@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Button, Container } from './App.styled';
 import { termsAndConditions } from 'pages/Home/termsAndConditions';
+import { BrowserRouter } from 'react-router-dom';
 
 export const App = () => {
  
@@ -38,15 +39,17 @@ const marginTop = style === 'titleMain' || style === 'title' || style === 'heade
 
 
   return (
-    <Container>
-      <Button onClick={switchLanguage}>{ language ==='uk'? 'EN': 'UK' }</Button>
-      <div>
-        {termsAndConditions.map((paragraph, index) => (
-          <div key={index} style={getParagraphStyle(paragraph.style)}>
-            <p>{language ? paragraph[language] : paragraph.en}</p>
-          </div>
-        ))}
-      </div>
-    </Container>
+    <BrowserRouter basename="/Privacy_Policy">
+      <Container>
+        <Button onClick={switchLanguage}>{language === 'uk' ? 'EN' : 'UK'}</Button>
+        <div>
+          {termsAndConditions.map((paragraph, index) => (
+            <div key={index} style={getParagraphStyle(paragraph.style)}>
+              <p>{language ? paragraph[language] : paragraph.en}</p>
+            </div>
+          ))}
+        </div>
+      </Container>
+    </BrowserRouter>
   );
 };
