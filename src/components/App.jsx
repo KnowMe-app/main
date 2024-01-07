@@ -3,7 +3,7 @@ import { Button, Container } from './App.styled';
 import { termsAndConditions } from 'pages/Home/termsAndConditions';
 
 export const App = () => {
-
+ 
   const [language, setLanguage] = useState('en');
 
 const switchLanguage = () => {
