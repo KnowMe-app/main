@@ -50,6 +50,6 @@ const marginTop = style === 'titleMain' || style === 'title' || style === 'heade
           ))}
         </div>
       </Container>
-    </BrowserRouter>
+    </BrowserRouter> 
   );
 };
