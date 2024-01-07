@@ -16,7 +16,7 @@ const switchLanguage = () => {
        titleMain: 26,
        title: 22,
        small: 20,
-     };
+     }; 
 
      const fontStyle = style === 'headerItalic' || style === 'list' ? 'italic' : 'normal';
      const fontWeight = ['header', 'titleMain', 'title', 'textMain'].includes(style) ? 'bold' : 'normal';
