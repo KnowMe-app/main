@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Container } from './App.styled';
 import { termsAndConditions } from 'pages/Home/termsAndConditions';
-import { BrowserRouter } from 'react-router-dom';
 
 export const App = () => {
  
@@ -39,7 +38,6 @@ const marginTop = style === 'titleMain' || style === 'title' || style === 'heade
 
 
   return (
-    <BrowserRouter basename="/Privacy_Policy">
       <Container>
         <Button onClick={switchLanguage}>{language === 'uk' ? 'EN' : 'UK'}</Button>
         <div>
@@ -50,6 +48,5 @@ const marginTop = style === 'titleMain' || style === 'title' || style === 'heade
           ))}
         </div>
       </Container>
-    </BrowserRouter> 
   );
 };
