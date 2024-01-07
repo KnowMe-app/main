@@ -7,6 +7,8 @@ export const Container = styled.div`
   padding: 30px;
   /* background-color: var(--primary-background-color); */
   box-shadow: var(--box-shadow);
+  display: flex;
+  flex-direction: column;
 `;
 
 export const TitleH1 = styled.h1`
@@ -32,5 +34,6 @@ export const Button = styled.button`
   &:hover,
   &:focus {
     background-color: var(--accent-color-hover);
-  }
+  };
+  align-self: flex-end;
 `;
