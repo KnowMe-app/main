@@ -418,6 +418,31 @@ export const termsAndConditions = [
     style: 'text',
   },
   {
+    en: 'Personal data is collected using the following services:',
+    uk: 'Персональні дані збираються з використанням таких сервісів:',
+    style: 'text',
+  },
+  {
+    en: '- Firebase Authentication (Google Inc.) for registration and authentication. To simplify the registration and authentication process, Firebase Authentication can make use of third-party identity providers and save the information on its platform. Place of processing: United States.',
+    uk: '- Firebase Authentication (Google Inc.) для реєстрації та автентифікації. Щоб спростити процес реєстрації та автентифікації, Firebase Authentication може використовувати сторонніх постачальників для ідентифікації та зберігання інформації на своїй платформі. Місце обробки: США.',
+    style: 'list',
+  },
+  {
+    en: '- Firebase Realtime Database (Google Inc.) for storing real-time data of users. ',
+    uk: '- Firebase Realtime Database (Google Inc.) для зберігання даних користувачів в режимі реального часу.',
+    style: 'list',
+  },
+  {
+    en: '- Firebase Firestore Database (Google Inc.) for data storage (duplicates Firebase Realtime Database).',
+    uk: '- Firebase Firestore Database (Google Inc.) для зберігання даних (дублює Firebase Realtime Database).',
+    style: 'list',
+  },
+  {
+    en: '- Firebase Storage (Google Inc.) for saving photos.',
+    uk: '- Firebase Storage (Google Inc.) для зберігання фотографій.',
+    style: 'list',
+  },
+  {
     en: 'The procedure for collecting and processing personal data assumes that the App stores the data that was entered into the system by the user. The entered data is displayed to other users for familiarization and decision-making regarding the possibility of cooperating.',
     uk: 'Порядок збору та обробки персональних даних передбачає, що у Застосунку зберігаються дані, які були внесені у систему користувачем. Надалі внесені дані відображаються іншим користувачам для знайомтсва та прийняття рішення щодо можливлї співпраці.',
     style: 'text',
@@ -458,13 +483,28 @@ export const termsAndConditions = [
     style: 'list',
   },
   {
-    en: '- means of communication;',
-    uk: '- засоби зв’язку;',
+    en: '- email address;',
+    uk: '- адреса електронної пошти;',
     style: 'list',
   },
   {
-    en: '- phenotype characteristics;',
-    uk: '- фенотипічна характеристика;',
+    en: '- phone number;',
+    uk: '- номер телефону;',
+    style: 'list',
+  },
+  {
+    en: '- social media links;',
+    uk: '- посилання на соціальні мережі;',
+    style: 'list',
+  },
+  {
+    en: '- other means of communication;',
+    uk: '- інші засоби зв’язку;',
+    style: 'list',
+  },
+  {
+    en: '- phenotype characteristics of the user;',
+    uk: '- фенотипічна характеристика користувача;',
     style: 'list',
   },
   {
@@ -504,8 +544,8 @@ export const termsAndConditions = [
     style: 'text',
   },
   {
-    en: '- locations (country, region, city) for finding users in your city/country, providing recommendations and information;',
-    uk: '- місця розташування (країна, регіон, місто) для підбору користувачів у Вашому місті / країні, надання рекомендацій та інформації;',
+    en: '- locations (country, region, city, street) for finding / sorting users close to each other, providing recommendations and information;',
+    uk: '- місця розташування (країна, регіон, місто, вулиця) для підбору / сортування користувачів поблизу один від одного, надання рекомендацій та інформації;',
     style: 'list',
   },
   {
