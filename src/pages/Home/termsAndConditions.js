@@ -221,9 +221,24 @@ export const termsAndConditions = [
     style: 'header',
   },
   {
-    en: 'You are not allowed to create an account and use the App if you do not meet all of these requirements:\n-You are at least 18 years old;\n-You have the legal capacity to enter into this Agreement with the Licensor;\n-You agree to abide by this Agreement and all applicable rules and laws.',
-    uk: 'Вам заборонено створювати обліковий запис та користуватись Застосунком, якщо Ви не відповідаєте усім цим вимогам:\n-Вам не менше 18 років;\n-Ви володієте правосуб’єктністю на укладення цієї Угоди з Ліцензіаром;\n-Ви погоджуєтесь дотримуватись цієї Угоди та всіх чинних норм та законів.',
+    en: 'You are not allowed to create an account and use the App if you do not meet all of these requirements:',
+    uk: 'Вам заборонено створювати обліковий запис та користуватись Застосунком, якщо Ви не відповідаєте усім цим вимогам:',
     style: 'text',
+  },
+  {
+    en: '- You are at least 18 years old;',
+    uk: '- Вам не менше 18 років;',
+    style: 'list',
+  },
+  {
+    en: '- You have the legal capacity to enter into this Agreement with the Licensor;',
+    uk: '- Ви володієте правосуб’єктністю на укладення цієї Угоди з Ліцензіаром;',
+    style: 'list',
+  },
+  {
+    en: '- You agree to abide by this Agreement and all applicable rules and laws.',
+    uk: '- Ви погоджуєтесь дотримуватись цієї Угоди та всіх чинних норм та законів.',
+    style: 'list',
   },
   {
     en: 'By using the App, you warrant on behalf of yourself that you will not:',
@@ -363,9 +378,29 @@ export const termsAndConditions = [
     style: 'header',
   },
   {
-    en: 'By registering in the App, you:\n-give consent to the collection and processing of your personal data specified by you in the App (processing of personal data - any action or set of actions, such as collection, registration, accumulation, storage, adaptation, change, renewal, use and dissemination (distribution, implementation, transfer), depersonalization, destruction of personal data, including using information (automated) systems (Article 2 of the Law of Ukraine "On the Protection of Personal Data");\n-you accept the User Agreement;\n-you confirm that you have read the text of the Privacy Notice clauses and the rights granted to you in accordance with Article 8 of the Law of Ukraine "On the Protection of Personal Data";\n-for the purpose of using the App, you consent to the use of your personal data.',
-    uk: 'Реєструючись у Застосунку, Ви:\n-надаєте згоду на збір та обробку своїх персональних даних, зазначених Вами у Застосунку (обробка персональних даних - будь-яка дія або сукупність дій, таких як збирання, реєстрація, накопичення, зберігання, адаптування, зміна, поновлення, використання і поширення (розповсюдження, реалізація, передача), знеособлення, знищення персональних даних, у тому числі з використанням інформаційних (автоматизованих) систем (ст. 2 Закону України «Про захист персональних даних»);\n-приймаєте Угоду користувача;\n-підтверджєте те, що ознайомились з текстом Повідомлення про обробку персональних даних та правами, наданими Вам згідно з ст. 8 Закону України «Про захист персональних даних»;\n-з метою використання Застосунком надаєте згоду на використання Ваших персональних даних.',
+    en: 'By registering in the App, you:',
+    uk: 'Реєструючись у Застосунку, Ви:',
     style: 'text',
+  },
+  {
+    en: '- give consent to the collection and processing of your personal data specified by you in the App (processing of personal data - any action or set of actions, such as collection, registration, accumulation, storage, adaptation, change, renewal, use and dissemination (distribution, implementation, transfer), depersonalization, destruction of personal data, including using information (automated) systems (Article 2 of the Law of Ukraine "On the Protection of Personal Data");',
+    uk: '- надаєте згоду на збір та обробку своїх персональних даних, зазначених Вами у Застосунку (обробка персональних даних - будь-яка дія або сукупність дій, таких як збирання, реєстрація, накопичення, зберігання, адаптування, зміна, поновлення, використання і поширення (розповсюдження, реалізація, передача), знеособлення, знищення персональних даних, у тому числі з використанням інформаційних (автоматизованих) систем (ст. 2 Закону України «Про захист персональних даних»);',
+    style: 'list',
+  },
+  {
+    en: '- you accept the User Agreement;',
+    uk: '- приймаєте Угоду користувача;',
+    style: 'list',
+  },
+  {
+    en: '- you confirm that you have read the text of the Privacy Notice clauses and the rights granted to you in accordance with Article 8 of the Law of Ukraine "On the Protection of Personal Data";',
+    uk: '- підтверджєте те, що ознайомились з текстом Повідомлення про обробку персональних даних та правами, наданими Вам згідно з ст. 8 Закону України «Про захист персональних даних»;',
+    style: 'list',
+  },
+  {
+    en: '- for the purpose of using the App, you consent to the use of your personal data.',
+    uk: '- з метою використання Застосунком надаєте згоду на використання Ваших персональних даних.',
+    style: 'list',
   },
   {
     en: 'According to Article 8, part 2, paragraphs 1 and 2 and Article 12, part 2, of the Law of Ukraine «On Personal Data Protection» we shall inform about the controller, processor, location, composition and collection purposes of personal data to be processed by this mobile application (frurther the App), the third parties whom personal data is transferred to and about the rights of the personal data subject.',
@@ -403,9 +438,49 @@ export const termsAndConditions = [
     style: 'text',
   },
   {
-    en: 'Personal data to be processed may include:\n\n-full name;\n-photos;\n-date of birth;\n-means of communication;\n-phenotype characteristics;\n-medical information (health data, medical history, medical documents);\n-other data entered into the App or information about actions performed in the system;\n-mobile device location and other unique device identifiers;',
-    uk: 'До складу персональних даних можуть включатися:\n\n-ім’я та прізвище;\n-фотографії;\n-дата народження;\n-засоби зв’язку;\n-фенотипічна характеристика;\n-медична інформація (дані про стан здоров’я, медична історія, медичні документи);\n-інші дані, які вносяться у Застосунок або інформація про дії, здійснені у системі;\n-місце розташування мобільного пристрою та інші унікальні ідентифікатори пристрою;',
+    en: 'Personal data to be processed may include:',
+    uk: 'До складу персональних даних можуть включатися:',
     style: 'text',
+  },
+  {
+    en: '- full name;',
+    uk: '- ім’я та прізвище;',
+    style: 'list',
+  },
+  {
+    en: '- photos;',
+    uk: '- фотографії;',
+    style: 'list',
+  },
+  {
+    en: '- date of birth;',
+    uk: '- дата народження;',
+    style: 'list',
+  },
+  {
+    en: '- means of communication;',
+    uk: '- засоби зв’язку;',
+    style: 'list',
+  },
+  {
+    en: '- phenotype characteristics;',
+    uk: '- фенотипічна характеристика;',
+    style: 'list',
+  },
+  {
+    en: '- medical information (health data, medical history, medical documents);',
+    uk: '- медична інформація (дані про стан здоров’я, медична історія, медичні документи);',
+    style: 'list',
+  },
+  {
+    en: '- other data entered into the App or information about actions performed in the system;',
+    uk: '- інші дані, які вносяться у Застосунок або інформація про дії, здійснені у системі;',
+    style: 'list',
+  },
+  {
+    en: '- mobile device location and other unique device identifiers;',
+    uk: '- місце розташування мобільного пристрою та інші унікальні ідентифікатори пристрою;',
+    style: 'list',
   },
   {
     en: 'Providing data is at your discretion. You decide whether to provide/upload data or not. If you choose to do so, your data will be stored in the App’s account management system. Other users of the App will have access to this data.',
@@ -424,18 +499,153 @@ export const termsAndConditions = [
     style: 'text',
   },
   {
-    en: 'Accessing some data on your device is necessary for certain functionality, including access to:\n\n-locations (country, region, city) for finding users in your city/country, providing recommendations and information;\n-notifications to promptly respond to events in the App;\n-contacts, for saving profiles to your phone’s address book;\n-the internal storage of your device in case of uploading photos to your profile;\n-push notifications if the user wishes to receive push notifications about interactions with other users of the App or other offers;\n-other potential functionalities, the notifications of which will appear in the App.\nYou can block the access to such data in the settings of your device. If you do not grant permission in such cases, we will not be able to provide the corresponding functionality.',
-    uk: 'Отримання доступу до деяких даних на Вашому пристрої необхідне для певного функціоналу Застосунку, зокрема це доступ до:\n\n-місця розташування (країна, регіон, місто) для підбору користувачів у Вашому місті / країні, надання рекомендацій та інформації;\n-повідомлень, щоб вчасно реагувати на події у Застосунку;\n-контактів, для збереження профайлів у Вашу телефонну книгу;\n-внутрішнього сховища Вашого пристрою у разі завантаження фотографій до профайлу в Застосунку;\n-push-сповіщення, якщо користувач бажає отримувати push-сповіщення про результати взаємодії з іншими користувачами Застосунку чи інші пропозиції;\n-іншого можливого функціоналу, повідомлення про яке буду з’являтися в Застосунку.\nВи можете заборонити доступ Застосунку до таких даних в налаштуваннях Вашого пристрою. Якщо Ви не надасте дозвіл у таких випадках, ми не матимемо змогу надати відповідний функціонал.',
+    en: 'Accessing some data on your device is necessary for certain functionality, including access to:',
+    uk: 'Отримання доступу до деяких даних на Вашому пристрої необхідне для певного функціоналу Застосунку, зокрема це доступ до:',
     style: 'text',
   },
   {
-    en: 'How user’s data is used:\n-For the administration of the App (account creation, management, providing support, responding to requests);\n-To assist in user interactions (recommendations, showing profiles to each other);\n-For advertising campaigns;\n-For the improvement of the App (development of new features based on the analysis of data provided by users, providing information to other service providers who help maintain the App);\n-For the prevention and detection of fraud or other illegal activities;\n-To ensure compliance with the law (compliance with legal requirements, assistance to law enforcement agencies).',
-    uk: 'Як використовуються дані про користувачів:\n-Для адміністрування Застосунку (створення акаунту, керування ним, надання підтримки, відповідей на запити);\n-Для допомоги взаємодії користувачів між собою (рекомендації, показ профілів один одному);\n-Для проведення рекламних кампаній;\n-Для вдосконалення Застосунку (розробка нових функцій на підставі аналізу переданих користувачем даних, надання інформації іншим постачальникам послуг, які допомагають підтримувати Застосунок);\n-Для упередження та виявлення шахрайства чи іншої незаконної діяльності;\n-Для забезпечення дотримання законодавства (відповідність юридичним вимогам, допомога правоохоронним органам).',
+    en: '- locations (country, region, city) for finding users in your city/country, providing recommendations and information;',
+    uk: '- місця розташування (країна, регіон, місто) для підбору користувачів у Вашому місті / країні, надання рекомендацій та інформації;',
+    style: 'list',
+  },
+  {
+    en: '- notifications to promptly respond to events in the App;',
+    uk: '- повідомлень, щоб вчасно реагувати на події у Застосунку;',
+    style: 'list',
+  },
+  {
+    en: '- contacts, for saving profiles to your phone’s address book;',
+    uk: '- контактів, для збереження профайлів у Вашу телефонну книгу;',
+    style: 'list',
+  },
+  {
+    en: '- the internal storage of your device in case of uploading photos to your profile;',
+    uk: '- внутрішнього сховища Вашого пристрою у разі завантаження фотографій до профайлу в Застосунку;',
+    style: 'list',
+  },
+  {
+    en: '- push notifications if the user wishes to receive push notifications about interactions with other users of the App or other offers;',
+    uk: '- push-сповіщення, якщо користувач бажає отримувати push-сповіщення про результати взаємодії з іншими користувачами Застосунку чи інші пропозиції;',
+    style: 'list',
+  },
+  {
+    en: '- other potential functionalities, the notifications of which will appear in the App.',
+    uk: '- іншого можливого функціоналу, повідомлення про яке буду з’являтися в Застосунку.',
+    style: 'list',
+  },
+  {
+    en: 'You can block the access to such data in the settings of your device. If you do not grant permission in such cases, we will not be able to provide the corresponding functionality.',
+    uk: 'Ви можете заборонити доступ Застосунку до таких даних в налаштуваннях Вашого пристрою. Якщо Ви не надасте дозвіл у таких випадках, ми не матимемо змогу надати відповідний функціонал.',
     style: 'text',
   },
   {
-    en: 'Under Article 8, part 2 of the Law of Ukraine «On Personal Data Protection», the data subject has the right to:\n\n-Know about his/her personal data sources of collection, location, purpose of their processing, personal data controllers or processors location or place of residence (stay) or give a respective instruction to authorized persons to obtain this information, except as provided by law;\n-Receive information about the conditions for granting access to personal data, particularly information about third parties to whom his personal data is transferred;\n-Access his/her personal data;\n-Receive an answer to requests whether his/her personal data is processed no later than (30) thirty calendar days from the request date of receipt, except as provided by law, as well as receive such personal data content;\n-Make a reasoned request to personal data controller with an objection against his/her personal data processing;\n-Make a reasoned request to his/her personal data change or destroy by any personal data controller and processor if such data is processed illegally or is inaccurate;\n-Protect his/her personal data from unlawful processing and accidental loss, destruction, damage due to intentional concealment, non-provision or untimely provision, as well as to protect from providing information that is inaccurate or discredits honor, dignity and business reputation of an individual;\n-Appeal to the Commissioner for Human Rights of the Verkhovna Rada of Ukraine or the court with complaints about the processing of their personal data;\n-Exercise legal remedies in case of violation of the personal data protection legislation;\nTo make reservations regarding the limitation of the right to process their personal data when giving consent;\n-To withdraw consent for the processing of personal data;\n-Know the mechanism of automatic processing of personal data;\n-Be protected against an automated decision that has legal consequences for him/her. To exercise your rights, you can contact us by using the feedback form or the link below the Agreement.',
-    uk: 'Згідно з ч. 2 ст. 8 Закону України «Про захист персональних даних» суб’єкт персональних даних має право:\n\n-знати про джерела збирання, місцезнаходження своїх персональних даних, мету їх обробки, місцезнаходження або місце проживання (перебування) власника чи розпорядника персональних даних або дати відповідне доручення щодо отримання цієї інформації уповноваженим ним особам, крім випадків, встановлених законом;\n-отримувати інформацію про умови надання доступу до персональних даних, зокрема інформацію про третіх осіб, яким передаються Ваші персональні дані;\n-на доступ до своїх персональних даних;\n-отримувати не пізніш як за тридцять календарних днів (30) з дня надходження запиту, крім випадків, передбачених законом, відповідь про те, чи обробляються Ваші персональні дані, а також отримувати зміст таких персональних даних;\n-пред’являти вмотивовану вимогу власнику персональних даних із запереченням проти обробки своїх персональних даних;\n-пред’являти вмотивовану вимогу щодо зміни або видалення своїх персональних даних будь-яким власником та розпорядником персональних даних, якщо ці дані обробляються незаконно чи є недостовірними;\n-на захист своїх персональних даних від незаконної обробки та випадкової втрати, знищення, пошкодження у зв’язку з умисним приховуванням, ненаданням чи несвоєчасним їх наданням, а також на захист від надання відомостей, що є недостовірними чи ганьблять честь, гідність та ділову репутацію фізичної особи;\n-звертатися із скаргами на обробку своїх персональних даних до Уповноваженого Верховної Ради з прав людини або до суду;\n-застосовувати засоби правового захисту в разі порушення законодавства про захист персональних даних;\n-вносити застереження стосовно обмеження права на обробку своїх персональних даних під час надання згоди;\n-відкликати згоду на обробку персональних даних;\n-знати механізм автоматичної обробки персональних даних;\n-на захист від автоматизованого рішення, яке має для нього правові наслідки. Щоб скористатися своїми правами, Ви можете зв’язатися з нами за допомогою форми зворотного зв’язку або за посиланням в кінці цієї Угоди.',
+    en: 'How user’s data is used:',
+    uk: 'Як використовуються дані про користувачів:',
+    style: 'text',
+  },
+  {
+    en: '- For the administration of the App (account creation, management, providing support, responding to requests);',
+    uk: '- Для адміністрування Застосунку (створення акаунту, керування ним, надання підтримки, відповідей на запити);',
+    style: 'list',
+  },
+  {
+    en: '- To assist in user interactions (recommendations, showing profiles to each other);',
+    uk: '- Для допомоги взаємодії користувачів між собою (рекомендації, показ профілів один одному);',
+    style: 'list',
+  },
+  {
+    en: '- For advertising campaigns;',
+    uk: '- Для проведення рекламних кампаній;',
+    style: 'list',
+  },
+  {
+    en: '- For the improvement of the App (development of new features based on the analysis of data provided by users, providing information to other service providers who help maintain the App);',
+    uk: '- Для вдосконалення Застосунку (розробка нових функцій на підставі аналізу переданих користувачем даних, надання інформації іншим постачальникам послуг, які допомагають підтримувати Застосунок);',
+    style: 'list',
+  },
+  {
+    en: '- For the prevention and detection of fraud or other illegal activities;',
+    uk: '- Для упередження та виявлення шахрайства чи іншої незаконної діяльності;',
+    style: 'list',
+  },
+  {
+    en: '- To ensure compliance with the law (compliance with legal requirements, assistance to law enforcement agencies).',
+    uk: '- Для забезпечення дотримання законодавства (відповідність юридичним вимогам, допомога правоохоронним органам).',
+    style: 'list',
+  },
+  {
+    en: 'Under Article 8, part 2 of the Law of Ukraine «On Personal Data Protection», the data subject has the right to:',
+    uk: 'Згідно з ч. 2 ст. 8 Закону України «Про захист персональних даних» суб’єкт персональних даних має право:',
+    style: 'text',
+  },
+  {
+    en: '- Know about his/her personal data sources of collection, location, purpose of their processing, personal data controllers or processors location or place of residence (stay) or give a respective instruction to authorized persons to obtain this information, except as provided by law;',
+    uk: '- Знати про джерела збирання, місцезнаходження своїх персональних даних, мету їх обробки, місцезнаходження або місце проживання (перебування) власника чи розпорядника персональних даних або дати відповідне доручення щодо отримання цієї інформації уповноваженим ним особам, крім випадків, встановлених законом;',
+    style: 'list',
+  },
+  {
+    en: '- Receive information about the conditions for granting access to personal data, particularly information about third parties to whom his personal data is transferred;',
+    uk: '- Отримувати інформацію про умови надання доступу до персональних даних, зокрема інформацію про третіх осіб, яким передаються Ваші персональні дані;',
+    style: 'list',
+  },
+  {
+    en: '- Access his/her personal data;',
+    uk: '- На доступ до своїх персональних даних;',
+    style: 'list',
+  },
+  {
+    en: '- Receive an answer to requests whether his/her personal data is processed no later than (30) thirty calendar days from the request date of receipt, except as provided by law, as well as receive such personal data content;',
+    uk: '- Отримувати не пізніш як за тридцять календарних днів (30) з дня надходження запиту, крім випадків, передбачених законом, відповідь про те, чи обробляються Ваші персональні дані, а також отримувати зміст таких персональних даних;',
+    style: 'list',
+  },
+  {
+    en: '- Make a reasoned request to personal data controller with an objection against his/her personal data processing;',
+    uk: '- Пред’являти вмотивовану вимогу власнику персональних даних із запереченням проти обробки своїх персональних даних;',
+    style: 'list',
+  },
+  {
+    en: '- Make a reasoned request to his/her personal data change or destroy by any personal data controller and processor if such data is processed illegally or is inaccurate;',
+    uk: '- Пред’являти вмотивовану вимогу щодо зміни або видалення своїх персональних даних будь-яким власником та розпорядником персональних даних, якщо ці дані обробляються незаконно чи є недостовірними;',
+    style: 'list',
+  },
+  {
+    en: '- Protect his/her personal data from unlawful processing and accidental loss, destruction, damage due to intentional concealment, non-provision or untimely provision, as well as to protect from providing information that is inaccurate or discredits honor, dignity and business reputation of an individual;',
+    uk: '- На захист своїх персональних даних від незаконної обробки та випадкової втрати, знищення, пошкодження у зв’язку з умисним приховуванням, ненаданням чи несвоєчасним їх наданням, а також на захист від надання відомостей, що є недостовірними чи ганьблять честь, гідність та ділову репутацію фізичної особи;',
+    style: 'list',
+  },
+  {
+    en: '- Appeal to the Commissioner for Human Rights of the Verkhovna Rada of Ukraine or the court with complaints about the processing of their personal data;',
+    uk: '- Звертатися із скаргами на обробку своїх персональних даних до Уповноваженого Верховної Ради з прав людини або до суду;',
+    style: 'list',
+  },
+  {
+    en: '- Exercise legal remedies in case of violation of the personal data protection legislation;',
+    uk: '- Застосовувати засоби правового захисту в разі порушення законодавства про захист персональних даних;',
+    style: 'list',
+  },
+  {
+    en: '- To make reservations regarding the limitation of the right to process their personal data when giving consent;',
+    uk: '- Вносити застереження стосовно обмеження права на обробку своїх персональних даних під час надання згоди;',
+    style: 'list',
+  },
+  {
+    en: '- To withdraw consent for the processing of personal data;',
+    uk: '- Відкликати згоду на обробку персональних даних;',
+    style: 'list',
+  },
+  {
+    en: '- Know the mechanism of automatic processing of personal data;',
+    uk: '- Знати механізм автоматичної обробки персональних даних;',
+    style: 'list',
+  },
+  {
+    en: '- Be protected against an automated decision that has legal consequences for him/her.',
+    uk: '- На захист від автоматизованого рішення, яке має для нього правові наслідки.',
+    style: 'list',
+  },
+  {
+    en: 'To exercise your rights, you can contact us by using the feedback form or the link below the Agreement.',
+    uk: 'Щоб скористатися своїми правами, Ви можете зв’язатися з нами за допомогою форми зворотного зв’язку або за посиланням в кінці цієї Угоди.',
     style: 'text',
   },
   {
@@ -454,9 +664,19 @@ export const termsAndConditions = [
     style: 'text',
   },
   {
-    en: 'The user’s personal data is subject to destruction in the event of:\n-the entry into force of the relevant court decision;\n- written notification of the user about his desire to destroy his personal data.',
-    uk: 'Персональні дані користувача підлягають знищенню у разі:\n-набрання законної сили відповідного рішення суду;\n- письмового повідомлення користувача про своє бажання, щодо знищення його персональних даних.',
+    en: 'The user’s personal data is subject to destruction in the event of:',
+    uk: 'Персональні дані користувача підлягають знищенню у разі:',
     style: 'text',
+  },
+  {
+    en: '- The entry into force of the relevant court decision;',
+    uk: '- Набрання законної сили відповідного рішення суду;',
+    style: 'list',
+  },
+  {
+    en: '- Written notification of the user about his desire to destroy his personal data.',
+    uk: '- Письмового повідомлення користувача про своє бажання, щодо знищення його персональних даних.',
+    style: 'list',
   },
   /////////////////////////
   {

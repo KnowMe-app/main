@@ -13,9 +13,9 @@ const switchLanguage = () => {
   
    const getParagraphStyle = style => {
      const fontSize = {
-       titleMain: 26,
-       title: 22,
-       small: 20,
+       titleMain: 22,
+       title: 18,
+       small: 14,
      }; 
 
      const fontStyle = style === 'headerItalic' || style === 'list' ? 'italic' : 'normal';
