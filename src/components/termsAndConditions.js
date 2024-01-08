@@ -22,7 +22,7 @@ export const termsAndConditions = [
     style: 'header',
   },
   {
-    en: 'The App is currently offered to users in test mode, which is why certain service functions are temporarily limited, and technical issues and errors may occur. For questions or suggestions, please contact us using the contact email (KnowMeEggDonor@gmail.com) or the link at the bottom of the page.',
+    en: 'The App is currently offered to users in test mode, which is why certain service functions are temporarily limited, and technical issues and errors may occur. For questions or suggestions, please contact us using the email (KnowMeEggDonor@gmail.com) or the link at the bottom of the page.',
     uk: 'Наразі Застосунок пропонується у тестовому режимі, у зв’язку з чим окремі функції сервісу тимчасово обмежуються, можливі технічні проблеми та помилки. З запитаннями або побажаннями звертайтеся за адресою електронної пошти (KnowMeEggDonor@gmail.com) або за посиланням внизу сторінки.',
     style: 'text',
   },
@@ -684,7 +684,7 @@ export const termsAndConditions = [
     style: 'list',
   },
   {
-    en: 'To exercise your rights, you can contact us by using the contact email (KnowMeEggDonor@gmail.com) or the link below the Agreement.',
+    en: 'To exercise your rights, you can contact us by using the email (KnowMeEggDonor@gmail.com) or the link below the Agreement.',
     uk: 'Щоб скористатися своїми правами, Ви можете зв’язатися з нами за адресою електронної пошти (KnowMeEggDonor@gmail.com) або за посиланням в кінці цієї Угоди.',
     style: 'text',
   },
