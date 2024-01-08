@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Container } from './App.styled';
-import { termsAndConditions } from 'pages/Home/termsAndConditions';
+import { termsAndConditions } from './termsAndConditions';
 
 export const App = () => {
  
