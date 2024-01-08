@@ -22,8 +22,8 @@ export const termsAndConditions = [
     style: 'header',
   },
   {
-    en: 'The App is currently offered to users in test mode, which is why certain service functions are temporarily limited, and technical issues and errors may occur. For questions or suggestions, please contact us using the link at the bottom of the page.',
-    uk: 'Наразі Застосунок пропонується у тестовому режимі, у зв’язку з чим окремі функції сервісу тимчасово обмежуються, можливі технічні проблеми та помилки. З запитаннями або побажаннями звертайтеся за посиланням внизу сторінки.',
+    en: 'The App is currently offered to users in test mode, which is why certain service functions are temporarily limited, and technical issues and errors may occur. For questions or suggestions, please contact us using the contact email (KnowMeEggDonor@gmail.com) or the link at the bottom of the page.',
+    uk: 'Наразі Застосунок пропонується у тестовому режимі, у зв’язку з чим окремі функції сервісу тимчасово обмежуються, можливі технічні проблеми та помилки. З запитаннями або побажаннями звертайтеся за адресою електронної пошти (KnowMeEggDonor@gmail.com) або за посиланням внизу сторінки.',
     style: 'text',
   },
 
@@ -76,8 +76,8 @@ export const termsAndConditions = [
   },
 
   {
-    en: 'The App is only available to individuals aged 18 and older. If you suspect that a user is under 18 years old, please submit a complaint through the link at the end of the page.',
-    uk: 'Застосунок доступний лише особам старшим 18 років. Якщо у Вас є підозри, що користувачу не виповнилося 18 років, будь ласка, надішліть скаргу за посиланням в кінці сторінки.',
+    en: 'The App is only available to individuals aged 18 and older. If you suspect that a user is under 18 years old, please submit a complaint through the contact email (KnowMeEggDonor@gmail.com) or the link at the end of the page.',
+    uk: 'Застосунок доступний лише особам старшим 18 років. Якщо у Вас є підозри, що користувачу не виповнилося 18 років, будь ласка, надішліть скаргу за адресою електронної пошти (KnowMeEggDonor@gmail.com) або за посиланням в кінці сторінки.',
     style: 'text',
   },
   {
@@ -146,8 +146,8 @@ export const termsAndConditions = [
     style: 'text',
   },
   {
-    en: 'If a user believes that the App contains data that violates their rights, the user is obliged to inform the Licensor by using the feedback form or the link below the Agreement and provide information confirming such violation.',
-    uk: 'Якщо користувач вважає, що у Застосунку наявні дані, що порушують його права, користувач зобов’язаний повідомити про це Ліцензіара за допомогою форми зворотного зв’язку або за посиланням в кінці цієї Угоди і надати інформацію, яка підтверджує таке порушення.',
+    en: 'If a user believes that the App contains data that violates their rights, the user is obliged to inform the Licensor by using the contact email (KnowMeEggDonor@gmail.com) or the link below the Agreement and provide information confirming such violation.',
+    uk: 'Якщо користувач вважає, що у Застосунку наявні дані, що порушують його права, користувач зобов’язаний повідомити про це Ліцензіара за адресою електронної пошти (KnowMeEggDonor@gmail.com) або за посиланням в кінці цієї Угоди і надати інформацію, яка підтверджує таке порушення.',
     style: 'text',
   },
   {
@@ -186,8 +186,8 @@ export const termsAndConditions = [
     style: 'text',
   },
   {
-    en: 'Editing of personal data is possible through the App. If a user believes that the data in the App is inaccurate and they are deprived of the functionality to correct it, please submit a relevant request for clarification through the link provided at the end of this page.',
-    uk: 'Редагування особистих даних можливе через Застосунок. Якщо користувач вважає, що дані, які містяться в Застосунку, є неточними, та користувач позбавлений функціоналу їх виправити, направте відповідний запит для уточнення через посилання, що вказане в кінці цієї сторінки.',
+    en: 'Editing of personal data is possible through the App. If a user believes that the data in the App is inaccurate and they are deprived of the functionality to correct it, please submit a relevant request for clarification through the contact email (KnowMeEggDonor@gmail.com) or the link provided at the end of this page.',
+    uk: 'Редагування особистих даних можливе через Застосунок. Якщо користувач вважає, що дані, які містяться в Застосунку, є неточними, та користувач позбавлений функціоналу їх виправити, направте відповідний запит для уточнення за адресою електронної пошти (KnowMeEggDonor@gmail.com) або через посилання, що вказане в кінці цієї сторінки.',
     style: 'text',
   },
   {
@@ -342,8 +342,8 @@ export const termsAndConditions = [
     style: 'text',
   },
   {
-    en: 'Although the Licensor reserves the right to review and remove data that violates this Agreement, the exclusive responsibility for such data lies with the user who posted them. If you encounter data in the App that violate this Agreement, please report it using the link at the bottom of this page.',
-    uk: 'Хоча Ліцензіар залишає за собою право переглядати та видаляти дані, що порушують цю Угоду, виняткову відповідальність за такі дані несе користувач, що їх опублікував. Якщо у Застосунку Ви бачите дані, які порушують цю Угоду, повідомте про це через посилання внизу цієї сторінки.',
+    en: 'Although the Licensor reserves the right to review and remove data that violates this Agreement, the exclusive responsibility for such data lies with the user who posted them. If you encounter data in the App that violate this Agreement, please report it using the contact email (KnowMeEggDonor@gmail.com) or the link at the bottom of this page.',
+    uk: 'Хоча Ліцензіар залишає за собою право переглядати та видаляти дані, що порушують цю Угоду, виняткову відповідальність за такі дані несе користувач, що їх опублікував. Якщо у Застосунку Ви бачите дані, які порушують цю Угоду, повідомте про це за адресою електронної пошти (KnowMeEggDonor@gmail.com) або через посилання внизу цієї сторінки.',
     style: 'text',
   },
   {
@@ -473,8 +473,8 @@ export const termsAndConditions = [
     style: 'list',
   },
   {
-    en: '- photos;',
-    uk: '- фотографії;',
+    en: '- photos of the user;',
+    uk: '- фотографії користувача;',
     style: 'list',
   },
   {
@@ -684,13 +684,13 @@ export const termsAndConditions = [
     style: 'list',
   },
   {
-    en: 'To exercise your rights, you can contact us by using the feedback form or the link below the Agreement.',
-    uk: 'Щоб скористатися своїми правами, Ви можете зв’язатися з нами за допомогою форми зворотного зв’язку або за посиланням в кінці цієї Угоди.',
+    en: 'To exercise your rights, you can contact us by using the contact email (KnowMeEggDonor@gmail.com) or the link below the Agreement.',
+    uk: 'Щоб скористатися своїми правами, Ви можете зв’язатися з нами за адресою електронної пошти (KnowMeEggDonor@gmail.com) або за посиланням в кінці цієї Угоди.',
     style: 'text',
   },
   {
-    en: 'Deleting the App does NOT terminate the account. To delete your account, please submit the relevant request through the link provided at the end of this page.',
-    uk: 'Видалення Застосунку НЕ припиняє дію акаунта. Щоб видалити свій акаунт, надішліть відповідний запит через посилання, вказане в кінці цієї сторінки.',
+    en: 'Deleting the App does NOT terminate the account. To delete your account, please submit the relevant request through the contact email (KnowMeEggDonor@gmail.com) or the link provided at the end of this page.',
+    uk: 'Видалення Застосунку НЕ припиняє дію акаунта. Щоб видалити свій акаунт, надішліть відповідний запит за адресою електронної пошти (KnowMeEggDonor@gmail.com) або через посилання, вказане в кінці цієї сторінки.',
     style: 'text',
   },
   {
