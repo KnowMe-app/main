@@ -1,8 +1,8 @@
 {
   "name": "Privacy_Policy",
-  "version": "0.1.0",
+  "version": "1.0.2",
   "private": true,
-  "homepage": "https://xanderkiev2022.github.io/Privacy_Policy/",
+  "homepage": "https://KnowMe-app.github.io/main/privacy_policy",
   "dependencies": {
     "@reduxjs/toolkit": "^1.9.2",
     "@testing-library/jest-dom": "^5.16.3",
