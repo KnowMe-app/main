@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import styled, { css } from 'styled-components';
 import { FaUser, FaLock } from 'react-icons/fa';
 import { auth, updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
-import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
 
 const Container = styled.div`
