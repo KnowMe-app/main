@@ -2,7 +2,7 @@
   "name": "main",
   "version": "1.0.2",
   "private": true,
-  "homepage": "https://KnowMe-app.github.io/main/privacy_policy",
+  "homepage": "https://KnowMe-app.github.io/main",
   "dependencies": {
     "@react-pdf/renderer": "^3.4.2",
     "@reduxjs/toolkit": "^1.9.2",
