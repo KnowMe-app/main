@@ -4,6 +4,7 @@ import { FaUser, FaLock } from 'react-icons/fa';
 import { auth, updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
 import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
+import { useNavigate } from 'react-router-dom';
 
 const Container = styled.div`
   display: flex;
@@ -50,7 +51,7 @@ const Label = styled.label`
       left: 10px;
       top: 0;
       transform: translateY(-100%);
-      font-size: 12px;
+      font-size: 14px;
       color: orange;
     `}
 `;
@@ -70,7 +71,7 @@ const SubmitButton = styled.button`
   }
 `;
 
-export const LoginScreen = () => {
+export const LoginScreen = ({isLoggedIn, setIsLoggedIn}) => {
   const [state, setState] = useState({
     email: '',
     password: '',
@@ -80,6 +81,8 @@ export const LoginScreen = () => {
     email: false,
     password: false,
   });
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     const checkAutofill = () => {
@@ -136,6 +139,8 @@ const handleRegistration = async () => {
         await sendEmailVerification(userCredential.user);
         await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
         await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
+        setIsLoggedIn(true);
+        navigate('/submit');
 
     } catch (error) {
       console.error('Error signing in:', error); 
