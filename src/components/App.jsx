@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Route, Routes, useNavigate  } from 'react-router-dom';
+import { Route, Routes, Navigate, useNavigate  } from 'react-router-dom';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import {ProfileScreen} from './ProfileScreen';
 import { LoginScreen } from './LoginScreen';
@@ -21,6 +21,7 @@ export const App = () => {
 
   return (
     <Routes>
+      <Route path="/" element={<Navigate to="/privacy_policy" />} />
       <Route path="/privacy_policy" element={<PrivacyPolicy />} />
       <Route path="/submit"  element={<ProfileScreen />} />
       <Route path="/login" element={<LoginScreen isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />
