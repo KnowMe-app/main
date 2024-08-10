@@ -1,13 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import styled, { css } from 'styled-components';
 import { FaUser, FaLock } from 'react-icons/fa';
-import { auth, 
-  // updateDataInFiresoreDB, updateDataInRealtimeDB 
-} from './config';
-import { createUserWithEmailAndPassword, 
-  // sendEmailVerification,
-   signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
-// import { getCurrentDate } from './foramtDate';
+import { auth, updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
+import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
+import { getCurrentDate } from './foramtDate';
 import { useNavigate } from 'react-router-dom';
 
 const Container = styled.div`
@@ -88,16 +84,16 @@ export const LoginScreen = ({isLoggedIn, setIsLoggedIn}) => {
 
   const navigate = useNavigate();
 
-  // useEffect(() => {
-  //   const checkAutofill = () => {
-  //     setFocused({
-  //       email: document.querySelector('input[name="email"]').value !== '',
-  //       password: document.querySelector('input[name="password"]').value !== '',
-  //     });
-  //   };
+  useEffect(() => {
+    const checkAutofill = () => {
+      setFocused({
+        email: document.querySelector('input[name="email"]').value !== '',
+        password: document.querySelector('input[name="password"]').value !== '',
+      });
+    };
 
-  //   checkAutofill();
-  // }, []);
+    checkAutofill();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -119,18 +115,18 @@ export const LoginScreen = ({isLoggedIn, setIsLoggedIn}) => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
 
-    //   const uploadedInfo = { 
-    //     // email: state.email,
-    //     // areTermsConfirmed: todayDays,
-    //     // registrationDate: todayDays,
-    //     lastLogin: todayDays,
-    //     // userId: userCredential.user.uid,
+      const uploadedInfo = { 
+        // email: state.email,
+        // areTermsConfirmed: todayDays,
+        // registrationDate: todayDays,
+        lastLogin: todayDays,
+        // userId: userCredential.user.uid,
         
-    // };
+    };
 
-        // await sendEmailVerification(userCredential.user);
-        // await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
-        // await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
+        await sendEmailVerification(userCredential.user);
+        await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
+        await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
 
         localStorage.setItem('isLoggedIn', 'true');
         localStorage.setItem('userEmail', state.email); 
@@ -143,25 +139,25 @@ export const LoginScreen = ({isLoggedIn, setIsLoggedIn}) => {
     }
 }
 
-// const {todayDays} = getCurrentDate()
+const {todayDays} = getCurrentDate()
 
 const handleRegistration = async () => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
       console.log('User registered in:', userCredential.user);
 
-    //   const uploadedInfo = { 
-    //     email: state.email,
-    //     areTermsConfirmed: todayDays,
-    //     registrationDate: todayDays,
-    //     lastLogin: todayDays,
-    //     userId: userCredential.user.uid,
+      const uploadedInfo = { 
+        email: state.email,
+        areTermsConfirmed: todayDays,
+        registrationDate: todayDays,
+        lastLogin: todayDays,
+        userId: userCredential.user.uid,
         
-    // };
+    };
 
-        // await sendEmailVerification(userCredential.user);
-        // await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
-        // await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
+        await sendEmailVerification(userCredential.user);
+        await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
+        await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
 
         localStorage.setItem('isLoggedIn', 'true');
         localStorage.setItem('userEmail', state.email); 
@@ -187,16 +183,16 @@ const handleAuth = async () => {
   }
 };
 
-// useEffect(() => {
-//   const loggedIn = localStorage.getItem('isLoggedIn');
-//   if(!isLoggedIn && !loggedIn){
-//     navigate('/login');  
-//   } else {
-//       setIsLoggedIn(true);
-//       navigate('/profile');
-//     }
-//     // eslint-disable-next-line
-// },[]);
+useEffect(() => {
+  const loggedIn = localStorage.getItem('isLoggedIn');
+  if(!isLoggedIn && !loggedIn){
+    navigate('/login');  
+  } else {
+      setIsLoggedIn(true);
+      navigate('/profile');
+    }
+    // eslint-disable-next-line
+},[]);
 
   return (
     <Container>
