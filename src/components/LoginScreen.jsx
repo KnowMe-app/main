@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
 import styled, { css } from 'styled-components';
 import { FaUser, FaLock } from 'react-icons/fa';
-// import { auth, updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
-// import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
+import { auth, 
+  // updateDataInFiresoreDB, updateDataInRealtimeDB 
+} from './config';
+import { createUserWithEmailAndPassword, 
+  // sendEmailVerification,
+   signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
 // import { getCurrentDate } from './foramtDate';
-// import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 const Container = styled.div`
   display: flex;
@@ -82,7 +86,7 @@ export const LoginScreen = ({isLoggedIn, setIsLoggedIn}) => {
     password: false,
   });
 
-  // const navigate = useNavigate();
+  const navigate = useNavigate();
 
   // useEffect(() => {
   //   const checkAutofill = () => {
@@ -111,73 +115,73 @@ export const LoginScreen = ({isLoggedIn, setIsLoggedIn}) => {
     setFocused(null);
   };
 
-//   const handleLogin = async () => {
-//     try {
-//       const userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
+  const handleLogin = async () => {
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
 
-//       const uploadedInfo = { 
-//         // email: state.email,
-//         // areTermsConfirmed: todayDays,
-//         // registrationDate: todayDays,
-//         lastLogin: todayDays,
-//         // userId: userCredential.user.uid,
+    //   const uploadedInfo = { 
+    //     // email: state.email,
+    //     // areTermsConfirmed: todayDays,
+    //     // registrationDate: todayDays,
+    //     lastLogin: todayDays,
+    //     // userId: userCredential.user.uid,
         
-//     };
+    // };
 
-//         await sendEmailVerification(userCredential.user);
-//         await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
-//         await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
+        // await sendEmailVerification(userCredential.user);
+        // await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
+        // await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
 
-//         localStorage.setItem('isLoggedIn', 'true');
-//         localStorage.setItem('userEmail', state.email); 
+        localStorage.setItem('isLoggedIn', 'true');
+        localStorage.setItem('userEmail', state.email); 
 
-//       setIsLoggedIn(true);
-//       navigate('/profile');
-//       console.log('User signed in:', userCredential.user);
-//     } catch (error) {
-//       console.error('Error signing in:', error);
-//     }
-// }
+      setIsLoggedIn(true);
+      navigate('/profile');
+      console.log('User signed in:', userCredential.user);
+    } catch (error) {
+      console.error('Error signing in:', error);
+    }
+}
 
 // const {todayDays} = getCurrentDate()
 
-// const handleRegistration = async () => {
-//     try {
-//       const userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
-//       console.log('User registered in:', userCredential.user);
+const handleRegistration = async () => {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
+      console.log('User registered in:', userCredential.user);
 
-//     //   const uploadedInfo = { 
-//     //     email: state.email,
-//     //     areTermsConfirmed: todayDays,
-//     //     registrationDate: todayDays,
-//     //     lastLogin: todayDays,
-//     //     userId: userCredential.user.uid,
+    //   const uploadedInfo = { 
+    //     email: state.email,
+    //     areTermsConfirmed: todayDays,
+    //     registrationDate: todayDays,
+    //     lastLogin: todayDays,
+    //     userId: userCredential.user.uid,
         
-//     // };
+    // };
 
-//         // await sendEmailVerification(userCredential.user);
-//         // await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
-//         // await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
+        // await sendEmailVerification(userCredential.user);
+        // await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
+        // await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
 
-//         localStorage.setItem('isLoggedIn', 'true');
-//         localStorage.setItem('userEmail', state.email); 
+        localStorage.setItem('isLoggedIn', 'true');
+        localStorage.setItem('userEmail', state.email); 
 
-//         setIsLoggedIn(true);
-//         navigate('/profile');
+        setIsLoggedIn(true);
+        navigate('/profile');
 
-//     } catch (error) {
-//       console.error('Error signing in:', error); 
-//     }
-// }
+    } catch (error) {
+      console.error('Error signing in:', error); 
+    }
+}
 
 const handleAuth = async () => {
   try {
-    // const signInMethods = await fetchSignInMethodsForEmail(auth, state.email);
-    // if (signInMethods.length > 0) {
-    //   await handleLogin();
-    // } else {
-    //   await handleRegistration();
-    // }
+    const signInMethods = await fetchSignInMethodsForEmail(auth, state.email);
+    if (signInMethods.length > 0) {
+      await handleLogin();
+    } else {
+      await handleRegistration();
+    }
   } catch (error) {
     console.error('Error in authentication process:', error);
   }
