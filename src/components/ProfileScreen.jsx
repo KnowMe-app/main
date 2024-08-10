@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import styled, { css } from 'styled-components';
 import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
+import { auth } from './config';
 import {fieldsMain} from './formFields';
+import { signOut } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
 
 
 const Container = styled.div`
@@ -80,7 +83,7 @@ const iconMap = {
   vk: <FaVk style={{ color: 'orange' }} />,
 };
 
-export const ProfileScreen = () => {
+export const ProfileScreen = ({isLoggedIn, setIsLoggedIn}) => {
   const [state, setState] = useState({
     name: '',
     surname: '',
@@ -96,6 +99,8 @@ export const ProfileScreen = () => {
     ownKids: '',
     reward: '',
   });
+
+  const navigate = useNavigate();
 
   const [focused, setFocused] = useState(null);
 
@@ -121,6 +126,23 @@ export const ProfileScreen = () => {
   const handleSubmit = () => {
     console.log('Form Data:', state);
   };
+
+  useEffect(() => {
+    if(!isLoggedIn){
+      navigate('/login');  
+    }
+  },[]);
+
+  const handleExit = async () => {
+    try {
+      await signOut(auth);
+      setIsLoggedIn(false); 
+      navigate('/login'); 
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
   return (
     <Container>
       {fieldsMain.map((field) => (
@@ -140,6 +162,7 @@ export const ProfileScreen = () => {
         </InputDiv>
       ))}
        <SubmitButton onClick={handleSubmit}>Submit</SubmitButton>
+       <SubmitButton onClick={handleExit}>Exit</SubmitButton>
     </Container>
   );
 };

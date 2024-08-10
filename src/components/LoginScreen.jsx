@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import styled, { css } from 'styled-components';
 import { FaUser, FaLock } from 'react-icons/fa';
 import { auth, updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
-import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
 import { useNavigate } from 'react-router-dom';
 
@@ -114,6 +114,22 @@ export const LoginScreen = ({isLoggedIn, setIsLoggedIn}) => {
   const handleLogin = async () => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
+
+      const uploadedInfo = { 
+        // email: state.email,
+        // areTermsConfirmed: todayDays,
+        // registrationDate: todayDays,
+        lastLogin: todayDays,
+        // userId: userCredential.user.uid,
+        
+    };
+
+        await sendEmailVerification(userCredential.user);
+        await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
+        await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
+
+      setIsLoggedIn(true);
+      navigate('/submit');
       console.log('User signed in:', userCredential.user);
     } catch (error) {
       console.error('Error signing in:', error);
@@ -146,6 +162,19 @@ const handleRegistration = async () => {
       console.error('Error signing in:', error); 
     }
 }
+
+const handleAuth = async () => {
+  try {
+    const signInMethods = await fetchSignInMethodsForEmail(auth, state.email);
+    if (signInMethods.length > 0) {
+      await handleLogin();
+    } else {
+      await handleRegistration();
+    }
+  } catch (error) {
+    console.error('Error in authentication process:', error);
+  }
+};
 
   return (
     <Container>
@@ -181,8 +210,9 @@ const handleRegistration = async () => {
           Пароль
         </Label>
       </InputDiv>
-      <SubmitButton onClick={handleLogin}>Вхід</SubmitButton>
-      <SubmitButton onClick={handleRegistration}>Реєстрація</SubmitButton>
+      <SubmitButton onClick={handleAuth}>Вхід / Реєстрація</SubmitButton>
+      {/* <SubmitButton onClick={handleLogin}>Вхід</SubmitButton> */}
+      {/* <SubmitButton onClick={handleRegistration}>Реєстрація</SubmitButton> */}
     </Container>
   );
 };
