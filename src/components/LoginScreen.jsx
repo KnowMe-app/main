@@ -115,18 +115,17 @@ export const LoginScreen = ({isLoggedIn, setIsLoggedIn}) => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
 
-      const uploadedInfo = { 
-        // email: state.email,
-        // areTermsConfirmed: todayDays,
-        // registrationDate: todayDays,
-        lastLogin: todayDays,
-        // userId: userCredential.user.uid,
+    //   const uploadedInfo = { 
+    //     // email: state.email,
+    //     // areTermsConfirmed: todayDays,
+    //     // registrationDate: todayDays,
+    //     lastLogin: todayDays,
+    //     // userId: userCredential.user.uid,
         
-    };
+    // };
 
-        await sendEmailVerification(userCredential.user);
-        await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
-        await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
+        // await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
+        // await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
 
         localStorage.setItem('isLoggedIn', 'true');
         localStorage.setItem('userEmail', state.email); 

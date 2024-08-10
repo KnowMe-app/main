@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import styled, { css } from 'styled-components';
 import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
-import { auth } from './config';
+import { auth, fetchUserData } from './config';
+import { makeUploadedInfo } from './makeUploadedInfo';
+import { updateDataInFiresoreDB, updateDataInRealtimeDB, getUrlofUploadedAvatar } from './config';
 import {fieldsMain} from './formFields';
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
+
+import { getStorage,} from 'firebase/storage';
+import { getFirestore, doc, updateDoc } from 'firebase/firestore';
 
 
 const Container = styled.div`
@@ -92,12 +97,7 @@ export const ProfileScreen = ({isLoggedIn, setIsLoggedIn}) => {
     telegram: '',
     facebook: '',
     instagram: '',
-    modifiedUser: '',
     vk: '',
-    weight: '',
-    blood: '',
-    ownKids: '',
-    reward: '',
   });
 
   const navigate = useNavigate();
@@ -110,7 +110,7 @@ export const ProfileScreen = ({isLoggedIn, setIsLoggedIn}) => {
       ...prevState,
       [name]: value,
     }));
-    console.log('handleChange :>> ', state.name);
+    console.log('handleChange :>> ', state);
   };
 
   const handleFocus = (name) => {
@@ -120,12 +120,52 @@ export const ProfileScreen = ({isLoggedIn, setIsLoggedIn}) => {
 
   const handleBlur = () => {
     setFocused(null);
+    handleSubmit()
     console.log('handleBlur');
   };
 
-  const handleSubmit = () => {
-    console.log('Form Data:', state);
+  const handleSubmit = async () => {
+    console.log('state :>> ', state);
+
+    const { existingData } = await fetchUserData(state.userId);
+    
+    const uploadedInfo = makeUploadedInfo(existingData, state);
+
+        await updateDataInRealtimeDB(state.userId, uploadedInfo);
+        await updateDataInFiresoreDB(state.userId, uploadedInfo, 'check');
   };
+
+  const fetchData = async () => {
+    const user = auth.currentUser;
+      if (user && user.uid) {
+        const data = await fetchUserData(user.uid);
+        const existingData = data.existingData || {};
+
+        const processedData = Object.keys(existingData).reduce((acc, key) => {
+          const value = existingData[key];
+          if (key === 'photos' && Array.isArray(value)) {
+            // Зберегти лише останні 9 значень
+            acc[key] = value.slice(-9);
+          } else {
+            acc[key] = Array.isArray(value) ? value[value.length - 1] : value;
+          }
+          return acc;
+        }, {});
+      
+      setState((prevState) => ({
+        ...prevState, // Зберегти попередні значення
+        ...processedData,
+        userId:user.uid  // Оновити значення з отриманих даних
+      }));
+      // setState('');
+    }
+  };
+
+  useEffect( () => {
+   fetchData();
+  },[]);
+
+
 
   useEffect(() => {
     const loggedIn = localStorage.getItem('isLoggedIn');
@@ -145,6 +185,7 @@ export const ProfileScreen = ({isLoggedIn, setIsLoggedIn}) => {
       console.log('handleExit');
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
+      setState('')
       setIsLoggedIn(false); 
       navigate('/login'); 
       await signOut(auth);
@@ -153,8 +194,96 @@ export const ProfileScreen = ({isLoggedIn, setIsLoggedIn}) => {
     }
   };
 
+////////////////////////////photo
+// const [selectedFiles, setSelectedFiles] = useState([]);
+
+// const [previewUrls, setPreviewUrls] = useState([]);
+
+  const addPhoto = async (event) => {
+    // const photoArray = Array.from(event.target.files);
+    // const existingUrls = Array.isArray(state.photos) ? [...state.photos] : state.photos ? [state.photos] : [];
+    // // const addedUrls = photoArray.map(file => URL.createObjectURL(file));
+
+
+    // // console.log('addedUrls',addedUrls);
+    // // console.log('existingUrls',existingUrls);
+    // const remainingSlots = 9 - existingUrls.length;
+
+    // // if (existingUrls.length + photoArray.length > 9) {
+    // //   console.log('Забагато фото');
+    // //   return; // Вийти, якщо більше фото, ніж дозволено
+    // // }
+
+    // const trimmedFiles =photoArray.slice(0, remainingSlots);
+
+    // // Генеруємо URL для прев'ю
+    // const newPreviewUrls = trimmedFiles.map(file => URL.createObjectURL(file));
+    
+    // // Об'єднуємо нові та існуючі URL
+    // const newExistingUrls = Array.isArray(state.photos) ? [...state.photos] : [];
+    // const addedUrls = newExistingUrls.concat(newPreviewUrls);
+
+    // console.log('selectedFiles',selectedFiles);
+
+    // setSelectedFiles(prevFiles => [...prevFiles, ...trimmedFiles]);
+    // setPreviewUrls(addedUrls);
+
+    // try {
+    //   // Отримуємо URL для завантажених фото
+    //   const newUrl = await Promise.all(
+    //     trimmedFiles.map(async (photo) => {
+    //       const url = await getUrlofUploadedAvatar(photo, state.userId);
+    //       return url;
+    //     })
+    //   );
+    //   existingUrls.push(...newUrl);
+
+
+    //     await updateDataInRealtimeDB(state.userId, {photos:existingUrls});
+    //     await updateDataInFiresoreDB(state.userId, {photos:existingUrls}, 'check');
+
+    //     setState((prevState) => ({
+    //       ...prevState, // Зберегти попередні значення
+    //       photos: existingUrls,
+    //     }));
+
+    // } catch (error) {
+    //   console.error('Error uploading photos:', error);
+    // } finally {
+    //   // Очищення стейту після завантаження
+    //   setSelectedFiles([]);
+    // }
+  };
+
+  // useEffect( () => {
+  //   console.log('previewUrls.photos',previewUrls);
+  //  },[previewUrls]);
+
+  // useEffect(() => {
+  //   // Очищення URL після використання
+  //   return () => {
+  //     previewUrls.forEach(url => URL.revokeObjectURL(url));
+  //   };
+  // }, [previewUrls]);
+
   return (
     <Container>
+
+{/* <div>
+        <input
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={addPhoto}
+        />
+        <div>
+          {previewUrls.map((url, index) => (
+            <img key={index} src={url} alt={`Preview ${index}`} style={{ width: '100px', height: '100px', margin: '5px' }} />
+          ))}
+        </div>
+      </div> */}
+
+
       {fieldsMain.map((field) => (
         <InputDiv key={field.name} width={field.width}>
           {iconMap[field.svg]}
