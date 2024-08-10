@@ -127,15 +127,25 @@ export const ProfileScreen = ({isLoggedIn, setIsLoggedIn}) => {
     console.log('Form Data:', state);
   };
 
-  useEffect(() => {
-    if(!isLoggedIn){
-      navigate('/login');  
-    }
-  },[]);
+  // useEffect(() => {
+  //   const loggedIn = localStorage.getItem('isLoggedIn');
+
+
+  //   if(!isLoggedIn && !loggedIn){
+  //     navigate('/login');  
+  //   } else {
+  //       setIsLoggedIn(true);
+  //       navigate('/submit');
+  //     }
+    
+  // },[]);
 
   const handleExit = async () => {
     try {
+      console.log('handleExit');
       await signOut(auth);
+      localStorage.removeItem('isLoggedIn');
+      localStorage.removeItem('userEmail');
       setIsLoggedIn(false); 
       navigate('/login'); 
     } catch (error) {

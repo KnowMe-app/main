@@ -128,6 +128,9 @@ export const LoginScreen = ({isLoggedIn, setIsLoggedIn}) => {
         await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
         await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
 
+        localStorage.setItem('isLoggedIn', 'true');
+        localStorage.setItem('userEmail', state.email); 
+
       setIsLoggedIn(true);
       navigate('/submit');
       console.log('User signed in:', userCredential.user);
@@ -155,6 +158,10 @@ const handleRegistration = async () => {
         await sendEmailVerification(userCredential.user);
         await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
         await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
+
+        localStorage.setItem('isLoggedIn', 'true');
+        localStorage.setItem('userEmail', state.email); 
+
         setIsLoggedIn(true);
         navigate('/submit');
 
@@ -175,6 +182,18 @@ const handleAuth = async () => {
     console.error('Error in authentication process:', error);
   }
 };
+
+// useEffect(() => {
+//   const loggedIn = localStorage.getItem('isLoggedIn');
+//   if(!isLoggedIn && !loggedIn){
+//     navigate('/login');  
+//   } else {
+//       setIsLoggedIn(true);
+//       navigate('/submit');
+//     }
+  
+
+// },[]);
 
   return (
     <Container>
