@@ -135,9 +135,9 @@ export const ProfileScreen = ({isLoggedIn, setIsLoggedIn}) => {
       navigate('/login');  
     } else {
         setIsLoggedIn(true);
-        navigate('/submit');
+        navigate('/profile');
       }
-    
+    // eslint-disable-next-line
   },[]);
 
   const handleExit = async () => {

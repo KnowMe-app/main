@@ -132,7 +132,7 @@ export const LoginScreen = ({isLoggedIn, setIsLoggedIn}) => {
         localStorage.setItem('userEmail', state.email); 
 
       setIsLoggedIn(true);
-      navigate('/submit');
+      navigate('/profile');
       console.log('User signed in:', userCredential.user);
     } catch (error) {
       console.error('Error signing in:', error);
@@ -163,7 +163,7 @@ const handleRegistration = async () => {
         localStorage.setItem('userEmail', state.email); 
 
         setIsLoggedIn(true);
-        navigate('/submit');
+        navigate('/profile');
 
     } catch (error) {
       console.error('Error signing in:', error); 
@@ -189,7 +189,7 @@ useEffect(() => {
     navigate('/login');  
   } else {
       setIsLoggedIn(true);
-      navigate('/submit');
+      navigate('/profile');
     }
     // eslint-disable-next-line
 },[]);
