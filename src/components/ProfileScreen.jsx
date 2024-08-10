@@ -143,11 +143,11 @@ export const ProfileScreen = ({isLoggedIn, setIsLoggedIn}) => {
   const handleExit = async () => {
     try {
       console.log('handleExit');
-      await signOut(auth);
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
       setIsLoggedIn(false); 
       navigate('/login'); 
+      await signOut(auth);
     } catch (error) {
       console.error('Error signing out:', error);
     }

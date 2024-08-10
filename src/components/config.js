@@ -156,29 +156,12 @@ export const deleteUserFromAuth = async userId => {
 };
 
 export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) => {
-
-  const userRef = doc(db, `users/${userId}`);
-  console.log('User Ref :>> ', userRef);
-
   try {
-
-    console.log('condition :>>', condition);
-    console.log('uploadedInfo :>> ', uploadedInfo);
-    console.log('userId :>> ', userId);
-    console.log('db :>> ', db);
-
-
     const userRef = doc(db, `users/${userId}`);
-    console.log('User Ref :>> ', userRef);
-
-
-    console.log('userRef :>> ', userRef);
     if (condition==='update') {
       await updateDoc(userRef, uploadedInfo);
     } 
     else if (condition==='set') {
-      console.log('userId :>> ', userId);
-      console.log('uploadedInfo :>> ', uploadedInfo);
       await setDoc(userRef, uploadedInfo);
     }
     else if (condition==='check') {
