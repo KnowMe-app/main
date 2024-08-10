@@ -183,17 +183,17 @@ const handleAuth = async () => {
   }
 };
 
-// useEffect(() => {
-//   const loggedIn = localStorage.getItem('isLoggedIn');
-//   if(!isLoggedIn && !loggedIn){
-//     navigate('/login');  
-//   } else {
-//       setIsLoggedIn(true);
-//       navigate('/submit');
-//     }
+useEffect(() => {
+  const loggedIn = localStorage.getItem('isLoggedIn');
+  if(!isLoggedIn && !loggedIn){
+    navigate('/login');  
+  } else {
+      setIsLoggedIn(true);
+      navigate('/submit');
+    }
   
 
-// },[]);
+},[]);
 
   return (
     <Container>
