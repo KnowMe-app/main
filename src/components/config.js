@@ -42,18 +42,14 @@ export const getUrlofUploadedPhoto = async photo => {
   return url;
 };
 
-const getFileBlob = async url => {
+const getFileBlob = (file) => {
   return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', url);
-    xhr.responseType = 'blob';
-    xhr.addEventListener('load', function () {
-      resolve(xhr.response);
-    });
-    xhr.addEventListener('error', function () {
-      reject(new Error('Failed to fetch blob'));
-    });
-    xhr.send();
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      resolve(new Blob([reader.result], { type: file.type }));
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
   });
 };
 

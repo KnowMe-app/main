@@ -14,11 +14,11 @@ export const fieldsMain = [
   { name: 'facebook', placeholder: 'facebook_nickname', svg: 'facebook-f' },
   { name: 'instagram', placeholder: 'instagram_nickname', svg: 'instagram' },
   { name: 'vk', placeholder: '0107655', hint: '0107655', svg: 'vk' },
-  { name: 'height', placeholder: 'cm', hint: 'cm', svg: 'no',  ukrainian: 'см', ukrainianHint: 'см' },
-  { name: 'weight', placeholder: 'kg', hint: 'kg', svg: 'no', ukrainian: 'кг', ukrainianHint: 'кг' },
-  { name: 'blood', placeholder: '3+', hint: 'Rh+', svg: 'no',  },
-  { name: 'ownKids', placeholder: '1', hint: 'own kids', svg: 'no', width: '26.5%', ukrainianHint: 'власних дітей' },
-  { name: 'reward', placeholder: '500', hint: '$ reward', svg: 'no', width: '26.5%', ukrainianHint: 'винагорода в $' },
+  { name: 'height', placeholder: 'cm', hint: 'cm', svg: 'no',  ukrainian: 'зріст в см', ukrainianHint: 'зріст в см' },
+  { name: 'weight', placeholder: 'kg', hint: 'kg', svg: 'no', ukrainian: 'вага в кг', ukrainianHint: 'вага в кг' },
+  { name: 'blood', placeholder: '3+', hint: 'група крові та резус / 3+', svg: 'no',  },
+  { name: 'ownKids', placeholder: '1', hint: 'own kids', svg: 'no', ukrainianHint: 'кілікість пологів' },
+  { name: 'reward', placeholder: '500', hint: '$ reward', svg: 'no', ukrainianHint: 'бажана винагорода в $' },
 ];
 
 export const inputFieldsEdRow2 = [
@@ -148,7 +148,7 @@ export const hairColorOptions = [
   { placeholder: 'Dark Chestnut', ukrainian: 'Темно-каштанове' },
   { placeholder: 'Dark Brunette', ukrainian: 'Темний брюнет' },
   { placeholder: 'Gray', ukrainian: 'Сіре' },
-  { placeholder: 'Other', ukrainian: 'Опишіть:' },
+  // { placeholder: 'Other', ukrainian: 'Опишіть:' },
   { placeholder: 'Clear', ukrainian: 'Очистити' },
 ];
 
@@ -162,12 +162,11 @@ export const eyeColorOptions = [
   { placeholder: 'Gray-Green', ukrainian: 'Сіро-зелені' },
   { placeholder: 'Gray-Blue', ukrainian: 'Сіро-голубі' },
   { placeholder: 'Sky-Blue', ukrainian: 'Голубі' },
-  { placeholder: 'Other', ukrainian: 'Опишіть:' },
-  { placeholder: 'Clear', ukrainian: 'Очистити' },
+   { placeholder: 'Clear', ukrainian: 'Очистити' },
 ];
 
-export const pickerFieldsEd = [
-  { name: 'eyeColor', placeholder: 'Blue', hint: 'eyes', svg: 'no', width: '33%', options: eyeColorOptions, ukrainian: 'Голубі', ukrainianHint: 'очі' },
+export const pickerFields = [
+  { name: 'eyeColor', placeholder: 'Blue', hint: 'eyes', svg: 'no', width: '33%', options: eyeColorOptions, ukrainian: 'Голубі', ukrainianHint: 'колір очей' },
   {
     name: 'hairColor',
     placeholder: 'Blonde',
@@ -363,7 +362,7 @@ export const pickerFieldsIp = [
 
 export const pickerFieldsEdMain = [
 
-  ...pickerFieldsEd,
+  ...pickerFields,
   ...pickerFieldsEdRow2,
   ...pickerFieldsEdRow4,
   ...pickerFieldsEdRow5,
@@ -372,7 +371,7 @@ export const pickerFieldsEdMain = [
 
 export const pickerFieldsAll = [
 
-  ...pickerFieldsEd,
+  ...pickerFields,
   ...pickerFieldsEdRow2,
   ...pickerFieldsEdRow4,
   ...pickerFieldsEdRow5,
