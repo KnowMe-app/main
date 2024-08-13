@@ -4,38 +4,7 @@ export const yesNoOptions = [
 ];
 
 export const inputFields = [
-  { name: 'name', placeholder: 'Ваше ім’я', svg: 'user'},
-  { name: 'surname', placeholder: 'Призіище', svg: 'user'},
-  { name: 'email', placeholder: 'Електронна пошта', svg: 'mail'},
-  { name: 'phone', placeholder: 'Нотмер телефону +380', svg: 'phone' },
-  { name: 'telegram', placeholder: 'Телеграм @nickname', svg: 'telegram-plane' },
-  { name: 'facebook', placeholder: 'facebook_nickname', svg: 'facebook-f' },
-  { name: 'instagram', placeholder: 'instagram_nickname', svg: 'instagram' },
-  { name: 'vk', placeholder: '0107655', hint: '0107655', svg: 'vk' },
-  { name: 'country', placeholder: 'Country', hint: 'country', svg: 'no', width: '33%', ukrainian: 'Країна', ukrainianHint: 'країна' },
-  { name: 'region', placeholder: 'Region', hint: 'region', svg: 'no', width: '33%', ukrainian: 'Область', ukrainianHint: 'область' },
-  { name: 'city', placeholder: 'City', hint: 'city', svg: 'no', width: '33%', ukrainian: 'Місто', ukrainianHint: 'місто' },
-  { name: 'height', placeholder: 'cm', hint: 'cm', svg: 'no',  ukrainian: 'зріст в см', ukrainianHint: 'зріст в см' },
-  { name: 'weight', placeholder: 'kg', hint: 'kg', svg: 'no', ukrainian: 'вага в кг', ukrainianHint: 'вага в кг' },
-  { name: 'blood', placeholder: '3+', hint: 'група крові та резус / 3+', svg: 'no',  },
-  { name: 'clothingSize', placeholder: '38-40', hint: 'clothing size', svg: 'no', width: '33%', ukrainianHint: 'розмір одягу' },
-  { name: 'shoeSize', placeholder: '38', hint: 'shoe size', svg: 'no', width: '33%', ukrainianHint: 'розмір взуття' },
-  { name: 'breastSize', placeholder: '75B', hint: 'breast size', svg: 'no', width: '33%', ukrainianHint: 'розмір грудей' },
-  { name: 'ownKids', placeholder: '1', hint: 'own kids', svg: 'no', ukrainianHint: 'кілікість пологів' },
-  { name: 'birth', placeholder: '30.01.2001', hint: 'DOB', svg: 'no', width: '33%', ukrainianHint: 'дата народження 30.10.2000' },
-  { name: 'lastDelivery', placeholder: '30.01.2021', hint: 'last delivery', svg: 'no', width: '33%', ukrainianHint: 'останні пологи були 30.01.2020' },
-  { name: 'csection', placeholder: '30.01.2020', hint: 'c-section', svg: 'no', width: '33%', ukrainianHint: 'кесарів розтин був 30.01.2020'},
-  { name: 'experience', placeholder: '2', hint: 'donatin exp?', svg: 'no', width: '33%', ukrainianHint: 'досвід донацій' },
-  { name: 'reward', placeholder: '500', hint: '$ reward', svg: 'no', ukrainianHint: 'бажана винагорода в $' },
-  {
-    name: 'moreInfo_main',
-    placeholder: 'More about myself... (max 300 digits)',
-    hint: 'extra info',
-    svg: 'no',
-    width: '100%',
-    ukrainian: 'Більше про себе... (макс 300 символів)',
-    ukrainianHint: 'додаткова інформація',
-  },
+  
 ];
 
 
@@ -172,6 +141,42 @@ export const educationOptions = [
 
 
 export const pickerFields = [
+
+  { name: 'name', placeholder: 'Ваше ім’я', svg: 'user'},
+  { name: 'surname', placeholder: 'Призіище', svg: 'user'},
+  { name: 'email', placeholder: 'Електронна пошта', svg: 'mail'},
+  { name: 'phone', placeholder: 'Нотмер телефону +380', svg: 'phone' },
+  { name: 'telegram', placeholder: 'Телеграм @nickname', svg: 'telegram-plane' },
+  { name: 'facebook', placeholder: 'facebook_nickname', svg: 'facebook-f' },
+  { name: 'instagram', placeholder: 'instagram_nickname', svg: 'instagram' },
+  { name: 'vk', placeholder: '0107655', hint: '0107655', svg: 'vk' },
+  { name: 'country', placeholder: 'Country', hint: 'country', svg: 'no', width: '33%', ukrainian: 'Країна', ukrainianHint: 'країна' },
+  { name: 'region', placeholder: 'Region', hint: 'region', svg: 'no', width: '33%', ukrainian: 'Область', ukrainianHint: 'область' },
+  { name: 'city', placeholder: 'City', hint: 'city', svg: 'no', width: '33%', ukrainian: 'Місто', ukrainianHint: 'місто' },
+  { name: 'height', placeholder: 'cm', hint: 'cm', svg: 'no',  ukrainian: 'зріст в см', ukrainianHint: 'зріст в см' },
+  { name: 'weight', placeholder: 'kg', hint: 'kg', svg: 'no', ukrainian: 'вага в кг', ukrainianHint: 'вага в кг' },
+  { name: 'blood', placeholder: '3+', hint: 'група крові та резус / 3+', svg: 'no',  },
+  { name: 'clothingSize', placeholder: '38-40', hint: 'clothing size', svg: 'no', width: '33%', ukrainianHint: 'розмір одягу' },
+  { name: 'shoeSize', placeholder: '38', hint: 'shoe size', svg: 'no', width: '33%', ukrainianHint: 'розмір взуття' },
+  { name: 'breastSize', placeholder: '75B', hint: 'breast size', svg: 'no', width: '33%', ukrainianHint: 'розмір грудей' },
+  { name: 'ownKids', placeholder: '1', hint: 'own kids', svg: 'no', ukrainianHint: 'кілікість пологів' },
+  { name: 'birth', placeholder: '30.01.2001', hint: 'DOB', svg: 'no', width: '33%', ukrainianHint: 'дата народження 30.10.2000' },
+  { name: 'lastDelivery', placeholder: '30.01.2021', hint: 'last delivery', svg: 'no', width: '33%', ukrainianHint: 'останні пологи були 30.01.2020' },
+  { name: 'csection', placeholder: '30.01.2020', hint: 'c-section', svg: 'no', width: '33%', ukrainianHint: 'кесарів розтин був 30.01.2020'},
+  { name: 'experience', placeholder: '2', hint: 'donatin exp?', svg: 'no', width: '33%', ukrainianHint: 'досвід донацій' },
+  { name: 'reward', placeholder: '500', hint: '$ reward', svg: 'no', ukrainianHint: 'бажана винагорода в $' },
+  {
+    name: 'moreInfo_main',
+    placeholder: 'More about myself... (max 300 digits)',
+    hint: 'extra info',
+    svg: 'no',
+    width: '100%',
+    ukrainian: 'Більше про себе... (макс 300 символів)',
+    ukrainianHint: 'додаткова інформація',
+  },
+
+
+
   { name: 'eyeColor', placeholder: 'Blue', hint: 'eyes', svg: 'no', width: '33%', options: eyeColorOptions, ukrainian: 'Голубі', ukrainianHint: 'колір очей' },
   {
     name: 'hairColor',

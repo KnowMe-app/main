@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import styled, { css } from 'styled-components';
-import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
-import { auth, fetchUserData, } from './config';
+// import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
+import { auth, fetchUserData } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
-import { inputFields, pickerFields } from './formFields';
+import { pickerFields } from './formFields';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import InfoModal from './InfoModal';
@@ -22,6 +22,16 @@ const Container = styled.div`
   /* height: 100vh; */
 `;
 
+const PickerContainer = styled.div`
+  display: flex;
+  /* flex-direction: column; */
+  justify-content: center;
+  align-items: center;
+  background-color: #f0f0f0;
+  width: ${({ width }) => width || '360px'};
+  box-sizing: border-box; /* Додано */
+`;
+
 const InputDiv = styled.div`
   display: flex;
   align-items: center;
@@ -31,7 +41,16 @@ const InputDiv = styled.div`
   background-color: #fff;
   border: 1px solid #ccc;
   border-radius: 5px;
-  width: ${({ width }) => width || '300px'};
+  width: ${({ width }) => width || '360px'};
+  box-sizing: border-box;
+  flex-grow: 1;
+  height: auto;
+  /* flex-direction: column; */
+
+  /* position: relative;
+  display: flex;
+
+  margin-bottom: 16px; */
   /* width: '300px'; */
 `;
 
@@ -42,6 +61,9 @@ const InputField = styled.input`
   flex: 1;
   padding-left: 10px;
   pointer-events: auto;
+  height: 100%;
+  resize: vertical;
+  box-sizing: border-box;
 
   /* Додати placeholder стилі для роботи з лейблом */
   &::placeholder {
@@ -88,21 +110,25 @@ const SubmitButton = styled.button`
   }
 `;
 
-const iconMap = {
-  user: <FaUser style={{ color: 'orange' }} />,
-  mail: <FaMailBulk style={{ color: 'orange' }} />,
-  phone: <FaPhone style={{ color: 'orange' }} />,
-  'telegram-plane': <FaTelegramPlane style={{ color: 'orange' }} />,
-  'facebook-f': <FaFacebookF style={{ color: 'orange' }} />,
-  instagram: <FaInstagram style={{ color: 'orange' }} />,
-  vk: <FaVk style={{ color: 'orange' }} />,
-};
+// const iconMap = {
+//   user: <FaUser style={{ color: 'orange' }} />,
+//   mail: <FaMailBulk style={{ color: 'orange' }} />,
+//   phone: <FaPhone style={{ color: 'orange' }} />,
+//   'telegram-plane': <FaTelegramPlane style={{ color: 'orange' }} />,
+//   'facebook-f': <FaFacebookF style={{ color: 'orange' }} />,
+//   instagram: <FaInstagram style={{ color: 'orange' }} />,
+//   vk: <FaVk style={{ color: 'orange' }} />,
+// };
 
 const InputFieldContainer = styled.div`
   display: flex;
   align-items: center;
   position: relative;
   width: 100%;
+  height: 100%; /* Дозволяє розтягувати висоту по висоті контейнера */
+  box-sizing: border-box;
+  flex-grow: 1;
+  height: auto; /* Дозволяє висоті адаптуватися до вмісту */
 `;
 
 const ClearButton = styled.button`
@@ -121,6 +147,29 @@ const ClearButton = styled.button`
   }
 `;
 
+const ButtonGroup = styled.div`
+  display: flex;
+  gap: 8px;
+  /* margin-top: 10px; Відступ між інпутом і кнопками */
+  /* width: 100%; */
+  margin-left: 8px;
+`;
+
+const Button = styled.button`
+  width: 40px; /* Встановіть ширину, яка визначатиме розмір кнопки */
+  height: 40px; /* Встановіть висоту, яка повинна дорівнювати ширині */
+  padding: 3px; /* Видаліть внутрішні відступи */
+  border: none;
+  background-color: #007bff;
+  color: white;
+  border-radius: 50px;
+  cursor: pointer;
+  flex: 1; /* Займає однаковий простір у групі кнопок */
+
+  &:hover {
+    background-color: #0056b3;
+  }
+`;
 
 export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   const [state, setState] = useState({
@@ -136,12 +185,47 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     pub: false,
   });
   const [focused, setFocused] = useState(null);
+  console.log('focused :>> ', focused);
   const navigate = useNavigate();
 
-  const handleChange = e => {
-    const { name, value } = e.target;
-    setState(prevState => ({ ...prevState, [name]: value }));
-  };
+  ////////////////////GPS
+
+  useEffect(() => {
+    // Перевіряємо, чи підтримується API геолокації
+    if (navigator.geolocation) {
+      // Отримуємо координати
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          // Успішний результат
+          const latitude = position.coords.latitude;
+          const longitude = position.coords.longitude;
+          console.log(`Latitude: ${latitude}, Longitude: ${longitude}`);
+
+          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`)
+            .then(response => response.json())
+            .then(data => {
+              const address = data.address;
+              const street = address.road || '';
+              const city = address.city || address.town || address.village || '';
+              const state = address.state || '';
+              const country = address.country || '';
+              console.log(`Street: ${street}, City: ${city}, State: ${state}, Country: ${country}`);
+              setState(prevState => ({ ...prevState, city, street, state, country }));
+            })
+            .catch(error => console.error('Error:', error));
+        },
+        error => {
+          // Обробка помилок
+          console.error('Error getting location', error);
+        }
+      );
+    } else {
+      console.log('Geolocation is not supported by this browser.');
+    }
+  }, []); // Порожній масив залежностей
+
+  ////////////////////GPS
+
   const handleFocus = name => {
     setFocused(name);
   };
@@ -244,7 +328,6 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     // eslint-disable-next-line
   }, [state]);
 
-
   const [selectedField, setSelectedField] = useState(null);
   // const [state, setState] = useState({ eyeColor: '', hairColor: '' });
 
@@ -276,56 +359,99 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
 
   return (
     <Container>
+      <Photos state={state} setState={setState} />
 
-   <Photos state={state} setState={setState}/>
+      {pickerFields.map(field => {
+        // console.log('field.options:', field.options);
 
-      {inputFields.map(field=> (
-        <InputDiv key={field.name}>
-          <InputFieldContainer>
-            <InputField
-              name={field.name}
-              value={state[field.name]}
-              onChange={handleChange}
-              onFocus={() => handleFocus(field.name)}
-              onBlur={handleBlur}
-            />
-            {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
-          </InputFieldContainer>
-          <Label isActive={focused === field.name || state[field.name]}>
-            {iconMap[field.svg]}
-            {field.ukrainianHint || field.hint || field.placeholder}
-          </Label>
-        </InputDiv>
-      ))}
+        return (
+          <PickerContainer>
+            <InputDiv key={field.name}>
+              <InputFieldContainer>
+                <InputField
+                  as={field.name === 'moreInfo_main' && 'textarea'}
+                  name={field.name}
+                  value={state[field.name]}
+                  onChange={e => {
+                    const value = e?.target?.value;
+                    // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
+                    setState(prevState => ({ ...prevState, [field.name]: value }));
+                    // } else {
+                    // handleChange(field.name, value || '');
+                    // }
+                  }}
+                  onFocus={() => {
+                    if (field.options === undefined) {
+                      handleFocus(field.name);
+                    } else if (state[field.name] !== '') {
+                      // console.log('field.options === undefined :>> ');
+                      handleFocus(field.name);
+                    } else {
+                      handleOpenModal(field.name);
+                      setShowInfoModal('pickerOptions');
+                    }
+                  }}
+                  placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
+                  onBlur={() => handleBlur(field.name)}
+                />
+                {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
+              </InputFieldContainer>
 
-        {pickerFields.map(field => (
-          <InputDiv key={field.name}>
-            <InputFieldContainer>
-              <InputField
-                name={field.name}
-                value={state[field.name]}
-                onFocus={() => {handleOpenModal(field.name); setShowInfoModal('pickerOptions')}}
-                onChange={e => handleChange(field.name, e.target.value)}
-                placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
-                onBlur={() => handleBlur(field.name)}
-              />
-              {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
-            </InputFieldContainer>
-            <Label isActive={state[field.name]}>{field.ukrainianHint || field.hint || field.placeholder}</Label>
-          </InputDiv>
-        ))}
+              <Label isActive={state[field.name]}>
+ {/* {iconMap[field.svg]} */}
+      {field.ukrainianHint || field.hint || field.placeholder}
+   </Label>
+
+
+
+
+
+            </InputDiv>
+            {Array.isArray(field.options) && field.options.length === 2 && (
+              <ButtonGroup>
+                <Button
+                  onClick={() => {
+                    setState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
+                    handleBlur(field.name);
+                  }}
+                >
+                  Yes
+                </Button>
+                <Button
+                  onClick={() => {
+                    setState(prevState => ({ ...prevState, [field.name]: 'No' }));
+                    handleBlur(field.name);
+                  }}
+                >
+                  No
+                </Button>
+                <Button
+                  onClick={() => {
+                    setState(prevState => ({ ...prevState, [field.name]: 'Other' }));
+                    handleBlur(field.name);
+                  }}
+                >
+                  Інше
+                </Button>
+              </ButtonGroup>
+            )}
+          </PickerContainer>
+        );
+      })}
 
       {!state.pub && <SubmitButton onClick={handlePublic}>Опублікувати</SubmitButton>}
       <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
       <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
       <SubmitButton onClick={handleExit}>Exit</SubmitButton>
 
-      {showInfoModal && <InfoModal 
-      onClose={handleOverlayClick}
-      options={pickerFields.find(field => field.name === selectedField)?.options} 
-      onSelect={handleSelectOption} 
-      text={showInfoModal} />}
-
+      {showInfoModal && (
+        <InfoModal
+          onClose={handleOverlayClick}
+          options={pickerFields.find(field => field.name === selectedField)?.options}
+          onSelect={handleSelectOption}
+          text={showInfoModal}
+        />
+      )}
     </Container>
   );
 };
