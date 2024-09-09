@@ -36,8 +36,6 @@ export const noseShapeOptions = [
   { placeholder: 'Greek', ukrainian: 'Грецький' },
   { placeholder: 'Nubian', ukrainian: 'Нубійський' },
   { placeholder: 'Upturned', ukrainian: 'Загострений' },
-
-  
 ];
 
 export const lipsShapeOptions = [
@@ -45,8 +43,6 @@ export const lipsShapeOptions = [
   { placeholder: 'Thin', ukrainian: 'Тонкі' },
   { placeholder: 'Wide', ukrainian: 'Широкі' },
   { placeholder: 'Plump', ukrainian: 'Пишні' },
-
-  
 ];
 
 export const chinShapeOptions = [
@@ -142,32 +138,32 @@ export const educationOptions = [
 
 export const pickerFields = [
 
-  { name: 'name', placeholder: 'Ваше ім’я', svg: 'user'},
-  { name: 'surname', placeholder: 'Призіище', svg: 'user'},
-  { name: 'email', placeholder: 'Електронна пошта', svg: 'mail'},
-  { name: 'phone', placeholder: 'Нотмер телефону +380', svg: 'phone' },
-  { name: 'telegram', placeholder: 'Телеграм @nickname', svg: 'telegram-plane' },
-  { name: 'facebook', placeholder: 'facebook_nickname', svg: 'facebook-f' },
-  { name: 'instagram', placeholder: 'instagram_nickname', svg: 'instagram' },
-  { name: 'vk', placeholder: '0107655', hint: '0107655', svg: 'vk' },
-  { name: 'country', placeholder: 'Country', hint: 'country', svg: 'no', width: '33%', ukrainian: 'Країна', ukrainianHint: 'країна' },
-  { name: 'region', placeholder: 'Region', hint: 'region', svg: 'no', width: '33%', ukrainian: 'Область', ukrainianHint: 'область' },
-  { name: 'city', placeholder: 'City', hint: 'city', svg: 'no', width: '33%', ukrainian: 'Місто', ukrainianHint: 'місто' },
-  { name: 'height', placeholder: 'cm', hint: 'cm', svg: 'no',  ukrainian: 'зріст в см', ukrainianHint: 'зріст в см' },
-  { name: 'weight', placeholder: 'kg', hint: 'kg', svg: 'no', ukrainian: 'вага в кг', ukrainianHint: 'вага в кг' },
-  { name: 'blood', placeholder: '3+', hint: 'група крові та резус / 3+', svg: 'no',  },
+  { name: 'name', placeholder: 'Ваше ім’я', svg: 'user', ukrainianHint: 'Ім’я' },
+  { name: 'surname', placeholder: 'Ваше призіище', svg: 'user', ukrainianHint: 'Прізвище'},
+  { name: 'email', placeholder: 'Електронна пошта', svg: 'mail', ukrainianHint:'E-mail'},
+  { name: 'phone', placeholder: '+380', svg: 'phone', ukrainianHint:'Номер телефону в форматі +380'},
+  { name: 'telegram', placeholder: 'telegram_nickname', svg: 'telegram-plane', ukrainianHint:'Telegram' },
+  { name: 'facebook', placeholder: 'facebook_nickname', svg: 'facebook-f', ukrainianHint:'Facebook' },
+  { name: 'instagram', placeholder: 'instagram_nickname', svg: 'instagram', ukrainianHint:'Instagram' },
+  { name: 'vk', placeholder: '0107655', hint: '0107655', svg: 'vk', ukrainianHint:'VK' },
+  { name: 'country', placeholder: 'Країна', hint: 'country', svg: 'no', width: '33%', ukrainian: 'Країна', ukrainianHint: 'країна проживання' },
+  { name: 'region', placeholder: 'Область', hint: 'region', svg: 'no', width: '33%', ukrainian: 'Область', ukrainianHint: 'область' },
+  { name: 'city', placeholder: 'Місто', hint: 'city', svg: 'no', width: '33%', ukrainian: 'Місто', ukrainianHint: 'місто' },
+  { name: 'height', placeholder: 'см', hint: 'cm', svg: 'no',  ukrainian: 'см', ukrainianHint: 'зріст в см' },
+  { name: 'weight', placeholder: 'кг', hint: 'kg', svg: 'no', ukrainian: 'кг', ukrainianHint: 'вага в кг' },
+  { name: 'blood', placeholder: '3+', hint: 'група крові та резус / 3+', svg: 'no', ukrainianHint: 'група крові та резус / 3+'  },
   { name: 'clothingSize', placeholder: '38-40', hint: 'clothing size', svg: 'no', width: '33%', ukrainianHint: 'розмір одягу' },
   { name: 'shoeSize', placeholder: '38', hint: 'shoe size', svg: 'no', width: '33%', ukrainianHint: 'розмір взуття' },
   { name: 'breastSize', placeholder: '75B', hint: 'breast size', svg: 'no', width: '33%', ukrainianHint: 'розмір грудей' },
   { name: 'ownKids', placeholder: '1', hint: 'own kids', svg: 'no', ukrainianHint: 'кілікість пологів' },
-  { name: 'birth', placeholder: '30.01.2001', hint: 'DOB', svg: 'no', width: '33%', ukrainianHint: 'дата народження 30.10.2000' },
+  { name: 'birth', placeholder: '30.01.2001', hint: 'DOB', svg: 'no', width: '33%', ukrainianHint: 'дата народження 30.01.2001' },
   { name: 'lastDelivery', placeholder: '30.01.2021', hint: 'last delivery', svg: 'no', width: '33%', ukrainianHint: 'останні пологи були 30.01.2020' },
-  { name: 'csection', placeholder: '30.01.2020', hint: 'c-section', svg: 'no', width: '33%', ukrainianHint: 'кесарів розтин був 30.01.2020'},
-  { name: 'experience', placeholder: '2', hint: 'donatin exp?', svg: 'no', width: '33%', ukrainianHint: 'досвід донацій' },
+  { name: 'csection', placeholder: '30.01.2020', hint: 'c-section', svg: 'no', width: '33%', ukrainianHint: 'кесарів розтин був 30.01.2020 / не було'},
+  { name: 'experience', placeholder: '2', hint: 'donatin exp?', svg: 'no', width: '33%', ukrainianHint: 'скільки попередніх донацій було' },
   { name: 'reward', placeholder: '500', hint: '$ reward', svg: 'no', ukrainianHint: 'бажана винагорода в $' },
   {
     name: 'moreInfo_main',
-    placeholder: 'More about myself... (max 300 digits)',
+    placeholder: 'Більше про себе... (макс 300 символів)',
     hint: 'extra info',
     svg: 'no',
     width: '100%',
@@ -177,10 +173,10 @@ export const pickerFields = [
 
 
 
-  { name: 'eyeColor', placeholder: 'Blue', hint: 'eyes', svg: 'no', width: '33%', options: eyeColorOptions, ukrainian: 'Голубі', ukrainianHint: 'колір очей' },
+  { name: 'eyeColor', placeholder: 'Голубі', hint: 'eyes', svg: 'no', width: '33%', options: eyeColorOptions, ukrainian: 'Голубі', ukrainianHint: 'колір очей' },
   {
     name: 'hairColor',
-    placeholder: 'Blonde',
+    placeholder: 'Блонд',
     hint: 'hair',
     svg: 'no',
     width: '33%',
@@ -192,7 +188,7 @@ export const pickerFields = [
  
   {
     name: 'hairStructure',
-    placeholder: 'Wavy',
+    placeholder: 'Хвилясте',
     hint: 'hair structure',
     svg: 'no',
     width: '33%',
@@ -202,7 +198,7 @@ export const pickerFields = [
   },
   {
     name: 'race',
-    placeholder: 'Asian',
+    placeholder: 'Азіатська',
     hint: 'human race',
     svg: 'no',
     width: '33%',
@@ -212,7 +208,7 @@ export const pickerFields = [
   },
   {
     name: 'bodyType',
-    placeholder: 'Triangle',
+    placeholder: 'Трикутник',
     hint: 'body type',
     svg: 'no',
     width: '33%',
@@ -220,9 +216,10 @@ export const pickerFields = [
     ukrainian: 'Трикутник',
     ukrainianHint: 'фігура',
   },
-  { name: 'faceShape', placeholder: 'Oval', hint: 'face shape', svg: 'no', width: '33%', options: faceShapeOptions, ukrainian: 'Овальне', ukrainianHint: 'форма обличчя'},
-  { name: 'noseShape', placeholder: 'Straight', hint: 'nose shape', svg: 'no', width: '33%', options: noseShapeOptions, ukrainian: 'Приямий', ukrainianHint: 'форма носа' },
-  { name: 'lipsShape', placeholder: 'Full', hint: 'lips shape', svg: 'no', width: '33%', options: lipsShapeOptions, ukrainian: 'Повні', ukrainianHint: 'форма губ' },
+  { name: 'faceShape', placeholder: 'Овальне', hint: 'face shape', svg: 'no', width: '33%', options: faceShapeOptions, ukrainian: 'Овальне', ukrainianHint: 'форма обличчя'},
+  { name: 'noseShape', placeholder: 'Приямий', hint: 'nose shape', svg: 'no', width: '33%', options: noseShapeOptions, ukrainian: 'Приямий', ukrainianHint: 'форма носа' },
+  { name: 'lipsShape', placeholder: 'Приямий', hint: 'nose shape', svg: 'no', width: '33%', options: lipsShapeOptions, ukrainian: 'Приямий', ukrainianHint: 'форма носа' },
+  { name: 'lipsShape', placeholder: 'Повні', hint: 'lips shape', svg: 'no', width: '33%', options: lipsShapeOptions, ukrainian: 'Повні', ukrainianHint: 'форма губ' },
   { name: 'chin', placeholder: 'Pointed', hint: 'сhin', svg: 'no', width: '33%', options: chinShapeOptions, ukrainian: 'Гостре', ukrainianHint: 'підборіддя' },
   
   {
@@ -233,7 +230,7 @@ export const pickerFields = [
     width: '33%',
     options: yesNoOptions,
     ukrainian: 'оберіть варіант',
-    ukrainianHint: 'офіційний шлюб',
+    ukrainianHint: 'Ви перебуваєте в офіційному шлюбі?',
   },
   {
     name: 'education',
@@ -255,8 +252,8 @@ export const pickerFields = [
     ukrainianHint: 'професія',
   },
  
- 
-  { name: 'allergy', placeholder: 'penicillin', hint: 'Allergy', svg: 'no', width: '33%', options: yesNoOptions },
+
+  { name: 'allergy', placeholder: 'пеніцилін', hint: 'Allergy', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'алергії' },
   {
     name: 'surgeries',
     placeholder: 'appendicite in 2021',
@@ -265,14 +262,14 @@ export const pickerFields = [
     width: '33%',
     options: yesNoOptions,
     ukrainian: 'апендицит в 2021',
-    ukrainianHint: 'операції',
+    ukrainianHint: 'перенесені операції',
   },
 
-  { name: 'chronicDiseases', placeholder: 'No', hint: 'Chronic diseases', svg: 'no', width: '33%', options: yesNoOptions },
-  { name: 'smoking', placeholder: 'Sometimes', hint: 'Smoking', svg: 'no', width: '33%', options: yesNoOptions },
-  { name: 'alcohol', placeholder: 'Sometimes', hint: 'Alcohol', svg: 'no', width: '33%', options: yesNoOptions },
-  { name: 'sport', placeholder: 'Volleyball', hint: 'Sport', svg: 'no', width: '33%', options: yesNoOptions },
-  { name: 'hobbies', placeholder: 'Reading', hint: 'Hobbies', svg: 'no', width: '33%', options: yesNoOptions },
-  { name: 'twinsInFamily', placeholder: 'No', hint: 'Twins in the family?', svg: 'no', width: '33%', options: yesNoOptions },
+  { name: 'chronicDiseases', placeholder: '-', hint: 'Chronic diseases', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'хронічні захворювання' },
+  { name: 'smoking', placeholder: '-', hint: 'Smoking', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'куріння' },
+  { name: 'alcohol', placeholder: '-', hint: 'Alcohol', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'вживання алкоголю' },
+  { name: 'sport', placeholder: 'Волейбол', hint: 'Sport', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'спорт' },
+  { name: 'hobbies', placeholder: 'Читання', hint: 'Hobbies', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'хоббі'  },
+  { name: 'twinsInFamily', placeholder: '-', hint: 'Twins in the family?', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'чи були двійнята в родині?'  },
 
 ];

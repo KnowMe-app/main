@@ -9,6 +9,10 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import InfoModal from './InfoModal';
 import Photos from './Photos';
+import { VerifyEmail } from './VerifyEmail';
+
+import { color } from './styles';
+
 
 const Container = styled.div`
   display: flex;
@@ -20,6 +24,21 @@ const Container = styled.div`
 
   /* maxWidth:  */
   /* height: 100vh; */
+`;
+
+const DotsButton = styled.button`
+  /* position: absolute; */
+  /* top: 8px; */
+  /* right: 8px; */
+  width: 40px;
+  height: 40px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  padding-bottom: 20;
+  margin-left: auto;
+
 `;
 
 const PickerContainer = styled.div`
@@ -71,7 +90,7 @@ const InputField = styled.input`
   }
 `;
 
-const Label = styled.label`
+const Hint = styled.label`
   position: absolute;
   padding-left: 10px;
   /* left: 30px; */
@@ -87,6 +106,32 @@ const Label = styled.label`
   ${({ isActive }) =>
     isActive &&
     css`
+    display:none;
+      /* left: 10px;
+      top: 0;
+      transform: translateY(-100%);
+      font-size: 12px;
+      color: orange; */
+    `}
+`;
+
+const Placeholder = styled.label`
+  position: absolute;
+  padding-left: 10px;
+  /* left: 30px; */
+  top: 0;
+  transform: translateY(-100%);
+  transition: all 0.3s ease;
+  color: gray;
+  pointer-events: none;
+  display: flex;
+  align-items: center; /* Вирівнює по вертикалі */
+  gap: 8px; /* Відстань між іконкою і текстом, змініть за потреби */
+  font-size: 12px;
+
+  ${({ isActive }) =>
+    isActive &&
+    css`
       left: 10px;
       top: 0;
       transform: translateY(-100%);
@@ -95,18 +140,32 @@ const Label = styled.label`
     `}
 `;
 
-const SubmitButton = styled.button`
-  margin-top: 20px;
+export const SubmitButton = styled.button`
+
+  /* margin-top: 20px; */
   padding: 10px 20px;
-  background-color: #4caf50;
-  color: white;
+  /* background-color: #4caf50; */
+  color: black;
   border: none;
   border-radius: 5px;
   cursor: pointer;
   font-size: 16px;
+  align-self: flex-start;
+  border-bottom: 1px solid #ddd; /* Лінія між елементами */
+  width: 100%;
+  transition: background-color 0.3s ease;
 
   &:hover {
-    background-color: #45a049;
+    background-color: #f5f5f5; /* Легкий фон при наведенні */
+  }
+`;
+
+export const ExitButton = styled(SubmitButton)`
+  background: none; /* Прибирає будь-які стилі фону */
+  border-bottom: none; /* Прибирає горизонтальну полосу */
+  transition: background-color 0.3s ease;
+  &:hover {
+    background-color: #f5f5f5; /* Легкий фон при наведенні */
   }
 `;
 
@@ -156,18 +215,19 @@ const ButtonGroup = styled.div`
 `;
 
 const Button = styled.button`
-  width: 40px; /* Встановіть ширину, яка визначатиме розмір кнопки */
-  height: 40px; /* Встановіть висоту, яка повинна дорівнювати ширині */
+  width: 35px; /* Встановіть ширину, яка визначатиме розмір кнопки */
+  height: 35px; /* Встановіть висоту, яка повинна дорівнювати ширині */
   padding: 3px; /* Видаліть внутрішні відступи */
   border: none;
-  background-color: #007bff;
+  background-color: ${color.accent5};
   color: white;
   border-radius: 50px;
   cursor: pointer;
+  font-size: 12px;
   flex: 1; /* Займає однаковий простір у групі кнопок */
 
   &:hover {
-    background-color: #0056b3;
+    background-color: ${color.accent};
   }
 `;
 
@@ -357,8 +417,20 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     setState(prevState => ({ ...prevState, [fieldName]: '' }));
   };
 
+  const dotsMenu = () => {
+    return(
+<>
+{!state.pub && <SubmitButton onClick={handlePublic}>Опублікувати</SubmitButton>}
+      <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
+      <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
+      <VerifyEmail/>
+      <ExitButton  onClick={handleExit}>Exit</ExitButton ></>
+    )
+  };
+
   return (
     <Container>
+      <DotsButton onClick={()=>{setShowInfoModal('dotsMenu')}} >⋮</DotsButton>
       <Photos state={state} setState={setState} />
 
       {pickerFields.map(field => {
@@ -382,25 +454,29 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
                   }}
                   onFocus={() => {
                     if (field.options === undefined) {
+                      console.log('field.options === undefined :>> ');
                       handleFocus(field.name);
-                    } else if (state[field.name] !== '') {
-                      // console.log('field.options === undefined :>> ');
+                    } else if (state[field.name] !== '' && state[field.name] !== undefined) {
+                      console.log('state[field.name] :>> ', state[field.name]);
+                      console.log('field.options !== ');
                       handleFocus(field.name);
                     } else {
                       handleOpenModal(field.name);
                       setShowInfoModal('pickerOptions');
                     }
                   }}
-                  placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
+                  // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
                   onBlur={() => handleBlur(field.name)}
                 />
                 {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
               </InputFieldContainer>
 
-              <Label isActive={state[field.name]}>
- {/* {iconMap[field.svg]} */}
-      {field.ukrainianHint || field.hint || field.placeholder}
-   </Label>
+              <Hint isActive={state[field.name]}>
+      {field.ukrainian || field.placeholder}
+   </Hint>
+   <Placeholder isActive={state[field.name]}>
+      {field.ukrainianHint}
+   </Placeholder>
 
 
 
@@ -439,10 +515,8 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         );
       })}
 
-      {!state.pub && <SubmitButton onClick={handlePublic}>Опублікувати</SubmitButton>}
-      <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
-      <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
-      <SubmitButton onClick={handleExit}>Exit</SubmitButton>
+      
+      
 
       {showInfoModal && (
         <InfoModal
@@ -450,6 +524,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
           options={pickerFields.find(field => field.name === selectedField)?.options}
           onSelect={handleSelectOption}
           text={showInfoModal}
+          Context={dotsMenu}
         />
       )}
     </Container>

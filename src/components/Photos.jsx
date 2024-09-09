@@ -2,6 +2,7 @@ import React from 'react';
 import styled from 'styled-components';
 import { deletePhotos, getUrlofUploadedAvatar } from './config';
 import { updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
+import { color } from './styles';
 
 const Container = styled.div`
   padding-bottom: 10px;
@@ -57,13 +58,16 @@ const UploadButtonWrapper = styled.div`
 const UploadButtonLabel = styled.label`
   display: inline-block;
   padding: 10px 20px;
-  background-color: orange;
+  background-color: ${color.accent5};
   color: white;
   border-radius: 5px;
   cursor: pointer;
   text-align: center;
   font-size: 16px;
   font-weight: bold;
+  &:hover {
+    background-color: ${color.accent};
+  }
 `;
 
 const HiddenFileInput = styled.input`

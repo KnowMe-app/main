@@ -151,7 +151,7 @@ const handleRegistration = async () => {
         registrationDate: todayDays,
         lastLogin: todayDays,
         userId: userCredential.user.uid,
-        
+        userRole: 'ed',
     };
 
         await sendEmailVerification(userCredential.user);
