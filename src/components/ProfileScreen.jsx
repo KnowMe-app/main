@@ -18,7 +18,7 @@ const Container = styled.div`
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 20px;
+  padding: 10px;
   background-color: #f5f5f5;
   /* max-width: 450px; */
 
@@ -39,6 +39,9 @@ const DotsButton = styled.button`
   /* position: absolute; */
   /* top: 8px; */
   /* right: 8px; */
+  margin-top: -10px;
+  margin-bottom: 10px;
+
   width: 40px;
   height: 40px;
   background: none;
@@ -58,7 +61,6 @@ const PickerContainer = styled.div`
   justify-content: center;
   align-items: center;
   background-color: #f0f0f0;
-  /* width: ${({ width }) => width || '360px'}; */
   box-sizing: border-box; /* Додано */
 `;
 
@@ -71,18 +73,10 @@ const InputDiv = styled.div`
   background-color: #fff;
   border: 1px solid #ccc;
   border-radius: 5px;
-  width: ${({ width }) => width || '360px'};
+
   box-sizing: border-box;
   flex-grow: 1;
   height: auto;
-
-  /* flex-direction: column; */
-
-  /* position: relative;
-  display: flex;
-
-  margin-bottom: 16px; */
-  /* width: '300px'; */
 `;
 
 // Стиль для інпутів
@@ -90,11 +84,14 @@ const InputField = styled.input`
   border: none;
   outline: none;
   flex: 1;
-  padding-left: 10px;
+  /* padding-left: 10px; */
+  max-width: 100%; 
+  min-width: 0; /* Дозволяє інпуту зменшуватися до нуля */
   pointer-events: auto;
   height: 100%;
   resize: vertical;
   box-sizing: border-box;
+  /* min-width:  100px; */
 
   /* Додати placeholder стилі для роботи з лейблом */
   &::placeholder {
@@ -220,7 +217,7 @@ const InputFieldContainer = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  width: 100%;
+  /* width: 100%; */
   height: 100%; /* Дозволяє розтягувати висоту по висоті контейнера */
   box-sizing: border-box;
   flex-grow: 1;
@@ -249,6 +246,8 @@ const ButtonGroup = styled.div`
   /* margin-top: 10px; Відступ між інпутом і кнопками */
   /* width: 100%; */
   margin-left: 8px;
+  /* width: 100%;  */
+  box-sizing: border-box; 
 `;
 
 const Button = styled.button`
@@ -261,7 +260,7 @@ const Button = styled.button`
   border-radius: 50px;
   cursor: pointer;
   font-size: 12px;
-  flex: 1; /* Займає однаковий простір у групі кнопок */
+  flex: 0 1 auto;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
 
   &:hover {
