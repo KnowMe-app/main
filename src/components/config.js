@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, deleteUser } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
-import { getDatabase, ref as ref2, get, remove, set } from 'firebase/database';
+import { getDatabase, ref as ref2, get, remove, set, update } from 'firebase/database';
 
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_API_KEY,
@@ -174,9 +174,12 @@ export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) =>
   }
 };
 
-export const updateDataInRealtimeDB = async (userId, uploadedInfo) => {
+export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
     const userRefRTDB = ref2(database, `users/${userId}`);
+    if (condition==='update') {
+      await update(userRefRTDB, { ...uploadedInfo });
+    } 
     await set(userRefRTDB, { ...uploadedInfo });
   } catch (error) {
     console.error('Сталася помилка під час збереження даних в Realtime Database:', error);

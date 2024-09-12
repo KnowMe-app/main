@@ -13,18 +13,26 @@ import { VerifyEmail } from './VerifyEmail';
 
 import { color } from './styles';
 
-
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   padding: 20px;
-  background-color: #f0f0f0;
+  background-color: #f5f5f5;
   /* max-width: 450px; */
 
   /* maxWidth:  */
   /* height: 100vh; */
+`;
+
+const InnerContainer = styled.div`
+  max-width: 450px;
+  width: 100%;
+  background-color: #f0f0f0;
+  padding: 20px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
 `;
 
 const DotsButton = styled.button`
@@ -39,7 +47,9 @@ const DotsButton = styled.button`
   cursor: pointer;
   padding-bottom: 20;
   margin-left: auto;
-
+  align-items: center;
+  justify-content: center;
+  display: flex;
 `;
 
 const PickerContainer = styled.div`
@@ -48,7 +58,7 @@ const PickerContainer = styled.div`
   justify-content: center;
   align-items: center;
   background-color: #f0f0f0;
-  width: ${({ width }) => width || '360px'};
+  /* width: ${({ width }) => width || '360px'}; */
   box-sizing: border-box; /* Додано */
 `;
 
@@ -65,6 +75,7 @@ const InputDiv = styled.div`
   box-sizing: border-box;
   flex-grow: 1;
   height: auto;
+
   /* flex-direction: column; */
 
   /* position: relative;
@@ -107,7 +118,7 @@ const Hint = styled.label`
   ${({ isActive }) =>
     isActive &&
     css`
-    display:none;
+      display: none;
       /* left: 10px;
       top: 0;
       transform: translateY(-100%);
@@ -142,7 +153,6 @@ const Placeholder = styled.label`
 `;
 
 export const SubmitButton = styled.button`
-
   /* margin-top: 20px; */
   padding: 10px 20px;
   /* background-color: #4caf50; */
@@ -158,6 +168,32 @@ export const SubmitButton = styled.button`
 
   &:hover {
     background-color: #f5f5f5; /* Легкий фон при наведенні */
+  }
+`;
+
+const PublishButton = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 5px auto 0 auto;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 10px 20px;
+  background-color: ${color.accent5};
+  text-align: center;
+  font-weight: bold;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+
+  &:hover {
+    background-color: ${color.accent};
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  &:active {
+    transform: scale(0.98);
   }
 `;
 
@@ -226,9 +262,15 @@ const Button = styled.button`
   cursor: pointer;
   font-size: 12px;
   flex: 1; /* Займає однаковий простір у групі кнопок */
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
 
   &:hover {
-    background-color: ${color.accent};
+    background-color: ${color.accent}; /* Колір кнопки при наведенні */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Тінь при наведенні */
+  }
+
+  &:active {
+    transform: scale(0.98); /* Легкий ефект при натисканні */
   }
 `;
 
@@ -418,106 +460,118 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     setState(prevState => ({ ...prevState, [fieldName]: '' }));
   };
 
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async user => {
+      if (user && user.emailVerified) {
+        setIsEmailVerified(true);
+      } else {
+        setIsEmailVerified(false);
+      }
+    });
+
+    // Відписка від прослуховування при демонтажі компонента
+    return () => unsubscribe();
+  }, []);
+
   const dotsMenu = () => {
-    return(
-<>
-{!state.pub && <SubmitButton onClick={handlePublic}>Опублікувати</SubmitButton>}
-      <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
-      <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
-      <VerifyEmail/>
-      <ExitButton  onClick={handleExit}>Exit</ExitButton ></>
-    )
+    return (
+      <>
+        <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
+        <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
+        {!isEmailVerified && <VerifyEmail />}
+        <ExitButton onClick={handleExit}>Exit</ExitButton>
+      </>
+    );
   };
 
   return (
     <Container>
-      <DotsButton onClick={()=>{setShowInfoModal('dotsMenu')}} >⋮</DotsButton>
-      <Photos state={state} setState={setState} />
+      <InnerContainer>
+        <DotsButton
+          onClick={() => {
+            setShowInfoModal('dotsMenu');
+          }}
+        >
+          ⋮
+        </DotsButton>
+        <Photos state={state} setState={setState} />
 
-      {pickerFields.map(field => {
-        // console.log('field.options:', field.options);
+        {pickerFields.map(field => {
+          // console.log('field.options:', field.options);
 
-        return (
-          <PickerContainer>
-            <InputDiv key={field.name}>
-              <InputFieldContainer>
-                <InputField
-                  as={field.name === 'moreInfo_main' && 'textarea'}
-                  name={field.name}
-                  value={state[field.name]}
-                  onChange={e => {
-                    const value = e?.target?.value;
-                    // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
-                    setState(prevState => ({ ...prevState, [field.name]: value }));
-                    // } else {
-                    // handleChange(field.name, value || '');
-                    // }
-                  }}
-                  onFocus={() => {
-                    if (field.options === undefined) {
-                      console.log('field.options === undefined :>> ');
-                      handleFocus(field.name);
-                    } else if (state[field.name] !== '' && state[field.name] !== undefined) {
-                      console.log('state[field.name] :>> ', state[field.name]);
-                      console.log('field.options !== ');
-                      handleFocus(field.name);
-                    } else {
-                      handleOpenModal(field.name);
-                      setShowInfoModal('pickerOptions');
-                    }
-                  }}
-                  // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
-                  onBlur={() => handleBlur(field.name)}
-                />
-                {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
-              </InputFieldContainer>
+          return (
+            <PickerContainer>
+              <InputDiv key={field.name}>
+                <InputFieldContainer>
+                  <InputField
+                    as={field.name === 'moreInfo_main' && 'textarea'}
+                    name={field.name}
+                    value={state[field.name]}
+                    onChange={e => {
+                      const value = e?.target?.value;
+                      // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
+                      setState(prevState => ({ ...prevState, [field.name]: value }));
+                      // } else {
+                      // handleChange(field.name, value || '');
+                      // }
+                    }}
+                    onFocus={() => {
+                      if (field.options === undefined) {
+                        console.log('field.options === undefined :>> ');
+                        handleFocus(field.name);
+                      } else if (state[field.name] !== '' && state[field.name] !== undefined) {
+                        console.log('state[field.name] :>> ', state[field.name]);
+                        console.log('field.options !== ');
+                        handleFocus(field.name);
+                      } else {
+                        handleOpenModal(field.name);
+                        setShowInfoModal('pickerOptions');
+                      }
+                    }}
+                    // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
+                    onBlur={() => handleBlur(field.name)}
+                  />
+                  {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
+                </InputFieldContainer>
 
-              <Hint isActive={state[field.name]}>
-      {field.ukrainian || field.placeholder}
-   </Hint>
-   <Placeholder isActive={state[field.name]}>
-      {field.ukrainianHint}
-   </Placeholder>
-
-
-
-
-
-            </InputDiv>
-            {Array.isArray(field.options) && field.options.length === 2 && (
-              <ButtonGroup>
-                <Button
-                  onClick={() => {
-                    setState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
-                    handleBlur(field.name);
-                  }}
-                >
-                  Yes
-                </Button>
-                <Button
-                  onClick={() => {
-                    setState(prevState => ({ ...prevState, [field.name]: 'No' }));
-                    handleBlur(field.name);
-                  }}
-                >
-                  No
-                </Button>
-                <Button
-                  onClick={() => {
-                    setState(prevState => ({ ...prevState, [field.name]: 'Other' }));
-                    handleBlur(field.name);
-                  }}
-                >
-                  Інше
-                </Button>
-              </ButtonGroup>
-            )}
-          </PickerContainer>
-        );
-      })}
-
-      
-      
+                <Hint isActive={state[field.name]}>{field.ukrainian || field.placeholder}</Hint>
+                <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+              </InputDiv>
+              {Array.isArray(field.options) && field.options.length === 2 && (
+                <ButtonGroup>
+                  <Button
+                    onClick={() => {
+                      setState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
+                      handleBlur(field.name);
+                    }}
+                  >
+                    Yes
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setState(prevState => ({ ...prevState, [field.name]: 'No' }));
+                      handleBlur(field.name);
+                    }}
+                  >
+                    No
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setState(prevState => ({ ...prevState, [field.name]: 'Other' }));
+                      handleBlur(field.name);
+                    }}
+                  >
+                    Інше
+                  </Button>
+                </ButtonGroup>
+              )}
+            </PickerContainer>
+          );
+        })}
+        {!state.pub && <PublishButton onClick={handlePublic}>Опублікувати</PublishButton>}
+      </InnerContainer>
 
       {showInfoModal && (
         <InfoModal

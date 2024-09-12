@@ -79,7 +79,7 @@ margin-bottom: 20px;
             onClick={handleVerifyAgain} 
             style={{backgroundColor: isCounting ? 'gray' : null }}
             >
-            {!isCounting ? 'Повторно підтвердити email':
+            {!isCounting ? 'Підтвердити email':
             (
               <ButtonText style={{fontSize: fontSize.big, textAlign: 'center', color: 'white' }}>
                 {language==='uk'? 'Лист відправлено. Повторити через ':'Verify again in '}

@@ -7,6 +7,15 @@ import { color } from './styles';
 const Container = styled.div`
   padding-bottom: 10px;
   max-width: 400px;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding-bottom: 10px;
+  max-width: 400px;
+  width: 100%; /* Це забезпечує адаптивну ширину */
+  margin: 0 auto; /* Центрує контейнер по горизонталі */
 `;
 
 const PhotosWrapper = styled.div`
@@ -65,8 +74,16 @@ const UploadButtonLabel = styled.label`
   text-align: center;
   font-size: 16px;
   font-weight: bold;
+
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+
   &:hover {
-    background-color: ${color.accent};
+    background-color: ${color.accent}; 
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); 
+  }
+
+  &:active {
+    transform: scale(0.98); 
   }
 `;
 
@@ -121,7 +138,7 @@ export const Photos = ({ state, setState }) => {
           <NoPhotosText>Додайте свої фото, максимум 9 шт</NoPhotosText>
         )}
       </PhotosWrapper>
-      <UploadButtonWrapper>
+     {(state.photos && state.photos.length < 9) && <UploadButtonWrapper>
         <UploadButtonLabel htmlFor="file-upload">
           Додати фото
           <HiddenFileInput
@@ -132,7 +149,7 @@ export const Photos = ({ state, setState }) => {
             onChange={addPhoto}
           />
         </UploadButtonLabel>
-      </UploadButtonWrapper>
+      </UploadButtonWrapper>}
     </Container>
   );
 };
