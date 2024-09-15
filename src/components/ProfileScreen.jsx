@@ -261,7 +261,7 @@ const InputFieldContainer = styled.div`
     position: absolute;
     left: 10px;
     top: 50%;
-    transform: ${({ fieldName, value }) => ((fieldName === 'phone' || fieldName === 'vk' || (fieldName === 'facebook' && /^\d+$/.test(value))) ? 'translateY(-50%)' : 'translateY(-55%)')};
+    transform: ${({ fieldName, value }) => ((fieldName === 'phone' || fieldName === 'vk' || (fieldName === 'facebook' && /^\d+$/.test(value))) ? 'translateY(-45%)' : 'translateY(-45%)')};
     color: ${({ value }) => (value ? '#000' : 'gray')}; // Чорний, якщо є значення; сірий, якщо порожньо
     font-size: 16px;
     text-align: center;
