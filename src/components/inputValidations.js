@@ -166,6 +166,7 @@ export const removeSpaceAndNewLine = value => {
       const [fullMatch, countryCode, areaCode, firstPart, secondPart, thirdPart] = match;
       formattedNumber = '';
   
+      console.log('fullMatch :>> ', fullMatch);
       // if (countryCode && countryCode.charAt(0) === '0') {
       formattedNumber += countryCode;
       // } else if (countryCode) {
