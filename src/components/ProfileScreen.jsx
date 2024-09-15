@@ -12,6 +12,7 @@ import Photos from './Photos';
 import { VerifyEmail } from './VerifyEmail';
 
 import { color } from './styles';
+import { inputUpdateValue } from './inputUpdatedValue';
 
 const Container = styled.div`
   display: flex;
@@ -20,6 +21,10 @@ const Container = styled.div`
   align-items: center;
   padding: 10px;
   background-color: #f5f5f5;
+
+  @media (max-width: 768px) { // Медіа-запит для пристроїв з шириною екрану до 768px
+    padding: 0;
+  }
   /* max-width: 450px; */
 
   /* maxWidth:  */
@@ -33,6 +38,12 @@ const InnerContainer = styled.div`
   padding: 20px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
+
+  @media (max-width: 768px) { // Медіа-запит для пристроїв з шириною екрану до 768px
+    background-color: #f5f5f5;
+    box-shadow: 0 4px 8px #f5f5f5;
+    border-radius: 0;
+  }
 `;
 
 const DotsButton = styled.button`
@@ -62,6 +73,9 @@ const PickerContainer = styled.div`
   align-items: center;
   background-color: #f0f0f0;
   box-sizing: border-box; /* Додано */
+  @media (max-width: 768px) { // Медіа-запит для пристроїв з шириною екрану до 768px
+    background-color: #f5f5f5;
+  }
 `;
 
 const InputDiv = styled.div`
@@ -85,6 +99,13 @@ const InputField = styled.input`
   outline: none;
   flex: 1;
   /* padding-left: 10px; */
+  padding-left: ${({ fieldName, value }) => {
+    if (fieldName === 'phone') return '20px';
+    if (fieldName === 'telegram' || fieldName === 'instagram') return '25px';
+    if (fieldName === 'facebook') return /^\d+$/.test(value) ? "20px" : "25px";
+    if (fieldName === 'vk') return /^\d+$/.test(value) || value === ''  ? "23px" : "10px";
+    return '10px'; // Значення за замовчуванням
+  }};
   max-width: 100%; 
   min-width: 0; /* Дозволяє інпуту зменшуватися до нуля */
   pointer-events: auto;
@@ -101,7 +122,13 @@ const InputField = styled.input`
 
 const Hint = styled.label`
   position: absolute;
-  padding-left: 10px;
+  /* padding-left: 10px; */
+  padding-left: ${({ fieldName, isActive }) => {
+    if (fieldName === 'phone') return '20px';
+    if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram') return '25px';
+    if (fieldName === 'vk') return '23px';
+    return '10px'; // Значення за замовчуванням
+  }};
   /* left: 30px; */
   top: 50%;
   transform: translateY(-50%);
@@ -222,6 +249,23 @@ const InputFieldContainer = styled.div`
   box-sizing: border-box;
   flex-grow: 1;
   height: auto; /* Дозволяє висоті адаптуватися до вмісту */
+
+  &::before {
+    content: ${({ fieldName, value }) => {
+  if (fieldName === 'phone') return "'+'";
+  if (fieldName === 'telegram' || fieldName === 'instagram') return "'@'";
+  if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
+  if (fieldName === 'vk') return /^\d+$/.test(value) || value === ''  ? "'id'" : "''";
+  return "''";
+}};
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: ${({ fieldName, value }) => ((fieldName === 'phone' || fieldName === 'vk' || (fieldName === 'facebook' && /^\d+$/.test(value))) ? 'translateY(-50%)' : 'translateY(-55%)')};
+    color: ${({ value }) => (value ? '#000' : 'gray')}; // Чорний, якщо є значення; сірий, якщо порожньо
+    font-size: 16px;
+    text-align: center;
+  }
 `;
 
 const ClearButton = styled.button`
@@ -503,15 +547,18 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
           return (
             <PickerContainer>
               <InputDiv key={field.name}>
-                <InputFieldContainer>
+                <InputFieldContainer fieldName={field.name} value={state[field.name]}>
                   <InputField
+                    fieldName={field.name} 
                     as={field.name === 'moreInfo_main' && 'textarea'}
+                    inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={state[field.name]}
                     onChange={e => {
                       const value = e?.target?.value;
+                      const updatedValue = inputUpdateValue(value, field)
                       // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
-                      setState(prevState => ({ ...prevState, [field.name]: value }));
+                      setState(prevState => ({ ...prevState, [field.name]: updatedValue }));
                       // } else {
                       // handleChange(field.name, value || '');
                       // }
@@ -535,7 +582,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
                   {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
                 </InputFieldContainer>
 
-                <Hint isActive={state[field.name]}>{field.ukrainian || field.placeholder}</Hint>
+                <Hint fieldName={field.name} isActive={state[field.name]}>{field.ukrainian || field.placeholder}</Hint>
                 <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
               </InputDiv>
               {Array.isArray(field.options) && field.options.length === 2 && (
@@ -546,7 +593,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
                       handleBlur(field.name);
                     }}
                   >
-                    Yes
+                    Так
                   </Button>
                   <Button
                     onClick={() => {
@@ -554,7 +601,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
                       handleBlur(field.name);
                     }}
                   >
-                    No
+                    Ні
                   </Button>
                   <Button
                     onClick={() => {
