@@ -56,6 +56,7 @@ const DeleteButton = styled.button`
 
 const NoPhotosText = styled.p`
   text-align: center;
+  color: ${color.gray3};
 `;
 
 const UploadButtonWrapper = styled.div`
@@ -138,7 +139,7 @@ export const Photos = ({ state, setState }) => {
           <NoPhotosText>Додайте свої фото, максимум 9 шт</NoPhotosText>
         )}
       </PhotosWrapper>
-     {(state.photos && state.photos.length < 9) && <UploadButtonWrapper>
+     {((state.photos && state.photos.length < 9) || (!state.photos)) && <UploadButtonWrapper>
         <UploadButtonLabel htmlFor="file-upload">
           Додати фото
           <HiddenFileInput
