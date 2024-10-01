@@ -105,6 +105,7 @@ const CheckboxContainer = styled.div`
   display: flex;
   align-items: center; /* Центрує по вертикалі */
   justify-content: center; /* Центрує по горизонталі */
+  width: auto;
 `;
 
 const CheckboxLabel = styled.label`
@@ -130,6 +131,8 @@ const CustomCheckbox = styled.input`
   border-radius: 4px;
   cursor: pointer;
   transition: background-color 0.3s ease, border-color 0.3s ease;
+  box-sizing: border-box;
+  flex-shrink: 0;
 
   /* Стиль для відміченого чекбоксу */
   &:checked {

@@ -98,6 +98,7 @@ const InputField = styled.input`
   border: none;
   outline: none;
   flex: 1;
+  align-items: center;
   /* padding-left: 10px; */
   padding-left: ${({ fieldName, value }) => {
     if (fieldName === 'phone') return '20px';
@@ -111,7 +112,7 @@ const InputField = styled.input`
   pointer-events: auto;
   height: 100%;
   resize: vertical;
-  box-sizing: border-box;
+  /* box-sizing: border-box; */
   /* min-width:  100px; */
 
   /* Додати placeholder стилі для роботи з лейблом */
@@ -130,8 +131,11 @@ const Hint = styled.label`
     return '10px'; // Значення за замовчуванням
   }};
   /* left: 30px; */
-  top: 50%;
-  transform: translateY(-50%);
+  /* top: 50%; */
+  /* transform: translateY(-50%); */
+  display: flex;
+  align-items: center;
+
   transition: all 0.3s ease;
   color: gray;
   pointer-events: none;
@@ -260,8 +264,10 @@ const InputFieldContainer = styled.div`
 }};
     position: absolute;
     left: 10px;
-    top: 50%;
-    transform: ${({ fieldName, value }) => ((fieldName === 'phone' || fieldName === 'vk' || (fieldName === 'facebook' && /^\d+$/.test(value))) ? 'translateY(-45%)' : 'translateY(-45%)')};
+    /* top: 50%; */
+    /* transform: ${({ fieldName, value }) => ((fieldName === 'phone' || fieldName === 'vk' || (fieldName === 'facebook' && /^\d+$/.test(value))) ? 'translateY(-45%)' : 'translateY(-45%)')}; */
+    display: flex;
+    align-items: center;
     color: ${({ value }) => (value ? '#000' : 'gray')}; // Чорний, якщо є значення; сірий, якщо порожньо
     font-size: 16px;
     text-align: center;
@@ -271,8 +277,9 @@ const InputFieldContainer = styled.div`
 const ClearButton = styled.button`
   position: absolute;
   right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+
   background: none;
   border: none;
   cursor: pointer;
@@ -470,7 +477,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     console.log('state :>> ', state);
-    handleSubmit();
+    // handleSubmit();
     // eslint-disable-next-line
   }, [state]);
 
