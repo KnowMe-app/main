@@ -335,7 +335,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     instagram: '',
     vk: '',
     userId: '',
-    pub: false,
+    publish: false,
   });
   const [focused, setFocused] = useState(null);
   console.log('focused :>> ', focused);
@@ -406,7 +406,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handlePublic = () => {
-    setState(prevState => ({ ...prevState, pub: true }));
+    setState(prevState => ({ ...prevState, publish: true }));
   };
 
   const handleOverlayClick = e => {
@@ -476,10 +476,10 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   }, []);
 
   useEffect(() => {
-    console.log('state :>> ', state);
-    // handleSubmit();
+    // console.log('state :>> ', state);
+    handleSubmit();
     // eslint-disable-next-line
-  }, [state]);
+  }, [state.publish]);
 
   const [selectedField, setSelectedField] = useState(null);
   // const [state, setState] = useState({ eyeColor: '', hairColor: '' });
@@ -623,7 +623,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
             </PickerContainer>
           );
         })}
-        {!state.pub && <PublishButton onClick={handlePublic}>Опублікувати</PublishButton>}
+        {!state.publish && <PublishButton onClick={handlePublic}>Опублікувати</PublishButton>}
       </InnerContainer>
 
       {showInfoModal && (
