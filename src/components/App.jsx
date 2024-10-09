@@ -4,6 +4,7 @@ import { PrivacyPolicy } from './PrivacyPolicy';
 import {ProfileScreen} from './ProfileScreen';
 import { LoginScreen } from './LoginScreen';
 import { SubmitForm } from './SubmitForm';
+import {AddNewProfile} from './AddNewProfile';
 
 export const App = () => {
 
@@ -24,6 +25,7 @@ export const App = () => {
       <Route path="/submit" element={<SubmitForm />} />
       <Route path="/profile"  element={<ProfileScreen isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn}/>} />
       <Route path="/login" element={<LoginScreen isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />
+      <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />
     </Routes>
   );
 };

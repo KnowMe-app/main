@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, deleteUser } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
-import { getDatabase, ref as ref2, get, remove, set, update } from 'firebase/database';
+import { getDatabase, ref as ref2, get, remove, set, update, query, orderByChild, equalTo, push } from 'firebase/database';
 
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_API_KEY,
@@ -82,6 +82,58 @@ export const fetchUsersCollectionInRTDB = async () => {
     return dataArray;
   } else {
     return []; // Повертаємо пустий масив, якщо немає даних
+  }
+};
+
+export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
+  const db = getDatabase();
+  const usersRef = ref2(db, 'newUsers');
+  
+  // Логування значення, яке шукаємо
+  console.log('searchedValue :>> ', searchedValue);
+
+  const [searchKey, searchValue] = Object.entries(searchedValue)[0];
+
+  // Перевірка, чи є це значення числом (ID Facebook) або ником Instagram
+  const isNumber = /^\d+$/.test(searchValue); // Перевірка на ID Facebook
+  // const isInstagramNick = /^[\w.]+$/.test(searchValue); // Перевірка на ник Instagram
+
+  // Створення запиту для пошуку за ключем fb або instagram
+  const newQuery = query(usersRef, orderByChild(searchKey), equalTo(isNumber ? Number(searchValue) : searchValue));
+
+  
+  try {
+    // Отримання даних за запитом
+    const snapshot = await get(newQuery);
+
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      
+      // Перетворюємо об'єкт у масив
+      const dataArray = Object.keys(data).map(key => ({
+        ...data[key]
+      }));
+
+      console.log('dataArray :>> ', dataArray);
+      return dataArray;  // Повертаємо масив користувачів
+    } else {
+      // Якщо даних немає, створюємо нового користувача
+      const newUserRef = push(usersRef);  // Генерує унікальний ключ
+      const newUser = {
+        [searchKey]: isNumber ? Number(searchValue) : searchValue, // Додаємо значення fb
+        // Додаємо інші потрібні поля, якщо необхідно
+      };
+
+      // Записуємо нового користувача в базу даних
+      await set(newUserRef, newUser);
+
+      return [{
+        ...newUser
+      }];  // Повертаємо новоствореного користувача
+    }
+  } catch (error) {
+    console.error('Error fetching data:', error);
+    return [];
   }
 };
 
@@ -181,6 +233,22 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
       await update(userRefRTDB, { ...uploadedInfo });
     } 
     await set(userRefRTDB, { ...uploadedInfo });
+  } catch (error) {
+    console.error('Сталася помилка під час збереження даних в Realtime Database:', error);
+    throw error;
+  }
+};
+
+export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) => {
+  try {
+    const userRefRTDB = ref2(database, `newUsers/${userId}`);
+    console.log('222 :>> ',);
+    if (condition==='update') {
+      await update(userRefRTDB, { ...uploadedInfo });
+    } 
+    console.log('2223 :>> ',);
+    await set(userRefRTDB, { ...uploadedInfo });
+    console.log('2224 :>> ',);
   } catch (error) {
     console.error('Сталася помилка під час збереження даних в Realtime Database:', error);
     throw error;
