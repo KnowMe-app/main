@@ -7,14 +7,14 @@ export const aiHandler = async (input) => {
     url: 'https://api.openai.com/v1/chat/completions', // Вірний URL для chat API
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer //////////`, // Ваш API-ключ
+      'Authorization': `Bearer ${process.env.REACT_APP_OPENAI_API_KEY}`, // Ваш API-ключ
     },
     data: {
       model: 'gpt-3.5-turbo', // Можна використовувати іншу модель, якщо потрібно
       messages: [
         {
           role: 'user',
-          content: `Оброби наступні дані та створіть ключі значення: "${input}"`
+          content: `Створи пари ключ-значення з"${input}" в один об"єкт. Для неідентифікованих даних ключ moreInfo_main. Найймовірніші ключі facebook, phone, vk, instagram, tiktok`
         }
       ],
       max_tokens: 100,

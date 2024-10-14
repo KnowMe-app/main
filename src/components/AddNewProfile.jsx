@@ -12,6 +12,7 @@ import { VerifyEmail } from './VerifyEmail';
 
 import { color } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
+import { aiHandler } from './aiHandler';
 
 const Container = styled.div`
   display: flex;
@@ -531,43 +532,64 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, []);
 
   const writeData = async () => {
+
+    // const res = await aiHandler(state.newData) 
+    // console.log('res :>> ', res);
+
     const parseFacebookId = url => {
-  // Регулярний вираз для витягування ID з URL Facebook
-  const facebookRegex = /facebook\.com\/(?:.*\/)?(\d+)/;
-  const match = url.match(facebookRegex);
-
-  // Якщо знайдено ID у URL
-  if (match && match[1]) {
-    return match[1]; // Повертає ID
-  }
-
- // Якщо URL - це 15 цифр або 14 цифр
- const numberRegex = /^\d{14,15}$/; // Зміна на 14-15 цифр
-  if (numberRegex.test(url)) {
-    return url; // Якщо це 14-15 цифр, повертаємо це значення
-  }
-
+    // Перевіряємо, чи є параметр id в URL (наприклад, profile.php?id=100018808396245)
+    const idParamRegex = /[?&]id=(\d+)/;
+    const matchIdParam = url.match(idParamRegex);
+  
+    // Якщо знаходимо id в параметрах URL
+    if (matchIdParam && matchIdParam[1]) {
+      return matchIdParam[1]; // Повертаємо ID
+    }
+  
+    // Регулярний вираз для витягування ID з URL Facebook
+    const facebookRegex = /facebook\.com\/(?:.*\/)?(\d+)/;
+    const match = url.match(facebookRegex);
+  
+    // Якщо знайдено ID у URL
+    if (match && match[1]) {
+      return match[1]; // Повертаємо ID
+    }
+  
+    // Якщо URL - це 15 цифр або 14 цифр
+    const numberRegex = /^\d{14,15}$/; // Перевірка на 14-15 цифр
+    if (numberRegex.test(url)) {
+      return url; // Якщо це 14-15 цифр, повертаємо це значення
+    }
+  
     // Регулярний вираз для витягування ніка з URL Facebook
     const facebookUsernameRegex = /facebook\.com\/([^/?]+)/;
     const matchUsername = url.match(facebookUsernameRegex);
   
     // Якщо знайдено нік у URL
     if (matchUsername && matchUsername[1]) {
-      return matchUsername[1]; // Повертає нік
+      return matchUsername[1]; // Повертаємо нік
     }
-
-  return null; // Повертає null, якщо ID не знайдено
-    };
+  
+    return null; // Повертаємо null, якщо ID не знайдено
+  };
 
     const parseInstagramId = (url) => {
-      const instagramRegex = /instagram\.com\/([^/?]+)/;
-      const match = url.match(instagramRegex);
-      
-      if (match && match[1]) {
-        return match[1]; // Повертає username, якщо знайдено
-      }
-      return null; // Повертає null, якщо username не знайдено
-    };
+        // Перевіряємо, чи URL містить "instagram.com"
+  if (!url.includes('instagram')) {
+    return null; // Повертає null, якщо це не URL Instagram
+  }
+
+  // Регулярний вираз для витягування username з URL Instagram
+  const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
+  const match = url.match(instagramRegex);
+
+  // Якщо знайдено username
+  if (match && match[1]) {
+    return match[1]; // Повертає username
+  }
+
+  return null; // Повертає null, якщо username не знайдено
+};
 
     const parsePhoneNumber = (phone) => {
     // Видалення пробілів, дужок, тире і знаку плюс
