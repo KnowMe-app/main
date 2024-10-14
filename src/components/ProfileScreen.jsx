@@ -476,10 +476,10 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   }, []);
 
   useEffect(() => {
-    // console.log('state :>> ', state);
+    // console.log('state.photos :>> ', state.photos);
     handleSubmit();
     // eslint-disable-next-line
-  }, [state.publish]);
+  }, [state.publish, state.photos]);
 
   const [selectedField, setSelectedField] = useState(null);
   // const [state, setState] = useState({ eyeColor: '', hairColor: '' });

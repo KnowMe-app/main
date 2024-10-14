@@ -24,7 +24,9 @@ export const storage = getStorage(app);
 export const database = getDatabase(app);
 
 export const getUrlofUploadedAvatar = async (photo, userId) => {
-  const file = await getFileBlob(photo); // перетворюємо отриману фотографію на об'єкт Blob
+  const compressedPhoto = await compressPhoto(photo, 50); // Стиснення фото до 50 кБ
+  const file = await getFileBlob(compressedPhoto); // Перетворюємо стиснене фото на об'єкт Blob
+
   const uniqueId = Date.now().toString(); // генеруємо унікальне ім"я для фото
   const fileName = `${uniqueId}.jpg`; // Використовуємо унікальне ім'я для файлу
   const linkToFile = ref(storage, `avatar/${userId}/${fileName}`); // створюємо посилання на місце збереження фото в Firebase
@@ -51,6 +53,68 @@ const getFileBlob = (file) => {
     reader.onerror = reject;
     reader.readAsArrayBuffer(file);
   });
+};
+
+const compressPhoto = (file, maxSizeKB) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Задаємо зменшені розміри canvas, зберігаючи пропорції
+        let width = img.width;
+        let height = img.height;
+
+        // Якщо зображення більше 1000px по ширині, зменшуємо до 1000px
+        const MAX_WIDTH = 1000;
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        
+        // Малюємо зображення на canvas з новими розмірами
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Спробуємо спочатку стиснути з якістю 0.6
+        let quality = 0.6;
+        let compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+        let compressedFile = dataURLToFile(compressedDataUrl);
+
+        // Перевірка розміру файлу після стиснення і зниження якості поступово
+        while (compressedFile.size > maxSizeKB * 1024 && quality > 0.1) {
+          quality -= 0.1; // Зменшуємо якість
+          compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+          compressedFile = dataURLToFile(compressedDataUrl);
+        }
+
+        console.log("Остаточний розмір стисненого фото:", compressedFile.size);
+        resolve(compressedFile);
+      };
+      img.onerror = reject;
+      img.src = event.target.result; // Завантажуємо фото в об'єкт Image
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file); // Читаємо файл як Data URL для canvas
+  });
+};
+
+// Функція для перетворення dataURL на файл
+const dataURLToFile = (dataUrl) => {
+  const arr = dataUrl.split(',');
+  const mime = arr[0].match(/:(.*?);/)[1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], 'compressed.jpg', { type: mime });
 };
 
 export const fetchUserData = async userId => {
@@ -204,20 +268,21 @@ export const deleteUserFromAuth = async userId => {
 };
 
 export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) => {
+  const cleanedUploadedInfo = removeUndefined(uploadedInfo);
   try {
     const userRef = doc(db, `users/${userId}`);
     if (condition==='update') {
-      await updateDoc(userRef, uploadedInfo);
+      await updateDoc(userRef, cleanedUploadedInfo);
     } 
     else if (condition==='set') {
-      await setDoc(userRef, uploadedInfo);
+      await setDoc(userRef, cleanedUploadedInfo);
     }
     else if (condition==='check') {
       const userDoc = await getDoc(userRef);
       if (userDoc.exists()) {
-        await updateDoc(userRef, uploadedInfo);
+        await updateDoc(userRef, cleanedUploadedInfo);
       } else {
-        await setDoc(userRef, uploadedInfo);
+        await setDoc(userRef, cleanedUploadedInfo);
       }
     }
   } catch (error) {
@@ -226,13 +291,27 @@ export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) =>
   }
 };
 
+const removeUndefined = (obj) => {
+  if (Array.isArray(obj)) {
+    return obj.filter(item => item !== undefined).map(removeUndefined);
+  } else if (typeof obj === 'object' && obj !== null) {
+    return Object.fromEntries(
+      Object.entries(obj)
+        .filter(([key, value]) => value !== undefined)
+        .map(([key, value]) => [key, removeUndefined(value)])
+    );
+  }
+  return obj;
+};
+
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
     const userRefRTDB = ref2(database, `users/${userId}`);
+    const cleanedUploadedInfo = removeUndefined(uploadedInfo);
     if (condition==='update') {
-      await update(userRefRTDB, { ...uploadedInfo });
+      await update(userRefRTDB, { ...cleanedUploadedInfo });
     } 
-    await set(userRefRTDB, { ...uploadedInfo });
+    await set(userRefRTDB, { ...cleanedUploadedInfo });
   } catch (error) {
     console.error('Сталася помилка під час збереження даних в Realtime Database:', error);
     throw error;
