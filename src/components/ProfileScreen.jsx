@@ -259,7 +259,7 @@ const InputFieldContainer = styled.div`
   if (fieldName === 'phone') return "'+'";
   if (fieldName === 'telegram' || fieldName === 'instagram') return "'@'";
   if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
-  if (fieldName === 'vk') return /^\d+$/.test(value) || value === ''  ? "'id'" : "''";
+  if (fieldName === 'vk') return (/^\d+$/.test(value) || value === '' || value === undefined) ? "'id'" : "''";
   return "''";
 }};
     position: absolute;
