@@ -175,7 +175,8 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
       
       // Перетворюємо об'єкт у масив
       const dataArray = Object.keys(data).map(key => ({
-        ...data[key]
+        userId: key,            // Зберігаємо ключ
+        ...data[key]        // Додаємо вміст під ключем
       }));
 
       console.log('dataArray :>> ', dataArray);
@@ -192,8 +193,9 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
       await set(newUserRef, newUser);
 
       return [{
-        ...newUser
-      }];  // Повертаємо новоствореного користувача
+        userId: newUserRef.key,  // Отримуємо ключ нового користувача
+        ...newUser           // Додаємо його вміст
+      }];
     }
   } catch (error) {
     console.error('Error fetching data:', error);

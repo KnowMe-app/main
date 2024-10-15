@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import styled, { css } from 'styled-components';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
-import { auth, fetchNewUsersCollectionInRTDB, fetchUserData } from './config';
-import { makeUploadedInfo } from './makeUploadedInfo';
-import { updateDataInRealtimeDB } from './config';
+import { auth, fetchNewUsersCollectionInRTDB, 
+  // fetchUserData, 
+  updateDataInNewUsersRTDB } from './config';
+// import { makeUploadedInfo } from './makeUploadedInfo';
+// import { updateDataInRealtimeDB } from './config';
 import { pickerFields } from './formFields';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
@@ -12,7 +14,7 @@ import { VerifyEmail } from './VerifyEmail';
 
 import { color } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
-import { aiHandler } from './aiHandler';
+// import { aiHandler } from './aiHandler';
 
 const Container = styled.div`
   display: flex;
@@ -259,10 +261,11 @@ const InputFieldContainer = styled.div`
 
   &::before {
     content: ${({ fieldName, value }) => {
+
       if (fieldName === 'phone') return "'+'";
       if (fieldName === 'telegram' || fieldName === 'instagram') return "'@'";
       if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
-      if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' ? "'id'" : "''";
+      if (fieldName === 'vk') return (/^\d+$/.test(value) || value === '' || value === undefined) ? "'id'" : "''";
       return "''";
     }};
     position: absolute;
@@ -329,7 +332,8 @@ const Button = styled.button`
 `;
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
-  const [state, setState] = useState({
+  
+  const initialState = {
     name: '',
     surname: '',
     email: '',
@@ -340,72 +344,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     vk: '',
     userId: '',
     publish: false,
-  });
-  const [focused, setFocused] = useState(null);
-  console.log('focused :>> ', focused);
+  }
+  
+    const [state, setState] = useState(initialState);
+  const [search, setSearch] = useState(null);
+  // const [focused, setFocused] = useState(null);
+  // console.log('focused :>> ', focused);
   const navigate = useNavigate();
 
-  // // Перенаправляємо на іншу сторінку
-  // useEffect(() => {
-  //     const loggedIn = localStorage.getItem('isLoggedIn');
-  //     if (!isLoggedIn && !loggedIn) {
-  //       navigate('/login');
-  //     } else {
-  //       setIsLoggedIn(true);
-  //       navigate('/add');
-  //     }
-  //     // eslint-disable-next-line
-  //   }, []);
-
-  ////////////////////GPS
-
-  useEffect(() => {
-    // Перевіряємо, чи підтримується API геолокації
-    if (navigator.geolocation) {
-      // Отримуємо координати
-      navigator.geolocation.getCurrentPosition(
-        position => {
-          // Успішний результат
-          const latitude = position.coords.latitude;
-          const longitude = position.coords.longitude;
-          console.log(`Latitude: ${latitude}, Longitude: ${longitude}`);
-
-          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`)
-            .then(response => response.json())
-            .then(data => {
-              const address = data.address;
-              const street = address.road || '';
-              const city = address.city || address.town || address.village || '';
-              const state = address.state || '';
-              const country = address.country || '';
-              console.log(`Street: ${street}, City: ${city}, State: ${state}, Country: ${country}`);
-              setState(prevState => ({ ...prevState, city, street, state, country }));
-            })
-            .catch(error => console.error('Error:', error));
-        },
-        error => {
-          // Обробка помилок
-          console.error('Error getting location', error);
-        }
-      );
-    } else {
-      console.log('Geolocation is not supported by this browser.');
-    }
-  }, []); // Порожній масив залежностей
-
-  ////////////////////GPS
-
-  const handleFocus = name => {
-    setFocused(name);
-  };
+  // const handleFocus = name => {
+  //   setFocused(name);
+  // };
   const handleBlur = () => {
-    setFocused(null);
+    // setFocused(null);
     handleSubmit();
+
   };
   const handleSubmit = async () => {
-    const { existingData } = await fetchUserData(state.userId);
-    const uploadedInfo = makeUploadedInfo(existingData, state);
-    await updateDataInRealtimeDB(state.userId, uploadedInfo);
+    // const { existingData } = await fetchUserData(state.userId);
+    // const uploadedInfo = makeUploadedInfo(existingData, state);
+    await updateDataInNewUsersRTDB(state.userId, state, 'update');
   };
   const handleExit = async () => {
     try {
@@ -429,63 +387,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       handleCloseModal();
     }
   };
-
-  // зберігаємо дані при завантаженні сторінки
-  const fetchData = async user => {
-    // console.log('fetchData :>> ');
-    // const user = auth.currentUser;
-    // console.log('user :>> ', user.uid);
-    if (user && user.uid) {
-      console.log('111 :>> ');
-      //   const data = await fetchNewUsersCollectionInRTDB(state.newData);
-      //   console.log('data!!!!!!!!!! :>> ', data);
-
-      //   const existingData = data.existingData || {};
-
-      //   const processedData = Object.keys(existingData).reduce((acc, key) => {
-      //     const value = existingData[key];
-      //     if (key === 'photos' && Array.isArray(value)) {
-      //       // Зберегти лише останні 9 значень
-      //       acc[key] = value.slice(-9);
-      //     } else {
-      //       acc[key] = Array.isArray(value) ? value[value.length - 1] : value;
-      //     }
-      //     return acc;
-      //   }, {});
-
-      //   console.log('processedData :>> ', processedData);
-      //   setState(prevState => ({
-      //     ...prevState, // Зберегти попередні значення
-      //     ...processedData,
-      //     userId: user.uid, // Оновити значення з отриманих даних
-      //   }));
-    }
-  };
-
-  // зберігаємо дані при завантаженні сторінки
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
-      if (user) {
-        console.log('User is logged in: ', user.uid);
-        fetchData(user);
-      } else {
-        console.log('No user is logged in.');
-      }
-    });
-
-    // Clean up the subscription on component unmount
-    return () => unsubscribe();
-  }, []);
-
-  // useEffect(() => {
-  //   fetchData();
-  // }, []);
-
-  //   useEffect(() => {
-  //     // console.log('state :>> ', state);
-  //     handleSubmit();
-  //     // eslint-disable-next-line
-  //   }, [state.publish]);
 
   const [selectedField, setSelectedField] = useState(null);
   // const [state, setState] = useState({ eyeColor: '', hairColor: '' });
@@ -513,7 +414,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleClear = fieldName => {
-    setState(prevState => ({ ...prevState, newData: '' }));
+    setState(prevState => ({ ...prevState, [fieldName]: '' }));
   };
 
   const [isEmailVerified, setIsEmailVerified] = useState(false);
@@ -531,9 +432,38 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return () => unsubscribe();
   }, []);
 
-  const writeData = async () => {
+//   useEffect(() => {
+// console.log('state :>> ', state);
+//   }, [state]);
 
-    // const res = await aiHandler(state.newData) 
+  // useEffect(() => {
+  //   console.log('state2 :>> ', state);
+  //     }, [search]);
+
+     
+     
+     
+     
+      // useEffect для скидання значень при зміні search
+useEffect(() => {
+  // Скинути значення стану для pickerFields
+  setState(prevState => {
+    const updatedState = {};
+    // Проходимося по всіх ключах в попередньому стані
+    Object.keys(prevState).forEach(key => {
+      updatedState[key] = ''; // Скидаємо значення до ''
+    });
+    return updatedState; // Повертаємо новий стан
+  });
+}, [search]); // Виконується при зміні search
+
+
+
+
+
+  const writeData = async () => {
+    setState({})
+    // const res = await aiHandler(search) 
     // console.log('res :>> ', res);
 
     const parseFacebookId = url => {
@@ -631,15 +561,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return null; // Повертає null, якщо не знайдено
     };
 
-    const inputData = state.newData;
+    const inputData = search;
 
     // 1. Перевіряємо, чи це Facebook URL
     console.log('inputData :>> ', inputData);
   const facebookId = parseFacebookId(inputData);
-  console.log('facebookId :>> ', facebookId);
+  console.log('facebook :>> ', facebookId);
   if (facebookId) {
     const result = { facebook: facebookId };
     const res = await fetchNewUsersCollectionInRTDB(result);
+    console.log('res :>> ', res);
+    // setState('')
+    // setSearch('')
+    setState(res[0])
+    // setUserId()
+
+
+
     console.log('Facebook ID:', res[0]);
     return;
   }
@@ -674,6 +612,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   console.log('Not a valid Facebook URL, Phone Number, or Instagram URL.');
 };
 
+
+// const [pickerFields, setPickerFields] = useState([]); // Додайте стан для pickerFields
+// // Функція для додавання нового інпуту
+// const addInputField = (field) => {
+//   // Оновлюємо масив pickerFields, додаючи новий інпут
+//   setPickerFields(prevFields => [
+//     ...prevFields,
+//     { ...field, name: `${field.name}_${prevFields.length}` } // Додаємо новий інпут з унікальним іменем
+//   ]);
+  
+//   // Скидаємо значення для нового інпуту
+//   setState(prevState => ({
+//     ...prevState,
+//     [`${field.name}_${prevState.length}`]: '' // Скидаємо значення нового інпуту
+//   }));
+// };
+
+
+
    const dotsMenu = () => {
     return (
       <>
@@ -698,100 +655,100 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         {/* <Photos state={state} setState={setState} /> */}
 
         <InputDiv>
-          <InputFieldContainer value={state.newData}>
+          <InputFieldContainer value={search}>
             <InputField
               as={'textarea'}
               inputMode={'text'}
-              value={state.newData}
+              value={search}
               onChange={e => {
                 const value = e?.target?.value;
                 // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
-                setState(prevState => ({ ...prevState, newData: value }));
+                  // setState(initialState)
+                  setSearch(value);
+                  // setState();
               }}
               onFocus={() => {}}
               onBlur={() => {
+                // setState();
                 writeData();
               }}
             />
-            {state.newData && <ClearButton onClick={() => handleClear(state.newData)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
+            {search && <ClearButton onClick={() => setSearch('')}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
           </InputFieldContainer>
         </InputDiv>
 
-        {pickerFields.map(field => {
+        {pickerFields.map((field, index) => {
           // console.log('field.options:', field.options);
 
-          return (
-            <PickerContainer>
-              <InputDiv key={field.name}>
-                <InputFieldContainer fieldName={field.name} value={state[field.name]}>
-                  <InputField
-                    fieldName={field.name}
-                    as={field.name === 'moreInfo_main' && 'textarea'}
-                    inputMode={field.name === 'phone' ? 'numeric' : 'text'}
-                    name={field.name}
-                    value={state[field.name]}
-                    onChange={e => {
-                      const value = e?.target?.value;
-                      const updatedValue = inputUpdateValue(value, field);
-                      // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
-                      setState(prevState => ({ ...prevState, [field.name]: updatedValue }));
-                      // } else {
-                      // handleChange(field.name, value || '');
-                      // }
-                    }}
-                    onFocus={() => {
-                      if (field.options === undefined) {
-                        console.log('field.options === undefined :>> ');
-                        handleFocus(field.name);
-                      } else if (state[field.name] !== '' && state[field.name] !== undefined) {
-                        console.log('state[field.name] :>> ', state[field.name]);
-                        console.log('field.options !== ');
-                        handleFocus(field.name);
-                      } else {
-                        // handleOpenModal(field.name);
-                        // setShowInfoModal('pickerOptions');
-                      }
-                    }}
-                    // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
-                    onBlur={() => handleBlur(field.name)}
-                  />
-                  {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
-                </InputFieldContainer>
+          return  (
+                <PickerContainer key={index}>
+                  <InputDiv>
+                    <InputFieldContainer fieldName={field.name} value={state[field.name]}>
+                      <InputField
+                        fieldName={field.name}
+                        as={field.name === 'moreInfo_main' && 'textarea'}
+                        inputMode={field.name === 'phone' ? 'numeric' : 'text'}
+                        name={field.name}
+                        value={state[field.name]}
+                        onChange={e => {
+                          const value = e?.target?.value;
+                          const updatedValue = inputUpdateValue(value, field);
+                          setState(prevState => ({ ...prevState, [field.name]: updatedValue }));
+                        }}
+                        // onFocus={() => {
+                        //   if (field.options === undefined) {
+                        //     console.log('field.options === undefined :>> ');
+                        //     handleFocus(field.name);
+                        //   } else if (state[field.name] !== '' && state[field.name] !== undefined) {
+                        //     console.log('state[field.name] :>> ', state[field.name]);
+                        //     console.log('field.options !== ');
+                        //     handleFocus(field.name);
+                        //   }
+                        // }}
+                        onBlur={() => handleBlur(field.name)}
+                      />
+                      {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times;</ClearButton>}
+                    </InputFieldContainer>
+        
+                    <Hint fieldName={field.name} isActive={state[field.name]}>
+                      {field.ukrainian || field.placeholder}
+                    </Hint>
+                    <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                  </InputDiv>
+        
+                  {Array.isArray(field.options) && field.options.length === 2 && (
+                    <ButtonGroup>
+                      <Button
+                        onClick={() => {
+                          setState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
+                          handleBlur(field.name);
+                        }}
+                      >
+                        Так
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setState(prevState => ({ ...prevState, [field.name]: 'No' }));
+                          handleBlur(field.name);
+                        }}
+                      >
+                        Ні
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setState(prevState => ({ ...prevState, [field.name]: 'Other' }));
+                          handleBlur(field.name);
+                        }}
+                      >
+                        Інше
+                      </Button>
+                    </ButtonGroup>
+                  )}
 
-                <Hint fieldName={field.name} isActive={state[field.name]}>
-                  {field.ukrainian || field.placeholder}
-                </Hint>
-                <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
-              </InputDiv>
-              {Array.isArray(field.options) && field.options.length === 2 && (
-                <ButtonGroup>
-                  <Button
-                    onClick={() => {
-                      setState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
-                      handleBlur(field.name);
-                    }}
-                  >
-                    Так
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setState(prevState => ({ ...prevState, [field.name]: 'No' }));
-                      handleBlur(field.name);
-                    }}
-                  >
-                    Ні
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setState(prevState => ({ ...prevState, [field.name]: 'Other' }));
-                      handleBlur(field.name);
-                    }}
-                  >
-                    Інше
-                  </Button>
-                </ButtonGroup>
-              )}
-            </PickerContainer>
+{/* <Button onClick={() => addInputField(field)}>+</Button> */}
+                </PickerContainer>
+              
+  
           );
         })}
         {!state.publish && <PublishButton onClick={handlePublic}>Опублікувати</PublishButton>}
