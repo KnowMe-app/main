@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import styled, { css } from 'styled-components';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
-import { auth, fetchNewUsersCollectionInRTDB, 
-  // fetchUserData, 
-  updateDataInNewUsersRTDB } from './config';
+import {
+  auth,
+  fetchNewUsersCollectionInRTDB,
+  // fetchUserData,
+  updateDataInNewUsersRTDB,
+} from './config';
 // import { makeUploadedInfo } from './makeUploadedInfo';
 // import { updateDataInRealtimeDB } from './config';
 import { pickerFields } from './formFields';
@@ -261,11 +264,10 @@ const InputFieldContainer = styled.div`
 
   &::before {
     content: ${({ fieldName, value }) => {
-
       if (fieldName === 'phone') return "'+'";
       if (fieldName === 'telegram' || fieldName === 'instagram') return "'@'";
       if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
-      if (fieldName === 'vk') return (/^\d+$/.test(value) || value === '' || value === undefined) ? "'id'" : "''";
+      if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' || value === undefined ? "'id'" : "''";
       return "''";
     }};
     position: absolute;
@@ -332,7 +334,9 @@ const Button = styled.button`
 `;
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
-  
+
+
+
   const initialState = {
     name: '',
     surname: '',
@@ -344,9 +348,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     vk: '',
     userId: '',
     publish: false,
-  }
-  
-    const [state, setState] = useState(initialState);
+  };
+
+  const [state, setState] = useState(initialState);
+
   const [search, setSearch] = useState(null);
   // const [focused, setFocused] = useState(null);
   // console.log('focused :>> ', focused);
@@ -358,12 +363,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleBlur = () => {
     // setFocused(null);
     handleSubmit();
-
   };
-  const handleSubmit = async () => {
+  const handleSubmit = async (newState) => {
     // const { existingData } = await fetchUserData(state.userId);
     // const uploadedInfo = makeUploadedInfo(existingData, state);
-    await updateDataInNewUsersRTDB(state.userId, state, 'update');
+    if (newState){
+      await updateDataInNewUsersRTDB(state.userId, newState, 'update');
+    } else {await updateDataInNewUsersRTDB(state.userId, state, 'update');}
+    
   };
   const handleExit = async () => {
     try {
@@ -413,7 +420,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     handleCloseModal();
   };
 
-  const handleClear = fieldName => {
+  const handleClear = (fieldName, index) => {
     setState(prevState => ({ ...prevState, [fieldName]: '' }));
   };
 
@@ -432,129 +439,121 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return () => unsubscribe();
   }, []);
 
-//   useEffect(() => {
-// console.log('state :>> ', state);
-//   }, [state]);
+  useEffect(() => {
+    // console.log('state :>> ', state);
+    // handleSubmit()
+  }, [state]);
 
   // useEffect(() => {
   //   console.log('state2 :>> ', state);
   //     }, [search]);
 
-     
-     
-     
-     
-      // useEffect для скидання значень при зміні search
-useEffect(() => {
-  // Скинути значення стану для pickerFields
-  setState(prevState => {
-    const updatedState = {};
-    // Проходимося по всіх ключах в попередньому стані
-    Object.keys(prevState).forEach(key => {
-      updatedState[key] = ''; // Скидаємо значення до ''
+  // useEffect для скидання значень при зміні search
+  useEffect(() => {
+    // Скинути значення стану для pickerFields
+    setState(prevState => {
+      const updatedState = {};
+      // Проходимося по всіх ключах в попередньому стані
+      Object.keys(prevState).forEach(key => {
+        updatedState[key] = ''; // Скидаємо значення до ''
+      });
+      return updatedState; // Повертаємо новий стан
     });
-    return updatedState; // Повертаємо новий стан
-  });
-}, [search]); // Виконується при зміні search
-
-
-
-
+  }, [search]); // Виконується при зміні search
 
   const writeData = async () => {
-    setState({})
-    // const res = await aiHandler(search) 
+    setState({});
+    // const res = await aiHandler(search)
     // console.log('res :>> ', res);
 
     const parseFacebookId = url => {
-    // Перевіряємо, чи є параметр id в URL (наприклад, profile.php?id=100018808396245)
-    const idParamRegex = /[?&]id=(\d+)/;
-    const matchIdParam = url.match(idParamRegex);
-  
-    // Якщо знаходимо id в параметрах URL
-    if (matchIdParam && matchIdParam[1]) {
-      return matchIdParam[1]; // Повертаємо ID
-    }
-  
-    // Регулярний вираз для витягування ID з URL Facebook
-    const facebookRegex = /facebook\.com\/(?:.*\/)?(\d+)/;
-    const match = url.match(facebookRegex);
-  
-    // Якщо знайдено ID у URL
-    if (match && match[1]) {
-      return match[1]; // Повертаємо ID
-    }
-  
-    // Якщо URL - це 15 цифр або 14 цифр
-    const numberRegex = /^\d{14,15}$/; // Перевірка на 14-15 цифр
-    if (numberRegex.test(url)) {
-      return url; // Якщо це 14-15 цифр, повертаємо це значення
-    }
-  
-    // Регулярний вираз для витягування ніка з URL Facebook
-    const facebookUsernameRegex = /facebook\.com\/([^/?]+)/;
-    const matchUsername = url.match(facebookUsernameRegex);
-  
-    // Якщо знайдено нік у URL
-    if (matchUsername && matchUsername[1]) {
-      return matchUsername[1]; // Повертаємо нік
-    }
-  
-    return null; // Повертаємо null, якщо ID не знайдено
-  };
+      // Перевіряємо, чи є параметр id в URL (наприклад, profile.php?id=100018808396245)
+      const idParamRegex = /[?&]id=(\d+)/;
+      const matchIdParam = url.match(idParamRegex);
 
-    const parseInstagramId = (url) => {
-        // Перевіряємо, чи URL містить "instagram.com"
-  if (!url.includes('instagram')) {
-    return null; // Повертає null, якщо це не URL Instagram
-  }
+      // Якщо знаходимо id в параметрах URL
+      if (matchIdParam && matchIdParam[1]) {
+        return matchIdParam[1]; // Повертаємо ID
+      }
 
-  // Регулярний вираз для витягування username з URL Instagram
-  const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
-  const match = url.match(instagramRegex);
+      // Регулярний вираз для витягування ID з URL Facebook
+      const facebookRegex = /facebook\.com\/(?:.*\/)?(\d+)/;
+      const match = url.match(facebookRegex);
 
-  // Якщо знайдено username
-  if (match && match[1]) {
-    return match[1]; // Повертає username
-  }
+      // Якщо знайдено ID у URL
+      if (match && match[1]) {
+        return match[1]; // Повертаємо ID
+      }
 
-  return null; // Повертає null, якщо username не знайдено
-};
+      // Якщо URL - це 15 цифр або 14 цифр
+      const numberRegex = /^\d{14,15}$/; // Перевірка на 14-15 цифр
+      if (numberRegex.test(url)) {
+        return url; // Якщо це 14-15 цифр, повертаємо це значення
+      }
 
-    const parsePhoneNumber = (phone) => {
-    // Видалення пробілів, дужок, тире і знаку плюс
-    const cleanedPhone = phone.replace(/[\s()\-+]/g, '');
+      // Регулярний вираз для витягування ніка з URL Facebook
+      const facebookUsernameRegex = /facebook\.com\/([^/?]+)/;
+      const matchUsername = url.match(facebookUsernameRegex);
 
-    // Якщо номер не починається з '+38', '38' або '0'
-    if (!cleanedPhone.startsWith('38') && !cleanedPhone.startsWith('0') && !cleanedPhone.startsWith('+38')) {
-      return cleanedPhone; // Повертаємо очищений номер без змін
-    }
-  
-    // Якщо номер починається з '0', замінюємо його на '38'
-    if (cleanedPhone.startsWith('0')) {
-      return '38' + cleanedPhone.slice(0); // Додаємо код країни, прибираючи '0'
-    }
-  
-    return cleanedPhone; // Повертаємо номер, якщо він починається з '38' або '+38'
-  };
+      // Якщо знайдено нік у URL
+      if (matchUsername && matchUsername[1]) {
+        return matchUsername[1]; // Повертаємо нік
+      }
+
+      return null; // Повертаємо null, якщо ID не знайдено
+    };
+
+    const parseInstagramId = url => {
+      // Перевіряємо, чи URL містить "instagram.com"
+      if (!url.includes('instagram')) {
+        return null; // Повертає null, якщо це не URL Instagram
+      }
+
+      // Регулярний вираз для витягування username з URL Instagram
+      const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
+      const match = url.match(instagramRegex);
+
+      // Якщо знайдено username
+      if (match && match[1]) {
+        return match[1]; // Повертає username
+      }
+
+      return null; // Повертає null, якщо username не знайдено
+    };
+
+    const parsePhoneNumber = phone => {
+      // Видалення пробілів, дужок, тире і знаку плюс
+      const cleanedPhone = phone.replace(/[\s()\-+]/g, '');
+
+      // Якщо номер не починається з '+38', '38' або '0'
+      if (!cleanedPhone.startsWith('38') && !cleanedPhone.startsWith('0') && !cleanedPhone.startsWith('+38')) {
+        return cleanedPhone; // Повертаємо очищений номер без змін
+      }
+
+      // Якщо номер починається з '0', замінюємо його на '38'
+      if (cleanedPhone.startsWith('0')) {
+        return '38' + cleanedPhone.slice(0); // Додаємо код країни, прибираючи '0'
+      }
+
+      return cleanedPhone; // Повертаємо номер, якщо він починається з '38' або '+38'
+    };
 
     // Функція для парсінга TikTok
-    const parseTikTokLink = (url) => {
+    const parseTikTokLink = url => {
       // Якщо URL містить "tiktok"
       const tiktokRegex = /tiktok\.com\/(?:.*\/)?([a-zA-Z0-9._-]+)/; // Регулярний вираз для ID TikTok
       const match = url.match(tiktokRegex);
       if (match) {
         return match[1]; // Повертає ID
       }
-      console.log('url0 :>> ',url );
-    // Якщо це одне слово (тільки букви, цифри, дефіси та крапки)
-    const simpleWordRegex = /^[a-zA-Z0-9._-а-яА-ЯёЁ]+$/; // Дозволяємо літери, цифри, дефіси, крапки та підкреслення
-    console.log('url1 :>> ',url );
-    if (simpleWordRegex.test(url)) {
-      console.log('url2 :>> ', url);
-      return url; // Повертає слово
-      
-    }
+      console.log('url0 :>> ', url);
+      // Якщо це одне слово (тільки букви, цифри, дефіси та крапки)
+      const simpleWordRegex = /^[a-zA-Z0-9._-а-яА-ЯёЁ]+$/; // Дозволяємо літери, цифри, дефіси, крапки та підкреслення
+      console.log('url1 :>> ', url);
+      if (simpleWordRegex.test(url)) {
+        console.log('url2 :>> ', url);
+        return url; // Повертає слово
+      }
       if (simpleWordRegex.test(url)) {
         return url; // Повертає слово
       }
@@ -565,40 +564,38 @@ useEffect(() => {
 
     // 1. Перевіряємо, чи це Facebook URL
     console.log('inputData :>> ', inputData);
-  const facebookId = parseFacebookId(inputData);
-  console.log('facebook :>> ', facebookId);
-  if (facebookId) {
-    const result = { facebook: facebookId };
-    const res = await fetchNewUsersCollectionInRTDB(result);
-    console.log('res :>> ', res);
-    // setState('')
-    // setSearch('')
-    setState(res[0])
-    // setUserId()
+    const facebookId = parseFacebookId(inputData);
+    console.log('facebook :>> ', facebookId);
+    if (facebookId) {
+      const result = { facebook: facebookId };
+      const res = await fetchNewUsersCollectionInRTDB(result);
+      console.log('res :>> ', res);
+      // setState('')
+      // setSearch('')
+      setState(res[0]);
+      // setUserId()
 
+      console.log('Facebook ID:', res[0]);
+      return;
+    }
 
+    // 2. Перевіряємо, чи це Instagram URL
+    const instagramId = parseInstagramId(inputData);
+    if (instagramId) {
+      const result = { instagram: instagramId };
+      const res = await fetchNewUsersCollectionInRTDB(result);
+      console.log('Instagram Username:', res[0]);
+      return;
+    }
 
-    console.log('Facebook ID:', res[0]);
-    return;
-  }
-
-  // 2. Перевіряємо, чи це Instagram URL
-  const instagramId = parseInstagramId(inputData);
-  if (instagramId) {
-    const result = { instagram: instagramId };
-    const res = await fetchNewUsersCollectionInRTDB(result);
-    console.log('Instagram Username:', res[0]);
-    return;
-  }
-
-        // 4. Перевірка на TikTok
-        const tiktokId = parseTikTokLink(inputData);
-        if (tiktokId) {
-          const result = { tiktok: tiktokId };
-          const res = await fetchNewUsersCollectionInRTDB(result);
-            console.log('TikTok ID:', res[0]);
-            return;
-        }
+    // 4. Перевірка на TikTok
+    const tiktokId = parseTikTokLink(inputData);
+    if (tiktokId) {
+      const result = { tiktok: tiktokId };
+      const res = await fetchNewUsersCollectionInRTDB(result);
+      console.log('TikTok ID:', res[0]);
+      return;
+    }
 
     // 3. Перевіряємо, чи це Номер телфону
     const phoneNumber = parsePhoneNumber(inputData);
@@ -609,29 +606,10 @@ useEffect(() => {
       return;
     }
 
-  console.log('Not a valid Facebook URL, Phone Number, or Instagram URL.');
-};
+    console.log('Not a valid Facebook URL, Phone Number, or Instagram URL.');
+  };
 
-
-// const [pickerFields, setPickerFields] = useState([]); // Додайте стан для pickerFields
-// // Функція для додавання нового інпуту
-// const addInputField = (field) => {
-//   // Оновлюємо масив pickerFields, додаючи новий інпут
-//   setPickerFields(prevFields => [
-//     ...prevFields,
-//     { ...field, name: `${field.name}_${prevFields.length}` } // Додаємо новий інпут з унікальним іменем
-//   ]);
-  
-//   // Скидаємо значення для нового інпуту
-//   setState(prevState => ({
-//     ...prevState,
-//     [`${field.name}_${prevState.length}`]: '' // Скидаємо значення нового інпуту
-//   }));
-// };
-
-
-
-   const dotsMenu = () => {
+  const dotsMenu = () => {
     return (
       <>
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
@@ -659,13 +637,13 @@ useEffect(() => {
             <InputField
               as={'textarea'}
               inputMode={'text'}
-              value={search}
+              value={search || ''}
               onChange={e => {
                 const value = e?.target?.value;
                 // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
-                  // setState(initialState)
-                  setSearch(value);
-                  // setState();
+                // setState(initialState)
+                setSearch(value);
+                // setState();
               }}
               onFocus={() => {}}
               onBlur={() => {
@@ -679,78 +657,153 @@ useEffect(() => {
 
         {pickerFields.map((field, index) => {
           // console.log('field.options:', field.options);
+          // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
 
-          return  (
-                <PickerContainer key={index}>
-                  <InputDiv>
-                    <InputFieldContainer fieldName={field.name} value={state[field.name]}>
-                      <InputField
-                        fieldName={field.name}
-                        as={field.name === 'moreInfo_main' && 'textarea'}
-                        inputMode={field.name === 'phone' ? 'numeric' : 'text'}
-                        name={field.name}
-                        value={state[field.name]}
-                        onChange={e => {
-                          const value = e?.target?.value;
-                          const updatedValue = inputUpdateValue(value, field);
-                          setState(prevState => ({ ...prevState, [field.name]: updatedValue }));
-                        }}
-                        // onFocus={() => {
-                        //   if (field.options === undefined) {
-                        //     console.log('field.options === undefined :>> ');
-                        //     handleFocus(field.name);
-                        //   } else if (state[field.name] !== '' && state[field.name] !== undefined) {
-                        //     console.log('state[field.name] :>> ', state[field.name]);
-                        //     console.log('field.options !== ');
-                        //     handleFocus(field.name);
-                        //   }
-                        // }}
-                        onBlur={() => handleBlur(field.name)}
-                      />
-                      {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times;</ClearButton>}
-                    </InputFieldContainer>
-        
-                    <Hint fieldName={field.name} isActive={state[field.name]}>
-                      {field.ukrainian || field.placeholder}
-                    </Hint>
-                    <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
-                  </InputDiv>
-        
-                  {Array.isArray(field.options) && field.options.length === 2 && (
-                    <ButtonGroup>
-                      <Button
-                        onClick={() => {
-                          setState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
-                          handleBlur(field.name);
-                        }}
-                      >
-                        Так
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setState(prevState => ({ ...prevState, [field.name]: 'No' }));
-                          handleBlur(field.name);
-                        }}
-                      >
-                        Ні
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setState(prevState => ({ ...prevState, [field.name]: 'Other' }));
-                          handleBlur(field.name);
-                        }}
-                      >
-                        Інше
-                      </Button>
-                    </ButtonGroup>
-                  )}
+          return (
+            <PickerContainer key={index}>
+              {Array.isArray(state[field.name]) ? (
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
+                  {state[field.name].map((value, idx) => {
+                    // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
 
-{/* <Button onClick={() => addInputField(field)}>+</Button> */}
-                </PickerContainer>
-              
-  
+                    return (
+                      <InputDiv key={`${field.name}-${idx}`}>
+                        <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
+                          <InputField
+                            fieldName={`${field.name}-${idx}`}
+                            as={field.name === 'moreInfo_main' && 'textarea'}
+                            inputMode={field.name === 'phone' ? 'numeric' : 'text'}
+                            name={`${field.name}-${idx}`}
+                            value={value || ''}
+                            onChange={e => {
+                              const updatedValue = inputUpdateValue(e?.target?.value, field);
+                              setState(prevState => ({
+                                ...prevState,
+                                [field.name]: prevState[field.name].map((item, i) => (i === idx ? updatedValue : item)),
+                              }));
+                            }}
+                            onBlur={() => handleBlur(`${field.name}-${idx}`)}
+                          />
+                          {(value || value ==='') && (
+                            <ClearButton
+                            onClick={() => {
+                              setState(prevState => {
+                                // Фільтруємо масив, щоб видалити елемент за індексом
+                                const filteredArray = prevState[field.name].filter((_, i) => i !== idx);
+                                
+                                // Якщо масив має лише одне значення, зберігаємо його як ключ-значення
+                                const newValue = filteredArray.length === 1 ? filteredArray[0] : filteredArray;
+                          
+                                const newState = {
+                                  ...prevState,
+                                  [field.name]: newValue,
+                                };
+                          
+                                // Викликаємо сабміт після оновлення стейту
+                                handleSubmit(newState);
+                                return newState;
+                              });
+                            }}
+                          >
+                            &times;
+                          </ClearButton>
+                          )}
+                        </InputFieldContainer>
+
+                        <Hint fieldName={field.name} isActive={value}>
+                          {field.ukrainian || field.placeholder}
+                        </Hint>
+                        <Placeholder isActive={value}>{field.ukrainianHint}</Placeholder>
+                      </InputDiv>
+                    );
+                  })}
+                </div>
+              ) : (
+                <InputDiv>
+                  <InputFieldContainer fieldName={field.name} value={state[field.name]}>
+                    <InputField
+                      fieldName={field.name}
+                      as={field.name === 'moreInfo_main' && 'textarea'}
+                      inputMode={field.name === 'phone' ? 'numeric' : 'text'}
+                      name={field.name}
+                      value={state[field.name] || ''}
+                      onChange={e => {
+                        const value = e?.target?.value;
+                        const updatedValue = inputUpdateValue(value, field);
+                        setState(prevState => ({
+                          ...prevState,
+                          [field.name]: Array.isArray(prevState[field.name]) ? [updatedValue, ...(prevState[field.name].slice(1) || [])] : updatedValue,
+                        }));
+                      }}
+                      onBlur={() => handleBlur(field.name)}
+                    />
+                    {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times;</ClearButton>}
+                  </InputFieldContainer>
+
+                  <Hint fieldName={field.name} isActive={state[field.name]}>
+                    {field.ukrainian || field.placeholder}
+                  </Hint>
+                  <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                </InputDiv>
+              )}
+
+              {/* Додати новий інпут до масиву */}
+
+              {state[field.name] &&
+                (Array.isArray(state[field.name]) ? state[field.name].length === 0 || state[field.name][state[field.name].length - 1] !== '' : true) &&
+                ((Array.isArray(field.options) && field.options.length !== 2) || !Array.isArray(field.options)) && (
+                  <Button
+                    style={{
+                      display: Array.isArray(state[field.name]) ? 'block' : 'inline-block',
+                      alignSelf: Array.isArray(state[field.name]) ? 'flex-end' : 'auto',
+                      marginBottom: Array.isArray(state[field.name]) ? '14px' : '0',
+                      marginLeft: '10px',
+                    }}
+                    onClick={() => {
+                      setState(prevState => ({
+                        ...prevState,
+                        [field.name]: (Array.isArray(prevState[field.name]) && prevState[field.name].length > 0) 
+                        ? [...prevState[field.name], ''] // Додати новий пустий елемент до масиву
+                        : [prevState[field.name], ''],
+                      }));
+                    }}
+                  >
+                    +
+                  </Button>
+                )}
+
+              {Array.isArray(field.options) && field.options.length === 2 && (
+                <ButtonGroup>
+                  <Button
+                    onClick={() => {
+                      setState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
+                      handleBlur(field.name);
+                    }}
+                  >
+                    Так
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setState(prevState => ({ ...prevState, [field.name]: 'No' }));
+                      handleBlur(field.name);
+                    }}
+                  >
+                    Ні
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setState(prevState => ({ ...prevState, [field.name]: 'Other' }));
+                      handleBlur(field.name);
+                    }}
+                  >
+                    Інше
+                  </Button>
+                </ButtonGroup>
+              )}
+            </PickerContainer>
           );
         })}
+
         {!state.publish && <PublishButton onClick={handlePublic}>Опублікувати</PublishButton>}
       </InnerContainer>
 
