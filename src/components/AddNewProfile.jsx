@@ -572,10 +572,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       console.log('res :>> ', res);
       // setState('')
       // setSearch('')
-      setState(res[0]);
+      setState(res);
       // setUserId()
 
-      console.log('Facebook ID:', res[0]);
+      console.log('Facebook ID:', res);
       return;
     }
 

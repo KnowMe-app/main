@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, deleteUser } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
-import { getDatabase, ref as ref2, get, remove, set, update, query, orderByChild, equalTo, push } from 'firebase/database';
+import { getDatabase, ref as ref2, get, remove, set, update, push,} from 'firebase/database';
 
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_API_KEY,
@@ -152,50 +152,58 @@ export const fetchUsersCollectionInRTDB = async () => {
 export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
+  const searchIdRef = ref2(db, 'newUsers/searchId');  // Референс для пошуку в searchId
+  
   
   // Логування значення, яке шукаємо
   console.log('searchedValue :>> ', searchedValue);
 
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
+  const searchIdKey = `${searchKey}_${searchValue}`; // Формуємо ключ для пошуку у searchId
 
-  // Перевірка, чи є це значення числом (ID Facebook) або ником Instagram
-  const isNumber = /^\d+$/.test(searchValue); // Перевірка на ID Facebook
-  // const isInstagramNick = /^[\w.]+$/.test(searchValue); // Перевірка на ник Instagram
-
-  // Створення запиту для пошуку за ключем fb або instagram
-  const newQuery = query(usersRef, orderByChild(searchKey), equalTo(isNumber ? Number(searchValue) : searchValue));
-
-  
   try {
-    // Отримання даних за запитом
-    const snapshot = await get(newQuery);
+    // 1. Шукаємо в searchId, чи є вже відповідний userId
+    const searchIdSnapshot = await get(ref2(db, `newUsers/searchId/${searchIdKey}`));
+    
+    if (searchIdSnapshot.exists()) {
+      const userId = searchIdSnapshot.val();  // Отримуємо userId
 
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      
-      // Перетворюємо об'єкт у масив
-      const dataArray = Object.keys(data).map(key => ({
-        userId: key,            // Зберігаємо ключ
-        ...data[key]        // Додаємо вміст під ключем
-      }));
+      // 2. Якщо userId знайдений, шукаємо його картку в newUsers
+      const userRef = ref2(db, `newUsers/${userId}`);
+      const userSnapshot = await get(userRef);
 
-      console.log('dataArray :>> ', dataArray);
-      return dataArray;  // Повертаємо масив користувачів
+      if (userSnapshot.exists()) {
+        console.log('Знайдений користувач: ', userSnapshot.val());
+        return {
+          userId,
+          ...userSnapshot.val(),
+        };
+      } else {
+        console.log('Не вдалося знайти картку користувача за userId.');
+        return null;
+      }
     } else {
-      // Якщо даних немає, створюємо нового користувача
-      const newUserRef = push(usersRef);  // Генерує унікальний ключ
+      // 3. Якщо userId не знайдено, створюємо нового користувача
+      const newUserRef = push(usersRef);  // Генеруємо унікальний ключ
       const newUser = {
-        [searchKey]: isNumber ? Number(searchValue) : searchValue, // Додаємо значення fb
-        // Додаємо інші потрібні поля, якщо необхідно
+        [searchKey]: searchValue, // Додаємо значення пошукового ключа
+        createdAt: Date.now(),    // Додаємо час створення або інші поля, якщо потрібно
       };
 
       // Записуємо нового користувача в базу даних
       await set(newUserRef, newUser);
 
-      return [{
-        userId: newUserRef.key,  // Отримуємо ключ нового користувача
-        ...newUser           // Додаємо його вміст
-      }];
+      const newUserId = newUserRef.key;
+
+      // 4. Додаємо пару ключ-значення у searchId
+      await update(searchIdRef, { [searchIdKey]: newUserId });
+
+      console.log('Створений новий користувач і доданий у searchId: ', newUser);
+
+      return {
+        userId: newUserId,
+        ...newUser,
+      };
     }
   } catch (error) {
     console.error('Error fetching data:', error);
