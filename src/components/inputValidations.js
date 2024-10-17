@@ -147,6 +147,49 @@ export const removeSpaceAndNewLine = value => {
     }
     return valueToUpdate;
   };
+
+  export const formatPhoneNumberNoSpace = number => {
+    let cleaned = removeNotNumbers(number);
+    cleaned = removeSpaceAndNewLine(cleaned);
+  
+    if (cleaned.startsWith('380380')) {
+      cleaned = '380' + cleaned.slice(6);
+    }
+    // Check if the number starts with '3800', then remove one zero
+    else if (cleaned.startsWith('3800')) {
+      cleaned = '380' + cleaned.slice(4);
+    }
+    // форматування номера телефону
+    const match = cleaned.match(/^(\d{0,2})(\d{0,3})(\d{0,3})(\d{0,2})(\d{0,2})$/);
+    let formattedNumber = '';
+    if (match) {
+      const [fullMatch, countryCode, areaCode, firstPart, secondPart, thirdPart] = match;
+      formattedNumber = '';
+  
+      console.log('fullMatch :>> ', fullMatch);
+      // if (countryCode && countryCode.charAt(0) === '0') {
+      formattedNumber += countryCode;
+      // } else if (countryCode) {
+      //   formattedNumber += '+' + countryCode;
+      // }
+  
+      if (areaCode) {
+        formattedNumber += '' + areaCode;
+        if (firstPart) {
+          formattedNumber += '' + firstPart;
+          if (secondPart) {
+            formattedNumber += '' + secondPart;
+            if (thirdPart) {
+              formattedNumber += '' + thirdPart;
+            }
+          }
+        }
+      }
+    } else {
+      formattedNumber = '380'; // If the number doesn't match, retain the default value
+    }
+    return formattedNumber;
+  };
   
   export const formatPhoneNumber = number => {
     let cleaned = removeNotNumbers(number);

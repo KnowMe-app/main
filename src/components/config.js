@@ -331,13 +331,59 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
 export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) => {
   try {
     const userRefRTDB = ref2(database, `newUsers/${userId}`);
-    console.log('222 :>> ',);
-    if (condition==='update') {
+    const snapshot = await get(userRefRTDB);
+    const currentUserData = snapshot.exists() ? snapshot.val() : {};
+
+    // Список ключів для обробки
+    const keysToCheck = ['facebook', 'instagram', 'phone', 'tiktok', 'telegram'];
+
+    // Перебір ключів та їх обробка
+    for (const key of keysToCheck) {
+      if (uploadedInfo[key]) {
+        // Отримуємо старі значення з сервера (масив або строку)
+        const currentValues = Array.isArray(currentUserData?.[key])
+          ? currentUserData[key]
+          : typeof currentUserData?.[key] === 'object'
+            ? Object.values(currentUserData[key])
+            : typeof currentUserData?.[key] === 'string'
+              ? [currentUserData[key]]
+              : [];
+
+        // Нові значення з uploadedInfo (масив або строку)
+        const newValues = Array.isArray(uploadedInfo[key])
+          ? uploadedInfo[key]
+          : typeof uploadedInfo[key] === 'object'
+            ? Object.values(uploadedInfo[key])
+            : typeof uploadedInfo[key] === 'string'
+              ? [uploadedInfo[key]]
+              : [];
+
+        console.log(`${key} currentValues :>> `, currentValues);
+        console.log(`${key} newValues :>> `, newValues);
+
+        // Видаляємо значення, яких більше немає у новому масиві
+        for (const value of currentValues) {
+          if (!newValues.includes(value)) {
+            await updateSearchId(key, value, userId, 'remove'); // Видаляємо конкретний ID
+          }
+        }
+
+        // Додаємо нові значення, яких не було в старому масиві
+        for (const value of newValues) {
+          if (!currentValues.includes(value)) {
+            await updateSearchId(key, value, userId, 'add'); // Додаємо новий ID
+          }
+        }
+      }
+    }
+
+    // Оновлення користувача в базі
+    if (condition === 'update') {
       await update(userRefRTDB, { ...uploadedInfo });
-    } 
-    console.log('2223 :>> ',);
-    await set(userRefRTDB, { ...uploadedInfo });
-    console.log('2224 :>> ',);
+    } else {
+      await set(userRefRTDB, { ...uploadedInfo });
+    }
+
   } catch (error) {
     console.error('Сталася помилка під час збереження даних в Realtime Database:', error);
     throw error;
@@ -363,4 +409,27 @@ export const deletePhotos = async (userId, photoUrls) => {
     console.error(`Photo delete error:`, error);
   }
   // }
+};
+
+// Функція для оновлення або видалення пар у searchId
+export const updateSearchId = async (searchKey, searchValue, userId, action) => {
+
+  const db = getDatabase();
+  const searchIdRef = ref2(db, 'newUsers/searchId');
+  const searchIdKey = `${searchKey}_${searchValue}`;
+  console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
+
+  if (action === 'add') {
+    // Додаємо нову пару
+    await update(searchIdRef, { [searchIdKey]: userId });
+    console.log(`Додано нову пару в searchId: ${searchIdKey}: ${userId}`);
+  } else if (action === 'remove') {
+    // Видаляємо існуючу пару
+    const searchIdSnapshot = await get(ref2(db, `newUsers/searchId/${searchIdKey}`));
+
+    if (searchIdSnapshot.exists() && searchIdSnapshot.val() === userId) {
+      await remove(ref2(db, `newUsers/searchId/${searchIdKey}`));
+      console.log(`Видалено пару в searchId: ${searchIdKey}`);
+    }
+  }
 };

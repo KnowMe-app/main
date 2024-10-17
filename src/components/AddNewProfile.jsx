@@ -17,6 +17,7 @@ import { VerifyEmail } from './VerifyEmail';
 
 import { color } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
+import { formatPhoneNumber } from './inputValidations';
 // import { aiHandler } from './aiHandler';
 
 const Container = styled.div`
@@ -503,62 +504,84 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return null; // Повертаємо null, якщо ID не знайдено
     };
 
-    const parseInstagramId = url => {
-      // Перевіряємо, чи URL містить "instagram.com"
-      if (!url.includes('instagram')) {
-        return null; // Повертає null, якщо це не URL Instagram
+    const parseInstagramId = input => {
+      // Перевіряємо, чи це URL Instagram
+      if (typeof input === 'string' && input.includes('instagram')) {
+        const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
+        const match = input.match(instagramRegex);
+    
+        // Якщо знайдено username в URL
+        if (match && match[1]) {
+          return match[1]; // Повертає username
+        }
       }
-
-      // Регулярний вираз для витягування username з URL Instagram
-      const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
-      const match = url.match(instagramRegex);
-
-      // Якщо знайдено username
+    
+      // Регулярний вираз для витягування username з рядків у форматі "inst monkey", "inst: monkey", тощо
+      const pattern = /(?:inst(?:agram)?\s*:?\s*|\s*instagram\s*:?\s*|\s*in\s*:?\s*|\s*i\s*:?\s*|\s*інст\s*:?\s*|\s*ін\s*:?\s*|\s*і\s*:?\s*|\s*інстаграм\s*:?\s*)(\w+)/i;
+      const match = input.match(pattern);
+    
+      // Якщо знайдено username в рядку
       if (match && match[1]) {
         return match[1]; // Повертає username
       }
-
+    
       return null; // Повертає null, якщо username не знайдено
     };
 
-    const parsePhoneNumber = phone => {
+    const parsePhoneNumber = (phone) => {
       // Видалення пробілів, дужок, тире і знаку плюс
-      const cleanedPhone = phone.replace(/[\s()\-+]/g, '');
-
-      // Якщо номер не починається з '+38', '38' або '0'
-      if (!cleanedPhone.startsWith('38') && !cleanedPhone.startsWith('0') && !cleanedPhone.startsWith('+38')) {
-        return cleanedPhone; // Повертаємо очищений номер без змін
+      const cleanedPhone = phone.replace(/[\s()\-+]/g, ''); // Очищення номера
+    
+      // Перевірка, чи номер містить принаймні 10 цифр
+      const digitCount = (cleanedPhone.match(/\d/g) || []).length;
+      if (digitCount < 10) {
+        return; // Вихід, якщо менше 10 цифр
       }
-
-      // Якщо номер починається з '0', замінюємо його на '38'
+    
+      // Якщо номер починається з '0', замінюємо його на '+38'
       if (cleanedPhone.startsWith('0')) {
-        return '38' + cleanedPhone.slice(0); // Додаємо код країни, прибираючи '0'
+        return '380' + cleanedPhone.slice(1); // Заміна '0' на '38'
       }
-
-      return cleanedPhone; // Повертаємо номер, якщо він починається з '38' або '+38'
+    
+      // Якщо номер починається з '('
+      if (cleanedPhone.startsWith('(')) {
+        const numberAfterCleaning = cleanedPhone.slice(1); // Очищаємо '('
+        const cleanedAfterParenthesis = numberAfterCleaning.replace(/[\s()\-+]/g, ''); // Очищаємо решту
+        if (/^\d{10}$/.test(cleanedAfterParenthesis)) {
+          return '38' + cleanedAfterParenthesis.slice(1); // Заміна '0' на '38'
+        }
+      }
+    
+      // Якщо номер починається з '+'
+      if (cleanedPhone.startsWith('38')) {
+        return cleanedPhone; // Повертаємо номер без змін
+      }
+    
+      // Якщо жодне з правил не відпрацювало, просто закінчуємо функцію
+      return; // Нічого не повертаємо
     };
 
     // Функція для парсінга TikTok
-    const parseTikTokLink = url => {
-      // Якщо URL містить "tiktok"
-      const tiktokRegex = /tiktok\.com\/(?:.*\/)?([a-zA-Z0-9._-]+)/; // Регулярний вираз для ID TikTok
-      const match = url.match(tiktokRegex);
-      if (match) {
-        return match[1]; // Повертає ID
-      }
-      console.log('url0 :>> ', url);
-      // Якщо це одне слово (тільки букви, цифри, дефіси та крапки)
-      const simpleWordRegex = /^[a-zA-Z0-9._-а-яА-ЯёЁ]+$/; // Дозволяємо літери, цифри, дефіси, крапки та підкреслення
-      console.log('url1 :>> ', url);
-      if (simpleWordRegex.test(url)) {
-        console.log('url2 :>> ', url);
-        return url; // Повертає слово
-      }
-      if (simpleWordRegex.test(url)) {
-        return url; // Повертає слово
-      }
-      return null; // Повертає null, якщо не знайдено
-    };
+    // const parseTikTokLink = url => {
+    //   // Якщо URL містить "tiktok"
+    //   const tiktokRegex = /tiktok\.com\/(?:.*\/)?([a-zA-Z0-9._-]+)/; // Регулярний вираз для ID TikTok
+    //   const match = url.match(tiktokRegex);
+    //   if (match) {
+    //     return match[1]; // Повертає ID
+    //   }
+    //   console.log('url0 :>> ', url);
+    //   // Якщо це одне слово (тільки букви, цифри, дефіси та крапки)
+    //   const simpleWordRegex = /^[a-zA-Z0-9._-а-яА-ЯёЁ]+$/; // Дозволяємо літери, цифри, дефіси, крапки та підкреслення
+    //   console.log('url1 :>> ', url);
+    //   if (simpleWordRegex.test(url)) {
+    //     console.log('url2 :>> ', url);
+    //     return url; // Повертає слово
+    //   }
+    //   if (simpleWordRegex.test(url)) {
+    //     return url; // Повертає слово
+    //   }
+    //   return null; // Повертає null, якщо не знайдено
+    // };
 
     const inputData = search;
 
@@ -584,25 +607,28 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (instagramId) {
       const result = { instagram: instagramId };
       const res = await fetchNewUsersCollectionInRTDB(result);
-      console.log('Instagram Username:', res[0]);
+      setState(res);
+      // console.log('Instagram Username:', res[0]);
       return;
     }
 
     // 4. Перевірка на TikTok
-    const tiktokId = parseTikTokLink(inputData);
-    if (tiktokId) {
-      const result = { tiktok: tiktokId };
-      const res = await fetchNewUsersCollectionInRTDB(result);
-      console.log('TikTok ID:', res[0]);
-      return;
-    }
+    // const tiktokId = parseTikTokLink(inputData);
+    // if (tiktokId) {
+    //   const result = { tiktok: tiktokId };
+    //   const res = await fetchNewUsersCollectionInRTDB(result);
+    //   setState(res);
+      // console.log('TikTok ID:', res[0]);
+    //   return;
+    // }
 
     // 3. Перевіряємо, чи це Номер телфону
     const phoneNumber = parsePhoneNumber(inputData);
     if (phoneNumber) {
       const result = { phone: phoneNumber };
       const res = await fetchNewUsersCollectionInRTDB(result);
-      console.log('Phone number:', res[0]);
+      setState(res);
+      // console.log('Phone number:', res[0]);
       return;
     }
 
@@ -674,7 +700,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                             as={field.name === 'moreInfo_main' && 'textarea'}
                             inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                             name={`${field.name}-${idx}`}
-                            value={value || ''}
+                            // value={value || ''}
+                            value={field.name === 'phone' ? formatPhoneNumber(value || '') : value || ''}
                             onChange={e => {
                               const updatedValue = inputUpdateValue(e?.target?.value, field);
                               setState(prevState => ({
@@ -726,7 +753,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       as={field.name === 'moreInfo_main' && 'textarea'}
                       inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                       name={field.name}
-                      value={state[field.name] || ''}
+                      // value={state[field.name] || ''}
+                      value={field.name === 'phone' ? formatPhoneNumber(state[field.name] || '') : state[field.name] || ''}
                       onChange={e => {
                         const value = e?.target?.value;
                         const updatedValue = inputUpdateValue(value, field);

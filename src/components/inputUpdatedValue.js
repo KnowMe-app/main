@@ -3,11 +3,11 @@ import {
   formatFacebook,
   formatInstagram,
   formatNumber,
-  formatPhoneNumber,
   formatTelegram,
   formatDate,
   removeSpacesLeaveEnter,
   removeExtraSpaces,
+  formatPhoneNumberNoSpace,
 } from './inputValidations';
 
 export const inputUpdateValue = (value, field, data) => {
@@ -22,7 +22,7 @@ export const inputUpdateValue = (value, field, data) => {
       : // : field.name === 'experience'
       // ? createOpuData(value)
       field.name === 'phone'
-      ? formatPhoneNumber(value)
+      ? formatPhoneNumberNoSpace(value)
       : field.name === 'reward'
       ? formatNumber(value, 9999)
       : field.name === 'ownKids'
