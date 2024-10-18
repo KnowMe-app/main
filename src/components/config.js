@@ -3,6 +3,7 @@ import { getAuth, deleteUser } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
 import { getDatabase, ref as ref2, get, remove, set, update, push,} from 'firebase/database';
+import { query, orderByKey, limitToFirst, startAfter} from 'firebase/database';
 
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_API_KEY,
@@ -159,7 +160,8 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
   console.log('searchedValue :>> ', searchedValue);
 
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
-  const searchIdKey = `${searchKey}_${searchValue}`; // Формуємо ключ для пошуку у searchId
+
+  const searchIdKey = `${searchKey}_${searchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
 
   try {
     // 1. Шукаємо в searchId, чи є вже відповідний userId
@@ -364,14 +366,14 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
         // Видаляємо значення, яких більше немає у новому масиві
         for (const value of currentValues) {
           if (!newValues.includes(value)) {
-            await updateSearchId(key, value, userId, 'remove'); // Видаляємо конкретний ID
+            await updateSearchId(key, value.toLowerCase(), userId, 'remove'); // Видаляємо конкретний ID
           }
         }
 
         // Додаємо нові значення, яких не було в старому масиві
         for (const value of newValues) {
           if (!currentValues.includes(value)) {
-            await updateSearchId(key, value, userId, 'add'); // Додаємо новий ID
+            await updateSearchId(key, value.toLowerCase(), userId, 'add'); // Додаємо новий ID
           }
         }
       }
@@ -433,3 +435,79 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
     }
   }
 };
+
+// Функція для видалення пар у searchId
+export const removeSearchId = async (userId) => {
+  const db = getDatabase();
+  
+  // Отримуємо всі пари в searchId
+  const searchIdSnapshot = await get(ref2(db, `newUsers/searchId`));
+  
+  if (searchIdSnapshot.exists()) {
+    const searchIdData = searchIdSnapshot.val();
+    
+    // Перебираємо всі ключі у searchId
+    const keysToRemove = Object.keys(searchIdData).filter(key => searchIdData[key] === userId);
+    
+    // Видаляємо пари, що відповідають userId
+    for (const key of keysToRemove) {
+      await remove(ref2(db, `newUsers/searchId/${key}`));
+      console.log(`Видалено пару в searchId: ${key}`);
+    }
+  }
+
+  // Видалення картки в newUsers
+  const userRef = ref2(db, `newUsers/${userId}`);
+  await remove(userRef);
+  console.log(`Видалено картку користувача з newUsers: ${userId}`);
+};
+
+export const fetchPaginatedNewUsers = async (lastKey) => {
+  const db = getDatabase();
+  const usersRef = ref2(db, 'newUsers');
+  
+  try {
+    // Формуємо запит для отримання даних, виключаючи 'searchId'
+    let usersQuery = query(usersRef, orderByKey(), limitToFirst(10 + 1)); // Отримуємо на один запис більше для визначення наявності наступної сторінки
+    
+    // Якщо є останній ключ (lastKey), беремо наступну сторінку даних
+    if (lastKey) {
+      usersQuery = query(usersRef, orderByKey(), limitToFirst(10 + 1), startAfter(lastKey));
+    }
+
+    // Виконуємо запит
+    const snapshot = await get(usersQuery);
+
+    if (snapshot.exists()) {
+      const usersData = snapshot.val();
+
+      // Виключаємо 'searchId' з результатів
+      const filteredData = Object.entries(usersData)
+        .filter(([key, value]) => key !== 'searchId')
+        .slice(0, 10); // Обмежуємо до 10 записів, решту використовуємо для визначення наступної сторінки
+
+      // Отримуємо останній ключ для пагінації
+      const lastUserKey = filteredData.length > 0 ? filteredData[filteredData.length - 1][0] : null;
+
+      return {
+        users: Object.fromEntries(filteredData),  // Повертаємо відфільтровані дані користувачів
+        lastKey: lastUserKey,  // Повертаємо ключ для наступної сторінки
+        hasMore: snapshot.size > 10, // Якщо більше 10 записів, є наступна сторінка
+      };
+    }
+
+    return {
+      users: {},
+      lastKey: null,
+      hasMore: false,
+    };
+  } catch (error) {
+    console.error('Error fetching paginated data:', error);
+    return {
+      users: {},
+      lastKey: null,
+      hasMore: false,
+    };
+  }
+};
+

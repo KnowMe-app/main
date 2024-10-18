@@ -6,6 +6,7 @@ import {
   fetchNewUsersCollectionInRTDB,
   // fetchUserData,
   updateDataInNewUsersRTDB,
+  fetchPaginatedNewUsers
 } from './config';
 // import { makeUploadedInfo } from './makeUploadedInfo';
 // import { updateDataInRealtimeDB } from './config';
@@ -18,6 +19,7 @@ import { VerifyEmail } from './VerifyEmail';
 import { color } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { formatPhoneNumber } from './inputValidations';
+import UsersList from './UsersList';
 // import { aiHandler } from './aiHandler';
 
 const Container = styled.div`
@@ -40,7 +42,7 @@ const Container = styled.div`
 
 const InnerContainer = styled.div`
   max-width: 450px;
-  width: 100%;
+  width: 90%;
   background-color: #f0f0f0;
   padding: 20px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
@@ -111,7 +113,7 @@ const InputField = styled.input`
   /* padding-left: 10px; */
   padding-left: ${({ fieldName, value }) => {
     if (fieldName === 'phone') return '20px';
-    if (fieldName === 'telegram' || fieldName === 'instagram') return '25px';
+    if (fieldName === 'telegram' || fieldName === 'instagram'|| fieldName === 'tiktok') return '25px';
     if (fieldName === 'facebook') return /^\d+$/.test(value) ? '20px' : '25px';
     if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' ? '23px' : '10px';
     return '10px'; // Значення за замовчуванням
@@ -135,7 +137,7 @@ const Hint = styled.label`
   /* padding-left: 10px; */
   padding-left: ${({ fieldName, isActive }) => {
     if (fieldName === 'phone') return '20px';
-    if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram') return '25px';
+    if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram'|| fieldName === 'tiktok') return '25px';
     if (fieldName === 'vk') return '23px';
     return '10px'; // Значення за замовчуванням
   }};
@@ -208,32 +210,6 @@ export const SubmitButton = styled.button`
   }
 `;
 
-const PublishButton = styled.button`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 5px auto 0 auto;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 10px 20px;
-  background-color: ${color.accent5};
-  text-align: center;
-  font-weight: bold;
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
-
-  &:hover {
-    background-color: ${color.accent};
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
-
-  &:active {
-    transform: scale(0.98);
-  }
-`;
-
 export const ExitButton = styled(SubmitButton)`
   background: none; /* Прибирає будь-які стилі фону */
   border-bottom: none; /* Прибирає горизонтальну полосу */
@@ -266,7 +242,7 @@ const InputFieldContainer = styled.div`
   &::before {
     content: ${({ fieldName, value }) => {
       if (fieldName === 'phone') return "'+'";
-      if (fieldName === 'telegram' || fieldName === 'instagram') return "'@'";
+      if (fieldName === 'telegram' || fieldName === 'instagram'|| fieldName === 'tiktok') return "'@'";
       if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
       if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' || value === undefined ? "'id'" : "''";
       return "''";
@@ -346,6 +322,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     telegram: '',
     facebook: '',
     instagram: '',
+    tiktok: '',
     vk: '',
     userId: '',
     publish: false,
@@ -386,9 +363,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
-  const handlePublic = () => {
-    setState(prevState => ({ ...prevState, publish: true }));
-  };
 
   const handleOverlayClick = e => {
     if (e.target === e.currentTarget) {
@@ -501,11 +475,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return matchUsername[1]; // Повертаємо нік
       }
 
+
+  // Регулярний вираз для обробки форматів на кшталт "facebook monkey", "fb monkey", тощо
+  const pattern = /(?:facebook|fb|фейсбук|фб)\s*:?\s*(\w+)/i;
+  const matchTextFormat = url.match(pattern);
+
+  // Якщо знайдено ID або нік у текстовому форматі
+  if (matchTextFormat && matchTextFormat[1]) {
+    return matchTextFormat[1]; // Повертаємо ID або нік
+  }
+
       return null; // Повертаємо null, якщо ID не знайдено
     };
 
     const parseInstagramId = input => {
       // Перевіряємо, чи це URL Instagram
+      console.log('111 :>> ');
       if (typeof input === 'string' && input.includes('instagram')) {
         const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
         const match = input.match(instagramRegex);
@@ -516,14 +501,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
       }
     
+      console.log('222 :>> ');
       // Регулярний вираз для витягування username з рядків у форматі "inst monkey", "inst: monkey", тощо
-      const pattern = /(?:inst(?:agram)?\s*:?\s*|\s*instagram\s*:?\s*|\s*in\s*:?\s*|\s*i\s*:?\s*|\s*інст\s*:?\s*|\s*ін\s*:?\s*|\s*і\s*:?\s*|\s*інстаграм\s*:?\s*)(\w+)/i;
+      // const pattern = /(?:inst(?:agram)?\s*:?\s*|\s*instagram\s*:?\s*|\s*in\s*:?\s*|\s*i\s*:?\s*|\s*інст\s*:?\s*|\s*ін\s*:?\s*|\s*і\s*:?\s*|\s*інстаграм\s*:?\s*)(\w+)/i;
+      const pattern = /(?:\binst(?:agram)?\s*:?\s*|\binstagram\s*:?\s*|\bін\s*:?\s*|\bin\s*:?\s*|\bінст\s*:?\s*|\bінстаграм\s*:?\s*)(\w+)/i;
       const match = input.match(pattern);
     
       // Якщо знайдено username в рядку
       if (match && match[1]) {
+        console.log('match :>> ', match);
         return match[1]; // Повертає username
       }
+      console.log('333 :>> ');
     
       return null; // Повертає null, якщо username не знайдено
     };
@@ -562,26 +551,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     };
 
     // Функція для парсінга TikTok
-    // const parseTikTokLink = url => {
-    //   // Якщо URL містить "tiktok"
-    //   const tiktokRegex = /tiktok\.com\/(?:.*\/)?([a-zA-Z0-9._-]+)/; // Регулярний вираз для ID TikTok
-    //   const match = url.match(tiktokRegex);
-    //   if (match) {
-    //     return match[1]; // Повертає ID
-    //   }
-    //   console.log('url0 :>> ', url);
-    //   // Якщо це одне слово (тільки букви, цифри, дефіси та крапки)
-    //   const simpleWordRegex = /^[a-zA-Z0-9._-а-яА-ЯёЁ]+$/; // Дозволяємо літери, цифри, дефіси, крапки та підкреслення
-    //   console.log('url1 :>> ', url);
-    //   if (simpleWordRegex.test(url)) {
-    //     console.log('url2 :>> ', url);
-    //     return url; // Повертає слово
-    //   }
-    //   if (simpleWordRegex.test(url)) {
-    //     return url; // Повертає слово
-    //   }
-    //   return null; // Повертає null, якщо не знайдено
-    // };
+    const parseTikTokLink = url => {
+      // Регулярний вираз для перевірки різних форматів, таких як "tik tok", "tiktok:", "tt", "ТТ:", і т.д.
+      const tiktokVariationsRegex = /(?:тікток|tiktok|tt|тт)[:\s]*([a-zA-Z0-9._-]+)/i;
+    
+      // Якщо URL містить "tiktok"
+      const tiktokRegex = /tiktok\.com\/(?:.*\/)?([a-zA-Z0-9._-]+)/; // Регулярний вираз для ID TikTok
+      const match = url.match(tiktokRegex);
+    
+      if (match && match[1]) {
+        return match[1]; // Повертає ID з URL TikTok
+      }
+    
+      // Якщо рядок містить варіацію "tiktok", "tik tok", "тікток", "tt", "ТТ" і т.д.
+      const variationMatch = url.match(tiktokVariationsRegex);
+      if (variationMatch && variationMatch[1]) {
+        return variationMatch[1]; // Повертає ID або username після "tiktok", "tik tok", "tt", "ТТ" тощо
+      }
+    
+      // Якщо це одне слово (тільки букви, цифри, дефіси та крапки)
+      const simpleWordRegex = /^[a-zA-Z0-9._-а-яА-ЯёЁ]+$/; // Дозволяємо літери, цифри, дефіси, крапки та підкреслення
+      if (simpleWordRegex.test(url)) {
+        return url; // Повертає слово, якщо воно відповідає критеріям
+      }
+    
+      return null; // Повертає null, якщо нічого не знайдено
+    };
 
     const inputData = search;
 
@@ -613,14 +608,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     // 4. Перевірка на TikTok
-    // const tiktokId = parseTikTokLink(inputData);
-    // if (tiktokId) {
-    //   const result = { tiktok: tiktokId };
-    //   const res = await fetchNewUsersCollectionInRTDB(result);
-    //   setState(res);
-      // console.log('TikTok ID:', res[0]);
-    //   return;
-    // }
+    const tiktokId = parseTikTokLink(inputData);
+    if (tiktokId) {
+      const result = { tiktok: tiktokId };
+      console.log('result :>> ', result);
+      const res = await fetchNewUsersCollectionInRTDB(result);
+      setState(res);
+      return;
+    }
 
     // 3. Перевіряємо, чи це Номер телфону
     const phoneNumber = parsePhoneNumber(inputData);
@@ -628,7 +623,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const result = { phone: phoneNumber };
       const res = await fetchNewUsersCollectionInRTDB(result);
       setState(res);
-      // console.log('Phone number:', res[0]);
       return;
     }
 
@@ -644,6 +638,40 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         <ExitButton onClick={handleExit}>Exit</ExitButton>
       </>
     );
+  };
+
+  const [users, setUsers] = useState({});
+  const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
+  const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
+
+
+  const loadMoreUsers = async () => {
+    const res = await fetchPaginatedNewUsers(lastKey);
+    // Перевіряємо, чи є користувачі у відповіді
+    if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
+      console.log('222 :>> ');
+      
+      // Використовуємо Object.entries для обробки res.users
+      const newUsers = Object.entries(res.users).reduce((acc, [userId, user]) => {
+        // Перевірка наявності поля userId, щоб уникнути помилок
+        console.log('3333 :>> ');
+        if (user.userId) {
+          acc[user.userId] = user; // Додаємо користувача до об'єкта
+        } else {
+          acc[userId] = user; // Якщо немає userId, використовуйте ключ об'єкта
+        }
+        return acc;
+      }, {});
+
+      console.log('newUsers :>> ', newUsers);
+  
+      // Оновлюємо стан користувачів
+      setUsers((prevUsers) => ({ ...prevUsers, ...newUsers })); // Додаємо нових користувачів до попередніх
+      setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
+      setHasMore(res.hasMore); // Оновлюємо hasMore
+    } else {
+      setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
+    }
   };
 
   return (
@@ -681,7 +709,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </InputFieldContainer>
         </InputDiv>
 
-        {pickerFields.map((field, index) => {
+{search? pickerFields.map((field, index) => {
           // console.log('field.options:', field.options);
           // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
 
@@ -830,9 +858,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               )}
             </PickerContainer>
           );
-        })}
-
-        {!state.publish && <PublishButton onClick={handlePublic}>Опублікувати</PublishButton>}
+        }):(
+          <div>
+        {hasMore && <Button
+            onClick={loadMoreUsers}
+          >
+            Load Cards
+          </Button>}
+          <UsersList users={users} setUsers={setUsers} /> {/* Передача користувачів у UsersList */}
+        </div>
+        )}
       </InnerContainer>
 
       {showInfoModal && (

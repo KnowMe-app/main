@@ -145,6 +145,7 @@ export const pickerFields = [
   { name: 'telegram', placeholder: 'telegram_nickname', svg: 'telegram-plane', ukrainianHint:'Telegram' },
   { name: 'facebook', placeholder: 'facebook_nickname', svg: 'facebook-f', ukrainianHint:'Facebook' },
   { name: 'instagram', placeholder: 'instagram_nickname', svg: 'instagram', ukrainianHint:'Instagram' },
+  { name: 'tiktok', placeholder: 'tiktok_nickname', svg: 'tiktok', ukrainianHint:'TikTok' },
   { name: 'vk', placeholder: '0107655', hint: '0107655', svg: 'vk', ukrainianHint:'VK' },
   { name: 'country', placeholder: 'Країна', hint: 'country', svg: 'no', width: '33%', ukrainian: 'Країна', ukrainianHint: 'країна проживання' },
   { name: 'region', placeholder: 'Область', hint: 'region', svg: 'no', width: '33%', ukrainian: 'Область', ukrainianHint: 'область' },

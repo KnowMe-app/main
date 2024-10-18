@@ -33,7 +33,7 @@ const Container = styled.div`
 
 const InnerContainer = styled.div`
   max-width: 450px;
-  width: 100%;
+  width: 90%;
   background-color: #f0f0f0;
   padding: 20px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
@@ -102,7 +102,7 @@ const InputField = styled.input`
   /* padding-left: 10px; */
   padding-left: ${({ fieldName, value }) => {
     if (fieldName === 'phone') return '20px';
-    if (fieldName === 'telegram' || fieldName === 'instagram') return '25px';
+    if (fieldName === 'telegram' || fieldName === 'instagram'|| fieldName === 'tiktok') return '25px';
     if (fieldName === 'facebook') return /^\d+$/.test(value) ? "20px" : "25px";
     if (fieldName === 'vk') return /^\d+$/.test(value) || value === ''  ? "23px" : "10px";
     return '10px'; // Значення за замовчуванням
@@ -126,7 +126,7 @@ const Hint = styled.label`
   /* padding-left: 10px; */
   padding-left: ${({ fieldName, isActive }) => {
     if (fieldName === 'phone') return '20px';
-    if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram') return '25px';
+    if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram'|| fieldName === 'tiktok') return '25px';
     if (fieldName === 'vk') return '23px';
     return '10px'; // Значення за замовчуванням
   }};
@@ -257,7 +257,7 @@ const InputFieldContainer = styled.div`
   &::before {
     content: ${({ fieldName, value }) => {
   if (fieldName === 'phone') return "'+'";
-  if (fieldName === 'telegram' || fieldName === 'instagram') return "'@'";
+  if (fieldName === 'telegram' || fieldName === 'instagram'|| fieldName === 'tiktok') return "'@'";
   if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
   if (fieldName === 'vk') return (/^\d+$/.test(value) || value === '' || value === undefined) ? "'id'" : "''";
   return "''";
@@ -333,6 +333,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     telegram: '',
     facebook: '',
     instagram: '',
+    tiktok: '',
     vk: '',
     userId: '',
     publish: false,
