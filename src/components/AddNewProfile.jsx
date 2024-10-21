@@ -4,13 +4,14 @@ import styled, { css } from 'styled-components';
 import {
   auth,
   fetchNewUsersCollectionInRTDB,
-  // fetchUserData,
+  fetchUserData,
   updateDataInNewUsersRTDB,
+  updateDataInRealtimeDB,
+  updateDataInFiresoreDB,
   fetchPaginatedNewUsers
 } from './config';
-// import { makeUploadedInfo } from './makeUploadedInfo';
-// import { updateDataInRealtimeDB } from './config';
-import { pickerFields } from './formFields';
+import { makeUploadedInfo } from './makeUploadedInfo';
+import { pickerFieldsExtended as pickerFields } from './formFields';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import InfoModal from './InfoModal';
@@ -342,13 +343,36 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // setFocused(null);
     handleSubmit();
   };
-  const handleSubmit = async (newState) => {
+  const handleSubmit = async (newState, overwrite) => {
+
+    console.log('state.userId.length>20 :>> ', state.userId.length>20);
     // const { existingData } = await fetchUserData(state.userId);
-    // const uploadedInfo = makeUploadedInfo(existingData, state);
+//     // const uploadedInfo = makeUploadedInfo(existingData, state);
+  if (newState?.userId?.length>20 || state?.userId?.length>20){
     if (newState){
-      await updateDataInNewUsersRTDB(state.userId, newState, 'update');
-    } else {await updateDataInNewUsersRTDB(state.userId, state, 'update');}
-    
+      console.log('dddd:');
+      const { existingData } = await fetchUserData(state.userId);
+      const uploadedInfo = makeUploadedInfo(existingData, newState, overwrite);
+
+      await updateDataInRealtimeDB(state.userId, uploadedInfo, 'update');
+      await updateDataInFiresoreDB(state.userId, uploadedInfo, 'check');
+    } else {
+      console.error('ffff:');
+      const { existingData } = await fetchUserData(state.userId);
+      console.log('existingData :>> ', existingData.name);
+      const uploadedInfo = makeUploadedInfo(existingData, state);
+      console.log('state :>> ', state.name);
+      console.log('uploadedInfo :>> ', uploadedInfo.name);
+      await updateDataInRealtimeDB(state.userId, uploadedInfo, 'update');
+      await updateDataInFiresoreDB(state.userId, uploadedInfo, 'check');
+  }}
+else {
+  console.log('kkkkkkkkkk :>> ');
+  if (newState){
+    await updateDataInNewUsersRTDB(state.userId, newState, 'update');
+  } else {await updateDataInNewUsersRTDB(state.userId, state, 'update');}
+  
+}
   };
   const handleExit = async () => {
     try {
@@ -415,7 +439,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, []);
 
   useEffect(() => {
-    // console.log('state :>> ', state);
+    console.log('state :>> ', state);
     // handleSubmit()
   }, [state]);
 
@@ -425,15 +449,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   // useEffect для скидання значень при зміні search
   useEffect(() => {
-    // Скинути значення стану для pickerFields
-    setState(prevState => {
-      const updatedState = {};
-      // Проходимося по всіх ключах в попередньому стані
-      Object.keys(prevState).forEach(key => {
-        updatedState[key] = ''; // Скидаємо значення до ''
-      });
-      return updatedState; // Повертаємо новий стан
-    });
+    setState({})
+    // // Скинути значення стану для pickerFields
+    // setState(prevState => {
+    //   const updatedState = {};
+    //   // Проходимося по всіх ключах в попередньому стані
+    //   Object.keys(prevState).forEach(key => {
+    //     updatedState[key] = ''; // Скидаємо значення до ''
+    //   });
+    //   return updatedState; // Повертаємо новий стан
+    // });
   }, [search]); // Виконується при зміні search
 
   const writeData = async () => {
@@ -578,6 +603,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return null; // Повертає null, якщо нічого не знайдено
     };
 
+    const parseUserId = input => {
+      // Регулярний вираз для витягування id
+      const pattern = /(?:\bId\s*:?\s*:?\s*)(\w+)/i;
+      const match = input.match(pattern);
+    
+      // Якщо знайдено username в рядку
+      if (match && match[1]) {
+        console.log('match :>> ', match);
+        return match[1]; // Повертає username
+      }
+      console.log('333 :>> ');
+    
+      return null; // Повертає null, якщо username не знайдено
+    };
+
     const inputData = search;
 
     // 1. Перевіряємо, чи це Facebook URL
@@ -626,6 +666,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
+        // 4. Перевіряємо, чи це Id
+    const userId = parseUserId(inputData);
+        if (userId) {
+          const result = { userId: userId };
+          const res = await fetchNewUsersCollectionInRTDB(result);
+          setState(res);
+          console.log('Перевіряємо, чи це ID:', res);
+          return;
+        }
+
     console.log('Not a valid Facebook URL, Phone Number, or Instagram URL.');
   };
 
@@ -647,9 +697,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const loadMoreUsers = async () => {
     const res = await fetchPaginatedNewUsers(lastKey);
+    console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
       console.log('222 :>> ');
+      console.log('res.users :>> ', res.users);
       
       // Використовуємо Object.entries для обробки res.users
       const newUsers = Object.entries(res.users).reduce((acc, [userId, user]) => {
@@ -673,6 +725,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
     }
   };
+
+
+  const additionalFields = Object.keys(state).filter(key => 
+    !pickerFields.some(field => field.name === key) && key !== 'attitude' && key !== 'whiteList'&& key !== 'blackList'
+  );
+
+  // console.log('additionalFields :>> ', additionalFields);
+  
+  // Об'єднуємо `pickerFields` та додаткові ключі
+ // Об'єднуємо `pickerFields` та додаткові ключі
+const fieldsToRender = [
+  ...pickerFields, 
+  ...additionalFields.map(key => ({
+    name: key,
+    placeholder: key,
+    ukrainianHint : key
+  }))
+];
+  
 
   return (
     <Container>
@@ -709,8 +780,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </InputFieldContainer>
         </InputDiv>
 
-{search? pickerFields.map((field, index) => {
-          // console.log('field.options:', field.options);
+{search? fieldsToRender.map((field, index) => {
+          // console.log('field:', field);
           // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
 
           return (
@@ -755,7 +826,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                                 };
                           
                                 // Викликаємо сабміт після оновлення стейту
-                                handleSubmit(newState);
+                                handleSubmit(newState, 'overwrite');
                                 return newState;
                               });
                             }}
@@ -860,12 +931,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           );
         }):(
           <div>
-        {hasMore && <Button
+        {
+        hasMore && 
+        <Button
             onClick={loadMoreUsers}
           >
             Load Cards
           </Button>}
-          <UsersList users={users} setUsers={setUsers} /> {/* Передача користувачів у UsersList */}
+          <UsersList users={users} setUsers={setUsers} setSearch={setSearch} setState={setState}/> {/* Передача користувачів у UsersList */}
         </div>
         )}
       </InnerContainer>
@@ -873,7 +946,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       {showInfoModal && (
         <InfoModal
           onClose={handleOverlayClick}
-          options={pickerFields.find(field => field.name === selectedField)?.options}
+          options={fieldsToRender.find(field => field.name === selectedField)?.options}
           onSelect={handleSelectOption}
           text={showInfoModal}
           Context={dotsMenu}

@@ -274,3 +274,8 @@ export const pickerFields = [
   { name: 'twinsInFamily', placeholder: '-', hint: 'Twins in the family?', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'чи були двійнята в родині?'  },
 
 ];
+
+export const pickerFieldsExtended = [
+  { name: 'userId', placeholder: 'userId', svg: 'user', ukrainianHint: 'Id' },
+  
+  ...pickerFields, ]

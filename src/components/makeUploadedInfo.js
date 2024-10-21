@@ -1,4 +1,4 @@
-export const makeUploadedInfo = (existingData, state) => {
+export const makeUploadedInfo = (existingData, state, overwrite) => {
   let uploadedInfo = { ...existingData };
 
   for (const field in state) {
@@ -38,7 +38,23 @@ export const makeUploadedInfo = (existingData, state) => {
          else {
           const updatedField = existingData[field].filter(item => item !== state[field]);
           updatedField.push(state[field]);
-          uploadedInfo[field] = updatedField;
+          if (overwrite) {
+          // Якщо масив має лише одне значення, зберігаємо його як ключ-значення
+            uploadedInfo[field] = [state[field]].length === 1 ? state[field] : [state[field]];
+          } else if (Array.isArray(updatedField) && updatedField[0] === '' &&  updatedField.length === 2){
+            console.log('444', );
+            uploadedInfo[field] = state[field];
+          }else {
+            console.log('555', );
+            uploadedInfo[field] = updatedField;
+          }
+
+          // if (state[field] === 'facebook'){
+
+          // }
+         
+          
+          // console.log('Ключ є, записуємо / перезаписуємо як останній елемент масиву:', uploadedInfo.facebook);
           // console.log('Ключ є, записуємо / перезаписуємо як останній елемент масиву:', uploadedInfo[field]);
 
           if (Array.isArray(state[field])) {
