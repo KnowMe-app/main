@@ -277,5 +277,18 @@ export const pickerFields = [
 
 export const pickerFieldsExtended = [
   { name: 'userId', placeholder: 'userId', svg: 'user', ukrainianHint: 'Id' },
+  { name: 'role', placeholder: 'см/до/смдо/агент', svg: 'user', ukrainianHint: 'СМДО?' },
+  { name: 'myComment', placeholder: 'коментар', svg: 'user', ukrainianHint: 'Коментра' },
+  { name: 'getInTouch', placeholder: '30.01.2025', svg: 'user', ukrainianHint: 'Коли звернутись' },
+  { name: 'lastAction', placeholder: '-', svg: 'user', ukrainianHint: 'Останні зміни' },
+  // { name: 'name', placeholder: 'Ваше ім’я', svg: 'user', ukrainianHint: 'Ім’я' },
+  // { name: 'surname', placeholder: 'Ваше призіище', svg: 'user', ukrainianHint: 'Прізвище'},
+  // { name: 'email', placeholder: 'Електронна пошта', svg: 'mail', ukrainianHint:'E-mail'},
+  // { name: 'phone', placeholder: '380', svg: 'phone', ukrainianHint:'Номер телефону в форматі +380'},
+  // { name: 'telegram', placeholder: 'telegram_nickname', svg: 'telegram-plane', ukrainianHint:'Telegram' },
+  // { name: 'facebook', placeholder: 'facebook_nickname', svg: 'facebook-f', ukrainianHint:'Facebook' },
+  // { name: 'instagram', placeholder: 'instagram_nickname', svg: 'instagram', ukrainianHint:'Instagram' },
   
-  ...pickerFields, ]
+  ...pickerFields,
+
+ ]

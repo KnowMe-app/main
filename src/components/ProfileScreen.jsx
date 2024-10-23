@@ -387,9 +387,11 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     setFocused(null);
     handleSubmit();
   };
-  const handleSubmit = async () => {
+  const handleSubmit = async (newState) => {
+    const data = newState? newState:state
     const { existingData } = await fetchUserData(state.userId);
-    const uploadedInfo = makeUploadedInfo(existingData, state);
+    
+    const uploadedInfo = makeUploadedInfo(existingData, data);
     await updateDataInRealtimeDB(state.userId, uploadedInfo);
     await updateDataInFiresoreDB(state.userId, uploadedInfo, 'check');
   };
@@ -507,9 +509,23 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     handleCloseModal();
   };
 
-  const handleClear = fieldName => {
-    setState(prevState => ({ ...prevState, [fieldName]: '' }));
-  };
+  // const handleClear = fieldName => {
+  //   setState(prevState => ({ ...prevState, [fieldName]: '' }));
+  // };
+
+  const handleClear = (fieldName) => {
+    setState(prevState => {
+      const newState = { ...prevState };
+  
+      // Очищення конкретного поля
+      if (fieldName in newState) {
+        newState[fieldName] = '';
+      }
+  
+      handleSubmit(newState);
+      return newState;
+    });
+};
 
   const [isEmailVerified, setIsEmailVerified] = useState(false);
 

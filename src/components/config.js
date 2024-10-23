@@ -217,7 +217,6 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
   const searchIdRef = ref2(db, 'newUsers/searchId');
-  // const usersRef = ref2(db, 'users');
 
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
   const searchIdKey = `${searchKey}_${searchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
@@ -225,52 +224,62 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
   console.log('searchedValue :>> ', searchedValue);
 
   try {
-    // 1. Шукаємо в searchId, чи є відповідний userId
+    // 1. Шукаємо в searchId
     const searchIdSnapshot = await get(ref2(db, `newUsers/searchId/${searchIdKey}`));
 
-    // 2. Шукаємо в users по userId
-    const userId = searchIdSnapshot.exists() ? searchIdSnapshot.val() : searchValue;
-    console.log('userId :>> ', userId);
-    const userSnapshotInUsers = await get(ref2(db, `users/${userId}`))
+    // 2. Витягування userId
+    let userId = searchIdSnapshot.exists() ? searchIdSnapshot.val() : searchValue;
 
-    // Якщо користувач знайдений у newUsers або в users
-    if (searchIdSnapshot.exists() || userSnapshotInUsers.exists()) {
-      // 3. Перевірка у newUsers
-      const userRefInNewUsers = ref2(db, `newUsers/${userId}`);
-      const userSnapshotInNewUsers = await get(userRefInNewUsers);
-
-      if (userSnapshotInNewUsers.exists()) {
-        console.log('Знайдено користувача у newUsers: ', userSnapshotInNewUsers.val());
+    // 3. Перевірка в newUsers по userId
+    const userSnapshotInNewUsers = await get(ref2(db, `newUsers/${userId}`));
+    // Якщо знайдено користувача в newUsers
+    if (userSnapshotInNewUsers.exists()) {
+      console.log('Знайдено користувача у newUsers: ', userSnapshotInNewUsers.val());
+      // Додатковий пошук в колекції users
+      const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
+      // Якщо знайдено користувача в users
+      if (userSnapshotInUsers.exists()) {
+        console.log('Знайдено користувача у users: ', userSnapshotInUsers.val());    
+        // Об'єднання даних з newUsers і users
         return {
           userId,
           ...userSnapshotInNewUsers.val(),
-        };
-      }
-
-      // 4. Перевірка у users
-      if (userSnapshotInUsers.exists()) {
-        console.log('Знайдено користувача у users: ', userSnapshotInUsers.val());
-        return {
-          userId,
           ...userSnapshotInUsers.val(),
         };
-      }
+      }    
+      // Повертаємо дані тільки з newUsers, якщо користувач не знайдений у users
+      return {
+        userId,
+        ...userSnapshotInNewUsers.val(),
+      };
+    }
 
-      console.log('Користувача не знайдено в жодній колекції.');
-      return null;
-    } else {
-      // 5. Створення нового користувача в 'newUsers'
+    // 4. Перевірка в users
+    const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
+    if (userSnapshotInUsers.exists()) {
+      console.log('Знайдено користувача у users: ', userSnapshotInUsers.val());
+      return {
+        userId,
+        ...userSnapshotInUsers.val(),
+      };
+    }
+
+    // 5. Створення нового користувача, лише якщо пошук був не по userId
+    if (searchKey !== 'userId') {
       const newUserRef = push(newUsersRef); // Генеруємо унікальний ключ
+      const newUserId = newUserRef.key;
+
+      // Форматування дати у форматі дд.мм.рррр
+      const createdAt = new Date().toLocaleDateString('uk-UA');
+
       const newUser = {
-        userId: searchValue,
+        userId: newUserId,
         [searchKey]: searchValue,
-        createdAt: Date.now(),
+        createdAt,
       };
 
       // Записуємо нового користувача в базу даних
       await set(newUserRef, newUser);
-
-      const newUserId = newUserRef.key;
 
       // 6. Додаємо пару ключ-значення у searchId
       await update(searchIdRef, { [searchIdKey]: newUserId });
@@ -282,9 +291,12 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
         ...newUser,
       };
     }
+
+    console.log('Користувача не знайдено в жодній колекції.');
+    return null;
   } catch (error) {
     console.error('Error fetching data:', error);
-    return [];
+    return null;
   }
 };
 
@@ -356,10 +368,13 @@ export const deleteUserFromAuth = async userId => {
 };
 
 export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) => {
+  console.log(`upl555555555oadedInfo`);
   const cleanedUploadedInfo = removeUndefined(uploadedInfo);
+  console.log(`uploadedInfo`, uploadedInfo);
   try {
     const userRef = doc(db, `users/${userId}`);
     if (condition==='update') {
+      console.log(`uploadedInfo`, uploadedInfo);
       await updateDoc(userRef, cleanedUploadedInfo);
     } 
     else if (condition==='set') {
@@ -536,6 +551,36 @@ export const removeSearchId = async (userId) => {
   const userRef = ref2(db, `newUsers/${userId}`);
   await remove(userRef);
   console.log(`Видалено картку користувача з newUsers: ${userId}`);
+};
+
+// Функція для видалення пар у searchId
+export const removeSpecificSearchId = async (userId, searchedValue) => {
+  const db = getDatabase();
+
+  const [searchKey, searchValue] = Object.entries(searchedValue)[0];
+  const searchIdKey = `${searchKey}_${searchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
+  console.log(`searchIdKey`, searchIdKey);
+  // Отримуємо всі пари в searchId
+  const searchIdSnapshot = await get(ref2(db, `newUsers/searchId`));
+  console.log(`5555555555`);
+  if (searchIdSnapshot.exists()) {
+    const searchIdData = searchIdSnapshot.val();
+    console.log(`searchIdData`, searchIdData);
+    
+    // Перебираємо всі ключі у searchId
+    const keysToRemove = Object.keys(searchIdData).filter(key => key === searchIdKey && searchIdData[key] === userId);
+    console.log(`keysToRemove`, keysToRemove);
+    // Видаляємо пари, що відповідають userId
+    for (const key of keysToRemove) {
+      await remove(ref2(db, `newUsers/searchId/${key}`));
+      console.log(`Видалено пару в searchId: ${key}`);
+    }
+  }
+
+  // Видалення картки в newUsers
+  // const userRef = ref2(db, `newUsers/${userId}`);
+  // await remove(userRef);
+  // console.log(`Видалено картку користувача з newUsers: ${userId}`);
 };
 
 export const fetchPaginatedNewUsers = async (lastKey) => {
