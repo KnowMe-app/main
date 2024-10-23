@@ -342,30 +342,30 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     handleSubmit();
   };
 
-  const findNestedArrays = (data, parentKey = '') => {
-    const nestedArrays = {};
+  // const findNestedArrays = (data, parentKey = '') => {
+  //   const nestedArrays = {};
   
-    Object.keys(data).forEach(key => {
-      const currentKey = parentKey ? `${parentKey}.${key}` : key;
+  //   Object.keys(data).forEach(key => {
+  //     const currentKey = parentKey ? `${parentKey}.${key}` : key;
   
-      if (Array.isArray(data[key])) {
-        // Якщо елемент масиву також є масивом, то це вкладений масив
-        if (data[key].some(item => Array.isArray(item))) {
-          nestedArrays[currentKey] = data[key];
-          console.log(`Знайдено вкладений масив в ключі '${currentKey}':`, data[key]);
-        }
-      } else if (typeof data[key] === 'object' && data[key] !== null) {
-        // Рекурсивно перевіряємо вкладені об'єкти
-        Object.assign(nestedArrays, findNestedArrays(data[key], currentKey));
-      }
-    });
+  //     if (Array.isArray(data[key])) {
+  //       // Якщо елемент масиву також є масивом, то це вкладений масив
+  //       if (data[key].some(item => Array.isArray(item))) {
+  //         nestedArrays[currentKey] = data[key];
+  //         console.log(`Знайдено вкладений масив в ключі '${currentKey}':`, data[key]);
+  //       }
+  //     } else if (typeof data[key] === 'object' && data[key] !== null) {
+  //       // Рекурсивно перевіряємо вкладені об'єкти
+  //       Object.assign(nestedArrays, findNestedArrays(data[key], currentKey));
+  //     }
+  //   });
   
-    return nestedArrays;
-  };
+  //   return nestedArrays;
+  // };
 
   const handleSubmit = async (newState, overwrite, keyValue) => {
     const fieldsForNewUsersOnly = ['role', 'getInTouch', 'myComment'];
-    const contacts = ['vk', 'instagram', 'email','tiktok','facebook', ];
+    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', ];
     const commonFields = ['lastAction'];
     // const userId = newState.userId || state.user
 
@@ -402,14 +402,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
         const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
 
-        const nestedArrays = findNestedArrays(uploadedInfo);
-        console.log('Всі вкладені масиви:', nestedArrays);
+        // const nestedArrays = findNestedArrays(uploadedInfo);
+        // console.log('Всі вкладені масиви:', nestedArrays);
 
         await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
         await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check');
 
         // if (newState._test_getInTouch) {
-          console.log('Updating state._test_getInTouch...');
+          // console.log('Updating state._test_getInTouch...');
             // Фільтруємо ключі, щоб видалити зайві поля
             const cleanedStateForNewUsers = Object.fromEntries(
             Object.entries(updatedState).filter(
@@ -685,6 +685,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return; // Нічого не повертаємо
     };
 
+    const parseEmail = email => {
+      // Видалення пробілів з початку і кінця та приведення до нижнього регістру
+      const cleanedEmail = email.trim().toLowerCase();
+    
+      // Перевірка базової структури email-адреси
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(cleanedEmail)) {
+        return; // Вихід, якщо адреса не відповідає базовій структурі email
+      }
+    
+      // Перевірка наявності домену
+      const domain = cleanedEmail.split('@')[1];
+      if (!domain || !domain.includes('.')) {
+        return; // Вихід, якщо домен некоректний
+      }
+    
+      // Якщо всі перевірки пройдено, повертаємо очищену email-адресу
+      return cleanedEmail;
+    };
+
     // Функція для парсінга TikTok
     const parseTikTokLink = url => {
       // Регулярний вираз для перевірки різних форматів, таких як "tik tok", "tiktok:", "tt", "ТТ:", і т.д.
@@ -777,6 +797,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           console.log('Перевіряємо, чи це ID:', res);
           return;
         }
+
+            // 4. Перевірка на email
+    const email = parseEmail(inputData);
+    if (email) {
+      const result = { email: email };
+      console.log('result :>> ', result);
+      const res = await fetchNewUsersCollectionInRTDB(result);
+      setState(res);
+      return;
+    }
 
     // 4. Перевірка на TikTok
     const tiktokId = parseTikTokLink(inputData);

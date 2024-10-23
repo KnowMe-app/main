@@ -213,15 +213,36 @@ export const fetchUsersCollectionInRTDB = async () => {
 //   }
 // };
 
+// const decodeEmail = (encodedEmail) => {
+//   return encodedEmail
+//     .replace(/_at_/g, '@')
+//     .replace(/_dot_/g, '.')
+//     .replace(/_hash_/g, '#')
+//     .replace(/_dollar_/g, '$')
+//     .replace(/_slash_/g, '/')
+//     .replace(/_lbracket_/g, '[')
+//     .replace(/_rbracket_/g, ']');
+// };
+
 export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
   const searchIdRef = ref2(db, 'newUsers/searchId');
 
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
-  const searchIdKey = `${searchKey}_${searchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
+
+  let modifiedSearchValue = searchValue;
+
+  // Якщо searchKey є email, замінюємо @ на [at] у searchValue
+  if (searchKey === 'email') {
+    modifiedSearchValue = encodeEmail(searchValue);
+  }
+
+  const searchIdKey = `${searchKey}_${modifiedSearchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
 
   console.log('searchedValue :>> ', searchedValue);
+  console.log('searchKey :>> ', searchKey);
+  console.log('searchIdKey :>> ', searchIdKey);
 
   try {
     // 1. Шукаємо в searchId
@@ -428,11 +449,12 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
     const currentUserData = snapshot.exists() ? snapshot.val() : {};
 
     // Список ключів для обробки
-    const keysToCheck = ['facebook', 'instagram', 'phone', 'tiktok', 'telegram'];
+    const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', ];
 
     // Перебір ключів та їх обробка
     for (const key of keysToCheck) {
       if (uploadedInfo[key]) {
+        console.log(`${key} uploadedInfo[key] :>> `, uploadedInfo[key]);
         // Отримуємо старі значення з сервера (масив або строку)
         const currentValues = Array.isArray(currentUserData?.[key])
           ? currentUserData[key]
@@ -504,15 +526,38 @@ export const deletePhotos = async (userId, photoUrls) => {
   // }
 };
 
+const encodeEmail = (email) => {
+  return email
+    .replace(/@/g, '_at_')
+    .replace(/\./g, '_dot_')
+    .replace(/#/g, '_hash_')
+    .replace(/\$/g, '_dollar_')
+    .replace(/\//g, '_slash_')
+    .replace(/\[/g, '_lbracket_')
+    .replace(/\]/g, '_rbracket_');
+};
+
 // Функція для оновлення або видалення пар у searchId
 export const updateSearchId = async (searchKey, searchValue, userId, action) => {
 
   const db = getDatabase();
   const searchIdRef = ref2(db, 'newUsers/searchId');
-  const searchIdKey = `${searchKey}_${searchValue}`;
-  console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
+
+  let modifiedSearchValue = searchValue;
+
+  // Якщо searchKey є email, замінюємо @ на [at] у searchValue
+  if (searchKey.toLowerCase() === 'email') {
+    modifiedSearchValue = encodeEmail(searchValue);
+  }
+  
+  const searchIdKey = `${searchKey}_${modifiedSearchValue}`;
+  // const searchIdKey = `${searchKey}_${searchValue}`;
+
+  console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
+  console.log(`Додано нову пару в searchId!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`);
   if (action === 'add') {
+
     // Додаємо нову пару
     await update(searchIdRef, { [searchIdKey]: userId });
     console.log(`Додано нову пару в searchId: ${searchIdKey}: ${userId}`);
