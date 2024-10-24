@@ -390,7 +390,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleSubmit = async (newState, overwrite, delCondition, keyValue) => {
     const fieldsForNewUsersOnly = ['role', 'getInTouch', 'myComment'];
-    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', ];
+    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId' ];
     const commonFields = ['lastAction'];
     // const userId = newState.userId || state.user
 
@@ -1047,11 +1047,17 @@ const handleDelKeyValue = (fieldName) => {
                         // value={state[field.name] || ''}
                         value={field.name === 'phone' ? formatPhoneNumber(state[field.name] || '') : state[field.name] || ''}
                         onChange={e => {
-                          const value = e?.target?.value;
-                          const updatedValue = inputUpdateValue(value, field);
+                          let value = e?.target?.value;
+                          // Якщо ім'я поля - 'publish', перетворюємо значення в булеве
+                            if (field.name === 'publish') {
+                              value = value.toLowerCase() === 'true'; // true, якщо значення 'true', інакше false
+                            } else {
+                              value = inputUpdateValue(value, field); // Оновлення значення для інших полів
+                            }
+
                           setState(prevState => ({
                             ...prevState,
-                            [field.name]: Array.isArray(prevState[field.name]) ? [updatedValue, ...(prevState[field.name].slice(1) || [])] : updatedValue,
+                            [field.name]: Array.isArray(prevState[field.name]) ? [value, ...(prevState[field.name].slice(1) || [])] : value,
                           }));
                         }}
                         // onBlur={() => handleBlur(field.name)}

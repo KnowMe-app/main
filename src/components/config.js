@@ -2,8 +2,8 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, deleteUser } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
-import { getDatabase, ref as ref2, get, remove, set, update, push,} from 'firebase/database';
-import { query, orderByKey, limitToFirst, startAfter} from 'firebase/database';
+import { getDatabase, ref as ref2, get, remove, set, update, push } from 'firebase/database';
+import { query, orderByKey, limitToFirst, startAfter } from 'firebase/database';
 
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_API_KEY,
@@ -12,7 +12,7 @@ const firebaseConfig = {
   projectId: process.env.REACT_APP_PROJECT_ID,
   storageBucket: process.env.REACT_APP_STORAGE_BUCKET,
   messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
-  appId: process.env.REACT_APP_APP_ID
+  appId: process.env.REACT_APP_APP_ID,
 };
 
 // Ініціалізація Firebase
@@ -45,7 +45,7 @@ export const getUrlofUploadedPhoto = async photo => {
   return url;
 };
 
-const getFileBlob = (file) => {
+const getFileBlob = file => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -59,12 +59,12 @@ const getFileBlob = (file) => {
 const compressPhoto = (file, maxSizeKB) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = event => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        
+
         // Задаємо зменшені розміри canvas, зберігаючи пропорції
         let width = img.width;
         let height = img.height;
@@ -78,7 +78,7 @@ const compressPhoto = (file, maxSizeKB) => {
 
         canvas.width = width;
         canvas.height = height;
-        
+
         // Малюємо зображення на canvas з новими розмірами
         ctx.drawImage(img, 0, 0, width, height);
 
@@ -94,7 +94,7 @@ const compressPhoto = (file, maxSizeKB) => {
           compressedFile = dataURLToFile(compressedDataUrl);
         }
 
-        console.log("Остаточний розмір стисненого фото:", compressedFile.size);
+        console.log('Остаточний розмір стисненого фото:', compressedFile.size);
         resolve(compressedFile);
       };
       img.onerror = reject;
@@ -106,7 +106,7 @@ const compressPhoto = (file, maxSizeKB) => {
 };
 
 // Функція для перетворення dataURL на файл
-const dataURLToFile = (dataUrl) => {
+const dataURLToFile = dataUrl => {
   const arr = dataUrl.split(',');
   const mime = arr[0].match(/:(.*?);/)[1];
   const bstr = atob(arr[1]);
@@ -154,8 +154,7 @@ export const fetchUsersCollectionInRTDB = async () => {
 //   const db = getDatabase();
 //   const usersRef = ref2(db, 'newUsers');
 //   const searchIdRef = ref2(db, 'newUsers/searchId');  // Референс для пошуку в searchId
-  
-  
+
 //   // Логування значення, яке шукаємо
 //   console.log('searchedValue :>> ', searchedValue);
 
@@ -166,7 +165,7 @@ export const fetchUsersCollectionInRTDB = async () => {
 //   try {
 //     // 1. Шукаємо в searchId, чи є вже відповідний userId
 //     const searchIdSnapshot = await get(ref2(db, `newUsers/searchId/${searchIdKey}`));
-    
+
 //     if (searchIdSnapshot.exists()) {
 //       const userId = searchIdSnapshot.val();  // Отримуємо userId
 
@@ -224,7 +223,7 @@ export const fetchUsersCollectionInRTDB = async () => {
 //     .replace(/_rbracket_/g, ']');
 // };
 
-export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
+export const fetchNewUsersCollectionInRTDB = async searchedValue => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
   const searchIdRef = ref2(db, 'newUsers/searchId');
@@ -260,14 +259,14 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
       const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
       // Якщо знайдено користувача в users
       if (userSnapshotInUsers.exists()) {
-        console.log('Знайдено користувача у users: ', userSnapshotInUsers.val());    
+        console.log('Знайдено користувача у users: ', userSnapshotInUsers.val());
         // Об'єднання даних з newUsers і users
         return {
           userId,
           ...userSnapshotInNewUsers.val(),
           ...userSnapshotInUsers.val(),
         };
-      }    
+      }
       // Повертаємо дані тільки з newUsers, якщо користувач не знайдений у users
       return {
         userId,
@@ -320,7 +319,6 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
     return null;
   }
 };
-
 
 export const getUserCards = async () => {
   const usersInCollection = await fetchUsersCollection();
@@ -394,14 +392,12 @@ export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) =>
   console.log(`uploadedInfo`, uploadedInfo);
   try {
     const userRef = doc(db, `users/${userId}`);
-    if (condition==='update') {
+    if (condition === 'update') {
       console.log(`uploadedInfo`, uploadedInfo);
       await updateDoc(userRef, cleanedUploadedInfo);
-    } 
-    else if (condition==='set') {
+    } else if (condition === 'set') {
       await setDoc(userRef, cleanedUploadedInfo);
-    }
-    else if (condition==='check') {
+    } else if (condition === 'check') {
       const userDoc = await getDoc(userRef);
       if (userDoc.exists()) {
         await updateDoc(userRef, cleanedUploadedInfo);
@@ -415,7 +411,7 @@ export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) =>
   }
 };
 
-const removeUndefined = (obj) => {
+const removeUndefined = obj => {
   if (Array.isArray(obj)) {
     return obj.filter(item => item !== undefined).map(removeUndefined);
   } else if (typeof obj === 'object' && obj !== null) {
@@ -432,9 +428,9 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
   try {
     const userRefRTDB = ref2(database, `users/${userId}`);
     const cleanedUploadedInfo = removeUndefined(uploadedInfo);
-    if (condition==='update') {
+    if (condition === 'update') {
       await update(userRefRTDB, { ...cleanedUploadedInfo });
-    } 
+    }
     await set(userRefRTDB, { ...cleanedUploadedInfo });
   } catch (error) {
     console.error('Сталася помилка під час збереження даних в Realtime Database:', error);
@@ -449,7 +445,7 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
     const currentUserData = snapshot.exists() ? snapshot.val() : {};
 
     // Список ключів для обробки
-    const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', ];
+    const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk'];
 
     // Перебір ключів та їх обробка
     for (const key of keysToCheck) {
@@ -459,34 +455,58 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
         const currentValues = Array.isArray(currentUserData?.[key])
           ? currentUserData[key]
           : typeof currentUserData?.[key] === 'object'
-            ? Object.values(currentUserData[key])
-            : typeof currentUserData?.[key] === 'string'
-              ? [currentUserData[key]]
-              : [];
+          ? Object.values(currentUserData[key])
+          : typeof currentUserData?.[key] === 'string'
+          ? [currentUserData[key]]
+          : [];
 
         // Нові значення з uploadedInfo (масив або строку)
-        const newValues = Array.isArray(uploadedInfo[key])
+        let newValues = Array.isArray(uploadedInfo[key])
           ? uploadedInfo[key]
           : typeof uploadedInfo[key] === 'object'
-            ? Object.values(uploadedInfo[key])
-            : typeof uploadedInfo[key] === 'string'
-              ? [uploadedInfo[key]]
-              : [];
+          ? Object.values(uploadedInfo[key])
+          : typeof uploadedInfo[key] === 'string'
+          ? [uploadedInfo[key]]
+          : [];
+
+          // Якщо ключ — це 'phone', прибираємо пробіли у нових значеннях
+          // if (key === 'phone') {
+          //   newValues = newValues.map((value) => 
+          //     typeof value === 'string' ? value.replace(/\s+/g, '') : value
+          //   );
+          // }
 
         console.log(`${key} currentValues :>> `, currentValues);
         console.log(`${key} newValues :>> `, newValues);
 
         // Видаляємо значення, яких більше немає у новому масиві
         for (const value of currentValues) {
-          if (!newValues.includes(value)) {
-            await updateSearchId(key, value.toLowerCase(), userId, 'remove'); // Видаляємо конкретний ID
+          let cleanedValue = value;
+
+          // Якщо ключ — це 'phone', прибираємо пробіли у значенні
+          if (key === 'phone') {
+            cleanedValue = value.replace(/\s+/g, '');
+          }
+
+          if (!newValues.includes(cleanedValue)) {
+            await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'remove'); // Видаляємо конкретний ID
           }
         }
 
         // Додаємо нові значення, яких не було в старому масиві
         for (const value of newValues) {
-          if (!currentValues.includes(value)) {
-            await updateSearchId(key, value.toLowerCase(), userId, 'add'); // Додаємо новий ID
+          let cleanedValue = value;
+
+          // Якщо ключ — це 'phone', прибираємо пробіли у значенні
+          if (key === 'phone') {
+            cleanedValue = value.replace(/\s+/g, '');
+          }
+
+          // console.log('cleanedValue :>> ', cleanedValue);
+
+          // Додаємо новий ID, якщо його ще немає в currentValues
+          if (!currentValues.includes(cleanedValue)) {
+            await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'); // Додаємо новий ID
           }
         }
       }
@@ -498,7 +518,6 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
     } else {
       await set(userRefRTDB, { ...uploadedInfo });
     }
-
   } catch (error) {
     console.error('Сталася помилка під час збереження даних в Realtime Database:', error);
     throw error;
@@ -526,7 +545,7 @@ export const deletePhotos = async (userId, photoUrls) => {
   // }
 };
 
-const encodeEmail = (email) => {
+const encodeEmail = email => {
   return email
     .replace(/@/g, '_at_')
     .replace(/\./g, '_dot_')
@@ -539,10 +558,8 @@ const encodeEmail = (email) => {
 
 // Функція для оновлення або видалення пар у searchId
 export const updateSearchId = async (searchKey, searchValue, userId, action) => {
-
   const db = getDatabase();
   const searchIdRef = ref2(db, 'newUsers/searchId');
-
 
   let modifiedSearchValue = searchValue;
 
@@ -550,14 +567,13 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
   if (searchKey.toLowerCase() === 'email') {
     modifiedSearchValue = encodeEmail(searchValue);
   }
-  
+
   const searchIdKey = `${searchKey}_${modifiedSearchValue}`;
   // const searchIdKey = `${searchKey}_${searchValue}`;
 
   console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
   console.log(`Додано нову пару в searchId!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`);
   if (action === 'add') {
-
     // Додаємо нову пару
     await update(searchIdRef, { [searchIdKey]: userId });
     console.log(`Додано нову пару в searchId: ${searchIdKey}: ${userId}`);
@@ -573,18 +589,18 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
 };
 
 // Функція для видалення пар у searchId
-export const removeSearchId = async (userId) => {
+export const removeSearchId = async userId => {
   const db = getDatabase();
-  
+
   // Отримуємо всі пари в searchId
   const searchIdSnapshot = await get(ref2(db, `newUsers/searchId`));
-  
+
   if (searchIdSnapshot.exists()) {
     const searchIdData = searchIdSnapshot.val();
-    
+
     // Перебираємо всі ключі у searchId
     const keysToRemove = Object.keys(searchIdData).filter(key => searchIdData[key] === userId);
-    
+
     // Видаляємо пари, що відповідають userId
     for (const key of keysToRemove) {
       await remove(ref2(db, `newUsers/searchId/${key}`));
@@ -611,7 +627,7 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
   if (searchIdSnapshot.exists()) {
     const searchIdData = searchIdSnapshot.val();
     console.log(`searchIdData`, searchIdData);
-    
+
     // Перебираємо всі ключі у searchId
     const keysToRemove = Object.keys(searchIdData).filter(key => key === searchIdKey && searchIdData[key] === userId);
     console.log(`keysToRemove`, keysToRemove);
@@ -632,7 +648,7 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
 //   const db = getDatabase();
 //   const newUsersRef  = ref2(db, 'newUsers');
 //   // const usersRef = ref2(db, 'users');
-  
+
 //   try {
 //     // Формуємо запит для отримання даних з 'newUsers', виключаючи 'searchId'
 //     let newUsersQuery = query(newUsersRef, orderByKey(), limitToFirst(10 + 1));
@@ -643,7 +659,7 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
 //     }
 
 //     // Паралельне виконання обох запитів
-//     const [newUsersSnapshot, 
+//     const [newUsersSnapshot,
 //       // usersSnapshot
 //     ] = await Promise.all([
 //       get(newUsersQuery),
@@ -701,11 +717,11 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
 
 // Функція для пошуку користувача за userId у двох колекціях
 
-export const fetchPaginatedNewUsers = async (lastKey) => {
+export const fetchPaginatedNewUsers = async lastKey => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
   const usersRef = ref2(db, 'users');
-  
+
   try {
     // Запит для отримання даних з 'newUsers'
     let newUsersQuery = query(newUsersRef, orderByKey(), limitToFirst(10 + 1));
@@ -716,10 +732,7 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
     }
 
     // Паралельне виконання обох запитів
-    const [newUsersSnapshot, usersSnapshot] = await Promise.all([
-      get(newUsersQuery),
-      get(usersRef)
-    ]);
+    const [newUsersSnapshot, usersSnapshot] = await Promise.all([get(newUsersQuery), get(usersRef)]);
 
     // Перевірка наявності даних у 'newUsers'
     let newUsersData = {};
@@ -730,8 +743,7 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
       const usersData = newUsersSnapshot.val();
 
       // Виключаємо 'searchId' з результатів
-      const filteredData = Object.entries(usersData)
-        .filter(([key]) => key !== 'searchId');
+      const filteredData = Object.entries(usersData).filter(([key]) => key !== 'searchId ');
 
       // Визначаємо останній ключ для пагінації
       lastUserKey = filteredData.length > 0 ? filteredData[filteredData.length - 1][0] : null;
@@ -746,14 +758,14 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
     // Перевірка наявності даних у 'users'
     let usersData = {};
     if (usersSnapshot.exists()) {
-      usersData = usersSnapshot.val();
+      // usersData = usersSnapshot.val();
+      usersData = Object.entries(usersSnapshot.val())
+        .filter(([key, value]) => value.lastAction) // Фільтрація за publish
+        .slice(0, 10); // Лімітуємо результати до 10
     }
 
     // Комбінування даних з 'users' та 'newUsers', обмежуючи кількість карток до 10
-    const combinedData = [
-      ...Object.entries(usersData).slice(0, 10),
-      ...Object.entries(newUsersData).slice(0, 10 - Object.keys(usersData).length)
-    ];
+    const combinedData = [...usersData, ...Object.entries(newUsersData).slice(0, 10 - Object.keys(usersData).length)];
 
     // Перетворення об'єднаних даних назад в об'єкт
     const paginatedData = Object.fromEntries(combinedData.slice(0, 10));
@@ -761,21 +773,20 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
     // Повертаємо об'єднані результати
     return {
       users: paginatedData,
-      lastKey: lastUserKey,  // Ключ для наступної сторінки
-      hasMore: hasMoreNewUsers // Показує, чи є наступна сторінка в 'newUsers'
+      lastKey: lastUserKey, // Ключ для наступної сторінки
+      hasMore: hasMoreNewUsers, // Показує, чи є наступна сторінка в 'newUsers'
     };
   } catch (error) {
     console.error('Error fetching paginated data:', error);
     return {
       users: {},
       lastKey: null,
-      hasMore: false
+      hasMore: false,
     };
   }
 };
 
-
-export const fetchUserById = async (userId) => {
+export const fetchUserById = async userId => {
   const db = getDatabase();
 
   // Референси для пошуку в newUsers і users
@@ -800,7 +811,6 @@ export const fetchUserById = async (userId) => {
     // Якщо користувача не знайдено в жодній колекції
     console.log('Користувача не знайдено в жодній колекції.');
     return null;
-
   } catch (error) {
     console.error('Помилка під час пошуку користувача: ', error);
     return null;

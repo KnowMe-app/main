@@ -281,6 +281,7 @@ export const pickerFieldsExtended = [
   { name: 'myComment', placeholder: 'коментар', svg: 'user', ukrainianHint: 'Коментра' },
   { name: 'getInTouch', placeholder: '30.01.2025', svg: 'user', ukrainianHint: 'Коли звернутись' },
   { name: 'lastAction', placeholder: '-', svg: 'user', ukrainianHint: 'Останні зміни' },
+  { name: 'publish', placeholder: 'false', svg: 'user', ukrainianHint: 'Анкета опублікована' },
   // { name: 'name', placeholder: 'Ваше ім’я', svg: 'user', ukrainianHint: 'Ім’я' },
   // { name: 'surname', placeholder: 'Ваше призіище', svg: 'user', ukrainianHint: 'Прізвище'},
   // { name: 'email', placeholder: 'Електронна пошта', svg: 'mail', ukrainianHint:'E-mail'},
