@@ -9,6 +9,7 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
   fetchPaginatedNewUsers,
+  removeKeyFromFirebase,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -264,15 +265,39 @@ const InputFieldContainer = styled.div`
 
 const ClearButton = styled.button`
   position: absolute;
-  right: 10px;
+  right: 0px;
   display: flex;
   align-items: center;
+  justify-content: center;
 
   background: none;
+  /* background: green; */
   border: none;
   cursor: pointer;
   color: gray;
   font-size: 18px;
+  width: 35px;
+  height:35px;
+
+  &:hover {
+    color: black;
+  }
+`;
+
+const DelKeyValueBTN = styled.button`
+  position: absolute;
+  right: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: red;
+  font-size: 18px;
+  width: 35px;
+  height:35px;
 
   &:hover {
     color: black;
@@ -313,21 +338,21 @@ const Button = styled.button`
 `;
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
-  const initialState = {
-    name: '',
-    surname: '',
-    email: '',
-    phone: '',
-    telegram: '',
-    facebook: '',
-    instagram: '',
-    tiktok: '',
-    vk: '',
-    userId: '',
-    publish: false,
-  };
+  // const initialState = {
+  //   name: '',
+  //   surname: '',
+  //   email: '',
+  //   phone: '',
+  //   telegram: '',
+  //   facebook: '',
+  //   instagram: '',
+  //   tiktok: '',
+  //   vk: '',
+  //   userId: '',
+  //   publish: false,
+  // };
 
-  const [state, setState] = useState(initialState);
+  const [state, setState] = useState({});
 
   const [search, setSearch] = useState(null);
   // const [focused, setFocused] = useState(null);
@@ -363,7 +388,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   //   return nestedArrays;
   // };
 
-  const handleSubmit = async (newState, overwrite, keyValue) => {
+  const handleSubmit = async (newState, overwrite, delCondition, keyValue) => {
     const fieldsForNewUsersOnly = ['role', 'getInTouch', 'myComment'];
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', ];
     const commonFields = ['lastAction'];
@@ -401,12 +426,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   );
 
         const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
-
+        console.error('uploadedInfo!!!!!!!!!!!!!!!!!!!!!!!!!!!', uploadedInfo);
         // const nestedArrays = findNestedArrays(uploadedInfo);
         // console.log('Всі вкладені масиви:', nestedArrays);
 
         await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
-        await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check');
+        await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
 
         // if (newState._test_getInTouch) {
           // console.log('Updating state._test_getInTouch...');
@@ -535,6 +560,33 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   });
 };
 
+const handleDelKeyValue = (fieldName) => {
+  setState(prevState => {
+    // Створюємо копію попереднього стану
+    const newState = { ...prevState };
+    
+    // Видаляємо ключ з нового стану
+    delete newState[fieldName];
+
+    // console.log('Видалили ключ з локального стану:', fieldName);
+    // console.log('newState:', newState);
+
+
+     // Встановлюємо значення 'del_key' для видалення
+    //  newState[fieldName] = 'del_key';
+
+     console.log(`Поле "${fieldName}" позначено для видалення`);
+  
+    // Викликаємо handleSubmit з оновленим станом
+    // handleSubmit(newState, 'overwrite', 'del', { [fieldName]: prevState[fieldName] });
+
+    // Видалення ключа з Firebase
+    removeKeyFromFirebase(fieldName, prevState.userId);
+
+    return newState; // Повертаємо оновлений стан
+  });
+};
+
   const [isEmailVerified, setIsEmailVerified] = useState(false);
 
   useEffect(() => {
@@ -550,26 +602,31 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return () => unsubscribe();
   }, []);
 
-  // useEffect(() => {
-  //   // console.log('state :>> ', state);
-  // }, [state]);
 
   // useEffect(() => {
+  //   // Рендеринг картки при зміні стану state
+  //   if (state && state.userId) {
+  //     console.log('state updated:', state); // Перевірка оновленого стану
+  //   }
+  // }, [state]);
+
+  
+  // useEffect(() => {
   //   console.log('state2 :>> ', state);
-  //     }, [search]);
+  //     }, [state]);
 
   // useEffect для скидання значень при зміні search
   useEffect(() => {
     // setState({});
     // Скинути значення стану для pickerFields
-    setState(prevState => {
-      const updatedState = {};
-      // Проходимося по всіх ключах в попередньому стані
-      Object.keys(prevState).forEach(key => {
-        updatedState[key] = ''; // Скидаємо значення до ''
-      });
-      return updatedState; // Повертаємо новий стан
-    });
+    // setState(prevState => {
+    //   const updatedState = {};
+    //   // Проходимося по всіх ключах в попередньому стані
+    //   Object.keys(prevState).forEach(key => {
+    //     updatedState[key] = ''; // Скидаємо значення до ''
+    //   });
+    //   return updatedState; // Повертаємо новий стан
+    // });
   }, [search]); // Виконується при зміні search
 
   const writeData = async () => {
@@ -935,7 +992,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </InputFieldContainer>
         </InputDiv>
 
-        {search ? (
+        {(search && state.userId) ? (
           fieldsToRender.map((field, index) => {
             // console.log('field:', field);
             // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
@@ -1001,6 +1058,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                         onBlur={() => handleSubmit(state, 'overwrite')}
                       />
                       {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times;</ClearButton>}
+                      {state[field.name] && <DelKeyValueBTN onClick={() => handleDelKeyValue(field.name)}>del</DelKeyValueBTN>}
                     </InputFieldContainer>
 
                     <Hint fieldName={field.name} isActive={state[field.name]}>

@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, deleteUser } from 'firebase/auth';
-import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
 import { getDatabase, ref as ref2, get, remove, set, update, push,} from 'firebase/database';
 import { query, orderByKey, limitToFirst, startAfter} from 'firebase/database';
@@ -628,13 +628,86 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
   // console.log(`Видалено картку користувача з newUsers: ${userId}`);
 };
 
+// export const fetchPaginatedNewUsersWorks = async (lastKey) => {
+//   const db = getDatabase();
+//   const newUsersRef  = ref2(db, 'newUsers');
+//   // const usersRef = ref2(db, 'users');
+  
+//   try {
+//     // Формуємо запит для отримання даних з 'newUsers', виключаючи 'searchId'
+//     let newUsersQuery = query(newUsersRef, orderByKey(), limitToFirst(10 + 1));
+
+//     // Якщо є останній ключ (lastKey), беремо наступну сторінку даних
+//     if (lastKey) {
+//       newUsersQuery = query(newUsersRef, orderByKey(), startAfter(lastKey), limitToFirst(10 + 1));
+//     }
+
+//     // Паралельне виконання обох запитів
+//     const [newUsersSnapshot, 
+//       // usersSnapshot
+//     ] = await Promise.all([
+//       get(newUsersQuery),
+//       // get(usersRef)
+//     ]);
+
+//     // Перевірка наявності даних у 'newUsers'
+//     let newUsersData = {};
+//     let lastUserKey = null;
+//     let hasMoreNewUsers = false;
+
+//     if (newUsersSnapshot.exists()) {
+//       const usersData = newUsersSnapshot.val();
+
+//       // Виключаємо 'searchId' з результатів
+//       const filteredData = Object.entries(usersData)
+//         .filter(([key]) => key !== 'searchId')
+//         .slice(0, 10); // Обмежуємо до 10 записів
+
+//       // Визначаємо останній ключ для пагінації
+//       lastUserKey = filteredData.length > 0 ? filteredData[filteredData.length - 1][0] : null;
+
+//       // Визначаємо, чи є ще сторінки
+//       hasMoreNewUsers = newUsersSnapshot.size > 10;
+
+//       // Перетворюємо дані в об'єкт
+//       newUsersData = Object.fromEntries(filteredData);
+//     }
+
+//     // Перевірка наявності даних у 'users'
+//     // let usersData = {};
+//     // if (usersSnapshot.exists()) {
+//     //   usersData = usersSnapshot.val();
+//     // }
+
+//     console.log('yyyyyyy :>> ', newUsersData);
+//     // Повертаємо об'єднані результати
+//     return {
+//       // newUsers: newUsersData,
+//       // users: usersData,
+//       users: newUsersData,
+//       lastKey: lastUserKey,  // Ключ для наступної сторінки
+//       hasMore: hasMoreNewUsers // Показує, чи є наступна сторінка в 'newUsers'
+//     };
+//   } catch (error) {
+//     console.error('Error fetching paginated data:', error);
+//     return {
+//       // newUsers: {},
+//       users: {},
+//       lastKey: null,
+//       hasMore: false
+//     };
+//   }
+// };
+
+// Функція для пошуку користувача за userId у двох колекціях
+
 export const fetchPaginatedNewUsers = async (lastKey) => {
   const db = getDatabase();
-  const newUsersRef  = ref2(db, 'newUsers');
-  // const usersRef = ref2(db, 'users');
+  const newUsersRef = ref2(db, 'newUsers');
+  const usersRef = ref2(db, 'users');
   
   try {
-    // Формуємо запит для отримання даних з 'newUsers', виключаючи 'searchId'
+    // Запит для отримання даних з 'newUsers'
     let newUsersQuery = query(newUsersRef, orderByKey(), limitToFirst(10 + 1));
 
     // Якщо є останній ключ (lastKey), беремо наступну сторінку даних
@@ -643,11 +716,9 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
     }
 
     // Паралельне виконання обох запитів
-    const [newUsersSnapshot, 
-      // usersSnapshot
-    ] = await Promise.all([
+    const [newUsersSnapshot, usersSnapshot] = await Promise.all([
       get(newUsersQuery),
-      // get(usersRef)
+      get(usersRef)
     ]);
 
     // Перевірка наявності даних у 'newUsers'
@@ -660,38 +731,42 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
 
       // Виключаємо 'searchId' з результатів
       const filteredData = Object.entries(usersData)
-        .filter(([key]) => key !== 'searchId')
-        .slice(0, 10); // Обмежуємо до 10 записів
+        .filter(([key]) => key !== 'searchId');
 
       // Визначаємо останній ключ для пагінації
       lastUserKey = filteredData.length > 0 ? filteredData[filteredData.length - 1][0] : null;
 
       // Визначаємо, чи є ще сторінки
-      hasMoreNewUsers = newUsersSnapshot.size > 10;
+      hasMoreNewUsers = filteredData.length > 10;
 
-      // Перетворюємо дані в об'єкт
-      newUsersData = Object.fromEntries(filteredData);
+      // Обмежуємо результати до 10 карток
+      newUsersData = Object.fromEntries(filteredData.slice(0, 10));
     }
 
     // Перевірка наявності даних у 'users'
-    // let usersData = {};
-    // if (usersSnapshot.exists()) {
-    //   usersData = usersSnapshot.val();
-    // }
+    let usersData = {};
+    if (usersSnapshot.exists()) {
+      usersData = usersSnapshot.val();
+    }
 
-    console.log('yyyyyyy :>> ', newUsersData);
+    // Комбінування даних з 'users' та 'newUsers', обмежуючи кількість карток до 10
+    const combinedData = [
+      ...Object.entries(usersData).slice(0, 10),
+      ...Object.entries(newUsersData).slice(0, 10 - Object.keys(usersData).length)
+    ];
+
+    // Перетворення об'єднаних даних назад в об'єкт
+    const paginatedData = Object.fromEntries(combinedData.slice(0, 10));
+
     // Повертаємо об'єднані результати
     return {
-      // newUsers: newUsersData,
-      // users: usersData,
-      users: newUsersData,
+      users: paginatedData,
       lastKey: lastUserKey,  // Ключ для наступної сторінки
       hasMore: hasMoreNewUsers // Показує, чи є наступна сторінка в 'newUsers'
     };
   } catch (error) {
     console.error('Error fetching paginated data:', error);
     return {
-      // newUsers: {},
       users: {},
       lastKey: null,
       hasMore: false
@@ -699,7 +774,7 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
   }
 };
 
-// Функція для пошуку користувача за userId у двох колекціях
+
 export const fetchUserById = async (userId) => {
   const db = getDatabase();
 
@@ -729,5 +804,45 @@ export const fetchUserById = async (userId) => {
   } catch (error) {
     console.error('Помилка під час пошуку користувача: ', error);
     return null;
+  }
+};
+
+// Функція для видалення ключа з Firebase
+export const removeKeyFromFirebase = async (field, userId) => {
+  const dbRealtime = getDatabase();
+  const dbFirestore = getFirestore();
+
+  // Визначаємо шляхи для видалення в обох колекціях Realtime Database
+  const newUsersRefRealtime = ref2(dbRealtime, `newUsers/${userId}/${field}`);
+  const usersRefRealtime = ref2(dbRealtime, `users/${userId}/${field}`);
+
+  // Визначаємо шляхи для видалення в Firestore
+  // const newUsersDocFirestore = doc(dbFirestore, 'newUsers', userId);
+  const usersDocFirestore = doc(dbFirestore, 'users', userId);
+
+  try {
+    // Видалення з newUsers у Realtime Database
+    await remove(newUsersRefRealtime);
+    console.log(`Ключ "${field}" видалено з Realtime Database: newUsers/${userId}`);
+
+    // Видалення з users у Realtime Database
+    await remove(usersRefRealtime);
+    console.log(`Ключ "${field}" видалено з Realtime Database: users/${userId}`);
+
+    // Видалення з newUsers у Firestore
+    // const newUsersDocSnap = await getDoc(newUsersDocFirestore);
+    // if (newUsersDocSnap.exists()) {
+    //   await updateDoc(newUsersDocFirestore, { [field]: deleteField() });
+    //   console.log(`Ключ "${field}" видалено з Firestore: newUsers/${userId}`);
+    // }
+
+    // Видалення з users у Firestore
+    const usersDocSnap = await getDoc(usersDocFirestore);
+    if (usersDocSnap.exists()) {
+      await updateDoc(usersDocFirestore, { [field]: deleteField() });
+      console.log(`Ключ "${field}" видалено з Firestore: users/${userId}`);
+    }
+  } catch (error) {
+    console.error('Помилка видалення ключа з Firebase:', error);
   }
 };

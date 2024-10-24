@@ -38,7 +38,7 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
             updatedField.push(state[field]);
             uploadedInfo[field] = updatedField;
           }
-      } else if (overwrite && state[field]===''&& !Array.isArray(existingData[field])){
+        }else if (overwrite && state[field]===''&& !Array.isArray(existingData[field])){
         console.log('Якщо це не масиви', state[field], existingData[field]);
         uploadedInfo[field] = '';
       } else if (overwrite && !Array.isArray(state[field]==='') && !Array.isArray(existingData[field])){
