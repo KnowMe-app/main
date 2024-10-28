@@ -233,9 +233,9 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
   let modifiedSearchValue = searchValue;
 
   // Якщо searchKey є email, замінюємо @ на [at] у searchValue
-  if (searchKey === 'email') {
+  // if (searchKey === 'email') {
     modifiedSearchValue = encodeEmail(searchValue);
-  }
+  // }
 
   const searchIdKey = `${searchKey}_${modifiedSearchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
 
@@ -247,8 +247,15 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
     // 1. Шукаємо в searchId
     const searchIdSnapshot = await get(ref2(db, `newUsers/searchId/${searchIdKey}`));
 
-    // 2. Витягування userId
-    let userId = searchIdSnapshot.exists() ? searchIdSnapshot.val() : searchValue;
+    // 2. Витягування userId з урахуванням додаткової умови
+    let userId;
+    if (searchIdSnapshot.exists()) {
+      userId = searchIdSnapshot.val();
+    } else {
+      userId = searchKey !== 'email' ? searchValue : modifiedSearchValue;
+    }
+
+    console.log('userId :>> ', userId);
 
     // 3. Перевірка в newUsers по userId
     const userSnapshotInNewUsers = await get(ref2(db, `newUsers/${userId}`));
@@ -256,6 +263,7 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
     if (userSnapshotInNewUsers.exists()) {
       console.log('Знайдено користувача у newUsers: ', userSnapshotInNewUsers.val());
       // Додатковий пошук в колекції users
+      console.log('userId222222222 :>> ', userId);
       const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
       // Якщо знайдено користувача в users
       if (userSnapshotInUsers.exists()) {
@@ -564,9 +572,9 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
   let modifiedSearchValue = searchValue;
 
   // Якщо searchKey є email, замінюємо @ на [at] у searchValue
-  if (searchKey.toLowerCase() === 'email') {
+  // if (searchKey.toLowerCase() === 'email') {
     modifiedSearchValue = encodeEmail(searchValue);
-  }
+  // }
 
   const searchIdKey = `${searchKey}_${modifiedSearchValue}`;
   // const searchIdKey = `${searchKey}_${searchValue}`;
@@ -758,10 +766,13 @@ export const fetchPaginatedNewUsers = async lastKey => {
     // Перевірка наявності даних у 'users'
     let usersData = {};
     if (usersSnapshot.exists()) {
-      // usersData = usersSnapshot.val();
-      usersData = Object.entries(usersSnapshot.val())
-        .filter(([key, value]) => value.lastAction) // Фільтрація за publish
-        .slice(0, 10); // Лімітуємо результати до 10
+      const usersArray = Object.entries(usersSnapshot.val());
+       // Розділяємо користувачів на дві частини
+  const withoutLastAction = usersArray.filter(([key, value]) => !value.lastAction);
+  const withLastAction = usersArray.filter(([key, value]) => value.lastAction);
+
+  // Об'єднуємо масиви, з користувачами з lastAction в кінці
+  usersData = [...withoutLastAction, ...withLastAction].slice(0, 10); // Лімітуємо результати до 10
     }
 
     // Комбінування даних з 'users' та 'newUsers', обмежуючи кількість карток до 10
@@ -786,6 +797,34 @@ export const fetchPaginatedNewUsers = async lastKey => {
   }
 };
 
+export const fetchListOfUsers = async () => {
+  const db = getDatabase();
+  const usersRef = ref2(db, 'users');
+
+  try {
+    // Паралельне виконання обох запитів
+    const [usersSnapshot] = await Promise.all([ get(usersRef)]);
+
+    // Перевірка наявності даних у 'users'
+    let userIds = [];
+    if (usersSnapshot.exists()) {
+      const usersData = usersSnapshot.val();
+      userIds = Object.keys(usersData)
+      // .slice(0, 4); // Отримуємо перші три ключі
+    }
+
+    // Повертаємо перші три ID користувачів
+    return userIds;
+  } catch (error) {
+    console.error('Error fetching paginated data:', error);
+    return {
+      users: {},
+      lastKey: null,
+      hasMore: false,
+    };
+  }
+};
+
 export const fetchUserById = async userId => {
   const db = getDatabase();
 
@@ -797,8 +836,27 @@ export const fetchUserById = async userId => {
     // Пошук у newUsers
     const newUserSnapshot = await get(userRefInNewUsers);
     if (newUserSnapshot.exists()) {
+      // console.log('Знайдено користувача у newUsers: ', newUserSnapshot.val());
+      // return newUserSnapshot.val();
       console.log('Знайдено користувача у newUsers: ', newUserSnapshot.val());
-      return newUserSnapshot.val();
+      // Додатковий пошук в колекції users
+      console.log('userId222222222 :>> ', userId);
+      const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
+      // Якщо знайдено користувача в users
+      if (userSnapshotInUsers.exists()) {
+        console.log('Знайдено користувача у users: ', userSnapshotInUsers.val());
+        // Об'єднання даних з newUsers і users
+        return {
+          userId,
+          ...newUserSnapshot.val(),
+          ...userSnapshotInUsers.val(),
+        };
+      }
+      // Повертаємо дані тільки з newUsers, якщо користувач не знайдений у users
+      return {
+        userId,
+        ...newUserSnapshot.val(),
+      };
     }
 
     // Пошук у users, якщо не знайдено в newUsers

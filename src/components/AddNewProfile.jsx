@@ -10,6 +10,7 @@ import {
   updateDataInFiresoreDB,
   fetchPaginatedNewUsers,
   removeKeyFromFirebase,
+  fetchListOfUsers,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -326,6 +327,7 @@ const Button = styled.button`
   font-size: 12px;
   flex: 0 1 auto;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  margin-right:10px;
 
   &:hover {
     background-color: ${color.accent}; /* Колір кнопки при наведенні */
@@ -388,7 +390,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   //   return nestedArrays;
   // };
 
-  const handleSubmit = async (newState, overwrite, delCondition, keyValue) => {
+  const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
     const fieldsForNewUsersOnly = ['role', 'getInTouch', 'myComment'];
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId' ];
     const commonFields = ['lastAction'];
@@ -405,7 +407,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const currentDate = formatDate(new Date());
 
   // Додаємо значення до lastAction
-  const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
+  const updatedState = newState 
+  ? { ...newState, lastAction: currentDate } 
+  : { ...state, lastAction: currentDate };
 
     if (updatedState?.userId?.length > 20) {
       // if (newState) {
@@ -416,7 +420,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           // await removeSpecificSearchId(keyValue, newState.userId)
         // }
 
-        const { existingData } = await fetchUserData(state.userId);
+        const { existingData } = await fetchUserData(updatedState.userId);
 
   // Фільтруємо ключі, щоб видалити зайві поля
   const cleanedState = Object.fromEntries(
@@ -430,8 +434,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         // const nestedArrays = findNestedArrays(uploadedInfo);
         // console.log('Всі вкладені масиви:', nestedArrays);
 
-        await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
-        await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
+        if (!makeIndex)
+        {
+          console.log('Update all database :>> ');
+          await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
+          await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
+        }
 
         // if (newState._test_getInTouch) {
           // console.log('Updating state._test_getInTouch...');
@@ -576,9 +584,6 @@ const handleDelKeyValue = (fieldName) => {
     //  newState[fieldName] = 'del_key';
 
      console.log(`Поле "${fieldName}" позначено для видалення`);
-  
-    // Викликаємо handleSubmit з оновленим станом
-    // handleSubmit(newState, 'overwrite', 'del', { [fieldName]: prevState[fieldName] });
 
     // Видалення ключа з Firebase
     removeKeyFromFirebase(fieldName, prevState.userId);
@@ -935,6 +940,19 @@ const handleDelKeyValue = (fieldName) => {
     }
   };
 
+  const makeIndex = async () => {
+    const res = await fetchListOfUsers();
+    res.forEach( async (userId) => {
+      const result = { userId: userId };
+      const res = await fetchNewUsersCollectionInRTDB(result);
+      console.log('res :>> ', res);
+      handleSubmit(res, false, false, true) 
+      // writeData(userId); // Викликаємо writeData() для кожного ID
+    });
+
+    
+  };
+
   const additionalFields = Object.keys(state).filter(
     key => !pickerFields.some(field => field.name === key) && key !== 'attitude' && key !== 'whiteList' && key !== 'blackList'
   );
@@ -1133,7 +1151,10 @@ const handleDelKeyValue = (fieldName) => {
           })
         ) : (
           <div>
-            {hasMore && <Button onClick={loadMoreUsers}>Load Cards</Button>}
+            <div>
+              {hasMore && <Button onClick={loadMoreUsers}>Load Cards</Button>}
+              {hasMore && <Button onClick={makeIndex}>Make index</Button>}
+            </div>
             <UsersList users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} /> {/* Передача користувачів у UsersList */}
           </div>
         )}

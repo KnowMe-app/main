@@ -3,6 +3,7 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
 
   for (const field in state) {
     if (
+      field === 'lastAction' ||
       field === 'loadingCounter' ||
       field === 'lastLogin' ||
       field === 'deviceResize' ||

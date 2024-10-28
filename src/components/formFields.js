@@ -219,7 +219,6 @@ export const pickerFields = [
   },
   { name: 'faceShape', placeholder: 'Овальне', hint: 'face shape', svg: 'no', width: '33%', options: faceShapeOptions, ukrainian: 'Овальне', ukrainianHint: 'форма обличчя'},
   { name: 'noseShape', placeholder: 'Приямий', hint: 'nose shape', svg: 'no', width: '33%', options: noseShapeOptions, ukrainian: 'Приямий', ukrainianHint: 'форма носа' },
-  { name: 'lipsShape', placeholder: 'Приямий', hint: 'nose shape', svg: 'no', width: '33%', options: lipsShapeOptions, ukrainian: 'Приямий', ukrainianHint: 'форма носа' },
   { name: 'lipsShape', placeholder: 'Повні', hint: 'lips shape', svg: 'no', width: '33%', options: lipsShapeOptions, ukrainian: 'Повні', ukrainianHint: 'форма губ' },
   { name: 'chin', placeholder: 'Pointed', hint: 'сhin', svg: 'no', width: '33%', options: chinShapeOptions, ukrainian: 'Гостре', ukrainianHint: 'підборіддя' },
   
