@@ -11,6 +11,7 @@ import {
   fetchPaginatedNewUsers,
   removeKeyFromFirebase,
   fetchListOfUsers,
+  makeNewUser,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -354,9 +355,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   //   publish: false,
   // };
 
+  const [userNotFound, setUserNotFound] = useState(false); // Стан для зберігання останнього ключа
+
   const [state, setState] = useState({});
 
   const [search, setSearch] = useState(null);
+  const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
+  // const [addUser, setAddUser] = useState(null);
   // const [focused, setFocused] = useState(null);
   // console.log('focused :>> ', focused);
   const navigate = useNavigate();
@@ -534,6 +539,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // };
 
   const handleClear = (fieldName, idx) => {
+   
     setState(prevState => {
        // Перевірка, чи є значення масивом
     const isArray = Array.isArray(prevState[fieldName]);
@@ -634,10 +640,42 @@ const handleDelKeyValue = (fieldName) => {
     // });
   }, [search]); // Виконується при зміні search
 
+  const handleAddUser = async () => {
+    const res = await makeNewUser(searchKeyValuePair)
+    setUserNotFound(false)
+    setState(res)
+    setSearchKeyValuePair({})
+  }
+
+  const processUserSearch = async (platform, parseFunction, inputData) => {
+    const id = parseFunction(inputData);
+  
+    if (id) {
+      const result = { [platform]: id };
+      console.log(`${platform} ID:`, id);
+  
+      setSearchKeyValuePair(result);
+      const res = await fetchNewUsersCollectionInRTDB(result);
+  
+      if (!res || (typeof res === 'object' && Object.keys(res).length === 0)) {
+        console.log(`Користувача не знайдено в ${platform}`);
+        setUserNotFound(true);
+      } else {
+        setUserNotFound(false);
+        setState(res);
+        console.log(`Користувача знайдено в ${platform}:`, res);
+      }
+  
+      return true; // Повертаємо true, якщо обробка завершена
+    }
+  
+    return false; // Повертаємо false, якщо ID не знайдено
+  };
+
   const writeData = async () => {
+    setUserNotFound(false);
     setState({});
     // const res = await aiHandler(search)
-    // console.log('res :>> ', res);
 
     const parseFacebookId = url => {
       // Перевіряємо, чи є параметр id в URL (наприклад, profile.php?id=100018808396245)
@@ -689,6 +727,7 @@ const handleDelKeyValue = (fieldName) => {
       // Перевіряємо, чи це URL Instagram
       console.log('111 :>> ');
       if (typeof input === 'string' && input.includes('instagram')) {
+        
         const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
         const match = input.match(instagramRegex);
 
@@ -701,7 +740,8 @@ const handleDelKeyValue = (fieldName) => {
       console.log('222 :>> ');
       // Регулярний вираз для витягування username з рядків у форматі "inst monkey", "inst: monkey", тощо
       // const pattern = /(?:inst(?:agram)?\s*:?\s*|\s*instagram\s*:?\s*|\s*in\s*:?\s*|\s*i\s*:?\s*|\s*інст\s*:?\s*|\s*ін\s*:?\s*|\s*і\s*:?\s*|\s*інстаграм\s*:?\s*)(\w+)/i;
-      const pattern = /(?:\binst(?:agram)?\s*:?\s*|\binstagram\s*:?\s*|\bін\s*:?\s*|\bin\s*:?\s*|\bінст\s*:?\s*|\bінстаграм\s*:?\s*)(\w+)/i;
+      // const pattern = /(?:\binst(?:agram)?\s*:?\s*|\binstagram\s*:?\s*|\bін\s*:?\s*|\bin\s*:?\s*|\bінст\s*:?\s*|\bінстаграм\s*:?\s*)(\w+)/i;
+      const pattern = /(?:\binst(?:agram)?\s*:?\s*|\binstagram\s*:?\s*|\bін\s*:?\s*|\bin\s*:?\s*|\bінст\s*:?\s*|\bінстаграм\s*:?\s*)([a-zA-Z0-9._]+)/i;
       const match = input.match(pattern);
 
       // Якщо знайдено username в рядку
@@ -821,75 +861,43 @@ const handleDelKeyValue = (fieldName) => {
       return null; // Повертає null, якщо username не знайдено
     };
 
-    const inputData = search;
+    const parseTelegramId = (input) => {
+      // Перевірка URL формату (наприклад, t.me/account)
+      const urlPattern = /t\.me\/([^/?#]+)/;
+      const urlMatch = input.match(urlPattern);
+    
+      if (urlMatch && urlMatch[1]) {
+        return urlMatch[1]; // Повертає username з URL
+      }
+    
+      // Перевірка формату з @ (наприклад, @account)
+      const atPattern = /^@(\w+)/;
+      const atMatch = input.match(atPattern);
+    
+      if (atMatch && atMatch[1]) {
+        return atMatch[1]; // Повертає username з формату @username
+      }
+    
+      // Перевірка текстових варіацій (наприклад, "телеграм account", "teleg: account", "t: account")
+      const textPattern = /(?:телеграм|телега|teleg|t(?=\s|:)|т(?=\s|:))\s*:?\s*([a-zA-Z0-9._]+)/i;
+ 
+      const textMatch = input.match(textPattern);
+    
+      if (textMatch && textMatch[1]) {
+        return textMatch[1]; // Повертає username з текстового формату
+      }
+    
+      // Якщо нічого не знайдено, повертає null
+      return null;
+    };
 
-    // 1. Перевіряємо, чи це Facebook URL
-    console.log('inputData :>> ', inputData);
-    const facebookId = parseFacebookId(inputData);
-    console.log('facebook :>> ', facebookId);
-    if (facebookId) {
-      const result = { facebook: facebookId };
-      const res = await fetchNewUsersCollectionInRTDB(result);
-      console.log('res :>> ', res);
-      // setState('')
-      // setSearch('')
-      setState(res);
-      // setUserId()
-
-      console.log('Facebook ID:', res);
-      return;
-    }
-
-    // 2. Перевіряємо, чи це Instagram URL
-    const instagramId = parseInstagramId(inputData);
-    if (instagramId) {
-      const result = { instagram: instagramId };
-      const res = await fetchNewUsersCollectionInRTDB(result);
-      setState(res);
-      // console.log('Instagram Username:', res[0]);
-      return;
-    }
-
-        // 4. Перевіряємо, чи це Id
-        const userId = parseUserId(inputData);
-        if (userId) {
-          const result = { userId: userId };
-          const res = await fetchNewUsersCollectionInRTDB(result);
-          setState(res);
-          console.log('Перевіряємо, чи це ID:', res);
-          return;
-        }
-
-            // 4. Перевірка на email
-    const email = parseEmail(inputData);
-    if (email) {
-      const result = { email: email };
-      console.log('result :>> ', result);
-      const res = await fetchNewUsersCollectionInRTDB(result);
-      setState(res);
-      return;
-    }
-
-    // 4. Перевірка на TikTok
-    const tiktokId = parseTikTokLink(inputData);
-    if (tiktokId) {
-      const result = { tiktok: tiktokId };
-      console.log('result :>> ', result);
-      const res = await fetchNewUsersCollectionInRTDB(result);
-      setState(res);
-      return;
-    }
-
-    // 3. Перевіряємо, чи це Номер телфону
-    const phoneNumber = parsePhoneNumber(inputData);
-    if (phoneNumber) {
-      const result = { phone: phoneNumber };
-      const res = await fetchNewUsersCollectionInRTDB(result);
-      setState(res);
-      return;
-    }
-
-
+    if (await processUserSearch('facebook', parseFacebookId, search)) return;
+    if (await processUserSearch('instagram', parseInstagramId, search)) return;
+    if (await processUserSearch('telegram', parseTelegramId, search)) return;
+    if (await processUserSearch('userId', parseUserId, search)) return;
+    if (await processUserSearch('email', parseEmail, search)) return;
+    if (await processUserSearch('tiktok', parseTikTokLink, search)) return;
+    if (await processUserSearch('phone', parsePhoneNumber, search)) return;
 
     console.log('Not a valid Facebook URL, Phone Number, or Instagram URL.');
   };
@@ -908,6 +916,7 @@ const handleDelKeyValue = (fieldName) => {
   const [users, setUsers] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
+
 
   const loadMoreUsers = async () => {
     const res = await fetchPaginatedNewUsers(lastKey);
@@ -997,6 +1006,9 @@ const handleDelKeyValue = (fieldName) => {
                 const value = e?.target?.value;
                 // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
                 // setState(initialState)
+                // setSearch(value);
+                // .replace(/\s+$/, '') — замінює всі пробіли в кінці рядка на порожній рядок, ефективно видаляючи їх.
+                // setSearch(value.replace(/\s+$/, ''));
                 setSearch(value);
                 // setState();
               }}
@@ -1006,7 +1018,7 @@ const handleDelKeyValue = (fieldName) => {
                 writeData();
               }}
             />
-            {search && <ClearButton onClick={() => setSearch('')}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
+            {search && <ClearButton onClick={() => {setSearch(''); setUserNotFound(false)}}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
           </InputFieldContainer>
         </InputDiv>
 
@@ -1152,6 +1164,7 @@ const handleDelKeyValue = (fieldName) => {
         ) : (
           <div>
             <div>
+              {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
               {hasMore && <Button onClick={loadMoreUsers}>Load Cards</Button>}
               {hasMore && <Button onClick={makeIndex}>Make index</Button>}
             </div>
