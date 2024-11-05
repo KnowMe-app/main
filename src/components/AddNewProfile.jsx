@@ -662,10 +662,15 @@ const handleDelKeyValue = (fieldName) => {
         setUserNotFound(true);
       } else {
         setUserNotFound(false);
-        setState(res);
-        console.log(`Користувача знайдено в ${platform}:`, res);
-      }
   
+        if (Array.isArray(res)) {
+          setUsers(res); // Якщо `res` є масивом, записуємо в `setUsers`
+          console.log(`Знайдено кількох користувачів у ${platform}:`, res);
+        } else {
+          setState(res); // Якщо `res` є об'єктом, записуємо в `setState`
+          console.log(`Користувача знайдено в ${platform}:`, res);
+        }
+      }
       return true; // Повертаємо true, якщо обробка завершена
     }
   
