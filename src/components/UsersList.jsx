@@ -61,24 +61,77 @@ const UserCard = ({ userData, editCard }) => {
       }
 
           // Клікабельні посилання для соцмереж і телефону
-      const links = {
-        telegram: `https://t.me/${value}`,
-        instagram: `https://instagram.com/${value}`,
-        tiktok: `https://www.tiktok.com/@${value}`,
-        phone: `tel:${value}`,
-        facebook: `https://facebook.com/${value}`,
-      };
-
-      if (links[key] && value) {
-        return (
-          <div key={nestedKey}>
-            <strong>{key}:</strong>{' '}
-            <a href={links[key]} target="_blank" rel="noopener noreferrer">
-              {value}
-            </a>
-          </div>
-        );
-      }
+          const links = {
+            telegram: (value) => `https://t.me/${value}`,
+            instagram: (value) => `https://instagram.com/${value}`,
+            tiktok: (value) => `https://www.tiktok.com/@${value}`,
+            phone: (value) => `tel:${value}`,
+            facebook: (value) => `https://facebook.com/${value}`,
+            email: (value) => `mailto:${value}`,
+            telegramFromPhone: (value) => `https://t.me/${value.replace(/\s+/g, '')}`,
+            viberFromPhone: (value) => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`, // Viber посилання
+            whatsappFromPhone: (value) => `https://wa.me/${value.replace(/\s+/g, '')}`, // WhatsApp посилання
+          };
+          
+          if (links[key] && value) {
+            return (
+              <div key={nestedKey}>
+                <strong>{key}:</strong>{' '}
+                {Array.isArray(value) ? (
+                  value.map((val, idx) => (
+                    <a
+                      key={`${nestedKey}-${idx}`}
+                      href={links[key](val)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
+                    >
+                      {val}
+                    </a>
+                  ))
+                ) : (
+                  <>
+                    <a
+                      href={links[key](value)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
+                    >
+                      {value}
+                    </a>
+                    {key === 'phone' && (
+                      <>
+                        <a
+                          href={links.telegramFromPhone(`+${value.replace(/\s+/g, '')}`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                        >
+                          Telegram
+                        </a>
+                        <a
+                          href={links.viberFromPhone(value)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                        >
+                          Viber
+                        </a>
+                        <a
+                          href={links.whatsappFromPhone(value)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                        >
+                          WhatsApp
+                        </a>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          }
 
       if (typeof value === 'object' && value !== null) {
         return (
