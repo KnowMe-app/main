@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import styled, { css } from 'styled-components';
+// import Photos from './Photos';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
 import {
   auth,
@@ -999,7 +1000,7 @@ const handleDelKeyValue = (fieldName) => {
         >
           ⋮
         </DotsButton>
-        {/* <Photos state={state} setState={setState} /> */}
+        {/* {search && !userNotFound && <Photos state={state} setState={setState} />} */}
 
         <InputDiv>
           <InputFieldContainer value={search}>
@@ -1168,12 +1169,21 @@ const handleDelKeyValue = (fieldName) => {
           })
         ) : (
           <div>
+            {(search && users && !userNotFound) ? (
+    <p style={{ textAlign: 'center', color: 'black' }}>
+      Знайдено {users.length} користувачів.
+    </p>
+  ) : userNotFound ? (
+    <p style={{ textAlign: 'center', color: 'black' }}>
+      No result
+    </p>
+  ) : null}
             <div>
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
               {hasMore && <Button onClick={loadMoreUsers}>Load Cards</Button>}
               {hasMore && <Button onClick={makeIndex}>Make index</Button>}
             </div>
-            <UsersList users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} /> {/* Передача користувачів у UsersList */}
+            {!userNotFound && <UsersList users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />} {/* Передача користувачів у UsersList */}
           </div>
         )}
       </InnerContainer>
