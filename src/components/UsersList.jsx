@@ -158,7 +158,7 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
     let contactVCard = `
     BEGIN:VCARD
     VERSION:3.0
-    FN:${user.name?.trim()} ${user.surname?.trim()}
+    FN:УК СМ ${user.name?.trim()} ${user.surname?.trim()}
     N:${user.surname?.trim() || ''};${user.name?.trim() || ''};;;
     TEL;TYPE=CELL:${user.phone ? `tel:${user.phone}` : ''}
     EMAIL;TYPE=HOME:${user.email || ''}
