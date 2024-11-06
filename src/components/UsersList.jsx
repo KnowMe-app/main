@@ -159,7 +159,7 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
     BEGIN:VCARD
     VERSION:3.0
     FN:УК СМ ${user.name?.trim()} ${user.surname?.trim()}
-    N:${user.surname?.trim() || ''};${user.name?.trim() || ''};;;
+    N:УК СМ ${user.surname?.trim() || ''};${user.name?.trim() || ''};;;
     TEL;TYPE=CELL:${user.phone ? `tel:${user.phone}` : ''}
     EMAIL;TYPE=HOME:${user.email || ''}
     ADR;TYPE=HOME:;;${user.street || ''};${user.city || ''};${user.region || ''};;${user.country || ''}
