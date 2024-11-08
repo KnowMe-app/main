@@ -5,13 +5,18 @@ import { fetchUserById,
 
 // Компонент для рендерингу кожної картки
 const UserCard = ({ userData, editCard }) => {
-  console.log('userData :>> ', userData);
+  console.log('userData!!!!! :>> ', userData);
 
   const calculateAge = (birthDateString) => {
+    if (typeof birthDateString !== 'string') {
+      console.error('Invalid birthDateString:', birthDateString);
+      return 'N/A'; // або поверніть 0, якщо потрібно обчислити вік
+    }
+  
     const [day, month, year] = birthDateString.split('.').map(Number);
     const birthDate = new Date(year, month - 1, day);
     const today = new Date();
-
+  
     let age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
@@ -21,9 +26,16 @@ const UserCard = ({ userData, editCard }) => {
   };
 
   const renderFields = (data, parentKey = '') => {
+    if (!data || typeof data !== 'object') {
+      console.error('Invalid data passed to renderFields:', data);
+      return null;
+    }
+
     const extendedData = { ...data };
-    if (extendedData.birth) {
+    if (typeof extendedData.birth === 'string') {
       extendedData.age = calculateAge(extendedData.birth);
+    } else {
+      console.warn('Invalid birth format:', extendedData.birth);
     }
 
     const sortedKeys = Object.keys(extendedData).sort((a, b) => {
