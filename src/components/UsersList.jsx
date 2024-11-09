@@ -1,29 +1,570 @@
-import React from 'react';
+import { useEffect, useRef } from 'react';
 import { fetchUserById, 
+  fetchUserData,
+  updateDataInNewUsersRTDB,
   // removeSearchId 
 } from './config';
+import { formatDateAndFormula} from './inputValidations';
+import { makeUploadedInfo } from './makeUploadedInfo';
+
+const handleChange = (setUsers, userId, key, value) => {
+  // console.log('userId В handleChange', userId);
+  const newValue = (key==='getInTouch' || key==='lastCycle') ? formatDateAndFormula(value) : value
+
+setUsers((prevState) => ({
+ ...prevState,
+ [userId]: {
+   ...prevState[userId],
+  [key]: newValue,
+ },
+}));
+};
+
+
+const handleSubmit = async (userData) => {
+
+const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
+const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId' ];
+const commonFields = ['lastAction'];
+const dublicateFields = ['weight', 'height', ];
+
+
+// console.log('userData В handleSubmit', userData);
+   const { existingData } = await fetchUserData(userData.userId);
+   const uploadedInfo = makeUploadedInfo(existingData, userData);
+   // console.log('uploadedInfo В handleSubmit', uploadedInfo);
+       // Фільтруємо ключі, щоб видалити зайві поля
+       const cleanedStateForNewUsers = Object.fromEntries(
+         Object.entries(uploadedInfo).filter(
+         ([key]) => [...fieldsForNewUsersOnly, ...contacts, ...commonFields, ...dublicateFields].includes(key)
+         )
+         );
+
+         console.log('cleanedStateForNewUsers', cleanedStateForNewUsers);
+
+
+   
+   await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
+};
+
+const renderTopBlock = (userData, setUsers) => {
+
+  console.log('userData в renderTopBlock:', userData );
+
+  if (!userData) return null;
+
+  
+
+  const nextContactDate = userData.getInTouch
+    ? userData.getInTouch
+    : 'НОВИЙ КОНТАКТ';
+
+    
+
+
+  return (
+    <div style={{ padding: '7px',  position: 'relative',}}>
+      <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div>
+      <div>
+        <strong>{`${userData.name || ''} ${userData.surname || ''}`.trim()}, 
+          {renderBirthInfo(userData.birth)} 
+          </strong> 
+          , {userData.maritalStatus},
+      </div>
+      
+      
+      {renderDeliveryInfo(userData.ownKids, userData.lastDelivery, userData.csection)}
+      {renderIMT(userData.weight, userData.height)}
+      {renderLastCycleInput(userData, setUsers)}
+      {renderWriterInput(userData, setUsers)}
+      {renderContacts(userData)}
+      <RenderCommentInput userData={userData} setUsers={setUsers} />
+      
+
+    
+
+      <div 
+        onClick={() => {
+          const details = document.getElementById('user-details');
+          if (details) {
+            details.style.display = details.style.display === 'none' ? 'block' : 'none';
+          }
+        }}
+        style={{ position: 'absolute', bottom: '10px', right: '10px', cursor: 'pointer', color: '#ebe0c2', fontSize: '18px' }}
+      >
+       ...
+      </div>
+    </div>
+  );
+};
+
+const renderBirthInfo = (birth) => {
+  const age = calculateAge(birth);
+
+  return age !== null ? (
+      <span>{age}р</span>
+  ) : null;
+};
+
+const renderIMT = (weight, height,) => {
+  const imt = calculateIMT(weight, height);
+  if (weight || height) {
+    return (
+      <div>
+        {weight && height
+          ? `ІМТ ${imt}`
+          : weight
+          ? `${weight} кг`
+          : `${height} см`}
+      </div>
+    );
+  }
+  return null; // Нічого не відображати, якщо немає ваги і зросту
+};
+
+const renderDeliveryInfo = (ownKids, lastDelivery, csection) => {
+  const monthsAgo = lastDelivery ? calculateMonthsAgo(lastDelivery) : null;
+
+  return (ownKids || monthsAgo !== null || csection) 
+    ? (
+      <div>
+        {ownKids ? `Пологів ${ownKids}` : ''}
+        {monthsAgo !== null ? `${ownKids ? ', ' : ''}ост пологи ${monthsAgo} міс тому` : ''}
+        {csection ? `${ownKids || monthsAgo !== null ? ', ' : ''}кс ${csection}` : ''}
+      </div>
+    )
+    : null;
+};
+
+const renderLastCycleInput = (userData, setUsers) => {
+
+  const nextCycle = calculateNextDate(userData.lastCycle);
+
+  return (
+    <div>
+      <label>Міс:</label>
+      <input
+        type="text"
+        value={userData.lastCycle || ''}
+        onChange={(e) => handleChange(setUsers, userData.userId, 'lastCycle', e.target.value)}
+        onBlur={() => handleSubmit(userData, 'overwrite')}
+        // placeholder="01.01.2021"
+        style={styles.underlinedInput}
+      />
+      {nextCycle && <span> - {nextCycle}</span>}
+    </div>
+  );
+};
+
+const renderGetInTouchInput = (userData, setUsers) => {
+  return (
+    <div>
+      <label>Написати:</label>
+      <input
+
+        type="text"
+        value={userData.getInTouch || ''}
+        onChange={(e) => handleChange(setUsers, userData.userId, 'getInTouch', e.target.value)}
+        onBlur={() => handleSubmit(userData, 'overwrite')}
+        // placeholder="Введіть дату або формулу"
+        style={styles.underlinedInput}
+      />
+    </div>
+  );
+};
+
+const RenderCommentInput = ({ userData, setUsers }) => {
+  const textareaRef = useRef(null);
+
+  const handleInputChange = (e) => {
+    handleChange(setUsers, userData.userId, 'myComment', e.target.value);
+  };
+
+  const autoResize = (textarea) => {
+    textarea.style.height = 'auto'; // Скидаємо висоту
+    textarea.style.height = `${textarea.scrollHeight}px`; // Встановлюємо нову висоту
+  };
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      autoResize(textareaRef.current); // Встановлюємо висоту після завантаження
+    }
+  }, [userData.myComment]); // Виконується при завантаженні та зміні коментаря
+
+  return (
+    <div style={{
+      display: 'flex', // Використовуємо flexbox
+      justifyContent: 'center', // Центрування по горизонталі
+      alignItems: 'center', // Центрування по вертикалі
+      height: '100%', // Висота контейнера
+    }}>
+      <textarea
+        ref={textareaRef}
+        placeholder="Додайте коментар"
+        value={userData.myComment || ''}
+        onChange={(e) => {
+          handleInputChange(e);
+          autoResize(e.target);
+        }}
+        onBlur={() => handleSubmit(userData, 'overwrite')}
+        style={{
+          // marginLeft: '10px',
+          width: '100%',
+          // height: 25,
+          // minHeight: '40px',
+          resize: 'none',
+          overflow: 'hidden',
+          padding: '5px',
+        }}
+      />
+    </div>
+  );
+};
+
+const renderWriterInput = (userData, setUsers) => {
+  const handleCodeClick = (code) => {
+    let currentWriter = userData.writer || '';
+    let updatedCodes = currentWriter.split(', ').filter((item) => item !== code); // Видаляємо, якщо є
+    updatedCodes = [code, ...updatedCodes]; // Додаємо код першим
+
+    const newState = {
+      ...userData,
+      writer: updatedCodes.join(', '),
+    };
+  
+    setUsers((prev) => ({
+      ...prev,
+      [userData.userId]: newState,
+    }));
+  
+    // Викликаємо handleSubmit поза setUsers
+    handleSubmit(newState, 'overwrite');
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%' }}>
+      {/* Верхній рядок: renderGetInTouchInput і інпут */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+        {renderGetInTouchInput(userData, setUsers)}
+        <input
+          type="text"
+          // placeholder="Введіть ім'я"
+          value={userData.writer || ''}
+          onChange={(e) => handleChange(setUsers, userData.userId, 'writer', e.target.value)}
+          onBlur={() => handleSubmit(userData, 'overwrite')}
+          style={{...styles.underlinedInput, width: '50%',}}
+        />
+      </div>
+
+      {/* Нижній рядок: кнопки */}
+      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', width: '100%' }}>
+        {['Ig','Ср', 'Срр', 'Ik', 'Т','V','W', 'ТТ', 'Ін', ].map((code) => (
+          <button
+            key={code}
+            onClick={() => handleCodeClick(code)}
+            style={{
+              padding: 5,
+              cursor: 'pointer',
+              flex: '1', // Рівномірно розподіляє кнопки по всій ширині
+              minWidth: '15px', // Мінімальна ширина кнопок
+            }}
+          >
+            {code}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// const renderContacts = (data, parentKey = '') => {
+//   if (!data || typeof data !== 'object') {
+//     console.error('Invalid data passed to renderContacts:', data);
+//     return null;
+//   }
+
+//   const links = {
+//     telegram: (value) => `https://t.me/@${value}`,
+//     instagram: (value) => `https://instagram.com/${value}`,
+//     tiktok: (value) => `https://www.tiktok.com/@${value}`,
+//     phone: (value) => `tel:${value}`,
+//     facebook: (value) => `https://facebook.com/${value}`,
+//     email: (value) => `mailto:${value}`,
+//     telegramFromPhone: (value) => `https://t.me/+${value.replace(/\s+/g, '')}`,
+//     viberFromPhone: (value) => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`,
+//     whatsappFromPhone: (value) => `https://wa.me/${value.replace(/\s+/g, '')}`,
+//   };
+
+//   return Object.keys(data).map((key) => {
+//     const nestedKey = parentKey ? `${parentKey}.${key}` : key;
+//     const value = data[key];
+
+//     if (!value || (Array.isArray(value) && value.length === 0)) {
+//       return null;
+//     }
+
+//     if (!links[key]) {
+//       // console.warn(`No link function defined for key: ${key}`);
+//       return null; // Пропускаємо ключі, які не мають обробки
+//     }
+
+//     const isSingleValue = Array.isArray(value) ? value.filter((v) => v.trim() !== '').length <= 1 : true;
+
+//     const labelMap = {
+//       email: 'Mail',
+//       phone: 'Tel',
+//       facebook: 'FB',
+//       instagram: 'Inst',
+//       tiktok: 'Tiktok',
+//     };
+
+//     const label = labelMap[key] || key;
+
+//     return (
+//       <div key={nestedKey} style={{
+//         whiteSpace: 'normal', // Дозволяє перенесення між словами
+//       wordBreak: 'break-word', // Розриває слова, якщо вони виходять за межі контейнера
+//       overflowWrap: 'break-word', // Переносить слова лише за потреби
+//       maxWidth: '83%',
+//       }}>
+//         {!['email', 'phone'].includes(key) && <strong>{label}:</strong>}{' '}
+//         {Array.isArray(value) ? (
+//           value
+//             .filter((val) => val.trim() !== '')
+//             .map((val, idx) => (
+//               <span key={`${nestedKey}-${idx}`} style={{ marginRight: '8px' }}>
+//                 <a
+//                   href={links[key](val)}
+//                   target="_blank"
+//                   rel="noopener noreferrer"
+//                   style={{ color: 'inherit', textDecoration: 'none' }}
+//                 >
+//                   {isSingleValue ? label : val}
+//                 </a>
+//                 {key === 'phone' && (
+//                   <>
+//                     <a
+//                       href={links.telegramFromPhone(val)}
+//                       target="_blank"
+//                       rel="noopener noreferrer"
+//                       style={{ marginLeft: '5px' }}
+//                     >
+//                       Tg
+//                     </a>
+//                     <a
+//                       href={links.viberFromPhone(val)}
+//                       target="_blank"
+//                       rel="noopener noreferrer"
+//                       style={{ marginLeft: '5px' }}
+//                     >
+//                       V
+//                     </a>
+//                     <a
+//                       href={links.whatsappFromPhone(val)}
+//                       target="_blank"
+//                       rel="noopener noreferrer"
+//                       style={{ marginLeft: '5px' }}
+//                     >
+//                       W
+//                     </a>
+//                   </>
+//                 )}
+//               </span>
+//             ))
+//         ) : (
+//           <a
+//             href={links[key](value)}
+//             target="_blank"
+//             rel="noopener noreferrer"
+//             style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
+//           >
+//             {isSingleValue ? label : value}
+//           </a>
+//         )}
+//       </div>
+//     );
+//   });
+// };
+
+const renderContacts = (data, parentKey = '') => {
+  if (!data || typeof data !== 'object') {
+    console.error('Invalid data passed to renderContacts:', data);
+    return null;
+  }
+
+  const links = {
+    telegram: (value) => `https://t.me/${value}`,
+    instagram: (value) => `https://instagram.com/${value}`,
+    tiktok: (value) => `https://www.tiktok.com/@${value}`,
+    phone: (value) => `tel:${value}`,
+    facebook: (value) => `https://facebook.com/${value}`,
+    email: (value) => `mailto:${value}`,
+    telegramFromPhone: (value) => `https://t.me/${value.replace(/\s+/g, '')}`,
+    viberFromPhone: (value) => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`,
+    whatsappFromPhone: (value) => `https://wa.me/${value.replace(/\s+/g, '')}`,
+  };
+
+  return Object.keys(data).map((key) => {
+    const nestedKey = parentKey ? `${parentKey}.${key}` : key;
+    const value = data[key];
+
+    // Пропускаємо ключ, якщо його значення — порожній рядок або порожній масив
+    if (!value || (Array.isArray(value) && value.length === 0)) {
+      return null;
+    }
+
+    if (links[key]) {
+      return (
+        <div key={nestedKey}>
+          {!['email', 'phone'].includes(key) && <strong>{key}:</strong>}{' '}
+          {Array.isArray(value) ? (
+            value
+              .filter((val) => val.trim() !== '') // Пропускаємо порожні елементи масиву
+              .map((val, idx) => (
+                <div key={`${nestedKey}-${idx}`} style={{ marginBottom: '2px' }}>
+                  <a
+                    href={links[key](val)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
+                  >
+                    {val}
+                  </a>
+                  {key === 'phone' && (
+                    <>
+                      <a
+                        href={links.telegramFromPhone(`+${val.replace(/\s+/g, '')}`)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                      >
+                        Tg
+                      </a>
+                      <a
+                        href={links.viberFromPhone(val)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                      >
+                        V
+                      </a>
+                      <a
+                        href={links.whatsappFromPhone(val)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                      >
+                        W
+                      </a>
+                    </>
+                  )}
+                </div>
+              ))
+          ) : (
+            <>
+              <a
+                href={links[key](value)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
+              >
+                {value}
+              </a>
+              {key === 'phone' && (
+                <>
+                  <a
+                    href={links.telegramFromPhone(`+${value.replace(/\s+/g, '')}`)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                  >
+                    Tg
+                  </a>
+                  <a
+                    href={links.viberFromPhone(value)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                  >
+                    V
+                  </a>
+                  <a
+                    href={links.whatsappFromPhone(value)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                  >
+                    W
+                  </a>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      );
+    }
+
+    return null; // Якщо ключ не обробляється
+  });
+};
+
+const calculateAge = (birthDateString) => {
+  if (!birthDateString) return null;
+  const [day, month, year] = birthDateString.split('.').map(Number);
+  const birthDate = new Date(year, month - 1, day);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
+
+const calculateMonthsAgo = (dateString) => {
+  if (!dateString) return null;
+
+  const [day, month, year] = dateString.split('.').map(Number);
+  const deliveryDate = new Date(year, month - 1, day);
+  const now = new Date();
+
+  const monthsDiff = (now.getFullYear() - deliveryDate.getFullYear()) * 12 + (now.getMonth() - deliveryDate.getMonth());
+  return monthsDiff;
+};
+
+const calculateNextDate = (dateString) => {
+  if (!dateString) return '';
+  const [day, month, year] = dateString.split('.').map(Number);
+  const currentDate = new Date(year, month - 1, day);
+  currentDate.setDate(currentDate.getDate() + 28);
+  return currentDate.toLocaleDateString('uk-UA');
+};
+
+const calculateIMT = (weight, height) => {
+  if (weight && height) {
+    const heightInMeters = height / 100;
+    return (weight / (heightInMeters ** 2)).toFixed(1);
+  }
+  return 'N/A';
+};
+
 
 // Компонент для рендерингу кожної картки
-const UserCard = ({ userData, editCard }) => {
-  console.log('userData!!!!! :>> ', userData);
+const UserCard = ({ userData, setUsers }) => {
 
-  const calculateAge = (birthDateString) => {
-    if (typeof birthDateString !== 'string') {
-      console.error('Invalid birthDateString:', birthDateString);
-      return 'N/A'; // або поверніть 0, якщо потрібно обчислити вік
-    }
-  
-    const [day, month, year] = birthDateString.split('.').map(Number);
-    const birthDate = new Date(year, month - 1, day);
-    const today = new Date();
-  
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age;
-  };
+
+  // console.log('userData!!!!! :>> ', userData);
+
+    // Ініціалізація локального стану на основі userData
+    // const [localUserData, setLocalUserData] = useState({});
+
+    // Синхронізація локального стану при завантеженні
+    // useEffect(() => {
+    //   // console.log('Updated userData!!!!!!!!!!!!!!!!!!!!!!!!!!!!!: в юх ефект', userData);
+    //   setLocalUserData(userData);
+    // }, []);
+
+
 
   const renderFields = (data, parentKey = '') => {
     if (!data || typeof data !== 'object') {
@@ -35,7 +576,7 @@ const UserCard = ({ userData, editCard }) => {
     if (typeof extendedData.birth === 'string') {
       extendedData.age = calculateAge(extendedData.birth);
     } else {
-      console.warn('Invalid birth format:', extendedData.birth);
+      // console.warn('Invalid birth format:', extendedData.birth);
     }
 
     const sortedKeys = Object.keys(extendedData).sort((a, b) => {
@@ -165,11 +706,29 @@ const UserCard = ({ userData, editCard }) => {
   };
 
   return (
-    <div style={styles.card2}>
+    <div>
+    {renderTopBlock(userData, setUsers)}
+    <div id="user-details" style={{ display: 'none' }}>
       {renderFields(userData)}
     </div>
+  </div>
   );
 };
+
+    // Обробник кліку на картці користувача
+    const handleCardClick = async (userId, setSearch, setState) => {
+      const userData = await fetchUserById(userId);
+      if (userData) {
+
+        console.log('Дані знайденого користувача: ', userData);
+        setSearch(`id: ${userData.userId}`);
+        setState(userData)
+        // setUsers(userData)
+        // Додаткова логіка обробки даних користувача
+      } else {
+        console.log('Користувача не знайдено.');
+      }
+    };
 
 // Компонент для рендерингу всіх карток
 const UsersList = ({ users, setUsers, setSearch, setState  }) => {
@@ -193,20 +752,7 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
     width: '100%'
   });
 
-    // Обробник кліку на картці користувача
-    const handleCardClick = async (userId) => {
-      const userData = await fetchUserById(userId);
-      if (userData) {
 
-        console.log('Дані знайденого користувача: ', userData);
-        setSearch(`id: ${userData.userId}`);
-        setState(userData)
-        // setUsers(userData)
-        // Додаткова логіка обробки даних користувача
-      } else {
-        console.log('Користувача не знайдено.');
-      }
-    };
 
   // const handleRemoveUser = async (userId) => {
   //   await removeSearchId(userId); // Виклик функції для видалення
@@ -309,7 +855,7 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
               style={styles.removeButton}
               onClick={(e) => {
                 e.stopPropagation(); // Запобігаємо активації кліку картки
-                handleCardClick(userData.userId);
+                handleCardClick(userData.userId, setSearch, setState);
               }}
             >
               edit
@@ -334,7 +880,7 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
             >
               del
             </button> */}
-            <UserCard userData={userData} />
+            <UserCard userData={userData} setUsers={setUsers} />
           </div>
         ))}
       </div>
@@ -343,6 +889,19 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
 
 // Стилі
 const styles = {
+  underlinedInput: {
+    border: "none",
+    borderBottom: "1px solid transparent",
+    backgroundColor: "transparent",
+    outline: "none",
+    fontSize: "16px",
+    padding: 0,
+    color: "white",
+    marginLeft: 5,
+    width: "9ch", // Точний розмір для дати формату 01.01.2022
+    textAlign: "center" // Вирівнювання тексту
+  },
+
   container: {
     display: 'flex',
     flexWrap: 'wrap',

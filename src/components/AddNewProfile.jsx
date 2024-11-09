@@ -280,7 +280,7 @@ const ClearButton = styled.button`
   color: gray;
   font-size: 18px;
   width: 35px;
-  height:35px;
+  height: 35px;
 
   &:hover {
     color: black;
@@ -300,7 +300,7 @@ const DelKeyValueBTN = styled.button`
   color: red;
   font-size: 18px;
   width: 35px;
-  height:35px;
+  height: 35px;
 
   &:hover {
     color: black;
@@ -329,7 +329,7 @@ const Button = styled.button`
   font-size: 12px;
   flex: 0 1 auto;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
-  margin-right:10px;
+  margin-right: 10px;
 
   &:hover {
     background-color: ${color.accent}; /* Колір кнопки при наведенні */
@@ -377,10 +377,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   // const findNestedArrays = (data, parentKey = '') => {
   //   const nestedArrays = {};
-  
+
   //   Object.keys(data).forEach(key => {
   //     const currentKey = parentKey ? `${parentKey}.${key}` : key;
-  
+
   //     if (Array.isArray(data[key])) {
   //       // Якщо елемент масиву також є масивом, то це вкладений масив
   //       if (data[key].some(item => Array.isArray(item))) {
@@ -392,94 +392,81 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   //       Object.assign(nestedArrays, findNestedArrays(data[key], currentKey));
   //     }
   //   });
-  
+
   //   return nestedArrays;
   // };
 
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
-    const fieldsForNewUsersOnly = ['role', 'getInTouch', 'myComment'];
-    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId' ];
+    const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
+    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
     const commonFields = ['lastAction'];
     // const userId = newState.userId || state.user
 
-      // Формуємо поточну дату у форматі дд.мм.рррр
-  const formatDate = (date) => {
-    const dd = String(date.getDate()).padStart(2, '0');
-    const mm = String(date.getMonth() + 1).padStart(2, '0'); // місяці від 0 до 11
-    const yyyy = date.getFullYear();
-    return `${dd}.${mm}.${yyyy}`;
-  };
+    // Формуємо поточну дату у форматі дд.мм.рррр
+    const formatDate = date => {
+      const dd = String(date.getDate()).padStart(2, '0');
+      const mm = String(date.getMonth() + 1).padStart(2, '0'); // місяці від 0 до 11
+      const yyyy = date.getFullYear();
+      return `${dd}.${mm}.${yyyy}`;
+    };
 
-  const currentDate = formatDate(new Date());
+    const currentDate = formatDate(new Date());
 
-  // Додаємо значення до lastAction
-  const updatedState = newState 
-  ? { ...newState, lastAction: currentDate } 
-  : { ...state, lastAction: currentDate };
+    // Додаємо значення до lastAction
+    const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
 
     if (updatedState?.userId?.length > 20) {
       // if (newState) {
-        // console.error('dddd-remove row');
-      
-        // console.log('newState',newState);
-        // if ([field.name]==='facebook'){
-          // await removeSpecificSearchId(keyValue, newState.userId)
-        // }
+      // console.error('dddd-remove row');
 
-        const { existingData } = await fetchUserData(updatedState.userId);
+      // console.log('newState',newState);
+      // if ([field.name]==='facebook'){
+      // await removeSpecificSearchId(keyValue, newState.userId)
+      // }
 
-  // Фільтруємо ключі, щоб видалити зайві поля
-  const cleanedState = Object.fromEntries(
-    Object.entries(updatedState).filter(
-      ([key]) =>  commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key)
-    )
-  );
+      const { existingData } = await fetchUserData(updatedState.userId);
 
-        const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
-        console.error('uploadedInfo!!!!!!!!!!!!!!!!!!!!!!!!!!!', uploadedInfo);
-        // const nestedArrays = findNestedArrays(uploadedInfo);
-        // console.log('Всі вкладені масиви:', nestedArrays);
+      // Фільтруємо ключі, щоб видалити зайві поля
+      const cleanedState = Object.fromEntries(
+        Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
+      );
 
-        if (!makeIndex)
-        {
-          console.log('Update all database :>> ');
-          await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
-          await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
-        }
+      const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
+      console.error('uploadedInfo!!!!!!!!!!!!!!!!!!!!!!!!!!!', uploadedInfo);
+      // const nestedArrays = findNestedArrays(uploadedInfo);
+      // console.log('Всі вкладені масиви:', nestedArrays);
 
-        // if (newState._test_getInTouch) {
-          // console.log('Updating state._test_getInTouch...');
-            // Фільтруємо ключі, щоб видалити зайві поля
-            const cleanedStateForNewUsers = Object.fromEntries(
-            Object.entries(updatedState).filter(
-            ([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key)
-            )
-            );
+      if (!makeIndex) {
+        console.log('Update all database :>> ');
+        await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
+        await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
+      }
 
-            console.log('cleanedStateForNewUsers', cleanedStateForNewUsers);
+      // if (newState._test_getInTouch) {
+      // console.log('Updating state._test_getInTouch...');
+      // Фільтруємо ключі, щоб видалити зайві поля
+      const cleanedStateForNewUsers = Object.fromEntries(Object.entries(updatedState).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key)));
 
-          await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update');
-        // }
+      console.log('cleanedStateForNewUsers', cleanedStateForNewUsers);
 
-      // } 
+      await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update');
+      // }
+
+      // }
       // else {
       //   console.error('ffff-modify/create row');
-       
-     
-          
+
       //     const { existingData } = await fetchUserData(state.userId);
       //     // console.log('existingData :>> ', existingData.name);
       //     const uploadedInfo = makeUploadedInfo(existingData, state, overwrite);
       //     // console.log('state :>> ', state.name);
       //     // console.log('uploadedInfo :>> ', uploadedInfo.name);
 
-
       //     const nestedArrays = findNestedArrays(uploadedInfo);
       //     console.log('Всі вкладені масиви:', nestedArrays);
       //     await updateDataInRealtimeDB(state.userId, uploadedInfo, 'update');
       //     await updateDataInFiresoreDB(state.userId, uploadedInfo, 'check');
-        
- 
+
       // }
     } else {
       console.log('kkkkkkkkkk :>> ');
@@ -540,64 +527,62 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // };
 
   const handleClear = (fieldName, idx) => {
-   
     setState(prevState => {
-       // Перевірка, чи є значення масивом
-    const isArray = Array.isArray(prevState[fieldName]);
-    let newValue;
-    let removedValue;
+      // Перевірка, чи є значення масивом
+      const isArray = Array.isArray(prevState[fieldName]);
+      let newValue;
+      let removedValue;
 
-     if (isArray) {
-      // Якщо значення є масивом, фільтруємо масив, щоб видалити елемент за індексом
-      const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
-      removedValue = prevState[fieldName][idx];
+      if (isArray) {
+        // Якщо значення є масивом, фільтруємо масив, щоб видалити елемент за індексом
+        const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
+        removedValue = prevState[fieldName][idx];
 
-      // Якщо після фільтрації залишається лише одне значення, зберігаємо його як ключ-значення
-      newValue = filteredArray.length === 1 ? filteredArray[0] : filteredArray;
-    } else {
-      // Якщо значення не є масивом, видаляємо його
-      removedValue = prevState[fieldName];
-      newValue = '';
-    }
+        // Якщо після фільтрації залишається лише одне значення, зберігаємо його як ключ-значення
+        newValue = filteredArray.length === 1 ? filteredArray[0] : filteredArray;
+      } else {
+        // Якщо значення не є масивом, видаляємо його
+        removedValue = prevState[fieldName];
+        newValue = '';
+      }
 
-    // Створюємо новий стан
-    const newState = {
-      ...prevState,
-      [fieldName]: newValue,
-    };
+      // Створюємо новий стан
+      const newState = {
+        ...prevState,
+        [fieldName]: newValue,
+      };
 
-    console.log('newState', newState);
+      console.log('newState', newState);
 
-    // Викликаємо сабміт після оновлення стейту
-    handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
+      // Викликаємо сабміт після оновлення стейту
+      handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
 
-    return newState;
-  });
-};
+      return newState;
+    });
+  };
 
-const handleDelKeyValue = (fieldName) => {
-  setState(prevState => {
-    // Створюємо копію попереднього стану
-    const newState = { ...prevState };
-    
-    // Видаляємо ключ з нового стану
-    delete newState[fieldName];
+  const handleDelKeyValue = fieldName => {
+    setState(prevState => {
+      // Створюємо копію попереднього стану
+      const newState = { ...prevState };
 
-    // console.log('Видалили ключ з локального стану:', fieldName);
-    // console.log('newState:', newState);
+      // Видаляємо ключ з нового стану
+      delete newState[fieldName];
 
+      // console.log('Видалили ключ з локального стану:', fieldName);
+      // console.log('newState:', newState);
 
-     // Встановлюємо значення 'del_key' для видалення
-    //  newState[fieldName] = 'del_key';
+      // Встановлюємо значення 'del_key' для видалення
+      //  newState[fieldName] = 'del_key';
 
-     console.log(`Поле "${fieldName}" позначено для видалення`);
+      console.log(`Поле "${fieldName}" позначено для видалення`);
 
-    // Видалення ключа з Firebase
-    removeKeyFromFirebase(fieldName, prevState.userId);
+      // Видалення ключа з Firebase
+      removeKeyFromFirebase(fieldName, prevState.userId);
 
-    return newState; // Повертаємо оновлений стан
-  });
-};
+      return newState; // Повертаємо оновлений стан
+    });
+  };
 
   const [isEmailVerified, setIsEmailVerified] = useState(false);
 
@@ -614,7 +599,6 @@ const handleDelKeyValue = (fieldName) => {
     return () => unsubscribe();
   }, []);
 
-
   // useEffect(() => {
   //   // Рендеринг картки при зміні стану state
   //   if (state && state.userId) {
@@ -622,7 +606,6 @@ const handleDelKeyValue = (fieldName) => {
   //   }
   // }, [state]);
 
-  
   // useEffect(() => {
   //   console.log('state2 :>> ', state);
   //     }, [state]);
@@ -642,28 +625,29 @@ const handleDelKeyValue = (fieldName) => {
   }, [search]); // Виконується при зміні search
 
   const handleAddUser = async () => {
-    const res = await makeNewUser(searchKeyValuePair)
-    setUserNotFound(false)
-    setState(res)
-    setSearchKeyValuePair({})
-  }
+    const res = await makeNewUser(searchKeyValuePair);
+    setUserNotFound(false);
+    setState(res);
+    setSearchKeyValuePair({});
+  };
 
   const processUserSearch = async (platform, parseFunction, inputData) => {
+    setUsers({});
     const id = parseFunction(inputData);
-  
+
     if (id) {
       const result = { [platform]: id };
       console.log(`${platform} ID:`, id);
-  
+
       setSearchKeyValuePair(result);
       const res = await fetchNewUsersCollectionInRTDB(result);
-  
+
       if (!res || (typeof res === 'object' && Object.keys(res).length === 0)) {
         console.log(`Користувача не знайдено в ${platform}`);
         setUserNotFound(true);
       } else {
         setUserNotFound(false);
-  
+
         if (Array.isArray(res)) {
           setUsers(res); // Якщо `res` є масивом, записуємо в `setUsers`
           console.log(`Знайдено кількох користувачів у ${platform}:`, res);
@@ -674,7 +658,7 @@ const handleDelKeyValue = (fieldName) => {
       }
       return true; // Повертаємо true, якщо обробка завершена
     }
-  
+
     return false; // Повертаємо false, якщо ID не знайдено
   };
 
@@ -733,7 +717,6 @@ const handleDelKeyValue = (fieldName) => {
       // Перевіряємо, чи це URL Instagram
       console.log('111 :>> ');
       if (typeof input === 'string' && input.includes('instagram')) {
-        
         const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
         const match = input.match(instagramRegex);
 
@@ -796,19 +779,19 @@ const handleDelKeyValue = (fieldName) => {
     const parseEmail = email => {
       // Видалення пробілів з початку і кінця та приведення до нижнього регістру
       const cleanedEmail = email.trim().toLowerCase();
-    
+
       // Перевірка базової структури email-адреси
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(cleanedEmail)) {
         return; // Вихід, якщо адреса не відповідає базовій структурі email
       }
-    
+
       // Перевірка наявності домену
       const domain = cleanedEmail.split('@')[1];
       if (!domain || !domain.includes('.')) {
         return; // Вихід, якщо домен некоректний
       }
-    
+
       // Якщо всі перевірки пройдено, повертаємо очищену email-адресу
       return cleanedEmail;
     };
@@ -867,32 +850,32 @@ const handleDelKeyValue = (fieldName) => {
       return null; // Повертає null, якщо username не знайдено
     };
 
-    const parseTelegramId = (input) => {
+    const parseTelegramId = input => {
       // Перевірка URL формату (наприклад, t.me/account)
       const urlPattern = /t\.me\/([^/?#]+)/;
       const urlMatch = input.match(urlPattern);
-    
+
       if (urlMatch && urlMatch[1]) {
         return urlMatch[1]; // Повертає username з URL
       }
-    
+
       // Перевірка формату з @ (наприклад, @account)
       const atPattern = /^@(\w+)/;
       const atMatch = input.match(atPattern);
-    
+
       if (atMatch && atMatch[1]) {
         return atMatch[1]; // Повертає username з формату @username
       }
-    
+
       // Перевірка текстових варіацій (наприклад, "телеграм account", "teleg: account", "t: account")
       const textPattern = /(?:телеграм|телега|teleg|t(?=\s|:)|т(?=\s|:))\s*:?\s*([a-zA-Z0-9._]+)/i;
- 
+
       const textMatch = input.match(textPattern);
-    
+
       if (textMatch && textMatch[1]) {
         return textMatch[1]; // Повертає username з текстового формату
       }
-    
+
       // Якщо нічого не знайдено, повертає null
       return null;
     };
@@ -923,19 +906,18 @@ const handleDelKeyValue = (fieldName) => {
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
 
-
   const loadMoreUsers = async () => {
     const res = await fetchPaginatedNewUsers(lastKey);
-    console.log('res :>> ', res);
+    // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
-      console.log('222 :>> ');
-      console.log('res.users :>> ', res.users);
+      // console.log('222 :>> ');
+      // console.log('res.users :>> ', res.users);
 
       // Використовуємо Object.entries для обробки res.users
       const newUsers = Object.entries(res.users).reduce((acc, [userId, user]) => {
         // Перевірка наявності поля userId, щоб уникнути помилок
-        console.log('3333 :>> ');
+        // console.log('3333 :>> ');
         if (user.userId) {
           acc[user.userId] = user; // Додаємо користувача до об'єкта
         } else {
@@ -957,15 +939,13 @@ const handleDelKeyValue = (fieldName) => {
 
   const makeIndex = async () => {
     const res = await fetchListOfUsers();
-    res.forEach( async (userId) => {
+    res.forEach(async userId => {
       const result = { userId: userId };
       const res = await fetchNewUsersCollectionInRTDB(result);
       console.log('res :>> ', res);
-      handleSubmit(res, false, false, true) 
+      handleSubmit(res, false, false, true);
       // writeData(userId); // Викликаємо writeData() для кожного ID
     });
-
-    
   };
 
   const additionalFields = Object.keys(state).filter(
@@ -1024,11 +1004,20 @@ const handleDelKeyValue = (fieldName) => {
                 writeData();
               }}
             />
-            {search && <ClearButton onClick={() => {setSearch(''); setUserNotFound(false)}}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
+            {search && (
+              <ClearButton
+                onClick={() => {
+                  setSearch('');
+                  setUserNotFound(false);
+                }}
+              >
+                &times; {/* HTML-символ для хрестика */}
+              </ClearButton>
+            )}
           </InputFieldContainer>
         </InputDiv>
 
-        {(search && state.userId) ? (
+        {search && state.userId ? (
           fieldsToRender.map((field, index) => {
             // console.log('field:', field);
             // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
@@ -1060,7 +1049,13 @@ const handleDelKeyValue = (fieldName) => {
                               onBlur={() => handleBlur(`${field.name}-${idx}`)}
                             />
                             {(value || value === '') && (
-                              <ClearButton onClick={() => {handleClear(field.name, idx)}}>&times;</ClearButton>
+                              <ClearButton
+                                onClick={() => {
+                                  handleClear(field.name, idx);
+                                }}
+                              >
+                                &times;
+                              </ClearButton>
                             )}
                           </InputFieldContainer>
 
@@ -1085,11 +1080,11 @@ const handleDelKeyValue = (fieldName) => {
                         onChange={e => {
                           let value = e?.target?.value;
                           // Якщо ім'я поля - 'publish', перетворюємо значення в булеве
-                            if (field.name === 'publish') {
-                              value = value.toLowerCase() === 'true'; // true, якщо значення 'true', інакше false
-                            } else {
-                              value = inputUpdateValue(value, field); // Оновлення значення для інших полів
-                            }
+                          if (field.name === 'publish') {
+                            value = value.toLowerCase() === 'true'; // true, якщо значення 'true', інакше false
+                          } else {
+                            value = inputUpdateValue(value, field); // Оновлення значення для інших полів
+                          }
 
                           setState(prevState => ({
                             ...prevState,
@@ -1140,24 +1135,43 @@ const handleDelKeyValue = (fieldName) => {
                   <ButtonGroup>
                     <Button
                       onClick={() => {
-                        setState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
-                        handleBlur(field.name);
+                        setState(prevState => {
+                          const newState = {
+                            ...prevState,
+                            [field.name]: 'Yes',
+                          };
+                          handleSubmit(newState, 'overwrite');
+                          return newState;
+                        });
                       }}
                     >
                       Так
                     </Button>
                     <Button
                       onClick={() => {
-                        setState(prevState => ({ ...prevState, [field.name]: 'No' }));
-                        handleBlur(field.name);
+                        setState(prevState => {
+                          const newState = {
+                            ...prevState,
+                            [field.name]: 'No',
+                          };
+                          handleSubmit(newState, 'overwrite');
+                          return newState;
+                        });
                       }}
                     >
                       Ні
                     </Button>
                     <Button
                       onClick={() => {
-                        setState(prevState => ({ ...prevState, [field.name]: 'Other' }));
-                        handleBlur(field.name);
+                        setState(prevState => {
+                          const newState = {
+                            ...prevState,
+                            [field.name]: 'Other',
+                          };
+                          handleSubmit(newState, 'overwrite');
+                          handleBlur(field.name);
+                          return newState;
+                        });
                       }}
                     >
                       Інше
@@ -1169,21 +1183,18 @@ const handleDelKeyValue = (fieldName) => {
           })
         ) : (
           <div>
-            {(search && users && !userNotFound) ? (
-    <p style={{ textAlign: 'center', color: 'black' }}>
-      Знайдено {users.length} користувачів.
-    </p>
-  ) : userNotFound ? (
-    <p style={{ textAlign: 'center', color: 'black' }}>
-      No result
-    </p>
-  ) : null}
+            {search && users && !userNotFound ? (
+              <p style={{ textAlign: 'center', color: 'black' }}>Знайдено {users.length} користувачів.</p>
+            ) : userNotFound ? (
+              <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
+            ) : null}
             <div>
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
               {hasMore && <Button onClick={loadMoreUsers}>Load Cards</Button>}
               {hasMore && <Button onClick={makeIndex}>Make index</Button>}
             </div>
-            {!userNotFound && <UsersList users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />} {/* Передача користувачів у UsersList */}
+            {!userNotFound && <UsersList users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}
+            {/* Передача користувачів у UsersList */}
           </div>
         )}
       </InnerContainer>

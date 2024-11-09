@@ -282,6 +282,179 @@ export const removeSpaceAndNewLine = value => {
   
     return formattedDate;
   };
+
+  export const formatDateAndFormula = (input) => {
+    if (!input) return '';
+
+    const today = new Date();
+
+    // Якщо формат дати
+    const datePattern = /^\d{2}\.\d{2}\.\d{4}$/;
+    if (datePattern.test(input)) {
+      return input; // Залишаємо введену дату
+    }
+
+// Якщо формат типу "7d", "6m", "1y" або "7д", "6м", "1р"
+const periodPattern = /^(\d+)(d|m|y|д|м|р)$/;
+const matchPeriod = input.match(periodPattern);
+if (matchPeriod) {
+  const value = parseInt(matchPeriod[1], 10);
+  const unit = matchPeriod[2];
+
+  switch (unit) {
+    case 'd':
+    case 'д':
+      today.setDate(today.getDate() + value);
+      break;
+    case 'm':
+    case 'м':
+      today.setMonth(today.getMonth() + value);
+      break;
+    case 'y':
+    case 'р':
+      today.setFullYear(today.getFullYear() + value);
+      break;
+    default:
+      break;
+  }
+  return today.toLocaleDateString('uk-UA');
+}
+
+    // Якщо формат типу "360-90"
+    const offsetPattern = /^(\d+)-(\d+)$/;
+    const matchOffset = input.match(offsetPattern);
+    if (matchOffset) {
+      const base = parseInt(matchOffset[1], 10);
+      const subtract = parseInt(matchOffset[2], 10);
+      today.setDate(today.getDate() + (base - subtract));
+      return today.toLocaleDateString('uk-UA');
+    }
+
+      // Якщо щонайменше 6 цифр і останні дві > 23, форматування дати
+// Якщо 6 або 8 цифр
+const digitPattern = /^\d{6,8}$/;
+if (digitPattern.test(input)) {
+  const day = input.slice(0, 2);
+  const month = input.slice(2, 4);
+
+  if (input.length === 6) {
+    const yearLastTwoDigits = input.slice(4, 6);
+    const year = `20${yearLastTwoDigits}`;
+
+    if (parseInt(yearLastTwoDigits, 10) > 23) {
+      return `${day}.${month}.${year}`;
+    }
+  }
+
+  if (input.length === 8) {
+    const yearFull = input.slice(4, 8);
+    if (parseInt(yearFull, 10) > 2023) {
+      return `${day}.${month}.${yearFull}`;
+    }
+  }
+}
+
+if (input.startsWith('=')) {
+  const formula = input.slice(1).trim();
+
+  if (formula.endsWith('.')) {
+    try {
+      const cleanFormula = formula.slice(0, -1);
+      
+      console.log('Формула для обчислення:', cleanFormula); // Логування очищеної формули
+
+      if (!cleanFormula) {
+        throw new Error('Порожня формула');
+      }
+
+      const result = calculateExpression(cleanFormula);
+
+      if (isNaN(result)) {
+        throw new Error('Результат не є числом');
+      }
+
+      today.setDate(today.getDate() + result);
+      console.log('Нова дата:', today.toLocaleDateString('uk-UA')); // Логування нової дати
+      return today.toLocaleDateString('uk-UA');
+    } catch (error) {
+      console.error('Помилка в обчисленні формули:', error.message);
+      return 'Невірна формула';
+    }
+  }
+
+  return input;
+}
+
+    // Повертаємо введене значення, якщо воно не відповідає жодному шаблону
+    return input;
+  };
+
+  // Функція для обчислення математичних виразів
+  const calculateExpression = (expression) => {
+    const operators = {
+      '+': (a, b) => a + b,
+      '-': (a, b) => a - b,
+      '*': (a, b) => a * b,
+      '/': (a, b) => a / b,
+    };
+  
+    const precedence = {
+      '+': 1,
+      '-': 1,
+      '*': 2,
+      '/': 2,
+    };
+  
+    const isOperator = (token) => ['+', '-', '*', '/'].includes(token);
+  
+    const tokens = expression.match(/(\d+|\+|-|\*|\/)/g);
+    console.log('Токени формули:', tokens);
+  
+    if (!tokens) {
+      throw new Error('Невірний вираз: порожній або некоректний ввід');
+    }
+  
+    const values = [];
+    const ops = [];
+  
+    const applyOperator = () => {
+      const b = values.pop();
+      const a = values.pop();
+      const op = ops.pop();
+      console.log('Застосовуємо оператор:', op, '| Операнди:', a, b);
+      if (a === undefined || b === undefined || !operators[op]) {
+        throw new Error('Неповний вираз');
+      }
+      values.push(operators[op](a, b));
+    };
+  
+    tokens.forEach((token) => {
+      console.log('Обробка токена:', token);
+      if (!isNaN(token)) {
+        values.push(parseFloat(token));
+        console.log('Додавання числа в стек:', values);
+      } else if (isOperator(token)) {
+        while (ops.length && precedence[ops[ops.length - 1]] >= precedence[token]) {
+          applyOperator();
+        }
+        ops.push(token);
+        console.log('Додавання оператора в стек:', ops);
+      } else {
+        throw new Error('Невірний токен');
+      }
+    });
+  
+    while (ops.length) {
+      applyOperator();
+    }
+  
+    if (values.length !== 1) {
+      throw new Error('Помилка обчислення: некоректний стек після обчислення');
+    }
+  
+    console.log('Результат обчислення:', values[0]);
+    return values[0];
+  };
   
   export const calculateAge = date => {
     const [day, month, year] = date.split('.');
@@ -305,4 +478,3 @@ export const removeSpaceAndNewLine = value => {
     let processedStr = trimmedStr.replace(/\s+/g, ' ');
     return processedStr;
     }
-  

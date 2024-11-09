@@ -8,6 +8,7 @@ import {
   removeSpacesLeaveEnter,
   removeExtraSpaces,
   formatPhoneNumberNoSpace,
+  formatDateAndFormula,
 } from './inputValidations';
 
 export const inputUpdateValue = (value, field, data) => {
@@ -50,6 +51,8 @@ export const inputUpdateValue = (value, field, data) => {
       ? formatNumber(value, 16)
       : field.name?.startsWith('more')
       ? removeSpacesLeaveEnter(value)
+      : field.name === 'getInTouch'
+      ? formatDateAndFormula(value)
       : removeExtraSpaces(value)
   );
 };

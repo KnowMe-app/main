@@ -587,7 +587,6 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
         }
       }
     }
-
     // Оновлення користувача в базі
     if (condition === 'update') {
       await update(userRefRTDB, { ...uploadedInfo });
@@ -720,7 +719,7 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
   // console.log(`Видалено картку користувача з newUsers: ${userId}`);
 };
 
-// export const fetchPaginatedNewUsersWorks = async (lastKey) => {
+// export const fetchPaginatedNewUsers = async (lastKey) => {
 //   const db = getDatabase();
 //   const newUsersRef  = ref2(db, 'newUsers');
 //   // const usersRef = ref2(db, 'users');
@@ -791,8 +790,10 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
 //   }
 // };
 
-// Функція для пошуку користувача за userId у двох колекціях
 
+
+// Функція для пошуку користувача за userId у двох колекціях
+// __вДвохКолекціях не працює лоад море
 export const fetchPaginatedNewUsers = async lastKey => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
@@ -833,15 +834,38 @@ export const fetchPaginatedNewUsers = async lastKey => {
 
     // Перевірка наявності даних у 'users'
     let usersData = {};
+    const targetUserId = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+    // const targetUserId = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
     if (usersSnapshot.exists()) {
       const usersArray = Object.entries(usersSnapshot.val());
-       // Розділяємо користувачів на дві частини
-  const withoutLastAction = usersArray.filter(([key, value]) => !value.lastAction);
-  const withLastAction = usersArray.filter(([key, value]) => value.lastAction);
 
-  // Об'єднуємо масиви, з користувачами з lastAction в кінці
-  usersData = [...withoutLastAction, ...withLastAction].slice(0, 10); // Лімітуємо результати до 10
-    }
+      // Виділяємо цільового користувача
+  const targetUser = usersArray.find(([key]) => key === targetUserId);
+  const otherUsers = usersArray.filter(([key]) => key !== targetUserId);
+
+
+
+
+  //      // Розділяємо користувачів на дві частини
+  // const withoutLastAction = usersArray.filter(([key, value]) => !value.lastAction);
+  // const withLastAction = usersArray.filter(([key, value]) => value.lastAction);
+
+    // Розділяємо інші користувачі на дві частини
+    const withoutLastAction = otherUsers.filter(([key, value]) => !value.lastAction);
+    const withLastAction = otherUsers.filter(([key, value]) => value.lastAction);
+  
+
+  // // Об'єднуємо масиви, з користувачами з lastAction в кінці
+  // usersData = [...withoutLastAction, ...withLastAction].slice(0, 10); // Лімітуємо результати до 10
+  //   }
+
+    // Додаємо цільового користувача першим і комбінуємо масиви
+    usersData = [
+      ...(targetUser ? [targetUser] : []),
+      ...withoutLastAction,
+      ...withLastAction,
+    ].slice(0, 10); // Лімітуємо результати до 10
+  }
 
     // Комбінування даних з 'users' та 'newUsers', обмежуючи кількість карток до 10
     const combinedData = [...usersData, ...Object.entries(newUsersData).slice(0, 10 - Object.keys(usersData).length)];
@@ -864,6 +888,173 @@ export const fetchPaginatedNewUsers = async lastKey => {
     };
   }
 };
+
+///////////////////////////ПРАЦЮЄ для тестування, мій перший
+// export const fetchPaginatedNewUsers = async (lastKey) => {
+//   const db = getDatabase();
+//   const newUsersRef = ref2(db, 'newUsers');
+//   const usersRef = ref2(db, 'users');
+//   const targetUserId = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+
+//   try {
+//     // Отримуємо всі дані з newUsers
+//     const [newUsersSnapshot, usersSnapshot] = await Promise.all([
+//       get(newUsersRef), // Отримуємо ВСІ дані з newUsers
+//       get(usersRef),    // Отримуємо ВСІ дані з users
+//     ]);
+
+//     if (!newUsersSnapshot.exists() && !usersSnapshot.exists()) {
+//       return {
+//         users: {},
+//         lastKey: null,
+//         hasMore: false,
+//       };
+//     }
+
+//     const newUsersData = newUsersSnapshot.exists() ? newUsersSnapshot.val() : {};
+//     const usersData = usersSnapshot.exists() ? usersSnapshot.val() : {};
+
+//     // Об'єднуємо всі дані
+//     const mergedData = mergeUsersData(newUsersData, usersData, targetUserId);
+
+//     // Визначаємо останній ключ для пагінації
+//     const lastUserKey = mergedData.length > 0 ? mergedData[mergedData.length - 1][0] : null;
+
+//     // Обмежуємо результати до 10 записів
+//     const paginatedData = Object.fromEntries(mergedData.slice(0, 10));
+
+//     console.log('paginatedData', paginatedData);
+
+//     return {
+//       users: paginatedData,
+//       lastKey: lastUserKey,
+//       hasMore: mergedData.length > 10,
+//     };
+//   } catch (error) {
+//     console.error('Error fetching paginated data:', error);
+//     return {
+//       users: {},
+//       lastKey: null,
+//       hasMore: false,
+//     };
+//   }
+// };
+
+///////////////////////////ПРАЦЮЄ лише з newUsers
+// export const fetchPaginatedNewUsers = async (lastKey) => {
+//   const db = getDatabase();
+//   const newUsersRef = ref2(db, 'newUsers');
+//   const targetUserId = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+
+//   try {
+//     // Формуємо запит до newUsers
+//     let newUsersQuery = query(newUsersRef, orderByKey(), limitToFirst(10 + 1));
+
+//     if (lastKey) {
+//       newUsersQuery = query(newUsersRef, orderByKey(), startAfter(lastKey), limitToFirst(10 + 1));
+//     }
+
+//     // Отримуємо дані з newUsers
+//     const newUsersSnapshot = await get(newUsersQuery);
+
+//     if (!newUsersSnapshot.exists()) {
+//       return {
+//         users: {},
+//         lastKey: null,
+//         hasMore: false,
+//       };
+//     }
+
+//     const newUsersData = newUsersSnapshot.val();
+    
+//     // Перетворюємо дані в масив [userId, userData]
+//     let sortedUsers = Object.entries(newUsersData);
+
+//     // Виділяємо targetUser і ставимо його першим
+//     sortedUsers = sortedUsers.filter(([key]) => key !== targetUserId); // Видаляємо targetUser з масиву
+//     const targetUser = Object.entries(newUsersData).find(([key]) => key === targetUserId); 
+
+//     if (targetUser) {
+//       sortedUsers.unshift(targetUser); // Додаємо targetUser на початок
+//     }
+
+//     // Визначаємо останній ключ для пагінації
+//     const lastUserKey = sortedUsers.length > 0 ? sortedUsers[sortedUsers.length - 1][0] : null;
+
+//     // Перевіряємо, чи є ще дані
+//     const hasMoreNewUsers = Object.keys(newUsersData).length > 10;
+
+//     // Обмежуємо результати до 10 записів
+//     const paginatedData = Object.fromEntries(sortedUsers.slice(0, 10));
+
+//     console.log('paginatedData', paginatedData);
+
+//     return {
+//       users: paginatedData,
+//       lastKey: lastUserKey,
+//       hasMore: hasMoreNewUsers,
+//     };
+//   } catch (error) {
+//     console.error('Error fetching paginated data:', error);
+//     return {
+//       users: {},
+//       lastKey: null,
+//       hasMore: false,
+//     };
+//   }
+// };
+
+
+// const fetchTargetUserData = async (targetUserId) => {
+//   const db = getDatabase();
+//   const newUsersRef = ref2(db, `newUsers/${targetUserId}`);
+//   const usersRef = ref2(db, `users/${targetUserId}`);
+
+//   try {
+//     // Отримуємо дані з двох колекцій
+//     const [newUserSnapshot, userSnapshot] = await Promise.all([
+//       get(newUsersRef),
+//       get(usersRef),
+//     ]);
+
+//     // Перевіряємо, чи існують дані
+//     const newUserData = newUserSnapshot.exists() ? newUserSnapshot.val() : null;
+//     const userData = userSnapshot.exists() ? userSnapshot.val() : null;
+
+//     console.log('Дані користувача з newUsers:', newUserData);
+//     console.log('Дані користувача з users:', userData);
+
+//     return {
+//       newUserData,
+//       userData,
+//     };
+//   } catch (error) {
+//     console.error('Помилка при отриманні даних користувача:', error);
+//     return null;
+//   }
+// };
+
+// Функція для об'єднання користувачів за userId
+
+// const mergeUsersData = (newUsersData, usersData, targetUserId) => {
+//   const mergedUsers = {};
+
+//   // Об'єднуємо дані з newUsers і users, враховуючи всі поля
+//   Object.keys({ ...newUsersData, ...usersData }).forEach((key) => {
+//     const newUserFields = newUsersData[key] || {};
+//     const userFields = usersData[key] || {};
+
+//     // Об'єднуємо дані, де пріоритет має newUsers
+//     mergedUsers[key] = { ...userFields, ...newUserFields };
+//   });
+
+//   // Сортуємо: targetUserId завжди на першому місці
+//   const sortedUsers = Object.entries(mergedUsers);
+//   const targetUser = sortedUsers.find(([key]) => key === targetUserId);
+//   const otherUsers = sortedUsers.filter(([key]) => key !== targetUserId);
+
+//   return targetUser ? [targetUser, ...otherUsers] : otherUsers;
+// };
 
 export const fetchListOfUsers = async () => {
   const db = getDatabase();
