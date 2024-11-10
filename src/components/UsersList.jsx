@@ -66,10 +66,11 @@ const renderTopBlock = (userData, setUsers) => {
     <div style={{ padding: '7px',  position: 'relative',}}>
       <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div>
       <div>
-        <strong>{`${userData.name || ''} ${userData.surname || ''}`.trim()}, 
+        <strong>{`${userData.name || ''} ${userData.surname || ''}`.trim()}
           {renderBirthInfo(userData.birth)} 
           </strong> 
-          , {userData.maritalStatus},
+          {renderCsection(userData.csection)} 
+          {renderMaritalStatus(userData.maritalStatus)} 
       </div>
       
       
@@ -81,11 +82,25 @@ const renderTopBlock = (userData, setUsers) => {
       <RenderCommentInput userData={userData} setUsers={setUsers} />
       
 
-    
+
+      <button
+      // style={{ position: 'absolute', bottom: '10px', right: '10px', cursor: 'pointer', backgroundColor: 'purple', }}
+              style={{...styles.removeButton, backgroundColor: 'purple', top: '10px', right: '60px'}}
+              onClick={() => {
+                const details = document.getElementById(userData.userId);
+                if (details) {
+                  details.style.display = details.style.display === 'none' ? 'block' : 'none';
+                }
+              }}
+            >
+              more
+            </button>
+
+
 
       <div 
         onClick={() => {
-          const details = document.getElementById('user-details');
+          const details = document.getElementById(userData.userId);
           if (details) {
             details.style.display = details.style.display === 'none' ? 'block' : 'none';
           }
@@ -102,7 +117,7 @@ const renderBirthInfo = (birth) => {
   const age = calculateAge(birth);
 
   return age !== null ? (
-      <span>{age}р</span>
+      <span>, {age}р</span>
   ) : null;
 };
 
@@ -130,7 +145,7 @@ const renderDeliveryInfo = (ownKids, lastDelivery, csection) => {
       <div>
         {ownKids ? `Пологів ${ownKids}` : ''}
         {monthsAgo !== null ? `${ownKids ? ', ' : ''}ост пологи ${monthsAgo} міс тому` : ''}
-        {csection ? `${ownKids || monthsAgo !== null ? ', ' : ''}кс ${csection}` : ''}
+        {/* {csection ? `${ownKids || monthsAgo !== null ? ', ' : ''}кс ${csection}` : ', _N/C_'} */}
       </div>
     )
     : null;
@@ -167,7 +182,7 @@ const renderGetInTouchInput = (userData, setUsers) => {
         onChange={(e) => handleChange(setUsers, userData.userId, 'getInTouch', e.target.value)}
         onBlur={() => handleSubmit(userData, 'overwrite')}
         // placeholder="Введіть дату або формулу"
-        style={styles.underlinedInput}
+        style={{...styles.underlinedInput, width: '40%',}}
       />
     </div>
   );
@@ -224,7 +239,7 @@ const RenderCommentInput = ({ userData, setUsers }) => {
 const renderWriterInput = (userData, setUsers) => {
   const handleCodeClick = (code) => {
     let currentWriter = userData.writer || '';
-    let updatedCodes = currentWriter.split(', ').filter((item) => item !== code); // Видаляємо, якщо є
+    let updatedCodes = currentWriter?.split(', ').filter((item) => item !== code); // Видаляємо, якщо є
     updatedCodes = [code, ...updatedCodes]; // Додаємо код першим
 
     const newState = {
@@ -267,6 +282,7 @@ const renderWriterInput = (userData, setUsers) => {
               cursor: 'pointer',
               flex: '1', // Рівномірно розподіляє кнопки по всій ширині
               minWidth: '15px', // Мінімальна ширина кнопок
+              // color: 'orange'
             }}
           >
             {code}
@@ -508,9 +524,41 @@ const renderContacts = (data, parentKey = '') => {
   });
 };
 
+const renderMaritalStatus = (maritalStatus) => {
+  switch (maritalStatus) {
+    case 'Yes': case '+':
+      return ', Married';
+    case 'No': case '-':
+      return ', Single';
+    default:
+      return maritalStatus || '';
+  }
+};
+
+const renderCsection = (csection) => {
+
+  if (csection === undefined) {
+    return ', кс ?';
+  }
+
+  switch (csection) {
+    case '1':
+      return ', 1кс';
+    case '2':
+      return ', 2кс';
+    case 'No': case '0': case '-':
+      return ', без кс';
+    case 'Yes': case '+':
+      return ', кс';
+    default:
+      return `, кс ${csection}`|| '';
+  }
+};
+
 const calculateAge = (birthDateString) => {
   if (!birthDateString) return null;
-  const [day, month, year] = birthDateString.split('.').map(Number);
+  if (typeof birthDateString !== 'string') return birthDateString;
+  const [day, month, year] = birthDateString?.split('.').map(Number);
   const birthDate = new Date(year, month - 1, day);
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
@@ -524,7 +572,7 @@ const calculateAge = (birthDateString) => {
 const calculateMonthsAgo = (dateString) => {
   if (!dateString) return null;
 
-  const [day, month, year] = dateString.split('.').map(Number);
+  const [day, month, year] = dateString?.split('.').map(Number);
   const deliveryDate = new Date(year, month - 1, day);
   const now = new Date();
 
@@ -534,7 +582,7 @@ const calculateMonthsAgo = (dateString) => {
 
 const calculateNextDate = (dateString) => {
   if (!dateString) return '';
-  const [day, month, year] = dateString.split('.').map(Number);
+  const [day, month, year] = dateString?.split('.').map(Number);
   const currentDate = new Date(year, month - 1, day);
   currentDate.setDate(currentDate.getDate() + 28);
   return currentDate.toLocaleDateString('uk-UA');
@@ -590,7 +638,7 @@ const UserCard = ({ userData, setUsers }) => {
       return indexA - indexB;
     });
 
-    let detailsRow = '';
+    // let detailsRow = '';
 
     return sortedKeys.map((key) => {
       const nestedKey = parentKey ? `${parentKey}.${key}` : key;
@@ -600,91 +648,91 @@ const UserCard = ({ userData, setUsers }) => {
         return null;
       }
 
-      // Спеціальне форматування для name, surname, age, blood, region
-      if (['name', 'surname', 'age', 'blood', 'region'].includes(key)) {
-        detailsRow += value ? `${value} ` : ''; // Додаємо тільки наявні значення
-        if (key === 'region') {
-          return (
-            <div key={nestedKey}>
-              <strong></strong> {detailsRow.trim()}
-            </div>
-          );
-        }
-        return null;
-      }
+      // // Спеціальне форматування для name, surname, age, blood, region
+      // if (['name', 'surname', 'age', 'blood', 'region'].includes(key)) {
+      //   detailsRow += value ? `${value} ` : ''; // Додаємо тільки наявні значення
+      //   if (key === 'region') {
+      //     return (
+      //       <div key={nestedKey}>
+      //         <strong></strong> {detailsRow.trim()}
+      //       </div>
+      //     );
+      //   }
+      //   return null;
+      // }
 
           // Клікабельні посилання для соцмереж і телефону
-          const links = {
-            telegram: (value) => `https://t.me/${value}`,
-            instagram: (value) => `https://instagram.com/${value}`,
-            tiktok: (value) => `https://www.tiktok.com/@${value}`,
-            phone: (value) => `tel:${value}`,
-            facebook: (value) => `https://facebook.com/${value}`,
-            email: (value) => `mailto:${value}`,
-            telegramFromPhone: (value) => `https://t.me/${value.replace(/\s+/g, '')}`,
-            viberFromPhone: (value) => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`, // Viber посилання
-            whatsappFromPhone: (value) => `https://wa.me/${value.replace(/\s+/g, '')}`, // WhatsApp посилання
-          };
+          // const links = {
+          //   telegram: (value) => `https://t.me/${value}`,
+          //   instagram: (value) => `https://instagram.com/${value}`,
+          //   tiktok: (value) => `https://www.tiktok.com/@${value}`,
+          //   phone: (value) => `tel:${value}`,
+          //   facebook: (value) => `https://facebook.com/${value}`,
+          //   email: (value) => `mailto:${value}`,
+          //   telegramFromPhone: (value) => `https://t.me/${value.replace(/\s+/g, '')}`,
+          //   viberFromPhone: (value) => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`, // Viber посилання
+          //   whatsappFromPhone: (value) => `https://wa.me/${value.replace(/\s+/g, '')}`, // WhatsApp посилання
+          // };
           
-          if (links[key] && value) {
-            return (
-              <div key={nestedKey}>
-                <strong>{key}:</strong>{' '}
-                {Array.isArray(value) ? (
-                  value.map((val, idx) => (
-                    <a
-                      key={`${nestedKey}-${idx}`}
-                      href={links[key](val)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-                    >
-                      {val}
-                    </a>
-                  ))
-                ) : (
-                  <>
-                    <a
-                      href={links[key](value)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-                    >
-                      {value}
-                    </a>
-                    {key === 'phone' && (
-                      <>
-                        <a
-                          href={links.telegramFromPhone(`+${value.replace(/\s+/g, '')}`)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                        >
-                          Telegram
-                        </a>
-                        <a
-                          href={links.viberFromPhone(value)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                        >
-                          Viber
-                        </a>
-                        <a
-                          href={links.whatsappFromPhone(value)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                        >
-                          WhatsApp
-                        </a>
-                      </>
-                    )}
-                  </>
-                )}
-              </div>
-            );
-          }
+          // if (links[key] && value) {
+          //   return (
+          //     <div key={nestedKey}>
+          //       <strong>{key}:</strong>{' '}
+          //       {Array.isArray(value) ? (
+          //         value.map((val, idx) => (
+          //           <a
+          //             key={`${nestedKey}-${idx}`}
+          //             href={links[key](val)}
+          //             target="_blank"
+          //             rel="noopener noreferrer"
+          //             style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
+          //           >
+          //             {val}
+          //           </a>
+          //         ))
+          //       ) : (
+          //         <>
+          //           <a
+          //             href={links[key](value)}
+          //             target="_blank"
+          //             rel="noopener noreferrer"
+          //             style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
+          //           >
+          //             {value}
+          //           </a>
+          //           {key === 'phone' && (
+          //             <>
+          //               <a
+          //                 href={links.telegramFromPhone(`+${value.replace(/\s+/g, '')}`)}
+          //                 target="_blank"
+          //                 rel="noopener noreferrer"
+          //                 style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+          //               >
+          //                 Telegram
+          //               </a>
+          //               <a
+          //                 href={links.viberFromPhone(value)}
+          //                 target="_blank"
+          //                 rel="noopener noreferrer"
+          //                 style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+          //               >
+          //                 Viber
+          //               </a>
+          //               <a
+          //                 href={links.whatsappFromPhone(value)}
+          //                 target="_blank"
+          //                 rel="noopener noreferrer"
+          //                 style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+          //               >
+          //                 WhatsApp
+          //               </a>
+          //             </>
+          //           )}
+          //         </>
+          //       )}
+          //     </div>
+          //   );
+          // }
 
       if (typeof value === 'object' && value !== null) {
         return (
@@ -708,7 +756,7 @@ const UserCard = ({ userData, setUsers }) => {
   return (
     <div>
     {renderTopBlock(userData, setUsers)}
-    <div id="user-details" style={{ display: 'none' }}>
+    <div id={userData.userId} style={{ display: 'none' }}>
       {renderFields(userData)}
     </div>
   </div>
@@ -862,7 +910,7 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
             </button>
 
             <button
-              style={{...styles.removeButton, backgroundColor: 'green', top: '50px',}}
+              style={{...styles.removeButton, backgroundColor: 'green', top: '10px', right: '118px'}}
               onClick={(e) => {
                 e.stopPropagation(); // Запобігаємо активації кліку картки
                 exportContacts(userData);
@@ -891,7 +939,7 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
 const styles = {
   underlinedInput: {
     border: "none",
-    borderBottom: "1px solid transparent",
+    borderBottom: "1px solid white",
     backgroundColor: "transparent",
     outline: "none",
     fontSize: "16px",
