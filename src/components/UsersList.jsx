@@ -83,7 +83,7 @@ const renderTopBlock = (userData, setUsers) => {
       
 
 
-      <button
+      {/* <button
       // style={{ position: 'absolute', bottom: '10px', right: '10px', cursor: 'pointer', backgroundColor: 'purple', }}
               style={{...styles.removeButton, backgroundColor: 'purple', top: '10px', right: '60px'}}
               onClick={() => {
@@ -94,7 +94,7 @@ const renderTopBlock = (userData, setUsers) => {
               }}
             >
               more
-            </button>
+            </button> */}
 
 
 
@@ -439,12 +439,12 @@ const renderContacts = (data, parentKey = '') => {
               .map((val, idx) => (
                 <div key={`${nestedKey}-${idx}`} style={{ marginBottom: '2px' }}>
                   <a
-                    href={links[key](val)}
+                    href={links[key](val.replace(/\s/g, ''))}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
                   >
-                    {val}
+                    {val.replace(/\s/g, '')}
                   </a>
                   {key === 'phone' && (
                     <>
@@ -479,12 +479,12 @@ const renderContacts = (data, parentKey = '') => {
           ) : (
             <>
               <a
-                href={links[key](value)}
+                href={links[key](value.replace(/\s/g, ''))}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
               >
-                {value}
+                {value.replace(/\s/g, '')}
               </a>
               {key === 'phone' && (
                 <>
@@ -571,6 +571,7 @@ const calculateAge = (birthDateString) => {
 
 const calculateMonthsAgo = (dateString) => {
   if (!dateString) return null;
+  if (typeof dateString !== 'string') return dateString;
 
   const [day, month, year] = dateString?.split('.').map(Number);
   const deliveryDate = new Date(year, month - 1, day);
@@ -647,92 +648,6 @@ const UserCard = ({ userData, setUsers }) => {
       if (['attitude', 'photos', 'whiteList', 'blackList'].includes(key)) {
         return null;
       }
-
-      // // Спеціальне форматування для name, surname, age, blood, region
-      // if (['name', 'surname', 'age', 'blood', 'region'].includes(key)) {
-      //   detailsRow += value ? `${value} ` : ''; // Додаємо тільки наявні значення
-      //   if (key === 'region') {
-      //     return (
-      //       <div key={nestedKey}>
-      //         <strong></strong> {detailsRow.trim()}
-      //       </div>
-      //     );
-      //   }
-      //   return null;
-      // }
-
-          // Клікабельні посилання для соцмереж і телефону
-          // const links = {
-          //   telegram: (value) => `https://t.me/${value}`,
-          //   instagram: (value) => `https://instagram.com/${value}`,
-          //   tiktok: (value) => `https://www.tiktok.com/@${value}`,
-          //   phone: (value) => `tel:${value}`,
-          //   facebook: (value) => `https://facebook.com/${value}`,
-          //   email: (value) => `mailto:${value}`,
-          //   telegramFromPhone: (value) => `https://t.me/${value.replace(/\s+/g, '')}`,
-          //   viberFromPhone: (value) => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`, // Viber посилання
-          //   whatsappFromPhone: (value) => `https://wa.me/${value.replace(/\s+/g, '')}`, // WhatsApp посилання
-          // };
-          
-          // if (links[key] && value) {
-          //   return (
-          //     <div key={nestedKey}>
-          //       <strong>{key}:</strong>{' '}
-          //       {Array.isArray(value) ? (
-          //         value.map((val, idx) => (
-          //           <a
-          //             key={`${nestedKey}-${idx}`}
-          //             href={links[key](val)}
-          //             target="_blank"
-          //             rel="noopener noreferrer"
-          //             style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-          //           >
-          //             {val}
-          //           </a>
-          //         ))
-          //       ) : (
-          //         <>
-          //           <a
-          //             href={links[key](value)}
-          //             target="_blank"
-          //             rel="noopener noreferrer"
-          //             style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-          //           >
-          //             {value}
-          //           </a>
-          //           {key === 'phone' && (
-          //             <>
-          //               <a
-          //                 href={links.telegramFromPhone(`+${value.replace(/\s+/g, '')}`)}
-          //                 target="_blank"
-          //                 rel="noopener noreferrer"
-          //                 style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-          //               >
-          //                 Telegram
-          //               </a>
-          //               <a
-          //                 href={links.viberFromPhone(value)}
-          //                 target="_blank"
-          //                 rel="noopener noreferrer"
-          //                 style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-          //               >
-          //                 Viber
-          //               </a>
-          //               <a
-          //                 href={links.whatsappFromPhone(value)}
-          //                 target="_blank"
-          //                 rel="noopener noreferrer"
-          //                 style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-          //               >
-          //                 WhatsApp
-          //               </a>
-          //             </>
-          //           )}
-          //         </>
-          //       )}
-          //     </div>
-          //   );
-          // }
 
       if (typeof value === 'object' && value !== null) {
         return (
@@ -819,7 +734,7 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
     VERSION:3.0
     FN:УК СМ ${user.name?.trim()} ${user.surname?.trim()}
     N:УК СМ ${user.surname?.trim() || ''};${user.name?.trim() || ''};;;
-    TEL;TYPE=CELL:${user.phone ? `tel:${user.phone}` : ''}
+    TEL;TYPE=CELL:${user.phone ? `tel:${user.phone.replace(/\s/g, '')}` : ''}
     EMAIL;TYPE=HOME:${user.email || ''}
     ADR;TYPE=HOME:;;${user.street || ''};${user.city || ''};${user.region || ''};;${user.country || ''}
     ORG:${user.profession || ''}
@@ -910,7 +825,10 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
             </button>
 
             <button
-              style={{...styles.removeButton, backgroundColor: 'green', top: '10px', right: '118px'}}
+              style={{...styles.removeButton, backgroundColor: 'green', top: '10px', 
+                // right: '118px'
+                right: '60px'
+              }}
               onClick={(e) => {
                 e.stopPropagation(); // Запобігаємо активації кліку картки
                 exportContacts(userData);
