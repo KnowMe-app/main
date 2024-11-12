@@ -49,7 +49,7 @@ const dublicateFields = ['weight', 'height', ];
 
 const renderTopBlock = (userData, setUsers) => {
 
-  console.log('userData в renderTopBlock:', userData );
+  // console.log('userData в renderTopBlock:', userData );
 
   if (!userData) return null;
 
@@ -696,7 +696,7 @@ const UserCard = ({ userData, setUsers }) => {
 // Компонент для рендерингу всіх карток
 const UsersList = ({ users, setUsers, setSearch, setState  }) => {
 
-  console.log('users in UsersList: ', users);
+  // console.log('users in UsersList: ', users);
 
   const gradients = [
     'linear-gradient(to right, #fc466b, #3f5efb)',

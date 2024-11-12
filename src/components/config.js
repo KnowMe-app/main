@@ -2,8 +2,8 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, deleteUser } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
-import { getDatabase, ref as ref2, get, remove, set, update, push } from 'firebase/database';
-import { query, orderByKey, limitToFirst, startAfter } from 'firebase/database';
+import { getDatabase, ref as ref2, get, remove, set, update, push, orderByChild,} from 'firebase/database';
+import { query, orderByKey, limitToFirst,} from 'firebase/database';
 import { startAt, endAt } from 'firebase/database';
 
 const firebaseConfig = {
@@ -891,103 +891,82 @@ const filterMain = (usersData) => {
   return filteredUsers;
 };
 
-// Функція для пошуку користувача за userId у двох колекціях
-// __вДвохКолекціях не працює лоад море
-export const fetchPaginatedNewUsers = async lastKey => {
+// Сортування
+const sortUsers = (filteredUsers) => {
+  const today = new Date().toLocaleDateString('uk-UA'); // "дд.мм.рррр"
+
+  return filteredUsers.sort(([_, a], [__, b]) => {
+    const aDate = a.getInTouch || "99.99.9999";
+    const bDate = b.getInTouch || "99.99.9999";
+
+    if (aDate === today && bDate !== today) return -1;
+    if (bDate === today && aDate !== today) return 1;
+
+    if (aDate === "99.99.9999" && bDate !== "99.99.9999") return -1;
+    if (bDate === "99.99.9999" && aDate !== "99.99.9999") return 1;
+
+    return new Date(aDate.split('.').reverse().join('-')) - new Date(bDate.split('.').reverse().join('-'));
+  });
+};
+
+export const fetchPaginatedNewUsers = async (lastKey) => {
   const db = getDatabase();
-  const newUsersRef = ref2(db, 'newUsers');
-  const usersRef = ref2(db, 'users');
+  const usersRef = ref2(db, 'newUsers');
+  const today = new Date().toLocaleDateString('uk-UA'); // "дд.мм.рррр"
 
   try {
-    // Запит для отримання даних з 'newUsers'
-    let newUsersQuery = query(newUsersRef, orderByKey(), limitToFirst(10 + 1));
+    // 1. Отримуємо картки з getInTouch = сьогодні
+    // const todayQuery = query(usersRef, orderByChild('getInTouch'), endAt(today));
+    const todayQuery = query(usersRef, orderByChild('getInTouch'), endAt(today));
+    const todaySnapshot = await get(todayQuery);
+    const todayUsers = todaySnapshot.exists() ? Object.entries(todaySnapshot.val()) : [];
 
-    // Якщо є останній ключ (lastKey), беремо наступну сторінку даних
-    if (lastKey) {
-      newUsersQuery = query(newUsersRef, orderByKey(), startAfter(lastKey), limitToFirst(10 + 1));
-    }
+    // 2. Отримуємо картки без getInTouch
+    const withoutGetInTouchQuery = query(usersRef, orderByChild('getInTouch'), startAt(null), limitToFirst(50));
+    const withoutGetInTouchSnapshot = await get(withoutGetInTouchQuery);
+    const withoutGetInTouchUsers = withoutGetInTouchSnapshot.exists()
+      ? Object.entries(withoutGetInTouchSnapshot.val()).filter(([_, value]) => !value.getInTouch)
+      : [];
 
-    // Паралельне виконання обох запитів
-    const [newUsersSnapshot, usersSnapshot] = await Promise.all([get(newUsersQuery), get(usersRef)]);
+    // 3. Отримуємо картки з майбутніми getInTouch
+    const futureQuery = query(usersRef, orderByChild('getInTouch'), startAt(today), limitToFirst(50));
+    const futureSnapshot = await get(futureQuery);
+    const futureUsers = futureSnapshot.exists()
+      ? Object.entries(futureSnapshot.val()).filter(([_, value]) => value.getInTouch > today)
+      : [];
 
-    // Перевірка наявності даних у 'newUsers'
-    let newUsersData = {};
-    let lastUserKey = null;
-    let hasMoreNewUsers = false;
-
-    if (newUsersSnapshot.exists()) {
-      const usersData = newUsersSnapshot.val();
-
-      // Виключаємо 'searchId' з результатів
-      //const filteredData = Object.entries(usersData).filter(([key]) => key !== 'searchId ');
-      const filteredData = filterMain(
-        Object.fromEntries(Object.entries(usersData)
-        .filter(([key]) => key !== 'searchId '))
-      );
-
-    
-
-      // Визначаємо останній ключ для пагінації
-      lastUserKey = filteredData.length > 0 ? filteredData[filteredData.length - 1][0] : null;
-
-      // Визначаємо, чи є ще сторінки
-      hasMoreNewUsers = filteredData.length > 10;
-
-      // Обмежуємо результати до 10 карток
-      newUsersData = Object.fromEntries(filteredData.slice(0, 10));
-    }
-
-    // Перевірка наявності даних у 'users'
-    let usersData = {};
-    const targetUserId = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
-    // const targetUserId = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
-    if (usersSnapshot.exists()) {
-      const usersArray = Object.entries(usersSnapshot.val());
-
-      // Виділяємо цільового користувача
-  const targetUser = usersArray.find(([key]) => key === targetUserId);
-  const otherUsers = usersArray.filter(([key]) => key !== targetUserId);
-
-
-
-
-  //      // Розділяємо користувачів на дві частини
-  // const withoutLastAction = usersArray.filter(([key, value]) => !value.lastAction);
-  // const withLastAction = usersArray.filter(([key, value]) => value.lastAction);
-
-    // Розділяємо інші користувачі на дві частини
-    const withoutLastAction = otherUsers.filter(([key, value]) => !value.lastAction);
-    const withLastAction = otherUsers.filter(([key, value]) => value.lastAction);
-  
-
-  // // Об'єднуємо масиви, з користувачами з lastAction в кінці
-  // usersData = [...withoutLastAction, ...withLastAction].slice(0, 10); // Лімітуємо результати до 10
-  //   }
-
-    // Додаємо цільового користувача першим і комбінуємо масиви
+    // 4. Об'єднуємо всі результати у форматі [key, value]
     const combinedUsers = [
-      ...(targetUser ? [targetUser] : []),
-      ...withoutLastAction,
-      ...withLastAction,
-    ].slice(0, 10);
+      ...todayUsers,
+      ...withoutGetInTouchUsers,
+      ...futureUsers,
+    ];
 
-    usersData = Object.fromEntries(filterMain(Object.fromEntries(combinedUsers)));
-  }
+    // 5. Фільтруємо користувачів
+    const filteredUsers = filterMain(combinedUsers);
 
-  const combinedData = [
-    ...Object.entries(usersData),
-    ...Object.entries(newUsersData).slice(0, 10 - Object.keys(usersData).length)
-  ];
+    // 6. Сортуємо за логікою: сьогодні -> без дати -> майбутні
+    const sortedUsers = sortUsers(filteredUsers);
 
-  const paginatedData = Object.fromEntries(combinedData.slice(0, 10));
+    // 7. Перетворюємо масив [key, value] у формат об'єкта
+    const paginatedUsers = sortedUsers.slice(0, 10).reduce((acc, [key, value]) => {
+      const userId = value[0]; // Перший елемент масиву - userId
+      const userData = value[1]; // Другий елемент - об'єкт даних користувача
+      acc[userId] = userData;
+      return acc;
+    }, {});
 
-  return {
-    users: paginatedData,
-    lastKey: lastUserKey,
-    hasMore: hasMoreNewUsers,
-  };
+    const nextKey = sortedUsers.length > 10 ? sortedUsers[10][0] : null;
+
+    console.log('paginatedUsers :>> ', paginatedUsers);
+
+    return {
+      users: paginatedUsers, // Об'єкт із ключами userId
+      lastKey: nextKey,
+      hasMore: sortedUsers.length > 10,
+    };
   } catch (error) {
-    console.error('Error fetching paginated data:', error);
+    console.error('Error fetching paginated filtered users:', error);
     return {
       users: {},
       lastKey: null,
@@ -995,6 +974,111 @@ export const fetchPaginatedNewUsers = async lastKey => {
     };
   }
 };
+
+// Функція для пошуку користувача за userId у двох колекціях
+// __вДвохКолекціях не працює лоад море
+// export const fetchPaginatedNewUsers = async lastKey => {
+//   const db = getDatabase();
+//   const newUsersRef = ref2(db, 'newUsers');
+//   const usersRef = ref2(db, 'users');
+
+//   try {
+//     // Запит для отримання даних з 'newUsers'
+//     let newUsersQuery = query(newUsersRef, orderByKey(), limitToFirst(10 + 1));
+
+//     // Якщо є останній ключ (lastKey), беремо наступну сторінку даних
+//     if (lastKey) {
+//       newUsersQuery = query(newUsersRef, orderByKey(), startAfter(lastKey), limitToFirst(10 + 1));
+//     }
+
+//     // Паралельне виконання обох запитів
+//     const [newUsersSnapshot, usersSnapshot] = await Promise.all([get(newUsersQuery), get(usersRef)]);
+
+//     // Перевірка наявності даних у 'newUsers'
+//     let newUsersData = {};
+//     let lastUserKey = null;
+//     let hasMoreNewUsers = false;
+
+//     if (newUsersSnapshot.exists()) {
+//       const usersData = newUsersSnapshot.val();
+
+//       // Виключаємо 'searchId' з результатів
+//       //const filteredData = Object.entries(usersData).filter(([key]) => key !== 'searchId ');
+//       const filteredData = filterMain(
+//         Object.fromEntries(Object.entries(usersData)
+//         .filter(([key]) => key !== 'searchId '))
+//       );
+
+    
+
+//       // Визначаємо останній ключ для пагінації
+//       lastUserKey = filteredData.length > 0 ? filteredData[filteredData.length - 1][0] : null;
+
+//       // Визначаємо, чи є ще сторінки
+//       hasMoreNewUsers = filteredData.length > 10;
+
+//       // Обмежуємо результати до 10 карток
+//       newUsersData = Object.fromEntries(filteredData.slice(0, 10));
+//     }
+
+//     // Перевірка наявності даних у 'users'
+//     let usersData = {};
+//     const targetUserId = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+//     // const targetUserId = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
+//     if (usersSnapshot.exists()) {
+//       const usersArray = Object.entries(usersSnapshot.val());
+
+//       // Виділяємо цільового користувача
+//   const targetUser = usersArray.find(([key]) => key === targetUserId);
+//   const otherUsers = usersArray.filter(([key]) => key !== targetUserId);
+
+
+
+
+//   //      // Розділяємо користувачів на дві частини
+//   // const withoutLastAction = usersArray.filter(([key, value]) => !value.lastAction);
+//   // const withLastAction = usersArray.filter(([key, value]) => value.lastAction);
+
+//     // Розділяємо інші користувачі на дві частини
+//     const withoutLastAction = otherUsers.filter(([key, value]) => !value.lastAction);
+//     const withLastAction = otherUsers.filter(([key, value]) => value.lastAction);
+  
+
+//   // // Об'єднуємо масиви, з користувачами з lastAction в кінці
+//   // usersData = [...withoutLastAction, ...withLastAction].slice(0, 10); // Лімітуємо результати до 10
+//   //   }
+
+//     // Додаємо цільового користувача першим і комбінуємо масиви
+//     const combinedUsers = [
+//       ...(targetUser ? [targetUser] : []),
+//       ...withoutLastAction,
+//       ...withLastAction,
+//     ].slice(0, 10);
+
+//     usersData = Object.fromEntries(filterMain(Object.fromEntries(combinedUsers)));
+//   }
+
+//   const combinedData = [
+//     ...Object.entries(usersData),
+//     ...Object.entries(newUsersData).slice(0, 10 - Object.keys(usersData).length)
+//   ];
+
+//   const paginatedData = Object.fromEntries(combinedData.slice(0, 10));
+
+//   return {
+//     users: paginatedData,
+//     lastKey: lastUserKey,
+//     hasMore: hasMoreNewUsers,
+//   };
+//   } catch (error) {
+//     console.error('Error fetching paginated data:', error);
+//     return {
+//       users: {},
+//       lastKey: null,
+//       hasMore: false,
+//     };
+//   }
+// };
 
 ///////////////////////////ПРАЦЮЄ для тестування, мій перший
 // export const fetchPaginatedNewUsers = async (lastKey) => {
