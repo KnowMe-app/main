@@ -790,7 +790,106 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
 //   }
 // };
 
+// Додаткова фільтрація користувачів
+// const filterMarriedAndAbove30 = (usersData) => {
 
+
+//   return Object.entries(usersData).filter(([key, value]) => {
+//     console.log('value', value);
+//     console.log('key', key);
+    
+//     if (!value.birth || !value.maritalStatus) return true; // Пропускаємо, якщо дані відсутні
+//     console.log('value', value);
+//     console.log('key', key);
+//     const birthDate = value.birth.split('.'); // Розділяємо дату на день, місяць, рік
+//     const birthYear = parseInt(birthDate[2], 10);
+//     const currentYear = new Date().getFullYear();
+//     const age = currentYear - birthYear;
+
+//     const failsFilter = value.maritalStatus === "Yes" && age > 30;
+//     if (failsFilter) {
+//       console.log(`User excluded by filter: ${key}`);
+//     }
+
+//     return !failsFilter; // Відфільтровуємо одружених старше 30 років
+//   });
+// };
+
+// Окрема функція для фільтрації за віком
+// const filterByAge = (value, ageLimit = 30) => {
+//   if (!value.birth) return true; // Пропускаємо, якщо дата народження відсутня
+//   const birthDate = value.birth.split('.'); // Розділяємо дату на день, місяць, рік
+//   const birthYear = parseInt(birthDate[2], 10);
+//   const currentYear = new Date().getFullYear();
+//   const age = currentYear - birthYear;
+//   return age <= ageLimit;
+// };
+
+// Окрема функція для фільтрації за статусом шлюбу
+// const filterByMaritalStatus = (value, requiredStatus = "Yes") => {
+//   if (!value.maritalStatus) return true; // Пропускаємо, якщо статус шлюбу відсутній
+//   return value.maritalStatus !== requiredStatus;
+// };
+
+// Фільтр за роллю користувача
+const filterByUserRole = (value) => {
+  const excludedRoles = ['ag', 'ip']; // Ролі, які потрібно виключити
+  return !excludedRoles.includes(value.userRole);
+};
+
+// Фільтр за групою крові
+const filterByNegativeBloodType = (value) => {
+  if (!value.blood) return true; // Пропускаємо, якщо дані про кров відсутні
+  const negativeBloodTypes = ['1-', '2-', '3-', '4-', '-']; // Негативні групи крові
+  return !negativeBloodTypes.includes(value.blood);
+};
+
+// Фільтр за віком і статусом шлюбу (комбінований)
+const filterByAgeAndMaritalStatus = (value, ageLimit = 30, requiredStatus = "Yes") => {
+  if (!value.birth || !value.maritalStatus) return true; // Пропускаємо, якщо дані відсутні
+  const birthDate = value.birth.split('.');
+  const birthYear = parseInt(birthDate[2], 10);
+  const currentYear = new Date().getFullYear();
+  const age = currentYear - birthYear;
+
+  return !(value.maritalStatus === requiredStatus && age > ageLimit); // Відфільтровуємо, якщо одружений і старший 30 років
+};
+
+// Фільтр за csection
+const filterByCSection = (value) => {
+  if (!value.csection) return true; // Пропускаємо, якщо дані відсутні
+  return value.csection !== '2' && value.csection !== '3';
+};
+
+// Основна функція фільтрації
+const filterMain = (usersData) => {
+  let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
+
+  const filteredUsers = Object.entries(usersData).filter(([key, value]) => {
+    const filters = {
+      filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value, 30, "Yes"), // Віковий і шлюбний фільтр
+      filterByUserRole: filterByUserRole(value),                                 // Фільтр за роллю користувача
+      filterByNegativeBloodType: filterByNegativeBloodType(value),               // Фільтр за групою крові
+      filterByCSection: filterByCSection(value),                                 // Фільтр за csection
+    };
+
+    const failedFilters = Object.entries(filters).filter(([filterName, result]) => !result);
+
+    if (failedFilters.length > 0) {
+      console.log(`User excluded by filter: ${key}`);
+      failedFilters.forEach(([filterName]) => {
+        console.log(`Failed filter: ${filterName}`);
+      });
+      excludedUsersCount++; // Збільшуємо лічильник відфільтрованих користувачів
+    }
+
+    return failedFilters.length === 0;
+  });
+
+  console.log(`Total excluded users: ${excludedUsersCount}`); // Виводимо загальну кількість відфільтрованих користувачів
+
+  return filteredUsers;
+};
 
 // Функція для пошуку користувача за userId у двох колекціях
 // __вДвохКолекціях не працює лоад море
@@ -820,7 +919,13 @@ export const fetchPaginatedNewUsers = async lastKey => {
       const usersData = newUsersSnapshot.val();
 
       // Виключаємо 'searchId' з результатів
-      const filteredData = Object.entries(usersData).filter(([key]) => key !== 'searchId ');
+      //const filteredData = Object.entries(usersData).filter(([key]) => key !== 'searchId ');
+      const filteredData = filterMain(
+        Object.fromEntries(Object.entries(usersData)
+        .filter(([key]) => key !== 'searchId '))
+      );
+
+    
 
       // Визначаємо останній ключ для пагінації
       lastUserKey = filteredData.length > 0 ? filteredData[filteredData.length - 1][0] : null;
@@ -860,25 +965,27 @@ export const fetchPaginatedNewUsers = async lastKey => {
   //   }
 
     // Додаємо цільового користувача першим і комбінуємо масиви
-    usersData = [
+    const combinedUsers = [
       ...(targetUser ? [targetUser] : []),
       ...withoutLastAction,
       ...withLastAction,
-    ].slice(0, 10); // Лімітуємо результати до 10
+    ].slice(0, 10);
+
+    usersData = Object.fromEntries(filterMain(Object.fromEntries(combinedUsers)));
   }
 
-    // Комбінування даних з 'users' та 'newUsers', обмежуючи кількість карток до 10
-    const combinedData = [...usersData, ...Object.entries(newUsersData).slice(0, 10 - Object.keys(usersData).length)];
+  const combinedData = [
+    ...Object.entries(usersData),
+    ...Object.entries(newUsersData).slice(0, 10 - Object.keys(usersData).length)
+  ];
 
-    // Перетворення об'єднаних даних назад в об'єкт
-    const paginatedData = Object.fromEntries(combinedData.slice(0, 10));
+  const paginatedData = Object.fromEntries(combinedData.slice(0, 10));
 
-    // Повертаємо об'єднані результати
-    return {
-      users: paginatedData,
-      lastKey: lastUserKey, // Ключ для наступної сторінки
-      hasMore: hasMoreNewUsers, // Показує, чи є наступна сторінка в 'newUsers'
-    };
+  return {
+    users: paginatedData,
+    lastKey: lastUserKey,
+    hasMore: hasMoreNewUsers,
+  };
   } catch (error) {
     console.error('Error fetching paginated data:', error);
     return {

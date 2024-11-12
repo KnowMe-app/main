@@ -543,13 +543,13 @@ const renderCsection = (csection) => {
 
   switch (csection) {
     case '1':
-      return ', 1кс';
+      return ', кс1';
     case '2':
-      return ', 2кс';
-    case 'No': case '0': case '-':
-      return ', без кс';
-    case 'Yes': case '+':
-      return ', кс';
+      return ', кс2';
+    case 'No': case '0': case 'Ні': case '-':
+      return ', кс-';
+    case 'Yes': case 'Так': case '+': 
+      return ', кс+';
     default:
       return `, кс ${csection}`|| '';
   }
@@ -838,7 +838,7 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
             </button>
 
             {/* <button
-              style={styles.removeButton}
+              style={{...styles.removeButton, backgroundColor: 'red', top: '42px'}}
               onClick={(e) => {
                 e.stopPropagation(); // Запобігаємо активації кліку картки
                 handleRemoveUser(userId);
