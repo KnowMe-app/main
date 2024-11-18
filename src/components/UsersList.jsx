@@ -6,6 +6,7 @@ import { fetchUserById,
 } from './config';
 import { formatDateAndFormula} from './inputValidations';
 import { makeUploadedInfo } from './makeUploadedInfo';
+import { coloredCard } from './styles';
 
 const handleChange = (setUsers, userId, key, value) => {
   // console.log('userId В handleChange', userId);
@@ -47,7 +48,7 @@ const dublicateFields = ['weight', 'height', ];
    await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
 };
 
-const renderTopBlock = (userData, setUsers) => {
+export const renderTopBlock = (userData, setUsers) => {
 
   // console.log('userData в renderTopBlock:', userData );
 
@@ -599,7 +600,7 @@ const calculateIMT = (weight, height) => {
 
 
 // Компонент для рендерингу кожної картки
-const UserCard = ({ userData, setUsers }) => {
+export const UserCard = ({ userData, setUsers }) => {
 
 
   // console.log('userData!!!!! :>> ', userData);
@@ -694,28 +695,9 @@ const UserCard = ({ userData, setUsers }) => {
     };
 
 // Компонент для рендерингу всіх карток
-const UsersList = ({ users, setUsers, setSearch, setState  }) => {
+export const UsersList = ({ users, setUsers, setSearch, setState  }) => {
 
   // console.log('users in UsersList: ', users);
-
-  const gradients = [
-    'linear-gradient(to right, #fc466b, #3f5efb)',
-    'linear-gradient(to right, #6a11cb, #2575fc)',
-    'linear-gradient(to right, #ff7e5f, #feb47b)'
-  ];
-  
-  // Функція для отримання градієнта на основі індексу картки
-  const getCardStyle = (index) => ({
-    position: 'relative',
-    margin: '10px',
-    // color: 'white',
-    marginTop: '20px',
-    // cursor: 'pointer',
-    background: gradients[index % gradients.length],
-    width: '100%'
-  });
-
-
 
   // const handleRemoveUser = async (userId) => {
   //   await removeSearchId(userId); // Виклик функції для видалення
@@ -810,7 +792,7 @@ const UsersList = ({ users, setUsers, setSearch, setState  }) => {
     {Object.entries(users).map(([userId, userData], index) => (
             <div 
             key={userId} 
-            style={getCardStyle(index)}
+            style={{...coloredCard(index)}}
             // onClick={() => handleCardClick(userData.userId)} // Додаємо обробник кліку
           >
 
@@ -906,5 +888,3 @@ const styles = {
     zIndex: 999,
   },
 };
-
-export default UsersList;

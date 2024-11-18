@@ -64,7 +64,6 @@ export const color = {
   paleYellow: `#F6C81355`,
 };
 
-
 export const fontSize = {
   biggest: 28 * resize,
   bigger: 24 * resize,
@@ -159,4 +158,32 @@ export const btnText = {
 export const rowWrap = {
   flexDirection: 'row', 
   flexWrap: 'wrap' 
+};
+
+const gradients = [
+  'linear-gradient(to right, #fc466b, #3f5efb)',
+  'linear-gradient(to right, #6a11cb, #2575fc)',
+  'linear-gradient(to right, #ff7e5f, #feb47b)'
+];
+  
+export const coloredCard = (index) => {
+  const exactIndex = index % gradients.length;
+  const randomIndex = Math.floor(Math.random() * gradients.length);
+
+  return {
+    position: 'relative',
+    background: index !== undefined
+      ? gradients[exactIndex]
+      : gradients[randomIndex],
+    width: '100%',
+    margin: index !== undefined
+    ? '10px'
+    : 0,
+    marginTop: index !== undefined
+    ? '20px'
+    : 0,
+    marginBottom: index !== undefined
+    ? 0
+    : '20px',
+  };
 };

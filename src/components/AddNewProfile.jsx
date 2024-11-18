@@ -22,10 +22,10 @@ import { useNavigate } from 'react-router-dom';
 import InfoModal from './InfoModal';
 import { VerifyEmail } from './VerifyEmail';
 
-import { color } from './styles';
+import { color, coloredCard } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { formatPhoneNumber } from './inputValidations';
-import UsersList from './UsersList';
+import {renderTopBlock, UsersList} from './UsersList';
 // import { aiHandler } from './aiHandler';
 
 const Container = styled.div`
@@ -1018,7 +1018,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         </InputDiv>
 
         {search && state.userId ? (
-          fieldsToRender.map((field, index) => {
+          <>
+<div style={{...coloredCard()}}>
+    {renderTopBlock(state, setState)}
+  
+  </div>
+          
+          {fieldsToRender.map((field, index) => {
             // console.log('field:', field);
             // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
 
@@ -1180,7 +1186,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 )}
               </PickerContainer>
             );
-          })
+          })}</>
         ) : (
           <div>
             {search && users && !userNotFound ? (
