@@ -3,7 +3,7 @@ import { getAuth, deleteUser } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
 import { getDatabase, ref as ref2, get, remove, set, update, push, orderByChild,} from 'firebase/database';
-import { query, orderByKey,} from 'firebase/database';
+import { query, orderByKey, equalTo} from 'firebase/database';
 import { startAt, endAt } from 'firebase/database';
 
 const firebaseConfig = {
@@ -900,7 +900,11 @@ const isValidDate = (date) => {
 // Сортування
 const sortUsers = (filteredUsers) => {
   // const today = new Date().toLocaleDateString('uk-UA'); // "дд.мм.рррр"
-  const today = new Date().toISOString().split('T')[0]; // Формат рррр-мм-дд
+  // const today = new Date().toISOString().split('T')[0]; // Формат рррр-мм-дд
+  const currentDate = new Date(); // Поточна дата
+  const tomorrow = new Date(currentDate); // Копія поточної дати
+  tomorrow.setDate(currentDate.getDate() + 1); // Збільшуємо дату на 1 день
+  const today = tomorrow.toISOString().split('T')[0]; // Формат YYYY-MM-DD
 
 
   return filteredUsers.sort(([_, a], [__, b]) => {
@@ -930,7 +934,9 @@ const sortUsers = (filteredUsers) => {
 export const fetchPaginatedNewUsers = async (lastKey) => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
-  const today = new Date();
+  const todayActual = new Date(); // Поточна дата
+  const today = new Date(todayActual); // Копія дати
+  today.setDate(todayActual.getDate() + 1); // Збільшуємо дату на 1 день
   const todayString = today.toISOString().split('T')[0]; // Формат YYYY-MM-DD
   // const todayString = today.toISOString().split('T')[0];
   
@@ -949,6 +955,18 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
   return allUsersSnapshot.exists() ? Object.entries(allUsersSnapshot.val()) : [];
 };
 
+// Функція для отримання користувачів з пустими або некоректними датами
+const getUsersWithInvalidDates = async () => {
+  const invalidDatesQuery = query(
+    usersRef,
+    orderByChild('myComment'),
+    equalTo(null) // Отримуємо користувачів з відсутніми або некоректними датами
+  );
+
+  const invalidDatesSnapshot = await get(invalidDatesQuery);
+  return invalidDatesSnapshot.exists() ? Object.entries(invalidDatesSnapshot.val()) : [];
+};
+
 // Функція для отримання користувачів з майбутніми датами
 const getUsersAfterToday = async () => {
   const futureUsersQuery = query(
@@ -965,8 +983,10 @@ let allUsers = [];
 
 // Спочатку намагаємось отримати користувачів до сьогоднішнього дня
 allUsers = await getUsersBeforeToday();
-
-// allUsers = await getUsersAfterToday();
+  // 2. Якщо немає користувачів зі старими датами, отримуємо з некоректними датами
+  if (allUsers.length === 0) {
+    allUsers = await getUsersWithInvalidDates();
+  }
 // Якщо користувачів до сьогоднішнього дня не знайшли, перевіряємо майбутні
 if (allUsers.length === 0) {
   allUsers = await getUsersAfterToday();
