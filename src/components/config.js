@@ -892,56 +892,93 @@ const filterMain = (usersData) => {
 };
 
 // Функція для перевірки формату дати (dd.mm.ррр)
-function isValidDate(dateString) {
-  // Регулярний вираз для перевірки формату
-  const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
-  return dateRegex.test(dateString);
-}
+// Перевірка коректності дати
+const isValidDate = (date) => {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && !isNaN(new Date(date).getTime());
+};
 
 // Сортування
 const sortUsers = (filteredUsers) => {
-  const today = new Date().toLocaleDateString('uk-UA'); // "дд.мм.рррр"
+  // const today = new Date().toLocaleDateString('uk-UA'); // "дд.мм.рррр"
+  const today = new Date().toISOString().split('T')[0]; // Формат рррр-мм-дд
+
 
   return filteredUsers.sort(([_, a], [__, b]) => {
     console.log('a :>> ', a);
-    console.log('a.getInTouch :>> ', a.getInTouch);
-    const aDate = a[1].getInTouch || "99.99.9999";
-    const bDate = b[1].getInTouch || "99.99.9999";
+    console.log('a.myComment :>> ', a.myComment);
+    const aDate = a[1].myComment || "9999-12-31";
+    const bDate = b[1].myComment || "9999-12-31";
 
-    // Порівняння на основі наявності "сьогоднішньої" дати
-    if (aDate === today && bDate !== today) return -1;
-    if (bDate === today && aDate !== today) return 1;
-
-    // Якщо дати є невірними (наприклад, "99.99.9999"), ставимо їх в кінець списку
-    if (aDate === "99.99.9999" && bDate !== "99.99.9999") return 1;
-    if (bDate === "99.99.9999" && aDate !== "99.99.9999") return -1;
-
-    // Переводимо дати в формат Date для порівняння
-    if (isValidDate(aDate) && isValidDate(bDate)) {
-      const aDateParts = aDate.split('.');
-      const bDateParts = bDate.split('.');
-      const aParsedDate = new Date(aDateParts[2], aDateParts[1] - 1, aDateParts[0]);
-      const bParsedDate = new Date(bDateParts[2], bDateParts[1] - 1, bDateParts[0]);
-
-      return aParsedDate - bParsedDate;
-    }
-    return 0; // Якщо дати некоректні або порівнювати нічого
-  });
+     // Якщо сьогоднішня дата в a, але не в b
+     if (aDate === today && bDate !== today) return -1;
+     if (bDate === today && aDate !== today) return 1;
+ 
+     // Перевіряємо коректність дати (має формат рррр-мм-дд)
+     if (isValidDate(aDate) && isValidDate(bDate)) {
+       return aDate.localeCompare(bDate); // Сортування в порядку зростання
+     }
+ 
+     // Ставимо некоректні дати в кінець списку
+     if (!isValidDate(aDate)) return 1;
+     if (!isValidDate(bDate)) return -1;
+ 
+     return 0; // Якщо немає чіткої умови
+   });
 };
+
 
 export const fetchPaginatedNewUsers = async (lastKey) => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
+  const today = new Date();
+  const todayString = today.toISOString().split('T')[0]; // Формат YYYY-MM-DD
+  // const todayString = today.toISOString().split('T')[0];
+  
+
 
   try {
+ // Функція для отримання користувачів до сьогоднішнього дня
+ const getUsersBeforeToday = async () => {
+  const allUsersQuery = query(
+    usersRef,
+    orderByChild('myComment'),
+    endAt(todayString) // Отримуємо користувачів до сьогоднішнього дня
+  );
 
+  const allUsersSnapshot = await get(allUsersQuery);
+  return allUsersSnapshot.exists() ? Object.entries(allUsersSnapshot.val()) : [];
+};
 
-// Отримуємо всі карточки, відсортовані за датою в спадаючому порядку
-const allUsersQuery = query(usersRef, orderByChild('getInTouch'), startAt(null));
-const allUsersSnapshot = await get(allUsersQuery);
-const allUsers = allUsersSnapshot.exists() ? Object.entries(allUsersSnapshot.val()) : [];
+// Функція для отримання користувачів з майбутніми датами
+const getUsersAfterToday = async () => {
+  const futureUsersQuery = query(
+    usersRef,
+    orderByChild('myComment'),
+    startAt(todayString) // Отримуємо користувачів з датою від сьогодні
+  );
 
-// Обробляємо дані та фільтруємо карточки
+  const futureUsersSnapshot = await get(futureUsersQuery);
+  return futureUsersSnapshot.exists() ? Object.entries(futureUsersSnapshot.val()) : [];
+};
+
+let allUsers = [];
+
+// Спочатку намагаємось отримати користувачів до сьогоднішнього дня
+allUsers = await getUsersBeforeToday();
+
+// allUsers = await getUsersAfterToday();
+// Якщо користувачів до сьогоднішнього дня не знайшли, перевіряємо майбутні
+if (allUsers.length === 0) {
+  allUsers = await getUsersAfterToday();
+}
+
+// Якщо ні тих, ні інших не знайшли, allUsers буде порожнім
+if (allUsers.length === 0) {
+  console.log('Немає користувачів.');
+  return []; // Повертаємо порожній список
+}
+
+// Фільтрація та сортування користувачів
 const sortedUsers2 = allUsers.filter(([key, value]) => {
   const getInTouch = value.getInTouch;
 
