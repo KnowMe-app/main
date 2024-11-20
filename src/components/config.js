@@ -3,7 +3,7 @@ import { getAuth, deleteUser } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
 import { getDatabase, ref as ref2, get, remove, set, update, push, orderByChild,} from 'firebase/database';
-import { query, orderByKey, limitToFirst,} from 'firebase/database';
+import { query, orderByKey,} from 'firebase/database';
 import { startAt, endAt } from 'firebase/database';
 
 const firebaseConfig = {
@@ -891,56 +891,77 @@ const filterMain = (usersData) => {
   return filteredUsers;
 };
 
+// Функція для перевірки формату дати (dd.mm.ррр)
+function isValidDate(dateString) {
+  // Регулярний вираз для перевірки формату
+  const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
+  return dateRegex.test(dateString);
+}
+
 // Сортування
 const sortUsers = (filteredUsers) => {
   const today = new Date().toLocaleDateString('uk-UA'); // "дд.мм.рррр"
 
   return filteredUsers.sort(([_, a], [__, b]) => {
-    const aDate = a.getInTouch || "99.99.9999";
-    const bDate = b.getInTouch || "99.99.9999";
+    console.log('a :>> ', a);
+    console.log('a.getInTouch :>> ', a.getInTouch);
+    const aDate = a[1].getInTouch || "99.99.9999";
+    const bDate = b[1].getInTouch || "99.99.9999";
 
+    // Порівняння на основі наявності "сьогоднішньої" дати
     if (aDate === today && bDate !== today) return -1;
     if (bDate === today && aDate !== today) return 1;
 
-    if (aDate === "99.99.9999" && bDate !== "99.99.9999") return -1;
-    if (bDate === "99.99.9999" && aDate !== "99.99.9999") return 1;
+    // Якщо дати є невірними (наприклад, "99.99.9999"), ставимо їх в кінець списку
+    if (aDate === "99.99.9999" && bDate !== "99.99.9999") return 1;
+    if (bDate === "99.99.9999" && aDate !== "99.99.9999") return -1;
 
-    return new Date(aDate.split('.').reverse().join('-')) - new Date(bDate.split('.').reverse().join('-'));
+    // Переводимо дати в формат Date для порівняння
+    if (isValidDate(aDate) && isValidDate(bDate)) {
+      const aDateParts = aDate.split('.');
+      const bDateParts = bDate.split('.');
+      const aParsedDate = new Date(aDateParts[2], aDateParts[1] - 1, aDateParts[0]);
+      const bParsedDate = new Date(bDateParts[2], bDateParts[1] - 1, bDateParts[0]);
+
+      return aParsedDate - bParsedDate;
+    }
+    return 0; // Якщо дати некоректні або порівнювати нічого
   });
 };
 
 export const fetchPaginatedNewUsers = async (lastKey) => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
-  const today = new Date().toLocaleDateString('uk-UA'); // "дд.мм.рррр"
 
   try {
-    // 1. Отримуємо картки з getInTouch = сьогодні
-    // const todayQuery = query(usersRef, orderByChild('getInTouch'), endAt(today));
-    const todayQuery = query(usersRef, orderByChild('getInTouch'), endAt(today));
-    const todaySnapshot = await get(todayQuery);
-    const todayUsers = todaySnapshot.exists() ? Object.entries(todaySnapshot.val()) : [];
 
-    // 2. Отримуємо картки без getInTouch
-    const withoutGetInTouchQuery = query(usersRef, orderByChild('getInTouch'), startAt(null), limitToFirst(50));
-    const withoutGetInTouchSnapshot = await get(withoutGetInTouchQuery);
-    const withoutGetInTouchUsers = withoutGetInTouchSnapshot.exists()
-      ? Object.entries(withoutGetInTouchSnapshot.val()).filter(([_, value]) => !value.getInTouch)
-      : [];
 
-    // 3. Отримуємо картки з майбутніми getInTouch
-    const futureQuery = query(usersRef, orderByChild('getInTouch'), startAt(today), limitToFirst(50));
-    const futureSnapshot = await get(futureQuery);
-    const futureUsers = futureSnapshot.exists()
-      ? Object.entries(futureSnapshot.val()).filter(([_, value]) => value.getInTouch > today)
-      : [];
+// Отримуємо всі карточки, відсортовані за датою в спадаючому порядку
+const allUsersQuery = query(usersRef, orderByChild('getInTouch'), startAt(null));
+const allUsersSnapshot = await get(allUsersQuery);
+const allUsers = allUsersSnapshot.exists() ? Object.entries(allUsersSnapshot.val()) : [];
 
-    // 4. Об'єднуємо всі результати у форматі [key, value]
-    const combinedUsers = [
-      ...todayUsers,
-      ...withoutGetInTouchUsers,
-      ...futureUsers,
-    ];
+// Обробляємо дані та фільтруємо карточки
+const sortedUsers2 = allUsers.filter(([key, value]) => {
+  const getInTouch = value.getInTouch;
+
+  // Якщо поле getInTouch відсутнє або дата неправильна, повертаємо true (для другої групи)
+  if (!getInTouch  || !isValidDate(getInTouch)) {
+    return true;
+  }
+
+  if (getInTouch === '99.99.2099' || getInTouch === '99.99.9999') {
+    return false;
+  }
+  // Переводимо дату в формат Date для порівняння
+  const dateParts = getInTouch.split('.');
+  const date = new Date(dateParts[2], dateParts[1] - 1, dateParts[0]);
+  // Порівнюємо дати і повертаємо true для першої групи (сьогоднішні або минулі дати)
+  return date <= new Date();
+});
+
+// 3. Об'єднуємо результати (вже відсортовані)
+const combinedUsers = sortedUsers2;
 
     // 5. Фільтруємо користувачів
     const filteredUsers = filterMain(combinedUsers);
@@ -956,15 +977,41 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
       return acc;
     }, {});
 
+    // Далі, після вибору 10 карток, отримуємо дані з колекції users для кожного userId
+    const userIds = Object.keys(paginatedUsers); // Отримуємо список userId з paginatedUsers
+    const usersData = {};
+
+    const userPromises = userIds.map((userId) => {
+      return fetchUserById(userId);  // Оскільки fetchUserById повертає проміс, ми можемо отримати результат
+    });
+  
+    // Чекаємо, поки всі проміси виконуються
+    const userResults = await Promise.all(userPromises);
+  
+    // Збираємо дані по кожному користувачеві в об'єкт
+    userResults.forEach((userData, index) => {
+      const userId = userIds[index];
+      if (userData) {
+        usersData[userId] = userData;
+      }
+    });
+  
+    // Об'єднуємо дані з newUsers та users для кожного userId
+    const finalUsers = userIds.reduce((acc, userId) => {
+      const newUserData = paginatedUsers[userId]; // Дані з newUsers
+      const userDataFromUsers = usersData[userId] || {}; // Дані з users
+      acc[userId] = { ...newUserData, ...userDataFromUsers }; // Об'єднуємо дані
+      return acc;
+    }, {});
+  
     const nextKey = sortedUsers.length > 10 ? sortedUsers[10][0] : null;
-
-    console.log('paginatedUsers :>> ', paginatedUsers);
-
+  
     return {
-      users: paginatedUsers, // Об'єкт із ключами userId
+      users: finalUsers, // Об'єкт із користувачами, що містить дані з newUsers і users
       lastKey: nextKey,
       hasMore: sortedUsers.length > 10,
     };
+  
   } catch (error) {
     console.error('Error fetching paginated filtered users:', error);
     return {
@@ -1290,13 +1337,13 @@ export const fetchUserById = async userId => {
     if (newUserSnapshot.exists()) {
       // console.log('Знайдено користувача у newUsers: ', newUserSnapshot.val());
       // return newUserSnapshot.val();
-      console.log('Знайдено користувача у newUsers: ', newUserSnapshot.val());
+      // console.log('Знайдено користувача у newUsers: ', newUserSnapshot.val());
       // Додатковий пошук в колекції users
-      console.log('userId222222222 :>> ', userId);
+      // console.log('userId222222222 :>> ', userId);
       const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
       // Якщо знайдено користувача в users
       if (userSnapshotInUsers.exists()) {
-        console.log('Знайдено користувача у users: ', userSnapshotInUsers.val());
+        // console.log('Знайдено користувача у users: ', userSnapshotInUsers.val());
         // Об'єднання даних з newUsers і users
         return {
           userId,

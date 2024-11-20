@@ -65,6 +65,9 @@ export const renderTopBlock = (userData, setUsers) => {
 
   return (
     <div style={{ padding: '7px',  position: 'relative',}}>
+      <div>
+        {userData.userId.substring(0, 6)}
+      </div>
       <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div>
       <div>
         <strong>{`${userData.name || ''} ${userData.surname || ''}`.trim()}
@@ -81,6 +84,7 @@ export const renderTopBlock = (userData, setUsers) => {
       {renderWriterInput(userData, setUsers)}
       {renderContacts(userData)}
       <RenderCommentInput userData={userData} setUsers={setUsers} />
+
       
 
 
