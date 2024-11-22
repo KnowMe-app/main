@@ -285,41 +285,42 @@ export const removeSpaceAndNewLine = value => {
 
   export const formatDateAndFormula = (input) => {
     if (!input) return '';
-
+  
     const today = new Date();
-
-    // Якщо формат дати
+  
+    // Якщо формат дати: DD.MM.YYYY
     const datePattern = /^\d{2}\.\d{2}\.\d{4}$/;
     if (datePattern.test(input)) {
-      return input; // Залишаємо введену дату
+      const [day, month, year] = input.split('.');
+      return `${year}-${month}-${day}`; // Повертаємо у форматі YYYY-MM-DD
     }
-
-// Якщо формат типу "7d", "6m", "1y" або "7д", "6м", "1р"
-const periodPattern = /^(\d+)(d|m|y|д|м|р)$/;
-const matchPeriod = input.match(periodPattern);
-if (matchPeriod) {
-  const value = parseInt(matchPeriod[1], 10);
-  const unit = matchPeriod[2];
-
-  switch (unit) {
-    case 'd':
-    case 'д':
-      today.setDate(today.getDate() + value);
-      break;
-    case 'm':
-    case 'м':
-      today.setMonth(today.getMonth() + value);
-      break;
-    case 'y':
-    case 'р':
-      today.setFullYear(today.getFullYear() + value);
-      break;
-    default:
-      break;
-  }
-  return today.toLocaleDateString('uk-UA');
-}
-
+  
+    // Якщо формат типу "7d", "6m", "1y" або "7д", "6м", "1р"
+    const periodPattern = /^(\d+)(d|m|y|д|м|р)$/;
+    const matchPeriod = input.match(periodPattern);
+    if (matchPeriod) {
+      const value = parseInt(matchPeriod[1], 10);
+      const unit = matchPeriod[2];
+  
+      switch (unit) {
+        case 'd':
+        case 'д':
+          today.setDate(today.getDate() + value);
+          break;
+        case 'm':
+        case 'м':
+          today.setMonth(today.getMonth() + value);
+          break;
+        case 'y':
+        case 'р':
+          today.setFullYear(today.getFullYear() + value);
+          break;
+        default:
+          break;
+      }
+      return today.toISOString().split('T')[0]; // Повертаємо у форматі YYYY-MM-DD
+    }
+  
     // Якщо формат типу "360-90"
     const offsetPattern = /^(\d+)-(\d+)$/;
     const matchOffset = input.match(offsetPattern);
@@ -327,67 +328,87 @@ if (matchPeriod) {
       const base = parseInt(matchOffset[1], 10);
       const subtract = parseInt(matchOffset[2], 10);
       today.setDate(today.getDate() + (base - subtract));
-      return today.toLocaleDateString('uk-UA');
+      return today.toISOString().split('T')[0]; // Повертаємо у форматі YYYY-MM-DD
     }
-
-      // Якщо щонайменше 6 цифр і останні дві > 23, форматування дати
-// Якщо 6 або 8 цифр
-const digitPattern = /^\d{6,8}$/;
-if (digitPattern.test(input)) {
-  const day = input.slice(0, 2);
-  const month = input.slice(2, 4);
-
-  if (input.length === 6) {
-    const yearLastTwoDigits = input.slice(4, 6);
-    const year = `20${yearLastTwoDigits}`;
-
-    if (parseInt(yearLastTwoDigits, 10) > 23) {
-      return `${day}.${month}.${year}`;
-    }
-  }
-
-  if (input.length === 8) {
-    const yearFull = input.slice(4, 8);
-    if (parseInt(yearFull, 10) > 2023) {
-      return `${day}.${month}.${yearFull}`;
-    }
-  }
-}
-
-if (input.startsWith('=')) {
-  const formula = input.slice(1).trim();
-
-  if (formula.endsWith('.')) {
-    try {
-      const cleanFormula = formula.slice(0, -1);
-      
-      console.log('Формула для обчислення:', cleanFormula); // Логування очищеної формули
-
-      if (!cleanFormula) {
-        throw new Error('Порожня формула');
+  
+    // Якщо формат числа: 6 або 8 цифр
+    const digitPattern = /^\d{6,8}$/;
+    if (digitPattern.test(input)) {
+      const day = input.slice(0, 2);
+      const month = input.slice(2, 4);
+  
+      if (input.length === 6) {
+        const yearLastTwoDigits = input.slice(4, 6);
+        const year = `20${yearLastTwoDigits}`;
+        if (parseInt(yearLastTwoDigits, 10) > 23) {
+          return `${year}-${month}-${day}`; // Повертаємо у форматі YYYY-MM-DD
+        }
       }
-
-      const result = calculateExpression(cleanFormula);
-
-      if (isNaN(result)) {
-        throw new Error('Результат не є числом');
+  
+      if (input.length === 8) {
+        const yearFull = input.slice(4, 8);
+        return `${yearFull}-${month}-${day}`; // Повертаємо у форматі YYYY-MM-DD
       }
-
-      today.setDate(today.getDate() + result);
-      console.log('Нова дата:', today.toLocaleDateString('uk-UA')); // Логування нової дати
-      return today.toLocaleDateString('uk-UA');
-    } catch (error) {
-      console.error('Помилка в обчисленні формули:', error.message);
-      return 'Невірна формула';
     }
-  }
-
-  return input;
-}
-
+  
+    // Якщо формат формули: починається з "="
+    if (input.startsWith('=')) {
+      const formula = input.slice(1).trim();
+  
+      if (formula.endsWith('.')) {
+        try {
+          const cleanFormula = formula.slice(0, -1);
+  
+          console.log('Формула для обчислення:', cleanFormula);
+  
+          if (!cleanFormula) {
+            throw new Error('Порожня формула');
+          }
+  
+          const result = calculateExpression(cleanFormula);
+  
+          if (isNaN(result)) {
+            throw new Error('Результат не є числом');
+          }
+  
+          today.setDate(today.getDate() + result);
+          console.log('Нова дата:', today.toISOString().split('T')[0]); // Логування у форматі YYYY-MM-DD
+          return today.toISOString().split('T')[0]; // Повертаємо у форматі YYYY-MM-DD
+        } catch (error) {
+          console.error('Помилка в обчисленні формули:', error.message);
+          return 'Невірна формула';
+        }
+      }
+  
+      return input;
+    }
+  
     // Повертаємо введене значення, якщо воно не відповідає жодному шаблону
     return input;
   };
+  
+     // Перетворення дати з формату YYYY-MM-DD в DD.MM.YYYY
+  export const formatDateToDisplay = (dateString) => {
+    if (!dateString) return '';
+    const parts = dateString.split('-');
+    if (parts.length === 3) {
+      const [year, month, day] = parts;
+      return `${day}.${month}.${year}`;
+    }
+    return dateString; // Повертаємо оригінал, якщо формат неправильний
+  };
+
+// Перетворення дати з формату DD.MM.YYYY в YYYY-MM-DD
+export const formatDateToServer = (dateString) => {
+  if (!dateString) return '';
+  const parts = dateString.split('.');
+  if (parts.length === 3) {
+    const [day, month, year] = parts;
+    return `${year}-${month}-${day}`;
+  }
+  return dateString; // Повертаємо оригінал, якщо формат неправильний
+};
+
 
   // Функція для обчислення математичних виразів
   const calculateExpression = (expression) => {

@@ -4,12 +4,11 @@ import { fetchUserById,
   updateDataInNewUsersRTDB,
   // removeSearchId 
 } from './config';
-import { formatDateAndFormula} from './inputValidations';
+import { formatDateAndFormula, formatDateToDisplay, formatDateToServer,} from './inputValidations';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { coloredCard } from './styles';
 
 const handleChange = (setUsers, userId, key, value) => {
-  // console.log('userId В handleChange', userId);
   const newValue = (key==='getInTouch' || key==='lastCycle') ? formatDateAndFormula(value) : value
 
 setUsers((prevState) => ({
@@ -56,9 +55,9 @@ export const renderTopBlock = (userData, setUsers) => {
 
   
 
-  const nextContactDate = userData.getInTouch
-    ? userData.getInTouch
-    : 'НОВИЙ КОНТАКТ';
+  // const nextContactDate = userData.getInTouch
+  //   ? userData.getInTouch
+  //   : 'НОВИЙ КОНТАКТ';
 
     
 
@@ -67,20 +66,34 @@ export const renderTopBlock = (userData, setUsers) => {
     <div style={{ padding: '7px',  position: 'relative',}}>
       <div>
         {userData.userId.substring(0, 6)}
+        {renderGetInTouchInput(userData, setUsers)}
       </div>
-      <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div>
+      {/* <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div> */}
       <div>
-        <strong>{`${userData.name || ''} ${userData.surname || ''}`.trim()}
-          {renderBirthInfo(userData.birth)} 
-          </strong> 
-          {renderCsection(userData.csection)} 
-          {renderMaritalStatus(userData.maritalStatus)} 
+      <strong>{`${(userData.name || userData.surname) ? `${userData.name || ''} ${userData.surname || ''}, ` : ''}`}</strong>
+        {/* {renderBirthInfo(userData.birth)} */}
+        {renderMaritalStatus(userData.maritalStatus)}
+        {renderCsection(userData.csection)} 
+          <div>
+          {`${userData.birth ? `${userData.birth}, ` : ''}` +
+    `${userData.height || ''}` +
+    `${userData.height && userData.weight ? ' / ' : ''}` +
+    `${userData.weight ? `${userData.weight}, ` : ''}` +
+    `${userData.blood || ''}`}
+    
+    </div>
+    <div>
+          {`${userData.region ? `${userData.region}, ` : ''}`  }
+
+    </div>
+          
+           
       </div>
       
       
       {renderDeliveryInfo(userData.ownKids, userData.lastDelivery, userData.csection)}
-      {renderIMT(userData.weight, userData.height)}
-      {renderLastCycleInput(userData, setUsers)}
+      {/* {renderIMT(userData.weight, userData.height)} */}
+      
       {renderWriterInput(userData, setUsers)}
       {renderContacts(userData)}
       <RenderCommentInput userData={userData} setUsers={setUsers} />
@@ -118,29 +131,29 @@ export const renderTopBlock = (userData, setUsers) => {
   );
 };
 
-const renderBirthInfo = (birth) => {
-  const age = calculateAge(birth);
+// const renderBirthInfo = (birth) => {
+//   const age = calculateAge(birth);
 
-  return age !== null ? (
-      <span>, {age}р</span>
-  ) : null;
-};
+//   return age !== null ? (
+//       <span>{age}р, </span>
+//   ) : null;
+// };
 
-const renderIMT = (weight, height,) => {
-  const imt = calculateIMT(weight, height);
-  if (weight || height) {
-    return (
-      <div>
-        {weight && height
-          ? `ІМТ ${imt}`
-          : weight
-          ? `${weight} кг`
-          : `${height} см`}
-      </div>
-    );
-  }
-  return null; // Нічого не відображати, якщо немає ваги і зросту
-};
+// const renderIMT = (weight, height,) => {
+//   const imt = calculateIMT(weight, height);
+//   if (weight || height) {
+//     return (
+//       <div>
+//         {weight && height
+//           ? `ІМТ ${imt}`
+//           : weight
+//           ? `${weight} кг`
+//           : `${height} см`}
+//       </div>
+//     );
+//   }
+//   return null; // Нічого не відображати, якщо немає ваги і зросту
+// };
 
 const renderDeliveryInfo = (ownKids, lastDelivery, csection) => {
   const monthsAgo = lastDelivery ? calculateMonthsAgo(lastDelivery) : null;
@@ -165,11 +178,16 @@ const renderLastCycleInput = (userData, setUsers) => {
       <label>Міс:</label>
       <input
         type="text"
-        value={userData.lastCycle || ''}
-        onChange={(e) => handleChange(setUsers, userData.userId, 'lastCycle', e.target.value)}
+        value={formatDateToDisplay(userData.lastCycle) || ''}
+        onChange={(e) => {
+          // Повертаємо формат YYYY-MM-DD для збереження
+          const serverFormattedDate = formatDateToServer(e.target.value);
+          handleChange(setUsers, userData.userId, 'lastCycle', serverFormattedDate);
+        }}
         onBlur={() => handleSubmit(userData, 'overwrite')}
         // placeholder="01.01.2021"
-        style={styles.underlinedInput}
+        style={{...styles.underlinedInput, flexGrow: 1, // Займає залишковий простір
+          maxWidth: '100%'}}
       />
       {nextCycle && <span> - {nextCycle}</span>}
     </div>
@@ -177,17 +195,24 @@ const renderLastCycleInput = (userData, setUsers) => {
 };
 
 const renderGetInTouchInput = (userData, setUsers) => {
+
+    
   return (
     <div>
       <label>Написати:</label>
       <input
 
         type="text"
-        value={userData.getInTouch || ''}
-        onChange={(e) => handleChange(setUsers, userData.userId, 'getInTouch', e.target.value)}
+        value={formatDateToDisplay(userData.getInTouch) || ''}
+        // onChange={(e) => handleChange(setUsers, userData.userId, 'getInTouch', e.target.value)}
+        onChange={(e) => {
+          // Повертаємо формат YYYY-MM-DD для збереження
+          const serverFormattedDate = formatDateToServer(e.target.value);
+          handleChange(setUsers, userData.userId, 'getInTouch', serverFormattedDate);
+        }}
         onBlur={() => handleSubmit(userData, 'overwrite')}
         // placeholder="Введіть дату або формулу"
-        style={{...styles.underlinedInput, width: '40%',}}
+        style={{...styles.underlinedInput, width: '20%',}}
       />
     </div>
   );
@@ -264,15 +289,17 @@ const renderWriterInput = (userData, setUsers) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%' }}>
       {/* Верхній рядок: renderGetInTouchInput і інпут */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
-        {renderGetInTouchInput(userData, setUsers)}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '2px', width: '100%' }}>
+      {renderLastCycleInput(userData, setUsers)}
         <input
           type="text"
           // placeholder="Введіть ім'я"
           value={userData.writer || ''}
           onChange={(e) => handleChange(setUsers, userData.userId, 'writer', e.target.value)}
           onBlur={() => handleSubmit(userData, 'overwrite')}
-          style={{...styles.underlinedInput, width: '50%',}}
+          style={{...styles.underlinedInput, flexGrow: 1, // Займає залишковий простір
+            maxWidth: '100%' // Обмежує ширину контейнером
+            }}
         />
       </div>
 
@@ -419,6 +446,8 @@ const renderContacts = (data, parentKey = '') => {
     tiktok: (value) => `https://www.tiktok.com/@${value}`,
     phone: (value) => `tel:${value}`,
     facebook: (value) => `https://facebook.com/${value}`,
+    vk: (value) => `https://vk.com/${value}`,
+    otherLink: (value) => `${value}`,
     email: (value) => `mailto:${value}`,
     telegramFromPhone: (value) => `https://t.me/${value.replace(/\s+/g, '')}`,
     viberFromPhone: (value) => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`,
@@ -532,9 +561,9 @@ const renderContacts = (data, parentKey = '') => {
 const renderMaritalStatus = (maritalStatus) => {
   switch (maritalStatus) {
     case 'Yes': case '+':
-      return ', Married';
+      return 'Married, ';
     case 'No': case '-':
-      return ', Single';
+      return 'Single, ';
     default:
       return maritalStatus || '';
   }
@@ -542,21 +571,23 @@ const renderMaritalStatus = (maritalStatus) => {
 
 const renderCsection = (csection) => {
 
-  if (csection === undefined) {
-    return ', кс ?';
-  }
+  // if (csection === undefined) {
+  //   return ', кс ?';
+  // }
 
   switch (csection) {
+    case undefined :
+    return '';
     case '1':
-      return ', кс1';
+      return 'кс1, ';
     case '2':
-      return ', кс2';
+      return 'кс2, ';
     case 'No': case '0': case 'Ні': case '-':
-      return ', кс-';
+      return 'кс-, ';
     case 'Yes': case 'Так': case '+': 
-      return ', кс+';
+      return 'кс+, ';
     default:
-      return `, кс ${csection}`|| '';
+      return `кс ${csection}, `|| '';
   }
 };
 
@@ -587,20 +618,53 @@ const calculateMonthsAgo = (dateString) => {
 };
 
 const calculateNextDate = (dateString) => {
+
   if (!dateString) return '';
-  const [day, month, year] = dateString?.split('.').map(Number);
+
+  // Перевіряємо, чи введена дата у форматі DD.MM.YYYY
+  const inputPattern = /^\d{2}\.\d{2}\.\d{4}$/;
+  if (inputPattern.test(dateString)) {
+    // Перетворюємо DD.MM.YYYY у формат YYYY-MM-DD
+    const [day, month, year] = dateString.split('.');
+    dateString = `${year}-${month}-${day}`;
+  }
+
+  // Перевіряємо, чи дата тепер у форматі YYYY-MM-DD
+  const storagePattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!storagePattern.test(dateString)) {
+    console.error('Invalid date format after conversion:', dateString);
+    return '';
+  }
+
+  // Створюємо об'єкт дати
+  const [year, month, day] = dateString.split('-').map(Number);
   const currentDate = new Date(year, month - 1, day);
+
+  // Перевіряємо, чи дата валідна
+  if (isNaN(currentDate.getTime())) {
+    console.error('Invalid date object:', currentDate);
+    return '';
+  }
+
+  // Додаємо 28 днів
   currentDate.setDate(currentDate.getDate() + 28);
-  return currentDate.toLocaleDateString('uk-UA');
+
+  // Форматуємо результат у форматі DD.MM.YYYY
+  const dayFormatted = String(currentDate.getDate()).padStart(2, '0');
+  const monthFormatted = String(currentDate.getMonth() + 1).padStart(2, '0');
+  // const yearFormatted = currentDate.getFullYear();
+
+  // return `${dayFormatted}.${monthFormatted}.${yearFormatted}`;
+  return `${dayFormatted}.${monthFormatted}`;
 };
 
-const calculateIMT = (weight, height) => {
-  if (weight && height) {
-    const heightInMeters = height / 100;
-    return (weight / (heightInMeters ** 2)).toFixed(1);
-  }
-  return 'N/A';
-};
+// const calculateIMT = (weight, height) => {
+//   if (weight && height) {
+//     const heightInMeters = height / 100;
+//     return (weight / (heightInMeters ** 2)).toFixed(1);
+//   }
+//   return 'N/A';
+// };
 
 
 // Компонент для рендерингу кожної картки

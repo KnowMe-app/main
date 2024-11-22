@@ -909,9 +909,9 @@ const sortUsers = (filteredUsers) => {
 
   return filteredUsers.sort(([_, a], [__, b]) => {
     console.log('a :>> ', a);
-    console.log('a.myComment :>> ', a.myComment);
-    const aDate = a[1].myComment || "9999-12-31";
-    const bDate = b[1].myComment || "9999-12-31";
+    console.log('a.getInTouch :>> ', a.getInTouch);
+    const aDate = a[1].getInTouch || "9999-12-31";
+    const bDate = b[1].getInTouch || "9999-12-31";
 
      // Якщо сьогоднішня дата в a, але не в b
      if (aDate === today && bDate !== today) return -1;
@@ -947,7 +947,7 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
  const getUsersBeforeToday = async () => {
   const allUsersQuery = query(
     usersRef,
-    orderByChild('myComment'),
+    orderByChild('getInTouch'),
     endAt(todayString) // Отримуємо користувачів до сьогоднішнього дня
   );
 
@@ -959,7 +959,7 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
 const getUsersWithInvalidDates = async () => {
   const invalidDatesQuery = query(
     usersRef,
-    orderByChild('myComment'),
+    orderByChild('getInTouch'),
     equalTo(null) // Отримуємо користувачів з відсутніми або некоректними датами
   );
 
@@ -971,7 +971,7 @@ const getUsersWithInvalidDates = async () => {
 const getUsersAfterToday = async () => {
   const futureUsersQuery = query(
     usersRef,
-    orderByChild('myComment'),
+    orderByChild('getInTouch'),
     startAt(todayString) // Отримуємо користувачів з датою від сьогодні
   );
 
@@ -983,6 +983,8 @@ let allUsers = [];
 
 // Спочатку намагаємось отримати користувачів до сьогоднішнього дня
 allUsers = await getUsersBeforeToday();
+// allUsers = await getUsersAfterToday();
+console.log('allUsers :>> ', allUsers);
   // 2. Якщо немає користувачів зі старими датами, отримуємо з некоректними датами
   if (allUsers.length === 0) {
     allUsers = await getUsersWithInvalidDates();
@@ -1002,20 +1004,41 @@ if (allUsers.length === 0) {
 const sortedUsers2 = allUsers.filter(([key, value]) => {
   const getInTouch = value.getInTouch;
 
+  console.log('getInTouch :>> ', getInTouch);
+
+
+
   // Якщо поле getInTouch відсутнє або дата неправильна, повертаємо true (для другої групи)
   if (!getInTouch  || !isValidDate(getInTouch)) {
     return true;
   }
 
-  if (getInTouch === '99.99.2099' || getInTouch === '99.99.9999') {
+  if (getInTouch === '2099-99-99' || getInTouch === '9999-99-99') {
     return false;
   }
   // Переводимо дату в формат Date для порівняння
-  const dateParts = getInTouch.split('.');
-  const date = new Date(dateParts[2], dateParts[1] - 1, dateParts[0]);
-  // Порівнюємо дати і повертаємо true для першої групи (сьогоднішні або минулі дати)
-  return date <= new Date();
+  let date;
+  if (getInTouch.includes('-')) {
+    // Формат YYYY-MM-DD
+    date = new Date(getInTouch);
+  } else if (getInTouch.includes('.')) {
+    // Формат DD.MM.YYYY
+    const [day, month, year] = getInTouch.split('.');
+    date = new Date(year, month - 1, day);
+  } else {
+    // Якщо формат невідомий
+    console.error('Невідомий формат дати:', getInTouch);
+    return true;
+  }
+
+  // Порівнюємо дату і повертаємо true, якщо вона сьогоднішня або в минулому
+  // return date <= new Date();
+
+  // Порівнюємо без урахування дат
+  return date
 });
+
+console.log('sortedUsers2 :>> ', sortedUsers2);
 
 // 3. Об'єднуємо результати (вже відсортовані)
 const combinedUsers = sortedUsers2;
