@@ -566,6 +566,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // Створюємо копію попереднього стану
       const newState = { ...prevState };
 
+      const deletedValue = newState[fieldName]
+
       // Видаляємо ключ з нового стану
       delete newState[fieldName];
 
@@ -578,7 +580,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       console.log(`Поле "${fieldName}" позначено для видалення`);
 
       // Видалення ключа з Firebase
-      removeKeyFromFirebase(fieldName, prevState.userId);
+      removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
 
       return newState; // Повертаємо оновлений стан
     });
@@ -726,17 +728,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
       }
 
-      console.log('222 :>> ');
       // Регулярний вираз для витягування username з рядків у форматі "inst monkey", "inst: monkey", тощо
       // const pattern = /(?:inst(?:agram)?\s*:?\s*|\s*instagram\s*:?\s*|\s*in\s*:?\s*|\s*i\s*:?\s*|\s*інст\s*:?\s*|\s*ін\s*:?\s*|\s*і\s*:?\s*|\s*інстаграм\s*:?\s*)(\w+)/i;
       // const pattern = /(?:\binst(?:agram)?\s*:?\s*|\binstagram\s*:?\s*|\bін\s*:?\s*|\bin\s*:?\s*|\bінст\s*:?\s*|\bінстаграм\s*:?\s*)(\w+)/i;
-      const pattern = /(?:\binst(?:agram)?\s*:?\s*|\binstagram\s*:?\s*|\bін\s*:?\s*|\bin\s*:?\s*|\bінст\s*:?\s*|\bінстаграм\s*:?\s*)([a-zA-Z0-9._]+)/i;
+      // const pattern = /(?:\binst(?:agram)?\s*:?\s*|\binstagram\s*:?\s*|\bін\s*:?\s*|\bin\s*:?\s*|\bінст\s*:?\s*|\bінстаграм\s*:?\s*)([a-zA-Z0-9._]+)/i;
+      // const pattern = /(?:\binst(?:agram)?\s+|\binstagram\s+|\bін(?:ст|стаграм)?\s+)([a-zA-Z0-9._]+)/i;
+      const pattern = /(?:\binst(?:agram)?\s*:?\s+|\binstagram\s*:?\s+|\bін(?:ст|стаграм)?\s*:?\s+|\bin\s*:?\s+)([a-zA-Z0-9._]+)/i;
+  
       const match = input.match(pattern);
 
       // Якщо знайдено username в рядку
       if (match && match[1]) {
-        console.log('match :>> ', match);
-        return match[1]; // Повертає username
+        // console.log('match :>> ', match); // Дебаг: покаже всі метчі
+        return match[1];
       }
       console.log('333 :>> ');
 
