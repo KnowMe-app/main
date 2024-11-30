@@ -26,6 +26,7 @@ import { color, coloredCard } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { formatPhoneNumber } from './inputValidations';
 import {renderTopBlock, UsersList} from './UsersList';
+import ExcelToJson from './ExcelToJson';
 // import { aiHandler } from './aiHandler';
 
 const Container = styled.div`
@@ -1202,6 +1203,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
               {hasMore && <Button onClick={loadMoreUsers}>Load Cards</Button>}
               {hasMore && <Button onClick={makeIndex}>Make index</Button>}
+              <ExcelToJson/>
             </div>
             {!userNotFound && <UsersList users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}
             {/* Передача користувачів у UsersList */}

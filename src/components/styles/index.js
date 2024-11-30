@@ -1,3 +1,5 @@
+import styled from "styled-components";
+
 const width = 200;
 const height = 500;
 
@@ -187,3 +189,61 @@ export const coloredCard = (index) => {
     : '20px',
   };
 };
+
+export const OrangeBtn = styled.button`
+  width: 35px; /* Встановіть ширину, яка визначатиме розмір кнопки */
+  height: 35px; /* Встановіть висоту, яка повинна дорівнювати ширині */
+  padding: 3px; /* Видаліть внутрішні відступи */
+  border: none;
+  background-color: ${color.accent5};
+  color: white;
+  border-radius: 50px;
+  cursor: pointer;
+  font-size: 12px;
+  flex: 0 1 auto;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  margin-right: 10px;
+
+  &:hover {
+    background-color: ${color.accent}; /* Колір кнопки при наведенні */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Тінь при наведенні */
+  }
+
+  &:active {
+    transform: scale(0.98); /* Легкий ефект при натисканні */
+  }
+`;
+
+
+// Стилізація прихованого інпута
+export const HiddenInput = styled.input`
+  display: none;
+`;
+
+// Кастомна стилізація для лейбла
+export const StyledLabel = styled.label`
+ display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px; /* Встановіть ширину, яка визначатиме розмір кнопки */
+  height: 29px; /* Встановіть висоту, яка повинна дорівнювати ширині */
+  padding: 3px; /* Видаліть внутрішні відступи */
+  border: none;
+  background-color: ${color.accent5};
+  color: white;
+  border-radius: 50px;
+  cursor: pointer;
+  font-size: 12px;
+  flex: 0 1 auto;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  margin-right: 10px;
+
+  &:hover {
+    background-color: ${color.accent}; /* Колір кнопки при наведенні */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Тінь при наведенні */
+  }
+
+  &:active {
+    transform: scale(0.98); /* Легкий ефект при натисканні */
+  }
+`;

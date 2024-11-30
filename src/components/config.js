@@ -261,9 +261,6 @@ const makeSearchKeyValue = (searchedValue) =>{
   let modifiedSearchValue = searchValue;
     modifiedSearchValue = encodeEmail(searchValue);
     const searchIdKey = `${searchKey}_${modifiedSearchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
-    console.log('searchedValue :>> ', searchedValue);
-    console.log('searchKey :>> ', searchKey);
-    console.log('searchIdKey :>> ', searchIdKey);
     return {searchKey, searchValue, modifiedSearchValue, searchIdKey}
 }
 
@@ -391,11 +388,8 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
   const uniqueUserIds = new Set();
 
   try {
-    console.log('users1111 :>> ', users);
     await searchBySearchId(prefixes, modifiedSearchValue, uniqueUserIds, users);
-    console.log('users2222 :>> ', users);
     await searchByPrefixes(prefixes, searchValue, uniqueUserIds, users);
-    console.log('users3333 :>> ', users);
 
     if (users.length === 1) {
       console.log('Знайдено одного користувача:', users[0]);
