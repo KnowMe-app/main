@@ -779,12 +779,14 @@ export const UsersList = ({ users, setUsers, setSearch, setState  }) => {
 
   // Функція для експорту контактів у форматі vCard
   const exportContacts = (user) => {
+
+    console.log('user :>> ', user);
     let contactVCard = `
     BEGIN:VCARD
     VERSION:3.0
-    FN:УК СМ ${user.name?.trim()} ${user.surname?.trim()}
+    FN:УК СМ ${user.name?.trim() || ''} ${user.surname?.trim() || ''}
     N:УК СМ ${user.surname?.trim() || ''};${user.name?.trim() || ''};;;
-    TEL;TYPE=CELL:${user.phone ? `tel:${user.phone.replace(/\s/g, '')}` : ''}
+    TEL;TYPE=CELL:${user.phone ? user.phone.replace(/\s/g, '') : ''}
     EMAIL;TYPE=HOME:${user.email || ''}
     ADR;TYPE=HOME:;;${user.street || ''};${user.city || ''};${user.region || ''};;${user.country || ''}
     ORG:${user.profession || ''}
@@ -798,46 +800,45 @@ export const UsersList = ({ users, setUsers, setSearch, setState  }) => {
     Instagram: user.instagram ? `https://instagram.com/${user.instagram}` : '',
     TikTok: user.tiktok ? `https://www.tiktok.com/@${user.tiktok}` : '',
     Facebook: user.facebook ? `https://facebook.com/${user.facebook}` : '',
-  };
+};
 
-  Object.entries(socialLinks).forEach(([label, link]) => {
-    if (link) {
+Object.entries(socialLinks).forEach(([label, link]) => {
+  if (link) {
       contactVCard += `URL;TYPE=${label}:${link}\n`;
-    }
-  });
+  }
+});
 
   // Додаткові поля в опис
   const additionalInfo = {
-    "Reward": user.reward,
-    "Height": user.height,
-    "Weight": user.weight,
-    "Body Type": user.bodyType,
-    "Clothing Size": user.clothingSize,
-    "Shoe Size": user.shoeSize,
-    "Eye Color": user.eyeColor,
-    "Hair Color": user.hairColor,
-    "Hair Structure": user.hairStructure,
-    "Face Shape": user.faceShape,
-    "Lips Shape": user.lipsShape,
-    "Nose Shape": user.noseShape,
-    "Chin": user.chin,
-    "Blood Type": user.blood,
-    "Own Kids": user.ownKids,
-    "Last Delivery": user.lastDelivery,
-    "Last Login": user.lastLogin,
-    "Last Action": user.lastAction,
-    "Education": user.education,
-    "Marital Status": user.maritalStatus,
-    "Are Terms Confirmed": user.areTermsConfirmed,
-    "Language": user.language,
-    "Experience": user.experience,
-    "Race": user.race
-  };
+    Reward: user.reward || '',
+    Height: user.height || '',
+    Weight: user.weight || '',
+    'Body Type': user.bodyType || '',
+    'Clothing Size': user.clothingSize || '',
+    'Shoe Size': user.shoeSize || '',
+    'Eye Color': user.eyeColor || '',
+    'Hair Color': user.hairColor || '',
+    'Hair Structure': user.hairStructure || '',
+    'Face Shape': user.faceShape || '',
+    'Lips Shape': user.lipsShape || '',
+    'Nose Shape': user.noseShape || '',
+    Chin: user.chin || '',
+    'Blood Type': user.blood || '',
+    'Own Kids': user.ownKids || '',
+    'Last Delivery': user.lastDelivery || '',
+    'Last Login': user.lastLogin || '',
+    'Last Action': user.lastAction || '',
+    Education: user.education || '',
+    'Marital Status': user.maritalStatus || '',
+    'Are Terms Confirmed': user.areTermsConfirmed || '',
+    Language: user.language || '',
+    Experience: user.experience || '',
+    Race: user.race || '',
+};
 
-  const description = Object.entries(additionalInfo)
-    .filter(([key, value]) => value)
-    .map(([key, value]) => `${key}: ${value}`)
-    .join(', ');
+const description = Object.entries(additionalInfo)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(', ');
 
   if (description) {
     contactVCard += `NOTE:${description}\n`;
@@ -845,11 +846,12 @@ export const UsersList = ({ users, setUsers, setSearch, setState  }) => {
 
   contactVCard += `END:VCARD\n`;
 
-  const blob = new Blob([contactVCard], { type: "text/vcard" });
+
+  const blob = new Blob([contactVCard], { type: 'text/vcard' });
   const url = window.URL.createObjectURL(blob);
-  const link = document.createElement("a");
+  const link = document.createElement('a');
   link.href = url;
-  link.download = `${user.name?.trim()}_${user.surname?.trim()}.vcf`;
+  link.download = `${user.name?.trim() || 'user'}_${user.surname?.trim() || 'data'}.vcf`;
   link.click();
 
   window.URL.revokeObjectURL(url);
