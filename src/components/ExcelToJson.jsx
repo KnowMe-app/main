@@ -8,7 +8,7 @@ const ExcelToJson = () => {
     const generateUniqueId = () => {
         const randomNumbers = Math.floor(100000 + Math.random() * 900000).toString();
         const randomLetters = Array.from({ length: 3 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
-        return `${randomLetters}${randomNumbers}`;
+        return `AA1${randomLetters}${randomNumbers}`;
     };
 
     const formatJson = (rows, worksheet) => {
@@ -34,7 +34,7 @@ const ExcelToJson = () => {
         };
     
         const processPhones = (phones) => {
-            const formattedPhones = phones.filter((phone) => phone !== null).map((phone) => {
+            const formattedPhones = phones.filter((phone) => phone !== null && phone !== "").map((phone) => {
                 if (phone.startsWith('(0')) {
                     return `38${phone.replace(/[()]/g, '')}`;
                 }
@@ -44,8 +44,27 @@ const ExcelToJson = () => {
         };
     
         const processLinks = (link1, link2, link3) => {
-            const links = [link1, link2, link3].filter((l) => l !== null);
+            const links = [link1, link2, link3].filter((l) => l !== null && l !== "");
             return links.length > 1 ? { otherLink: links } : links[0] ? { otherLink: links[0] } : null;
+        };
+
+        const vkLinks = (link1, link2) => {
+            const links = [link1, link2].filter((l) => l !== null && l !== "");
+            return links.length > 1 ? { vk: links } : links[0] ? { vk: links[0] } : null;
+        };
+
+        const fbLinks = (link1, link2) => {
+            const links = [link1, link2].filter((l) => l !== null && l !== "");
+            return links.length > 1 ? { facebook: links } : links[0] ? { facebook: links[0] } : null;
+        };
+
+        const telegramLinks = (link1, link2) => {
+            const links = [link1, link2].filter((l) => l !== null && l !== "");
+            return links.length > 1 ? { telegram: links } : links[0] ? { telegram: links[0] } : null;
+        };
+        const emailLinks = (link1, link2) => {
+            const links = [link1, link2].filter((l) => l !== null && l !== "");
+            return links.length > 1 ? { email: links } : links[0] ? { email: links[0] } : null;
         };
     
         const processComments = (comment1, comment2, comment3, notes) => {
@@ -63,20 +82,33 @@ const ExcelToJson = () => {
     
         return rows.reduce((acc, row, rowIndex) => {
             const {
+                nameFull, // розібрав
                 phone1,
                 phone2,
                 phone3,
+                phone4,
+                telegram1,
+                telegram2,
+                vk1,
+                vk2,
+                vkMain, // розібрав
+                facebook1,
+                facebook2,
+                email1,
+                email2,
+                emailMain, // розібрав
                 otherLink1,
                 otherLink2,
                 otherLink3,
+                otherLink4, // розібрав
                 myComment1,
                 myComment2,
                 myComment3,
                 birth,
                 lastAction,
                 getInTouch,
-                Вік,
-                ІМТ,
+                Вік, // розібрав
+                ІМТ, // розібрав
                 csection,
                 ...rest
             } = row;
@@ -96,10 +128,14 @@ const ExcelToJson = () => {
     
         acc[uniqueId] = {
             ...Object.fromEntries(
-                Object.entries(rest).filter(([key, value]) => value !== null)
+                Object.entries(rest).filter(([key, value]) => value !== null && value !== "")
             ),
-            ...(processPhones([phone1, phone2, phone3]) ? { phone: processPhones([phone1, phone2, phone3]) } : {}),
+            ...(processPhones([phone1, phone2, phone3, phone4]) ? { phone: processPhones([phone1, phone2, phone3, phone4]) } : {}),
             ...(processLinks(otherLink1, otherLink2, otherLink3) || {}),
+            ...(vkLinks(vk1, vk2) || {}),
+            ...(fbLinks(facebook1, facebook2) || {}),
+            ...(telegramLinks(telegram1, telegram2) || {}),
+            ...(emailLinks(email1, email2) || {}),
             ...(processComments(myComment1, myComment2, myComment3, notes.join('; ')) || {}),
             ...(birth ? { birth: formatDate(birth, 'dd.mm.yyyy') } : {}),
             ...(lastAction ? { lastAction: formatDate(lastAction, 'dd.mm.yyyy') } : {}),

@@ -644,91 +644,115 @@ const renderContacts = (data, parentKey = '') => {
           {!['email', 'phone'].includes(key) && <strong>{key}:</strong>}{' '}
           {Array.isArray(value) ? (
             value
-              .filter((val) => val.trim() !== '') // Пропускаємо порожні елементи масиву
-              .map((val, idx) => (
-                <div key={`${nestedKey}-${idx}`} style={{ marginBottom: '2px' }}>
-                  <a
-                    href={links[key](val.replace(/\s/g, ''))}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-                  >
-                    {val.replace(/\s/g, '')}
-                  </a>
-                  {key === 'phone' && (
-                    <>
+              .filter((val) => typeof val === 'string' && val.trim() !== '') // Фільтруємо лише непусті рядки
+              .map((val, idx) => {
+                try {
+                  const processedVal = key === 'phone' ? val.replace(/\s/g, '') : val; // Видаляємо пробіли тільки для phone
+                  return (
+                    <div key={`${nestedKey}-${idx}`} style={{ marginBottom: '2px' }}>
                       <a
-                        href={links.telegramFromPhone(`+${val.replace(/\s+/g, '')}`)}
+                        href={links[key](processedVal)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                        style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
                       >
-                        Tg
+                        {key === 'phone' ? `+${processedVal}` : processedVal}
                       </a>
-                      <a
-                        href={links.viberFromPhone(val)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                      >
-                        V
-                      </a>
-                      <a
-                        href={links.whatsappFromPhone(val)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                      >
-                        W
-                      </a>
-                    </>
-                  )}
-                </div>
-              ))
+                      {key === 'phone' && (
+                        <>
+                          <a
+                            href={links.telegramFromPhone(`+${val}`)} // Telegram отримує значення з пробілами
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                          >
+                            Tg
+                          </a>
+                          <a
+                            href={links.viberFromPhone(processedVal)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                          >
+                            V
+                          </a>
+                          <a
+                            href={links.whatsappFromPhone(processedVal)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                          >
+                            W
+                          </a>
+                        </>
+                      )}
+                    </div>
+                  );
+                } catch (error) {
+                  return (
+                    <div key={`${nestedKey}-${idx}`} style={{ marginBottom: '2px' }}>
+                      {val}
+                    </div>
+                  );
+                }
+              })
           ) : (
             <>
-              <a
-                href={links[key](value.replace(/\s/g, ''))}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-              >
-                {value.replace(/\s/g, '')}
-              </a>
-              {key === 'phone' && (
-                <>
-                  <a
-                    href={links.telegramFromPhone(`+${value.replace(/\s+/g, '')}`)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                  >
-                    Tg
-                  </a>
-                  <a
-                    href={links.viberFromPhone(value)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                  >
-                    V
-                  </a>
-                  <a
-                    href={links.whatsappFromPhone(value)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                  >
-                    W
-                  </a>
-                </>
-              )}
+              {(() => {
+                try {
+                  const processedValue = key === 'phone' ? value.replace(/\s/g, '') : value; // Видаляємо пробіли тільки для phone
+                  return (
+                    <>
+                      <a
+                        href={links[key](processedValue)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
+                      >
+                        {key === 'phone' ? `+${processedValue}` : processedValue}
+                      </a>
+                      {key === 'phone' && (
+                        <>
+                          <a
+                            href={links.telegramFromPhone(`+${value}`)} // Telegram отримує значення з пробілами
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                          >
+                            Tg
+                          </a>
+                          <a
+                            href={links.viberFromPhone(processedValue)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                          >
+                            V
+                          </a>
+                          <a
+                            href={links.whatsappFromPhone(processedValue)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+                          >
+                            W
+                          </a>
+                        </>
+                      )}
+                    </>
+                  );
+                } catch (error) {
+                  return <div>{value}</div>;
+                }
+              })()}
             </>
           )}
         </div>
       );
     }
-
+    
+    
+    
     return null; // Якщо ключ не обробляється
   });
 };
