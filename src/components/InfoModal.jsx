@@ -75,7 +75,7 @@ const OrangeStrong = styled.strong`
   color: orange;
 `;
 
-export const InfoModal = ({ onClose, onSelect, options, text, Context}) => {
+export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm }) => {
   const delProfile = (
     <>
       <p>Щоб видалити анкету, відправте запит на пошту</p>
@@ -93,6 +93,11 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context}) => {
         <OrangeStrong>KnowMe: Egg donor</OrangeStrong>
       </a>
       <p>в Google Play</p>
+    </>
+  );
+
+  const delConfirm = (
+      <>{DelConfirm && <DelConfirm/>}
     </>
   );
   
@@ -154,6 +159,7 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context}) => {
         {text === 'viewProfile' && viewProfile}
         {text === 'pickerOptions' && pickerOptions}
         {text === 'dotsMenu' && dotsMenu}
+        {text === 'delConfirm' && delConfirm}
       </ModalContent>
     </ModalOverlay>
   );

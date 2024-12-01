@@ -47,12 +47,185 @@ const dublicateFields = ['weight', 'height', ];
    await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
 };
 
-export const renderTopBlock = (userData, setUsers) => {
+
+
+export const renderTopBlock = (userData, setUsers, setShowInfoModal) => {
+
+
 
   // console.log('userData в renderTopBlock:', userData );
 
   if (!userData) return null;
 
+///
+
+
+
+
+  // Функція для експорту контактів у форматі vCard
+  const exportContacts = (user) => {
+    console.log('user :>> ', user);
+  
+    // Формуємо vCard
+    let contactVCard = `BEGIN:VCARD\r\nVERSION:3.0\r\n`;
+  
+    // Обробка імені та прізвища
+    const names = Array.isArray(user.name) ? user.name : [user.name];
+    const surnames = Array.isArray(user.surname) ? user.surname : [user.surname];
+  
+    const fullName = `${names.join(' ').trim()} ${surnames.join(' ').trim()}`;
+    if (fullName.trim()) {
+      contactVCard += `FN;CHARSET=UTF-8:${fullName.trim()}\r\n`;
+      contactVCard += `N;CHARSET=UTF-8:${surnames.join(' ').trim()};${names.join(' ').trim()};;;\r\n`;
+    }
+  
+    // Обробка телефонів
+    const phones = Array.isArray(user.phone) ? user.phone : [user.phone];
+    phones.forEach((phone) => {
+      if (phone) {
+        contactVCard += `TEL;TYPE=CELL:+${phone.trim()}\r\n`;
+      }
+    });
+  
+    // Обробка email
+    const emails = Array.isArray(user.email) ? user.email : [user.email];
+    emails.forEach((email) => {
+      if (email) {
+        contactVCard += `EMAIL;CHARSET=UTF-8;TYPE=HOME:${email.trim()}\r\n`;
+      }
+    });
+  
+    // Обробка адрес
+    const addresses = Array.isArray(user.address) ? user.address : [user.address];
+    addresses.forEach((address) => {
+      if (address) {
+        const { street = '', city = '', region = '', country = '' } = address;
+        contactVCard += `ADR;CHARSET=UTF-8;TYPE=HOME:;;${street.trim()};${city.trim()};${region.trim()};${country.trim()}\r\n`;
+      }
+    });
+  
+    // Обробка ролей
+    const roles = Array.isArray(user.userRole) ? user.userRole : [user.userRole];
+    roles.forEach((role) => {
+      if (role) {
+        contactVCard += `TITLE;CHARSET=UTF-8:${role.trim()}\r\n`;
+      }
+    });
+  
+    // Обробка дат народження
+    const births = Array.isArray(user.birth) ? user.birth : [user.birth];
+    births.forEach((birth) => {
+      if (birth) {
+        const [day, month, year] = birth.split('.');
+        contactVCard += `BDAY:${year}-${month}-${day}\r\n`; // Формат YYYY-MM-DD
+      }
+    });
+  
+    // Обробка соціальних мереж
+    const socialLinks = {
+      Telegram: Array.isArray(user.telegram) ? user.telegram : [user.telegram],
+      Instagram: Array.isArray(user.instagram) ? user.instagram : [user.instagram],
+      TikTok: Array.isArray(user.tiktok) ? user.tiktok : [user.tiktok],
+      Facebook: Array.isArray(user.facebook) ? user.facebook : [user.facebook],
+    };
+  
+    Object.entries(socialLinks).forEach(([label, links]) => {
+      links.forEach((link) => {
+        if (link) {
+          contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:https://${label.toLowerCase()}.com/${link.trim()}\r\n`;
+        }
+      });
+    });
+  
+    // Додаткові поля для NOTE
+    const additionalInfo = {
+      Reward: user.reward || '',
+      Height: user.height || '',
+      Weight: user.weight || '',
+      'Body Type': user.bodyType || '',
+      'Clothing Size': user.clothingSize || '',
+      'Shoe Size': user.shoeSize || '',
+      'Eye Color': user.eyeColor || '',
+      'Hair Color': user.hairColor || '',
+      'Hair Structure': user.hairStructure || '',
+      'Face Shape': user.faceShape || '',
+      'Lips Shape': user.lipsShape || '',
+      'Nose Shape': user.noseShape || '',
+      Chin: user.chin || '',
+      'Blood Type': user.blood || '',
+      'Own Kids': user.ownKids || '',
+      'Last Delivery': user.lastDelivery || '',
+      'Last Login': user.lastLogin || '',
+      'Last Action': user.lastAction || '',
+      Education: user.education || '',
+      'Marital Status': user.maritalStatus || '',
+      'Are Terms Confirmed': user.areTermsConfirmed || '',
+      Language: user.language || '',
+      Experience: user.experience || '',
+      Race: user.race || '',
+    };
+  
+    const description = Object.entries(additionalInfo)
+      .filter(([, value]) => value) // Виключаємо порожні значення
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(', ');
+  
+    if (description) {
+      contactVCard += `NOTE;CHARSET=UTF-8:${description}\r\n`;
+    }
+  
+    contactVCard += `END:VCARD\r\n`;
+  
+    // Створюємо Blob із кодуванням UTF-8
+    const vCardBlob = new Blob([contactVCard], { type: 'text/vcard;charset=utf-8' });
+  
+    // Завантаження файлу
+    const url = window.URL.createObjectURL(vCardBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${names[0]?.trim() || 'user'}_${surnames[0]?.trim() || 'data'}.vcf`;
+    link.click();
+  
+    console.log('Generated vCard:', contactVCard);
+  
+    window.URL.revokeObjectURL(url);
+  };
+
+  const renderExportButton = (userData) => (
+    <button
+      style={{
+        ...styles.removeButton,
+        backgroundColor: 'green',
+        top: '10px',
+        right: '60px',
+      }}
+      onClick={(e) => {
+        e.stopPropagation(); // Запобігаємо активації кліку картки
+        exportContacts(userData);
+      }}
+    >
+      export
+    </button>
+  );
+  
+  const renderDeleteButton = (userId) => (
+    <button
+      style={{
+        ...styles.removeButton,
+        backgroundColor: 'red',
+        top: '42px',
+      }}
+      onClick={(e) => {
+        console.log('delConfirm :>> ');
+        e.stopPropagation(); // Запобігаємо активації кліку картки
+        setShowInfoModal('delConfirm'); // Trigger the modal opening
+
+        // handleRemoveUser(userId);
+      }}
+    >
+      del
+    </button>
+  );
   
 
   // const nextContactDate = userData.getInTouch
@@ -64,6 +237,8 @@ export const renderTopBlock = (userData, setUsers) => {
 
   return (
     <div style={{ padding: '7px',  position: 'relative',}}>
+      {renderDeleteButton(userData.userId)}
+      {renderExportButton(userData)}
       <div>
         {userData.userId.substring(0, 6)}
         {renderGetInTouchInput(userData, setUsers)}
@@ -668,7 +843,7 @@ const calculateNextDate = (dateString) => {
 
 
 // Компонент для рендерингу кожної картки
-export const UserCard = ({ userData, setUsers }) => {
+export const UserCard = ({ userData, setUsers, setShowInfoModal }) => {
 
 
   // console.log('userData!!!!! :>> ', userData);
@@ -739,7 +914,8 @@ export const UserCard = ({ userData, setUsers }) => {
 
   return (
     <div>
-    {renderTopBlock(userData, setUsers)}
+
+    {renderTopBlock(userData, setUsers, setShowInfoModal)}
     <div id={userData.userId} style={{ display: 'none' }}>
       {renderFields(userData)}
     </div>
@@ -763,99 +939,27 @@ export const UserCard = ({ userData, setUsers }) => {
     };
 
 // Компонент для рендерингу всіх карток
-export const UsersList = ({ users, setUsers, setSearch, setState  }) => {
+export const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoModal  }) => {
 
   // console.log('users in UsersList: ', users);
 
-  // const handleRemoveUser = async (userId) => {
-  //   await removeSearchId(userId); // Виклик функції для видалення
-  //   // Оновлення стану користувачів
-  //   setUsers(prevUsers => {
-  //     const updatedUsers = { ...prevUsers };
-  //     delete updatedUsers[userId]; // Видалення користувача за userId
-  //     return updatedUsers; // Повертаємо оновлений об'єкт користувачів
-  //   });
-  // };
-
-  // Функція для експорту контактів у форматі vCard
-  const exportContacts = (user) => {
-
-    console.log('user :>> ', user);
-    let contactVCard = `
-    BEGIN:VCARD
-    VERSION:3.0
-    FN:УК СМ ${user.name?.trim() || ''} ${user.surname?.trim() || ''}
-    N:УК СМ ${user.surname?.trim() || ''};${user.name?.trim() || ''};;;
-    TEL;TYPE=CELL:${user.phone ? user.phone.replace(/\s/g, '') : ''}
-    EMAIL;TYPE=HOME:${user.email || ''}
-    ADR;TYPE=HOME:;;${user.street || ''};${user.city || ''};${user.region || ''};;${user.country || ''}
-    ORG:${user.profession || ''}
-    TITLE:${user.userRole || ''}
-    BDAY:${user.birth || ''}
-  `;
-
-  // Додаємо лінки на соціальні мережі
-  const socialLinks = {
-    Telegram: user.telegram ? `https://t.me/${user.telegram}` : '',
-    Instagram: user.instagram ? `https://instagram.com/${user.instagram}` : '',
-    TikTok: user.tiktok ? `https://www.tiktok.com/@${user.tiktok}` : '',
-    Facebook: user.facebook ? `https://facebook.com/${user.facebook}` : '',
-};
-
-Object.entries(socialLinks).forEach(([label, link]) => {
-  if (link) {
-      contactVCard += `URL;TYPE=${label}:${link}\n`;
-  }
-});
-
-  // Додаткові поля в опис
-  const additionalInfo = {
-    Reward: user.reward || '',
-    Height: user.height || '',
-    Weight: user.weight || '',
-    'Body Type': user.bodyType || '',
-    'Clothing Size': user.clothingSize || '',
-    'Shoe Size': user.shoeSize || '',
-    'Eye Color': user.eyeColor || '',
-    'Hair Color': user.hairColor || '',
-    'Hair Structure': user.hairStructure || '',
-    'Face Shape': user.faceShape || '',
-    'Lips Shape': user.lipsShape || '',
-    'Nose Shape': user.noseShape || '',
-    Chin: user.chin || '',
-    'Blood Type': user.blood || '',
-    'Own Kids': user.ownKids || '',
-    'Last Delivery': user.lastDelivery || '',
-    'Last Login': user.lastLogin || '',
-    'Last Action': user.lastAction || '',
-    Education: user.education || '',
-    'Marital Status': user.maritalStatus || '',
-    'Are Terms Confirmed': user.areTermsConfirmed || '',
-    Language: user.language || '',
-    Experience: user.experience || '',
-    Race: user.race || '',
-};
-
-const description = Object.entries(additionalInfo)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join(', ');
-
-  if (description) {
-    contactVCard += `NOTE:${description}\n`;
-  }
-
-  contactVCard += `END:VCARD\n`;
 
 
-  const blob = new Blob([contactVCard], { type: 'text/vcard' });
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${user.name?.trim() || 'user'}_${user.surname?.trim() || 'data'}.vcf`;
-  link.click();
+  const renderEditButton = (userId, setSearch, setState) => (
+    <button
+      style={styles.removeButton}
+      onClick={(e) => {
+        e.stopPropagation(); // Запобігаємо активації кліку картки
+        handleCardClick(userId, setSearch, setState);
+      }}
+    >
+      edit
+    </button>
+  );
+  
+  
 
-  window.URL.revokeObjectURL(url);
-}
+
 
   return (
     <div style={styles.container}>
@@ -865,40 +969,11 @@ const description = Object.entries(additionalInfo)
             style={{...coloredCard(index)}}
             // onClick={() => handleCardClick(userData.userId)} // Додаємо обробник кліку
           >
+            
+            {renderEditButton(userData.userId, setSearch, setState)}
+            {/* {renderExportButton(userData)} */}
 
-<button
-              style={styles.removeButton}
-              onClick={(e) => {
-                e.stopPropagation(); // Запобігаємо активації кліку картки
-                handleCardClick(userData.userId, setSearch, setState);
-              }}
-            >
-              edit
-            </button>
-
-            <button
-              style={{...styles.removeButton, backgroundColor: 'green', top: '10px', 
-                // right: '118px'
-                right: '60px'
-              }}
-              onClick={(e) => {
-                e.stopPropagation(); // Запобігаємо активації кліку картки
-                exportContacts(userData);
-              }}
-            >
-              export
-            </button>
-
-            {/* <button
-              style={{...styles.removeButton, backgroundColor: 'red', top: '42px'}}
-              onClick={(e) => {
-                e.stopPropagation(); // Запобігаємо активації кліку картки
-                handleRemoveUser(userId);
-              }}
-            >
-              del
-            </button> */}
-            <UserCard userData={userData} setUsers={setUsers} />
+            <UserCard setShowInfoModal = {setShowInfoModal} userData={userData} setUsers={setUsers} />
           </div>
         ))}
       </div>

@@ -13,6 +13,7 @@ import {
   removeKeyFromFirebase,
   fetchListOfUsers,
   makeNewUser,
+  removeSearchId,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -907,6 +908,33 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
   };
 
+  const delConfirm = () => {
+
+    // console.log('state :>> ', state);
+    const handleRemoveUser = async () => {
+      try {
+        await removeSearchId(state.userId); // Виклик функції для видалення
+        setUsers(prevUsers => {
+          const updatedUsers = { ...prevUsers };
+          delete updatedUsers[state.userId]; // Видалення користувача за userId
+          return updatedUsers; // Повертаємо оновлений об'єкт користувачів
+        });
+        setShowInfoModal(null); // Close modal after deletion
+        console.log(`User ${state.userId} deleted.`);
+      } catch (error) {
+        console.error('Error deleting user:', error);
+      }
+    };
+  
+    return (
+      <>
+        <p>Видалити профіль?</p>
+        <SubmitButton onClick={handleRemoveUser}>Видалити</SubmitButton>
+        <SubmitButton onClick={() => setShowInfoModal(null)}>Відмінити</SubmitButton>
+      </>
+    );
+  };
+
   const [users, setUsers] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
@@ -1025,8 +1053,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         {search && state.userId ? (
           <>
 <div style={{...coloredCard()}}>
-    {renderTopBlock(state, setState)}
-  
+    {renderTopBlock(state, setState, setShowInfoModal,  )}
   </div>
           
           {fieldsToRender.map((field, index) => {
@@ -1205,7 +1232,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               {hasMore && <Button onClick={makeIndex}>Make index</Button>}
               <ExcelToJson/>
             </div>
-            {!userNotFound && <UsersList users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}
+            {!userNotFound && <UsersList setShowInfoModal ={setShowInfoModal} users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}
             {/* Передача користувачів у UsersList */}
           </div>
         )}
@@ -1218,6 +1245,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           onSelect={handleSelectOption}
           text={showInfoModal}
           Context={dotsMenu}
+          DelConfirm={delConfirm}
         />
       )}
     </Container>
