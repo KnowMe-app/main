@@ -50,17 +50,8 @@ const dublicateFields = ['weight', 'height', ];
 
 
 export const renderTopBlock = (userData, setUsers, setShowInfoModal) => {
-
-
-
   // console.log('userData в renderTopBlock:', userData );
-
   if (!userData) return null;
-
-///
-
-
-
 
   // Функція для експорту контактів у форматі vCard
   const exportContacts = (user) => {
@@ -240,7 +231,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal) => {
       {renderDeleteButton(userData.userId)}
       {renderExportButton(userData)}
       <div>
-        {userData.userId.substring(0, 6)}
+        {userData.userId.substring(0, 8)}
         {renderGetInTouchInput(userData, setUsers)}
       </div>
       {/* <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div> */}

@@ -5,11 +5,11 @@ import { OrangeBtn, StyledLabel, HiddenInput,  } from './styles';
 const ExcelToJson = () => {
     const [jsonData, setJsonData] = useState({});
 
-    const generateUniqueId = () => {
-        const randomNumbers = Math.floor(100000 + Math.random() * 900000).toString();
-        const randomLetters = Array.from({ length: 3 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
-        return `AA1${randomLetters}${randomNumbers}`;
-    };
+    // const generateUniqueId = () => {
+    //     const randomNumbers = Math.floor(100000 + Math.random() * 900000).toString();
+    //     const randomLetters = Array.from({ length: 3 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
+    //     return `AA1${randomLetters}${randomNumbers}`;
+    // };
 
     const formatJson = (rows, worksheet) => {
         const formatDate = (excelDate, format) => {
@@ -110,10 +110,11 @@ const ExcelToJson = () => {
                 Вік, // розібрав
                 ІМТ, // розібрав
                 csection,
+                userId,
                 ...rest
             } = row;
     
-            const uniqueId = generateUniqueId();
+            // const uniqueId = generateUniqueId();
     
         // Отримуємо примітки для цього рядка
         const notes = [];
@@ -126,7 +127,7 @@ const ExcelToJson = () => {
             }
         });
     
-        acc[uniqueId] = {
+        acc[userId] = {
             ...Object.fromEntries(
                 Object.entries(rest).filter(([key, value]) => value !== null && value !== "")
             ),
@@ -141,6 +142,7 @@ const ExcelToJson = () => {
             ...(lastAction ? { lastAction: formatDate(lastAction, 'dd.mm.yyyy') } : {}),
             ...(getInTouch ? { getInTouch: formatDate(getInTouch, 'yyyy-mm-dd') } : {}),
             ...(csection ? { csection: formatDate(csection, 'dd.mm.yyyy') } : {}),
+            ...{userId},
         };
     
             return acc;

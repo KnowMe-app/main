@@ -910,14 +910,15 @@ const filterByNegativeBloodType = (value) => {
 };
 
 // Фільтр за віком і статусом шлюбу (комбінований)
-const filterByAgeAndMaritalStatus = (value, ageLimit = 30, requiredStatus = "Yes") => {
+const filterByAgeAndMaritalStatus = (value, ageLimit = 30, requiredStatuses = ["Yes", "+"]) => {
   if (!value.birth || !value.maritalStatus) return true; // Пропускаємо, якщо дані відсутні
   const birthDate = value.birth.split('.');
   const birthYear = parseInt(birthDate[2], 10);
   const currentYear = new Date().getFullYear();
   const age = currentYear - birthYear;
 
-  return !(value.maritalStatus === requiredStatus && age > ageLimit); // Відфільтровуємо, якщо одружений і старший 30 років
+  // Перевіряємо, чи maritalStatus входить у список потрібних статусів
+  return !(requiredStatuses.includes(value.maritalStatus) && age > ageLimit);
 };
 
 // Фільтр за csection
@@ -931,11 +932,13 @@ const filterMain = (usersData) => {
   let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
 
   const filteredUsers = Object.entries(usersData).filter(([key, value]) => {
+    console.log('value :>> ', value[1]);
     const filters = {
-      filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value, 30, "Yes"), // Віковий і шлюбний фільтр
-      filterByUserRole: filterByUserRole(value),                                 // Фільтр за роллю користувача
-      filterByNegativeBloodType: filterByNegativeBloodType(value),               // Фільтр за групою крові
-      filterByCSection: filterByCSection(value),                                 // Фільтр за csection
+      filterByKeyCount: Object.keys(value[1]).length >= 10,                         // Фільтр за кількістю ключів
+      filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value[1], 30, ["Yes", "+"]), // Віковий і шлюбний фільтр
+      filterByUserRole: filterByUserRole(value[1]),                                 // Фільтр за роллю користувача
+      filterByNegativeBloodType: filterByNegativeBloodType(value[1]),               // Фільтр за групою крові
+      filterByCSection: filterByCSection(value[1]),                                 // Фільтр за csection
     };
 
     const failedFilters = Object.entries(filters).filter(([filterName, result]) => !result);
@@ -1115,7 +1118,7 @@ const combinedUsers = sortedUsers2;
     const sortedUsers = sortUsers(filteredUsers);
 
     // 7. Перетворюємо масив [key, value] у формат об'єкта
-    const paginatedUsers = sortedUsers.slice(0, 10).reduce((acc, [key, value]) => {
+    const paginatedUsers = sortedUsers.slice(0, 30).reduce((acc, [key, value]) => {
       const userId = value[0]; // Перший елемент масиву - userId
       const userData = value[1]; // Другий елемент - об'єкт даних користувача
       acc[userId] = userData;
@@ -1149,12 +1152,12 @@ const combinedUsers = sortedUsers2;
       return acc;
     }, {});
   
-    const nextKey = sortedUsers.length > 10 ? sortedUsers[10][0] : null;
+    const nextKey = sortedUsers.length > 20 ? sortedUsers[20][0] : null;
   
     return {
       users: finalUsers, // Об'єкт із користувачами, що містить дані з newUsers і users
       lastKey: nextKey,
-      hasMore: sortedUsers.length > 10,
+      hasMore: sortedUsers.length > 20,
     };
   
   } catch (error) {
