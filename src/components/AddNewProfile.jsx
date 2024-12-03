@@ -14,6 +14,7 @@ import {
   fetchListOfUsers,
   makeNewUser,
   removeSearchId,
+  createSearchIdsForAllUsers,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -886,6 +887,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return null;
     };
 
+    const parseOtherContact = input => {
+        return input; // Повертаємо номер без змін
+    };
+
     if (await processUserSearch('facebook', parseFacebookId, search)) return;
     if (await processUserSearch('instagram', parseInstagramId, search)) return;
     if (await processUserSearch('telegram', parseTelegramId, search)) return;
@@ -893,6 +898,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (await processUserSearch('email', parseEmail, search)) return;
     if (await processUserSearch('tiktok', parseTikTokLink, search)) return;
     if (await processUserSearch('phone', parsePhoneNumber, search)) return;
+    if (await processUserSearch('other', parseOtherContact, search)) return;
 
     console.log('Not a valid Facebook URL, Phone Number, or Instagram URL.');
   };
@@ -971,6 +977,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const makeIndex = async () => {
+    await createSearchIdsForAllUsers();
+
     const res = await fetchListOfUsers();
     res.forEach(async userId => {
       const result = { userId: userId };

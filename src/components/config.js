@@ -259,7 +259,7 @@ return {
 const makeSearchKeyValue = (searchedValue) =>{
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
   let modifiedSearchValue = searchValue;
-    modifiedSearchValue = encodeEmail(searchValue);
+    modifiedSearchValue = encodeKey(searchValue);
     const searchIdKey = `${searchKey}_${modifiedSearchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
     return {searchKey, searchValue, modifiedSearchValue, searchIdKey}
 }
@@ -386,6 +386,8 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
   const prefixes = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk'];
   const users = [];
   const uniqueUserIds = new Set();
+
+  console.log('modifiedSearchValue3333333333333 :>> ', modifiedSearchValue);
 
   try {
     await searchBySearchId(prefixes, modifiedSearchValue, uniqueUserIds, users);
@@ -639,8 +641,9 @@ export const deletePhotos = async (userId, photoUrls) => {
   // }
 };
 
-const encodeEmail = email => {
-  return email
+const encodeKey = key => {
+  return key
+    .replace(/\s/g, '_space_')
     .replace(/@/g, '_at_')
     .replace(/\./g, '_dot_')
     .replace(/#/g, '_hash_')
@@ -661,7 +664,7 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
       return;
     }
 
-    const searchIdKey = `${searchKey}_${encodeEmail(searchValue)}`;
+    const searchIdKey = `${searchKey}_${encodeKey(searchValue)}`;
     const searchIdRef = ref2(database, `newUsers/searchId/${searchIdKey}`);
     console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
@@ -727,6 +730,50 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
 };
 
 
+
+export const createSearchIdsForAllUsers = async () => {
+    const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk'];
+    const newUsersRef = ref2(database, 'newUsers');
+
+    const [newUsersSnapshot] = await Promise.all([get(newUsersRef)]);
+
+    if (newUsersSnapshot.exists()) {
+        const usersData = newUsersSnapshot.val();
+        const userIds = Object.keys(usersData);
+
+        const updatePromises = [];
+
+        for (const userId of userIds) {
+            const user = usersData[userId];
+
+            for (const key of keysToCheck) {
+                if (user.hasOwnProperty(key)) {
+                    let value = user[key];
+
+                    if (value && typeof value === 'string') { // Перевірка на існування значення та типу string
+                        let cleanedValue = value;
+
+                        // Якщо ключ 'phone', видаляємо всі пробіли
+                        if (key === 'phone') {
+                            cleanedValue = value.replace(/\s+/g, '');
+                        }
+                          // Якщо ключ 'telegram', кодуємо рядок
+                          if (key === 'telegram') {
+                            cleanedValue = encodeKey(value);
+                        }
+
+                        // Додаємо новий ID
+                        // Додаємо новий ID
+                        updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
+                        // await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add');
+                    }
+                }
+            }
+        }
+              // Виконуємо всі оновлення паралельно
+              await Promise.all(updatePromises);
+    }
+};
 
 // Функція для видалення пар у searchId
 export const removeSearchId = async userId => {
