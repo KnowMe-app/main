@@ -267,28 +267,38 @@ const makeSearchKeyValue = (searchedValue) =>{
 const searchUserByPartialUserId = async (userId) => {
   console.log('userId:', userId);
   try {
-    const usersRef = ref2(database, 'users');
-    const partialUserIdQuery = query(usersRef, orderByKey(), startAt(userId), endAt(userId + "\uf8ff"));
-    const usersSnapshot = await get(partialUserIdQuery);
+    const collections = ['users', 'newUsers']; // Масив колекцій, де здійснюється пошук
+    let foundUsers = [];
 
-    if (usersSnapshot.exists()) {
-      let foundUsers = [];
-      usersSnapshot.forEach((snapshot) => {
-        const currentUserId = snapshot.key;
-        const userData = snapshot.val();
+    for (const collection of collections) {
+      const refToCollection = ref2(database, collection);
+      const partialUserIdQuery = query(
+        refToCollection,
+        orderByKey(),
+        startAt(userId),
+        endAt(userId + "\uf8ff")
+      );
 
-        if (currentUserId.includes(userId)) {
-          foundUsers.push({ userId: currentUserId, ...userData });
-        }
-      });
+      const snapshot = await get(partialUserIdQuery);
 
-      if (foundUsers.length === 1) {
-        console.log('Знайдено єдиного користувача з частковим збігом userId:', foundUsers[0]);
-        return foundUsers[0]; // Повертаємо об'єкт, якщо знайдено лише одного користувача
-      } else if (foundUsers.length > 1) {
-        console.log('Знайдено кількох користувачів з частковим збігом userId:', foundUsers);
-        return foundUsers; // Повертаємо масив, якщо знайдено кілька користувачів
+      if (snapshot.exists()) {
+        snapshot.forEach((userSnapshot) => {
+          const currentUserId = userSnapshot.key;
+          const userData = userSnapshot.val();
+
+          if (currentUserId.includes(userId)) {
+            foundUsers.push({ userId: currentUserId, ...userData, collection });
+          }
+        });
       }
+    }
+
+    if (foundUsers.length === 1) {
+      console.log('Знайдено єдиного користувача з частковим збігом userId:', foundUsers[0]);
+      return foundUsers[0]; // Повертаємо об'єкт, якщо знайдено лише одного користувача
+    } else if (foundUsers.length > 1) {
+      console.log('Знайдено кількох користувачів з частковим збігом userId:', foundUsers);
+      return foundUsers; // Повертаємо масив, якщо знайдено кілька користувачів
     }
 
     console.log('Користувача з частковим userId не знайдено.');
@@ -298,6 +308,7 @@ const searchUserByPartialUserId = async (userId) => {
     return null;
   }
 };
+
 
 const addUserToResults = async (userId, users) => {
   const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));
@@ -340,6 +351,7 @@ const searchBySearchId = async (prefixes, modifiedSearchValue, uniqueUserIds, us
           } else {
             if (!uniqueUserIds.has(userIdOrArray)) {
               uniqueUserIds.add(userIdOrArray);
+              console.log('uniqueUserIds.add(userIdOrArray) :>> ');
               await addUserToResults(userIdOrArray, users);
             }
           }

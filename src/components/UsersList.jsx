@@ -233,21 +233,22 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal) => {
       <div>
         {userData.userId.substring(0, 8)}
         {renderGetInTouchInput(userData, setUsers)}
+        {renderLastCycleInput(userData, setUsers)}
       </div>
       {/* <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div> */}
       <div>
       <strong>{`${(userData.name || userData.surname) ? `${userData.name || ''} ${userData.surname || ''}, ` : ''}`}</strong>
-        {/* {renderBirthInfo(userData.birth)} */}
+        {renderBirthInfo(userData.birth)}
         {renderMaritalStatus(userData.maritalStatus)}
-        {renderCsection(userData.csection)} 
-          <div>
-          {`${userData.birth ? `${userData.birth}, ` : ''}` +
+        {/* {renderCsection(userData.csection)}  */}
+        <div style={{ whiteSpace: 'pre-wrap' }}>
+  {`${userData.birth ? `${userData.birth}, ` : ''}` +
     `${userData.height || ''}` +
     `${userData.height && userData.weight ? ' / ' : ''}` +
     `${userData.weight ? `${userData.weight}, ` : ''}` +
     `${userData.blood || ''}`}
-    
-    </div>
+  {renderDeliveryInfo(userData.ownKids, userData.lastDelivery, userData.csection)}
+</div>
     <div>
           {`${userData.region ? `${userData.region}, ` : ''}`  }
 
@@ -257,11 +258,12 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal) => {
       </div>
       
       
-      {renderDeliveryInfo(userData.ownKids, userData.lastDelivery, userData.csection)}
+      
       {/* {renderIMT(userData.weight, userData.height)} */}
       
-      {renderWriterInput(userData, setUsers)}
+      
       {renderContacts(userData)}
+      {renderWriterInput(userData, setUsers)}
       <RenderCommentInput userData={userData} setUsers={setUsers} />
 
       
@@ -297,13 +299,13 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal) => {
   );
 };
 
-// const renderBirthInfo = (birth) => {
-//   const age = calculateAge(birth);
+const renderBirthInfo = (birth) => {
+  const age = calculateAge(birth);
 
-//   return age !== null ? (
-//       <span>{age}р, </span>
-//   ) : null;
-// };
+  return age !== null ? (
+      <span>{age}, </span>
+  ) : null;
+};
 
 // const renderIMT = (weight, height,) => {
 //   const imt = calculateIMT(weight, height);
@@ -322,17 +324,59 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal) => {
 // };
 
 const renderDeliveryInfo = (ownKids, lastDelivery, csection) => {
-  const monthsAgo = lastDelivery ? calculateMonthsAgo(lastDelivery) : null;
+// Функція для парсингу дати з формату дд.мм.рррр
+const parseCsectionDate = (dateString) => {
+  // Перевірка формату дд.мм.рррр
+  const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
+  
+  if (!dateRegex.test(dateString)) {
+    return null; // Повертаємо null, якщо формат не відповідає
+  }
 
-  return (ownKids || monthsAgo !== null || csection) 
-    ? (
-      <div>
-        {ownKids ? `Пологів ${ownKids}` : ''}
-        {monthsAgo !== null ? `${ownKids ? ', ' : ''}ост пологи ${monthsAgo} міс тому` : ''}
-        {/* {csection ? `${ownKids || monthsAgo !== null ? ', ' : ''}кс ${csection}` : ', _N/C_'} */}
-      </div>
-    )
-    : null;
+  const [day, month, year] = dateString.split('.').map(Number);
+
+  // Перевірка на коректність дати
+  const isValidDate = (d, m, y) =>
+    d > 0 &&
+    d <= 31 &&
+    m > 0 &&
+    m <= 12 &&
+    y > 0 &&
+    !isNaN(new Date(y, m - 1, d).getTime());
+
+  if (!isValidDate(day, month, year)) {
+    return null; // Повертаємо null, якщо дата некоректна
+  }
+
+  return dateString; // Повертаємо коректний об'єкт Date
+};
+
+   // Використовуємо `csection` як дату останніх пологів, якщо `lastDelivery` не задано
+   const effectiveLastDelivery = lastDelivery || (csection && parseCsectionDate(csection));
+   const monthsAgo = effectiveLastDelivery ? calculateMonthsAgo(effectiveLastDelivery) : null;
+
+  // return (ownKids || monthsAgo !== null || csection) 
+  //   ? (
+  //     <div>
+  //       {ownKids ? `Пологів ${ownKids}` : ''}
+  //       {monthsAgo !== null ? `${ownKids ? ', ' : ''}ост пологи ${monthsAgo} міс тому` : ''}
+  //       {/* {csection ? `${ownKids || monthsAgo !== null ? ', ' : ''}кс ${csection}` : ', _N/C_'} */}
+  //     </div>
+  //   )
+  //   : null;
+  if (!ownKids && monthsAgo === null && !csection) return null;
+
+  const parts = [];
+  if (ownKids) parts.push(`Пологів ${ownKids}`);
+
+  if (monthsAgo !== null) {
+    parts.push(`ост ${monthsAgo} міс тому`);
+  }
+
+  if (csection) parts.push(`кс ${csection}`);
+  // Якщо csection не потрібно показувати, закоментуйте цей рядок або видаліть його.
+
+  return <div>{parts.join(', ')}</div>;
 };
 
 const renderLastCycleInput = (userData, setUsers) => {
@@ -365,7 +409,7 @@ const renderGetInTouchInput = (userData, setUsers) => {
     
   return (
     <div>
-      <label>Написати:</label>
+      <label>Пізніше:</label>
       <input
 
         type="text"
@@ -456,7 +500,7 @@ const renderWriterInput = (userData, setUsers) => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%' }}>
       {/* Верхній рядок: renderGetInTouchInput і інпут */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '2px', width: '100%' }}>
-      {renderLastCycleInput(userData, setUsers)}
+      
         <input
           type="text"
           // placeholder="Введіть ім'я"
@@ -751,35 +795,35 @@ const renderContacts = (data, parentKey = '') => {
 const renderMaritalStatus = (maritalStatus) => {
   switch (maritalStatus) {
     case 'Yes': case '+':
-      return 'Married, ';
+      return 'Заміжня, ';
     case 'No': case '-':
-      return 'Single, ';
+      return 'Незаміжня, ';
     default:
       return maritalStatus || '';
   }
 };
 
-const renderCsection = (csection) => {
+// const renderCsection = (csection) => {
 
-  // if (csection === undefined) {
-  //   return ', кс ?';
-  // }
+//   // if (csection === undefined) {
+//   //   return ', кс ?';
+//   // }
 
-  switch (csection) {
-    case undefined :
-    return '';
-    case '1':
-      return 'кс1, ';
-    case '2':
-      return 'кс2, ';
-    case 'No': case '0': case 'Ні': case '-':
-      return 'кс-, ';
-    case 'Yes': case 'Так': case '+': 
-      return 'кс+, ';
-    default:
-      return `кс ${csection}, `|| '';
-  }
-};
+//   switch (csection) {
+//     case undefined :
+//     return '';
+//     case '1':
+//       return 'кс1, ';
+//     case '2':
+//       return 'кс2, ';
+//     case 'No': case '0': case 'Ні': case '-':
+//       return 'кс-, ';
+//     case 'Yes': case 'Так': case '+': 
+//       return 'кс+, ';
+//     default:
+//       return `кс ${csection}, `|| '';
+//   }
+// };
 
 const calculateAge = (birthDateString) => {
   if (!birthDateString) return null;

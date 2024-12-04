@@ -822,11 +822,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return variationMatch[1]; // Повертає ID або username після "tiktok", "tik tok", "tt", "ТТ" тощо
       }
 
-      // Якщо це одне слово (тільки букви, цифри, дефіси та крапки)
-      const simpleWordRegex = /^[a-zA-Z0-9._-а-яА-ЯёЁ]+$/; // Дозволяємо літери, цифри, дефіси, крапки та підкреслення
-      if (simpleWordRegex.test(url)) {
-        return url; // Повертає слово, якщо воно відповідає критеріям
-      }
+      // // Якщо це одне слово (тільки букви, цифри, дефіси та крапки)
+      // const simpleWordRegex = /^[a-zA-Z0-9._-а-яА-ЯёЁ]+$/; // Дозволяємо літери, цифри, дефіси, крапки та підкреслення
+      // if (simpleWordRegex.test(url)) {
+      //   return url; // Повертає слово, якщо воно відповідає критеріям
+      // }
 
       return null; // Повертає null, якщо нічого не знайдено
     };
@@ -882,7 +882,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (textMatch && textMatch[1]) {
         return textMatch[1]; // Повертає username з текстового формату
       }
-
+console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
       // Якщо нічого не знайдено, повертає null
       return null;
     };
@@ -1086,7 +1086,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                               // value={value || ''}
                               value={field.name === 'phone' ? formatPhoneNumber(value || '') : value || ''}
                               onChange={e => {
-                                const updatedValue = inputUpdateValue(e?.target?.value, field);
+                                // const updatedValue = inputUpdateValue(e?.target?.value, field);
+                                const updatedValue = field.name === 'telegram' 
+                                  ? e?.target?.value // Без inputUpdateValue для 'telegram'
+                                  : inputUpdateValue(e?.target?.value, field);
                                 setState(prevState => ({
                                   ...prevState,
                                   [field.name]: prevState[field.name].map((item, i) => (i === idx ? updatedValue : item)),
@@ -1128,8 +1131,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                           // Якщо ім'я поля - 'publish', перетворюємо значення в булеве
                           if (field.name === 'publish') {
                             value = value.toLowerCase() === 'true'; // true, якщо значення 'true', інакше false
+                          } else if (field.name === 'telgram') {
+                            value = e?.target?.value
                           } else {
-                            value = inputUpdateValue(value, field); // Оновлення значення для інших полів
+                            // value = inputUpdateValue(value, field); // Оновлення значення для інших полів
                           }
 
                           setState(prevState => ({
