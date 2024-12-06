@@ -33,15 +33,22 @@ const ExcelToJson = () => {
             }
         };
     
-        const processPhones = (phones) => {
-            const formattedPhones = phones.filter((phone) => phone !== null && phone !== "").map((phone) => {
-                if (phone.startsWith('(0')) {
-                    return `38${phone.replace(/[()]/g, '')}`;
-                }
-                return phone;
-            });
-            return formattedPhones.length > 1 ? formattedPhones : formattedPhones[0] ? formattedPhones[0] : null;
-        };
+const processPhones = (phones) => {
+    const formattedPhones = phones
+        .filter((phone) => phone !== null && phone !== "")
+        .map((phone) => {
+            if (typeof phone === "string" && phone.startsWith("(0")) {
+                return `38${phone.replace(/[()]/g, '')}`;
+            }
+            return phone;
+        });
+    return formattedPhones.length > 1
+        ? formattedPhones
+        : formattedPhones[0]
+        ? formattedPhones[0]
+        : null;
+};
+
     
         const processLinks = (link1, link2, link3) => {
             const links = [link1, link2, link3].filter((l) => l !== null && l !== "");
@@ -65,6 +72,11 @@ const ExcelToJson = () => {
         const emailLinks = (link1, link2) => {
             const links = [link1, link2].filter((l) => l !== null && l !== "");
             return links.length > 1 ? { email: links } : links[0] ? { email: links[0] } : null;
+        };
+
+        const instLinks = (link1, link2) => {
+            const links = [link1, link2].filter((l) => l !== null && l !== "");
+            return links.length > 1 ? { instagram: links } : links[0] ? { instagram: links[0] } : null;
         };
     
         const processComments = (comment1, comment2, comment3, notes) => {
@@ -92,8 +104,12 @@ const ExcelToJson = () => {
                 vk1,
                 vk2,
                 vkMain, // розібрав
+                facebookMain, // розібрав
                 facebook1,
                 facebook2,
+                instagramMain,
+                instagram1,
+                instagram2,
                 email1,
                 email2,
                 emailMain, // розібрав
@@ -137,6 +153,7 @@ const ExcelToJson = () => {
             ...(fbLinks(facebook1, facebook2) || {}),
             ...(telegramLinks(telegram1, telegram2) || {}),
             ...(emailLinks(email1, email2) || {}),
+            ...(instLinks(instagram1, instagram2) || {}),
             ...(processComments(myComment1, myComment2, myComment3, notes.join('; ')) || {}),
             ...(birth ? { birth: formatDate(birth, 'dd.mm.yyyy') } : {}),
             ...(lastAction ? { lastAction: formatDate(lastAction, 'dd.mm.yyyy') } : {}),

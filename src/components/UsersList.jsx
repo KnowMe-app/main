@@ -83,7 +83,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
     const fullName = `${names.join(' ').trim()} ${surnames.join(' ').trim()}`;
     if (fullName.trim()) {
       contactVCard += `FN;CHARSET=UTF-8:${fullName.trim()}\r\n`;
-      contactVCard += `N;CHARSET=UTF-8:${surnames.join(' ').trim()};${names.join(' ').trim()};;;\r\n`;
+      contactVCard += `N;CHARSET=UTF-8:УК СМ ${names.join(' ').trim()} ${surnames.join(' ').trim()};;;\r\n`;
     }
   
     // Обробка телефонів
@@ -139,7 +139,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
     Object.entries(socialLinks).forEach(([label, links]) => {
       links.forEach((link) => {
         if (link) {
-          contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:https://${label.toLowerCase()}.com/${link.trim()}\r\n`;
+          contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:https://${label.toLowerCase()}.com/${link}\r\n`;
         }
       });
     });
