@@ -5,16 +5,18 @@ import styled, { css } from 'styled-components';
 import {
   auth,
   fetchNewUsersCollectionInRTDB,
-  fetchUserData,
+  // fetchUserData,
   updateDataInNewUsersRTDB,
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
   fetchPaginatedNewUsers,
   removeKeyFromFirebase,
-  fetchListOfUsers,
+  // fetchListOfUsers,
   makeNewUser,
   removeSearchId,
-  createSearchIdsForAllUsers,
+  // createSearchIdsForAllUsers,
+  createSearchIdsInCollection,
+  fetchUserById,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -404,7 +406,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
     const commonFields = ['lastAction'];
     // const userId = newState.userId || state.user
-
     // Формуємо поточну дату у форматі дд.мм.рррр
     const formatDate = date => {
       const dd = String(date.getDate()).padStart(2, '0');
@@ -412,7 +413,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const yyyy = date.getFullYear();
       return `${dd}.${mm}.${yyyy}`;
     };
-
     const currentDate = formatDate(new Date());
 
     // Додаємо значення до lastAction
@@ -427,7 +427,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // await removeSpecificSearchId(keyValue, newState.userId)
       // }
 
-      const { existingData } = await fetchUserData(updatedState.userId);
+      // const { existingData } = await fetchUserData(updatedState.userId);
+
+      // console.log('existingData1 :>> ', existingData);
+      const { existingData } = await fetchUserById(updatedState.userId);
+      // console.log('existingData2 :>> ', existingData2);
+
 
       // Фільтруємо ключі, щоб видалити зайві поля
       const cleanedState = Object.fromEntries(
@@ -435,22 +440,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       );
 
       const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
-      console.error('uploadedInfo!!!!!!!!!!!!!!!!!!!!!!!!!!!', uploadedInfo);
+      // console.log('uploadedInfo!!!!!!!!!!!!!!!!!!!!!!!!!!!', uploadedInfo);
       // const nestedArrays = findNestedArrays(uploadedInfo);
       // console.log('Всі вкладені масиви:', nestedArrays);
 
       if (!makeIndex) {
-        console.log('Update all database :>> ');
+        // console.log('Update all database :>> ');
         await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
         await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
       }
-
       // if (newState._test_getInTouch) {
       // console.log('Updating state._test_getInTouch...');
       // Фільтруємо ключі, щоб видалити зайві поля
       const cleanedStateForNewUsers = Object.fromEntries(Object.entries(updatedState).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key)));
-
-      console.log('cleanedStateForNewUsers', cleanedStateForNewUsers);
 
       await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update');
       // }
@@ -637,35 +639,41 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const processUserSearch = async (platform, parseFunction, inputData) => {
-    setUsers({});
-    const id = parseFunction(inputData);
-
+    setUsers({}); // Скидаємо попередній стан користувачів
+    const id = parseFunction(inputData); // Парсимо ID
+  
     if (id) {
       const result = { [platform]: id };
       console.log(`${platform} ID:`, id);
-
-      setSearchKeyValuePair(result);
-      const res = await fetchNewUsersCollectionInRTDB(result);
-
-      if (!res || (typeof res === 'object' && Object.keys(res).length === 0)) {
+  
+      setSearchKeyValuePair(result); // Задаємо ключ пошуку
+      const res = await fetchNewUsersCollectionInRTDB(result); // Пошук у базі
+      console.log('res :>> ', res);
+  
+      if (!res || Object.keys(res).length === 0) {
+        // Якщо результат пустий
         console.log(`Користувача не знайдено в ${platform}`);
         setUserNotFound(true);
       } else {
+        // Якщо користувач знайдений
         setUserNotFound(false);
-
-        if (Array.isArray(res)) {
-          setUsers(res); // Якщо `res` є масивом, записуємо в `setUsers`
-          console.log(`Знайдено кількох користувачів у ${platform}:`, res);
-        } else {
-          setState(res); // Якщо `res` є об'єктом, записуємо в `setState`
+  
+        if ('userId' in res) {
+          // Якщо в респонсі є ключ `userId`, використовуємо `setState`
+          setState(res);
           console.log(`Користувача знайдено в ${platform}:`, res);
+        } else {
+          // Якщо ключа `userId` немає, використовуємо `setUsers`
+          setUsers(res);
+          console.log(`Знайдено користувачів у ${platform}:`, res);
         }
       }
       return true; // Повертаємо true, якщо обробка завершена
     }
-
+  
     return false; // Повертаємо false, якщо ID не знайдено
   };
+  
 
   const writeData = async () => {
     setUserNotFound(false);
@@ -977,16 +985,17 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
   };
 
   const makeIndex = async () => {
-    await createSearchIdsForAllUsers();
+    await createSearchIdsInCollection('newUsers');
+    await createSearchIdsInCollection('users');
 
-    const res = await fetchListOfUsers();
-    res.forEach(async userId => {
-      const result = { userId: userId };
-      const res = await fetchNewUsersCollectionInRTDB(result);
-      console.log('res :>> ', res);
-      handleSubmit(res, false, false, true);
-      // writeData(userId); // Викликаємо writeData() для кожного ID
-    });
+    // const res = await fetchListOfUsers();
+    // res.forEach(async userId => {
+    //   const result = { userId: userId };
+    //   const res = await fetchNewUsersCollectionInRTDB(result);
+    //   console.log('res :>> ', res);
+    //   handleSubmit(res, false, false, true);
+    //   // writeData(userId); // Викликаємо writeData() для кожного ID
+    // });
   };
 
   const additionalFields = Object.keys(state).filter(
@@ -1061,7 +1070,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
         {search && state.userId ? (
           <>
 <div style={{...coloredCard()}}>
-    {renderTopBlock(state, setState, setShowInfoModal,  )}
+    {renderTopBlock(state, setState, setShowInfoModal, true, )}
   </div>
           
           {fieldsToRender.map((field, index) => {

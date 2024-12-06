@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { fetchUserById, 
-  fetchUserData,
+  // fetchUserData,
   updateDataInNewUsersRTDB,
   // removeSearchId 
 } from './config';
@@ -8,16 +8,30 @@ import { formatDateAndFormula, formatDateToDisplay, formatDateToServer,} from '.
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { coloredCard } from './styles';
 
-const handleChange = (setUsers, userId, key, value) => {
+const handleChange = (setUsers, setState, userId, key, value) => {
+
+  console.log('handleChange :>> ', value);
   const newValue = (key==='getInTouch' || key==='lastCycle') ? formatDateAndFormula(value) : value
 
-setUsers((prevState) => ({
+console.log('flag :>> ', );
+if (setState){
+console.log('flag :>> ',);
+  setUsers(prevState => ({
+    ...prevState,
+    [key]: value,
+  }));
+}
+else {
+  setUsers((prevState) => ({
  ...prevState,
  [userId]: {
    ...prevState[userId],
   [key]: newValue,
  },
 }));
+}
+
+
 };
 
 
@@ -29,8 +43,10 @@ const commonFields = ['lastAction'];
 const dublicateFields = ['weight', 'height', ];
 
 
-// console.log('userData В handleSubmit', userData);
-   const { existingData } = await fetchUserData(userData.userId);
+console.log('userData В handleSubmit', userData);
+  //  const { existingData } = await fetchUserData(userData.userId);
+   const { existingData } = await fetchUserById(userData.userId);
+   console.log('1111 :>> ', );
    const uploadedInfo = makeUploadedInfo(existingData, userData);
    // console.log('uploadedInfo В handleSubmit', uploadedInfo);
        // Фільтруємо ключі, щоб видалити зайві поля
@@ -49,7 +65,7 @@ const dublicateFields = ['weight', 'height', ];
 
 
 
-export const renderTopBlock = (userData, setUsers, setShowInfoModal) => {
+export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) => {
   // console.log('userData в renderTopBlock:', userData );
   if (!userData) return null;
 
@@ -225,15 +241,16 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal) => {
 
     
 
-
+// console.log('userData in renderTopBlock :>> ', userData);
   return (
     <div style={{ padding: '7px',  position: 'relative',}}>
       {renderDeleteButton(userData.userId)}
       {renderExportButton(userData)}
       <div>
-        {userData.userId.substring(0, 8)}
-        {renderGetInTouchInput(userData, setUsers)}
-        {renderLastCycleInput(userData, setUsers)}
+      {userData.userId}
+        {/* {userData.userId.substring(0, 4)} */}
+        {renderGetInTouchInput(userData, setUsers, setState)}
+        {renderLastCycleInput(userData, setUsers, setState)}
       </div>
       {/* <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div> */}
       <div>
@@ -263,8 +280,8 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal) => {
       
       
       {renderContacts(userData)}
-      {renderWriterInput(userData, setUsers)}
-      <RenderCommentInput userData={userData} setUsers={setUsers} />
+      {renderWriterInput(userData, setUsers, setState)}
+      <RenderCommentInput userData={userData} setUsers={setUsers} setState={setState} />
 
       
 
@@ -379,7 +396,7 @@ const parseCsectionDate = (dateString) => {
   return <div>{parts.join(', ')}</div>;
 };
 
-const renderLastCycleInput = (userData, setUsers) => {
+const renderLastCycleInput = (userData, setUsers, setState, ) => {
 
   const nextCycle = calculateNextDate(userData.lastCycle);
 
@@ -392,7 +409,7 @@ const renderLastCycleInput = (userData, setUsers) => {
         onChange={(e) => {
           // Повертаємо формат YYYY-MM-DD для збереження
           const serverFormattedDate = formatDateToServer(e.target.value);
-          handleChange(setUsers, userData.userId, 'lastCycle', serverFormattedDate);
+          handleChange(setUsers, setState, userData.userId, 'lastCycle', serverFormattedDate);
         }}
         onBlur={() => handleSubmit(userData, 'overwrite')}
         // placeholder="01.01.2021"
@@ -404,7 +421,7 @@ const renderLastCycleInput = (userData, setUsers) => {
   );
 };
 
-const renderGetInTouchInput = (userData, setUsers) => {
+const renderGetInTouchInput = (userData, setUsers, setState) => {
 
     
   return (
@@ -418,7 +435,7 @@ const renderGetInTouchInput = (userData, setUsers) => {
         onChange={(e) => {
           // Повертаємо формат YYYY-MM-DD для збереження
           const serverFormattedDate = formatDateToServer(e.target.value);
-          handleChange(setUsers, userData.userId, 'getInTouch', serverFormattedDate);
+          handleChange(setUsers, setState, userData.userId, 'getInTouch', serverFormattedDate);
         }}
         onBlur={() => handleSubmit(userData, 'overwrite')}
         // placeholder="Введіть дату або формулу"
@@ -428,11 +445,11 @@ const renderGetInTouchInput = (userData, setUsers) => {
   );
 };
 
-const RenderCommentInput = ({ userData, setUsers }) => {
+const RenderCommentInput = ({ userData, setUsers, setState,  }) => {
   const textareaRef = useRef(null);
 
   const handleInputChange = (e) => {
-    handleChange(setUsers, userData.userId, 'myComment', e.target.value);
+    handleChange(setUsers, setState, userData.userId, 'myComment', e.target.value);
   };
 
   const autoResize = (textarea) => {
@@ -476,7 +493,7 @@ const RenderCommentInput = ({ userData, setUsers }) => {
   );
 };
 
-const renderWriterInput = (userData, setUsers) => {
+const renderWriterInput = (userData, setUsers, setState) => {
   const handleCodeClick = (code) => {
     let currentWriter = userData.writer || '';
     let updatedCodes = currentWriter?.split(', ').filter((item) => item !== code); // Видаляємо, якщо є
@@ -491,6 +508,8 @@ const renderWriterInput = (userData, setUsers) => {
       ...prev,
       [userData.userId]: newState,
     }));
+
+    // handleChange(setUsers, setState, userData.userId, 'writer');
   
     // Викликаємо handleSubmit поза setUsers
     handleSubmit(newState, 'overwrite');
@@ -505,7 +524,7 @@ const renderWriterInput = (userData, setUsers) => {
           type="text"
           // placeholder="Введіть ім'я"
           value={userData.writer || ''}
-          onChange={(e) => handleChange(setUsers, userData.userId, 'writer', e.target.value)}
+          onChange={(e) => handleChange(setUsers, setState, userData.userId, 'writer', e.target.value)}
           onBlur={() => handleSubmit(userData, 'overwrite')}
           style={{...styles.underlinedInput, flexGrow: 1, // Займає залишковий простір
             maxWidth: '100%' // Обмежує ширину контейнером
@@ -1000,7 +1019,7 @@ export const UserCard = ({ userData, setUsers, setShowInfoModal }) => {
 // Компонент для рендерингу всіх карток
 export const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoModal  }) => {
 
-  // console.log('users in UsersList: ', users);
+  console.log('users in UsersList: ', users);
 
 
 

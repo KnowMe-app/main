@@ -12,7 +12,7 @@ export const App = () => {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(false);
-  console.log('isLoggedIn :>> ', isLoggedIn);
+  // console.log('isLoggedIn :>> ', isLoggedIn);
 
   const navigate = useNavigate();
 

@@ -2,8 +2,8 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, deleteUser } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
-import { getDatabase, ref as ref2, get, remove, set, update, push, orderByChild,} from 'firebase/database';
-import { query, orderByKey, equalTo} from 'firebase/database';
+import { getDatabase, ref as ref2, get, remove, set, update, push, orderByChild } from 'firebase/database';
+import { query, orderByKey, equalTo } from 'firebase/database';
 import { startAt, endAt } from 'firebase/database';
 
 const firebaseConfig = {
@@ -120,6 +120,7 @@ const dataURLToFile = dataUrl => {
 };
 
 export const fetchUserData = async userId => {
+  console.log('userId :>> ', userId);
   const userRef = doc(db, 'users', userId);
   const docSnap = await getDoc(userRef);
   const existingData = docSnap.data();
@@ -150,68 +151,6 @@ export const fetchUsersCollectionInRTDB = async () => {
   }
 };
 
-// export const fetchNewUsersCollectionInRTDBIn2Folders = async (searchedValue) => {
-//   const db = getDatabase();
-//   const usersRef = ref2(db, 'newUsers');
-//   const searchIdRef = ref2(db, 'newUsers/searchId');  // Референс для пошуку в searchId
-
-//   // Логування значення, яке шукаємо
-//   console.log('searchedValue :>> ', searchedValue);
-
-//   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
-
-//   const searchIdKey = `${searchKey}_${searchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
-
-//   try {
-//     // 1. Шукаємо в searchId, чи є вже відповідний userId
-//     const searchIdSnapshot = await get(ref2(db, `newUsers/searchId/${searchIdKey}`));
-
-//     if (searchIdSnapshot.exists()) {
-//       const userId = searchIdSnapshot.val();  // Отримуємо userId
-
-//       // 2. Якщо userId знайдений, шукаємо його картку в newUsers
-//       const userRef = ref2(db, `newUsers/${userId}`);
-//       const userSnapshot = await get(userRef);
-
-//       if (userSnapshot.exists()) {
-//         console.log('Знайдений користувач: ', userSnapshot.val());
-//         return {
-//           userId,
-//           ...userSnapshot.val(),
-//         };
-//       } else {
-//         console.log('Не вдалося знайти картку користувача за userId.');
-//         return null;
-//       }
-//     } else {
-//       // 3. Якщо userId не знайдено, створюємо нового користувача
-//       const newUserRef = push(usersRef);  // Генеруємо унікальний ключ
-//       const newUser = {
-//         [searchKey]: searchValue, // Додаємо значення пошукового ключа
-//         createdAt: Date.now(),    // Додаємо час створення або інші поля, якщо потрібно
-//       };
-
-//       // Записуємо нового користувача в базу даних
-//       await set(newUserRef, newUser);
-
-//       const newUserId = newUserRef.key;
-
-//       // 4. Додаємо пару ключ-значення у searchId
-//       await update(searchIdRef, { [searchIdKey]: newUserId });
-
-//       console.log('Створений новий користувач і доданий у searchId: ', newUser);
-
-//       return {
-//         userId: newUserId,
-//         ...newUser,
-//       };
-//     }
-//   } catch (error) {
-//     console.error('Error fetching data:', error);
-//     return [];
-//   }
-// };
-
 // const decodeEmail = (encodedEmail) => {
 //   return encodedEmail
 //     .replace(/_at_/g, '@')
@@ -223,52 +162,51 @@ export const fetchUsersCollectionInRTDB = async () => {
 //     .replace(/_rbracket_/g, ']');
 // };
 
-export const makeNewUser = async (searchedValue)=>{
+export const makeNewUser = async searchedValue => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
   const searchIdRef = ref2(db, 'newUsers/searchId');
 
-  const { searchKey, searchValue, searchIdKey, } = makeSearchKeyValue(searchedValue)
+  const { searchKey, searchValue, searchIdKey } = makeSearchKeyValue(searchedValue);
 
-const newUserRef = push(newUsersRef); // Генеруємо унікальний ключ
-const newUserId = newUserRef.key;
+  const newUserRef = push(newUsersRef); // Генеруємо унікальний ключ
+  const newUserId = newUserRef.key;
 
-// Форматування дати у форматі дд.мм.рррр
-const createdAt = new Date().toLocaleDateString('uk-UA');
+  // Форматування дати у форматі дд.мм.рррр
+  const createdAt = new Date().toLocaleDateString('uk-UA');
 
-const newUser = {
-  userId: newUserId,
-  [searchKey]: searchValue,
-  createdAt,
+  const newUser = {
+    userId: newUserId,
+    [searchKey]: searchValue,
+    createdAt,
+  };
+
+  // Записуємо нового користувача в базу даних
+  await set(newUserRef, newUser);
+
+  // 6. Додаємо пару ключ-значення у searchId
+  await update(searchIdRef, { [searchIdKey]: newUserId });
+
+  console.log('Створений новий користувач і доданий у searchId: ', newUser);
+
+  return {
+    userId: newUserId,
+    ...newUser,
+  };
 };
 
-// Записуємо нового користувача в базу даних
-await set(newUserRef, newUser);
-
-// 6. Додаємо пару ключ-значення у searchId
-await update(searchIdRef, { [searchIdKey]: newUserId });
-
-console.log('Створений новий користувач і доданий у searchId: ', newUser);
-
-return {
-  userId: newUserId,
-  ...newUser,
-};
-}
-
-const makeSearchKeyValue = (searchedValue) =>{
+const makeSearchKeyValue = searchedValue => {
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
   let modifiedSearchValue = searchValue;
-    modifiedSearchValue = encodeKey(searchValue);
-    const searchIdKey = `${searchKey}_${modifiedSearchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
-    return {searchKey, searchValue, modifiedSearchValue, searchIdKey}
-}
+  modifiedSearchValue = encodeKey(searchValue);
+  const searchIdKey = `${searchKey}_${modifiedSearchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
+  return { searchKey, searchValue, modifiedSearchValue, searchIdKey };
+};
 
-const searchUserByPartialUserId = async (userId) => {
+const searchUserByPartialUserId = async (userId, users) => {
   console.log('userId:', userId);
   try {
     const collections = ['users', 'newUsers']; // Масив колекцій, де здійснюється пошук
-    let foundUsers = [];
 
     for (const collection of collections) {
       const refToCollection = ref2(database, collection);
@@ -276,29 +214,32 @@ const searchUserByPartialUserId = async (userId) => {
         refToCollection,
         orderByKey(),
         startAt(userId),
-        endAt(userId + "\uf8ff")
+        endAt(userId + '\uf8ff')
       );
 
       const snapshot = await get(partialUserIdQuery);
 
       if (snapshot.exists()) {
+        const userPromises = []; // Масив для збереження обіцянок `addUserToResults`
+
         snapshot.forEach((userSnapshot) => {
           const currentUserId = userSnapshot.key;
-          const userData = userSnapshot.val();
 
           if (currentUserId.includes(userId)) {
-            foundUsers.push({ userId: currentUserId, ...userData, collection });
+            // Додаємо обіцянку в масив
+            userPromises.push(addUserToResults(currentUserId, users));
           }
         });
-      }
-    }
 
-    if (foundUsers.length === 1) {
-      console.log('Знайдено єдиного користувача з частковим збігом userId:', foundUsers[0]);
-      return foundUsers[0]; // Повертаємо об'єкт, якщо знайдено лише одного користувача
-    } else if (foundUsers.length > 1) {
-      console.log('Знайдено кількох користувачів з частковим збігом userId:', foundUsers);
-      return foundUsers; // Повертаємо масив, якщо знайдено кілька користувачів
+        // Виконуємо всі обіцянки для цієї колекції
+        await Promise.all(userPromises);
+
+        // Якщо після виконання є знайдені користувачі, повертаємо їх
+        if (Object.keys(users).length > 0) {
+          console.log('Користувачі знайдені:', users);
+          return users;
+        }
+      }
     }
 
     console.log('Користувача з частковим userId не знайдено.');
@@ -310,6 +251,7 @@ const searchUserByPartialUserId = async (userId) => {
 };
 
 
+
 const addUserToResults = async (userId, users) => {
   const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));
   const userFromNewUsers = userSnapshotInNewUsers.exists() ? userSnapshotInNewUsers.val() : {};
@@ -317,11 +259,23 @@ const addUserToResults = async (userId, users) => {
   const userSnapshotInUsers = await get(ref2(database, `users/${userId}`));
   const userFromUsers = userSnapshotInUsers.exists() ? userSnapshotInUsers.val() : {};
 
-  users.push({
-    userId,
-    ...userFromNewUsers,
-    ...userFromUsers,
-  });
+  console.log('userFromUsers :>> ', userFromUsers);
+  console.log('userFromNewUsers :>> ', userFromNewUsers);
+  // users.push({
+  //   userId,
+  //   ...userFromNewUsers,
+  //   ...userFromUsers,
+  // });
+
+
+    // // Додаємо користувача у форматі userId -> userData
+    users[userId] = {
+      userId,
+      ...userFromNewUsers,
+      ...userFromUsers,
+    };
+
+    console.log('users44444 :>> ', users);
 };
 
 const searchBySearchId = async (prefixes, modifiedSearchValue, uniqueUserIds, users) => {
@@ -331,18 +285,21 @@ const searchBySearchId = async (prefixes, modifiedSearchValue, uniqueUserIds, us
       ...(modifiedSearchValue.startsWith('0') ? [`${prefix}_38${modifiedSearchValue.toLowerCase()}`] : []),
       ...(modifiedSearchValue.startsWith('+') ? [`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`] : []),
     ];
-
+console.log('searchBySearchId :>> ',);
     return searchKeys.map(async searchKeyPrefix => {
-      const searchIdSnapshot = await get(
-        query(ref2(database, 'newUsers/searchId'), orderByKey(), startAt(searchKeyPrefix), endAt(`${searchKeyPrefix}\uf8ff`))
-      );
+      const searchIdSnapshot = await get(query(ref2(database, 'newUsers/searchId'), orderByKey(), startAt(searchKeyPrefix), endAt(`${searchKeyPrefix}\uf8ff`)));
+
 
       if (searchIdSnapshot.exists()) {
         const matchingKeys = searchIdSnapshot.val();
 
+        console.log('matchingKeys11111111111111 :>> ', matchingKeys);
+
         for (const [, userIdOrArray] of Object.entries(matchingKeys)) {
           if (Array.isArray(userIdOrArray)) {
+            console.log('userIdOrArray2222222222 :>> ', userIdOrArray);
             for (const userId of userIdOrArray) {
+              console.log('userId33333333333333 :>> ', userId);
               if (!uniqueUserIds.has(userId)) {
                 uniqueUserIds.add(userId);
                 await addUserToResults(userId, users);
@@ -373,12 +330,10 @@ const searchByPrefixes = async (prefixes, searchValue, uniqueUserIds, users) => 
     );
 
     const snapshotByPrefix = await get(queryByPrefix);
-
     if (snapshotByPrefix.exists()) {
       snapshotByPrefix.forEach(userSnapshot => {
         const userId = userSnapshot.key;
         const userData = userSnapshot.val();
-
         if (
           userData[prefix] &&
           typeof userData[prefix] === 'string' &&
@@ -393,27 +348,41 @@ const searchByPrefixes = async (prefixes, searchValue, uniqueUserIds, users) => 
   }
 };
 
-export const fetchNewUsersCollectionInRTDB = async (searchedValue) => {
+export const fetchNewUsersCollectionInRTDB = async searchedValue => {
   const { searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const prefixes = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk'];
-  const users = [];
+  const users = {};
   const uniqueUserIds = new Set();
 
-  console.log('modifiedSearchValue3333333333333 :>> ', modifiedSearchValue);
+  // console.log('modifiedSearchValue3333333333333 :>> ', modifiedSearchValue);
 
   try {
     await searchBySearchId(prefixes, modifiedSearchValue, uniqueUserIds, users);
     await searchByPrefixes(prefixes, searchValue, uniqueUserIds, users);
+    await searchUserByPartialUserId(searchValue, users);
 
-    if (users.length === 1) {
-      console.log('Знайдено одного користувача:', users[0]);
-      return users[0];
-    } else if (users.length > 1) {
-      console.log('Знайдено кілька користувачів:', users);
-      return users;
-    }
+    // if (users.length === 1) {
+    //   console.log('Знайдено одного користувача:', users[0]);
+    //   return users[0];
+    // } else if (users.length > 1) {
+    //   console.log('Знайдено кілька користувачів:', users);
+    //   return users;
+    // }
 
-    const userFromUsers = await searchUserByPartialUserId(searchValue);
+        // Якщо знайдено одного користувача
+        if (Object.keys(users).length === 1) {
+          const singleUserId = Object.keys(users)[0];
+          console.log('Знайдено одного користувача:', users[singleUserId]);
+          return users[singleUserId];
+        }
+    
+        // Якщо знайдено кілька користувачів
+        if (Object.keys(users).length > 1) {
+          console.log('Знайдено кілька користувачів:', users);
+          return users;
+        }
+
+    const userFromUsers = await searchUserByPartialUserId(searchValue, users);
     if (userFromUsers) {
       return userFromUsers;
     }
@@ -495,9 +464,12 @@ export const deleteUserFromAuth = async userId => {
 export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) => {
   console.log(`upl555555555oadedInfo`);
   const cleanedUploadedInfo = removeUndefined(uploadedInfo);
-  console.log(`uploadedInfo`, uploadedInfo);
+  console.log(`uploadedInfo!!!!`, uploadedInfo);
+  console.log('userId :>> ', userId);
+  console.log('db:', db);
   try {
     const userRef = doc(db, `users/${userId}`);
+    console.log(`rrrrrrrrrrrrr`);
     if (condition === 'update') {
       console.log(`uploadedInfo`, uploadedInfo);
       await updateDoc(userRef, cleanedUploadedInfo);
@@ -512,7 +484,7 @@ export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) =>
       }
     }
   } catch (error) {
-    console.error('Сталася помилка під час збереження даних в Firestore Database:', error);
+    console.error('Сталася помилка під час збереження даних в Firestore Database1:', error);
     throw error;
   }
 };
@@ -539,7 +511,7 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
     }
     await set(userRefRTDB, { ...cleanedUploadedInfo });
   } catch (error) {
-    console.error('Сталася помилка під час збереження даних в Realtime Database:', error);
+    console.error('Сталася помилка під час збереження даних в Realtime Database2:', error);
     throw error;
   }
 };
@@ -555,7 +527,6 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
 
     // Перебір ключів та їх обробка
     for (const key of keysToCheck) {
-      
       const isEmptyString = uploadedInfo[key] === '';
 
       if (isEmptyString) {
@@ -564,10 +535,10 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
         uploadedInfo[key] = null; // Видаляємо ключ з newUsers/${userId}
         continue; // Переходимо до наступного ключа
       }
-    
+
       if (uploadedInfo[key] !== undefined) {
         console.log(`${key} uploadedInfo[key] :>> `, uploadedInfo[key]);
-    
+
         // Формуємо currentValues
         const currentValues = Array.isArray(currentUserData?.[key])
           ? currentUserData[key].filter(Boolean)
@@ -576,7 +547,7 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
           : typeof currentUserData?.[key] === 'string'
           ? [currentUserData[key]].filter(Boolean)
           : [];
-    
+
         // Формуємо newValues
         const newValues = Array.isArray(uploadedInfo[key])
           ? uploadedInfo[key].filter(Boolean)
@@ -585,7 +556,7 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
           : typeof uploadedInfo[key] === 'string'
           ? [uploadedInfo[key]].filter(Boolean)
           : [];
-    
+
         console.log(`${key} currentValues :>> `, currentValues);
         console.log(`${key} newValues :>> `, newValues);
 
@@ -616,6 +587,8 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
 
           // Додаємо новий ID, якщо його ще немає в currentValues
           if (!currentValues.includes(cleanedValue)) {
+            console.log('currentValues :>> ', currentValues);
+            console.log('cleanedValue :>> ', cleanedValue);
             await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'); // Додаємо новий ID
           }
         }
@@ -628,7 +601,7 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
       await set(userRefRTDB, { ...uploadedInfo });
     }
   } catch (error) {
-    console.error('Сталася помилка під час збереження даних в Realtime Database:', error);
+    console.error('Сталася помилка під час збереження даних в Realtime Database3:', error);
     throw error;
   }
 };
@@ -741,50 +714,67 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
   }
 };
 
+export const createSearchIdsInCollection = async collection => {
+  const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk'];
+  const ref = ref2(database, collection);
 
+  const [newUsersSnapshot] = await Promise.all([get(ref)]);
 
-export const createSearchIdsForAllUsers = async () => {
-    const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk'];
-    const newUsersRef = ref2(database, 'newUsers');
+  if (newUsersSnapshot.exists()) {
+    const usersData = newUsersSnapshot.val();
+    const userIds = Object.keys(usersData);
+    // const userIds = ['AA0041'];
 
-    const [newUsersSnapshot] = await Promise.all([get(newUsersRef)]);
+    const updatePromises = [];
 
-    if (newUsersSnapshot.exists()) {
-        const usersData = newUsersSnapshot.val();
-        const userIds = Object.keys(usersData);
+    for (const userId of userIds) {
+      const user = usersData[userId];
+      for (const key of keysToCheck) {
+        if (user.hasOwnProperty(key)) {
+          let value = user[key];
 
-        const updatePromises = [];
+          // Якщо value - масив
+          if (Array.isArray(value)) {
+            value.forEach(item => {
+              if (item && typeof item === 'string') {
+                let cleanedValue = item.toString().trim(); // Видаляємо зайві пробіли
 
-        for (const userId of userIds) {
-            const user = usersData[userId];
-
-            for (const key of keysToCheck) {
-                if (user.hasOwnProperty(key)) {
-                    let value = user[key];
-
-                    if (value && typeof value === 'string') { // Перевірка на існування значення та типу string
-                        let cleanedValue = value;
-
-                        // Якщо ключ 'phone', видаляємо всі пробіли
-                        if (key === 'phone') {
-                            cleanedValue = value.replace(/\s+/g, '');
-                        }
-                          // Якщо ключ 'telegram', кодуємо рядок
-                          if (key === 'telegram') {
-                            cleanedValue = encodeKey(value);
-                        }
-
-                        // Додаємо новий ID
-                        // Додаємо новий ID
-                        updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
-                        // await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add');
-                    }
+                if (key === 'phone') {
+                  cleanedValue = cleanedValue.replace(/\s+/g, ''); // Видалення пробілів
                 }
+
+                if (key === 'telegram') {
+                  cleanedValue = encodeKey(cleanedValue); // Кодування
+                }
+
+                updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
+              }
+            });
+          }
+          // Якщо value - рядок або число
+          else if (value && (typeof value === 'string' || typeof value === 'number')) {
+            // Перевірка на існування значення та типу string
+            let cleanedValue = value.toString(); // Перетворюємо і цифри і букви в рядок, щоб працювало toLowerCase
+
+            // Якщо ключ 'phone', видаляємо всі пробіли
+            if (key === 'phone') {
+              cleanedValue = value.replace(/\s+/g, '');
             }
+            // Якщо ключ 'telegram', кодуємо рядок
+            if (key === 'telegram') {
+              cleanedValue = encodeKey(value);
+            }
+
+            // Додаємо новий ID
+            updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
+            // await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add');
+          }
         }
-              // Виконуємо всі оновлення паралельно
-              await Promise.all(updatePromises);
+      }
     }
+    // Виконуємо всі оновлення паралельно
+    await Promise.all(updatePromises);
+  }
 };
 
 // Функція для видалення пар у searchId
@@ -836,140 +826,23 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
       console.log(`Видалено пару в searchId: ${key}`);
     }
   }
-
-  // Видалення картки в newUsers
-  // const userRef = ref2(db, `newUsers/${userId}`);
-  // await remove(userRef);
-  // console.log(`Видалено картку користувача з newUsers: ${userId}`);
 };
 
-// export const fetchPaginatedNewUsers = async (lastKey) => {
-//   const db = getDatabase();
-//   const newUsersRef  = ref2(db, 'newUsers');
-//   // const usersRef = ref2(db, 'users');
-
-//   try {
-//     // Формуємо запит для отримання даних з 'newUsers', виключаючи 'searchId'
-//     let newUsersQuery = query(newUsersRef, orderByKey(), limitToFirst(10 + 1));
-
-//     // Якщо є останній ключ (lastKey), беремо наступну сторінку даних
-//     if (lastKey) {
-//       newUsersQuery = query(newUsersRef, orderByKey(), startAfter(lastKey), limitToFirst(10 + 1));
-//     }
-
-//     // Паралельне виконання обох запитів
-//     const [newUsersSnapshot,
-//       // usersSnapshot
-//     ] = await Promise.all([
-//       get(newUsersQuery),
-//       // get(usersRef)
-//     ]);
-
-//     // Перевірка наявності даних у 'newUsers'
-//     let newUsersData = {};
-//     let lastUserKey = null;
-//     let hasMoreNewUsers = false;
-
-//     if (newUsersSnapshot.exists()) {
-//       const usersData = newUsersSnapshot.val();
-
-//       // Виключаємо 'searchId' з результатів
-//       const filteredData = Object.entries(usersData)
-//         .filter(([key]) => key !== 'searchId')
-//         .slice(0, 10); // Обмежуємо до 10 записів
-
-//       // Визначаємо останній ключ для пагінації
-//       lastUserKey = filteredData.length > 0 ? filteredData[filteredData.length - 1][0] : null;
-
-//       // Визначаємо, чи є ще сторінки
-//       hasMoreNewUsers = newUsersSnapshot.size > 10;
-
-//       // Перетворюємо дані в об'єкт
-//       newUsersData = Object.fromEntries(filteredData);
-//     }
-
-//     // Перевірка наявності даних у 'users'
-//     // let usersData = {};
-//     // if (usersSnapshot.exists()) {
-//     //   usersData = usersSnapshot.val();
-//     // }
-
-//     console.log('yyyyyyy :>> ', newUsersData);
-//     // Повертаємо об'єднані результати
-//     return {
-//       // newUsers: newUsersData,
-//       // users: usersData,
-//       users: newUsersData,
-//       lastKey: lastUserKey,  // Ключ для наступної сторінки
-//       hasMore: hasMoreNewUsers // Показує, чи є наступна сторінка в 'newUsers'
-//     };
-//   } catch (error) {
-//     console.error('Error fetching paginated data:', error);
-//     return {
-//       // newUsers: {},
-//       users: {},
-//       lastKey: null,
-//       hasMore: false
-//     };
-//   }
-// };
-
-// Додаткова фільтрація користувачів
-// const filterMarriedAndAbove30 = (usersData) => {
-
-
-//   return Object.entries(usersData).filter(([key, value]) => {
-//     console.log('value', value);
-//     console.log('key', key);
-    
-//     if (!value.birth || !value.maritalStatus) return true; // Пропускаємо, якщо дані відсутні
-//     console.log('value', value);
-//     console.log('key', key);
-//     const birthDate = value.birth.split('.'); // Розділяємо дату на день, місяць, рік
-//     const birthYear = parseInt(birthDate[2], 10);
-//     const currentYear = new Date().getFullYear();
-//     const age = currentYear - birthYear;
-
-//     const failsFilter = value.maritalStatus === "Yes" && age > 30;
-//     if (failsFilter) {
-//       console.log(`User excluded by filter: ${key}`);
-//     }
-
-//     return !failsFilter; // Відфільтровуємо одружених старше 30 років
-//   });
-// };
-
-// Окрема функція для фільтрації за віком
-// const filterByAge = (value, ageLimit = 30) => {
-//   if (!value.birth) return true; // Пропускаємо, якщо дата народження відсутня
-//   const birthDate = value.birth.split('.'); // Розділяємо дату на день, місяць, рік
-//   const birthYear = parseInt(birthDate[2], 10);
-//   const currentYear = new Date().getFullYear();
-//   const age = currentYear - birthYear;
-//   return age <= ageLimit;
-// };
-
-// Окрема функція для фільтрації за статусом шлюбу
-// const filterByMaritalStatus = (value, requiredStatus = "Yes") => {
-//   if (!value.maritalStatus) return true; // Пропускаємо, якщо статус шлюбу відсутній
-//   return value.maritalStatus !== requiredStatus;
-// };
-
 // Фільтр за роллю користувача
-const filterByUserRole = (value) => {
+const filterByUserRole = value => {
   const excludedRoles = ['ag', 'ip']; // Ролі, які потрібно виключити
   return !excludedRoles.includes(value.userRole);
 };
 
 // Фільтр за групою крові
-const filterByNegativeBloodType = (value) => {
+const filterByNegativeBloodType = value => {
   if (!value.blood) return true; // Пропускаємо, якщо дані про кров відсутні
   const negativeBloodTypes = ['1-', '2-', '3-', '4-', '-']; // Негативні групи крові
   return !negativeBloodTypes.includes(value.blood);
 };
 
 // Фільтр за віком і статусом шлюбу (комбінований)
-const filterByAgeAndMaritalStatus = (value, ageLimit = 30, requiredStatuses = ["Yes", "+"]) => {
+const filterByAgeAndMaritalStatus = (value, ageLimit = 30, requiredStatuses = ['Yes', '+']) => {
   if (!value.birth || !value.maritalStatus) return true; // Пропускаємо, якщо дані відсутні
   const birthDate = value.birth.split('.');
   const birthYear = parseInt(birthDate[2], 10);
@@ -981,31 +854,31 @@ const filterByAgeAndMaritalStatus = (value, ageLimit = 30, requiredStatuses = ["
 };
 
 // Фільтр за csection
-const filterByCSection = (value) => {
+const filterByCSection = value => {
   if (!value.csection) return true; // Пропускаємо, якщо дані відсутні
   return value.csection !== '2' && value.csection !== '3';
 };
 
 // Основна функція фільтрації
-const filterMain = (usersData) => {
+const filterMain = usersData => {
   let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
 
   const filteredUsers = Object.entries(usersData).filter(([key, value]) => {
-    console.log('value :>> ', value[1]);
+    // console.log('value :>> ', value[1]);
     const filters = {
-      filterByKeyCount: Object.keys(value[1]).length >= 10,                         // Фільтр за кількістю ключів
-      filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value[1], 30, ["Yes", "+"]), // Віковий і шлюбний фільтр
-      filterByUserRole: filterByUserRole(value[1]),                                 // Фільтр за роллю користувача
-      filterByNegativeBloodType: filterByNegativeBloodType(value[1]),               // Фільтр за групою крові
-      filterByCSection: filterByCSection(value[1]),                                 // Фільтр за csection
+      filterByKeyCount: Object.keys(value[1]).length >= 10, // Фільтр за кількістю ключів
+      filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value[1], 30, ['Yes', '+']), // Віковий і шлюбний фільтр
+      filterByUserRole: filterByUserRole(value[1]), // Фільтр за роллю користувача
+      filterByNegativeBloodType: filterByNegativeBloodType(value[1]), // Фільтр за групою крові
+      filterByCSection: filterByCSection(value[1]), // Фільтр за csection
     };
 
     const failedFilters = Object.entries(filters).filter(([filterName, result]) => !result);
 
     if (failedFilters.length > 0) {
-      console.log(`User excluded by filter: ${key}`);
+      // console.log(`User excluded by filter: ${key}`);
       failedFilters.forEach(([filterName]) => {
-        console.log(`Failed filter: ${filterName}`);
+        // console.log(`Failed filter: ${filterName}`);
       });
       excludedUsersCount++; // Збільшуємо лічильник відфільтрованих користувачів
     }
@@ -1020,12 +893,12 @@ const filterMain = (usersData) => {
 
 // Функція для перевірки формату дати (dd.mm.ррр)
 // Перевірка коректності дати
-const isValidDate = (date) => {
+const isValidDate = date => {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) && !isNaN(new Date(date).getTime());
 };
 
 // Сортування
-const sortUsers = (filteredUsers) => {
+const sortUsers = filteredUsers => {
   // const today = new Date().toLocaleDateString('uk-UA'); // "дд.мм.рррр"
   // const today = new Date().toISOString().split('T')[0]; // Формат рррр-мм-дд
   const currentDate = new Date(); // Поточна дата
@@ -1033,32 +906,30 @@ const sortUsers = (filteredUsers) => {
   tomorrow.setDate(currentDate.getDate() + 1); // Збільшуємо дату на 1 день
   const today = tomorrow.toISOString().split('T')[0]; // Формат YYYY-MM-DD
 
-
   return filteredUsers.sort(([_, a], [__, b]) => {
-    console.log('a :>> ', a);
-    console.log('a.getInTouch :>> ', a.getInTouch);
-    const aDate = a[1].getInTouch || "9999-12-31";
-    const bDate = b[1].getInTouch || "9999-12-31";
+    // console.log('a :>> ', a);
+    // console.log('a.getInTouch :>> ', a.getInTouch);
+    const aDate = a[1].getInTouch || '9999-12-31';
+    const bDate = b[1].getInTouch || '9999-12-31';
 
-     // Якщо сьогоднішня дата в a, але не в b
-     if (aDate === today && bDate !== today) return -1;
-     if (bDate === today && aDate !== today) return 1;
- 
-     // Перевіряємо коректність дати (має формат рррр-мм-дд)
-     if (isValidDate(aDate) && isValidDate(bDate)) {
-       return aDate.localeCompare(bDate); // Сортування в порядку зростання
-     }
- 
-     // Ставимо некоректні дати в кінець списку
-     if (!isValidDate(aDate)) return 1;
-     if (!isValidDate(bDate)) return -1;
- 
-     return 0; // Якщо немає чіткої умови
-   });
+    // Якщо сьогоднішня дата в a, але не в b
+    if (aDate === today && bDate !== today) return -1;
+    if (bDate === today && aDate !== today) return 1;
+
+    // Перевіряємо коректність дати (має формат рррр-мм-дд)
+    if (isValidDate(aDate) && isValidDate(bDate)) {
+      return aDate.localeCompare(bDate); // Сортування в порядку зростання
+    }
+
+    // Ставимо некоректні дати в кінець списку
+    if (!isValidDate(aDate)) return 1;
+    if (!isValidDate(bDate)) return -1;
+
+    return 0; // Якщо немає чіткої умови
+  });
 };
 
-
-export const fetchPaginatedNewUsers = async (lastKey) => {
+export const fetchPaginatedNewUsers = async lastKey => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
   const todayActual = new Date(); // Поточна дата
@@ -1066,109 +937,105 @@ export const fetchPaginatedNewUsers = async (lastKey) => {
   today.setDate(todayActual.getDate() + 1); // Збільшуємо дату на 1 день
   const todayString = today.toISOString().split('T')[0]; // Формат YYYY-MM-DD
   // const todayString = today.toISOString().split('T')[0];
-  
-
 
   try {
- // Функція для отримання користувачів до сьогоднішнього дня
- const getUsersBeforeToday = async () => {
-  const allUsersQuery = query(
-    usersRef,
-    orderByChild('getInTouch'),
-    endAt(todayString) // Отримуємо користувачів до сьогоднішнього дня
-  );
+    // Функція для отримання користувачів до сьогоднішнього дня
+    const getUsersBeforeToday = async () => {
+      const allUsersQuery = query(
+        usersRef,
+        orderByChild('getInTouch'),
+        endAt(todayString) // Отримуємо користувачів до сьогоднішнього дня
+      );
 
-  const allUsersSnapshot = await get(allUsersQuery);
-  return allUsersSnapshot.exists() ? Object.entries(allUsersSnapshot.val()) : [];
-};
+      const allUsersSnapshot = await get(allUsersQuery);
+      return allUsersSnapshot.exists() ? Object.entries(allUsersSnapshot.val()) : [];
+    };
 
-// Функція для отримання користувачів з пустими або некоректними датами
-const getUsersWithInvalidDates = async () => {
-  const invalidDatesQuery = query(
-    usersRef,
-    orderByChild('getInTouch'),
-    equalTo(null) // Отримуємо користувачів з відсутніми або некоректними датами
-  );
+    // Функція для отримання користувачів з пустими або некоректними датами
+    const getUsersWithInvalidDates = async () => {
+      const invalidDatesQuery = query(
+        usersRef,
+        orderByChild('getInTouch'),
+        equalTo(null) // Отримуємо користувачів з відсутніми або некоректними датами
+      );
 
-  const invalidDatesSnapshot = await get(invalidDatesQuery);
-  return invalidDatesSnapshot.exists() ? Object.entries(invalidDatesSnapshot.val()) : [];
-};
+      const invalidDatesSnapshot = await get(invalidDatesQuery);
+      return invalidDatesSnapshot.exists() ? Object.entries(invalidDatesSnapshot.val()) : [];
+    };
 
-// Функція для отримання користувачів з майбутніми датами
-const getUsersAfterToday = async () => {
-  const futureUsersQuery = query(
-    usersRef,
-    orderByChild('getInTouch'),
-    startAt(todayString) // Отримуємо користувачів з датою від сьогодні
-  );
+    // Функція для отримання користувачів з майбутніми датами
+    const getUsersAfterToday = async () => {
+      const futureUsersQuery = query(
+        usersRef,
+        orderByChild('getInTouch'),
+        startAt(todayString) // Отримуємо користувачів з датою від сьогодні
+      );
 
-  const futureUsersSnapshot = await get(futureUsersQuery);
-  return futureUsersSnapshot.exists() ? Object.entries(futureUsersSnapshot.val()) : [];
-};
+      const futureUsersSnapshot = await get(futureUsersQuery);
+      return futureUsersSnapshot.exists() ? Object.entries(futureUsersSnapshot.val()) : [];
+    };
 
-let allUsers = [];
+    let allUsers = [];
 
-// Спочатку намагаємось отримати користувачів до сьогоднішнього дня
-allUsers = await getUsersBeforeToday();
-// allUsers = await getUsersAfterToday();
-console.log('allUsers :>> ', allUsers);
-  // 2. Якщо немає користувачів зі старими датами, отримуємо з некоректними датами
-  if (allUsers.length === 0) {
-    allUsers = await getUsersWithInvalidDates();
-  }
-// Якщо користувачів до сьогоднішнього дня не знайшли, перевіряємо майбутні
-if (allUsers.length === 0) {
-  allUsers = await getUsersAfterToday();
-}
+    // Спочатку намагаємось отримати користувачів до сьогоднішнього дня
+    allUsers = await getUsersBeforeToday();
+    // allUsers = await getUsersAfterToday();
+    console.log('allUsers :>> ', allUsers);
+    // 2. Якщо немає користувачів зі старими датами, отримуємо з некоректними датами
+    if (allUsers.length === 0) {
+      allUsers = await getUsersWithInvalidDates();
+    }
+    // Якщо користувачів до сьогоднішнього дня не знайшли, перевіряємо майбутні
+    if (allUsers.length === 0) {
+      allUsers = await getUsersAfterToday();
+    }
 
-// Якщо ні тих, ні інших не знайшли, allUsers буде порожнім
-if (allUsers.length === 0) {
-  console.log('Немає користувачів.');
-  return []; // Повертаємо порожній список
-}
+    // Якщо ні тих, ні інших не знайшли, allUsers буде порожнім
+    if (allUsers.length === 0) {
+      console.log('Немає користувачів.');
+      return []; // Повертаємо порожній список
+    }
 
-// Фільтрація та сортування користувачів
-const sortedUsers2 = allUsers.filter(([key, value]) => {
-  const getInTouch = value.getInTouch;
+    // Фільтрація та сортування користувачів
+    const sortedUsers2 = allUsers.filter(([key, value]) => {
+      const getInTouch = value.getInTouch;
 
-  console.log('getInTouch :>> ', getInTouch);
+      console.log('getInTouch :>> ', getInTouch);
 
+      // Якщо поле getInTouch відсутнє або дата неправильна, повертаємо true (для другої групи)
+      if (!getInTouch || !isValidDate(getInTouch)) {
+        return true;
+      }
 
+      if (getInTouch === '2099-99-99' || getInTouch === '9999-99-99') {
+        return false;
+      }
+      // Переводимо дату в формат Date для порівняння
+      let date;
+      if (getInTouch.includes('-')) {
+        // Формат YYYY-MM-DD
+        date = new Date(getInTouch);
+      } else if (getInTouch.includes('.')) {
+        // Формат DD.MM.YYYY
+        const [day, month, year] = getInTouch.split('.');
+        date = new Date(year, month - 1, day);
+      } else {
+        // Якщо формат невідомий
+        console.error('Невідомий формат дати:', getInTouch);
+        return true;
+      }
 
-  // Якщо поле getInTouch відсутнє або дата неправильна, повертаємо true (для другої групи)
-  if (!getInTouch  || !isValidDate(getInTouch)) {
-    return true;
-  }
+      // Порівнюємо дату і повертаємо true, якщо вона сьогоднішня або в минулому
+      // return date <= new Date();
 
-  if (getInTouch === '2099-99-99' || getInTouch === '9999-99-99') {
-    return false;
-  }
-  // Переводимо дату в формат Date для порівняння
-  let date;
-  if (getInTouch.includes('-')) {
-    // Формат YYYY-MM-DD
-    date = new Date(getInTouch);
-  } else if (getInTouch.includes('.')) {
-    // Формат DD.MM.YYYY
-    const [day, month, year] = getInTouch.split('.');
-    date = new Date(year, month - 1, day);
-  } else {
-    // Якщо формат невідомий
-    console.error('Невідомий формат дати:', getInTouch);
-    return true;
-  }
+      // Порівнюємо без урахування дат
+      return date;
+    });
 
-  // Порівнюємо дату і повертаємо true, якщо вона сьогоднішня або в минулому
-  // return date <= new Date();
+    console.log('sortedUsers2 :>> ', sortedUsers2);
 
-  // Порівнюємо без урахування дат
-  return date
-});
-
-console.log('sortedUsers2 :>> ', sortedUsers2);
-
-// 3. Об'єднуємо результати (вже відсортовані)
-const combinedUsers = sortedUsers2;
+    // 3. Об'єднуємо результати (вже відсортовані)
+    const combinedUsers = sortedUsers2;
 
     // 5. Фільтруємо користувачів
     const filteredUsers = filterMain(combinedUsers);
@@ -1188,13 +1055,13 @@ const combinedUsers = sortedUsers2;
     const userIds = Object.keys(paginatedUsers); // Отримуємо список userId з paginatedUsers
     const usersData = {};
 
-    const userPromises = userIds.map((userId) => {
-      return fetchUserById(userId);  // Оскільки fetchUserById повертає проміс, ми можемо отримати результат
+    const userPromises = userIds.map(userId => {
+      return fetchUserById(userId); // Оскільки fetchUserById повертає проміс, ми можемо отримати результат
     });
-  
+
     // Чекаємо, поки всі проміси виконуються
     const userResults = await Promise.all(userPromises);
-  
+
     // Збираємо дані по кожному користувачеві в об'єкт
     userResults.forEach((userData, index) => {
       const userId = userIds[index];
@@ -1202,7 +1069,7 @@ const combinedUsers = sortedUsers2;
         usersData[userId] = userData;
       }
     });
-  
+
     // Об'єднуємо дані з newUsers та users для кожного userId
     const finalUsers = userIds.reduce((acc, userId) => {
       const newUserData = paginatedUsers[userId]; // Дані з newUsers
@@ -1210,15 +1077,14 @@ const combinedUsers = sortedUsers2;
       acc[userId] = { ...newUserData, ...userDataFromUsers }; // Об'єднуємо дані
       return acc;
     }, {});
-  
+
     const nextKey = sortedUsers.length > 20 ? sortedUsers[20][0] : null;
-  
+
     return {
       users: finalUsers, // Об'єкт із користувачами, що містить дані з newUsers і users
       lastKey: nextKey,
       hasMore: sortedUsers.length > 20,
     };
-  
   } catch (error) {
     console.error('Error fetching paginated filtered users:', error);
     return {
@@ -1228,162 +1094,6 @@ const combinedUsers = sortedUsers2;
     };
   }
 };
-
-// Функція для пошуку користувача за userId у двох колекціях
-// __вДвохКолекціях не працює лоад море
-// export const fetchPaginatedNewUsers = async lastKey => {
-//   const db = getDatabase();
-//   const newUsersRef = ref2(db, 'newUsers');
-//   const usersRef = ref2(db, 'users');
-
-//   try {
-//     // Запит для отримання даних з 'newUsers'
-//     let newUsersQuery = query(newUsersRef, orderByKey(), limitToFirst(10 + 1));
-
-//     // Якщо є останній ключ (lastKey), беремо наступну сторінку даних
-//     if (lastKey) {
-//       newUsersQuery = query(newUsersRef, orderByKey(), startAfter(lastKey), limitToFirst(10 + 1));
-//     }
-
-//     // Паралельне виконання обох запитів
-//     const [newUsersSnapshot, usersSnapshot] = await Promise.all([get(newUsersQuery), get(usersRef)]);
-
-//     // Перевірка наявності даних у 'newUsers'
-//     let newUsersData = {};
-//     let lastUserKey = null;
-//     let hasMoreNewUsers = false;
-
-//     if (newUsersSnapshot.exists()) {
-//       const usersData = newUsersSnapshot.val();
-
-//       // Виключаємо 'searchId' з результатів
-//       //const filteredData = Object.entries(usersData).filter(([key]) => key !== 'searchId ');
-//       const filteredData = filterMain(
-//         Object.fromEntries(Object.entries(usersData)
-//         .filter(([key]) => key !== 'searchId '))
-//       );
-
-    
-
-//       // Визначаємо останній ключ для пагінації
-//       lastUserKey = filteredData.length > 0 ? filteredData[filteredData.length - 1][0] : null;
-
-//       // Визначаємо, чи є ще сторінки
-//       hasMoreNewUsers = filteredData.length > 10;
-
-//       // Обмежуємо результати до 10 карток
-//       newUsersData = Object.fromEntries(filteredData.slice(0, 10));
-//     }
-
-//     // Перевірка наявності даних у 'users'
-//     let usersData = {};
-//     const targetUserId = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
-//     // const targetUserId = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
-//     if (usersSnapshot.exists()) {
-//       const usersArray = Object.entries(usersSnapshot.val());
-
-//       // Виділяємо цільового користувача
-//   const targetUser = usersArray.find(([key]) => key === targetUserId);
-//   const otherUsers = usersArray.filter(([key]) => key !== targetUserId);
-
-
-
-
-//   //      // Розділяємо користувачів на дві частини
-//   // const withoutLastAction = usersArray.filter(([key, value]) => !value.lastAction);
-//   // const withLastAction = usersArray.filter(([key, value]) => value.lastAction);
-
-//     // Розділяємо інші користувачі на дві частини
-//     const withoutLastAction = otherUsers.filter(([key, value]) => !value.lastAction);
-//     const withLastAction = otherUsers.filter(([key, value]) => value.lastAction);
-  
-
-//   // // Об'єднуємо масиви, з користувачами з lastAction в кінці
-//   // usersData = [...withoutLastAction, ...withLastAction].slice(0, 10); // Лімітуємо результати до 10
-//   //   }
-
-//     // Додаємо цільового користувача першим і комбінуємо масиви
-//     const combinedUsers = [
-//       ...(targetUser ? [targetUser] : []),
-//       ...withoutLastAction,
-//       ...withLastAction,
-//     ].slice(0, 10);
-
-//     usersData = Object.fromEntries(filterMain(Object.fromEntries(combinedUsers)));
-//   }
-
-//   const combinedData = [
-//     ...Object.entries(usersData),
-//     ...Object.entries(newUsersData).slice(0, 10 - Object.keys(usersData).length)
-//   ];
-
-//   const paginatedData = Object.fromEntries(combinedData.slice(0, 10));
-
-//   return {
-//     users: paginatedData,
-//     lastKey: lastUserKey,
-//     hasMore: hasMoreNewUsers,
-//   };
-//   } catch (error) {
-//     console.error('Error fetching paginated data:', error);
-//     return {
-//       users: {},
-//       lastKey: null,
-//       hasMore: false,
-//     };
-//   }
-// };
-
-///////////////////////////ПРАЦЮЄ для тестування, мій перший
-// export const fetchPaginatedNewUsers = async (lastKey) => {
-//   const db = getDatabase();
-//   const newUsersRef = ref2(db, 'newUsers');
-//   const usersRef = ref2(db, 'users');
-//   const targetUserId = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
-
-//   try {
-//     // Отримуємо всі дані з newUsers
-//     const [newUsersSnapshot, usersSnapshot] = await Promise.all([
-//       get(newUsersRef), // Отримуємо ВСІ дані з newUsers
-//       get(usersRef),    // Отримуємо ВСІ дані з users
-//     ]);
-
-//     if (!newUsersSnapshot.exists() && !usersSnapshot.exists()) {
-//       return {
-//         users: {},
-//         lastKey: null,
-//         hasMore: false,
-//       };
-//     }
-
-//     const newUsersData = newUsersSnapshot.exists() ? newUsersSnapshot.val() : {};
-//     const usersData = usersSnapshot.exists() ? usersSnapshot.val() : {};
-
-//     // Об'єднуємо всі дані
-//     const mergedData = mergeUsersData(newUsersData, usersData, targetUserId);
-
-//     // Визначаємо останній ключ для пагінації
-//     const lastUserKey = mergedData.length > 0 ? mergedData[mergedData.length - 1][0] : null;
-
-//     // Обмежуємо результати до 10 записів
-//     const paginatedData = Object.fromEntries(mergedData.slice(0, 10));
-
-//     console.log('paginatedData', paginatedData);
-
-//     return {
-//       users: paginatedData,
-//       lastKey: lastUserKey,
-//       hasMore: mergedData.length > 10,
-//     };
-//   } catch (error) {
-//     console.error('Error fetching paginated data:', error);
-//     return {
-//       users: {},
-//       lastKey: null,
-//       hasMore: false,
-//     };
-//   }
-// };
 
 ///////////////////////////ПРАЦЮЄ лише з newUsers
 // export const fetchPaginatedNewUsers = async (lastKey) => {
@@ -1411,13 +1121,13 @@ const combinedUsers = sortedUsers2;
 //     }
 
 //     const newUsersData = newUsersSnapshot.val();
-    
+
 //     // Перетворюємо дані в масив [userId, userData]
 //     let sortedUsers = Object.entries(newUsersData);
 
 //     // Виділяємо targetUser і ставимо його першим
 //     sortedUsers = sortedUsers.filter(([key]) => key !== targetUserId); // Видаляємо targetUser з масиву
-//     const targetUser = Object.entries(newUsersData).find(([key]) => key === targetUserId); 
+//     const targetUser = Object.entries(newUsersData).find(([key]) => key === targetUserId);
 
 //     if (targetUser) {
 //       sortedUsers.unshift(targetUser); // Додаємо targetUser на початок
@@ -1449,71 +1159,19 @@ const combinedUsers = sortedUsers2;
 //   }
 // };
 
-
-// const fetchTargetUserData = async (targetUserId) => {
-//   const db = getDatabase();
-//   const newUsersRef = ref2(db, `newUsers/${targetUserId}`);
-//   const usersRef = ref2(db, `users/${targetUserId}`);
-
-//   try {
-//     // Отримуємо дані з двох колекцій
-//     const [newUserSnapshot, userSnapshot] = await Promise.all([
-//       get(newUsersRef),
-//       get(usersRef),
-//     ]);
-
-//     // Перевіряємо, чи існують дані
-//     const newUserData = newUserSnapshot.exists() ? newUserSnapshot.val() : null;
-//     const userData = userSnapshot.exists() ? userSnapshot.val() : null;
-
-//     console.log('Дані користувача з newUsers:', newUserData);
-//     console.log('Дані користувача з users:', userData);
-
-//     return {
-//       newUserData,
-//       userData,
-//     };
-//   } catch (error) {
-//     console.error('Помилка при отриманні даних користувача:', error);
-//     return null;
-//   }
-// };
-
-// Функція для об'єднання користувачів за userId
-
-// const mergeUsersData = (newUsersData, usersData, targetUserId) => {
-//   const mergedUsers = {};
-
-//   // Об'єднуємо дані з newUsers і users, враховуючи всі поля
-//   Object.keys({ ...newUsersData, ...usersData }).forEach((key) => {
-//     const newUserFields = newUsersData[key] || {};
-//     const userFields = usersData[key] || {};
-
-//     // Об'єднуємо дані, де пріоритет має newUsers
-//     mergedUsers[key] = { ...userFields, ...newUserFields };
-//   });
-
-//   // Сортуємо: targetUserId завжди на першому місці
-//   const sortedUsers = Object.entries(mergedUsers);
-//   const targetUser = sortedUsers.find(([key]) => key === targetUserId);
-//   const otherUsers = sortedUsers.filter(([key]) => key !== targetUserId);
-
-//   return targetUser ? [targetUser, ...otherUsers] : otherUsers;
-// };
-
 export const fetchListOfUsers = async () => {
   const db = getDatabase();
   const usersRef = ref2(db, 'users');
 
   try {
     // Паралельне виконання обох запитів
-    const [usersSnapshot] = await Promise.all([ get(usersRef)]);
+    const [usersSnapshot] = await Promise.all([get(usersRef)]);
 
     // Перевірка наявності даних у 'users'
     let userIds = [];
     if (usersSnapshot.exists()) {
       const usersData = usersSnapshot.val();
-      userIds = Object.keys(usersData)
+      userIds = Object.keys(usersData);
       // .slice(0, 4); // Отримуємо перші три ключі
     }
 
@@ -1532,7 +1190,7 @@ export const fetchListOfUsers = async () => {
 export const fetchUserById = async userId => {
   const db = getDatabase();
 
-  console.log('userId в fetchUserById: ',userId);
+  // console.log('userId в fetchUserById: ', userId);
 
   // Референси для пошуку в newUsers і users
   const userRefInNewUsers = ref2(db, `newUsers/${userId}`);
