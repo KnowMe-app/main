@@ -254,7 +254,11 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
       </div>
       {/* <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div> */}
       <div>
-      <strong>{`${(userData.name || userData.surname) ? `${userData.name || ''} ${userData.surname || ''}, ` : ''}`}</strong>
+      <strong>
+  {`${(userData.surname || userData.name || userData.fathersname)
+    ? `${userData.surname || ''} ${userData.name || ''} ${userData.fathersname || ''}, `
+    : ''}`}
+</strong>
         {renderBirthInfo(userData.birth)}
         {renderMaritalStatus(userData.maritalStatus)}
         {/* {renderCsection(userData.csection)}  */}
@@ -423,18 +427,17 @@ const renderLastCycleInput = (userData, setUsers, setState, ) => {
 
 const renderGetInTouchInput = (userData, setUsers, setState) => {
 
-    
   return (
     <div>
       <label>Пізніше:</label>
       <input
 
         type="text"
-        value={formatDateToDisplay(userData.getInTouch) || ''}
+        value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
         // onChange={(e) => handleChange(setUsers, userData.userId, 'getInTouch', e.target.value)}
         onChange={(e) => {
           // Повертаємо формат YYYY-MM-DD для збереження
-          const serverFormattedDate = formatDateToServer(e.target.value);
+          const serverFormattedDate = formatDateToServer(formatDateAndFormula(e.target.value));
           handleChange(setUsers, setState, userData.userId, 'getInTouch', serverFormattedDate);
         }}
         onBlur={() => handleSubmit(userData, 'overwrite')}
