@@ -47,8 +47,16 @@ const handleSubmit = async userData => {
   const uploadedInfo = makeUploadedInfo(existingData, userData);
 
 // Оновлюємо поле lastAction поточною датою у форматі рррр-мм-дд
-const currentDate = new Date().toISOString().split('T')[0];
-uploadedInfo.lastAction = currentDate;
+const currentDate = new Date();
+currentDate.setDate(currentDate.getDate());
+
+// Форматуємо дату в локальному часі замість використання UTC
+const year = currentDate.getFullYear();
+const month = String(currentDate.getMonth() + 1).padStart(2, '0'); // Додаємо 1, оскільки місяці в Date починаються з 0
+const day = String(currentDate.getDate()).padStart(2, '0');
+const formattedDate = `${year}-${month}-${day}`; // Формат YYYY-MM-DD
+
+uploadedInfo.lastAction = formattedDate;
 
   // Фільтруємо ключі, щоб видалити зайві поля
   const cleanedStateForNewUsers = Object.fromEntries(
