@@ -1,133 +1,128 @@
 import { useEffect, useRef } from 'react';
-import { fetchUserById, 
+import {
+  fetchUserById,
   // fetchUserData,
   updateDataInNewUsersRTDB,
-  // removeSearchId 
+  // removeSearchId
 } from './config';
-import { formatDateAndFormula, formatDateToDisplay, formatDateToServer,} from './inputValidations';
+import { formatDateAndFormula, formatDateToDisplay, formatDateToServer } from './inputValidations';
 import { makeUploadedInfo } from './makeUploadedInfo';
-import { coloredCard } from './styles';
+import { coloredCard, OrangeBtn } from './styles';
 
-const handleChange = (setUsers, setState, userId, key, value) => {
+const handleChange = (setUsers, setState, userId, key, value, click) => {
+  const newValue = key === 'getInTouch' || key === 'lastCycle' ? formatDateAndFormula(value) : value;
 
-  console.log('handleChange :>> ', value);
-  const newValue = (key==='getInTouch' || key==='lastCycle') ? formatDateAndFormula(value) : value
-
-console.log('flag :>> ', );
-if (setState){
-console.log('flag :>> ',);
-  setUsers(prevState => ({
-    ...prevState,
-    [key]: value,
-  }));
-}
-else {
-  setUsers((prevState) => ({
- ...prevState,
- [userId]: {
-   ...prevState[userId],
-  [key]: newValue,
- },
-}));
-}
-
-
+  if (setState) {
+    setUsers(prevState => {
+      const newState = { ...prevState, [key]: newValue };
+      click && handleSubmit(newState);
+      return newState;
+    });
+  } else {
+    setUsers(prevState => {
+      const newState = {
+        ...prevState,
+        [userId]: {
+          ...prevState[userId],
+          [key]: newValue,
+        },
+      };
+      click && handleSubmit(newState[userId], 'overwrite');
+      return newState;
+    });
+  }
 };
 
+const handleSubmit = async userData => {
+  const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
+  const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
+  const commonFields = ['lastAction'];
+  const dublicateFields = ['weight', 'height'];
 
-const handleSubmit = async (userData) => {
-
-const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
-const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId' ];
-const commonFields = ['lastAction'];
-const dublicateFields = ['weight', 'height', ];
-
-
-console.log('userData В handleSubmit', userData);
+  console.log('userData В handleSubmit', userData);
   //  const { existingData } = await fetchUserData(userData.userId);
-   const { existingData } = await fetchUserById(userData.userId);
-   console.log('1111 :>> ', );
-   const uploadedInfo = makeUploadedInfo(existingData, userData);
-   // console.log('uploadedInfo В handleSubmit', uploadedInfo);
-       // Фільтруємо ключі, щоб видалити зайві поля
-       const cleanedStateForNewUsers = Object.fromEntries(
-         Object.entries(uploadedInfo).filter(
-         ([key]) => [...fieldsForNewUsersOnly, ...contacts, ...commonFields, ...dublicateFields].includes(key)
-         )
-         );
+  console.log('userData.userId :>> ', userData.userId);
+  const { existingData } = await fetchUserById(userData.userId);
+  console.log('1111 :>> ');
+  const uploadedInfo = makeUploadedInfo(existingData, userData);
 
-         console.log('cleanedStateForNewUsers', cleanedStateForNewUsers);
+// Оновлюємо поле lastAction поточною датою у форматі рррр-мм-дд
+const currentDate = new Date().toISOString().split('T')[0];
+uploadedInfo.lastAction = currentDate;
 
+  // Фільтруємо ключі, щоб видалити зайві поля
+  const cleanedStateForNewUsers = Object.fromEntries(
+    Object.entries(uploadedInfo).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts, ...commonFields, ...dublicateFields].includes(key))
+  );
 
-   
-   await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
+  console.log('cleanedStateForNewUsers!!!!!!!!!!!!!!', cleanedStateForNewUsers);
+
+  await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
 };
-
-
 
 export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) => {
   // console.log('userData в renderTopBlock:', userData );
   if (!userData) return null;
 
   // Функція для експорту контактів у форматі vCard
-  const exportContacts = (user) => {
+  const exportContacts = user => {
     console.log('user :>> ', user);
-  
+
     // Формуємо vCard
     let contactVCard = `BEGIN:VCARD\r\nVERSION:3.0\r\n`;
-  
+
     // Обробка імені та прізвища
     const names = Array.isArray(user.name) ? user.name : [user.name];
     const surnames = Array.isArray(user.surname) ? user.surname : [user.surname];
-  
+
     const fullName = `${names.join(' ').trim()} ${surnames.join(' ').trim()}`;
     if (fullName.trim()) {
       contactVCard += `FN;CHARSET=UTF-8:${fullName.trim()}\r\n`;
       contactVCard += `N;CHARSET=UTF-8:УК СМ ${names.join(' ').trim()} ${surnames.join(' ').trim()};;;\r\n`;
     }
-  
+
     // Обробка телефонів
     const phones = Array.isArray(user.phone) ? user.phone : [user.phone];
-    phones.forEach((phone) => {
+    phones.forEach(phone => {
       if (phone) {
         contactVCard += `TEL;TYPE=CELL:+${phone.trim()}\r\n`;
       }
     });
-  
+
     // Обробка email
     const emails = Array.isArray(user.email) ? user.email : [user.email];
-    emails.forEach((email) => {
+    emails.forEach(email => {
       if (email) {
         contactVCard += `EMAIL;CHARSET=UTF-8;TYPE=HOME:${email.trim()}\r\n`;
       }
     });
-  
+
     // Обробка адрес
     const addresses = Array.isArray(user.address) ? user.address : [user.address];
-    addresses.forEach((address) => {
+    addresses.forEach(address => {
       if (address) {
         const { street = '', city = '', region = '', country = '' } = address;
         contactVCard += `ADR;CHARSET=UTF-8;TYPE=HOME:;;${street.trim()};${city.trim()};${region.trim()};${country.trim()}\r\n`;
       }
     });
-  
+
     // Обробка ролей
     const roles = Array.isArray(user.userRole) ? user.userRole : [user.userRole];
-    roles.forEach((role) => {
+    roles.forEach(role => {
       if (role) {
         contactVCard += `TITLE;CHARSET=UTF-8:${role.trim()}\r\n`;
       }
     });
-  
+
     // Обробка дат народження
     const births = Array.isArray(user.birth) ? user.birth : [user.birth];
-    births.forEach((birth) => {
+    births.forEach(birth => {
       if (birth) {
         const [day, month, year] = birth.split('.');
         contactVCard += `BDAY:${year}-${month}-${day}\r\n`; // Формат YYYY-MM-DD
       }
     });
-  
+
     // Обробка соціальних мереж
     const socialLinks = {
       Telegram: Array.isArray(user.telegram) ? user.telegram : [user.telegram],
@@ -135,15 +130,15 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
       TikTok: Array.isArray(user.tiktok) ? user.tiktok : [user.tiktok],
       Facebook: Array.isArray(user.facebook) ? user.facebook : [user.facebook],
     };
-  
+
     Object.entries(socialLinks).forEach(([label, links]) => {
-      links.forEach((link) => {
+      links.forEach(link => {
         if (link) {
           contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:https://${label.toLowerCase()}.com/${link}\r\n`;
         }
       });
     });
-  
+
     // Додаткові поля для NOTE
     const additionalInfo = {
       Reward: user.reward || '',
@@ -171,34 +166,34 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
       Experience: user.experience || '',
       Race: user.race || '',
     };
-  
+
     const description = Object.entries(additionalInfo)
       .filter(([, value]) => value) // Виключаємо порожні значення
       .map(([key, value]) => `${key}: ${value}`)
       .join(', ');
-  
+
     if (description) {
       contactVCard += `NOTE;CHARSET=UTF-8:${description}\r\n`;
     }
-  
+
     contactVCard += `END:VCARD\r\n`;
-  
+
     // Створюємо Blob із кодуванням UTF-8
     const vCardBlob = new Blob([contactVCard], { type: 'text/vcard;charset=utf-8' });
-  
+
     // Завантаження файлу
     const url = window.URL.createObjectURL(vCardBlob);
     const link = document.createElement('a');
     link.href = url;
     link.download = `${names[0]?.trim() || 'user'}_${surnames[0]?.trim() || 'data'}.vcf`;
     link.click();
-  
+
     console.log('Generated vCard:', contactVCard);
-  
+
     window.URL.revokeObjectURL(url);
   };
 
-  const renderExportButton = (userData) => (
+  const renderExportButton = userData => (
     <button
       style={{
         ...styles.removeButton,
@@ -206,7 +201,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
         top: '10px',
         right: '60px',
       }}
-      onClick={(e) => {
+      onClick={e => {
         e.stopPropagation(); // Запобігаємо активації кліку картки
         exportContacts(userData);
       }}
@@ -214,15 +209,15 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
       export
     </button>
   );
-  
-  const renderDeleteButton = (userId) => (
+
+  const renderDeleteButton = userId => (
     <button
       style={{
         ...styles.removeButton,
         backgroundColor: 'red',
         top: '42px',
       }}
-      onClick={(e) => {
+      onClick={e => {
         console.log('delConfirm :>> ');
         e.stopPropagation(); // Запобігаємо активації кліку картки
         setShowInfoModal('delConfirm'); // Trigger the modal opening
@@ -233,62 +228,72 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
       del
     </button>
   );
-  
 
   // const nextContactDate = userData.getInTouch
   //   ? userData.getInTouch
   //   : 'НОВИЙ КОНТАКТ';
 
-    
-
-// console.log('userData in renderTopBlock :>> ', userData);
+  // console.log('userData in renderTopBlock :>> ', userData);
   return (
-    <div style={{ padding: '7px',  position: 'relative',}}>
+    <div style={{ padding: '7px', position: 'relative' }}>
       {renderDeleteButton(userData.userId)}
       {renderExportButton(userData)}
       <div>
-      {userData.userId}
-        {/* {userData.userId.substring(0, 4)} */}
+        {userData.userId}
         {renderGetInTouchInput(userData, setUsers, setState)}
-        {renderLastCycleInput(userData, setUsers, setState)}
+        {userData.lastCycle && renderLastCycleInput(userData, setUsers, setState)}
+        { renderDeliveryInfo(userData.ownKids, userData.lastDelivery, userData.csection)}
+        {userData.birth && `${userData.birth} - `}
+        {userData.birth && renderBirthInfo(userData.birth)}
       </div>
       {/* <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div> */}
       <div>
-      <strong>
-  {`${(userData.surname || userData.name || userData.fathersname)
-    ? `${userData.surname || ''} ${userData.name || ''} ${userData.fathersname || ''}, `
-    : ''}`}
-</strong>
+        <strong>
+        {
+            (() => {
+              const nameParts = [];
+              if (userData.surname) nameParts.push(userData.surname);
+              if (userData.name) nameParts.push(userData.name);
+              if (userData.fathersname) nameParts.push(userData.fathersname);
+              return nameParts.length > 0 ? `${nameParts.join(' ')}, ` : '';
+            })()
+          }
+        </strong>
         {renderBirthInfo(userData.birth)}
-        {renderMaritalStatus(userData.maritalStatus)}
+       
         {/* {renderCsection(userData.csection)}  */}
         <div style={{ whiteSpace: 'pre-wrap' }}>
-  {`${userData.birth ? `${userData.birth}, ` : ''}` +
-    `${userData.height || ''}` +
-    `${userData.height && userData.weight ? ' / ' : ''}` +
-    `${userData.weight ? `${userData.weight}, ` : ''}` +
-    `${userData.blood || ''}`}
-  {renderDeliveryInfo(userData.ownKids, userData.lastDelivery, userData.csection)}
-</div>
-    <div>
-          {`${userData.region ? `${userData.region}, ` : ''}`  }
-
-    </div>
-          
-           
+          {
+            (() => {
+              const parts = [];
+              if (userData.maritalStatus) parts.push(renderMaritalStatus(userData.maritalStatus));
+              if (userData.blood) parts.push(userData.blood);
+              if (userData.height) parts.push(userData.height);
+              if (userData.height && userData.weight) parts.push('/');
+              if (userData.weight) parts.push(`${userData.weight} - `);
+              if (userData.weight && userData.height) parts.push(`${calculateIMT(userData.weight, userData.height)}`);
+              // if (userData.birth) parts.push(`${userData.birth},`);
+              return parts.join(' ');
+            })()
+          }
+        </div>
+        <div>
+          {
+            (() => {
+              const locationParts = [];
+              if (userData.region) locationParts.push(userData.region);
+              if (userData.city) locationParts.push(userData.city);
+              return locationParts.join(', ');
+            })()
+          }
+        </div>
       </div>
-      
-      
-      
-      {/* {renderIMT(userData.weight, userData.height)} */}
-      
-      
+
+     
+
       {renderContacts(userData)}
       {renderWriterInput(userData, setUsers, setState)}
       <RenderCommentInput userData={userData} setUsers={setUsers} setState={setState} />
-
-      
-
 
       {/* <button
       // style={{ position: 'absolute', bottom: '10px', right: '10px', cursor: 'pointer', backgroundColor: 'purple', }}
@@ -303,9 +308,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
               more
             </button> */}
 
-
-
-      <div 
+      <div
         onClick={() => {
           const details = document.getElementById(userData.userId);
           if (details) {
@@ -314,18 +317,16 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
         }}
         style={{ position: 'absolute', bottom: '10px', right: '10px', cursor: 'pointer', color: '#ebe0c2', fontSize: '18px' }}
       >
-       ...
+        ...
       </div>
     </div>
   );
 };
 
-const renderBirthInfo = (birth) => {
+const renderBirthInfo = birth => {
   const age = calculateAge(birth);
 
-  return age !== null ? (
-      <span>{age}, </span>
-  ) : null;
+  return age !== null ? <span>{age}р</span> : null;
 };
 
 // const renderIMT = (weight, height,) => {
@@ -345,38 +346,32 @@ const renderBirthInfo = (birth) => {
 // };
 
 const renderDeliveryInfo = (ownKids, lastDelivery, csection) => {
-// Функція для парсингу дати з формату дд.мм.рррр
-const parseCsectionDate = (dateString) => {
-  // Перевірка формату дд.мм.рррр
-  const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
-  
-  if (!dateRegex.test(dateString)) {
-    return null; // Повертаємо null, якщо формат не відповідає
-  }
+  // Функція для парсингу дати з формату дд.мм.рррр
+  const parseCsectionDate = dateString => {
+    // Перевірка формату дд.мм.рррр
+    const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
 
-  const [day, month, year] = dateString.split('.').map(Number);
+    if (!dateRegex.test(dateString)) {
+      return null; // Повертаємо null, якщо формат не відповідає
+    }
 
-  // Перевірка на коректність дати
-  const isValidDate = (d, m, y) =>
-    d > 0 &&
-    d <= 31 &&
-    m > 0 &&
-    m <= 12 &&
-    y > 0 &&
-    !isNaN(new Date(y, m - 1, d).getTime());
+    const [day, month, year] = dateString.split('.').map(Number);
 
-  if (!isValidDate(day, month, year)) {
-    return null; // Повертаємо null, якщо дата некоректна
-  }
+    // Перевірка на коректність дати
+    const isValidDate = (d, m, y) => d > 0 && d <= 31 && m > 0 && m <= 12 && y > 0 && !isNaN(new Date(y, m - 1, d).getTime());
 
-  return dateString; // Повертаємо коректний об'єкт Date
-};
+    if (!isValidDate(day, month, year)) {
+      return null; // Повертаємо null, якщо дата некоректна
+    }
 
-   // Використовуємо `csection` як дату останніх пологів, якщо `lastDelivery` не задано
-   const effectiveLastDelivery = lastDelivery || (csection && parseCsectionDate(csection));
-   const monthsAgo = effectiveLastDelivery ? calculateMonthsAgo(effectiveLastDelivery) : null;
+    return dateString; // Повертаємо коректний об'єкт Date
+  };
 
-  // return (ownKids || monthsAgo !== null || csection) 
+  // Використовуємо `csection` як дату останніх пологів, якщо `lastDelivery` не задано
+  const effectiveLastDelivery = lastDelivery || (csection && parseCsectionDate(csection));
+  const monthsAgo = effectiveLastDelivery ? calculateMonthsAgo(effectiveLastDelivery) : null;
+
+  // return (ownKids || monthsAgo !== null || csection)
   //   ? (
   //     <div>
   //       {ownKids ? `Пологів ${ownKids}` : ''}
@@ -388,74 +383,119 @@ const parseCsectionDate = (dateString) => {
   if (!ownKids && monthsAgo === null && !csection) return null;
 
   const parts = [];
-  if (ownKids) parts.push(`Пологів ${ownKids}`);
+  if (effectiveLastDelivery) parts.push(`${effectiveLastDelivery} пологи`);
 
   if (monthsAgo !== null) {
-    parts.push(`ост ${monthsAgo} міс тому`);
+    if (monthsAgo > 24) {
+      const years = Math.floor(monthsAgo / 12); // Округлення до меншого
+      parts.push(`${years}рт, `);
+    } else {
+      parts.push(`${monthsAgo}м, `);
+    }
   }
+
+  if (ownKids) parts.push(`всього ${ownKids},`);
+
+
 
   if (csection) parts.push(`кс ${csection}`);
   // Якщо csection не потрібно показувати, закоментуйте цей рядок або видаліть його.
 
-  return <div>{parts.join(', ')}</div>;
+  return <div >{parts.join(' ')}</div>;
 };
 
-const renderLastCycleInput = (userData, setUsers, setState, ) => {
-
+const renderLastCycleInput = (userData, setUsers, setState) => {
   const nextCycle = calculateNextDate(userData.lastCycle);
 
   return (
     <div>
-      <label>Міс:</label>
+      {/* <label>Міс:</label> */}
       <input
         type="text"
         value={formatDateToDisplay(userData.lastCycle) || ''}
-        onChange={(e) => {
+        onChange={e => {
           // Повертаємо формат YYYY-MM-DD для збереження
           const serverFormattedDate = formatDateToServer(e.target.value);
           handleChange(setUsers, setState, userData.userId, 'lastCycle', serverFormattedDate);
         }}
         onBlur={() => handleSubmit(userData, 'overwrite')}
         // placeholder="01.01.2021"
-        style={{...styles.underlinedInput, flexGrow: 1, // Займає залишковий простір
-          maxWidth: '100%'}}
+        style={{ ...styles.underlinedInput, 
+          marginLeft: 0,
+          textAlign: 'left',
+        }}
       />
-      {nextCycle && <span> - {nextCycle}</span>}
+      {nextCycle && <span> місячні - {nextCycle}</span>}
     </div>
   );
 };
 
 const renderGetInTouchInput = (userData, setUsers, setState) => {
+  const handleSendToEnd = () => {
+    handleChange(setUsers, setState, userData.userId, 'getInTouch', '2099-99-99', true);
+  };
+
+  const handleAddDays = (days) => {
+    const currentDate = new Date();
+    currentDate.setDate(currentDate.getDate() + days);
+  
+    // Форматуємо дату в локальному часі замість використання UTC
+    const year = currentDate.getFullYear();
+    const month = String(currentDate.getMonth() + 1).padStart(2, '0'); // Додаємо 1, оскільки місяці в Date починаються з 0
+    const day = String(currentDate.getDate()).padStart(2, '0');
+    const formattedDate = `${year}-${month}-${day}`; // Формат YYYY-MM-DD
+    handleChange(setUsers, setState, userData.userId, 'getInTouch', formattedDate, true);
+  };
+
+  const ActionButton = ({ label, days, onClick }) => (
+    <OrangeBtn
+      onClick={() => (onClick ? onClick(days) : null)}
+      style={{   width: '25px', /* Встановіть ширину, яка визначатиме розмір кнопки */
+        height: '25px', /* Встановіть висоту, яка повинна дорівнювати ширині */
+      marginLeft: '5px',
+      marginRight: 0,
+    }}
+    >
+      {label}
+    </OrangeBtn>
+  );
 
   return (
-    <div>
-      <label>Пізніше:</label>
+    <div style={{ display: 'flex', alignItems: 'center',}}>
+      {/* <label style={{ marginRight: '10px' }}>Пізніше:</label> */}
       <input
-
         type="text"
         value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
-        // onChange={(e) => handleChange(setUsers, userData.userId, 'getInTouch', e.target.value)}
-        onChange={(e) => {
+        onChange={e => {
           // Повертаємо формат YYYY-MM-DD для збереження
           const serverFormattedDate = formatDateToServer(formatDateAndFormula(e.target.value));
           handleChange(setUsers, setState, userData.userId, 'getInTouch', serverFormattedDate);
         }}
         onBlur={() => handleSubmit(userData, 'overwrite')}
-        // placeholder="Введіть дату або формулу"
-        style={{...styles.underlinedInput, width: '20%',}}
+        style={{ ...styles.underlinedInput, 
+          marginLeft: 0,
+          textAlign: 'left',
+        }}
       />
+
+      <ActionButton label="7д" days={7} onClick={handleAddDays} />
+      <ActionButton label="1м" days={30} onClick={handleAddDays} />
+      <ActionButton label="6м" days={180} onClick={handleAddDays} />
+      <ActionButton label="1р" days={365} onClick={handleAddDays} />
+      <ActionButton label="99" onClick={handleSendToEnd} />
+
     </div>
   );
 };
 
-const RenderCommentInput = ({ userData, setUsers, setState,  }) => {
+const RenderCommentInput = ({ userData, setUsers, setState }) => {
   const textareaRef = useRef(null);
 
-  const handleInputChange = (e) => {
+  const handleInputChange = e => {
     handleChange(setUsers, setState, userData.userId, 'myComment', e.target.value);
   };
 
-  const autoResize = (textarea) => {
+  const autoResize = textarea => {
     textarea.style.height = 'auto'; // Скидаємо висоту
     textarea.style.height = `${textarea.scrollHeight}px`; // Встановлюємо нову висоту
   };
@@ -467,17 +507,19 @@ const RenderCommentInput = ({ userData, setUsers, setState,  }) => {
   }, [userData.myComment]); // Виконується при завантаженні та зміні коментаря
 
   return (
-    <div style={{
-      display: 'flex', // Використовуємо flexbox
-      justifyContent: 'center', // Центрування по горизонталі
-      alignItems: 'center', // Центрування по вертикалі
-      height: '100%', // Висота контейнера
-    }}>
+    <div
+      style={{
+        display: 'flex', // Використовуємо flexbox
+        justifyContent: 'center', // Центрування по горизонталі
+        alignItems: 'center', // Центрування по вертикалі
+        height: '100%', // Висота контейнера
+      }}
+    >
       <textarea
         ref={textareaRef}
         placeholder="Додайте коментар"
         value={userData.myComment || ''}
-        onChange={(e) => {
+        onChange={e => {
           handleInputChange(e);
           autoResize(e.target);
         }}
@@ -497,47 +539,48 @@ const RenderCommentInput = ({ userData, setUsers, setState,  }) => {
 };
 
 const renderWriterInput = (userData, setUsers, setState) => {
-  const handleCodeClick = (code) => {
+  const handleCodeClick = code => {
     let currentWriter = userData.writer || '';
-    let updatedCodes = currentWriter?.split(', ').filter((item) => item !== code); // Видаляємо, якщо є
+    let updatedCodes = currentWriter?.split(', ').filter(item => item !== code); // Видаляємо, якщо є
     updatedCodes = [code, ...updatedCodes]; // Додаємо код першим
 
     const newState = {
       ...userData,
       writer: updatedCodes.join(', '),
     };
-  
-    setUsers((prev) => ({
+
+    setUsers(prev => ({
       ...prev,
       [userData.userId]: newState,
     }));
 
     // handleChange(setUsers, setState, userData.userId, 'writer');
-  
+
     // Викликаємо handleSubmit поза setUsers
     handleSubmit(newState, 'overwrite');
-  }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', width: '100%' }}>
       {/* Верхній рядок: renderGetInTouchInput і інпут */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '2px', width: '100%' }}>
-      
         <input
           type="text"
           // placeholder="Введіть ім'я"
           value={userData.writer || ''}
-          onChange={(e) => handleChange(setUsers, setState, userData.userId, 'writer', e.target.value)}
+          onChange={e => handleChange(setUsers, setState, userData.userId, 'writer', e.target.value)}
           onBlur={() => handleSubmit(userData, 'overwrite')}
-          style={{...styles.underlinedInput, flexGrow: 1, // Займає залишковий простір
-            maxWidth: '100%' // Обмежує ширину контейнером
-            }}
+          style={{
+            ...styles.underlinedInput,
+            flexGrow: 1, // Займає залишковий простір
+            maxWidth: '100%', // Обмежує ширину контейнером
+          }}
         />
       </div>
 
       {/* Нижній рядок: кнопки */}
       <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', width: '100%' }}>
-        {['Ig','Ср', 'Срр', 'Ik', 'Т','V','W', 'ТТ', 'Ін', ].map((code) => (
+        {['Ig', 'Ср', 'Срр', 'Ik', 'Т', 'V', 'W', 'ТТ', 'Ін'].map(code => (
           <button
             key={code}
             onClick={() => handleCodeClick(code)}
@@ -673,20 +716,20 @@ const renderContacts = (data, parentKey = '') => {
   }
 
   const links = {
-    telegram: (value) => `https://t.me/${value}`,
-    instagram: (value) => `https://instagram.com/${value}`,
-    tiktok: (value) => `https://www.tiktok.com/@${value}`,
-    phone: (value) => `tel:${value}`,
-    facebook: (value) => `https://facebook.com/${value}`,
-    vk: (value) => `https://vk.com/${value}`,
-    otherLink: (value) => `${value}`,
-    email: (value) => `mailto:${value}`,
-    telegramFromPhone: (value) => `https://t.me/${value.replace(/\s+/g, '')}`,
-    viberFromPhone: (value) => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`,
-    whatsappFromPhone: (value) => `https://wa.me/${value.replace(/\s+/g, '')}`,
+    telegram: value => `https://t.me/${value}`,
+    instagram: value => `https://instagram.com/${value}`,
+    tiktok: value => `https://www.tiktok.com/@${value}`,
+    phone: value => `tel:${value}`,
+    facebook: value => `https://facebook.com/${value}`,
+    vk: value => `https://vk.com/${value}`,
+    otherLink: value => `${value}`,
+    email: value => `mailto:${value}`,
+    telegramFromPhone: value => `https://t.me/${value.replace(/\s+/g, '')}`,
+    viberFromPhone: value => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`,
+    whatsappFromPhone: value => `https://wa.me/${value.replace(/\s+/g, '')}`,
   };
 
-  return Object.keys(data).map((key) => {
+  return Object.keys(data).map(key => {
     const nestedKey = parentKey ? `${parentKey}.${key}` : key;
     const value = data[key];
 
@@ -701,7 +744,7 @@ const renderContacts = (data, parentKey = '') => {
           {!['email', 'phone'].includes(key) && <strong>{key}:</strong>}{' '}
           {Array.isArray(value) ? (
             value
-              .filter((val) => typeof val === 'string' && val.trim() !== '') // Фільтруємо лише непусті рядки
+              .filter(val => typeof val === 'string' && val.trim() !== '') // Фільтруємо лише непусті рядки
               .map((val, idx) => {
                 try {
                   const processedVal = key === 'phone' ? val.replace(/\s/g, '') : val; // Видаляємо пробіли тільки для phone
@@ -807,19 +850,19 @@ const renderContacts = (data, parentKey = '') => {
         </div>
       );
     }
-    
-    
-    
+
     return null; // Якщо ключ не обробляється
   });
 };
 
-const renderMaritalStatus = (maritalStatus) => {
+const renderMaritalStatus = maritalStatus => {
   switch (maritalStatus) {
-    case 'Yes': case '+':
-      return 'Заміжня, ';
-    case 'No': case '-':
-      return 'Незаміжня, ';
+    case 'Yes':
+    case '+':
+      return 'Заміжня';
+    case 'No':
+    case '-':
+      return 'Незаміжня';
     default:
       return maritalStatus || '';
   }
@@ -840,14 +883,14 @@ const renderMaritalStatus = (maritalStatus) => {
 //       return 'кс2, ';
 //     case 'No': case '0': case 'Ні': case '-':
 //       return 'кс-, ';
-//     case 'Yes': case 'Так': case '+': 
+//     case 'Yes': case 'Так': case '+':
 //       return 'кс+, ';
 //     default:
 //       return `кс ${csection}, `|| '';
 //   }
 // };
 
-const calculateAge = (birthDateString) => {
+const calculateAge = birthDateString => {
   if (!birthDateString) return null;
   if (typeof birthDateString !== 'string') return birthDateString;
   const [day, month, year] = birthDateString?.split('.').map(Number);
@@ -861,7 +904,7 @@ const calculateAge = (birthDateString) => {
   return age;
 };
 
-const calculateMonthsAgo = (dateString) => {
+const calculateMonthsAgo = dateString => {
   if (!dateString) return null;
   if (typeof dateString !== 'string') return dateString;
 
@@ -873,8 +916,7 @@ const calculateMonthsAgo = (dateString) => {
   return monthsDiff;
 };
 
-const calculateNextDate = (dateString) => {
-
+const calculateNextDate = dateString => {
   if (!dateString) return '';
 
   // Перевіряємо, чи введена дата у форматі DD.MM.YYYY
@@ -914,31 +956,26 @@ const calculateNextDate = (dateString) => {
   return `${dayFormatted}.${monthFormatted}`;
 };
 
-// const calculateIMT = (weight, height) => {
-//   if (weight && height) {
-//     const heightInMeters = height / 100;
-//     return (weight / (heightInMeters ** 2)).toFixed(1);
-//   }
-//   return 'N/A';
-// };
-
+const calculateIMT = (weight, height) => {
+  if (weight && height) {
+    const heightInMeters = height / 100;
+    return (weight / (heightInMeters ** 2)).toFixed(1);
+  }
+  return 'N/A';
+};
 
 // Компонент для рендерингу кожної картки
 export const UserCard = ({ userData, setUsers, setShowInfoModal }) => {
-
-
   // console.log('userData!!!!! :>> ', userData);
 
-    // Ініціалізація локального стану на основі userData
-    // const [localUserData, setLocalUserData] = useState({});
+  // Ініціалізація локального стану на основі userData
+  // const [localUserData, setLocalUserData] = useState({});
 
-    // Синхронізація локального стану при завантеженні
-    // useEffect(() => {
-    //   // console.log('Updated userData!!!!!!!!!!!!!!!!!!!!!!!!!!!!!: в юх ефект', userData);
-    //   setLocalUserData(userData);
-    // }, []);
-
-
+  // Синхронізація локального стану при завантеженні
+  // useEffect(() => {
+  //   // console.log('Updated userData!!!!!!!!!!!!!!!!!!!!!!!!!!!!!: в юх ефект', userData);
+  //   setLocalUserData(userData);
+  // }, []);
 
   const renderFields = (data, parentKey = '') => {
     if (!data || typeof data !== 'object') {
@@ -966,7 +1003,7 @@ export const UserCard = ({ userData, setUsers, setShowInfoModal }) => {
 
     // let detailsRow = '';
 
-    return sortedKeys.map((key) => {
+    return sortedKeys.map(key => {
       const nestedKey = parentKey ? `${parentKey}.${key}` : key;
       const value = extendedData[key];
 
@@ -978,9 +1015,7 @@ export const UserCard = ({ userData, setUsers, setShowInfoModal }) => {
         return (
           <div key={nestedKey}>
             <strong>{key}:</strong>
-            <div style={{ marginLeft: '20px' }}>
-              {renderFields(value, nestedKey)}
-            </div>
+            <div style={{ marginLeft: '20px' }}>{renderFields(value, nestedKey)}</div>
           </div>
         );
       }
@@ -995,41 +1030,36 @@ export const UserCard = ({ userData, setUsers, setShowInfoModal }) => {
 
   return (
     <div>
-
-    {renderTopBlock(userData, setUsers, setShowInfoModal)}
-    <div id={userData.userId} style={{ display: 'none' }}>
-      {renderFields(userData)}
+      {renderTopBlock(userData, setUsers, setShowInfoModal)}
+      <div id={userData.userId} style={{ display: 'none' }}>
+        {renderFields(userData)}
+      </div>
     </div>
-  </div>
   );
 };
 
-    // Обробник кліку на картці користувача
-    const handleCardClick = async (userId, setSearch, setState) => {
-      const userData = await fetchUserById(userId);
-      if (userData) {
-
-        console.log('Дані знайденого користувача: ', userData);
-        setSearch(`id: ${userData.userId}`);
-        setState(userData)
-        // setUsers(userData)
-        // Додаткова логіка обробки даних користувача
-      } else {
-        console.log('Користувача не знайдено.');
-      }
-    };
+// Обробник кліку на картці користувача
+const handleCardClick = async (userId, setSearch, setState) => {
+  const userData = await fetchUserById(userId);
+  if (userData) {
+    console.log('Дані знайденого користувача: ', userData);
+    setSearch(`id: ${userData.userId}`);
+    setState(userData);
+    // setUsers(userData)
+    // Додаткова логіка обробки даних користувача
+  } else {
+    console.log('Користувача не знайдено.');
+  }
+};
 
 // Компонент для рендерингу всіх карток
-export const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoModal  }) => {
-
+export const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoModal }) => {
   console.log('users in UsersList: ', users);
-
-
 
   const renderEditButton = (userId, setSearch, setState) => (
     <button
       style={styles.removeButton}
-      onClick={(e) => {
+      onClick={e => {
         e.stopPropagation(); // Запобігаємо активації кліку картки
         handleCardClick(userId, setSearch, setState);
       }}
@@ -1037,43 +1067,38 @@ export const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoMod
       edit
     </button>
   );
-  
-  
-
-
 
   return (
     <div style={styles.container}>
-    {Object.entries(users).map(([userId, userData], index) => (
-            <div 
-            key={userId} 
-            style={{...coloredCard(index)}}
-            // onClick={() => handleCardClick(userData.userId)} // Додаємо обробник кліку
-          >
-            
-            {renderEditButton(userData.userId, setSearch, setState)}
-            {/* {renderExportButton(userData)} */}
+      {Object.entries(users).map(([userId, userData], index) => (
+        <div
+          key={userId}
+          style={{ ...coloredCard(index) }}
+          // onClick={() => handleCardClick(userData.userId)} // Додаємо обробник кліку
+        >
+          {renderEditButton(userData.userId, setSearch, setState)}
+          {/* {renderExportButton(userData)} */}
 
-            <UserCard setShowInfoModal = {setShowInfoModal} userData={userData} setUsers={setUsers} />
-          </div>
-        ))}
-      </div>
+          <UserCard setShowInfoModal={setShowInfoModal} userData={userData} setUsers={setUsers} />
+        </div>
+      ))}
+    </div>
   );
 };
 
 // Стилі
 const styles = {
   underlinedInput: {
-    border: "none",
-    borderBottom: "1px solid white",
-    backgroundColor: "transparent",
-    outline: "none",
-    fontSize: "16px",
+    border: 'none',
+    borderBottom: '1px solid white',
+    backgroundColor: 'transparent',
+    outline: 'none',
+    fontSize: '16px',
     padding: 0,
-    color: "white",
+    color: 'white',
     marginLeft: 5,
-    width: "9ch", // Точний розмір для дати формату 01.01.2022
-    textAlign: "center" // Вирівнювання тексту
+    width: '9.5ch', // Точний розмір для дати формату 01.01.2022
+    textAlign: 'center', // Вирівнювання тексту
   },
 
   container: {
@@ -1088,12 +1113,12 @@ const styles = {
     marginTop: '20px',
     // cursor: 'pointer',
     background: 'linear-gradient(to right, #ff7e5f, #feb47b)', // Виправлено
-    width: '100%'
+    width: '100%',
   },
   card2: {
     position: 'relative', // Додаємо для розташування кнопки
     margin: '10px', // Відстань між картками
-    color:'white',
+    color: 'white',
   },
   removeButton: {
     // position: 'absolute',
