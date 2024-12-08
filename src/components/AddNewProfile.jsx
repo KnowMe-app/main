@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import styled, { css } from 'styled-components';
 // import Photos from './Photos';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
@@ -998,6 +998,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     // });
   };
 
+  const priorityOrder = ['birth','name', 'surname', 'fathersname', 'phone', 'facebook', 'instagram', 'telegram', 'tiktok',  'region', 'city', 'height', 'weight', 'blood', 'maritalStatus', 'ownKids', 'csection', 'lastDelivery', 'role'];
   const additionalFields = Object.keys(state).filter(
     key => !pickerFields.some(field => field.name === key) && key !== 'attitude' && key !== 'whiteList' && key !== 'blackList'
   );
@@ -1015,10 +1016,32 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     })),
   ];
 
+  const sortedFieldsToRender = [
+    ...priorityOrder
+      .map(key => fieldsToRender.find(field => field.name === key))
+      .filter(Boolean),
+    ...fieldsToRender.filter(field => !priorityOrder.includes(field.name)),
+  ];
+
   // const fieldsToRender = [
   //   ...pickerFields,
 
   // ];
+
+  //////////// висота text area
+  const textareaRef = useRef(null);
+
+  const autoResize = textarea => {
+    textarea.style.height = 'auto'; // Скидаємо висоту
+    textarea.style.height = `${textarea.scrollHeight}px`; // Встановлюємо нову висоту
+  };
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      autoResize(textareaRef.current); // Встановлюємо висоту після завантаження
+    }
+  }, [state.myComment]); // Виконується при завантаженні та зміні коментаря
+
 
   return (
     <Container>
@@ -1073,7 +1096,9 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     {renderTopBlock(state, setState, setShowInfoModal, true, )}
   </div>
           
-          {fieldsToRender.map((field, index) => {
+          {sortedFieldsToRender
+          .filter(field => !['myComment', 'getInTouch', 'writer'].includes(field.name)) // Фільтруємо поле myComment
+          .map((field, index) => {
             // console.log('field:', field);
             // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
 
@@ -1089,13 +1114,15 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
                           <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
                             <InputField
                               fieldName={`${field.name}-${idx}`}
-                              as={field.name === 'moreInfo_main' && 'textarea'}
+                              as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
+                              ref={field.name === 'myComment' ? textareaRef : null}
                               inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                               name={`${field.name}-${idx}`}
                               // value={value || ''}
                               value={field.name === 'phone' ? formatPhoneNumber(value || '') : value || ''}
                               onChange={e => {
                                 // const updatedValue = inputUpdateValue(e?.target?.value, field);
+                                field.name === 'myComment' && autoResize(e.target);
                                 const updatedValue = field.name === 'telegram' 
                                   ? e?.target?.value // Без inputUpdateValue для 'telegram'
                                   : inputUpdateValue(e?.target?.value, field);
@@ -1130,12 +1157,14 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
                     <InputFieldContainer fieldName={field.name} value={state[field.name]}>
                       <InputField
                         fieldName={field.name}
-                        as={field.name === 'moreInfo_main' && 'textarea'}
+                        as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
+                        ref={field.name === 'myComment' ? textareaRef : null}
                         inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                         name={field.name}
                         // value={state[field.name] || ''}
                         value={field.name === 'phone' ? formatPhoneNumber(state[field.name] || '') : state[field.name] || ''}
                         onChange={e => {
+                          field.name === 'myComment' && autoResize(e.target);
                           let value = e?.target?.value;
                           // Якщо ім'я поля - 'publish', перетворюємо значення в булеве
                           if (field.name === 'publish') {

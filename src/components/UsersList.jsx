@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   fetchUserById,
   // fetchUserData,
@@ -237,11 +237,6 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
     </button>
   );
 
-  // const nextContactDate = userData.getInTouch
-  //   ? userData.getInTouch
-  //   : 'НОВИЙ КОНТАКТ';
-
-  // console.log('userData in renderTopBlock :>> ', userData);
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
       {renderDeleteButton(userData.userId)}
@@ -249,7 +244,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
       <div>
         {userData.userId}
         {renderGetInTouchInput(userData, setUsers, setState)}
-        {userData.lastCycle && renderLastCycleInput(userData, setUsers, setState)}
+        {(userData.userRole !== 'ag' || userData.userRole !== 'ip' || userData.role !== 'ag') && renderLastCycleInput(userData, setUsers, setState)}
         { renderDeliveryInfo(userData.ownKids, userData.lastDelivery, userData.csection)}
         {userData.birth && `${userData.birth} - `}
         {userData.birth && renderBirthInfo(userData.birth)}
@@ -263,11 +258,11 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
               if (userData.surname) nameParts.push(userData.surname);
               if (userData.name) nameParts.push(userData.name);
               if (userData.fathersname) nameParts.push(userData.fathersname);
-              return nameParts.length > 0 ? `${nameParts.join(' ')}, ` : '';
+              return nameParts.length > 0 ? `${nameParts.join(' ')}` : '';
             })()
           }
         </strong>
-        {renderBirthInfo(userData.birth)}
+        {/* {renderBirthInfo(userData.birth)} */}
        
         {/* {renderCsection(userData.csection)}  */}
         <div style={{ whiteSpace: 'pre-wrap' }}>
@@ -416,11 +411,19 @@ const renderLastCycleInput = (userData, setUsers, setState) => {
   const nextCycle = calculateNextDate(userData.lastCycle);
 
   return (
-    <div>
-      {/* <label>Міс:</label> */}
+    <React.Fragment>
+  <style>
+    {`
+      input::placeholder {
+        color: white; /* Робимо плейсхолдер білим */
+        opacity: 1;   /* Для чіткої видимості */
+      }
+    `}
+  </style>
       <input
         type="text"
         value={formatDateToDisplay(userData.lastCycle) || ''}
+        placeholder='міс'
         onChange={e => {
           // Повертаємо формат YYYY-MM-DD для збереження
           const serverFormattedDate = formatDateToServer(e.target.value);
@@ -431,10 +434,11 @@ const renderLastCycleInput = (userData, setUsers, setState) => {
         style={{ ...styles.underlinedInput, 
           marginLeft: 0,
           textAlign: 'left',
+          color: 'white', // Колір текст
         }}
       />
       {nextCycle && <span> місячні - {nextCycle}</span>}
-    </div>
+    </React.Fragment>
   );
 };
 
@@ -589,19 +593,24 @@ const renderWriterInput = (userData, setUsers, setState) => {
       {/* Нижній рядок: кнопки */}
       <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', width: '100%' }}>
         {['Ig', 'Ср', 'Срр', 'Ik', 'Т', 'V', 'W', 'ТТ', 'Ін'].map(code => (
-          <button
+          <OrangeBtn
             key={code}
             onClick={() => handleCodeClick(code)}
             style={{
-              padding: 5,
+              // padding: 5,
               cursor: 'pointer',
               flex: '1', // Рівномірно розподіляє кнопки по всій ширині
-              minWidth: '15px', // Мінімальна ширина кнопок
+              // minWidth: '15px', // Мінімальна ширина кнопок
+              width: '25px', /* Встановіть ширину, яка визначатиме розмір кнопки */
+        height: '25px', /* Встановіть висоту, яка повинна дорівнювати ширині */
+      marginLeft: '5px',
+      marginRight: 0,
+      color: 'black'
               // color: 'orange'
             }}
           >
             {code}
-          </button>
+          </OrangeBtn>
         ))}
       </div>
     </div>
