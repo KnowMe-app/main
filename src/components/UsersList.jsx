@@ -373,16 +373,20 @@ const renderDeliveryInfo = (ownKids, lastDelivery, csection) => {
   // Використовуємо `csection` як дату останніх пологів, якщо `lastDelivery` не задано
   const effectiveLastDelivery = lastDelivery || (csection && parseCsectionDate(csection));
   const monthsAgo = effectiveLastDelivery ? calculateMonthsAgo(effectiveLastDelivery) : null;
+  const whenGetInTouch = effectiveLastDelivery
 
-  // return (ownKids || monthsAgo !== null || csection)
-  //   ? (
-  //     <div>
-  //       {ownKids ? `Пологів ${ownKids}` : ''}
-  //       {monthsAgo !== null ? `${ownKids ? ', ' : ''}ост пологи ${monthsAgo} міс тому` : ''}
-  //       {/* {csection ? `${ownKids || monthsAgo !== null ? ', ' : ''}кс ${csection}` : ', _N/C_'} */}
-  //     </div>
-  //   )
-  //   : null;
+    // Форматування дати у формат "дд.мм.рррр"
+    const formatDate = (date) =>
+      date
+        ? date
+            .toLocaleDateString('uk-UA', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            })
+            .replace(/\//g, '.')
+        : null;
+
   if (!ownKids && monthsAgo === null && !csection) return null;
 
   const parts = [];
@@ -401,13 +405,46 @@ const renderDeliveryInfo = (ownKids, lastDelivery, csection) => {
 
 
 
-  if (csection) parts.push(`кс ${csection}`);
+  // if (csection) parts.push(`кс ${csection}`);
   // Якщо csection не потрібно показувати, закоментуйте цей рядок або видаліть його.
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: '5px' }}>
+    {parts.map((part, index) => (
+      <span key={`part-${index}`} style={{ whiteSpace: 'nowrap' }}>
+        {part}
+      </span>
+    ))}
+    {csection && (
+      <button
+        key="csection"
+        onClick={() => alert(`C-section: ${formatDate(whenGetInTouch)}`)
+        // handleChange(setUsers, setState, userData.userId, 'writer',  updatedCodes.join(', '), true)
+      }
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: '#28A745',
+          color: 'white',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          fontSize: '16px',
+          // height: '40px',
+          padding: '0 10px',
+        }}
+      >
+        кс {csection}
+      </button>
+    )}
+  </div>
+  );
 
-  return <div >{parts.join(' ')}</div>;
+  // return <div >{parts.join(' ')}</div>;
 };
 
 const renderLastCycleInput = (userData, setUsers, setState) => {
+
   const nextCycle = calculateNextDate(userData.lastCycle);
 
   return (
@@ -420,6 +457,7 @@ const renderLastCycleInput = (userData, setUsers, setState) => {
       }
     `}
   </style>
+  <div style={{ display: 'flex', alignItems: 'flex-end' }}>
       <input
         type="text"
         value={formatDateToDisplay(userData.lastCycle) || ''}
@@ -437,7 +475,33 @@ const renderLastCycleInput = (userData, setUsers, setState) => {
           color: 'white', // Колір текст
         }}
       />
-      {nextCycle && <span> місячні - {nextCycle}</span>}
+      {/* {nextCycle && <span> місячні - {nextCycle}</span>} */}
+      {nextCycle && (
+      <React.Fragment>
+        <span style={{ marginLeft: '10px', marginRight: '5px', color: 'white', }}>місячні -</span>
+        <button
+          onClick={() => 
+            handleChange(setUsers, setState, userData.userId, 'getInTouch', nextCycle, true)} // Замість alert додайте потрібну логіку
+          style={{
+            // padding: '5px 10px',
+            display: 'flex', // Використовуємо flexbox
+    justifyContent: 'center', // Центруємо текст горизонтально
+    alignItems: 'center', // Центруємо текст вертикально
+    // backgroundColor: '#007BFF', // Колір кнопки
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '16px',
+    // height: '40px', // Задаємо висоту для точного центрування
+    width: 'auto', // Або конкретна ширина, якщо потрібно
+          }}
+        >
+          {nextCycle.slice(0, 5)}
+        </button>
+      </React.Fragment>
+    )}
+      </div>
     </React.Fragment>
   );
 };
@@ -501,6 +565,8 @@ const renderGetInTouchInput = (userData, setUsers, setState) => {
 };
 
 const RenderCommentInput = ({ userData, setUsers, setState }) => {
+
+  console.log('userData in RenderCommentInput :>> ', userData);
   const textareaRef = useRef(null);
 
   const handleInputChange = e => {
@@ -555,21 +621,7 @@ const renderWriterInput = (userData, setUsers, setState) => {
     let currentWriter = userData.writer || '';
     let updatedCodes = currentWriter?.split(', ').filter(item => item !== code); // Видаляємо, якщо є
     updatedCodes = [code, ...updatedCodes]; // Додаємо код першим
-
-    const newState = {
-      ...userData,
-      writer: updatedCodes.join(', '),
-    };
-
-    setUsers(prev => ({
-      ...prev,
-      [userData.userId]: newState,
-    }));
-
-    // handleChange(setUsers, setState, userData.userId, 'writer');
-
-    // Викликаємо handleSubmit поза setUsers
-    handleSubmit(newState, 'overwrite');
+    handleChange(setUsers, setState, userData.userId, 'writer',  updatedCodes.join(', '), true);
   };
 
   return (
@@ -592,7 +644,7 @@ const renderWriterInput = (userData, setUsers, setState) => {
 
       {/* Нижній рядок: кнопки */}
       <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', width: '100%' }}>
-        {['Ig', 'Ср', 'Срр', 'Ik', 'Т', 'V', 'W', 'ТТ', 'Ін'].map(code => (
+        {['IgF', 'IgTT', 'Ср', 'Срр', 'Ik', 'Т', 'V', 'W', 'ТТ', 'Ін'].map(code => (
           <OrangeBtn
             key={code}
             onClick={() => handleCodeClick(code)}
@@ -967,10 +1019,10 @@ const calculateNextDate = dateString => {
   // Форматуємо результат у форматі DD.MM.YYYY
   const dayFormatted = String(currentDate.getDate()).padStart(2, '0');
   const monthFormatted = String(currentDate.getMonth() + 1).padStart(2, '0');
-  // const yearFormatted = currentDate.getFullYear();
+  const yearFormatted = currentDate.getFullYear();
 
-  // return `${dayFormatted}.${monthFormatted}.${yearFormatted}`;
-  return `${dayFormatted}.${monthFormatted}`;
+  return `${dayFormatted}.${monthFormatted}.${yearFormatted}`;
+  // return `${dayFormatted}.${monthFormatted}`;
 };
 
 const calculateIMT = (weight, height) => {
