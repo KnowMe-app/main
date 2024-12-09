@@ -245,7 +245,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
         {userData.userId}
         {renderGetInTouchInput(userData, setUsers, setState)}
         {(userData.userRole !== 'ag' || userData.userRole !== 'ip' || userData.role !== 'ag') && renderLastCycleInput(userData, setUsers, setState)}
-        { renderDeliveryInfo(userData.ownKids, userData.lastDelivery, userData.csection)}
+        { renderDeliveryInfo(setUsers, setState, userData)}
         {userData.birth && `${userData.birth} - `}
         {userData.birth && renderBirthInfo(userData.birth)}
       </div>
@@ -348,7 +348,9 @@ const renderBirthInfo = birth => {
 //   return null; // Нічого не відображати, якщо немає ваги і зросту
 // };
 
-const renderDeliveryInfo = (ownKids, lastDelivery, csection) => {
+const renderDeliveryInfo = (setUsers, setState, userData) => {
+  const { ownKids, lastDelivery, csection } = userData;
+
   // Функція для парсингу дати з формату дд.мм.рррр
   const parseCsectionDate = dateString => {
     // Перевірка формату дд.мм.рррр
@@ -361,31 +363,48 @@ const renderDeliveryInfo = (ownKids, lastDelivery, csection) => {
     const [day, month, year] = dateString.split('.').map(Number);
 
     // Перевірка на коректність дати
-    const isValidDate = (d, m, y) => d > 0 && d <= 31 && m > 0 && m <= 12 && y > 0 && !isNaN(new Date(y, m - 1, d).getTime());
+    const isValidDate = (d, m, y) =>
+      d > 0 &&
+      d <= 31 &&
+      m > 0 &&
+      m <= 12 &&
+      y > 0 &&
+      !isNaN(new Date(y, m - 1, d).getTime());
 
     if (!isValidDate(day, month, year)) {
       return null; // Повертаємо null, якщо дата некоректна
     }
 
-    return dateString; // Повертаємо коректний об'єкт Date
+    return dateString;
   };
 
   // Використовуємо `csection` як дату останніх пологів, якщо `lastDelivery` не задано
   const effectiveLastDelivery = lastDelivery || (csection && parseCsectionDate(csection));
-  const monthsAgo = effectiveLastDelivery ? calculateMonthsAgo(effectiveLastDelivery) : null;
-  const whenGetInTouch = effectiveLastDelivery
 
-    // Форматування дати у формат "дд.мм.рррр"
-    const formatDate = (date) =>
-      date
-        ? date
-            .toLocaleDateString('uk-UA', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric',
-            })
-            .replace(/\//g, '.')
-        : null;
+  // Додаємо перевірку перед викликом `split`
+  let deliveryDate = null;
+  if (effectiveLastDelivery && /^\d{2}\.\d{2}\.\d{4}$/.test(effectiveLastDelivery)) {
+    const [day, month, year] = effectiveLastDelivery.split('.').map(Number);
+    deliveryDate = new Date(year, month - 1, day); // JavaScript місяці починаються з 0
+  }
+
+  const monthsAgo = effectiveLastDelivery ? calculateMonthsAgo(effectiveLastDelivery) : null;
+
+  const whenGetInTouch = deliveryDate
+    ? new Date(deliveryDate.getFullYear(), deliveryDate.getMonth() + 18, deliveryDate.getDate())
+    : null;
+
+  // Форматування дати у формат "дд.мм.рррр"
+  const formatDate = date =>
+    date
+      ? date
+          .toLocaleDateString('uk-UA', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          })
+          .replace(/\//g, '.')
+      : null;
 
   if (!ownKids && monthsAgo === null && !csection) return null;
 
@@ -403,45 +422,41 @@ const renderDeliveryInfo = (ownKids, lastDelivery, csection) => {
 
   if (ownKids) parts.push(`всього ${ownKids},`);
 
-
-
-  // if (csection) parts.push(`кс ${csection}`);
-  // Якщо csection не потрібно показувати, закоментуйте цей рядок або видаліть його.
+  // Повертаємо результат
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: '5px' }}>
-    {parts.map((part, index) => (
-      <span key={`part-${index}`} style={{ whiteSpace: 'nowrap' }}>
-        {part}
-      </span>
-    ))}
-    {csection && (
-      <button
-        key="csection"
-        onClick={() => alert(`C-section: ${formatDate(whenGetInTouch)}`)
-        // handleChange(setUsers, setState, userData.userId, 'writer',  updatedCodes.join(', '), true)
-      }
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          backgroundColor: '#28A745',
-          color: 'white',
-          border: 'none',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          fontSize: '16px',
-          // height: '40px',
-          padding: '0 10px',
-        }}
-      >
-        кс {csection}
-      </button>
-    )}
-  </div>
+      {parts.map((part, index) => (
+        <span key={`part-${index}`} style={{ whiteSpace: 'nowrap' }}>
+          {part}
+        </span>
+      ))}
+      {csection && (
+        <button
+          key="csection"
+          onClick={() => {
+            // alert(`C-section: ${formatDate(whenGetInTouch)}`);
+            handleChange(setUsers, setState, userData.userId, 'getInTouch', formatDate(whenGetInTouch), true);
+          }}
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: '#28A745',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '16px',
+            padding: '0 10px',
+          }}
+        >
+          кс {csection}
+        </button>
+      )}
+    </div>
   );
-
-  // return <div >{parts.join(' ')}</div>;
 };
+
 
 const renderLastCycleInput = (userData, setUsers, setState) => {
 
@@ -483,18 +498,31 @@ const renderLastCycleInput = (userData, setUsers, setState) => {
           onClick={() => 
             handleChange(setUsers, setState, userData.userId, 'getInTouch', nextCycle, true)} // Замість alert додайте потрібну логіку
           style={{
-            // padding: '5px 10px',
-            display: 'flex', // Використовуємо flexbox
-    justifyContent: 'center', // Центруємо текст горизонтально
-    alignItems: 'center', // Центруємо текст вертикально
+    //         padding: '5px 10px',
+    //         display: 'flex', // Використовуємо flexbox
+    // justifyContent: 'center', // Центруємо текст горизонтально
+    // alignItems: 'center', // Центруємо текст вертикально
     // backgroundColor: '#007BFF', // Колір кнопки
+    // color: 'white',
+    // border: 'none',
+    // borderRadius: '4px',
+    // cursor: 'pointer',
+    // fontSize: '16px',
+    // // height: '40px', // Задаємо висоту для точного центрування
+    // width: 'auto', // Або конкретна ширина, якщо потрібно
+
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#007BFF',
     color: 'white',
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '16px',
-    // height: '40px', // Задаємо висоту для точного центрування
-    width: 'auto', // Або конкретна ширина, якщо потрібно
+    padding: '0 10px',
+
+
           }}
         >
           {nextCycle.slice(0, 5)}
@@ -553,7 +581,7 @@ const renderGetInTouchInput = (userData, setUsers, setState) => {
           textAlign: 'left',
         }}
       />
-
+      <ActionButton label="3д" days={3} onClick={handleAddDays} />
       <ActionButton label="7д" days={7} onClick={handleAddDays} />
       <ActionButton label="1м" days={30} onClick={handleAddDays} />
       <ActionButton label="6м" days={180} onClick={handleAddDays} />
