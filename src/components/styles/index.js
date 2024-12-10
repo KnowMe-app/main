@@ -178,15 +178,15 @@ export const coloredCard = (index) => {
       ? gradients[exactIndex]
       : gradients[randomIndex],
     width: '100%',
-    margin: index !== undefined
+    // margin: index !== undefined
+    // ? '5px'
+    // : 0,
+    marginTop: index !== undefined
     ? '10px'
     : 0,
-    marginTop: index !== undefined
-    ? '20px'
-    : 0,
     marginBottom: index !== undefined
-    ? 0
-    : '20px',
+    ? '20px'
+    : '10px'
   };
 };
 
@@ -246,4 +246,19 @@ export const StyledLabel = styled.label`
   &:active {
     transform: scale(0.98); /* Легкий ефект при натисканні */
   }
+`;
+
+export const AttentionDiv = styled.div`
+  justify-content: center;
+  align-items: center;
+  background-color: #28A745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 16px;
+  padding: 0 5px;
+  display: inline-flex;
+  text-align: center;
+  /* vertical-align: middle; */
 `;

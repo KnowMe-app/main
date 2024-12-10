@@ -7,7 +7,7 @@ import {
 } from './config';
 import { formatDateAndFormula, formatDateToDisplay, formatDateToServer } from './inputValidations';
 import { makeUploadedInfo } from './makeUploadedInfo';
-import { coloredCard, OrangeBtn } from './styles';
+import { AttentionDiv, coloredCard, OrangeBtn } from './styles';
 
 const handleChange = (setUsers, setState, userId, key, value, click) => {
   const newValue = key === 'getInTouch' || key === 'lastCycle' ? formatDateAndFormula(value) : value;
@@ -82,11 +82,12 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
     // Обробка імені та прізвища
     const names = Array.isArray(user.name) ? user.name : [user.name];
     const surnames = Array.isArray(user.surname) ? user.surname : [user.surname];
+    const fathersnames = Array.isArray(user.fathersname) ? user.fathersname : [user.fathersname];
 
-    const fullName = `${names.join(' ').trim()} ${surnames.join(' ').trim()}`;
+    const fullName = `${surnames.join(' ').trim()} ${names.join(' ').trim()} ${fathersnames.join(' ').trim()}`;
     if (fullName.trim()) {
-      contactVCard += `FN;CHARSET=UTF-8:${fullName.trim()}\r\n`;
-      contactVCard += `N;CHARSET=UTF-8:УК СМ ${names.join(' ').trim()} ${surnames.join(' ').trim()};;;\r\n`;
+      contactVCard += `FN;CHARSET=UTF-8:УК СМ ${fullName.trim()}\r\n`;
+      contactVCard += `N;CHARSET=UTF-8:УК СМ ${fullName.trim()};;;;\r\n`;
     }
 
     // Обробка телефонів
@@ -123,13 +124,13 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
     });
 
     // Обробка дат народження
-    const births = Array.isArray(user.birth) ? user.birth : [user.birth];
-    births.forEach(birth => {
-      if (birth) {
-        const [day, month, year] = birth.split('.');
-        contactVCard += `BDAY:${year}-${month}-${day}\r\n`; // Формат YYYY-MM-DD
-      }
-    });
+    // const births = Array.isArray(user.birth) ? user.birth : [user.birth];
+    // births.forEach(birth => {
+    //   if (birth) {
+    //     const [day, month, year] = birth.split('.');
+    //     contactVCard += `BDAY:${year}-${month}-${day}\r\n`; // Формат YYYY-MM-DD
+    //   }
+    // });
 
     // Обробка соціальних мереж
     const socialLinks = {
@@ -137,42 +138,60 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
       Instagram: Array.isArray(user.instagram) ? user.instagram : [user.instagram],
       TikTok: Array.isArray(user.tiktok) ? user.tiktok : [user.tiktok],
       Facebook: Array.isArray(user.facebook) ? user.facebook : [user.facebook],
+      OtherLink: Array.isArray(user.otherLink) ? user.otherLink : [user.otherLink],
     };
+
+    // Object.entries(socialLinks).forEach(([label, links]) => {
+    //   links.forEach(link => {
+    //     if (link) {
+    //       contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:https://${label.toLowerCase()}.com/${link}\r\n`;
+    //     }
+    //   });
+    // });
 
     Object.entries(socialLinks).forEach(([label, links]) => {
       links.forEach(link => {
         if (link) {
-          contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:https://${label.toLowerCase()}.com/${link}\r\n`;
+          if (label === "OtherLink") {
+            // Обробка для повноцінного лінка
+            contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:${link}\r\n`;
+          } else {
+            // Обробка для інших соціальних мереж
+            contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:https://${label.toLowerCase()}.com/${link}\r\n`;
+          }
         }
       });
     });
 
     // Додаткові поля для NOTE
     const additionalInfo = {
-      Reward: user.reward || '',
+      Birth: user.birth || '',
+      Marriage: user.maritalStatus || '',
+      // Role: user.userRole || '',
+      // Reward: user.reward || '',
       Height: user.height || '',
       Weight: user.weight || '',
-      'Body Type': user.bodyType || '',
-      'Clothing Size': user.clothingSize || '',
-      'Shoe Size': user.shoeSize || '',
-      'Eye Color': user.eyeColor || '',
-      'Hair Color': user.hairColor || '',
-      'Hair Structure': user.hairStructure || '',
-      'Face Shape': user.faceShape || '',
-      'Lips Shape': user.lipsShape || '',
-      'Nose Shape': user.noseShape || '',
-      Chin: user.chin || '',
-      'Blood Type': user.blood || '',
-      'Own Kids': user.ownKids || '',
-      'Last Delivery': user.lastDelivery || '',
-      'Last Login': user.lastLogin || '',
-      'Last Action': user.lastAction || '',
-      Education: user.education || '',
-      'Marital Status': user.maritalStatus || '',
-      'Are Terms Confirmed': user.areTermsConfirmed || '',
-      Language: user.language || '',
-      Experience: user.experience || '',
-      Race: user.race || '',
+      // 'Body Type': user.bodyType || '',
+      // 'Clothing Size': user.clothingSize || '',
+      // 'Shoe Size': user.shoeSize || '',
+      // 'Eye Color': user.eyeColor || '',
+      // 'Hair Color': user.hairColor || '',
+      // 'Hair Structure': user.hairStructure || '',
+      // 'Face Shape': user.faceShape || '',
+      // 'Lips Shape': user.lipsShape || '',
+      // 'Nose Shape': user.noseShape || '',
+      // Chin: user.chin || '',
+      Blood: user.blood || '',
+      Deliveries: user.ownKids || '',
+      Last_Delivery: user.lastDelivery || '',
+      // 'Last Login': user.lastLogin || '',
+      // 'Last Action': user.lastAction || '',
+      // Education: user.education || '',
+      Csection: user.csection || '',
+      // 'Are Terms Confirmed': user.areTermsConfirmed || '',
+      // Language: user.language || '',
+      // Experience: user.experience || '',
+      // Race: user.race || '',
     };
 
     const description = Object.entries(additionalInfo)
@@ -193,7 +212,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
     const url = window.URL.createObjectURL(vCardBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${names[0]?.trim() || 'user'}_${surnames[0]?.trim() || 'data'}.vcf`;
+    link.download = `УК СМ ${fullName.trim()}.vcf`;
     link.click();
 
     console.log('Generated vCard:', contactVCard);
@@ -206,15 +225,17 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
       style={{
         ...styles.removeButton,
         backgroundColor: 'green',
+        // top: '10px',
+        // right: '60px',
         top: '10px',
-        right: '60px',
+        right: '10px',
       }}
       onClick={e => {
         e.stopPropagation(); // Запобігаємо активації кліку картки
         exportContacts(userData);
       }}
     >
-      export
+      save
     </button>
   );
 
@@ -270,13 +291,14 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
             (() => {
               const parts = [];
               if (userData.maritalStatus) parts.push(renderMaritalStatus(userData.maritalStatus));
-              if (userData.blood) parts.push(userData.blood);
+              if (userData.blood) parts.push(renderBlood(userData.blood));
               if (userData.height) parts.push(userData.height);
               if (userData.height && userData.weight) parts.push('/');
               if (userData.weight) parts.push(`${userData.weight} - `);
               if (userData.weight && userData.height) parts.push(`${calculateIMT(userData.weight, userData.height)}`);
               // if (userData.birth) parts.push(`${userData.birth},`);
-              return parts.join(' ');
+              // return parts.join(' ');
+              return parts.map((part, index) => <React.Fragment key={index}>{part} </React.Fragment>);
             })()
           }
         </div>
@@ -330,6 +352,27 @@ const renderBirthInfo = birth => {
   const age = calculateAge(birth);
 
   return age !== null ? <span>{age}р</span> : null;
+};
+
+const renderBlood = (blood) => {
+console.log('blood :>> ', blood);
+
+  return (
+      <AttentionDiv 
+          style={{
+              // padding: '1px 6px',
+              
+              // color: 'white',
+              // border: 'none',
+              // borderRadius: '5px',
+              // display: 'inline-block',
+              // fontSize: '14px',
+              backgroundColor: 'orange',
+          }}
+      >
+          РК {blood}
+      </AttentionDiv >
+  );
 };
 
 // const renderIMT = (weight, height,) => {
@@ -1165,8 +1208,122 @@ export const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoMod
     </button>
   );
 
+  const exportContacts = (users) => {
+    // Беремо перших 5 користувачів
+    const firstFiveUsers = Object.entries(users)
+    // .slice(0, 2);
+  
+    // Формуємо vCard для всіх контактів
+    let contactVCard = '';
+  
+    firstFiveUsers.forEach(([userId, user]) => {
+      contactVCard += `BEGIN:VCARD\r\nVERSION:3.0\r\n`;
+  
+      // Обробка імені, прізвища та по-батькові
+      const names = user.name ? [user.name] : [];
+      const surnames = user.surname ? [user.surname] : [];
+      const fathersnames = user.fathersname ? [user.fathersname] : [];
+  
+      const fullName = `${surnames.join(' ').trim()} ${names.join(' ').trim()} ${fathersnames.join(' ').trim()}`;
+      if (fullName.trim()) {
+        contactVCard += `FN;CHARSET=UTF-8:УК СМ ${fullName.trim()}\r\n`;
+        contactVCard += `N;CHARSET=UTF-8:УК СМ ${fullName.trim()};;;\r\n`;
+      }
+  
+      // Обробка телефонів
+      const phones = Array.isArray(user.phone) ? user.phone : user.phone ? [user.phone] : [];
+      phones.forEach(phone => {
+        if (phone) {
+          contactVCard += `TEL;TYPE=CELL:+${String(phone).trim()}\r\n`;
+        }
+      });
+  
+      // Обробка email
+      const emails = Array.isArray(user.email) ? user.email : user.email ? [user.email] : [];
+      emails.forEach(email => {
+        if (email) {
+          contactVCard += `EMAIL;CHARSET=UTF-8:${email.trim()}\r\n`;
+        }
+      });
+  
+      // Обробка соціальних мереж
+      const socialLinks = {
+        Telegram: user.telegram ? [user.telegram] : [],
+        Instagram: user.instagram ? [user.instagram] : [],
+        TikTok: user.tiktok ? [user.tiktok] : [],
+        Facebook: user.facebook ? [user.facebook] : [],
+        VK: user.vk ? [user.vk] : [], // Додаємо VK
+        OtherLink: user.otherLink ? [user.otherLink] : [],
+      };
+  
+      Object.entries(socialLinks).forEach(([label, links]) => {
+        links.forEach(link => {
+          if (link) {
+            if (label === "OtherLink") {
+              contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:${link}\r\n`;
+            } else {
+              contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:https://${label.toLowerCase()}.com/${link}\r\n`;
+            }
+          }
+        });
+      });
+  
+      // Додаткові поля для NOTE
+      const additionalInfo = {
+        Birth: user.birth || '',
+        Marriage: user.maritalStatus || '',
+        Height: user.height || '',
+        Weight: user.weight || '',
+        Blood: user.blood || '',
+        Deliveries: user.ownKids || '',
+        Last_Delivery: user.lastDelivery || '',
+        Csection: user.csection || '',
+      };
+  
+      const description = Object.entries(additionalInfo)
+        .filter(([, value]) => value)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(', '); // Для багаторядкового тексту в NOTE
+  
+      if (description) {
+        contactVCard += `NOTE;CHARSET=UTF-8:${description}\r\n`;
+      }
+  
+      contactVCard += `END:VCARD\r\n`;
+    });
+  
+    // Створюємо Blob із усіма контактами
+    const vCardBlob = new Blob([contactVCard], { type: 'text/vcard;charset=utf-8' });
+  
+    // Завантаження файлу
+    const url = window.URL.createObjectURL(vCardBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `contacts.vcf`;
+    link.click();
+  
+    console.log('Generated vCard:', contactVCard);
+  
+    window.URL.revokeObjectURL(url);
+  };
+  
+
   return (
     <div style={styles.container}>
+        <OrangeBtn
+        style={{
+          // margin: '10px',
+          // padding: '10px',
+          // backgroundColor: '#28a745',
+          // color: 'white',
+          // border: 'none',
+          // borderRadius: '5px',
+          // cursor: 'pointer',
+        }}
+        onClick={()=>{exportContacts(users)}}
+      >
+        Export Users
+      </OrangeBtn>
       {Object.entries(users).map(([userId, userData], index) => (
         <div
           key={userId}
@@ -1223,7 +1380,7 @@ const styles = {
     // left: '100%', // Центруємо по горизонталі
     // transform: 'translateX(-50%)', // Центруємо кнопку
     // marginLeft: 'auto',
-    padding: '5px 10px',
+    padding: '3px 6px',
     backgroundColor: 'orange',
     color: 'white',
     border: 'none',
@@ -1231,8 +1388,9 @@ const styles = {
     cursor: 'pointer',
     // left: '100%',
     position: 'absolute',
-    top: '10px', // Відступ від верхнього краю
-    right: '10px', // Відступ зліва
+    top: '73px',
+        right: '10px',
+
     zIndex: 999,
   },
 };

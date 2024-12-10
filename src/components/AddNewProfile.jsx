@@ -38,7 +38,7 @@ const Container = styled.div`
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 10px;
+  padding: 5px;
   background-color: #f5f5f5;
 
   @media (max-width: 768px) {
@@ -53,7 +53,7 @@ const Container = styled.div`
 
 const InnerContainer = styled.div`
   max-width: 450px;
-  width: 90%;
+  width: 97%;
   background-color: #f0f0f0;
   padding: 20px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
@@ -126,7 +126,7 @@ const InputField = styled.input`
     if (fieldName === 'phone') return '20px';
     if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok') return '25px';
     if (fieldName === 'facebook') return /^\d+$/.test(value) ? '20px' : '25px';
-    if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' ? '23px' : '10px';
+    // if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' ? '23px' : '10px';
     return '10px'; // Значення за замовчуванням
   }};
   max-width: 100%;
@@ -149,7 +149,7 @@ const Hint = styled.label`
   padding-left: ${({ fieldName, isActive }) => {
     if (fieldName === 'phone') return '20px';
     if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram' || fieldName === 'tiktok') return '25px';
-    if (fieldName === 'vk') return '23px';
+    // if (fieldName === 'vk') return '23px';
     return '10px'; // Значення за замовчуванням
   }};
   /* left: 30px; */
@@ -255,7 +255,7 @@ const InputFieldContainer = styled.div`
       if (fieldName === 'phone') return "'+'";
       if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok') return "'@'";
       if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
-      if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' || value === undefined ? "'id'" : "''";
+      // if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' || value === undefined ? "'id'" : "''";
       return "''";
     }};
     position: absolute;
@@ -645,6 +645,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (id) {
       const result = { [platform]: id };
       console.log(`${platform} ID:`, id);
+
+      console.log('objeresultct!!!!! :>> ', result);
   
       setSearchKeyValuePair(result); // Задаємо ключ пошуку
       const res = await fetchNewUsersCollectionInRTDB(result); // Пошук у базі
@@ -852,7 +854,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
 
       // Правило 3: Витягування id за допомогою регулярного виразу
-      const pattern = /(?:\bId\s*:?\s*:?\s*)(\w+)/i;
+      // const pattern = /(?:\bId\s*:?\s*:?\s*)(\w+)/i; 
+      const pattern = /(?:\bId\s*[:\s]+\s*)(\w+)/i; // додав обов"язкову двокрапку після id
       const match = input.match(pattern);
 
       // Якщо знайдено username в рядку

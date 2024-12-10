@@ -25,6 +25,8 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const database = getDatabase(app);
 
+const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'name', 'surname' ];
+
 export const getUrlofUploadedAvatar = async (photo, userId) => {
   const compressedPhoto = await compressPhoto(photo, 50); // Стиснення фото до 50 кБ
   const file = await getFileBlob(compressedPhoto); // Перетворюємо стиснене фото на об'єкт Blob
@@ -278,8 +280,8 @@ const addUserToResults = async (userId, users) => {
     console.log('users44444 :>> ', users);
 };
 
-const searchBySearchId = async (prefixes, modifiedSearchValue, uniqueUserIds, users) => {
-  const searchPromises = prefixes.flatMap(prefix => {
+const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
+  const searchPromises = keysToCheck.flatMap(prefix => {
     const searchKeys = [
       `${prefix}_${modifiedSearchValue.toLowerCase()}`,
       ...(modifiedSearchValue.startsWith('0') ? [`${prefix}_38${modifiedSearchValue.toLowerCase()}`] : []),
@@ -320,8 +322,9 @@ console.log('searchBySearchId :>> ',);
   await Promise.all(searchPromises);
 };
 
-const searchByPrefixes = async (prefixes, searchValue, uniqueUserIds, users) => {
-  for (const prefix of prefixes) {
+const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
+console.log('searchValue :>> ', searchValue);
+  for (const prefix of keysToCheck) {
     const queryByPrefix = query(
       ref2(database, 'newUsers'),
       orderByChild(prefix),
@@ -341,7 +344,11 @@ const searchByPrefixes = async (prefixes, searchValue, uniqueUserIds, users) => 
           !uniqueUserIds.has(userId)
         ) {
           uniqueUserIds.add(userId);
-          users.push({ userId, ...userData });
+          users[userId] = {
+            userId,
+            ...userData,
+          };
+          // users.push({ userId, ...userData });
         }
       });
     }
@@ -350,15 +357,14 @@ const searchByPrefixes = async (prefixes, searchValue, uniqueUserIds, users) => 
 
 export const fetchNewUsersCollectionInRTDB = async searchedValue => {
   const { searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
-  const prefixes = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk'];
   const users = {};
   const uniqueUserIds = new Set();
 
   // console.log('modifiedSearchValue3333333333333 :>> ', modifiedSearchValue);
 
   try {
-    await searchBySearchId(prefixes, modifiedSearchValue, uniqueUserIds, users);
-    await searchByPrefixes(prefixes, searchValue, uniqueUserIds, users);
+    await searchBySearchId(modifiedSearchValue, uniqueUserIds, users);
+    await searchByPrefixes(searchValue, uniqueUserIds, users);
     await searchUserByPartialUserId(searchValue, users);
 
     // if (users.length === 1) {
@@ -382,10 +388,10 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
           return users;
         }
 
-    const userFromUsers = await searchUserByPartialUserId(searchValue, users);
-    if (userFromUsers) {
-      return userFromUsers;
-    }
+    // const userFromUsers = await searchUserByPartialUserId(searchValue, users);
+    // if (userFromUsers) {
+    //   return userFromUsers;
+    // }
 
     console.log('Користувача не знайдено.');
     return {};
@@ -521,9 +527,6 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
     const userRefRTDB = ref2(database, `newUsers/${userId}`);
     const snapshot = await get(userRefRTDB);
     const currentUserData = snapshot.exists() ? snapshot.val() : {};
-
-    // Список ключів для обробки
-    const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk'];
 
     // Перебір ключів та їх обробка
     for (const key of keysToCheck) {
@@ -715,7 +718,7 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
 };
 
 export const createSearchIdsInCollection = async collection => {
-  const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk'];
+  
   const ref = ref2(database, collection);
 
   const [newUsersSnapshot] = await Promise.all([get(ref)]);
@@ -739,7 +742,7 @@ export const createSearchIdsInCollection = async collection => {
               if (item && typeof item === 'string') {
                 let cleanedValue = item.toString().trim(); // Видаляємо зайві пробіли
 
-                if (key === 'phone') {
+                if (key === 'phone' || key === 'name'|| key === 'surname') {
                   cleanedValue = cleanedValue.replace(/\s+/g, ''); // Видалення пробілів
                 }
 
@@ -757,7 +760,7 @@ export const createSearchIdsInCollection = async collection => {
             let cleanedValue = value.toString(); // Перетворюємо і цифри і букви в рядок, щоб працювало toLowerCase
 
             // Якщо ключ 'phone', видаляємо всі пробіли
-            if (key === 'phone') {
+            if (key === 'phone' || key === 'name'|| key === 'surname') {
               cleanedValue = value.replace(/\s+/g, '');
             }
             // Якщо ключ 'telegram', кодуємо рядок
@@ -830,8 +833,9 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
 
 // Фільтр за роллю користувача
 const filterByUserRole = value => {
-  const excludedRoles = ['ag', 'ip']; // Ролі, які потрібно виключити
-  return !excludedRoles.includes(value.userRole);
+  const excludedRoles = ['ag', 'ip', 'Конкурент', 'Агент']; // Ролі, які потрібно виключити
+  return !excludedRoles.includes(value.userRole) && !excludedRoles.includes(value.role);
+  // return !excludedRoles.includes(value.userRole);
 };
 
 // Фільтр за групою крові
@@ -1094,70 +1098,6 @@ export const fetchPaginatedNewUsers = async lastKey => {
     };
   }
 };
-
-///////////////////////////ПРАЦЮЄ лише з newUsers
-// export const fetchPaginatedNewUsers = async (lastKey) => {
-//   const db = getDatabase();
-//   const newUsersRef = ref2(db, 'newUsers');
-//   const targetUserId = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
-
-//   try {
-//     // Формуємо запит до newUsers
-//     let newUsersQuery = query(newUsersRef, orderByKey(), limitToFirst(10 + 1));
-
-//     if (lastKey) {
-//       newUsersQuery = query(newUsersRef, orderByKey(), startAfter(lastKey), limitToFirst(10 + 1));
-//     }
-
-//     // Отримуємо дані з newUsers
-//     const newUsersSnapshot = await get(newUsersQuery);
-
-//     if (!newUsersSnapshot.exists()) {
-//       return {
-//         users: {},
-//         lastKey: null,
-//         hasMore: false,
-//       };
-//     }
-
-//     const newUsersData = newUsersSnapshot.val();
-
-//     // Перетворюємо дані в масив [userId, userData]
-//     let sortedUsers = Object.entries(newUsersData);
-
-//     // Виділяємо targetUser і ставимо його першим
-//     sortedUsers = sortedUsers.filter(([key]) => key !== targetUserId); // Видаляємо targetUser з масиву
-//     const targetUser = Object.entries(newUsersData).find(([key]) => key === targetUserId);
-
-//     if (targetUser) {
-//       sortedUsers.unshift(targetUser); // Додаємо targetUser на початок
-//     }
-
-//     // Визначаємо останній ключ для пагінації
-//     const lastUserKey = sortedUsers.length > 0 ? sortedUsers[sortedUsers.length - 1][0] : null;
-
-//     // Перевіряємо, чи є ще дані
-//     const hasMoreNewUsers = Object.keys(newUsersData).length > 10;
-
-//     // Обмежуємо результати до 10 записів
-//     const paginatedData = Object.fromEntries(sortedUsers.slice(0, 10));
-
-//     console.log('paginatedData', paginatedData);
-
-//     return {
-//       users: paginatedData,
-//       lastKey: lastUserKey,
-//       hasMore: hasMoreNewUsers,
-//     };
-//   } catch (error) {
-//     console.error('Error fetching paginated data:', error);
-//     return {
-//       users: {},
-//       lastKey: null,
-//       hasMore: false,
-//     };
-//   }
-// };
 
 export const fetchListOfUsers = async () => {
   const db = getDatabase();
