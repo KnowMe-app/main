@@ -86,8 +86,8 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
 
     const fullName = `${surnames.join(' ').trim()} ${names.join(' ').trim()} ${fathersnames.join(' ').trim()}`;
     if (fullName.trim()) {
-      contactVCard += `FN;CHARSET=UTF-8:УК СМ ${fullName.trim()}\r\n`;
-      contactVCard += `N;CHARSET=UTF-8:УК СМ ${fullName.trim()};;;;\r\n`;
+      contactVCard += `FN;CHARSET=UTF-8:СМДО ${fullName.trim()}\r\n`;
+      contactVCard += `N;CHARSET=UTF-8:СМДО ${fullName.trim()};;;;\r\n`;
     }
 
     // Обробка телефонів
@@ -212,7 +212,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
     const url = window.URL.createObjectURL(vCardBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `УК СМ ${fullName.trim()}.vcf`;
+    link.download = `СМДО ${fullName.trim()}.vcf`;
     link.click();
 
     console.log('Generated vCard:', contactVCard);
@@ -263,6 +263,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
       {renderDeleteButton(userData.userId)}
       {renderExportButton(userData)}
       <div>
+        {userData.isDuplicate&&'ПОВТОР!!!!!!!!! '}
         {userData.userId}
         {renderGetInTouchInput(userData, setUsers, setState)}
         {(userData.userRole !== 'ag' || userData.userRole !== 'ip' || userData.role !== 'ag') && renderLastCycleInput(userData, setUsers, setState)}
@@ -1226,8 +1227,8 @@ export const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoMod
   
       const fullName = `${surnames.join(' ').trim()} ${names.join(' ').trim()} ${fathersnames.join(' ').trim()}`;
       if (fullName.trim()) {
-        contactVCard += `FN;CHARSET=UTF-8:УК СМ ${fullName.trim()}\r\n`;
-        contactVCard += `N;CHARSET=UTF-8:УК СМ ${fullName.trim()};;;\r\n`;
+        contactVCard += `FN;CHARSET=UTF-8:СМДО ${fullName.trim()}\r\n`;
+        contactVCard += `N;CHARSET=UTF-8:СМДО ${fullName.trim()};;;\r\n`;
       }
   
       // Обробка телефонів

@@ -254,7 +254,7 @@ const searchUserByPartialUserId = async (userId, users) => {
 
 
 
-const addUserToResults = async (userId, users) => {
+const addUserToResults = async (userId, users, userIdOrArray = null) => {
   const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));
   const userFromNewUsers = userSnapshotInNewUsers.exists() ? userSnapshotInNewUsers.val() : {};
 
@@ -275,9 +275,8 @@ const addUserToResults = async (userId, users) => {
       userId,
       ...userFromNewUsers,
       ...userFromUsers,
-    };
-
-    console.log('users44444 :>> ', users);
+      ...(userIdOrArray ? { duplicate: userIdOrArray } : {}), // Додаємо ключ duplicate, якщо userIdOrArray не null
+  };
 };
 
 const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
@@ -304,7 +303,7 @@ console.log('searchBySearchId :>> ',);
               console.log('userId33333333333333 :>> ', userId);
               if (!uniqueUserIds.has(userId)) {
                 uniqueUserIds.add(userId);
-                await addUserToResults(userId, users);
+                await addUserToResults(userId, users, userIdOrArray);
               }
             }
           } else {
@@ -1082,6 +1081,89 @@ export const fetchPaginatedNewUsers = async lastKey => {
       return acc;
     }, {});
 
+    // перевірка на дублікати працює проте тягне багато ресурсів, довго видає результат
+    // const processSearchKeys = async (searchKeys, userId, setDuplicate) => {
+    //   for (const searchKey of searchKeys) {
+    //     try {
+    //       const searchIdSnapshot = await get(
+    //         query(ref2(database, `newUsers/searchId`), orderByKey(), startAt(encodeKey(searchKey)), endAt(`${encodeKey(searchKey)}\uf8ff`))
+    //       );
+    
+    //       if (searchIdSnapshot.exists()) {
+    //         const matchingKeys = searchIdSnapshot.val();
+    
+    //         for (const [, userIdOrArray] of Object.entries(matchingKeys)) {
+    //           if (Array.isArray(userIdOrArray)) {
+    //             if (userIdOrArray.includes(userId)) {
+    //               setDuplicate(userIdOrArray);
+    //               return; // Завершуємо обробку, якщо знайдено дублікат
+    //             }
+    //           } else if (userIdOrArray === userId) {
+    //             // setDuplicate(true);
+    //             return; // Завершуємо обробку, якщо знайдено дублікат
+    //           }
+    //         }
+    //       }
+    //     } catch (error) {
+    //       console.error(`Error processing searchKey: ${searchKey}`, error);
+    //     }
+    //   }
+    // };
+    
+    // const finalUsers = await userIds.reduce(async (accPromise, userId) => {
+    //   const acc = await accPromise;
+    //   const newUserData = paginatedUsers[userId];
+    //   const userDataFromUsers = usersData[userId] || {};
+    
+    //   let isDuplicate = false;
+    //   const setDuplicate = value => {
+    //     isDuplicate = value;
+    //   };
+    
+    //   for (const key of keysToCheck) {
+    //     if (key === 'name' || key === 'surname') {
+    //       continue;
+    //     }
+    
+    //     const valueToCheck = newUserData[key] || userDataFromUsers[key];
+    
+    //     if (valueToCheck) {
+    //       if (typeof valueToCheck === 'string') {
+    //         const searchKeys = [
+    //           `${key}_${valueToCheck.toLowerCase()}`,
+    //           ...(valueToCheck.startsWith('0') ? [`${key}_38${valueToCheck.toLowerCase()}`] : []),
+    //           ...(valueToCheck.startsWith('+') ? [`${key}_${valueToCheck.slice(1).toLowerCase()}`] : []),
+    //         ];
+    
+    //         console.log('searchKeys :>> ', searchKeys);
+    //         await processSearchKeys(searchKeys, userId, setDuplicate);
+    //       } else if (typeof valueToCheck === 'number') {
+    //         const valueAsString = valueToCheck.toString();
+    //         const searchKeys = [`${key}_${valueAsString}`];
+    //         console.log('searchKeys (number) :>> ', searchKeys);
+    //         await processSearchKeys(searchKeys, userId, setDuplicate);
+    //       } else if (Array.isArray(valueToCheck)) {
+    //         for (const item of valueToCheck) {
+    //           if (typeof item === 'string' || typeof item === 'number') {
+    //             const valueAsString = item.toString().toLowerCase();
+    //             const searchKeys = [`${key}_${valueAsString}`];
+    //             console.log('searchKeys (array item) :>> ', searchKeys);
+    //             await processSearchKeys(searchKeys, userId, setDuplicate);
+    //           } else {
+    //             console.warn('Unsupported array item type:', { key, item });
+    //           }
+    //         }
+    //       } else {
+    //         console.warn('Unsupported valueToCheck type:', { key, valueToCheck, type: typeof valueToCheck });
+    //       }
+    //     }
+    //     if (isDuplicate) break;
+    //   }
+    
+    //   acc[userId] = { ...newUserData, ...userDataFromUsers, isDuplicate };
+    //   return acc;
+    // }, Promise.resolve({}));
+
     const nextKey = sortedUsers.length > 20 ? sortedUsers[20][0] : null;
 
     return {
@@ -1218,5 +1300,131 @@ export const removeKeyFromFirebase = async (field, value, userId) => {
     }
   } catch (error) {
     console.error('Помилка видалення ключа з Firebase:', error);
+  }
+};
+
+
+export const loadDuplicateUsers = async () => {
+  const duplicates = []; // Масив для зберігання дублікатів
+
+  try {
+    // Запит для отримання всіх записів з searchId
+    const searchIdSnapshot = await get(ref2(database, 'newUsers/searchId'));
+
+    if (searchIdSnapshot.exists()) {
+      const searchIdData = searchIdSnapshot.val();
+
+      // Проходимо через всі ключі в searchId
+      for (const [searchKey, userIdOrArray] of Object.entries(searchIdData)) {
+        if (searchKey.startsWith('name') || searchKey.startsWith('surname')) {
+          continue; // Пропускаємо ключі, які починаються на "name" або "surname"
+        }
+
+        if (Array.isArray(userIdOrArray)) {
+          console.log('Duplicate found in searchId:', { searchKey, userIdOrArray });
+
+          // Якщо ключ - масив, додаємо всі userId до списку дублікатів
+          duplicates.push(...userIdOrArray);
+        }
+      }
+
+      console.log('All duplicates (with repeats):', duplicates);
+
+      // Отримуємо перші 20 userId, включаючи повтори
+      const first20Duplicates = duplicates.slice(0, 10);
+      console.log('First 20 duplicates (with repeats):', first20Duplicates);
+
+      // Отримуємо дані по кожному userId
+// Отримуємо дані по кожному userId
+const mergedUsers = {}; // Об'єкт для збереження об'єднаних користувачів
+for (const userId of first20Duplicates) {
+  try {
+    let mergedData = { userId }; // Початковий об'єкт з userId
+
+    // Пошук користувача спочатку в newUsers
+    const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));
+    if (userSnapshotInNewUsers.exists()) {
+      const userDataInNewUsers = userSnapshotInNewUsers.val();
+      mergedData = {
+        ...mergedData,
+        ...userDataInNewUsers, // Додаємо дані з newUsers
+      };
+    }
+
+    // Пошук користувача в users
+    const userSnapshotInUsers = await get(ref2(database, `users/${userId}`));
+    if (userSnapshotInUsers.exists()) {
+      const userDataInUsers = userSnapshotInUsers.val();
+      mergedData = {
+        ...mergedData,
+        ...userDataInUsers, // Додаємо дані з users
+      };
+    }
+
+    // Зберігаємо об'єднані дані для userId
+    mergedUsers[userId] = mergedData;
+        } catch (error) {
+          console.error(`Error fetching user data for userId: ${userId}`, error);
+        }
+      }
+
+      console.log('Duplicate users:', mergedUsers);
+
+      // Повертаємо перші 20 користувачів
+      return mergedUsers;
+    } else {
+      console.log('No duplicates found in searchId.');
+      return {};
+    }
+  } catch (error) {
+    console.error('Error loading duplicate users:', error);
+    return {};
+  }
+};
+
+export const removeCardAndSearchId = async userId => {
+  const db = getDatabase();
+
+  try {
+    // Отримуємо картку користувача з newUsers
+    const userSnapshot = await get(ref2(db, `newUsers/${userId}`));
+    if (!userSnapshot.exists()) {
+      console.warn(`Користувач не знайдений у newUsers: ${userId}`);
+      return;
+    }
+
+    const userData = userSnapshot.val();
+    console.log(`Дані користувача:`, userData);
+
+    // Перебір ключів для перевірки
+    for (const key of keysToCheck) {
+      const valueToCheck = userData[key];
+
+      if (!valueToCheck) continue; // Пропускаємо, якщо значення відсутнє
+
+      // Якщо значення — рядок
+      if (typeof valueToCheck === 'string') {
+        console.log(`Видалення рядкового значення: ${key} -> ${valueToCheck}`);
+        await updateSearchId(key, valueToCheck, userId, 'remove');
+      }
+
+      // Якщо значення — масив
+      if (Array.isArray(valueToCheck)) {
+        console.log(`Видалення масиву значень для ключа: ${key} -> ${valueToCheck}`);
+        for (const item of valueToCheck) {
+          if (typeof item === 'string' || typeof item === 'number') {
+            await updateSearchId(key, item, userId, 'remove');
+          } else {
+            console.warn(`Пропущено непідтримуване значення в масиві для ключа: ${key}`, item);
+          }
+        }
+      }
+    }
+    // console.warn(`Видаляємо картку користувача з newUsers: ${userId}`);
+    // Видаляємо картку користувача з newUsers
+    await remove(ref2(db, `newUsers/${userId}`));
+    console.log(`Картка користувача видалена з newUsers: ${userId}`);
+  } catch (error) {
+    console.error(`Помилка під час видалення searchId для userId: ${userId}`, error);
   }
 };

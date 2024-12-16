@@ -13,10 +13,12 @@ import {
   removeKeyFromFirebase,
   // fetchListOfUsers,
   makeNewUser,
-  removeSearchId,
+  // removeSearchId,
   // createSearchIdsForAllUsers,
   createSearchIdsInCollection,
   fetchUserById,
+  loadDuplicateUsers,
+  removeCardAndSearchId,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -930,7 +932,8 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     // console.log('state :>> ', state);
     const handleRemoveUser = async () => {
       try {
-        await removeSearchId(state.userId); // Виклик функції для видалення
+        // await removeSearchId(state.userId); // Виклик функції для видалення
+        await removeCardAndSearchId(state.userId); // Виклик функції для видалення
         setUsers(prevUsers => {
           const updatedUsers = { ...prevUsers };
           delete updatedUsers[state.userId]; // Видалення користувача за userId
@@ -985,6 +988,13 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     } else {
       setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
     }
+  };
+
+  const searchDuplicates = async () => {
+    const res = await loadDuplicateUsers();
+    setUsers(prevUsers => ({ ...prevUsers, ...res }));
+    // console.log('res :>> ', res);
+
   };
 
   const makeIndex = async () => {
@@ -1284,6 +1294,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
               {hasMore && <Button onClick={loadMoreUsers}>Load Cards</Button>}
               {hasMore && <Button onClick={makeIndex}>Make index</Button>}
+              {<Button onClick={searchDuplicates}>Duplicates</Button>}
               <ExcelToJson/>
             </div>
             {!userNotFound && <UsersList setShowInfoModal ={setShowInfoModal} users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}
