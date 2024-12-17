@@ -1141,8 +1141,9 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
                               ref={field.name === 'myComment' ? textareaRef : null}
                               inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                               name={`${field.name}-${idx}`}
-                              // value={value || ''}
-                              value={field.name === 'phone' ? formatPhoneNumber(value || '') : value || ''}
+                              value={value || ''}
+                              // value={field.name === 'phone'  ? formatPhoneNumber(value || '') : value || ''}
+                              ///глючить якщо телефон не в правильному форматі
                               onChange={e => {
                                 // const updatedValue = inputUpdateValue(e?.target?.value, field);
                                 field.name === 'myComment' && autoResize(e.target);
