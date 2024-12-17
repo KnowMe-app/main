@@ -19,6 +19,7 @@ import {
   fetchUserById,
   loadDuplicateUsers,
   removeCardAndSearchId,
+  fetchAllUsersFromRTDB,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -33,6 +34,7 @@ import { inputUpdateValue } from './inputUpdatedValue';
 import { formatPhoneNumber } from './inputValidations';
 import {renderTopBlock, UsersList} from './UsersList';
 import ExcelToJson from './ExcelToJson';
+import { saveToContact } from './ExportContact';
 // import { aiHandler } from './aiHandler';
 
 const Container = styled.div`
@@ -990,6 +992,12 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     }
   };
 
+  const saveAllContacts = async () => {
+    const res = await fetchAllUsersFromRTDB();
+    saveToContact(res)
+    
+  };
+
   const searchDuplicates = async () => {
     const res = await loadDuplicateUsers();
     setUsers(prevUsers => ({ ...prevUsers, ...res }));
@@ -998,6 +1006,8 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
   };
 
   const makeIndex = async () => {
+
+    // await new Promise(resolve => setTimeout(resolve, 15000)); // Чекаємо 15 секунд
     await createSearchIdsInCollection('newUsers');
     await createSearchIdsInCollection('users');
 
@@ -1294,7 +1304,8 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
               {hasMore && <Button onClick={loadMoreUsers}>Load Cards</Button>}
               {hasMore && <Button onClick={makeIndex}>Make index</Button>}
-              {<Button onClick={searchDuplicates}>Duplicates</Button>}
+              {<Button onClick={searchDuplicates}>DPL</Button>}
+              <Button onClick={saveAllContacts}> Save All</Button>
               <ExcelToJson/>
             </div>
             {!userNotFound && <UsersList setShowInfoModal ={setShowInfoModal} users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}

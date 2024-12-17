@@ -153,17 +153,6 @@ export const fetchUsersCollectionInRTDB = async () => {
   }
 };
 
-// const decodeEmail = (encodedEmail) => {
-//   return encodedEmail
-//     .replace(/_at_/g, '@')
-//     .replace(/_dot_/g, '.')
-//     .replace(/_hash_/g, '#')
-//     .replace(/_dollar_/g, '$')
-//     .replace(/_slash_/g, '/')
-//     .replace(/_lbracket_/g, '[')
-//     .replace(/_rbracket_/g, ']');
-// };
-
 export const makeNewUser = async searchedValue => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
@@ -716,6 +705,73 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
   }
 };
 
+// export const updateSearchId = async (searchKey, searchValue, userId, action) => {
+//   console.log('searchKey!!!!!!!!! :>> ', searchKey);
+//   console.log('searchValue!!!!!!!!! :>> ', searchValue);
+//   console.log('action!!!!!!!!!!! :>> ', action);
+
+//   if (!searchValue || !searchKey || !userId) {
+//     console.error('Invalid parameters provided:', { searchKey, searchValue, userId });
+//     return;
+//   }
+
+//   const searchIdKey = `${searchKey}_${encodeKey(searchValue)}`;
+//   const searchIdRef = ref2(database, `newUsers/searchId/${searchIdKey}`);
+//   console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
+
+//   try {
+//     await runTransaction(searchIdRef, currentData => {
+//       if (action === 'add') {
+//         if (currentData === null) {
+//           // Ключ ще не існує, ставимо одразу userId
+//           return userId;
+//         } else if (Array.isArray(currentData)) {
+//           // Якщо це масив, перевіряємо чи вже є userId
+//           if (!currentData.includes(userId)) {
+//             currentData.push(userId);
+//           }
+//           return currentData;
+//         } else {
+//           // Якщо це одиничне значення, але не масив
+//           if (currentData !== userId) {
+//             return [currentData, userId];
+//           }
+//           return currentData;
+//         }
+//       } else if (action === 'remove') {
+//         if (currentData === null) {
+//           // Нема чого видаляти
+//           return currentData;
+//         } else if (Array.isArray(currentData)) {
+//           const updatedValue = currentData.filter(id => id !== userId);
+//           if (updatedValue.length === 1) {
+//             return updatedValue[0]; // Залишився один елемент - повертаємо його як одиничне значення
+//           } else if (updatedValue.length === 0) {
+//             return null; // Видаляємо ключ
+//           } else {
+//             return updatedValue; 
+//           }
+//         } else {
+//           // Якщо одиничне значення
+//           if (currentData === userId) {
+//             return null; // Видаляємо ключ
+//           }
+//           return currentData; 
+//         }
+//       } else {
+//         console.error('Unknown action provided:', action);
+//         return currentData;
+//       }
+//     }, {
+//       applyLocally: false // Якщо не потрібне локальне застосування
+//     });
+
+//     console.log(`Операція '${action}' успішно виконана для ключа ${searchIdKey}.`);
+//   } catch (error) {
+//     console.error('Error in updateSearchId with transaction:', error);
+//   }
+// };
+
 export const createSearchIdsInCollection = async collection => {
   
   const ref = ref2(database, collection);
@@ -725,7 +781,8 @@ export const createSearchIdsInCollection = async collection => {
   if (newUsersSnapshot.exists()) {
     const usersData = newUsersSnapshot.val();
     const userIds = Object.keys(usersData);
-    // const userIds = ['AA0041'];
+    console.log('userIds :>> ', userIds);
+    // const userIds = ['AA9834'];
 
     const updatePromises = [];
 
@@ -737,6 +794,7 @@ export const createSearchIdsInCollection = async collection => {
 
           // Якщо value - масив
           if (Array.isArray(value)) {
+            console.log('Array.isArray(value) :>> ', value);
             value.forEach(item => {
               if (item && typeof item === 'string') {
                 let cleanedValue = item.toString().trim(); // Видаляємо зайві пробіли
@@ -760,7 +818,7 @@ export const createSearchIdsInCollection = async collection => {
 
             // Якщо ключ 'phone', видаляємо всі пробіли
             if (key === 'phone' || key === 'name'|| key === 'surname') {
-              cleanedValue = value.replace(/\s+/g, '');
+              cleanedValue = cleanedValue.replace(/\s+/g, '');
             }
             // Якщо ключ 'telegram', кодуємо рядок
             if (key === 'telegram') {
@@ -830,6 +888,50 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
   }
 };
 
+const checkAgeAndBMI = (value) => {
+  if (!value.birth || !value.weight || !value.height) {
+    // Якщо дані відсутні, пропускаємо користувача
+    return true;
+  }
+
+  const birthParts = value.birth.split('.');
+  if (birthParts.length !== 3) {
+    // Формат дати некоректний, пропускаємо користувача
+    return true;
+  }
+
+  const [dayStr, monthStr, yearStr] = birthParts;
+  const day = parseInt(dayStr, 10);
+  const month = parseInt(monthStr, 10);
+  const year = parseInt(yearStr, 10);
+
+  // Перевірка коректності дати
+  if (isNaN(day) || isNaN(month) || isNaN(year) || year < 1900 || year > new Date().getFullYear()) {
+    // Некоректна дата, пропускаємо користувача
+    return true;
+  }
+
+  const currentYear = new Date().getFullYear();
+  const age = currentYear - year;
+
+  const weight = parseFloat(value.weight);
+  const height = parseFloat(value.height);
+
+  if (!weight || !height || weight <= 0 || height <= 0) {
+    // Некоректні дані для ІМТ, пропускаємо
+    return true;
+  }
+
+  const bmi = weight / ((height / 100) ** 2);
+
+  // Перевіряємо умови
+  if (age <= 36 && bmi <= 28) {
+    return true; // Умови по віку та ІМТ виконані
+  } else {
+    return false; // Умови по віку та ІМТ не виконані
+  }
+};
+
 // Фільтр за роллю користувача
 const filterByUserRole = value => {
   const excludedRoles = ['ag', 'ip', 'Конкурент', 'Агент']; // Ролі, які потрібно виключити
@@ -837,11 +939,20 @@ const filterByUserRole = value => {
   // return !excludedRoles.includes(value.userRole);
 };
 
-// Фільтр за групою крові
+// Фільтр за групою крові додано умову для донорів, вік до 36, імт до 28
 const filterByNegativeBloodType = value => {
   if (!value.blood) return true; // Пропускаємо, якщо дані про кров відсутні
   const negativeBloodTypes = ['1-', '2-', '3-', '4-', '-']; // Негативні групи крові
-  return !negativeBloodTypes.includes(value.blood);
+  // return !negativeBloodTypes.includes(value.blood);
+  const hasNegativeBloodType = negativeBloodTypes.includes(value.blood);
+
+  // Якщо група крові негативна, то пропускаємо користувача лише якщо він проходить перевірку віку та ІМТ
+  if (hasNegativeBloodType) {
+    return checkAgeAndBMI(value);
+  }
+
+  return true; // Якщо кров не негативна, пропускаємо без додаткової перевірки
+
 };
 
 // Фільтр за віком і статусом шлюбу (комбінований)
@@ -853,13 +964,32 @@ const filterByAgeAndMaritalStatus = (value, ageLimit = 30, requiredStatuses = ['
   const age = currentYear - birthYear;
 
   // Перевіряємо, чи maritalStatus входить у список потрібних статусів
-  return !(requiredStatuses.includes(value.maritalStatus) && age > ageLimit);
+  // return !(requiredStatuses.includes(value.maritalStatus) && age > ageLimit);
+   // Перевіряємо, чи maritalStatus входить у список потрібних статусів
+   const failsAgeMaritalFilter = requiredStatuses.includes(value.maritalStatus) && age > ageLimit;
+
+   if (!failsAgeMaritalFilter) {
+     // Якщо користувач пройшов базовий фільтр, пропускаємо його.
+     return true;
+   } else {
+     // Якщо користувач не пройшов базовий фільтр, перевіримо вік та ІМТ
+     return checkAgeAndBMI(value);
+   }
 };
 
-// Фільтр за csection
+// Фільтр за csection додано умову для донорів, вік до 36, імт до 28
 const filterByCSection = value => {
   if (!value.csection) return true; // Пропускаємо, якщо дані відсутні
-  return value.csection !== '2' && value.csection !== '3';
+  // return value.csection !== '2' && value.csection !== '3';
+  const c = value.csection.toString();
+
+  // Якщо csection не '2' або '3', повертаємо як раніше
+  if (c !== '2' && c !== '3') return true;
+
+  // Якщо csection = '2' або '3', перевіряємо вік і ІМТ через нову функцію
+  // Якщо checkAgeAndBMI повертає true - користувача пропускаємо
+  // Якщо false - користувача фільтруємо
+  return checkAgeAndBMI(value);
 };
 
 // Основна функція фільтрації
@@ -869,7 +999,7 @@ const filterMain = usersData => {
   const filteredUsers = Object.entries(usersData).filter(([key, value]) => {
     // console.log('value :>> ', value[1]);
     const filters = {
-      filterByKeyCount: Object.keys(value[1]).length >= 10, // Фільтр за кількістю ключів
+      filterByKeyCount: Object.keys(value[1]).length >= 8, // Фільтр за кількістю ключів
       filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value[1], 30, ['Yes', '+']), // Віковий і шлюбний фільтр
       filterByUserRole: filterByUserRole(value[1]), // Фільтр за роллю користувача
       filterByNegativeBloodType: filterByNegativeBloodType(value[1]), // Фільтр за групою крові
@@ -1426,5 +1556,55 @@ export const removeCardAndSearchId = async userId => {
     console.log(`Картка користувача видалена з newUsers: ${userId}`);
   } catch (error) {
     console.error(`Помилка під час видалення searchId для userId: ${userId}`, error);
+  }
+};
+
+export const fetchAllUsersFromRTDB = async () => {
+  try {
+    // Отримуємо дані з двох колекцій
+    const [newUsersSnapshot, usersSnapshot] = await Promise.all([
+      get(ref2(database, 'newUsers')),
+      get(ref2(database, 'users')),
+    ]);
+
+    const newUsersData = newUsersSnapshot.exists() ? newUsersSnapshot.val() : {};
+    const usersData = usersSnapshot.exists() ? usersSnapshot.val() : {};
+
+    const allUserIds = new Set([
+      ...Object.keys(newUsersData),
+      ...Object.keys(usersData),
+    ]);
+
+    // Перетворюємо Set у масив
+    const allUsersArray = Array.from(allUserIds);
+
+    // Об’єднуємо дані та формуємо масив пар [userId, userObject]
+    const mergedUsersArray = allUsersArray.map(userId => {
+      const newUserRaw = newUsersData[userId] || {};
+      // Деструктуризуємо, виключаючи searchId
+      const { searchId, ...newUserDataWithoutSearchId } = newUserRaw; 
+      
+      return [
+        userId,
+        {
+          userId,
+          ...newUserDataWithoutSearchId,
+          ...(usersData[userId] || {}),
+        },
+      ];
+    });
+
+    // Обмежуємо результати першими 3
+    const limitedUsersArray = mergedUsersArray
+    // .slice(0, 40);
+
+    // Перетворюємо назад в об’єкт
+    const limitedUsers = Object.fromEntries(limitedUsersArray);
+
+    console.log('Отримано перших 3 користувачів без поля searchId:', limitedUsers);
+    return limitedUsers;
+  } catch (error) {
+    console.error('Помилка при отриманні даних:', error);
+    return null;
   }
 };
