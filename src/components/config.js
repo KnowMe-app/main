@@ -1433,79 +1433,176 @@ export const removeKeyFromFirebase = async (field, value, userId) => {
   }
 };
 
+// через баг з сьорчАйді вивидить пусту карточку
+// export const loadDuplicateUsers = async () => {
+//   const duplicates = []; // Масив для зберігання дублікатів
 
+//   try {
+//     // Запит для отримання всіх записів з searchId
+//     const searchIdSnapshot = await get(ref2(database, 'newUsers/searchId'));
+
+//     if (searchIdSnapshot.exists()) {
+//       const searchIdData = searchIdSnapshot.val();
+
+//       // Проходимо через всі ключі в searchId
+//       for (const [searchKey, userIdOrArray] of Object.entries(searchIdData)) {
+//         if (searchKey.startsWith('name') || searchKey.startsWith('surname')) {
+//           continue; // Пропускаємо ключі, які починаються на "name" або "surname"
+//         }
+
+//         if (Array.isArray(userIdOrArray)) {
+//           console.log('Duplicate found in searchId:', { searchKey, userIdOrArray });
+
+//           // Якщо ключ - масив, додаємо всі userId до списку дублікатів
+//           duplicates.push(...userIdOrArray);
+//         }
+//       }
+
+//       console.log('All duplicates (with repeats):', duplicates);
+
+//       // Отримуємо перші 20 userId, включаючи повтори
+//       const first20Duplicates = duplicates.slice(0, 20);
+//       console.log('First 20 duplicates (with repeats):', first20Duplicates);
+
+//       // Отримуємо дані по кожному userId
+// // Отримуємо дані по кожному userId
+// const mergedUsers = {}; // Об'єкт для збереження об'єднаних користувачів
+// for (const userId of first20Duplicates) {
+//   try {
+//     let mergedData = { userId }; // Початковий об'єкт з userId
+
+//     // Пошук користувача спочатку в newUsers
+//     const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));
+//     if (userSnapshotInNewUsers.exists()) {
+//       const userDataInNewUsers = userSnapshotInNewUsers.val();
+//       mergedData = {
+//         ...mergedData,
+//         ...userDataInNewUsers, // Додаємо дані з newUsers
+//       };
+//     }
+
+//     // Пошук користувача в users
+//     const userSnapshotInUsers = await get(ref2(database, `users/${userId}`));
+//     if (userSnapshotInUsers.exists()) {
+//       const userDataInUsers = userSnapshotInUsers.val();
+//       mergedData = {
+//         ...mergedData,
+//         ...userDataInUsers, // Додаємо дані з users
+//       };
+//     }
+
+//     // Зберігаємо об'єднані дані для userId
+//     mergedUsers[userId] = mergedData;
+//         } catch (error) {
+//           console.error(`Error fetching user data for userId: ${userId}`, error);
+//         }
+//       }
+
+//       console.log('Duplicate users:', mergedUsers);
+
+//       // Повертаємо перші 20 користувачів
+//       return mergedUsers;
+//     } else {
+//       console.log('No duplicates found in searchId.');
+//       return {};
+//     }
+//   } catch (error) {
+//     console.error('Error loading duplicate users:', error);
+//     return {};
+//   }
+// };
 export const loadDuplicateUsers = async () => {
-  const duplicates = []; // Масив для зберігання дублікатів
-
   try {
-    // Запит для отримання всіх записів з searchId
     const searchIdSnapshot = await get(ref2(database, 'newUsers/searchId'));
 
-    if (searchIdSnapshot.exists()) {
-      const searchIdData = searchIdSnapshot.val();
-
-      // Проходимо через всі ключі в searchId
-      for (const [searchKey, userIdOrArray] of Object.entries(searchIdData)) {
-        if (searchKey.startsWith('name') || searchKey.startsWith('surname')) {
-          continue; // Пропускаємо ключі, які починаються на "name" або "surname"
-        }
-
-        if (Array.isArray(userIdOrArray)) {
-          console.log('Duplicate found in searchId:', { searchKey, userIdOrArray });
-
-          // Якщо ключ - масив, додаємо всі userId до списку дублікатів
-          duplicates.push(...userIdOrArray);
-        }
-      }
-
-      console.log('All duplicates (with repeats):', duplicates);
-
-      // Отримуємо перші 20 userId, включаючи повтори
-      const first20Duplicates = duplicates.slice(0, 10);
-      console.log('First 20 duplicates (with repeats):', first20Duplicates);
-
-      // Отримуємо дані по кожному userId
-// Отримуємо дані по кожному userId
-const mergedUsers = {}; // Об'єкт для збереження об'єднаних користувачів
-for (const userId of first20Duplicates) {
-  try {
-    let mergedData = { userId }; // Початковий об'єкт з userId
-
-    // Пошук користувача спочатку в newUsers
-    const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));
-    if (userSnapshotInNewUsers.exists()) {
-      const userDataInNewUsers = userSnapshotInNewUsers.val();
-      mergedData = {
-        ...mergedData,
-        ...userDataInNewUsers, // Додаємо дані з newUsers
-      };
-    }
-
-    // Пошук користувача в users
-    const userSnapshotInUsers = await get(ref2(database, `users/${userId}`));
-    if (userSnapshotInUsers.exists()) {
-      const userDataInUsers = userSnapshotInUsers.val();
-      mergedData = {
-        ...mergedData,
-        ...userDataInUsers, // Додаємо дані з users
-      };
-    }
-
-    // Зберігаємо об'єднані дані для userId
-    mergedUsers[userId] = mergedData;
-        } catch (error) {
-          console.error(`Error fetching user data for userId: ${userId}`, error);
-        }
-      }
-
-      console.log('Duplicate users:', mergedUsers);
-
-      // Повертаємо перші 20 користувачів
-      return mergedUsers;
-    } else {
+    if (!searchIdSnapshot.exists()) {
       console.log('No duplicates found in searchId.');
       return {};
     }
+
+    const searchIdData = searchIdSnapshot.val();
+
+    const pairs = []; // Масив для зберігання пар (userIdOrArray)
+    for (const [searchKey, userIdOrArray] of Object.entries(searchIdData)) {
+      if (searchKey.startsWith('name') || searchKey.startsWith('surname')) {
+        continue; // Пропускаємо ключі, які починаються на "name" або "surname"
+      }
+
+      if (Array.isArray(userIdOrArray)) {
+        console.log('Duplicate found in searchId:', { searchKey, userIdOrArray });
+        // Зберігаємо пару в масив pairs
+        // Припускаємо, що це завжди пара (2 значення), якщо буває більше — можна додати перевірку.
+        pairs.push(userIdOrArray);
+      }
+    }
+
+    console.log('All pairs of duplicates:', pairs);
+
+    // Отримаємо перші 10 пар
+    const first10Pairs = pairs.slice(0, 10);
+
+    const mergedUsers = {};
+    for (const pair of first10Pairs) {
+      if (pair.length < 2) continue; // Якщо чомусь пара не повна, пропускаємо
+      
+      const [firstUserId, secondUserId] = pair;
+      
+      // Отримуємо дані першого користувача
+      let mergedDataFirst = { userId: firstUserId };
+      const userSnapshotInNewUsersFirst = await get(ref2(database, `newUsers/${firstUserId}`));
+      if (userSnapshotInNewUsersFirst.exists()) {
+        const userDataInNewUsers = userSnapshotInNewUsersFirst.val();
+        mergedDataFirst = {
+          ...mergedDataFirst,
+          ...userDataInNewUsers,
+        };
+      }
+
+      const userSnapshotInUsersFirst = await get(ref2(database, `users/${firstUserId}`));
+      if (userSnapshotInUsersFirst.exists()) {
+        const userDataInUsers = userSnapshotInUsersFirst.val();
+        mergedDataFirst = {
+          ...mergedDataFirst,
+          ...userDataInUsers,
+        };
+      }
+
+      // Отримуємо дані другого користувача
+      let mergedDataSecond = { userId: secondUserId };
+      const userSnapshotInNewUsersSecond = await get(ref2(database, `newUsers/${secondUserId}`));
+      if (userSnapshotInNewUsersSecond.exists()) {
+        const userDataInNewUsers2 = userSnapshotInNewUsersSecond.val();
+        mergedDataSecond = {
+          ...mergedDataSecond,
+          ...userDataInNewUsers2,
+        };
+      }
+
+      const userSnapshotInUsersSecond = await get(ref2(database, `users/${secondUserId}`));
+      if (userSnapshotInUsersSecond.exists()) {
+        const userDataInUsers2 = userSnapshotInUsersSecond.val();
+        mergedDataSecond = {
+          ...mergedDataSecond,
+          ...userDataInUsers2,
+        };
+      }
+
+      // Перевіряємо другого користувача - чи є у нього інші ключі крім userId
+      const keysSecond = Object.keys(mergedDataSecond);
+      if (keysSecond.length <= 1) {
+        // Другий користувач не має даних окрім userId, ігноруємо цю пару
+        console.log(`Ignoring pair [${firstUserId}, ${secondUserId}] because second user is empty`);
+        continue;
+      }
+
+      // Якщо у другого користувача є дані, додаємо обох в mergedUsers
+      mergedUsers[firstUserId] = mergedDataFirst;
+      mergedUsers[secondUserId] = mergedDataSecond;
+    }
+
+    console.log('Duplicate users after filtering empty second user:', mergedUsers);
+
+    return mergedUsers;
   } catch (error) {
     console.error('Error loading duplicate users:', error);
     return {};

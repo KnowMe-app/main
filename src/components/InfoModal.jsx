@@ -75,7 +75,7 @@ const OrangeStrong = styled.strong`
   color: orange;
 `;
 
-export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm }) => {
+export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards }) => {
   const delProfile = (
     <>
       <p>Щоб видалити анкету, відправте запит на пошту</p>
@@ -100,6 +100,11 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
       <>{DelConfirm && <DelConfirm/>}
     </>
   );
+
+  const compareCards = (
+    <>{CompareCards && <CompareCards/>}
+  </>
+);
   
   const dotsMenu = (
     <>{Context && <Context/>}
@@ -160,6 +165,7 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
         {text === 'pickerOptions' && pickerOptions}
         {text === 'dotsMenu' && dotsMenu}
         {text === 'delConfirm' && delConfirm}
+        {text === 'compareCards' && compareCards}
       </ModalContent>
     </ModalOverlay>
   );

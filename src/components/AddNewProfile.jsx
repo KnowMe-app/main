@@ -957,6 +957,18 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     );
   };
 
+  const [compare, setCompare] = useState('');
+  const compareCards = () => {
+  
+    return (
+      <>
+        <p>Порівняти</p>
+        {/* <p>{compare}</p> */}
+        <div dangerouslySetInnerHTML={{ __html: compare }} />
+      </>
+    );
+  };
+
   const [users, setUsers] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
@@ -1000,6 +1012,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
 
   const searchDuplicates = async () => {
     const res = await loadDuplicateUsers();
+    console.log('res :>> ', res);
     setUsers(prevUsers => ({ ...prevUsers, ...res }));
     // console.log('res :>> ', res);
 
@@ -1309,7 +1322,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
               <Button onClick={saveAllContacts}> Save All</Button>
               <ExcelToJson/>
             </div>
-            {!userNotFound && <UsersList setShowInfoModal ={setShowInfoModal} users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}
+            {!userNotFound && <UsersList setCompare ={setCompare} setShowInfoModal ={setShowInfoModal} users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}
             {/* Передача користувачів у UsersList */}
           </div>
         )}
@@ -1323,6 +1336,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
           text={showInfoModal}
           Context={dotsMenu}
           DelConfirm={delConfirm}
+          CompareCards={compareCards}
         />
       )}
     </Container>
