@@ -1539,7 +1539,7 @@ export const loadDuplicateUsers = async () => {
     console.log('All pairs of duplicates:', pairs);
 
     // Отримаємо перші 10 пар
-    const first10Pairs = pairs.slice(0, 20);
+    const first10Pairs = pairs.slice(0, 30);
 
     const mergedUsers = {};
     for (const pair of first10Pairs) {
