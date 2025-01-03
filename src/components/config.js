@@ -1539,7 +1539,7 @@ export const loadDuplicateUsers = async () => {
     console.log('All pairs of duplicates:', pairs);
 
     // Отримаємо перші 10 пар
-    const first10Pairs = pairs.slice(0, 40);
+    const first10Pairs = pairs.slice(0, 60);
 
     const mergedUsers = {};
     for (const pair of first10Pairs) {
@@ -1547,45 +1547,80 @@ export const loadDuplicateUsers = async () => {
       
       const [firstUserId, secondUserId] = pair;
       
-      // Отримуємо дані першого користувача
-      let mergedDataFirst = { userId: firstUserId };
-      const userSnapshotInNewUsersFirst = await get(ref2(database, `newUsers/${firstUserId}`));
-      if (userSnapshotInNewUsersFirst.exists()) {
-        const userDataInNewUsers = userSnapshotInNewUsersFirst.val();
-        mergedDataFirst = {
-          ...mergedDataFirst,
-          ...userDataInNewUsers,
-        };
-      }
+      // // Отримуємо дані першого користувача
+      // let mergedDataFirst = { userId: firstUserId };
+      // const userSnapshotInNewUsersFirst = await get(ref2(database, `newUsers/${firstUserId}`));
+      // if (userSnapshotInNewUsersFirst.exists()) {
+      //   const userDataInNewUsers = userSnapshotInNewUsersFirst.val();
+      //   mergedDataFirst = {
+      //     ...mergedDataFirst,
+      //     ...userDataInNewUsers,
+      //   };
+      // }
 
-      const userSnapshotInUsersFirst = await get(ref2(database, `users/${firstUserId}`));
-      if (userSnapshotInUsersFirst.exists()) {
-        const userDataInUsers = userSnapshotInUsersFirst.val();
-        mergedDataFirst = {
-          ...mergedDataFirst,
-          ...userDataInUsers,
-        };
-      }
+      // const userSnapshotInUsersFirst = await get(ref2(database, `users/${firstUserId}`));
+      // if (userSnapshotInUsersFirst.exists()) {
+      //   const userDataInUsers = userSnapshotInUsersFirst.val();
+      //   mergedDataFirst = {
+      //     ...mergedDataFirst,
+      //     ...userDataInUsers,
+      //   };
+      // }
+
+            // Функція для отримання даних користувача
+            const getUserData = async (userId) => {
+              let mergedData = { userId };
+              const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));
+              if (userSnapshotInNewUsers.exists()) {
+                const userDataInNewUsers = userSnapshotInNewUsers.val();
+                mergedData = {
+                  ...mergedData,
+                  ...userDataInNewUsers,
+                };
+              }
+      
+              const userSnapshotInUsers = await get(ref2(database, `users/${userId}`));
+              if (userSnapshotInUsers.exists()) {
+                const userDataInUsers = userSnapshotInUsers.val();
+                mergedData = {
+                  ...mergedData,
+                  ...userDataInUsers,
+                };
+              }
+      
+              return mergedData;
+            };
 
       // Отримуємо дані другого користувача
-      let mergedDataSecond = { userId: secondUserId };
-      const userSnapshotInNewUsersSecond = await get(ref2(database, `newUsers/${secondUserId}`));
-      if (userSnapshotInNewUsersSecond.exists()) {
-        const userDataInNewUsers2 = userSnapshotInNewUsersSecond.val();
-        mergedDataSecond = {
-          ...mergedDataSecond,
-          ...userDataInNewUsers2,
-        };
-      }
+      // let mergedDataSecond = { userId: secondUserId };
+      // const userSnapshotInNewUsersSecond = await get(ref2(database, `newUsers/${secondUserId}`));
+      // if (userSnapshotInNewUsersSecond.exists()) {
+      //   const userDataInNewUsers2 = userSnapshotInNewUsersSecond.val();
+      //   mergedDataSecond = {
+      //     ...mergedDataSecond,
+      //     ...userDataInNewUsers2,
+      //   };
+      // }
 
-      const userSnapshotInUsersSecond = await get(ref2(database, `users/${secondUserId}`));
-      if (userSnapshotInUsersSecond.exists()) {
-        const userDataInUsers2 = userSnapshotInUsersSecond.val();
-        mergedDataSecond = {
-          ...mergedDataSecond,
-          ...userDataInUsers2,
-        };
-      }
+      // const userSnapshotInUsersSecond = await get(ref2(database, `users/${secondUserId}`));
+      // if (userSnapshotInUsersSecond.exists()) {
+      //   const userDataInUsers2 = userSnapshotInUsersSecond.val();
+      //   mergedDataSecond = {
+      //     ...mergedDataSecond,
+      //     ...userDataInUsers2,
+      //   };
+      // }
+
+            // Отримуємо дані для обох користувачів
+            const mergedDataFirst = await getUserData(firstUserId);
+            const mergedDataSecond = await getUserData(secondUserId);
+
+            // Перевіряємо першого користувача
+            const keysFirst = Object.keys(mergedDataFirst);
+            if (keysFirst.length <= 1) {
+              console.log(`Ignoring pair [${firstUserId}, ${secondUserId}] because first user is empty`);
+              continue;
+            }
 
       // Перевіряємо другого користувача - чи є у нього інші ключі крім userId
       const keysSecond = Object.keys(mergedDataSecond);
