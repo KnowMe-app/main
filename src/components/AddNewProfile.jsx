@@ -31,7 +31,7 @@ import { VerifyEmail } from './VerifyEmail';
 
 import { color, coloredCard } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
-import { formatPhoneNumber } from './inputValidations';
+//import { formatPhoneNumber } from './inputValidations';
 import {renderTopBlock, UsersList} from './UsersList';
 import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
@@ -1014,7 +1014,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     const res = await loadDuplicateUsers();
     console.log('res :>> ', res);
     setUsers(prevUsers => ({ ...prevUsers, ...res }));
-    // console.log('res :>> ', res);
+    // console.log('res!!!!!!!! :>> ', res.length);
 
   };
 
@@ -1034,7 +1034,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     // });
   };
 
-  const priorityOrder = ['birth','name', 'surname', 'fathersname', 'phone', 'facebook', 'instagram', 'telegram', 'tiktok',  'region', 'city', 'height', 'weight', 'blood', 'maritalStatus', 'ownKids', 'csection', 'lastDelivery', 'role'];
+  const priorityOrder = ['birth','name', 'surname', 'fathersname', 'phone', 'facebook', 'instagram', 'telegram', 'tiktok',  'region', 'city', 'height', 'weight', 'blood', 'maritalStatus','csection', 'ownKids', 'lastDelivery', 'role'];
   const additionalFields = Object.keys(state).filter(
     key => !pickerFields.some(field => field.name === key) && key !== 'attitude' && key !== 'whiteList' && key !== 'blackList'
   );
@@ -1198,8 +1198,8 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
                         ref={field.name === 'myComment' ? textareaRef : null}
                         inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                         name={field.name}
-                        // value={state[field.name] || ''}
-                        value={field.name === 'phone' ? formatPhoneNumber(state[field.name] || '') : state[field.name] || ''}
+                        value={state[field.name] || ''}
+                        // value={field.name === 'phone' ? formatPhoneNumber(state[field.name] || '') : state[field.name] || ''}
                         onChange={e => {
                           field.name === 'myComment' && autoResize(e.target);
                           let value = e?.target?.value;
@@ -1310,10 +1310,13 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
         ) : (
           <div>
             {search && users && !userNotFound ? (
-              <p style={{ textAlign: 'center', color: 'black' }}>Знайдено {users.length} користувачів.</p>
+              <p style={{ textAlign: 'center', color: 'black' }}>Знайдено {Object.keys(users).length} користувачів.</p>
             ) : userNotFound ? (
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
-            ) : null}
+            ) : Object.keys(users).length > 1 ? (
+              <p style={{ textAlign: 'center', color: 'black' }}>Знайдено {Object.keys(users).length} користувачів!</p>
+            ) :
+            null}
             <div>
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
               {hasMore && <Button onClick={loadMoreUsers}>Load Cards</Button>}
@@ -1321,6 +1324,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
               {<Button onClick={searchDuplicates}>DPL</Button>}
               <Button onClick={saveAllContacts}> Save All</Button>
               <ExcelToJson/>
+              {/* {users && <div>Знайдено {Object.keys(users).length}</div>} */}
             </div>
             {!userNotFound && <UsersList setCompare ={setCompare} setShowInfoModal ={setShowInfoModal} users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}
             {/* Передача користувачів у UsersList */}

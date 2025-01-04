@@ -1016,7 +1016,8 @@ export const UserCard = ({ userData, setUsers, setShowInfoModal }) => {
 
       return (
         <div key={nestedKey}>
-          <strong>{key}:</strong> {value.toString()}
+          {/* <strong>{key}:</strong> {value.toString()} */}
+          <strong>{key}:</strong> {value != null ? value.toString() : '—'}
         </div>
       );
     });
