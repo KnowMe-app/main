@@ -93,11 +93,20 @@ const processPhones = (phones) => {
                 return null; // Якщо немає жодного валідного значення, не повертати ключ
             }
         
-            if (validLinks.length === 1) {
-                return { [key]: validLinks[0] }; // Якщо одне значення, повернути як ключ-значення
-            }
+               // Спеціальна обробка для VK
+    if (key === 'vk') {
+        const vkIds = validLinks.map(link => {
+            const match = link.match(/vk\.com\/(id\d+|[a-zA-Z0-9_]+)/);
+            return match ? match[1] : link; // Повертаємо ID або залишаємо посилання, якщо ID не знайдено
+        });
+        return vkIds.length === 1 ? { [key]: vkIds[0] } : { [key]: vkIds };
+    }
+
+    // Стандартна обробка
+    return validLinks.length === 1
+        ? { [key]: validLinks[0] } // Якщо одне значення, повернути як ключ-значення
+        : { [key]: validLinks }; // Якщо кілька значень, повернути як масив
         
-            return { [key]: validLinks }; // Якщо кілька значень, повернути як масив
         };
 
         const cleanBilingualFields = (obj, keys) => {
@@ -221,15 +230,6 @@ const processPhones = (phones) => {
         
         };
 
-        const linkConfig = {
-            telegram: [telegram1, telegram2],
-            email: [email1, email2],
-            instagram: [instagram1, instagram2],
-            vk: [vk1, vk2, vk3, vk4],
-            facebook: [facebook1, facebook2],
-            otherLink: [otherLink1, otherLink2, otherLink3, otherLink4],
-        };
-
         const excludedFields = [
             'no1', 'no2', 'no3', 'no4', 'no5', 'no6', 'no7',
             'nameFull', 'facebookMain',
@@ -252,11 +252,11 @@ const processPhones = (phones) => {
                     )
             ),
             ...(processPhones([phone1, phone2, phone3, phone4, phone5]) ? { phone: processPhones([phone1, phone2, phone3, phone4, phone5]) } : {}),
-            ...Object.fromEntries(
-                Object.entries(linkConfig)
-                    .map(([key, links]) => makeLink(key, ...links)) // Проходимося по кожному ключу
-                    .filter((entry) => entry !== null) // Видаляємо null, якщо посилань немає
-            ),
+            // ...Object.fromEntries(
+            //     Object.entries(linkConfig)
+            //         .map(([key, links]) => makeLink(key, links)) // Проходимося по кожному ключу
+            //         .filter((entry) => entry !== null) // Видаляємо null, якщо посилань немає
+            // ),
             ...(cleanBilingualFields(
                 row && typeof row === 'object'
                     ? Object.fromEntries(
@@ -265,6 +265,12 @@ const processPhones = (phones) => {
                     : {}, // Порожній об'єкт, якщо row не є об'єктом
                 bilingualKeys
             ) || {}),
+            ...(makeLink('telegram', telegram1, telegram2) || {}),
+            ...(makeLink('facebook', facebook1, facebook2) || {}),
+            ...(makeLink('instagram', instagram1, instagram2) || {}),
+            ...(makeLink('vk', vk1, vk2, vk3, vk4) || {}),
+            ...(makeLink('email', email1, email2) || {}),
+            ...(makeLink('otherLink', otherLink1, otherLink2, otherLink3, otherLink4) || {}),
             ...(processComments(myComment1, myComment2, myComment3, notes.join('; ')) || {}),
             ...(birth ? { birth: formatDate(birth, 'dd.mm.yyyy') } : {}),
             ...(lastAction ? { lastAction: formatDate(lastAction, 'dd.mm.yyyy') } : {}),
