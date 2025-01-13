@@ -101,7 +101,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
       onClick={e => {
         console.log('delConfirm!!!!!!!!!!! :>> ', userData.userId);
         e.stopPropagation(); // Запобігаємо активації кліку картки
-        setState({ userId:userData.userId });
+        // setState({ userId:userData.userId });
         setShowInfoModal('delConfirm'); // Trigger the modal opening
        
 
@@ -707,6 +707,7 @@ const renderWriterInput = (userData, setUsers, setState) => {
 // };
 
 const renderContacts = (data, parentKey = '') => {
+  console.error('Invalid data !!!!!!!!!!!:', data);
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderContacts:', data);
     return null;
@@ -962,7 +963,9 @@ const calculateIMT = (weight, height) => {
 };
 
 // Компонент для рендерингу кожної картки
-export const UserCard = ({ userData, setUsers, setShowInfoModal, setState }) => {
+export const UserCard = ({ userData, setUsers, setShowInfoModal, 
+  // setState 
+}) => {
   // console.log('userData!!!!! :>> ', userData);
 
   // Ініціалізація локального стану на основі userData
@@ -1028,7 +1031,9 @@ export const UserCard = ({ userData, setUsers, setShowInfoModal, setState }) => 
 
   return (
     <div>
-      {renderTopBlock(userData, setUsers, setShowInfoModal, setState)}
+      {renderTopBlock(userData, setUsers, setShowInfoModal, 
+        // setState
+        )}
       <div id={userData.userId} style={{ display: 'none' }}>
         {renderFields(userData)}
       </div>
