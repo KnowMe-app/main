@@ -128,8 +128,6 @@ export const educationOptions = [
   { placeholder: 'Higher', ukrainian: 'Вища освіта' },
   { placeholder: 'Technical', ukrainian: 'Професійно-технічна освіта' },
   { placeholder: 'Secondary', ukrainian: 'Загальна середня освіта' },
-
-  
 ];
 
 
@@ -139,7 +137,7 @@ export const educationOptions = [
 export const pickerFields = [
 
   { name: 'name', placeholder: 'Ваше ім’я', svg: 'user', ukrainianHint: 'Ім’я' },
-  { name: 'surname', placeholder: 'Ваше призіище', svg: 'user', ukrainianHint: 'Прізвище'},
+  { name: 'surname', placeholder: 'Ваше прізвище', svg: 'user', ukrainianHint: 'Прізвище'},
   { name: 'email', placeholder: 'Електронна пошта', svg: 'mail', ukrainianHint:'E-mail'},
   { name: 'phone', placeholder: '380', svg: 'phone', ukrainianHint:'Номер телефону в форматі +380'},
   { name: 'telegram', placeholder: 'telegram_nickname', svg: 'telegram-plane', ukrainianHint:'Telegram' },
@@ -274,6 +272,12 @@ export const pickerFields = [
 
 ];
 
+export const csectionOptions = [
+  { placeholder: '-', ukrainian: 'Ні' },
+  { placeholder: '1', ukrainian: '1' },
+  { placeholder: '2', ukrainian: '2' },
+];
+
 export const pickerFieldsExtended = [
   { name: 'userId', placeholder: 'userId', svg: 'user', ukrainianHint: 'Id' },
   { name: 'role', placeholder: 'см/до/смдо/агент', svg: 'user', ukrainianHint: 'СМДО?' },
@@ -283,6 +287,8 @@ export const pickerFieldsExtended = [
   { name: 'publish', placeholder: 'false', svg: 'user', ukrainianHint: 'Анкета опублікована' },
   { name: 'fathersname', placeholder: 'По-батькові', svg: 'user', ukrainianHint: 'По-батькові' },
   { name: 'otherLink', placeholder: 'www', svg: 'user', ukrainianHint: 'Лінк' },
+  { name: 'csection', placeholder: '30.01.2020', hint: 'c-section', svg: 'no', width: '33%', ukrainianHint: 'кесарів розтин', options: csectionOptions,},
+
   // { name: 'name', placeholder: 'Ваше ім’я', svg: 'user', ukrainianHint: 'Ім’я' },
   // { name: 'surname', placeholder: 'Ваше призіище', svg: 'user', ukrainianHint: 'Прізвище'},
   // { name: 'email', placeholder: 'Електронна пошта', svg: 'mail', ukrainianHint:'E-mail'},

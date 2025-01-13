@@ -617,9 +617,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   //   }
   // }, [state]);
 
-  // useEffect(() => {
-  //   console.log('state2 :>> ', state);
-  //     }, [state]);
+  useEffect(() => {
+    console.log('state2!!!!!!!!!! :>> ', state);
+      }, [state]);
 
   // useEffect для скидання значень при зміні search
   useEffect(() => {
@@ -644,7 +644,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const processUserSearch = async (platform, parseFunction, inputData) => {
     setUsers({}); // Скидаємо попередній стан користувачів
-    const id = parseFunction(inputData); // Парсимо ID
+    const id = parseFunction(inputData.trim()); // Парсимо ID
   
     if (id) {
       const result = { [platform]: id };
@@ -690,47 +690,44 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // Перевіряємо, чи є параметр id в URL (наприклад, profile.php?id=100018808396245)
       const idParamRegex = /[?&]id=(\d+)/;
       const matchIdParam = url.match(idParamRegex);
-
-      // Якщо знаходимо id в параметрах URL
+    
       if (matchIdParam && matchIdParam[1]) {
         return matchIdParam[1]; // Повертаємо ID
       }
-
-      // Регулярний вираз для витягування ID з URL Facebook
-      const facebookRegex = /facebook\.com\/(?:.*\/)?(\d+)/;
-      const match = url.match(facebookRegex);
-
-      // Якщо знайдено ID у URL
-      if (match && match[1]) {
-        return match[1]; // Повертаємо ID
+    
+      // Регулярний вираз для числового ID у URL (тільки числа)
+      const facebookIdRegex = /facebook\.com\/(?:.*\/)?(\d+)$/;
+      const matchId = url.match(facebookIdRegex);
+    
+      if (matchId && matchId[1]) {
+        return matchId[1]; // Повертаємо числовий ID
       }
-
-      // Якщо URL - це 15 цифр або 14 цифр
-      const numberRegex = /^\d{14,15}$/; // Перевірка на 14-15 цифр
+    
+      // Регулярний вираз для текстових ніків (усе, крім символів `/`, `?`, `#`)
+      const facebookUsernameRegex = /facebook\.com\/([\w.-]+)(?:[/?#]|$)/;
+      const matchUsername = url.match(facebookUsernameRegex);
+    
+      if (matchUsername && matchUsername[1]) {
+        return matchUsername[1]; // Повертаємо текстовий нік
+      }
+    
+      // Перевірка на 14-15 цифр
+      const numberRegex = /^\d{14,15}$/;
       if (numberRegex.test(url)) {
         return url; // Якщо це 14-15 цифр, повертаємо це значення
       }
-
-      // Регулярний вираз для витягування ніка з URL Facebook
-      const facebookUsernameRegex = /facebook\.com\/([^/?]+)/;
-      const matchUsername = url.match(facebookUsernameRegex);
-
-      // Якщо знайдено нік у URL
-      if (matchUsername && matchUsername[1]) {
-        return matchUsername[1]; // Повертаємо нік
-      }
-
-      // Регулярний вираз для обробки форматів на кшталт "facebook monkey", "fb monkey", тощо
-      const pattern = /(?:facebook|fb|фейсбук|фб)\s*:?\s*(\w+)/i;
-      const matchTextFormat = url.match(pattern);
-
-      // Якщо знайдено ID або нік у текстовому форматі
+    
+      // Формат "facebook: username", "fb username"
+      const textFormatRegex = /(?:facebook|fb|фейсбук|фб)\s*:?\s*(\w+)/i;
+      const matchTextFormat = url.match(textFormatRegex);
+    
       if (matchTextFormat && matchTextFormat[1]) {
         return matchTextFormat[1]; // Повертаємо ID або нік
       }
-
-      return null; // Повертаємо null, якщо ID не знайдено
+    
+      return null; // Повертаємо null, якщо нічого не знайдено
     };
+    
 
     const parseInstagramId = input => {
       // Перевіряємо, чи це URL Instagram
@@ -1235,7 +1232,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
 
                 {state[field.name] &&
                   (Array.isArray(state[field.name]) ? state[field.name].length === 0 || state[field.name][state[field.name].length - 1] !== '' : true) &&
-                  ((Array.isArray(field.options) && field.options.length !== 2) || !Array.isArray(field.options)) && (
+                  ((Array.isArray(field.options) && (field.options.length !== 2 && field.options.length !== 3)) || !Array.isArray(field.options)) && (
                     <Button
                       style={{
                         display: Array.isArray(state[field.name]) ? 'block' : 'inline-block',
@@ -1257,53 +1254,101 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
                     </Button>
                   )}
 
-                {Array.isArray(field.options) && field.options.length === 2 && (
-                  <ButtonGroup>
-                    <Button
-                      onClick={() => {
-                        setState(prevState => {
-                          const newState = {
-                            ...prevState,
-                            [field.name]: 'Yes',
-                          };
-                          handleSubmit(newState, 'overwrite');
-                          return newState;
-                        });
-                      }}
-                    >
-                      Так
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setState(prevState => {
-                          const newState = {
-                            ...prevState,
-                            [field.name]: 'No',
-                          };
-                          handleSubmit(newState, 'overwrite');
-                          return newState;
-                        });
-                      }}
-                    >
-                      Ні
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setState(prevState => {
-                          const newState = {
-                            ...prevState,
-                            [field.name]: 'Other',
-                          };
-                          handleSubmit(newState, 'overwrite');
-                          handleBlur(field.name);
-                          return newState;
-                        });
-                      }}
-                    >
-                      Інше
-                    </Button>
-                  </ButtonGroup>
-                )}
+{Array.isArray(field.options) ? (
+  field.options.length === 2 ? (
+    <ButtonGroup>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: 'Yes',
+            };
+            handleSubmit(newState, 'overwrite');
+            return newState;
+          });
+        }}
+      >
+        Так
+      </Button>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: 'No',
+            };
+            handleSubmit(newState, 'overwrite');
+            return newState;
+          });
+        }}
+      >
+        Ні
+      </Button>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: 'Other',
+            };
+            handleSubmit(newState, 'overwrite');
+            handleBlur(field.name);
+            return newState;
+          });
+        }}
+      >
+        Інше
+      </Button>
+    </ButtonGroup>
+  ) : field.options.length === 3 ? (
+    <ButtonGroup>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: '-',
+            };
+            handleSubmit(newState, 'overwrite');
+            return newState;
+          });
+        }}
+      >
+        Ні
+      </Button>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: '1',
+            };
+            handleSubmit(newState, 'overwrite');
+            return newState;
+          });
+        }}
+      >
+        1
+      </Button>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: '2',
+            };
+            handleSubmit(newState, 'overwrite');
+            handleBlur(field.name);
+            return newState;
+          });
+        }}
+      >
+        2
+      </Button>
+    </ButtonGroup>
+  ) : null
+) : null}
               </PickerContainer>
             );
           })}</>

@@ -25,7 +25,7 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const database = getDatabase(app);
 
-const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'name', 'surname' ];
+const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'name', 'surname', 'lastAction' , 'getInTouch' ];
 
 export const getUrlofUploadedAvatar = async (photo, userId) => {
   const compressedPhoto = await compressPhoto(photo, 50); // Стиснення фото до 50 кБ
@@ -528,7 +528,7 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
       }
 
       if (uploadedInfo[key] !== undefined) {
-        console.log(`${key} uploadedInfo[key] :>> `, uploadedInfo[key]);
+        // console.log(`${key} uploadedInfo[key] :>> `, uploadedInfo[key]);
 
         // Формуємо currentValues
         const currentValues = Array.isArray(currentUserData?.[key])
@@ -548,8 +548,8 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
           ? [uploadedInfo[key]].filter(Boolean)
           : [];
 
-        console.log(`${key} currentValues :>> `, currentValues);
-        console.log(`${key} newValues :>> `, newValues);
+        // console.log(`${key} currentValues :>> `, currentValues);
+        // console.log(`${key} newValues :>> `, newValues);
 
         // Видаляємо значення, яких більше немає у новому масиві
         for (const value of currentValues) {

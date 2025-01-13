@@ -40,11 +40,11 @@ const handleSubmit = async userData => {
   const commonFields = ['lastAction'];
   const dublicateFields = ['weight', 'height'];
 
-  console.log('userData В handleSubmit', userData);
+  // console.log('userData В handleSubmit', userData);
   //  const { existingData } = await fetchUserData(userData.userId);
-  console.log('userData.userId :>> ', userData.userId);
+  // console.log('userData.userId :>> ', userData.userId);
   const { existingData } = await fetchUserById(userData.userId);
-  console.log('1111 :>> ');
+  // console.log('1111 :>> ');
   const uploadedInfo = makeUploadedInfo(existingData, userData);
 
 // Оновлюємо поле lastAction поточною датою у форматі рррр-мм-дд
@@ -64,13 +64,12 @@ uploadedInfo.lastAction = formattedDate;
     Object.entries(uploadedInfo).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts, ...commonFields, ...dublicateFields].includes(key))
   );
 
-  console.log('cleanedStateForNewUsers!!!!!!!!!!!!!!', cleanedStateForNewUsers);
+  // console.log('cleanedStateForNewUsers!!!!!!!!!!!!!!', cleanedStateForNewUsers);
 
   await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
 };
 
 export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) => {
-  // console.log('userData в renderTopBlock:', userData );
   if (!userData) return null;
 
   const renderExportButton = userData => (
@@ -92,7 +91,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
     </button>
   );
 
-  const renderDeleteButton = userId => (
+  const renderDeleteButton = userData => (
     <button
       style={{
         ...styles.removeButton,
@@ -100,9 +99,13 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
         top: '42px',
       }}
       onClick={e => {
-        console.log('delConfirm :>> ');
+        console.log('delConfirm!!!!!!!!!!! :>> ', userData.userId);
         e.stopPropagation(); // Запобігаємо активації кліку картки
+        setState({ userId:userData.userId });
         setShowInfoModal('delConfirm'); // Trigger the modal opening
+       
+
+    
 
         // handleRemoveUser(userId);
       }}
@@ -113,7 +116,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
 
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
-      {renderDeleteButton(userData.userId)}
+      {renderDeleteButton(userData)}
       {renderExportButton(userData)}
       <div>
         {userData.isDuplicate&&'ПОВТОР!!!!!!!!! '}
@@ -209,7 +212,7 @@ const renderBirthInfo = birth => {
 };
 
 const renderBlood = (blood) => {
-console.log('blood :>> ', blood);
+// console.log('blood :>> ', blood);
 
   return (
       <AttentionDiv 
@@ -491,7 +494,7 @@ const renderGetInTouchInput = (userData, setUsers, setState) => {
 
 const RenderCommentInput = ({ userData, setUsers, setState }) => {
 
-  console.log('userData in RenderCommentInput :>> ', userData);
+  // console.log('userData in RenderCommentInput :>> ', userData);
   const textareaRef = useRef(null);
 
   const handleInputChange = e => {
@@ -959,7 +962,7 @@ const calculateIMT = (weight, height) => {
 };
 
 // Компонент для рендерингу кожної картки
-export const UserCard = ({ userData, setUsers, setShowInfoModal }) => {
+export const UserCard = ({ userData, setUsers, setShowInfoModal, setState }) => {
   // console.log('userData!!!!! :>> ', userData);
 
   // Ініціалізація локального стану на основі userData
@@ -1025,7 +1028,7 @@ export const UserCard = ({ userData, setUsers, setShowInfoModal }) => {
 
   return (
     <div>
-      {renderTopBlock(userData, setUsers, setShowInfoModal)}
+      {renderTopBlock(userData, setUsers, setShowInfoModal, setState)}
       <div id={userData.userId} style={{ display: 'none' }}>
         {renderFields(userData)}
       </div>
@@ -1192,7 +1195,7 @@ export const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoMod
           {renderInfoButton(index, users)}
           {/* {renderExportButton(userData)} */}
 
-          <UserCard setShowInfoModal={setShowInfoModal} userData={userData} setUsers={setUsers} />
+          <UserCard setShowInfoModal={setShowInfoModal} userData={userData} setUsers={setUsers} setState={setState} />
         </div>
       ))}
     </div>
