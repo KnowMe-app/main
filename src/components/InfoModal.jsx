@@ -76,6 +76,7 @@ const OrangeStrong = styled.strong`
 `;
 
 export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards }) => {
+
   const delProfile = (
     <>
       <p>Щоб видалити анкету, відправте запит на пошту</p>
@@ -97,9 +98,9 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
   );
 
   const delConfirm = (
-      <>{DelConfirm && <DelConfirm/>}
-    </>
-  );
+    <>{DelConfirm && <DelConfirm/>}
+  </>
+);
 
   const compareCards = (
     <>{CompareCards && <CompareCards/>}

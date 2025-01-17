@@ -350,6 +350,7 @@ const Button = styled.button`
   }
 `;
 
+
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // const initialState = {
   //   name: '',
@@ -1122,11 +1123,11 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
             )}
           </InputFieldContainer>
         </InputDiv>
-
+)
         {search && state.userId ? (
           <>
 <div style={{...coloredCard()}}>
-    {renderTopBlock(state, setState, setShowInfoModal, true, )}
+    {renderTopBlock(state, setState, setShowInfoModal, true)}
   </div>
           
           {sortedFieldsToRender

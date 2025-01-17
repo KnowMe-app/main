@@ -15,9 +15,28 @@ const handleChange = (setUsers, setState, userId, key, value, click) => {
 
   if (setState) {
     setUsers(prevState => {
-      const newState = { ...prevState, [key]: newValue };
-      click && handleSubmit(newState);
-      return newState;
+      // console.log('prevState!!!!!!!!! :>> ', prevState);
+      // Зроблено в основному для видалення юзера серед масиву карточок, а не з середини
+
+      const isMultiple = typeof prevState === 'object' && !Array.isArray(prevState) && Object.keys(prevState).every(id => typeof prevState[id] === 'object');
+      
+      if (!isMultiple){
+        const newState = { ...prevState, [key]: newValue };
+        click && handleSubmit(newState);
+        return newState;
+      }
+      else {
+        const newState = {
+          ...prevState,
+          [userId]: {
+            ...prevState[userId],
+            [key]: newValue,
+          },
+        };
+        click && handleSubmit(newState[userId], 'overwrite');
+        return newState;
+      }
+    
     });
   } else {
     setUsers(prevState => {
@@ -69,7 +88,8 @@ uploadedInfo.lastAction = formattedDate;
   await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
 };
 
-export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) => {
+export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState, isFromListOfUsers) => {
+
   if (!userData) return null;
 
   const renderExportButton = userData => (
@@ -101,13 +121,10 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState) =
       onClick={e => {
         console.log('delConfirm!!!!!!!!!!! :>> ', userData.userId);
         e.stopPropagation(); // Запобігаємо активації кліку картки
-        // setState({ userId:userData.userId });
+        if (isFromListOfUsers==='isFromListOfUsers'){
+          setState({userId:userData.userId })
+        }  
         setShowInfoModal('delConfirm'); // Trigger the modal opening
-       
-
-    
-
-        // handleRemoveUser(userId);
       }}
     >
       del
@@ -707,7 +724,7 @@ const renderWriterInput = (userData, setUsers, setState) => {
 // };
 
 const renderContacts = (data, parentKey = '') => {
-  console.error('Invalid data !!!!!!!!!!!:', data);
+  // console.error('Invalid data !!!!!!!!!!!:', data);
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderContacts:', data);
     return null;
@@ -964,7 +981,7 @@ const calculateIMT = (weight, height) => {
 
 // Компонент для рендерингу кожної картки
 export const UserCard = ({ userData, setUsers, setShowInfoModal, 
-  // setState 
+  setState 
 }) => {
   // console.log('userData!!!!! :>> ', userData);
 
@@ -1032,7 +1049,7 @@ export const UserCard = ({ userData, setUsers, setShowInfoModal,
   return (
     <div>
       {renderTopBlock(userData, setUsers, setShowInfoModal, 
-        // setState
+        setState, 'isFromListOfUsers'
         )}
       <div id={userData.userId} style={{ display: 'none' }}>
         {renderFields(userData)}
