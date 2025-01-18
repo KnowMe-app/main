@@ -25,7 +25,9 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const database = getDatabase(app);
 
-const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction' , 'getInTouch' ];
+const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 
+  // 'name', 'surname', 'lastAction' , 'getInTouch' 
+];
 
 export const getUrlofUploadedAvatar = async (photo, userId) => {
   const compressedPhoto = await compressPhoto(photo, 50); // Стиснення фото до 50 кБ
