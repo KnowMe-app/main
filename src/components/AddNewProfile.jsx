@@ -36,7 +36,7 @@ import {UsersList} from './UsersList';
 import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
-import { UploadJson } from './topBtns/uploadJSON';
+import { UploadJson } from './topBtns/uploadNewJSON';
 // import { aiHandler } from './aiHandler';
 
 const Container = styled.div`
