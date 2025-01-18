@@ -36,6 +36,7 @@ import {UsersList} from './UsersList';
 import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
+import { UploadJson } from './topBtns/uploadJSON';
 // import { aiHandler } from './aiHandler';
 
 const Container = styled.div`
@@ -1371,6 +1372,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
               {<Button onClick={searchDuplicates}>DPL</Button>}
               <Button onClick={saveAllContacts}> Save All</Button>
               <ExcelToJson/>
+              <UploadJson/>
               {/* {users && <div>Знайдено {Object.keys(users).length}</div>} */}
             </div>
             {!userNotFound && <UsersList setCompare ={setCompare} setShowInfoModal ={setShowInfoModal} users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}
