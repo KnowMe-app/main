@@ -1,4 +1,4 @@
-import styled from "styled-components";
+import styled from 'styled-components';
 
 const width = 200;
 const height = 500;
@@ -13,14 +13,29 @@ console.log('height :>> ', height);
 console.log('width :>> ', width);
 
 export let resize;
-if (height > 1200) {resize = 1.6} 
-else if (height > 840 && width > 410) { resize = 1.1; } // Galaxy note 20
-else if (height > 830 && width > 410) { resize = 0.78; } // UserPhone, 0.85 завеликі літери на профайл скрін
-else if (height > 780 && width > 390) { resize = 0.85; } // Pixel 4 + Xiaomi Redmi Note 8(791*392) 0.95 не гарно 
-else if (height > 725 && width > 359) { resize = 0.85; } // S21
-else if (width <= 390) { resize = 0.8; } // вузький телефон
-else if (height < 600) {resize = 0.8;} // середній розмір
-else {resize = 1;} // звичайний розмір
+if (height > 1200) {
+  resize = 1.6;
+} else if (height > 840 && width > 410) {
+  resize = 1.1;
+} // Galaxy note 20
+else if (height > 830 && width > 410) {
+  resize = 0.78;
+} // UserPhone, 0.85 завеликі літери на профайл скрін
+else if (height > 780 && width > 390) {
+  resize = 0.85;
+} // Pixel 4 + Xiaomi Redmi Note 8(791*392) 0.95 не гарно
+else if (height > 725 && width > 359) {
+  resize = 0.85;
+} // S21
+else if (width <= 390) {
+  resize = 0.8;
+} // вузький телефон
+else if (height < 600) {
+  resize = 0.8;
+} // середній розмір
+else {
+  resize = 1;
+} // звичайний розмір
 
 console.log('resize :>> ', resize);
 
@@ -30,9 +45,9 @@ export const deviceHeight = height;
 export const statusBarHeight = 10;
 
 export const padding = {
-    min:8,
-    horizontal: 10,
-}
+  min: 8,
+  horizontal: 10,
+};
 
 export const color = {
   accent: '#FF6C00',
@@ -46,7 +61,7 @@ export const color = {
   gray: '#E8E8E8',
   gray2: '#c2bebe',
   gray3: 'gray',
-  gray4:'#b3b3b3',
+  gray4: '#b3b3b3',
   // black: '#212121',
   black: 'rgba(33, 33, 33, 0.8)',
   blue: '#1B4371',
@@ -152,41 +167,31 @@ export const svgBtn = {
   justifyContent: 'center',
 };
 export const btnText = {
-  fontSize:fontSize.regular, 
-  color: color.oppositeAccent, 
+  fontSize: fontSize.regular,
+  color: color.oppositeAccent,
   textAlign: 'center',
 };
 
 export const rowWrap = {
-  flexDirection: 'row', 
-  flexWrap: 'wrap' 
+  flexDirection: 'row',
+  flexWrap: 'wrap',
 };
 
-const gradients = [
-  'linear-gradient(to right, #fc466b, #3f5efb)',
-  'linear-gradient(to right, #6a11cb, #2575fc)',
-  'linear-gradient(to right, #ff7e5f, #feb47b)'
-];
-  
-export const coloredCard = (index) => {
+const gradients = ['linear-gradient(to right, #fc466b, #3f5efb)', 'linear-gradient(to right, #6a11cb, #2575fc)', 'linear-gradient(to right, #ff7e5f, #feb47b)'];
+
+export const coloredCard = index => {
   const exactIndex = index % gradients.length;
   const randomIndex = Math.floor(Math.random() * gradients.length);
 
   return {
     position: 'relative',
-    background: index !== undefined
-      ? gradients[exactIndex]
-      : gradients[randomIndex],
+    background: index !== undefined ? gradients[exactIndex] : gradients[randomIndex],
     width: '100%',
     // margin: index !== undefined
     // ? '5px'
     // : 0,
-    marginTop: index !== undefined
-    ? '10px'
-    : 0,
-    marginBottom: index !== undefined
-    ? '20px'
-    : '10px'
+    marginTop: index !== undefined ? '10px' : 0,
+    marginBottom: index !== undefined ? '20px' : '10px',
   };
 };
 
@@ -214,7 +219,6 @@ export const OrangeBtn = styled.button`
   }
 `;
 
-
 // Стилізація прихованого інпута
 export const HiddenInput = styled.input`
   display: none;
@@ -222,7 +226,7 @@ export const HiddenInput = styled.input`
 
 // Кастомна стилізація для лейбла
 export const StyledLabel = styled.label`
- display: inline-flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 29px; /* Встановіть ширину, яка визначатиме розмір кнопки */
@@ -251,7 +255,7 @@ export const StyledLabel = styled.label`
 export const AttentionDiv = styled.div`
   justify-content: center;
   align-items: center;
-  background-color: #28A745;
+  background-color: #28a745;
   color: white;
   border: none;
   border-radius: 4px;
@@ -261,4 +265,42 @@ export const AttentionDiv = styled.div`
   display: inline-flex;
   text-align: center;
   /* vertical-align: middle; */
+`;
+
+export const CardMenuBtn = styled.button`
+  border: none;
+  background-color: ${color.accent5};
+  color: white;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  flex: 0 1 auto;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  padding: 3px 6px;
+  position: absolute;
+  top: 73px;
+  right: 10px;
+  z-index: 999;
+
+  &:hover {
+    background-color: ${color.accent}; /* Колір кнопки при наведенні */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Тінь при наведенні */
+  }
+
+  &:active {
+    transform: scale(0.98); /* Легкий ефект при натисканні */
+  }
+`;
+
+export const UnderlinedInput = styled.input`
+  border: none;
+  border-bottom: 1px solid white;
+  background-color: transparent;
+  outline: none;
+  font-size: 16px;
+  padding: 0;
+  color: white;
+  margin-left: 5;
+  width: 9.5ch; // Точний розмір для дати формату 01.01.2022
+  text-align: center; // Вирівнювання тексту
 `;

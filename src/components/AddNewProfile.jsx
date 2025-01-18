@@ -32,9 +32,10 @@ import { VerifyEmail } from './VerifyEmail';
 import { color, coloredCard } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
 //import { formatPhoneNumber } from './inputValidations';
-import {renderTopBlock, UsersList} from './UsersList';
+import {UsersList} from './UsersList';
 import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
+import { renderTopBlock } from './smallCard/renderTopBlock';
 // import { aiHandler } from './aiHandler';
 
 const Container = styled.div`
