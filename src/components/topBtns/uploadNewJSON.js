@@ -41,11 +41,19 @@ export const UploadJson = () => {
   };
 
   const processPhoneNumber = (phone) => {
-    let cleanedPhone = phone.replace(/\+/g, "");
-    if (cleanedPhone.startsWith("0")) {
-      cleanedPhone = "38" + cleanedPhone;
+    const processSinglePhone = (singlePhone) => {
+      let cleanedPhone = singlePhone.replace(/\+/g, "");
+      if (cleanedPhone.startsWith("0")) {
+        cleanedPhone = "38" + cleanedPhone;
+      }
+      return cleanedPhone;
+    };
+  
+    if (Array.isArray(phone)) {
+      return phone.map(processSinglePhone);
+    } else {
+      return processSinglePhone(phone);
     }
-    return cleanedPhone;
   };
 
   return (
