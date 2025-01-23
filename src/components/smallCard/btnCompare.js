@@ -1,6 +1,7 @@
 import React from 'react';
+import { handleSubmitAll } from './actions';
 
-export const btnCompare = (index, users, setShowInfoModal, setCompare) => {
+export const btnCompare = (index, users, setUsers, setShowInfoModal, setCompare) => {
   const delKeys = [
     'photos',
     'areTermsConfirmed',
@@ -34,6 +35,75 @@ export const btnCompare = (index, users, setShowInfoModal, setCompare) => {
     'photos',
   ];
 
+  const mergeValues = (key, currentVal, nextVal) => {
+    // Функція для перевірки, чи значення є масивом, завдяки комам
+    const isArray = (value) => typeof value === 'string' && value.includes(',');
+  
+    // Перетворення значення на масив
+    const toArray = (value) => (isArray(value) ? value.split(',').map((item) => item.trim()) : [value].map((item) => item.trim()));
+  
+    // Якщо `currentVal` порожнє, повертаємо пустий рядок
+    if (!currentVal) {
+      return '';
+    }
+  
+    // Якщо `nextVal` порожнє, повертаємо `currentVal`
+    if (!nextVal) {
+      return currentVal;
+    }
+  
+    // Перетворюємо значення на масиви
+    const currentArray = toArray(currentVal);
+    const nextArray = toArray(nextVal);
+  
+    // Об'єднуємо масиви та видаляємо дублікати
+    const uniqueValues = Array.from(new Set([...currentArray, ...nextArray]));
+  
+    // Повертаємо результат як рядок, об'єднаний комами
+    return uniqueValues.join(', ');
+  };
+  
+
+  window.handleClick = (key, nextVal, currentVal, userIdCur, userIdNext) => {
+
+  // Логіка: визначення `targetUserId`
+  const targetUserId = currentVal ? userIdNext : userIdCur;
+  console.log('Target User ID:', targetUserId);
+
+  // Перевіряємо, чи існує потрібний користувач
+  if (users[targetUserId]) {
+    // Створюємо копію users, щоб уникнути мутації
+    const updatedUsers = { ...users };
+
+    // Логіка для полів `getInTouch` та `lastCycle` - перезапис значення
+    if (key === 'getInTouch' || key === 'lastCycle') {
+      updatedUsers[targetUserId][key] = currentVal || nextVal;
+    } else {
+      // Отримуємо результат з `mergeValues`
+      const mergedValue = mergeValues(key, currentVal, nextVal);
+
+      // Логіка запису результату:
+      if (mergedValue.includes(',')) {
+        // Якщо результат містить кілька значень (на основі ком), записуємо як масив
+        updatedUsers[targetUserId][key] = mergedValue.split(',').map((item) => item.trim());
+      } else {
+        // Якщо результат одне значення, записуємо його як ключ-значення
+        updatedUsers[targetUserId][key] = mergedValue;
+      }
+    }
+
+    // Оновлюємо стан
+    setUsers(updatedUsers);
+
+    // Відправляємо оновлені дані користувача на сервер
+    handleSubmitAll(updatedUsers[targetUserId], 'overwrite');
+
+    console.log('Updated user data:', updatedUsers[targetUserId]);
+  } else {
+    console.error(`User with ID ${targetUserId} not found`);
+  }
+};
+
   return (
     <button
       style={{ ...styles.removeButton, top: 105, backgroundColor: 'purple' }}
@@ -41,7 +111,10 @@ export const btnCompare = (index, users, setShowInfoModal, setCompare) => {
         e.stopPropagation();
         const entries = Object.entries(users);
         const currentUser = entries[index][1];
+        console.log('currentUser :>> ', currentUser?.userId);
         const nextUser = entries[index + 1]?.[1]; // Перевірка чи існує наступний юзер
+        // const prevUser = entries[index - 1]?.[1]; // Попередній юзер
+        // console.log('prevUser :>> ', prevUser?.userId);
 
         // Тут ми НЕ виймаємо photos, щоб він залишився в currentUser та nextUser
         const restCurrentUser = currentUser || {};
@@ -65,9 +138,21 @@ export const btnCompare = (index, users, setShowInfoModal, setCompare) => {
 
           rows += `
           <tr>
-            <td style="width:20%; white-space: normal; word-break: break-word;">${key}</td>
-            <td style="width:40%; white-space: normal; word-break: break-word;">${currentVal}</td>
-            <td style="width:40%; white-space: normal; word-break: break-word;">${nextVal}</td>
+ <td style="width:20%; white-space: normal; word-break: break-word; cursor: pointer;">
+              ${key}
+            </td>
+              <td 
+      style="width:40%; white-space: normal; word-break: break-word; cursor: pointer;" 
+      onclick="window.handleClick('${key}', '${nextVal}', '${currentVal}', '${currentUser.userId}', '${nextUser?.userId}')"
+    >
+      ${currentVal || ''}
+    </td>
+    <td 
+      style="width:40%; white-space: normal; word-break: break-word; cursor: pointer;" 
+      onclick="window.handleClick('${key}', '${currentVal}', '${nextVal}', '${nextUser.userId}', '${currentUser?.userId}')"
+    >
+      ${nextVal || ''}
+    </td>
           </tr>
         `;
         }

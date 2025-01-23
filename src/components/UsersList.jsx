@@ -74,7 +74,7 @@ const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoModal, set
       {Object.entries(users).map(([userId, userData], index) => (
         <div key={userId} style={{ ...coloredCard(index) }}>
           {btnEdit(userData.userId, setSearch, setState)}
-          {btnCompare(index, users, setShowInfoModal, setCompare)}
+          {btnCompare(index, users, setUsers, setShowInfoModal, setCompare, )}
           <UserCard
             setShowInfoModal={setShowInfoModal}
             userData={userData}
