@@ -12,48 +12,65 @@ const ExcelToJson = () => {
     // };
 
     const formatJson = (rows, worksheet) => {
-        const formatDate = (excelDate, format) => {
-            try {
-                if (!excelDate) return null;
+        // const formatDate = (excelDate, format) => {
+        //     try {
+        //         if (!excelDate) return null;
     
-                const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
-                if (isNaN(jsDate.getTime())) {
-                    return excelDate; // Повертаємо вихідне значення, якщо дата не валідна
-                }
+        //         const jsDate = new Date((excelDate - 25569) * 86400 * 1000);
+        //         if (isNaN(jsDate.getTime())) {
+        //             return excelDate; // Повертаємо вихідне значення, якщо дата не валідна
+        //         }
     
-                const dd = String(jsDate.getDate()).padStart(2, '0');
-                const mm = String(jsDate.getMonth() + 1).padStart(2, '0');
-                const yyyy = jsDate.getFullYear();
+        //         const dd = String(jsDate.getDate()).padStart(2, '0');
+        //         const mm = String(jsDate.getMonth() + 1).padStart(2, '0');
+        //         const yyyy = jsDate.getFullYear();
     
-                return format === 'dd.mm.yyyy'
-                    ? `${dd}.${mm}.${yyyy}`
-                    : `${yyyy}-${mm}-${dd}`;
-            } catch (error) {
-                return excelDate; // Повертаємо вихідне значення у разі помилки
-            }
-        };
+        //         return format === 'dd.mm.yyyy'
+        //             ? `${dd}.${mm}.${yyyy}`
+        //             : `${yyyy}-${mm}-${dd}`;
+        //     } catch (error) {
+        //         return excelDate; // Повертаємо вихідне значення у разі помилки
+        //     }
+        // };
     
-const processPhones = (phones) => {
-    const formattedPhones = phones
-        .filter((phone) => phone !== null && phone !== "")
-        .map((phone) => {
-            if (typeof phone === "string") {
-                // Видаляємо + на початку, якщо він є
-                phone = phone.startsWith("+") ? phone.slice(1) : phone;
+// const processPhones = (phones) => {
+//     const formattedPhones = phones
+//         .filter((phone) => phone !== null && phone !== "")
+//         .map((phone) => {
+//             if (typeof phone === "string") {
+//                 // Видаляємо + на початку, якщо він є
+//                 phone = phone.startsWith("+") ? phone.slice(1) : phone;
 
-                // Додаємо 38, якщо телефон починається на (0
-                if (phone.startsWith("(0")) {
-                    return `38${phone.replace(/[()]/g, '')}`;
-                }
-            }
-            return phone;
-        });
+//                 // Додаємо 38, якщо телефон починається на (0
+//                 if (phone.startsWith("(0")) {
+//                     return `38${phone.replace(/[()]/g, '')}`;
+//                 }
+//             }
+//             return phone;
+//         });
     
-    return formattedPhones.length > 1
-        ? formattedPhones
-        : formattedPhones[0]
-        ? formattedPhones[0]
-        : null;
+//     return formattedPhones.length > 1
+//         ? formattedPhones
+//         : formattedPhones[0]
+//         ? formattedPhones[0]
+//         : null;
+// };
+
+const processPhones = (key, ...values) => {
+    const stringValues = values
+    .filter((v) => v !== null && v !== "" && v !== undefined) // Фільтруємо порожні та недійсні значення
+    .map(String) // Приводимо всі значення до рядкового формату
+    .map((v) => v.trim()); // Видаляємо зайві пробіли
+
+const uniqueValues = [...new Set(stringValues)]; // Уникаємо дублікатів
+
+if (uniqueValues.length === 0) {
+    return null; // Якщо немає жодного валідного значення, не повертати ключ
+}
+
+return uniqueValues.length === 1
+    ? { [key]: uniqueValues[0] } // Якщо одне значення, повернути як ключ-значення
+    : { [key]: uniqueValues }; // Якщо кілька значень, повернути як масив
 };
 
     
@@ -102,6 +119,32 @@ const processPhones = (phones) => {
         return vkIds.length === 1 ? { [key]: vkIds[0] } : { [key]: vkIds };
     }
 
+    const stringValues = links
+        .filter((v) => v !== null && v !== "" && v !== undefined) // Фільтруємо недійсні значення
+        .map(String) // Приводимо до рядка
+        .map((v) => v.trim()); // Видаляємо зайві пробіли
+
+    // Унікальність у нижньому регістрі, але збереження оригіналу
+    const lowerCaseMap = new Map();
+    stringValues.forEach((value) => {
+        const lowerCaseValue = value.toLowerCase();
+        if (!lowerCaseMap.has(lowerCaseValue)) {
+            lowerCaseMap.set(lowerCaseValue, value);
+        }
+    });
+    const uniqueValues = [...lowerCaseMap.values()];
+
+    if (uniqueValues.length === 0) {
+        return null; // Якщо немає валідних значень, не повертати ключ
+    }
+
+    // Спеціальна обробка для імен
+    if (key === 'name' || key === 'surname' || key === 'city' || key === 'birth') {
+        return uniqueValues.length === 1
+            ? { [key]: uniqueValues[0] } // Одне ім'я
+            : { [key]: uniqueValues }; // Кілька імен
+    }
+
     // Стандартна обробка
     return validLinks.length === 1
         ? { [key]: validLinks[0] } // Якщо одне значення, повернути як ключ-значення
@@ -109,18 +152,18 @@ const processPhones = (phones) => {
         
         };
 
-        const cleanBilingualFields = (obj, keys) => {
-            if (!obj || typeof obj !== 'object') return {}; // Перевірка, чи об'єкт існує
+        // const cleanBilingualFields = (obj, keys) => {
+        //     if (!obj || typeof obj !== 'object') return {}; // Перевірка, чи об'єкт існує
         
-            return Object.fromEntries(
-                Object.entries(obj).map(([key, value]) => {
-                    if (keys.includes(key) && typeof value === 'string' && value.includes('/')) {
-                        return [key, value.split('/')[0].trim()];
-                    }
-                    return [key, value];
-                })
-            );
-        };
+        //     return Object.fromEntries(
+        //         Object.entries(obj).map(([key, value]) => {
+        //             if (keys.includes(key) && typeof value === 'string' && value.includes('/')) {
+        //                 return [key, value.split('/')[0].trim()];
+        //             }
+        //             return [key, value];
+        //         })
+        //     );
+        // };
 
         // const emailLinks = (link1, link2) => {
         //     const links = [link1, link2].filter((l) => l !== null && l !== "");
@@ -132,25 +175,25 @@ const processPhones = (phones) => {
         //     return links.length > 1 ? { instagram: links } : links[0] ? { instagram: links[0] } : null;
         // };
     
-        const processComments = (comment1, comment2, comment3, notes) => {
-            const comments = [comment1, comment2, comment3]
-            .filter((c) => c !== null && c !== "") // Видаляємо null та порожні коментарі
-            .map((comment, index) => {
-                if (index === 0) {
-                    return `Характер: ${comment}`; // Додаємо "Характер:" перед першим коментарем
-                }
-                if (index === 2) {
-                    return formatDate(comment, 'dd.mm.yyyy'); // Форматуємо третій коментар як дату
-                }
-                return comment; // Інші коментарі залишаємо без змін
-            });
+    //     const processComments = (comment1, comment2, comment3, notes) => {
+    //         const comments = [comment1, comment2, comment3]
+    //         .filter((c) => c !== null && c !== "") // Видаляємо null та порожні коментарі
+    //         .map((comment, index) => {
+    //             if (index === 0) {
+    //                 return `Характер: ${comment}`; // Додаємо "Характер:" перед першим коментарем
+    //             }
+    //             if (index === 2) {
+    //                 return formatDate(comment, 'dd.mm.yyyy'); // Форматуємо третій коментар як дату
+    //             }
+    //             return comment; // Інші коментарі залишаємо без змін
+    //         });
     
-        if (notes) {
-            comments.push(notes); // Додаємо примітки до коментарів
-        }
+    //     if (notes) {
+    //         comments.push(notes); // Додаємо примітки до коментарів
+    //     }
     
-        return comments.length ? { myComment: comments.join('; ') } : null;
-    };
+    //     return comments.length ? { myComment: comments.join('; ') } : null;
+    // };
     
         return rows.reduce((acc, row, rowIndex) => {
             const {
@@ -160,36 +203,42 @@ const processPhones = (phones) => {
                 phone3,
                 phone4,
                 phone5,
-                telegram1,
-                telegram2,
-                photos,
+                phone6,
+                phone7,
+                phone8,
+                phone9,
+                instagram1,
+                instagram2,
+                facebook1,
+                facebook2,
+                facebook3,
+                facebook4,
+                twitter1,
+                twitter2,
                 vk1,
                 vk2,
                 vk3, 
                 vk4,
-               
-                facebook1,
-                facebook2,
-                instagramMain,
-                instagram1,
-                instagram2,
-                email1,
-                email2,
-                
-                otherLink1,
-                otherLink2,
-                otherLink3,
-                otherLink4, // розібрав
-                myComment1,
-                myComment2,
-                myComment3,
-                birth,
-                lastAction,
-                lastDelivery,
-                getInTouch,
-                
-                csection,
+                name1,
+                name2,
+                surname1,
+                surname2,
+                fathersname1,
+                fathersname2,
+                city1,
+                city2,                
+                city3,
+                birth1,
+                birth2,
                 userId,
+                // country,
+                // email,
+                // lastAction,
+                // myComment,
+                // getInTouch,
+                // writer,
+                // height,
+                // weight,
                 ...rest
             } = row;
     
@@ -206,29 +255,29 @@ const processPhones = (phones) => {
             }
         });
 
-        const convertDriveLinkToImage = (link) => {
-            if (typeof link !== 'string') {
-                return null; // Якщо посилання не є рядком, повертаємо null
-            }
+        // const convertDriveLinkToImage = (link) => {
+        //     if (typeof link !== 'string') {
+        //         return null; // Якщо посилання не є рядком, повертаємо null
+        //     }
         
-            let fileId = null;
+        //     let fileId = null;
         
-            // Перевірка формату "file/d/"
-            const fileMatch = link.match(/\/file\/d\/([^/]+)/);
-            if (fileMatch) {
-                fileId = fileMatch[1];
-            }
+        //     // Перевірка формату "file/d/"
+        //     const fileMatch = link.match(/\/file\/d\/([^/]+)/);
+        //     if (fileMatch) {
+        //         fileId = fileMatch[1];
+        //     }
         
-            // Перевірка формату "open?id="
-            const openMatch = link.match(/open\?id=([^&]+)/);
-            if (openMatch) {
-                fileId = openMatch[1];
-            }
+        //     // Перевірка формату "open?id="
+        //     const openMatch = link.match(/open\?id=([^&]+)/);
+        //     if (openMatch) {
+        //         fileId = openMatch[1];
+        //     }
         
-            return fileId ? `https://drive.google.com/uc?id=${fileId}` : null;
+        //     return fileId ? `https://drive.google.com/uc?id=${fileId}` : null;
         
         
-        };
+        // };
 
         const excludedFields = [
             'no1', 'no2', 'no3', 'no4', 'no5', 'no6', 'no7',
@@ -242,7 +291,7 @@ const processPhones = (phones) => {
                 'formRemarks',
         ];
 
-        const bilingualKeys = ['race', 'hairColor', 'hairStructure', 'eyeColor', 'bodyType', 'education'];
+        // const bilingualKeys = ['race', 'hairColor', 'hairStructure', 'eyeColor', 'bodyType', 'education'];
     
         acc[userId] = {
             ...Object.fromEntries(
@@ -251,42 +300,51 @@ const processPhones = (phones) => {
                         value !== null && value !== "" && !excludedFields.includes(key)
                     )
             ),
-            ...(processPhones([phone1, phone2, phone3, phone4, phone5]) ? { phone: processPhones([phone1, phone2, phone3, phone4, phone5]) } : {}),
+            // ...(processPhones([phone1, phone2, phone3, phone4, phone5, phone6, phone7, phone8, phone9]) ? { phone: processPhones([phone1, phone2, phone3, phone4, phone5, phone6, phone7, phone8, phone9]) } : {}),
+            ...(processPhones('phone', phone1, phone2, phone3, phone4, phone5, phone6, phone7, phone8, phone9)?processPhones('phone', phone1, phone2, phone3, phone4, phone5, phone6, phone7, phone8, phone9):{}),      
             // ...Object.fromEntries(
             //     Object.entries(linkConfig)
             //         .map(([key, links]) => makeLink(key, links)) // Проходимося по кожному ключу
             //         .filter((entry) => entry !== null) // Видаляємо null, якщо посилань немає
             // ),
-            ...(cleanBilingualFields(
-                row && typeof row === 'object'
-                    ? Object.fromEntries(
-                        Object.entries(row).filter(([key]) => bilingualKeys.includes(key))
-                    )
-                    : {}, // Порожній об'єкт, якщо row не є об'єктом
-                bilingualKeys
-            ) || {}),
-            ...(makeLink('telegram', telegram1, telegram2) || {}),
-            ...(makeLink('facebook', facebook1, facebook2) || {}),
+            // ...(cleanBilingualFields(
+            //     row && typeof row === 'object'
+            //         ? Object.fromEntries(
+            //             Object.entries(row).filter(([key]) => bilingualKeys.includes(key))
+            //         )
+            //         : {}, // Порожній об'єкт, якщо row не є об'єктом
+            //     bilingualKeys
+            // ) || {}),
+            // ...(makeLink('telegram', telegram1, telegram2) || {}),
             ...(makeLink('instagram', instagram1, instagram2) || {}),
+            ...(makeLink('facebook', facebook1, facebook2, facebook3, facebook4) || {}),
+            ...(makeLink('twitter', twitter1, twitter2) || {}),
             ...(makeLink('vk', vk1, vk2, vk3, vk4) || {}),
-            ...(makeLink('email', email1, email2) || {}),
-            ...(makeLink('otherLink', otherLink1, otherLink2, otherLink3, otherLink4) || {}),
-            ...(processComments(myComment1, myComment2, myComment3, notes.join('; ')) || {}),
-            ...(birth ? { birth: formatDate(birth, 'dd.mm.yyyy') } : {}),
-            ...(lastAction ? { lastAction: formatDate(lastAction, 'dd.mm.yyyy') } : {}),
-            ...(lastDelivery ? { lastDelivery: formatDate(lastDelivery, 'dd.mm.yyyy') } : {}),
-            ...(getInTouch ? { getInTouch: formatDate(getInTouch, 'yyyy-mm-dd') } : {}),
-            ...(csection ? { csection: formatDate(csection, 'dd.mm.yyyy') } : {}),
-            ...(photos
-                ? {
-                    photos: photos
-                        .split(',')
-                        .filter(photo => photo.trim() !== "") // Видаляємо порожні значення
-                        .map(photo => photo.trim()) // Видаляємо зайві пробіли
-                        .map(photo => convertDriveLinkToImage(photo)) // Конвертуємо посилання для зображень
-                        .filter(photo => photo !== null) // Видаляємо некоректні посилання
-                }
-                : {}),
+            ...(makeLink('name', name1, name2) || {}),
+            ...(makeLink('surname', surname1, surname2) || {}),
+            ...(makeLink('fathersname', fathersname1, fathersname2) || {}),
+            ...(makeLink('city', city1, city2, city3) || {}),
+            ...(makeLink('birth', birth1, birth2) || {}),
+            // ...(birth ? { birth: formatDate(birth, 'dd.mm.yyyy') } : {}),
+
+            // ...(makeLink('email', email1, email2) || {}),
+            // ...(makeLink('otherLink', otherLink1, otherLink2, otherLink3, otherLink4) || {}),
+            // ...(processComments(myComment1, myComment2, myComment3, notes.join('; ')) || {}),
+            
+            // ...(lastAction ? { lastAction: formatDate(lastAction, 'dd.mm.yyyy') } : {}),
+            // ...(lastDelivery ? { lastDelivery: formatDate(lastDelivery, 'dd.mm.yyyy') } : {}),
+            // ...(getInTouch ? { getInTouch: formatDate(getInTouch, 'yyyy-mm-dd') } : {}),
+            // ...(csection ? { csection: formatDate(csection, 'dd.mm.yyyy') } : {}),
+            // ...(photos
+            //     ? {
+            //         photos: photos
+            //             .split(',')
+            //             .filter(photo => photo.trim() !== "") // Видаляємо порожні значення
+            //             .map(photo => photo.trim()) // Видаляємо зайві пробіли
+            //             .map(photo => convertDriveLinkToImage(photo)) // Конвертуємо посилання для зображень
+            //             .filter(photo => photo !== null) // Видаляємо некоректні посилання
+            //     }
+            //     : {}),
             ...{ userId },
         };
 

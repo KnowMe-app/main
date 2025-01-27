@@ -9,7 +9,7 @@ export const btnExportUsers = users => {
         saveToContact(users);
       }}
     >
-      Export Users
+      Save
     </OrangeBtn>
   );
 };

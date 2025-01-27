@@ -4,7 +4,7 @@ import { renderTopBlock } from './smallCard/renderTopBlock';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnEdit } from './smallCard/btnEdit';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
-import { btnExportUsers } from './topBtns/btnExportUsers';
+// import { btnExportUsers } from './topBtns/btnExportUsers';
 
 // Компонент для рендерингу полів користувача
 const renderFields = (data, parentKey = '') => {
@@ -70,7 +70,7 @@ const UserCard = ({ userData, setUsers, setShowInfoModal, setState }) => {
 const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoModal, setCompare }) => {
   return (
     <div style={styles.container}>
-      {btnExportUsers(users)}
+      
       {Object.entries(users).map(([userId, userData], index) => (
         <div key={userId} style={{ ...coloredCard(index) }}>
           {btnEdit(userData.userId, setSearch, setState)}

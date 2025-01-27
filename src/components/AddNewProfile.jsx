@@ -33,10 +33,12 @@ import { color, coloredCard } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
 //import { formatPhoneNumber } from './inputValidations';
 import {UsersList} from './UsersList';
-import ExcelToJson from './ExcelToJson';
+// import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
-import { UploadJson } from './topBtns/uploadNewJSON';
+// import { UploadJson } from './topBtns/uploadNewJSON';
+import { btnExportUsers } from './topBtns/btnExportUsers';
+// import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 
 const Container = styled.div`
@@ -600,6 +602,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [isEmailVerified, setIsEmailVerified] = useState(false);
 
+
+  
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
       if (user && user.emailVerified) {
@@ -1125,7 +1129,6 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
             )}
           </InputFieldContainer>
         </InputDiv>
-)
         {search && state.userId ? (
           <>
 <div style={{...coloredCard()}}>
@@ -1367,12 +1370,15 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
             null}
             <div>
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
-              {hasMore && <Button onClick={loadMoreUsers}>Load Cards</Button>}
-              {hasMore && <Button onClick={makeIndex}>Make index</Button>}
+              {hasMore && <Button onClick={loadMoreUsers}>Load</Button>}
+              {hasMore && <Button onClick={makeIndex}>Index</Button>}
               {<Button onClick={searchDuplicates}>DPL</Button>}
-              <Button onClick={saveAllContacts}> Save All</Button>
-              <ExcelToJson/>
-              <UploadJson/>
+              {btnExportUsers(users)}
+              <Button onClick={saveAllContacts}> S_All</Button>
+              
+              {/* <ExcelToJson/> */}
+              {/* <UploadJson/> */}
+              {/* <JsonToExcelButton/> */}
               {/* {users && <div>Знайдено {Object.keys(users).length}</div>} */}
             </div>
             {!userNotFound && <UsersList setCompare ={setCompare} setShowInfoModal ={setShowInfoModal} users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}
