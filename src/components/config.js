@@ -26,8 +26,17 @@ export const storage = getStorage(app);
 export const database = getDatabase(app);
 
 const keysToCheck = [
-  'instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 
-  'name', 'surname', 'lastAction' , 'getInTouch' 
+  'instagram', 
+  'facebook', 
+  'email',
+   'phone', 
+  'telegram', 
+  'tiktok', 
+  'other', 
+  'vk', 
+  'name', 
+  'surname',
+   'lastAction' , 'getInTouch' 
 ];
 
 export const getUrlofUploadedAvatar = async (photo, userId) => {
@@ -681,6 +690,11 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
   try {
     if (!searchValue || !searchKey || !userId) {
       console.error('Invalid parameters provided:', { searchKey, searchValue, userId });
+      return;
+    }
+
+    if (searchKey === 'getInTouch' || searchKey === 'lastAction') {
+      console.log('Пропускаємо непотрібні ключі :>> ', searchKey);
       return;
     }
 
@@ -1568,7 +1582,7 @@ export const loadDuplicateUsers = async () => {
 
     const pairs = []; // Масив для зберігання пар (userIdOrArray)
     for (const [searchKey, userIdOrArray] of Object.entries(searchIdData)) {
-      if (searchKey.startsWith('name') || searchKey.startsWith('surname')) {
+      if (searchKey.startsWith('name') || searchKey.startsWith('surname') || searchKey.startsWith('other') || searchKey.startsWith('getInTouch')|| searchKey.startsWith('lastAction')) {
         continue; // Пропускаємо ключі, які починаються на "name" або "surname"
       }
 
