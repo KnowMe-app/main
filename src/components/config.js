@@ -25,7 +25,8 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const database = getDatabase(app);
 
-const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 
+const keysToCheck = [
+  'instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 
   'name', 'surname', 'lastAction' , 'getInTouch' 
 ];
 
