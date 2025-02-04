@@ -1368,7 +1368,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
             ) : userNotFound ? (
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
             ) : Object.keys(users).length > 1 ? (
-              <p style={{ textAlign: 'center', color: 'black' }}>Знайдено {Object.keys(users).length} користувачів!
+              <p style={{ textAlign: 'center', color: 'black' }}>{Object.keys(users).length} користувачів
               {duplicates ? ` з (${duplicates})` : ''}
               </p>
             ) :
