@@ -1584,6 +1584,8 @@ export const loadDuplicateUsers = async () => {
 
     // Отримаємо перші 10 пар
     const first10Pairs = pairs.slice(0, 60);
+    const totalDuplicates = pairs.length;
+    // console.log('totalDuplicates :>> ', totalDuplicates);
 
     const mergedUsers = {};
     for (const pair of first10Pairs) {
@@ -1681,7 +1683,7 @@ export const loadDuplicateUsers = async () => {
 
     console.log('Duplicate users after filtering empty second user:', mergedUsers);
 
-    return mergedUsers;
+    return {mergedUsers, totalDuplicates};
   } catch (error) {
     console.error('Error loading duplicate users:', error);
     return {};

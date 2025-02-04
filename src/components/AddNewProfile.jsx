@@ -1014,10 +1014,13 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     
   };
 
+  const [duplicates, setDuplicates] = useState('');
+
   const searchDuplicates = async () => {
-    const res = await loadDuplicateUsers();
-    console.log('res :>> ', res);
-    setUsers(prevUsers => ({ ...prevUsers, ...res }));
+    const {mergedUsers, totalDuplicates} = await loadDuplicateUsers();
+    // console.log('res :>> ', res);
+    setUsers(prevUsers => ({ ...prevUsers, ...mergedUsers }));
+    setDuplicates(totalDuplicates);
     // console.log('res!!!!!!!! :>> ', res.length);
 
   };
@@ -1365,7 +1368,9 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
             ) : userNotFound ? (
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
             ) : Object.keys(users).length > 1 ? (
-              <p style={{ textAlign: 'center', color: 'black' }}>Знайдено {Object.keys(users).length} користувачів!</p>
+              <p style={{ textAlign: 'center', color: 'black' }}>Знайдено {Object.keys(users).length} користувачів!
+              {duplicates ? ` з (${duplicates})` : ''}
+              </p>
             ) :
             null}
             <div>
