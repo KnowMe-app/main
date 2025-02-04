@@ -26,7 +26,7 @@ export const storage = getStorage(app);
 export const database = getDatabase(app);
 
 const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 
-  // 'name', 'surname', 'lastAction' , 'getInTouch' 
+  'name', 'surname', 'lastAction' , 'getInTouch' 
 ];
 
 export const getUrlofUploadedAvatar = async (photo, userId) => {
@@ -313,37 +313,78 @@ console.log('searchBySearchId :>> ',);
 };
 
 const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
-console.log('searchValue :>> ', searchValue);
+  console.log('🔍 searchValue :>> ', searchValue);
+
   for (const prefix of keysToCheck) {
+    console.log('🛠 Searching by prefix:', prefix);
+
+    let formattedSearchValue = searchValue.trim().toLowerCase();
+
+    // Якщо шукаємо за "surname", робимо пошук з урахуванням першої великої літери
+    if (prefix === 'name' || prefix === 'surname') {
+      formattedSearchValue =
+        searchValue.trim().charAt(0).toUpperCase() + searchValue.trim().slice(1).toLowerCase();
+    }
+
     const queryByPrefix = query(
       ref2(database, 'newUsers'),
       orderByChild(prefix),
-      startAt(searchValue.toLowerCase()),
-      endAt(`${searchValue.toLowerCase()}\uf8ff`)
+      startAt(formattedSearchValue),
+      endAt(`${formattedSearchValue}\uf8ff`)
     );
 
-    const snapshotByPrefix = await get(queryByPrefix);
-    if (snapshotByPrefix.exists()) {
-      snapshotByPrefix.forEach(userSnapshot => {
-        const userId = userSnapshot.key;
-        const userData = userSnapshot.val();
-        if (
-          userData[prefix] &&
-          typeof userData[prefix] === 'string' &&
-          userData[prefix].toLowerCase().includes(searchValue.toLowerCase()) &&
-          !uniqueUserIds.has(userId)
-        ) {
-          uniqueUserIds.add(userId);
-          users[userId] = {
-            userId,
-            ...userData,
-          };
-          // users.push({ userId, ...userData });
-        }
-      });
+    try {
+      const snapshotByPrefix = await get(queryByPrefix);
+      console.log(`📡 Firebase Query Executed for '${prefix}'`);
+
+      if (snapshotByPrefix.exists()) {
+        console.log(`✅ Found results for '${prefix}'`);
+
+        snapshotByPrefix.forEach((userSnapshot) => {
+          const userId = userSnapshot.key;
+          const userData = userSnapshot.val();
+
+          let fieldValue = userData[prefix];
+
+          // Переконаємося, що значення є рядком і не містить зайвих пробілів
+          if (typeof fieldValue === 'string') {
+            fieldValue = fieldValue.trim();
+          } else {
+            return; // Пропускаємо, якщо поле не є рядком
+          }
+
+          console.log('📌 Checking user:', userId);
+          console.log(`🧐 userData['${prefix}']:`, fieldValue);
+          console.log('📏 Type of fieldValue:', typeof fieldValue);
+          console.log(
+            '🔍 Includes searchValue?',
+            fieldValue.toLowerCase().includes(formattedSearchValue.toLowerCase())
+          );
+          console.log('🛑 Already in uniqueUserIds?', uniqueUserIds.has(userId));
+
+          if (
+            fieldValue &&
+            typeof fieldValue === 'string' &&
+            fieldValue.toLowerCase().includes(formattedSearchValue.toLowerCase()) &&
+            !uniqueUserIds.has(userId)
+          ) {
+            uniqueUserIds.add(userId);
+            users[userId] = {
+              userId,
+              ...userData,
+            };
+            console.log(`✅ Added user '${userId}' to results`);
+          }
+        });
+      } else {
+        console.log(`🚫 No results found for '${prefix}'`);
+      }
+    } catch (error) {
+      console.error(`❌ Error fetching data for '${prefix}':`, error);
     }
   }
 };
+
 
 export const fetchNewUsersCollectionInRTDB = async searchedValue => {
   const { searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
