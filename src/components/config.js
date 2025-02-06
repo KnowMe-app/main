@@ -610,7 +610,17 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
 
           // Якщо ключ — це 'phone', прибираємо пробіли у значенні
           if (key === 'phone') {
-            cleanedValue = value.replace(/\s+/g, '');
+            if (typeof value === 'number') {
+              cleanedValue = String(value).replace(/\s+/g, '');
+            } else if (typeof value === 'string') {
+              cleanedValue = value.replace(/\s+/g, '');
+            } else if (Array.isArray(value)) {
+              // Якщо value є масивом телефонів
+              cleanedValue = value.map((v) => (typeof v === 'number' ? String(v) : v)).map((v) => v.replace(/\s+/g, ''));
+            } else {
+              console.warn(`Неправильний тип даних для ключа 'phone':`, value);
+              cleanedValue = ''; // Запобігаємо помилці та уникаємо некоректного значення
+            }
           }
 
           if (!newValues.includes(cleanedValue)) {
@@ -624,7 +634,17 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
 
           // Якщо ключ — це 'phone', прибираємо пробіли у значенні
           if (key === 'phone') {
-            cleanedValue = value.replace(/\s+/g, '');
+            if (typeof value === 'number') {
+              cleanedValue = String(value).replace(/\s+/g, '');
+            } else if (typeof value === 'string') {
+              cleanedValue = value.replace(/\s+/g, '');
+            } else if (Array.isArray(value)) {
+              // Якщо value є масивом телефонів
+              cleanedValue = value.map((v) => (typeof v === 'number' ? String(v) : v)).map((v) => v.replace(/\s+/g, ''));
+            } else {
+              console.warn(`Неправильний тип даних для ключа 'phone':`, value);
+              cleanedValue = ''; // Запобігаємо помилці та уникаємо некоректного значення
+            }
           }
 
           // console.log('cleanedValue :>> ', cleanedValue);
