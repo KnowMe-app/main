@@ -967,7 +967,7 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
 };
 
 const checkAgeAndBMI = (value) => {
-  if (!value.birth || !value.weight || !value.height) {
+  if (!value.birth || !value.weight || !value.height || typeof value.birth !== 'string') {
     // Якщо дані відсутні, пропускаємо користувача
     return true;
   }
@@ -1035,7 +1035,8 @@ const filterByNegativeBloodType = value => {
 
 // Фільтр за віком і статусом шлюбу (комбінований)
 const filterByAgeAndMaritalStatus = (value, ageLimit = 30, requiredStatuses = ['Yes', '+']) => {
-  if (!value.birth || !value.maritalStatus) return true; // Пропускаємо, якщо дані відсутні
+  if (!value.birth || !value.maritalStatus || typeof value.birth !== 'string') return true; // Пропускаємо, якщо дані відсутні
+  
   const birthDate = value.birth.split('.');
   const birthYear = parseInt(birthDate[2], 10);
   const currentYear = new Date().getFullYear();
