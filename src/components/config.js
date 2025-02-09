@@ -967,7 +967,8 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
 };
 
 const checkAgeAndBMI = (value) => {
-  if (!value.birth || !value.weight || !value.height || typeof value.birth !== 'string') {
+  if (!value.birth || !value.weight || !value.height || 
+    typeof value.birth !== 'string') {
     // Якщо дані відсутні, пропускаємо користувача
     return true;
   }
