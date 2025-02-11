@@ -659,7 +659,11 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
       }
     }
     // Оновлення користувача в базі
-    if (condition === 'update') {
+
+    console.log('uploadedInfo :>> ', uploadedInfo);
+    console.log('currentUserData :>> ', currentUserData);
+    
+    if (condition === 'update' && !(Object.keys(uploadedInfo).length < Object.keys(currentUserData).length)) {
       await update(userRefRTDB, { ...uploadedInfo });
     } else {
       await set(userRefRTDB, { ...uploadedInfo });
