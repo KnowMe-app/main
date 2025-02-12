@@ -1624,7 +1624,7 @@ export const loadDuplicateUsers = async () => {
     console.log('All pairs of duplicates:', pairs);
 
     // Отримаємо перші 10 пар
-    const first10Pairs = pairs.slice(0, 150);
+    const first10Pairs = pairs.slice(0, 60);
     const totalDuplicates = pairs.length;
     // console.log('totalDuplicates :>> ', totalDuplicates);
 
