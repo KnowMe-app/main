@@ -663,7 +663,8 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
     console.log('uploadedInfo :>> ', uploadedInfo);
     console.log('currentUserData :>> ', currentUserData);
     
-    if (condition === 'update' && !(Object.keys(uploadedInfo).length < Object.keys(currentUserData).length)) {
+    // if (condition === 'update' && !(Object.keys(uploadedInfo).length < Object.keys(currentUserData).length)) {
+      if (condition === 'update') {
       await update(userRefRTDB, { ...uploadedInfo });
     } else {
       await set(userRefRTDB, { ...uploadedInfo });
