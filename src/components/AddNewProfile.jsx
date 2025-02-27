@@ -38,6 +38,7 @@ import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 // import { UploadJson } from './topBtns/uploadNewJSON';
 import { btnExportUsers } from './topBtns/btnExportUsers';
+import { btnMerge } from './smallCard/btnMerge';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 
@@ -1378,6 +1379,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
               {hasMore && <Button onClick={loadMoreUsers}>Load</Button>}
               {hasMore && <Button onClick={makeIndex}>Index</Button>}
               {<Button onClick={searchDuplicates}>DPL</Button>}
+              {<Button onClick={()=>{btnMerge(users, setUsers, setDuplicates)}}>Merg</Button>}
               {btnExportUsers(users)}
               <Button onClick={saveAllContacts}> S_All</Button>
               

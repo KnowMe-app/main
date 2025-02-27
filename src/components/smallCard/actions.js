@@ -52,9 +52,11 @@ export const handleSubmit = async userData => {
   // console.log('userData В handleSubmit', userData);
   //  const { existingData } = await fetchUserData(userData.userId);
   // console.log('userData.userId :>> ', userData.userId);
-  const { existingData } = await fetchUserById(userData.userId);
+  // const { existingData } = await fetchUserById(userData.userId);
   // console.log('1111 :>> ');
-  const uploadedInfo = makeUploadedInfo(existingData, userData);
+  // const uploadedInfo = makeUploadedInfo(existingData, userData);
+  console.log('userData!!!!!!!!!!!!!!!!!!!!!!!!! :>> ', userData);
+  const uploadedInfo = userData;
 
   // Оновлюємо поле lastAction поточною датою у форматі рррр-мм-дд
   const currentDate = new Date();

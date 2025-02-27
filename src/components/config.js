@@ -287,7 +287,7 @@ const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
       ...(modifiedSearchValue.startsWith('0') ? [`${prefix}_38${modifiedSearchValue.toLowerCase()}`] : []),
       ...(modifiedSearchValue.startsWith('+') ? [`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`] : []),
     ];
-console.log('searchBySearchId :>> ',);
+// console.log('searchBySearchId :>> ',);
     return searchKeys.map(async searchKeyPrefix => {
       const searchIdSnapshot = await get(query(ref2(database, 'newUsers/searchId'), orderByKey(), startAt(searchKeyPrefix), endAt(`${searchKeyPrefix}\uf8ff`)));
 
@@ -295,13 +295,13 @@ console.log('searchBySearchId :>> ',);
       if (searchIdSnapshot.exists()) {
         const matchingKeys = searchIdSnapshot.val();
 
-        console.log('matchingKeys11111111111111 :>> ', matchingKeys);
+        // console.log('matchingKeys11111111111111 :>> ', matchingKeys);
 
         for (const [, userIdOrArray] of Object.entries(matchingKeys)) {
           if (Array.isArray(userIdOrArray)) {
-            console.log('userIdOrArray2222222222 :>> ', userIdOrArray);
+            // console.log('userIdOrArray2222222222 :>> ', userIdOrArray);
             for (const userId of userIdOrArray) {
-              console.log('userId33333333333333 :>> ', userId);
+              // console.log('userId33333333333333 :>> ', userId);
               if (!uniqueUserIds.has(userId)) {
                 uniqueUserIds.add(userId);
                 await addUserToResults(userId, users, userIdOrArray);
@@ -310,7 +310,7 @@ console.log('searchBySearchId :>> ',);
           } else {
             if (!uniqueUserIds.has(userIdOrArray)) {
               uniqueUserIds.add(userIdOrArray);
-              console.log('uniqueUserIds.add(userIdOrArray) :>> ');
+              // console.log('uniqueUserIds.add(userIdOrArray) :>> ');
               await addUserToResults(userIdOrArray, users);
             }
           }
@@ -323,10 +323,10 @@ console.log('searchBySearchId :>> ',);
 };
 
 const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
-  console.log('🔍 searchValue :>> ', searchValue);
+  // console.log('🔍 searchValue :>> ', searchValue);
 
   for (const prefix of keysToCheck) {
-    console.log('🛠 Searching by prefix:', prefix);
+    // console.log('🛠 Searching by prefix:', prefix);
 
     let formattedSearchValue = searchValue.trim().toLowerCase();
 
@@ -335,6 +335,12 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
       formattedSearchValue =
         searchValue.trim().charAt(0).toUpperCase() + searchValue.trim().slice(1).toLowerCase();
     }
+
+//     if (prefix === 'telegram') {
+//       formattedSearchValue = `telegram_ук_см_${searchValue.trim().toLowerCase()}`;
+// }
+
+console.log('formattedSearchValue :>> ', formattedSearchValue);
 
     const queryByPrefix = query(
       ref2(database, 'newUsers'),
@@ -345,10 +351,10 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
 
     try {
       const snapshotByPrefix = await get(queryByPrefix);
-      console.log(`📡 Firebase Query Executed for '${prefix}'`);
+      // console.log(`📡 Firebase Query Executed for '${prefix}'`);
 
       if (snapshotByPrefix.exists()) {
-        console.log(`✅ Found results for '${prefix}'`);
+        // console.log(`✅ Found results for '${prefix}'`);
 
         snapshotByPrefix.forEach((userSnapshot) => {
           const userId = userSnapshot.key;
@@ -363,14 +369,14 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
             return; // Пропускаємо, якщо поле не є рядком
           }
 
-          console.log('📌 Checking user:', userId);
-          console.log(`🧐 userData['${prefix}']:`, fieldValue);
-          console.log('📏 Type of fieldValue:', typeof fieldValue);
-          console.log(
-            '🔍 Includes searchValue?',
-            fieldValue.toLowerCase().includes(formattedSearchValue.toLowerCase())
-          );
-          console.log('🛑 Already in uniqueUserIds?', uniqueUserIds.has(userId));
+          // console.log('📌 Checking user:', userId);
+          // console.log(`🧐 userData['${prefix}']:`, fieldValue);
+          // console.log('📏 Type of fieldValue:', typeof fieldValue);
+          // console.log(
+          //   '🔍 Includes searchValue?',
+          //   fieldValue.toLowerCase().includes(formattedSearchValue.toLowerCase())
+          // );
+          // console.log('🛑 Already in uniqueUserIds?', uniqueUserIds.has(userId));
 
           if (
             fieldValue &&
@@ -383,14 +389,14 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
               userId,
               ...userData,
             };
-            console.log(`✅ Added user '${userId}' to results`);
+            // console.log(`✅ Added user '${userId}' to results`);
           }
         });
       } else {
-        console.log(`🚫 No results found for '${prefix}'`);
+        // console.log(`🚫 No results found for '${prefix}'`);
       }
     } catch (error) {
-      console.error(`❌ Error fetching data for '${prefix}':`, error);
+      // console.error(`❌ Error fetching data for '${prefix}':`, error);
     }
   }
 };
@@ -665,8 +671,10 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
     
     // if (condition === 'update' && !(Object.keys(uploadedInfo).length < Object.keys(currentUserData).length)) {
       if (condition === 'update') {
+        console.log('update :>> ');
       await update(userRefRTDB, { ...uploadedInfo });
     } else {
+      console.log('set :>> ');
       await set(userRefRTDB, { ...uploadedInfo });
     }
   } catch (error) {
@@ -1624,7 +1632,7 @@ export const loadDuplicateUsers = async () => {
     console.log('All pairs of duplicates:', pairs);
 
     // Отримаємо перші 10 пар
-    const first10Pairs = pairs.slice(0, 60);
+    const first10Pairs = pairs.slice(0, 300);
     const totalDuplicates = pairs.length;
     // console.log('totalDuplicates :>> ', totalDuplicates);
 
@@ -1730,6 +1738,157 @@ export const loadDuplicateUsers = async () => {
     return {};
   }
 };
+
+export const mergeDuplicateUsers = async () => {
+
+    try {
+      const searchIdSnapshot = await get(ref2(database, 'newUsers/searchId'));
+  
+      if (!searchIdSnapshot.exists()) {
+        console.log('No duplicates found in searchId.');
+        return {};
+      }
+  
+      const searchIdData = searchIdSnapshot.val();
+  
+      const pairs = [];
+      for (const [searchKey, userIdOrArray] of Object.entries(searchIdData)) {
+        if (searchKey.startsWith('name') || searchKey.startsWith('surname') || searchKey.startsWith('other') || searchKey.startsWith('getInTouch') || searchKey.startsWith('lastAction')) {
+          continue;
+        }
+  
+        if (Array.isArray(userIdOrArray)) {
+          console.log('Duplicate found in searchId:', { searchKey, userIdOrArray });
+          pairs.push(userIdOrArray);
+        }
+      }
+  
+      console.log('All pairs of duplicates:', pairs);
+  
+      const first10Pairs = pairs
+      // .slice(0, 300);
+      const totalDuplicates = pairs.length;
+  
+      const mergedUsers = {};
+  
+      const getUserData = async (userId) => {
+        let mergedData = { userId };
+        const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));
+        if (userSnapshotInNewUsers.exists()) {
+          mergedData = { ...mergedData, ...userSnapshotInNewUsers.val() };
+        }
+  
+        const userSnapshotInUsers = await get(ref2(database, `users/${userId}`));
+        if (userSnapshotInUsers.exists()) {
+          mergedData = { ...mergedData, ...userSnapshotInUsers.val() };
+        }
+  
+        return mergedData;
+      };
+  
+      const mergeValues = (key, currentVal, nextVal) => {
+        const normalize = (value) => String(value).replace(/\s+/g, '').trim();
+      
+        const toArray = (value) => {
+          if (!value) return [];
+          if (Array.isArray(value)) return value.map(normalize).filter(item => item !== ''); // Якщо вже масив – очищаємо
+          return String(value)
+            .split(/[,;]/) // Розбиваємо значення за `,` або `;`
+            .map((item) => normalize(item))
+            .filter(item => item !== '');
+        };
+      
+        if (!currentVal) return nextVal || '';
+        if (!nextVal) return currentVal;
+      
+        const currentArray = toArray(currentVal).flatMap(toArray);
+        const nextArray = toArray(nextVal).flatMap(toArray);
+
+        const seen = new Set();
+        const uniqueValues = [...currentArray, ...nextArray].filter((val) => {
+          const normalizedVal = val.trim();
+          if (seen.has(normalizedVal)) {
+            return false;
+          }
+          seen.add(normalizedVal);
+          return true;
+        });
+      
+        // Якщо залишилось одне значення – повертаємо його як рядок, якщо більше – як масив
+        return uniqueValues.length === 1 ? uniqueValues[0] : uniqueValues;
+      };
+
+      
+  
+      const delKeys = [
+        'photos', 'areTermsConfirmed', 'attitude', 'breastSize', 'chin', 'bodyType', 'lastAction', 'clothingSize',
+        'deviceHeight', 'education', 'experience', 'eyeColor', 'faceShape', 'glasses', 'hairColor', 'hairStructure',
+        'language', 'lastLogin', 'lipsShape', 'noseShape', 'profession', 'publish', 'race', 'registrationDate',
+        'reward', 'shoeSize', 'street', 'whiteList', 'blackList'
+      ];
+  
+      for (const pair of first10Pairs) {
+        if (pair.length < 2) continue;
+  
+        const [firstUserId, secondUserId] = pair;
+        const user1 = await getUserData(firstUserId);
+        const user2 = await getUserData(secondUserId);
+  
+        if (Object.keys(user1).length <= 1 || Object.keys(user2).length <= 1) {
+          console.log(`Ignoring pair [${firstUserId}, ${secondUserId}] because one user is empty`);
+          continue;
+        }
+
+          // Перевіряємо чи userId містить тільки `VK` або `AA`
+  if (!/^VK|AA\d+$/.test(user1.userId) || !/^VK|AA\d+$/.test(user2.userId)) {
+    console.log(`Skipping pair [${firstUserId}, ${secondUserId}] because userId is not VK or AA`);
+    continue;
+  }
+  
+        let primaryUser, donorUser;
+        if (!user1.userId.startsWith('VK')) {
+          primaryUser = firstUserId;
+          donorUser = secondUserId;
+        } else if (!user2.userId.startsWith('VK')) {
+          primaryUser = secondUserId;
+          donorUser = firstUserId;
+        } else {
+          donorUser = firstUserId;
+          primaryUser = secondUserId;
+        }
+      
+        console.log(`Primary user: ${primaryUser}, Donor user: ${donorUser}`);
+      
+        for (const key of Object.keys(user2)) {
+          if (!delKeys.includes(key) && key !== 'userId') {
+            user1[key] = mergeValues(key, user1[key], user2[key]);
+          }
+        }
+      
+        // ГАРАНТУЄМО, що `userId` не зміниться!
+        user1.userId = primaryUser;
+      
+        mergedUsers[primaryUser] = user1; // Використовуємо `primaryUser`, бо він завжди правильний
+      
+        console.log(`Merged user saved as ${primaryUser}:`, mergedUsers[primaryUser]);
+
+        await updateDataInNewUsersRTDB(mergedUsers[primaryUser].userId, mergedUsers[primaryUser], 'update');
+      
+        const db = getDatabase();
+        await remove(ref2(db, `newUsers/${donorUser}`));
+        console.log(`Deleted donor user: ${donorUser}`);
+      }
+  
+      console.log('Final merged users:', mergedUsers);
+  
+      return { mergedUsers, totalDuplicates };
+    } catch (error) {
+      console.error('Error loading duplicate users:', error);
+      return {};
+    }
+  };
+  
+
 
 export const removeCardAndSearchId = async userId => {
   const db = getDatabase();

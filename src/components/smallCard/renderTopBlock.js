@@ -11,6 +11,7 @@ import { fieldBirth } from './fieldBirth';
 import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { utilCalculateIMT } from './utilCalculateIMT';
+import { formatDateToDisplay } from 'components/inputValidations';
 
 export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState, isFromListOfUsers) => {
   if (!userData) return null;
@@ -20,7 +21,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState, i
       {btnDel(userData, setState, setShowInfoModal, isFromListOfUsers)}
       {btnExport(userData)}
       <div>
-        {userData.isDuplicate && 'ПОВТОР!!!!!!!!! '}
+        {userData.lastAction && formatDateToDisplay(userData.lastAction)},
         {userData.userId}
         {fieldGetInTouch(userData, setUsers, setState)}
         {(userData.userRole !== 'ag' || userData.userRole !== 'ip' || userData.role !== 'ag') && fieldLastCycle(userData, setUsers, setState)}
