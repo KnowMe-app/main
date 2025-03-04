@@ -1,4 +1,4 @@
-import { generateUserId } from "components/generateUserId";
+// import { generateUserId } from "components/generateUserId";
 import { HiddenInput, StyledLabel } from "components/styles";
 import React, { useState } from "react";
 

@@ -1,7 +1,11 @@
-import { loadDuplicateUsers, mergeDuplicateUsers } from "components/config";
+import { 
+  // loadDuplicateUsers,
+   mergeDuplicateUsers } from "components/config";
 
 export const btnMerge = async (users, setUsers, setDuplicates) => {
-  const { mergedUsers, totalDuplicates } = await mergeDuplicateUsers();
+  const { mergedUsers, 
+    // totalDuplicates 
+  } = await mergeDuplicateUsers();
   console.log('mergedUsers :>> ', mergedUsers);
 
   // setDuplicates(totalDuplicates);
