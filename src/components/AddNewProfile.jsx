@@ -978,8 +978,8 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
 
-  const loadMoreUsers = async () => {
-    const res = await fetchPaginatedNewUsers(lastKey);
+  const loadMoreUsers = async (filterForload) => {
+    const res = await fetchPaginatedNewUsers(lastKey, filterForload);
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
@@ -1376,7 +1376,8 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
             null}
             <div>
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
-              {hasMore && <Button onClick={loadMoreUsers}>Load</Button>}
+              {hasMore && <Button onClick={()=>{loadMoreUsers('ED')}}>ED</Button>}
+              {hasMore && <Button onClick={()=>{loadMoreUsers()}}>Load</Button>}
               {hasMore && <Button onClick={makeIndex}>Index</Button>}
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {<Button onClick={()=>{btnMerge(users, setUsers, setDuplicates)}}>Merg</Button>}

@@ -50,8 +50,9 @@ export const fieldGetInTouch = (userData, setUsers, setState) => {
         }}
       />
       <ActionButton label="3д" days={3} onClick={handleAddDays} />
-      <ActionButton label="7д" days={7} onClick={handleAddDays} />
+      {/* <ActionButton label="7д" days={7} onClick={handleAddDays} /> */}
       <ActionButton label="1м" days={30} onClick={handleAddDays} />
+      <ActionButton label="3м" days={90} onClick={handleAddDays} />
       <ActionButton label="6м" days={180} onClick={handleAddDays} />
       <ActionButton label="1р" days={365} onClick={handleAddDays} />
       <ActionButton label="99" onClick={handleSendToEnd} />

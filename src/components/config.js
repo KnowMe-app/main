@@ -1031,6 +1031,12 @@ const filterByUserRole = value => {
   // return !excludedRoles.includes(value.userRole);
 };
 
+// Фільтр за довжиною userId
+const filterByUserIdLength = value => {
+  // Перевіряємо, що userId є рядком та його довжина не перевищує 25 символів
+  return typeof value.userId === 'string' && value.userId.length <= 25;
+};
+
 // Фільтр за групою крові додано умову для донорів, вік до 36, імт до 28
 const filterByNegativeBloodType = value => {
   if (!value.blood) return true; // Пропускаємо, якщо дані про кров відсутні
@@ -1070,6 +1076,20 @@ const filterByAgeAndMaritalStatus = (value, ageLimit = 30, requiredStatuses = ['
    }
 };
 
+// Фільтр за віком
+const filterByAge = (value, ageLimit = 30) => {
+  // Якщо дата народження відсутня або не є рядком, пропускаємо користувача
+  if (!value.birth || typeof value.birth !== 'string') return true;
+
+  const birthParts = value.birth.split('.');
+  const birthYear = parseInt(birthParts[2], 10);
+  const currentYear = new Date().getFullYear();
+  const age = currentYear - birthYear;
+
+  // Пропускаємо користувача, якщо вік не перевищує ageLimit
+  return age <= ageLimit;
+};
+
 // Фільтр за csection додано умову для донорів, вік до 36, імт до 28
 const filterByCSection = value => {
   if (!value.csection) return true; // Пропускаємо, якщо дані відсутні
@@ -1086,18 +1106,30 @@ const filterByCSection = value => {
 };
 
 // Основна функція фільтрації
-const filterMain = usersData => {
+const filterMain = (usersData, filterForload) => {
   let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
 
   const filteredUsers = Object.entries(usersData).filter(([key, value]) => {
     // console.log('value :>> ', value[1]);
-    const filters = {
-      filterByKeyCount: Object.keys(value[1]).length >= 8, // Фільтр за кількістю ключів
-      filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value[1], 30, ['Yes', '+']), // Віковий і шлюбний фільтр
-      filterByUserRole: filterByUserRole(value[1]), // Фільтр за роллю користувача
-      filterByNegativeBloodType: filterByNegativeBloodType(value[1]), // Фільтр за групою крові
-      filterByCSection: filterByCSection(value[1]), // Фільтр за csection
-    };
+    let filters;
+    if (filterForload === 'ED') {
+      // Якщо filterForload === ED, використовуємо новий пустий filters
+      filters = {
+        filterByKeyCount: Object.keys(value[1]).length >= 8, // Фільтр за кількістю ключів
+        filterByUserRole: filterByUserRole(value[1]), // Фільтр за роллю користувача
+        filterByUserIdLength: filterByUserIdLength(value[1]), // Фільтр за довжиною userId
+        filterByAge: filterByAge(value[1], 30), // Віковий і шлюбний фільтр
+
+      };
+    } else {
+      filters = {
+        filterByKeyCount: Object.keys(value[1]).length >= 8, // Фільтр за кількістю ключів
+        filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value[1], 30, ['Yes', '+']), // Віковий і шлюбний фільтр
+        filterByUserRole: filterByUserRole(value[1]), // Фільтр за роллю користувача
+        filterByNegativeBloodType: filterByNegativeBloodType(value[1]), // Фільтр за групою крові
+        filterByCSection: filterByCSection(value[1]), // Фільтр за csection
+      };
+    }
 
     const failedFilters = Object.entries(filters).filter(([filterName, result]) => !result);
 
@@ -1155,7 +1187,7 @@ const sortUsers = filteredUsers => {
   });
 };
 
-export const fetchPaginatedNewUsers = async lastKey => {
+export const fetchPaginatedNewUsers = async (lastKey, filterForload) => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
   const todayActual = new Date(); // Поточна дата
@@ -1264,7 +1296,7 @@ export const fetchPaginatedNewUsers = async lastKey => {
     const combinedUsers = sortedUsers2;
 
     // 5. Фільтруємо користувачів
-    const filteredUsers = filterMain(combinedUsers);
+    const filteredUsers = filterMain(combinedUsers, filterForload);
 
     // 6. Сортуємо за логікою: сьогодні -> без дати -> майбутні
     const sortedUsers = sortUsers(filteredUsers);
