@@ -285,6 +285,11 @@ export const removeSpaceAndNewLine = value => {
 
   export const formatDateAndFormula = (input) => {
     if (!input) return '';
+
+     // Якщо це масив — з'єднуємо елементи в один рядок
+  if (Array.isArray(input)) {
+    input = input.join(', ');
+  }
   
     const today = new Date();
   
