@@ -1349,7 +1349,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
               [field.name]: '2',
             };
             handleSubmit(newState, 'overwrite');
-            handleBlur(field.name);
+            // handleBlur(field.name); - csection не працювало по натисканню, лише з другої спроби
             return newState;
           });
         }}
