@@ -39,6 +39,7 @@ import { renderTopBlock } from './smallCard/renderTopBlock';
 // import { UploadJson } from './topBtns/uploadNewJSON';
 import { btnExportUsers } from './topBtns/btnExportUsers';
 import { btnMerge } from './smallCard/btnMerge';
+import { SearchFilters } from './SearchFilters';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 
@@ -377,6 +378,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [search, setSearch] = useState(() => localStorage.getItem('searchQuery') || '');
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
+  const [filters, setFilters] = useState({
+    csectionNot2: true,
+    csection0: true,
+    maritalStatus: true,
+    blood: true,
+  });
   // const [addUser, setAddUser] = useState(null);
   // const [focused, setFocused] = useState(null);
   // console.log('focused :>> ', focused);
@@ -995,8 +1002,8 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
 
-  const loadMoreUsers = async (filterForload) => {
-    const res = await fetchPaginatedNewUsers(lastKey, filterForload);
+  const loadMoreUsers = async (filterForload, currentFilters = filters) => {
+    const res = await fetchPaginatedNewUsers(lastKey, filterForload, currentFilters);
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
@@ -1015,8 +1022,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
         return acc;
       }, {});
 
-      console.log('newUsers :>> ', newUsers);
-
+      // Оновлюємо стан користувачів
       // Оновлюємо стан користувачів
       setUsers(prevUsers => ({ ...prevUsers, ...newUsers })); // Додаємо нових користувачів до попередніх
       setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
@@ -1391,6 +1397,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
               </p>
             ) :
             null}
+            <SearchFilters filters={filters} onChange={setFilters} />
             <div>
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
               {hasMore && <Button onClick={()=>{loadMoreUsers('ED')}}>ED</Button>}
