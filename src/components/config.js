@@ -109,7 +109,6 @@ const compressPhoto = (file, maxSizeKB) => {
           compressedFile = dataURLToFile(compressedDataUrl);
         }
 
-        console.log('Остаточний розмір стисненого фото:', compressedFile.size);
         resolve(compressedFile);
       };
       img.onerror = reject;
@@ -134,7 +133,6 @@ const dataURLToFile = dataUrl => {
 };
 
 export const fetchUserData = async userId => {
-  console.log('userId :>> ', userId);
   const userRef = doc(db, 'users', userId);
   const docSnap = await getDoc(userRef);
   const existingData = docSnap.data();
@@ -190,7 +188,6 @@ export const makeNewUser = async searchedValue => {
   // 6. Додаємо пару ключ-значення у searchId
   await update(searchIdRef, { [searchIdKey]: newUserId });
 
-  console.log('Створений новий користувач і доданий у searchId: ', newUser);
 
   return {
     userId: newUserId,
@@ -207,7 +204,6 @@ const makeSearchKeyValue = searchedValue => {
 };
 
 const searchUserByPartialUserId = async (userId, users) => {
-  console.log('userId:', userId);
   try {
     const collections = ['users', 'newUsers']; // Масив колекцій, де здійснюється пошук
 
@@ -239,13 +235,12 @@ const searchUserByPartialUserId = async (userId, users) => {
 
         // Якщо після виконання є знайдені користувачі, повертаємо їх
         if (Object.keys(users).length > 0) {
-          console.log('Користувачі знайдені:', users);
           return users;
         }
       }
     }
 
-    console.log('Користувача з частковим userId не знайдено.');
+    // Користувача не знайдено
     return null;
   } catch (error) {
     console.error('Error fetching data by partial userId:', error);
@@ -261,9 +256,6 @@ const addUserToResults = async (userId, users, userIdOrArray = null) => {
 
   const userSnapshotInUsers = await get(ref2(database, `users/${userId}`));
   const userFromUsers = userSnapshotInUsers.exists() ? userSnapshotInUsers.val() : {};
-
-  console.log('userFromUsers :>> ', userFromUsers);
-  console.log('userFromNewUsers :>> ', userFromNewUsers);
   // users.push({
   //   userId,
   //   ...userFromNewUsers,
@@ -340,7 +332,6 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
 //       formattedSearchValue = `telegram_ук_см_${searchValue.trim().toLowerCase()}`;
 // }
 
-console.log('formattedSearchValue :>> ', formattedSearchValue);
 
     const queryByPrefix = query(
       ref2(database, 'newUsers'),
@@ -1202,10 +1193,8 @@ const sortUsers = filteredUsers => {
   const today = tomorrow.toISOString().split('T')[0]; // Формат YYYY-MM-DD
 
   return filteredUsers.sort(([_, a], [__, b]) => {
-    // console.log('a :>> ', a);
-    // console.log('a.getInTouch :>> ', a.getInTouch);
-    const aDate = a[1].getInTouch || '9999-12-31';
-    const bDate = b[1].getInTouch || '9999-12-31';
+    const aDate = a.getInTouch || '9999-12-31';
+    const bDate = b.getInTouch || '9999-12-31';
 
     // Якщо сьогоднішня дата в a, але не в b
     if (aDate === today && bDate !== today) return -1;
@@ -1336,9 +1325,7 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
     const sortedUsers = sortUsers(filteredUsers);
 
     // 7. Перетворюємо масив [key, value] у формат об'єкта
-    const paginatedUsers = sortedUsers.slice(0, 30).reduce((acc, [key, value]) => {
-      const userId = value[0]; // Перший елемент масиву - userId
-      const userData = value[1]; // Другий елемент - об'єкт даних користувача
+    const paginatedUsers = sortedUsers.slice(0, 30).reduce((acc, [userId, userData]) => {
       acc[userId] = userData;
       return acc;
     }, {});
