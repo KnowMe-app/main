@@ -375,7 +375,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [state, setState] = useState({});
 
-  const [search, setSearch] = useState(null);
+  const [search, setSearch] = useState(() => localStorage.getItem('searchQuery') || '');
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   // const [addUser, setAddUser] = useState(null);
   // const [focused, setFocused] = useState(null);
@@ -643,6 +643,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // });
   }, [search]); // Виконується при зміні search
 
+  // Save search query to localStorage
+  useEffect(() => {
+    if (search) {
+      localStorage.setItem('searchQuery', search);
+    } else {
+      localStorage.removeItem('searchQuery');
+    }
+  }, [search]);
+
+  // Use saved query on initial load
+  useEffect(() => {
+    if (search) {
+      writeData(search);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleAddUser = async () => {
     const res = await makeNewUser(searchKeyValuePair);
     setUserNotFound(false);
@@ -689,7 +706,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
   
 
-  const writeData = async () => {
+  const writeData = async (query = search) => {
     setUserNotFound(false);
     setState({});
     // const res = await aiHandler(search)
@@ -911,14 +928,14 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
         return input; // Повертаємо номер без змін
     };
 
-    if (await processUserSearch('facebook', parseFacebookId, search)) return;
-    if (await processUserSearch('instagram', parseInstagramId, search)) return;
-    if (await processUserSearch('telegram', parseTelegramId, search)) return;
-    if (await processUserSearch('userId', parseUserId, search)) return;
-    if (await processUserSearch('email', parseEmail, search)) return;
-    if (await processUserSearch('tiktok', parseTikTokLink, search)) return;
-    if (await processUserSearch('phone', parsePhoneNumber, search)) return;
-    if (await processUserSearch('other', parseOtherContact, search)) return;
+    if (await processUserSearch('facebook', parseFacebookId, query)) return;
+    if (await processUserSearch('instagram', parseInstagramId, query)) return;
+    if (await processUserSearch('telegram', parseTelegramId, query)) return;
+    if (await processUserSearch('userId', parseUserId, query)) return;
+    if (await processUserSearch('email', parseEmail, query)) return;
+    if (await processUserSearch('tiktok', parseTikTokLink, query)) return;
+    if (await processUserSearch('phone', parsePhoneNumber, query)) return;
+    if (await processUserSearch('other', parseOtherContact, query)) return;
 
     console.log('Not a valid Facebook URL, Phone Number, or Instagram URL.');
   };
