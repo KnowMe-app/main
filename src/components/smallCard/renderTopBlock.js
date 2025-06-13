@@ -25,9 +25,9 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState, i
         {userData.lastAction && formatDateToDisplay(userData.lastAction)}
         {userData.lastAction && ', '}
         {userData.userId}
-        {fieldGetInTouch(userData, setUsers, setState)}
+        {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') && fieldGetInTouch(userData, setUsers, setState)}
         {fieldRole(userData, setUsers, setState)}
-        {(userData.userRole !== 'ag' || userData.userRole !== 'ip' || userData.role !== 'ag') && fieldLastCycle(userData, setUsers, setState)}
+        {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') && fieldLastCycle(userData, setUsers, setState)}
         {fieldDeliveryInfo(setUsers, setState, userData)}
         {userData.birth && `${userData.birth} - `}
         {userData.birth && fieldBirth(userData.birth)}
