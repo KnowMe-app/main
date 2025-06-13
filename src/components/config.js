@@ -1166,6 +1166,7 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
         // console.log(`Failed filter: ${filterName}`);
       });
       excludedUsersCount++; // Збільшуємо лічильник відфільтрованих користувачів
+    console.log(`excludedUsersCount: ${excludedUsersCount}`);
     }
 
     return failedFilters.length === 0;

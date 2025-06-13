@@ -5,7 +5,8 @@ export const SearchFilters = ({ filters, onChange }) => {
     if (option === 'le1') {
       onChange({ ...filters, csectionNot2: true, csection0: false });
     } else if (option === 'none') {
-      onChange({ ...filters, csectionNot2: false, csection0: true });
+
+      onChange({ ...filters, csectionNot2: true, csection0: true });
     } else {
       onChange({ ...filters, csectionNot2: false, csection0: false });
     }
