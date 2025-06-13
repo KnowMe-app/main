@@ -109,7 +109,6 @@ const compressPhoto = (file, maxSizeKB) => {
           compressedFile = dataURLToFile(compressedDataUrl);
         }
 
-        console.log('Остаточний розмір стисненого фото:', compressedFile.size);
         resolve(compressedFile);
       };
       img.onerror = reject;
@@ -134,7 +133,6 @@ const dataURLToFile = dataUrl => {
 };
 
 export const fetchUserData = async userId => {
-  console.log('userId :>> ', userId);
   const userRef = doc(db, 'users', userId);
   const docSnap = await getDoc(userRef);
   const existingData = docSnap.data();
@@ -190,7 +188,6 @@ export const makeNewUser = async searchedValue => {
   // 6. Додаємо пару ключ-значення у searchId
   await update(searchIdRef, { [searchIdKey]: newUserId });
 
-  console.log('Створений новий користувач і доданий у searchId: ', newUser);
 
   return {
     userId: newUserId,
@@ -207,7 +204,6 @@ const makeSearchKeyValue = searchedValue => {
 };
 
 const searchUserByPartialUserId = async (userId, users) => {
-  console.log('userId:', userId);
   try {
     const collections = ['users', 'newUsers']; // Масив колекцій, де здійснюється пошук
 
@@ -239,13 +235,12 @@ const searchUserByPartialUserId = async (userId, users) => {
 
         // Якщо після виконання є знайдені користувачі, повертаємо їх
         if (Object.keys(users).length > 0) {
-          console.log('Користувачі знайдені:', users);
           return users;
         }
       }
     }
 
-    console.log('Користувача з частковим userId не знайдено.');
+    // Користувача не знайдено
     return null;
   } catch (error) {
     console.error('Error fetching data by partial userId:', error);
@@ -261,9 +256,6 @@ const addUserToResults = async (userId, users, userIdOrArray = null) => {
 
   const userSnapshotInUsers = await get(ref2(database, `users/${userId}`));
   const userFromUsers = userSnapshotInUsers.exists() ? userSnapshotInUsers.val() : {};
-
-  console.log('userFromUsers :>> ', userFromUsers);
-  console.log('userFromNewUsers :>> ', userFromNewUsers);
   // users.push({
   //   userId,
   //   ...userFromNewUsers,
@@ -340,7 +332,6 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
 //       formattedSearchValue = `telegram_ук_см_${searchValue.trim().toLowerCase()}`;
 // }
 
-console.log('formattedSearchValue :>> ', formattedSearchValue);
 
     const queryByPrefix = query(
       ref2(database, 'newUsers'),
@@ -1041,7 +1032,6 @@ const filterByUserIdLength = value => {
 const filterByNegativeBloodType = value => {
   if (!value.blood) return true; // Пропускаємо, якщо дані про кров відсутні
   const negativeBloodTypes = ['1-', '2-', '3-', '4-', '-']; // Негативні групи крові
-  // return !negativeBloodTypes.includes(value.blood);
   const hasNegativeBloodType = negativeBloodTypes.includes(value.blood);
 
   // Якщо група крові негативна, то пропускаємо користувача лише якщо він проходить перевірку віку та ІМТ
@@ -1051,6 +1041,13 @@ const filterByNegativeBloodType = value => {
 
   return true; // Якщо кров не негативна, пропускаємо без додаткової перевірки
 
+};
+
+// Спрощений фільтр за негативним резус-фактором без перевірки віку та ІМТ
+const filterByNegativeRhOnly = value => {
+  if (!value.blood) return true;
+  const negativeBloodTypes = ['1-', '2-', '3-', '4-', '-'];
+  return !negativeBloodTypes.includes(value.blood);
 };
 
 // Фільтр за віком і статусом шлюбу (комбінований)
@@ -1105,30 +1102,60 @@ const filterByCSection = value => {
   return checkAgeAndBMI(value);
 };
 
+// C-section <=1 filter
+const filterByCSectionLE1 = value => {
+  if (!value.csection) return true;
+  return value.csection !== '2';
+};
+
+// C-section none (dash) filter
+const filterByCSectionNone = value => {
+  if (!value.csection) return true;
+  return value.csection !== '1' && value.csection !== '2';
+};
+
+// Фільтр тільки за шлюбним статусом без перевірки віку
+const filterByMaritalStatusOnly = (value, excluded = ['Yes', 'Так', '+']) => {
+  if (!value.maritalStatus) return true;
+  return !excluded.includes(value.maritalStatus);
+};
+
 // Основна функція фільтрації
-const filterMain = (usersData, filterForload) => {
+const filterMain = (usersData, filterForload, filterSettings = {}) => {
   let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
 
-  const filteredUsers = Object.entries(usersData).filter(([key, value]) => {
-    // console.log('value :>> ', value[1]);
+  const filteredUsers = usersData.filter(([key, value]) => {
     let filters;
     if (filterForload === 'ED') {
       // Якщо filterForload === ED, використовуємо новий пустий filters
       filters = {
-        filterByKeyCount: Object.keys(value[1]).length >= 8, // Фільтр за кількістю ключів
-        filterByUserRole: filterByUserRole(value[1]), // Фільтр за роллю користувача
-        filterByUserIdLength: filterByUserIdLength(value[1]), // Фільтр за довжиною userId
-        filterByAge: filterByAge(value[1], 30), // Віковий і шлюбний фільтр
+        filterByKeyCount: Object.keys(value).length >= 8, // Фільтр за кількістю ключів
+        filterByUserRole: filterByUserRole(value), // Фільтр за роллю користувача
+        filterByUserIdLength: filterByUserIdLength(value), // Фільтр за довжиною userId
+        filterByAge: filterByAge(value, 30), // Віковий і шлюбний фільтр
 
       };
     } else {
       filters = {
-        filterByKeyCount: Object.keys(value[1]).length >= 8, // Фільтр за кількістю ключів
-        filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value[1], 30, ['Yes', '+']), // Віковий і шлюбний фільтр
-        filterByUserRole: filterByUserRole(value[1]), // Фільтр за роллю користувача
-        filterByNegativeBloodType: filterByNegativeBloodType(value[1]), // Фільтр за групою крові
-        filterByCSection: filterByCSection(value[1]), // Фільтр за csection
+        filterByKeyCount: Object.keys(value).length >= 8, // Фільтр за кількістю ключів
+        filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value, 30, ['Yes', '+']), // Віковий і шлюбний фільтр
+        filterByUserRole: filterByUserRole(value), // Фільтр за роллю користувача
+        filterByNegativeBloodType: filterByNegativeBloodType(value), // Фільтр за групою крові
+        filterByCSection: filterByCSection(value), // Фільтр за csection
       };
+    }
+
+    if (filterSettings.csectionNot2) {
+      filters.csectionNot2 = filterByCSectionLE1(value);
+    }
+    if (filterSettings.csection0) {
+      filters.csection0 = filterByCSectionNone(value);
+    }
+    if (filterSettings.maritalStatus) {
+      filters.maritalStatus = filterByMaritalStatusOnly(value);
+    }
+    if (filterSettings.blood) {
+      filters.blood = filterByNegativeRhOnly(value);
     }
 
     const failedFilters = Object.entries(filters).filter(([filterName, result]) => !result);
@@ -1144,7 +1171,7 @@ const filterMain = (usersData, filterForload) => {
     return failedFilters.length === 0;
   });
 
-  console.log(`Total excluded users: ${excludedUsersCount}`); // Виводимо загальну кількість відфільтрованих користувачів
+
 
   return filteredUsers;
 };
@@ -1165,10 +1192,8 @@ const sortUsers = filteredUsers => {
   const today = tomorrow.toISOString().split('T')[0]; // Формат YYYY-MM-DD
 
   return filteredUsers.sort(([_, a], [__, b]) => {
-    // console.log('a :>> ', a);
-    // console.log('a.getInTouch :>> ', a.getInTouch);
-    const aDate = a[1].getInTouch || '9999-12-31';
-    const bDate = b[1].getInTouch || '9999-12-31';
+    const aDate = a.getInTouch || '9999-12-31';
+    const bDate = b.getInTouch || '9999-12-31';
 
     // Якщо сьогоднішня дата в a, але не в b
     if (aDate === today && bDate !== today) return -1;
@@ -1187,7 +1212,7 @@ const sortUsers = filteredUsers => {
   });
 };
 
-export const fetchPaginatedNewUsers = async (lastKey, filterForload) => {
+export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSettings = {}) => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
   const todayActual = new Date(); // Поточна дата
@@ -1238,7 +1263,6 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload) => {
     // Спочатку намагаємось отримати користувачів до сьогоднішнього дня
     allUsers = await getUsersBeforeToday();
     // allUsers = await getUsersAfterToday();
-    console.log('allUsers :>> ', allUsers);
     // 2. Якщо немає користувачів зі старими датами, отримуємо з некоректними датами
     if (allUsers.length === 0) {
       allUsers = await getUsersWithInvalidDates();
@@ -1258,7 +1282,6 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload) => {
     const sortedUsers2 = allUsers.filter(([key, value]) => {
       const getInTouch = value.getInTouch;
 
-      console.log('getInTouch :>> ', getInTouch);
 
       // Якщо поле getInTouch відсутнє або дата неправильна, повертаємо true (для другої групи)
       if (!getInTouch || !isValidDate(getInTouch)) {
@@ -1290,21 +1313,18 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload) => {
       return date;
     });
 
-    console.log('sortedUsers2 :>> ', sortedUsers2);
 
     // 3. Об'єднуємо результати (вже відсортовані)
     const combinedUsers = sortedUsers2;
 
     // 5. Фільтруємо користувачів
-    const filteredUsers = filterMain(combinedUsers, filterForload);
+    const filteredUsers = filterMain(combinedUsers, filterForload, filterSettings);
 
     // 6. Сортуємо за логікою: сьогодні -> без дати -> майбутні
     const sortedUsers = sortUsers(filteredUsers);
 
     // 7. Перетворюємо масив [key, value] у формат об'єкта
-    const paginatedUsers = sortedUsers.slice(0, 30).reduce((acc, [key, value]) => {
-      const userId = value[0]; // Перший елемент масиву - userId
-      const userData = value[1]; // Другий елемент - об'єкт даних користувача
+    const paginatedUsers = sortedUsers.slice(0, 30).reduce((acc, [userId, userData]) => {
       acc[userId] = userData;
       return acc;
     }, {});
