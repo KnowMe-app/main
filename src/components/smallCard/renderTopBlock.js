@@ -5,6 +5,7 @@ import { fieldDeliveryInfo } from './fieldDeliveryInfo';
 import { fieldWriter } from './fieldWritter';
 import { fieldContacts } from './fieldContacts';
 import { fieldGetInTouch } from './fieldGetInTouch';
+import { fieldRole } from './fieldRole';
 import { fieldLastCycle } from './fieldLastCycle';
 import { FieldComment } from './FieldComment';
 import { fieldBirth } from './fieldBirth';
@@ -25,6 +26,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState, i
         {userData.lastAction && ', '}
         {userData.userId}
         {fieldGetInTouch(userData, setUsers, setState)}
+        {fieldRole(userData, setUsers, setState)}
         {(userData.userRole !== 'ag' || userData.userRole !== 'ip' || userData.role !== 'ag') && fieldLastCycle(userData, setUsers, setState)}
         {fieldDeliveryInfo(setUsers, setState, userData)}
         {userData.birth && `${userData.birth} - `}
