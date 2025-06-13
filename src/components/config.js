@@ -1131,7 +1131,7 @@ const filterByMaritalStatusOnly = (value, excluded = ['Yes', 'Так', '+']) => 
 
 // Основна функція фільтрації
 const filterMain = (usersData, filterForload, filterSettings = {}) => {
-  let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
+  //let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
 
   const filteredUsers = usersData.filter(([key, value]) => {
     let filters;
