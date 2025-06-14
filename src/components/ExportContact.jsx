@@ -3,19 +3,76 @@ export const makeVCard = user => {
   // Формуємо vCard
   let contactVCard = `BEGIN:VCARD\r\nVERSION:3.0\r\n`;
 
+  // Визначення префіксу для імені
+  const getPrefix = user => {
+    const hasAgentName = Array.isArray(user.name)
+      ? user.name.some(n => String(n).trim().toLowerCase() === 'агент')
+      : String(user.name).trim().toLowerCase() === 'агент';
+
+    const userRoles = Array.isArray(user.userRole)
+      ? user.userRole
+      : [user.userRole];
+    const roles = Array.isArray(user.role) ? user.role : [user.role];
+
+    if (
+      hasAgentName ||
+      userRoles.includes('ag') ||
+      roles.includes('ag')
+    ) {
+      return 'KMАгент';
+    }
+
+    if (userRoles.includes('ip')) {
+      return 'KMПара';
+    }
+
+    if (user.userId && String(user.userId).length > 20) {
+      return 'КМД';
+    }
+
+    if (user.userId && String(user.userId).startsWith('VK')) {
+      return 'КМВК';
+    }
+
+    return 'КМСД';
+  };
+
+  const prefix = getPrefix(user);
+
+  // Обробка телефонів (необхідно для випадку, коли немає ПІБ)
+  const phones = Array.isArray(user.phone) ? user.phone : [user.phone];
+  const firstPhone = phones.find(phone => phone);
+
   // Обробка імені та прізвища
   const names = Array.isArray(user.name) ? user.name : [user.name];
   const surnames = Array.isArray(user.surname) ? user.surname : [user.surname];
-  const fathersnames = Array.isArray(user.fathersname) ? user.fathersname : [user.fathersname];
+  const fathersnames = Array.isArray(user.fathersname)
+    ? user.fathersname
+    : [user.fathersname];
 
-  const fullName = `${surnames.join(' ').trim()} ${names.join(' ').trim()} ${fathersnames.join(' ').trim()}`;
-  if (fullName.trim()) {
-    contactVCard += `FN;CHARSET=UTF-8:СМДО ${fullName.trim()}\r\n`;
-    contactVCard += `N;CHARSET=UTF-8:СМДО ${fullName.trim()};;;;\r\n`;
-  }
+  const cleaned = arr =>
+    arr
+      .filter(Boolean)
+      .map(part => String(part).trim())
+      .filter(part => part.toLowerCase() !== 'агент');
+
+  const fullNameParts = [
+    ...cleaned(surnames),
+    ...cleaned(names),
+    ...cleaned(fathersnames),
+  ];
+  const fullName = fullNameParts.join(' ').trim();
+
+  const finalName = fullName
+    ? `${prefix} ${fullName}`
+    : firstPhone
+    ? `${prefix} ${String(firstPhone).trim()}`
+    : prefix;
+
+  contactVCard += `FN;CHARSET=UTF-8:${finalName}\r\n`;
+  contactVCard += `N;CHARSET=UTF-8:${finalName};;;;\r\n`;
 
   // Обробка телефонів
-  const phones = Array.isArray(user.phone) ? user.phone : [user.phone];
   phones.forEach(phone => {
     if (phone) {
       contactVCard += `TEL;TYPE=CELL:+${String(phone).trim()}\r\n`;
