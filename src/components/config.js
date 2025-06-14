@@ -1030,15 +1030,15 @@ const filterByUserIdLength = value => {
 
 const filterByUserIdPrefix = (value, prefix) => {
   if (!value.userId) return false;
-  return value.userId.startsWith(prefix);
+  return value.userId.toLowerCase().startsWith(prefix.toLowerCase());
 };
 
 const filterByUserIdLong = value => {
-  return value.userId && value.userId.length > 16;
+  return value.userId && value.userId.length > 20;
 };
 
 const filterByUserIdNotLong = value => {
-  return !(value.userId && value.userId.length > 16);
+  return !(value.userId && value.userId.length > 20);
 };
 
 // Фільтр за групою крові додано умову для донорів, вік до 36, імт до 28
@@ -1137,14 +1137,14 @@ const filterByCSectionNone = value => {
 
 const filterMarriedOnly = value => {
   if (!value.maritalStatus) return true;
-  const unmarried = ['no', 'ні', '-'];
-  return !unmarried.includes(value.maritalStatus.toLowerCase());
+  const married = ['yes', '+', 'married', 'одружена', 'заміжня'];
+  return married.includes(value.maritalStatus.trim().toLowerCase());
 };
 
 const filterUnmarriedOnly = value => {
   if (!value.maritalStatus) return true;
-  const unmarried = ['no', 'ні', '-'];
-  return unmarried.includes(value.maritalStatus.toLowerCase());
+  const unmarried = ['no', '-', 'unmarried', 'single', 'ні', 'незаміжня'];
+  return unmarried.includes(value.maritalStatus.trim().toLowerCase());
 };
 
 
