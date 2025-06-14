@@ -11,6 +11,8 @@ import {
   updateDataInFiresoreDB,
   fetchPaginatedNewUsers,
   fetchAllFilteredUsers,
+  fetchTotalFilteredUsersCount,
+  PAGE_SIZE,
   removeKeyFromFirebase,
   // fetchListOfUsers,
   makeNewUser,
@@ -676,6 +678,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setUsers({});
     setLastKey(null);
     setHasMore(true);
+    setTotalCount(0);
   }, [filters]);
 
   // Use saved query on initial load
@@ -1020,12 +1023,16 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
   const [users, setUsers] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
+  const [totalCount, setTotalCount] = useState(0);
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
     const res = await fetchPaginatedNewUsers(lastKey, filterForload, currentFilters);
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
+      if (res.totalCount !== undefined) {
+        setTotalCount(res.totalCount);
+      }
       // console.log('222 :>> ');
       // console.log('res.users :>> ', res.users);
 
@@ -1419,11 +1426,11 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
         ) : (
           <div>
             {search && users && !userNotFound ? (
-              <p style={{ textAlign: 'center', color: 'black' }}>Знайдено {Object.keys(users).length} користувачів.</p>
+              <p style={{ textAlign: 'center', color: 'black' }}>Знайдено {totalCount} користувачів.</p>
             ) : userNotFound ? (
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
             ) : Object.keys(users).length > 1 ? (
-              <p style={{ textAlign: 'center', color: 'black' }}>{Object.keys(users).length} користувачів
+              <p style={{ textAlign: 'center', color: 'black' }}>{totalCount} користувачів
               {duplicates ? ` з (${duplicates})` : ''}
               </p>
             ) :
