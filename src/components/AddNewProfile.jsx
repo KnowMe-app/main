@@ -11,8 +11,6 @@ import {
   updateDataInFiresoreDB,
   fetchPaginatedNewUsers,
   fetchAllFilteredUsers,
-  fetchTotalFilteredUsersCount,
-  PAGE_SIZE,
   removeKeyFromFirebase,
   // fetchListOfUsers,
   makeNewUser,
