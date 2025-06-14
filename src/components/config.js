@@ -25,6 +25,8 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const database = getDatabase(app);
 
+export const PAGE_SIZE = 20;
+
 const keysToCheck = [
   'instagram', 
   'facebook', 
@@ -1400,11 +1402,20 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
     // 6. Сортуємо за логікою: сьогодні -> без дати -> майбутні
     const sortedUsers = sortUsers(filteredUsers);
 
-    // 7. Перетворюємо масив [key, value] у формат об'єкта
-    const paginatedUsers = sortedUsers.slice(0, 30).reduce((acc, [userId, userData]) => {
-      acc[userId] = userData;
-      return acc;
-    }, {});
+    const totalCount = sortedUsers.length;
+
+    let startIndex = 0;
+    if (lastKey) {
+      const index = sortedUsers.findIndex(([id]) => id === lastKey);
+      startIndex = index === -1 ? 0 : index + 1;
+    }
+
+    const paginatedUsers = sortedUsers
+      .slice(startIndex, startIndex + PAGE_SIZE)
+      .reduce((acc, [userId, userData]) => {
+        acc[userId] = userData;
+        return acc;
+      }, {});
 
     // Далі, після вибору 10 карток, отримуємо дані з колекції users для кожного userId
     const userIds = Object.keys(paginatedUsers); // Отримуємо список userId з paginatedUsers
@@ -1516,12 +1527,14 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
     //   return acc;
     // }, Promise.resolve({}));
 
-    const nextKey = sortedUsers.length > 20 ? sortedUsers[20][0] : null;
+    const nextIndex = startIndex + PAGE_SIZE;
+    const nextKey = sortedUsers.length > nextIndex ? sortedUsers[nextIndex][0] : null;
 
     return {
       users: finalUsers, // Об'єкт із користувачами, що містить дані з newUsers і users
       lastKey: nextKey,
-      hasMore: sortedUsers.length > 20,
+      hasMore: !!nextKey,
+      totalCount,
     };
   } catch (error) {
     console.error('Error fetching paginated filtered users:', error);
@@ -2102,6 +2115,11 @@ export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}) 
     console.error('Error fetching filtered users:', error);
     return {};
   }
+};
+
+export const fetchTotalFilteredUsersCount = async (filterForload, filterSettings = {}) => {
+  const allUsers = await fetchAllFilteredUsers(filterForload, filterSettings);
+  return Object.keys(allUsers).length;
 };
 
 export const fetchAllUsersFromRTDB = async () => {
