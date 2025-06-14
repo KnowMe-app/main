@@ -1028,6 +1028,19 @@ const filterByUserIdLength = value => {
   return typeof value.userId === 'string' && value.userId.length <= 25;
 };
 
+const filterByUserIdPrefix = (value, prefix) => {
+  if (!value.userId) return false;
+  return value.userId.startsWith(prefix);
+};
+
+const filterByUserIdLong = value => {
+  return value.userId && value.userId.length > 16;
+};
+
+const filterByUserIdNotLong = value => {
+  return !(value.userId && value.userId.length > 16);
+};
+
 // Фільтр за групою крові додано умову для донорів, вік до 36, імт до 28
 const filterByNegativeBloodType = value => {
   if (!value.blood) return true; // Пропускаємо, якщо дані про кров відсутні
@@ -1048,6 +1061,14 @@ const filterByNegativeRhOnly = value => {
   if (!value.blood) return true;
   const negativeBloodTypes = ['1-', '2-', '3-', '4-', '-'];
   return !negativeBloodTypes.includes(value.blood);
+};
+
+const filterByPositiveRhOnly = filterByNegativeRhOnly;
+
+const filterByNegativeRhStrict = value => {
+  if (!value.blood) return true;
+  const negativeBloodTypes = ['1-', '2-', '3-', '4-', '-'];
+  return negativeBloodTypes.includes(value.blood);
 };
 
 // Фільтр за віком і статусом шлюбу (комбінований)
@@ -1114,11 +1135,18 @@ const filterByCSectionNone = value => {
   return value.csection !== '1' && value.csection !== '2';
 };
 
-// Фільтр тільки за шлюбним статусом без перевірки віку
-const filterByMaritalStatusOnly = (value, excluded = ['Yes', 'Так', '+']) => {
+const filterMarriedOnly = value => {
   if (!value.maritalStatus) return true;
-  return !excluded.includes(value.maritalStatus);
+  const unmarried = ['no', 'ні', '-'];
+  return !unmarried.includes(value.maritalStatus.toLowerCase());
 };
+
+const filterUnmarriedOnly = value => {
+  if (!value.maritalStatus) return true;
+  const unmarried = ['no', 'ні', '-'];
+  return unmarried.includes(value.maritalStatus.toLowerCase());
+};
+
 
 // Основна функція фільтрації
 const filterMain = (usersData, filterForload, filterSettings = {}) => {
@@ -1145,17 +1173,48 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
       };
     }
 
-    if (filterSettings.csectionNot2) {
-      filters.csectionNot2 = filterByCSectionLE1(value);
+    if (filterSettings.csection === 'le1') {
+      filters.csection = filterByCSectionLE1(value);
+    } else if (filterSettings.csection === 'none') {
+      filters.csection = filterByCSectionNone(value);
     }
-    if (filterSettings.csection0) {
-      filters.csection0 = filterByCSectionNone(value);
+
+    if (filterSettings.maritalStatus === 'married') {
+      filters.maritalStatus = filterMarriedOnly(value);
+    } else if (filterSettings.maritalStatus === 'unmarried') {
+      filters.maritalStatus = filterUnmarriedOnly(value);
     }
-    if (filterSettings.maritalStatus) {
-      filters.maritalStatus = filterByMaritalStatusOnly(value);
+
+    if (filterSettings.blood === 'pos') {
+      filters.blood = filterByPositiveRhOnly(value);
+    } else if (filterSettings.blood === 'neg') {
+      filters.blood = filterByNegativeRhStrict(value);
     }
-    if (filterSettings.blood) {
-      filters.blood = filterByNegativeRhOnly(value);
+
+    if (filterSettings.age && filterSettings.age !== 'off') {
+      filters.age = filterByAge(value, Number(filterSettings.age));
+    }
+
+    if (filterSettings.userId) {
+      switch (filterSettings.userId) {
+        case 'vk':
+        case 'ab':
+        case 'aa':
+        case 'dash': {
+          const prefix =
+            filterSettings.userId === 'dash' ? '-' : filterSettings.userId;
+          filters.userId = filterByUserIdPrefix(value, prefix);
+          break;
+        }
+        case 'long':
+          filters.userId = filterByUserIdLong(value);
+          break;
+        case 'notlong':
+          filters.userId = filterByUserIdNotLong(value);
+          break;
+        default:
+          break;
+      }
     }
 
     const failedFilters = Object.entries(filters).filter(([filterName, result]) => !result);
