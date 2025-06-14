@@ -174,31 +174,38 @@ export const makeVCard = user => {
 };
 
 export const saveToContact = data => {
-  let contactVCard = '';
-  var fileName = '';
+  const CHUNK_SIZE = 22000;
+  let usersList = [];
+  let baseName = 'contacts';
 
   if (data.name) {
     // Один користувач (у нього є поле 'name')
-    contactVCard += makeVCard(data);
-    fileName = 'contact.vcf';
+    usersList = [data];
+    baseName = 'contact';
   } else {
-    // Об’єкт з користувачами {id: user, ...}
-    const firstFiveUsers = Object.entries(data)
-    // .slice(0, 5);
-    firstFiveUsers.forEach(([userId, user]) => {
-      contactVCard += makeVCard(user);
-    });
-    fileName = 'contacts.vcf';
+    usersList = Object.values(data);
   }
 
-  const vCardBlob = new Blob([contactVCard], { type: 'text/vcard;charset=utf-8' });
-  const url = window.URL.createObjectURL(vCardBlob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.click();
+  for (let i = 0; i < usersList.length; i += CHUNK_SIZE) {
+    const chunk = usersList.slice(i, i + CHUNK_SIZE);
+    let contactVCard = '';
 
-  console.log('Generated vCard:', contactVCard);
+    chunk.forEach(user => {
+      contactVCard += makeVCard(user);
+    });
 
-  window.URL.revokeObjectURL(url);
+    const fileSuffix = usersList.length > CHUNK_SIZE ? `_${Math.floor(i / CHUNK_SIZE) + 1}` : '';
+    const fileName = `${baseName}${fileSuffix}.vcf`;
+
+    const vCardBlob = new Blob([contactVCard], { type: 'text/vcard;charset=utf-8' });
+    const url = window.URL.createObjectURL(vCardBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.click();
+
+    console.log('Generated vCard:', contactVCard);
+
+    window.URL.revokeObjectURL(url);
+  }
 };
