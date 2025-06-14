@@ -1052,7 +1052,14 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
   };
 
   const exportFilteredUsers = async () => {
-    const allUsers = await fetchAllFilteredUsers(undefined, filters);
+    const noFilters =
+      !filters ||
+      Object.values(filters).every(value => value === 'off');
+
+    const allUsers = noFilters
+      ? await fetchAllUsersFromRTDB()
+      : await fetchAllFilteredUsers(undefined, filters);
+
     saveToContact(allUsers);
   };
 
