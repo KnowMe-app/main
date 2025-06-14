@@ -378,11 +378,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [search, setSearch] = useState(() => localStorage.getItem('searchQuery') || '');
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
-  const [filters, setFilters] = useState({
-    csectionNot2: true,
-    csection0: true,
-    maritalStatus: true,
-    blood: true,
+  const [filters, setFilters] = useState(() => {
+    const stored = localStorage.getItem('userFilters');
+    return (
+      stored
+        ? JSON.parse(stored)
+        : {
+            csection: 'off',
+            maritalStatus: 'off',
+            blood: 'off',
+            age: 'off',
+            userId: 'off',
+          }
+    );
   });
   // const [addUser, setAddUser] = useState(null);
   // const [focused, setFocused] = useState(null);
@@ -658,6 +666,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('searchQuery');
     }
   }, [search]);
+
+  useEffect(() => {
+    localStorage.setItem('userFilters', JSON.stringify(filters));
+  }, [filters]);
 
   // Use saved query on initial load
   useEffect(() => {

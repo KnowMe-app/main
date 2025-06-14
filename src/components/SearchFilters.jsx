@@ -1,107 +1,167 @@
 import React from 'react';
 
 export const SearchFilters = ({ filters, onChange }) => {
-  const handleCsectionChange = option => {
-    if (option === 'le1') {
-      onChange({ ...filters, csectionNot2: true, csection0: false });
-    } else if (option === 'none') {
-
-      onChange({ ...filters, csectionNot2: true, csection0: true });
-    } else {
-      onChange({ ...filters, csectionNot2: false, csection0: false });
-    }
-  };
-
-  const handleToggle = (name, value) => {
+  const handleChange = (name, value) => {
     onChange({ ...filters, [name]: value });
   };
 
-  const currentCsection = filters.csection0
-    ? 'none'
-    : filters.csectionNot2
-    ? 'le1'
-    : 'off';
-
   return (
-    <div style={{ margin: '10px 0' }}>
+    <div style={{ margin: '10px 0', color: 'black' }}>
       <div style={{ marginBottom: '8px' }}>
         <span style={{ marginRight: '8px' }}>C-section:</span>
-        <label>
+        <label style={{ color: 'black' }}>
           <input
             type="radio"
             name="csection"
             value="off"
-            checked={currentCsection === 'off'}
-            onChange={() => handleCsectionChange('off')}
+            checked={filters.csection === 'off'}
+            onChange={() => handleChange('csection', 'off')}
           />
           no filter
         </label>
-        <label style={{ marginLeft: '10px' }}>
+        <label style={{ marginLeft: '10px', color: 'black' }}>
           <input
             type="radio"
             name="csection"
             value="le1"
-            checked={currentCsection === 'le1'}
-            onChange={() => handleCsectionChange('le1')}
+            checked={filters.csection === 'le1'}
+            onChange={() => handleChange('csection', 'le1')}
           />
           ≤1
         </label>
-        <label style={{ marginLeft: '10px' }}>
+        <label style={{ marginLeft: '10px', color: 'black' }}>
           <input
             type="radio"
             name="csection"
             value="none"
-            checked={currentCsection === 'none'}
-            onChange={() => handleCsectionChange('none')}
+            checked={filters.csection === 'none'}
+            onChange={() => handleChange('csection', 'none')}
           />
           none (–)
         </label>
       </div>
       <div style={{ marginBottom: '8px' }}>
         <span style={{ marginRight: '8px' }}>Marital status:</span>
-        <label>
-          <input
-            type="radio"
-            name="maritalStatus"
-            value="on"
-            checked={filters.maritalStatus}
-            onChange={() => handleToggle('maritalStatus', true)}
-          />
-          active
-        </label>
-        <label style={{ marginLeft: '10px' }}>
+        <label style={{ color: 'black' }}>
           <input
             type="radio"
             name="maritalStatus"
             value="off"
-            checked={!filters.maritalStatus}
-            onChange={() => handleToggle('maritalStatus', false)}
+            checked={filters.maritalStatus === 'off'}
+            onChange={() => handleChange('maritalStatus', 'off')}
           />
-          disabled
+          no filter
+        </label>
+        <label style={{ marginLeft: '10px', color: 'black' }}>
+          <input
+            type="radio"
+            name="maritalStatus"
+            value="married"
+            checked={filters.maritalStatus === 'married'}
+            onChange={() => handleChange('maritalStatus', 'married')}
+          />
+          married
+        </label>
+        <label style={{ marginLeft: '10px', color: 'black' }}>
+          <input
+            type="radio"
+            name="maritalStatus"
+            value="unmarried"
+            checked={filters.maritalStatus === 'unmarried'}
+            onChange={() => handleChange('maritalStatus', 'unmarried')}
+          />
+          unmarried
         </label>
       </div>
-      <div>
+      <div style={{ marginBottom: '8px' }}>
         <span style={{ marginRight: '8px' }}>Rh factor:</span>
-        <label>
-          <input
-            type="radio"
-            name="blood"
-            value="on"
-            checked={filters.blood}
-            onChange={() => handleToggle('blood', true)}
-          />
-          active
-        </label>
-        <label style={{ marginLeft: '10px' }}>
+        <label style={{ color: 'black' }}>
           <input
             type="radio"
             name="blood"
             value="off"
-            checked={!filters.blood}
-            onChange={() => handleToggle('blood', false)}
+            checked={filters.blood === 'off'}
+            onChange={() => handleChange('blood', 'off')}
           />
-          disabled
+          no filter
         </label>
+        <label style={{ marginLeft: '10px', color: 'black' }}>
+          <input
+            type="radio"
+            name="blood"
+            value="pos"
+            checked={filters.blood === 'pos'}
+            onChange={() => handleChange('blood', 'pos')}
+          />
+          Rh+
+        </label>
+        <label style={{ marginLeft: '10px', color: 'black' }}>
+          <input
+            type="radio"
+            name="blood"
+            value="neg"
+            checked={filters.blood === 'neg'}
+            onChange={() => handleChange('blood', 'neg')}
+          />
+          Rh-
+        </label>
+      </div>
+      <div style={{ marginBottom: '8px' }}>
+        <span style={{ marginRight: '8px' }}>Age:</span>
+        <label style={{ color: 'black' }}>
+          <input
+            type="radio"
+            name="age"
+            value="off"
+            checked={filters.age === 'off'}
+            onChange={() => handleChange('age', 'off')}
+          />
+          no filter
+        </label>
+        {['43', '38', '36', '32', '30', '25'].map(limit => (
+          <label key={limit} style={{ marginLeft: '10px', color: 'black' }}>
+            <input
+              type="radio"
+              name="age"
+              value={limit}
+              checked={filters.age === limit}
+              onChange={() => handleChange('age', limit)}
+            />
+            {!isNaN(limit) ? `≤${limit}` : limit}
+          </label>
+        ))}
+      </div>
+      <div>
+        <span style={{ marginRight: '8px' }}>UserId:</span>
+        <label style={{ color: 'black' }}>
+          <input
+            type="radio"
+            name="userId"
+            value="off"
+            checked={filters.userId === 'off'}
+            onChange={() => handleChange('userId', 'off')}
+          />
+          no filter
+        </label>
+        {[
+          { val: 'vk', label: 'vk' },
+          { val: 'ab', label: 'ab' },
+          { val: 'aa', label: 'aa' },
+          { val: 'dash', label: '-' },
+          { val: 'long', label: '>16' },
+          { val: 'notlong', label: '<=16' },
+        ].map(({ val, label }) => (
+          <label key={val} style={{ marginLeft: '10px', color: 'black' }}>
+            <input
+              type="radio"
+              name="userId"
+              value={val}
+              checked={filters.userId === val}
+              onChange={() => handleChange('userId', val)}
+            />
+            {label}
+          </label>
+        ))}
       </div>
     </div>
   );
