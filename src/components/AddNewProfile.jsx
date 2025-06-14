@@ -10,6 +10,7 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
   fetchPaginatedNewUsers,
+  fetchAllFilteredUsers,
   removeKeyFromFirebase,
   // fetchListOfUsers,
   makeNewUser,
@@ -671,6 +672,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     localStorage.setItem('userFilters', JSON.stringify(filters));
   }, [filters]);
 
+  useEffect(() => {
+    setUsers({});
+    setLastKey(null);
+    setHasMore(true);
+  }, [filters]);
+
   // Use saved query on initial load
   useEffect(() => {
     if (search) {
@@ -1042,6 +1049,11 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     } else {
       setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
     }
+  };
+
+  const exportFilteredUsers = async () => {
+    const allUsers = await fetchAllFilteredUsers(undefined, filters);
+    saveToContact(allUsers);
   };
 
   const saveAllContacts = async () => {
@@ -1417,7 +1429,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
               {hasMore && <Button onClick={makeIndex}>Index</Button>}
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {<Button onClick={()=>{btnMerge(users, setUsers, setDuplicates)}}>Merg</Button>}
-              {btnExportUsers(users)}
+              {btnExportUsers(exportFilteredUsers)}
               <Button onClick={saveAllContacts}> S_All</Button>
               
               {/* <ExcelToJson/> */}
