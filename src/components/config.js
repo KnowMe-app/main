@@ -1137,14 +1137,14 @@ const filterByCSectionNone = value => {
 
 const filterMarriedOnly = value => {
   if (!value.maritalStatus) return true;
-  const married = ['yes', '+', 'married', 'одружена', 'заміжня'];
-  return married.includes(value.maritalStatus.trim().toLowerCase());
+  const unmarried = ['no', '-', 'unmarried', 'single', 'ні', 'незаміжня'];
+  return !unmarried.includes(value.maritalStatus.trim().toLowerCase());
 };
 
 const filterUnmarriedOnly = value => {
   if (!value.maritalStatus) return true;
-  const unmarried = ['no', '-', 'unmarried', 'single', 'ні', 'незаміжня'];
-  return unmarried.includes(value.maritalStatus.trim().toLowerCase());
+  const married = ['yes', '+', 'married', 'одружена', 'заміжня'];
+  return !married.includes(value.maritalStatus.trim().toLowerCase());
 };
 
 
