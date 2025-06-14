@@ -671,6 +671,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     localStorage.setItem('userFilters', JSON.stringify(filters));
   }, [filters]);
 
+  useEffect(() => {
+    setUsers({});
+    setLastKey(null);
+    setHasMore(true);
+  }, [filters]);
+
   // Use saved query on initial load
   useEffect(() => {
     if (search) {
@@ -1042,6 +1048,25 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     } else {
       setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
     }
+  };
+
+  const exportFilteredUsers = async () => {
+    let allUsers = {};
+    let nextKey = null;
+    let more = true;
+
+    while (more) {
+      const res = await fetchPaginatedNewUsers(nextKey, undefined, filters);
+      if (res && res.users && Object.keys(res.users).length > 0) {
+        allUsers = { ...allUsers, ...res.users };
+        nextKey = res.lastKey;
+        more = res.hasMore;
+      } else {
+        more = false;
+      }
+    }
+
+    saveToContact(allUsers);
   };
 
   const saveAllContacts = async () => {
@@ -1417,7 +1442,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
               {hasMore && <Button onClick={makeIndex}>Index</Button>}
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {<Button onClick={()=>{btnMerge(users, setUsers, setDuplicates)}}>Merg</Button>}
-              {btnExportUsers(users)}
+              {btnExportUsers(exportFilteredUsers)}
               <Button onClick={saveAllContacts}> S_All</Button>
               
               {/* <ExcelToJson/> */}

@@ -1,14 +1,9 @@
 import React from 'react';
-import { saveToContact } from 'components/ExportContact';
 import { OrangeBtn } from 'components/styles';
 
-export const btnExportUsers = users => {
+export const btnExportUsers = onExport => {
   return (
-    <OrangeBtn
-      onClick={() => {
-        saveToContact(users);
-      }}
-    >
+    <OrangeBtn onClick={onExport}>
       Save
     </OrangeBtn>
   );
