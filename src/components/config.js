@@ -1163,27 +1163,36 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
         filterByAge: filterByAge(value, 30), // Віковий і шлюбний фільтр
 
       };
-    } else {
-      filters = {
-        filterByKeyCount: Object.keys(value).length >= 8, // Фільтр за кількістю ключів
-        filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value, 30, ['Yes', '+']), // Віковий і шлюбний фільтр
-        filterByUserRole: filterByUserRole(value), // Фільтр за роллю користувача
-        filterByNegativeBloodType: filterByNegativeBloodType(value), // Фільтр за групою крові
-        filterByCSection: filterByCSection(value), // Фільтр за csection
-      };
-    }
+      } else {
+        filters = {
+          filterByKeyCount: Object.keys(value).length >= 8, // Фільтр за кількістю ключів
+          filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value, 30, ['Yes', '+']), // Віковий і шлюбний фільтр
+          filterByUserRole: filterByUserRole(value), // Фільтр за роллю користувача
+          filterByNegativeBloodType: filterByNegativeBloodType(value), // Фільтр за групою крові
+          filterByCSection: filterByCSection(value), // Фільтр за csection
+        };
+      }
 
-    if (filterSettings.csection === 'le1') {
-      filters.csection = filterByCSectionLE1(value);
-    } else if (filterSettings.csection === 'none') {
-      filters.csection = filterByCSectionNone(value);
-    }
+      if (filterSettings.csection === 'le1') {
+        filters.csection = filterByCSectionLE1(value);
+      } else if (filterSettings.csection === 'none') {
+        filters.csection = filterByCSectionNone(value);
+      }
 
-    if (filterSettings.maritalStatus === 'married') {
-      filters.maritalStatus = filterMarriedOnly(value);
-    } else if (filterSettings.maritalStatus === 'unmarried') {
-      filters.maritalStatus = filterUnmarriedOnly(value);
-    }
+      if (filterSettings.maritalStatus === 'married') {
+        filters.maritalStatus = filterMarriedOnly(value);
+      } else if (filterSettings.maritalStatus === 'unmarried') {
+        filters.maritalStatus = filterUnmarriedOnly(value);
+      }
+      if (
+        filterSettings.maritalStatus &&
+        filterSettings.maritalStatus !== 'off' &&
+        Object.prototype.hasOwnProperty.call(filters, 'filterByAgeAndMaritalStatus')
+      ) {
+        // Якщо користувач явно фільтрує за статусом шлюбу,
+        // не застосовуємо базовий комбінований фільтр
+        filters.filterByAgeAndMaritalStatus = true;
+      }
 
     if (filterSettings.blood === 'pos') {
       filters.blood = filterByPositiveRhOnly(value);
