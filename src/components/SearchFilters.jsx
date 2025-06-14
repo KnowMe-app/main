@@ -148,8 +148,8 @@ export const SearchFilters = ({ filters, onChange }) => {
           { val: 'ab', label: 'ab' },
           { val: 'aa', label: 'aa' },
           { val: 'dash', label: '-' },
-          { val: 'long', label: '>16' },
-          { val: 'notlong', label: '<=16' },
+          { val: 'long', label: '>20' },
+          { val: 'notlong', label: '\u2264 20' },
         ].map(({ val, label }) => (
           <label key={val} style={{ marginLeft: '10px', color: 'black' }}>
             <input
