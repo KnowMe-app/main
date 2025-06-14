@@ -1136,15 +1136,15 @@ const filterByCSectionNone = value => {
 };
 
 const filterMarriedOnly = value => {
-  if (!value.maritalStatus) return true;
-  const unmarried = ['no', '-', 'unmarried', 'single', 'ні', 'незаміжня'];
-  return !unmarried.includes(value.maritalStatus.trim().toLowerCase());
+  if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return false;
+  const married = ['yes', '+', 'married', 'одружена', 'заміжня'];
+  return married.includes(value.maritalStatus.trim().toLowerCase());
 };
 
 const filterUnmarriedOnly = value => {
-  if (!value.maritalStatus) return true;
-  const married = ['yes', '+', 'married', 'одружена', 'заміжня'];
-  return !married.includes(value.maritalStatus.trim().toLowerCase());
+  if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return false;
+  const unmarried = ['no', '-', 'unmarried', 'single', 'ні', 'незаміжня'];
+  return unmarried.includes(value.maritalStatus.trim().toLowerCase());
 };
 
 
@@ -1192,6 +1192,14 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
         // Якщо користувач явно фільтрує за статусом шлюбу,
         // не застосовуємо базовий комбінований фільтр
         filters.filterByAgeAndMaritalStatus = true;
+      }
+      if (
+        filterSettings.maritalStatus &&
+        filterSettings.maritalStatus !== 'off' &&
+        Object.prototype.hasOwnProperty.call(filters, 'filterByAge')
+      ) {
+        // При явному фільтрі за статусом шлюбу вимикаємо базовий віковий фільтр
+        filters.filterByAge = true;
       }
 
     if (filterSettings.blood === 'pos') {
