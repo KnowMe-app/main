@@ -2066,6 +2066,44 @@ export const removeCardAndSearchId = async userId => {
   }
 };
 
+export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}) => {
+  try {
+    const [newUsersSnapshot, usersSnapshot] = await Promise.all([
+      get(ref2(database, 'newUsers')),
+      get(ref2(database, 'users')),
+    ]);
+
+    const newUsersData = newUsersSnapshot.exists() ? newUsersSnapshot.val() : {};
+    const usersData = usersSnapshot.exists() ? usersSnapshot.val() : {};
+
+    const allUserIds = new Set([
+      ...Object.keys(newUsersData),
+      ...Object.keys(usersData),
+    ]);
+
+    const allUsersArray = Array.from(allUserIds).map(userId => {
+      const newUserRaw = newUsersData[userId] || {};
+      const { searchId, ...newUserDataWithoutSearchId } = newUserRaw;
+
+      return [
+        userId,
+        {
+          userId,
+          ...newUserDataWithoutSearchId,
+          ...(usersData[userId] || {}),
+        },
+      ];
+    });
+
+    const filteredUsers = filterMain(allUsersArray, filterForload, filterSettings);
+    const sortedUsers = sortUsers(filteredUsers);
+    return Object.fromEntries(sortedUsers);
+  } catch (error) {
+    console.error('Error fetching filtered users:', error);
+    return {};
+  }
+};
+
 export const fetchAllUsersFromRTDB = async () => {
   try {
     // Отримуємо дані з двох колекцій

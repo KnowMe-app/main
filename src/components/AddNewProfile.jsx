@@ -10,6 +10,7 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
   fetchPaginatedNewUsers,
+  fetchAllFilteredUsers,
   removeKeyFromFirebase,
   // fetchListOfUsers,
   makeNewUser,
@@ -1051,21 +1052,7 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
   };
 
   const exportFilteredUsers = async () => {
-    let allUsers = {};
-    let nextKey = null;
-    let more = true;
-
-    while (more) {
-      const res = await fetchPaginatedNewUsers(nextKey, undefined, filters);
-      if (res && res.users && Object.keys(res.users).length > 0) {
-        allUsers = { ...allUsers, ...res.users };
-        nextKey = res.lastKey;
-        more = res.hasMore;
-      } else {
-        more = false;
-      }
-    }
-
+    const allUsers = await fetchAllFilteredUsers(undefined, filters);
     saveToContact(allUsers);
   };
 
