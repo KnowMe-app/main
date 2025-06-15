@@ -1381,7 +1381,7 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
 
     // 5. Фільтруємо користувачів, якщо передані активні фільтри
     const noExplicitFilters =
-      !filterForload &&
+      (!filterForload || filterForload === 'NewLoad') &&
       (!filterSettings ||
         Object.values(filterSettings).every(value => value === 'off'));
 
