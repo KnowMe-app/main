@@ -1152,8 +1152,6 @@ const filterUnmarriedOnly = value => {
 
 // Основна функція фільтрації
 const filterMain = (usersData, filterForload, filterSettings = {}) => {
-  const noExplicitFilters =
-    Object.values(filterSettings).every(value => value === 'off');
   let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
 
   const filteredUsers = usersData.filter(([key, value]) => {
@@ -1166,17 +1164,6 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
         filterByUserRole: filterByUserRole(value),
         filterByUserIdLength: filterByUserIdLength(value),
         filterByAge: filterByAge(value, 30),
-      });
-    } else if (noExplicitFilters) {
-      // Базові фільтри застосовуємо лише коли відсутні явні фільтри
-      Object.assign(filters, {
-        filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value, 30, [
-          'Yes',
-          '+',
-        ]),
-        filterByUserRole: filterByUserRole(value),
-        filterByNegativeBloodType: filterByNegativeBloodType(value),
-        filterByCSection: filterByCSection(value),
       });
     }
 
