@@ -3,7 +3,7 @@ import { getAuth, deleteUser } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
 import { getDatabase, ref as ref2, get, remove, set, update, push, orderByChild } from 'firebase/database';
-import { query, orderByKey, equalTo } from 'firebase/database';
+import { query, orderByKey } from 'firebase/database';
 import { startAt, endAt } from 'firebase/database';
 
 const firebaseConfig = {
@@ -1283,7 +1283,7 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
   const todayActual = new Date(); // Поточна дата
   const today = new Date(todayActual); // Копія дати
   today.setDate(todayActual.getDate() + 1); // Збільшуємо дату на 1 день
-  const todayString = today.toISOString().split('T')[0]; // Формат YYYY-MM-DD
+  // const todayString = today.toISOString().split('T')[0]; // Формат YYYY-MM-DD
 
   try {
     const snapshot = await get(usersRef);
