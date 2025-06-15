@@ -41,6 +41,8 @@ import { renderTopBlock } from './smallCard/renderTopBlock';
 import { btnExportUsers } from './topBtns/btnExportUsers';
 import { btnMerge } from './smallCard/btnMerge';
 import { SearchFilters } from './SearchFilters';
+import { Pagination } from './Pagination';
+import { PAGE_SIZE } from './config';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 
@@ -677,6 +679,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLastKey(null);
     setHasMore(true);
     setTotalCount(0);
+    setCurrentPage(1);
   }, [filters]);
 
   // Use saved query on initial load
@@ -1022,6 +1025,8 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
   const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [currentFilter, setCurrentFilter] = useState(null);
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
     const res = await fetchPaginatedNewUsers(lastKey, filterForload, currentFilters);
@@ -1054,6 +1059,14 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
     } else {
       setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
     }
+  };
+
+  const handlePageChange = async page => {
+    const needed = page * PAGE_SIZE;
+    while (hasMore && Object.keys(users).length < needed) {
+      await loadMoreUsers(currentFilter);
+    }
+    setCurrentPage(page);
   };
 
   const exportFilteredUsers = async () => {
@@ -1144,6 +1157,16 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
       autoResize(textareaRef.current); // Встановлюємо висоту після завантаження
     }
   }, [state.myComment]); // Виконується при завантаженні та зміні коментаря
+
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
+  const displayedUserIds = Object.keys(users).slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+  const paginatedUsers = displayedUserIds.reduce((acc, id) => {
+    acc[id] = users[id];
+    return acc;
+  }, {});
 
 
   return (
@@ -1436,8 +1459,34 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
             <SearchFilters filters={filters} onChange={setFilters} />
             <div>
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
-              {hasMore && <Button onClick={()=>{loadMoreUsers('ED')}}>ED</Button>}
-              {hasMore && <Button onClick={()=>{loadMoreUsers()}}>Load</Button>}
+              {hasMore && (
+                <Button
+                  onClick={() => {
+                    setUsers({});
+                    setLastKey(null);
+                    setHasMore(true);
+                    setCurrentPage(1);
+                    setCurrentFilter('ED');
+                    loadMoreUsers('ED');
+                  }}
+                >
+                  ED
+                </Button>
+              )}
+              {hasMore && (
+                <Button
+                  onClick={() => {
+                    setUsers({});
+                    setLastKey(null);
+                    setHasMore(true);
+                    setCurrentPage(1);
+                    setCurrentFilter(null);
+                    loadMoreUsers();
+                  }}
+                >
+                  Load
+                </Button>
+              )}
               {hasMore && <Button onClick={makeIndex}>Index</Button>}
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {<Button onClick={()=>{btnMerge(users, setUsers, setDuplicates)}}>Merg</Button>}
@@ -1449,7 +1498,23 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
               {/* <JsonToExcelButton/> */}
               {/* {users && <div>Знайдено {Object.keys(users).length}</div>} */}
             </div>
-            {!userNotFound && <UsersList setCompare ={setCompare} setShowInfoModal ={setShowInfoModal} users={users} setUsers={setUsers} setSearch={setSearch} setState={setState} />}{' '}
+            {!userNotFound && (
+              <>
+                <UsersList
+                  setCompare={setCompare}
+                  setShowInfoModal={setShowInfoModal}
+                  users={paginatedUsers}
+                  setUsers={setUsers}
+                  setSearch={setSearch}
+                  setState={setState}
+                />
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                />
+              </>
+            )}
             {/* Передача користувачів у UsersList */}
           </div>
         )}
