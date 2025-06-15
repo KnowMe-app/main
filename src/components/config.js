@@ -1396,8 +1396,15 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
     // 3. Об'єднуємо результати (вже відсортовані)
     const combinedUsers = sortedUsers2;
 
-    // 5. Фільтруємо користувачів
-    const filteredUsers = filterMain(combinedUsers, filterForload, filterSettings);
+    // 5. Фільтруємо користувачів, якщо передані активні фільтри
+    const noExplicitFilters =
+      !filterForload &&
+      (!filterSettings ||
+        Object.values(filterSettings).every(value => value === 'off'));
+
+    const filteredUsers = noExplicitFilters
+      ? combinedUsers
+      : filterMain(combinedUsers, filterForload, filterSettings);
 
     // 6. Сортуємо за логікою: сьогодні -> без дати -> майбутні
     const sortedUsers = sortUsers(filteredUsers);
