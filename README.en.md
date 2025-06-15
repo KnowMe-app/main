@@ -107,5 +107,5 @@ the line are required.
 ## Search filters
 
 The Add New Profile page provides radio buttons to filter users by C-section
-history, marital status and negative Rh factor. All filters are enabled by
-default and appear above the user list.
+history, marital status and negative Rh factor. The radio buttons appear above
+the user list.

@@ -1489,6 +1489,20 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
                     setLastKey(null);
                     setHasMore(true);
                     setCurrentPage(1);
+                    setCurrentFilter('NewLoad');
+                    loadMoreUsers('NewLoad');
+                  }}
+                >
+                  NewLoad
+                </Button>
+              )}
+              {hasMore && (
+                <Button
+                  onClick={() => {
+                    setUsers({});
+                    setLastKey(null);
+                    setHasMore(true);
+                    setCurrentPage(1);
                     setCurrentFilter(null);
                     loadMoreUsers();
                   }}
