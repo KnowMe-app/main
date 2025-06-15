@@ -1152,28 +1152,33 @@ const filterUnmarriedOnly = value => {
 
 // Основна функція фільтрації
 const filterMain = (usersData, filterForload, filterSettings = {}) => {
+  const noExplicitFilters =
+    Object.values(filterSettings).every(value => value === 'off');
   let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
 
   const filteredUsers = usersData.filter(([key, value]) => {
-    let filters;
+    let filters = {
+      filterByKeyCount: Object.keys(value).length >= 8,
+    };
     if (filterForload === 'ED') {
-      // Якщо filterForload === ED, використовуємо новий пустий filters
-      filters = {
-        filterByKeyCount: Object.keys(value).length >= 8, // Фільтр за кількістю ключів
-        filterByUserRole: filterByUserRole(value), // Фільтр за роллю користувача
-        filterByUserIdLength: filterByUserIdLength(value), // Фільтр за довжиною userId
-        filterByAge: filterByAge(value, 30), // Віковий і шлюбний фільтр
-
-      };
-      } else {
-        filters = {
-          filterByKeyCount: Object.keys(value).length >= 8, // Фільтр за кількістю ключів
-          filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value, 30, ['Yes', '+']), // Віковий і шлюбний фільтр
-          filterByUserRole: filterByUserRole(value), // Фільтр за роллю користувача
-          filterByNegativeBloodType: filterByNegativeBloodType(value), // Фільтр за групою крові
-          filterByCSection: filterByCSection(value), // Фільтр за csection
-        };
-      }
+      // Якщо filterForload === ED, використовуємо додаткові фільтри
+      Object.assign(filters, {
+        filterByUserRole: filterByUserRole(value),
+        filterByUserIdLength: filterByUserIdLength(value),
+        filterByAge: filterByAge(value, 30),
+      });
+    } else if (noExplicitFilters) {
+      // Базові фільтри застосовуємо лише коли відсутні явні фільтри
+      Object.assign(filters, {
+        filterByAgeAndMaritalStatus: filterByAgeAndMaritalStatus(value, 30, [
+          'Yes',
+          '+',
+        ]),
+        filterByUserRole: filterByUserRole(value),
+        filterByNegativeBloodType: filterByNegativeBloodType(value),
+        filterByCSection: filterByCSection(value),
+      });
+    }
 
       if (filterSettings.csection === 'le1') {
         filters.csection = filterByCSectionLE1(value);
@@ -1181,28 +1186,11 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
         filters.csection = filterByCSectionNone(value);
       }
 
-      if (filterSettings.maritalStatus === 'married') {
-        filters.maritalStatus = filterMarriedOnly(value);
-      } else if (filterSettings.maritalStatus === 'unmarried') {
-        filters.maritalStatus = filterUnmarriedOnly(value);
-      }
-      if (
-        filterSettings.maritalStatus &&
-        filterSettings.maritalStatus !== 'off' &&
-        Object.prototype.hasOwnProperty.call(filters, 'filterByAgeAndMaritalStatus')
-      ) {
-        // Якщо користувач явно фільтрує за статусом шлюбу,
-        // не застосовуємо базовий комбінований фільтр
-        filters.filterByAgeAndMaritalStatus = true;
-      }
-      if (
-        filterSettings.maritalStatus &&
-        filterSettings.maritalStatus !== 'off' &&
-        Object.prototype.hasOwnProperty.call(filters, 'filterByAge')
-      ) {
-        // При явному фільтрі за статусом шлюбу вимикаємо базовий віковий фільтр
-        filters.filterByAge = true;
-      }
+    if (filterSettings.maritalStatus === 'married') {
+      filters.maritalStatus = filterMarriedOnly(value);
+    } else if (filterSettings.maritalStatus === 'unmarried') {
+      filters.maritalStatus = filterUnmarriedOnly(value);
+    }
 
     if (filterSettings.blood === 'pos') {
       filters.blood = filterByPositiveRhOnly(value);
@@ -1214,7 +1202,7 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
       filters.age = filterByAge(value, Number(filterSettings.age));
     }
 
-    if (filterSettings.userId) {
+    if (filterSettings.userId && filterSettings.userId !== 'off') {
       switch (filterSettings.userId) {
         case 'vk':
         case 'ab':
