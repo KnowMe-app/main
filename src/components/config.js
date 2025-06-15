@@ -1058,6 +1058,8 @@ const filterByNegativeBloodType = value => {
 
 };
 
+console.log(`filterByNegativeBloodType: ${filterByNegativeBloodType}`);
+
 // Спрощений фільтр за негативним резус-фактором без перевірки віку та ІМТ
 const filterByNegativeRhOnly = value => {
   if (!value.blood) return true;
@@ -1096,6 +1098,8 @@ const filterByAgeAndMaritalStatus = (value, ageLimit = 30, requiredStatuses = ['
    }
 };
 
+console.log(`filterByAgeAndMaritalStatus: ${filterByAgeAndMaritalStatus}`);
+
 // Фільтр за віком
 const filterByAge = (value, ageLimit = 30) => {
   // Якщо дата народження відсутня або не є рядком, пропускаємо користувача
@@ -1124,6 +1128,10 @@ const filterByCSection = value => {
   // Якщо false - користувача фільтруємо
   return checkAgeAndBMI(value);
 };
+
+console.log(`filterByCSection: ${filterByCSection}`);
+
+
 
 // C-section <=1 filter
 const filterByCSectionLE1 = value => {
