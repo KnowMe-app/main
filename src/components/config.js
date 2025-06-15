@@ -1252,25 +1252,28 @@ const sortUsers = filteredUsers => {
   const tomorrow = new Date(currentDate); // Копія поточної дати
   tomorrow.setDate(currentDate.getDate() + 1); // Збільшуємо дату на 1 день
   const today = tomorrow.toISOString().split('T')[0]; // Формат YYYY-MM-DD
+  const getGroup = date => {
+    if (!date) return 4; // порожня дата
+    if (date === '2099-99-99' || date === '9999-99-99') return 5; // спецдати
+    if (!isValidDate(date)) return 3; // некоректні дати
+    if (date === today) return 0; // сьогодні
+    return date < today ? 1 : 2; // минулі або майбутні
+  };
 
   return filteredUsers.sort(([_, a], [__, b]) => {
-    const aDate = a.getInTouch || '9999-12-31';
-    const bDate = b.getInTouch || '9999-12-31';
+    const groupA = getGroup(a.getInTouch);
+    const groupB = getGroup(b.getInTouch);
 
-    // Якщо сьогоднішня дата в a, але не в b
-    if (aDate === today && bDate !== today) return -1;
-    if (bDate === today && aDate !== today) return 1;
+    if (groupA !== groupB) return groupA - groupB;
 
-    // Перевіряємо коректність дати (має формат рррр-мм-дд)
-    if (isValidDate(aDate) && isValidDate(bDate)) {
-      return aDate.localeCompare(bDate); // Сортування в порядку зростання
+    // Усередині груп із коректними датами сортуємо за зростанням
+    if (groupA <= 2) {
+      const aDate = a.getInTouch || '';
+      const bDate = b.getInTouch || '';
+      return aDate.localeCompare(bDate);
     }
 
-    // Ставимо некоректні дати в кінець списку
-    if (!isValidDate(aDate)) return 1;
-    if (!isValidDate(bDate)) return -1;
-
-    return 0; // Якщо немає чіткої умови
+    return 0;
   });
 };
 
@@ -1281,115 +1284,26 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
   const today = new Date(todayActual); // Копія дати
   today.setDate(todayActual.getDate() + 1); // Збільшуємо дату на 1 день
   const todayString = today.toISOString().split('T')[0]; // Формат YYYY-MM-DD
-  // const todayString = today.toISOString().split('T')[0];
 
   try {
-    // Функція для отримання користувачів до сьогоднішнього дня
-    const getUsersBeforeToday = async () => {
-      const allUsersQuery = query(
-        usersRef,
-        orderByChild('getInTouch'),
-        endAt(todayString) // Отримуємо користувачів до сьогоднішнього дня
-      );
-
-      const allUsersSnapshot = await get(allUsersQuery);
-      return allUsersSnapshot.exists() ? Object.entries(allUsersSnapshot.val()) : [];
-    };
-
-    // Функція для отримання користувачів з пустими або некоректними датами
-    const getUsersWithInvalidDates = async () => {
-      const invalidDatesQuery = query(
-        usersRef,
-        orderByChild('getInTouch'),
-        equalTo(null) // Отримуємо користувачів з відсутніми або некоректними датами
-      );
-
-      const invalidDatesSnapshot = await get(invalidDatesQuery);
-      return invalidDatesSnapshot.exists() ? Object.entries(invalidDatesSnapshot.val()) : [];
-    };
-
-    // Функція для отримання користувачів з майбутніми датами
-    const getUsersAfterToday = async () => {
-      const futureUsersQuery = query(
-        usersRef,
-        orderByChild('getInTouch'),
-        startAt(todayString) // Отримуємо користувачів з датою від сьогодні
-      );
-
-      const futureUsersSnapshot = await get(futureUsersQuery);
-      return futureUsersSnapshot.exists() ? Object.entries(futureUsersSnapshot.val()) : [];
-    };
-
-    let allUsers = [];
-
-    // Спочатку намагаємось отримати користувачів до сьогоднішнього дня
-    allUsers = await getUsersBeforeToday();
-    // allUsers = await getUsersAfterToday();
-    // 2. Якщо немає користувачів зі старими датами, отримуємо з некоректними датами
-    if (allUsers.length === 0) {
-      allUsers = await getUsersWithInvalidDates();
-    }
-    // Якщо користувачів до сьогоднішнього дня не знайшли, перевіряємо майбутні
-    if (allUsers.length === 0) {
-      allUsers = await getUsersAfterToday();
-    }
-
-    // Якщо ні тих, ні інших не знайшли, allUsers буде порожнім
-    if (allUsers.length === 0) {
+    const snapshot = await get(usersRef);
+    if (!snapshot.exists()) {
       console.log('Немає користувачів.');
-      return []; // Повертаємо порожній список
+      return [];
     }
 
-    // Фільтрація та сортування користувачів
-    const sortedUsers2 = allUsers.filter(([key, value]) => {
-      const getInTouch = value.getInTouch;
+    let allUsers = Object.entries(snapshot.val()).filter(([id]) => id !== 'searchId');
 
-
-      // Якщо поле getInTouch відсутнє або дата неправильна, повертаємо true (для другої групи)
-      if (!getInTouch || !isValidDate(getInTouch)) {
-        return true;
-      }
-
-      if (getInTouch === '2099-99-99' || getInTouch === '9999-99-99') {
-        return false;
-      }
-      // Переводимо дату в формат Date для порівняння
-      let date;
-      if (getInTouch.includes('-')) {
-        // Формат YYYY-MM-DD
-        date = new Date(getInTouch);
-      } else if (getInTouch.includes('.')) {
-        // Формат DD.MM.YYYY
-        const [day, month, year] = getInTouch.split('.');
-        date = new Date(year, month - 1, day);
-      } else {
-        // Якщо формат невідомий
-        console.error('Невідомий формат дати:', getInTouch);
-        return true;
-      }
-
-      // Порівнюємо дату і повертаємо true, якщо вона сьогоднішня або в минулому
-      // return date <= new Date();
-
-      // Порівнюємо без урахування дат
-      return date;
-    });
-
-
-    // 3. Об'єднуємо результати (вже відсортовані)
-    const combinedUsers = sortedUsers2;
-
-    // 5. Фільтруємо користувачів, якщо передані активні фільтри
+    // Фільтруємо користувачів, якщо передані активні фільтри
     const noExplicitFilters =
       (!filterForload || filterForload === 'NewLoad') &&
-      (!filterSettings ||
-        Object.values(filterSettings).every(value => value === 'off'));
+      (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
 
     const filteredUsers = noExplicitFilters
-      ? combinedUsers
-      : filterMain(combinedUsers, filterForload, filterSettings);
+      ? allUsers
+      : filterMain(allUsers, filterForload, filterSettings);
 
-    // 6. Сортуємо за логікою: сьогодні -> без дати -> майбутні
+    // Сортуємо користувачів згідно з вимогами
     const sortedUsers = sortUsers(filteredUsers);
 
     const totalCount = sortedUsers.length;
@@ -1434,89 +1348,6 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
       return acc;
     }, {});
 
-    // перевірка на дублікати працює проте тягне багато ресурсів, довго видає результат
-    // const processSearchKeys = async (searchKeys, userId, setDuplicate) => {
-    //   for (const searchKey of searchKeys) {
-    //     try {
-    //       const searchIdSnapshot = await get(
-    //         query(ref2(database, `newUsers/searchId`), orderByKey(), startAt(encodeKey(searchKey)), endAt(`${encodeKey(searchKey)}\uf8ff`))
-    //       );
-    
-    //       if (searchIdSnapshot.exists()) {
-    //         const matchingKeys = searchIdSnapshot.val();
-    
-    //         for (const [, userIdOrArray] of Object.entries(matchingKeys)) {
-    //           if (Array.isArray(userIdOrArray)) {
-    //             if (userIdOrArray.includes(userId)) {
-    //               setDuplicate(userIdOrArray);
-    //               return; // Завершуємо обробку, якщо знайдено дублікат
-    //             }
-    //           } else if (userIdOrArray === userId) {
-    //             // setDuplicate(true);
-    //             return; // Завершуємо обробку, якщо знайдено дублікат
-    //           }
-    //         }
-    //       }
-    //     } catch (error) {
-    //       console.error(`Error processing searchKey: ${searchKey}`, error);
-    //     }
-    //   }
-    // };
-    
-    // const finalUsers = await userIds.reduce(async (accPromise, userId) => {
-    //   const acc = await accPromise;
-    //   const newUserData = paginatedUsers[userId];
-    //   const userDataFromUsers = usersData[userId] || {};
-    
-    //   let isDuplicate = false;
-    //   const setDuplicate = value => {
-    //     isDuplicate = value;
-    //   };
-    
-    //   for (const key of keysToCheck) {
-    //     if (key === 'name' || key === 'surname') {
-    //       continue;
-    //     }
-    
-    //     const valueToCheck = newUserData[key] || userDataFromUsers[key];
-    
-    //     if (valueToCheck) {
-    //       if (typeof valueToCheck === 'string') {
-    //         const searchKeys = [
-    //           `${key}_${valueToCheck.toLowerCase()}`,
-    //           ...(valueToCheck.startsWith('0') ? [`${key}_38${valueToCheck.toLowerCase()}`] : []),
-    //           ...(valueToCheck.startsWith('+') ? [`${key}_${valueToCheck.slice(1).toLowerCase()}`] : []),
-    //         ];
-    
-    //         console.log('searchKeys :>> ', searchKeys);
-    //         await processSearchKeys(searchKeys, userId, setDuplicate);
-    //       } else if (typeof valueToCheck === 'number') {
-    //         const valueAsString = valueToCheck.toString();
-    //         const searchKeys = [`${key}_${valueAsString}`];
-    //         console.log('searchKeys (number) :>> ', searchKeys);
-    //         await processSearchKeys(searchKeys, userId, setDuplicate);
-    //       } else if (Array.isArray(valueToCheck)) {
-    //         for (const item of valueToCheck) {
-    //           if (typeof item === 'string' || typeof item === 'number') {
-    //             const valueAsString = item.toString().toLowerCase();
-    //             const searchKeys = [`${key}_${valueAsString}`];
-    //             console.log('searchKeys (array item) :>> ', searchKeys);
-    //             await processSearchKeys(searchKeys, userId, setDuplicate);
-    //           } else {
-    //             console.warn('Unsupported array item type:', { key, item });
-    //           }
-    //         }
-    //       } else {
-    //         console.warn('Unsupported valueToCheck type:', { key, valueToCheck, type: typeof valueToCheck });
-    //       }
-    //     }
-    //     if (isDuplicate) break;
-    //   }
-    
-    //   acc[userId] = { ...newUserData, ...userDataFromUsers, isDuplicate };
-    //   return acc;
-    // }, Promise.resolve({}));
-
     const nextIndex = startIndex + PAGE_SIZE;
     const nextKey = sortedUsers.length > nextIndex ? sortedUsers[nextIndex][0] : null;
 
@@ -1527,7 +1358,7 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
       totalCount,
     };
   } catch (error) {
-    console.error('Error fetching paginated filtered users:', error);
+    console.error("Error fetching paginated filtered users:", error);
     return {
       users: {},
       lastKey: null,
@@ -1535,6 +1366,7 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
     };
   }
 };
+
 
 export const fetchListOfUsers = async () => {
   const db = getDatabase();
