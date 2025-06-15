@@ -21,6 +21,7 @@ import {
   loadDuplicateUsers,
   removeCardAndSearchId,
   fetchAllUsersFromRTDB,
+  fetchTotalNewUsersCount,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -1098,6 +1099,11 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
 
   };
 
+  const handleInfo = async () => {
+    const count = await fetchTotalNewUsersCount();
+    alert(`Total cards in newUsers: ${count}`);
+  };
+
   const makeIndex = async () => {
 
     // await new Promise(resolve => setTimeout(resolve, 15000)); // Чекаємо 15 секунд
@@ -1472,6 +1478,9 @@ console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
                 >
                   ED
                 </Button>
+              )}
+              {hasMore && (
+                <Button onClick={handleInfo}>Info</Button>
               )}
               {hasMore && (
                 <Button

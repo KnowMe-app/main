@@ -2129,6 +2129,21 @@ export const fetchTotalFilteredUsersCount = async (filterForload, filterSettings
   return Object.keys(allUsers).length;
 };
 
+export const fetchTotalNewUsersCount = async () => {
+  try {
+    const snapshot = await get(ref2(database, 'newUsers'));
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      const userKeys = Object.keys(data).filter(key => key !== 'searchId');
+      return userKeys.length;
+    }
+    return 0;
+  } catch (error) {
+    console.error('Error fetching total newUsers count:', error);
+    return 0;
+  }
+};
+
 export const fetchAllUsersFromRTDB = async () => {
   try {
     // Отримуємо дані з двох колекцій
