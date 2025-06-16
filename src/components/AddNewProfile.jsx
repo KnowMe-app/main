@@ -1023,11 +1023,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentFilter, setCurrentFilter] = useState(null);
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
-    console.log('loadMoreUsers called with', {
-      filterForload,
-      lastKey,
-      currentFilters,
-    });
     const res = await fetchPaginatedNewUsers(lastKey, filterForload, currentFilters);
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
@@ -1055,8 +1050,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setUsers(prevUsers => ({ ...prevUsers, ...newUsers })); // Додаємо нових користувачів до попередніх
       setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
       setHasMore(res.hasMore); // Оновлюємо hasMore
-      console.log('loaded users count', Object.keys(newUsers).length);
-      console.log('next lastKey', res.lastKey);
     } else {
       setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
     }
