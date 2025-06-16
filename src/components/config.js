@@ -1034,6 +1034,8 @@ const filterByNegativeRhOnly = value => {
   const negativeBloodTypes = ['1-', '2-', '3-', '4-', '-'];
   return !negativeBloodTypes.includes(value.blood);
 };
+console.log('filterByNegativeRhOnly: ', filterByNegativeRhOnly);
+
 
 // const filterByPositiveRhOnly = filterByNegativeRhOnly;
 
