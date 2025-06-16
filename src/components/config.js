@@ -1043,7 +1043,7 @@ const filterByNegativeRhOnly = value => {
 //   return negativeBloodTypes.includes(value.blood);
 // };
 
-const getCsectionCategory = val => {
+const categorizeCsection = val => {
   if (!val) return 'other';
   const c = val.toString().trim().toLowerCase();
   if (!isNaN(parseInt(c, 10))) {
@@ -1185,7 +1185,7 @@ const filterByAgeAndMaritalStatus = (value, ageLimit = 30, requiredStatuses = ['
   // Перевіряємо, чи maritalStatus входить у список потрібних статусів
   const failsAgeMaritalFilter = requiredStatuses.includes(value.maritalStatus) && age > ageLimit;
 
-  if (!failsAgeMaritalFilter) {
+      const cat = categorizeCsection(value.csection);
     // Якщо користувач пройшов базовий фільтр, пропускаємо його.
     return true;
   } else {
