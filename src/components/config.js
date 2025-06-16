@@ -1011,18 +1011,6 @@ const filterByUserIdLength = value => {
   return typeof value.userId === 'string' && value.userId.length <= 25;
 };
 
-const filterByUserIdPrefix = (value, prefix) => {
-  if (!value.userId) return false;
-  return value.userId.toLowerCase().startsWith(prefix.toLowerCase());
-};
-
-const filterByUserIdLong = value => {
-  return value.userId && value.userId.length > 20;
-};
-
-const filterByUserIdNotLong = value => {
-  return !(value.userId && value.userId.length > 20);
-};
 
 // Фільтр за групою крові додано умову для донорів, вік до 36, імт до 28
 const filterByNegativeBloodType = value => {
@@ -1047,12 +1035,76 @@ const filterByNegativeRhOnly = value => {
   return !negativeBloodTypes.includes(value.blood);
 };
 
-const filterByPositiveRhOnly = filterByNegativeRhOnly;
+// const filterByPositiveRhOnly = filterByNegativeRhOnly;
 
-const filterByNegativeRhStrict = value => {
-  if (!value.blood) return true;
-  const negativeBloodTypes = ['1-', '2-', '3-', '4-', '-'];
-  return negativeBloodTypes.includes(value.blood);
+// const filterByNegativeRhStrict = value => {
+//   if (!value.blood) return true;
+//   const negativeBloodTypes = ['1-', '2-', '3-', '4-', '-'];
+//   return negativeBloodTypes.includes(value.blood);
+// };
+
+const getCsectionCategory = val => {
+  if (!val) return 'other';
+  const c = val.toString().trim().toLowerCase();
+  if (!isNaN(parseInt(c, 10))) {
+    const num = parseInt(c, 10);
+    if (num >= 2) return 'cs2plus';
+    if (num === 1) return 'cs1';
+    if (num === 0) return 'cs0';
+  }
+  if (['-', 'no', 'ні'].includes(c)) return 'cs0';
+  return 'other';
+};
+
+const getRoleCategory = value => {
+  const role = (value.role || value.userRole || '').toString().trim().toLowerCase();
+  if (!role) return 'other';
+  if (['ed'].includes(role)) return 'ed';
+  if (['sm'].includes(role)) return 'sm';
+  if (role === 'ag') return 'ag';
+  if (role === 'ip') return 'ip';
+  if (role === 'cl') return 'cl';
+  return 'other';
+};
+
+const getMaritalStatusCategory = value => {
+  if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return 'other';
+  const m = value.maritalStatus.trim().toLowerCase();
+  if (['yes', '+', 'married', 'одружена', 'заміжня'].includes(m)) return 'married';
+  if (['no', '-', 'unmarried', 'single', 'ні', 'незаміжня'].includes(m)) return 'unmarried';
+  return 'other';
+};
+
+const getBloodCategory = value => {
+  const b = (value.blood || '').toString().trim().toLowerCase();
+  if (!b) return 'other';
+  if (['rh+', 'рк+', '+', 'pos'].includes(b)) return 'pos';
+  if (['rh-', 'рк-', '-', 'neg'].includes(b)) return 'neg';
+  return 'other';
+};
+
+const getAgeCategory = value => {
+  if (!value.birth || typeof value.birth !== 'string') return 'other';
+  const birthParts = value.birth.split('.');
+  const birthYear = parseInt(birthParts[2], 10);
+  const currentYear = new Date().getFullYear();
+  const age = currentYear - birthYear;
+  if (age <= 25) return 'le25';
+  if (age >= 26 && age <= 29) return '26_29';
+  if (age >= 31 && age <= 36) return '31_36';
+  if (age >= 37 && age <= 42) return '37_42';
+  return 'other';
+};
+
+const getUserIdCategory = userId => {
+  if (!userId) return 'other';
+  const id = userId.toString();
+  if (id.startsWith('vk')) return 'vk';
+  if (id.startsWith('aa')) return 'aa';
+  if (id.startsWith('ab')) return 'ab';
+  if (id.length > 20) return 'long';
+  if (id.length > 8 && id.length <= 20) return 'mid';
+  return 'other';
 };
 
 const getCsectionCategory = val => {
@@ -1176,31 +1228,30 @@ const filterByCSection = value => {
 console.log(`filterByCSection: ${filterByCSection}`);
 
 // C-section <=1 filter
-const filterByCSectionLE1 = value => {
-  if (!value.csection) return true;
-  return value.csection !== '2';
-};
+// const filterByCSectionLE1 = value => {
+//   if (!value.csection) return true;
+//   return value.csection !== '2';
+// };
 
-// C-section none (dash) filter
-const filterByCSectionNone = value => {
-  if (!value.csection) return true;
-  return value.csection !== '1' && value.csection !== '2';
-};
+// // C-section none (dash) filter
+// const filterByCSectionNone = value => {
+//   if (!value.csection) return true;
+//   return value.csection !== '1' && value.csection !== '2';
+// };
 
-const filterMarriedOnly = value => {
-  if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return false;
-  const married = ['yes', '+', 'married', 'одружена', 'заміжня'];
-  return married.includes(value.maritalStatus.trim().toLowerCase());
-};
-
-const filterUnmarriedOnly = value => {
-  if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return false;
-  const unmarried = ['no', '-', 'unmarried', 'single', 'ні', 'незаміжня'];
-  return unmarried.includes(value.maritalStatus.trim().toLowerCase());
-};
+// const filterMarriedOnly = value => {
+//   if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return false;
+//   const married = ['yes', '+', 'married', 'одружена', 'заміжня'];
+//   return married.includes(value.maritalStatus.trim().toLowerCase());
+// };
 
 // Основна функція фільтрації
 const filterMain = (usersData, filterForload, filterSettings = {}) => {
+  console.log('filterMain called with', {
+    filterForload,
+    filterSettings,
+    usersCount: usersData.length,
+  });
   let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
 
   const filteredUsers = usersData.filter(([key, value]) => {
