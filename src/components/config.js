@@ -17,7 +17,6 @@ import {
   limitToFirst,
   startAt,
   endAt,
-  equalTo,
 } from 'firebase/database';
 
 const firebaseConfig = {
