@@ -34,7 +34,7 @@ import { VerifyEmail } from './VerifyEmail';
 import { color, coloredCard } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
 //import { formatPhoneNumber } from './inputValidations';
-import { UsersList } from './UsersList';
+import {UsersList} from './UsersList';
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -347,9 +347,7 @@ const Button = styled.button`
   cursor: pointer;
   font-size: 12px;
   flex: 0 1 auto;
-  transition:
-    background-color 0.3s ease,
-    box-shadow 0.3s ease;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
   margin-right: 10px;
 
   &:hover {
@@ -361,6 +359,7 @@ const Button = styled.button`
     transform: scale(0.98); /* Легкий ефект при натисканні */
   }
 `;
+
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // const initialState = {
@@ -385,16 +384,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   const [filters, setFilters] = useState(() => {
     const stored = localStorage.getItem('userFilters');
-    return stored
-      ? JSON.parse(stored)
-      : {
-          csection: { cs2plus: true, cs1: true, cs0: true, other: true },
-          role: { ed: true, sm: true, ag: true, ip: true, cl: true, other: true },
-          maritalStatus: { married: true, unmarried: true, other: true },
-          blood: { pos: true, neg: true, other: true },
-          age: { le25: true, '26_29': true, '31_36': true, '37_42': true, other: true },
-          userId: { vk: true, aa: true, ab: true, long: true, mid: true, other: true },
-        };
+    return (
+      stored
+        ? JSON.parse(stored)
+        : {
+            csection: 'off',
+            maritalStatus: 'off',
+            blood: 'off',
+            age: 'off',
+            userId: 'off',
+          }
+    );
   });
   // const [addUser, setAddUser] = useState(null);
   // const [focused, setFocused] = useState(null);
@@ -461,6 +461,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // console.log('existingData1 :>> ', existingData);
       const { existingData } = await fetchUserById(updatedState.userId);
       // console.log('existingData2 :>> ', existingData2);
+
 
       // Фільтруємо ключі, щоб видалити зайві поля
       const cleanedState = Object.fromEntries(
@@ -599,7 +600,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // Створюємо копію попереднього стану
       const newState = { ...prevState };
 
-      const deletedValue = newState[fieldName];
+      const deletedValue = newState[fieldName]
 
       // Видаляємо ключ з нового стану
       delete newState[fieldName];
@@ -621,6 +622,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [isEmailVerified, setIsEmailVerified] = useState(false);
 
+
+  
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
       if (user && user.emailVerified) {
@@ -643,7 +646,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     console.log('state2!!!!!!!!!! :>> ', state);
-  }, [state]);
+      }, [state]);
 
   // useEffect для скидання значень при зміні search
   useEffect(() => {
@@ -698,17 +701,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const processUserSearch = async (platform, parseFunction, inputData) => {
     setUsers({}); // Скидаємо попередній стан користувачів
     const id = parseFunction(inputData.trim()); // Парсимо ID
-
+  
     if (id) {
       const result = { [platform]: id };
       console.log(`${platform} ID:`, id);
 
       console.log('objeresultct!!!!! :>> ', result);
-
+  
       setSearchKeyValuePair(result); // Задаємо ключ пошуку
       const res = await fetchNewUsersCollectionInRTDB(result); // Пошук у базі
       console.log('res :>> ', res);
-
+  
       if (!res || Object.keys(res).length === 0) {
         // Якщо результат пустий
         console.log(`Користувача не знайдено в ${platform}`);
@@ -716,7 +719,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       } else {
         // Якщо користувач знайдений
         setUserNotFound(false);
-
+  
         if ('userId' in res) {
           // Якщо в респонсі є ключ `userId`, використовуємо `setState`
           setState(res);
@@ -729,9 +732,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
       return true; // Повертаємо true, якщо обробка завершена
     }
-
+  
     return false; // Повертаємо false, якщо ID не знайдено
   };
+  
 
   const writeData = async (query = search) => {
     setUserNotFound(false);
@@ -742,43 +746,44 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // Перевіряємо, чи є параметр id в URL (наприклад, profile.php?id=100018808396245)
       const idParamRegex = /[?&]id=(\d+)/;
       const matchIdParam = url.match(idParamRegex);
-
+    
       if (matchIdParam && matchIdParam[1]) {
         return matchIdParam[1]; // Повертаємо ID
       }
-
+    
       // Регулярний вираз для числового ID у URL (тільки числа)
       const facebookIdRegex = /facebook\.com\/(?:.*\/)?(\d+)$/;
       const matchId = url.match(facebookIdRegex);
-
+    
       if (matchId && matchId[1]) {
         return matchId[1]; // Повертаємо числовий ID
       }
-
+    
       // Регулярний вираз для текстових ніків (усе, крім символів `/`, `?`, `#`)
       const facebookUsernameRegex = /facebook\.com\/([\w.-]+)(?:[/?#]|$)/;
       const matchUsername = url.match(facebookUsernameRegex);
-
+    
       if (matchUsername && matchUsername[1]) {
         return matchUsername[1]; // Повертаємо текстовий нік
       }
-
+    
       // Перевірка на 14-15 цифр
       const numberRegex = /^\d{14,15}$/;
       if (numberRegex.test(url)) {
         return url; // Якщо це 14-15 цифр, повертаємо це значення
       }
-
+    
       // Формат "facebook: username", "fb username"
       const textFormatRegex = /(?:facebook|fb|фейсбук|фб)\s*:?\s*(\w+)/i;
       const matchTextFormat = url.match(textFormatRegex);
-
+    
       if (matchTextFormat && matchTextFormat[1]) {
         return matchTextFormat[1]; // Повертаємо ID або нік
       }
-
+    
       return null; // Повертаємо null, якщо нічого не знайдено
     };
+    
 
     const parseInstagramId = input => {
       // Перевіряємо, чи це URL Instagram
@@ -799,7 +804,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // const pattern = /(?:\binst(?:agram)?\s*:?\s*|\binstagram\s*:?\s*|\bін\s*:?\s*|\bin\s*:?\s*|\bінст\s*:?\s*|\bінстаграм\s*:?\s*)([a-zA-Z0-9._]+)/i;
       // const pattern = /(?:\binst(?:agram)?\s+|\binstagram\s+|\bін(?:ст|стаграм)?\s+)([a-zA-Z0-9._]+)/i;
       const pattern = /(?:\binst(?:agram)?\s*:?\s+|\binstagram\s*:?\s+|\bін(?:ст|стаграм)?\s*:?\s+|\bin\s*:?\s+)([a-zA-Z0-9._]+)/i;
-
+  
       const match = input.match(pattern);
 
       // Якщо знайдено username в рядку
@@ -906,7 +911,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
 
       // Правило 3: Витягування id за допомогою регулярного виразу
-      // const pattern = /(?:\bId\s*:?\s*:?\s*)(\w+)/i;
+      // const pattern = /(?:\bId\s*:?\s*:?\s*)(\w+)/i; 
       const pattern = /(?:\bId\s*[:\s]+\s*)(\w+)/i; // додав обов"язкову двокрапку після id
       const match = input.match(pattern);
 
@@ -945,13 +950,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (textMatch && textMatch[1]) {
         return textMatch[1]; // Повертає username з текстового формату
       }
-      console.log('parseTelegramId!!!!!!!!!!!!!! :>> ');
+console.log('parseTelegramId!!!!!!!!!!!!!! :>> ', );
       // Якщо нічого не знайдено, повертає null
       return null;
     };
 
     const parseOtherContact = input => {
-      return input; // Повертаємо номер без змін
+        return input; // Повертаємо номер без змін
     };
 
     if (await processUserSearch('facebook', parseFacebookId, query)) return;
@@ -978,6 +983,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const delConfirm = () => {
+
     // console.log('state :>> ', state);
     const handleRemoveUser = async () => {
       try {
@@ -994,7 +1000,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         console.error('Error deleting user:', error);
       }
     };
-
+  
     return (
       <>
         <p>Видалити профіль?</p>
@@ -1006,6 +1012,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [compare, setCompare] = useState('');
   const compareCards = () => {
+  
     return (
       <>
         <p>Порівняти</p>
@@ -1023,11 +1030,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentFilter, setCurrentFilter] = useState(null);
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
-    console.log('loadMoreUsers called with', {
-      filterForload,
-      lastKey,
-      currentFilters,
-    });
     const res = await fetchPaginatedNewUsers(lastKey, filterForload, currentFilters);
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
@@ -1055,8 +1057,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setUsers(prevUsers => ({ ...prevUsers, ...newUsers })); // Додаємо нових користувачів до попередніх
       setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
       setHasMore(res.hasMore); // Оновлюємо hasMore
-      console.log('loaded users count', Object.keys(newUsers).length);
-      console.log('next lastKey', res.lastKey);
     } else {
       setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
     }
@@ -1071,26 +1071,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const exportFilteredUsers = async () => {
-    const noFilters = !filters || Object.values(filters).every(value => value === 'off');
+    const noFilters =
+      !filters ||
+      Object.values(filters).every(value => value === 'off');
 
-    const allUsers = noFilters ? await fetchAllUsersFromRTDB() : await fetchAllFilteredUsers(undefined, filters);
+    const allUsers = noFilters
+      ? await fetchAllUsersFromRTDB()
+      : await fetchAllFilteredUsers(undefined, filters);
 
     saveToContact(allUsers);
   };
 
   const saveAllContacts = async () => {
     const res = await fetchAllUsersFromRTDB();
-    saveToContact(res);
+    saveToContact(res)
+    
   };
 
   const [duplicates, setDuplicates] = useState('');
 
   const searchDuplicates = async () => {
-    const { mergedUsers, totalDuplicates } = await loadDuplicateUsers();
+    const {mergedUsers, totalDuplicates} = await loadDuplicateUsers();
     // console.log('res :>> ', res);
     setUsers(prevUsers => ({ ...prevUsers, ...mergedUsers }));
     setDuplicates(totalDuplicates);
     // console.log('res!!!!!!!! :>> ', res.length);
+
   };
 
   const handleInfo = async () => {
@@ -1099,6 +1105,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const makeIndex = async () => {
+
     // await new Promise(resolve => setTimeout(resolve, 15000)); // Чекаємо 15 секунд
     await createSearchIdsInCollection('newUsers');
     await createSearchIdsInCollection('users');
@@ -1113,27 +1120,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // });
   };
 
-  const priorityOrder = [
-    'birth',
-    'name',
-    'surname',
-    'fathersname',
-    'phone',
-    'facebook',
-    'instagram',
-    'telegram',
-    'tiktok',
-    'region',
-    'city',
-    'height',
-    'weight',
-    'blood',
-    'maritalStatus',
-    'csection',
-    'ownKids',
-    'lastDelivery',
-    'role',
-  ];
+  const priorityOrder = ['birth','name', 'surname', 'fathersname', 'phone', 'facebook', 'instagram', 'telegram', 'tiktok',  'region', 'city', 'height', 'weight', 'blood', 'maritalStatus','csection', 'ownKids', 'lastDelivery', 'role'];
   const additionalFields = Object.keys(state).filter(
     key => !pickerFields.some(field => field.name === key) && key !== 'attitude' && key !== 'whiteList' && key !== 'blackList'
   );
@@ -1152,7 +1139,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   ];
 
   const sortedFieldsToRender = [
-    ...priorityOrder.map(key => fieldsToRender.find(field => field.name === key)).filter(Boolean),
+    ...priorityOrder
+      .map(key => fieldsToRender.find(field => field.name === key))
+      .filter(Boolean),
     ...fieldsToRender.filter(field => !priorityOrder.includes(field.name)),
   ];
 
@@ -1176,11 +1165,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [state.myComment]); // Виконується при завантаженні та зміні коментаря
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
-  const displayedUserIds = Object.keys(users).slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const displayedUserIds = Object.keys(users).slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
   const paginatedUsers = displayedUserIds.reduce((acc, id) => {
     acc[id] = users[id];
     return acc;
   }, {});
+
 
   return (
     <Container>
@@ -1230,233 +1223,233 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         </InputDiv>
         {search && state.userId ? (
           <>
-            <div style={{ ...coloredCard() }}>{renderTopBlock(state, setState, setShowInfoModal, true)}</div>
+<div style={{...coloredCard()}}>
+    {renderTopBlock(state, setState, setShowInfoModal, true)}
+  </div>
+          
+          {sortedFieldsToRender
+          .filter(field => !['myComment', 'getInTouch', 'writer'].includes(field.name)) // Фільтруємо поле myComment
+          .map((field, index) => {
+            // console.log('field:', field);
+            // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
 
-            {sortedFieldsToRender
-              .filter(field => !['myComment', 'getInTouch', 'writer'].includes(field.name)) // Фільтруємо поле myComment
-              .map((field, index) => {
-                // console.log('field:', field);
-                // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
+            return (
+              <PickerContainer key={index}>
+                {Array.isArray(state[field.name]) ? (
+                  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
+                    {state[field.name].map((value, idx) => {
+                      // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
 
-                return (
-                  <PickerContainer key={index}>
-                    {Array.isArray(state[field.name]) ? (
-                      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
-                        {state[field.name].map((value, idx) => {
-                          // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
-
-                          return (
-                            <InputDiv key={`${field.name}-${idx}`}>
-                              <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
-                                <InputField
-                                  fieldName={`${field.name}-${idx}`}
-                                  as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
-                                  ref={field.name === 'myComment' ? textareaRef : null}
-                                  inputMode={field.name === 'phone' ? 'numeric' : 'text'}
-                                  name={`${field.name}-${idx}`}
-                                  value={value || ''}
-                                  // value={field.name === 'phone'  ? formatPhoneNumber(value || '') : value || ''}
-                                  ///глючить якщо телефон не в правильному форматі
-                                  onChange={e => {
-                                    // const updatedValue = inputUpdateValue(e?.target?.value, field);
-                                    field.name === 'myComment' && autoResize(e.target);
-                                    const updatedValue =
-                                      field.name === 'telegram'
-                                        ? e?.target?.value // Без inputUpdateValue для 'telegram'
-                                        : inputUpdateValue(e?.target?.value, field);
-                                    setState(prevState => ({
-                                      ...prevState,
-                                      [field.name]: prevState[field.name].map((item, i) => (i === idx ? updatedValue : item)),
-                                    }));
-                                  }}
-                                  onBlur={() => handleBlur(`${field.name}-${idx}`)}
-                                />
-                                {(value || value === '') && (
-                                  <ClearButton
-                                    onClick={() => {
-                                      handleClear(field.name, idx);
-                                    }}
-                                  >
-                                    &times;
-                                  </ClearButton>
-                                )}
-                              </InputFieldContainer>
-
-                              <Hint fieldName={field.name} isActive={value}>
-                                {field.ukrainian || field.placeholder}
-                              </Hint>
-                              <Placeholder isActive={value}>{field.ukrainianHint}</Placeholder>
-                            </InputDiv>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <InputDiv>
-                        <InputFieldContainer fieldName={field.name} value={state[field.name]}>
-                          <InputField
-                            fieldName={field.name}
-                            as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
-                            ref={field.name === 'myComment' ? textareaRef : null}
-                            inputMode={field.name === 'phone' ? 'numeric' : 'text'}
-                            name={field.name}
-                            value={state[field.name] || ''}
-                            // value={field.name === 'phone' ? formatPhoneNumber(state[field.name] || '') : state[field.name] || ''}
-                            onChange={e => {
-                              field.name === 'myComment' && autoResize(e.target);
-                              let value = e?.target?.value;
-                              // Якщо ім'я поля - 'publish', перетворюємо значення в булеве
-                              if (field.name === 'publish') {
-                                value = value.toLowerCase() === 'true'; // true, якщо значення 'true', інакше false
-                              } else if (field.name === 'telgram') {
-                                value = e?.target?.value;
-                              } else {
-                                // value = inputUpdateValue(value, field); // Оновлення значення для інших полів
-                              }
-
-                              setState(prevState => ({
-                                ...prevState,
-                                [field.name]: Array.isArray(prevState[field.name]) ? [value, ...(prevState[field.name].slice(1) || [])] : value,
-                              }));
-                            }}
-                            // onBlur={() => handleBlur(field.name)}
-                            onBlur={() => handleSubmit(state, 'overwrite')}
-                          />
-                          {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times;</ClearButton>}
-                          {state[field.name] && <DelKeyValueBTN onClick={() => handleDelKeyValue(field.name)}>del</DelKeyValueBTN>}
-                        </InputFieldContainer>
-
-                        <Hint fieldName={field.name} isActive={state[field.name]}>
-                          {field.ukrainian || field.placeholder}
-                        </Hint>
-                        <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
-                      </InputDiv>
-                    )}
-
-                    {/* Додати новий інпут до масиву */}
-
-                    {state[field.name] &&
-                      (Array.isArray(state[field.name]) ? state[field.name].length === 0 || state[field.name][state[field.name].length - 1] !== '' : true) &&
-                      ((Array.isArray(field.options) && field.options.length !== 2 && field.options.length !== 3) || !Array.isArray(field.options)) && (
-                        <Button
-                          style={{
-                            display: Array.isArray(state[field.name]) ? 'block' : 'inline-block',
-                            alignSelf: Array.isArray(state[field.name]) ? 'flex-end' : 'auto',
-                            marginBottom: Array.isArray(state[field.name]) ? '14px' : '0',
-                            marginLeft: '10px',
-                          }}
-                          onClick={() => {
-                            setState(prevState => ({
-                              ...prevState,
-                              [field.name]:
-                                Array.isArray(prevState[field.name]) && prevState[field.name].length > 0
-                                  ? [...prevState[field.name], ''] // Додати новий пустий елемент до масиву
-                                  : [prevState[field.name], ''],
-                            }));
-                          }}
-                        >
-                          +
-                        </Button>
-                      )}
-
-                    {Array.isArray(field.options) ? (
-                      field.options.length === 2 ? (
-                        <ButtonGroup>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
+                      return (
+                        <InputDiv key={`${field.name}-${idx}`}>
+                          <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
+                            <InputField
+                              fieldName={`${field.name}-${idx}`}
+                              as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
+                              ref={field.name === 'myComment' ? textareaRef : null}
+                              inputMode={field.name === 'phone' ? 'numeric' : 'text'}
+                              name={`${field.name}-${idx}`}
+                              value={value || ''}
+                              // value={field.name === 'phone'  ? formatPhoneNumber(value || '') : value || ''}
+                              ///глючить якщо телефон не в правильному форматі
+                              onChange={e => {
+                                // const updatedValue = inputUpdateValue(e?.target?.value, field);
+                                field.name === 'myComment' && autoResize(e.target);
+                                const updatedValue = field.name === 'telegram' 
+                                  ? e?.target?.value // Без inputUpdateValue для 'telegram'
+                                  : inputUpdateValue(e?.target?.value, field);
+                                setState(prevState => ({
                                   ...prevState,
-                                  [field.name]: 'Yes',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                return newState;
-                              });
-                            }}
-                          >
-                            Так
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
-                                  ...prevState,
-                                  [field.name]: 'No',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                return newState;
-                              });
-                            }}
-                          >
-                            Ні
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
-                                  ...prevState,
-                                  [field.name]: 'Other',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                handleBlur(field.name);
-                                return newState;
-                              });
-                            }}
-                          >
-                            Інше
-                          </Button>
-                        </ButtonGroup>
-                      ) : field.options.length === 3 ? (
-                        <ButtonGroup>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
-                                  ...prevState,
-                                  [field.name]: '-',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                return newState;
-                              });
-                            }}
-                          >
-                            Ні
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
-                                  ...prevState,
-                                  [field.name]: '1',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                return newState;
-                              });
-                            }}
-                          >
-                            1
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
-                                  ...prevState,
-                                  [field.name]: '2',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                // handleBlur(field.name); - csection не працювало по натисканню, лише з другої спроби
-                                return newState;
-                              });
-                            }}
-                          >
-                            2
-                          </Button>
-                        </ButtonGroup>
-                      ) : null
-                    ) : null}
-                  </PickerContainer>
-                );
-              })}
-          </>
+                                  [field.name]: prevState[field.name].map((item, i) => (i === idx ? updatedValue : item)),
+                                }));
+                              }}
+                              onBlur={() => handleBlur(`${field.name}-${idx}`)}
+                            />
+                            {(value || value === '') && (
+                              <ClearButton
+                                onClick={() => {
+                                  handleClear(field.name, idx);
+                                }}
+                              >
+                                &times;
+                              </ClearButton>
+                            )}
+                          </InputFieldContainer>
+
+                          <Hint fieldName={field.name} isActive={value}>
+                            {field.ukrainian || field.placeholder}
+                          </Hint>
+                          <Placeholder isActive={value}>{field.ukrainianHint}</Placeholder>
+                        </InputDiv>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <InputDiv>
+                    <InputFieldContainer fieldName={field.name} value={state[field.name]}>
+                      <InputField
+                        fieldName={field.name}
+                        as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
+                        ref={field.name === 'myComment' ? textareaRef : null}
+                        inputMode={field.name === 'phone' ? 'numeric' : 'text'}
+                        name={field.name}
+                        value={state[field.name] || ''}
+                        // value={field.name === 'phone' ? formatPhoneNumber(state[field.name] || '') : state[field.name] || ''}
+                        onChange={e => {
+                          field.name === 'myComment' && autoResize(e.target);
+                          let value = e?.target?.value;
+                          // Якщо ім'я поля - 'publish', перетворюємо значення в булеве
+                          if (field.name === 'publish') {
+                            value = value.toLowerCase() === 'true'; // true, якщо значення 'true', інакше false
+                          } else if (field.name === 'telgram') {
+                            value = e?.target?.value
+                          } else {
+                            // value = inputUpdateValue(value, field); // Оновлення значення для інших полів
+                          }
+
+                          setState(prevState => ({
+                            ...prevState,
+                            [field.name]: Array.isArray(prevState[field.name]) ? [value, ...(prevState[field.name].slice(1) || [])] : value,
+                          }));
+                        }}
+                        // onBlur={() => handleBlur(field.name)}
+                        onBlur={() => handleSubmit(state, 'overwrite')}
+                      />
+                      {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times;</ClearButton>}
+                      {state[field.name] && <DelKeyValueBTN onClick={() => handleDelKeyValue(field.name)}>del</DelKeyValueBTN>}
+                    </InputFieldContainer>
+
+                    <Hint fieldName={field.name} isActive={state[field.name]}>
+                      {field.ukrainian || field.placeholder}
+                    </Hint>
+                    <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                  </InputDiv>
+                )}
+
+                {/* Додати новий інпут до масиву */}
+
+                {state[field.name] &&
+                  (Array.isArray(state[field.name]) ? state[field.name].length === 0 || state[field.name][state[field.name].length - 1] !== '' : true) &&
+                  ((Array.isArray(field.options) && (field.options.length !== 2 && field.options.length !== 3)) || !Array.isArray(field.options)) && (
+                    <Button
+                      style={{
+                        display: Array.isArray(state[field.name]) ? 'block' : 'inline-block',
+                        alignSelf: Array.isArray(state[field.name]) ? 'flex-end' : 'auto',
+                        marginBottom: Array.isArray(state[field.name]) ? '14px' : '0',
+                        marginLeft: '10px',
+                      }}
+                      onClick={() => {
+                        setState(prevState => ({
+                          ...prevState,
+                          [field.name]:
+                            Array.isArray(prevState[field.name]) && prevState[field.name].length > 0
+                              ? [...prevState[field.name], ''] // Додати новий пустий елемент до масиву
+                              : [prevState[field.name], ''],
+                        }));
+                      }}
+                    >
+                      +
+                    </Button>
+                  )}
+
+{Array.isArray(field.options) ? (
+  field.options.length === 2 ? (
+    <ButtonGroup>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: 'Yes',
+            };
+            handleSubmit(newState, 'overwrite');
+            return newState;
+          });
+        }}
+      >
+        Так
+      </Button>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: 'No',
+            };
+            handleSubmit(newState, 'overwrite');
+            return newState;
+          });
+        }}
+      >
+        Ні
+      </Button>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: 'Other',
+            };
+            handleSubmit(newState, 'overwrite');
+            handleBlur(field.name);
+            return newState;
+          });
+        }}
+      >
+        Інше
+      </Button>
+    </ButtonGroup>
+  ) : field.options.length === 3 ? (
+    <ButtonGroup>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: '-',
+            };
+            handleSubmit(newState, 'overwrite');
+            return newState;
+          });
+        }}
+      >
+        Ні
+      </Button>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: '1',
+            };
+            handleSubmit(newState, 'overwrite');
+            return newState;
+          });
+        }}
+      >
+        1
+      </Button>
+      <Button
+        onClick={() => {
+          setState(prevState => {
+            const newState = {
+              ...prevState,
+              [field.name]: '2',
+            };
+            handleSubmit(newState, 'overwrite');
+            // handleBlur(field.name); - csection не працювало по натисканню, лише з другої спроби
+            return newState;
+          });
+        }}
+      >
+        2
+      </Button>
+    </ButtonGroup>
+  ) : null
+) : null}
+              </PickerContainer>
+            );
+          })}</>
         ) : (
           <div>
             {search && users && !userNotFound ? (
@@ -1464,11 +1457,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             ) : userNotFound ? (
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
             ) : Object.keys(users).length > 1 ? (
-              <p style={{ textAlign: 'center', color: 'black' }}>
-                {totalCount} користувачів
-                {duplicates ? ` з (${duplicates})` : ''}
+              <p style={{ textAlign: 'center', color: 'black' }}>{totalCount} користувачів
+              {duplicates ? ` з (${duplicates})` : ''}
               </p>
-            ) : null}
+            ) :
+            null}
             <SearchFilters filters={filters} onChange={setFilters} />
             <div>
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
@@ -1486,7 +1479,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   ED
                 </Button>
               )}
-              {hasMore && <Button onClick={handleInfo}>Info</Button>}
+              {hasMore && (
+                <Button onClick={handleInfo}>Info</Button>
+              )}
               {hasMore && (
                 <Button
                   onClick={() => {
@@ -1517,18 +1512,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               )}
               {hasMore && <Button onClick={makeIndex}>Index</Button>}
               {<Button onClick={searchDuplicates}>DPL</Button>}
-              {
-                <Button
-                  onClick={() => {
-                    btnMerge(users, setUsers, setDuplicates);
-                  }}
-                >
-                  Merg
-                </Button>
-              }
+              {<Button onClick={()=>{btnMerge(users, setUsers, setDuplicates)}}>Merg</Button>}
               {btnExportUsers(exportFilteredUsers)}
               <Button onClick={saveAllContacts}> S_All</Button>
-
+              
               {/* <ExcelToJson/> */}
               {/* <UploadJson/> */}
               {/* <JsonToExcelButton/> */}
@@ -1544,7 +1531,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setSearch={setSearch}
                   setState={setState}
                 />
-                <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                />
               </>
             )}
             {/* Передача користувачів у UsersList */}
