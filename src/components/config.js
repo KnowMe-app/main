@@ -2,9 +2,23 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, deleteUser } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
-import { getDatabase, ref as ref2, get, remove, set, update, push, orderByChild } from 'firebase/database';
-import { query, orderByKey } from 'firebase/database';
-import { startAt, endAt } from 'firebase/database';
+import {
+  getDatabase,
+  ref as ref2,
+  get,
+  remove,
+  set,
+  update,
+  push,
+  orderByChild,
+  query,
+  orderByKey,
+  startAfter,
+  limitToFirst,
+  startAt,
+  endAt,
+  equalTo,
+} from 'firebase/database';
 
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_API_KEY,
@@ -1284,88 +1298,79 @@ const sortUsers = filteredUsers => {
   });
 };
 
-export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSettings = {}) => {
+export const fetchPaginatedNewUsers = async (
+  lastKey,
+  filterForload,
+  filterSettings = {}
+) => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
-  const todayActual = new Date(); // Поточна дата
-  const today = new Date(todayActual); // Копія дати
-  today.setDate(todayActual.getDate() + 1); // Збільшуємо дату на 1 день
-  // const todayString = today.toISOString().split('T')[0]; // Формат YYYY-MM-DD
+  const limit = PAGE_SIZE + 1;
 
   try {
-    const snapshot = await get(usersRef);
+    const baseQuery = lastKey
+      ? query(usersRef, orderByKey(), startAfter(lastKey), limitToFirst(limit))
+      : query(usersRef, orderByKey(), limitToFirst(limit));
+
+    const snapshot = await get(baseQuery);
     if (!snapshot.exists()) {
-      console.log('Немає користувачів.');
-      return [];
+      return { users: {}, lastKey: null, hasMore: false };
     }
 
-    let allUsers = Object.entries(snapshot.val()).filter(([id]) => id !== 'searchId');
+    let fetchedUsers = Object.entries(snapshot.val()).filter(
+      ([id]) => id !== 'searchId'
+    );
 
-    // Фільтруємо користувачів, якщо передані активні фільтри
     const noExplicitFilters =
       (!filterForload || filterForload === 'NewLoad') &&
-      (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
+      (!filterSettings ||
+        Object.values(filterSettings).every(value => value === 'off'));
 
     const filteredUsers = noExplicitFilters
-      ? allUsers
-      : filterMain(allUsers, filterForload, filterSettings);
+      ? fetchedUsers
+      : filterMain(fetchedUsers, filterForload, filterSettings);
 
-    // Сортуємо користувачів згідно з вимогами
     const sortedUsers = sortUsers(filteredUsers);
 
-    const totalCount = sortedUsers.length;
+    const paginatedSlice = sortedUsers.slice(0, PAGE_SIZE);
+    const nextKey =
+      sortedUsers.length > PAGE_SIZE ? sortedUsers[PAGE_SIZE][0] : null;
 
-    let startIndex = 0;
-    if (lastKey) {
-      const index = sortedUsers.findIndex(([id]) => id === lastKey);
-      startIndex = index === -1 ? 0 : index + 1;
-    }
-
-    const paginatedUsers = sortedUsers
-      .slice(startIndex, startIndex + PAGE_SIZE)
-      .reduce((acc, [userId, userData]) => {
-        acc[userId] = userData;
-        return acc;
-      }, {});
-
-    // Далі, після вибору 10 карток, отримуємо дані з колекції users для кожного userId
-    const userIds = Object.keys(paginatedUsers); // Отримуємо список userId з paginatedUsers
-    const usersData = {};
-
-    const userPromises = userIds.map(userId => {
-      return fetchUserById(userId); // Оскільки fetchUserById повертає проміс, ми можемо отримати результат
-    });
-
-    // Чекаємо, поки всі проміси виконуються
-    const userResults = await Promise.all(userPromises);
-
-    // Збираємо дані по кожному користувачеві в об'єкт
-    userResults.forEach((userData, index) => {
-      const userId = userIds[index];
-      if (userData) {
-        usersData[userId] = userData;
-      }
-    });
-
-    // Об'єднуємо дані з newUsers та users для кожного userId
-    const finalUsers = userIds.reduce((acc, userId) => {
-      const newUserData = paginatedUsers[userId]; // Дані з newUsers
-      const userDataFromUsers = usersData[userId] || {}; // Дані з users
-      acc[userId] = { ...newUserData, ...userDataFromUsers }; // Об'єднуємо дані
+    const paginatedUsers = paginatedSlice.reduce((acc, [userId, userData]) => {
+      acc[userId] = userData;
       return acc;
     }, {});
 
-    const nextIndex = startIndex + PAGE_SIZE;
-    const nextKey = sortedUsers.length > nextIndex ? sortedUsers[nextIndex][0] : null;
+    const userIds = Object.keys(paginatedUsers);
+    const userResults = await Promise.all(userIds.map(id => fetchUserById(id)));
+
+    const usersData = {};
+    userResults.forEach((data, idx) => {
+      const id = userIds[idx];
+      if (data) usersData[id] = data;
+    });
+
+    const finalUsers = userIds.reduce((acc, id) => {
+      acc[id] = { ...paginatedUsers[id], ...(usersData[id] || {}) };
+      return acc;
+    }, {});
+
+    let totalCount;
+    if (!lastKey) {
+      totalCount = await fetchTotalFilteredUsersCount(
+        filterForload,
+        filterSettings
+      );
+    }
 
     return {
-      users: finalUsers, // Об'єкт із користувачами, що містить дані з newUsers і users
+      users: finalUsers,
       lastKey: nextKey,
       hasMore: !!nextKey,
       totalCount,
     };
   } catch (error) {
-    console.error("Error fetching paginated filtered users:", error);
+    console.error('Error fetching paginated filtered users:', error);
     return {
       users: {},
       lastKey: null,
