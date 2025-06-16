@@ -383,19 +383,38 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [search, setSearch] = useState(() => localStorage.getItem('searchQuery') || '');
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
-  const [filters, setFilters] = useState(() => {
+  const defaultFilters = {
+    csection: { cs2plus: true, cs1: true, cs0: true, other: true },
+    role: { ed: true, sm: true, ag: true, ip: true, cl: true, other: true },
+    maritalStatus: { married: true, unmarried: true, other: true },
+    blood: { pos: true, neg: true, other: true },
+    age: { le25: true, '26_29': true, '31_36': true, '37_42': true, other: true },
+    userId: { vk: true, aa: true, ab: true, long: true, mid: true, other: true },
+  };
+
+  const normalizeFilterGroup = (value, defaults) => {
+    return typeof value === 'object' && value !== null ? { ...defaults, ...value } : { ...defaults };
+  };
+
+  const getInitialFilters = () => {
     const stored = localStorage.getItem('userFilters');
-    return stored
-      ? JSON.parse(stored)
-      : {
-          csection: { cs2plus: true, cs1: true, cs0: true, other: true },
-          role: { ed: true, sm: true, ag: true, ip: true, cl: true, other: true },
-          maritalStatus: { married: true, unmarried: true, other: true },
-          blood: { pos: true, neg: true, other: true },
-          age: { le25: true, '26_29': true, '31_36': true, '37_42': true, other: true },
-          userId: { vk: true, aa: true, ab: true, long: true, mid: true, other: true },
-        };
-  });
+    if (!stored) return { ...defaultFilters };
+    try {
+      const parsed = JSON.parse(stored);
+      return {
+        csection: normalizeFilterGroup(parsed.csection, defaultFilters.csection),
+        role: normalizeFilterGroup(parsed.role, defaultFilters.role),
+        maritalStatus: normalizeFilterGroup(parsed.maritalStatus, defaultFilters.maritalStatus),
+        blood: normalizeFilterGroup(parsed.blood, defaultFilters.blood),
+        age: normalizeFilterGroup(parsed.age, defaultFilters.age),
+        userId: normalizeFilterGroup(parsed.userId, defaultFilters.userId),
+      };
+    } catch {
+      return { ...defaultFilters };
+    }
+  };
+
+  const [filters, setFilters] = useState(getInitialFilters);
   // const [addUser, setAddUser] = useState(null);
   // const [focused, setFocused] = useState(null);
   // console.log('focused :>> ', focused);
