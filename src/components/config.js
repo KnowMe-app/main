@@ -1168,23 +1168,6 @@ console.log(`filterByCSection: ${filterByCSection}`);
 //   if (!value.csection) return true;
 //   return value.csection !== '2';
 // };
-
-// // C-section none (dash) filter
-// const filterByCSectionNone = value => {
-//   if (!value.csection) return true;
-//   return value.csection !== '1' && value.csection !== '2';
-// };
-
-// const filterMarriedOnly = value => {
-//   if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return false;
-//   const married = ['yes', '+', 'married', 'одружена', 'заміжня'];
-//   return married.includes(value.maritalStatus.trim().toLowerCase());
-// };
-
-// const filterUnmarriedOnly = value => {
-//   if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return false;
-//   const unmarried = ['no', '-', 'unmarried', 'single', 'ні', 'незаміжня'];
-//   return unmarried.includes(value.maritalStatus.trim().toLowerCase());
 // };
 
 // Основна функція фільтрації
