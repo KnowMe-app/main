@@ -15,8 +15,10 @@ import {
   orderByKey,
   startAfter,
   limitToFirst,
+  limitToLast,
   startAt,
   endAt,
+  equalTo,
 } from 'firebase/database';
 
 const firebaseConfig = {
@@ -1179,6 +1181,18 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
   const usersRef = ref2(db, 'newUsers');
   const limit = PAGE_SIZE + 1;
 
+  if (filterForload === "DATE") {
+    const data = await fetchSortedUsersByDate(limit, lastKey || 0);
+    const entries = Object.entries(data);
+    const nextKey = entries.length > PAGE_SIZE ? entries[PAGE_SIZE][0] : null;
+    return {
+      users: Object.fromEntries(entries.slice(0, PAGE_SIZE)),
+      lastKey: nextKey,
+      hasMore: !!nextKey,
+      totalCount: Object.keys(data).length
+    };
+  }
+
   try {
     const baseQuery = lastKey ? query(usersRef, orderByKey(), startAfter(lastKey), limitToFirst(limit)) : query(usersRef, orderByKey(), limitToFirst(limit));
 
@@ -1899,3 +1913,81 @@ export const fetchAllUsersFromRTDB = async () => {
     return null;
   }
 };
+
+export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
+  const dbInstance = getDatabase();
+  const usersRef = ref2(dbInstance, 'newUsers');
+
+  const currentDate = new Date();
+  const tomorrow = new Date(currentDate);
+  tomorrow.setDate(currentDate.getDate() + 1);
+  const today = tomorrow.toISOString().split('T')[0];
+
+  const twoWeeksAgo = new Date(tomorrow);
+  twoWeeksAgo.setDate(tomorrow.getDate() - 14);
+  const twoWeeksAgoDate = twoWeeksAgo.toISOString().split('T')[0];
+
+  const twoWeeksAhead = new Date(tomorrow);
+  twoWeeksAhead.setDate(tomorrow.getDate() + 14);
+  const twoWeeksAheadDate = twoWeeksAhead.toISOString().split('T')[0];
+
+  const fetchData = async q => {
+    const snap = await get(q);
+    return snap.exists() ? Object.entries(snap.val()) : [];
+  };
+
+  const result = [];
+
+  // Today's records
+  let entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo(today), limitToFirst(limit)));
+  result.push(...entries);
+
+  if (result.length < limit) {
+    // Previous records within two weeks
+    entries = await fetchData(
+      query(
+        usersRef,
+        orderByChild('getInTouch'),
+        startAt(twoWeeksAgoDate),
+        endAt(today),
+        limitToLast(limit - result.length)
+      )
+    );
+    entries = entries.filter(([, u]) => u.getInTouch < today);
+    result.push(...entries);
+  }
+
+  if (result.length < limit) {
+    // Upcoming records within two weeks
+    entries = await fetchData(
+      query(
+        usersRef,
+        orderByChild('getInTouch'),
+        startAt(today),
+        endAt(twoWeeksAheadDate),
+        limitToFirst(limit - result.length)
+      )
+    );
+    entries = entries.filter(([, u]) => u.getInTouch > today && u.getInTouch <= twoWeeksAheadDate);
+    result.push(...entries);
+  }
+
+  if (result.length < limit) {
+    // Empty dates
+    entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo(''), limitToFirst(limit - result.length)));
+    result.push(...entries);
+  }
+
+  if (result.length < limit) {
+    // Records with special future dates
+    entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('2099-99-99')));
+    result.push(...entries);
+    if (result.length < limit) {
+      entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('9999-99-99')));
+      result.push(...entries);
+    }
+  }
+
+  return Object.fromEntries(result.slice(offset, offset + limit));
+}
+
