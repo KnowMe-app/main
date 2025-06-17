@@ -1149,12 +1149,11 @@ const sortUsers = filteredUsers => {
   })();
   const getGroup = date => {
     if (!date) return 4; // порожня дата
-    const normalized = String(date).trim();
-    if (normalized === '2099-99-99' || normalized === '9999-99-99') return 6; // спецдати
-    if (!isValidDate(normalized)) return 3; // некоректні дати
-    if (normalized === today) return 0; // сьогодні
-    if (normalized < today) return 1; // минулі
-    if (normalized <= twoWeeksAheadDate) return 2; // майбутні до 2х тижнів
+    if (date === '2099-99-99' || date === '9999-99-99') return 6; // спецдати
+    if (!isValidDate(date)) return 3; // некоректні дати
+    if (date === today) return 0; // сьогодні
+    if (date < today) return 1; // минулі
+    if (date <= twoWeeksAheadDate) return 2; // майбутні до 2х тижнів
     return 5; // інші майбутні дати
   };
 
@@ -1165,7 +1164,7 @@ const sortUsers = filteredUsers => {
     if (groupA !== groupB) return groupA - groupB;
 
     // Усередині груп із коректними датами сортуємо за зростанням
-    if (groupA <= 2 || groupA === 5 || groupA === 6) {
+    if (groupA <= 2 || groupA === 5) {
       const aDate = a.getInTouch || '';
       const bDate = b.getInTouch || '';
       return aDate.localeCompare(bDate);
@@ -1178,6 +1177,8 @@ const sortUsers = filteredUsers => {
 export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSettings = {}) => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
+  const limit = PAGE_SIZE + 1;
+
   try {
     const baseQuery = lastKey ? query(usersRef, orderByKey(), startAfter(lastKey), limitToFirst(limit)) : query(usersRef, orderByKey(), limitToFirst(limit));
 
