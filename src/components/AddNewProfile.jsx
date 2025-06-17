@@ -1040,6 +1040,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState(null);
+  const [dateOffset, setDateOffset] = useState(0);
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
     console.log('loadMoreUsers called with', {
@@ -1047,7 +1048,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       lastKey,
       currentFilters,
     });
-    const res = await fetchPaginatedNewUsers(lastKey, filterForload, currentFilters);
+    const param = filterForload === "DATE" ? dateOffset : lastKey;
+    const res = await fetchPaginatedNewUsers(param, filterForload, currentFilters);
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
@@ -1072,8 +1074,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // Оновлюємо стан користувачів
       // Оновлюємо стан користувачів
       setUsers(prevUsers => ({ ...prevUsers, ...newUsers })); // Додаємо нових користувачів до попередніх
-      setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
-      setHasMore(res.hasMore); // Оновлюємо hasMore
+      if (filterForload === "DATE") {
+        setDateOffset(prev => prev + PAGE_SIZE);
+        setHasMore(res.hasMore);
+      } else {
+        setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
+        setHasMore(res.hasMore); // Оновлюємо hasMore
+      }
       console.log('loaded users count', Object.keys(newUsers).length);
       console.log('next lastKey', res.lastKey);
     } else {
@@ -1499,6 +1506,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     setHasMore(true);
                     setCurrentPage(1);
                     setCurrentFilter('ED');
+                    setDateOffset(0);
                     loadMoreUsers('ED');
                   }}
                 >
@@ -1513,7 +1521,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     setLastKey(null);
                     setHasMore(true);
                     setCurrentPage(1);
+                    setCurrentFilter("DATE");
+                    setDateOffset(0);
+                    loadMoreUsers("DATE");
+                  }}
+                >
+                  SortByDate
+                </Button>
+              )}
+              {hasMore && (
+                <Button
+                  onClick={() => {
+                    setUsers({});
+                    setLastKey(null);
+                    setHasMore(true);
+                    setCurrentPage(1);
                     setCurrentFilter('NewLoad');
+                    setDateOffset(0);
                     loadMoreUsers('NewLoad');
                   }}
                 >
@@ -1528,6 +1552,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     setHasMore(true);
                     setCurrentPage(1);
                     setCurrentFilter(null);
+                    setDateOffset(0);
                     loadMoreUsers();
                   }}
                 >
