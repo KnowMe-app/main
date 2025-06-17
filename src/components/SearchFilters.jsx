@@ -1,7 +1,7 @@
 import React from 'react';
 
 export const SearchFilters = ({ filters, onChange }) => {
-  const handleChange = (name, value) => {
+  const handleFilterChange = (name, value) => {
     onChange({ ...filters, [name]: value });
   };
 
@@ -15,7 +15,7 @@ export const SearchFilters = ({ filters, onChange }) => {
             name="csection"
             value="off"
             checked={filters.csection === 'off'}
-            onChange={() => handleChange('csection', 'off')}
+              onChange={() => handleFilterChange('csection', 'off')}
           />
           no filter
         </label>
@@ -25,7 +25,7 @@ export const SearchFilters = ({ filters, onChange }) => {
             name="csection"
             value="le1"
             checked={filters.csection === 'le1'}
-            onChange={() => handleChange('csection', 'le1')}
+              onChange={() => handleFilterChange('csection', 'le1')}
           />
           ≤1
         </label>
@@ -35,7 +35,7 @@ export const SearchFilters = ({ filters, onChange }) => {
             name="csection"
             value="none"
             checked={filters.csection === 'none'}
-            onChange={() => handleChange('csection', 'none')}
+              onChange={() => handleFilterChange('csection', 'none')}
           />
           none (–)
         </label>
@@ -48,7 +48,7 @@ export const SearchFilters = ({ filters, onChange }) => {
             name="maritalStatus"
             value="off"
             checked={filters.maritalStatus === 'off'}
-            onChange={() => handleChange('maritalStatus', 'off')}
+              onChange={() => handleFilterChange('maritalStatus', 'off')}
           />
           no filter
         </label>
@@ -58,7 +58,7 @@ export const SearchFilters = ({ filters, onChange }) => {
             name="maritalStatus"
             value="married"
             checked={filters.maritalStatus === 'married'}
-            onChange={() => handleChange('maritalStatus', 'married')}
+              onChange={() => handleFilterChange('maritalStatus', 'married')}
           />
           married
         </label>
@@ -68,7 +68,7 @@ export const SearchFilters = ({ filters, onChange }) => {
             name="maritalStatus"
             value="unmarried"
             checked={filters.maritalStatus === 'unmarried'}
-            onChange={() => handleChange('maritalStatus', 'unmarried')}
+              onChange={() => handleFilterChange('maritalStatus', 'unmarried')}
           />
           unmarried
         </label>
@@ -81,7 +81,7 @@ export const SearchFilters = ({ filters, onChange }) => {
             name="blood"
             value="off"
             checked={filters.blood === 'off'}
-            onChange={() => handleChange('blood', 'off')}
+              onChange={() => handleFilterChange('blood', 'off')}
           />
           no filter
         </label>
@@ -91,7 +91,7 @@ export const SearchFilters = ({ filters, onChange }) => {
             name="blood"
             value="pos"
             checked={filters.blood === 'pos'}
-            onChange={() => handleChange('blood', 'pos')}
+              onChange={() => handleFilterChange('blood', 'pos')}
           />
           Rh+
         </label>
@@ -101,7 +101,7 @@ export const SearchFilters = ({ filters, onChange }) => {
             name="blood"
             value="neg"
             checked={filters.blood === 'neg'}
-            onChange={() => handleChange('blood', 'neg')}
+              onChange={() => handleFilterChange('blood', 'neg')}
           />
           Rh-
         </label>
@@ -114,20 +114,20 @@ export const SearchFilters = ({ filters, onChange }) => {
             name="age"
             value="off"
             checked={filters.age === 'off'}
-            onChange={() => handleChange('age', 'off')}
+              onChange={() => handleFilterChange('age', 'off')}
           />
           no filter
         </label>
-        {['43', '38', '36', '32', '30', '25'].map(limit => (
-          <label key={limit} style={{ marginLeft: '10px', color: 'black' }}>
+        {['43', '38', '36', '32', '30', '25'].map(ageLimit => (
+          <label key={ageLimit} style={{ marginLeft: '10px', color: 'black' }}>
             <input
               type="radio"
               name="age"
-              value={limit}
-              checked={filters.age === limit}
-              onChange={() => handleChange('age', limit)}
+              value={ageLimit}
+              checked={filters.age === ageLimit}
+              onChange={() => handleFilterChange('age', ageLimit)}
             />
-            {!isNaN(limit) ? `≤${limit}` : limit}
+            {!isNaN(ageLimit) ? `≤${ageLimit}` : ageLimit}
           </label>
         ))}
       </div>
@@ -139,7 +139,7 @@ export const SearchFilters = ({ filters, onChange }) => {
             name="userId"
             value="off"
             checked={filters.userId === 'off'}
-            onChange={() => handleChange('userId', 'off')}
+              onChange={() => handleFilterChange('userId', 'off')}
           />
           no filter
         </label>
@@ -157,7 +157,7 @@ export const SearchFilters = ({ filters, onChange }) => {
               name="userId"
               value={val}
               checked={filters.userId === val}
-              onChange={() => handleChange('userId', val)}
+              onChange={() => handleFilterChange('userId', val)}
             />
             {label}
           </label>
