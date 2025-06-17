@@ -118,16 +118,16 @@ export const SearchFilters = ({ filters, onChange }) => {
           />
           no filter
         </label>
-        {['43', '38', '36', '32', '30', '25'].map(limit => (
-          <label key={limit} style={{ marginLeft: '10px', color: 'black' }}>
+        {['43', '38', '36', '32', '30', '25'].map(ageLimit => (
+          <label key={ageLimit} style={{ marginLeft: '10px', color: 'black' }}>
             <input
               type="radio"
               name="age"
-              value={limit}
-              checked={filters.age === limit}
-              onChange={() => handleChange('age', limit)}
+              value={ageLimit}
+              checked={filters.age === ageLimit}
+              onChange={() => handleChange('age', ageLimit)}
             />
-            {!isNaN(limit) ? `≤${limit}` : limit}
+            {!isNaN(ageLimit) ? `≤${ageLimit}` : ageLimit}
           </label>
         ))}
       </div>
