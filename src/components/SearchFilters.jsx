@@ -1,4 +1,5 @@
 import React from 'react';
+import { CheckboxGroup } from './CheckboxGroup';
 
 export const SearchFilters = ({ filters, onChange }) => {
   const handleFilterChange = (name, value) => {
