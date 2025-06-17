@@ -1,19 +1,19 @@
 import React from 'react';
-import { CheckboxGroup } from './CheckboxGroup';
+  const handleFilterChange = (name, value) => {
 
-export const SearchFilters = ({ filters, onChange }) => {
-  const groups = [
-    {
-      filterName: 'csection',
-      label: 'C-section',
-      options: [
-        { val: 'cs2plus', label: 'cs2+' },
-        { val: 'cs1', label: 'cs1' },
-        { val: 'cs0', label: 'cs0' },
-        { val: 'other', label: '?' },
-      ],
-    },
-    {
+              onChange={() => handleFilterChange('csection', 'off')}
+              onChange={() => handleFilterChange('csection', 'le1')}
+              onChange={() => handleFilterChange('csection', 'none')}
+              onChange={() => handleFilterChange('maritalStatus', 'off')}
+              onChange={() => handleFilterChange('maritalStatus', 'married')}
+              onChange={() => handleFilterChange('maritalStatus', 'unmarried')}
+              onChange={() => handleFilterChange('blood', 'off')}
+              onChange={() => handleFilterChange('blood', 'pos')}
+              onChange={() => handleFilterChange('blood', 'neg')}
+              onChange={() => handleFilterChange('age', 'off')}
+              onChange={() => handleFilterChange('age', ageLimit)}
+              onChange={() => handleFilterChange('userId', 'off')}
+              onChange={() => handleFilterChange('userId', val)}
       filterName: 'role',
       label: 'Role',
       options: [
