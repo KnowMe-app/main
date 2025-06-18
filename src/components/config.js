@@ -1182,14 +1182,15 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
   const limit = PAGE_SIZE + 1;
 
   if (filterForload === "DATE") {
-    const data = await fetchSortedUsersByDate(limit, lastKey || 0);
+    const { data, totalCount } = await fetchSortedUsersByDate(limit, lastKey || 0);
     const entries = Object.entries(data);
-    const nextKey = entries.length > PAGE_SIZE ? entries[PAGE_SIZE][0] : null;
+    const nextOffset = (lastKey || 0) + PAGE_SIZE;
+    const hasMore = nextOffset < totalCount;
     return {
-      users: Object.fromEntries(entries.slice(0, PAGE_SIZE)),
-      lastKey: nextKey,
-      hasMore: !!nextKey,
-      totalCount: Object.keys(data).length
+      users: Object.fromEntries(entries),
+      lastKey: nextOffset,
+      hasMore,
+      totalCount,
     };
   }
 
@@ -1939,55 +1940,44 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
   const result = [];
 
   // Today's records
-  let entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo(today), limitToFirst(limit)));
+  let entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo(today)));
   result.push(...entries);
 
-  if (result.length < limit) {
-    // Previous records within two weeks
-    entries = await fetchData(
-      query(
-        usersRef,
-        orderByChild('getInTouch'),
-        startAt(twoWeeksAgoDate),
-        endAt(today),
-        limitToLast(limit - result.length)
-      )
-    );
-    entries = entries.filter(([, u]) => u.getInTouch < today);
-    result.push(...entries);
-  }
+  // Previous records within two weeks
+  entries = await fetchData(
+    query(
+      usersRef,
+      orderByChild('getInTouch'),
+      startAt(twoWeeksAgoDate),
+      endAt(today)
+    )
+  );
+  entries = entries.filter(([, u]) => u.getInTouch < today);
+  result.push(...entries);
 
-  if (result.length < limit) {
-    // Upcoming records within two weeks
-    entries = await fetchData(
-      query(
-        usersRef,
-        orderByChild('getInTouch'),
-        startAt(today),
-        endAt(twoWeeksAheadDate),
-        limitToFirst(limit - result.length)
-      )
-    );
-    entries = entries.filter(([, u]) => u.getInTouch > today && u.getInTouch <= twoWeeksAheadDate);
-    result.push(...entries);
-  }
+  // Upcoming records within two weeks
+  entries = await fetchData(
+    query(
+      usersRef,
+      orderByChild('getInTouch'),
+      startAt(today),
+      endAt(twoWeeksAheadDate)
+    )
+  );
+  entries = entries.filter(([, u]) => u.getInTouch > today && u.getInTouch <= twoWeeksAheadDate);
+  result.push(...entries);
 
-  if (result.length < limit) {
-    // Empty dates
-    entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo(''), limitToFirst(limit - result.length)));
-    result.push(...entries);
-  }
+  // Empty dates
+  entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('')));
+  result.push(...entries);
 
-  if (result.length < limit) {
-    // Records with special future dates
-    entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('2099-99-99')));
-    result.push(...entries);
-    if (result.length < limit) {
-      entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('9999-99-99')));
-      result.push(...entries);
-    }
-  }
+  // Records with special future dates
+  entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('2099-99-99')));
+  result.push(...entries);
+  entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('9999-99-99')));
+  result.push(...entries);
 
-  return Object.fromEntries(result.slice(offset, offset + limit));
+  const sliced = result.slice(offset, offset + limit);
+  return { data: Object.fromEntries(sliced), totalCount: result.length };
 }
 
