@@ -1181,16 +1181,62 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
   const limit = PAGE_SIZE + 1;
 
   if (filterForload === "DATE") {
-    const { data, totalCount } = await fetchSortedUsersByDate(limit, lastKey || 0);
-    const entries = Object.entries(data);
-    const nextOffset = (lastKey || 0) + PAGE_SIZE;
-    const hasMore = nextOffset < totalCount;
-    return {
-      users: Object.fromEntries(entries),
-      lastKey: nextOffset,
-      hasMore,
-      totalCount,
-    };
+    try {
+      const { data } = await fetchSortedUsersByDate(limit, lastKey || 0);
+      let fetchedUsers = Object.entries(data);
+
+      const noExplicitFilters =
+        (!filterForload || filterForload === 'NewLoad') &&
+        (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
+
+      const filteredUsers = noExplicitFilters
+        ? fetchedUsers
+        : filterMain(fetchedUsers, filterForload, filterSettings);
+
+      const sortedUsers = sortUsers(filteredUsers);
+
+      const paginatedSlice = sortedUsers.slice(0, PAGE_SIZE);
+      const nextOffset = (lastKey || 0) + PAGE_SIZE;
+      const hasMore = sortedUsers.length > PAGE_SIZE;
+
+      const paginatedUsers = paginatedSlice.reduce((acc, [userId, userData]) => {
+        acc[userId] = userData;
+        return acc;
+      }, {});
+
+      const userIds = Object.keys(paginatedUsers);
+      const userResults = await Promise.all(userIds.map(id => fetchUserById(id)));
+
+      const usersData = {};
+      userResults.forEach((data, idx) => {
+        const id = userIds[idx];
+        if (data) usersData[id] = data;
+      });
+
+      const finalUsers = userIds.reduce((acc, id) => {
+        acc[id] = { ...paginatedUsers[id], ...(usersData[id] || {}) };
+        return acc;
+      }, {});
+
+      let totalCount;
+      if (!lastKey) {
+        totalCount = await fetchTotalFilteredUsersCount(filterForload, filterSettings);
+      }
+
+      return {
+        users: finalUsers,
+        lastKey: nextOffset,
+        hasMore,
+        totalCount,
+      };
+    } catch (error) {
+      console.error('Error fetching sorted users by date with filters:', error);
+      return {
+        users: {},
+        lastKey: null,
+        hasMore: false,
+      };
+    }
   }
 
   try {
@@ -1829,8 +1875,8 @@ export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}) 
 
       const allUsersArray = Array.from(allUserIds).map(userId => {
         const newUserRaw = newUsersData[userId] || {};
-        const { searchId: _unused, ...newUserDataWithoutSearchId } = newUserRaw;
-        void _unused;
+        const newUserDataWithoutSearchId = { ...newUserRaw };
+        delete newUserDataWithoutSearchId.searchId;
 
       return [
         userId,
@@ -1887,9 +1933,9 @@ export const fetchAllUsersFromRTDB = async () => {
     // Об’єднуємо дані та формуємо масив пар [userId, userObject]
       const mergedUsersArray = allUsersArray.map(userId => {
         const newUserRaw = newUsersData[userId] || {};
-        // Деструктуризуємо, виключаючи searchId
-        const { searchId: _unused, ...newUserDataWithoutSearchId } = newUserRaw;
-        void _unused;
+        // Видаляємо поле searchId
+        const newUserDataWithoutSearchId = { ...newUserRaw };
+        delete newUserDataWithoutSearchId.searchId;
 
       return [
         userId,
