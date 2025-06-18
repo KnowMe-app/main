@@ -373,8 +373,8 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
       } else {
         // console.log(`🚫 No results found for '${prefix}'`);
       }
-    } catch (error) {
-      // console.error(`❌ Error fetching data for '${prefix}':`, error);
+    } catch {
+      // console.error(`❌ Error fetching data for '${prefix}'`);
     }
   }
 };
@@ -524,9 +524,9 @@ const removeUndefined = obj => {
     return obj.filter(item => item !== undefined).map(removeUndefined);
   } else if (typeof obj === 'object' && obj !== null) {
     return Object.fromEntries(
-      Object.entries(obj)
-        .filter(([key, value]) => value !== undefined)
-        .map(([key, value]) => [key, removeUndefined(value)])
+        Object.entries(obj)
+          .filter(([, value]) => value !== undefined)
+          .map(([key, value]) => [key, removeUndefined(value)])
     );
   }
   return obj;
@@ -1069,7 +1069,7 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
   });
   let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
 
-  const filteredUsers = usersData.filter(([key, value]) => {
+    const filteredUsers = usersData.filter(([, value]) => {
     let filters = {
       filterByKeyCount: Object.keys(value).length >= 8,
     };
@@ -1112,12 +1112,12 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
       filters.userId = !!filterSettings.userId[cat];
     }
 
-    const failedFilters = Object.entries(filters).filter(([filterName, result]) => !result);
+      const failedFilters = Object.entries(filters).filter(([, result]) => !result);
 
     if (failedFilters.length > 0) {
-      // console.log(`User excluded by filter: ${key}`);
-      failedFilters.forEach(([filterName]) => {
-        // console.log(`Failed filter: ${filterName}`);
+        // console.log(`User excluded by filter: ${key}`);
+        failedFilters.forEach(() => {
+          // console.log(`Failed filter`);
       });
       excludedUsersCount++; // Збільшуємо лічильник відфільтрованих користувачів
       console.log(`excludedUsersCount: ${excludedUsersCount}`);
@@ -1158,7 +1158,7 @@ const sortUsers = filteredUsers => {
     return 5; // інші майбутні дати
   };
 
-  return filteredUsers.sort(([_, a], [__, b]) => {
+    return filteredUsers.sort(([, a], [, b]) => {
     const groupA = getGroup(a.getInTouch);
     const groupB = getGroup(b.getInTouch);
 
@@ -1827,9 +1827,10 @@ export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}) 
 
     const allUserIds = new Set([...Object.keys(newUsersData), ...Object.keys(usersData)]);
 
-    const allUsersArray = Array.from(allUserIds).map(userId => {
-      const newUserRaw = newUsersData[userId] || {};
-      const { searchId, ...newUserDataWithoutSearchId } = newUserRaw;
+      const allUsersArray = Array.from(allUserIds).map(userId => {
+        const newUserRaw = newUsersData[userId] || {};
+        const { searchId: _unused, ...newUserDataWithoutSearchId } = newUserRaw;
+        void _unused;
 
       return [
         userId,
@@ -1884,10 +1885,11 @@ export const fetchAllUsersFromRTDB = async () => {
     const allUsersArray = Array.from(allUserIds);
 
     // Об’єднуємо дані та формуємо масив пар [userId, userObject]
-    const mergedUsersArray = allUsersArray.map(userId => {
-      const newUserRaw = newUsersData[userId] || {};
-      // Деструктуризуємо, виключаючи searchId
-      const { searchId, ...newUserDataWithoutSearchId } = newUserRaw;
+      const mergedUsersArray = allUsersArray.map(userId => {
+        const newUserRaw = newUsersData[userId] || {};
+        // Деструктуризуємо, виключаючи searchId
+        const { searchId: _unused, ...newUserDataWithoutSearchId } = newUserRaw;
+        void _unused;
 
       return [
         userId,
@@ -1931,16 +1933,29 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
   twoWeeksAhead.setDate(tomorrow.getDate() + 14);
   const twoWeeksAheadDate = twoWeeksAhead.toISOString().split('T')[0];
 
+  const beforeTwoWeeksAgo = new Date(twoWeeksAgo);
+  beforeTwoWeeksAgo.setDate(twoWeeksAgo.getDate() - 1);
+  const beforeTwoWeeksAgoDate = beforeTwoWeeksAgo.toISOString().split('T')[0];
+
   const fetchData = async q => {
     const snap = await get(q);
     return snap.exists() ? Object.entries(snap.val()) : [];
   };
 
   const result = [];
+  const fetchedIds = new Set();
+  const pushUnique = entries => {
+    for (const entry of entries) {
+      if (!fetchedIds.has(entry[0])) {
+        fetchedIds.add(entry[0]);
+        result.push(entry);
+      }
+    }
+  };
 
   // Today's records
   let entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo(today)));
-  result.push(...entries);
+  pushUnique(entries);
 
   // Previous records within two weeks
   entries = await fetchData(
@@ -1952,7 +1967,7 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
     )
   );
   entries = entries.filter(([, u]) => u.getInTouch < today);
-  result.push(...entries);
+  pushUnique(entries);
 
   // Upcoming records within two weeks
   entries = await fetchData(
@@ -1964,17 +1979,45 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
     )
   );
   entries = entries.filter(([, u]) => u.getInTouch > today && u.getInTouch <= twoWeeksAheadDate);
-  result.push(...entries);
+  pushUnique(entries);
+
+  // Records outside two week range (past and future)
+  entries = await fetchData(query(usersRef, orderByChild('getInTouch'), endAt(beforeTwoWeeksAgoDate)));
+  entries = entries.filter(([, u]) => isValidDate(u.getInTouch) && u.getInTouch < twoWeeksAgoDate);
+  pushUnique(entries);
+
+  entries = await fetchData(query(usersRef, orderByChild('getInTouch'), startAt(twoWeeksAheadDate)));
+  entries = entries.filter(([, u]) =>
+    isValidDate(u.getInTouch) &&
+    u.getInTouch > twoWeeksAheadDate &&
+    u.getInTouch !== '2099-99-99' &&
+    u.getInTouch !== '9999-99-99'
+  );
+  pushUnique(entries);
 
   // Empty dates
   entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('')));
-  result.push(...entries);
+  pushUnique(entries);
+
+  // Records with invalid dates (non-empty and not YYYY-MM-DD)
+  entries = await fetchData(query(usersRef, orderByChild('getInTouch')));
+  entries = entries.filter(([id, u]) => {
+    const d = u.getInTouch;
+    return (
+      d &&
+      !isValidDate(d) &&
+      d !== '2099-99-99' &&
+      d !== '9999-99-99' &&
+      !fetchedIds.has(id)
+    );
+  });
+  pushUnique(entries);
 
   // Records with special future dates
   entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('2099-99-99')));
-  result.push(...entries);
+  pushUnique(entries);
   entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('9999-99-99')));
-  result.push(...entries);
+  pushUnique(entries);
 
   const sliced = result.slice(offset, offset + limit);
   return { data: Object.fromEntries(sliced), totalCount: result.length };
