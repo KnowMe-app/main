@@ -686,6 +686,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('searchQuery');
     }
   }, [search]);
+  const [users, setUsers] = useState({});
+  const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
+  const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [currentFilter, setCurrentFilter] = useState(null);
+  const [dateOffset, setDateOffset] = useState(0);
+
 
   useEffect(() => {
     localStorage.setItem('userFilters', JSON.stringify(filters));
@@ -697,7 +705,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setHasMore(true);
     setTotalCount(0);
     setCurrentPage(1);
-  }, [filters]);
+    if (currentFilter) {
+      loadMoreUsers(currentFilter);
+    }
+    // loadMoreUsers depends on many state values, so we skip it from the deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, currentFilter]);
 
   // Use saved query on initial load
   useEffect(() => {
@@ -1034,13 +1047,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
   };
 
-  const [users, setUsers] = useState({});
-  const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
-  const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
-  const [totalCount, setTotalCount] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [currentFilter, setCurrentFilter] = useState(null);
-  const [dateOffset, setDateOffset] = useState(0);
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
     console.log('loadMoreUsers called with', {
@@ -1498,52 +1504,46 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             <SearchFilters filters={filters} onChange={setFilters} />
             <div>
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
-              {hasMore && (
-                <Button
-                  onClick={() => {
-                    setUsers({});
-                    setLastKey(null);
-                    setHasMore(true);
-                    setCurrentPage(1);
-                    setCurrentFilter('ED');
-                    setDateOffset(0);
-                    loadMoreUsers('ED');
-                  }}
-                >
-                  ED
-                </Button>
-              )}
-              {hasMore && <Button onClick={handleInfo}>Info</Button>}
-              {hasMore && (
-                <Button
-                  onClick={() => {
-                    setUsers({});
-                    setLastKey(null);
-                    setHasMore(true);
-                    setCurrentPage(1);
-                    setCurrentFilter("DATE");
-                    setDateOffset(0);
-                    loadMoreUsers("DATE");
-                  }}
-                >
-                  SortByDate
-                </Button>
-              )}
-              {hasMore && (
-                <Button
-                  onClick={() => {
-                    setUsers({});
-                    setLastKey(null);
-                    setHasMore(true);
-                    setCurrentPage(1);
-                    setCurrentFilter('NewLoad');
-                    setDateOffset(0);
-                    loadMoreUsers('NewLoad');
-                  }}
-                >
-                  NewLoad
-                </Button>
-              )}
+              <Button
+                onClick={() => {
+                  setUsers({});
+                  setLastKey(null);
+                  setHasMore(true);
+                  setCurrentPage(1);
+                  setCurrentFilter('ED');
+                  setDateOffset(0);
+                  loadMoreUsers('ED');
+                }}
+              >
+                ED
+              </Button>
+              <Button onClick={handleInfo}>Info</Button>
+              <Button
+                onClick={() => {
+                  setUsers({});
+                  setLastKey(null);
+                  setHasMore(true);
+                  setCurrentPage(1);
+                  setCurrentFilter("DATE");
+                  setDateOffset(0);
+                  loadMoreUsers("DATE");
+                }}
+              >
+                SortByDate
+              </Button>
+              <Button
+                onClick={() => {
+                  setUsers({});
+                  setLastKey(null);
+                  setHasMore(true);
+                  setCurrentPage(1);
+                  setCurrentFilter('NewLoad');
+                  setDateOffset(0);
+                  loadMoreUsers('NewLoad');
+                }}
+              >
+                NewLoad
+              </Button>
               {hasMore && (
                 <Button
                   onClick={() => {
@@ -1559,7 +1559,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   Load
                 </Button>
               )}
-              {hasMore && <Button onClick={makeIndex}>Index</Button>}
+              <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {
                 <Button
