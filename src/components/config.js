@@ -1035,7 +1035,7 @@ const getAgeCategory = value => {
 
 const getUserIdCategory = userId => {
   if (!userId) return 'other';
-  const id = userId.toString();
+  const id = userId.toString().toLowerCase();
   if (id.startsWith('vk')) return 'vk';
   if (id.startsWith('aa')) return 'aa';
   if (id.startsWith('ab')) return 'ab';
