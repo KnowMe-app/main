@@ -700,7 +700,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (currentFilter) {
       loadMoreUsers(currentFilter);
     }
-  }, [filters]);
+    // loadMoreUsers depends on many state values, so we skip it from the deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, currentFilter]);
 
   // Use saved query on initial load
   useEffect(() => {
