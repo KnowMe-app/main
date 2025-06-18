@@ -964,9 +964,9 @@ const filterByUserRole = value => {
 };
 
 // Фільтр за довжиною userId
-const filterByUserIdLength = value => {
+const filterByUserIdLength = userId => {
   // Перевіряємо, що userId є рядком та його довжина не перевищує 25 символів
-  return typeof value.userId === 'string' && value.userId.length <= 25;
+  return typeof userId === 'string' && userId.length <= 25;
 };
 
 
@@ -1006,18 +1006,18 @@ const getMaritalStatusCategory = value => {
 const getBloodCategory = value => {
   const b = (value.blood || '').toString().trim().toLowerCase();
   if (!b) return 'other';
-  if (['rh+', 'рк+', '+', 'pos'].includes(b)) return 'pos';
-  if (['rh-', 'рк-', '-', 'neg'].includes(b)) return 'neg';
+  const normalized = b.replace(/\s+/g, '');
+  const positive = ['rh+', 'рк+', 'pos', '+'];
+  const negative = ['rh-', 'рк-', 'neg', '-'];
+
+  if (positive.includes(normalized)) return 'pos';
+  if (negative.includes(normalized)) return 'neg';
+
+  if (normalized.endsWith('+')) return 'pos';
+  if (normalized.endsWith('-')) return 'neg';
   return 'other';
 };
 
-// Basic filter helper for negative Rh factor
-const filterByNegativeRhOnly = value => {
-  if (!value.blood) return true;
-  const negative = ['1-', '2-', '3-', '4-', '-', 'rh-', 'рк-', 'neg'];
-  return negative.includes(value.blood.toString().trim().toLowerCase());
-};
-console.log('filterByNegativeRhOnly: ', filterByNegativeRhOnly);
 
 
 const getAgeCategory = value => {
@@ -1067,9 +1067,9 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
     filterSettings,
     usersCount: usersData.length,
   });
-  let excludedUsersCount = 0; // Лічильник відфільтрованих користувачів
 
-    const filteredUsers = usersData.filter(([, value]) => {
+  const filteredUsers = usersData.filter(([key, value]) => {
+    const userId = value.userId || key;
     let filters = {
       filterByKeyCount: Object.keys(value).length >= 8,
     };
@@ -1077,7 +1077,7 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
       // Якщо filterForload === ED, використовуємо додаткові фільтри
       Object.assign(filters, {
         filterByUserRole: filterByUserRole(value),
-        filterByUserIdLength: filterByUserIdLength(value),
+        filterByUserIdLength: filterByUserIdLength(userId),
         filterByAge: filterByAge(value, 30),
       });
     }
@@ -1108,19 +1108,17 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
     }
 
     if (filterSettings.userId && Object.values(filterSettings.userId).some(v => !v)) {
-      const cat = getUserIdCategory(value.userId);
+      const cat = getUserIdCategory(userId);
       filters.userId = !!filterSettings.userId[cat];
     }
 
       const failedFilters = Object.entries(filters).filter(([, result]) => !result);
 
     if (failedFilters.length > 0) {
-        // console.log(`User excluded by filter: ${key}`);
-        failedFilters.forEach(() => {
-          // console.log(`Failed filter`);
+      // console.log(`User excluded by filter: ${key}`);
+      failedFilters.forEach(() => {
+        // console.log(`Failed filter`);
       });
-      excludedUsersCount++; // Збільшуємо лічильник відфільтрованих користувачів
-      console.log(`excludedUsersCount: ${excludedUsersCount}`);
     }
 
     return failedFilters.length === 0;
