@@ -15,7 +15,6 @@ import {
   orderByKey,
   startAfter,
   limitToFirst,
-  limitToLast,
   startAt,
   endAt,
   equalTo,
