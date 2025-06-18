@@ -686,6 +686,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('searchQuery');
     }
   }, [search]);
+  const [users, setUsers] = useState({});
+  const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
+  const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [currentFilter, setCurrentFilter] = useState(null);
+  const [dateOffset, setDateOffset] = useState(0);
+
 
   useEffect(() => {
     localStorage.setItem('userFilters', JSON.stringify(filters));
@@ -1039,13 +1047,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
   };
 
-  const [users, setUsers] = useState({});
-  const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
-  const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
-  const [totalCount, setTotalCount] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [currentFilter, setCurrentFilter] = useState(null);
-  const [dateOffset, setDateOffset] = useState(0);
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
     console.log('loadMoreUsers called with', {
