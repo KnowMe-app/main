@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, deleteUser } from 'firebase/auth';
-import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
-import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
+import { getAuth } from 'firebase/auth';
+import { collection, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
+import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject } from 'firebase/storage';
 import {
   getDatabase,
   ref as ref2,
@@ -55,14 +55,6 @@ export const getUrlofUploadedAvatar = async (photo, userId) => {
   return url;
 };
 
-export const getUrlofUploadedPhoto = async photo => {
-  const file = await getFileBlob(photo); // перетворюємо отриману фотографію на об'єкт Blob
-  const uniqueId = Date.now().toString(); // генеруємо унікальне ім"я для фото
-  const linkToFile = ref(storage, `imgPost/${uniqueId}`); // створюємо посилання на місце збереження фото в Firebase
-  await uploadBytes(linkToFile, file); // завантажуємо фото
-  const url = await getDownloadURL(linkToFile); // отримуємо URL-адресу завантаженого фото
-  return url;
-};
 
 const getFileBlob = file => {
   return new Promise((resolve, reject) => {
@@ -438,58 +430,6 @@ export const getUserCards = async () => {
   return allUserCards;
 };
 
-export const deleteObjectFromFSDB = async objectPath => {
-  try {
-    const firestore = getFirestore();
-    // Створюємо посилання на документ, який потрібно видалити
-    const documentRef = doc(firestore, objectPath);
-    // Викликаємо метод deleteDoc для видалення документа з Firestore
-    await deleteDoc(documentRef);
-    console.log('Документ успішно видалено з Firestore');
-  } catch (error) {
-    console.error('Сталася помилка під час видалення документа:', error);
-    throw error; // Прокидуємо помилку для обробки на рівні викликаючого коду
-  }
-};
-
-export const deleteObjectFromRTDB = async objectPath => {
-  try {
-    const db = getDatabase();
-    // Створюємо посилання на об'єкт, який потрібно видалити
-    const objectRef = ref2(db, objectPath);
-    // Викликаємо метод remove для видалення об'єкта з бази даних
-    await remove(objectRef);
-    console.log("Об'єкт успішно видалено з бази даних");
-  } catch (error) {
-    console.error("Сталася помилка під час видалення об'єкта:", error);
-    throw error; // Прокидуємо помилку для обробки на рівні викликаючого коду
-  }
-};
-
-export const deleteObjectFromStorage = async folderPath => {
-  try {
-    const storage = getStorage();
-    const listRef = ref(storage, folderPath);
-    const { items } = await listAll(listRef);
-    const deletePromises = items.map(itemRef => deleteObject(itemRef));
-    await Promise.all(deletePromises);
-    console.log('Папку успішно видалено з Firebase Storage');
-  } catch (error) {
-    console.error('Сталася помилка під час видалення папки з Firebase Storage:', error);
-    throw error;
-  }
-};
-
-export const deleteUserFromAuth = async userId => {
-  try {
-    const auth = getAuth();
-    await deleteUser(auth, userId); // Передаємо userId для видалення користувача за його ID
-    console.log('Користувача успішно видалено з Authentication Firebase');
-  } catch (error) {
-    console.error('Сталася помилка під час видалення користувача з Authentication Firebase:', error);
-    throw error;
-  }
-};
 
 export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) => {
   console.log(`upl555555555oadedInfo`);
@@ -1044,6 +984,14 @@ const getUserIdCategory = userId => {
   return 'other';
 };
 
+const getFieldCountCategory = value => {
+  const count = Object.keys(value).length;
+  if (count < 4) return 'lt4';
+  if (count < 8) return 'lt8';
+  if (count < 12) return 'lt12';
+  return 'other';
+};
+
 
 // Фільтр за віком
 const filterByAge = (value, ageLimit = 30) => {
@@ -1070,9 +1018,7 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
 
   const filteredUsers = usersData.filter(([key, value]) => {
     const userId = value.userId || key;
-    let filters = {
-      filterByKeyCount: Object.keys(value).length >= 8,
-    };
+    let filters = {};
     if (filterForload === 'ED') {
       // Якщо filterForload === ED, використовуємо додаткові фільтри
       Object.assign(filters, {
@@ -1112,7 +1058,12 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
       filters.userId = !!filterSettings.userId[cat];
     }
 
-      const failedFilters = Object.entries(filters).filter(([, result]) => !result);
+    if (filterSettings.fields && Object.values(filterSettings.fields).some(v => !v)) {
+      const cat = getFieldCountCategory(value);
+      filters.fields = !!filterSettings.fields[cat];
+    }
+
+    const failedFilters = Object.entries(filters).filter(([, result]) => !result);
 
     if (failedFilters.length > 0) {
       // console.log(`User excluded by filter: ${key}`);

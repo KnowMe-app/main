@@ -66,6 +66,16 @@ export const SearchFilters = ({ filters, onChange }) => {
         { val: 'other', label: '?' },
       ],
     },
+    {
+      filterName: 'fields',
+      label: 'Fields',
+      options: [
+        { val: 'lt4', label: '<4' },
+        { val: 'lt8', label: '<8' },
+        { val: 'lt12', label: '<12' },
+        { val: 'other', label: '?' },
+      ],
+    },
   ];
 
   return (
