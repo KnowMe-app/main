@@ -85,7 +85,8 @@ export const SearchFilters = ({ filters, onChange }) => {
         { val: 'w30_49', label: '30-49' },
         { val: 'w50_99', label: '50-99' },
         { val: 'w100_199', label: '100-199' },
-        { val: 'other', label: '200+' },
+        { val: 'w200_plus', label: '200+' },
+        { val: 'other', label: 'Все інше' },
       ],
     },
   ];
