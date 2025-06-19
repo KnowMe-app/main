@@ -993,7 +993,7 @@ const getCommentLengthCategory = comment => {
   if (wordCount < 50) return 'w30_49';
   if (wordCount < 100) return 'w50_99';
   if (wordCount < 200) return 'w100_199';
-  return 'other';
+  return 'w200_plus';
 };
 
 // Фільтр за віком
