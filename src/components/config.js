@@ -1178,18 +1178,54 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
   const usersRef = ref2(db, 'newUsers');
   const limit = PAGE_SIZE + 1;
 
+  const noExplicitFilters =
+    (!filterForload || filterForload === 'NewLoad') &&
+    (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
+
   if (filterForload === "DATE") {
+    if (!noExplicitFilters) {
+      try {
+        const filtered = await fetchAllFilteredUsers(filterForload, filterSettings);
+        const fetchedUsers = Object.entries(filtered);
+
+        const sortedUsers = sortUsers(fetchedUsers);
+
+        const offset = lastKey || 0;
+        const paginatedSlice = sortedUsers.slice(offset, offset + PAGE_SIZE);
+        const nextOffset = offset + PAGE_SIZE;
+        const hasMore = sortedUsers.length > nextOffset;
+
+        const paginatedUsers = paginatedSlice.reduce((acc, [userId, userData]) => {
+          acc[userId] = userData;
+          return acc;
+        }, {});
+
+        let totalCount;
+        if (!lastKey) {
+          totalCount = sortedUsers.length;
+        }
+
+        return {
+          users: paginatedUsers,
+          lastKey: nextOffset,
+          hasMore,
+          totalCount,
+        };
+      } catch (error) {
+        console.error('Error fetching date filtered users:', error);
+        return {
+          users: {},
+          lastKey: null,
+          hasMore: false,
+        };
+      }
+    }
+
     try {
       const { data } = await fetchSortedUsersByDate(limit, lastKey || 0);
       let fetchedUsers = Object.entries(data);
 
-      const noExplicitFilters =
-        (!filterForload || filterForload === 'NewLoad') &&
-        (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
-
-      const filteredUsers = noExplicitFilters
-        ? fetchedUsers
-        : filterMain(fetchedUsers, filterForload, filterSettings);
+      const filteredUsers = filterMain(fetchedUsers, filterForload, filterSettings);
 
       const sortedUsers = sortUsers(filteredUsers);
 
