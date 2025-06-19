@@ -390,6 +390,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     blood: { pos: true, neg: true, other: true },
     age: { le25: true, '26_29': true, '31_36': true, '37_42': true, other: true },
     userId: { vk: true, aa: true, ab: true, long: true, mid: true, other: true },
+    fields: { lt4: true, lt8: true, lt12: true, other: true },
   };
 
   const normalizeFilterGroup = (value, defaults) => {
@@ -408,6 +409,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         blood: normalizeFilterGroup(parsed.blood, defaultFilters.blood),
         age: normalizeFilterGroup(parsed.age, defaultFilters.age),
         userId: normalizeFilterGroup(parsed.userId, defaultFilters.userId),
+        fields: normalizeFilterGroup(parsed.fields, defaultFilters.fields),
       };
     } catch {
       return { ...defaultFilters };
