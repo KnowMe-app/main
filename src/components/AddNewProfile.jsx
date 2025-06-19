@@ -391,7 +391,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     age: { le25: true, '26_29': true, '31_36': true, '37_42': true, other: true },
     userId: { vk: true, aa: true, ab: true, long: true, mid: true, other: true },
     fields: { lt4: true, lt8: true, lt12: true, other: true },
-    commentLength: { lt10: true, lt30: true, lt50: true, lt100: true, lt200: true, other: true },
+    commentLength: { w0_9: true, w10_29: true, w30_49: true, w50_99: true, w100_199: true, other: true },
   };
 
   const normalizeFilterGroup = (value, defaults) => {
@@ -697,7 +697,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState(null);
   const [dateOffset, setDateOffset] = useState(0);
-
 
   useEffect(() => {
     localStorage.setItem('userFilters', JSON.stringify(filters));
@@ -1051,14 +1050,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
   };
 
-
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
     console.log('loadMoreUsers called with', {
       filterForload,
       lastKey,
       currentFilters,
     });
-    const param = filterForload === "DATE" ? dateOffset : lastKey;
+    const param = filterForload === 'DATE' ? dateOffset : lastKey;
     const res = await fetchPaginatedNewUsers(param, filterForload, currentFilters);
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
@@ -1084,7 +1082,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // Оновлюємо стан користувачів
       // Оновлюємо стан користувачів
       setUsers(prevUsers => ({ ...prevUsers, ...newUsers })); // Додаємо нових користувачів до попередніх
-      if (filterForload === "DATE") {
+      if (filterForload === 'DATE') {
         setDateOffset(prev => prev + PAGE_SIZE);
         setHasMore(res.hasMore);
       } else {
@@ -1528,9 +1526,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setLastKey(null);
                   setHasMore(true);
                   setCurrentPage(1);
-                  setCurrentFilter("DATE");
+                  setCurrentFilter('DATE');
                   setDateOffset(0);
-                  loadMoreUsers("DATE");
+                  loadMoreUsers('DATE');
                 }}
               >
                 SortByDate
