@@ -992,6 +992,17 @@ const getFieldCountCategory = value => {
   return 'other';
 };
 
+const getCommentLengthCategory = comment => {
+  if (!comment || typeof comment !== 'string') return 'other';
+  const wordCount = comment.trim().split(/\s+/).length;
+  if (wordCount < 10) return 'lt10';
+  if (wordCount < 30) return 'lt30';
+  if (wordCount < 50) return 'lt50';
+  if (wordCount < 100) return 'lt100';
+  if (wordCount < 200) return 'lt200';
+  return 'other';
+};
+
 
 // Фільтр за віком
 const filterByAge = (value, ageLimit = 30) => {
@@ -1061,6 +1072,11 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
     if (filterSettings.fields && Object.values(filterSettings.fields).some(v => !v)) {
       const cat = getFieldCountCategory(value);
       filters.fields = !!filterSettings.fields[cat];
+    }
+
+    if (filterSettings.commentLength && Object.values(filterSettings.commentLength).some(v => !v)) {
+      const cat = getCommentLengthCategory(value.myComment);
+      filters.commentLength = !!filterSettings.commentLength[cat];
     }
 
     const failedFilters = Object.entries(filters).filter(([, result]) => !result);
