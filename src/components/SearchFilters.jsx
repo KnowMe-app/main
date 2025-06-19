@@ -76,6 +76,18 @@ export const SearchFilters = ({ filters, onChange }) => {
         { val: 'other', label: '?' },
       ],
     },
+    {
+      filterName: 'commentLength',
+      label: 'Comment words',
+      options: [
+        { val: 'lt10', label: '<10' },
+        { val: 'lt30', label: '<30' },
+        { val: 'lt50', label: '<50' },
+        { val: 'lt100', label: '<100' },
+        { val: 'lt200', label: '<200' },
+        { val: 'other', label: '?' },
+      ],
+    },
   ];
 
   return (
