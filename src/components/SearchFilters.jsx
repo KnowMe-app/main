@@ -80,12 +80,12 @@ export const SearchFilters = ({ filters, onChange }) => {
       filterName: 'commentLength',
       label: 'Comment words',
       options: [
-        { val: 'lt10', label: '<10' },
-        { val: 'lt30', label: '<30' },
-        { val: 'lt50', label: '<50' },
-        { val: 'lt100', label: '<100' },
-        { val: 'lt200', label: '<200' },
-        { val: 'other', label: '?' },
+        { val: 'w0_9', label: '0-9' },
+        { val: 'w10_29', label: '10-29' },
+        { val: 'w30_49', label: '30-49' },
+        { val: 'w50_99', label: '50-99' },
+        { val: 'w100_199', label: '100-199' },
+        { val: 'other', label: '200+' },
       ],
     },
   ];
@@ -93,14 +93,7 @@ export const SearchFilters = ({ filters, onChange }) => {
   return (
     <div style={{ margin: '10px 0', color: 'black' }}>
       {groups.map(group => (
-        <CheckboxGroup
-          key={group.filterName}
-          label={group.label}
-          filterName={group.filterName}
-          options={group.options}
-          filters={filters}
-          onChange={onChange}
-        />
+        <CheckboxGroup key={group.filterName} label={group.label} filterName={group.filterName} options={group.options} filters={filters} onChange={onChange} />
       ))}
     </div>
   );

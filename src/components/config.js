@@ -55,7 +55,6 @@ export const getUrlofUploadedAvatar = async (photo, userId) => {
   return url;
 };
 
-
 const getFileBlob = file => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -430,7 +429,6 @@ export const getUserCards = async () => {
   return allUserCards;
 };
 
-
 export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) => {
   console.log(`upl555555555oadedInfo`);
   const cleanedUploadedInfo = removeUndefined(uploadedInfo);
@@ -464,9 +462,9 @@ const removeUndefined = obj => {
     return obj.filter(item => item !== undefined).map(removeUndefined);
   } else if (typeof obj === 'object' && obj !== null) {
     return Object.fromEntries(
-        Object.entries(obj)
-          .filter(([, value]) => value !== undefined)
-          .map(([key, value]) => [key, removeUndefined(value)])
+      Object.entries(obj)
+        .filter(([, value]) => value !== undefined)
+        .map(([key, value]) => [key, removeUndefined(value)])
     );
   }
   return obj;
@@ -895,7 +893,6 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
   }
 };
 
-
 // Фільтр за роллю користувача
 const filterByUserRole = value => {
   const excludedRoles = ['ag', 'ip', 'Конкурент', 'Агент']; // Ролі, які потрібно виключити
@@ -908,8 +905,6 @@ const filterByUserIdLength = userId => {
   // Перевіряємо, що userId є рядком та його довжина не перевищує 25 символів
   return typeof userId === 'string' && userId.length <= 25;
 };
-
-
 
 const categorizeCsection = val => {
   if (!val) return 'other';
@@ -958,8 +953,6 @@ const getBloodCategory = value => {
   return 'other';
 };
 
-
-
 const getAgeCategory = value => {
   if (!value.birth || typeof value.birth !== 'string') return 'other';
   const birthParts = value.birth.split('.');
@@ -995,14 +988,13 @@ const getFieldCountCategory = value => {
 const getCommentLengthCategory = comment => {
   if (!comment || typeof comment !== 'string') return 'other';
   const wordCount = comment.trim().split(/\s+/).length;
-  if (wordCount < 10) return 'lt10';
-  if (wordCount < 30) return 'lt30';
-  if (wordCount < 50) return 'lt50';
-  if (wordCount < 100) return 'lt100';
-  if (wordCount < 200) return 'lt200';
+  if (wordCount < 10) return 'w0_9';
+  if (wordCount < 30) return 'w10_29';
+  if (wordCount < 50) return 'w30_49';
+  if (wordCount < 100) return 'w50_99';
+  if (wordCount < 200) return 'w100_199';
   return 'other';
 };
-
 
 // Фільтр за віком
 const filterByAge = (value, ageLimit = 30) => {
@@ -1017,7 +1009,6 @@ const filterByAge = (value, ageLimit = 30) => {
   // Пропускаємо користувача, якщо вік не перевищує ageLimit
   return age <= ageLimit;
 };
-
 
 // Основна функція фільтрації
 const filterMain = (usersData, filterForload, filterSettings = {}) => {
@@ -1123,7 +1114,7 @@ const sortUsers = filteredUsers => {
     return 5; // інші майбутні дати
   };
 
-    return filteredUsers.sort(([, a], [, b]) => {
+  return filteredUsers.sort(([, a], [, b]) => {
     const groupA = getGroup(a.getInTouch);
     const groupB = getGroup(b.getInTouch);
 
@@ -1146,10 +1137,9 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
   const limit = PAGE_SIZE + 1;
 
   const noExplicitFilters =
-    (!filterForload || filterForload === 'NewLoad') &&
-    (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
+    (!filterForload || filterForload === 'NewLoad') && (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
 
-  if (filterForload === "DATE") {
+  if (filterForload === 'DATE') {
     if (!noExplicitFilters) {
       try {
         const filtered = await fetchAllFilteredUsers(filterForload, filterSettings);
@@ -1874,10 +1864,10 @@ export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}) 
 
     const allUserIds = new Set([...Object.keys(newUsersData), ...Object.keys(usersData)]);
 
-      const allUsersArray = Array.from(allUserIds).map(userId => {
-        const newUserRaw = newUsersData[userId] || {};
-        const newUserDataWithoutSearchId = { ...newUserRaw };
-        delete newUserDataWithoutSearchId.searchId;
+    const allUsersArray = Array.from(allUserIds).map(userId => {
+      const newUserRaw = newUsersData[userId] || {};
+      const newUserDataWithoutSearchId = { ...newUserRaw };
+      delete newUserDataWithoutSearchId.searchId;
 
       return [
         userId,
@@ -1932,11 +1922,11 @@ export const fetchAllUsersFromRTDB = async () => {
     const allUsersArray = Array.from(allUserIds);
 
     // Об’єднуємо дані та формуємо масив пар [userId, userObject]
-      const mergedUsersArray = allUsersArray.map(userId => {
-        const newUserRaw = newUsersData[userId] || {};
-        // Видаляємо поле searchId
-        const newUserDataWithoutSearchId = { ...newUserRaw };
-        delete newUserDataWithoutSearchId.searchId;
+    const mergedUsersArray = allUsersArray.map(userId => {
+      const newUserRaw = newUsersData[userId] || {};
+      // Видаляємо поле searchId
+      const newUserDataWithoutSearchId = { ...newUserRaw };
+      delete newUserDataWithoutSearchId.searchId;
 
       return [
         userId,
@@ -2005,26 +1995,12 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
   pushUnique(entries);
 
   // Previous records within two weeks
-  entries = await fetchData(
-    query(
-      usersRef,
-      orderByChild('getInTouch'),
-      startAt(twoWeeksAgoDate),
-      endAt(today)
-    )
-  );
+  entries = await fetchData(query(usersRef, orderByChild('getInTouch'), startAt(twoWeeksAgoDate), endAt(today)));
   entries = entries.filter(([, u]) => u.getInTouch < today);
   pushUnique(entries);
 
   // Upcoming records within two weeks
-  entries = await fetchData(
-    query(
-      usersRef,
-      orderByChild('getInTouch'),
-      startAt(today),
-      endAt(twoWeeksAheadDate)
-    )
-  );
+  entries = await fetchData(query(usersRef, orderByChild('getInTouch'), startAt(today), endAt(twoWeeksAheadDate)));
   entries = entries.filter(([, u]) => u.getInTouch > today && u.getInTouch <= twoWeeksAheadDate);
   pushUnique(entries);
 
@@ -2034,11 +2010,8 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
   pushUnique(entries);
 
   entries = await fetchData(query(usersRef, orderByChild('getInTouch'), startAt(twoWeeksAheadDate)));
-  entries = entries.filter(([, u]) =>
-    isValidDate(u.getInTouch) &&
-    u.getInTouch > twoWeeksAheadDate &&
-    u.getInTouch !== '2099-99-99' &&
-    u.getInTouch !== '9999-99-99'
+  entries = entries.filter(
+    ([, u]) => isValidDate(u.getInTouch) && u.getInTouch > twoWeeksAheadDate && u.getInTouch !== '2099-99-99' && u.getInTouch !== '9999-99-99'
   );
   pushUnique(entries);
 
@@ -2050,13 +2023,7 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
   entries = await fetchData(query(usersRef, orderByChild('getInTouch')));
   entries = entries.filter(([id, u]) => {
     const d = u.getInTouch;
-    return (
-      d &&
-      !isValidDate(d) &&
-      d !== '2099-99-99' &&
-      d !== '9999-99-99' &&
-      !fetchedIds.has(id)
-    );
+    return d && !isValidDate(d) && d !== '2099-99-99' && d !== '9999-99-99' && !fetchedIds.has(id);
   });
   pushUnique(entries);
 
@@ -2069,4 +2036,3 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
   const sliced = result.slice(offset, offset + limit);
   return { data: Object.fromEntries(sliced), totalCount: result.length };
 }
-
