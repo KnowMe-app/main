@@ -1552,6 +1552,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 SortByDate
               </Button>
               <Button
+                onClick={() =>
+                  setFilters(prev => ({
+                    ...prev,
+                    favorite: {
+                      ...prev.favorite,
+                      favOnly: !prev.favorite.favOnly,
+                    },
+                  }))
+                }
+              >
+                {filters.favorite.favOnly ? '❤' : '♡'}
+              </Button>
+              <Button
                 onClick={() => {
                   setUsers({});
                   setLastKey(null);
