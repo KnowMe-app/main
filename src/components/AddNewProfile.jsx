@@ -1097,17 +1097,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
         setHasMore(res.hasMore); // Оновлюємо hasMore
       }
-      console.log('loaded users count', Object.keys(newUsers).length);
+      const count = Object.keys(newUsers).length;
+      console.log('loaded users count', count);
       console.log('next lastKey', res.lastKey);
+      return { count, hasMore: res.hasMore };
     } else {
       setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
+      return { count: 0, hasMore: false };
     }
   };
 
   const handlePageChange = async page => {
     const needed = page * PAGE_SIZE;
-    while (hasMore && Object.keys(users).length < needed) {
-      await loadMoreUsers(currentFilter);
+    let loaded = Object.keys(users).length;
+    let more = hasMore;
+
+    while (more && loaded < needed) {
+      const { count, hasMore: nextMore } = await loadMoreUsers(currentFilter);
+      loaded += count;
+      more = nextMore;
     }
     setCurrentPage(page);
   };
