@@ -996,6 +996,11 @@ const getCommentLengthCategory = comment => {
   return 'w200_plus';
 };
 
+const isFavoriteUser = userId => {
+  const stored = JSON.parse(localStorage.getItem('favoriteUsers') || '{}');
+  return !!stored[userId];
+};
+
 // Фільтр за віком
 const filterByAge = (value, ageLimit = 30) => {
   // Якщо дата народження відсутня або не є рядком, пропускаємо користувача
@@ -1068,6 +1073,10 @@ const filterMain = (usersData, filterForload, filterSettings = {}) => {
     if (filterSettings.commentLength && Object.values(filterSettings.commentLength).some(v => !v)) {
       const cat = getCommentLengthCategory(value.myComment);
       filters.commentLength = !!filterSettings.commentLength[cat];
+    }
+
+    if (filterSettings.favorite && filterSettings.favorite.favOnly) {
+      filters.favorite = isFavoriteUser(userId);
     }
 
     const failedFilters = Object.entries(filters).filter(([, result]) => !result);

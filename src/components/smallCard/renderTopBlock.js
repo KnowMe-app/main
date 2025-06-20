@@ -1,6 +1,7 @@
 import React from 'react';
 import { btnDel } from './btnDel';
 import { btnExport } from './btnExport';
+import { BtnFavorite } from './btnFavorite';
 import { fieldDeliveryInfo } from './fieldDeliveryInfo';
 import { fieldWriter } from './fieldWritter';
 import { fieldContacts } from './fieldContacts';
@@ -20,6 +21,7 @@ export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState, i
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
       {btnDel(userData, setState, setShowInfoModal, isFromListOfUsers)}
+      <BtnFavorite userId={userData.userId} />
       {btnExport(userData)}
       <div>
         {userData.lastAction && formatDateToDisplay(userData.lastAction)}

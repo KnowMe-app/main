@@ -400,6 +400,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       w200_plus: true,
       other: true,
     },
+    favorite: { favOnly: false },
   };
 
   const normalizeFilterGroup = (value, defaults) => {
@@ -420,6 +421,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         userId: normalizeFilterGroup(parsed.userId, defaultFilters.userId),
         fields: normalizeFilterGroup(parsed.fields, defaultFilters.fields),
         commentLength: normalizeFilterGroup(parsed.commentLength, defaultFilters.commentLength),
+        favorite: normalizeFilterGroup(parsed.favorite, defaultFilters.favorite),
       };
     } catch {
       return { ...defaultFilters };
