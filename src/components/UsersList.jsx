@@ -89,7 +89,6 @@ const UsersList = ({
   setState,
   setShowInfoModal,
   setCompare,
-  sortFavorites,
   favoriteUsers = {},
   setFavoriteUsers,
 }) => {
@@ -98,14 +97,6 @@ const UsersList = ({
   };
 
   const entries = Object.entries(users);
-  if (sortFavorites) {
-    entries.sort(([idA], [idB]) => {
-      const aFav = isFavoriteUser(idA);
-      const bFav = isFavoriteUser(idB);
-      if (aFav === bFav) return 0;
-      return aFav ? -1 : 1;
-    });
-  }
 
   return (
     <div style={styles.container}>
