@@ -714,17 +714,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [favoriteSort, setFavoriteSort] = useState(false);
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
 
-  useEffect(() => {
-    const owner = auth.currentUser?.uid;
-    if (!owner) return;
+  const ownerId = auth.currentUser?.uid;
 
-    const favRef = ref(database, `multiData/favorites/${owner}`);
+  useEffect(() => {
+    if (!ownerId) return;
+
+    const favRef = ref(database, `multiData/favorites/${ownerId}`);
     const unsubscribe = onValue(favRef, snap => {
       setFavoriteUsersData(snap.exists() ? snap.val() : {});
     });
 
     return () => unsubscribe();
-  }, [isEmailVerified]);
+  }, [ownerId]);
 
   useEffect(() => {
     localStorage.setItem('userFilters', JSON.stringify(filters));
