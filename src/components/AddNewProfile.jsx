@@ -1341,9 +1341,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             <div style={{ ...coloredCard() }}>
               {renderTopBlock(
                 state,
-                setState,
+                setUsers,
                 setShowInfoModal,
-                true,
+                setState,
+                false,
                 favoriteUsersData,
                 setFavoriteUsersData,
               )}
