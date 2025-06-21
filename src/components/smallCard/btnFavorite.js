@@ -1,23 +1,19 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { addFavoriteUser, removeFavoriteUser } from '../config';
 
-export const BtnFavorite = ({ userId }) => {
-  const [isFavorite, setIsFavorite] = useState(false);
+export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers }) => {
+  const isFavorite = !!favoriteUsers[userId];
 
-  useEffect(() => {
-    const stored = JSON.parse(localStorage.getItem('favoriteUsers') || '{}');
-    setIsFavorite(!!stored[userId]);
-  }, [userId]);
-
-  const toggleFavorite = () => {
-    const stored = JSON.parse(localStorage.getItem('favoriteUsers') || '{}');
-    if (stored[userId]) {
-      delete stored[userId];
-      setIsFavorite(false);
+  const toggleFavorite = async () => {
+    if (isFavorite) {
+      await removeFavoriteUser(userId);
+      const updated = { ...favoriteUsers };
+      delete updated[userId];
+      setFavoriteUsers(updated);
     } else {
-      stored[userId] = true;
-      setIsFavorite(true);
+      await addFavoriteUser(userId);
+      setFavoriteUsers({ ...favoriteUsers, [userId]: true });
     }
-    localStorage.setItem('favoriteUsers', JSON.stringify(stored));
   };
 
   return (

@@ -12,6 +12,8 @@ import {
   updateDataInFiresoreDB,
   fetchPaginatedNewUsers,
   fetchAllFilteredUsers,
+  fetchFavoriteUsers,
+  fetchFavoriteUsersData,
   removeKeyFromFirebase,
   // fetchListOfUsers,
   makeNewUser,
@@ -709,6 +711,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentFilter, setCurrentFilter] = useState(null);
   const [dateOffset, setDateOffset] = useState(0);
   const [favoriteSort, setFavoriteSort] = useState(false);
+  const [favoriteUsersData, setFavoriteUsersData] = useState({});
+
+  useEffect(() => {
+    const loadFavs = async () => {
+      const owner = auth.currentUser?.uid;
+      if (owner) {
+        const favs = await fetchFavoriteUsers(owner);
+        setFavoriteUsersData(favs);
+      }
+    };
+    loadFavs();
+  }, [isEmailVerified]);
 
   useEffect(() => {
     localStorage.setItem('userFilters', JSON.stringify(filters));
@@ -1069,7 +1083,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       currentFilters,
     });
     const param = filterForload === 'DATE' ? dateOffset : lastKey;
-    const res = await fetchPaginatedNewUsers(param, filterForload, currentFilters);
+    let fav = favoriteUsersData;
+    if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
+    }
+    const res = await fetchPaginatedNewUsers(param, filterForload, currentFilters, fav);
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
@@ -1127,7 +1146,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const exportFilteredUsers = async () => {
     const noFilters = !filters || Object.values(filters).every(value => value === 'off');
 
-    const allUsers = noFilters ? await fetchAllUsersFromRTDB() : await fetchAllFilteredUsers(undefined, filters);
+    let fav = favoriteUsersData;
+    if (filters.favorite?.favOnly && Object.keys(fav).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
+    }
+
+    const allUsers = noFilters ? await fetchAllUsersFromRTDB() : await fetchAllFilteredUsers(undefined, filters, fav);
 
     saveToContact(allUsers);
   };
@@ -1135,6 +1160,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const saveAllContacts = async () => {
     const res = await fetchAllUsersFromRTDB();
     saveToContact(res);
+  };
+
+  const loadFavoriteUsers = async () => {
+    const owner = auth.currentUser?.uid;
+    if (!owner) return;
+    const favIds = await fetchFavoriteUsers(owner);
+    setFavoriteUsersData(favIds);
+    const loaded = await fetchFavoriteUsersData(owner);
+    setUsers(loaded);
+    setHasMore(false);
+    setLastKey(null);
+    setCurrentPage(1);
+    setTotalCount(Object.keys(loaded).length);
   };
 
   const [duplicates, setDuplicates] = useState('');
@@ -1234,9 +1272,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const ids = Object.keys(users);
     if (favoriteSort) {
       ids.sort((a, b) => {
-        const stored = JSON.parse(localStorage.getItem('favoriteUsers') || '{}');
-        const aFav = !!stored[a];
-        const bFav = !!stored[b];
+        const aFav = !!favoriteUsersData[a];
+        const bFav = !!favoriteUsersData[b];
         if (aFav === bFav) return 0;
         return aFav ? -1 : 1;
       });
@@ -1298,7 +1335,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         </InputDiv>
         {search && state.userId ? (
           <>
-            <div style={{ ...coloredCard() }}>{renderTopBlock(state, setState, setShowInfoModal, true)}</div>
+            <div style={{ ...coloredCard() }}>
+              {renderTopBlock(
+                state,
+                setState,
+                setShowInfoModal,
+                true,
+                favoriteUsersData,
+                setFavoriteUsersData,
+              )}
+            </div>
 
             {sortedFieldsToRender
               .filter(field => !['myComment', 'getInTouch', 'writer'].includes(field.name)) // Фільтруємо поле myComment
@@ -1595,6 +1641,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   Load
                 </Button>
               )}
+              <Button onClick={loadFavoriteUsers}>Load favorites</Button>
               <Button onClick={() => setFavoriteSort(prev => !prev)}>
                 <FaHeart />
               </Button>
@@ -1624,6 +1671,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setShowInfoModal={setShowInfoModal}
                   users={paginatedUsers}
                   sortFavorites={favoriteSort}
+                  favoriteUsers={favoriteUsersData}
+                  setFavoriteUsers={setFavoriteUsersData}
                   setUsers={setUsers}
                   setSearch={setSearch}
                   setState={setState}

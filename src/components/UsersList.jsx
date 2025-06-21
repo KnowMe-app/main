@@ -55,10 +55,25 @@ const renderFields = (data, parentKey = '') => {
 };
 
 // Компонент для рендерингу картки користувача
-const UserCard = ({ userData, setUsers, setShowInfoModal, setState }) => {
+const UserCard = ({
+  userData,
+  setUsers,
+  setShowInfoModal,
+  setState,
+  favoriteUsers,
+  setFavoriteUsers,
+}) => {
   return (
     <div>
-      {renderTopBlock(userData, setUsers, setShowInfoModal, setState, 'isFromListOfUsers')}
+      {renderTopBlock(
+        userData,
+        setUsers,
+        setShowInfoModal,
+        setState,
+        'isFromListOfUsers',
+        favoriteUsers,
+        setFavoriteUsers,
+      )}
       <div id={userData.userId} style={{ display: 'none' }}>
         {renderFields(userData)}
       </div>
@@ -67,10 +82,19 @@ const UserCard = ({ userData, setUsers, setShowInfoModal, setState }) => {
 };
 
 // Компонент для рендерингу списку користувачів
-const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoModal, setCompare, sortFavorites }) => {
+const UsersList = ({
+  users,
+  setUsers,
+  setSearch,
+  setState,
+  setShowInfoModal,
+  setCompare,
+  sortFavorites,
+  favoriteUsers = {},
+  setFavoriteUsers,
+}) => {
   const isFavoriteUser = userId => {
-    const stored = JSON.parse(localStorage.getItem('favoriteUsers') || '{}');
-    return !!stored[userId];
+    return !!favoriteUsers[userId];
   };
 
   const entries = Object.entries(users);
@@ -95,6 +119,8 @@ const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoModal, set
             userData={userData}
             setUsers={setUsers}
             setState={setState}
+            favoriteUsers={favoriteUsers}
+            setFavoriteUsers={setFavoriteUsers}
           />
         </div>
       ))}
