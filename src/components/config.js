@@ -697,7 +697,8 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
       return;
     }
 
-    const searchIdKey = `${searchKey}_${encodeKey(searchValue)}`;
+  const normalizedValue = String(searchValue).toLowerCase();
+  const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`;
     const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
     console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
@@ -924,7 +925,8 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
   const db = getDatabase();
 
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
-  const searchIdKey = `${searchKey}_${searchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
+  const normalizedValue = String(searchValue).toLowerCase();
+  const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`; // Формуємо ключ для пошуку у searchId
   console.log(`searchIdKey`, searchIdKey);
   // Отримуємо всі пари в searchId
   const searchIdSnapshot = await get(ref2(db, `searchId`));
