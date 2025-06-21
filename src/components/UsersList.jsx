@@ -92,9 +92,6 @@ const UsersList = ({
   favoriteUsers = {},
   setFavoriteUsers,
 }) => {
-  const isFavoriteUser = userId => {
-    return !!favoriteUsers[userId];
-  };
 
   const entries = Object.entries(users);
 
