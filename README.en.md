@@ -109,3 +109,14 @@ the line are required.
 The Add New Profile page provides radio buttons to filter users by C-section
 history, marital status and negative Rh factor. The radio buttons appear above
 the user list.
+
+## Favorites
+
+Each user card contains a heart button that lets you mark the contact as a
+favorite. Favorites are saved per account under `multiData/favorites/{userId}`
+in Firebase Realtime Database. You must be signed in for the button to work.
+
+Clicking the heart toggles the state both locally and on the backend. If you
+open multiple tabs, favorites stay in sync because the UI subscribes to realtime
+updates. You can sort or filter the list by favorites using the controls on the
+Add New Profile page.

@@ -46,7 +46,8 @@ import { btnExportUsers } from './topBtns/btnExportUsers';
 import { btnMerge } from './smallCard/btnMerge';
 import { SearchFilters } from './SearchFilters';
 import { Pagination } from './Pagination';
-import { PAGE_SIZE } from './config';
+import { PAGE_SIZE, database } from './config';
+import { onValue, ref } from 'firebase/database';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 
@@ -714,14 +715,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
 
   useEffect(() => {
-    const loadFavs = async () => {
-      const owner = auth.currentUser?.uid;
-      if (owner) {
-        const favs = await fetchFavoriteUsers(owner);
-        setFavoriteUsersData(favs);
-      }
-    };
-    loadFavs();
+    const owner = auth.currentUser?.uid;
+    if (!owner) return;
+
+    const favRef = ref(database, `multiData/favorites/${owner}`);
+    const unsubscribe = onValue(favRef, snap => {
+      setFavoriteUsersData(snap.exists() ? snap.val() : {});
+    });
+
+    return () => unsubscribe();
   }, [isEmailVerified]);
 
   useEffect(() => {
