@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import styled, { css } from 'styled-components';
 // import Photos from './Photos';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
-import { FaHeart } from 'react-icons/fa';
 import {
   auth,
   fetchNewUsersCollectionInRTDB,
@@ -711,7 +710,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState(null);
   const [dateOffset, setDateOffset] = useState(0);
-  const [favoriteSort, setFavoriteSort] = useState(false);
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
 
   const ownerId = auth.currentUser?.uid;
@@ -1272,16 +1270,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
   const getSortedIds = () => {
-    const ids = Object.keys(users);
-    if (favoriteSort) {
-      ids.sort((a, b) => {
-        const aFav = !!favoriteUsersData[a];
-        const bFav = !!favoriteUsersData[b];
-        if (aFav === bFav) return 0;
-        return aFav ? -1 : 1;
-      });
-    }
-    return ids;
+    return Object.keys(users);
   };
 
   const displayedUserIds = getSortedIds().slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -1590,19 +1579,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             <SearchFilters filters={filters} onChange={setFilters} />
             <div>
               {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
-              <Button
-                onClick={() => {
-                  setUsers({});
-                  setLastKey(null);
-                  setHasMore(true);
-                  setCurrentPage(1);
-                  setCurrentFilter('ED');
-                  setDateOffset(0);
-                  loadMoreUsers('ED');
-                }}
-              >
-                ED
-              </Button>
               <Button onClick={handleInfo}>Info</Button>
               <Button
                 onClick={() => {
@@ -1617,38 +1593,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               >
                 SortByDate
               </Button>
-              <Button
-                onClick={() => {
-                  setUsers({});
-                  setLastKey(null);
-                  setHasMore(true);
-                  setCurrentPage(1);
-                  setCurrentFilter('NewLoad');
-                  setDateOffset(0);
-                  loadMoreUsers('NewLoad');
-                }}
-              >
-                NewLoad
-              </Button>
-              {hasMore && (
-                <Button
-                  onClick={() => {
-                    setUsers({});
-                    setLastKey(null);
-                    setHasMore(true);
-                    setCurrentPage(1);
-                    setCurrentFilter(null);
-                    setDateOffset(0);
-                    loadMoreUsers();
-                  }}
-                >
-                  Load
-                </Button>
-              )}
               <Button onClick={loadFavoriteUsers}>Load favorites</Button>
-              <Button onClick={() => setFavoriteSort(prev => !prev)}>
-                <FaHeart />
-              </Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {
@@ -1674,7 +1619,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setCompare={setCompare}
                   setShowInfoModal={setShowInfoModal}
                   users={paginatedUsers}
-                  sortFavorites={favoriteSort}
                   favoriteUsers={favoriteUsersData}
                   setFavoriteUsers={setFavoriteUsersData}
                   setUsers={setUsers}
