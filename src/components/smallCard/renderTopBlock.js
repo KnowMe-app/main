@@ -15,13 +15,25 @@ import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { utilCalculateIMT } from './utilCalculateIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
 
-export const renderTopBlock = (userData, setUsers, setShowInfoModal, setState, isFromListOfUsers) => {
+export const renderTopBlock = (
+  userData,
+  setUsers,
+  setShowInfoModal,
+  setState,
+  isFromListOfUsers,
+  favoriteUsers = {},
+  setFavoriteUsers,
+) => {
   if (!userData) return null;
 
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
       {btnDel(userData, setState, setShowInfoModal, isFromListOfUsers)}
-      <BtnFavorite userId={userData.userId} />
+      <BtnFavorite
+        userId={userData.userId}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+      />
       {btnExport(userData)}
       <div>
         {userData.lastAction && formatDateToDisplay(userData.lastAction)}
