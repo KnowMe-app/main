@@ -212,7 +212,7 @@ export const fetchFavoriteUsersData = async ownerId => {
 export const makeNewUser = async searchedValue => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
-  const searchIdRef = ref2(db, 'newUsers/searchId');
+  const searchIdRef = ref2(db, 'searchId');
 
   const { searchKey, searchValue, searchIdKey } = makeSearchKeyValue(searchedValue);
 
@@ -318,7 +318,7 @@ const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
     ];
     // console.log('searchBySearchId :>> ',);
     return searchKeys.map(async searchKeyPrefix => {
-      const searchIdSnapshot = await get(query(ref2(database, 'newUsers/searchId'), orderByKey(), startAt(searchKeyPrefix), endAt(`${searchKeyPrefix}\uf8ff`)));
+      const searchIdSnapshot = await get(query(ref2(database, 'searchId'), orderByKey(), startAt(searchKeyPrefix), endAt(`${searchKeyPrefix}\uf8ff`)));
 
       if (searchIdSnapshot.exists()) {
         const matchingKeys = searchIdSnapshot.val();
@@ -697,8 +697,9 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
       return;
     }
 
-    const searchIdKey = `${searchKey}_${encodeKey(searchValue)}`;
-    const searchIdRef = ref2(database, `newUsers/searchId/${searchIdKey}`);
+  const normalizedValue = String(searchValue).toLowerCase();
+  const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`;
+    const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
     console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
     if (action === 'add') {
@@ -710,20 +711,20 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
         if (Array.isArray(existingValue)) {
           if (!existingValue.includes(userId)) {
             const updatedValue = [...existingValue, userId];
-            await update(ref2(database, 'newUsers/searchId'), { [searchIdKey]: updatedValue });
+            await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
             console.log(`Додано userId до масиву: ${searchIdKey}:`, updatedValue);
           } else {
             console.log(`userId вже існує в масиві для ключа: ${searchIdKey}`);
           }
         } else if (existingValue !== userId) {
           const updatedValue = [existingValue, userId];
-          await update(ref2(database, 'newUsers/searchId'), { [searchIdKey]: updatedValue });
+          await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
           console.log(`Перетворено значення на масив і додано userId: ${searchIdKey}:`, updatedValue);
         } else {
           console.log(`Ключ вже містить userId: ${searchIdKey}`);
         }
       } else {
-        await update(ref2(database, 'newUsers/searchId'), { [searchIdKey]: userId });
+        await update(ref2(database, 'searchId'), { [searchIdKey]: userId });
         console.log(`Додано нову пару в searchId: ${searchIdKey}: ${userId}`);
       }
     } else if (action === 'remove') {
@@ -736,13 +737,13 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
           const updatedValue = existingValue.filter(id => id !== userId);
 
           if (updatedValue.length === 1) {
-            await update(ref2(database, 'newUsers/searchId'), { [searchIdKey]: updatedValue[0] });
+            await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue[0] });
             console.log(`Оновлено значення ключа до одиничного значення: ${searchIdKey}:`, updatedValue[0]);
           } else if (updatedValue.length === 0) {
             await remove(searchIdRef);
             console.log(`Видалено ключ: ${searchIdKey}`);
           } else {
-            await update(ref2(database, 'newUsers/searchId'), { [searchIdKey]: updatedValue });
+            await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
             console.log(`Оновлено масив ключа: ${searchIdKey}:`, updatedValue);
           }
         } else if (existingValue === userId) {
@@ -773,7 +774,7 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
 //   }
 
 //   const searchIdKey = `${searchKey}_${encodeKey(searchValue)}`;
-//   const searchIdRef = ref2(database, `newUsers/searchId/${searchIdKey}`);
+//   const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
 //   console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
 //   try {
@@ -898,7 +899,7 @@ export const removeSearchId = async userId => {
   const db = getDatabase();
 
   // Отримуємо всі пари в searchId
-  const searchIdSnapshot = await get(ref2(db, `newUsers/searchId`));
+  const searchIdSnapshot = await get(ref2(db, `searchId`));
 
   if (searchIdSnapshot.exists()) {
     const searchIdData = searchIdSnapshot.val();
@@ -908,7 +909,7 @@ export const removeSearchId = async userId => {
 
     // Видаляємо пари, що відповідають userId
     for (const key of keysToRemove) {
-      await remove(ref2(db, `newUsers/searchId/${key}`));
+      await remove(ref2(db, `searchId/${key}`));
       console.log(`Видалено пару в searchId: ${key}`);
     }
   }
@@ -924,10 +925,11 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
   const db = getDatabase();
 
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
-  const searchIdKey = `${searchKey}_${searchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
+  const normalizedValue = String(searchValue).toLowerCase();
+  const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`; // Формуємо ключ для пошуку у searchId
   console.log(`searchIdKey`, searchIdKey);
   // Отримуємо всі пари в searchId
-  const searchIdSnapshot = await get(ref2(db, `newUsers/searchId`));
+  const searchIdSnapshot = await get(ref2(db, `searchId`));
   console.log(`5555555555`);
   if (searchIdSnapshot.exists()) {
     const searchIdData = searchIdSnapshot.val();
@@ -938,7 +940,7 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
     console.log(`keysToRemove`, keysToRemove);
     // Видаляємо пари, що відповідають userId
     for (const key of keysToRemove) {
-      await remove(ref2(db, `newUsers/searchId/${key}`));
+      await remove(ref2(db, `searchId/${key}`));
       console.log(`Видалено пару в searchId: ${key}`);
     }
   }
@@ -1297,7 +1299,7 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
       return { users: {}, lastKey: null, hasMore: false };
     }
 
-    let fetchedUsers = Object.entries(snapshot.val()).filter(([id]) => id !== 'searchId');
+    let fetchedUsers = Object.entries(snapshot.val());
 
     const noExplicitFilters =
       (!filterForload || filterForload === 'NewLoad') && (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
@@ -1477,7 +1479,7 @@ export const removeKeyFromFirebase = async (field, value, userId) => {
 
 //   try {
 //     // Запит для отримання всіх записів з searchId
-//     const searchIdSnapshot = await get(ref2(database, 'newUsers/searchId'));
+//     const searchIdSnapshot = await get(ref2(database, 'searchId'));
 
 //     if (searchIdSnapshot.exists()) {
 //       const searchIdData = searchIdSnapshot.val();
@@ -1551,7 +1553,7 @@ export const removeKeyFromFirebase = async (field, value, userId) => {
 // };
 export const loadDuplicateUsers = async () => {
   try {
-    const searchIdSnapshot = await get(ref2(database, 'newUsers/searchId'));
+    const searchIdSnapshot = await get(ref2(database, 'searchId'));
 
     if (!searchIdSnapshot.exists()) {
       console.log('No duplicates found in searchId.');
@@ -1692,7 +1694,7 @@ export const loadDuplicateUsers = async () => {
 
 export const mergeDuplicateUsers = async () => {
   try {
-    const searchIdSnapshot = await get(ref2(database, 'newUsers/searchId'));
+    const searchIdSnapshot = await get(ref2(database, 'searchId'));
 
     if (!searchIdSnapshot.exists()) {
       console.log('No duplicates found in searchId.');
@@ -1925,14 +1927,12 @@ export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}, 
 
     const allUsersArray = Array.from(allUserIds).map(userId => {
       const newUserRaw = newUsersData[userId] || {};
-      const newUserDataWithoutSearchId = { ...newUserRaw };
-      delete newUserDataWithoutSearchId.searchId;
 
       return [
         userId,
         {
           userId,
-          ...newUserDataWithoutSearchId,
+          ...newUserRaw,
           ...(usersData[userId] || {}),
         },
       ];
@@ -1957,8 +1957,7 @@ export const fetchTotalNewUsersCount = async () => {
     const snapshot = await get(ref2(database, 'newUsers'));
     if (snapshot.exists()) {
       const data = snapshot.val();
-      const userKeys = Object.keys(data).filter(key => key !== 'searchId');
-      return userKeys.length;
+      return Object.keys(data).length;
     }
     return 0;
   } catch (error) {
@@ -1983,15 +1982,11 @@ export const fetchAllUsersFromRTDB = async () => {
     // Об’єднуємо дані та формуємо масив пар [userId, userObject]
     const mergedUsersArray = allUsersArray.map(userId => {
       const newUserRaw = newUsersData[userId] || {};
-      // Видаляємо поле searchId
-      const newUserDataWithoutSearchId = { ...newUserRaw };
-      delete newUserDataWithoutSearchId.searchId;
-
       return [
         userId,
         {
           userId,
-          ...newUserDataWithoutSearchId,
+          ...newUserRaw,
           ...(usersData[userId] || {}),
         },
       ];
@@ -2004,7 +1999,7 @@ export const fetchAllUsersFromRTDB = async () => {
     // Перетворюємо назад в об’єкт
     const limitedUsers = Object.fromEntries(limitedUsersArray);
 
-    console.log('Отримано перших 3 користувачів без поля searchId:', limitedUsers);
+    console.log('Отримано перших 3 користувачів:', limitedUsers);
     return limitedUsers;
   } catch (error) {
     console.error('Помилка при отриманні даних:', error);
