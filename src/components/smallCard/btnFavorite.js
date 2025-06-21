@@ -1,18 +1,30 @@
 import React from 'react';
-import { addFavoriteUser, removeFavoriteUser } from '../config';
+import { addFavoriteUser, removeFavoriteUser, auth } from '../config';
 
 export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers }) => {
   const isFavorite = !!favoriteUsers[userId];
 
   const toggleFavorite = async () => {
+    if (!auth.currentUser) {
+      alert('Please sign in to manage favorites');
+      return;
+    }
     if (isFavorite) {
-      await removeFavoriteUser(userId);
-      const updated = { ...favoriteUsers };
-      delete updated[userId];
-      setFavoriteUsers(updated);
+      try {
+        await removeFavoriteUser(userId);
+        const updated = { ...favoriteUsers };
+        delete updated[userId];
+        setFavoriteUsers(updated);
+      } catch (error) {
+        console.error('Failed to remove favorite:', error);
+      }
     } else {
-      await addFavoriteUser(userId);
-      setFavoriteUsers({ ...favoriteUsers, [userId]: true });
+      try {
+        await addFavoriteUser(userId);
+        setFavoriteUsers({ ...favoriteUsers, [userId]: true });
+      } catch (error) {
+        console.error('Failed to add favorite:', error);
+      }
     }
   };
 
@@ -30,6 +42,7 @@ export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers }) =>
         color: isFavorite ? 'red' : 'gray',
         cursor: 'pointer',
       }}
+      disabled={!auth.currentUser}
       onClick={e => {
         e.stopPropagation();
         toggleFavorite();
