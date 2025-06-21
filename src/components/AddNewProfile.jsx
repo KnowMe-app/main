@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import styled, { css } from 'styled-components';
 // import Photos from './Photos';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
+import { FaHeart } from 'react-icons/fa';
 import {
   auth,
   fetchNewUsersCollectionInRTDB,
@@ -707,6 +708,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState(null);
   const [dateOffset, setDateOffset] = useState(0);
+  const [favoriteSort, setFavoriteSort] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('userFilters', JSON.stringify(filters));
@@ -1228,7 +1230,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [state.myComment]); // Виконується при завантаженні та зміні коментаря
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
-  const displayedUserIds = Object.keys(users).slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const getSortedIds = () => {
+    const ids = Object.keys(users);
+    if (favoriteSort) {
+      ids.sort((a, b) => {
+        const stored = JSON.parse(localStorage.getItem('favoriteUsers') || '{}');
+        const aFav = !!stored[a];
+        const bFav = !!stored[b];
+        if (aFav === bFav) return 0;
+        return aFav ? -1 : 1;
+      });
+    }
+    return ids;
+  };
+
+  const displayedUserIds = getSortedIds().slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const paginatedUsers = displayedUserIds.reduce((acc, id) => {
     acc[id] = users[id];
     return acc;
@@ -1579,6 +1595,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   Load
                 </Button>
               )}
+              <Button onClick={() => setFavoriteSort(prev => !prev)}>
+                <FaHeart />
+              </Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {
@@ -1604,6 +1623,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setCompare={setCompare}
                   setShowInfoModal={setShowInfoModal}
                   users={paginatedUsers}
+                  sortFavorites={favoriteSort}
                   setUsers={setUsers}
                   setSearch={setSearch}
                   setState={setState}

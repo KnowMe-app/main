@@ -67,11 +67,26 @@ const UserCard = ({ userData, setUsers, setShowInfoModal, setState }) => {
 };
 
 // Компонент для рендерингу списку користувачів
-const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoModal, setCompare }) => {
+const UsersList = ({ users, setUsers, setSearch, setState, setShowInfoModal, setCompare, sortFavorites }) => {
+  const isFavoriteUser = userId => {
+    const stored = JSON.parse(localStorage.getItem('favoriteUsers') || '{}');
+    return !!stored[userId];
+  };
+
+  const entries = Object.entries(users);
+  if (sortFavorites) {
+    entries.sort(([idA], [idB]) => {
+      const aFav = isFavoriteUser(idA);
+      const bFav = isFavoriteUser(idB);
+      if (aFav === bFav) return 0;
+      return aFav ? -1 : 1;
+    });
+  }
+
   return (
     <div style={styles.container}>
-      
-      {Object.entries(users).map(([userId, userData], index) => (
+
+      {entries.map(([userId, userData], index) => (
         <div key={userId} style={{ ...coloredCard(index) }}>
           {btnEdit(userData.userId, setSearch, setState)}
           {btnCompare(index, users, setUsers, setShowInfoModal, setCompare, )}
