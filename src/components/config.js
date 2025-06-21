@@ -774,7 +774,7 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
 //   }
 
 //   const searchIdKey = `${searchKey}_${encodeKey(searchValue)}`;
-//   const searchIdRef = ref2(database, `newUsers/searchId/${searchIdKey}`);
+//   const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
 //   console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
 //   try {
@@ -1479,7 +1479,7 @@ export const removeKeyFromFirebase = async (field, value, userId) => {
 
 //   try {
 //     // Запит для отримання всіх записів з searchId
-//     const searchIdSnapshot = await get(ref2(database, 'newUsers/searchId'));
+//     const searchIdSnapshot = await get(ref2(database, 'searchId'));
 
 //     if (searchIdSnapshot.exists()) {
 //       const searchIdData = searchIdSnapshot.val();
