@@ -5,6 +5,8 @@ import { makeUploadedInfo } from "components/makeUploadedInfo";
 export const handleChange = (setUsers, setState, userId, key, value, click) => {
   const newValue = key === 'getInTouch' || key === 'lastCycle' ? formatDateAndFormula(value) : value;
 
+  if (setState) setState(prev => ({ ...prev, [key]: newValue }));
+
   if (setState) {
     setUsers(prevState => {
       // console.log('prevState!!!!!!!!! :>> ', prevState);
@@ -14,7 +16,7 @@ export const handleChange = (setUsers, setState, userId, key, value, click) => {
 
       if (!isMultiple) {
         const newState = { ...prevState, [key]: newValue };
-        click && handleSubmit(newState);
+        click && handleSubmit({ ...newState, userId: userId || newState.userId });
         return newState;
       } else {
         const newState = {
@@ -24,7 +26,7 @@ export const handleChange = (setUsers, setState, userId, key, value, click) => {
             [key]: newValue,
           },
         };
-        click && handleSubmit(newState[userId], 'overwrite');
+        click && handleSubmit({ ...newState[userId], userId }, 'overwrite');
         return newState;
       }
     });
@@ -37,7 +39,7 @@ export const handleChange = (setUsers, setState, userId, key, value, click) => {
           [key]: newValue,
         },
       };
-      click && handleSubmit(newState[userId], 'overwrite');
+      click && handleSubmit({ ...newState[userId], userId }, 'overwrite');
       return newState;
     });
   }
