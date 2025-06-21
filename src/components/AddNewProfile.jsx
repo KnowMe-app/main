@@ -403,7 +403,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       w200_plus: true,
       other: true,
     },
-    favorite: { favOnly: false },
   };
 
   const normalizeFilterGroup = (value, defaults) => {
@@ -424,7 +423,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         userId: normalizeFilterGroup(parsed.userId, defaultFilters.userId),
         fields: normalizeFilterGroup(parsed.fields, defaultFilters.fields),
         commentLength: normalizeFilterGroup(parsed.commentLength, defaultFilters.commentLength),
-        favorite: normalizeFilterGroup(parsed.favorite, defaultFilters.favorite),
       };
     } catch {
       return { ...defaultFilters };
@@ -1578,7 +1576,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             ) : null}
             <SearchFilters filters={filters} onChange={setFilters} />
             <div>
-              {userNotFound && <Button onClick={handleAddUser}>Add user</Button>}
+              {userNotFound && <Button onClick={handleAddUser}>+</Button>}
               <Button onClick={handleInfo}>Info</Button>
               <Button
                 onClick={() => {
@@ -1591,9 +1589,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   loadMoreUsers('DATE');
                 }}
               >
-                SortByDate
+                Load
               </Button>
-              <Button onClick={loadFavoriteUsers}>Load favorites</Button>
+              <Button onClick={loadFavoriteUsers}>❤</Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {

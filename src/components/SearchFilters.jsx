@@ -89,13 +89,6 @@ export const SearchFilters = ({ filters, onChange }) => {
         { val: 'other', label: 'Все інше' },
       ],
     },
-    {
-      filterName: 'favorite',
-      label: 'Favorite',
-      options: [
-        { val: 'favOnly', label: 'fav only' },
-      ],
-    },
   ];
 
   return (
