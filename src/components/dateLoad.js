@@ -19,8 +19,10 @@ export async function fetchFilteredUsersByPage(
 ) {
   const result = [];
   let offset = startOffset;
+  let daysChecked = 0;
+  const MAX_DAYS = 3;
 
-  while (result.length < PAGE_SIZE) {
+  while (result.length < PAGE_SIZE && daysChecked < MAX_DAYS) {
     const diff = offsetToDiff(offset);
     const currentDate = new Date();
     currentDate.setDate(currentDate.getDate() + diff);
@@ -31,7 +33,7 @@ export async function fetchFilteredUsersByPage(
       result.push(...entries);
     }
     offset += 1;
-    if (offset > 730) break;
+    daysChecked += 1;
   }
 
   if (!fetchUserByIdFn) {
