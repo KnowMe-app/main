@@ -34,11 +34,11 @@ test('fetchFilteredUsersByPage queries dates around today', async () => {
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = yesterday.toISOString().split('T')[0];
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  const twoDaysAgo = new Date(today);
+  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+  const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
 
   expect(calls[0]).toBe(todayStr);
   expect(calls[1]).toBe(yesterdayStr);
-  expect(calls[2]).toBe(tomorrowStr);
+  expect(calls[2]).toBe(twoDaysAgoStr);
 });
