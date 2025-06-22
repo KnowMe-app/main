@@ -1,4 +1,4 @@
-import { handleChange, handleSubmit } from './actions';
+import { handleChange } from './actions';
 const { formatDateToDisplay, formatDateAndFormula, formatDateToServer } = require('components/inputValidations');
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
 
@@ -73,7 +73,20 @@ export const fieldGetInTouch = (
             { currentFilter, isDateInRange }
           );
         }}
-        onBlur={() => handleSubmit(userData, 'overwrite')}
+        onBlur={e => {
+          const serverFormattedDate = formatDateToServer(
+            formatDateAndFormula(e.target.value)
+          );
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            'getInTouch',
+            serverFormattedDate,
+            true,
+            { currentFilter, isDateInRange }
+          );
+        }}
         style={{
           marginLeft: 0,
           textAlign: 'left',
