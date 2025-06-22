@@ -42,3 +42,16 @@ test('fetchFilteredUsersByPage queries dates around today', async () => {
   expect(calls[1]).toBe(yesterdayStr);
   expect(calls[2]).toBe(twoDaysAgoStr);
 });
+
+test('fetchFilteredUsersByPage stops after checking three days', async () => {
+  const calls = [];
+  const fetchStub = async (dateStr, limit) => {
+    calls.push(dateStr);
+    return [];
+  };
+  const fetchUserStub = async () => null;
+
+  await fetchFilteredUsersByPage(0, fetchStub, fetchUserStub);
+
+  expect(calls.length).toBe(3);
+});
