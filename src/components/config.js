@@ -2071,7 +2071,7 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
 
   entries = await fetchData(query(usersRef, orderByChild('getInTouch'), startAt(twoWeeksAheadDate)));
   entries = entries.filter(
-    ([, u]) => isValidDate(u.getInTouch) && u.getInTouch > twoWeeksAheadDate && u.getInTouch !== '2099-99-99' && u.getInTouch !== '9999-99-99'
+    ([, u]) => isValidDate(u.getInTouch) && u.getInTouch > twoWeeksAheadDate
   );
   pushUnique(entries);
 
@@ -2083,15 +2083,11 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
   entries = await fetchData(query(usersRef, orderByChild('getInTouch')));
   entries = entries.filter(([id, u]) => {
     const d = u.getInTouch;
-    return d && !isValidDate(d) && d !== '2099-99-99' && d !== '9999-99-99' && !fetchedIds.has(id);
+    return d && !isValidDate(d) && !fetchedIds.has(id);
   });
   pushUnique(entries);
 
-  // Records with special future dates
-  entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('2099-99-99')));
-  pushUnique(entries);
-  entries = await fetchData(query(usersRef, orderByChild('getInTouch'), equalTo('9999-99-99')));
-  pushUnique(entries);
+  // Records with special future dates are no longer included
 
   const sliced = result.slice(offset, offset + limit);
   return { data: Object.fromEntries(sliced), totalCount: result.length };
