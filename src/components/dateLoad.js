@@ -9,9 +9,7 @@ export async function defaultFetchByDate(dateStr, limit) {
 }
 
 function offsetToDiff(offset) {
-  if (offset === 0) return 0;
-  const step = Math.ceil(offset / 2);
-  return offset % 2 ? -step : step;
+  return -offset;
 }
 
 export async function fetchFilteredUsersByPage(
