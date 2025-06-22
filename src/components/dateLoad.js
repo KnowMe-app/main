@@ -1,5 +1,5 @@
 import { getDatabase, ref as ref2, query, orderByChild, equalTo, limitToFirst, get } from 'firebase/database';
-import { PAGE_SIZE } from './constants';
+import { PAGE_SIZE, INVALID_DATE_TOKENS, MAX_LOOKBACK_DAYS } from './constants';
 
 export async function defaultFetchByDate(dateStr, limit) {
   const db = getDatabase();
@@ -13,19 +13,46 @@ export async function fetchFilteredUsersByPage(
   fetchDateFn = defaultFetchByDate,
   fetchUserByIdFn,
   filterSettings = {},
-  favoriteUsers = {}
+  favoriteUsers = {},
+  filterMainFnParam
 ) {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const today = new Date();
   const limit = startOffset + PAGE_SIZE + 1;
-  const entries = await fetchDateFn(todayStr, limit);
+  const entries = [];
 
-  let filterMainFn;
-  if (!fetchUserByIdFn) {
+  let dayOffset = 0;
+  let invalidIndex = 0;
+
+  while (entries.length < limit && dayOffset < MAX_LOOKBACK_DAYS) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - dayOffset);
+    const dateStr = date.toISOString().split('T')[0];
+    // eslint-disable-next-line no-await-in-loop
+    const chunk = await fetchDateFn(dateStr, limit - entries.length);
+    if (chunk.length === 0) {
+      while (
+        entries.length < limit &&
+        invalidIndex < INVALID_DATE_TOKENS.length
+      ) {
+        // eslint-disable-next-line no-await-in-loop
+        const extra = await fetchDateFn(
+          INVALID_DATE_TOKENS[invalidIndex],
+          limit - entries.length
+        );
+        invalidIndex += 1;
+        entries.push(...extra);
+      }
+    } else {
+      entries.push(...chunk);
+    }
+    dayOffset += 1;
+  }
+
+  let filterMainFn = filterMainFnParam;
+  if (!fetchUserByIdFn || !filterMainFn) {
     const mod = await import('./config');
-    fetchUserByIdFn = mod.fetchUserById;
-    filterMainFn = mod.filterMain;
-  } else {
-    ({ filterMain: filterMainFn } = await import('./config'));
+    if (!fetchUserByIdFn) fetchUserByIdFn = mod.fetchUserById;
+    if (!filterMainFn) ({ filterMain: filterMainFn } = mod);
   }
 
   const combined = [];
