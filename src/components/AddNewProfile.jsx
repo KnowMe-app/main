@@ -1135,8 +1135,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
-  const loadMoreUsers2 = async () => {
-    const res = await fetchFilteredUsersByPage(dateOffset2);
+  const loadMoreUsers2 = async (currentFilters = filters) => {
+    let fav = favoriteUsersData;
+    if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
+    }
+
+    const res = await fetchFilteredUsersByPage(
+      dateOffset2,
+      undefined,
+      undefined,
+      currentFilters,
+      fav
+    );
     if (res && Object.keys(res.users).length > 0) {
       setUsers(prev => ({ ...prev, ...res.users }));
       setDateOffset2(res.lastKey);

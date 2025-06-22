@@ -1069,7 +1069,12 @@ const filterByAge = (value, ageLimit = 30) => {
 };
 
 // Основна функція фільтрації
-const filterMain = (usersData, filterForload, filterSettings = {}, favoriteUsers = {}) => {
+export const filterMain = (
+  usersData,
+  filterForload,
+  filterSettings = {},
+  favoriteUsers = {}
+) => {
   console.log('filterMain called with', {
     filterForload,
     filterSettings,
