@@ -19,6 +19,7 @@ import {
   endAt,
   equalTo,
 } from 'firebase/database';
+import { PAGE_SIZE } from './constants';
 
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_API_KEY,
@@ -39,7 +40,7 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const database = getDatabase(app);
 
-export const PAGE_SIZE = 20;
+export { PAGE_SIZE } from './constants';
 
 const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
 
@@ -2090,3 +2091,5 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
   const sliced = result.slice(offset, offset + limit);
   return { data: Object.fromEntries(sliced), totalCount: result.length };
 }
+
+export { fetchFilteredUsersByPage } from './dateLoad';
