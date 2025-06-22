@@ -18,3 +18,27 @@ test('fetchFilteredUsersByPage limits results to PAGE_SIZE', async () => {
   const res = await fetchFilteredUsersByPage(0, fetchStub, fetchUserStub);
   expect(Object.keys(res.users).length).toBeLessThanOrEqual(PAGE_SIZE);
 });
+
+test('fetchFilteredUsersByPage queries dates around today', async () => {
+  const calls = [];
+  const fetchStub = async (dateStr, limit) => {
+    calls.push(dateStr);
+    return [];
+  };
+  const fetchUserStub = async () => null;
+
+  await fetchFilteredUsersByPage(0, fetchStub, fetchUserStub);
+
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+  expect(calls[0]).toBe(todayStr);
+  expect(calls[1]).toBe(yesterdayStr);
+  expect(calls[2]).toBe(tomorrowStr);
+});
