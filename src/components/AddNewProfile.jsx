@@ -1620,7 +1620,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setCurrentPage(1);
                   setCurrentFilter('DATE');
                   setDateOffset(0);
-                  loadMoreUsers('DATE');
                 }}
               >
                 Load
@@ -1632,7 +1631,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setCurrentPage(1);
                   setCurrentFilter('DATE2');
                   setDateOffset2(0);
-                  loadMoreUsers2();
                 }}
               >
                 Load2
