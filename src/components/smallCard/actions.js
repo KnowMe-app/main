@@ -65,8 +65,6 @@ export const handleChange = (
         [userId]: { ...prev[userId], _pendingRemove: true },
       };
     });
-    // Зберігаємо зміну дати одразу, навіть якщо карточка буде прихована
-    handleSubmit({ userId, getInTouch: newValue }, 'overwrite');
   }
 };
 
