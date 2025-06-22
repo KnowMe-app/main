@@ -14,7 +14,8 @@ export async function fetchFilteredUsersByPage(
   fetchUserByIdFn,
   filterSettings = {},
   favoriteUsers = {},
-  filterMainFnParam
+  filterMainFnParam,
+  onProgress
 ) {
   const today = new Date();
   const target = startOffset + PAGE_SIZE;
@@ -63,6 +64,17 @@ export async function fetchFilteredUsersByPage(
           filterSettings,
           favoriteUsers
         );
+        if (onProgress) {
+          const partial = filtered.slice(
+            startOffset,
+            Math.min(filtered.length, startOffset + PAGE_SIZE)
+          );
+          const partUsers = {};
+          partial.forEach(([pid, pdata]) => {
+            partUsers[pid] = pdata;
+          });
+          onProgress(partUsers);
+        }
       }
     } else {
       for (let i = 0; i < chunk.length; i += 1) {
@@ -72,6 +84,17 @@ export async function fetchFilteredUsersByPage(
         combined.push([id, extra ? { ...data, ...extra } : data]);
       }
       filtered = filterMainFn(combined, 'DATE2', filterSettings, favoriteUsers);
+      if (onProgress) {
+        const partial = filtered.slice(
+          startOffset,
+          Math.min(filtered.length, startOffset + PAGE_SIZE)
+        );
+        const partUsers = {};
+        partial.forEach(([pid, pdata]) => {
+          partUsers[pid] = pdata;
+        });
+        onProgress(partUsers);
+      }
     }
     dayOffset += 1;
   }

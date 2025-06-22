@@ -1,5 +1,5 @@
 import React from 'react';
-import { coloredCard } from './styles';
+import { coloredCard, FadeContainer } from './styles';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnEdit } from './smallCard/btnEdit';
@@ -62,6 +62,8 @@ const UserCard = ({
   setState,
   favoriteUsers,
   setFavoriteUsers,
+  currentFilter,
+  isDateInRange,
 }) => {
   return (
     <div>
@@ -73,6 +75,8 @@ const UserCard = ({
         'isFromListOfUsers',
         favoriteUsers,
         setFavoriteUsers,
+        currentFilter,
+        isDateInRange,
       )}
       <div id={userData.userId} style={{ display: 'none' }}>
         {renderFields(userData)}
@@ -91,6 +95,8 @@ const UsersList = ({
   setCompare,
   favoriteUsers = {},
   setFavoriteUsers,
+  currentFilter,
+  isDateInRange,
 }) => {
 
   const entries = Object.entries(users);
@@ -99,7 +105,20 @@ const UsersList = ({
     <div style={styles.container}>
 
       {entries.map(([userId, userData], index) => (
-        <div key={userId} style={{ ...coloredCard(index) }}>
+        <FadeContainer
+          key={userId}
+          className={`fade-in${userData._pendingRemove ? ' fade-out' : ''}`}
+          style={{ ...coloredCard(index) }}
+          onAnimationEnd={() => {
+            if (userData._pendingRemove) {
+              setUsers(prev => {
+                const copy = { ...prev };
+                delete copy[userId];
+                return copy;
+              });
+            }
+          }}
+        >
           {btnEdit(userData.userId, setSearch, setState)}
           {btnCompare(index, users, setUsers, setShowInfoModal, setCompare, )}
           <UserCard
@@ -109,8 +128,10 @@ const UsersList = ({
             setState={setState}
             favoriteUsers={favoriteUsers}
             setFavoriteUsers={setFavoriteUsers}
+            currentFilter={currentFilter}
+            isDateInRange={isDateInRange}
           />
-        </div>
+        </FadeContainer>
       ))}
     </div>
   );

@@ -23,6 +23,8 @@ export const renderTopBlock = (
   isFromListOfUsers,
   favoriteUsers = {},
   setFavoriteUsers,
+  currentFilter,
+  isDateInRange,
 ) => {
   if (!userData) return null;
 
@@ -39,7 +41,8 @@ export const renderTopBlock = (
         {userData.lastAction && formatDateToDisplay(userData.lastAction)}
         {userData.lastAction && ', '}
         {userData.userId}
-        {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') && fieldGetInTouch(userData, setUsers, setState)}
+        {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') &&
+          fieldGetInTouch(userData, setUsers, setState, currentFilter, isDateInRange)}
         {fieldRole(userData, setUsers, setState)}
         {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') && fieldLastCycle(userData, setUsers, setState)}
         {fieldDeliveryInfo(setUsers, setState, userData)}

@@ -1,4 +1,4 @@
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 
 const width = 200;
 const height = 500;
@@ -176,6 +176,25 @@ export const rowWrap = {
   flexDirection: 'row',
   flexWrap: 'wrap',
 };
+
+const fadeInKey = keyframes`
+  from { opacity: 0; }
+  to { opacity: 1; }
+`;
+
+const fadeOutKey = keyframes`
+  from { opacity: 1; }
+  to { opacity: 0; }
+`;
+
+export const FadeContainer = styled.div`
+  &.fade-in {
+    animation: ${fadeInKey} 0.3s forwards;
+  }
+  &.fade-out {
+    animation: ${fadeOutKey} 0.3s forwards;
+  }
+`;
 
 const gradients = ['linear-gradient(to right, #fc466b, #3f5efb)', 'linear-gradient(to right, #6a11cb, #2575fc)', 'linear-gradient(to right, #ff7e5f, #feb47b)'];
 
