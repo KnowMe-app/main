@@ -11,28 +11,41 @@ export async function defaultFetchByDate(dateStr, limit) {
 export async function fetchFilteredUsersByPage(
   startOffset = 0,
   fetchDateFn = defaultFetchByDate,
-  fetchUserByIdFn
+  fetchUserByIdFn,
+  filterSettings = {},
+  favoriteUsers = {}
 ) {
   const todayStr = new Date().toISOString().split('T')[0];
   const limit = startOffset + PAGE_SIZE + 1;
   const entries = await fetchDateFn(todayStr, limit);
-  const slice = entries.slice(startOffset, startOffset + PAGE_SIZE);
 
+  let filterMainFn;
   if (!fetchUserByIdFn) {
-    const { fetchUserById } = await import('./config');
-    fetchUserByIdFn = fetchUserById;
+    const mod = await import('./config');
+    fetchUserByIdFn = mod.fetchUserById;
+    filterMainFn = mod.filterMain;
+  } else {
+    ({ filterMain: filterMainFn } = await import('./config'));
   }
 
-  const users = {};
-  for (let i = 0; i < slice.length; i += 1) {
-    const [id, data] = slice[i];
+  const combined = [];
+  for (let i = 0; i < entries.length; i += 1) {
+    const [id, data] = entries[i];
     // eslint-disable-next-line no-await-in-loop
     const extra = await fetchUserByIdFn(id);
-    users[id] = extra ? { ...data, ...extra } : data;
+    combined.push([id, extra ? { ...data, ...extra } : data]);
   }
 
+  const filtered = filterMainFn(combined, 'DATE2', filterSettings, favoriteUsers);
+  const slice = filtered.slice(startOffset, startOffset + PAGE_SIZE);
+
+  const users = {};
+  slice.forEach(([id, data]) => {
+    users[id] = data;
+  });
+
   const nextOffset = startOffset + slice.length;
-  const hasMore = entries.length > startOffset + PAGE_SIZE;
+  const hasMore = filtered.length > startOffset + PAGE_SIZE;
 
   return { users, lastKey: nextOffset, hasMore };
 }
