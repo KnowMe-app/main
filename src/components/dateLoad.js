@@ -8,6 +8,12 @@ export async function defaultFetchByDate(dateStr, limit) {
   return snap.exists() ? Object.entries(snap.val()) : [];
 }
 
+function offsetToDiff(offset) {
+  if (offset === 0) return 0;
+  const step = Math.ceil(offset / 2);
+  return offset % 2 ? -step : step;
+}
+
 export async function fetchFilteredUsersByPage(
   startOffset = 0,
   fetchDateFn = defaultFetchByDate,
@@ -15,10 +21,11 @@ export async function fetchFilteredUsersByPage(
 ) {
   const result = [];
   let offset = startOffset;
-  let currentDate = new Date();
-  currentDate.setDate(currentDate.getDate() - offset);
 
   while (result.length < PAGE_SIZE) {
+    const diff = offsetToDiff(offset);
+    const currentDate = new Date();
+    currentDate.setDate(currentDate.getDate() + diff);
     const dateStr = currentDate.toISOString().split('T')[0];
     // eslint-disable-next-line no-await-in-loop
     const entries = await fetchDateFn(dateStr, PAGE_SIZE - result.length);
@@ -26,8 +33,7 @@ export async function fetchFilteredUsersByPage(
       result.push(...entries);
     }
     offset += 1;
-    currentDate.setDate(currentDate.getDate() - 1);
-    if (offset > 365) break;
+    if (offset > 730) break;
   }
 
   if (!fetchUserByIdFn) {
