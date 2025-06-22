@@ -18,6 +18,35 @@ export async function fetchFilteredUsersByPage(
 ) {
   const today = new Date();
   const limit = startOffset + PAGE_SIZE + 1;
+  const entries = [];
+
+  let dayOffset = 0;
+  let invalidIndex = 0;
+
+  while (entries.length < limit && dayOffset < MAX_LOOKBACK_DAYS) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - dayOffset);
+    const dateStr = date.toISOString().split('T')[0];
+    // eslint-disable-next-line no-await-in-loop
+    const chunk = await fetchDateFn(dateStr, limit - entries.length);
+    if (chunk.length === 0) {
+      while (
+        entries.length < limit &&
+        invalidIndex < INVALID_DATE_TOKENS.length
+      ) {
+        // eslint-disable-next-line no-await-in-loop
+        const extra = await fetchDateFn(
+          INVALID_DATE_TOKENS[invalidIndex],
+          limit - entries.length
+        );
+        invalidIndex += 1;
+        entries.push(...extra);
+      }
+    } else {
+      entries.push(...chunk);
+    }
+    dayOffset += 1;
+  }
 
   let filterMainFn = filterMainFnParam;
   if (!fetchUserByIdFn || !filterMainFn) {
@@ -27,54 +56,14 @@ export async function fetchFilteredUsersByPage(
   }
 
   const combined = [];
-  let filtered = [];
-
-  let dayOffset = 0;
-  let invalidIndex = 0;
-
-  while (filtered.length < limit && dayOffset < MAX_LOOKBACK_DAYS) {
-    const fetchLimit = limit - filtered.length;
-    const date = new Date(today);
-    date.setDate(today.getDate() - dayOffset);
-    const dateStr = date.toISOString().split('T')[0];
+  for (let i = 0; i < entries.length; i += 1) {
+    const [id, data] = entries[i];
     // eslint-disable-next-line no-await-in-loop
-    const chunk = await fetchDateFn(dateStr, fetchLimit);
-    if (chunk.length === 0) {
-      while (
-        filtered.length < limit &&
-        invalidIndex < INVALID_DATE_TOKENS.length
-      ) {
-        // eslint-disable-next-line no-await-in-loop
-        const extra = await fetchDateFn(
-          INVALID_DATE_TOKENS[invalidIndex],
-          limit - filtered.length
-        );
-        invalidIndex += 1;
-        for (let i = 0; i < extra.length; i += 1) {
-          const [eid, edata] = extra[i];
-          // eslint-disable-next-line no-await-in-loop
-          const extraUser = await fetchUserByIdFn(eid);
-          combined.push([eid, extraUser ? { ...edata, ...extraUser } : edata]);
-        }
-        filtered = filterMainFn(
-          combined,
-          'DATE2',
-          filterSettings,
-          favoriteUsers
-        );
-      }
-    } else {
-      for (let i = 0; i < chunk.length; i += 1) {
-        const [id, data] = chunk[i];
-        // eslint-disable-next-line no-await-in-loop
-        const extra = await fetchUserByIdFn(id);
-        combined.push([id, extra ? { ...data, ...extra } : data]);
-      }
-      filtered = filterMainFn(combined, 'DATE2', filterSettings, favoriteUsers);
-    }
-    dayOffset += 1;
+    const extra = await fetchUserByIdFn(id);
+    combined.push([id, extra ? { ...data, ...extra } : data]);
   }
 
+  const filtered = filterMainFn(combined, 'DATE2', filterSettings, favoriteUsers);
   const slice = filtered.slice(startOffset, startOffset + PAGE_SIZE);
 
   const users = {};

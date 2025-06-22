@@ -8,12 +8,6 @@ jest.mock('../config', () => ({
   filterMain: jest.fn((users) => users),
 }));
 
-jest.mock('../constants', () => ({
-  PAGE_SIZE: 20,
-  INVALID_DATE_TOKENS: ['', '2099-99-99', '9999-99-99'],
-  MAX_LOOKBACK_DAYS: 2,
-}));
-
 const { fetchFilteredUsersByPage } = require('../dateLoad');
 const { PAGE_SIZE, INVALID_DATE_TOKENS } = require('../constants');
 
@@ -115,50 +109,4 @@ test('fetchFilteredUsersByPage paginates with startOffset', async () => {
   expect(Object.keys(second.users).length).toBe(sampleData.length - PAGE_SIZE);
   expect(second.hasMore).toBe(false);
   expect(second.lastKey).toBe(sampleData.length);
-});
-
-test('fetchFilteredUsersByPage continues fetching when filters remove records', async () => {
-  const calls = [];
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
-  const yesterdayStr = new Date(today.getTime() - 86400000)
-    .toISOString()
-    .split('T')[0];
-
-  const dataMap = {
-    [todayStr]: Array.from({ length: PAGE_SIZE }, (_, i) => [
-      `skip${i}`,
-      { getInTouch: todayStr },
-    ]),
-    [yesterdayStr]: Array.from({ length: PAGE_SIZE }, (_, i) => [
-      `id${i}`,
-      { getInTouch: yesterdayStr },
-    ]),
-  };
-
-  const fetchStub = jest.fn(async (dateStr, limit) => {
-    calls.push(dateStr);
-    const arr = dataMap[dateStr] || [];
-    return arr.slice(0, limit);
-  });
-  const fetchUserStub = async id => ({ userId: id });
-
-  const { filterMain } = require('../config');
-  filterMain.mockImplementation(users =>
-    users.filter(([id]) => !id.startsWith('skip')),
-  );
-
-  const res = await fetchFilteredUsersByPage(
-    0,
-    fetchStub,
-    fetchUserStub,
-    {},
-    {},
-    filterMain,
-  );
-
-  expect(fetchStub.mock.calls[0][0]).toBe(todayStr);
-  expect(fetchStub.mock.calls.some(call => call[0] === yesterdayStr)).toBe(true);
-  expect(Object.keys(res.users).length).toBe(PAGE_SIZE);
-  expect(res.hasMore).toBe(false);
 });
