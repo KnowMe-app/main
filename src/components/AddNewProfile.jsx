@@ -24,6 +24,7 @@ import {
   removeCardAndSearchId,
   fetchAllUsersFromRTDB,
   fetchTotalNewUsersCount,
+  fetchFilteredUsersByPage,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -708,6 +709,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState(null);
   const [dateOffset, setDateOffset] = useState(0);
+  const [dateOffset2, setDateOffset2] = useState(0);
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
 
   const ownerId = auth.currentUser?.uid;
@@ -1129,13 +1131,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
+  const loadMoreUsers2 = async () => {
+    const res = await fetchFilteredUsersByPage(dateOffset2);
+    if (res && Object.keys(res.users).length > 0) {
+      setUsers(prev => ({ ...prev, ...res.users }));
+      setDateOffset2(res.lastKey);
+      setHasMore(res.hasMore);
+      const count = Object.keys(res.users).length;
+      return { count, hasMore: res.hasMore };
+    }
+    setHasMore(false);
+    return { count: 0, hasMore: false };
+  };
+
   const handlePageChange = async page => {
     const needed = page * PAGE_SIZE;
     let loaded = Object.keys(users).length;
     let more = hasMore;
 
     while (more && loaded < needed) {
-      const { count, hasMore: nextMore } = await loadMoreUsers(currentFilter);
+      const { count, hasMore: nextMore } =
+        currentFilter === 'DATE2'
+          ? await loadMoreUsers2()
+          : await loadMoreUsers(currentFilter);
       loaded += count;
       more = nextMore;
     }
@@ -1590,6 +1608,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 }}
               >
                 Load
+              </Button>
+              <Button
+                onClick={() => {
+                  setUsers({});
+                  setHasMore(true);
+                  setCurrentPage(1);
+                  setCurrentFilter('DATE2');
+                  setDateOffset2(0);
+                  loadMoreUsers2();
+                }}
+              >
+                Load2
               </Button>
               <Button onClick={loadFavoriteUsers}>❤</Button>
               <Button onClick={makeIndex}>Index</Button>
