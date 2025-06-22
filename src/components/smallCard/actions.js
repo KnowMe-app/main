@@ -53,6 +53,7 @@ export const handleChange = (
   }
 
   if (
+    click &&
     key === 'getInTouch' &&
     options.currentFilter === 'DATE2' &&
     options.isDateInRange &&
