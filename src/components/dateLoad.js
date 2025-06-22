@@ -8,47 +8,31 @@ export async function defaultFetchByDate(dateStr, limit) {
   return snap.exists() ? Object.entries(snap.val()) : [];
 }
 
-function offsetToDiff(offset) {
-  return -offset;
-}
-
 export async function fetchFilteredUsersByPage(
   startOffset = 0,
   fetchDateFn = defaultFetchByDate,
   fetchUserByIdFn
 ) {
-  const result = [];
-  let offset = startOffset;
-  let daysChecked = 0;
-  const MAX_DAYS = 3;
-
-  while (result.length < PAGE_SIZE && daysChecked < MAX_DAYS) {
-    const diff = offsetToDiff(offset);
-    const currentDate = new Date();
-    currentDate.setDate(currentDate.getDate() + diff);
-    const dateStr = currentDate.toISOString().split('T')[0];
-    // eslint-disable-next-line no-await-in-loop
-    const entries = await fetchDateFn(dateStr, PAGE_SIZE - result.length);
-    if (entries.length) {
-      result.push(...entries);
-    }
-    offset += 1;
-    daysChecked += 1;
-  }
+  const todayStr = new Date().toISOString().split('T')[0];
+  const limit = startOffset + PAGE_SIZE + 1;
+  const entries = await fetchDateFn(todayStr, limit);
+  const slice = entries.slice(startOffset, startOffset + PAGE_SIZE);
 
   if (!fetchUserByIdFn) {
     const { fetchUserById } = await import('./config');
     fetchUserByIdFn = fetchUserById;
   }
 
-  const userIds = result.map(([id]) => id);
-  const userResults = await Promise.all(userIds.map(id => fetchUserByIdFn(id)));
-
   const users = {};
-  userResults.forEach((data, idx) => {
-    const id = userIds[idx];
-    if (data) users[id] = { ...result[idx][1], ...data };
-  });
+  for (let i = 0; i < slice.length; i += 1) {
+    const [id, data] = slice[i];
+    // eslint-disable-next-line no-await-in-loop
+    const extra = await fetchUserByIdFn(id);
+    users[id] = extra ? { ...data, ...extra } : data;
+  }
 
-  return { users, lastKey: offset, hasMore: result.length === PAGE_SIZE };
+  const nextOffset = startOffset + slice.length;
+  const hasMore = entries.length > startOffset + PAGE_SIZE;
+
+  return { users, lastKey: nextOffset, hasMore };
 }
