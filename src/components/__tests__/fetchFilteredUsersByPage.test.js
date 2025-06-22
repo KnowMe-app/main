@@ -156,3 +156,33 @@ test('fetchFilteredUsersByPage continues fetching when filters remove records', 
   expect(Object.keys(res.users).length).toBe(PAGE_SIZE);
   expect(res.hasMore).toBe(false);
 });
+
+test('fetchFilteredUsersByPage calls progress callback with incremental results', async () => {
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+  const dataMap = {
+    [today]: Array.from({ length: PAGE_SIZE / 2 }, (_, i) => [`a${i}`, { getInTouch: today }]),
+    [yesterday]: Array.from({ length: PAGE_SIZE }, (_, i) => [`b${i}`, { getInTouch: yesterday }]),
+  };
+
+  const fetchStub = async (dateStr, limit) => {
+    const arr = dataMap[dateStr] || [];
+    return arr.slice(0, limit);
+  };
+  const fetchUserStub = async id => ({ userId: id });
+
+  const progress = [];
+  await fetchFilteredUsersByPage(
+    0,
+    fetchStub,
+    fetchUserStub,
+    {},
+    {},
+    users => users,
+    part => progress.push(Object.keys(part).length)
+  );
+
+  expect(progress.length).toBeGreaterThan(1);
+  expect(progress[progress.length - 1]).toBe(PAGE_SIZE);
+});

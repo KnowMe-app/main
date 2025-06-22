@@ -712,6 +712,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [dateOffset2, setDateOffset2] = useState(0);
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
 
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  const isDateInRange = dateStr => {
+    const dates = Object.values(users)
+      .map(u => u.getInTouch)
+      .filter(d => dateRegex.test(d));
+    if (dates.length === 0) return true;
+    dates.sort();
+    const min = dates[0];
+    const max = dates[dates.length - 1];
+    return dateStr >= min && dateStr <= max;
+  };
+
   const ownerId = auth.currentUser?.uid;
 
   useEffect(() => {
@@ -1147,7 +1159,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       undefined,
       undefined,
       currentFilters,
-      fav
+      fav,
+      undefined,
+      partial => setUsers(prev => ({ ...prev, ...partial }))
     );
     if (res && Object.keys(res.users).length > 0) {
       setUsers(prev => ({ ...prev, ...res.users }));
@@ -1368,6 +1382,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 false,
                 favoriteUsersData,
                 setFavoriteUsersData,
+                currentFilter,
+                isDateInRange,
               )}
             </div>
 
@@ -1668,6 +1684,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setUsers={setUsers}
                   setSearch={setSearch}
                   setState={setState}
+                  currentFilter={currentFilter}
+                  isDateInRange={isDateInRange}
                 />
                 <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
               </>

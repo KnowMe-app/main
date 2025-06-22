@@ -2,7 +2,15 @@ import { fetchUserById, updateDataInNewUsersRTDB } from "components/config";
 import { formatDateAndFormula } from "components/inputValidations";
 import { makeUploadedInfo } from "components/makeUploadedInfo";
 
-export const handleChange = (setUsers, setState, userId, key, value, click) => {
+export const handleChange = (
+  setUsers,
+  setState,
+  userId,
+  key,
+  value,
+  click,
+  options = {}
+) => {
   const newValue = key === 'getInTouch' || key === 'lastCycle' ? formatDateAndFormula(value) : value;
 
   if (setState) setState(prev => ({ ...prev, [key]: newValue }));
@@ -41,6 +49,21 @@ export const handleChange = (setUsers, setState, userId, key, value, click) => {
       };
       click && handleSubmit({ ...newState[userId], userId }, 'overwrite');
       return newState;
+    });
+  }
+
+  if (
+    key === 'getInTouch' &&
+    options.currentFilter === 'DATE2' &&
+    options.isDateInRange &&
+    !options.isDateInRange(newValue)
+  ) {
+    setUsers(prev => {
+      if (!prev[userId]) return prev;
+      return {
+        ...prev,
+        [userId]: { ...prev[userId], _pendingRemove: true },
+      };
     });
   }
 };
