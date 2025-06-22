@@ -736,7 +736,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setTotalCount(0);
     setCurrentPage(1);
     if (currentFilter) {
-      loadMoreUsers(currentFilter);
+      if (currentFilter === 'DATE2') {
+        loadMoreUsers2();
+      } else {
+        loadMoreUsers(currentFilter);
+      }
     }
     // loadMoreUsers depends on many state values, so we skip it from the deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
