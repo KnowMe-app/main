@@ -3,7 +3,7 @@ import { CardMenuBtn } from 'components/styles';
 import React, { useState } from 'react';
 import { RotatingLines } from 'react-loader-spinner';
 
-export const btnEdit = (userId, setSearch, setState) => {
+export const BtnEdit = ({ userId, setSearch, setState }) => {
   const [loading, setLoading] = useState(false);
 
   const handleCardClick = async () => {
