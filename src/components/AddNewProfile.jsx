@@ -392,7 +392,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     role: { ed: true, sm: true, ag: true, ip: true, cl: true, other: true },
     maritalStatus: { married: true, unmarried: true, other: true },
     blood: { pos: true, neg: true, other: true },
-    age: { le25: true, '26_29': true, '31_36': true, '37_42': true, other: true },
+    age: {
+      le25: true,
+      '26_29': true,
+      '31_36': true,
+      '37_42': true,
+      '43_plus': true,
+      other: true,
+    },
     userId: { vk: true, aa: true, ab: true, long: true, mid: true, other: true },
     fields: { lt4: true, lt8: true, lt12: true, other: true },
     commentLength: {
