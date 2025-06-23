@@ -235,6 +235,14 @@ export const makeNewUser = async searchedValue => {
   // 6. Додаємо пару ключ-значення у searchId
   await update(searchIdRef, { [searchIdKey]: newUserId });
 
+  await updateUserIdIndex(getUserIdCategory(newUserId), newUserId, 'add');
+  await updateFieldsIndex(getFieldCountCategory(newUser), newUserId, 'add');
+  await updateMaritalIndex(getMaritalStatusCategory(newUser), newUserId, 'add');
+  await updateCsectionIndex(categorizeCsection(newUser.csection), newUserId, 'add');
+  await updateCommentWordsIndex(getCommentLengthCategory(newUser.myComment), newUserId, 'add');
+  await updateAgeIndex(getAgeCategory(newUser), newUserId, 'add');
+  await updateRoleIndex(getRoleCategory(newUser), newUserId, 'add');
+
   return {
     userId: newUserId,
     ...newUser,
@@ -631,6 +639,65 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
         }
       }
     }
+
+    const newUserData = { ...currentUserData, ...uploadedInfo };
+
+    const oldBlood = currentUserData.blood;
+    const newBlood = newUserData.blood;
+    if (oldBlood !== newBlood) {
+      if (oldBlood) await updateBloodIndex(getBloodIndexCategory(oldBlood), userId, 'remove');
+      if (newBlood) await updateBloodIndex(getBloodIndexCategory(newBlood), userId, 'add');
+    }
+
+    const oldMarital = getMaritalStatusCategory(currentUserData);
+    const newMarital = getMaritalStatusCategory(newUserData);
+    if (oldMarital !== newMarital) {
+      await updateMaritalIndex(oldMarital, userId, 'remove');
+      await updateMaritalIndex(newMarital, userId, 'add');
+    }
+
+    const oldCs = categorizeCsection(currentUserData.csection);
+    const newCs = categorizeCsection(newUserData.csection);
+    if (oldCs !== newCs) {
+      await updateCsectionIndex(oldCs, userId, 'remove');
+      await updateCsectionIndex(newCs, userId, 'add');
+    }
+
+    const oldUserCat = getUserIdCategory(currentUserData.userId || userId);
+    const newUserCat = getUserIdCategory(newUserData.userId || userId);
+    if (oldUserCat !== newUserCat) {
+      await updateUserIdIndex(oldUserCat, userId, 'remove');
+      await updateUserIdIndex(newUserCat, userId, 'add');
+    }
+
+    const oldFields = getFieldCountCategory(currentUserData);
+    const newFields = getFieldCountCategory(newUserData);
+    if (oldFields !== newFields) {
+      await updateFieldsIndex(oldFields, userId, 'remove');
+      await updateFieldsIndex(newFields, userId, 'add');
+    }
+
+    const oldComment = getCommentLengthCategory(currentUserData.myComment);
+    const newComment = getCommentLengthCategory(newUserData.myComment);
+    if (oldComment !== newComment) {
+      await updateCommentWordsIndex(oldComment, userId, 'remove');
+      await updateCommentWordsIndex(newComment, userId, 'add');
+    }
+
+    const oldAge = getAgeCategory(currentUserData);
+    const newAge = getAgeCategory(newUserData);
+    if (oldAge !== newAge) {
+      await updateAgeIndex(oldAge, userId, 'remove');
+      await updateAgeIndex(newAge, userId, 'add');
+    }
+
+    const oldRole = getRoleCategory(currentUserData);
+    const newRole = getRoleCategory(newUserData);
+    if (oldRole !== newRole) {
+      await updateRoleIndex(oldRole, userId, 'remove');
+      await updateRoleIndex(newRole, userId, 'add');
+    }
+
     // Оновлення користувача в базі
 
     console.log('uploadedInfo :>> ', uploadedInfo);
@@ -1039,6 +1106,165 @@ const getFieldCountCategory = value => {
   if (count < 12) return 'lt12';
   return 'other';
 };
+
+// ====================== Index helpers ======================
+const getBloodIndexCategory = blood => {
+  if (!blood) return 'unknown';
+  const normalized = blood.toString().trim().toLowerCase().replace(/\s+/g, '');
+  if (!normalized) return 'unknown';
+  if (/^[1234][+-]$/.test(normalized)) return normalized;
+  if (/^[+-]$/.test(normalized)) return normalized === '+' ? 'posOnly' : 'negOnly';
+  if (/^[1234]$/.test(normalized)) return normalized;
+  return 'invalid';
+};
+
+// Generic helper to update usersIndex nodes
+export const updateIndex = async (indexName, category, userId, action) => {
+  if (!indexName || !category || !userId) return;
+  const indexRef = ref2(database, `usersIndex/${indexName}/${category}`);
+  if (action === 'add') {
+    const snap = await get(indexRef);
+    if (snap.exists()) {
+      const val = snap.val();
+      if (Array.isArray(val)) {
+        if (!val.includes(userId)) {
+          await update(ref2(database, `usersIndex/${indexName}`), { [category]: [...val, userId] });
+        }
+      } else if (val !== userId) {
+        await update(ref2(database, `usersIndex/${indexName}`), { [category]: [val, userId] });
+      }
+    } else {
+      await update(ref2(database, `usersIndex/${indexName}`), { [category]: userId });
+    }
+  } else if (action === 'remove') {
+    const snap = await get(indexRef);
+    if (snap.exists()) {
+      const val = snap.val();
+      if (Array.isArray(val)) {
+        const updated = val.filter(id => id !== userId);
+        if (updated.length === 0) {
+          await remove(indexRef);
+        } else if (updated.length === 1) {
+          await update(ref2(database, `usersIndex/${indexName}`), { [category]: updated[0] });
+        } else {
+          await update(ref2(database, `usersIndex/${indexName}`), { [category]: updated });
+        }
+      } else if (val === userId) {
+        await remove(indexRef);
+      }
+    }
+  }
+};
+
+export const createIndexInCollection = async (indexName, collection, categorizeFn) => {
+  const ref = ref2(database, collection);
+  const snap = await get(ref);
+  if (!snap.exists()) return;
+  const data = snap.val();
+  const ids = Object.keys(data);
+  const updates = [];
+  for (const uid of ids) {
+    const cat = categorizeFn(data[uid], uid);
+    updates.push(updateIndex(indexName, cat, uid, 'add'));
+  }
+  await Promise.all(updates);
+};
+
+export const fetchUsersByIndex = async (indexName, categories, offset = 0) => {
+  const snap = await get(ref2(database, `usersIndex/${indexName}`));
+  if (!snap.exists()) return { users: {}, lastKey: null, hasMore: false };
+  const idx = snap.val();
+  let ids = [];
+  categories.forEach(cat => {
+    const val = idx[cat];
+    if (val) ids = ids.concat(Array.isArray(val) ? val : [val]);
+  });
+  ids = Array.from(new Set(ids));
+  const pageIds = ids.slice(offset, offset + PAGE_SIZE);
+  const results = await Promise.all(pageIds.map(id => fetchUserById(id)));
+  const users = {};
+  results.forEach((data, i) => {
+    if (data) users[pageIds[i]] = data;
+  });
+  const nextOffset = offset + pageIds.length;
+  const hasMore = ids.length > nextOffset;
+  const res = { users, lastKey: hasMore ? nextOffset : null, hasMore };
+  if (offset === 0) res.totalCount = ids.length;
+  return res;
+};
+
+export const updateBloodIndex = (category, userId, action) =>
+  updateIndex('blood', category, userId, action);
+
+// Create blood index for all users in given collection
+export const createBloodIndexInCollection = async collection =>
+  createIndexInCollection('blood', collection, user => getBloodIndexCategory(user.blood));
+
+export const fetchUsersByBloodIndex = async (categories, offset = 0) =>
+  fetchUsersByIndex('blood', categories, offset);
+
+export const updateMaritalIndex = (category, userId, action) =>
+  updateIndex('maritalStatus', category, userId, action);
+
+export const createMaritalIndexInCollection = async collection =>
+  createIndexInCollection('maritalStatus', collection, user => getMaritalStatusCategory(user));
+
+export const fetchUsersByMaritalIndex = async (categories, offset = 0) =>
+  fetchUsersByIndex('maritalStatus', categories, offset);
+
+export const updateCsectionIndex = (category, userId, action) =>
+  updateIndex('csection', category, userId, action);
+
+export const createCsectionIndexInCollection = async collection =>
+  createIndexInCollection('csection', collection, user => categorizeCsection(user.csection));
+
+export const fetchUsersByCsectionIndex = async (categories, offset = 0) =>
+  fetchUsersByIndex('csection', categories, offset);
+
+export const updateUserIdIndex = (category, userId, action) =>
+  updateIndex('userId', category, userId, action);
+
+export const createUserIdIndexInCollection = async collection =>
+  createIndexInCollection('userId', collection, (_, uid) => getUserIdCategory(uid));
+
+export const fetchUsersByUserIdIndex = async (categories, offset = 0) =>
+  fetchUsersByIndex('userId', categories, offset);
+
+export const updateFieldsIndex = (category, userId, action) =>
+  updateIndex('fields', category, userId, action);
+
+export const createFieldsIndexInCollection = async collection =>
+  createIndexInCollection('fields', collection, user => getFieldCountCategory(user));
+
+export const fetchUsersByFieldsIndex = async (categories, offset = 0) =>
+  fetchUsersByIndex('fields', categories, offset);
+
+export const updateCommentWordsIndex = (category, userId, action) =>
+  updateIndex('commentWords', category, userId, action);
+
+export const createCommentWordsIndexInCollection = async collection =>
+  createIndexInCollection('commentWords', collection, user => getCommentLengthCategory(user.myComment));
+
+export const fetchUsersByCommentWordsIndex = async (categories, offset = 0) =>
+  fetchUsersByIndex('commentWords', categories, offset);
+
+export const updateAgeIndex = (category, userId, action) =>
+  updateIndex('age', category, userId, action);
+
+export const createAgeIndexInCollection = async collection =>
+  createIndexInCollection('age', collection, user => getAgeCategory(user));
+
+export const fetchUsersByAgeIndex = async (categories, offset = 0) =>
+  fetchUsersByIndex('age', categories, offset);
+
+export const updateRoleIndex = (category, userId, action) =>
+  updateIndex('role', category, userId, action);
+
+export const createRoleIndexInCollection = async collection =>
+  createIndexInCollection('role', collection, user => getRoleCategory(user));
+
+export const fetchUsersByRoleIndex = async (categories, offset = 0) =>
+  fetchUsersByIndex('role', categories, offset);
 
 const getCommentLengthCategory = comment => {
   if (!comment || typeof comment !== 'string') return 'other';
@@ -1889,6 +2115,22 @@ export const removeCardAndSearchId = async userId => {
 
     const userData = userSnapshot.val();
     console.log(`Дані користувача:`, userData);
+
+    if (userData.blood) {
+      await updateBloodIndex(
+        getBloodIndexCategory(userData.blood),
+        userId,
+        'remove',
+      );
+    }
+
+    await updateMaritalIndex(getMaritalStatusCategory(userData), userId, 'remove');
+    await updateCsectionIndex(categorizeCsection(userData.csection), userId, 'remove');
+    await updateUserIdIndex(getUserIdCategory(userData.userId || userId), userId, 'remove');
+    await updateFieldsIndex(getFieldCountCategory(userData), userId, 'remove');
+    await updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'remove');
+    await updateAgeIndex(getAgeCategory(userData), userId, 'remove');
+    await updateRoleIndex(getRoleCategory(userData), userId, 'remove');
 
     // Перебір ключів для перевірки
     for (const key of keysToCheck) {
