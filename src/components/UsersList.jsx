@@ -2,7 +2,7 @@ import React from 'react';
 import { coloredCard, FadeContainer } from './styles';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import { btnCompare } from './smallCard/btnCompare';
-import { BtnEdit } from './smallCard/btnEdit';
+import { btnEdit } from './smallCard/btnEdit';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
 
@@ -119,7 +119,7 @@ const UsersList = ({
             }
           }}
         >
-          <BtnEdit userId={userData.userId} setSearch={setSearch} setState={setState} />
+          {btnEdit(userData.userId, setSearch, setState)}
           {btnCompare(index, users, setUsers, setShowInfoModal, setCompare, )}
           <UserCard
             setShowInfoModal={setShowInfoModal}
