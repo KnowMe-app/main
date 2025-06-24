@@ -1551,7 +1551,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                               }));
                             }}
                             // onBlur={() => handleBlur(field.name)}
-                            onBlur={() => handleSubmit(state, 'overwrite')}
+                            onBlur={e => {
+                              if (field.name === 'myComment') {
+                                const value = e.target.value;
+                                setState(prev => {
+                                  const newState = {
+                                    ...prev,
+                                    [field.name]: Array.isArray(prev[field.name])
+                                      ? [value, ...(prev[field.name].slice(1) || [])]
+                                      : value,
+                                  };
+                                  handleSubmit(newState, 'overwrite');
+                                  return newState;
+                                });
+                              } else {
+                                handleSubmit(state, 'overwrite');
+                              }
+                            }}
                           />
                           {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times;</ClearButton>}
                           {state[field.name] && <DelKeyValueBTN onClick={() => handleDelKeyValue(field.name)}>del</DelKeyValueBTN>}
