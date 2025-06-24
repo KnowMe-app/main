@@ -1551,12 +1551,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                               }));
                             }}
                             // onBlur={() => handleBlur(field.name)}
-                            onBlur={e =>
-                              handleSubmit(
-                                { ...state, [field.name]: e.target.value },
-                                'overwrite'
-                              )
-                            }
+                            onBlur={() => handleSubmit(state, 'overwrite')}
                           />
                           {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times;</ClearButton>}
                           {state[field.name] && <DelKeyValueBTN onClick={() => handleDelKeyValue(field.name)}>del</DelKeyValueBTN>}
