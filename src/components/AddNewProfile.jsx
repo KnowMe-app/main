@@ -455,6 +455,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // const handleFocus = name => {
   //   setFocused(name);
   // };
+  const handleBlur = () => {
+    // setFocused(null);
+    handleSubmit();
+  };
 
   // const findNestedArrays = (data, parentKey = '') => {
   //   const nestedArrays = {};
@@ -1497,17 +1501,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                                       [field.name]: prevState[field.name].map((item, i) => (i === idx ? updatedValue : item)),
                                     }));
                                   }}
-                                  onBlur={e => {
-                                    const value = e.target.value;
-                                    const newState = {
-                                      ...state,
-                                      [field.name]: state[field.name].map((item, i) =>
-                                        i === idx ? value : item
-                                      ),
-                                    };
-                                    setState(newState);
-                                    handleSubmit(newState, 'overwrite');
-                                  }}
+                                  onBlur={() => handleBlur(`${field.name}-${idx}`)}
                                 />
                                 {(value || value === '') && (
                                   <ClearButton
@@ -1557,21 +1551,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                               }));
                             }}
                             // onBlur={() => handleBlur(field.name)}
-                            onBlur={e => {
-                              if (field.name === 'myComment') {
-                                const value = e.target.value;
-                                const newState = {
-                                  ...state,
-                                  [field.name]: Array.isArray(state[field.name])
-                                    ? [value, ...(state[field.name].slice(1) || [])]
-                                    : value,
-                                };
-                                setState(newState);
-                                handleSubmit(newState, 'overwrite');
-                              } else {
-                                handleSubmit(state, 'overwrite');
-                              }
-                            }}
+                            onBlur={() => handleSubmit(state, 'overwrite')}
                           />
                           {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times;</ClearButton>}
                           {state[field.name] && <DelKeyValueBTN onClick={() => handleDelKeyValue(field.name)}>del</DelKeyValueBTN>}
@@ -1649,6 +1629,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                                   [field.name]: 'Other',
                                 };
                                 handleSubmit(newState, 'overwrite');
+                                handleBlur(field.name);
                                 return newState;
                               });
                             }}
