@@ -1554,16 +1554,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                             onBlur={e => {
                               if (field.name === 'myComment') {
                                 const value = e.target.value;
-                                setState(prev => {
-                                  const newState = {
-                                    ...prev,
-                                    [field.name]: Array.isArray(prev[field.name])
-                                      ? [value, ...(prev[field.name].slice(1) || [])]
-                                      : value,
-                                  };
-                                  handleSubmit(newState, 'overwrite');
-                                  return newState;
-                                });
+                                const newState = {
+                                  ...state,
+                                  [field.name]: Array.isArray(state[field.name])
+                                    ? [value, ...(state[field.name].slice(1) || [])]
+                                    : value,
+                                };
+                                setState(newState);
+                                handleSubmit(newState, 'overwrite');
                               } else {
                                 handleSubmit(state, 'overwrite');
                               }
