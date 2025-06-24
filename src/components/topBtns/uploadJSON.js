@@ -97,7 +97,7 @@ export const UploadJson = () => {
   
     // Формуємо фінальний об'єкт, враховуючи keyMapping та excludedKeys
     const finalResult = {};
-    const commentParts = [];
+    const myComments = [];
   
     Object.entries(result).forEach(([key, val]) => {
       // Якщо ключ не у списку виключень
@@ -108,17 +108,17 @@ export const UploadJson = () => {
         } else {
           // Якщо немає — вважаємо, що це "коментар" або невідомий ключ
           if (Array.isArray(val)) {
-            commentParts.push(`${key}: ${val.join(", ")}`);
+            myComments.push(`${key}: ${val.join(", ")}`);
           } else {
-            commentParts.push(`${key}: ${val}`);
+            myComments.push(`${key}: ${val}`);
           }
         }
       }
     });
   
-    // Якщо щось відправили у myComment, додаємо його у finalResult
-    if (commentParts.length > 0) {
-      finalResult.myComment = commentParts.join("; ");
+    // Якщо щось відправили у myComments, додаємо його у finalResult
+    if (myComments.length > 0) {
+      finalResult.myComments = myComments.join("; ");
     }
   
     return finalResult;
@@ -193,7 +193,7 @@ export const UploadJson = () => {
   
     // Формуємо фінальний об'єкт із урахуванням keyMapping та excludedKeys
     const finalResult = {};
-    const commentParts = [];
+    const myComments = [];
   
     Object.entries(result).forEach(([key, val]) => {
       // Перевіряємо, чи не виключати ключ
@@ -202,18 +202,18 @@ export const UploadJson = () => {
         if (keyMapping[key]) {
           finalResult[keyMapping[key]] = val;
         } 
-        // Якщо ключ не відомий (немає в keyMapping), зберігаємо в myComment
+        // Якщо ключ не відомий (немає в keyMapping), зберігаємо в myComments
         else {
           // Можна залишити як є, якщо не потрібно переносити в коментар
-          // Або перенести в коментар:
-          commentParts.push(`${key}: ${Array.isArray(val) ? val.join(", ") : val}`);
+          // Або перенести в myComments:
+          myComments.push(`${key}: ${Array.isArray(val) ? val.join(", ") : val}`);
         }
       }
     });
   
     // Якщо є коментарі, додаємо їх у результат
-    if (commentParts.length > 0) {
-      finalResult.myComment = commentParts.join("; ");
+    if (myComments.length > 0) {
+      finalResult.myComments = myComments.join("; ");
     }
   
     console.log("finalResult :>> ", finalResult);
