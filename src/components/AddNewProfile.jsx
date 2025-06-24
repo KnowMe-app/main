@@ -1161,27 +1161,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       currentFilters,
       fav,
       undefined,
-      partial =>
-        setUsers(prev => {
-          const updated = { ...prev };
-          Object.entries(partial).forEach(([id, data]) => {
-            if (!Object.prototype.hasOwnProperty.call(updated, id)) {
-              updated[id] = data;
-            }
-          });
-          return updated;
-        })
+      partial => setUsers(prev => ({ ...prev, ...partial }))
     );
     if (res && Object.keys(res.users).length > 0) {
-      setUsers(prev => {
-        const updated = { ...prev };
-        Object.entries(res.users).forEach(([id, data]) => {
-          if (!Object.prototype.hasOwnProperty.call(updated, id)) {
-            updated[id] = data;
-          }
-        });
-        return updated;
-      });
+      setUsers(prev => ({ ...prev, ...res.users }));
       setDateOffset2(res.lastKey);
       setHasMore(res.hasMore);
       const count = Object.keys(res.users).length;
