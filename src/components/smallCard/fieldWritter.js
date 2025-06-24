@@ -16,7 +16,9 @@ export const fieldWriter = (userData, setUsers, setState) => {
           // placeholder="Введіть ім'я"
           value={userData.writer || ''}
           onChange={e => handleChange(setUsers, setState, userData.userId, 'writer', e.target.value)}
-          onBlur={() => handleSubmit(userData, 'overwrite')}
+          onBlur={e =>
+            handleSubmit({ ...userData, writer: e.target.value }, 'overwrite')
+          }
           style={{
             flexGrow: 1, // Займає залишковий простір
             maxWidth: '100%', // Обмежує ширину контейнером
