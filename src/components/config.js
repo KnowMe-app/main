@@ -1017,7 +1017,6 @@ const getAgeCategory = value => {
   if (age >= 26 && age <= 29) return '26_29';
   if (age >= 31 && age <= 36) return '31_36';
   if (age >= 37 && age <= 42) return '37_42';
-  if (age >= 43) return '43_plus';
   return 'other';
 };
 

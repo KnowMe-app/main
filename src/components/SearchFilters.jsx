@@ -51,7 +51,6 @@ export const SearchFilters = ({ filters, onChange }) => {
         { val: '26_29', label: '26-29' },
         { val: '31_36', label: '31-36' },
         { val: '37_42', label: '37-42' },
-        { val: '43_plus', label: '43+' },
         { val: 'other', label: '?' },
       ],
     },
