@@ -37,7 +37,16 @@ export const FieldComment = ({ userData, setUsers, setState }) => {
           handleInputChange(e);
           autoResize(e.target);
         }}
-        onBlur={() => handleSubmit(userData, 'overwrite')}
+        onBlur={e =>
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            'myComment',
+            e.target.value,
+            true
+          )
+        }
         style={{
           // marginLeft: '10px',
           width: '100%',
