@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { handleChange, handleSubmit } from './actions';
 const { formatDateToDisplay, formatDateAndFormula, formatDateToServer } = require('components/inputValidations');
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
@@ -56,49 +55,30 @@ export const fieldGetInTouch = (
     </OrangeBtn>
   );
 
-  const GetInTouchInput = ({ initialValue }) => {
-    const [value, setValue] = useState(
-      formatDateToDisplay(formatDateAndFormula(initialValue)) || ''
-    );
-
-    useEffect(() => {
-      setValue(
-        formatDateToDisplay(formatDateAndFormula(initialValue)) || ''
-      );
-    }, [initialValue]);
-
-    const handleBlur = () => {
-      const serverFormattedDate = formatDateToServer(
-        formatDateAndFormula(value)
-      );
-
-      handleChange(
-        setUsers,
-        setState,
-        userData.userId,
-        'getInTouch',
-        serverFormattedDate,
-        false,
-        { currentFilter, isDateInRange }
-      );
-
-      handleSubmit(userData, 'overwrite');
-    };
-
-    return (
-      <UnderlinedInput
-        type="text"
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        onBlur={handleBlur}
-        style={{ marginLeft: 0, textAlign: 'left' }}
-      />
-    );
-  };
-
   return (
     <div style={{ display: 'flex', alignItems: 'center' }}>
-      <GetInTouchInput initialValue={userData.getInTouch} />
+      <UnderlinedInput
+        type="text"
+        value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
+        onChange={e => {
+          // Повертаємо формат YYYY-MM-DD для збереження
+          const serverFormattedDate = formatDateToServer(formatDateAndFormula(e.target.value));
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            'getInTouch',
+            serverFormattedDate,
+            false,
+            { currentFilter, isDateInRange }
+          );
+        }}
+        onBlur={() => handleSubmit(userData, 'overwrite')}
+        style={{
+          marginLeft: 0,
+          textAlign: 'left',
+        }}
+      />
       <ActionButton label="3д" days={3} onClick={handleAddDays} />
       {/* <ActionButton label="7д" days={7} onClick={handleAddDays} /> */}
       <ActionButton label="1м" days={30} onClick={handleAddDays} />
