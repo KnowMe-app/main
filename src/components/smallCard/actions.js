@@ -58,13 +58,7 @@ export const handleChange = (
     options.isDateInRange &&
     !options.isDateInRange(newValue)
   ) {
-    setUsers(prev => {
-      if (!prev[userId]) return prev;
-      return {
-        ...prev,
-        [userId]: { ...prev[userId], _pendingRemove: true },
-      };
-    });
+    // Do not remove the card from the DATE2 list when getInTouch is changed.
   }
 };
 
