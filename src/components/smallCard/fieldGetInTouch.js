@@ -1,44 +1,24 @@
 import { handleChange, handleSubmit } from './actions';
-import { useState, useEffect } from 'react';
 const { formatDateToDisplay, formatDateAndFormula, formatDateToServer } = require('components/inputValidations');
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
 
-export const GetInTouchInput = ({ initialValue, userData, setUsers, setState, currentFilter, isDateInRange, handleChange }) => {
-  const [value, setValue] = useState('');
-
-  useEffect(() => {
-    setValue(formatDateToDisplay(formatDateAndFormula(initialValue)) || '');
-  }, [initialValue]);
-
-  const handleBlur = () => {
-    const serverFormattedDate = formatDateToServer(formatDateAndFormula(value));
-    handleChange(setUsers, setState, userData.userId, 'getInTouch', serverFormattedDate, false, {
-      currentFilter,
-      isDateInRange,
-    });
-    handleSubmit(userData, 'overwrite');
-  };
-
-  return (
-    <UnderlinedInput
-      type="text"
-      value={value}
-      onChange={e => setValue(e.target.value)}
-      onBlur={handleBlur}
-      style={{
-        marginLeft: 0,
-        textAlign: 'left',
-      }}
-    />
-  );
-};
-
-export const fieldGetInTouch = (userData, setUsers, setState, currentFilter, isDateInRange) => {
+export const fieldGetInTouch = (
+  userData,
+  setUsers,
+  setState,
+  currentFilter,
+  isDateInRange,
+) => {
   const handleSendToEnd = () => {
-    handleChange(setUsers, setState, userData.userId, 'getInTouch', '2099-99-99', true, {
-      currentFilter,
-      isDateInRange,
-    });
+    handleChange(
+      setUsers,
+      setState,
+      userData.userId,
+      'getInTouch',
+      '2099-99-99',
+      true,
+      { currentFilter, isDateInRange }
+    );
   };
 
   const handleAddDays = days => {
@@ -50,10 +30,15 @@ export const fieldGetInTouch = (userData, setUsers, setState, currentFilter, isD
     const month = String(currentDate.getMonth() + 1).padStart(2, '0'); // Додаємо 1, оскільки місяці в Date починаються з 0
     const day = String(currentDate.getDate()).padStart(2, '0');
     const formattedDate = `${year}-${month}-${day}`; // Формат YYYY-MM-DD
-    handleChange(setUsers, setState, userData.userId, 'getInTouch', formattedDate, true, {
-      currentFilter,
-      isDateInRange,
-    });
+    handleChange(
+      setUsers,
+      setState,
+      userData.userId,
+      'getInTouch',
+      formattedDate,
+      true,
+      { currentFilter, isDateInRange }
+    );
   };
 
   const ActionButton = ({ label, days, onClick }) => (
@@ -72,14 +57,27 @@ export const fieldGetInTouch = (userData, setUsers, setState, currentFilter, isD
 
   return (
     <div style={{ display: 'flex', alignItems: 'center' }}>
-      <GetInTouchInput
-        initialValue={userData.getInTouch}
-        userData={userData}
-        setUsers={setUsers}
-        setState={setState}
-        currentFilter={currentFilter}
-        isDateInRange={isDateInRange}
-        handleChange={handleChange}
+      <UnderlinedInput
+        type="text"
+        value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
+        onChange={e => {
+          // Повертаємо формат YYYY-MM-DD для збереження
+          const serverFormattedDate = formatDateToServer(formatDateAndFormula(e.target.value));
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            'getInTouch',
+            serverFormattedDate,
+            false,
+            { currentFilter, isDateInRange }
+          );
+        }}
+        onBlur={() => handleSubmit(userData, 'overwrite')}
+        style={{
+          marginLeft: 0,
+          textAlign: 'left',
+        }}
       />
       <ActionButton label="3д" days={3} onClick={handleAddDays} />
       {/* <ActionButton label="7д" days={7} onClick={handleAddDays} /> */}
