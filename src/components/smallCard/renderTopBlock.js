@@ -5,7 +5,7 @@ import { BtnFavorite } from './btnFavorite';
 import { fieldDeliveryInfo } from './fieldDeliveryInfo';
 import { fieldWriter } from './fieldWritter';
 import { fieldContacts } from './fieldContacts';
-import { fieldGetInTouch } from './fieldGetInTouch';
+import { FieldGetInTouch } from './fieldGetInTouch';
 import { fieldRole } from './fieldRole';
 import { fieldLastCycle } from './fieldLastCycle';
 import { FieldComment } from './FieldComment';
@@ -42,7 +42,7 @@ export const renderTopBlock = (
         {userData.lastAction && ', '}
         {userData.userId}
         {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') &&
-          fieldGetInTouch(userData, setUsers, setState, currentFilter, isDateInRange)}
+          FieldGetInTouch(userData, setUsers, setState, currentFilter, isDateInRange)}
         {fieldRole(userData, setUsers, setState)}
         {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') && fieldLastCycle(userData, setUsers, setState)}
         {fieldDeliveryInfo(setUsers, setState, userData)}
