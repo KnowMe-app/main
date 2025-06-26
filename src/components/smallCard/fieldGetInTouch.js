@@ -1,14 +1,23 @@
+import React, { useState, useEffect } from 'react';
 import { handleChange, handleSubmit } from './actions';
 const { formatDateToDisplay, formatDateAndFormula, formatDateToServer } = require('components/inputValidations');
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
 
-export const fieldGetInTouch = (
+export const FieldGetInTouch = (
   userData,
   setUsers,
   setState,
   currentFilter,
   isDateInRange,
 ) => {
+  const [inputValue, setInputValue] = useState(
+    formatDateToDisplay(userData.getInTouch) || ''
+  );
+
+  useEffect(() => {
+    setInputValue(formatDateToDisplay(userData.getInTouch) || '');
+  }, [userData.getInTouch]);
+
   const handleSendToEnd = () => {
     handleChange(
       setUsers,
@@ -19,6 +28,7 @@ export const fieldGetInTouch = (
       true,
       { currentFilter, isDateInRange }
     );
+    setInputValue(formatDateToDisplay('2099-99-99'));
   };
 
   const handleAddDays = days => {
@@ -39,6 +49,7 @@ export const fieldGetInTouch = (
       true,
       { currentFilter, isDateInRange }
     );
+    setInputValue(formatDateToDisplay(formattedDate));
   };
 
   const ActionButton = ({ label, days, onClick }) => (
@@ -59,10 +70,11 @@ export const fieldGetInTouch = (
     <div style={{ display: 'flex', alignItems: 'center' }}>
       <UnderlinedInput
         type="text"
-        value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
-        onChange={e => {
-          // Повертаємо формат YYYY-MM-DD для збереження
-          const serverFormattedDate = formatDateToServer(formatDateAndFormula(e.target.value));
+        value={inputValue}
+        onChange={e => setInputValue(e.target.value)}
+        onBlur={() => {
+          const formatted = formatDateAndFormula(inputValue);
+          const serverFormattedDate = formatDateToServer(formatted);
           handleChange(
             setUsers,
             setState,
@@ -72,8 +84,8 @@ export const fieldGetInTouch = (
             false,
             { currentFilter, isDateInRange }
           );
+          handleSubmit(userData, 'overwrite');
         }}
-        onBlur={() => handleSubmit(userData, 'overwrite')}
         style={{
           marginLeft: 0,
           textAlign: 'left',
