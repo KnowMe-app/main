@@ -73,20 +73,7 @@ export const fieldGetInTouch = (
             { currentFilter, isDateInRange }
           );
         }}
-        onBlur={e => {
-          const serverFormattedDate = formatDateToServer(
-            formatDateAndFormula(e.target.value)
-          );
-          handleChange(
-            setUsers,
-            setState,
-            userData.userId,
-            'getInTouch',
-            serverFormattedDate,
-            true,
-            { currentFilter, isDateInRange }
-          );
-        }}
+        onBlur={() => handleSubmit(userData, 'overwrite')}
         style={{
           marginLeft: 0,
           textAlign: 'left',
