@@ -1,5 +1,5 @@
 import { handleChange, handleSubmit } from './actions';
-const { formatDateToDisplay, formatDateToServer } = require('components/inputValidations');
+const { formatDateToDisplay, formatDateAndFormula, formatDateToServer } = require('components/inputValidations');
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
 
 export const fieldGetInTouch = (
@@ -59,10 +59,10 @@ export const fieldGetInTouch = (
     <div style={{ display: 'flex', alignItems: 'center' }}>
       <UnderlinedInput
         type="text"
-        value={formatDateToDisplay(userData.getInTouch) || ''}
+        value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
         onChange={e => {
-          // Перетворюємо введення на формат YYYY-MM-DD для збереження
-          const serverFormattedDate = formatDateToServer(e.target.value);
+          // Повертаємо формат YYYY-MM-DD для збереження
+          const serverFormattedDate = formatDateToServer(formatDateAndFormula(e.target.value));
           handleChange(
             setUsers,
             setState,
