@@ -384,6 +384,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [userNotFound, setUserNotFound] = useState(false); // Стан для зберігання останнього ключа
 
   const [state, setState] = useState({});
+  const isEditingRef = useRef(false);
 
   const [search, setSearch] = useState(() => localStorage.getItem('searchQuery') || '');
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
@@ -679,6 +680,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     console.log('state2!!!!!!!!!! :>> ', state);
   }, [state]);
+
+  useEffect(() => {
+    isEditingRef.current = !!state.userId;
+  }, [state.userId]);
 
   // useEffect для скидання значень при зміні search
   useEffect(() => {
@@ -1093,12 +1098,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
   };
 
+  const mergeWithoutOverwrite = (prev, additions) => {
+    const merged = { ...prev };
+    Object.entries(additions).forEach(([id, data]) => {
+      if (!merged[id]) merged[id] = data;
+    });
+    return merged;
+  };
+
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
     console.log('loadMoreUsers called with', {
       filterForload,
       lastKey,
       currentFilters,
     });
+    if (isEditingRef.current) return { count: 0, hasMore };
     const param = filterForload === 'DATE' ? dateOffset : lastKey;
     let fav = favoriteUsersData;
     if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
@@ -1129,7 +1143,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       // Оновлюємо стан користувачів
       // Оновлюємо стан користувачів
-      setUsers(prevUsers => ({ ...prevUsers, ...newUsers })); // Додаємо нових користувачів до попередніх
+      setUsers(prevUsers => mergeWithoutOverwrite(prevUsers, newUsers)); // Додаємо нових користувачів до попередніх без перезапису
       if (filterForload === 'DATE') {
         setDateOffset(prev => prev + PAGE_SIZE);
         setHasMore(res.hasMore);
@@ -1154,6 +1168,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setFavoriteUsersData(fav);
     }
 
+    if (isEditingRef.current) return { count: 0, hasMore };
+
     const res = await fetchFilteredUsersByPage(
       dateOffset2,
       undefined,
@@ -1161,10 +1177,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       currentFilters,
       fav,
       undefined,
-      partial => setUsers(prev => ({ ...prev, ...partial }))
+      partial => {
+        if (!isEditingRef.current) {
+          setUsers(prev => mergeWithoutOverwrite(prev, partial));
+        }
+      }
     );
     if (res && Object.keys(res.users).length > 0) {
-      setUsers(prev => ({ ...prev, ...res.users }));
+      if (!isEditingRef.current) {
+        setUsers(prev => mergeWithoutOverwrite(prev, res.users));
+      }
       setDateOffset2(res.lastKey);
       setHasMore(res.hasMore);
       const count = Object.keys(res.users).length;
