@@ -385,19 +385,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [state, setState] = useState({});
   const isEditingRef = useRef(false);
-  const focusCounter = useRef(0);
-
-  const handleFocusCapture = () => {
-    focusCounter.current += 1;
-    isEditingRef.current = true;
-  };
-
-  const handleBlurCapture = () => {
-    focusCounter.current = Math.max(focusCounter.current - 1, 0);
-    if (focusCounter.current === 0 && !state.userId) {
-      isEditingRef.current = false;
-    }
-  };
 
   const [search, setSearch] = useState(() => localStorage.getItem('searchQuery') || '');
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
@@ -1361,7 +1348,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, {});
 
   return (
-    <Container onFocusCapture={handleFocusCapture} onBlurCapture={handleBlurCapture}>
+    <Container>
       <InnerContainer>
         <DotsButton
           onClick={() => {
