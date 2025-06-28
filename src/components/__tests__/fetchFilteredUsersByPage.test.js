@@ -9,7 +9,7 @@ jest.mock('../config', () => ({
 }));
 
 const { fetchFilteredUsersByPage } = require('../dateLoad');
-const { PAGE_SIZE, INVALID_DATE_TOKENS } = require('../constants');
+const { PAGE_SIZE } = require('../constants');
 
 test('fetchFilteredUsersByPage limits results to PAGE_SIZE', async () => {
   const today = new Date().toISOString().split('T')[0];
@@ -63,11 +63,7 @@ test('fetchFilteredUsersByPage fetches earlier dates when needed', async () => {
     users => users
   );
 
-  expect(calls).toEqual([
-    todayStr,
-    ...INVALID_DATE_TOKENS,
-    yesterdayStr,
-  ]);
+  expect(calls).toEqual([todayStr, '', yesterdayStr]);
   expect(Object.keys(res.users).length).toBe(PAGE_SIZE);
   expect(res.hasMore).toBe(true);
 });
