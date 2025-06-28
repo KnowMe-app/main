@@ -20,7 +20,7 @@ import {
   // createSearchIdsForAllUsers,
   createSearchIdsInCollection,
   createIndexesSequentiallyInCollection,
-  fetchUsersByBloodIndex,
+  fetchUsersByFiltersIndex,
   fetchUserById,
   loadDuplicateUsers,
   removeCardAndSearchId,
@@ -1210,15 +1210,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsers3 = async (currentFilters = filters) => {
-    const bloodFilters = currentFilters.blood || {};
-    const categories = Object.entries(bloodFilters)
-      .filter(([, v]) => v)
-      .map(([k]) => k);
-    if (categories.length === 0) {
-      setHasMore(false);
-      return { count: 0, hasMore: false };
+    let fav = favoriteUsersData;
+    if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
     }
-    const res = await fetchUsersByBloodIndex(categories, indexOffset);
+
+    const res = await fetchUsersByFiltersIndex(currentFilters, indexOffset, fav);
     if (res && Object.keys(res.users).length > 0) {
       setUsers(prev => ({ ...prev, ...res.users }));
       setIndexOffset(res.lastKey || 0);
