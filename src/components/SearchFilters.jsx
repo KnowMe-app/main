@@ -48,7 +48,7 @@ export const SearchFilters = ({ filters, onChange }) => {
       label: 'Age',
       options: [
         { val: 'le25', label: '≤25' },
-        { val: '26_29', label: '26-29' },
+        { val: '26_30', label: '26-30' },
         { val: '31_36', label: '31-36' },
         { val: '37_42', label: '37-42' },
         { val: '43_plus', label: '43+' },

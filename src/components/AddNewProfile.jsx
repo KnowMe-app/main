@@ -19,6 +19,15 @@ import {
   // removeSearchId,
   // createSearchIdsForAllUsers,
   createSearchIdsInCollection,
+  createBloodIndexInCollection,
+  createMaritalIndexInCollection,
+  createCsectionIndexInCollection,
+  createRoleIndexInCollection,
+  createUserIdIndexInCollection,
+  createFieldsIndexInCollection,
+  createCommentWordsIndexInCollection,
+  createAgeIndexInCollection,
+  fetchUsersByBloodIndex,
   fetchUserById,
   loadDuplicateUsers,
   removeCardAndSearchId,
@@ -394,7 +403,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     blood: { pos: true, neg: true, other: true },
     age: {
       le25: true,
-      '26_29': true,
+      '26_30': true,
       '31_36': true,
       '37_42': true,
       '43_plus': true,
@@ -717,6 +726,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentFilter, setCurrentFilter] = useState(null);
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
+  const [indexOffset, setIndexOffset] = useState(0);
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -754,9 +764,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setHasMore(true);
     setTotalCount(0);
     setCurrentPage(1);
+    setIndexOffset(0);
     if (currentFilter) {
       if (currentFilter === 'DATE2') {
         loadMoreUsers2();
+      } else if (currentFilter === 'INDEX') {
+        loadMoreUsers3();
       } else {
         loadMoreUsers(currentFilter);
       }
@@ -1198,6 +1211,28 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return { count: 0, hasMore: false };
   };
 
+  const loadMoreUsers3 = async (currentFilters = filters) => {
+    const bloodFilters = currentFilters.blood || {};
+    const categories = Object.entries(bloodFilters)
+      .filter(([, v]) => v)
+      .map(([k]) => k);
+    if (categories.length === 0) {
+      setHasMore(false);
+      return { count: 0, hasMore: false };
+    }
+    const res = await fetchUsersByBloodIndex(categories, indexOffset);
+    if (res && Object.keys(res.users).length > 0) {
+      setUsers(prev => ({ ...prev, ...res.users }));
+      setIndexOffset(res.lastKey || 0);
+      if (res.totalCount !== undefined) setTotalCount(res.totalCount);
+      setHasMore(res.hasMore);
+      const count = Object.keys(res.users).length;
+      return { count, hasMore: res.hasMore };
+    }
+    setHasMore(false);
+    return { count: 0, hasMore: false };
+  };
+
   const handlePageChange = async page => {
     const needed = page * PAGE_SIZE;
     let loaded = Object.keys(users).length;
@@ -1207,7 +1242,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const { count, hasMore: nextMore } =
         currentFilter === 'DATE2'
           ? await loadMoreUsers2()
-          : await loadMoreUsers(currentFilter);
+          : currentFilter === 'INDEX'
+            ? await loadMoreUsers3()
+            : await loadMoreUsers(currentFilter);
       loaded += count;
       more = nextMore;
     }
@@ -1274,6 +1311,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     //   handleSubmit(res, false, false, true);
     //   // writeData(userId); // Викликаємо writeData() для кожного ID
     // });
+  };
+
+  const indexData = async () => {
+    const collections = ['newUsers', 'users'];
+    for (const col of collections) {
+      await Promise.all([
+        createBloodIndexInCollection(col),
+        createMaritalIndexInCollection(col),
+        createCsectionIndexInCollection(col),
+        createRoleIndexInCollection(col),
+        createUserIdIndexInCollection(col),
+        createFieldsIndexInCollection(col),
+        createCommentWordsIndexInCollection(col),
+        createAgeIndexInCollection(col),
+      ]);
+    }
   };
 
   const priorityOrder = [
@@ -1677,7 +1730,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               >
                 Load2
               </Button>
+              <Button
+                onClick={() => {
+                  setUsers({});
+                  setHasMore(true);
+                  setCurrentPage(1);
+                  setCurrentFilter('INDEX');
+                  setIndexOffset(0);
+                  loadMoreUsers3();
+                }}
+              >
+                Load3
+              </Button>
               <Button onClick={loadFavoriteUsers}>❤</Button>
+              <Button onClick={indexData}>IndData</Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {
