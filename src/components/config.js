@@ -1279,85 +1279,6 @@ export const createRoleIndexInCollection = async collection =>
 export const fetchUsersByRoleIndex = async (categories, offset = 0) =>
   fetchUsersByIndex('role', categories, offset);
 
-// Helper to collect matching user ids for all active checkbox filters using indexes
-export const getIdsByIndexFilters = async filterSettings => {
-  const indexMap = {
-    blood: 'blood',
-    maritalStatus: 'maritalStatus',
-    csection: 'csection',
-    role: 'role',
-    age: 'age',
-    userId: 'userId',
-    fields: 'fields',
-    commentLength: 'commentWords',
-  };
-
-  let idSet = null;
-  for (const [filterKey, indexName] of Object.entries(indexMap)) {
-    const group = filterSettings[filterKey];
-    if (!group) continue;
-    let categories = Object.entries(group)
-      .filter(([, v]) => v)
-      .map(([k]) => k);
-    if (filterKey === 'blood') {
-      const mapped = [];
-      categories.forEach(cat => {
-        if (cat === 'pos') mapped.push('1+', '2+', '3+', '4+', 'posOnly');
-        else if (cat === 'neg') mapped.push('1-', '2-', '3-', '4-', 'negOnly');
-        else if (cat === 'other') mapped.push('1', '2', '3', '4', 'invalid', 'unknown');
-        else mapped.push(cat);
-      });
-      categories = mapped;
-    }
-    if (categories.length === 0) return new Set();
-    if (categories.length === Object.keys(group).length) continue;
-    const snap = await get(ref2(database, `usersIndex/${indexName}`));
-    if (!snap.exists()) return new Set();
-    const idx = snap.val();
-    let ids = [];
-    categories.forEach(cat => {
-      const val = idx[cat];
-      if (val) ids = ids.concat(Array.isArray(val) ? val : [val]);
-    });
-    const currentSet = new Set(ids);
-    if (idSet === null) idSet = currentSet;
-    else idSet = new Set([...idSet].filter(id => currentSet.has(id)));
-    if (idSet.size === 0) break;
-  }
-  return idSet || new Set();
-};
-
-// Fetch users sorted by date using server-side pagination but filter them by
-// checkbox-selected ids from indexes
-export const fetchUsersByIndexAndDate = async (
-  startOffset = 0,
-  filterSettings = {},
-  favoriteUsers = {},
-  onProgress
-) => {
-  const ids = await getIdsByIndexFilters(filterSettings);
-  if (ids.size === 0) return { users: {}, lastKey: null, hasMore: false };
-
-  const customFilterMain = (entries, filterForload, fs, fav) => {
-    const subset = entries.filter(([id]) => ids.has(id));
-    // Apply only favorite filter through filterMain
-    const subSettings = { favorite: fs.favorite };
-    return filterMain(subset, filterForload, subSettings, fav);
-  };
-
-  const res = await fetchFilteredUsersByPage(
-    startOffset,
-    undefined,
-    undefined,
-    { favorite: filterSettings.favorite },
-    favoriteUsers,
-    customFilterMain,
-    onProgress
-  );
-  if (startOffset === 0) res.totalCount = ids.size;
-  return res;
-};
-
 // Index all relevant categories for a single user
 export const indexUserData = async (userData, userId) => {
   if (userData.blood) {
@@ -1568,24 +1489,9 @@ export const fetchUsersByFiltersIndex = async (
   for (const [filterKey, indexName] of Object.entries(indexMap)) {
     const group = filterSettings[filterKey];
     if (!group) continue;
-    let categories = Object.entries(group)
+    const categories = Object.entries(group)
       .filter(([, v]) => v)
       .map(([k]) => k);
-    if (filterKey === 'blood') {
-      const mapped = [];
-      categories.forEach(cat => {
-        if (cat === 'pos') {
-          mapped.push('1+', '2+', '3+', '4+', 'posOnly');
-        } else if (cat === 'neg') {
-          mapped.push('1-', '2-', '3-', '4-', 'negOnly');
-        } else if (cat === 'other') {
-          mapped.push('1', '2', '3', '4', 'invalid', 'unknown');
-        } else {
-          mapped.push(cat);
-        }
-      });
-      categories = mapped;
-    }
     if (categories.length === 0) return { users: {}, lastKey: null, hasMore: false };
     if (categories.length === Object.keys(group).length) continue;
     const snap = await get(ref2(database, `usersIndex/${indexName}`));
