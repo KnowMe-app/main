@@ -492,16 +492,10 @@ export const getUserCards = async () => {
 };
 
 export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) => {
-  console.log(`upl555555555oadedInfo`);
   const cleanedUploadedInfo = removeUndefined(uploadedInfo);
-  console.log(`uploadedInfo!!!!`, uploadedInfo);
-  console.log('userId :>> ', userId);
-  console.log('db:', db);
   try {
     const userRef = doc(db, `users/${userId}`);
-    console.log(`rrrrrrrrrrrrr`);
     if (condition === 'update') {
-      console.log(`uploadedInfo`, uploadedInfo);
       await updateDoc(userRef, cleanedUploadedInfo);
     } else if (condition === 'set') {
       await setDoc(userRef, cleanedUploadedInfo);
@@ -700,6 +694,16 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
       await updateRoleIndex(newRole, userId, 'add');
     }
 
+    const oldTouch = getGetInTouchKeys(currentUserData);
+    const newTouch = getGetInTouchKeys(newUserData);
+    await updateGetInTouchIndex(oldTouch, userId, 'remove');
+    await updateGetInTouchIndex(newTouch, userId, 'add');
+
+    const oldBirth = getBirthKeys(currentUserData);
+    const newBirth = getBirthKeys(newUserData);
+    await updateBirthIndex(oldBirth, userId, 'remove');
+    await updateBirthIndex(newBirth, userId, 'add');
+
     // Оновлення користувача в базі
 
     console.log('uploadedInfo :>> ', uploadedInfo);
@@ -749,6 +753,25 @@ const encodeKey = key => {
     .replace(/\//g, '_slash_')
     .replace(/\[/g, '_lbracket_')
     .replace(/\]/g, '_rbracket_');
+};
+
+const extractDateTokens = value => {
+  if (!value) return [];
+  const str = Array.isArray(value) ? value.join(' ') : value.toString();
+  const matches = str.match(/\d{4}-\d{2}-\d{2}/g);
+  return matches || [];
+};
+
+const getGetInTouchKeys = value => {
+  const dates = extractDateTokens(value.getInTouch);
+  if (dates.length === 0) return ['other'];
+  return dates.map(d => encodeKey(d));
+};
+
+const getBirthKeys = value => {
+  const dates = extractDateTokens(value.birth);
+  if (dates.length === 0) return ['other'];
+  return dates.map(d => encodeKey(d));
 };
 
 // Функція для оновлення або видалення пар у searchId
@@ -1109,6 +1132,7 @@ const getFieldCountCategory = value => {
   return 'other';
 };
 
+
 // ====================== Index helpers ======================
 const getBloodIndexCategory = blood => {
   if (!blood) return 'unknown';
@@ -1154,6 +1178,27 @@ export const updateIndex = async (indexName, category, userId, action) => {
     }
     return current;
   });
+};
+
+export const updateMultiIndex = async (indexName, categories, userId, action) => {
+  const cats = Array.isArray(categories) ? categories : [categories];
+  for (const cat of cats) {
+    // eslint-disable-next-line no-await-in-loop
+    await updateIndex(indexName, cat, userId, action);
+  }
+};
+
+export const createMultiIndexInCollection = async (indexName, collection, getCats) => {
+  const ref = ref2(database, collection);
+  const snap = await get(ref);
+  if (!snap.exists()) return;
+  const data = snap.val();
+  const ids = Object.keys(data);
+  for (const uid of ids) {
+    const cats = getCats(data[uid], uid);
+    // eslint-disable-next-line no-await-in-loop
+    await updateMultiIndex(indexName, cats, uid, 'add');
+  }
 };
 
 export const createIndexInCollection = async (indexName, collection, categorizeFn) => {
@@ -1280,6 +1325,26 @@ export const createRoleIndexInCollection = async collection =>
 export const fetchUsersByRoleIndex = async (categories, offset = 0) =>
   fetchUsersByIndex('role', categories, offset);
 
+export const updateGetInTouchIndex = (categories, userId, action) =>
+  updateMultiIndex('getInTouch', categories, userId, action);
+
+export const createGetInTouchIndexInCollection = async collection =>
+  createMultiIndexInCollection('getInTouch', collection, user =>
+    getGetInTouchKeys(user)
+  );
+
+export const fetchUsersByGetInTouchIndex = async (categories, offset = 0) =>
+  fetchUsersByIndex('getInTouch', categories, offset);
+
+export const updateBirthIndex = (categories, userId, action) =>
+  updateMultiIndex('birth', categories, userId, action);
+
+export const createBirthIndexInCollection = async collection =>
+  createMultiIndexInCollection('birth', collection, user => getBirthKeys(user));
+
+export const fetchUsersByBirthIndex = async (categories, offset = 0) =>
+  fetchUsersByIndex('birth', categories, offset);
+
 // Helper to collect matching user ids for all active checkbox filters using indexes
 export const getIdsByIndexFilters = async filterSettings => {
   const indexMap = {
@@ -1291,6 +1356,8 @@ export const getIdsByIndexFilters = async filterSettings => {
     userId: 'userId',
     fields: 'fields',
     commentLength: 'commentWords',
+    getInTouch: 'getInTouch',
+    birth: 'birth',
   };
 
   let idSet = null;
@@ -1346,15 +1413,35 @@ export const fetchUsersByIndexAndDate = async (
     return filterMain(subset, filterForload, subSettings, fav);
   };
 
-  const res = await fetchFilteredUsersByPage(
+  const { fetchByDateFromIndex } = await import('./dateLoad');
+
+  let res = await fetchFilteredUsersByPage(
     startOffset,
-    undefined,
+    fetchByDateFromIndex,
     undefined,
     { favorite: filterSettings.favorite },
     favoriteUsers,
     customFilterMain,
     onProgress
   );
+
+  const loadedCount = Object.keys(res.users).length;
+  if (loadedCount < PAGE_SIZE && res.hasMore) {
+    const extra = await fetchFilteredUsersByPage(
+      startOffset + loadedCount,
+      undefined,
+      undefined,
+      { favorite: filterSettings.favorite },
+      favoriteUsers,
+      customFilterMain,
+      onProgress
+    );
+    res = {
+      users: { ...res.users, ...extra.users },
+      lastKey: extra.lastKey,
+      hasMore: extra.hasMore,
+    };
+  }
   if (startOffset === 0) res.totalCount = ids.size;
   return res;
 };
@@ -1371,6 +1458,8 @@ export const indexUserData = async (userData, userId) => {
   await updateFieldsIndex(getFieldCountCategory(userData), userId, 'add');
   await updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'add');
   await updateAgeIndex(getAgeCategory(userData), userId, 'add');
+  await updateGetInTouchIndex(getGetInTouchKeys(userData), userId, 'add');
+  await updateBirthIndex(getBirthKeys(userData), userId, 'add');
 };
 
 // Run indexing sequentially for every user in a collection
@@ -1563,6 +1652,7 @@ export const fetchUsersByFiltersIndex = async (
     userId: 'userId',
     fields: 'fields',
     commentLength: 'commentWords',
+    getInTouch: 'getInTouch',
   };
 
   let idSet = null;
@@ -2345,6 +2435,8 @@ export const removeCardAndSearchId = async userId => {
     await updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'remove');
     await updateAgeIndex(getAgeCategory(userData), userId, 'remove');
     await updateRoleIndex(getRoleCategory(userData), userId, 'remove');
+    await updateGetInTouchIndex(getGetInTouchKeys(userData), userId, 'remove');
+    await updateBirthIndex(getBirthKeys(userData), userId, 'remove');
 
     // Перебір ключів для перевірки
     for (const key of keysToCheck) {
