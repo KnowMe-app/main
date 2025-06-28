@@ -19,14 +19,7 @@ import {
   // removeSearchId,
   // createSearchIdsForAllUsers,
   createSearchIdsInCollection,
-  createBloodIndexInCollection,
-  createMaritalIndexInCollection,
-  createCsectionIndexInCollection,
-  createRoleIndexInCollection,
-  createUserIdIndexInCollection,
-  createFieldsIndexInCollection,
-  createCommentWordsIndexInCollection,
-  createAgeIndexInCollection,
+  createIndexesSequentiallyInCollection,
   fetchUsersByBloodIndex,
   fetchUserById,
   loadDuplicateUsers,
@@ -1321,16 +1314,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const indexData = async () => {
     const collections = ['newUsers', 'users'];
     for (const col of collections) {
-      await Promise.all([
-        createBloodIndexInCollection(col),
-        createMaritalIndexInCollection(col),
-        createCsectionIndexInCollection(col),
-        createRoleIndexInCollection(col),
-        createUserIdIndexInCollection(col),
-        createFieldsIndexInCollection(col),
-        createCommentWordsIndexInCollection(col),
-        createAgeIndexInCollection(col),
-      ]);
+      await createIndexesSequentiallyInCollection(col);
     }
   };
 
