@@ -1469,6 +1469,81 @@ const sortUsers = filteredUsers => {
   });
 };
 
+export const fetchUsersByFiltersIndex = async (
+  filterSettings = {},
+  offset = 0,
+  favoriteUsers = {}
+) => {
+  const indexMap = {
+    blood: 'blood',
+    maritalStatus: 'maritalStatus',
+    csection: 'csection',
+    role: 'role',
+    age: 'age',
+    userId: 'userId',
+    fields: 'fields',
+    commentLength: 'commentWords',
+  };
+
+  let idSet = null;
+  for (const [filterKey, indexName] of Object.entries(indexMap)) {
+    const group = filterSettings[filterKey];
+    if (!group) continue;
+    const categories = Object.entries(group)
+      .filter(([, v]) => v)
+      .map(([k]) => k);
+    if (categories.length === 0) return { users: {}, lastKey: null, hasMore: false };
+    if (categories.length === Object.keys(group).length) continue;
+    const snap = await get(ref2(database, `usersIndex/${indexName}`));
+    if (!snap.exists()) return { users: {}, lastKey: null, hasMore: false };
+    const idx = snap.val();
+    let ids = [];
+    categories.forEach(cat => {
+      const val = idx[cat];
+      if (val) ids = ids.concat(Array.isArray(val) ? val : [val]);
+    });
+    const currentSet = new Set(ids);
+    if (idSet === null) {
+      idSet = currentSet;
+    } else {
+      idSet = new Set([...idSet].filter(id => currentSet.has(id)));
+    }
+    if (idSet.size === 0) break;
+  }
+
+  if (!idSet || idSet.size === 0) {
+    return { users: {}, lastKey: null, hasMore: false };
+  }
+
+  const allIds = Array.from(idSet);
+  const totalCount = allIds.length;
+  const collected = {};
+  let idxOffset = offset;
+  while (Object.keys(collected).length < PAGE_SIZE && idxOffset < allIds.length) {
+    const sliceIds = allIds.slice(idxOffset, idxOffset + PAGE_SIZE);
+    const results = await Promise.all(sliceIds.map(id => fetchUserById(id)));
+    const entries = [];
+    results.forEach((data, i) => {
+      if (data) entries.push([sliceIds[i], data]);
+    });
+    const filtered = filterMain(entries, 'INDEX', filterSettings, favoriteUsers);
+    filtered.forEach(([id, user]) => {
+      if (!collected[id] && Object.keys(collected).length < PAGE_SIZE) {
+        collected[id] = user;
+      }
+    });
+    idxOffset += PAGE_SIZE;
+  }
+
+  const hasMore = idxOffset < allIds.length;
+  return {
+    users: collected,
+    lastKey: hasMore ? idxOffset : null,
+    hasMore,
+    totalCount,
+  };
+};
+
 export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSettings = {}, favoriteUsers = {}) => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
