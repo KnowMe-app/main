@@ -1161,12 +1161,10 @@ export const createIndexInCollection = async (indexName, collection, categorizeF
   if (!snap.exists()) return;
   const data = snap.val();
   const ids = Object.keys(data);
-  const updates = [];
   for (const uid of ids) {
     const cat = categorizeFn(data[uid], uid);
-    updates.push(updateIndex(indexName, cat, uid, 'add'));
+    await updateIndex(indexName, cat, uid, 'add');
   }
-  await Promise.all(updates);
 };
 
 export const fetchUsersByIndex = async (indexName, categories, offset = 0) => {
@@ -1264,6 +1262,31 @@ export const createRoleIndexInCollection = async collection =>
 
 export const fetchUsersByRoleIndex = async (categories, offset = 0) =>
   fetchUsersByIndex('role', categories, offset);
+
+// Index all relevant categories for a single user
+export const indexUserData = async (userData, userId) => {
+  if (userData.blood) {
+    await updateBloodIndex(getBloodIndexCategory(userData.blood), userId, 'add');
+  }
+  await updateMaritalIndex(getMaritalStatusCategory(userData), userId, 'add');
+  await updateCsectionIndex(categorizeCsection(userData.csection), userId, 'add');
+  await updateRoleIndex(getRoleCategory(userData), userId, 'add');
+  await updateUserIdIndex(getUserIdCategory(userData.userId || userId), userId, 'add');
+  await updateFieldsIndex(getFieldCountCategory(userData), userId, 'add');
+  await updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'add');
+  await updateAgeIndex(getAgeCategory(userData), userId, 'add');
+};
+
+// Run indexing sequentially for every user in a collection
+export const createIndexesSequentiallyInCollection = async collection => {
+  const ref = ref2(database, collection);
+  const snap = await get(ref);
+  if (!snap.exists()) return;
+  const data = snap.val();
+  for (const uid of Object.keys(data)) {
+    await indexUserData(data[uid], uid);
+  }
+};
 
 const getCommentLengthCategory = comment => {
   if (!comment || typeof comment !== 'string') return 'other';
