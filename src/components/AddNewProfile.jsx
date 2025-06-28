@@ -21,6 +21,7 @@ import {
   createSearchIdsInCollection,
   createIndexesSequentiallyInCollection,
   fetchUsersByFiltersIndex,
+  fetchUsersByIndexAndDate,
   fetchUserById,
   loadDuplicateUsers,
   removeCardAndSearchId,
@@ -1216,7 +1217,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setFavoriteUsersData(fav);
     }
 
-    const res = await fetchUsersByFiltersIndex(currentFilters, indexOffset, fav);
+    const res = await fetchUsersByIndexAndDate(
+      indexOffset,
+      currentFilters,
+      fav,
+      partial => {
+        setUsers(prev => ({ ...prev, ...partial }));
+      },
+    );
     if (res && Object.keys(res.users).length > 0) {
       setUsers(prev => ({ ...prev, ...res.users }));
       setIndexOffset(res.lastKey || 0);
