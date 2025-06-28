@@ -18,6 +18,7 @@ import {
   startAt,
   endAt,
   equalTo,
+  runTransaction,
 } from 'firebase/database';
 import { PAGE_SIZE } from './constants';
 
@@ -1122,38 +1123,36 @@ const getBloodIndexCategory = blood => {
 export const updateIndex = async (indexName, category, userId, action) => {
   if (!indexName || !category || !userId) return;
   const indexRef = ref2(database, `usersIndex/${indexName}/${category}`);
-  if (action === 'add') {
-    const snap = await get(indexRef);
-    if (snap.exists()) {
-      const val = snap.val();
-      if (Array.isArray(val)) {
-        if (!val.includes(userId)) {
-          await update(ref2(database, `usersIndex/${indexName}`), { [category]: [...val, userId] });
-        }
-      } else if (val !== userId) {
-        await update(ref2(database, `usersIndex/${indexName}`), { [category]: [val, userId] });
+  await runTransaction(indexRef, current => {
+    if (action === 'add') {
+      if (current === null) {
+        return [userId];
       }
-    } else {
-      await update(ref2(database, `usersIndex/${indexName}`), { [category]: userId });
-    }
-  } else if (action === 'remove') {
-    const snap = await get(indexRef);
-    if (snap.exists()) {
-      const val = snap.val();
-      if (Array.isArray(val)) {
-        const updated = val.filter(id => id !== userId);
-        if (updated.length === 0) {
-          await remove(indexRef);
-        } else if (updated.length === 1) {
-          await update(ref2(database, `usersIndex/${indexName}`), { [category]: updated[0] });
-        } else {
-          await update(ref2(database, `usersIndex/${indexName}`), { [category]: updated });
+      if (Array.isArray(current)) {
+        if (!current.includes(userId)) {
+          return [...current, userId];
         }
-      } else if (val === userId) {
-        await remove(indexRef);
+        return current;
       }
+      if (current !== userId) {
+        return [current, userId];
+      }
+      return Array.isArray(current) ? current : [current];
+    } else if (action === 'remove') {
+      if (current === null) {
+        return current;
+      }
+      if (Array.isArray(current)) {
+        const updated = current.filter(id => id !== userId);
+        return updated.length ? updated : null;
+      }
+      if (current === userId) {
+        return null;
+      }
+      return current;
     }
-  }
+    return current;
+  });
 };
 
 export const createIndexInCollection = async (indexName, collection, categorizeFn) => {
