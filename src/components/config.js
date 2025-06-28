@@ -1227,6 +1227,22 @@ export const createUserIdIndexInCollection = async collection =>
 export const fetchUsersByUserIdIndex = async (categories, offset = 0) =>
   fetchUsersByIndex('userId', categories, offset);
 
+// Get a set of all userIds that are already indexed in usersIndex/userId
+export const fetchAllIndexedUserIds = async () => {
+  const snap = await get(ref2(database, 'usersIndex/userId'));
+  if (!snap.exists()) return new Set();
+  const data = snap.val();
+  const set = new Set();
+  Object.values(data).forEach(val => {
+    if (Array.isArray(val)) {
+      val.forEach(id => set.add(id));
+    } else if (val) {
+      set.add(val);
+    }
+  });
+  return set;
+};
+
 export const updateFieldsIndex = (category, userId, action) =>
   updateIndex('fields', category, userId, action);
 
@@ -1283,7 +1299,13 @@ export const createIndexesSequentiallyInCollection = async collection => {
   const snap = await get(ref);
   if (!snap.exists()) return;
   const data = snap.val();
+
+  // Fetch ids already indexed to avoid re-indexing the same users
+  const indexedIds = await fetchAllIndexedUserIds();
+
   for (const uid of Object.keys(data)) {
+    const userId = data[uid].userId || uid;
+    if (indexedIds.has(userId)) continue;
     await indexUserData(data[uid], uid);
   }
 };
