@@ -62,18 +62,30 @@ export const fieldGetInTouch = (
         value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
         onChange={e => {
           // Повертаємо формат YYYY-MM-DD для збереження
-          const serverFormattedDate = formatDateToServer(formatDateAndFormula(e.target.value));
+          const serverFormattedDate = formatDateToServer(
+            formatDateAndFormula(e.target.value)
+          );
           handleChange(
             setUsers,
             setState,
             userData.userId,
             'getInTouch',
             serverFormattedDate,
+            false
+          );
+        }}
+        onBlur={() => {
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            'getInTouch',
+            userData.getInTouch,
             false,
             { currentFilter, isDateInRange }
           );
+          handleSubmit(userData, 'overwrite');
         }}
-        onBlur={() => handleSubmit(userData, 'overwrite')}
         style={{
           marginLeft: 0,
           textAlign: 'left',
