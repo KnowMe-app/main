@@ -22,6 +22,7 @@ import {
 } from 'firebase/database';
 import { PAGE_SIZE } from './constants';
 import { fetchFilteredUsersByPage } from './dateLoad';
+import { toast } from 'react-hot-toast';
 
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_API_KEY,
@@ -1409,7 +1410,11 @@ export const fetchUsersByIndexAndDate = async (
   onProgress
 ) => {
   const ids = await getIdsByIndexFilters(filterSettings);
-  if (ids.size === 0) return { users: {}, lastKey: null, hasMore: false };
+  console.log('fetchUsersByIndexAndDate ids size', ids.size);
+  if (ids.size === 0) {
+    toast.error('Index is empty or filters removed all users');
+    return { users: {}, lastKey: null, hasMore: false };
+  }
 
   const customFilterMain = (entries, filterForload, fs, fav) => {
     const subset = entries.filter(([id]) => ids.has(id));
