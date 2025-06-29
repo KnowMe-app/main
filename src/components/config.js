@@ -1370,7 +1370,7 @@ export const getIdsByIndexFilters = async filterSettings => {
     birth: 'birth',
   };
 
-  let idSet = null;
+  const indexInfos = [];
   let hasExplicit = false;
   for (const [filterKey, indexName] of Object.entries(indexMap)) {
     const group = filterSettings[filterKey];
@@ -1391,26 +1391,37 @@ export const getIdsByIndexFilters = async filterSettings => {
     if (categories.length === 0) return new Set();
     if (categories.length === Object.keys(group).length) continue;
     hasExplicit = true;
-    const snap = await get(ref2(database, `usersIndex/${indexName}`));
-    if (!snap.exists()) return new Set();
-    const idx = snap.val();
+    indexInfos.push({ indexName, categories });
+  }
+
+  if (indexInfos.length === 0) {
+    return hasExplicit ? new Set() : fetchAllIndexedUserIds();
+  }
+
+  const fetchPromises = indexInfos.map(info =>
+    Promise.all(
+      info.categories.map(cat =>
+        get(ref2(database, `usersIndex/${info.indexName}/${cat}`))
+      )
+    )
+  );
+  const results = await Promise.all(fetchPromises);
+
+  let idSet = null;
+  results.forEach(snaps => {
     let ids = [];
-    categories.forEach(cat => {
-      const val = idx[cat];
-      if (!val) return;
-      if (Array.isArray(val)) {
-        ids = ids.concat(val);
-      } else if (typeof val === 'object') {
-        ids = ids.concat(Object.keys(val));
-      } else {
-        ids.push(val);
-      }
+    snaps.forEach(snap => {
+      if (!snap.exists()) return;
+      const val = snap.val();
+      if (Array.isArray(val)) ids = ids.concat(val);
+      else if (val && typeof val === 'object') ids = ids.concat(Object.keys(val));
+      else if (val) ids.push(val);
     });
     const currentSet = new Set(ids);
     if (idSet === null) idSet = currentSet;
     else idSet = new Set([...idSet].filter(id => currentSet.has(id)));
-    if (idSet.size === 0) break;
-  }
+  });
+
   if (idSet === null) {
     return hasExplicit ? new Set() : fetchAllIndexedUserIds();
   }
@@ -1440,10 +1451,11 @@ export const fetchUsersByIndexAndDate = async (
   };
 
   const { fetchByDateFromIndex } = await import('./dateLoad');
+  const dateFn = (d, l) => fetchByDateFromIndex(d, l, ids);
 
   let res = await fetchFilteredUsersByPage(
     startOffset,
-    fetchByDateFromIndex,
+    dateFn,
     undefined,
     { favorite: filterSettings.favorite },
     favoriteUsers,
