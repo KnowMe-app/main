@@ -1361,6 +1361,7 @@ export const getIdsByIndexFilters = async filterSettings => {
   };
 
   let idSet = null;
+  let hasExplicit = false;
   for (const [filterKey, indexName] of Object.entries(indexMap)) {
     const group = filterSettings[filterKey];
     if (!group) continue;
@@ -1379,6 +1380,7 @@ export const getIdsByIndexFilters = async filterSettings => {
     }
     if (categories.length === 0) return new Set();
     if (categories.length === Object.keys(group).length) continue;
+    hasExplicit = true;
     const snap = await get(ref2(database, `usersIndex/${indexName}`));
     if (!snap.exists()) return new Set();
     const idx = snap.val();
@@ -1392,7 +1394,10 @@ export const getIdsByIndexFilters = async filterSettings => {
     else idSet = new Set([...idSet].filter(id => currentSet.has(id)));
     if (idSet.size === 0) break;
   }
-  return idSet || new Set();
+  if (idSet === null) {
+    return hasExplicit ? new Set() : fetchAllIndexedUserIds();
+  }
+  return idSet;
 };
 
 // Fetch users sorted by date using server-side pagination but filter them by
