@@ -50,6 +50,7 @@ import { SearchFilters } from './SearchFilters';
 import { Pagination } from './Pagination';
 import { PAGE_SIZE, database } from './config';
 import { onValue, ref } from 'firebase/database';
+import { toast } from 'react-hot-toast';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 
@@ -1210,6 +1211,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsers3 = async (currentFilters = filters) => {
+    console.log('loadMoreUsers3 called', currentFilters, indexOffset);
     let fav = favoriteUsersData;
     if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
@@ -1232,6 +1234,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const count = Object.keys(res.users).length;
       return { count, hasMore: res.hasMore };
     }
+    console.log('loadMoreUsers3: no users returned', res);
+    toast.error('No users found for current filters or indexes');
     setHasMore(false);
     return { count: 0, hasMore: false };
   };
