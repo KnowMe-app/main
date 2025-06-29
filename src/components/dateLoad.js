@@ -8,31 +8,6 @@ export async function defaultFetchByDate(dateStr, limit) {
   return snap.exists() ? Object.entries(snap.val()) : [];
 }
 
-export async function fetchByDateFromIndex(dateStr, limit, allowedIds) {
-  const { fetchUserById } = await import('./config');
-  const db = getDatabase();
-  const snap = await get(ref2(db, `usersIndex/getInTouch/${dateStr}`));
-  if (!snap.exists()) return [];
-  const idsRaw = snap.val();
-  let ids;
-  if (Array.isArray(idsRaw)) {
-    ids = idsRaw;
-  } else if (idsRaw && typeof idsRaw === 'object') {
-    ids = Object.keys(idsRaw);
-  } else {
-    ids = [idsRaw];
-  }
-  if (allowedIds) {
-    ids = ids.filter(id => allowedIds.has(id));
-  }
-  ids = ids.slice(0, limit);
-  const results = await Promise.all(ids.map(id => fetchUserById(id)));
-  const entries = [];
-  results.forEach((data, i) => {
-    if (data) entries.push([ids[i], data]);
-  });
-  return entries;
-}
 
 export async function fetchFilteredUsersByPage(
   startOffset = 0,

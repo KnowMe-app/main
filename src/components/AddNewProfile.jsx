@@ -20,7 +20,6 @@ import {
   // createSearchIdsForAllUsers,
   createSearchIdsInCollection,
   createIndexesSequentiallyInCollection,
-  fetchUsersByIndexAndDate,
   fetchUserById,
   loadDuplicateUsers,
   removeCardAndSearchId,
@@ -50,7 +49,6 @@ import { SearchFilters } from './SearchFilters';
 import { Pagination } from './Pagination';
 import { PAGE_SIZE, database } from './config';
 import { onValue, ref } from 'firebase/database';
-import { toast } from 'react-hot-toast';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 
@@ -725,7 +723,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentFilter, setCurrentFilter] = useState(null);
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
-  const [indexOffset, setIndexOffset] = useState(0);
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -763,12 +760,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setHasMore(true);
     setTotalCount(0);
     setCurrentPage(1);
-    setIndexOffset(0);
     if (currentFilter) {
       if (currentFilter === 'DATE2') {
         loadMoreUsers2();
-      } else if (currentFilter === 'INDEX') {
-        loadMoreUsers3();
       } else {
         loadMoreUsers(currentFilter);
       }
@@ -1210,35 +1204,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return { count: 0, hasMore: false };
   };
 
-  const loadMoreUsers3 = async (currentFilters = filters) => {
-    console.log('loadMoreUsers3 called', currentFilters, indexOffset);
-    let fav = favoriteUsersData;
-    if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
-      fav = await fetchFavoriteUsers(auth.currentUser.uid);
-      setFavoriteUsersData(fav);
-    }
-
-    const res = await fetchUsersByIndexAndDate(
-      indexOffset,
-      currentFilters,
-      fav,
-      partial => {
-        setUsers(prev => ({ ...prev, ...partial }));
-      },
-    );
-    if (res && Object.keys(res.users).length > 0) {
-      setUsers(prev => ({ ...prev, ...res.users }));
-      setIndexOffset(res.lastKey || 0);
-      if (res.totalCount !== undefined) setTotalCount(res.totalCount);
-      setHasMore(res.hasMore);
-      const count = Object.keys(res.users).length;
-      return { count, hasMore: res.hasMore };
-    }
-    console.log('loadMoreUsers3: no users returned', res);
-    toast.error('No users found for current filters or indexes');
-    setHasMore(false);
-    return { count: 0, hasMore: false };
-  };
 
   const handlePageChange = async page => {
     const needed = page * PAGE_SIZE;
@@ -1249,9 +1214,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const { count, hasMore: nextMore } =
         currentFilter === 'DATE2'
           ? await loadMoreUsers2()
-          : currentFilter === 'INDEX'
-            ? await loadMoreUsers3()
-            : await loadMoreUsers(currentFilter);
+          : await loadMoreUsers(currentFilter);
       loaded += count;
       more = nextMore;
     }
@@ -1727,18 +1690,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 }}
               >
                 Load2
-              </Button>
-              <Button
-                onClick={() => {
-                  setUsers({});
-                  setHasMore(true);
-                  setCurrentPage(1);
-                  setCurrentFilter('INDEX');
-                  setIndexOffset(0);
-                  loadMoreUsers3();
-                }}
-              >
-                Load3
               </Button>
               <Button onClick={loadFavoriteUsers}>❤</Button>
               <Button onClick={indexData}>IndData</Button>
