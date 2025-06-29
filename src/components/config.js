@@ -202,8 +202,8 @@ export const fetchFavoriteUsersData = async ownerId => {
     const ids = Object.keys(favoriteIds || {});
     const results = await Promise.all(ids.map(id => fetchUserById(id)));
     const data = {};
-    results.forEach((user, idx) => {
-      if (user) data[ids[idx]] = user;
+    results.forEach((resp, idx) => {
+      if (resp && resp.existingData) data[ids[idx]] = resp.existingData;
     });
     return data;
   } catch (error) {
@@ -1226,8 +1226,8 @@ export const fetchUsersByIndex = async (indexName, categories, offset = 0) => {
   const pageIds = ids.slice(offset, offset + PAGE_SIZE);
   const results = await Promise.all(pageIds.map(id => fetchUserById(id)));
   const users = {};
-  results.forEach((data, i) => {
-    if (data) users[pageIds[i]] = data;
+  results.forEach((resp, i) => {
+    if (resp && resp.existingData) users[pageIds[i]] = resp.existingData;
   });
   const nextOffset = offset + pageIds.length;
   const hasMore = ids.length > nextOffset;
@@ -1713,8 +1713,8 @@ export const fetchUsersByFiltersIndex = async (
     const sliceIds = allIds.slice(idxOffset, idxOffset + PAGE_SIZE);
     const results = await Promise.all(sliceIds.map(id => fetchUserById(id)));
     const entries = [];
-    results.forEach((data, i) => {
-      if (data) entries.push([sliceIds[i], data]);
+    results.forEach((resp, i) => {
+      if (resp && resp.existingData) entries.push([sliceIds[i], resp.existingData]);
     });
     const filtered = filterMain(entries, 'INDEX', filterSettings, favoriteUsers);
     filtered.forEach(([id, user]) => {
@@ -1802,9 +1802,9 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
       const userResults = await Promise.all(userIds.map(id => fetchUserById(id)));
 
       const usersData = {};
-      userResults.forEach((data, idx) => {
+      userResults.forEach((resp, idx) => {
         const id = userIds[idx];
-        if (data) usersData[id] = data;
+        if (resp && resp.existingData) usersData[id] = resp.existingData;
       });
 
       const finalUsers = userIds.reduce((acc, id) => {
@@ -1862,9 +1862,9 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
     const userResults = await Promise.all(userIds.map(id => fetchUserById(id)));
 
     const usersData = {};
-    userResults.forEach((data, idx) => {
+    userResults.forEach((resp, idx) => {
       const id = userIds[idx];
-      if (data) usersData[id] = data;
+      if (resp && resp.existingData) usersData[id] = resp.existingData;
     });
 
     const finalUsers = userIds.reduce((acc, id) => {
@@ -1944,32 +1944,30 @@ export const fetchUserById = async userId => {
       if (userSnapshotInUsers.exists()) {
         // console.log('Знайдено користувача у users: ', userSnapshotInUsers.val());
         // Об'єднання даних з newUsers і users
-        return {
+        const merged = {
           userId,
           ...newUserSnapshot.val(),
           ...userSnapshotInUsers.val(),
         };
+        return { existingData: merged };
       }
       // Повертаємо дані тільки з newUsers, якщо користувач не знайдений у users
-      return {
-        userId,
-        ...newUserSnapshot.val(),
-      };
+      return { existingData: { userId, ...newUserSnapshot.val() } };
     }
 
     // Пошук у users, якщо не знайдено в newUsers
     const userSnapshot = await get(userRefInUsers);
     if (userSnapshot.exists()) {
       console.log('Знайдено користувача у users: ', userSnapshot.val());
-      return userSnapshot.val();
+      return { existingData: userSnapshot.val() };
     }
 
     // Якщо користувача не знайдено в жодній колекції
     console.log('Користувача не знайдено в жодній колекції.1.');
-    return null;
+    return { existingData: null };
   } catch (error) {
     console.error('Помилка під час пошуку користувача: ', error);
-    return null;
+    return { existingData: null };
   }
 };
 

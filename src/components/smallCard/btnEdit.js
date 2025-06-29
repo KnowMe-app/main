@@ -4,11 +4,11 @@ import React from 'react';
 
 export const btnEdit = (userId, setSearch, setState) => {
   const handleCardClick = async () => {
-    const userData = await fetchUserById(userId);
-    if (userData) {
-      console.log('Дані знайденого користувача: ', userData);
-      setSearch(`id: ${userData.userId}`);
-      setState(userData);
+    const { existingData } = await fetchUserById(userId);
+    if (existingData) {
+      console.log('Дані знайденого користувача: ', existingData);
+      setSearch(`id: ${existingData.userId}`);
+      setState(existingData);
     } else {
       console.log('Користувача не знайдено.');
     }
