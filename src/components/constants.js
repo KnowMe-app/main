@@ -1,4 +1,6 @@
 export const PAGE_SIZE = 20;
+// Number of users to index concurrently when creating indexes
+export const BATCH_SIZE = 10;
 
 // List of invalid date tokens used when no records exist for a real date.
 // These values help fetch orphaned records that might have malformed

@@ -20,7 +20,7 @@ import {
   equalTo,
   runTransaction,
 } from 'firebase/database';
-import { PAGE_SIZE } from './constants';
+import { PAGE_SIZE, BATCH_SIZE } from './constants';
 import { fetchFilteredUsersByPage } from './dateLoad';
 import { toast } from 'react-hot-toast';
 
@@ -43,7 +43,7 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const database = getDatabase(app);
 
-export { PAGE_SIZE } from './constants';
+export { PAGE_SIZE, BATCH_SIZE } from './constants';
 
 const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
 
@@ -1474,18 +1474,22 @@ export const fetchUsersByIndexAndDate = async (
 
 // Index all relevant categories for a single user
 export const indexUserData = async (userData, userId) => {
+  const promises = [];
   if (userData.blood) {
-    await updateBloodIndex(getBloodIndexCategory(userData.blood), userId, 'add');
+    promises.push(
+      updateBloodIndex(getBloodIndexCategory(userData.blood), userId, 'add'),
+    );
   }
-  await updateMaritalIndex(getMaritalStatusCategory(userData), userId, 'add');
-  await updateCsectionIndex(categorizeCsection(userData.csection), userId, 'add');
-  await updateRoleIndex(getRoleCategory(userData), userId, 'add');
-  await updateUserIdIndex(getUserIdCategory(userData.userId || userId), userId, 'add');
-  await updateFieldsIndex(getFieldCountCategory(userData), userId, 'add');
-  await updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'add');
-  await updateAgeIndex(getAgeCategory(userData), userId, 'add');
-  await updateGetInTouchIndex(getGetInTouchKeys(userData), userId, 'add');
-  await updateBirthIndex(getBirthKeys(userData), userId, 'add');
+  promises.push(updateMaritalIndex(getMaritalStatusCategory(userData), userId, 'add'));
+  promises.push(updateCsectionIndex(categorizeCsection(userData.csection), userId, 'add'));
+  promises.push(updateRoleIndex(getRoleCategory(userData), userId, 'add'));
+  promises.push(updateUserIdIndex(getUserIdCategory(userData.userId || userId), userId, 'add'));
+  promises.push(updateFieldsIndex(getFieldCountCategory(userData), userId, 'add'));
+  promises.push(updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'add'));
+  promises.push(updateAgeIndex(getAgeCategory(userData), userId, 'add'));
+  promises.push(updateGetInTouchIndex(getGetInTouchKeys(userData), userId, 'add'));
+  promises.push(updateBirthIndex(getBirthKeys(userData), userId, 'add'));
+  await Promise.all(promises.filter(Boolean));
 };
 
 // Run indexing sequentially for every user in a collection
@@ -1498,10 +1502,16 @@ export const createIndexesSequentiallyInCollection = async collection => {
   // Fetch ids already indexed to avoid re-indexing the same users
   const indexedIds = await fetchAllIndexedUserIds();
 
-  for (const uid of Object.keys(data)) {
-    const userId = data[uid].userId || uid;
-    if (indexedIds.has(userId)) continue;
-    await indexUserData(data[uid], uid);
+  const entries = Object.entries(data);
+  for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+    const batch = entries.slice(i, i + BATCH_SIZE);
+    const promises = batch.map(([uid, user]) => {
+      const userId = user.userId || uid;
+      if (indexedIds.has(userId)) return undefined;
+      return indexUserData(user, uid);
+    });
+    // eslint-disable-next-line no-await-in-loop
+    await Promise.all(promises.filter(Boolean));
   }
 };
 
