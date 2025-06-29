@@ -1221,7 +1221,14 @@ export const fetchUsersByIndex = async (indexName, categories, offset = 0) => {
   let ids = [];
   categories.forEach(cat => {
     const val = idx[cat];
-    if (val) ids = ids.concat(Array.isArray(val) ? val : [val]);
+    if (!val) return;
+    if (Array.isArray(val)) {
+      ids = ids.concat(val);
+    } else if (typeof val === 'object') {
+      ids = ids.concat(Object.keys(val));
+    } else {
+      ids.push(val);
+    }
   });
   ids = Array.from(new Set(ids));
   const pageIds = ids.slice(offset, offset + PAGE_SIZE);
@@ -1283,6 +1290,8 @@ export const fetchAllIndexedUserIds = async () => {
   Object.values(data).forEach(val => {
     if (Array.isArray(val)) {
       val.forEach(id => set.add(id));
+    } else if (val && typeof val === 'object') {
+      Object.keys(val).forEach(id => set.add(id));
     } else if (val) {
       set.add(val);
     }
@@ -1388,7 +1397,14 @@ export const getIdsByIndexFilters = async filterSettings => {
     let ids = [];
     categories.forEach(cat => {
       const val = idx[cat];
-      if (val) ids = ids.concat(Array.isArray(val) ? val : [val]);
+      if (!val) return;
+      if (Array.isArray(val)) {
+        ids = ids.concat(val);
+      } else if (typeof val === 'object') {
+        ids = ids.concat(Object.keys(val));
+      } else {
+        ids.push(val);
+      }
     });
     const currentSet = new Set(ids);
     if (idSet === null) idSet = currentSet;
