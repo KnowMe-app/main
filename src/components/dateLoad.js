@@ -78,12 +78,14 @@ export async function fetchFilteredUsersByPage(
           limit - filtered.length
         );
         invalidIndex += 1;
-        for (let i = 0; i < extra.length; i += 1) {
-          const [eid, edata] = extra[i];
-          // eslint-disable-next-line no-await-in-loop
-          const extraUser = await fetchUserByIdFn(eid);
+        const extraIds = extra.map(([eid]) => eid);
+        const extraUsers = await Promise.all(
+          extraIds.map(id => fetchUserByIdFn(id))
+        );
+        extra.forEach(([eid, edata], idx) => {
+          const extraUser = extraUsers[idx];
           combined.push([eid, extraUser ? { ...edata, ...extraUser } : edata]);
-        }
+        });
         filtered = filterMainFn(
           combined,
           'DATE2',
@@ -103,12 +105,12 @@ export async function fetchFilteredUsersByPage(
         }
       }
     } else {
-      for (let i = 0; i < chunk.length; i += 1) {
-        const [id, data] = chunk[i];
-        // eslint-disable-next-line no-await-in-loop
-        const extra = await fetchUserByIdFn(id);
+      const ids = chunk.map(([id]) => id);
+      const extras = await Promise.all(ids.map(id => fetchUserByIdFn(id)));
+      chunk.forEach(([id, data], i) => {
+        const extra = extras[i];
         combined.push([id, extra ? { ...data, ...extra } : data]);
-      }
+      });
       filtered = filterMainFn(combined, 'DATE2', filterSettings, favoriteUsers);
       if (onProgress) {
         const partial = filtered.slice(
