@@ -14,7 +14,14 @@ export async function fetchByDateFromIndex(dateStr, limit) {
   const snap = await get(ref2(db, `usersIndex/getInTouch/${dateStr}`));
   if (!snap.exists()) return [];
   const idsRaw = snap.val();
-  const ids = Array.isArray(idsRaw) ? idsRaw.slice(0, limit) : [idsRaw];
+  let ids;
+  if (Array.isArray(idsRaw)) {
+    ids = idsRaw.slice(0, limit);
+  } else if (idsRaw && typeof idsRaw === 'object') {
+    ids = Object.keys(idsRaw).slice(0, limit);
+  } else {
+    ids = [idsRaw];
+  }
   const results = await Promise.all(ids.map(id => fetchUserById(id)));
   const entries = [];
   results.forEach((data, i) => {
