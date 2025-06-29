@@ -17,8 +17,8 @@ export async function fetchByDateFromIndex(dateStr, limit) {
   const ids = Array.isArray(idsRaw) ? idsRaw.slice(0, limit) : [idsRaw];
   const results = await Promise.all(ids.map(id => fetchUserById(id)));
   const entries = [];
-  results.forEach((resp, i) => {
-    if (resp && resp.existingData) entries.push([ids[i], resp.existingData]);
+  results.forEach((data, i) => {
+    if (data) entries.push([ids[i], data]);
   });
   return entries;
 }
@@ -70,8 +70,7 @@ export async function fetchFilteredUsersByPage(
         for (let i = 0; i < extra.length; i += 1) {
           const [eid, edata] = extra[i];
           // eslint-disable-next-line no-await-in-loop
-          const extraUserResp = await fetchUserByIdFn(eid);
-          const extraUser = extraUserResp ? extraUserResp.existingData : null;
+          const extraUser = await fetchUserByIdFn(eid);
           combined.push([eid, extraUser ? { ...edata, ...extraUser } : edata]);
         }
         filtered = filterMainFn(
@@ -96,8 +95,7 @@ export async function fetchFilteredUsersByPage(
       for (let i = 0; i < chunk.length; i += 1) {
         const [id, data] = chunk[i];
         // eslint-disable-next-line no-await-in-loop
-        const extraResp = await fetchUserByIdFn(id);
-        const extra = extraResp ? extraResp.existingData : null;
+        const extra = await fetchUserByIdFn(id);
         combined.push([id, extra ? { ...data, ...extra } : data]);
       }
       filtered = filterMainFn(combined, 'DATE2', filterSettings, favoriteUsers);
