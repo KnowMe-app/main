@@ -40,5 +40,7 @@ export const makeCardDescription = user => {
     fullName,
   ].filter(Boolean);
 
-  return parts.join('\\n');
+  const enumerated = parts.map((text, index) => `${index + 1}. ${text}`);
+
+  return enumerated.join('\\n');
 };
