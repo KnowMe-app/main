@@ -174,7 +174,8 @@ export const makeVCard = user => {
 };
 
 export const saveToContact = data => {
-  const CHUNK_SIZE = 22000;
+  // Limit each exported file to no more than 8000 contacts
+  const CHUNK_SIZE = 8000;
   let usersList = [];
   let baseName = 'contacts';
 
