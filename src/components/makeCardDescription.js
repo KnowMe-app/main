@@ -11,24 +11,12 @@ export const makeCardDescription = user => {
 
   const maritalStatus = user.maritalStatus || '';
 
-  // Normalize c-section info: treat placeholders like '-' or 'No' as "не було"
-  const normalizeCSection = value => {
-    if (!value) return 'не було';
-    const cleaned = String(value).trim().toLowerCase();
-    if (cleaned === '-' || cleaned === 'no' || cleaned === 'ні' || cleaned === '0') {
-      return 'не було';
-    }
-    return value;
-  };
-  const csectionInfo = normalizeCSection(user.csection);
+  const csectionInfo = user.csection || 'не було';
 
-  const heightWeightRaw = user.height || user.weight
+  const heightWeight = user.height || user.weight
     ? `${user.height || ''}/${user.weight || ''}`
     : '';
-  const heightWeight = [heightWeightRaw, user.blood]
-    .filter(Boolean)
-    .join(' ');
- 
+
   const lastCycle = user.lastCycle || '';
 
   const phones = (Array.isArray(user.phone) ? user.phone : [user.phone])
@@ -52,5 +40,5 @@ export const makeCardDescription = user => {
     fullName,
   ].filter(Boolean);
 
-  return parts.map((text, index) => `${index + 1}. ${text}`).join('\n');
+  return parts.join('\\n');
 };
