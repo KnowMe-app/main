@@ -9,15 +9,38 @@ export const makeCardDescription = user => {
 
   const birthDate = user.birth || '';
 
-  const maritalStatus = user.maritalStatus || '';
+  const normalizeStr = str => str.toString().trim().toLowerCase();
 
-  const csectionInfo = user.csection || 'не було';
+  const getMaritalStatus = val => {
+    if (!val) return '?';
+    const normalized = normalizeStr(val);
+    if (['yes', '+', 'married', 'одружена', 'заміжня'].includes(normalized))
+      return 'заміжня';
+    if (
+      ['no', '-', 'unmarried', 'single', 'ні', 'незаміжня'].includes(normalized)
+    )
+      return 'не заміжня';
+    return '?';
+  };
 
-  const heightWeight = user.height || user.weight
-    ? `${user.height || ''}/${user.weight || ''}`
-    : '';
+  const maritalStatus = getMaritalStatus(user.maritalStatus);
 
-  const lastCycle = user.lastCycle || '';
+  const getCsectionInfo = val => {
+    if (val === undefined || val === null || val === '') return '?';
+    const normalized = normalizeStr(val);
+    if (['не було', 'no', 'ні', '-', '0', 'false'].includes(normalized)) return '-';
+    return val;
+  };
+
+  const csectionInfo = getCsectionInfo(user.csection);
+
+  const heightWeightBloodParts = [user.height, user.weight, user.blood].filter(
+    Boolean,
+  );
+  const heightWeightBlood =
+    heightWeightBloodParts.length > 0
+      ? heightWeightBloodParts.join('/')
+      : '?';
 
   const phones = (Array.isArray(user.phone) ? user.phone : [user.phone])
     .filter(Boolean)
@@ -34,8 +57,7 @@ export const makeCardDescription = user => {
     birthDate,
     maritalStatus,
     csectionInfo,
-    heightWeight,
-    lastCycle,
+    heightWeightBlood,
     phones,
     fullName,
   ].filter(Boolean);

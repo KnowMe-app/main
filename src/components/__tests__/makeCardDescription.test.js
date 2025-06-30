@@ -20,10 +20,10 @@ test('makeCardDescription returns enumerated description with literal \\n', () =
 
   const description = makeCardDescription(user);
   const parts = description.split('\\n');
-  expect(parts.length).toBe(9);
+  expect(parts.length).toBe(8);
   expect(parts[0]).toBe('1. 2-2023');
   expect(parts[1]).toBe('2. Kyivska, Kyiv');
-  expect(parts[8]).toBe('9. Doe Jane Petrovna');
+  expect(parts[7]).toBe('8. Doe Jane Petrovna');
 });
 
 test('makeCardDescription skips empty fields and enumerates correctly', () => {
@@ -38,8 +38,10 @@ test('makeCardDescription skips empty fields and enumerates correctly', () => {
   const parts = description.split('\\n');
   expect(parts).toEqual([
     '1. Lvivska',
-    '2. не було',
-    '3. 0555555555',
-    '4. Smith John',
+    '2. ?',
+    '3. ?',
+    '4. ?',
+    '5. 0555555555',
+    '6. Smith John',
   ]);
 });
