@@ -28,7 +28,7 @@ export const makeCardDescription = user => {
   const heightWeight = [heightWeightRaw, user.blood]
     .filter(Boolean)
     .join(' ');
-
+ 
   const lastCycle = user.lastCycle || '';
 
   const phones = (Array.isArray(user.phone) ? user.phone : [user.phone])
