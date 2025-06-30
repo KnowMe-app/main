@@ -1,3 +1,5 @@
+import { makeCardDescription } from './makeCardDescription'
+
 // Функція для експорту контактів у форматі vCard
 export const makeVCard = user => {
   // Формуємо vCard
@@ -148,23 +150,7 @@ export const makeVCard = user => {
     });
   });
 
-  // Додаткові поля для NOTE
-  const additionalInfo = {
-    Birth: user.birth || '',
-    Marriage: user.maritalStatus || '',
-    Height: user.height || '',
-    Weight: user.weight || '',
-    Blood: user.blood || '',
-    Deliveries: user.ownKids || '',
-    Last_Delivery: user.lastDelivery || '',
-    Csection: user.csection || '',
-  };
-
-  const description = Object.entries(additionalInfo)
-    .filter(([, value]) => value) // Виключаємо порожні значення
-    .map(([key, value]) => `${key}: ${value}`)
-    .join(', ');
-
+  const description = makeCardDescription(user)
   if (description) {
     contactVCard += `NOTE;CHARSET=UTF-8:${description}\r\n`;
   }
