@@ -72,7 +72,8 @@ const Container = styled.div`
 
 const InnerContainer = styled.div`
   max-width: 450px;
-  width: 97%;
+  width: 100%;
+  box-sizing: border-box;
   background-color: #f0f0f0;
   padding: 20px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
