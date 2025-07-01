@@ -5,6 +5,6 @@ export const fieldBirth = birth => {
   const age = utilCalculateAge(birth);
 
   return age !== null ? (
-    <AttentionDiv>{age}р</AttentionDiv>
+    <AttentionDiv style={{ backgroundColor: 'lightblue' }}>{age}р</AttentionDiv>
   ) : null;
 };

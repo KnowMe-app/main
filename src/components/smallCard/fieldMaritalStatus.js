@@ -1,12 +1,20 @@
+import { AttentionDiv } from 'components/styles';
+
 export const fieldMaritalStatus = maritalStatus => {
-    switch (maritalStatus) {
-      case 'Yes':
-      case '+':
-        return 'Заміжня';
-      case 'No':
-      case '-':
-        return 'Незаміжня';
-      default:
-        return maritalStatus || '';
-    }
-  };
+  let text;
+  switch (maritalStatus) {
+    case 'Yes':
+    case '+':
+      text = 'Заміжня';
+      break;
+    case 'No':
+    case '-':
+      text = 'Незаміжня';
+      break;
+    default:
+      text = maritalStatus || '';
+  }
+  return text ? (
+    <AttentionDiv style={{ backgroundColor: 'orange' }}>{text}</AttentionDiv>
+  ) : null;
+};

@@ -286,6 +286,20 @@ export const AttentionDiv = styled.div`
   /* vertical-align: middle; */
 `;
 
+export const AttentionButton = styled.button`
+  justify-content: center;
+  align-items: center;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 16px;
+  padding: 0 10px;
+  display: inline-flex;
+  cursor: pointer;
+`;
+
 export const CardMenuBtn = styled.button`
   border: none;
   background-color: ${color.accent5};

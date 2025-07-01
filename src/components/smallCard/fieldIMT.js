@@ -4,6 +4,6 @@ import { utilCalculateIMT } from './utilCalculateIMT';
 export const fieldIMT = (weight, height) => {
   const imt = utilCalculateIMT(weight, height);
   return imt && imt !== 'N/A' ? (
-    <AttentionDiv style={{ backgroundColor: 'orange' }}>{imt}</AttentionDiv>
+    <AttentionDiv style={{ backgroundColor: 'purple' }}>{imt}</AttentionDiv>
   ) : null;
 };
