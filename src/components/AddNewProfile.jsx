@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled, { css } from 'styled-components';
-// import Photos from './Photos';
+import Photos from './Photos';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
 import {
   auth,
@@ -1376,7 +1376,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         >
           ⋮
         </DotsButton>
-        {/* {search && !userNotFound && <Photos state={state} setState={setState} />} */}
+
 
         <InputDiv>
           <InputFieldContainer value={search}>
@@ -1652,6 +1652,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   </PickerContainer>
                 );
               })}
+              <Photos state={state} setState={setState} />
           </>
         ) : (
           <div>
