@@ -1,5 +1,6 @@
 import { handleChange } from './actions';
 import { utilCalculateMonthsAgo } from './utilCalculateMonthsAgo';
+import { AttentionButton } from 'components/styles';
 
 export const fieldDeliveryInfo = (setUsers, setState, userData) => {
   const { ownKids, lastDelivery, csection } = userData;
@@ -76,27 +77,22 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
         </span>
       ))}
       {csection && (
-        <button
+        <AttentionButton
           key="csection"
           onClick={() => {
-            // alert(`C-section: ${formatDate(whenGetInTouch)}`);
-            handleChange(setUsers, setState, userData.userId, 'getInTouch', formatDate(whenGetInTouch), true);
+            handleChange(
+              setUsers,
+              setState,
+              userData.userId,
+              'getInTouch',
+              formatDate(whenGetInTouch),
+              true,
+            );
           }}
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            backgroundColor: '#28A745',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '16px',
-            padding: '0 10px',
-          }}
+          style={{ backgroundColor: '#28A745' }}
         >
           кс {csection}
-        </button>
+        </AttentionButton>
       )}
     </div>
   );

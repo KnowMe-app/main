@@ -5,7 +5,8 @@ export const fieldBlood = blood => {
   return (
     <AttentionDiv
       style={{
-        backgroundColor: 'orange',
+        backgroundColor: 'yellow',
+        color: 'black',
       }}
     >
       РК {blood}

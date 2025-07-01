@@ -1,6 +1,6 @@
 import { handleChange, handleSubmit } from './actions';
 import { formatDateToDisplay, formatDateToServer } from 'components/inputValidations';
-import { UnderlinedInput } from 'components/styles';
+import { UnderlinedInput, AttentionButton } from 'components/styles';
 import React from 'react';
 
 const calculateNextDate = dateString => {
@@ -78,23 +78,21 @@ export const fieldLastCycle = (userData, setUsers, setState) => {
         {nextCycle && (
           <React.Fragment>
             <span style={{ marginLeft: '10px', marginRight: '5px', color: 'white' }}>місячні -</span>
-            <button
-              onClick={() => handleChange(setUsers, setState, userData.userId, 'getInTouch', nextCycle, true)} // Замість alert додайте потрібну логіку
-              style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                backgroundColor: '#007BFF',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '16px',
-                padding: '0 10px',
-              }}
+            <AttentionButton
+              onClick={() =>
+                handleChange(
+                  setUsers,
+                  setState,
+                  userData.userId,
+                  'getInTouch',
+                  nextCycle,
+                  true,
+                )
+              }
+              style={{ backgroundColor: '#007BFF' }}
             >
               {nextCycle.slice(0, 5)}
-            </button>
+            </AttentionButton>
           </React.Fragment>
         )}
       </div>
