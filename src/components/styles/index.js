@@ -278,8 +278,8 @@ export const AttentionDiv = styled.div`
   color: white;
   border: none;
   border-radius: 4px;
-  font-size: 12px;
-  line-height: 14px;
+  font-size: 14px;
+  line-height: 16px;
   padding: 0 5px;
   display: inline-flex;
   text-align: center;
@@ -293,8 +293,8 @@ export const AttentionButton = styled.button`
   color: white;
   border: none;
   border-radius: 4px;
-  font-size: 12px;
-  line-height: 14px;
+  font-size: 14px;
+  line-height: 16px;
   padding: 0 10px;
   display: inline-flex;
   cursor: pointer;

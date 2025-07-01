@@ -61,7 +61,7 @@ export const renderTopBlock = (
           })()}
         </strong>
         {/* {renderCsection(userData.csection)}  */}
-        <div style={{ whiteSpace: 'pre-wrap' }}>
+        <div style={{ whiteSpace: 'pre-wrap', display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
           {(() => {
             const parts = [];
             if (userData.maritalStatus) parts.push(fieldMaritalStatus(userData.maritalStatus));
