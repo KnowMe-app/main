@@ -278,8 +278,8 @@ export const AttentionDiv = styled.div`
   color: white;
   border: none;
   border-radius: 4px;
-  font-size: 14px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 14px;
   padding: 0 5px;
   display: inline-flex;
   text-align: center;
@@ -293,8 +293,8 @@ export const AttentionButton = styled.button`
   color: white;
   border: none;
   border-radius: 4px;
-  font-size: 14px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 14px;
   padding: 0 10px;
   display: inline-flex;
   cursor: pointer;
@@ -330,7 +330,7 @@ export const UnderlinedInput = styled.input`
   border-bottom: 1px solid white;
   background-color: transparent;
   outline: none;
-  font-size: 16px;
+  font-size: 12px;
   padding: 0;
   color: white;
   margin-left: 5;
