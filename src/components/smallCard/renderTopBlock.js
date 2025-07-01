@@ -12,7 +12,7 @@ import { FieldComment } from './FieldComment';
 import { fieldBirth } from './fieldBirth';
 import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
-import { utilCalculateIMT } from './utilCalculateIMT';
+import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
 
 export const renderTopBlock = (
@@ -69,7 +69,7 @@ export const renderTopBlock = (
             if (userData.height) parts.push(userData.height);
             if (userData.height && userData.weight) parts.push('/');
             if (userData.weight) parts.push(`${userData.weight} - `);
-            if (userData.weight && userData.height) parts.push(`${utilCalculateIMT(userData.weight, userData.height)}`);
+            if (userData.weight && userData.height) parts.push(fieldIMT(userData.weight, userData.height));
             return parts.map((part, index) => <React.Fragment key={index}>{part} </React.Fragment>);
           })()}
         </div>
