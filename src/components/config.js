@@ -1525,36 +1525,33 @@ const sortUsers = filteredUsers => {
   const tomorrow = new Date(currentDate); // Копія поточної дати
   tomorrow.setDate(currentDate.getDate() + 1); // Збільшуємо дату на 1 день
   const today = tomorrow.toISOString().split('T')[0]; // Формат YYYY-MM-DD
-  const twoWeeksAheadDate = (() => {
-    const twoWeeksAhead = new Date(tomorrow);
-    twoWeeksAhead.setDate(tomorrow.getDate() + 14);
-    return twoWeeksAhead.toISOString().split('T')[0];
-  })();
   const getGroup = date => {
-    if (!date) return 4; // порожня дата
-    if (date === '2099-99-99' || date === '9999-99-99') return 6; // спецдати
-    if (!isValidDate(date)) return 3; // некоректні дати
+    if (!date) return 3; // порожня дата
+    if (date === '2099-99-99' || date === '9999-99-99') return null; // спецдати - не повертаємо
+    if (!isValidDate(date)) return 2; // некоректні дати
     if (date === today) return 0; // сьогодні
-    if (date < today) return 1; // минулі
-    if (date <= twoWeeksAheadDate) return 2; // майбутні до 2х тижнів
-    return 5; // інші майбутні дати
+    if (date < today) return 1; // минулі дати
+    // Будь-які майбутні дати не повертаємо
+    return null;
   };
 
-  return filteredUsers.sort(([, a], [, b]) => {
-    const groupA = getGroup(a.getInTouch);
-    const groupB = getGroup(b.getInTouch);
+  return filteredUsers
+    .filter(([, u]) => getGroup(u.getInTouch) !== null)
+    .sort(([, a], [, b]) => {
+      const groupA = getGroup(a.getInTouch);
+      const groupB = getGroup(b.getInTouch);
 
-    if (groupA !== groupB) return groupA - groupB;
+      if (groupA !== groupB) return groupA - groupB;
 
-    // Усередині груп із коректними датами сортуємо за зростанням
-    if (groupA <= 2 || groupA === 5) {
-      const aDate = a.getInTouch || '';
-      const bDate = b.getInTouch || '';
-      return aDate.localeCompare(bDate);
-    }
+      // Сортуємо минулі дати у зворотному порядку (від сьогодні назад)
+      if (groupA === 1) {
+        const aDate = a.getInTouch || '';
+        const bDate = b.getInTouch || '';
+        return bDate.localeCompare(aDate);
+      }
 
-    return 0;
-  });
+      return 0;
+    });
 };
 
 
