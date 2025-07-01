@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import styled from 'styled-components';
 import { deletePhotos, getUrlofUploadedAvatar } from './config';
 import { updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
@@ -54,6 +54,57 @@ const DeleteButton = styled.button`
   justify-content: center;
 `;
 
+const FullScreenOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+`;
+
+const FullScreenImage = styled.img`
+  max-width: 90%;
+  max-height: 90%;
+  object-fit: contain;
+`;
+
+const CloseButton = styled.button`
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 32px;
+  cursor: pointer;
+`;
+
+const FullDeleteButton = styled.button`
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
+
+const TrashIcon = () => (
+  <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+    <path d="M3 6h18M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6m-9 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+  </svg>
+);
+
 const NoPhotosText = styled.p`
   text-align: center;
   color: ${color.gray3};
@@ -93,6 +144,7 @@ const HiddenFileInput = styled.input`
 `;
 
 export const Photos = ({ state, setState }) => {
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
 
   const handleDeletePhoto = async photoUrl => {
     const newPhotos = state.photos.filter(url => url !== photoUrl);
@@ -130,7 +182,11 @@ export const Photos = ({ state, setState }) => {
           <PhotosWrapper>
             {state.photos.map((url, index) => (
               <PhotoItem key={index}>
-                <PhotoImage src={url} alt={`user avatar ${index}`} />
+                <PhotoImage
+                  src={url}
+                  alt={`user avatar ${index}`}
+                  onClick={() => setSelectedPhoto(url)}
+                />
                 <DeleteButton onClick={() => handleDeletePhoto(url)}>×</DeleteButton>
               </PhotoItem>
             ))}
@@ -151,6 +207,21 @@ export const Photos = ({ state, setState }) => {
           />
         </UploadButtonLabel>
       </UploadButtonWrapper>}
+      {selectedPhoto && (
+        <FullScreenOverlay onClick={() => setSelectedPhoto(null)}>
+          <FullScreenImage src={selectedPhoto} alt="full screen" />
+          <CloseButton onClick={() => setSelectedPhoto(null)}>×</CloseButton>
+          <FullDeleteButton
+            onClick={e => {
+              e.stopPropagation();
+              handleDeletePhoto(selectedPhoto);
+              setSelectedPhoto(null);
+            }}
+          >
+            <TrashIcon />
+          </FullDeleteButton>
+        </FullScreenOverlay>
+      )}
     </Container>
   );
 };
