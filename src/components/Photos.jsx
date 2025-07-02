@@ -163,21 +163,13 @@ export const Photos = ({ state, setState }) => {
   };
 
   const addPhoto = async event => {
-    const input = event.target;
-    const photoArray = Array.from(input.files);
-
+    const photoArray = Array.from(event.target.files);
     try {
-      const newUrls = await Promise.all(
-        photoArray.map(photo => getUrlofUploadedAvatar(photo, state.userId))
-      );
-
+      const newUrls = await Promise.all(photoArray.map(photo => getUrlofUploadedAvatar(photo, state.userId)));
       setState(prevState => ({
         ...prevState,
         photos: [...(prevState.photos || []), ...newUrls],
       }));
-
-      // Clear the input to ensure change event fires when re-adding same file
-      input.value = '';
     } catch (error) {
       console.error('Error uploading photos:', error);
     }
