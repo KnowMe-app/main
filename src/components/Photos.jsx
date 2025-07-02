@@ -113,11 +113,16 @@ export const Photos = ({ state, setState }) => {
   const addPhoto = async event => {
     const photoArray = Array.from(event.target.files);
     try {
-      const newUrls = await Promise.all(photoArray.map(photo => getUrlofUploadedAvatar(photo, state.userId)));
+      const newUrls = await Promise.all(
+        photoArray.map(photo => getUrlofUploadedAvatar(photo, state.userId))
+      );
+      const updatedPhotos = [...(state.photos || []), ...newUrls];
       setState(prevState => ({
         ...prevState,
-        photos: [...(prevState.photos || []), ...newUrls],
+        photos: updatedPhotos,
       }));
+      await updateDataInRealtimeDB(state.userId, { photos: updatedPhotos });
+      await updateDataInFiresoreDB(state.userId, { photos: updatedPhotos }, 'check');
     } catch (error) {
       console.error('Error uploading photos:', error);
     }
