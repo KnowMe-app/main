@@ -696,10 +696,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     isEditingRef.current = !!state.userId;
   }, [state.userId]);
 
-  useEffect(() => {
-    handleSubmit(state, 'overwrite');
-  }, [state.photos]);
-
   // useEffect для скидання значень при зміні search
   useEffect(() => {
     // setState({});
