@@ -696,12 +696,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     isEditingRef.current = !!state.userId;
   }, [state.userId]);
 
-  // Photo changes should trigger saving the profile.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    handleSubmit(state, 'overwrite');
-  }, [state.photos]);
-
   // useEffect для скидання значень при зміні search
   useEffect(() => {
     // setState({});
