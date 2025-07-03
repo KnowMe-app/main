@@ -1302,7 +1302,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     'role',
   ];
   const additionalFields = Object.keys(state).filter(
-    key => !pickerFields.some(field => field.name === key) && key !== 'attitude' && key !== 'whiteList' && key !== 'blackList'
+    key =>
+      !pickerFields.some(field => field.name === key) &&
+      key !== 'attitude' &&
+      key !== 'whiteList' &&
+      key !== 'blackList' &&
+      key !== 'photos'
   );
 
   // console.log('additionalFields :>> ', additionalFields);
