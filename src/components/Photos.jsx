@@ -114,8 +114,9 @@ export const Photos = ({ state, setState }) => {
     await updateDataInNewUsersRTDB(state.userId, { photos: updatedPhotos }, 'update');
   };
 
-  const handleDeletePhoto = async photoUrl => {
-    const newPhotos = state.photos.filter(url => url !== photoUrl);
+  const handleDeletePhoto = async index => {
+    const photoUrl = state.photos[index];
+    const newPhotos = state.photos.filter((_, i) => i !== index);
 
     try {
       await deletePhotos(state.userId, [photoUrl]);
@@ -155,8 +156,15 @@ export const Photos = ({ state, setState }) => {
           <PhotosWrapper>
             {state.photos.map((url, index) => (
               <PhotoItem key={index}>
-                <PhotoImage src={url} alt={`user avatar ${index}`} />
-                <DeleteButton onClick={() => handleDeletePhoto(url)}>×</DeleteButton>
+                <PhotoImage
+                  src={url}
+                  alt={`user avatar ${index}`}
+                  onError={e => {
+                    e.target.onerror = null;
+                    e.target.src = '/logo192.png';
+                  }}
+                />
+                <DeleteButton onClick={() => handleDeletePhoto(index)}>×</DeleteButton>
               </PhotoItem>
             ))}
           </PhotosWrapper>
