@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
-import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject } from 'firebase/storage';
+import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
 import {
   getDatabase,
   ref as ref2,
@@ -740,6 +740,18 @@ export const deletePhotos = async (userId, photoUrls) => {
     console.error(`Photo delete error:`, error);
   }
   // }
+};
+
+export const getAllUserPhotos = async userId => {
+  try {
+    const folderRef = ref(storage, `avatar/${userId}`);
+    const list = await listAll(folderRef);
+    const urls = await Promise.all(list.items.map(item => getDownloadURL(item)));
+    return urls;
+  } catch (error) {
+    console.error('Error listing user photos:', error);
+    return [];
+  }
 };
 
 const encodeKey = key => {
@@ -1755,25 +1767,19 @@ export const fetchUserById = async userId => {
     // Пошук у newUsers
     const newUserSnapshot = await get(userRefInNewUsers);
     if (newUserSnapshot.exists()) {
-      // console.log('Знайдено користувача у newUsers: ', newUserSnapshot.val());
-      // return newUserSnapshot.val();
-      // console.log('Знайдено користувача у newUsers: ', newUserSnapshot.val());
-      // Додатковий пошук в колекції users
-      // console.log('userId222222222 :>> ', userId);
+      const photos = userId.length > 20 ? await getAllUserPhotos(userId) : undefined;
       const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
-      // Якщо знайдено користувача в users
       if (userSnapshotInUsers.exists()) {
-        // console.log('Знайдено користувача у users: ', userSnapshotInUsers.val());
-        // Об'єднання даних з newUsers і users
         return {
           userId,
+          photos,
           ...newUserSnapshot.val(),
           ...userSnapshotInUsers.val(),
         };
       }
-      // Повертаємо дані тільки з newUsers, якщо користувач не знайдений у users
       return {
         userId,
+        photos,
         ...newUserSnapshot.val(),
       };
     }
@@ -1781,8 +1787,13 @@ export const fetchUserById = async userId => {
     // Пошук у users, якщо не знайдено в newUsers
     const userSnapshot = await get(userRefInUsers);
     if (userSnapshot.exists()) {
+      const photos = userId.length > 20 ? await getAllUserPhotos(userId) : undefined;
       console.log('Знайдено користувача у users: ', userSnapshot.val());
-      return userSnapshot.val();
+      return {
+        userId,
+        photos,
+        ...userSnapshot.val(),
+      };
     }
 
     // Якщо користувача не знайдено в жодній колекції

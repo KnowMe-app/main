@@ -1,11 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import styled from 'styled-components';
-import { deletePhotos, getUrlofUploadedAvatar } from './config';
-import {
-  updateDataInFiresoreDB,
-  updateDataInRealtimeDB,
-  updateDataInNewUsersRTDB,
-} from './config';
+import { deletePhotos, getUrlofUploadedAvatar, getAllUserPhotos } from './config';
+import { updateDataInNewUsersRTDB } from './config';
 import { color } from './styles';
 
 const Container = styled.div`
@@ -97,6 +93,26 @@ const HiddenFileInput = styled.input`
 `;
 
 export const Photos = ({ state, setState }) => {
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const urls = await getAllUserPhotos(state.userId);
+        setState(prev => ({ ...prev, photos: urls }));
+      } catch (e) {
+        console.error('Error loading photos:', e);
+      }
+    };
+    if (state.userId && state.userId.length > 20 && state.photos === undefined) {
+      load();
+    }
+  }, [state.userId, state.photos, setState]);
+
+  const savePhotoList = async updatedPhotos => {
+    if (state.userId.length > 20) {
+      return;
+    }
+    await updateDataInNewUsersRTDB(state.userId, { photos: updatedPhotos }, 'update');
+  };
 
   const handleDeletePhoto = async photoUrl => {
     const newPhotos = state.photos.filter(url => url !== photoUrl);
@@ -108,16 +124,7 @@ export const Photos = ({ state, setState }) => {
         photos: newPhotos,
       }));
 
-      if (state.userId.length > 20) {
-        await updateDataInRealtimeDB(state.userId, { photos: newPhotos });
-        await updateDataInFiresoreDB(
-          state.userId,
-          { photos: newPhotos },
-          'check'
-        );
-      } else {
-        await updateDataInNewUsersRTDB(state.userId, { photos: newPhotos }, 'update');
-      }
+      await savePhotoList(newPhotos);
     } catch (error) {
       console.error('Error deleting photo:', error);
     }
@@ -135,16 +142,7 @@ export const Photos = ({ state, setState }) => {
         photos: updatedPhotos,
       }));
 
-      if (state.userId.length > 20) {
-        await updateDataInRealtimeDB(state.userId, { photos: updatedPhotos });
-        await updateDataInFiresoreDB(
-          state.userId,
-          { photos: updatedPhotos },
-          'check'
-        );
-      } else {
-        await updateDataInNewUsersRTDB(state.userId, { photos: updatedPhotos }, 'update');
-      }
+      await savePhotoList(updatedPhotos);
     } catch (error) {
       console.error('Error uploading photos:', error);
     }
