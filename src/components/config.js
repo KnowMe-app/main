@@ -1773,15 +1773,15 @@ export const fetchUserById = async userId => {
       if (userSnapshotInUsers.exists()) {
         return {
           userId,
-          photos,
           ...newUserSnapshot.val(),
           ...userSnapshotInUsers.val(),
+          photos,
         };
       }
       return {
         userId,
-        photos,
         ...newUserSnapshot.val(),
+        photos,
       };
     }
 
@@ -1792,8 +1792,8 @@ export const fetchUserById = async userId => {
       console.log('Знайдено користувача у users: ', userSnapshot.val());
       return {
         userId,
-        photos,
         ...userSnapshot.val(),
+        photos,
       };
     }
 
