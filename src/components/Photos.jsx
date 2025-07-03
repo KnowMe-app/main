@@ -102,13 +102,13 @@ export const Photos = ({ state, setState }) => {
         console.error('Error loading photos:', e);
       }
     };
-    if (state.userId && state.userId.length > 20 && state.photos === undefined) {
+    if (state.userId && state.userId.length <= 20 && state.photos === undefined) {
       load();
     }
   }, [state.userId, state.photos, setState]);
 
   const savePhotoList = async updatedPhotos => {
-    if (state.userId.length > 20) {
+    if (state.userId.length <= 20) {
       return;
     }
     await updateDataInNewUsersRTDB(state.userId, { photos: updatedPhotos }, 'update');
