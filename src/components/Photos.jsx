@@ -1,7 +1,11 @@
 import React from 'react';
 import styled from 'styled-components';
 import { deletePhotos, getUrlofUploadedAvatar } from './config';
-import { updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
+import {
+  updateDataInFiresoreDB,
+  updateDataInRealtimeDB,
+  updateDataInNewUsersRTDB,
+} from './config';
 import { color } from './styles';
 
 const Container = styled.div`
@@ -103,8 +107,17 @@ export const Photos = ({ state, setState }) => {
         ...prevState,
         photos: newPhotos,
       }));
-      await updateDataInRealtimeDB(state.userId, { photos: newPhotos });
-      await updateDataInFiresoreDB(state.userId, { photos: newPhotos }, 'check');
+
+      if (state.userId.length > 20) {
+        await updateDataInRealtimeDB(state.userId, { photos: newPhotos });
+        await updateDataInFiresoreDB(
+          state.userId,
+          { photos: newPhotos },
+          'check'
+        );
+      } else {
+        await updateDataInNewUsersRTDB(state.userId, { photos: newPhotos }, 'update');
+      }
     } catch (error) {
       console.error('Error deleting photo:', error);
     }
@@ -121,8 +134,17 @@ export const Photos = ({ state, setState }) => {
         ...prevState,
         photos: updatedPhotos,
       }));
-      await updateDataInRealtimeDB(state.userId, { photos: updatedPhotos });
-      await updateDataInFiresoreDB(state.userId, { photos: updatedPhotos }, 'check');
+
+      if (state.userId.length > 20) {
+        await updateDataInRealtimeDB(state.userId, { photos: updatedPhotos });
+        await updateDataInFiresoreDB(
+          state.userId,
+          { photos: updatedPhotos },
+          'check'
+        );
+      } else {
+        await updateDataInNewUsersRTDB(state.userId, { photos: updatedPhotos }, 'update');
+      }
     } catch (error) {
       console.error('Error uploading photos:', error);
     }
