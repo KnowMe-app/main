@@ -1809,6 +1809,14 @@ export const fetchUserById = async userId => {
 export const removeKeyFromFirebase = async (field, value, userId) => {
   const dbRealtime = getDatabase();
   const dbFirestore = getFirestore();
+  if (field === 'photos' && value) {
+    try {
+      const photosArray = Array.isArray(value) ? value : [value];
+      await deletePhotos(userId, photosArray);
+    } catch (e) {
+      console.error('Error deleting photos from storage:', e);
+    }
+  }
 
   // Визначаємо шляхи для видалення в обох колекціях Realtime Database
   const newUsersRefRealtime = ref2(dbRealtime, `newUsers/${userId}/${field}`);
