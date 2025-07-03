@@ -1767,7 +1767,7 @@ export const fetchUserById = async userId => {
     // Пошук у newUsers
     const newUserSnapshot = await get(userRefInNewUsers);
     if (newUserSnapshot.exists()) {
-      const photos = userId.length > 20 ? await getAllUserPhotos(userId) : undefined;
+      const photos = userId.length <= 20 ? await getAllUserPhotos(userId) : undefined;
       const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
       if (userSnapshotInUsers.exists()) {
         return {
@@ -1787,7 +1787,7 @@ export const fetchUserById = async userId => {
     // Пошук у users, якщо не знайдено в newUsers
     const userSnapshot = await get(userRefInUsers);
     if (userSnapshot.exists()) {
-      const photos = userId.length > 20 ? await getAllUserPhotos(userId) : undefined;
+      const photos = userId.length <= 20 ? await getAllUserPhotos(userId) : undefined;
       console.log('Знайдено користувача у users: ', userSnapshot.val());
       return {
         userId,
