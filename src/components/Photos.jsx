@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
-import { deletePhotos, getUrlofUploadedAvatar } from './config';
-import { updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
+import { deletePhotos, getUrlofUploadedAvatar, getAllUserPhotos } from './config';
+import { updateDataInNewUsersRTDB } from './config';
 import { color } from './styles';
 
 const Container = styled.div`
@@ -177,8 +177,10 @@ const FullScreenPhotoViewer = ({ url, onClose, onDelete }) => {
 export const Photos = ({ state, setState }) => {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
 
-  const handleDeletePhoto = async photoUrl => {
-    const newPhotos = state.photos.filter(url => url !== photoUrl);
+
+  const handleDeletePhoto = async index => {
+    const photoUrl = state.photos[index];
+    const newPhotos = state.photos.filter((_, i) => i !== index);
 
     try {
       await deletePhotos(state.userId, [photoUrl]);
@@ -186,8 +188,8 @@ export const Photos = ({ state, setState }) => {
         ...prevState,
         photos: newPhotos,
       }));
-      await updateDataInRealtimeDB(state.userId, { photos: newPhotos });
-      await updateDataInFiresoreDB(state.userId, { photos: newPhotos }, 'check');
+
+      await savePhotoList(newPhotos);
     } catch (error) {
       console.error('Error deleting photo:', error);
     }
@@ -196,11 +198,16 @@ export const Photos = ({ state, setState }) => {
   const addPhoto = async event => {
     const photoArray = Array.from(event.target.files);
     try {
-      const newUrls = await Promise.all(photoArray.map(photo => getUrlofUploadedAvatar(photo, state.userId)));
+      const newUrls = await Promise.all(
+        photoArray.map(photo => getUrlofUploadedAvatar(photo, state.userId))
+      );
+      const updatedPhotos = [...(state.photos || []), ...newUrls];
       setState(prevState => ({
         ...prevState,
-        photos: [...(prevState.photos || []), ...newUrls],
+        photos: updatedPhotos,
       }));
+
+      await savePhotoList(updatedPhotos);
     } catch (error) {
       console.error('Error uploading photos:', error);
     }
@@ -220,6 +227,7 @@ export const Photos = ({ state, setState }) => {
               <DeleteButton onClick={() => handleDeletePhoto(url)}>×</DeleteButton>
             </PhotoItem>
           ))
+
         ) : (
           <NoPhotosText>Додайте свої фото, максимум 9 шт</NoPhotosText>
         )}

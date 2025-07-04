@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
-import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject } from 'firebase/storage';
+import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
 import {
   getDatabase,
   ref as ref2,
@@ -723,23 +723,36 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
 };
 // export const auth = getAuth(app);
 
-export const deletePhotos = async (userId, photoUrls) => {
-  try {
-    await Promise.all(
-      photoUrls.map(async photoUrl => {
+export const deletePhotos = async (userId, photoUrls = []) => {
+  const validUrls = (photoUrls || []).filter(Boolean);
+  await Promise.all(
+    validUrls.map(async photoUrl => {
+      try {
         const urlParts = photoUrl.split('%2F');
         const fileNameWithExtension = urlParts[urlParts.length - 1];
-        const partsAfterQuestionMark = fileNameWithExtension.split('?');
-        const fileName = partsAfterQuestionMark[0];
+        const [fileName] = fileNameWithExtension.split('?');
         const filePath = `avatar/${userId}/${fileName}`;
         const fileRef = ref(storage, filePath);
         await deleteObject(fileRef);
-      })
-    );
+      } catch (error) {
+        if (error?.code !== 'storage/object-not-found') {
+          console.error('Photo delete error:', error);
+        }
+      }
+    })
+  );
+};
+
+export const getAllUserPhotos = async userId => {
+  try {
+    const folderRef = ref(storage, `avatar/${userId}`);
+    const list = await listAll(folderRef);
+    const urls = await Promise.all(list.items.map(item => getDownloadURL(item)));
+    return urls;
   } catch (error) {
-    console.error(`Photo delete error:`, error);
+    console.error('Error listing user photos:', error);
+    return [];
   }
-  // }
 };
 
 const encodeKey = key => {
@@ -1755,34 +1768,33 @@ export const fetchUserById = async userId => {
     // Пошук у newUsers
     const newUserSnapshot = await get(userRefInNewUsers);
     if (newUserSnapshot.exists()) {
-      // console.log('Знайдено користувача у newUsers: ', newUserSnapshot.val());
-      // return newUserSnapshot.val();
-      // console.log('Знайдено користувача у newUsers: ', newUserSnapshot.val());
-      // Додатковий пошук в колекції users
-      // console.log('userId222222222 :>> ', userId);
+      const photos = userId.length <= 20 ? await getAllUserPhotos(userId) : undefined;
       const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
-      // Якщо знайдено користувача в users
       if (userSnapshotInUsers.exists()) {
-        // console.log('Знайдено користувача у users: ', userSnapshotInUsers.val());
-        // Об'єднання даних з newUsers і users
         return {
           userId,
           ...newUserSnapshot.val(),
           ...userSnapshotInUsers.val(),
+          photos,
         };
       }
-      // Повертаємо дані тільки з newUsers, якщо користувач не знайдений у users
       return {
         userId,
         ...newUserSnapshot.val(),
+        photos,
       };
     }
 
     // Пошук у users, якщо не знайдено в newUsers
     const userSnapshot = await get(userRefInUsers);
     if (userSnapshot.exists()) {
+      const photos = userId.length <= 20 ? await getAllUserPhotos(userId) : undefined;
       console.log('Знайдено користувача у users: ', userSnapshot.val());
-      return userSnapshot.val();
+      return {
+        userId,
+        ...userSnapshot.val(),
+        photos,
+      };
     }
 
     // Якщо користувача не знайдено в жодній колекції
@@ -1808,6 +1820,10 @@ export const removeKeyFromFirebase = async (field, value, userId) => {
   const usersDocFirestore = doc(dbFirestore, 'users', userId);
 
   try {
+    if (field === 'photos') {
+      const urls = Array.isArray(value) ? value : [value];
+      await deletePhotos(userId, urls);
+    }
     // Видалення з newUsers у Realtime Database
     await remove(newUsersRefRealtime);
     console.log(`Ключ "${field}" видалено з Realtime Database: newUsers/${userId}`);
