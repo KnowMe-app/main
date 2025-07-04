@@ -1,7 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
-import { deletePhotos, getUrlofUploadedAvatar, getAllUserPhotos } from './config';
-import { updateDataInNewUsersRTDB } from './config';
+import {
+  deletePhotos,
+  getUrlofUploadedAvatar,
+  getAllUserPhotos,
+  updateDataInRealtimeDB,
+  updateDataInFiresoreDB,
+} from './config';
+
 import { color } from './styles';
 
 const Container = styled.div`
@@ -54,6 +60,57 @@ const DeleteButton = styled.button`
   justify-content: center;
 `;
 
+const FullScreenOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+`;
+
+const FullScreenImage = styled.img`
+  max-width: 90%;
+  max-height: 90%;
+  object-fit: contain;
+`;
+
+const CloseButton = styled.button`
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 32px;
+  cursor: pointer;
+`;
+
+const FullDeleteButton = styled.button`
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
+
+const TrashIcon = () => (
+  <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+    <path d="M3 6h18M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6m-9 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+  </svg>
+);
+
 const NoPhotosText = styled.p`
   text-align: center;
   color: ${color.gray3};
@@ -92,7 +149,41 @@ const HiddenFileInput = styled.input`
   display: none; /* Ховаємо справжній input */
 `;
 
+const FullScreenPhotoViewer = ({ url, onClose, onDelete }) => {
+  const handleDelete = useCallback(
+    e => {
+      e.stopPropagation();
+      onDelete();
+    },
+    [onDelete]
+  );
+
+  useEffect(() => {
+    const keyHandler = e => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', keyHandler);
+    return () => document.removeEventListener('keydown', keyHandler);
+  }, [onClose]);
+
+  return (
+    <FullScreenOverlay onClick={onClose}>
+      <FullScreenImage src={url} alt="full screen" />
+      <CloseButton onClick={onClose}>×</CloseButton>
+      <FullDeleteButton onClick={handleDelete}>
+        <TrashIcon />
+      </FullDeleteButton>
+    </FullScreenOverlay>
+  );
+};
+
 export const Photos = ({ state, setState }) => {
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -102,16 +193,20 @@ export const Photos = ({ state, setState }) => {
         console.error('Error loading photos:', e);
       }
     };
-    if (state.userId && state.userId.length <= 20 && state.photos === undefined) {
+
+    if (state.userId && state.userId.length > 20 && state.photos === undefined) {
+
       load();
     }
   }, [state.userId, state.photos, setState]);
 
   const savePhotoList = async updatedPhotos => {
-    if (state.userId.length <= 20) {
-      return;
+    try {
+      await updateDataInRealtimeDB(state.userId, { photos: updatedPhotos });
+      await updateDataInFiresoreDB(state.userId, { photos: updatedPhotos }, 'check');
+    } catch (error) {
+      console.error('Error saving photo list:', error);
     }
-    await updateDataInNewUsersRTDB(state.userId, { photos: updatedPhotos }, 'update');
   };
 
   const handleDeletePhoto = async index => {
@@ -124,7 +219,6 @@ export const Photos = ({ state, setState }) => {
         ...prevState,
         photos: newPhotos,
       }));
-
       await savePhotoList(newPhotos);
     } catch (error) {
       console.error('Error deleting photo:', error);
@@ -134,9 +228,7 @@ export const Photos = ({ state, setState }) => {
   const addPhoto = async event => {
     const photoArray = Array.from(event.target.files);
     try {
-      const newUrls = await Promise.all(
-        photoArray.map(photo => getUrlofUploadedAvatar(photo, state.userId))
-      );
+      const newUrls = await Promise.all(photoArray.map(photo => getUrlofUploadedAvatar(photo, state.userId)));
       const updatedPhotos = [...(state.photos || []), ...newUrls];
       setState(prevState => ({
         ...prevState,
@@ -153,37 +245,42 @@ export const Photos = ({ state, setState }) => {
     <Container>
       <PhotosWrapper>
         {state.photos && state.photos.length > 0 ? (
-          <PhotosWrapper>
-            {state.photos.map((url, index) => (
-              <PhotoItem key={index}>
-                <PhotoImage
-                  src={url}
-                  alt={`user avatar ${index}`}
-                  onError={e => {
-                    e.target.onerror = null;
-                    e.target.src = '/logo192.png';
-                  }}
-                />
-                <DeleteButton onClick={() => handleDeletePhoto(index)}>×</DeleteButton>
-              </PhotoItem>
-            ))}
-          </PhotosWrapper>
+          state.photos.map((url, index) => (
+            <PhotoItem key={index}>
+              <PhotoImage
+                src={url}
+                alt={`user avatar ${index}`}
+                onClick={() => setSelectedPhoto(url)}
+              />
+              <DeleteButton onClick={() => handleDeletePhoto(url)}>×</DeleteButton>
+            </PhotoItem>
+          ))
+
         ) : (
           <NoPhotosText>Додайте свої фото, максимум 9 шт</NoPhotosText>
         )}
       </PhotosWrapper>
-     {((state.photos && state.photos.length < 9) || (!state.photos)) && <UploadButtonWrapper>
-        <UploadButtonLabel htmlFor="file-upload">
-          Додати фото
-          <HiddenFileInput
-            id="file-upload"
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={addPhoto}
-          />
-        </UploadButtonLabel>
-      </UploadButtonWrapper>}
+      {((state.photos && state.photos.length < 9) || !state.photos) && (
+        <UploadButtonWrapper>
+          <UploadButtonLabel htmlFor="file-upload">
+            Додати фото
+            <HiddenFileInput
+              id="file-upload"
+              type="file"
+              multiple
+              accept="image/*"
+              onChange={addPhoto}
+            />
+          </UploadButtonLabel>
+        </UploadButtonWrapper>
+      )}
+      {selectedPhoto && (
+        <FullScreenPhotoViewer
+          url={selectedPhoto}
+          onClose={() => setSelectedPhoto(null)}
+          onDelete={() => handleDeletePhoto(selectedPhoto)}
+        />
+      )}
     </Container>
   );
 };
