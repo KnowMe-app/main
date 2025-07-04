@@ -696,19 +696,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     isEditingRef.current = !!state.userId;
   }, [state.userId]);
 
-  // useEffect для скидання значень при зміні search
-  useEffect(() => {
-    // setState({});
-    // Скинути значення стану для pickerFields
-    // setState(prevState => {
-    //   const updatedState = {};
-    //   // Проходимося по всіх ключах в попередньому стані
-    //   Object.keys(prevState).forEach(key => {
-    //     updatedState[key] = ''; // Скидаємо значення до ''
-    //   });
-    //   return updatedState; // Повертаємо новий стан
-    // });
-  }, [search]); // Виконується при зміні search
 
   // Save search query to localStorage
   useEffect(() => {
@@ -1315,7 +1302,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     'role',
   ];
   const additionalFields = Object.keys(state).filter(
-    key => !pickerFields.some(field => field.name === key) && key !== 'attitude' && key !== 'whiteList' && key !== 'blackList'
+    key =>
+      !pickerFields.some(field => field.name === key) &&
+      key !== 'attitude' &&
+      key !== 'whiteList' &&
+      key !== 'blackList' &&
+      key !== 'photos'
   );
 
   // console.log('additionalFields :>> ', additionalFields);

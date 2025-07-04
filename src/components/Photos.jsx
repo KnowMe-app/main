@@ -7,6 +7,7 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
 } from './config';
+
 import { color } from './styles';
 
 const Container = styled.div`
@@ -182,6 +183,7 @@ const FullScreenPhotoViewer = ({ url, onClose, onDelete }) => {
 export const Photos = ({ state, setState }) => {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
 
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -193,6 +195,7 @@ export const Photos = ({ state, setState }) => {
     };
 
     if (state.userId && state.userId.length > 20 && state.photos === undefined) {
+
       load();
     }
   }, [state.userId, state.photos, setState]);
@@ -206,8 +209,9 @@ export const Photos = ({ state, setState }) => {
     }
   };
 
-  const handleDeletePhoto = async photoUrl => {
-    const newPhotos = state.photos.filter(url => url !== photoUrl);
+  const handleDeletePhoto = async index => {
+    const photoUrl = state.photos[index];
+    const newPhotos = state.photos.filter((_, i) => i !== index);
 
     try {
       await deletePhotos(state.userId, [photoUrl]);
@@ -230,6 +234,7 @@ export const Photos = ({ state, setState }) => {
         ...prevState,
         photos: updatedPhotos,
       }));
+
       await savePhotoList(updatedPhotos);
     } catch (error) {
       console.error('Error uploading photos:', error);
@@ -250,6 +255,7 @@ export const Photos = ({ state, setState }) => {
               <DeleteButton onClick={() => handleDeletePhoto(url)}>×</DeleteButton>
             </PhotoItem>
           ))
+
         ) : (
           <NoPhotosText>Додайте свої фото, максимум 9 шт</NoPhotosText>
         )}
