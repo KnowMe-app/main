@@ -755,21 +755,6 @@ export const getAllUserPhotos = async userId => {
   }
 };
 
-export const getAllUserPhotos = async userId => {
-  try {
-    const photosRef = ref2(database, `users/${userId}/photos`);
-    const snapshot = await get(photosRef);
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      return Array.isArray(data) ? data : Object.values(data);
-    }
-    return [];
-  } catch (error) {
-    console.error('Error loading user photos:', error);
-    return [];
-  }
-};
-
 const encodeKey = key => {
   return key
     .replace(/\s/g, '_space_')
