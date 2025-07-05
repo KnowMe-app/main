@@ -85,8 +85,14 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete }) => {
 
   if (!photos.length) return null;
 
+  const handleOverlayClick = e => {
+    if (e.target === e.currentTarget && onClose) {
+      onClose();
+    }
+  };
+
   return (
-    <Overlay onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    <Overlay onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} onClick={handleOverlayClick}>
       <FullImage src={photos[current]} alt="full" />
       <CloseButton onClick={onClose} aria-label="Close">
         <FiX size={30} />
