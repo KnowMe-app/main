@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import toast from 'react-hot-toast';
 import styled, { css } from 'styled-components';
 import Photos from './Photos';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
@@ -1259,9 +1260,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const makeIndex = async () => {
-    // await new Promise(resolve => setTimeout(resolve, 15000)); // Чекаємо 15 секунд
-    await createSearchIdsInCollection('newUsers');
-    await createSearchIdsInCollection('users');
+    toast.loading('Indexing newUsers 0%', { id: 'index-progress' });
+    await createSearchIdsInCollection('newUsers', progress => {
+      toast.loading(`Indexing newUsers ${progress}%`, { id: 'index-progress' });
+    });
+    toast.loading('Indexing users 0%', { id: 'index-progress' });
+    await createSearchIdsInCollection('users', progress => {
+      toast.loading(`Indexing users ${progress}%`, { id: 'index-progress' });
+    });
+    toast.success('Indexing finished', { id: 'index-progress' });
 
     // const res = await fetchListOfUsers();
     // res.forEach(async userId => {
