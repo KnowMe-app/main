@@ -22,6 +22,8 @@ import {
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE } from './constants';
 
+const isDev = process.env.NODE_ENV === 'development';
+
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_API_KEY,
   authDomain: process.env.REACT_APP_AUTH_DOMAIN,
@@ -788,9 +790,11 @@ const getBirthKeys = value => {
 
 // Функція для оновлення або видалення пар у searchId
 export const updateSearchId = async (searchKey, searchValue, userId, action) => {
-  console.log('searchKey!!!!!!!!! :>> ', searchKey);
-  console.log('searchValue!!!!!!!!! :>> ', searchValue);
-  console.log('action!!!!!!!!!!! :>> ', action);
+  if (isDev) {
+    console.log('searchKey!!!!!!!!! :>> ', searchKey);
+    console.log('searchValue!!!!!!!!! :>> ', searchValue);
+    console.log('action!!!!!!!!!!! :>> ', action);
+  }
   try {
     if (!searchValue || !searchKey || !userId) {
       console.error('Invalid parameters provided:', { searchKey, searchValue, userId });
@@ -798,14 +802,14 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
     }
 
     if (searchKey === 'getInTouch' || searchKey === 'lastAction') {
-      console.log('Пропускаємо непотрібні ключі :>> ', searchKey);
+      if (isDev) console.log('Пропускаємо непотрібні ключі :>> ', searchKey);
       return;
     }
 
   const normalizedValue = String(searchValue).toLowerCase();
   const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`;
     const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
-    console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
+    if (isDev) console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
     if (action === 'add') {
       const searchIdSnapshot = await get(searchIdRef);
@@ -817,20 +821,20 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
           if (!existingValue.includes(userId)) {
             const updatedValue = [...existingValue, userId];
             await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-            console.log(`Додано userId до масиву: ${searchIdKey}:`, updatedValue);
+            if (isDev) console.log(`Додано userId до масиву: ${searchIdKey}:`, updatedValue);
           } else {
-            console.log(`userId вже існує в масиві для ключа: ${searchIdKey}`);
+            if (isDev) console.log(`userId вже існує в масиві для ключа: ${searchIdKey}`);
           }
         } else if (existingValue !== userId) {
           const updatedValue = [existingValue, userId];
           await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-          console.log(`Перетворено значення на масив і додано userId: ${searchIdKey}:`, updatedValue);
+          if (isDev) console.log(`Перетворено значення на масив і додано userId: ${searchIdKey}:`, updatedValue);
         } else {
-          console.log(`Ключ вже містить userId: ${searchIdKey}`);
+          if (isDev) console.log(`Ключ вже містить userId: ${searchIdKey}`);
         }
       } else {
         await update(ref2(database, 'searchId'), { [searchIdKey]: userId });
-        console.log(`Додано нову пару в searchId: ${searchIdKey}: ${userId}`);
+        if (isDev) console.log(`Додано нову пару в searchId: ${searchIdKey}: ${userId}`);
       }
     } else if (action === 'remove') {
       const searchIdSnapshot = await get(searchIdRef);
@@ -843,22 +847,22 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
 
           if (updatedValue.length === 1) {
             await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue[0] });
-            console.log(`Оновлено значення ключа до одиничного значення: ${searchIdKey}:`, updatedValue[0]);
+            if (isDev) console.log(`Оновлено значення ключа до одиничного значення: ${searchIdKey}:`, updatedValue[0]);
           } else if (updatedValue.length === 0) {
             await remove(searchIdRef);
-            console.log(`Видалено ключ: ${searchIdKey}`);
+            if (isDev) console.log(`Видалено ключ: ${searchIdKey}`);
           } else {
             await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-            console.log(`Оновлено масив ключа: ${searchIdKey}:`, updatedValue);
+            if (isDev) console.log(`Оновлено масив ключа: ${searchIdKey}:`, updatedValue);
           }
         } else if (existingValue === userId) {
           await remove(searchIdRef);
-          console.log(`Видалено ключ, що мав одиничне значення: ${searchIdKey}`);
+          if (isDev) console.log(`Видалено ключ, що мав одиничне значення: ${searchIdKey}`);
         } else {
-          console.log(`userId не знайдено для видалення: ${searchIdKey}`);
+          if (isDev) console.log(`userId не знайдено для видалення: ${searchIdKey}`);
         }
       } else {
-        console.log(`Ключ не знайдено для видалення: ${searchIdKey}`);
+        if (isDev) console.log(`Ключ не знайдено для видалення: ${searchIdKey}`);
       }
     } else {
       console.error('Unknown action provided:', action);
@@ -935,7 +939,7 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
 //   }
 // };
 
-export const createSearchIdsInCollection = async collection => {
+export const createSearchIdsInCollection = async (collection, onProgress) => {
   const ref = ref2(database, collection);
 
   const [newUsersSnapshot] = await Promise.all([get(ref)]);
@@ -943,59 +947,60 @@ export const createSearchIdsInCollection = async collection => {
   if (newUsersSnapshot.exists()) {
     const usersData = newUsersSnapshot.val();
     const userIds = Object.keys(usersData);
-    console.log('userIds :>> ', userIds);
-    // const userIds = ['AA9834'];
+    if (isDev) console.log('userIds :>> ', userIds);
 
-    const updatePromises = [];
+    const totalUsers = userIds.length;
+    for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+      const batchIds = userIds.slice(i, i + BATCH_SIZE);
+      const updatePromises = [];
+      for (const userId of batchIds) {
+        const user = usersData[userId];
+        for (const key of keysToCheck) {
+          if (user.hasOwnProperty(key)) {
+            let value = user[key];
 
-    for (const userId of userIds) {
-      const user = usersData[userId];
-      for (const key of keysToCheck) {
-        if (user.hasOwnProperty(key)) {
-          let value = user[key];
+            if (Array.isArray(value)) {
+              if (isDev) console.log('Array.isArray(value) :>> ', value);
+              value.forEach(item => {
+                if (item && typeof item === 'string') {
+                  let cleanedValue = item.toString().trim();
 
-          // Якщо value - масив
-          if (Array.isArray(value)) {
-            console.log('Array.isArray(value) :>> ', value);
-            value.forEach(item => {
-              if (item && typeof item === 'string') {
-                let cleanedValue = item.toString().trim(); // Видаляємо зайві пробіли
+                  if (key === 'phone' || key === 'name' || key === 'surname') {
+                    cleanedValue = cleanedValue.replace(/\s+/g, '');
+                  }
 
-                if (key === 'phone' || key === 'name' || key === 'surname') {
-                  cleanedValue = cleanedValue.replace(/\s+/g, ''); // Видалення пробілів
+                  if (key === 'telegram') {
+                    cleanedValue = encodeKey(cleanedValue);
+                  }
+
+                  updatePromises.push(
+                    updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'),
+                  );
                 }
+              });
+            } else if (value && (typeof value === 'string' || typeof value === 'number')) {
+              let cleanedValue = value.toString();
 
-                if (key === 'telegram') {
-                  cleanedValue = encodeKey(cleanedValue); // Кодування
-                }
-
-                updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
+              if (key === 'phone' || key === 'name' || key === 'surname') {
+                cleanedValue = cleanedValue.replace(/\s+/g, '');
               }
-            });
-          }
-          // Якщо value - рядок або число
-          else if (value && (typeof value === 'string' || typeof value === 'number')) {
-            // Перевірка на існування значення та типу string
-            let cleanedValue = value.toString(); // Перетворюємо і цифри і букви в рядок, щоб працювало toLowerCase
+              if (key === 'telegram') {
+                cleanedValue = encodeKey(value);
+              }
 
-            // Якщо ключ 'phone', видаляємо всі пробіли
-            if (key === 'phone' || key === 'name' || key === 'surname') {
-              cleanedValue = cleanedValue.replace(/\s+/g, '');
+              updatePromises.push(
+                updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'),
+              );
             }
-            // Якщо ключ 'telegram', кодуємо рядок
-            if (key === 'telegram') {
-              cleanedValue = encodeKey(value);
-            }
-
-            // Додаємо новий ID
-            updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
-            // await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add');
           }
         }
       }
+
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.all(updatePromises);
+      const progress = Math.floor(((i + batchIds.length) / totalUsers) * 100);
+      if (onProgress && progress % 10 === 0) onProgress(progress);
     }
-    // Виконуємо всі оновлення паралельно
-    await Promise.all(updatePromises);
   }
 };
 
