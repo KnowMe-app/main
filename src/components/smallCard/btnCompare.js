@@ -149,20 +149,22 @@ const handleCompareClick = (e, index, users, delKeys, setShowInfoModal, setCompa
     const storedCurrent = new Set([...currentSet, ...nextSet]); // Унікальний набір без дублікатів
     const storedNext = new Set([...nextSet, ...currentSet]);
 
+    const isUserId = key === 'userId';
+
     rows += `
       <tr>
         <td style="width:20%; white-space: normal; word-break: break-word; cursor: pointer;">
           ${key}
         </td>
-        <td 
-          style="width:40%; white-space: normal; word-break: break-word; cursor: pointer;" 
-          onclick="window.handleClick('${key}', '${[...storedNext].join(', ')}', '${[...storedCurrent].join(', ')}', '${currentUser.userId}', '${nextUser?.userId}')"
+        <td
+          style="width:40%; white-space: normal; word-break: break-word; cursor: ${isUserId ? 'default' : 'pointer'};"
+          ${isUserId ? '' : `onclick="window.handleClick('${key}', '${[...storedNext].join(', ')}', '${[...storedCurrent].join(', ')}', '${currentUser.userId}', '${nextUser?.userId}')"`}
         >
           ${uniqueCurrent.join(', ') || ''}
         </td>
-        <td 
-          style="width:40%; white-space: normal; word-break: break-word; cursor: pointer;" 
-          onclick="window.handleClick('${key}', '${[...storedCurrent].join(', ')}', '${[...storedNext].join(', ')}', '${nextUser.userId}', '${currentUser?.userId}')"
+        <td
+          style="width:40%; white-space: normal; word-break: break-word; cursor: ${isUserId ? 'default' : 'pointer'};"
+          ${isUserId ? '' : `onclick="window.handleClick('${key}', '${[...storedCurrent].join(', ')}', '${[...storedNext].join(', ')}', '${nextUser.userId}', '${currentUser?.userId}')"`}
         >
           ${uniqueNext.join(', ') || ''}
         </td>
