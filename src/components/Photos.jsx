@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { deletePhotos, getUrlofUploadedAvatar, getAllUserPhotos } from './config';
 import { updateDataInNewUsersRTDB } from './config';
 import { color } from './styles';
+import PhotoViewer from './PhotoViewer';
 
 const Container = styled.div`
   padding-bottom: 10px;
@@ -93,6 +94,7 @@ const HiddenFileInput = styled.input`
 `;
 
 export const Photos = ({ state, setState }) => {
+  const [viewerIndex, setViewerIndex] = useState(null);
   useEffect(() => {
     const load = async () => {
       try {
@@ -131,6 +133,18 @@ export const Photos = ({ state, setState }) => {
     }
   };
 
+  const handleDeleteFromViewer = async index => {
+    const newLength = state.photos.length - 1;
+    await handleDeletePhoto(index);
+    if (newLength <= 0) {
+      setViewerIndex(null);
+    } else if (index >= newLength) {
+      setViewerIndex(newLength - 1);
+    } else {
+      setViewerIndex(index);
+    }
+  };
+
   const addPhoto = async event => {
     const photoArray = Array.from(event.target.files);
     try {
@@ -159,6 +173,7 @@ export const Photos = ({ state, setState }) => {
                 <PhotoImage
                   src={url}
                   alt={`user avatar ${index}`}
+                  onClick={() => setViewerIndex(index)}
                   onError={e => {
                     e.target.onerror = null;
                     e.target.src = '/logo192.png';
@@ -184,6 +199,14 @@ export const Photos = ({ state, setState }) => {
           />
         </UploadButtonLabel>
       </UploadButtonWrapper>}
+      {viewerIndex !== null && (
+        <PhotoViewer
+          photos={state.photos}
+          index={viewerIndex}
+          onClose={() => setViewerIndex(null)}
+          onDelete={handleDeleteFromViewer}
+        />
+      )}
     </Container>
   );
 };
