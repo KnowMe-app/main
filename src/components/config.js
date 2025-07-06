@@ -322,11 +322,20 @@ const addUserToResults = async (userId, users, userIdOrArray = null) => {
 };
 
 const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
+  const ukSmEncoded = encodeKey('УК СМ').toLowerCase();
   const searchPromises = keysToCheck.flatMap(prefix => {
     const searchKeys = [
       `${prefix}_${modifiedSearchValue.toLowerCase()}`,
-      ...(modifiedSearchValue.startsWith('0') ? [`${prefix}_38${modifiedSearchValue.toLowerCase()}`] : []),
-      ...(modifiedSearchValue.startsWith('+') ? [`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`] : []),
+      ...(modifiedSearchValue.startsWith('0')
+        ? [`${prefix}_38${modifiedSearchValue.toLowerCase()}`]
+        : []),
+      ...(modifiedSearchValue.startsWith('+')
+        ? [`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`]
+        : []),
+      ...(prefix === 'name' &&
+      !modifiedSearchValue.toLowerCase().startsWith(ukSmEncoded)
+        ? [`${prefix}_${ukSmEncoded}_${modifiedSearchValue.toLowerCase()}`]
+        : []),
     ];
     // console.log('searchBySearchId :>> ',);
     return searchKeys.map(async searchKeyPrefix => {
