@@ -1049,21 +1049,27 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     let res = await fetchNewUsersCollectionInRTDB({ name: query.trim() });
     setSearchKeyValuePair({ name: query.trim() });
 
+    // Additional search variant with prefix "УК СМ"
+    if (!res || Object.keys(res).length === 0) {
+      const prefixedQuery = /^ук\s*см/i.test(query)
+        ? query.trim()
+        : `УК СМ ${query.trim()}`;
+      if (prefixedQuery !== query.trim()) {
+        res = await fetchNewUsersCollectionInRTDB({ name: prefixedQuery });
+        if (res && Object.keys(res).length > 0) {
+          setSearchKeyValuePair({ name: prefixedQuery });
+        }
+      }
+    }
+
+    // Search without the "УК СМ" prefix if the user entered it
     if (!res || Object.keys(res).length === 0) {
       const cleanedQuery = query.replace(/^ук\s*см\s*/i, '').trim();
       if (cleanedQuery && cleanedQuery !== query.trim()) {
         res = await fetchNewUsersCollectionInRTDB({ name: cleanedQuery });
-        setSearchKeyValuePair({ name: cleanedQuery });
-      }
-    }
-
-    if (!res || Object.keys(res).length === 0) {
-      const withPrefix = /^ук\s*см/i.test(query)
-        ? null
-        : `УК СМ ${query.trim()}`;
-      if (withPrefix) {
-        res = await fetchNewUsersCollectionInRTDB({ name: withPrefix });
-        setSearchKeyValuePair({ name: withPrefix });
+        if (res && Object.keys(res).length > 0) {
+          setSearchKeyValuePair({ name: cleanedQuery });
+        }
       }
     }
 
