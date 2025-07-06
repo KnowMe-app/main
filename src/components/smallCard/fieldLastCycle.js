@@ -66,7 +66,17 @@ export const fieldLastCycle = (userData, setUsers, setState) => {
             const serverFormattedDate = formatDateToServer(e.target.value);
             handleChange(setUsers, setState, userData.userId, 'lastCycle', serverFormattedDate);
           }}
-          onBlur={() => handleSubmit(userData, 'overwrite')}
+          onBlur={e => {
+            const serverFormattedDate = formatDateToServer(e.target.value);
+            handleChange(
+              setUsers,
+              setState,
+              userData.userId,
+              'lastCycle',
+              serverFormattedDate,
+              true
+            );
+          }}
           // placeholder="01.01.2021"
           style={{
             marginLeft: 0,
