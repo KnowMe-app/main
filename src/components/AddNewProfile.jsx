@@ -1045,7 +1045,39 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (await processUserSearch('phone', parsePhoneNumber, query)) return;
     if (await processUserSearch('other', parseOtherContact, query)) return;
 
-    console.log('Not a valid Facebook URL, Phone Number, or Instagram URL.');
+    // Generic search by name if no specific pattern matched
+    let res = await fetchNewUsersCollectionInRTDB({ name: query.trim() });
+    setSearchKeyValuePair({ name: query.trim() });
+
+    if (!res || Object.keys(res).length === 0) {
+      const cleanedQuery = query.replace(/^ук\s*см\s*/i, '').trim();
+      if (cleanedQuery && cleanedQuery !== query.trim()) {
+        res = await fetchNewUsersCollectionInRTDB({ name: cleanedQuery });
+        setSearchKeyValuePair({ name: cleanedQuery });
+      }
+    }
+
+    if (!res || Object.keys(res).length === 0) {
+      const withPrefix = /^ук\s*см/i.test(query)
+        ? null
+        : `УК СМ ${query.trim()}`;
+      if (withPrefix) {
+        res = await fetchNewUsersCollectionInRTDB({ name: withPrefix });
+        setSearchKeyValuePair({ name: withPrefix });
+      }
+    }
+
+    if (!res || Object.keys(res).length === 0) {
+      console.log('Not a valid Facebook URL, Phone Number, or Instagram URL.');
+      setUserNotFound(true);
+    } else {
+      setUserNotFound(false);
+      if ('userId' in res) {
+        setState(res);
+      } else {
+        setUsers(res);
+      }
+    }
   };
 
   const dotsMenu = () => {
