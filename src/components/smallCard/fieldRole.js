@@ -12,7 +12,16 @@ export const fieldRole = (userData, setUsers, setState) => {
         type="text"
         value={userData.role || ''}
         onChange={e => handleChange(setUsers, setState, userData.userId, 'role', e.target.value)}
-        onBlur={() => handleSubmit(userData, 'overwrite')}
+        onBlur={e =>
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            'role',
+            e.target.value,
+            true
+          )
+        }
         style={{ marginLeft: 0, textAlign: 'left', width: '6ch' }}
       />
       {['ed', 'ip', 'ag'].map(role => (
