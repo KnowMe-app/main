@@ -321,7 +321,12 @@ const addUserToResults = async (userId, users, userIdOrArray = null) => {
   };
 };
 
-const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
+const searchBySearchId = async (
+  modifiedSearchValue,
+  uniqueUserIds,
+  users,
+  searchKey,
+) => {
   const ukSmEncoded = encodeKey('УК СМ').toLowerCase();
   const searchPromises = keysToCheck.flatMap(prefix => {
     const searchKeys = [
@@ -332,8 +337,12 @@ const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
       ...(modifiedSearchValue.startsWith('+')
         ? [`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`]
         : []),
+      ...(prefix === 'telegram'
+        ? [`${prefix}_${ukSmEncoded}_${modifiedSearchValue.toLowerCase()}`]
+        : []),
       ...(prefix === 'name' &&
-      !modifiedSearchValue.toLowerCase().startsWith(ukSmEncoded)
+        searchKey !== 'telegram' &&
+        !modifiedSearchValue.toLowerCase().startsWith(ukSmEncoded)
         ? [`${prefix}_${ukSmEncoded}_${modifiedSearchValue.toLowerCase()}`]
         : []),
     ];
@@ -381,14 +390,24 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
 
     // Якщо шукаємо за "surname", робимо пошук з урахуванням першої великої літери
     if (prefix === 'name' || prefix === 'surname') {
-      formattedSearchValue = searchValue.trim().charAt(0).toUpperCase() + searchValue.trim().slice(1).toLowerCase();
+      formattedSearchValue =
+        searchValue.trim().charAt(0).toUpperCase() +
+        searchValue.trim().slice(1).toLowerCase();
     }
 
-    //     if (prefix === 'telegram') {
-    //       formattedSearchValue = `telegram_ук_см_${searchValue.trim().toLowerCase()}`;
-    // }
+    const searchValues = [formattedSearchValue];
 
-    const queryByPrefix = query(ref2(database, 'newUsers'), orderByChild(prefix), startAt(formattedSearchValue), endAt(`${formattedSearchValue}\uf8ff`));
+    if (prefix === 'telegram') {
+      searchValues.push(`ук см ${searchValue.trim().toLowerCase()}`);
+    }
+
+    for (const value of searchValues) {
+      const queryByPrefix = query(
+        ref2(database, 'newUsers'),
+        orderByChild(prefix),
+        startAt(value),
+        endAt(`${value}\uf8ff`),
+      );
 
     try {
       const snapshotByPrefix = await get(queryByPrefix);
@@ -443,14 +462,21 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
 };
 
 export const fetchNewUsersCollectionInRTDB = async searchedValue => {
-  const { searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
+  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(
+    searchedValue,
+  );
   const users = {};
   const uniqueUserIds = new Set();
 
   // console.log('modifiedSearchValue3333333333333 :>> ', modifiedSearchValue);
 
   try {
-    await searchBySearchId(modifiedSearchValue, uniqueUserIds, users);
+    await searchBySearchId(
+      modifiedSearchValue,
+      uniqueUserIds,
+      users,
+      searchKey,
+    );
     await searchByPrefixes(searchValue, uniqueUserIds, users);
     await searchUserByPartialUserId(searchValue, users);
 
