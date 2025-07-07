@@ -322,12 +322,32 @@ const addUserToResults = async (userId, users, userIdOrArray = null) => {
 };
 
 const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
+  const ukSmPrefix = encodeKey('УК СМ ');
+  const hasUkSm = modifiedSearchValue
+    .toLowerCase()
+    .startsWith(ukSmPrefix.toLowerCase());
+
   const searchPromises = keysToCheck.flatMap(prefix => {
-    const searchKeys = [
-      `${prefix}_${modifiedSearchValue.toLowerCase()}`,
-      ...(modifiedSearchValue.startsWith('0') ? [`${prefix}_38${modifiedSearchValue.toLowerCase()}`] : []),
-      ...(modifiedSearchValue.startsWith('+') ? [`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`] : []),
-    ];
+    const baseKey = `${prefix}_${modifiedSearchValue.toLowerCase()}`;
+    const searchKeys = [baseKey];
+
+    if (hasUkSm) {
+      const withoutPrefix = modifiedSearchValue
+        .slice(ukSmPrefix.length)
+        .toLowerCase();
+      searchKeys.push(`${prefix}_${withoutPrefix}`);
+    } else {
+      searchKeys.push(
+        `${prefix}_${ukSmPrefix.toLowerCase()}${modifiedSearchValue.toLowerCase()}`,
+      );
+    }
+
+    if (modifiedSearchValue.startsWith('0')) {
+      searchKeys.push(`${prefix}_38${modifiedSearchValue.toLowerCase()}`);
+    }
+    if (modifiedSearchValue.startsWith('+')) {
+      searchKeys.push(`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`);
+    }
     // console.log('searchBySearchId :>> ',);
     return searchKeys.map(async searchKeyPrefix => {
       const searchIdSnapshot = await get(query(ref2(database, 'searchId'), orderByKey(), startAt(searchKeyPrefix), endAt(`${searchKeyPrefix}\uf8ff`)));
