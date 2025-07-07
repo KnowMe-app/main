@@ -818,6 +818,31 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const writeData = async (query = search) => {
     setUserNotFound(false);
     setState({});
+
+    const trimmed = query?.trim();
+    if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      const values = trimmed
+        .slice(1, -1)
+        .split(/[\s,;\n]+/)
+        .map(v => v.trim())
+        .filter(Boolean);
+
+      if (values.length > 0) {
+        const results = {};
+        for (const val of values) {
+          const res = await fetchNewUsersCollectionInRTDB({ name: val });
+          if (!res || Object.keys(res).length === 0) {
+            results[`new_${val}`] = { _notFound: true, searchVal: val };
+          } else if ('userId' in res) {
+            results[res.userId] = res;
+          } else {
+            Object.assign(results, res);
+          }
+        }
+        setUsers(results);
+        return;
+      }
+    }
     // const res = await aiHandler(search)
 
     const parseFacebookId = url => {
