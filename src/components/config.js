@@ -322,11 +322,9 @@ const addUserToResults = async (userId, users, userIdOrArray = null) => {
 };
 
 const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
-  const ukSmPrefix = encodeKey('УК СМ ');
   const searchPromises = keysToCheck.flatMap(prefix => {
     const searchKeys = [
       `${prefix}_${modifiedSearchValue.toLowerCase()}`,
-      `${prefix}_${ukSmPrefix.toLowerCase()}${modifiedSearchValue.toLowerCase()}`,
       ...(modifiedSearchValue.startsWith('0') ? [`${prefix}_38${modifiedSearchValue.toLowerCase()}`] : []),
       ...(modifiedSearchValue.startsWith('+') ? [`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`] : []),
     ];
