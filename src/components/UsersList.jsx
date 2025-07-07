@@ -1,5 +1,6 @@
 import React from 'react';
 import { coloredCard, FadeContainer } from './styles';
+import { makeNewUser } from './config';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnEdit } from './smallCard/btnEdit';
@@ -98,8 +99,16 @@ const UsersList = ({
   currentFilter,
   isDateInRange,
 }) => {
-
   const entries = Object.entries(users);
+
+  const handleCreate = async value => {
+    const res = await makeNewUser({ name: value });
+    setUsers(prev => {
+      const copy = { ...prev };
+      delete copy[`new_${value}`];
+      return { ...copy, [res.userId]: res };
+    });
+  };
 
   return (
     <div style={styles.container}>
@@ -119,18 +128,44 @@ const UsersList = ({
             }
           }}
         >
-          {btnEdit(userData.userId, setSearch, setState)}
-          {btnCompare(index, users, setUsers, setShowInfoModal, setCompare, )}
-          <UserCard
-            setShowInfoModal={setShowInfoModal}
-            userData={userData}
-            setUsers={setUsers}
-            setState={setState}
-            favoriteUsers={favoriteUsers}
-            setFavoriteUsers={setFavoriteUsers}
-            currentFilter={currentFilter}
-            isDateInRange={isDateInRange}
-          />
+          {userData._notFound ? (
+            <div
+              style={{
+                padding: '20px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                color: 'white',
+              }}
+            >
+              <span>{userData.searchVal}</span>
+              <svg
+                onClick={() => handleCreate(userData.searchVal)}
+                width="40"
+                height="40"
+                viewBox="0 0 40 40"
+                style={{ cursor: 'pointer' }}
+              >
+                <rect x="18" y="8" width="4" height="24" fill="white" />
+                <rect x="8" y="18" width="24" height="4" fill="white" />
+              </svg>
+            </div>
+          ) : (
+            <>
+              {btnEdit(userData.userId, setSearch, setState)}
+              {btnCompare(index, users, setUsers, setShowInfoModal, setCompare, )}
+              <UserCard
+                setShowInfoModal={setShowInfoModal}
+                userData={userData}
+                setUsers={setUsers}
+                setState={setState}
+                favoriteUsers={favoriteUsers}
+                setFavoriteUsers={setFavoriteUsers}
+                currentFilter={currentFilter}
+                isDateInRange={isDateInRange}
+              />
+            </>
+          )}
         </FadeContainer>
       ))}
     </div>
