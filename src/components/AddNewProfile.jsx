@@ -820,15 +820,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setState({});
 
     const trimmed = query?.trim();
-    if (trimmed) {
-      const regex = /"([^"]+)"|[^\s,;\n]+/g;
-      const values = [];
-      let match;
-      while ((match = regex.exec(trimmed)) !== null) {
-        values.push((match[1] || match[0]).trim());
-      }
+    if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      const values = trimmed
+        .slice(1, -1)
+        .split(/[\s,;\n]+/)
+        .map(v => v.trim())
+        .filter(Boolean);
 
-      if (values.length > 1) {
+      if (values.length > 0) {
         const results = {};
         for (const val of values) {
           const res = await fetchNewUsersCollectionInRTDB({ name: val });
@@ -842,8 +841,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
         setUsers(results);
         return;
-      } else if (values.length === 1) {
-        query = values[0];
       }
     }
     // const res = await aiHandler(search)
