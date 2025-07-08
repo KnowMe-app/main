@@ -821,10 +821,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const trimmed = query?.trim();
     if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
-      const values = trimmed
-        .slice(1, -1)
-        .split(/[\s,;\n]+/)
-        .map(v => v.trim())
+      const inside = trimmed.slice(1, -1);
+      const matches = inside.match(/"[^"]+"|[^\s,;]+/g) || [];
+      const values = matches
+        .map(v => v.replace(/^"|"$/g, '').trim())
         .filter(Boolean);
 
       if (values.length > 0) {
