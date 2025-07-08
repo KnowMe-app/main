@@ -1,24 +1,17 @@
 import { handleChange, handleSubmit } from './actions';
-import { useEffect, useRef } from "react";
+import { useRef } from 'react';
+import { useAutoResize } from '../../hooks/useAutoResize';
 
 export const FieldComment = ({ userData, setUsers, setState }) => {
   // console.log('userData in RenderCommentInput :>> ', userData);
   const textareaRef = useRef(null);
+  const autoResize = useAutoResize(textareaRef, userData.myComment);
 
   const handleInputChange = e => {
     handleChange(setUsers, setState, userData.userId, 'myComment', e.target.value);
   };
 
-  const autoResize = textarea => {
-    textarea.style.height = 'auto'; // Скидаємо висоту
-    textarea.style.height = `${textarea.scrollHeight}px`; // Встановлюємо нову висоту
-  };
-
-  useEffect(() => {
-    if (textareaRef.current) {
-      autoResize(textareaRef.current); // Встановлюємо висоту після завантаження
-    }
-  }, [userData.myComment]); // Виконується при завантаженні та зміні коментаря
+  // autoResize will adjust height on mount and when value changes
 
   return (
     <div
