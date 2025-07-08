@@ -48,6 +48,7 @@ import { btnExportUsers } from './topBtns/btnExportUsers';
 import { btnMerge } from './smallCard/btnMerge';
 import { SearchFilters } from './SearchFilters';
 import { Pagination } from './Pagination';
+import { useAutoResize } from '../hooks/useAutoResize';
 import { PAGE_SIZE, database } from './config';
 import { onValue, ref } from 'firebase/database';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
@@ -1394,17 +1395,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   //////////// висота text area
   const textareaRef = useRef(null);
+  const moreInfoRef = useRef(null);
 
-  const autoResize = textarea => {
-    textarea.style.height = 'auto'; // Скидаємо висоту
-    textarea.style.height = `${textarea.scrollHeight}px`; // Встановлюємо нову висоту
-  };
-
-  useEffect(() => {
-    if (textareaRef.current) {
-      autoResize(textareaRef.current); // Встановлюємо висоту після завантаження
-    }
-  }, [state.myComment]); // Виконується при завантаженні та зміні коментаря
+  const autoResizeMyComment = useAutoResize(textareaRef, state.myComment);
+  const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
   const getSortedIds = () => {
@@ -1498,7 +1492,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                                 <InputField
                                   fieldName={`${field.name}-${idx}`}
                                   as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
-                                  ref={field.name === 'myComment' ? textareaRef : null}
+                                  ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
                                   inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                                   name={`${field.name}-${idx}`}
                                   value={value || ''}
@@ -1506,7 +1500,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                                   ///глючить якщо телефон не в правильному форматі
                                   onChange={e => {
                                     // const updatedValue = inputUpdateValue(e?.target?.value, field);
-                                    field.name === 'myComment' && autoResize(e.target);
+                                    if (field.name === 'myComment') {
+                                      autoResizeMyComment(e.target);
+                                    }
+                                    if (field.name === 'moreInfo_main') {
+                                      autoResizeMoreInfo(e.target);
+                                    }
                                     const updatedValue =
                                       field.name === 'telegram'
                                         ? e?.target?.value // Без inputUpdateValue для 'telegram'
@@ -1543,13 +1542,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                           <InputField
                             fieldName={field.name}
                             as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
-                            ref={field.name === 'myComment' ? textareaRef : null}
+                            ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
                             inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                             name={field.name}
                             value={state[field.name] || ''}
                             // value={field.name === 'phone' ? formatPhoneNumber(state[field.name] || '') : state[field.name] || ''}
                             onChange={e => {
-                              field.name === 'myComment' && autoResize(e.target);
+                              if (field.name === 'myComment') {
+                                autoResizeMyComment(e.target);
+                              }
+                              if (field.name === 'moreInfo_main') {
+                                autoResizeMoreInfo(e.target);
+                              }
                               let value = e?.target?.value;
                               // Якщо ім'я поля - 'publish', перетворюємо значення в булеве
                               if (field.name === 'publish') {

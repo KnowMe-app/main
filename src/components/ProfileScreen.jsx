@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import styled, { css } from 'styled-components';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
 import { auth, fetchUserData } from './config';
@@ -13,6 +13,7 @@ import { VerifyEmail } from './VerifyEmail';
 
 import { color } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
+import { useAutoResize } from '../hooks/useAutoResize';
 
 const Container = styled.div`
   display: flex;
@@ -341,6 +342,8 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   const [focused, setFocused] = useState(null);
   console.log('focused :>> ', focused);
   const navigate = useNavigate();
+  const moreInfoRef = useRef(null);
+  const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
 
   ////////////////////GPS
 
@@ -573,13 +576,15 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
               <InputDiv key={field.name}>
                 <InputFieldContainer fieldName={field.name} value={state[field.name]}>
                   <InputField
-                    fieldName={field.name} 
+                    fieldName={field.name}
                     as={field.name === 'moreInfo_main' && 'textarea'}
+                    ref={field.name === 'moreInfo_main' ? moreInfoRef : null}
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={state[field.name]}
                     onChange={e => {
                       const value = e?.target?.value;
+                      field.name === 'moreInfo_main' && autoResizeMoreInfo(e.target);
                       const updatedValue = inputUpdateValue(value, field)
                       // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
                       setState(prevState => ({ ...prevState, [field.name]: updatedValue }));
