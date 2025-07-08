@@ -7,7 +7,7 @@ export const btnEdit = (userId, setSearch, setState) => {
     const userData = await fetchUserById(userId);
     if (userData) {
       console.log('Дані знайденого користувача: ', userData);
-      setSearch(`id: ${userData.userId}`);
+      setSearch(`${userData.userId}`);
       setState(userData);
     } else {
       console.log('Користувача не знайдено.');
