@@ -327,6 +327,13 @@ const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
     .toLowerCase()
     .startsWith(ukSmPrefix.toLowerCase());
 
+  console.log(
+    '🔍 searchBySearchId value:',
+    modifiedSearchValue,
+    'hasUkSm:',
+    hasUkSm,
+  );
+
   const searchPromises = keysToCheck.flatMap(prefix => {
     const baseKey = `${prefix}_${modifiedSearchValue.toLowerCase()}`;
     const searchKeys = [baseKey];
@@ -348,14 +355,13 @@ const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
     if (modifiedSearchValue.startsWith('+')) {
       searchKeys.push(`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`);
     }
-    // console.log('searchBySearchId :>> ',);
+    console.log(`🔑 searchKeys for ${prefix}:`, searchKeys);
     return searchKeys.map(async searchKeyPrefix => {
       const searchIdSnapshot = await get(query(ref2(database, 'searchId'), orderByKey(), startAt(searchKeyPrefix), endAt(`${searchKeyPrefix}\uf8ff`)));
 
       if (searchIdSnapshot.exists()) {
         const matchingKeys = searchIdSnapshot.val();
-
-        // console.log('matchingKeys11111111111111 :>> ', matchingKeys);
+        console.log('✅ matchingKeys for', searchKeyPrefix, ':', matchingKeys);
 
         for (const [, userIdOrArray] of Object.entries(matchingKeys)) {
           if (Array.isArray(userIdOrArray)) {
@@ -380,13 +386,14 @@ const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
   });
 
   await Promise.all(searchPromises);
+  console.log('📊 Results after searchBySearchId:', users);
 };
 
 const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
   // console.log('🔍 searchValue :>> ', searchValue);
 
   for (const prefix of keysToCheck) {
-    // console.log('🛠 Searching by prefix:', prefix);
+    console.log('🛠 Searching by prefix:', prefix);
 
     let formattedSearchValue = searchValue.trim().toLowerCase();
 
@@ -406,7 +413,7 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
       // console.log(`📡 Firebase Query Executed for '${prefix}'`);
 
       if (snapshotByPrefix.exists()) {
-        // console.log(`✅ Found results for '${prefix}'`);
+        console.log(`✅ Found results for '${prefix}':`, snapshotByPrefix.val());
 
         snapshotByPrefix.forEach(userSnapshot => {
           const userId = userSnapshot.key;
@@ -445,7 +452,7 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
           }
         });
       } else {
-        // console.log(`🚫 No results found for '${prefix}'`);
+        console.log(`🚫 No results found for '${prefix}'`);
       }
     } catch {
       // console.error(`❌ Error fetching data for '${prefix}'`);
@@ -458,7 +465,9 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
   const users = {};
   const uniqueUserIds = new Set();
 
-  // console.log('modifiedSearchValue3333333333333 :>> ', modifiedSearchValue);
+  if (['ук см тесттт', 'ук см тесттт2'].includes(searchValue.toLowerCase())) {
+    console.log('🔎 Debug search for:', searchValue, 'modified:', modifiedSearchValue);
+  }
 
   try {
     await searchBySearchId(modifiedSearchValue, uniqueUserIds, users);
@@ -477,12 +486,14 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
     if (Object.keys(users).length === 1) {
       const singleUserId = Object.keys(users)[0];
       console.log('Знайдено одного користувача:', users[singleUserId]);
+      console.log('🔚 Search finished with one user');
       return users[singleUserId];
     }
 
     // Якщо знайдено кілька користувачів
     if (Object.keys(users).length > 1) {
       console.log('Знайдено кілька користувачів:', users);
+      console.log('🔚 Search finished with multiple users');
       return users;
     }
 
@@ -492,6 +503,7 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
     // }
 
     console.log('Користувача не знайдено.');
+    console.log('🔚 Search finished with no results');
     return {};
   } catch (error) {
     console.error('Error fetching data:', error);
