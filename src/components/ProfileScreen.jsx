@@ -90,7 +90,8 @@ const InputDiv = styled.div`
   border-radius: 5px;
 
   box-sizing: border-box;
-  flex-grow: 1;
+  flex: 1 1 auto;
+  min-width: 0; /* Запобігає переповненню при додаванні кнопок */
   height: auto;
 `;
 
@@ -252,7 +253,8 @@ const InputFieldContainer = styled.div`
   /* width: 100%; */
   height: 100%; /* Дозволяє розтягувати висоту по висоті контейнера */
   box-sizing: border-box;
-  flex-grow: 1;
+  flex: 1 1 auto;
+  min-width: 0; /* Дозволяє контейнеру звужуватись разом з інпутом */
   height: auto; /* Дозволяє висоті адаптуватися до вмісту */
 
   &::before {
