@@ -974,28 +974,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     // Функція для парсінга TikTok
     const parseTikTokLink = url => {
-      // Регулярний вираз для перевірки різних форматів, таких як "tik tok", "tiktok:", "tt", "ТТ:", і т.д.
-      const tiktokVariationsRegex = /(?:тікток|tiktok|tt|тт)[:\s]*([a-zA-Z0-9._-]+)/i;
-
-      // Якщо URL містить "tiktok"
-      const tiktokRegex = /tiktok\.com\/(?:.*\/)?([a-zA-Z0-9._-]+)/; // Регулярний вираз для ID TikTok
+      // ID або нік в URL TikTok
+      const tiktokRegex = /tiktok\.com\/(?:.*\/)?@?([a-zA-Z0-9._-]+)/;
       const match = url.match(tiktokRegex);
 
       if (match && match[1]) {
         return match[1]; // Повертає ID з URL TikTok
       }
 
-      // Якщо рядок містить варіацію "tiktok", "tik tok", "тікток", "tt", "ТТ" і т.д.
+      // Варіації "tiktok", "tik tok", "тікток", "tt", "ТТ" з обов'язковим роздільником
+      const tiktokVariationsRegex = /(?:^|[^A-Za-z0-9\u0400-\u04FF_])(тікток|tiktok|tt|тт)[:\s]+([a-zA-Z0-9._-]+)/i;
       const variationMatch = url.match(tiktokVariationsRegex);
-      if (variationMatch && variationMatch[1]) {
-        return variationMatch[1]; // Повертає ID або username після "tiktok", "tik tok", "tt", "ТТ" тощо
-      }
 
-      // // Якщо це одне слово (тільки букви, цифри, дефіси та крапки)
-      // const simpleWordRegex = /^[a-zA-Z0-9._-а-яА-ЯёЁ]+$/; // Дозволяємо літери, цифри, дефіси, крапки та підкреслення
-      // if (simpleWordRegex.test(url)) {
-      //   return url; // Повертає слово, якщо воно відповідає критеріям
-      // }
+      if (variationMatch && variationMatch[2]) {
+        return variationMatch[2]; // Повертає ID або username після ключового слова
+      }
 
       return null; // Повертає null, якщо нічого не знайдено
     };
