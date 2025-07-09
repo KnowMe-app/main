@@ -566,7 +566,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('userEmail');
       setState({});
       setIsLoggedIn(false);
-      navigate('/login');
+      navigate('/my-profile');
       await signOut(auth);
     } catch (error) {
       console.error('Error signing out:', error);

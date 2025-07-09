@@ -406,7 +406,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('userEmail');
       setState({});
       setIsLoggedIn(false);
-      navigate('/login');
+      navigate('/my-profile');
       await signOut(auth);
     } catch (error) {
       console.error('Error signing out:', error);
@@ -475,7 +475,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     const loggedIn = localStorage.getItem('isLoggedIn');
     if (!isLoggedIn && !loggedIn) {
-      navigate('/login');
+      navigate('/my-profile');
     } else {
       setIsLoggedIn(true);
       navigate('/my-profile');

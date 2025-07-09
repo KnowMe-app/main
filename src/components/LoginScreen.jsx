@@ -275,7 +275,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     const loggedIn = localStorage.getItem('isLoggedIn');
     if (!isLoggedIn && !loggedIn) {
-      navigate('/login');
+      navigate('/my-profile');
     } else {
       setIsLoggedIn(true);
       navigate('/my-profile');
