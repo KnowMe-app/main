@@ -195,6 +195,8 @@ const StatusMessage = styled.div`
   font-weight: bold;
   margin-bottom: 10px;
   align-self: flex-end;
+  text-align: right;
+  width: 100%;
   `;
 
 const AuthInputDiv = styled(InputDiv)`
@@ -232,45 +234,6 @@ const AuthLabel = styled.label`
     `}
 `;
 
-const CheckboxContainer = styled.div`
-  margin-top: 10px;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: auto;
-`;
-
-const CheckboxLabel = styled.label`
-  font-size: 12px;
-  color: #333;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  max-width: 300px;
-  transition: color 0.3s ease, box-shadow 0.3s ease;
-`;
-
-const CustomCheckbox = styled.input`
-  appearance: none;
-  width: 15px;
-  height: 15px;
-  border: 2px solid #ccc;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.3s ease, border-color 0.3s ease;
-  box-sizing: border-box;
-  flex-shrink: 0;
-
-  &:checked {
-    background-color: ${color.accent5};
-    border-color: ${color.accent5};
-  }
-
-  &:hover {
-    border-color: ${color.accent};
-  }
-`;
 
 export const SubmitButton = styled.button`
   /* margin-top: 20px; */
@@ -315,6 +278,10 @@ const PublishButton = styled.button`
   &:active {
     transform: scale(0.98);
   }
+`;
+
+const AgreeButton = styled(PublishButton)`
+  margin-bottom: 10px;
 `;
 
 export const ExitButton = styled(SubmitButton)`
@@ -433,12 +400,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     publish: false,
   });
   const [focused, setFocused] = useState(null);
-  const [isChecked, setIsChecked] = useState(false);
   const [missing, setMissing] = useState({});
-
-  const handleCheckboxChange = () => {
-    setIsChecked(!isChecked);
-  };
   console.log('focused :>> ', focused);
   const navigate = useNavigate();
   const moreInfoRef = useRef(null);
@@ -510,12 +472,39 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
+  const handleAgree = async () => {
+    const miss = {};
+    if (!state.email) miss.email = true;
+    if (!state.password) miss.password = true;
+    setMissing(miss);
+    if (Object.keys(miss).length) return;
+    try {
+      const methods = await fetchSignInMethodsForEmail(auth, state.email);
+      let userCredential;
+      if (methods.length > 0) {
+        userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
+      } else {
+        userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
+        await sendEmailVerification(userCredential.user);
+      }
+      const uploadedInfo = {
+        email: state.email,
+        userId: userCredential.user.uid,
+      };
+      await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
+      await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
+      setIsLoggedIn(true);
+      setState(prev => ({ ...prev, userId: userCredential.user.uid }));
+    } catch (error) {
+      console.error('auth error', error);
+    }
+  };
+
   const handlePublic = async () => {
     if (!state.userId) {
       const miss = {};
       if (!state.email) miss.email = true;
       if (!state.password) miss.password = true;
-      if (!isChecked) miss.checkbox = true;
       setMissing(miss);
       if (Object.keys(miss).length) return;
       try {
@@ -713,13 +702,10 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               />
               <AuthLabel isActive={focused === 'passwordReg' || state.password}>Придумайте / введіть пароль</AuthLabel>
             </AuthInputDiv>
-            <CheckboxContainer style={missing.checkbox ? { transform: 'scale(1.05)', border: '1px solid red' } : {}}>
-              <CustomCheckbox type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
-              <CheckboxLabel>Я погоджуюся з умовами програми</CheckboxLabel>
-            </CheckboxContainer>
+            <AgreeButton onClick={handleAgree}>Я погоджуюся з умовами програми</AgreeButton>
           </>
         )}
-        <Photos state={state} setState={setState} />
+        {state.userId && <Photos state={state} setState={setState} />}
 
         {pickerFields.map(field => {
           // console.log('field.options:', field.options);
