@@ -21,6 +21,7 @@ import {
   runTransaction,
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE } from './constants';
+import { nameSynonyms, surnameSynonyms } from './nameSynonyms';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -959,6 +960,34 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
 //   }
 // };
 
+const addSynonymIndexes = (fieldKey, originalValue, promises, userId) => {
+  const map = fieldKey === 'name' ? nameSynonyms : surnameSynonyms;
+  const synonyms = map[originalValue.toLowerCase()] || [];
+  synonyms.forEach(syn => {
+    const cleaned = syn.replace(/\s+/g, '').toLowerCase();
+    promises.push(updateSearchId(fieldKey, cleaned, userId, 'add'));
+  });
+};
+
+const parseTelegramNames = value => {
+  const match = value.match(/^\s*УК\s*СМ\s+(.+)/i);
+  if (!match) return [];
+  return match[1].trim().split(/\s+/);
+};
+
+const addTelegramIndexes = (telegramValue, promises, userId) => {
+  const tokens = parseTelegramNames(telegramValue);
+  tokens.forEach(token => {
+    const cleaned = token.replace(/\s+/g, '').toLowerCase();
+    if (cleaned) {
+      promises.push(updateSearchId('name', cleaned, userId, 'add'));
+      promises.push(updateSearchId('surname', cleaned, userId, 'add'));
+      addSynonymIndexes('name', cleaned, promises, userId);
+      addSynonymIndexes('surname', cleaned, promises, userId);
+    }
+  });
+};
+
 export const createSearchIdsInCollection = async (collection, onProgress) => {
   const ref = ref2(database, collection);
 
@@ -996,6 +1025,14 @@ export const createSearchIdsInCollection = async (collection, onProgress) => {
                   updatePromises.push(
                     updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'),
                   );
+
+                  if (key === 'name' || key === 'surname') {
+                    addSynonymIndexes(key, cleanedValue, updatePromises, userId);
+                  }
+
+                  if (key === 'telegram') {
+                    addTelegramIndexes(item, updatePromises, userId);
+                  }
                 }
               });
             } else if (value && (typeof value === 'string' || typeof value === 'number')) {
@@ -1011,6 +1048,14 @@ export const createSearchIdsInCollection = async (collection, onProgress) => {
               updatePromises.push(
                 updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'),
               );
+
+              if (key === 'name' || key === 'surname') {
+                addSynonymIndexes(key, cleanedValue, updatePromises, userId);
+              }
+
+              if (key === 'telegram') {
+                addTelegramIndexes(value, updatePromises, userId);
+              }
             }
           }
         }
@@ -2426,6 +2471,53 @@ export const fetchAllUsersFromRTDB = async () => {
   } catch (error) {
     console.error('Помилка при отриманні даних:', error);
     return null;
+  }
+};
+
+export const fetchAllNamesAndTelegrams = async () => {
+  try {
+    const [newUsersSnapshot, usersSnapshot] = await Promise.all([
+      get(ref2(database, 'newUsers')),
+      get(ref2(database, 'users')),
+    ]);
+
+    const newUsersData = newUsersSnapshot.exists() ? newUsersSnapshot.val() : {};
+    const usersData = usersSnapshot.exists() ? usersSnapshot.val() : {};
+
+    const allUserIds = new Set([
+      ...Object.keys(newUsersData),
+      ...Object.keys(usersData),
+    ]);
+
+    const names = new Set();
+    const surnames = new Set();
+    const telegrams = new Set();
+
+    for (const userId of allUserIds) {
+      const user = {
+        ...(newUsersData[userId] || {}),
+        ...(usersData[userId] || {}),
+      };
+
+      if (user.name && typeof user.name === 'string') {
+        names.add(user.name.trim());
+      }
+      if (user.surname && typeof user.surname === 'string') {
+        surnames.add(user.surname.trim());
+      }
+      if (user.telegram && typeof user.telegram === 'string') {
+        telegrams.add(user.telegram.trim());
+      }
+    }
+
+    return {
+      names: Array.from(names),
+      surnames: Array.from(surnames),
+      telegrams: Array.from(telegrams),
+    };
+  } catch (error) {
+    console.error('Error fetching names and telegrams:', error);
+    return { names: [], surnames: [], telegrams: [] };
   }
 };
 
