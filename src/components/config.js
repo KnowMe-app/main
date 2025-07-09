@@ -2474,7 +2474,7 @@ export const fetchAllUsersFromRTDB = async () => {
   }
 };
 
-export const fetchAllNamesAndTelegrams = async onProgress => {
+export const fetchAllNamesAndTelegrams = async () => {
   try {
     const [newUsersSnapshot, usersSnapshot] = await Promise.all([
       get(ref2(database, 'newUsers')),
@@ -2493,11 +2493,7 @@ export const fetchAllNamesAndTelegrams = async onProgress => {
     const surnames = new Set();
     const telegrams = new Set();
 
-    const userIds = Array.from(allUserIds);
-    const total = userIds.length;
-    let processed = 0;
-
-    for (const userId of userIds) {
+    for (const userId of allUserIds) {
       const user = {
         ...(newUsersData[userId] || {}),
         ...(usersData[userId] || {}),
@@ -2512,10 +2508,6 @@ export const fetchAllNamesAndTelegrams = async onProgress => {
       if (user.telegram && typeof user.telegram === 'string') {
         telegrams.add(user.telegram.trim());
       }
-
-      processed += 1;
-      const progress = Math.floor((processed / total) * 100);
-      if (onProgress && progress % 10 === 0) onProgress(progress);
     }
 
     return {
