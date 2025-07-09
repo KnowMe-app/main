@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Route, Routes, useNavigate  } from 'react-router-dom';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { MyProfile } from './MyProfile';
-import { LoginScreen } from './LoginScreen';
 import { SubmitForm } from './SubmitForm';
 import {AddNewProfile} from './AddNewProfile';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -38,7 +37,6 @@ export const App = () => {
       <Route path="/" element={user ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />} />
       <Route path="/submit" element={<SubmitForm />} />
       <Route path="/my-profile"  element={<MyProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn}/>} />
-      <Route path="/login" element={<LoginScreen isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />
       {user&& <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
       {user&&<Route path="/policy" element={<PrivacyPolicy/>} />}
     </Routes>
