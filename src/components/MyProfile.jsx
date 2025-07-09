@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import styled, { css } from 'styled-components';
-import { FaUser, FaLock } from 'react-icons/fa';
+
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
 import { auth, fetchUserData } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -194,17 +194,10 @@ const StatusMessage = styled.div`
   color: ${({ published }) => (published ? 'green' : 'red')};
   font-weight: bold;
   margin-bottom: 10px;
-`;
+  align-self: flex-end;
+  `;
 
-const AuthInputDiv = styled.div`
-  display: flex;
-  align-items: center;
-  position: relative;
-  margin: 10px 0;
-  padding: 10px;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  border-radius: 5px;
+const AuthInputDiv = styled(InputDiv)`
   width: 100%;
   transition: transform 0.3s ease;
   ${({ missing }) =>
@@ -213,12 +206,9 @@ const AuthInputDiv = styled.div`
       transform: scale(1.05);
       border-color: red;
     `}
-`;
+  `;
 
-const AuthInputField = styled.input`
-  border: none;
-  outline: none;
-  flex: 1;
+const AuthInputField = styled(InputField)`
   padding-left: 10px;
 `;
 
@@ -698,6 +688,37 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         <StatusMessage published={state.publish}>
           {state.publish ? 'Анкета опублікована' : 'Анкета прихована'}
         </StatusMessage>
+        {!state.userId && (
+          <>
+            <AuthInputDiv missing={missing.email}>
+              <AuthInputField
+                type="text"
+                name="email"
+                value={state.email}
+                onChange={e => setState(prev => ({ ...prev, email: e.target.value }))}
+                onFocus={() => handleFocus('emailReg')}
+                onBlur={handleBlur}
+              />
+              <AuthLabel isActive={focused === 'emailReg' || state.email}>Введіть емейл</AuthLabel>
+            </AuthInputDiv>
+            <AuthInputDiv missing={missing.password}>
+              <AuthInputField
+                type="password"
+                name="password"
+                value={state.password}
+                onChange={e => setState(prev => ({ ...prev, password: e.target.value }))}
+                onFocus={() => handleFocus('passwordReg')}
+                onBlur={handleBlur}
+                autoComplete="new-password"
+              />
+              <AuthLabel isActive={focused === 'passwordReg' || state.password}>Придумайте / введіть пароль</AuthLabel>
+            </AuthInputDiv>
+            <CheckboxContainer style={missing.checkbox ? { transform: 'scale(1.05)', border: '1px solid red' } : {}}>
+              <CustomCheckbox type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
+              <CheckboxLabel>Я погоджуюся з умовами програми</CheckboxLabel>
+            </CheckboxContainer>
+          </>
+        )}
         <Photos state={state} setState={setState} />
 
         {pickerFields.map(field => {
@@ -777,39 +798,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             </PickerContainer>
           );
         })}
-        {!state.userId && (
-          <>
-            <AuthInputDiv missing={missing.email}>
-              <FaUser style={{ marginRight: '10px', color: 'orange' }} />
-              <AuthInputField
-                type="text"
-                name="email"
-                value={state.email}
-                onChange={e => setState(prev => ({ ...prev, email: e.target.value }))}
-                onFocus={() => handleFocus('emailReg')}
-                onBlur={handleBlur}
-              />
-              <AuthLabel isActive={focused === 'emailReg' || state.email}>Поштова скринька</AuthLabel>
-            </AuthInputDiv>
-            <AuthInputDiv missing={missing.password}>
-              <FaLock style={{ marginRight: '10px', color: 'orange' }} />
-              <AuthInputField
-                type="password"
-                name="password"
-                value={state.password}
-                onChange={e => setState(prev => ({ ...prev, password: e.target.value }))}
-                onFocus={() => handleFocus('passwordReg')}
-                onBlur={handleBlur}
-                autoComplete="new-password"
-              />
-              <AuthLabel isActive={focused === 'passwordReg' || state.password}>Пароль</AuthLabel>
-            </AuthInputDiv>
-            <CheckboxContainer style={missing.checkbox ? { transform: 'scale(1.05)', border: '1px solid red' } : {}}>
-              <CustomCheckbox type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
-              <CheckboxLabel>Я погоджуюся з умовами програми</CheckboxLabel>
-            </CheckboxContainer>
-          </>
-        )}
         {!state.publish && (
           <PublishButton onClick={handlePublic}>Опублікувати</PublishButton>
         )}
