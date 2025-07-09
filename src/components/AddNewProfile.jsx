@@ -1336,6 +1336,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // });
   };
 
+  // Builds search indexes for names in both 'newUsers' and 'users'
+  // collections. Progress is shown with toast notifications.
   const indexNames = async () => {
     toast.loading('Indexing names newUsers 0%', { id: 'name-index-progress' });
     await createSearchIdsInCollection('newUsers', progress => {
@@ -1359,12 +1361,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
+  // Retrieves all names, surnames and Telegram handles from both
+  // 'newUsers' and 'users' collections. Shows progress via toasts and
+  // stores the result in the `nameDump` state.
   const collectNames = async () => {
-    const data = await fetchAllNamesAndTelegrams();
+    toast.loading('Collecting names 0%', { id: 'name-collect-progress' });
+    const data = await fetchAllNamesAndTelegrams(progress => {
+      toast.loading(`Collecting names ${progress}%`, {
+        id: 'name-collect-progress',
+      });
+    });
     setNameDump(data);
+    toast.success('Names collected', { id: 'name-collect-progress' });
     console.log('Collected names:', data);
   };
 
+  // Downloads the `nameDump` state as a names.json file on the client.
   const downloadNames = () => {
     if (!nameDump) return;
     const blob = new Blob([JSON.stringify(nameDump, null, 2)], {
