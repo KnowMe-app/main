@@ -1336,6 +1336,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // });
   };
 
+  const indexNames = async () => {
+    toast.loading('Indexing names newUsers 0%', { id: 'name-index-progress' });
+    await createSearchIdsInCollection('newUsers', progress => {
+      toast.loading(`Indexing names newUsers ${progress}%`, {
+        id: 'name-index-progress',
+      });
+    });
+    toast.loading('Indexing names users 0%', { id: 'name-index-progress' });
+    await createSearchIdsInCollection('users', progress => {
+      toast.loading(`Indexing names users ${progress}%`, {
+        id: 'name-index-progress',
+      });
+    });
+    toast.success('Names indexed', { id: 'name-index-progress' });
+  };
+
   const indexData = async () => {
     const collections = ['newUsers', 'users'];
     for (const col of collections) {
@@ -1779,6 +1795,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               <Button onClick={loadFavoriteUsers}>❤</Button>
               <Button onClick={indexData}>IndData</Button>
               <Button onClick={makeIndex}>Index</Button>
+              <Button onClick={indexNames}>IndName</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {
                 <Button
