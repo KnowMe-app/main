@@ -27,6 +27,7 @@ import {
   fetchAllUsersFromRTDB,
   fetchTotalNewUsersCount,
   fetchFilteredUsersByPage,
+  fetchAllNamesAndTelegrams,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -1299,6 +1300,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [duplicates, setDuplicates] = useState('');
 
+  const [nameDump, setNameDump] = useState(null);
+
   const searchDuplicates = async () => {
     const { mergedUsers, totalDuplicates } = await loadDuplicateUsers();
     // console.log('res :>> ', res);
@@ -1338,6 +1341,27 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     for (const col of collections) {
       await createIndexesSequentiallyInCollection(col);
     }
+  };
+
+  const collectNames = async () => {
+    const data = await fetchAllNamesAndTelegrams();
+    setNameDump(data);
+    console.log('Collected names:', data);
+  };
+
+  const downloadNames = () => {
+    if (!nameDump) return;
+    const blob = new Blob([JSON.stringify(nameDump, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'names.json';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const priorityOrder = [
@@ -1750,6 +1774,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               >
                 Load2
               </Button>
+              <Button onClick={collectNames}>GetNames</Button>
+              <Button onClick={downloadNames}>SaveNames</Button>
               <Button onClick={loadFavoriteUsers}>❤</Button>
               <Button onClick={indexData}>IndData</Button>
               <Button onClick={makeIndex}>Index</Button>

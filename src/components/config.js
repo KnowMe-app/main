@@ -2429,6 +2429,53 @@ export const fetchAllUsersFromRTDB = async () => {
   }
 };
 
+export const fetchAllNamesAndTelegrams = async () => {
+  try {
+    const [newUsersSnapshot, usersSnapshot] = await Promise.all([
+      get(ref2(database, 'newUsers')),
+      get(ref2(database, 'users')),
+    ]);
+
+    const newUsersData = newUsersSnapshot.exists() ? newUsersSnapshot.val() : {};
+    const usersData = usersSnapshot.exists() ? usersSnapshot.val() : {};
+
+    const allUserIds = new Set([
+      ...Object.keys(newUsersData),
+      ...Object.keys(usersData),
+    ]);
+
+    const names = new Set();
+    const surnames = new Set();
+    const telegrams = new Set();
+
+    for (const userId of allUserIds) {
+      const user = {
+        ...(newUsersData[userId] || {}),
+        ...(usersData[userId] || {}),
+      };
+
+      if (user.name && typeof user.name === 'string') {
+        names.add(user.name.trim());
+      }
+      if (user.surname && typeof user.surname === 'string') {
+        surnames.add(user.surname.trim());
+      }
+      if (user.telegram && typeof user.telegram === 'string') {
+        telegrams.add(user.telegram.trim());
+      }
+    }
+
+    return {
+      names: Array.from(names),
+      surnames: Array.from(surnames),
+      telegrams: Array.from(telegrams),
+    };
+  } catch (error) {
+    console.error('Error fetching names and telegrams:', error);
+    return { names: [], surnames: [], telegrams: [] };
+  }
+};
+
 export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
   const dbInstance = getDatabase();
   const usersRef = ref2(dbInstance, 'newUsers');
