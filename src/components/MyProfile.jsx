@@ -1,11 +1,19 @@
 import React, { useEffect, useState, useRef } from 'react';
 import styled, { css } from 'styled-components';
+import { FaUser, FaLock } from 'react-icons/fa';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
 import { auth, fetchUserData } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
 import { pickerFields } from './formFields';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import {
+  onAuthStateChanged,
+  signOut,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signInWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
+} from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import InfoModal from './InfoModal';
 import Photos from './Photos';
@@ -178,8 +186,100 @@ const Placeholder = styled.label`
       top: 0;
       transform: translateY(-100%);
       font-size: 12px;
+  color: orange;
+  `}
+`;
+
+const StatusMessage = styled.div`
+  color: ${({ published }) => (published ? 'green' : 'red')};
+  font-weight: bold;
+  margin-bottom: 10px;
+`;
+
+const AuthInputDiv = styled.div`
+  display: flex;
+  align-items: center;
+  position: relative;
+  margin: 10px 0;
+  padding: 10px;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  width: 100%;
+  transition: transform 0.3s ease;
+  ${({ missing }) =>
+    missing &&
+    css`
+      transform: scale(1.05);
+      border-color: red;
+    `}
+`;
+
+const AuthInputField = styled.input`
+  border: none;
+  outline: none;
+  flex: 1;
+  padding-left: 10px;
+`;
+
+const AuthLabel = styled.label`
+  position: absolute;
+  left: 30px;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: all 0.3s ease;
+  color: gray;
+  pointer-events: none;
+
+  ${({ isActive }) =>
+    isActive &&
+    css`
+      left: 10px;
+      top: 0;
+      transform: translateY(-100%);
+      font-size: 14px;
       color: orange;
     `}
+`;
+
+const CheckboxContainer = styled.div`
+  margin-top: 10px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+`;
+
+const CheckboxLabel = styled.label`
+  font-size: 12px;
+  color: #333;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  max-width: 300px;
+  transition: color 0.3s ease, box-shadow 0.3s ease;
+`;
+
+const CustomCheckbox = styled.input`
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border: 2px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+  box-sizing: border-box;
+  flex-shrink: 0;
+
+  &:checked {
+    background-color: ${color.accent5};
+    border-color: ${color.accent5};
+  }
+
+  &:hover {
+    border-color: ${color.accent};
+  }
 `;
 
 export const SubmitButton = styled.button`
@@ -327,11 +427,12 @@ const Button = styled.button`
   }
 `;
 
-export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
+export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [state, setState] = useState({
     name: '',
     surname: '',
     email: '',
+    password: '',
     phone: '',
     telegram: '',
     facebook: '',
@@ -342,6 +443,12 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     publish: false,
   });
   const [focused, setFocused] = useState(null);
+  const [isChecked, setIsChecked] = useState(false);
+  const [missing, setMissing] = useState({});
+
+  const handleCheckboxChange = () => {
+    setIsChecked(!isChecked);
+  };
   console.log('focused :>> ', focused);
   const navigate = useNavigate();
   const moreInfoRef = useRef(null);
@@ -413,7 +520,36 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
-  const handlePublic = () => {
+  const handlePublic = async () => {
+    if (!state.userId) {
+      const miss = {};
+      if (!state.email) miss.email = true;
+      if (!state.password) miss.password = true;
+      if (!isChecked) miss.checkbox = true;
+      setMissing(miss);
+      if (Object.keys(miss).length) return;
+      try {
+        const methods = await fetchSignInMethodsForEmail(auth, state.email);
+        let userCredential;
+        if (methods.length > 0) {
+          userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
+        } else {
+          userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
+          await sendEmailVerification(userCredential.user);
+        }
+        const uploadedInfo = {
+          email: state.email,
+          userId: userCredential.user.uid,
+        };
+        await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
+        await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
+        setIsLoggedIn(true);
+        setState(prev => ({ ...prev, userId: userCredential.user.uid }));
+      } catch (error) {
+        console.error('auth error', error);
+        return;
+      }
+    }
     setState(prevState => ({ ...prevState, publish: true }));
   };
 
@@ -472,16 +608,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   // }, []);
 
   // Перенаправляємо на іншу сторінку
-  useEffect(() => {
-    const loggedIn = localStorage.getItem('isLoggedIn');
-    if (!isLoggedIn && !loggedIn) {
-      navigate('/login');
-    } else {
-      setIsLoggedIn(true);
-      navigate('/my-profile');
-    }
-    // eslint-disable-next-line
-  }, []);
+  // Цей екран доступний і без авторизації
 
   useEffect(() => {
     // console.log('state.photos :>> ', state.photos);
@@ -568,6 +695,9 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         >
           ⋮
         </DotsButton>
+        <StatusMessage published={state.publish}>
+          {state.publish ? 'Анкета опублікована' : 'Анкета прихована'}
+        </StatusMessage>
         <Photos state={state} setState={setState} />
 
         {pickerFields.map(field => {
@@ -647,7 +777,42 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
             </PickerContainer>
           );
         })}
-        {!state.publish && <PublishButton onClick={handlePublic}>Опублікувати</PublishButton>}
+        {!state.userId && (
+          <>
+            <AuthInputDiv missing={missing.email}>
+              <FaUser style={{ marginRight: '10px', color: 'orange' }} />
+              <AuthInputField
+                type="text"
+                name="email"
+                value={state.email}
+                onChange={e => setState(prev => ({ ...prev, email: e.target.value }))}
+                onFocus={() => handleFocus('emailReg')}
+                onBlur={handleBlur}
+              />
+              <AuthLabel isActive={focused === 'emailReg' || state.email}>Поштова скринька</AuthLabel>
+            </AuthInputDiv>
+            <AuthInputDiv missing={missing.password}>
+              <FaLock style={{ marginRight: '10px', color: 'orange' }} />
+              <AuthInputField
+                type="password"
+                name="password"
+                value={state.password}
+                onChange={e => setState(prev => ({ ...prev, password: e.target.value }))}
+                onFocus={() => handleFocus('passwordReg')}
+                onBlur={handleBlur}
+                autoComplete="new-password"
+              />
+              <AuthLabel isActive={focused === 'passwordReg' || state.password}>Пароль</AuthLabel>
+            </AuthInputDiv>
+            <CheckboxContainer style={missing.checkbox ? { transform: 'scale(1.05)', border: '1px solid red' } : {}}>
+              <CustomCheckbox type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
+              <CheckboxLabel>Я погоджуюся з умовами програми</CheckboxLabel>
+            </CheckboxContainer>
+          </>
+        )}
+        {!state.publish && (
+          <PublishButton onClick={handlePublic}>Опублікувати</PublishButton>
+        )}
       </InnerContainer>
 
       {showInfoModal && (
@@ -663,4 +828,4 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   );
 };
 
-export default ProfileScreen;
+export default MyProfile;

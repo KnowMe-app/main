@@ -222,7 +222,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.setItem('userEmail', state.email);
 
       setIsLoggedIn(true);
-      navigate('/profile');
+      navigate('/my-profile');
       console.log('User signed in:', userCredential.user);
     } catch (error) {
       console.error('Error signing in:', error);
@@ -253,7 +253,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.setItem('userEmail', state.email);
 
       setIsLoggedIn(true);
-      navigate('/profile');
+      navigate('/my-profile');
     } catch (error) {
       console.error('Error signing in:', error);
     }
@@ -278,7 +278,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       navigate('/login');
     } else {
       setIsLoggedIn(true);
-      navigate('/profile');
+      navigate('/my-profile');
     }
     // eslint-disable-next-line
   }, []);
