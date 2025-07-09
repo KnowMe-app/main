@@ -21,7 +21,6 @@ import {
   runTransaction,
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE } from './constants';
-import { nameSynonyms, surnameSynonyms } from './nameSynonyms';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -960,34 +959,6 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
 //   }
 // };
 
-const addSynonymIndexes = (fieldKey, originalValue, promises, userId) => {
-  const map = fieldKey === 'name' ? nameSynonyms : surnameSynonyms;
-  const synonyms = map[originalValue.toLowerCase()] || [];
-  synonyms.forEach(syn => {
-    const cleaned = syn.replace(/\s+/g, '').toLowerCase();
-    promises.push(updateSearchId(fieldKey, cleaned, userId, 'add'));
-  });
-};
-
-const parseTelegramNames = value => {
-  const match = value.match(/^\s*УК\s*СМ\s+(.+)/i);
-  if (!match) return [];
-  return match[1].trim().split(/\s+/);
-};
-
-const addTelegramIndexes = (telegramValue, promises, userId) => {
-  const tokens = parseTelegramNames(telegramValue);
-  tokens.forEach(token => {
-    const cleaned = token.replace(/\s+/g, '').toLowerCase();
-    if (cleaned) {
-      promises.push(updateSearchId('name', cleaned, userId, 'add'));
-      promises.push(updateSearchId('surname', cleaned, userId, 'add'));
-      addSynonymIndexes('name', cleaned, promises, userId);
-      addSynonymIndexes('surname', cleaned, promises, userId);
-    }
-  });
-};
-
 export const createSearchIdsInCollection = async (collection, onProgress) => {
   const ref = ref2(database, collection);
 
@@ -1025,14 +996,6 @@ export const createSearchIdsInCollection = async (collection, onProgress) => {
                   updatePromises.push(
                     updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'),
                   );
-
-                  if (key === 'name' || key === 'surname') {
-                    addSynonymIndexes(key, cleanedValue, updatePromises, userId);
-                  }
-
-                  if (key === 'telegram') {
-                    addTelegramIndexes(item, updatePromises, userId);
-                  }
                 }
               });
             } else if (value && (typeof value === 'string' || typeof value === 'number')) {
@@ -1048,14 +1011,6 @@ export const createSearchIdsInCollection = async (collection, onProgress) => {
               updatePromises.push(
                 updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'),
               );
-
-              if (key === 'name' || key === 'surname') {
-                addSynonymIndexes(key, cleanedValue, updatePromises, userId);
-              }
-
-              if (key === 'telegram') {
-                addTelegramIndexes(value, updatePromises, userId);
-              }
             }
           }
         }
