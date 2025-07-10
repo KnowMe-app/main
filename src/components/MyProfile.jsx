@@ -213,12 +213,12 @@ const AuthInputDiv = styled(InputDiv)`
   `;
 
 const AuthInputField = styled(InputField)`
-  padding-left: 10px;
+  padding-left: 20px;
 `;
 
 const AuthLabel = styled.label`
   position: absolute;
-  left: 10px;
+  left: 20px;
   top: 50%;
   transform: translateY(-50%);
   transition: all 0.3s ease;
@@ -228,7 +228,7 @@ const AuthLabel = styled.label`
   ${({ isActive }) =>
     isActive &&
     css`
-      left: 10px;
+      left: 20px;
       top: 0;
       transform: translateY(-100%);
       font-size: 12px;
