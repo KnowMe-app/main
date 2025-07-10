@@ -6,6 +6,7 @@ import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailA
 import { getCurrentDate } from './foramtDate';
 import { useNavigate } from 'react-router-dom';
 import { color } from './styles';
+import toast from 'react-hot-toast';
 
 const Container = styled.div`
   display: flex;
@@ -31,15 +32,16 @@ const InnerContainer = styled.div`
 `;
 
 const InputDiv = styled.div`
-  display: inline-block;
-  vertical-align: middle;
+  display: flex;
+  align-items: center;
   position: relative;
   margin: 10px 0;
   padding: 10px;
   background-color: #fff;
   border: 1px solid #ccc;
   border-radius: 5px;
-  width: 300px;
+  width: 100%;
+  box-sizing: border-box;
 `;
 
 const InputField = styled.input`
@@ -197,6 +199,8 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     };
 
     checkAutofill();
+    const timer = setTimeout(checkAutofill, 500);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleChange = e => {
@@ -244,7 +248,11 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       navigate('/my-profile');
       console.log('User signed in:', userCredential.user);
     } catch (error) {
-      console.error('Error signing in:', error);
+      if (error.code === 'auth/wrong-password') {
+        toast.error('Невірний пароль');
+      } else {
+        console.error('Error signing in:', error);
+      }
     }
   };
 
