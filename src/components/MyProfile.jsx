@@ -101,6 +101,7 @@ const InputDiv = styled.div`
 
   box-sizing: border-box;
   flex: 1 1 auto;
+  width: 100%;
   min-width: 0; /* Запобігає переповненню при додаванні кнопок */
   height: auto;
 `;
@@ -284,12 +285,15 @@ const PublishButton = styled.button`
 
 const AgreeButton = styled(PublishButton)`
   margin-bottom: 10px;
+  width: 110px;
+  white-space: nowrap;
 `;
 const TermsButton = styled.button`
   background-color: ${color.oppositeAccent};
   border: 1px solid ${color.gray};
   border-radius: 4px;
   padding: 10px 6px;
+  width: 110px;
   margin-left: 8px;
   font-size: 16px;
   cursor: pointer;
@@ -406,21 +410,13 @@ const Button = styled.button`
   }
 `;
 
+const initialProfileState = pickerFields.reduce(
+  (acc, field) => ({ ...acc, [field.name]: '' }),
+  { password: '', userId: '', publish: false }
+);
+
 export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
-  const [state, setState] = useState({
-    name: '',
-    surname: '',
-    email: '',
-    password: '',
-    phone: '',
-    telegram: '',
-    facebook: '',
-    instagram: '',
-    tiktok: '',
-    vk: '',
-    userId: '',
-    publish: false,
-  });
+  const [state, setState] = useState(initialProfileState);
   const [focused, setFocused] = useState(null);
   const [missing, setMissing] = useState({});
   console.log('focused :>> ', focused);
@@ -501,7 +497,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
       localStorage.removeItem('myProfileDraft');
-      setState({});
+      setState(initialProfileState);
       setIsLoggedIn(false);
       navigate('/my-profile');
       await signOut(auth);
