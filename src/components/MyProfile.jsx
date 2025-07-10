@@ -15,6 +15,7 @@ import {
   fetchSignInMethodsForEmail,
 } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
+import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import Photos from './Photos';
 import { VerifyEmail } from './VerifyEmail';
@@ -499,22 +500,42 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setMissing(miss);
     if (Object.keys(miss).length) return;
     try {
+      const { todayDays } = getCurrentDate();
       const methods = await fetchSignInMethodsForEmail(auth, state.email);
       let userCredential;
+      let uploadedInfo;
       if (methods.length > 0) {
         userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
+        uploadedInfo = {
+          email: state.email,
+          areTermsConfirmed: todayDays,
+          lastLogin: todayDays,
+          userId: userCredential.user.uid,
+          userRole: 'ed',
+        };
+        await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
+        await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
       } else {
         userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
         await sendEmailVerification(userCredential.user);
+        uploadedInfo = {
+          email: state.email,
+          areTermsConfirmed: todayDays,
+          registrationDate: todayDays,
+          lastLogin: todayDays,
+          userId: userCredential.user.uid,
+          userRole: 'ed',
+        };
+        await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
+        await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
       }
-      const uploadedInfo = {
-        email: state.email,
-        userId: userCredential.user.uid,
-      };
-      await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
-      await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
+
+      localStorage.setItem('isLoggedIn', 'true');
+      localStorage.setItem('userEmail', state.email);
+
       setIsLoggedIn(true);
       setState(prev => ({ ...prev, userId: userCredential.user.uid }));
+      navigate('/my-profile');
     } catch (error) {
       console.error('auth error', error);
     }
