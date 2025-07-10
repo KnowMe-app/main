@@ -218,7 +218,7 @@ const AuthInputField = styled(InputField)`
 
 const AuthLabel = styled.label`
   position: absolute;
-  left: 30px;
+  left: 10px;
   top: 50%;
   transform: translateY(-50%);
   transition: all 0.3s ease;
@@ -291,10 +291,13 @@ const TermsButton = styled.button`
   background-color: ${color.oppositeAccent};
   border: 1px solid ${color.gray};
   border-radius: 4px;
-  padding: 10px 6px;
+  padding: 10px 20px;
   width: 110px;
   margin-left: 8px;
-  font-size: 16px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   color: ${color.accent5};
   &:hover {
