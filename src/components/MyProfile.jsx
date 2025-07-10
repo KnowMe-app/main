@@ -16,7 +16,6 @@ import {
 } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { getCurrentDate } from './foramtDate';
-import toast from 'react-hot-toast';
 import InfoModal from './InfoModal';
 import Photos from './Photos';
 import { VerifyEmail } from './VerifyEmail';
@@ -428,21 +427,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const moreInfoRef = useRef(null);
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
 
-  useEffect(() => {
-    const savedDraft = localStorage.getItem('myProfileDraft');
-    if (savedDraft && !state.userId) {
-      setState(prev => ({ ...prev, ...JSON.parse(savedDraft) }));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!state.publish) {
-      localStorage.setItem('myProfileDraft', JSON.stringify(state));
-    } else {
-      localStorage.removeItem('myProfileDraft');
-    }
-  }, [state, state.publish]);
-
   ////////////////////GPS
 
   useEffect(() => {
@@ -500,7 +484,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     try {
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
-      localStorage.removeItem('myProfileDraft');
       setState({});
       setIsLoggedIn(false);
       navigate('/my-profile');
@@ -554,11 +537,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setState(prev => ({ ...prev, userId: userCredential.user.uid }));
       navigate('/my-profile');
     } catch (error) {
-      if (error.code === 'auth/wrong-password') {
-        toast.error('Невірний пароль');
-      } else {
-        console.error('auth error', error);
-      }
+      console.error('auth error', error);
     }
   };
 
@@ -587,11 +566,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setIsLoggedIn(true);
         setState(prev => ({ ...prev, userId: userCredential.user.uid }));
       } catch (error) {
-        if (error.code === 'auth/wrong-password') {
-          toast.error('Невірний пароль');
-        } else {
-          console.error('auth error', error);
-        }
+        console.error('auth error', error);
         return;
       }
     }
@@ -769,7 +744,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               <AuthLabel isActive={focused === 'passwordReg' || state.password}>Придумайте / введіть пароль</AuthLabel>
             </AuthInputDiv>
             <AgreeContainer>
-              <AgreeButton onClick={handleAgree}>Я погоджуюсь</AgreeButton>
+              <AgreeButton onClick={handleAgree}>Я погоджуюся з умовами програми</AgreeButton>
               <TermsButton onClick={() => navigate('/policy')}>Умови</TermsButton>
             </AgreeContainer>
           </>
