@@ -287,9 +287,9 @@ const TermsButton = styled.button`
   background-color: ${color.oppositeAccent};
   border: 1px solid ${color.gray};
   border-radius: 4px;
-  padding: 2px 6px;
+  padding: 10px 6px;
   margin-left: 8px;
-  font-size: 12px;
+  font-size: 16px;
   cursor: pointer;
   color: ${color.accent5};
   &:hover {
