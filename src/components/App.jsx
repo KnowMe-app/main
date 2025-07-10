@@ -38,7 +38,7 @@ export const App = () => {
       <Route path="/submit" element={<SubmitForm />} />
       <Route path="/my-profile"  element={<MyProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn}/>} />
       {user&& <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
-      {user&&<Route path="/policy" element={<PrivacyPolicy/>} />}
+      <Route path="/policy" element={<PrivacyPolicy />} />
     </Routes>
   );
 };
