@@ -284,7 +284,8 @@ const PublishButton = styled.button`
 
 const AgreeButton = styled(PublishButton)`
   margin-bottom: 10px;
-  font-size: 14px;
+  font-size: 12px;
+  white-space: nowrap;
   flex-grow: 1;
 `;
 const TermsButton = styled.button`
