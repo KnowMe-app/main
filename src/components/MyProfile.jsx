@@ -229,7 +229,7 @@ const AuthLabel = styled.label`
       left: 10px;
       top: 0;
       transform: translateY(-100%);
-      font-size: 14px;
+      font-size: 12px;
       color: orange;
     `}
 `;
@@ -281,6 +281,26 @@ const PublishButton = styled.button`
 `;
 
 const AgreeButton = styled(PublishButton)`
+  margin-bottom: 10px;
+`;
+const TermsButton = styled.button`
+  background-color: ${color.oppositeAccent};
+  border: 1px solid ${color.gray};
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin-left: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: ${color.accent5};
+  &:hover {
+    background-color: ${color.paleAccent5};
+  }
+`;
+
+const AgreeContainer = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin-bottom: 10px;
 `;
 
@@ -702,7 +722,10 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               />
               <AuthLabel isActive={focused === 'passwordReg' || state.password}>Придумайте / введіть пароль</AuthLabel>
             </AuthInputDiv>
-            <AgreeButton onClick={handleAgree}>Я погоджуюся з умовами програми</AgreeButton>
+            <AgreeContainer>
+              <AgreeButton onClick={handleAgree}>Я погоджуюся з умовами програми</AgreeButton>
+              <TermsButton onClick={() => navigate('/policy')}>Умови</TermsButton>
+            </AgreeContainer>
           </>
         )}
         {state.userId && <Photos state={state} setState={setState} />}

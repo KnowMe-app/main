@@ -31,8 +31,8 @@ const InnerContainer = styled.div`
 `;
 
 const InputDiv = styled.div`
-  display: flex;
-  align-items: center;
+  display: inline-block;
+  vertical-align: middle;
   position: relative;
   margin: 10px 0;
   padding: 10px;
@@ -65,7 +65,7 @@ const Label = styled.label`
       left: 10px;
       top: 0;
       transform: translateY(-100%);
-      font-size: 14px;
+      font-size: 12px;
       color: orange;
     `}
 `;
@@ -114,8 +114,8 @@ const CheckboxLabel = styled.label`
   /* font-weight: bold; */
   color: #333;
   cursor: pointer;
-  display: flex;
-  align-items: center;
+  display: inline-block;
+  vertical-align: middle;
   max-width: 300px;
   transition: color 0.3s ease, box-shadow 0.3s ease;
   &:hover {
