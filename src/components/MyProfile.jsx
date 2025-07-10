@@ -204,11 +204,10 @@ const StatusMessage = styled.div`
 
 const AuthInputDiv = styled(InputDiv)`
   width: 100%;
-  transition: transform 0.3s ease;
+  margin-bottom: 15px;
   ${({ missing }) =>
     missing &&
     css`
-      transform: scale(1.05);
       border-color: red;
     `}
   `;
@@ -285,8 +284,8 @@ const PublishButton = styled.button`
 
 const AgreeButton = styled(PublishButton)`
   margin-bottom: 10px;
-  width: 110px;
-  white-space: nowrap;
+  font-size: 14px;
+  flex-grow: 1;
 `;
 const TermsButton = styled.button`
   background-color: ${color.oppositeAccent};
@@ -307,6 +306,7 @@ const AgreeContainer = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
   margin-bottom: 10px;
 `;
 
@@ -765,7 +765,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               <AuthLabel isActive={focused === 'passwordReg' || state.password}>Придумайте / введіть пароль</AuthLabel>
             </AuthInputDiv>
             <AgreeContainer>
-              <AgreeButton onClick={handleAgree}>Я погоджуюсь</AgreeButton>
+            <AgreeButton onClick={handleAgree}>Я погоджуюсь з умовами програми</AgreeButton>
               <TermsButton onClick={() => navigate('/policy')}>Умови</TermsButton>
             </AgreeContainer>
           </>
