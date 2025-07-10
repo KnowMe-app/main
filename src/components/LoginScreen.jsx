@@ -123,6 +123,21 @@ const CheckboxLabel = styled.label`
   }
 `;
 
+const TermsButton = styled.button`
+  background-color: ${color.oppositeAccent};
+  border: 1px solid ${color.gray};
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin-left: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: ${color.accent5};
+
+  &:hover {
+    background-color: ${color.paleAccent5};
+  }
+`;
+
 const CustomCheckbox = styled.input`
   appearance: none; /* Сховати стандартний чекбокс */
   width: 15px; /* Розмір чекбоксу */
@@ -201,7 +216,11 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleLabelClick = () => {
-    navigate('/'); // Перехід на сторінку політики конфіденційності
+    navigate('/policy'); // Перехід на сторінку політики конфіденційності
+  };
+
+  const handleTermsClick = () => {
+    navigate('/policy');
   };
 
   const handleLogin = async () => {
@@ -322,6 +341,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
             Я погоджуюся з Угодою користувача та надаю згоду на обробку моїх персональних даних та вчинення пов’язаних з цим дій відповідно до розділу Політики
             конфіденційності Угодои користувача
           </CheckboxLabel>
+          <TermsButton onClick={handleTermsClick}>Умови</TermsButton>
         </CheckboxContainer>
 
         {/* Кнопка стане активною лише коли галочка натиснута */}
