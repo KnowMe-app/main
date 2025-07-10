@@ -20,6 +20,7 @@ import toast from 'react-hot-toast';
 import InfoModal from './InfoModal';
 import Photos from './Photos';
 import { VerifyEmail } from './VerifyEmail';
+import { FaEye, FaEyeSlash } from 'react-icons/fa';
 
 import { color } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
@@ -213,12 +214,12 @@ const AuthInputDiv = styled(InputDiv)`
   `;
 
 const AuthInputField = styled(InputField)`
-  padding-left: 20px;
+  padding-left: 10px;
 `;
 
 const AuthLabel = styled.label`
   position: absolute;
-  left: 20px;
+  left: 10px;
   top: 50%;
   transform: translateY(-50%);
   transition: all 0.3s ease;
@@ -228,7 +229,7 @@ const AuthLabel = styled.label`
   ${({ isActive }) =>
     isActive &&
     css`
-      left: 20px;
+      left: 10px;
       top: 0;
       transform: translateY(-100%);
       font-size: 12px;
@@ -295,7 +296,7 @@ const TermsButton = styled.button`
   padding: 10px 20px;
   width: 110px;
   margin-left: 8px;
-  font-size: 14px;
+  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -381,6 +382,22 @@ const ClearButton = styled.button`
   }
 `;
 
+const TogglePasswordButton = styled.button`
+  position: absolute;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: gray;
+  font-size: 18px;
+
+  &:hover {
+    color: black;
+  }
+`;
+
 const ButtonGroup = styled.div`
   display: flex;
   gap: 8px;
@@ -423,6 +440,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [state, setState] = useState(initialProfileState);
   const [focused, setFocused] = useState(null);
   const [missing, setMissing] = useState({});
+  const [showPassword, setShowPassword] = useState(false);
   console.log('focused :>> ', focused);
   const navigate = useNavigate();
   const moreInfoRef = useRef(null);
@@ -758,7 +776,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             </AuthInputDiv>
             <AuthInputDiv missing={missing.password}>
               <AuthInputField
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 name="password"
                 value={state.password}
                 onChange={e => setState(prev => ({ ...prev, password: e.target.value }))}
@@ -766,6 +784,9 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 onBlur={handleBlur}
                 autoComplete="new-password"
               />
+              <TogglePasswordButton type="button" onClick={() => setShowPassword(prev => !prev)}>
+                {showPassword ? <FaEyeSlash /> : <FaEye />}
+              </TogglePasswordButton>
               <AuthLabel isActive={focused === 'passwordReg' || state.password}>Придумайте / введіть пароль</AuthLabel>
             </AuthInputDiv>
             <AgreeContainer>
