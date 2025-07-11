@@ -406,6 +406,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('userEmail');
       setState({});
       setIsLoggedIn(false);
+      handleCloseModal();
       navigate('/my-profile');
       await signOut(auth);
     } catch (error) {
@@ -561,13 +562,15 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   return (
     <Container>
       <InnerContainer>
-        <DotsButton
-          onClick={() => {
-            setShowInfoModal('dotsMenu');
-          }}
-        >
-          ⋮
-        </DotsButton>
+        {isLoggedIn && (
+          <DotsButton
+            onClick={() => {
+              setShowInfoModal('dotsMenu');
+            }}
+          >
+            ⋮
+          </DotsButton>
+        )}
         <Photos state={state} setState={setState} />
 
         {pickerFields.map(field => {

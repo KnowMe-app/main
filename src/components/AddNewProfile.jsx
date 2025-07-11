@@ -566,6 +566,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('userEmail');
       setState({});
       setIsLoggedIn(false);
+      handleCloseModal();
       navigate('/my-profile');
       await signOut(auth);
     } catch (error) {
@@ -1414,13 +1415,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   return (
     <Container>
       <InnerContainer>
-        <DotsButton
-          onClick={() => {
-            setShowInfoModal('dotsMenu');
-          }}
-        >
-          ⋮
-        </DotsButton>
+        {isLoggedIn && (
+          <DotsButton
+            onClick={() => {
+              setShowInfoModal('dotsMenu');
+            }}
+          >
+            ⋮
+          </DotsButton>
+        )}
 
 
         <InputDiv>
