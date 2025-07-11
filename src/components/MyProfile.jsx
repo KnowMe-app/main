@@ -642,6 +642,21 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return acc;
       }, {});
 
+      const { todayDays } = getCurrentDate();
+      const defaults = {};
+      if (!existingData?.userRole) defaults.userRole = 'ed';
+      if (!existingData?.userId) defaults.userId = user.uid;
+      if (!existingData?.email && user.email) defaults.email = user.email;
+      if (!existingData?.registrationDate) defaults.registrationDate = todayDays;
+      if (!existingData?.areTermsConfirmed) defaults.areTermsConfirmed = todayDays;
+      if (!existingData?.lastLogin) defaults.lastLogin = todayDays;
+
+      if (Object.keys(defaults).length) {
+        await updateDataInRealtimeDB(user.uid, defaults, 'update');
+        await updateDataInFiresoreDB(user.uid, defaults, 'check');
+        Object.assign(processedData, defaults);
+      }
+
       console.log('processedData :>> ', processedData);
       setState(prevState => ({
         ...prevState, // Зберегти попередні значення
