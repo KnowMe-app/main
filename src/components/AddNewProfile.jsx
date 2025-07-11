@@ -149,7 +149,7 @@ const InputField = styled.input`
     if (fieldName === 'phone') return '20px';
     if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok') return '25px';
     if (fieldName === 'facebook') return /^\d+$/.test(value) ? '20px' : '25px';
-    // if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' ? '23px' : '10px';
+    if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' ? '23px' : '10px';
     return '10px'; // Значення за замовчуванням
   }};
   max-width: 100%;
@@ -172,7 +172,7 @@ const Hint = styled.label`
   padding-left: ${({ fieldName, isActive }) => {
     if (fieldName === 'phone') return '20px';
     if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram' || fieldName === 'tiktok') return '25px';
-    // if (fieldName === 'vk') return '23px';
+    if (fieldName === 'vk') return '23px';
     return '10px'; // Значення за замовчуванням
   }};
   /* left: 30px; */
@@ -279,7 +279,7 @@ const InputFieldContainer = styled.div`
       if (fieldName === 'phone') return "'+'";
       if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok') return "'@'";
       if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
-      // if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' || value === undefined ? "'id'" : "''";
+      if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' || value === undefined ? "'id'" : "''";
       return "''";
     }};
     position: absolute;
