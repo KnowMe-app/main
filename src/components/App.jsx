@@ -16,6 +16,13 @@ export const App = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    const stored = localStorage.getItem('isLoggedIn');
+    if (stored === 'true') {
+      setIsLoggedIn(true);
+    }
+  }, []);
+
+  useEffect(() => {
     if (isLoggedIn) {
       navigate('/my-profile');
     }

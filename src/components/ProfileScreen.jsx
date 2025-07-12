@@ -504,6 +504,12 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [showInfoModal, setShowInfoModal] = useState(false);
 
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setShowInfoModal(false);
+    }
+  }, [isLoggedIn]);
+
   const handleCloseModal = () => {
     // setIsModalOpen(false);
     setSelectedField(null);

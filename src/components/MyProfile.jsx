@@ -709,6 +709,19 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [showInfoModal, setShowInfoModal] = useState(false);
 
+  useEffect(() => {
+    const logged = localStorage.getItem('isLoggedIn');
+    if (!isLoggedIn && logged) {
+      setIsLoggedIn(true);
+    }
+  }, [isLoggedIn, setIsLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setShowInfoModal(false);
+    }
+  }, [isLoggedIn]);
+
   const handleCloseModal = () => {
     // setIsModalOpen(false);
     setSelectedField(null);
