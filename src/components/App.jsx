@@ -10,7 +10,7 @@ import { auth } from './config';
 export const App = () => {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(null);
+  const [user, setUser] = useState(false);
   // console.log('isLoggedIn :>> ', isLoggedIn);
 
   const navigate = useNavigate();
@@ -23,19 +23,17 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    if (isLoggedIn && isAdmin === false) {
+    if (isLoggedIn) {
       navigate('/my-profile');
     }
-  }, [isLoggedIn, navigate, isAdmin]);
+  }, [isLoggedIn, navigate]);
 
   // Special page for admin
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
       if (user && user.uid === process.env.REACT_APP_USER1) {
-        setIsAdmin(true);
-      } else {
-        setIsAdmin(false);
-      }
+       setUser(true)
+      } 
     });
     // Clean up the subscription on component unmount
     return () => unsubscribe();
@@ -43,10 +41,10 @@ export const App = () => {
 
   return (
     <Routes>
-      <Route path="/" element={isAdmin ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />} />
+      <Route path="/" element={user ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />} />
       <Route path="/submit" element={<SubmitForm />} />
       <Route path="/my-profile"  element={<MyProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn}/>} />
-      {isAdmin && <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
+      {user&& <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
       <Route path="/policy" element={<PrivacyPolicy />} />
     </Routes>
   );
