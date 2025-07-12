@@ -784,13 +784,15 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   return (
     <Container>
       <InnerContainer>
-        <DotsButton
-          onClick={() => {
-            setShowInfoModal('dotsMenu');
-          }}
-        >
-          ⋮
-        </DotsButton>
+        {isLoggedIn && (
+          <DotsButton
+            onClick={() => {
+              setShowInfoModal('dotsMenu');
+            }}
+          >
+            ⋮
+          </DotsButton>
+        )}
         <StatusMessage published={state.publish}>
           {state.publish ? 'Анкета опублікована' : 'Анкета прихована'}
         </StatusMessage>

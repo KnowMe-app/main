@@ -572,13 +572,15 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   return (
     <Container>
       <InnerContainer>
-        <DotsButton
-          onClick={() => {
-            setShowInfoModal('dotsMenu');
-          }}
-        >
-          ⋮
-        </DotsButton>
+        {isLoggedIn && (
+          <DotsButton
+            onClick={() => {
+              setShowInfoModal('dotsMenu');
+            }}
+          >
+            ⋮
+          </DotsButton>
+        )}
         <Photos state={state} setState={setState} />
 
         {pickerFields.map(field => {
