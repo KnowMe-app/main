@@ -447,13 +447,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
 
   useEffect(() => {
-    const logged = localStorage.getItem('isLoggedIn');
-    if (!isLoggedIn && logged) {
-      setIsLoggedIn(true);
-    }
-  }, [isLoggedIn, setIsLoggedIn]);
-
-  useEffect(() => {
     const savedDraft = localStorage.getItem('myProfileDraft');
     if (savedDraft && !state.userId) {
       setState(prev => ({ ...prev, ...JSON.parse(savedDraft) }));
@@ -711,12 +704,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const [showInfoModal, setShowInfoModal] = useState(false);
-
-  useEffect(() => {
-    if (!isLoggedIn) {
-      setShowInfoModal(false);
-    }
-  }, [isLoggedIn]);
 
   const handleCloseModal = () => {
     // setIsModalOpen(false);
