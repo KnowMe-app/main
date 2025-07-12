@@ -521,7 +521,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('myProfileDraft');
       setState(initialProfileState);
       setIsLoggedIn(false);
-      handleCloseModal();
       navigate('/my-profile');
       await signOut(auth);
     } catch (error) {
@@ -767,15 +766,13 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   return (
     <Container>
       <InnerContainer>
-        {isLoggedIn && (
-          <DotsButton
-            onClick={() => {
-              setShowInfoModal('dotsMenu');
-            }}
-          >
-            ⋮
-          </DotsButton>
-        )}
+        <DotsButton
+          onClick={() => {
+            setShowInfoModal('dotsMenu');
+          }}
+        >
+          ⋮
+        </DotsButton>
         <StatusMessage published={state.publish}>
           {state.publish ? 'Анкета опублікована' : 'Анкета прихована'}
         </StatusMessage>
