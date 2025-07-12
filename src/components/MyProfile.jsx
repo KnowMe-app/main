@@ -252,6 +252,10 @@ export const SubmitButton = styled.button`
   width: 100%;
   transition: background-color 0.3s ease;
 
+  &:last-child {
+    border-bottom: none;
+  }
+
   &:hover {
     background-color: #f5f5f5; /* Легкий фон при наведенні */
   }
@@ -521,6 +525,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('myProfileDraft');
       setState(initialProfileState);
       setIsLoggedIn(false);
+      setShowInfoModal(false);
       navigate('/my-profile');
       await signOut(auth);
     } catch (error) {
@@ -758,7 +763,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
         {!isEmailVerified && <VerifyEmail />}
-        <ExitButton onClick={handleExit}>Exit</ExitButton>
+        {isLoggedIn && <ExitButton onClick={handleExit}>Exit</ExitButton>}
       </>
     );
   };
