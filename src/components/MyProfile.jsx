@@ -252,6 +252,10 @@ export const SubmitButton = styled.button`
   width: 100%;
   transition: background-color 0.3s ease;
 
+  &:last-child {
+    border-bottom: none;
+  }
+
   &:hover {
     background-color: #f5f5f5; /* Легкий фон при наведенні */
   }
