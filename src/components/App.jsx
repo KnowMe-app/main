@@ -13,6 +13,13 @@ export const App = () => {
   const [user, setUser] = useState(false);
   // console.log('isLoggedIn :>> ', isLoggedIn);
 
+  useEffect(() => {
+    const stored = localStorage.getItem('isLoggedIn');
+    if (stored === 'true') {
+      setIsLoggedIn(true);
+    }
+  }, []);
+
   const navigate = useNavigate();
 
   useEffect(() => {
