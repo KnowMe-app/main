@@ -521,6 +521,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('myProfileDraft');
       setState(initialProfileState);
       setIsLoggedIn(false);
+      setShowInfoModal(false);
       navigate('/my-profile');
       await signOut(auth);
     } catch (error) {
@@ -758,7 +759,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
         {!isEmailVerified && <VerifyEmail />}
-        <ExitButton onClick={handleExit}>Exit</ExitButton>
+        {isLoggedIn && <ExitButton onClick={handleExit}>Exit</ExitButton>}
       </>
     );
   };

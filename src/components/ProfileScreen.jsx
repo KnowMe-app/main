@@ -406,6 +406,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('userEmail');
       setState({});
       setIsLoggedIn(false);
+      setShowInfoModal(false);
       navigate('/my-profile');
       await signOut(auth);
     } catch (error) {
@@ -553,7 +554,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
         {!isEmailVerified && <VerifyEmail />}
-        <ExitButton onClick={handleExit}>Exit</ExitButton>
+        {isLoggedIn && <ExitButton onClick={handleExit}>Exit</ExitButton>}
       </>
     );
   };
