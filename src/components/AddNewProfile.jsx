@@ -1432,13 +1432,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   return (
     <Container>
       <InnerContainer>
-        <DotsButton
-          onClick={() => {
-            setShowInfoModal('dotsMenu');
-          }}
-        >
-          ⋮
-        </DotsButton>
+        {isLoggedIn && (
+          <DotsButton
+            onClick={() => {
+              setShowInfoModal('dotsMenu');
+            }}
+          >
+            ⋮
+          </DotsButton>
+        )}
 
 
         <InputDiv>
