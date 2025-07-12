@@ -245,7 +245,9 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.setItem('userEmail', state.email);
 
       setIsLoggedIn(true);
-      navigate('/my-profile');
+      if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
+        navigate('/my-profile');
+      }
       console.log('User signed in:', userCredential.user);
     } catch (error) {
       if (error.code === 'auth/wrong-password') {
@@ -280,7 +282,9 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.setItem('userEmail', state.email);
 
       setIsLoggedIn(true);
-      navigate('/my-profile');
+      if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
+        navigate('/my-profile');
+      }
     } catch (error) {
       console.error('Error signing in:', error);
     }

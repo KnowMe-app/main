@@ -575,7 +575,9 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       setIsLoggedIn(true);
       setState(prev => ({ ...prev, userId: userCredential.user.uid }));
-      navigate('/my-profile');
+      if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
+        navigate('/my-profile');
+      }
     } catch (error) {
       if (error.code === 'auth/wrong-password') {
         toast.error('Невірний пароль');
