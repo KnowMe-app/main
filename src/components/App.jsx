@@ -23,10 +23,10 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn && !user) {
       navigate('/my-profile');
     }
-  }, [isLoggedIn, navigate]);
+  }, [isLoggedIn, navigate, user]);
 
   // Special page for admin
   useEffect(() => {
