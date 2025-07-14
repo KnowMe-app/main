@@ -39,7 +39,6 @@ const ModalContent = styled.div`
   border-radius: 8px;
   max-height: 90vh;
   overflow-y: auto;
-  color: black;
 `;
 
 const renderFields = (data, parentKey = '') => {
@@ -158,24 +157,16 @@ const Matching = () => {
     loadInitial();
   }, [loadInitial]);
 
-  const loaderRef = useRef(null);
-
-  useEffect(() => {
-    const node = loaderRef.current;
-    if (!node) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting) {
-        loadMore();
-      }
-    });
-
-    observer.observe(node);
-    return () => observer.unobserve(node);
-  }, [loadMore]);
+  const handleScroll = e => {
+    const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
+    if (scrollTop + clientHeight >= scrollHeight - 10) {
+      loadMore();
+    }
+  };
 
   return (
     <>
-      <Grid style={{ overflowY: 'auto', height: '80vh' }}>
+      <Grid onScroll={handleScroll} style={{ overflowY: 'auto', height: '80vh' }}>
         {users.map(user => {
           const photo = getCurrentValue(user.photos);
           return (
@@ -190,7 +181,6 @@ const Matching = () => {
             />
           );
         })}
-        <div ref={loaderRef} style={{ width: '100%', height: '1px' }} />
       </Grid>
       {selected && (
         <ModalOverlay onClick={() => setSelected(null)}>
