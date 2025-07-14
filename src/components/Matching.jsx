@@ -33,13 +33,85 @@ const ModalOverlay = styled.div`
   z-index: 1000;
 `;
 
-const ModalContent = styled.div`
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  max-height: 90vh;
-  overflow-y: auto;
+
+// Styled components for detailed modal card
+const DonorCard = styled.div`
+  font-family: sans-serif;
+  max-width: 380px;
+  margin: 10px;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   color: black;
+`;
+
+const Header = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: orange;
+  font-weight: bold;
+  font-size: 18px;
+  margin-bottom: 10px;
+`;
+
+const ProfileSection = styled.div`
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+`;
+
+const Photo = styled.img`
+  width: 110px;
+  border-radius: 10px;
+  margin-right: 10px;
+`;
+
+const Info = styled.div`
+  flex: 1;
+`;
+
+const Table = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  row-gap: 10px;
+  column-gap: 8px;
+  font-size: 13px;
+  margin-bottom: 15px;
+
+  & > div {
+    line-height: 1.2;
+  }
+`;
+
+const MoreInfo = styled.div`
+  background-color: #f9f9f9;
+  padding: 10px;
+  border-left: 4px solid orange;
+  margin-bottom: 10px;
+  font-size: 14px;
+`;
+
+const Contact = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+`;
+
+const Icons = styled.div`
+  display: flex;
+  gap: 10px;
+  font-size: 18px;
+`;
+
+const Id = styled.div`
+  font-size: 12px;
+  color: #777;
+  text-align: right;
+  margin-top: 5px;
 `;
 
 const renderFields = (data, parentKey = '') => {
@@ -203,10 +275,49 @@ const Matching = () => {
       </Grid>
       {selected && (
         <ModalOverlay onClick={() => setSelected(null)}>
-          <ModalContent onClick={e => e.stopPropagation()}>
-            {renderFields(selected)}
-            <div style={{ marginTop: '10px' }}>{fieldContacts(selected)}</div>
-          </ModalContent>
+          <DonorCard onClick={e => e.stopPropagation()}>
+            <Header>
+              <span className="title">Egg donor</span>
+              <button
+                className="close"
+                onClick={() => setSelected(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </Header>
+            <ProfileSection>
+              {getCurrentValue(selected.photos) && (
+                <Photo src={getCurrentValue(selected.photos)} alt="Donor" />
+              )}
+              <Info>
+                <strong>
+                  {selected.surname || ''} {selected.name || ''}
+                  {selected.fathersname ? `, ${selected.fathersname}` : ''}
+                </strong>
+                <br />
+                {selected.region || ''}
+                {selected.city ? `, ${selected.city}` : ''}
+              </Info>
+            </ProfileSection>
+            <Table>{renderFields(selected)}</Table>
+            {selected.myComment && (
+              <MoreInfo>
+                <strong>More information</strong>
+                <br />
+                {selected.myComment}
+              </MoreInfo>
+            )}
+            <Contact>
+              <div className="phone">
+                {Array.isArray(selected.phone)
+                  ? selected.phone[0]
+                  : selected.phone}
+              </div>
+              <Icons>{fieldContacts(selected)}</Icons>
+            </Contact>
+            <Id>ID: {selected.userId}</Id>
+          </DonorCard>
         </ModalOverlay>
       )}
     </>
