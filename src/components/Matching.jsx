@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import styled from 'styled-components';
+import './DonorCard.css';
 import { fetchLatestUsers, getAllUserPhotos } from './config';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContacts } from './smallCard/fieldContacts';
@@ -34,19 +35,7 @@ const ModalOverlay = styled.div`
 `;
 
 
-// Styled components for detailed modal card
-const DonorCard = styled.div`
-  font-family: sans-serif;
-  max-width: 380px;
-  margin: 10px;
-  border: 1px solid #ccc;
-  border-radius: 10px;
-  padding: 10px;
-  background: #fff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  color: black;
-`;
-
+// Styles for detailed modal card are defined in DonorCard.css
 const Header = styled.div`
   display: flex;
   justify-content: space-between;
@@ -275,8 +264,9 @@ const Matching = () => {
       </Grid>
       {selected && (
         <ModalOverlay onClick={() => setSelected(null)}>
-          <DonorCard onClick={e => e.stopPropagation()}>
-            <Header>
+          <div className="donor-card" onClick={e => e.stopPropagation()}>
+            <div className="header">
+
               <span className="title">Egg donor</span>
               <button
                 className="close"
@@ -285,12 +275,13 @@ const Matching = () => {
               >
                 ✕
               </button>
-            </Header>
-            <ProfileSection>
+            </div>
+            <div className="profile-section">
               {getCurrentValue(selected.photos) && (
-                <Photo src={getCurrentValue(selected.photos)} alt="Donor" />
+                <img className="photo" src={getCurrentValue(selected.photos)} alt="Donor" />
               )}
-              <Info>
+              <div className="info">
+
                 <strong>
                   {selected.surname || ''} {selected.name || ''}
                   {selected.fathersname ? `, ${selected.fathersname}` : ''}
@@ -298,26 +289,24 @@ const Matching = () => {
                 <br />
                 {selected.region || ''}
                 {selected.city ? `, ${selected.city}` : ''}
-              </Info>
-            </ProfileSection>
-            <Table>{renderFields(selected)}</Table>
+              </div>
+            </div>
+            <div className="table">{renderFields(selected)}</div>
             {selected.myComment && (
-              <MoreInfo>
+              <div className="more-info">
                 <strong>More information</strong>
                 <br />
                 {selected.myComment}
-              </MoreInfo>
-            )}
-            <Contact>
-              <div className="phone">
-                {Array.isArray(selected.phone)
-                  ? selected.phone[0]
-                  : selected.phone}
               </div>
-              <Icons>{fieldContacts(selected)}</Icons>
-            </Contact>
-            <Id>ID: {selected.userId}</Id>
-          </DonorCard>
+            )}
+            <div className="contact">
+              <div className="phone">
+                {Array.isArray(selected.phone) ? selected.phone[0] : selected.phone}
+              </div>
+              <div className="icons">{fieldContacts(selected)}</div>
+            </div>
+            <div className="id">ID: {selected.userId}</div>
+          </div>
         </ModalOverlay>
       )}
     </>
