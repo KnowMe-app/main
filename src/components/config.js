@@ -164,41 +164,27 @@ export const fetchUsersCollectionInRTDB = async () => {
   }
 };
 
-export const fetchUsersByLastLogin = async (
-  limit = 9,
-  lastLogin,
-  lastKey,
-) => {
+export const fetchLatestUsers = async (limit = 9, lastKey) => {
   const usersRef = ref2(database, 'users');
-  let q;
-  if (lastLogin !== undefined && lastKey !== undefined) {
-    q = query(
-      usersRef,
-      orderByChild('lastLogin'),
-      endBefore(lastLogin, lastKey),
-      limitToLast(limit),
-    );
-  } else {
-    q = query(usersRef, orderByChild('lastLogin'), limitToLast(limit));
-  }
+  const q =
+    lastKey !== undefined
+      ? query(usersRef, orderByKey(), endBefore(lastKey), limitToLast(limit))
+      : query(usersRef, orderByKey(), limitToLast(limit));
 
   const snapshot = await get(q);
   if (!snapshot.exists()) {
-    return { users: [], lastLogin: null, lastKey: null, hasMore: false };
+    return { users: [], lastKey: null, hasMore: false };
   }
 
-  const entries = Object.entries(snapshot.val()).sort((a, b) => {
-    const aLogin = a[1].lastLogin || '';
-    const bLogin = b[1].lastLogin || '';
-    return bLogin.localeCompare(aLogin);
-  });
+  const entries = Object.entries(snapshot.val()).sort((a, b) =>
+    b[0].localeCompare(a[0]),
+  );
 
   const hasMore = entries.length === limit;
   const lastEntry = entries[entries.length - 1];
 
   return {
     users: entries.map(([id, data]) => data),
-    lastLogin: lastEntry ? lastEntry[1].lastLogin : null,
     lastKey: lastEntry ? lastEntry[0] : null,
     hasMore,
   };

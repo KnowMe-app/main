@@ -1,9 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import styled from 'styled-components';
-import {
-  fetchUsersByLastLogin,
-  getAllUserPhotos,
-} from './config';
+import { fetchLatestUsers, getAllUserPhotos } from './config';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContacts } from './smallCard/fieldContacts';
 
@@ -115,21 +112,20 @@ const LOAD_MORE = 3;
 
 const Matching = () => {
   const [users, setUsers] = useState([]);
-  const [lastVal, setLastVal] = useState();
   const [lastKey, setLastKey] = useState();
   const [hasMore, setHasMore] = useState(true);
   const [selected, setSelected] = useState(null);
   const loadingRef = useRef(false);
 
-  const fetchChunk = async (limit, val, key) => {
-    const res = await fetchUsersByLastLogin(limit, val, key);
+  const fetchChunk = async (limit, key) => {
+    const res = await fetchLatestUsers(limit, key);
     const withPhotos = await Promise.all(
       res.users.map(async user => {
         const photos = await getAllUserPhotos(user.userId);
         return { ...user, photos };
       }),
     );
-    return { users: withPhotos, lastLogin: res.lastLogin, lastKey: res.lastKey, hasMore: res.hasMore };
+    return { users: withPhotos, lastKey: res.lastKey, hasMore: res.hasMore };
   };
 
   const loadInitial = React.useCallback(async () => {
@@ -137,7 +133,6 @@ const Matching = () => {
     try {
       const res = await fetchChunk(INITIAL_LOAD);
       setUsers(res.users);
-      setLastVal(res.lastLogin);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
     } finally {
@@ -149,9 +144,8 @@ const Matching = () => {
     if (!hasMore || loadingRef.current) return;
     loadingRef.current = true;
     try {
-      const res = await fetchChunk(LOAD_MORE, lastVal, lastKey);
+      const res = await fetchChunk(LOAD_MORE, lastKey);
       setUsers(prev => [...prev, ...res.users]);
-      setLastVal(res.lastLogin);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
     } finally {
