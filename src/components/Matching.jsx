@@ -176,8 +176,11 @@ const Matching = () => {
     );
 
     observer.observe(node);
-    return () => observer.disconnect();
-  }, [loadMore]);
+    return () => {
+      observer.unobserve(node);
+      observer.disconnect();
+    };
+  }, [loadMore, users.length]);
 
   return (
     <>
