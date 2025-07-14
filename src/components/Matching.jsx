@@ -12,8 +12,8 @@ const Grid = styled.div`
 `;
 
 const Card = styled.div`
-  width: 120px;
-  height: 160px;
+  width: calc(50% - 20px);
+  height: 40vh;
   background-color: orange;
   background-size: cover;
   background-position: center;
@@ -159,23 +159,29 @@ const Matching = () => {
   }, [loadInitial]);
 
   const loaderRef = useRef(null);
+  const gridRef = useRef(null);
 
   useEffect(() => {
     const node = loaderRef.current;
-    if (!node) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting) {
-        loadMore();
-      }
-    });
+    const root = gridRef.current;
+    if (!node || !root) return;
+
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting) {
+          loadMore();
+        }
+      },
+      { root }
+    );
 
     observer.observe(node);
-    return () => observer.unobserve(node);
+    return () => observer.disconnect();
   }, [loadMore]);
 
   return (
     <>
-      <Grid style={{ overflowY: 'auto', height: '80vh' }}>
+      <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
         {users.map(user => {
           const photo = getCurrentValue(user.photos);
           return (
