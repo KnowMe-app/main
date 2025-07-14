@@ -15,8 +15,10 @@ import {
   orderByKey,
   startAfter,
   limitToFirst,
+  limitToLast,
   startAt,
   endAt,
+  endBefore,
   equalTo,
   runTransaction,
 } from 'firebase/database';
@@ -160,6 +162,46 @@ export const fetchUsersCollectionInRTDB = async () => {
   } else {
     return []; // Повертаємо пустий масив, якщо немає даних
   }
+};
+
+export const fetchUsersByLastLogin = async (
+  limit = 9,
+  lastLogin,
+  lastKey,
+) => {
+  const usersRef = ref2(database, 'users');
+  let q;
+  if (lastLogin !== undefined && lastKey !== undefined) {
+    q = query(
+      usersRef,
+      orderByChild('lastLogin'),
+      endBefore(lastLogin, lastKey),
+      limitToLast(limit),
+    );
+  } else {
+    q = query(usersRef, orderByChild('lastLogin'), limitToLast(limit));
+  }
+
+  const snapshot = await get(q);
+  if (!snapshot.exists()) {
+    return { users: [], lastLogin: null, lastKey: null, hasMore: false };
+  }
+
+  const entries = Object.entries(snapshot.val()).sort((a, b) => {
+    const aLogin = a[1].lastLogin || '';
+    const bLogin = b[1].lastLogin || '';
+    return bLogin.localeCompare(aLogin);
+  });
+
+  const hasMore = entries.length === limit;
+  const lastEntry = entries[entries.length - 1];
+
+  return {
+    users: entries.map(([id, data]) => data),
+    lastLogin: lastEntry ? lastEntry[1].lastLogin : null,
+    lastKey: lastEntry ? lastEntry[0] : null,
+    hasMore,
+  };
 };
 
 // Favorites are stored per owner so multiple users can have their own lists
