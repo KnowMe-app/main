@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import styled from 'styled-components';
+import { color } from './styles';
 import { fetchLatestUsers, getAllUserPhotos } from './config';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContacts } from './smallCard/fieldContacts';
@@ -37,23 +38,24 @@ const ModalOverlay = styled.div`
 // Styled components for detailed modal card
 const DonorCard = styled.div`
   font-family: sans-serif;
-  max-width: 380px;
+  max-width: 400px;
+  width: 90%;
   margin: 10px;
-  border: 1px solid #ccc;
-  border-radius: 10px;
-  padding: 10px;
-  background: #fff;
+  border: 1px solid ${color.gray};
+  border-radius: 8px;
+  padding: 16px;
+  background: ${color.oppositeAccent};
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  color: black;
+  color: ${color.black};
 `;
 
 const Header = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: orange;
+  color: ${color.accent};
   font-weight: bold;
-  font-size: 18px;
+  font-size: 20px;
   margin-bottom: 10px;
 `;
 
@@ -61,12 +63,15 @@ const ProfileSection = styled.div`
   display: flex;
   align-items: center;
   margin-bottom: 15px;
+  border-bottom: 1px solid ${color.gray4};
+  padding-bottom: 10px;
 `;
 
 const Photo = styled.img`
   width: 110px;
-  border-radius: 10px;
+  border-radius: 8px;
   margin-right: 10px;
+  object-fit: cover;
 `;
 
 const Info = styled.div`
@@ -76,20 +81,27 @@ const Info = styled.div`
 const Table = styled.div`
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  row-gap: 10px;
+  row-gap: 8px;
   column-gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
   margin-bottom: 15px;
 
   & > div {
     line-height: 1.2;
+    display: flex;
+    flex-direction: column;
+  }
+
+  & strong {
+    font-size: 12px;
+    color: ${color.gray3};
   }
 `;
 
 const MoreInfo = styled.div`
-  background-color: #f9f9f9;
+  background-color: ${color.paleAccent2};
   padding: 10px;
-  border-left: 4px solid orange;
+  border-left: 4px solid ${color.accent};
   margin-bottom: 10px;
   font-size: 14px;
 `;
@@ -99,17 +111,21 @@ const Contact = styled.div`
   justify-content: space-between;
   align-items: center;
   font-size: 14px;
+  border-top: 1px solid ${color.gray4};
+  padding-top: 10px;
+  margin-top: 10px;
 `;
 
 const Icons = styled.div`
   display: flex;
   gap: 10px;
   font-size: 18px;
+  color: ${color.accent};
 `;
 
 const Id = styled.div`
   font-size: 12px;
-  color: #777;
+  color: ${color.gray3};
   text-align: right;
   margin-top: 5px;
 `;
