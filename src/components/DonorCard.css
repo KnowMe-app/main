@@ -1,0 +1,77 @@
+.donor-card {
+  font-family: sans-serif;
+  max-width: 380px;
+  margin: 10px;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  color: black;
+}
+
+.donor-card .header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: orange;
+  font-weight: bold;
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.donor-card .photo {
+  width: 110px;
+  border-radius: 10px;
+  margin-right: 10px;
+}
+
+.donor-card .profile-section {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.donor-card .info {
+  flex: 1;
+}
+
+.donor-card .table {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  row-gap: 10px;
+  column-gap: 8px;
+  font-size: 13px;
+  margin-bottom: 15px;
+}
+
+.donor-card .table div {
+  line-height: 1.2;
+}
+
+.donor-card .more-info {
+  background-color: #f9f9f9;
+  padding: 10px;
+  border-left: 4px solid orange;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.donor-card .contact {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+
+.donor-card .icons span {
+  margin-right: 10px;
+  font-size: 18px;
+}
+
+.donor-card .id {
+  font-size: 12px;
+  color: #777;
+  text-align: right;
+  margin-top: 5px;
+}

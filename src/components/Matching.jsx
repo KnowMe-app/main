@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import styled from 'styled-components';
+import './DonorCard.css';
 import { fetchLatestUsers, getAllUserPhotos } from './config';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContacts } from './smallCard/fieldContacts';
@@ -33,14 +34,8 @@ const ModalOverlay = styled.div`
   z-index: 1000;
 `;
 
-const ModalContent = styled.div`
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  max-height: 90vh;
-  overflow-y: auto;
-  color: black;
-`;
+
+// Styles for detailed modal card are defined in DonorCard.css
 
 const renderFields = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
@@ -203,10 +198,47 @@ const Matching = () => {
       </Grid>
       {selected && (
         <ModalOverlay onClick={() => setSelected(null)}>
-          <ModalContent onClick={e => e.stopPropagation()}>
-            {renderFields(selected)}
-            <div style={{ marginTop: '10px' }}>{fieldContacts(selected)}</div>
-          </ModalContent>
+          <div className="donor-card" onClick={e => e.stopPropagation()}>
+            <div className="header">
+              <span className="title">Egg donor</span>
+              <button
+                className="close"
+                onClick={() => setSelected(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="profile-section">
+              {getCurrentValue(selected.photos) && (
+                <img className="photo" src={getCurrentValue(selected.photos)} alt="Donor" />
+              )}
+              <div className="info">
+                <strong>
+                  {selected.surname || ''} {selected.name || ''}
+                  {selected.fathersname ? `, ${selected.fathersname}` : ''}
+                </strong>
+                <br />
+                {selected.region || ''}
+                {selected.city ? `, ${selected.city}` : ''}
+              </div>
+            </div>
+            <div className="table">{renderFields(selected)}</div>
+            {selected.myComment && (
+              <div className="more-info">
+                <strong>More information</strong>
+                <br />
+                {selected.myComment}
+              </div>
+            )}
+            <div className="contact">
+              <div className="phone">
+                {Array.isArray(selected.phone) ? selected.phone[0] : selected.phone}
+              </div>
+              <div className="icons">{fieldContacts(selected)}</div>
+            </div>
+            <div className="id">ID: {selected.userId}</div>
+          </div>
         </ModalOverlay>
       )}
     </>
