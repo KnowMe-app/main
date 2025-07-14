@@ -12,8 +12,8 @@ const Grid = styled.div`
 `;
 
 const Card = styled.div`
-  width: 120px;
-  height: 160px;
+  width: calc(50% - 20px);
+  height: 40vh;
   background-color: orange;
   background-size: cover;
   background-position: center;
@@ -39,6 +39,7 @@ const ModalContent = styled.div`
   border-radius: 8px;
   max-height: 90vh;
   overflow-y: auto;
+  color: black;
 `;
 
 const renderFields = (data, parentKey = '') => {
@@ -140,7 +141,7 @@ const Matching = () => {
     }
   }, []);
 
-  const loadMore = async () => {
+  const loadMore = React.useCallback(async () => {
     if (!hasMore || loadingRef.current) return;
     loadingRef.current = true;
     try {
@@ -151,22 +152,36 @@ const Matching = () => {
     } finally {
       loadingRef.current = false;
     }
-  };
+  }, [hasMore, lastKey]);
 
   useEffect(() => {
     loadInitial();
   }, [loadInitial]);
 
-  const handleScroll = e => {
-    const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
-    if (scrollTop + clientHeight >= scrollHeight - 10) {
-      loadMore();
-    }
-  };
+  const loaderRef = useRef(null);
+  const gridRef = useRef(null);
+
+  useEffect(() => {
+    const node = loaderRef.current;
+    const root = gridRef.current;
+    if (!node || !root) return;
+
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting) {
+          loadMore();
+        }
+      },
+      { root }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   return (
     <>
-      <Grid onScroll={handleScroll} style={{ overflowY: 'auto', height: '80vh' }}>
+      <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
         {users.map(user => {
           const photo = getCurrentValue(user.photos);
           return (
@@ -181,6 +196,7 @@ const Matching = () => {
             />
           );
         })}
+        <div ref={loaderRef} style={{ width: '100%', height: '1px' }} />
       </Grid>
       {selected && (
         <ModalOverlay onClick={() => setSelected(null)}>
