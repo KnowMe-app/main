@@ -36,6 +36,72 @@ const ModalOverlay = styled.div`
 
 
 // Styles for detailed modal card are defined in DonorCard.css
+const Header = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: orange;
+  font-weight: bold;
+  font-size: 18px;
+  margin-bottom: 10px;
+`;
+
+const ProfileSection = styled.div`
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+`;
+
+const Photo = styled.img`
+  width: 110px;
+  border-radius: 10px;
+  margin-right: 10px;
+`;
+
+const Info = styled.div`
+  flex: 1;
+`;
+
+const Table = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  row-gap: 10px;
+  column-gap: 8px;
+  font-size: 13px;
+  margin-bottom: 15px;
+
+  & > div {
+    line-height: 1.2;
+  }
+`;
+
+const MoreInfo = styled.div`
+  background-color: #f9f9f9;
+  padding: 10px;
+  border-left: 4px solid orange;
+  margin-bottom: 10px;
+  font-size: 14px;
+`;
+
+const Contact = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+`;
+
+const Icons = styled.div`
+  display: flex;
+  gap: 10px;
+  font-size: 18px;
+`;
+
+const Id = styled.div`
+  font-size: 12px;
+  color: #777;
+  text-align: right;
+  margin-top: 5px;
+`;
 
 const renderFields = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
@@ -200,6 +266,7 @@ const Matching = () => {
         <ModalOverlay onClick={() => setSelected(null)}>
           <div className="donor-card" onClick={e => e.stopPropagation()}>
             <div className="header">
+
               <span className="title">Egg donor</span>
               <button
                 className="close"
@@ -214,6 +281,7 @@ const Matching = () => {
                 <img className="photo" src={getCurrentValue(selected.photos)} alt="Donor" />
               )}
               <div className="info">
+
                 <strong>
                   {selected.surname || ''} {selected.name || ''}
                   {selected.fathersname ? `, ${selected.fathersname}` : ''}
