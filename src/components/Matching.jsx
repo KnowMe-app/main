@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import styled from 'styled-components';
+import './DonorCard.css';
 import { fetchLatestUsers, getAllUserPhotos } from './config';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContacts } from './smallCard/fieldContacts';
@@ -34,85 +35,7 @@ const ModalOverlay = styled.div`
 `;
 
 
-// Styled components for detailed modal card
-const DonorCard = styled.div`
-  font-family: sans-serif;
-  max-width: 380px;
-  margin: 10px;
-  border: 1px solid #ccc;
-  border-radius: 10px;
-  padding: 10px;
-  background: #fff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  color: black;
-`;
-
-const Header = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: orange;
-  font-weight: bold;
-  font-size: 18px;
-  margin-bottom: 10px;
-`;
-
-const ProfileSection = styled.div`
-  display: flex;
-  align-items: center;
-  margin-bottom: 15px;
-`;
-
-const Photo = styled.img`
-  width: 110px;
-  border-radius: 10px;
-  margin-right: 10px;
-`;
-
-const Info = styled.div`
-  flex: 1;
-`;
-
-const Table = styled.div`
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  row-gap: 10px;
-  column-gap: 8px;
-  font-size: 13px;
-  margin-bottom: 15px;
-
-  & > div {
-    line-height: 1.2;
-  }
-`;
-
-const MoreInfo = styled.div`
-  background-color: #f9f9f9;
-  padding: 10px;
-  border-left: 4px solid orange;
-  margin-bottom: 10px;
-  font-size: 14px;
-`;
-
-const Contact = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 14px;
-`;
-
-const Icons = styled.div`
-  display: flex;
-  gap: 10px;
-  font-size: 18px;
-`;
-
-const Id = styled.div`
-  font-size: 12px;
-  color: #777;
-  text-align: right;
-  margin-top: 5px;
-`;
+// Styles for detailed modal card are defined in DonorCard.css
 
 const renderFields = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
@@ -275,8 +198,8 @@ const Matching = () => {
       </Grid>
       {selected && (
         <ModalOverlay onClick={() => setSelected(null)}>
-          <DonorCard onClick={e => e.stopPropagation()}>
-            <Header>
+          <div className="donor-card" onClick={e => e.stopPropagation()}>
+            <div className="header">
               <span className="title">Egg donor</span>
               <button
                 className="close"
@@ -285,12 +208,12 @@ const Matching = () => {
               >
                 ✕
               </button>
-            </Header>
-            <ProfileSection>
+            </div>
+            <div className="profile-section">
               {getCurrentValue(selected.photos) && (
-                <Photo src={getCurrentValue(selected.photos)} alt="Donor" />
+                <img className="photo" src={getCurrentValue(selected.photos)} alt="Donor" />
               )}
-              <Info>
+              <div className="info">
                 <strong>
                   {selected.surname || ''} {selected.name || ''}
                   {selected.fathersname ? `, ${selected.fathersname}` : ''}
@@ -298,26 +221,24 @@ const Matching = () => {
                 <br />
                 {selected.region || ''}
                 {selected.city ? `, ${selected.city}` : ''}
-              </Info>
-            </ProfileSection>
-            <Table>{renderFields(selected)}</Table>
+              </div>
+            </div>
+            <div className="table">{renderFields(selected)}</div>
             {selected.myComment && (
-              <MoreInfo>
+              <div className="more-info">
                 <strong>More information</strong>
                 <br />
                 {selected.myComment}
-              </MoreInfo>
-            )}
-            <Contact>
-              <div className="phone">
-                {Array.isArray(selected.phone)
-                  ? selected.phone[0]
-                  : selected.phone}
               </div>
-              <Icons>{fieldContacts(selected)}</Icons>
-            </Contact>
-            <Id>ID: {selected.userId}</Id>
-          </DonorCard>
+            )}
+            <div className="contact">
+              <div className="phone">
+                {Array.isArray(selected.phone) ? selected.phone[0] : selected.phone}
+              </div>
+              <div className="icons">{fieldContacts(selected)}</div>
+            </div>
+            <div className="id">ID: {selected.userId}</div>
+          </div>
         </ModalOverlay>
       )}
     </>
