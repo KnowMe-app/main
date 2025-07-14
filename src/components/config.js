@@ -184,7 +184,7 @@ export const fetchLatestUsers = async (limit = 9, lastKey) => {
   const lastEntry = entries[entries.length - 1];
 
   return {
-    users: entries.map(([id, data]) => data),
+    users: entries.map(([id, data]) => ({ userId: id, ...data })),
     lastKey: lastEntry ? lastEntry[0] : null,
     hasMore,
   };
