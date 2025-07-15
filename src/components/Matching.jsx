@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { color } from './styles';
 import { fetchLatestUsers, getAllUserPhotos } from './config';
 import { getCurrentValue } from './getCurrentValue';
-import { fieldContacts } from './smallCard/fieldContacts';
+import { fieldContactsIcons } from './smallCard/fieldContacts';
 
 const Grid = styled.div`
   display: flex;
@@ -313,7 +313,7 @@ const Matching = () => {
                   ? selected.phone[0]
                   : selected.phone}
               </div>
-              <Icons>{fieldContacts(selected)}</Icons>
+              <Icons>{fieldContactsIcons(selected)}</Icons>
             </Contact>
             <Id>ID: {selected.userId}</Id>
           </DonorCard>
