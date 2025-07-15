@@ -169,15 +169,6 @@ const renderSelectedFields = user => {
       }
     }
 
-    if (field.key === 'reward') {
-      if (Array.isArray(value)) {
-        value = value[value.length - 1];
-      } else if (typeof value === 'string' && value.includes(',')) {
-        const parts = value.split(',');
-        value = parts[parts.length - 1].trim();
-      }
-    }
-
     if (value === undefined || value === '' || value === null) return null;
 
     return (
@@ -319,7 +310,7 @@ const Matching = () => {
             <Contact>
               <Icons>{fieldContactsIcons(selected)}</Icons>
             </Contact>
-            <Id>ID: {selected.userId ? selected.userId.slice(0, 5) : ''}</Id>
+            <Id>ID: {selected.userId}</Id>
           </DonorCard>
         </ModalOverlay>
       )}
