@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import styled from 'styled-components';
+import { color } from './styles';
 import { fetchLatestUsers, getAllUserPhotos } from './config';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContacts } from './smallCard/fieldContacts';
@@ -37,23 +38,24 @@ const ModalOverlay = styled.div`
 // Styled components for detailed modal card
 const DonorCard = styled.div`
   font-family: sans-serif;
-  max-width: 380px;
+  max-width: 400px;
+  width: 90%;
   margin: 10px;
-  border: 1px solid #ccc;
-  border-radius: 10px;
-  padding: 10px;
-  background: #fff;
+  border: 1px solid ${color.gray};
+  border-radius: 8px;
+  padding: 16px;
+  background: ${color.oppositeAccent};
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  color: black;
+  color: ${color.black};
 `;
 
 const Header = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: orange;
+  color: ${color.accent};
   font-weight: bold;
-  font-size: 18px;
+  font-size: 20px;
   margin-bottom: 10px;
 `;
 
@@ -61,35 +63,72 @@ const ProfileSection = styled.div`
   display: flex;
   align-items: center;
   margin-bottom: 15px;
+  border-bottom: 1px solid ${color.gray4};
+  padding-bottom: 10px;
 `;
 
 const Photo = styled.img`
   width: 110px;
-  border-radius: 10px;
+  border-radius: 8px;
   margin-right: 10px;
+  object-fit: cover;
 `;
 
 const Info = styled.div`
   flex: 1;
 `;
 
+// Fields to display in the details modal
+const FIELDS = [
+  { key: 'height', label: 'Height (cm)' },
+  { key: 'weight', label: 'Weight (kg)' },
+  { key: 'bmi', label: 'BMI' },
+  { key: 'clothingSize', label: 'Clothing size' },
+  { key: 'shoeSize', label: 'Shoe size' },
+  { key: 'blood', label: 'Rh' },
+  { key: 'eyeColor', label: 'Eyes' },
+  { key: 'glasses', label: 'Glasses' },
+  { key: 'race', label: 'Race' },
+  { key: 'faceShape', label: 'Face shape' },
+  { key: 'noseShape', label: 'Nose shape' },
+  { key: 'lipsShape', label: 'Lips shape' },
+  { key: 'hairColor', label: 'Hair color' },
+  { key: 'hairStructure', label: 'Hair structure' },
+  { key: 'chin', label: 'Chin' },
+  { key: 'breastSize', label: 'Breast size' },
+  { key: 'bodyType', label: 'Body type' },
+  { key: 'maritalStatus', label: 'Marital status' },
+  { key: 'education', label: 'Education' },
+  { key: 'profession', label: 'Profession' },
+  { key: 'ownKids', label: 'Own kids' },
+  { key: 'reward', label: 'Expected reward $' },
+  { key: 'experience', label: 'Donation exp' },
+];
+
 const Table = styled.div`
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  row-gap: 10px;
+  row-gap: 8px;
   column-gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
   margin-bottom: 15px;
 
   & > div {
     line-height: 1.2;
+    display: flex;
+    flex-direction: column;
+  }
+
+  & strong {
+    font-size: 12px;
+    color: ${color.gray3};
   }
 `;
 
 const MoreInfo = styled.div`
-  background-color: #f9f9f9;
+  background-color: ${color.paleAccent2};
   padding: 10px;
-  border-left: 4px solid orange;
+  border-left: 4px solid ${color.accent};
   margin-bottom: 10px;
   font-size: 14px;
 `;
@@ -99,82 +138,42 @@ const Contact = styled.div`
   justify-content: space-between;
   align-items: center;
   font-size: 14px;
+  border-top: 1px solid ${color.gray4};
+  padding-top: 10px;
+  margin-top: 10px;
 `;
 
 const Icons = styled.div`
   display: flex;
   gap: 10px;
   font-size: 18px;
+  color: ${color.accent};
 `;
 
 const Id = styled.div`
   font-size: 12px;
-  color: #777;
+  color: ${color.gray3};
   text-align: right;
   margin-top: 5px;
 `;
 
-const renderFields = (data, parentKey = '') => {
-  if (!data || typeof data !== 'object') {
-    console.error('Invalid data passed to renderFields:', data);
-    return null;
-  }
-
-  const extendedData = { ...data };
-
-  const sortedKeys = Object.keys(extendedData).sort((a, b) => {
-    const priority = [
-      'name',
-      'surname',
-      'fathersname',
-      'birth',
-      'blood',
-      'maritalStatus',
-      'csection',
-      'weight',
-      'height',
-      'ownKids',
-      'lastDelivery',
-      'lastCycle',
-      'facebook',
-      'instagram',
-      'telegram',
-      'phone',
-      'tiktok',
-      'vk',
-      'writer',
-      'myComment',
-      'region',
-      'city',
-    ];
-    const indexA = priority.indexOf(a);
-    const indexB = priority.indexOf(b);
-    if (indexA === -1 && indexB === -1) return 0;
-    if (indexA === -1) return 1;
-    if (indexB === -1) return -1;
-    return indexA - indexB;
-  });
-
-  return sortedKeys.map(key => {
-    const nestedKey = parentKey ? `${parentKey}.${key}` : key;
-    const value = extendedData[key];
-
-    if (['attitude', 'photos', 'whiteList', 'blackList'].includes(key)) {
-      return null;
+const renderSelectedFields = user => {
+  return FIELDS.map(field => {
+    let value = user[field.key];
+    if (field.key === 'bmi') {
+      const { weight, height } = user;
+      if (weight && height) {
+        value = ((weight / (height * height)) * 10000).toFixed(2);
+      } else {
+        value = null;
+      }
     }
 
-    if (typeof value === 'object' && value !== null) {
-      return (
-        <div key={nestedKey} style={{ marginLeft: '10px' }}>
-          <strong>{key}:</strong>
-          <div>{renderFields(value, nestedKey)}</div>
-        </div>
-      );
-    }
+    if (value === undefined || value === '' || value === null) return null;
 
     return (
-      <div key={nestedKey}>
-        <strong>{key}:</strong> {value != null ? value.toString() : '—'}
+      <div key={field.key}>
+        <strong>{field.label}</strong> {String(value)}
       </div>
     );
   });
@@ -300,7 +299,7 @@ const Matching = () => {
                 {selected.city ? `, ${selected.city}` : ''}
               </Info>
             </ProfileSection>
-            <Table>{renderFields(selected)}</Table>
+            <Table>{renderSelectedFields(selected)}</Table>
             {selected.myComment && (
               <MoreInfo>
                 <strong>More information</strong>
