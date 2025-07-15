@@ -169,14 +169,7 @@ const renderSelectedFields = user => {
       }
     }
 
-    if (field.key === 'reward') {
-      if (Array.isArray(value)) {
-        value = value[value.length - 1];
-      } else if (typeof value === 'string' && value.includes(',')) {
-        const parts = value.split(',');
-        value = parts[parts.length - 1].trim();
-      }
-    }
+    value = getCurrentValue(value);
 
     if (value === undefined || value === '' || value === null) return null;
 

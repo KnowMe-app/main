@@ -176,13 +176,6 @@ export const fieldContactsIcons = data => {
     whatsappFromPhone: value => `https://wa.me/${value.replace(/\s+/g, '')}`,
   };
 
-  const iconMap = {
-    facebook: <FaFacebookF />,
-    instagram: <FaInstagram />,
-    tiktok: <SiTiktok />,
-    email: <MdEmail />,
-    telegram: <FaTelegramPlane />,
-  };
 
   const processed = Object.fromEntries(
     Object.entries(data).map(([k, v]) => [k, getCurrentValue(v)])
