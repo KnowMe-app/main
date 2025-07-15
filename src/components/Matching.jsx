@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled from 'styled-components';
 import { color } from './styles';
 import { fetchLatestUsers, getAllUserPhotos } from './config';
@@ -135,7 +136,7 @@ const MoreInfo = styled.div`
 
 const Contact = styled.div`
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   font-size: 14px;
   border-top: 1px solid ${color.gray4};
@@ -295,6 +296,7 @@ const Matching = () => {
                 <strong>
                   {selected.surname || ''} {selected.name || ''}
                   {selected.fathersname ? `, ${selected.fathersname}` : ''}
+                  {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
                 </strong>
                 <br />
                 {selected.region || ''}
@@ -309,8 +311,16 @@ const Matching = () => {
                 {selected.myComment}
               </MoreInfo>
             )}
+            {selected.moreInfo_main && (
+              <MoreInfo>
+                {selected.moreInfo_main}
+              </MoreInfo>
+            )}
             <Contact>
               <Icons>{fieldContactsIcons(selected)}</Icons>
+              {selected.writer && (
+                <div style={{ marginLeft: '10px' }}>{selected.writer}</div>
+              )}
             </Contact>
             <Id>ID: {selected.userId ? selected.userId.slice(0, 5) : ''}</Id>
           </DonorCard>
