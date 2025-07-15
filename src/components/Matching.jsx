@@ -169,6 +169,8 @@ const renderSelectedFields = user => {
       }
     }
 
+    value = getCurrentValue(value);
+
     if (value === undefined || value === '' || value === null) return null;
 
     return (
@@ -310,7 +312,7 @@ const Matching = () => {
             <Contact>
               <Icons>{fieldContactsIcons(selected)}</Icons>
             </Contact>
-            <Id>ID: {selected.userId}</Id>
+            <Id>ID: {selected.userId ? selected.userId.slice(0, 5) : ''}</Id>
           </DonorCard>
         </ModalOverlay>
       )}
