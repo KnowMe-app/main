@@ -78,6 +78,33 @@ const Info = styled.div`
   flex: 1;
 `;
 
+// Fields to display in the details modal
+const FIELDS = [
+  { key: 'height', label: 'Height (cm)' },
+  { key: 'weight', label: 'Weight (kg)' },
+  { key: 'bmi', label: 'BMI' },
+  { key: 'clothingSize', label: 'Clothing size' },
+  { key: 'shoeSize', label: 'Shoe size' },
+  { key: 'blood', label: 'Rh' },
+  { key: 'eyeColor', label: 'Eyes' },
+  { key: 'glasses', label: 'Glasses' },
+  { key: 'race', label: 'Race' },
+  { key: 'faceShape', label: 'Face shape' },
+  { key: 'noseShape', label: 'Nose shape' },
+  { key: 'lipsShape', label: 'Lips shape' },
+  { key: 'hairColor', label: 'Hair color' },
+  { key: 'hairStructure', label: 'Hair structure' },
+  { key: 'chin', label: 'Chin' },
+  { key: 'breastSize', label: 'Breast size' },
+  { key: 'bodyType', label: 'Body type' },
+  { key: 'maritalStatus', label: 'Marital status' },
+  { key: 'education', label: 'Education' },
+  { key: 'profession', label: 'Profession' },
+  { key: 'ownKids', label: 'Own kids' },
+  { key: 'reward', label: 'Expected reward $' },
+  { key: 'experience', label: 'Donation exp' },
+];
+
 const Table = styled.div`
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -130,67 +157,23 @@ const Id = styled.div`
   margin-top: 5px;
 `;
 
-const renderFields = (data, parentKey = '') => {
-  if (!data || typeof data !== 'object') {
-    console.error('Invalid data passed to renderFields:', data);
-    return null;
-  }
-
-  const extendedData = { ...data };
-
-  const sortedKeys = Object.keys(extendedData).sort((a, b) => {
-    const priority = [
-      'name',
-      'surname',
-      'fathersname',
-      'birth',
-      'blood',
-      'maritalStatus',
-      'csection',
-      'weight',
-      'height',
-      'ownKids',
-      'lastDelivery',
-      'lastCycle',
-      'facebook',
-      'instagram',
-      'telegram',
-      'phone',
-      'tiktok',
-      'vk',
-      'writer',
-      'myComment',
-      'region',
-      'city',
-    ];
-    const indexA = priority.indexOf(a);
-    const indexB = priority.indexOf(b);
-    if (indexA === -1 && indexB === -1) return 0;
-    if (indexA === -1) return 1;
-    if (indexB === -1) return -1;
-    return indexA - indexB;
-  });
-
-  return sortedKeys.map(key => {
-    const nestedKey = parentKey ? `${parentKey}.${key}` : key;
-    const value = extendedData[key];
-
-    if (['attitude', 'photos', 'whiteList', 'blackList'].includes(key)) {
-      return null;
+const renderSelectedFields = user => {
+  return FIELDS.map(field => {
+    let value = user[field.key];
+    if (field.key === 'bmi') {
+      const { weight, height } = user;
+      if (weight && height) {
+        value = ((weight / (height * height)) * 10000).toFixed(2);
+      } else {
+        value = null;
+      }
     }
 
-    if (typeof value === 'object' && value !== null) {
-      return (
-        <div key={nestedKey} style={{ marginLeft: '10px' }}>
-          <strong>{key}:</strong>
-          <div>{renderFields(value, nestedKey)}</div>
-        </div>
-      );
-    }
+    if (value === undefined || value === '' || value === null) return null;
 
     return (
-      <div key={nestedKey}>
-        <strong>{key}:</strong> {value != null ? value.toString() : '—'}
+      <div key={field.key}>
+        <strong>{field.label}</strong> {String(value)}
       </div>
     );
   });
@@ -316,7 +299,7 @@ const Matching = () => {
                 {selected.city ? `, ${selected.city}` : ''}
               </Info>
             </ProfileSection>
-            <Table>{renderFields(selected)}</Table>
+            <Table>{renderSelectedFields(selected)}</Table>
             {selected.myComment && (
               <MoreInfo>
                 <strong>More information</strong>
