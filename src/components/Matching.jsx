@@ -308,11 +308,6 @@ const Matching = () => {
               </MoreInfo>
             )}
             <Contact>
-              <div className="phone">
-                {Array.isArray(selected.phone)
-                  ? selected.phone[0]
-                  : selected.phone}
-              </div>
               <Icons>{fieldContactsIcons(selected)}</Icons>
             </Contact>
             <Id>ID: {selected.userId}</Id>

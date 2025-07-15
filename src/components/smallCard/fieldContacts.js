@@ -186,44 +186,52 @@ export const fieldContactsIcons = data => {
     if (!value || (Array.isArray(value) && value.length === 0)) return null;
 
     if (key === 'phone') {
-      const val = Array.isArray(value) ? value[0] : value;
-      const processed = val.replace(/\s/g, '');
-      return (
-        <div key="phone" style={{ marginBottom: '2px' }}>
-          <a
-            href={links.phone(processed)}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-          >
-            {`+${processed}`}
-          </a>
-          <a
-            href={links.telegramFromPhone(`+${val}`)}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-          >
-            <FaTelegramPlane />
-          </a>
-          <a
-            href={links.viberFromPhone(processed)}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-          >
-            <FaViber />
-          </a>
-          <a
-            href={links.whatsappFromPhone(processed)}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-          >
-            <FaWhatsapp />
-          </a>
-        </div>
-      );
+      const numbers = Array.isArray(value) ? value : [value];
+      return numbers
+        .filter(val => typeof val === 'string' && val.trim() !== '')
+        .map((val, idx) => {
+          const processed = val.replace(/\s/g, '');
+          return (
+            <div key={`phone-${idx}`} style={{ marginBottom: '2px' }}>
+              <a
+                href={links.phone(processed)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: 'inherit',
+                  textDecoration: 'none',
+                  marginRight: '8px',
+                }}
+              >
+                {`+${processed}`}
+              </a>
+              <a
+                href={links.telegramFromPhone(`+${val}`)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+              >
+                <FaTelegramPlane />
+              </a>
+              <a
+                href={links.viberFromPhone(processed)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+              >
+                <FaViber />
+              </a>
+              <a
+                href={links.whatsappFromPhone(processed)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
+              >
+                <FaWhatsapp />
+              </a>
+            </div>
+          );
+        });
     }
 
     if (iconMap[key]) {
