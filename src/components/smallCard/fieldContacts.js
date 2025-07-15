@@ -29,130 +29,76 @@ export const fieldContacts = (data, parentKey = '') => {
     whatsappFromPhone: value => `https://wa.me/${value.replace(/\s+/g, '')}`,
   };
 
-  return Object.keys(data).map(key => {
-    const nestedKey = parentKey ? `${parentKey}.${key}` : key;
-    const value = data[key];
-
-    // Пропускаємо ключ, якщо його значення — порожній рядок або порожній масив
-    if (!value || (Array.isArray(value) && value.length === 0)) {
-      return null;
-    }
-
-    if (links[key]) {
-      return (
-        <div key={nestedKey}>
-          {!['email', 'phone'].includes(key) && <strong>{key}:</strong>}{' '}
-          {Array.isArray(value) ? (
-            value
-              .filter(val => typeof val === 'string' && val.trim() !== '') // Фільтруємо лише непусті рядки
-              .map((val, idx) => {
-                try {
-                  const processedVal = key === 'phone' ? val.replace(/\s/g, '') : val; // Видаляємо пробіли тільки для phone
-                  return (
-                    <div key={`${nestedKey}-${idx}`} style={{ marginBottom: '2px' }}>
-                      <a
-                        href={links[key](processedVal)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-                      >
-                        {key === 'phone' ? `+${processedVal}` : processedVal}
-                      </a>
-                      {key === 'phone' && (
-                        <>
-                          <a
-                            href={links.telegramFromPhone(`+${val}`)} // Telegram отримує значення з пробілами
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                          >
-                            Tg
-                          </a>
-                          <a
-                            href={links.viberFromPhone(processedVal)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                          >
-                            V
-                          </a>
-                          <a
-                            href={links.whatsappFromPhone(processedVal)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                          >
-                            W
-                          </a>
-                        </>
-                      )}
-                    </div>
-                  );
-                } catch (error) {
-                  return (
-                    <div key={`${nestedKey}-${idx}`} style={{ marginBottom: '2px' }}>
-                      {val}
-                    </div>
-                  );
-                }
-              })
-          ) : (
-            <>
-              {(() => {
-                try {
-                  const processedValue = key === 'phone' ? value.replace(/\s/g, '') : value; // Видаляємо пробіли тільки для phone
-                  return (
-                    <>
-                      <a
-                        href={links[key](processedValue)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-                      >
-                        {key === 'phone' ? `+${processedValue}` : processedValue}
-                      </a>
-                      {key === 'phone' && (
-                        <>
-                          <a
-                            href={links.telegramFromPhone(`+${value}`)} // Telegram отримує значення з пробілами
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                          >
-                            Tg
-                          </a>
-                          <a
-                            href={links.viberFromPhone(processedValue)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                          >
-                            V
-                          </a>
-                          <a
-                            href={links.whatsappFromPhone(processedValue)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
-                          >
-                            W
-                          </a>
-                        </>
-                      )}
-                    </>
-                  );
-                } catch (error) {
-                  return <div>{value}</div>;
-                }
-              })()}
-            </>
-          )}
-        </div>
-      );
-    }
-
-    return null; // Якщо ключ не обробляється
-  });
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      {(Array.isArray(data.phone) ? data.phone : [data.phone])
+        .filter(v => v)
+        .map((val, idx) => {
+          const processedVal = String(val).replace(/\s/g, '');
+          return (
+            <span key={`phone-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <a
+                href={links.phone(processedVal)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'none' }}
+              >
+                {`+${processedVal}`}
+              </a>
+              <a
+                href={links.telegramFromPhone(`+${val}`)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'none' }}
+              >
+                Tg
+              </a>
+              <a
+                href={links.viberFromPhone(processedVal)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'none' }}
+              >
+                V
+              </a>
+              <a
+                href={links.whatsappFromPhone(processedVal)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'none' }}
+              >
+                W
+              </a>
+            </span>
+          );
+        })}
+      {data.email && (
+        <a href={links.email(getCurrentValue(data.email))} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+          <MdEmail />
+        </a>
+      )}
+      {data.facebook && (
+        <a href={links.facebook(getCurrentValue(data.facebook))} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+          <FaFacebookF />
+        </a>
+      )}
+      {data.instagram && (
+        <a href={links.instagram(getCurrentValue(data.instagram))} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+          <FaInstagram />
+        </a>
+      )}
+      {data.telegram && typeof getCurrentValue(data.telegram) === 'string' && !getCurrentValue(data.telegram).startsWith('УК СМ') && (
+        <a href={links.telegram(getCurrentValue(data.telegram))} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+          <FaTelegramPlane />
+        </a>
+      )}
+      {data.tiktok && (
+        <a href={links.tiktok(getCurrentValue(data.tiktok))} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+          <SiTiktok />
+        </a>
+      )}
+    </div>
+  );
 };
 
 export const fieldContactsIcons = data => {
@@ -186,40 +132,7 @@ export const fieldContactsIcons = data => {
     Object.entries(data).map(([k, v]) => [k, getCurrentValue(v)])
   );
 
-  const socialKeys = ['instagram', 'facebook', 'vk', 'tiktok', 'telegram', 'otherLink', 'email'];
-
-  const socialRow = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-      {socialKeys.map(key => {
-        const val = processed[key];
-        if (!val) return null;
-        if (iconMap[key]) {
-          return (
-            <a
-              key={key}
-              href={links[key](val)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: 'inherit', textDecoration: 'none' }}
-            >
-              {iconMap[key]}
-            </a>
-          );
-        }
-        return (
-          <a
-            key={key}
-            href={links[key](val)}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'inherit', textDecoration: 'none' }}
-          >
-            {val}
-          </a>
-        );
-      })}
-    </div>
-  );
+  const elements = [];
 
   const phoneValues = processed.phone
     ? Array.isArray(processed.phone)
@@ -227,50 +140,69 @@ export const fieldContactsIcons = data => {
       : [processed.phone]
     : [];
 
-  const phoneRows = phoneValues.map((val, idx) => {
+  phoneValues.forEach((val, idx) => {
     const processedVal = String(val).replace(/\s/g, '');
-    return (
-      <div key={`phone-${idx}`} style={{ marginTop: idx ? '2px' : '0px' }}>
-        <a
-          href={links.phone(processedVal)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-        >
+    elements.push(
+      <span key={`phone-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <a href={links.phone(processedVal)} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
           {`+${processedVal}`}
         </a>
-        <a
-          href={links.telegramFromPhone(`+${val}`)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-        >
+        <a href={links.telegramFromPhone(`+${val}`)} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
           <FaTelegramPlane />
         </a>
-        <a
-          href={links.viberFromPhone(processedVal)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-        >
+        <a href={links.viberFromPhone(processedVal)} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
           <FaViber />
         </a>
-        <a
-          href={links.whatsappFromPhone(processedVal)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-        >
+        <a href={links.whatsappFromPhone(processedVal)} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
           <FaWhatsapp />
         </a>
-      </div>
+      </span>
     );
   });
 
+  if (processed.email) {
+    elements.push(
+      <a key="email" href={links.email(processed.email)} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+        <MdEmail />
+      </a>
+    );
+  }
+
+  if (processed.facebook) {
+    elements.push(
+      <a key="facebook" href={links.facebook(processed.facebook)} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+        <FaFacebookF />
+      </a>
+    );
+  }
+
+  if (processed.instagram) {
+    elements.push(
+      <a key="instagram" href={links.instagram(processed.instagram)} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+        <FaInstagram />
+      </a>
+    );
+  }
+
+  if (processed.telegram && typeof processed.telegram === 'string' && !processed.telegram.startsWith('УК СМ')) {
+    elements.push(
+      <a key="telegram" href={links.telegram(processed.telegram)} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+        <FaTelegramPlane />
+      </a>
+    );
+  }
+
+  if (processed.tiktok) {
+    elements.push(
+      <a key="tiktok" href={links.tiktok(processed.tiktok)} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+        <SiTiktok />
+      </a>
+    );
+  }
+
   return (
-    <div>
-      {socialRow}
-      {phoneRows}
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      {elements}
     </div>
   );
 };
