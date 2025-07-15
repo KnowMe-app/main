@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   FaFacebookF,
   FaInstagram,
@@ -180,46 +181,20 @@ export const fieldContactsIcons = data => {
     instagram: <FaInstagram />,
     tiktok: <SiTiktok />,
     email: <MdEmail />,
+    telegram: <FaTelegramPlane />,
   };
 
   const processed = Object.fromEntries(
     Object.entries(data).map(([k, v]) => [k, getCurrentValue(v)])
   );
 
-  const socialKeys = ['instagram', 'facebook', 'vk', 'tiktok', 'telegram', 'otherLink', 'email'];
-
-  const socialRow = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-      {socialKeys.map(key => {
-        const val = processed[key];
-        if (!val) return null;
-        if (iconMap[key]) {
-          return (
-            <a
-              key={key}
-              href={links[key](val)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: 'inherit', textDecoration: 'none' }}
-            >
-              {iconMap[key]}
-            </a>
-          );
-        }
-        return (
-          <a
-            key={key}
-            href={links[key](val)}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'inherit', textDecoration: 'none' }}
-          >
-            {val}
-          </a>
-        );
-      })}
-    </div>
-  );
+  const telegramValues = processed.telegram
+    ? Array.isArray(processed.telegram)
+      ? processed.telegram.filter(v => v && !String(v).trim().startsWith('УК СМ'))
+      : String(processed.telegram).trim().startsWith('УК СМ')
+        ? []
+        : [processed.telegram]
+    : [];
 
   const phoneValues = processed.phone
     ? Array.isArray(processed.phone)
@@ -227,50 +202,103 @@ export const fieldContactsIcons = data => {
       : [processed.phone]
     : [];
 
-  const phoneRows = phoneValues.map((val, idx) => {
-    const processedVal = String(val).replace(/\s/g, '');
-    return (
-      <div key={`phone-${idx}`} style={{ marginTop: idx ? '2px' : '0px' }}>
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      {phoneValues.map((val, idx) => {
+        const processedVal = String(val).replace(/\s/g, '');
+        return (
+          <React.Fragment key={`phone-${idx}`}>
+            <a
+              href={links.phone(processedVal)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'inherit', textDecoration: 'none' }}
+            >
+              {`+${processedVal}`}
+            </a>
+            <a
+              href={links.telegramFromPhone(`+${val}`)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'inherit', textDecoration: 'none' }}
+            >
+              <FaTelegramPlane />
+            </a>
+            <a
+              href={links.viberFromPhone(processedVal)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'inherit', textDecoration: 'none' }}
+            >
+              <FaViber />
+            </a>
+            <a
+              href={links.whatsappFromPhone(processedVal)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'inherit', textDecoration: 'none' }}
+            >
+              <FaWhatsapp />
+            </a>
+          </React.Fragment>
+        );
+      })}
+
+      {processed.email && (
         <a
-          href={links.phone(processedVal)}
+          href={links.email(processed.email)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
+          style={{ color: 'inherit', textDecoration: 'none' }}
         >
-          {`+${processedVal}`}
+          <MdEmail />
         </a>
+      )}
+
+      {processed.facebook && (
         <a
-          href={links.telegramFromPhone(`+${val}`)}
+          href={links.facebook(processed.facebook)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
+          style={{ color: 'inherit', textDecoration: 'none' }}
+        >
+          <FaFacebookF />
+        </a>
+      )}
+
+      {processed.instagram && (
+        <a
+          href={links.instagram(processed.instagram)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: 'inherit', textDecoration: 'none' }}
+        >
+          <FaInstagram />
+        </a>
+      )}
+
+      {telegramValues.map((val, idx) => (
+        <a
+          key={`telegram-${idx}`}
+          href={links.telegram(val)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: 'inherit', textDecoration: 'none' }}
         >
           <FaTelegramPlane />
         </a>
-        <a
-          href={links.viberFromPhone(processedVal)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-        >
-          <FaViber />
-        </a>
-        <a
-          href={links.whatsappFromPhone(processedVal)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
-        >
-          <FaWhatsapp />
-        </a>
-      </div>
-    );
-  });
+      ))}
 
-  return (
-    <div>
-      {socialRow}
-      {phoneRows}
+      {processed.tiktok && (
+        <a
+          href={links.tiktok(processed.tiktok)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: 'inherit', textDecoration: 'none' }}
+        >
+          <SiTiktok />
+        </a>
+      )}
     </div>
   );
 };
