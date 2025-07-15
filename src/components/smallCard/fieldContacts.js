@@ -206,7 +206,7 @@ export const fieldContactsIcons = data => {
               href={links.phone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: 'inherit', textDecoration: 'none' }}
+              style={{ color: 'black', textDecoration: 'none' }}
             >
               {`+${processedVal}`}
             </a>
