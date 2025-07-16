@@ -13,6 +13,7 @@ import {
   auth,
 } from './config';
 import { onValue, ref as refDb } from 'firebase/database';
+import { onAuthStateChanged } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
@@ -235,22 +236,31 @@ const Matching = () => {
   };
 
   useEffect(() => {
-    const ownerId = auth.currentUser?.uid;
-    if (!ownerId) return;
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      if (!user) {
+        setFavoriteUsers({});
+        setDislikeUsers({});
+        return;
+      }
 
-    const favRef = refDb(database, `multiData/favorites/${ownerId}`);
-    const disRef = refDb(database, `multiData/dislikes/${ownerId}`);
+      const favRef = refDb(database, `multiData/favorites/${user.uid}`);
+      const disRef = refDb(database, `multiData/dislikes/${user.uid}`);
 
-    const unsubFav = onValue(favRef, snap => {
-      setFavoriteUsers(snap.exists() ? snap.val() : {});
-    });
-    const unsubDis = onValue(disRef, snap => {
-      setDislikeUsers(snap.exists() ? snap.val() : {});
+      const unsubFav = onValue(favRef, snap => {
+        setFavoriteUsers(snap.exists() ? snap.val() : {});
+      });
+      const unsubDis = onValue(disRef, snap => {
+        setDislikeUsers(snap.exists() ? snap.val() : {});
+      });
+
+      return () => {
+        unsubFav();
+        unsubDis();
+      };
     });
 
     return () => {
-      unsubFav();
-      unsubDis();
+      unsubscribeAuth();
     };
   }, []);
 
