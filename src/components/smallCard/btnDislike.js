@@ -1,13 +1,7 @@
 import React from 'react';
 import { addDislikeUser, removeDislikeUser, auth } from '../config';
 
-export const BtnDislike = ({
-  userId,
-  dislikeUsers = {},
-  setDislikeUsers,
-  style = {},
-  onToggle,
-}) => {
+export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers }) => {
   const isDisliked = !!dislikeUsers[userId];
 
   const toggleDislike = async () => {
@@ -32,7 +26,6 @@ export const BtnDislike = ({
         console.error('Failed to add dislike:', error);
       }
     }
-    if (onToggle) onToggle(!isDisliked);
   };
 
   return (
@@ -48,7 +41,6 @@ export const BtnDislike = ({
         border: `2px solid ${isDisliked ? 'blue' : 'gray'}`,
         color: isDisliked ? 'blue' : 'gray',
         cursor: 'pointer',
-        ...style,
       }}
       disabled={!auth.currentUser}
       onClick={e => {
