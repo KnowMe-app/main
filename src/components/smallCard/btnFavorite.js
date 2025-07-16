@@ -1,7 +1,7 @@
 import React from 'react';
 import { addFavoriteUser, removeFavoriteUser, auth } from '../config';
 
-export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers }) => {
+export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers, onRemove }) => {
   const isFavorite = !!favoriteUsers[userId];
 
   const toggleFavorite = async () => {
@@ -15,6 +15,7 @@ export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers }) =>
         const updated = { ...favoriteUsers };
         delete updated[userId];
         setFavoriteUsers(updated);
+        if (onRemove) onRemove(userId);
       } catch (error) {
         console.error('Failed to remove favorite:', error);
       }
@@ -32,8 +33,8 @@ export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers }) =>
     <button
       style={{
         position: 'absolute',
-        top: '10px',
-        right: '50px',
+        bottom: '10px',
+        right: '10px',
         width: '35px',
         height: '35px',
         borderRadius: '50%',
