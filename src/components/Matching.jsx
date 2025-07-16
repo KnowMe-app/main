@@ -252,14 +252,35 @@ const Matching = () => {
   }, []);
 
   const fetchChunk = async (limit, key) => {
-    const res = await fetchLatestUsers(limit, key);
-    const withPhotos = await Promise.all(
-      res.users.map(async user => {
-        const photos = await getAllUserPhotos(user.userId);
-        return { ...user, photos };
-      }),
-    );
-    return { users: withPhotos, lastKey: res.lastKey, hasMore: res.hasMore };
+    const ignored = new Set([
+      ...Object.keys(favoriteUsers || {}),
+      ...Object.keys(dislikeUsers || {}),
+    ]);
+    let hasMoreRes = true;
+    let last = key;
+    const collected = [];
+
+    while (hasMoreRes && collected.length < limit) {
+      const res = await fetchLatestUsers(limit, last);
+      last = res.lastKey;
+      hasMoreRes = res.hasMore;
+
+      const filtered = res.users.filter(u => !ignored.has(u.userId));
+      const withPhotos = await Promise.all(
+        filtered.map(async user => {
+          const photos = await getAllUserPhotos(user.userId);
+          return { ...user, photos };
+        }),
+      );
+      collected.push(...withPhotos);
+
+      if (!hasMoreRes) break;
+      if (collected.length < limit) {
+        continue;
+      }
+    }
+
+    return { users: collected.slice(0, limit), lastKey: last, hasMore: hasMoreRes };
   };
 
   const loadInitial = React.useCallback(async () => {
@@ -272,7 +293,7 @@ const Matching = () => {
     } finally {
       loadingRef.current = false;
     }
-  }, []);
+  }, [fetchChunk]);
 
   const loadFavoriteCards = async () => {
     const owner = auth.currentUser?.uid;
@@ -303,7 +324,7 @@ const Matching = () => {
     } finally {
       loadingRef.current = false;
     }
-  }, [hasMore, lastKey]);
+  }, [fetchChunk, hasMore, lastKey]);
 
   useEffect(() => {
     loadInitial();
@@ -357,19 +378,26 @@ const Matching = () => {
                   : {}
               }
             >
-              <BtnFavorite
-                userId={user.userId}
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-              />
               <BtnDislike
                 userId={user.userId}
                 dislikeUsers={dislikeUsers}
                 setDislikeUsers={setDislikeUsers}
+                style={{ bottom: '10px', left: '10px', top: 'auto', right: 'auto' }}
+                onToggle={disliked => {
+                  if (disliked) {
+                    setUsers(prev => prev.filter(u => u.userId !== user.userId));
+                  }
+                }}
+              />
+              <BtnFavorite
+                userId={user.userId}
+                favoriteUsers={favoriteUsers}
+                setFavoriteUsers={setFavoriteUsers}
+                style={{ bottom: '10px', right: '10px', top: 'auto', left: 'auto' }}
               />
             </Card>
           );
-        })}
+        })
         </Grid>
       </div>
       {selected && (
