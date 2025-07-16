@@ -1,7 +1,7 @@
 import React from 'react';
 import { addDislikeUser, removeDislikeUser, auth } from '../config';
 
-export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers }) => {
+export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers, onRemove }) => {
   const isDisliked = !!dislikeUsers[userId];
 
   const toggleDislike = async () => {
@@ -15,6 +15,7 @@ export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers }) => {
         const updated = { ...dislikeUsers };
         delete updated[userId];
         setDislikeUsers(updated);
+        if (onRemove) onRemove(userId);
       } catch (error) {
         console.error('Failed to remove dislike:', error);
       }
@@ -22,6 +23,7 @@ export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers }) => {
       try {
         await addDislikeUser(userId);
         setDislikeUsers({ ...dislikeUsers, [userId]: true });
+        if (onRemove) onRemove(userId);
       } catch (error) {
         console.error('Failed to add dislike:', error);
       }
@@ -32,8 +34,8 @@ export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers }) => {
     <button
       style={{
         position: 'absolute',
-        top: '10px',
-        right: '10px',
+        bottom: '10px',
+        left: '10px',
         width: '35px',
         height: '35px',
         borderRadius: '50%',
@@ -48,7 +50,7 @@ export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers }) => {
         toggleDislike();
       }}
     >
-      {isDisliked ? '👎' : '👍'}
+      {'👎'}
     </button>
   );
 };

@@ -7,6 +7,8 @@ import {
   getAllUserPhotos,
   fetchFavoriteUsersData,
   fetchDislikeUsersData,
+  fetchFavoriteUsers,
+  fetchDislikeUsers,
   database,
   auth,
 } from './config';
@@ -59,8 +61,6 @@ const ModalOverlay = styled.div`
   z-index: 1000;
 `;
 
-
-
 // Styled components for detailed modal card
 const DonorCard = styled.div`
   font-family: sans-serif;
@@ -77,7 +77,6 @@ const DonorCard = styled.div`
   overflow-y: auto;
   position: relative;
 `;
-
 
 const Title = styled.div`
   color: ${color.accent};
@@ -229,7 +228,11 @@ const Matching = () => {
   const [showPhoto, setShowPhoto] = useState(false);
   const [favoriteUsers, setFavoriteUsers] = useState({});
   const [dislikeUsers, setDislikeUsers] = useState({});
+  const [viewMode, setViewMode] = useState('default');
   const loadingRef = useRef(false);
+  const handleRemove = id => {
+    setUsers(prev => prev.filter(u => u.userId !== id));
+  };
 
   useEffect(() => {
     const ownerId = auth.currentUser?.uid;
@@ -251,13 +254,14 @@ const Matching = () => {
     };
   }, []);
 
-  const fetchChunk = async (limit, key) => {
-    const res = await fetchLatestUsers(limit, key);
+  const fetchChunk = async (limit, key, exclude = new Set()) => {
+    const res = await fetchLatestUsers(limit + exclude.size, key);
+    const filtered = res.users.filter(u => !exclude.has(u.userId)).slice(0, limit);
     const withPhotos = await Promise.all(
-      res.users.map(async user => {
+      filtered.map(async user => {
         const photos = await getAllUserPhotos(user.userId);
         return { ...user, photos };
-      }),
+      })
     );
     return { users: withPhotos, lastKey: res.lastKey, hasMore: res.hasMore };
   };
@@ -265,10 +269,19 @@ const Matching = () => {
   const loadInitial = React.useCallback(async () => {
     loadingRef.current = true;
     try {
-      const res = await fetchChunk(INITIAL_LOAD);
+      const owner = auth.currentUser?.uid;
+      let exclude = new Set();
+      if (owner) {
+        const [favIds, disIds] = await Promise.all([fetchFavoriteUsers(owner), fetchDislikeUsers(owner)]);
+        setFavoriteUsers(favIds);
+        setDislikeUsers(disIds);
+        exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
+      }
+      const res = await fetchChunk(INITIAL_LOAD, undefined, exclude);
       setUsers(res.users);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
+      setViewMode('default');
     } finally {
       loadingRef.current = false;
     }
@@ -281,6 +294,7 @@ const Matching = () => {
     setUsers(Object.values(loaded));
     setHasMore(false);
     setLastKey(null);
+    setViewMode('favorites');
   };
 
   const loadDislikeCards = async () => {
@@ -290,20 +304,22 @@ const Matching = () => {
     setUsers(Object.values(loaded));
     setHasMore(false);
     setLastKey(null);
+    setViewMode('dislikes');
   };
 
   const loadMore = React.useCallback(async () => {
-    if (!hasMore || loadingRef.current) return;
+    if (!hasMore || loadingRef.current || viewMode !== 'default') return;
     loadingRef.current = true;
     try {
-      const res = await fetchChunk(LOAD_MORE, lastKey);
+      const exclude = new Set([...Object.keys(favoriteUsers), ...Object.keys(dislikeUsers)]);
+      const res = await fetchChunk(LOAD_MORE, lastKey, exclude);
       setUsers(prev => [...prev, ...res.users]);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
     } finally {
       loadingRef.current = false;
     }
-  }, [hasMore, lastKey]);
+  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode]);
 
   useEffect(() => {
     loadInitial();
@@ -349,31 +365,34 @@ const Matching = () => {
             return (
               <Card
                 data-card
-              key={user.userId}
-              onClick={() => setSelected(user)}
-              style={
-                photo
-                  ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' }
-                  : {}
-              }
-            >
-              <BtnFavorite
-                userId={user.userId}
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-              />
-              <BtnDislike
-                userId={user.userId}
-                dislikeUsers={dislikeUsers}
-                setDislikeUsers={setDislikeUsers}
-              />
-            </Card>
-          );
-        })}
+                key={user.userId}
+                onClick={() => setSelected(user)}
+                style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}
+              >
+                <BtnFavorite
+                  userId={user.userId}
+                  favoriteUsers={favoriteUsers}
+                  setFavoriteUsers={setFavoriteUsers}
+                  onRemove={viewMode === 'favorites' ? handleRemove : undefined}
+                />
+                <BtnDislike
+                  userId={user.userId}
+                  dislikeUsers={dislikeUsers}
+                  setDislikeUsers={setDislikeUsers}
+                  onRemove={viewMode !== 'default' ? handleRemove : undefined}
+                />
+              </Card>
+            );
+          })}
         </Grid>
       </div>
       {selected && (
-        <ModalOverlay onClick={() => { setSelected(null); setShowPhoto(false); }}>
+        <ModalOverlay
+          onClick={() => {
+            setSelected(null);
+            setShowPhoto(false);
+          }}
+        >
           <DonorCard onClick={e => e.stopPropagation()}>
             <CloseButton
               className="close"
@@ -385,16 +404,13 @@ const Matching = () => {
               ✕
             </CloseButton>
             <ProfileSection>
-              {getCurrentValue(selected.photos) && (
-                <Photo
-                  src={getCurrentValue(selected.photos)}
-                  alt="Donor"
-                  onClick={() => setShowPhoto(true)}
-                />
-              )}
+              {getCurrentValue(selected.photos) && <Photo src={getCurrentValue(selected.photos)} alt="Donor" onClick={() => setShowPhoto(true)} />}
               <Info>
                 <Title>Egg donor profile</Title>
-                <strong>{getCurrentValue(selected.surname) || ''} {getCurrentValue(selected.name) || ''}{selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}</strong>
+                <strong>
+                  {getCurrentValue(selected.surname) || ''} {getCurrentValue(selected.name) || ''}
+                  {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
+                </strong>
                 <br />
                 {getCurrentValue(selected.region) || ''}
                 {getCurrentValue(selected.city) ? `, ${getCurrentValue(selected.city)}` : ''}
@@ -408,16 +424,10 @@ const Matching = () => {
                 {getCurrentValue(selected.myComment)}
               </MoreInfo>
             )}
-            {getCurrentValue(selected.moreInfo_main) && (
-              <MoreInfo>
-                {getCurrentValue(selected.moreInfo_main)}
-              </MoreInfo>
-            )}
+            {getCurrentValue(selected.moreInfo_main) && <MoreInfo>{getCurrentValue(selected.moreInfo_main)}</MoreInfo>}
             <Contact>
               <Icons>{fieldContactsIcons(selected)}</Icons>
-              {getCurrentValue(selected.writer) && (
-                <div style={{ marginLeft: '10px' }}>{getCurrentValue(selected.writer)}</div>
-              )}
+              {getCurrentValue(selected.writer) && <div style={{ marginLeft: '10px' }}>{getCurrentValue(selected.writer)}</div>}
             </Contact>
             <Id>ID: {selected.userId ? selected.userId.slice(0, 5) : ''}</Id>
           </DonorCard>
