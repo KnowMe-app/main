@@ -5,12 +5,14 @@ import { color } from './styles';
 import { fetchLatestUsers, getAllUserPhotos } from './config';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
+import PhotoViewer from './PhotoViewer';
 
 const Grid = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   padding: 10px;
+  justify-content: center;
 `;
 
 const Card = styled.div`
@@ -26,6 +28,8 @@ const ModalOverlay = styled.div`
   position: fixed;
   top: 0;
   left: 0;
+  right: 0;
+  bottom: 0;
   width: 100vw;
   height: 100vh;
   background: rgba(0, 0, 0, 0.5);
@@ -35,14 +39,6 @@ const ModalOverlay = styled.div`
   z-index: 1000;
 `;
 
-const PhotoOverlay = styled(ModalOverlay)`
-  background: rgba(0, 0, 0, 0.9);
-`;
-
-const FullscreenPhoto = styled.img`
-  max-width: 90vw;
-  max-height: 90vh;
-`;
 
 
 // Styled components for detailed modal card
@@ -59,14 +55,9 @@ const DonorCard = styled.div`
   color: ${color.black};
   max-height: 80vh;
   overflow-y: auto;
+  position: relative;
 `;
 
-const Header = styled.div`
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  margin-bottom: 10px;
-`;
 
 const Title = styled.div`
   color: ${color.accent};
@@ -92,6 +83,16 @@ const Photo = styled.img`
 
 const Info = styled.div`
   flex: 1;
+`;
+
+const CloseButton = styled.button`
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
 `;
 
 // Fields to display in the details modal
@@ -254,7 +255,7 @@ const Matching = () => {
   useEffect(() => {
     const node = loaderRef.current;
     const root = gridRef.current;
-    if (!node || !root) return;
+    if (!node) return;
 
     const observer = new IntersectionObserver(
       entries => {
@@ -262,7 +263,7 @@ const Matching = () => {
           loadMore();
         }
       },
-      { root }
+      { root: root || null, rootMargin: '100px' }
     );
 
     observer.observe(node);
@@ -294,15 +295,15 @@ const Matching = () => {
       {selected && (
         <ModalOverlay onClick={() => { setSelected(null); setShowPhoto(false); }}>
           <DonorCard onClick={e => e.stopPropagation()}>
-            <Header>
-              <button
-                className="close"
-                onClick={() => { setSelected(null); setShowPhoto(false); }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                ✕
-              </button>
-            </Header>
+            <CloseButton
+              className="close"
+              onClick={() => {
+                setSelected(null);
+                setShowPhoto(false);
+              }}
+            >
+              ✕
+            </CloseButton>
             <ProfileSection>
               {getCurrentValue(selected.photos) && (
                 <Photo
@@ -314,31 +315,31 @@ const Matching = () => {
               <Info>
                 <Title>Egg donor profile</Title>
                 <strong>
-                  {selected.surname || ''} {selected.name || ''} {selected.fathersname || ''}
+                  {getCurrentValue(selected.surname) || ''} {getCurrentValue(selected.name) || ''}
                   {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
                 </strong>
                 <br />
-                {selected.region || ''}
-                {selected.city ? `, ${selected.city}` : ''}
+                {getCurrentValue(selected.region) || ''}
+                {getCurrentValue(selected.city) ? `, ${getCurrentValue(selected.city)}` : ''}
               </Info>
             </ProfileSection>
             <Table>{renderSelectedFields(selected)}</Table>
-            {selected.myComment && (
+            {getCurrentValue(selected.myComment) && (
               <MoreInfo>
                 <strong>More information</strong>
                 <br />
-                {selected.myComment}
+                {getCurrentValue(selected.myComment)}
               </MoreInfo>
             )}
-            {selected.moreInfo_main && (
+            {getCurrentValue(selected.moreInfo_main) && (
               <MoreInfo>
-                {selected.moreInfo_main}
+                {getCurrentValue(selected.moreInfo_main)}
               </MoreInfo>
             )}
             <Contact>
               <Icons>{fieldContactsIcons(selected)}</Icons>
-              {selected.writer && (
-                <div style={{ marginLeft: '10px' }}>{selected.writer}</div>
+              {getCurrentValue(selected.writer) && (
+                <div style={{ marginLeft: '10px' }}>{getCurrentValue(selected.writer)}</div>
               )}
             </Contact>
             <Id>ID: {selected.userId ? selected.userId.slice(0, 5) : ''}</Id>
@@ -346,9 +347,10 @@ const Matching = () => {
         </ModalOverlay>
       )}
       {showPhoto && (
-        <PhotoOverlay onClick={() => setShowPhoto(false)}>
-          <FullscreenPhoto src={getCurrentValue(selected.photos)} alt="Donor" />
-        </PhotoOverlay>
+        <PhotoViewer
+          photos={Array.isArray(selected.photos) ? selected.photos : [getCurrentValue(selected.photos)].filter(Boolean)}
+          onClose={() => setShowPhoto(false)}
+        />
       )}
     </>
   );
