@@ -1,13 +1,7 @@
 import React from 'react';
 import { addFavoriteUser, removeFavoriteUser, auth } from '../config';
 
-export const BtnFavorite = ({
-  userId,
-  favoriteUsers = {},
-  setFavoriteUsers,
-  style = {},
-  onToggle,
-}) => {
+export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers }) => {
   const isFavorite = !!favoriteUsers[userId];
 
   const toggleFavorite = async () => {
@@ -32,7 +26,6 @@ export const BtnFavorite = ({
         console.error('Failed to add favorite:', error);
       }
     }
-    if (onToggle) onToggle(!isFavorite);
   };
 
   return (
@@ -48,7 +41,6 @@ export const BtnFavorite = ({
         border: `2px solid ${isFavorite ? 'red' : 'gray'}`,
         color: isFavorite ? 'red' : 'gray',
         cursor: 'pointer',
-        ...style,
       }}
       disabled={!auth.currentUser}
       onClick={e => {
