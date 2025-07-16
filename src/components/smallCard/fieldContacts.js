@@ -9,6 +9,7 @@ import {
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getCurrentValue } from '../getCurrentValue';
+import { color } from '../styles';
 
 export const fieldContacts = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
@@ -206,7 +207,7 @@ export const fieldContactsIcons = data => {
               href={links.phone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: 'black', textDecoration: 'none' }}
+              style={{ color: color.black, textDecoration: 'none' }}
             >
               {`+${processedVal}`}
             </a>
