@@ -2,7 +2,17 @@ import React, { useEffect, useState, useRef } from 'react';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled from 'styled-components';
 import { color } from './styles';
-import { fetchLatestUsers, getAllUserPhotos } from './config';
+import {
+  fetchLatestUsers,
+  getAllUserPhotos,
+  fetchFavoriteUsersData,
+  fetchDislikeUsersData,
+  database,
+  auth,
+} from './config';
+import { onValue, ref as refDb } from 'firebase/database';
+import { BtnFavorite } from './smallCard/btnFavorite';
+import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
 import PhotoViewer from './PhotoViewer';
@@ -22,6 +32,16 @@ const Card = styled.div`
   background-size: cover;
   background-position: center;
   border-radius: 8px;
+  position: relative;
+`;
+
+const TopActions = styled.div`
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 10px;
+  z-index: 10;
 `;
 
 const ModalOverlay = styled.div`
@@ -198,8 +218,8 @@ const renderSelectedFields = user => {
   });
 };
 
-const INITIAL_LOAD = 9;
-const LOAD_MORE = 3;
+const INITIAL_LOAD = 6;
+const LOAD_MORE = 2;
 
 const Matching = () => {
   const [users, setUsers] = useState([]);
@@ -207,7 +227,29 @@ const Matching = () => {
   const [hasMore, setHasMore] = useState(true);
   const [selected, setSelected] = useState(null);
   const [showPhoto, setShowPhoto] = useState(false);
+  const [favoriteUsers, setFavoriteUsers] = useState({});
+  const [dislikeUsers, setDislikeUsers] = useState({});
   const loadingRef = useRef(false);
+
+  useEffect(() => {
+    const ownerId = auth.currentUser?.uid;
+    if (!ownerId) return;
+
+    const favRef = refDb(database, `multiData/favorites/${ownerId}`);
+    const disRef = refDb(database, `multiData/dislikes/${ownerId}`);
+
+    const unsubFav = onValue(favRef, snap => {
+      setFavoriteUsers(snap.exists() ? snap.val() : {});
+    });
+    const unsubDis = onValue(disRef, snap => {
+      setDislikeUsers(snap.exists() ? snap.val() : {});
+    });
+
+    return () => {
+      unsubFav();
+      unsubDis();
+    };
+  }, []);
 
   const fetchChunk = async (limit, key) => {
     const res = await fetchLatestUsers(limit, key);
@@ -232,6 +274,24 @@ const Matching = () => {
     }
   }, []);
 
+  const loadFavoriteCards = async () => {
+    const owner = auth.currentUser?.uid;
+    if (!owner) return;
+    const loaded = await fetchFavoriteUsersData(owner);
+    setUsers(Object.values(loaded));
+    setHasMore(false);
+    setLastKey(null);
+  };
+
+  const loadDislikeCards = async () => {
+    const owner = auth.currentUser?.uid;
+    if (!owner) return;
+    const loaded = await fetchDislikeUsersData(owner);
+    setUsers(Object.values(loaded));
+    setHasMore(false);
+    setLastKey(null);
+  };
+
   const loadMore = React.useCallback(async () => {
     if (!hasMore || loadingRef.current) return;
     loadingRef.current = true;
@@ -249,13 +309,16 @@ const Matching = () => {
     loadInitial();
   }, [loadInitial]);
 
-  const loaderRef = useRef(null);
   const gridRef = useRef(null);
+  const observerRef = useRef(null);
 
   useEffect(() => {
-    const node = loaderRef.current;
-    const root = gridRef.current;
-    if (!node) return;
+    if (!gridRef.current || !hasMore) return;
+
+    const cards = gridRef.current.querySelectorAll('[data-card]');
+    const index = users.length - 3;
+    const target = cards[index];
+    if (!target) return;
 
     const observer = new IntersectionObserver(
       entries => {
@@ -263,23 +326,29 @@ const Matching = () => {
           loadMore();
         }
       },
-      { root: root || null, rootMargin: '100px' }
+      { root: gridRef.current, rootMargin: '100px' }
     );
 
-    observer.observe(node);
+    observer.observe(target);
+    observerRef.current = observer;
     return () => {
-      observer.unobserve(node);
-      observer.disconnect();
+      if (observerRef.current) observerRef.current.disconnect();
     };
-  }, [loadMore, users.length]);
+  }, [loadMore, users.length, hasMore]);
 
   return (
     <>
-      <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
-        {users.map(user => {
-          const photo = getCurrentValue(user.photos);
-          return (
-            <Card
+      <div style={{ position: 'relative' }}>
+        <TopActions>
+          <button onClick={loadFavoriteCards}>❤</button>
+          <button onClick={loadDislikeCards}>👎</button>
+        </TopActions>
+        <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
+          {users.map(user => {
+            const photo = getCurrentValue(user.photos);
+            return (
+              <Card
+                data-card
               key={user.userId}
               onClick={() => setSelected(user)}
               style={
@@ -287,11 +356,22 @@ const Matching = () => {
                   ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' }
                   : {}
               }
-            />
+            >
+              <BtnFavorite
+                userId={user.userId}
+                favoriteUsers={favoriteUsers}
+                setFavoriteUsers={setFavoriteUsers}
+              />
+              <BtnDislike
+                userId={user.userId}
+                dislikeUsers={dislikeUsers}
+                setDislikeUsers={setDislikeUsers}
+              />
+            </Card>
           );
         })}
-        <div ref={loaderRef} style={{ width: '100%', height: '1px' }} />
-      </Grid>
+        </Grid>
+      </div>
       {selected && (
         <ModalOverlay onClick={() => { setSelected(null); setShowPhoto(false); }}>
           <DonorCard onClick={e => e.stopPropagation()}>
@@ -314,10 +394,7 @@ const Matching = () => {
               )}
               <Info>
                 <Title>Egg donor profile</Title>
-                <strong>
-                  {getCurrentValue(selected.surname) || ''} {getCurrentValue(selected.name) || ''}
-                  {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
-                </strong>
+                <strong>{getCurrentValue(selected.surname) || ''} {getCurrentValue(selected.name) || ''}{selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}</strong>
                 <br />
                 {getCurrentValue(selected.region) || ''}
                 {getCurrentValue(selected.city) ? `, ${getCurrentValue(selected.city)}` : ''}

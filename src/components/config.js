@@ -212,6 +212,26 @@ export const removeFavoriteUser = async userId => {
   }
 };
 
+export const addDislikeUser = async userId => {
+  try {
+    const owner = auth.currentUser;
+    if (!owner) return;
+    await set(ref2(database, `multiData/dislikes/${owner.uid}/${userId}`), true);
+  } catch (error) {
+    console.error('Error adding dislike user:', error);
+  }
+};
+
+export const removeDislikeUser = async userId => {
+  try {
+    const owner = auth.currentUser;
+    if (!owner) return;
+    await remove(ref2(database, `multiData/dislikes/${owner.uid}/${userId}`));
+  } catch (error) {
+    console.error('Error removing dislike user:', error);
+  }
+};
+
 // Retrieve favorites for a specific owner
 export const fetchFavoriteUsers = async ownerId => {
   try {
@@ -237,6 +257,33 @@ export const fetchFavoriteUsersData = async ownerId => {
     return data;
   } catch (error) {
     console.error('Error fetching favorite users data:', error);
+    return {};
+  }
+};
+
+export const fetchDislikeUsers = async ownerId => {
+  try {
+    const refPath = ref2(database, `multiData/dislikes/${ownerId}`);
+    const snap = await get(refPath);
+    return snap.exists() ? snap.val() : {};
+  } catch (error) {
+    console.error('Error fetching dislike users:', error);
+    return {};
+  }
+};
+
+export const fetchDislikeUsersData = async ownerId => {
+  try {
+    const dislikeIds = await fetchDislikeUsers(ownerId);
+    const ids = Object.keys(dislikeIds || {});
+    const results = await Promise.all(ids.map(id => fetchUserById(id)));
+    const data = {};
+    results.forEach((user, idx) => {
+      if (user) data[ids[idx]] = user;
+    });
+    return data;
+  } catch (error) {
+    console.error('Error fetching dislike users data:', error);
     return {};
   }
 };
