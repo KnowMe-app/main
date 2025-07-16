@@ -35,6 +35,15 @@ const ModalOverlay = styled.div`
   z-index: 1000;
 `;
 
+const PhotoOverlay = styled(ModalOverlay)`
+  background: rgba(0, 0, 0, 0.9);
+`;
+
+const FullscreenPhoto = styled.img`
+  max-width: 90vw;
+  max-height: 90vh;
+`;
+
 
 // Styled components for detailed modal card
 const DonorCard = styled.div`
@@ -48,16 +57,21 @@ const DonorCard = styled.div`
   background: ${color.oppositeAccent};
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   color: ${color.black};
+  max-height: 80vh;
+  overflow-y: auto;
 `;
 
 const Header = styled.div`
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
+  margin-bottom: 10px;
+`;
+
+const Title = styled.div`
   color: ${color.accent};
   font-weight: bold;
-  font-size: 20px;
-  margin-bottom: 10px;
+  margin-bottom: 4px;
 `;
 
 const ProfileSection = styled.div`
@@ -69,10 +83,11 @@ const ProfileSection = styled.div`
 `;
 
 const Photo = styled.img`
-  width: 110px;
+  width: 90px;
   border-radius: 8px;
   margin-right: 10px;
   object-fit: cover;
+  cursor: pointer;
 `;
 
 const Info = styled.div`
@@ -147,7 +162,7 @@ const Contact = styled.div`
 const Icons = styled.div`
   display: flex;
   gap: 10px;
-  font-size: 18px;
+  font-size: 16px;
   color: ${color.accent};
 `;
 
@@ -190,6 +205,7 @@ const Matching = () => {
   const [lastKey, setLastKey] = useState();
   const [hasMore, setHasMore] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [showPhoto, setShowPhoto] = useState(false);
   const loadingRef = useRef(false);
 
   const fetchChunk = async (limit, key) => {
@@ -276,13 +292,12 @@ const Matching = () => {
         <div ref={loaderRef} style={{ width: '100%', height: '1px' }} />
       </Grid>
       {selected && (
-        <ModalOverlay onClick={() => setSelected(null)}>
+        <ModalOverlay onClick={() => { setSelected(null); setShowPhoto(false); }}>
           <DonorCard onClick={e => e.stopPropagation()}>
             <Header>
-              <span className="title">Egg donor</span>
               <button
                 className="close"
-                onClick={() => setSelected(null)}
+                onClick={() => { setSelected(null); setShowPhoto(false); }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer' }}
               >
                 ✕
@@ -290,12 +305,16 @@ const Matching = () => {
             </Header>
             <ProfileSection>
               {getCurrentValue(selected.photos) && (
-                <Photo src={getCurrentValue(selected.photos)} alt="Donor" />
+                <Photo
+                  src={getCurrentValue(selected.photos)}
+                  alt="Donor"
+                  onClick={() => setShowPhoto(true)}
+                />
               )}
               <Info>
+                <Title>Egg donor profile</Title>
                 <strong>
-                  {selected.surname || ''} {selected.name || ''}
-                  {selected.fathersname ? `, ${selected.fathersname}` : ''}
+                  {selected.surname || ''} {selected.name || ''} {selected.fathersname || ''}
                   {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
                 </strong>
                 <br />
@@ -325,6 +344,11 @@ const Matching = () => {
             <Id>ID: {selected.userId ? selected.userId.slice(0, 5) : ''}</Id>
           </DonorCard>
         </ModalOverlay>
+      )}
+      {showPhoto && (
+        <PhotoOverlay onClick={() => setShowPhoto(false)}>
+          <FullscreenPhoto src={getCurrentValue(selected.photos)} alt="Donor" />
+        </PhotoOverlay>
       )}
     </>
   );
