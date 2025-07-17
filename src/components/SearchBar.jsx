@@ -55,8 +55,21 @@ const ClearButton = styled.button`
   }
 `;
 
-const SearchBar = ({ searchFunc, setUsers, setState, setUserNotFound, onSearchKey }) => {
-  const [search, setSearch] = useState(() => localStorage.getItem('searchQuery') || '');
+const SearchBar = ({
+  searchFunc,
+  setUsers,
+  setState,
+  setUserNotFound,
+  onSearchKey,
+  search: externalSearch,
+  setSearch: externalSetSearch,
+}) => {
+  const [internalSearch, setInternalSearch] = useState(
+    () => localStorage.getItem('searchQuery') || '',
+  );
+
+  const search = externalSearch !== undefined ? externalSearch : internalSearch;
+  const setSearch = externalSetSearch !== undefined ? externalSetSearch : setInternalSearch;
 
   useEffect(() => {
     if (search) {
