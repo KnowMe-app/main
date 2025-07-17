@@ -46,8 +46,7 @@ import { renderTopBlock } from './smallCard/renderTopBlock';
 // import { UploadJson } from './topBtns/uploadNewJSON';
 import { btnExportUsers } from './topBtns/btnExportUsers';
 import { btnMerge } from './smallCard/btnMerge';
-import FilterPanel from './FilterPanel';
-import SearchBar from './SearchBar';
+import { SearchFilters } from './SearchFilters';
 import { Pagination } from './Pagination';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { PAGE_SIZE, database } from './config';
@@ -397,8 +396,59 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [state, setState] = useState({});
   const isEditingRef = useRef(false);
 
+  const [search, setSearch] = useState(() => localStorage.getItem('searchQuery') || '');
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
-  const [filters, setFilters] = useState({});
+  const defaultFilters = {
+    csection: { cs2plus: true, cs1: true, cs0: true, other: true },
+    role: { ed: true, sm: true, ag: true, ip: true, cl: true, other: true },
+    maritalStatus: { married: true, unmarried: true, other: true },
+    blood: { pos: true, neg: true, other: true },
+    age: {
+      le25: true,
+      '26_30': true,
+      '31_36': true,
+      '37_42': true,
+      '43_plus': true,
+      other: true,
+    },
+    userId: { vk: true, aa: true, ab: true, long: true, mid: true, other: true },
+    fields: { lt4: true, lt8: true, lt12: true, other: true },
+    commentLength: {
+      w0_9: true,
+      w10_29: true,
+      w30_49: true,
+      w50_99: true,
+      w100_199: true,
+      w200_plus: true,
+      other: true,
+    },
+  };
+
+  const normalizeFilterGroup = (value, defaults) => {
+    return typeof value === 'object' && value !== null ? { ...defaults, ...value } : { ...defaults };
+  };
+
+  const getInitialFilters = () => {
+    const stored = localStorage.getItem('userFilters');
+    if (!stored) return { ...defaultFilters };
+    try {
+      const parsed = JSON.parse(stored);
+      return {
+        csection: normalizeFilterGroup(parsed.csection, defaultFilters.csection),
+        role: normalizeFilterGroup(parsed.role, defaultFilters.role),
+        maritalStatus: normalizeFilterGroup(parsed.maritalStatus, defaultFilters.maritalStatus),
+        blood: normalizeFilterGroup(parsed.blood, defaultFilters.blood),
+        age: normalizeFilterGroup(parsed.age, defaultFilters.age),
+        userId: normalizeFilterGroup(parsed.userId, defaultFilters.userId),
+        fields: normalizeFilterGroup(parsed.fields, defaultFilters.fields),
+        commentLength: normalizeFilterGroup(parsed.commentLength, defaultFilters.commentLength),
+      };
+    } catch {
+      return { ...defaultFilters };
+    }
+  };
+
+  const [filters, setFilters] = useState(getInitialFilters);
   // const [addUser, setAddUser] = useState(null);
   // const [focused, setFocused] = useState(null);
   // console.log('focused :>> ', focused);
@@ -667,6 +717,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [state.userId]);
 
 
+  // Save search query to localStorage
+  useEffect(() => {
+    if (search) {
+      localStorage.setItem('searchQuery', search);
+    } else {
+      localStorage.removeItem('searchQuery');
+    }
+  }, [search]);
   const [users, setUsers] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
@@ -723,10 +781,344 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, currentFilter]);
 
+  // Use saved query on initial load
+  useEffect(() => {
+    if (search) {
+      writeData(search);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleAddUser = async () => {
     const res = await makeNewUser(searchKeyValuePair);
     setUserNotFound(false);
+    setState(res);
+    setSearchKeyValuePair({});
+  };
+
+  const processUserSearch = async (platform, parseFunction, inputData) => {
+    setUsers({}); // Скидаємо попередній стан користувачів
+    const id = parseFunction(inputData.trim()); // Парсимо ID
+
+    if (id) {
+      const result = { [platform]: id };
+      console.log(`${platform} ID:`, id);
+
+      console.log('objeresultct!!!!! :>> ', result);
+
+      setSearchKeyValuePair(result); // Задаємо ключ пошуку
+      const res = await fetchNewUsersCollectionInRTDB(result); // Пошук у базі
+      console.log('res :>> ', res);
+
+      if (!res || Object.keys(res).length === 0) {
+        // Якщо результат пустий
+        console.log(`Користувача не знайдено в ${platform}`);
+        setUserNotFound(true);
+      } else {
+        // Якщо користувач знайдений
+        setUserNotFound(false);
+
+        if ('userId' in res) {
+          // Якщо в респонсі є ключ `userId`, використовуємо `setState`
+          setState(res);
+          console.log(`Користувача знайдено в ${platform}:`, res);
+        } else {
+          // Якщо ключа `userId` немає, використовуємо `setUsers`
+          setUsers(res);
+          console.log(`Знайдено користувачів у ${platform}:`, res);
+        }
+      }
+      return true; // Повертаємо true, якщо обробка завершена
+    }
+
+    return false; // Повертаємо false, якщо ID не знайдено
+  };
+
+  const writeData = async (query = search) => {
+    setUserNotFound(false);
+    setState({});
+
+    const trimmed = query?.trim();
+    if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      const inside = trimmed.slice(1, -1);
+      const matches = inside.match(/"[^"]+"|[^\s,;]+/g) || [];
+      const values = matches
+        .map(v => v.replace(/^"|"$/g, '').trim())
+        .filter(Boolean);
+
+      if (values.length > 0) {
+        const results = {};
+        for (const val of values) {
+          const res = await fetchNewUsersCollectionInRTDB({ name: val });
+          if (!res || Object.keys(res).length === 0) {
+            results[`new_${val}`] = { _notFound: true, searchVal: val };
+          } else if ('userId' in res) {
+            results[res.userId] = res;
+          } else {
+            Object.assign(results, res);
+          }
+        }
+        setUsers(results);
+        return;
+      }
+    }
+    // const res = await aiHandler(search)
+
+    const parseFacebookId = url => {
+      // Перевіряємо, чи є параметр id в URL (наприклад, profile.php?id=100018808396245)
+      const idParamRegex = /[?&]id=(\d+)/;
+      const matchIdParam = url.match(idParamRegex);
+
+      if (matchIdParam && matchIdParam[1]) {
+        return matchIdParam[1]; // Повертаємо ID
+      }
+
+      // Регулярний вираз для числового ID у URL (тільки числа)
+      const facebookIdRegex = /facebook\.com\/(?:.*\/)?(\d+)$/;
+      const matchId = url.match(facebookIdRegex);
+
+      if (matchId && matchId[1]) {
+        return matchId[1]; // Повертаємо числовий ID
+      }
+
+      // Регулярний вираз для текстових ніків (усе, крім символів `/`, `?`, `#`)
+      const facebookUsernameRegex = /facebook\.com\/([\w.-]+)(?:[/?#]|$)/;
+      const matchUsername = url.match(facebookUsernameRegex);
+
+      if (matchUsername && matchUsername[1]) {
+        return matchUsername[1]; // Повертаємо текстовий нік
+      }
+
+      // Перевірка на 14-15 цифр
+      const numberRegex = /^\d{14,15}$/;
+      if (numberRegex.test(url)) {
+        return url; // Якщо це 14-15 цифр, повертаємо це значення
+      }
+
+      // Формат "facebook: username", "fb username"
+      const textFormatRegex = /(?:facebook|fb|фейсбук|фб)\s*:?\s*(\w+)/i;
+      const matchTextFormat = url.match(textFormatRegex);
+
+      if (matchTextFormat && matchTextFormat[1]) {
+        return matchTextFormat[1]; // Повертаємо ID або нік
+      }
+
+      return null; // Повертаємо null, якщо нічого не знайдено
+    };
+
+    const parseInstagramId = input => {
+      // Перевіряємо, чи це URL Instagram
+      console.log('111 :>> ');
+      if (typeof input === 'string' && input.includes('instagram')) {
+        const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
+        const match = input.match(instagramRegex);
+
+        // Якщо знайдено username в URL
+        if (match && match[1]) {
+          return match[1]; // Повертає username
+        }
+      }
+
+      // Регулярний вираз для витягування username з рядків у форматі "inst monkey", "inst: monkey", тощо
+      // const pattern = /(?:inst(?:agram)?\s*:?\s*|\s*instagram\s*:?\s*|\s*in\s*:?\s*|\s*i\s*:?\s*|\s*інст\s*:?\s*|\s*ін\s*:?\s*|\s*і\s*:?\s*|\s*інстаграм\s*:?\s*)(\w+)/i;
+      // const pattern = /(?:\binst(?:agram)?\s*:?\s*|\binstagram\s*:?\s*|\bін\s*:?\s*|\bin\s*:?\s*|\bінст\s*:?\s*|\bінстаграм\s*:?\s*)(\w+)/i;
+      // const pattern = /(?:\binst(?:agram)?\s*:?\s*|\binstagram\s*:?\s*|\bін\s*:?\s*|\bin\s*:?\s*|\bінст\s*:?\s*|\bінстаграм\s*:?\s*)([a-zA-Z0-9._]+)/i;
+      // const pattern = /(?:\binst(?:agram)?\s+|\binstagram\s+|\bін(?:ст|стаграм)?\s+)([a-zA-Z0-9._]+)/i;
+      const pattern = /(?:\binst(?:agram)?\s*:?\s+|\binstagram\s*:?\s+|\bін(?:ст|стаграм)?\s*:?\s+|\bin\s*:?\s+)([a-zA-Z0-9._]+)/i;
+
+      const match = input.match(pattern);
+
+      // Якщо знайдено username в рядку
+      if (match && match[1]) {
+        // console.log('match :>> ', match); // Дебаг: покаже всі метчі
+        return match[1];
+      }
+      console.log('333 :>> ');
+
+      return null; // Повертає null, якщо username не знайдено
+    };
+
+    const parsePhoneNumber = phone => {
+      // Видалення пробілів, дужок, тире і знаку плюс
+      const cleanedPhone = phone.replace(/[\s()\-+]/g, ''); // Очищення номера
+
+      // Перевірка, чи номер містить принаймні 10 цифр
+      const digitCount = (cleanedPhone.match(/\d/g) || []).length;
+      if (digitCount < 10) {
+        return; // Вихід, якщо менше 10 цифр
+      }
+
+      // Якщо номер починається з '0', замінюємо його на '+38'
+      if (cleanedPhone.startsWith('0')) {
+        return '380' + cleanedPhone.slice(1); // Заміна '0' на '38'
+      }
+
+      // Якщо номер починається з '('
+      if (cleanedPhone.startsWith('(')) {
+        const numberAfterCleaning = cleanedPhone.slice(1); // Очищаємо '('
+        const cleanedAfterParenthesis = numberAfterCleaning.replace(/[\s()\-+]/g, ''); // Очищаємо решту
+        if (/^\d{10}$/.test(cleanedAfterParenthesis)) {
+          return '38' + cleanedAfterParenthesis.slice(1); // Заміна '0' на '38'
+        }
+      }
+
+      // Якщо номер починається з '+'
+      if (cleanedPhone.startsWith('38')) {
+        return cleanedPhone; // Повертаємо номер без змін
+      }
+
+      // Якщо жодне з правил не відпрацювало, просто закінчуємо функцію
+      return; // Нічого не повертаємо
+    };
+
+    const parseEmail = email => {
+      // Видалення пробілів з початку і кінця та приведення до нижнього регістру
+      const cleanedEmail = email.trim().toLowerCase();
+
+      // Перевірка базової структури email-адреси
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(cleanedEmail)) {
+        return; // Вихід, якщо адреса не відповідає базовій структурі email
+      }
+
+      // Перевірка наявності домену
+      const domain = cleanedEmail.split('@')[1];
+      if (!domain || !domain.includes('.')) {
+        return; // Вихід, якщо домен некоректний
+      }
+
+      // Якщо всі перевірки пройдено, повертаємо очищену email-адресу
+      return cleanedEmail;
+    };
+
+    // Функція для парсінга TikTok
+    const parseTikTokLink = url => {
+      // ID або нік в URL TikTok
+      const tiktokRegex = /tiktok\.com\/(?:.*\/)?@?([a-zA-Z0-9._-]+)/;
+      const match = url.match(tiktokRegex);
+
+      if (match && match[1]) {
+        return match[1]; // Повертає ID з URL TikTok
+      }
+
+      // Варіації "tiktok", "tik tok", "тікток", "tt", "ТТ" з обов'язковим роздільником
+      // і принаймні однією літерою у ніку
+      const tiktokVariationsRegex =
+        /(?:^|[^A-Za-z0-9\u0400-\u04FF_])(тікток|tiktok|tt|тт)[:\s]+([A-Za-z0-9._-]*[A-Za-z][A-Za-z0-9._-]*)/i;
+      const variationMatch = url.match(tiktokVariationsRegex);
+
+      if (variationMatch && variationMatch[2]) {
+        return variationMatch[2]; // Повертає ID або username після ключового слова
+      }
+
+      return null; // Повертає null, якщо нічого не знайдено
+    };
+
+    const parseUserId = input => {
+      // Правило 1: Перевірка, чи рядок має 20 символів і починається з '-'
+      if (typeof input === 'string' && input.length === 20 && input.startsWith('-')) {
+        return input; // Повертає userId
+      }
+
+      // Правило 2: Перевірка, чи рядок містить лише цифри та латинські букви і має 28 символів
+      const alphanumericPattern = /^[a-zA-Z0-9]{28}$/;
+      if (alphanumericPattern.test(input)) {
+        return input; // Повертає userId
+      }
+
+      // Правило 3: Витягування id за допомогою регулярного виразу
+      // const pattern = /(?:\bId\s*:?\s*:?\s*)(\w+)/i;
+      const pattern = /(?:\bId\s*[:\s]+\s*)(\w+)/i; // додав обов"язкову двокрапку після id
+      const match = input.match(pattern);
+
+      // Якщо знайдено username в рядку
+      if (match && match[1]) {
+        console.log('match :>> ', match);
+        return match[1]; // Повертає username
+      }
+
+      console.log('333 :>> ');
+      return null; // Повертає null, якщо username не знайдено
+    };
+
+    const parseTelegramId = input => {
+      // Перевірка URL формату (наприклад, t.me/account)
+      const urlPattern = /t\.me\/([^/?#]+)/;
+      const urlMatch = input.match(urlPattern);
+
+      if (urlMatch && urlMatch[1]) {
+        return urlMatch[1]; // Повертає username з URL
+      }
+
+      // Перевірка формату з @ (наприклад, @account)
+      const atPattern = /^@(\w+)/;
+      const atMatch = input.match(atPattern);
+
+      if (atMatch && atMatch[1]) {
+        return atMatch[1]; // Повертає username з формату @username
+      }
+
+      // Перевірка текстових варіацій (наприклад, "телеграм account", "teleg: account", "t: account")
+      const textPattern = /(?:телеграм|телега|teleg|t(?=\s|:)|т(?=\s|:))\s*:?\s*([a-zA-Z0-9._]+)/i;
+
+      const textMatch = input.match(textPattern);
+
+      if (textMatch && textMatch[1]) {
+        return textMatch[1]; // Повертає username з текстового формату
+      }
+      console.log('parseTelegramId!!!!!!!!!!!!!! :>> ');
+      // Якщо нічого не знайдено, повертає null
+      return null;
+    };
+
+    const parseOtherContact = input => {
+      return input; // Повертаємо номер без змін
+    };
+
+    if (await processUserSearch('facebook', parseFacebookId, query)) return;
+    if (await processUserSearch('instagram', parseInstagramId, query)) return;
+    if (await processUserSearch('telegram', parseTelegramId, query)) return;
+    if (await processUserSearch('userId', parseUserId, query)) return;
+    if (await processUserSearch('email', parseEmail, query)) return;
+    if (await processUserSearch('tiktok', parseTikTokLink, query)) return;
+    if (await processUserSearch('phone', parsePhoneNumber, query)) return;
+    if (await processUserSearch('other', parseOtherContact, query)) return;
+
+    // Generic search by name if no specific pattern matched
+    let res = await fetchNewUsersCollectionInRTDB({ name: query.trim() });
+    setSearchKeyValuePair({ name: query.trim() });
+
+    if (!res || Object.keys(res).length === 0) {
+      const cleanedQuery = query.replace(/^ук\s*см\s*/i, '').trim();
+      if (cleanedQuery && cleanedQuery !== query.trim()) {
+        res = await fetchNewUsersCollectionInRTDB({ name: cleanedQuery });
+        setSearchKeyValuePair({ name: cleanedQuery });
+      }
+    }
+
+    if (!res || Object.keys(res).length === 0) {
+      const withPrefix = /^ук\s*см/i.test(query)
+        ? null
+        : `УК СМ ${query.trim()}`;
+      if (withPrefix) {
+        res = await fetchNewUsersCollectionInRTDB({ name: withPrefix });
+        setSearchKeyValuePair({ name: withPrefix });
+      }
+    }
+
+    if (!res || Object.keys(res).length === 0) {
+      console.log('Not a valid Facebook URL, Phone Number, or Instagram URL.');
+      setUserNotFound(true);
+    } else {
+      setUserNotFound(false);
+      if ('userId' in res) {
+        setState(res);
+      } else {
+        setUsers(res);
+      }
+    }
+  };
+
   const dotsMenu = () => {
     return (
       <>
@@ -1051,14 +1443,41 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         )}
 
 
-        <SearchBar
-          searchFunc={fetchNewUsersCollectionInRTDB}
-          setUsers={setUsers}
-          setState={setState}
-          setUserNotFound={setUserNotFound}
-          onSearchKey={setSearchKeyValuePair}
-        />
-        {state.userId ? (
+        <InputDiv>
+          <InputFieldContainer value={search}>
+            <InputField
+              as={'textarea'}
+              inputMode={'text'}
+              value={search || ''}
+              onChange={e => {
+                const value = e?.target?.value;
+                // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
+                // setState(initialState)
+                // setSearch(value);
+                // .replace(/\s+$/, '') — замінює всі пробіли в кінці рядка на порожній рядок, ефективно видаляючи їх.
+                // setSearch(value.replace(/\s+$/, ''));
+                setSearch(value);
+                // setState();
+              }}
+              onFocus={() => {}}
+              onBlur={() => {
+                // setState();
+                writeData();
+              }}
+            />
+            {search && (
+              <ClearButton
+                onClick={() => {
+                  setSearch('');
+                  setUserNotFound(false);
+                }}
+              >
+                &times; {/* HTML-символ для хрестика */}
+              </ClearButton>
+            )}
+          </InputFieldContainer>
+        </InputDiv>
+        {search && state.userId ? (
           <>
             <div style={{ ...coloredCard() }}>
               {renderTopBlock(
@@ -1312,7 +1731,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </>
         ) : (
           <div>
-            {users && !userNotFound ? (
+            {search && users && !userNotFound ? (
               <p style={{ textAlign: 'center', color: 'black' }}>Знайдено {totalCount} користувачів.</p>
             ) : userNotFound ? (
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
@@ -1322,7 +1741,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 {duplicates ? ` з (${duplicates})` : ''}
               </p>
             ) : null}
-            <FilterPanel onChange={setFilters} />
+            <SearchFilters filters={filters} onChange={setFilters} />
             <div>
               {userNotFound && <Button onClick={handleAddUser}>+</Button>}
               <Button onClick={handleInfo}>Info</Button>
