@@ -19,6 +19,7 @@ import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
 import PhotoViewer from './PhotoViewer';
+import toast from 'react-hot-toast';
 
 const Grid = styled.div`
   display: flex;
@@ -280,15 +281,18 @@ const Matching = () => {
   }, []);
 
   const fetchChunk = async (limit, key, exclude = new Set()) => {
-    const res = await fetchLatestUsers(limit + exclude.size, key);
-    const filtered = res.users.filter(u => !exclude.has(u.userId)).slice(0, limit);
+    const res = await fetchLatestUsers(limit + exclude.size + 1, key);
+    const filtered = res.users.filter(u => !exclude.has(u.userId));
+    const hasMore = filtered.length > limit || res.hasMore;
+    const slice = filtered.slice(0, limit);
     const withPhotos = await Promise.all(
-      filtered.map(async user => {
+      slice.map(async user => {
         const photos = await getAllUserPhotos(user.userId);
         return { ...user, photos };
       })
     );
-    return { users: withPhotos, lastKey: res.lastKey, hasMore: res.hasMore };
+    const lastKeyResult = slice.length > 0 ? slice[slice.length - 1].userId : res.lastKey;
+    return { users: withPhotos, lastKey: lastKeyResult, hasMore };
   };
 
   const loadInitial = React.useCallback(async () => {
@@ -308,6 +312,9 @@ const Matching = () => {
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
       setViewMode('default');
+      toast(
+        `Initial load: ${res.users.length} users. hasMore: ${res.hasMore}. lastKey: ${res.lastKey}`,
+      );
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -348,6 +355,9 @@ const Matching = () => {
       setUsers(prev => [...prev, ...res.users]);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
+      toast(
+        `Loaded ${res.users.length} more. hasMore: ${res.hasMore}. lastKey: ${res.lastKey}`,
+      );
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -375,7 +385,7 @@ const Matching = () => {
           loadMore();
         }
       },
-      { root: gridRef.current, rootMargin: '100px' }
+      { root: gridRef.current, rootMargin: '0px 0px 200px 0px' }
     );
 
     observer.observe(target);
