@@ -9,6 +9,10 @@ import {
   fetchDislikeUsersData,
   fetchFavoriteUsers,
   fetchDislikeUsers,
+  filterMain,
+  searchUsersOnly,
+  fetchUserComment,
+  setUserComment,
   database,
   auth,
 } from './config';
@@ -19,6 +23,9 @@ import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
 import PhotoViewer from './PhotoViewer';
+import toast from 'react-hot-toast';
+import SearchBar from './SearchBar';
+import FilterPanel from './FilterPanel';
 
 const Grid = styled.div`
   display: flex;
@@ -285,10 +292,32 @@ const Matching = () => {
   const [viewMode, setViewMode] = useState('default');
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState('donor');
+  const [filters, setFilters] = useState({});
+  const [comments, setComments] = useState({});
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
+  };
+
+  const applySearchResults = async res => {
+    const arr = Array.isArray(res) ? res : Object.values(res || {});
+    setUsers(arr);
+    setHasMore(false);
+    await loadCommentsFor(arr);
+  };
+
+  const loadCommentsFor = async list => {
+    const owner = auth.currentUser?.uid;
+    if (!owner) return;
+    const results = await Promise.all(list.map(u => fetchUserComment(owner, u.userId)));
+    setComments(prev => {
+      const copy = { ...prev };
+      list.forEach((u, idx) => {
+        copy[u.userId] = results[idx] || '';
+      });
+      return copy;
+    });
   };
 
   useEffect(() => {
@@ -353,6 +382,7 @@ const Matching = () => {
       const res = await fetchChunk(INITIAL_LOAD, undefined, exclude, roleFilter);
       loadedIdsRef.current = new Set(res.users.map(u => u.userId));
       setUsers(res.users);
+      await loadCommentsFor(res.users);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
       setViewMode('default');
@@ -369,6 +399,7 @@ const Matching = () => {
     const loaded = await fetchFavoriteUsersData(owner);
     loadedIdsRef.current = new Set(Object.keys(loaded));
     setUsers(Object.values(loaded));
+    await loadCommentsFor(Object.values(loaded));
     setHasMore(false);
     setLastKey(null);
     setViewMode('favorites');
@@ -382,6 +413,7 @@ const Matching = () => {
     const loaded = await fetchDislikeUsersData(owner);
     loadedIdsRef.current = new Set(Object.keys(loaded));
     setUsers(Object.values(loaded));
+    await loadCommentsFor(Object.values(loaded));
     setHasMore(false);
     setLastKey(null);
     setViewMode('dislikes');
@@ -398,6 +430,7 @@ const Matching = () => {
       const unique = res.users.filter(u => !loadedIdsRef.current.has(u.userId));
       unique.forEach(u => loadedIdsRef.current.add(u.userId));
       setUsers(prev => [...prev, ...unique]);
+      await loadCommentsFor(unique);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
     } finally {
@@ -412,6 +445,16 @@ const Matching = () => {
 
   const gridRef = useRef(null);
   const observerRef = useRef(null);
+
+  const filteredUsers =
+    filters && Object.keys(filters).length > 0
+      ? filterMain(
+          users.map(u => [u.userId, u]),
+          null,
+          filters,
+          favoriteUsers,
+        ).map(([id, u]) => u)
+      : users;
 
   useEffect(() => {
     if (!gridRef.current || !hasMore) return;
@@ -472,8 +515,14 @@ const Matching = () => {
             Біо батьки
           </button>
         </div>
+        <SearchBar
+          searchFunc={searchUsersOnly}
+          setUsers={applySearchResults}
+          setUserNotFound={() => {}}
+        />
+        <FilterPanel hideUserId hideCommentLength onChange={setFilters} />
         <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
-          {users.map(user => {
+          {filteredUsers.map(user => {
             const photo = getCurrentValue(user.photos);
             return (
               <Card
@@ -493,6 +542,18 @@ const Matching = () => {
                   dislikeUsers={dislikeUsers}
                   setDislikeUsers={setDislikeUsers}
                   onRemove={viewMode !== 'default' ? handleRemove : undefined}
+                />
+                <textarea
+                  value={comments[user.userId] || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setComments(prev => ({ ...prev, [user.userId]: val }));
+                  }}
+                  onBlur={() => {
+                    const owner = auth.currentUser?.uid;
+                    if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
+                  }}
+                  style={{ position: 'absolute', bottom: '5px', left: '5px', width: '90%' }}
                 />
               </Card>
             );
@@ -553,6 +614,15 @@ const Matching = () => {
               <Icons>{fieldContactsIcons(selected)}</Icons>
               {getCurrentValue(selected.writer) && <div style={{ marginLeft: '10px' }}>{getCurrentValue(selected.writer)}</div>}
             </Contact>
+            <textarea
+              value={comments[selected.userId] || ''}
+              onChange={e => setComments(prev => ({ ...prev, [selected.userId]: e.target.value }))}
+              onBlur={() => {
+                const owner = auth.currentUser?.uid;
+                if (owner) setUserComment(owner, selected.userId, comments[selected.userId] || '');
+              }}
+              style={{ width: '100%', marginTop: '10px' }}
+            />
             <Id>ID: {selected.userId ? selected.userId.slice(0, 5) : ''}</Id>
           </DonorCard>
         </ModalOverlay>
