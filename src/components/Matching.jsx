@@ -23,7 +23,6 @@ import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
 import PhotoViewer from './PhotoViewer';
-import toast from 'react-hot-toast';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 
