@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
-import { FiTrash2, FiX } from 'react-icons/fi';
+import { FiTrash2, FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 
 const Overlay = styled.div`
   position: fixed;
@@ -38,26 +38,50 @@ const DeleteButton = styled(IconButton)`
   right: 70px;
 `;
 
+const ArrowButton = styled(IconButton)`
+  top: 50%;
+  transform: translateY(-50%);
+`;
+
+const PrevButton = styled(ArrowButton)`
+  left: 20px;
+`;
+
+const NextButton = styled(ArrowButton)`
+  right: 20px;
+`;
+
 export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete }) => {
   const [current, setCurrent] = useState(index);
   const [startX, setStartX] = useState(null);
 
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, []);
-
-  const next = () => {
+  const next = React.useCallback(() => {
     if (photos.length === 0) return;
     setCurrent(prev => (prev + 1) % photos.length);
-  };
+  }, [photos.length]);
 
-  const prev = () => {
+  const prev = React.useCallback(() => {
     if (photos.length === 0) return;
     setCurrent(prev => (prev - 1 + photos.length) % photos.length);
-  };
+  }, [photos.length]);
+
+  useEffect(() => {
+    const handleKey = e => {
+      if (e.key === 'ArrowRight') {
+        next();
+      } else if (e.key === 'ArrowLeft') {
+        prev();
+      }
+    };
+
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKey);
+
+    return () => {
+      document.body.style.overflow = '';
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [next, prev]);
 
   const handleTouchStart = e => {
     if (e.touches && e.touches.length > 0) {
@@ -94,12 +118,20 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete }) => {
   return (
     <Overlay onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} onClick={handleOverlayClick}>
       <FullImage src={photos[current]} alt="full" />
+      <PrevButton onClick={prev} aria-label="Previous">
+        <FiChevronLeft size={40} />
+      </PrevButton>
+      <NextButton onClick={next} aria-label="Next">
+        <FiChevronRight size={40} />
+      </NextButton>
       <CloseButton onClick={onClose} aria-label="Close">
         <FiX size={30} />
       </CloseButton>
-      <DeleteButton onClick={handleDelete} aria-label="Delete">
-        <FiTrash2 size={30} />
-      </DeleteButton>
+      {onDelete && (
+        <DeleteButton onClick={handleDelete} aria-label="Delete">
+          <FiTrash2 size={30} />
+        </DeleteButton>
+      )}
     </Overlay>
   );
 };
