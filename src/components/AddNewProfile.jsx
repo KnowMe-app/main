@@ -1062,6 +1062,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           setState={setState}
           setUserNotFound={setUserNotFound}
           onSearchKey={setSearchKeyValuePair}
+          onClear={() => {
+            setState({});
+            setSearchKeyValuePair(null);
+          }}
         />
         {state.userId ? (
           <>

@@ -63,6 +63,7 @@ const SearchBar = ({
   onSearchKey,
   search: externalSearch,
   setSearch: externalSetSearch,
+  onClear,
 }) => {
   const [internalSearch, setInternalSearch] = useState(
     () => localStorage.getItem('searchQuery') || '',
@@ -277,6 +278,7 @@ const SearchBar = ({
             onClick={() => {
               setSearch('');
               setUserNotFound && setUserNotFound(false);
+              onClear && onClear();
             }}
           >
             &times;
