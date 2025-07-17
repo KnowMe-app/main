@@ -1,5 +1,6 @@
 import React from 'react';
 import { addFavoriteUser, removeFavoriteUser, auth } from '../config';
+import { color } from '../styles';
 
 export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers, onRemove }) => {
   const isFavorite = !!favoriteUsers[userId];
@@ -38,9 +39,9 @@ export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers, onRe
         width: '35px',
         height: '35px',
         borderRadius: '50%',
-        background: 'white',
-        border: `2px solid ${isFavorite ? 'red' : 'gray'}`,
-        color: isFavorite ? 'red' : 'gray',
+        background: color.accent5,
+        border: 'none',
+        color: 'white',
         cursor: 'pointer',
       }}
       disabled={!auth.currentUser}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { addDislikeUser, removeDislikeUser, auth } from '../config';
+import { color } from '../styles';
 
 export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers, onRemove }) => {
   const isDisliked = !!dislikeUsers[userId];
@@ -39,9 +40,9 @@ export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers, onRemov
         width: '35px',
         height: '35px',
         borderRadius: '50%',
-        background: 'white',
-        border: `2px solid ${isDisliked ? 'blue' : 'gray'}`,
-        color: isDisliked ? 'blue' : 'gray',
+        background: color.accent5,
+        border: 'none',
+        color: 'white',
         cursor: 'pointer',
       }}
       disabled={!auth.currentUser}
