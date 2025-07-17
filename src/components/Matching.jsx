@@ -19,6 +19,7 @@ import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
 import PhotoViewer from './PhotoViewer';
+import toast from 'react-hot-toast';
 
 const Grid = styled.div`
   display: flex;
@@ -308,6 +309,9 @@ const Matching = () => {
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
       setViewMode('default');
+      toast(
+        `Initial load: ${res.users.length} users. hasMore: ${res.hasMore}. lastKey: ${res.lastKey}`,
+      );
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -348,6 +352,9 @@ const Matching = () => {
       setUsers(prev => [...prev, ...res.users]);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
+      toast(
+        `Loaded ${res.users.length} more. hasMore: ${res.hasMore}. lastKey: ${res.lastKey}`,
+      );
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -375,7 +382,7 @@ const Matching = () => {
           loadMore();
         }
       },
-      { root: gridRef.current, rootMargin: '100px' }
+      { root: gridRef.current, rootMargin: '0px 0px 200px 0px' }
     );
 
     observer.observe(target);
