@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
 import {
   fetchLatestUsers,
@@ -36,6 +36,21 @@ const Card = styled.div`
   background-position: center;
   border-radius: 8px;
   position: relative;
+`;
+
+const loadingWave = keyframes`
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+`;
+
+const SkeletonCard = styled(Card)`
+  background: linear-gradient(90deg, ${color.paleAccent2} 25%, ${color.paleAccent5} 50%, ${color.paleAccent2} 75%);
+  background-size: 200% 100%;
+  animation: ${loadingWave} 1.5s infinite;
 `;
 
 const TopActions = styled.div`
@@ -136,7 +151,6 @@ const FIELDS = [
   { key: 'bodyType', label: 'Body type' },
   { key: 'maritalStatus', label: 'Marital status' },
   { key: 'education', label: 'Education' },
-  { key: 'profession', label: 'Profession' },
   { key: 'ownKids', label: 'Own kids' },
   { key: 'reward', label: 'Expected reward $' },
   { key: 'experience', label: 'Donation exp' },
@@ -230,6 +244,7 @@ const Matching = () => {
   const [favoriteUsers, setFavoriteUsers] = useState({});
   const [dislikeUsers, setDislikeUsers] = useState({});
   const [viewMode, setViewMode] = useState('default');
+  const [loading, setLoading] = useState(true);
   const loadingRef = useRef(false);
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
@@ -278,6 +293,7 @@ const Matching = () => {
 
   const loadInitial = React.useCallback(async () => {
     loadingRef.current = true;
+    setLoading(true);
     try {
       const owner = auth.currentUser?.uid;
       let exclude = new Set();
@@ -294,32 +310,38 @@ const Matching = () => {
       setViewMode('default');
     } finally {
       loadingRef.current = false;
+      setLoading(false);
     }
   }, []);
 
   const loadFavoriteCards = async () => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
+    setLoading(true);
     const loaded = await fetchFavoriteUsersData(owner);
     setUsers(Object.values(loaded));
     setHasMore(false);
     setLastKey(null);
     setViewMode('favorites');
+    setLoading(false);
   };
 
   const loadDislikeCards = async () => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
+    setLoading(true);
     const loaded = await fetchDislikeUsersData(owner);
     setUsers(Object.values(loaded));
     setHasMore(false);
     setLastKey(null);
     setViewMode('dislikes');
+    setLoading(false);
   };
 
   const loadMore = React.useCallback(async () => {
     if (!hasMore || loadingRef.current || viewMode !== 'default') return;
     loadingRef.current = true;
+    setLoading(true);
     try {
       const exclude = new Set([...Object.keys(favoriteUsers), ...Object.keys(dislikeUsers)]);
       const res = await fetchChunk(LOAD_MORE, lastKey, exclude);
@@ -328,6 +350,7 @@ const Matching = () => {
       setHasMore(res.hasMore);
     } finally {
       loadingRef.current = false;
+      setLoading(false);
     }
   }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode]);
 
@@ -394,6 +417,10 @@ const Matching = () => {
               </Card>
             );
           })}
+          {loading &&
+            Array.from({ length: 4 }).map((_, idx) => (
+              <SkeletonCard data-card key={`skeleton-${idx}`} />
+            ))}
         </Grid>
       </div>
       {selected && (
@@ -418,7 +445,7 @@ const Matching = () => {
               <Info>
                 <Title>Egg donor profile</Title>
                 <strong>
-                  {getCurrentValue(selected.surname) || ''} {getCurrentValue(selected.name) || ''}
+                  {(getCurrentValue(selected.surname) || '').trim()} {(getCurrentValue(selected.name) || '').trim()}
                   {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
                 </strong>
                 <br />
@@ -432,6 +459,13 @@ const Matching = () => {
                 <strong>More information</strong>
                 <br />
                 {getCurrentValue(selected.myComment)}
+              </MoreInfo>
+            )}
+            {getCurrentValue(selected.profession) && (
+              <MoreInfo>
+                <strong>Profession</strong>
+                <br />
+                {getCurrentValue(selected.profession)}
               </MoreInfo>
             )}
             {getCurrentValue(selected.moreInfo_main) && <MoreInfo>{getCurrentValue(selected.moreInfo_main)}</MoreInfo>}
