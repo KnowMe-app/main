@@ -63,6 +63,21 @@ const TopActions = styled.div`
   z-index: 10;
 `;
 
+const ActionButton = styled.button`
+  width: 35px;
+  height: 35px;
+  padding: 3px;
+  border: none;
+  background-color: ${color.accent5};
+  color: white;
+  border-radius: 50px;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
+
 const ModalOverlay = styled.div`
   position: fixed;
   top: 0;
@@ -237,17 +252,25 @@ const INITIAL_LOAD = 6;
 const LOAD_MORE = 2;
 
 const roleMatchesFilter = (user, filter) => {
-  const roles = Array.isArray(user.userRole)
+  const userRoles = Array.isArray(user.userRole)
     ? user.userRole.map(r => String(r).toLowerCase())
-    : [String(user.userRole).toLowerCase()];
+    : user.userRole
+    ? [String(user.userRole).toLowerCase()]
+    : [];
+  const roles = Array.isArray(user.role)
+    ? user.role.map(r => String(r).toLowerCase())
+    : user.role
+    ? [String(user.role).toLowerCase()]
+    : [];
+  const allRoles = [...userRoles, ...roles];
   if (filter === 'donor') {
-    return roles.some(r => ['ed', 'sm'].includes(r));
+    return allRoles.some(r => ['ed', 'sm'].includes(r));
   }
   if (filter === 'agency') {
-    return roles.some(r => ['ag', 'cl'].includes(r));
+    return allRoles.some(r => ['ag', 'cl'].includes(r));
   }
   if (filter === 'parent') {
-    return roles.some(r => ['ip'].includes(r));
+    return allRoles.some(r => ['ip'].includes(r));
   }
   return true;
 };
@@ -264,6 +287,7 @@ const Matching = () => {
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState('donor');
   const loadingRef = useRef(false);
+  const loadedIdsRef = useRef(new Set());
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
@@ -317,6 +341,7 @@ const Matching = () => {
   const loadInitial = React.useCallback(async () => {
     loadingRef.current = true;
     setLoading(true);
+    loadedIdsRef.current = new Set();
     try {
       const owner = auth.currentUser?.uid;
       let exclude = new Set();
@@ -327,6 +352,7 @@ const Matching = () => {
         exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
       }
       const res = await fetchChunk(INITIAL_LOAD, undefined, exclude, roleFilter);
+      loadedIdsRef.current = new Set(res.users.map(u => u.userId));
       setUsers(res.users);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
@@ -345,6 +371,7 @@ const Matching = () => {
     if (!owner) return;
     setLoading(true);
     const loaded = await fetchFavoriteUsersData(owner);
+    loadedIdsRef.current = new Set(Object.keys(loaded));
     setUsers(Object.values(loaded));
     setHasMore(false);
     setLastKey(null);
@@ -357,6 +384,7 @@ const Matching = () => {
     if (!owner) return;
     setLoading(true);
     const loaded = await fetchDislikeUsersData(owner);
+    loadedIdsRef.current = new Set(Object.keys(loaded));
     setUsers(Object.values(loaded));
     setHasMore(false);
     setLastKey(null);
@@ -371,7 +399,9 @@ const Matching = () => {
     try {
       const exclude = new Set([...Object.keys(favoriteUsers), ...Object.keys(dislikeUsers)]);
       const res = await fetchChunk(LOAD_MORE, lastKey, exclude, roleFilter);
-      setUsers(prev => [...prev, ...res.users]);
+      const unique = res.users.filter(u => !loadedIdsRef.current.has(u.userId));
+      unique.forEach(u => loadedIdsRef.current.add(u.userId));
+      setUsers(prev => [...prev, ...unique]);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
       toast(
@@ -418,8 +448,8 @@ const Matching = () => {
     <>
       <div style={{ position: 'relative' }}>
         <TopActions>
-          <button onClick={loadFavoriteCards}>❤</button>
-          <button onClick={loadDislikeCards}>👎</button>
+          <ActionButton onClick={loadFavoriteCards}>❤</ActionButton>
+          <ActionButton onClick={loadDislikeCards}>👎</ActionButton>
         </TopActions>
         <div
           style={{
@@ -427,6 +457,7 @@ const Matching = () => {
             justifyContent: 'center',
             gap: '10px',
             marginBottom: '10px',
+            marginTop: '20px',
           }}
         >
           <button
