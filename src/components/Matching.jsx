@@ -382,7 +382,7 @@ const Matching = () => {
           loadMore();
         }
       },
-      { root: gridRef.current, rootMargin: '100px' }
+      { root: gridRef.current, rootMargin: '0px 0px 200px 0px' }
     );
 
     observer.observe(target);

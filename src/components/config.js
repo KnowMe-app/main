@@ -166,21 +166,25 @@ export const fetchUsersCollectionInRTDB = async () => {
 
 export const fetchLatestUsers = async (limit = 9, lastKey) => {
   const usersRef = ref2(database, 'users');
+  const realLimit = limit + 1;
   const q =
     lastKey !== undefined
-      ? query(usersRef, orderByKey(), endBefore(lastKey), limitToLast(limit))
-      : query(usersRef, orderByKey(), limitToLast(limit));
+      ? query(usersRef, orderByKey(), endBefore(lastKey), limitToLast(realLimit))
+      : query(usersRef, orderByKey(), limitToLast(realLimit));
 
   const snapshot = await get(q);
   if (!snapshot.exists()) {
     return { users: [], lastKey: null, hasMore: false };
   }
 
-  const entries = Object.entries(snapshot.val()).sort((a, b) =>
+  let entries = Object.entries(snapshot.val()).sort((a, b) =>
     b[0].localeCompare(a[0]),
   );
 
-  const hasMore = entries.length === limit;
+  const hasMore = entries.length > limit;
+  if (hasMore) {
+    entries = entries.slice(0, limit);
+  }
   const lastEntry = entries[entries.length - 1];
 
   return {
