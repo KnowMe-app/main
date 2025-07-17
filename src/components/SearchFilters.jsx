@@ -1,8 +1,8 @@
 import React from 'react';
 import { CheckboxGroup } from './CheckboxGroup';
 
-export const SearchFilters = ({ filters, onChange }) => {
-  const groups = [
+export const SearchFilters = ({ filters, onChange, hideUserId = false, hideCommentLength = false }) => {
+  let groups = [
     {
       filterName: 'csection',
       label: 'C-section',
@@ -91,6 +91,13 @@ export const SearchFilters = ({ filters, onChange }) => {
       ],
     },
   ];
+
+  if (hideUserId) {
+    groups = groups.filter(g => g.filterName !== 'userId');
+  }
+  if (hideCommentLength) {
+    groups = groups.filter(g => g.filterName !== 'commentLength');
+  }
 
   return (
     <div style={{ margin: '10px 0', color: 'black' }}>
