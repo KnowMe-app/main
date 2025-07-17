@@ -394,6 +394,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [userNotFound, setUserNotFound] = useState(false); // Стан для зберігання останнього ключа
 
+  const [search, setSearch] = useState('');
+
   const [state, setState] = useState({});
   const isEditingRef = useRef(false);
 
@@ -1054,6 +1056,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
         <SearchBar
           searchFunc={fetchNewUsersCollectionInRTDB}
+          search={search}
+          setSearch={setSearch}
           setUsers={setUsers}
           setState={setState}
           setUserNotFound={setUserNotFound}
@@ -1382,6 +1386,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   favoriteUsers={favoriteUsersData}
                   setFavoriteUsers={setFavoriteUsersData}
                   setUsers={setUsers}
+                  setSearch={setSearch}
                   setState={setState}
                   currentFilter={currentFilter}
                   isDateInRange={isDateInRange}
