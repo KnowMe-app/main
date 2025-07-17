@@ -236,6 +236,22 @@ const renderSelectedFields = user => {
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 2;
 
+const roleMatchesFilter = (user, filter) => {
+  const roles = Array.isArray(user.userRole)
+    ? user.userRole.map(r => String(r).toLowerCase())
+    : [String(user.userRole).toLowerCase()];
+  if (filter === 'donor') {
+    return roles.some(r => ['ed', 'sm'].includes(r));
+  }
+  if (filter === 'agency') {
+    return roles.some(r => ['ag', 'cl'].includes(r));
+  }
+  if (filter === 'parent') {
+    return roles.some(r => ['ip'].includes(r));
+  }
+  return true;
+};
+
 const Matching = () => {
   const [users, setUsers] = useState([]);
   const [lastKey, setLastKey] = useState();
@@ -246,6 +262,7 @@ const Matching = () => {
   const [dislikeUsers, setDislikeUsers] = useState({});
   const [viewMode, setViewMode] = useState('default');
   const [loading, setLoading] = useState(true);
+  const [roleFilter, setRoleFilter] = useState('donor');
   const loadingRef = useRef(false);
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
@@ -278,11 +295,13 @@ const Matching = () => {
     return () => {
       unsubscribeAuth();
     };
-  }, []);
+  }, [roleFilter]);
 
-  const fetchChunk = async (limit, key, exclude = new Set()) => {
+  const fetchChunk = async (limit, key, exclude = new Set(), role) => {
     const res = await fetchLatestUsers(limit + exclude.size + 1, key);
-    const filtered = res.users.filter(u => !exclude.has(u.userId));
+    const filtered = res.users.filter(
+      u => !exclude.has(u.userId) && roleMatchesFilter(u, role),
+    );
     const hasMore = filtered.length > limit || res.hasMore;
     const slice = filtered.slice(0, limit);
     const withPhotos = await Promise.all(
@@ -307,7 +326,7 @@ const Matching = () => {
         setDislikeUsers(disIds);
         exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
       }
-      const res = await fetchChunk(INITIAL_LOAD, undefined, exclude);
+      const res = await fetchChunk(INITIAL_LOAD, undefined, exclude, roleFilter);
       setUsers(res.users);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
@@ -319,7 +338,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, []);
+  }, [roleFilter]);
 
   const loadFavoriteCards = async () => {
     const owner = auth.currentUser?.uid;
@@ -351,7 +370,7 @@ const Matching = () => {
     setLoading(true);
     try {
       const exclude = new Set([...Object.keys(favoriteUsers), ...Object.keys(dislikeUsers)]);
-      const res = await fetchChunk(LOAD_MORE, lastKey, exclude);
+      const res = await fetchChunk(LOAD_MORE, lastKey, exclude, roleFilter);
       setUsers(prev => [...prev, ...res.users]);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
@@ -362,7 +381,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode]);
+  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode, roleFilter]);
 
   useEffect(() => {
     loadInitial();
@@ -402,6 +421,33 @@ const Matching = () => {
           <button onClick={loadFavoriteCards}>❤</button>
           <button onClick={loadDislikeCards}>👎</button>
         </TopActions>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '10px',
+            marginBottom: '10px',
+          }}
+        >
+          <button
+            onClick={() => setRoleFilter('donor')}
+            disabled={roleFilter === 'donor'}
+          >
+            Донори
+          </button>
+          <button
+            onClick={() => setRoleFilter('agency')}
+            disabled={roleFilter === 'agency'}
+          >
+            Агентсва та Клініки
+          </button>
+          <button
+            onClick={() => setRoleFilter('parent')}
+            disabled={roleFilter === 'parent'}
+          >
+            Біо батьки
+          </button>
+        </div>
         <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
           {users.map(user => {
             const photo = getCurrentValue(user.photos);
