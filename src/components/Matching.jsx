@@ -281,15 +281,18 @@ const Matching = () => {
   }, []);
 
   const fetchChunk = async (limit, key, exclude = new Set()) => {
-    const res = await fetchLatestUsers(limit + exclude.size, key);
-    const filtered = res.users.filter(u => !exclude.has(u.userId)).slice(0, limit);
+    const res = await fetchLatestUsers(limit + exclude.size + 1, key);
+    const filtered = res.users.filter(u => !exclude.has(u.userId));
+    const hasMore = filtered.length > limit || res.hasMore;
+    const slice = filtered.slice(0, limit);
     const withPhotos = await Promise.all(
-      filtered.map(async user => {
+      slice.map(async user => {
         const photos = await getAllUserPhotos(user.userId);
         return { ...user, photos };
       })
     );
-    return { users: withPhotos, lastKey: res.lastKey, hasMore: res.hasMore };
+    const lastKeyResult = slice.length > 0 ? slice[slice.length - 1].userId : res.lastKey;
+    return { users: withPhotos, lastKey: lastKeyResult, hasMore };
   };
 
   const loadInitial = React.useCallback(async () => {
