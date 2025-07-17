@@ -725,8 +725,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
 
   const handleAddUser = async () => {
-    const res = await makeNewUser(searchKeyValuePair);
+    await makeNewUser(searchKeyValuePair);
     setUserNotFound(false);
+  };
   const dotsMenu = () => {
     return (
       <>
@@ -1381,7 +1382,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   favoriteUsers={favoriteUsersData}
                   setFavoriteUsers={setFavoriteUsersData}
                   setUsers={setUsers}
-                  setSearch={setSearch}
                   setState={setState}
                   currentFilter={currentFilter}
                   isDateInRange={isDateInRange}
