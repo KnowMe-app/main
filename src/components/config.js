@@ -311,7 +311,12 @@ export const fetchUserComment = async (ownerId, userId) => {
 };
 
 const addUserFromUsers = async (userId, users) => {
-  const snap = await get(ref2(database, `users/${userId}`));
+  // Try to load user from the main collection first
+  let snap = await get(ref2(database, `users/${userId}`));
+  if (!snap.exists()) {
+    // Fallback to newUsers collection
+    snap = await get(ref2(database, `newUsers/${userId}`));
+  }
   if (snap.exists()) {
     users[userId] = { userId, ...snap.val() };
   }

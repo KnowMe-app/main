@@ -34,6 +34,10 @@ const Grid = styled.div`
   justify-content: center;
 `;
 
+const CardWrapper = styled.div`
+  width: 100%;
+`;
+
 const Card = styled.div`
   width: 100%;
   height: 40vh;
@@ -524,26 +528,28 @@ const Matching = () => {
           {filteredUsers.map(user => {
             const photo = getCurrentValue(user.photos);
             return (
-              <Card
-                data-card
-                key={user.userId}
-                onClick={() => setSelected(user)}
-                style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}
-              >
-                <BtnFavorite
-                  userId={user.userId}
-                  favoriteUsers={favoriteUsers}
-                  setFavoriteUsers={setFavoriteUsers}
-                  onRemove={viewMode === 'favorites' ? handleRemove : undefined}
-                />
-                <BtnDislike
-                  userId={user.userId}
-                  dislikeUsers={dislikeUsers}
-                  setDislikeUsers={setDislikeUsers}
-                  onRemove={viewMode !== 'default' ? handleRemove : undefined}
-                />
+              <CardWrapper key={user.userId}>
+                <Card
+                  data-card
+                  onClick={() => setSelected(user)}
+                  style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}
+                >
+                  <BtnFavorite
+                    userId={user.userId}
+                    favoriteUsers={favoriteUsers}
+                    setFavoriteUsers={setFavoriteUsers}
+                    onRemove={viewMode === 'favorites' ? handleRemove : undefined}
+                  />
+                  <BtnDislike
+                    userId={user.userId}
+                    dislikeUsers={dislikeUsers}
+                    setDislikeUsers={setDislikeUsers}
+                    onRemove={viewMode !== 'default' ? handleRemove : undefined}
+                  />
+                </Card>
                 <textarea
                   value={comments[user.userId] || ''}
+                  onClick={e => e.stopPropagation()}
                   onChange={e => {
                     const val = e.target.value;
                     setComments(prev => ({ ...prev, [user.userId]: val }));
@@ -552,9 +558,9 @@ const Matching = () => {
                     const owner = auth.currentUser?.uid;
                     if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
                   }}
-                  style={{ position: 'absolute', bottom: '5px', left: '5px', width: '90%' }}
+                  style={{ width: '100%', marginTop: '5px' }}
                 />
-              </Card>
+              </CardWrapper>
             );
           })}
           {loading &&
