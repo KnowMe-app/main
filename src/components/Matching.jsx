@@ -19,7 +19,6 @@ import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
 import PhotoViewer from './PhotoViewer';
-import toast from 'react-hot-toast';
 
 const Grid = styled.div`
   display: flex;
@@ -30,7 +29,7 @@ const Grid = styled.div`
 `;
 
 const Card = styled.div`
-  width: calc(50% - 20px);
+  width: 100%;
   height: 40vh;
   background-color: orange;
   background-size: cover;
@@ -248,8 +247,8 @@ const renderSelectedFields = user => {
   });
 };
 
-const INITIAL_LOAD = 6;
-const LOAD_MORE = 2;
+const INITIAL_LOAD = 3;
+const LOAD_MORE = 1;
 
 const roleMatchesFilter = (user, filter) => {
   const userRoles = Array.isArray(user.userRole)
@@ -357,9 +356,6 @@ const Matching = () => {
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
       setViewMode('default');
-      toast(
-        `Initial load: ${res.users.length} users. hasMore: ${res.hasMore}. lastKey: ${res.lastKey}`,
-      );
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -404,9 +400,6 @@ const Matching = () => {
       setUsers(prev => [...prev, ...unique]);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
-      toast(
-        `Loaded ${res.users.length} more. hasMore: ${res.hasMore}. lastKey: ${res.lastKey}`,
-      );
     } finally {
       loadingRef.current = false;
       setLoading(false);
