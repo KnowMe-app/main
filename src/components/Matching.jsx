@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
@@ -297,6 +298,8 @@ const Matching = () => {
   const [roleFilter, setRoleFilter] = useState('donor');
   const [filters, setFilters] = useState({});
   const [comments, setComments] = useState({});
+  const navigate = useNavigate();
+  const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
   const handleRemove = id => {
@@ -628,7 +631,14 @@ const Matching = () => {
               }}
               style={{ width: '100%', marginTop: '10px' }}
             />
-            <Id>ID: {selected.userId ? selected.userId.slice(0, 5) : ''}</Id>
+            <Id
+              onClick={() => {
+                if (isAdmin) navigate(`/user/${selected.userId}`);
+              }}
+              style={{ cursor: isAdmin ? 'pointer' : 'default' }}
+            >
+              ID: {selected.userId ? selected.userId.slice(0, 5) : ''}
+            </Id>
           </DonorCard>
         </ModalOverlay>
       )}
