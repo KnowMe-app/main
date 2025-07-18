@@ -20,8 +20,8 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
         filterName: 'maritalStatus',
         label: 'Marital status',
         options: [
-          { val: 'married', label: 'Так/+' },
-          { val: 'unmarried', label: 'Ні/-' },
+        { val: 'married', label: 'Married' },
+          { val: 'unmarried', label: 'Single' },
           { val: 'other', label: '?' },
         ],
       },
@@ -95,8 +95,8 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
       filterName: 'maritalStatus',
       label: 'Marital status',
       options: [
-        { val: 'married', label: 'Так/+' },
-        { val: 'unmarried', label: 'Ні/-' },
+        { val: 'married', label: 'Married' },
+        { val: 'unmarried', label: 'Single' },
         { val: 'other', label: '?' },
       ],
     },
