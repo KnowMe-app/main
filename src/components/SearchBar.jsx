@@ -91,6 +91,9 @@ const SearchBar = ({
     () => localStorage.getItem('searchQuery') || '',
   );
 
+  const textareaRef = useRef(null);
+  useAutoResize(textareaRef, search);
+
   const search = externalSearch !== undefined ? externalSearch : internalSearch;
   const setSearch = externalSetSearch !== undefined ? externalSetSearch : setInternalSearch;
 
