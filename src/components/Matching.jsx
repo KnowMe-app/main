@@ -105,7 +105,7 @@ const FilterContainer = styled.div`
   top: 0;
   right: 0;
   height: 100%;
-  width: 300px;
+  width: 320px;
   max-width: 80%;
   background: #fff;
   z-index: 20;
@@ -384,6 +384,21 @@ const Matching = () => {
     };
   }, [roleFilter]);
 
+  useEffect(() => {
+    if (filters.role) {
+      const { ed, ag, ip } = filters.role;
+      if (ed && !ag && !ip) {
+        setRoleFilter('donor');
+      } else if (!ed && ag && !ip) {
+        setRoleFilter('agency');
+      } else if (!ed && !ag && ip) {
+        setRoleFilter('parent');
+      } else {
+        setRoleFilter('donor');
+      }
+    }
+  }, [filters.role]);
+
   const fetchChunk = async (limit, key, exclude = new Set(), role) => {
     const res = await fetchLatestUsers(limit + exclude.size + 1, key);
     const filtered = res.users.filter(
@@ -492,10 +507,16 @@ const Matching = () => {
       : users;
 
   useEffect(() => {
+    if (filteredUsers.length <= 1 && hasMore) {
+      loadMore();
+    }
+  }, [filteredUsers.length, hasMore, loadMore]);
+
+  useEffect(() => {
     if (!gridRef.current || !hasMore) return;
 
     const cards = gridRef.current.querySelectorAll('[data-card]');
-    const index = users.length > 3 ? users.length - 3 : users.length - 1;
+    const index = filteredUsers.length > 3 ? filteredUsers.length - 3 : filteredUsers.length - 1;
     const target = cards[index];
     if (!target) return;
 
@@ -513,7 +534,7 @@ const Matching = () => {
     return () => {
       if (observerRef.current) observerRef.current.disconnect();
     };
-  }, [loadMore, users.length, hasMore]);
+  }, [loadMore, filteredUsers.length, hasMore]);
 
   return (
     <>
@@ -536,35 +557,12 @@ const Matching = () => {
           <ActionButton onClick={loadDislikeCards}>👎</ActionButton>
           <ActionButton onClick={() => setShowFilters(s => !s)}>⚙</ActionButton>
         </TopActions>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            gap: '10px',
-            marginBottom: '10px',
-            marginTop: '20px',
-          }}
-        >
-          <button
-            onClick={() => setRoleFilter('donor')}
-            disabled={roleFilter === 'donor'}
-          >
-            Донори
-          </button>
-          <button
-            onClick={() => setRoleFilter('agency')}
-            disabled={roleFilter === 'agency'}
-          >
-            Агентсва та Клініки
-          </button>
-          <button
-            onClick={() => setRoleFilter('parent')}
-            disabled={roleFilter === 'parent'}
-          >
-            Біо батьки
-          </button>
-        </div>
-        
+        {isAdmin && (
+          <p style={{ textAlign: 'center', color: 'black' }}>
+            {filteredUsers.length} карточок
+          </p>
+        )}
+
         <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
           {filteredUsers.map(user => {
             const photo = getCurrentValue(user.photos);

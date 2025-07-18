@@ -14,10 +14,10 @@ export const makeCardDescription = user => {
   const getMaritalStatus = val => {
     if (!val) return '?';
     const normalized = normalizeStr(val);
-    if (['yes', '+', 'married', 'одружена', 'заміжня'].includes(normalized))
+    if (['yes', 'так', '+', 'married', 'одружена', 'заміжня'].includes(normalized))
       return 'заміжня';
     if (
-      ['no', '-', 'unmarried', 'single', 'ні', 'незаміжня'].includes(normalized)
+      ['no', 'ні', '-', 'unmarried', 'single', 'незаміжня'].includes(normalized)
     )
       return 'не заміжня';
     return '?';

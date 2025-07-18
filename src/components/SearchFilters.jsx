@@ -11,8 +11,8 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
         label: 'Role',
         options: [
           { val: 'ed', label: 'ДО' },
-          { val: 'ag', label: 'Агентсва/Клініки' },
-          { val: 'ip', label: 'біобатьки' },
+          { val: 'ag', label: 'Агентства' },
+          { val: 'ip', label: 'Батьки' },
           { val: 'other', label: '?' },
         ],
       },
@@ -20,8 +20,8 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
         filterName: 'maritalStatus',
         label: 'Marital status',
         options: [
-          { val: 'married', label: 'заміжня' },
-          { val: 'unmarried', label: 'незаміжня' },
+          { val: 'married', label: 'Так/+' },
+          { val: 'unmarried', label: 'Ні/-' },
           { val: 'other', label: '?' },
         ],
       },
@@ -95,8 +95,8 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
       filterName: 'maritalStatus',
       label: 'Marital status',
       options: [
-        { val: 'married', label: 'заміжня' },
-        { val: 'unmarried', label: 'незаміжня' },
+        { val: 'married', label: 'Так/+' },
+        { val: 'unmarried', label: 'Ні/-' },
         { val: 'other', label: '?' },
       ],
     },
