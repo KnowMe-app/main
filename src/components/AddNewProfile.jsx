@@ -178,57 +178,61 @@ const Button = styled.button`
 `;
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
-  // const initialState = {
-  //   name: '',
-  //   surname: '',
-  //   email: '',
-  //   phone: '',
 
-      // const { existingData } = await fetchUserData(updatedState.userId);
+  const location = useLocation();
 
-      // console.log('existingData1 :>> ', existingData);
+  const [userNotFound, setUserNotFound] = useState(false);
+
+  const [search, setSearch] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('search') || '';
+  });
+
+  const [state, setState] = useState({});
+  const isEditingRef = useRef(false);
+
+  const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
+  const [filters, setFilters] = useState({});
+  const navigate = useNavigate();
+
+  const handleBlur = () => {
+    handleSubmit();
+  };
+
+  const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
+    const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
+    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
+    const commonFields = ['lastAction'];
+
+    const formatDate = date => {
+      const dd = String(date.getDate()).padStart(2, '0');
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const yyyy = date.getFullYear();
+      return `${dd}.${mm}.${yyyy}`;
+    };
+    const currentDate = formatDate(new Date());
+
+    const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
+
+    if (updatedState?.userId?.length > 20) {
       const { existingData } = await fetchUserById(updatedState.userId);
-      // console.log('existingData2 :>> ', existingData2);
 
-      // Фільтруємо ключі, щоб видалити зайві поля
       const cleanedState = Object.fromEntries(
         Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
       );
 
       const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
-      // console.log('uploadedInfo!!!!!!!!!!!!!!!!!!!!!!!!!!!', uploadedInfo);
-      // const nestedArrays = findNestedArrays(uploadedInfo);
-      // console.log('Всі вкладені масиви:', nestedArrays);
 
       if (!makeIndex) {
-        // console.log('Update all database :>> ');
         await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
         await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
       }
-      // if (newState._test_getInTouch) {
-      // console.log('Updating state._test_getInTouch...');
-      // Фільтруємо ключі, щоб видалити зайві поля
-      const cleanedStateForNewUsers = Object.fromEntries(Object.entries(updatedState).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key)));
+
+      const cleanedStateForNewUsers = Object.fromEntries(
+        Object.entries(updatedState).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key))
+      );
 
       await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update');
-      // }
-
-      // }
-      // else {
-      //   console.error('ffff-modify/create row');
-
-      //     const { existingData } = await fetchUserData(state.userId);
-      //     // console.log('existingData :>> ', existingData.name);
-      //     const uploadedInfo = makeUploadedInfo(existingData, state, overwrite);
-      //     // console.log('state :>> ', state.name);
-      //     // console.log('uploadedInfo :>> ', uploadedInfo.name);
-
-      //     const nestedArrays = findNestedArrays(uploadedInfo);
-      //     console.log('Всі вкладені масиви:', nestedArrays);
-      //     await updateDataInRealtimeDB(state.userId, uploadedInfo, 'update');
-      //     await updateDataInFiresoreDB(state.userId, uploadedInfo, 'check');
-
-      // }
     } else {
       console.log('kkkkkkkkkk :>> ');
       if (newState) {
