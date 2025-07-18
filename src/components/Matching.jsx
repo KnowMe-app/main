@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { UserCard } from './UsersList';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
@@ -286,6 +287,7 @@ const roleMatchesFilter = (user, filter) => {
 };
 
 const Matching = () => {
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [lastKey, setLastKey] = useState();
   const [hasMore, setHasMore] = useState(true);
@@ -633,7 +635,9 @@ const Matching = () => {
             />
             <Id
               onClick={() => {
-                if (isAdmin) setShowUserCard(true);
+                if (isAdmin) {
+                  navigate(`/add?search=${selected.userId}`);
+                }
               }}
               style={{ cursor: isAdmin ? 'pointer' : 'default' }}
             >

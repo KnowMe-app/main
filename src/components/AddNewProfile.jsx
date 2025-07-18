@@ -32,7 +32,7 @@ import {
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { pickerFieldsExtended as pickerFields } from './formFields';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import InfoModal from './InfoModal';
 import { VerifyEmail } from './VerifyEmail';
 
@@ -392,9 +392,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   //   publish: false,
   // };
 
+  const location = useLocation();
+
   const [userNotFound, setUserNotFound] = useState(false); // Стан для зберігання останнього ключа
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get('search') || '';
+  });
 
   const [state, setState] = useState({});
   const isEditingRef = useRef(false);
