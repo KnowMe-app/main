@@ -29,7 +29,7 @@ const defaultsAdd = {
 };
 
 const defaultsMatching = {
-  role: { ed: true, ag: true, ip: true, other: true },
+  role: { ed: true, ag: false, ip: false, other: false },
   maritalStatus: { married: true, unmarried: true, other: true },
   bloodGroup: { '1': true, '2': true, '3': true, '4': true, other: true },
   rh: { '+': true, '-': true, other: true },

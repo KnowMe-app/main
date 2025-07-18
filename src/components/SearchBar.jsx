@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { useAutoResize } from '../hooks/useAutoResize';
 import styled from 'styled-components';
 
 const SearchIcon = (
@@ -34,14 +35,14 @@ const InputDiv = styled.div`
 
 const InputFieldContainer = styled.div`
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   position: relative;
   height: auto;
   flex: 1 1 auto;
   min-width: 0;
 `;
 
-const InputField = styled.input`
+const InputField = styled.textarea`
   border: none;
   outline: none;
   flex: 1;
@@ -49,7 +50,10 @@ const InputField = styled.input`
   max-width: 100%;
   min-width: 0;
   pointer-events: auto;
-  height: 35px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.2;
+  min-height: 35px;
 `;
 
 const ClearButton = styled.button`
@@ -89,6 +93,9 @@ const SearchBar = ({
 
   const search = externalSearch !== undefined ? externalSearch : internalSearch;
   const setSearch = externalSetSearch !== undefined ? externalSetSearch : setInternalSearch;
+
+  const textareaRef = useRef(null);
+  useAutoResize(textareaRef, search);
 
   useEffect(() => {
     if (search) {
@@ -288,6 +295,8 @@ const SearchBar = ({
       {leftIcon && <span style={{ marginRight: '5px' }}>{leftIcon}</span>}
       <InputFieldContainer value={search}>
         <InputField
+          ref={textareaRef}
+          rows={1}
           value={search || ''}
           onChange={e => setSearch(e.target.value)}
           onBlur={() => writeData()}

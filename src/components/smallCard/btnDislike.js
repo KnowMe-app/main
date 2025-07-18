@@ -41,9 +41,12 @@ export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers, onRemov
         height: '35px',
         borderRadius: '50%',
         background: color.accent5,
-        border: 'none',
-        color: 'white',
+        border: `${isDisliked ? 2 : 1}px solid ${isDisliked ? 'red' : '#ccc'}`,
+        color: isDisliked ? 'red' : 'lightcoral',
         cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}
       disabled={!auth.currentUser}
       onClick={e => {
@@ -51,7 +54,20 @@ export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers, onRemov
         toggleDislike();
       }}
     >
-      {'👎'}
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        width="18"
+        height="18"
+        fill={isDisliked ? 'red' : 'none'}
+        stroke={isDisliked ? 'red' : 'lightcoral'}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
     </button>
   );
 };

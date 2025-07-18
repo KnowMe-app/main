@@ -80,6 +80,8 @@ code {
 }
 
 .spinner {
+  display: inline-block;
+  box-sizing: border-box;
   border: 2px solid #ccc;
   border-top-color: #555;
   border-radius: 50%;

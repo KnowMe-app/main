@@ -4,10 +4,12 @@ export const fieldMaritalStatus = maritalStatus => {
   let text;
   switch (maritalStatus) {
     case 'Yes':
+    case 'Так':
     case '+':
       text = 'Заміжня';
       break;
     case 'No':
+    case 'Ні':
     case '-':
       text = 'Незаміжня';
       break;
