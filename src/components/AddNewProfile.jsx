@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import styled, { css } from 'styled-components';
-import Photos from './Photos';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
 import {
   auth,
@@ -30,14 +29,12 @@ import {
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
-import { pickerFieldsExtended as pickerFields } from './formFields';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import InfoModal from './InfoModal';
 import { VerifyEmail } from './VerifyEmail';
 
 import { color, coloredCard } from './styles';
-import { inputUpdateValue } from './inputUpdatedValue';
 //import { formatPhoneNumber } from './inputValidations';
 import { UsersList } from './UsersList';
 // import ExcelToJson from './ExcelToJson';
@@ -49,7 +46,7 @@ import { btnMerge } from './smallCard/btnMerge';
 import FilterPanel from './FilterPanel';
 import SearchBar from './SearchBar';
 import { Pagination } from './Pagination';
-import { useAutoResize } from '../hooks/useAutoResize';
+import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import { PAGE_SIZE, database } from './config';
 import { onValue, ref } from 'firebase/database';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
@@ -974,65 +971,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
-  const priorityOrder = [
-    'birth',
-    'name',
-    'surname',
-    'fathersname',
-    'phone',
-    'facebook',
-    'instagram',
-    'telegram',
-    'tiktok',
-    'region',
-    'city',
-    'height',
-    'weight',
-    'blood',
-    'maritalStatus',
-    'csection',
-    'ownKids',
-    'lastDelivery',
-    'role',
-  ];
-  const additionalFields = Object.keys(state).filter(
-    key =>
-      !pickerFields.some(field => field.name === key) &&
-      key !== 'attitude' &&
-      key !== 'whiteList' &&
-      key !== 'blackList' &&
-      key !== 'photos'
-  );
+  const fieldsToRender = getFieldsToRender(state);
 
-  // console.log('additionalFields :>> ', additionalFields);
-
-  // Об'єднуємо `pickerFields` та додаткові ключі
-  // Об'єднуємо `pickerFields` та додаткові ключі
-  const fieldsToRender = [
-    ...pickerFields,
-    ...additionalFields.map(key => ({
-      name: key,
-      placeholder: key,
-      ukrainianHint: key,
-    })),
-  ];
-
-  const sortedFieldsToRender = [
-    ...priorityOrder.map(key => fieldsToRender.find(field => field.name === key)).filter(Boolean),
-    ...fieldsToRender.filter(field => !priorityOrder.includes(field.name)),
-  ];
 
   // const fieldsToRender = [
   //   ...pickerFields,
 
   // ];
 
-  //////////// висота text area
-  const textareaRef = useRef(null);
-  const moreInfoRef = useRef(null);
-
-  const autoResizeMyComment = useAutoResize(textareaRef, state.myComment);
-  const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
   const getSortedIds = () => {
@@ -1088,241 +1034,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               )}
             </div>
 
-            {sortedFieldsToRender
-              .filter(field => !['myComment', 'getInTouch', 'writer'].includes(field.name)) // Фільтруємо поле myComment
-              .map((field, index) => {
-                // console.log('field:', field);
-                // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
-
-                return (
-                  <PickerContainer key={index}>
-                    {Array.isArray(state[field.name]) ? (
-                      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
-                        {state[field.name].map((value, idx) => {
-                          // console.log('state[field.name] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!:>> ', state[field.name]);
-
-                          return (
-                            <InputDiv key={`${field.name}-${idx}`}>
-                              <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
-                                <InputField
-                                  fieldName={`${field.name}-${idx}`}
-                                  as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
-                                  ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
-                                  inputMode={field.name === 'phone' ? 'numeric' : 'text'}
-                                  name={`${field.name}-${idx}`}
-                                  value={value || ''}
-                                  // value={field.name === 'phone'  ? formatPhoneNumber(value || '') : value || ''}
-                                  ///глючить якщо телефон не в правильному форматі
-                                  onChange={e => {
-                                    // const updatedValue = inputUpdateValue(e?.target?.value, field);
-                                    if (field.name === 'myComment') {
-                                      autoResizeMyComment(e.target);
-                                    }
-                                    if (field.name === 'moreInfo_main') {
-                                      autoResizeMoreInfo(e.target);
-                                    }
-                                    const updatedValue =
-                                      field.name === 'telegram'
-                                        ? e?.target?.value // Без inputUpdateValue для 'telegram'
-                                        : inputUpdateValue(e?.target?.value, field);
-                                    setState(prevState => ({
-                                      ...prevState,
-                                      [field.name]: prevState[field.name].map((item, i) => (i === idx ? updatedValue : item)),
-                                    }));
-                                  }}
-                                  onBlur={() => handleBlur(`${field.name}-${idx}`)}
-                                />
-                                {(value || value === '') && (
-                                  <ClearButton
-                                    onClick={() => {
-                                      handleClear(field.name, idx);
-                                    }}
-                                  >
-                                    &times;
-                                  </ClearButton>
-                                )}
-                              </InputFieldContainer>
-
-                              <Hint fieldName={field.name} isActive={value}>
-                                {field.ukrainian || field.placeholder}
-                              </Hint>
-                              <Placeholder isActive={value}>{field.ukrainianHint}</Placeholder>
-                            </InputDiv>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <InputDiv>
-                        <InputFieldContainer fieldName={field.name} value={state[field.name]}>
-                          <InputField
-                            fieldName={field.name}
-                            as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
-                            ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
-                            inputMode={field.name === 'phone' ? 'numeric' : 'text'}
-                            name={field.name}
-                            value={state[field.name] || ''}
-                            // value={field.name === 'phone' ? formatPhoneNumber(state[field.name] || '') : state[field.name] || ''}
-                            onChange={e => {
-                              if (field.name === 'myComment') {
-                                autoResizeMyComment(e.target);
-                              }
-                              if (field.name === 'moreInfo_main') {
-                                autoResizeMoreInfo(e.target);
-                              }
-                              let value = e?.target?.value;
-                              // Якщо ім'я поля - 'publish', перетворюємо значення в булеве
-                              if (field.name === 'publish') {
-                                value = value.toLowerCase() === 'true'; // true, якщо значення 'true', інакше false
-                              } else if (field.name === 'telgram') {
-                                value = e?.target?.value;
-                              } else {
-                                // value = inputUpdateValue(value, field); // Оновлення значення для інших полів
-                              }
-
-                              setState(prevState => ({
-                                ...prevState,
-                                [field.name]: Array.isArray(prevState[field.name]) ? [value, ...(prevState[field.name].slice(1) || [])] : value,
-                              }));
-                            }}
-                            // onBlur={() => handleBlur(field.name)}
-                            onBlur={() => handleSubmit(state, 'overwrite')}
-                          />
-                          {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times;</ClearButton>}
-                          {state[field.name] && <DelKeyValueBTN onClick={() => handleDelKeyValue(field.name)}>del</DelKeyValueBTN>}
-                        </InputFieldContainer>
-
-                        <Hint fieldName={field.name} isActive={state[field.name]}>
-                          {field.ukrainian || field.placeholder}
-                        </Hint>
-                        <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
-                      </InputDiv>
-                    )}
-
-                    {/* Додати новий інпут до масиву */}
-
-                    {state[field.name] &&
-                      (Array.isArray(state[field.name]) ? state[field.name].length === 0 || state[field.name][state[field.name].length - 1] !== '' : true) &&
-                      ((Array.isArray(field.options) && field.options.length !== 2 && field.options.length !== 3) || !Array.isArray(field.options)) && (
-                        <Button
-                          style={{
-                            display: Array.isArray(state[field.name]) ? 'block' : 'inline-block',
-                            alignSelf: Array.isArray(state[field.name]) ? 'flex-end' : 'auto',
-                            marginBottom: Array.isArray(state[field.name]) ? '14px' : '0',
-                            marginLeft: '10px',
-                          }}
-                          onClick={() => {
-                            setState(prevState => ({
-                              ...prevState,
-                              [field.name]:
-                                Array.isArray(prevState[field.name]) && prevState[field.name].length > 0
-                                  ? [...prevState[field.name], ''] // Додати новий пустий елемент до масиву
-                                  : [prevState[field.name], ''],
-                            }));
-                          }}
-                        >
-                          +
-                        </Button>
-                      )}
-
-                    {Array.isArray(field.options) ? (
-                      field.options.length === 2 ? (
-                        <ButtonGroup>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
-                                  ...prevState,
-                                  [field.name]: 'Yes',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                return newState;
-                              });
-                            }}
-                          >
-                            Так
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
-                                  ...prevState,
-                                  [field.name]: 'No',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                return newState;
-                              });
-                            }}
-                          >
-                            Ні
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
-                                  ...prevState,
-                                  [field.name]: 'Other',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                handleBlur(field.name);
-                                return newState;
-                              });
-                            }}
-                          >
-                            Інше
-                          </Button>
-                        </ButtonGroup>
-                      ) : field.options.length === 3 ? (
-                        <ButtonGroup>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
-                                  ...prevState,
-                                  [field.name]: '-',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                return newState;
-                              });
-                            }}
-                          >
-                            Ні
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
-                                  ...prevState,
-                                  [field.name]: '1',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                return newState;
-                              });
-                            }}
-                          >
-                            1
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setState(prevState => {
-                                const newState = {
-                                  ...prevState,
-                                  [field.name]: '2',
-                                };
-                                handleSubmit(newState, 'overwrite');
-                                // handleBlur(field.name); - csection не працювало по натисканню, лише з другої спроби
-                                return newState;
-                              });
-                            }}
-                          >
-                            2
-                          </Button>
-                        </ButtonGroup>
-                      ) : null
-                    ) : null}
-                  </PickerContainer>
-                );
-              })}
-              <Photos state={state} setState={setState} />
+            <ProfileForm
+              state={state}
+              setState={setState}
+              handleBlur={handleBlur}
+              handleSubmit={handleSubmit}
+              handleClear={handleClear}
+              handleDelKeyValue={handleDelKeyValue}
+            />
           </>
         ) : (
           <div>
