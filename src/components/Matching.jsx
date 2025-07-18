@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { UserCard } from './UsersList';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
@@ -298,7 +298,7 @@ const Matching = () => {
   const [roleFilter, setRoleFilter] = useState('donor');
   const [filters, setFilters] = useState({});
   const [comments, setComments] = useState({});
-  const navigate = useNavigate();
+  const [showUserCard, setShowUserCard] = useState(false);
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
@@ -633,7 +633,7 @@ const Matching = () => {
             />
             <Id
               onClick={() => {
-                if (isAdmin) navigate(`/user/${selected.userId}`);
+                if (isAdmin) setShowUserCard(true);
               }}
               style={{ cursor: isAdmin ? 'pointer' : 'default' }}
             >
@@ -647,6 +647,24 @@ const Matching = () => {
           photos={Array.isArray(selected.photos) ? selected.photos : [getCurrentValue(selected.photos)].filter(Boolean)}
           onClose={() => setShowPhoto(false)}
         />
+      )}
+      {showUserCard && selected && (
+        <ModalOverlay
+          onClick={() => setShowUserCard(false)}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+            <UserCard
+              userData={selected}
+              setUsers={() => {}}
+              setShowInfoModal={() => {}}
+              setState={() => {}}
+              favoriteUsers={{}}
+              setFavoriteUsers={() => {}}
+              currentFilter={null}
+              isDateInRange={() => true}
+            />
+          </div>
+        </ModalOverlay>
       )}
     </>
   );
