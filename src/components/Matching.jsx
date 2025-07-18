@@ -636,7 +636,7 @@ const Matching = () => {
             <Id
               onClick={() => {
                 if (isAdmin) {
-                  navigate(`/add?search=${selected.userId}`);
+                  navigate(`/edit/${selected.userId}`);
                 }
               }}
               style={{ cursor: isAdmin ? 'pointer' : 'default' }}

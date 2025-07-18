@@ -3,8 +3,9 @@ import { Route, Routes, useNavigate  } from 'react-router-dom';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { MyProfile } from './MyProfile';
 import { SubmitForm } from './SubmitForm';
-import {AddNewProfile} from './AddNewProfile';
+import { AddNewProfile } from './AddNewProfile';
 import Matching from './Matching';
+import EditProfile from './EditProfile';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './config';
 
@@ -49,6 +50,7 @@ export const App = () => {
       <Route path="/my-profile"  element={<MyProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn}/>} />
       {isAdmin && <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
       {isAdmin && <Route path="/matching" element={<Matching />} />}
+      {isAdmin && <Route path="/edit/:userId" element={<EditProfile />} />}
       <Route path="/policy" element={<PrivacyPolicy />} />
     </Routes>
   );
