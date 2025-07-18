@@ -180,4 +180,4 @@ const styles = {
   },
 };
 
-export { UsersList };
+export { UsersList, UserCard };
