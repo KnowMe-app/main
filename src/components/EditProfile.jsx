@@ -15,7 +15,10 @@ const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 5px;
+  padding: 20px;
+  box-sizing: border-box;
+  max-width: 450px;
+  width: 100%;
 `;
 
 const BackButton = styled.button`

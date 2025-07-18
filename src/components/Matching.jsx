@@ -105,7 +105,7 @@ const FilterContainer = styled.div`
   top: 0;
   right: 0;
   height: 100%;
-  width: 250px;
+  width: 300px;
   max-width: 80%;
   background: #fff;
   z-index: 20;
@@ -495,7 +495,7 @@ const Matching = () => {
     if (!gridRef.current || !hasMore) return;
 
     const cards = gridRef.current.querySelectorAll('[data-card]');
-    const index = users.length - 3;
+    const index = users.length > 3 ? users.length - 3 : users.length - 1;
     const target = cards[index];
     if (!target) return;
 
