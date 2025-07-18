@@ -64,6 +64,8 @@ const SearchBar = ({
   search: externalSearch,
   setSearch: externalSetSearch,
   onClear,
+  wrapperStyle = {},
+  leftIcon = null,
 }) => {
   const [internalSearch, setInternalSearch] = useState(
     () => localStorage.getItem('searchQuery') || '',
@@ -266,7 +268,8 @@ const SearchBar = ({
   };
 
   return (
-    <InputDiv>
+    <InputDiv style={wrapperStyle}>
+      {leftIcon && <span style={{ marginRight: '5px' }}>{leftIcon}</span>}
       <InputFieldContainer value={search}>
         <InputField
           value={search || ''}
