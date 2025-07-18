@@ -453,9 +453,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [filters, currentFilter]);
 
 
+  const [adding, setAdding] = useState(false);
+
   const handleAddUser = async () => {
-    await makeNewUser(searchKeyValuePair);
+    setAdding(true);
+    const newUser = await makeNewUser(searchKeyValuePair);
+    setState(newUser);
     setUserNotFound(false);
+    setAdding(false);
   };
   const dotsMenu = () => {
     return (
@@ -782,7 +787,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             ) : null}
             <FilterPanel onChange={setFilters} />
             <div>
-              {userNotFound && <Button onClick={handleAddUser}>+</Button>}
+              {userNotFound && (
+                <Button onClick={handleAddUser} disabled={adding}>
+                  {adding ? (
+                    <span className="spinner" />
+                  ) : (
+                    '+'
+                  )}
+                </Button>
+              )}
               <Button onClick={handleInfo}>Info</Button>
               <Button
                 onClick={() => {
