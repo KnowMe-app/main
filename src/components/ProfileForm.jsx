@@ -304,6 +304,7 @@ const PickerContainer = styled.div`
   align-items: center;
   background-color: #f0f0f0;
   box-sizing: border-box;
+  width: 100%;
   @media (max-width: 768px) {
     background-color: #f5f5f5;
   }

@@ -1332,8 +1332,10 @@ const getRoleCategory = value => {
 const getMaritalStatusCategory = value => {
   if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return 'other';
   const m = value.maritalStatus.trim().toLowerCase();
-  if (['yes', '+', 'married', 'одружена', 'заміжня'].includes(m)) return 'married';
-  if (['no', '-', 'unmarried', 'single', 'ні', 'незаміжня'].includes(m)) return 'unmarried';
+  if (['yes', 'так', '+', 'married', 'одружена', 'заміжня'].includes(m))
+    return 'married';
+  if (['no', 'ні', '-', 'unmarried', 'single', 'незаміжня'].includes(m))
+    return 'unmarried';
   return 'other';
 };
 

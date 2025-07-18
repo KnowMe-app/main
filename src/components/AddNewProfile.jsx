@@ -486,6 +486,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         });
         setShowInfoModal(null); // Close modal after deletion
         console.log(`User ${state.userId} deleted.`);
+        navigate(-1); // Return to previous screen after deletion
       } catch (error) {
         console.error('Error deleting user:', error);
       }
