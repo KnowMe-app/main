@@ -89,6 +89,32 @@ const ActionButton = styled.button`
   justify-content: center;
 `;
 
+const FilterOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 15;
+  display: ${props => (props.show ? 'block' : 'none')};
+`;
+
+const FilterContainer = styled.div`
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 250px;
+  max-width: 80%;
+  background: #fff;
+  z-index: 20;
+  transform: translateX(${props => (props.show ? '0' : '100%')});
+  transition: transform 0.3s ease-in-out;
+  padding: 10px;
+  overflow-y: auto;
+`;
+
 const ModalOverlay = styled.div`
   position: fixed;
   top: 0;
@@ -301,6 +327,7 @@ const Matching = () => {
   const [filters, setFilters] = useState({});
   const [comments, setComments] = useState({});
   const [showUserCard, setShowUserCard] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
@@ -490,10 +517,24 @@ const Matching = () => {
 
   return (
     <>
+      {showFilters && (
+        <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />
+      )}
+      <FilterContainer show={showFilters} onClick={e => e.stopPropagation()}>
+        <SearchBar
+          searchFunc={searchUsersOnly}
+          setUsers={applySearchResults}
+          setUserNotFound={() => {}}
+          wrapperStyle={{ width: '100%', marginBottom: '10px' }}
+          leftIcon="🔍"
+        />
+        <FilterPanel mode="matching" hideUserId hideCommentLength onChange={setFilters} />
+      </FilterContainer>
       <div style={{ position: 'relative' }}>
         <TopActions>
           <ActionButton onClick={loadFavoriteCards}>❤</ActionButton>
           <ActionButton onClick={loadDislikeCards}>👎</ActionButton>
+          <ActionButton onClick={() => setShowFilters(s => !s)}>⚙</ActionButton>
         </TopActions>
         <div
           style={{
@@ -523,12 +564,7 @@ const Matching = () => {
             Біо батьки
           </button>
         </div>
-        <SearchBar
-          searchFunc={searchUsersOnly}
-          setUsers={applySearchResults}
-          setUserNotFound={() => {}}
-        />
-        <FilterPanel hideUserId hideCommentLength onChange={setFilters} />
+        
         <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
           {filteredUsers.map(user => {
             const photo = getCurrentValue(user.photos);

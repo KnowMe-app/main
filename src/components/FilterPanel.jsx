@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { SearchFilters } from './SearchFilters';
 
-const defaultFilters = {
+const defaultsAdd = {
   csection: { cs2plus: true, cs1: true, cs0: true, other: true },
   role: { ed: true, sm: true, ag: true, ip: true, cl: true, other: true },
   maritalStatus: { married: true, unmarried: true, other: true },
-  blood: { pos: true, neg: true, other: true },
+  bloodGroup: { '1': true, '2': true, '3': true, '4': true, other: true },
+  rh: { '+': true, '-': true, other: true },
   age: {
     le25: true,
     '26_30': true,
@@ -27,37 +28,51 @@ const defaultFilters = {
   },
 };
 
+const defaultsMatching = {
+  role: { ed: true, ag: true, ip: true, other: true },
+  maritalStatus: { married: true, unmarried: true, other: true },
+  bloodGroup: { '1': true, '2': true, '3': true, '4': true, other: true },
+  rh: { '+': true, '-': true, other: true },
+  age: {
+    le25: true,
+    '26_30': true,
+    '31_36': true,
+    '37_42': true,
+    '43_plus': true,
+    other: true,
+  },
+  country: { ua: true, other: true, unknown: true },
+};
+
 const normalizeFilterGroup = (value, defaults) => {
   return typeof value === 'object' && value !== null ? { ...defaults, ...value } : { ...defaults };
 };
 
-const getInitialFilters = () => {
-  const stored = localStorage.getItem('userFilters');
-  if (!stored) return { ...defaultFilters };
-  try {
-    const parsed = JSON.parse(stored);
-    return {
-      csection: normalizeFilterGroup(parsed.csection, defaultFilters.csection),
-      role: normalizeFilterGroup(parsed.role, defaultFilters.role),
-      maritalStatus: normalizeFilterGroup(parsed.maritalStatus, defaultFilters.maritalStatus),
-      blood: normalizeFilterGroup(parsed.blood, defaultFilters.blood),
-      age: normalizeFilterGroup(parsed.age, defaultFilters.age),
-      userId: normalizeFilterGroup(parsed.userId, defaultFilters.userId),
-      fields: normalizeFilterGroup(parsed.fields, defaultFilters.fields),
-      commentLength: normalizeFilterGroup(parsed.commentLength, defaultFilters.commentLength),
-    };
-  } catch {
-    return { ...defaultFilters };
-  }
-};
+const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false, mode = 'default' }) => {
+  const defaultFilters = useMemo(() => (mode === 'matching' ? defaultsMatching : defaultsAdd), [mode]);
+  const storageKey = mode === 'matching' ? 'matchingFilters' : 'userFilters';
 
-const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false }) => {
+  const getInitialFilters = () => {
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) return { ...defaultFilters };
+    try {
+      const parsed = JSON.parse(stored);
+      const result = {};
+      for (const key of Object.keys(defaultFilters)) {
+        result[key] = normalizeFilterGroup(parsed[key], defaultFilters[key]);
+      }
+      return result;
+    } catch {
+      return { ...defaultFilters };
+    }
+  };
+
   const [filters, setFilters] = useState(getInitialFilters);
 
   useEffect(() => {
-    localStorage.setItem('userFilters', JSON.stringify(filters));
+    localStorage.setItem(storageKey, JSON.stringify(filters));
     if (onChange) onChange(filters);
-  }, [filters, onChange]);
+  }, [filters, onChange, storageKey]);
 
   return (
     <SearchFilters
@@ -65,6 +80,7 @@ const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false }
       onChange={setFilters}
       hideUserId={hideUserId}
       hideCommentLength={hideCommentLength}
+      mode={mode}
     />
   );
 };

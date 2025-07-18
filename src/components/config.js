@@ -453,6 +453,7 @@ export const makeNewUser = async searchedValue => {
   await updateCommentWordsIndex(getCommentLengthCategory(newUser.myComment), newUserId, 'add');
   await updateAgeIndex(getAgeCategory(newUser), newUserId, 'add');
   await updateRoleIndex(getRoleCategory(newUser), newUserId, 'add');
+  await updateCountryIndex(getCountryCategory(newUser), newUserId, 'add');
 
   return {
     userId: newUserId,
@@ -916,6 +917,13 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
       await updateAgeIndex(newAge, userId, 'add');
     }
 
+    const oldCountry = getCountryCategory(currentUserData);
+    const newCountry = getCountryCategory(newUserData);
+    if (oldCountry !== newCountry) {
+      await updateCountryIndex(oldCountry, userId, 'remove');
+      await updateCountryIndex(newCountry, userId, 'add');
+    }
+
     const oldRole = getRoleCategory(currentUserData);
     const newRole = getRoleCategory(newUserData);
     if (oldRole !== newRole) {
@@ -1329,18 +1337,16 @@ const getMaritalStatusCategory = value => {
   return 'other';
 };
 
-const getBloodCategory = value => {
-  const b = (value.blood || '').toString().trim().toLowerCase();
-  if (!b) return 'other';
-  const normalized = b.replace(/\s+/g, '');
-  const positive = ['rh+', 'рк+', 'pos', '+'];
-  const negative = ['rh-', 'рк-', 'neg', '-'];
+const getBloodGroupCategory = value => {
+  const b = (value.blood || '').toString().trim().toLowerCase().replace(/\s+/g, '');
+  if (/^[1234]/.test(b)) return b[0];
+  return 'other';
+};
 
-  if (positive.includes(normalized)) return 'pos';
-  if (negative.includes(normalized)) return 'neg';
-
-  if (normalized.endsWith('+')) return 'pos';
-  if (normalized.endsWith('-')) return 'neg';
+const getRhCategory = value => {
+  const b = (value.blood || '').toString().trim().toLowerCase().replace(/\s+/g, '');
+  if (b.endsWith('+') || b === '+') return '+';
+  if (b.endsWith('-') || b === '-') return '-';
   return 'other';
 };
 
@@ -1355,6 +1361,15 @@ const getAgeCategory = value => {
   if (age >= 31 && age <= 36) return '31_36';
   if (age >= 37 && age <= 42) return '37_42';
   if (age >= 43) return '43_plus';
+  return 'other';
+};
+
+const getCountryCategory = value => {
+  const raw = (value.country || '').toString().trim();
+  if (!raw) return 'unknown';
+  const normalized = raw.toLowerCase();
+  const uaVariants = ['ukraine', 'україна', 'украина', 'украин', 'уккраина'];
+  if (uaVariants.includes(normalized)) return 'ua';
   return 'other';
 };
 
@@ -1383,10 +1398,9 @@ const getBloodIndexCategory = blood => {
   if (!blood) return 'unknown';
   const normalized = blood.toString().trim().toLowerCase().replace(/\s+/g, '');
   if (!normalized) return 'unknown';
-  if (/^[1234][+-]$/.test(normalized)) return normalized;
-  if (/^[+-]$/.test(normalized)) return normalized === '+' ? 'posOnly' : 'negOnly';
-  if (/^[1234]$/.test(normalized)) return normalized;
-  return 'invalid';
+  if (/^[1234][+-]?$/.test(normalized)) return normalized;
+  if (/^[+-]$/.test(normalized)) return normalized;
+  return 'other';
 };
 
 // Generic helper to update usersIndex nodes
@@ -1570,6 +1584,15 @@ export const createAgeIndexInCollection = async collection =>
 export const fetchUsersByAgeIndex = async (categories, offset = 0) =>
   fetchUsersByIndex('age', categories, offset);
 
+export const updateCountryIndex = (category, userId, action) =>
+  updateIndex('country', category, userId, action);
+
+export const createCountryIndexInCollection = async collection =>
+  createIndexInCollection('country', collection, user => getCountryCategory(user));
+
+export const fetchUsersByCountryIndex = async (categories, offset = 0) =>
+  fetchUsersByIndex('country', categories, offset);
+
 export const updateRoleIndex = (category, userId, action) =>
   updateIndex('role', category, userId, action);
 
@@ -1616,6 +1639,7 @@ export const indexUserData = async (userData, userId) => {
   promises.push(updateFieldsIndex(getFieldCountCategory(userData), userId, 'add'));
   promises.push(updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'add'));
   promises.push(updateAgeIndex(getAgeCategory(userData), userId, 'add'));
+  promises.push(updateCountryIndex(getCountryCategory(userData), userId, 'add'));
   promises.push(updateGetInTouchIndex(getGetInTouchKeys(userData), userId, 'add'));
   promises.push(updateBirthIndex(getBirthKeys(userData), userId, 'add'));
   await Promise.all(promises.filter(Boolean));
@@ -1713,14 +1737,24 @@ export const filterMain = (
       filters.maritalStatus = !!filterSettings.maritalStatus[cat];
     }
 
-    if (filterSettings.blood && Object.values(filterSettings.blood).some(v => !v)) {
-      const cat = getBloodCategory(value);
-      filters.blood = !!filterSettings.blood[cat];
+    if (filterSettings.bloodGroup && Object.values(filterSettings.bloodGroup).some(v => !v)) {
+      const cat = getBloodGroupCategory(value);
+      filters.bloodGroup = !!filterSettings.bloodGroup[cat];
+    }
+
+    if (filterSettings.rh && Object.values(filterSettings.rh).some(v => !v)) {
+      const cat = getRhCategory(value);
+      filters.rh = !!filterSettings.rh[cat];
     }
 
     if (filterSettings.age && Object.values(filterSettings.age).some(v => !v)) {
       const cat = getAgeCategory(value);
       filters.age = !!filterSettings.age[cat];
+    }
+
+    if (filterSettings.country && Object.values(filterSettings.country).some(v => !v)) {
+      const cat = getCountryCategory(value);
+      filters.country = !!filterSettings.country[cat];
     }
 
     if (filterSettings.userId && Object.values(filterSettings.userId).some(v => !v)) {
@@ -2510,6 +2544,7 @@ export const removeCardAndSearchId = async userId => {
     await updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'remove');
     await updateAgeIndex(getAgeCategory(userData), userId, 'remove');
     await updateRoleIndex(getRoleCategory(userData), userId, 'remove');
+    await updateCountryIndex(getCountryCategory(userData), userId, 'remove');
     await updateGetInTouchIndex(getGetInTouchKeys(userData), userId, 'remove');
     await updateBirthIndex(getBirthKeys(userData), userId, 'remove');
 

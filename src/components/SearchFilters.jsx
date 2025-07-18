@@ -1,23 +1,89 @@
 import React from 'react';
 import { CheckboxGroup } from './CheckboxGroup';
 
-export const SearchFilters = ({ filters, onChange, hideUserId = false, hideCommentLength = false }) => {
-  let groups = [
-    {
-      filterName: 'csection',
-      label: 'C-section',
-      options: [
-        { val: 'cs2plus', label: 'cs2+' },
-        { val: 'cs1', label: 'cs1' },
-        { val: 'cs0', label: 'cs0' },
-        { val: 'other', label: '?' },
-      ],
-    },
-    {
-      filterName: 'role',
-      label: 'Role',
-      options: [
-        { val: 'ed', label: 'ed' },
+export const SearchFilters = ({ filters, onChange, hideUserId = false, hideCommentLength = false, mode = 'default' }) => {
+  let groups = [];
+
+  if (mode === 'matching') {
+    groups = [
+      {
+        filterName: 'role',
+        label: 'Role',
+        options: [
+          { val: 'ed', label: 'ДО' },
+          { val: 'ag', label: 'Агентсва/Клініки' },
+          { val: 'ip', label: 'біобатьки' },
+          { val: 'other', label: '?' },
+        ],
+      },
+      {
+        filterName: 'maritalStatus',
+        label: 'Marital status',
+        options: [
+          { val: 'married', label: 'заміжня' },
+          { val: 'unmarried', label: 'незаміжня' },
+          { val: 'other', label: '?' },
+        ],
+      },
+      {
+        filterName: 'bloodGroup',
+        label: 'Blood group',
+        options: [
+          { val: '1', label: '1' },
+          { val: '2', label: '2' },
+          { val: '3', label: '3' },
+          { val: '4', label: '4' },
+          { val: 'other', label: '?' },
+        ],
+      },
+      {
+        filterName: 'rh',
+        label: 'Rh',
+        options: [
+          { val: '+', label: '+' },
+          { val: '-', label: '-' },
+          { val: 'other', label: '?' },
+        ],
+      },
+      {
+        filterName: 'age',
+        label: 'Age',
+        options: [
+          { val: 'le25', label: '≤25' },
+          { val: '26_30', label: '26-30' },
+          { val: '31_36', label: '31-36' },
+          { val: '37_42', label: '37-42' },
+          { val: '43_plus', label: '43+' },
+          { val: 'other', label: '?' },
+        ],
+      },
+      {
+        filterName: 'country',
+        label: 'Country',
+        options: [
+          { val: 'ua', label: 'Ukraine' },
+          { val: 'other', label: 'Other' },
+          { val: 'unknown', label: '?' },
+        ],
+      },
+    ];
+  } else {
+    groups = [
+      {
+        filterName: 'csection',
+        label: 'C-section',
+        options: [
+          { val: 'cs2plus', label: 'cs2+' },
+          { val: 'cs1', label: 'cs1' },
+          { val: 'cs0', label: 'cs0' },
+          { val: 'other', label: '?' },
+        ],
+      },
+      {
+        filterName: 'role',
+        label: 'Role',
+        options: [
+          { val: 'ed', label: 'ed' },
         { val: 'sm', label: 'sm' },
         { val: 'ag', label: 'ag' },
         { val: 'ip', label: 'ip' },
@@ -35,11 +101,22 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
       ],
     },
     {
-      filterName: 'blood',
-      label: 'Rh factor',
+      filterName: 'bloodGroup',
+      label: 'Blood group',
       options: [
-        { val: 'pos', label: 'рк+' },
-        { val: 'neg', label: 'рк-' },
+        { val: '1', label: '1' },
+        { val: '2', label: '2' },
+        { val: '3', label: '3' },
+        { val: '4', label: '4' },
+        { val: 'other', label: '?' },
+      ],
+    },
+    {
+      filterName: 'rh',
+      label: 'Rh',
+      options: [
+        { val: '+', label: '+' },
+        { val: '-', label: '-' },
         { val: 'other', label: '?' },
       ],
     },
@@ -90,7 +167,8 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
         { val: 'other', label: 'Все інше' },
       ],
     },
-  ];
+    ];
+  }
 
   if (hideUserId) {
     groups = groups.filter(g => g.filterName !== 'userId');
