@@ -23,7 +23,7 @@ const InputDiv = styled.div`
   align-items: center;
   position: relative;
   margin: 10px 0;
-  padding: 4px 10px;
+  padding: 0 10px;
   background-color: #fff;
   border: 3px solid;
   border-image: linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet) 1;
@@ -53,7 +53,7 @@ const InputField = styled.textarea`
   pointer-events: auto;
   resize: none;
   overflow: hidden;
-  line-height: 1.2;
+  line-height: 24px;
   min-height: 24px;
 `;
 
