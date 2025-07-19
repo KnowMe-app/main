@@ -75,6 +75,9 @@ export const color = {
   orange: '#EC9804',
   //
 
+  iconActive: '#212121',
+  iconInactive: '#353535',
+
   paleAccent: `#FF6C0055`,
   paleAccent2: '#FFA50030',
   paleAccent5: '#FF8C0055',
