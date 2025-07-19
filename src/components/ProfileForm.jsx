@@ -327,10 +327,14 @@ const InputDiv = styled.div`
 `;
 
 const InputField = styled.input`
+  background-color: inherit;
   border: none;
   outline: none;
   flex: 1;
   align-items: center;
+  &:focus {
+    background-color: inherit;
+  }
   padding-left: ${({ fieldName, value }) => {
     if (fieldName === 'phone') return '20px';
     if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok') return '25px';
