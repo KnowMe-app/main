@@ -39,11 +39,11 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
       },
       {
         filterName: 'rh',
-        label: 'Rh',
+        label: '',
         compact: true,
         options: [
-          { val: '+', label: '+' },
-          { val: '-', label: '-' },
+          { val: '+', label: 'Rh+' },
+          { val: '-', label: 'Rh-' },
           { val: 'other', label: '?' },
         ],
       },
@@ -56,6 +56,18 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
           { val: '26_30', label: '26-30' },
           { val: '31_36', label: '31-36' },
           { val: '37_plus', label: '37+' },
+          { val: 'other', label: '?' },
+        ],
+      },
+      {
+        filterName: 'bmi',
+        label: 'BMI',
+        compact: true,
+        options: [
+          { val: 'lt18_5', label: '<18.5' },
+          { val: '18_5_24_9', label: '18.5-24.9' },
+          { val: '25_29_9', label: '25-29.9' },
+          { val: '30_plus', label: '30+' },
           { val: 'other', label: '?' },
         ],
       },

@@ -40,6 +40,13 @@ const defaultsMatching = {
     '37_plus': true,
     other: true,
   },
+  bmi: {
+    lt18_5: true,
+    '18_5_24_9': true,
+    '25_29_9': true,
+    '30_plus': true,
+    other: true,
+  },
   country: { ua: true, other: true, unknown: true },
 };
 
