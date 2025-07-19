@@ -71,7 +71,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--primary-text-color);
-  /* background-color: #333333; */
+  background-color: #f5f5f5;
 }
 
 code {
