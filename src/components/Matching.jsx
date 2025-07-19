@@ -38,6 +38,11 @@ const Grid = styled.div`
 
 const CardWrapper = styled.div`
   width: 100%;
+  padding: 3px;
+  border: 3px solid;
+  border-image: linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet) 1;
+  border-radius: 8px;
+  box-sizing: border-box;
 `;
 
 const Card = styled.div`
