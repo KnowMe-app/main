@@ -5,7 +5,7 @@ const defaultsAdd = {
   csection: { cs2plus: true, cs1: true, cs0: true, other: true },
   role: { ed: true, sm: true, ag: true, ip: true, cl: true, other: true },
   maritalStatus: { married: true, unmarried: true, other: true },
-  bloodGroup: { '1': true, '2': true, '3': true, '4': true, other: true },
+  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true },
   rh: { '+': true, '-': true, other: true },
   age: {
     le25: true,
@@ -31,14 +31,13 @@ const defaultsAdd = {
 const defaultsMatching = {
   role: { ed: true, ag: false, ip: false, other: false },
   maritalStatus: { married: true, unmarried: true, other: true },
-  bloodGroup: { '1': true, '2': true, '3': true, '4': true, other: true },
+  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true },
   rh: { '+': true, '-': true, other: true },
   age: {
     le25: true,
     '26_30': true,
     '31_36': true,
-    '37_42': true,
-    '43_plus': true,
+    '37_plus': true,
     other: true,
   },
   country: { ua: true, other: true, unknown: true },
@@ -74,15 +73,7 @@ const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false, 
     if (onChange) onChange(filters);
   }, [filters, onChange, storageKey]);
 
-  return (
-    <SearchFilters
-      filters={filters}
-      onChange={setFilters}
-      hideUserId={hideUserId}
-      hideCommentLength={hideCommentLength}
-      mode={mode}
-    />
-  );
+  return <SearchFilters filters={filters} onChange={setFilters} hideUserId={hideUserId} hideCommentLength={hideCommentLength} mode={mode} />;
 };
 
 export default FilterPanel;

@@ -168,18 +168,14 @@ export const fetchLatestUsers = async (limit = 9, lastKey) => {
   const usersRef = ref2(database, 'users');
   const realLimit = limit + 1;
   const q =
-    lastKey !== undefined
-      ? query(usersRef, orderByKey(), endBefore(lastKey), limitToLast(realLimit))
-      : query(usersRef, orderByKey(), limitToLast(realLimit));
+    lastKey !== undefined ? query(usersRef, orderByKey(), endBefore(lastKey), limitToLast(realLimit)) : query(usersRef, orderByKey(), limitToLast(realLimit));
 
   const snapshot = await get(q);
   if (!snapshot.exists()) {
     return { users: [], lastKey: null, hasMore: false };
   }
 
-  let entries = Object.entries(snapshot.val()).sort((a, b) =>
-    b[0].localeCompare(a[0]),
-  );
+  let entries = Object.entries(snapshot.val()).sort((a, b) => b[0].localeCompare(a[0]));
 
   const hasMore = entries.length > limit;
   if (hasMore) {
@@ -532,23 +528,17 @@ const addUserToResults = async (userId, users, userIdOrArray = null) => {
 
 const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
   const ukSmPrefix = encodeKey('УК СМ ');
-  const hasUkSm = modifiedSearchValue
-    .toLowerCase()
-    .startsWith(ukSmPrefix.toLowerCase());
+  const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(ukSmPrefix.toLowerCase());
 
   const searchPromises = keysToCheck.flatMap(prefix => {
     const baseKey = `${prefix}_${modifiedSearchValue.toLowerCase()}`;
     const searchKeys = [baseKey];
 
     if (hasUkSm) {
-      const withoutPrefix = modifiedSearchValue
-        .slice(ukSmPrefix.length)
-        .toLowerCase();
+      const withoutPrefix = modifiedSearchValue.slice(ukSmPrefix.length).toLowerCase();
       searchKeys.push(`${prefix}_${withoutPrefix}`);
     } else {
-      searchKeys.push(
-        `${prefix}_${ukSmPrefix.toLowerCase()}${modifiedSearchValue.toLowerCase()}`,
-      );
+      searchKeys.push(`${prefix}_${ukSmPrefix.toLowerCase()}${modifiedSearchValue.toLowerCase()}`);
     }
 
     if (modifiedSearchValue.startsWith('0')) {
@@ -1042,8 +1032,8 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
       return;
     }
 
-  const normalizedValue = String(searchValue).toLowerCase();
-  const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`;
+    const normalizedValue = String(searchValue).toLowerCase();
+    const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`;
     const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
     if (isDev) console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
@@ -1209,9 +1199,7 @@ export const createSearchIdsInCollection = async (collection, onProgress) => {
                     cleanedValue = encodeKey(cleanedValue);
                   }
 
-                  updatePromises.push(
-                    updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'),
-                  );
+                  updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
                 }
               });
             } else if (value && (typeof value === 'string' || typeof value === 'number')) {
@@ -1224,9 +1212,7 @@ export const createSearchIdsInCollection = async (collection, onProgress) => {
                 cleanedValue = encodeKey(value);
               }
 
-              updatePromises.push(
-                updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'),
-              );
+              updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
             }
           }
         }
@@ -1332,10 +1318,8 @@ const getRoleCategory = value => {
 const getMaritalStatusCategory = value => {
   if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return 'other';
   const m = value.maritalStatus.trim().toLowerCase();
-  if (['yes', 'так', '+', 'married', 'одружена', 'заміжня'].includes(m))
-    return 'married';
-  if (['no', 'ні', '-', 'unmarried', 'single', 'незаміжня'].includes(m))
-    return 'unmarried';
+  if (['yes', 'так', '+', 'married', 'одружена', 'заміжня'].includes(m)) return 'married';
+  if (['no', 'ні', '-', 'unmarried', 'single', 'незаміжня'].includes(m)) return 'unmarried';
   return 'other';
 };
 
@@ -1393,7 +1377,6 @@ const getFieldCountCategory = value => {
   if (count < 12) return 'lt12';
   return 'other';
 };
-
 
 // ====================== Index helpers ======================
 const getBloodIndexCategory = blood => {
@@ -1504,42 +1487,30 @@ export const fetchUsersByIndex = async (indexName, categories, offset = 0) => {
   return res;
 };
 
-export const updateBloodIndex = (category, userId, action) =>
-  updateIndex('blood', category, userId, action);
+export const updateBloodIndex = (category, userId, action) => updateIndex('blood', category, userId, action);
 
 // Create blood index for all users in given collection
-export const createBloodIndexInCollection = async collection =>
-  createIndexInCollection('blood', collection, user => getBloodIndexCategory(user.blood));
+export const createBloodIndexInCollection = async collection => createIndexInCollection('blood', collection, user => getBloodIndexCategory(user.blood));
 
-export const fetchUsersByBloodIndex = async (categories, offset = 0) =>
-  fetchUsersByIndex('blood', categories, offset);
+export const fetchUsersByBloodIndex = async (categories, offset = 0) => fetchUsersByIndex('blood', categories, offset);
 
-export const updateMaritalIndex = (category, userId, action) =>
-  updateIndex('maritalStatus', category, userId, action);
+export const updateMaritalIndex = (category, userId, action) => updateIndex('maritalStatus', category, userId, action);
 
-export const createMaritalIndexInCollection = async collection =>
-  createIndexInCollection('maritalStatus', collection, user => getMaritalStatusCategory(user));
+export const createMaritalIndexInCollection = async collection => createIndexInCollection('maritalStatus', collection, user => getMaritalStatusCategory(user));
 
-export const fetchUsersByMaritalIndex = async (categories, offset = 0) =>
-  fetchUsersByIndex('maritalStatus', categories, offset);
+export const fetchUsersByMaritalIndex = async (categories, offset = 0) => fetchUsersByIndex('maritalStatus', categories, offset);
 
-export const updateCsectionIndex = (category, userId, action) =>
-  updateIndex('csection', category, userId, action);
+export const updateCsectionIndex = (category, userId, action) => updateIndex('csection', category, userId, action);
 
-export const createCsectionIndexInCollection = async collection =>
-  createIndexInCollection('csection', collection, user => categorizeCsection(user.csection));
+export const createCsectionIndexInCollection = async collection => createIndexInCollection('csection', collection, user => categorizeCsection(user.csection));
 
-export const fetchUsersByCsectionIndex = async (categories, offset = 0) =>
-  fetchUsersByIndex('csection', categories, offset);
+export const fetchUsersByCsectionIndex = async (categories, offset = 0) => fetchUsersByIndex('csection', categories, offset);
 
-export const updateUserIdIndex = (category, userId, action) =>
-  updateIndex('userId', category, userId, action);
+export const updateUserIdIndex = (category, userId, action) => updateIndex('userId', category, userId, action);
 
-export const createUserIdIndexInCollection = async collection =>
-  createIndexInCollection('userId', collection, (_, uid) => getUserIdCategory(uid));
+export const createUserIdIndexInCollection = async collection => createIndexInCollection('userId', collection, (_, uid) => getUserIdCategory(uid));
 
-export const fetchUsersByUserIdIndex = async (categories, offset = 0) =>
-  fetchUsersByIndex('userId', categories, offset);
+export const fetchUsersByUserIdIndex = async (categories, offset = 0) => fetchUsersByIndex('userId', categories, offset);
 
 // Get a set of all userIds that are already indexed in usersIndex/userId
 export const fetchAllIndexedUserIds = async () => {
@@ -1559,70 +1530,48 @@ export const fetchAllIndexedUserIds = async () => {
   return set;
 };
 
-export const updateFieldsIndex = (category, userId, action) =>
-  updateIndex('fields', category, userId, action);
+export const updateFieldsIndex = (category, userId, action) => updateIndex('fields', category, userId, action);
 
-export const createFieldsIndexInCollection = async collection =>
-  createIndexInCollection('fields', collection, user => getFieldCountCategory(user));
+export const createFieldsIndexInCollection = async collection => createIndexInCollection('fields', collection, user => getFieldCountCategory(user));
 
-export const fetchUsersByFieldsIndex = async (categories, offset = 0) =>
-  fetchUsersByIndex('fields', categories, offset);
+export const fetchUsersByFieldsIndex = async (categories, offset = 0) => fetchUsersByIndex('fields', categories, offset);
 
-export const updateCommentWordsIndex = (category, userId, action) =>
-  updateIndex('commentWords', category, userId, action);
+export const updateCommentWordsIndex = (category, userId, action) => updateIndex('commentWords', category, userId, action);
 
 export const createCommentWordsIndexInCollection = async collection =>
   createIndexInCollection('commentWords', collection, user => getCommentLengthCategory(user.myComment));
 
-export const fetchUsersByCommentWordsIndex = async (categories, offset = 0) =>
-  fetchUsersByIndex('commentWords', categories, offset);
+export const fetchUsersByCommentWordsIndex = async (categories, offset = 0) => fetchUsersByIndex('commentWords', categories, offset);
 
-export const updateAgeIndex = (category, userId, action) =>
-  updateIndex('age', category, userId, action);
+export const updateAgeIndex = (category, userId, action) => updateIndex('age', category, userId, action);
 
-export const createAgeIndexInCollection = async collection =>
-  createIndexInCollection('age', collection, user => getAgeCategory(user));
+export const createAgeIndexInCollection = async collection => createIndexInCollection('age', collection, user => getAgeCategory(user));
 
-export const fetchUsersByAgeIndex = async (categories, offset = 0) =>
-  fetchUsersByIndex('age', categories, offset);
+export const fetchUsersByAgeIndex = async (categories, offset = 0) => fetchUsersByIndex('age', categories, offset);
 
-export const updateCountryIndex = (category, userId, action) =>
-  updateIndex('country', category, userId, action);
+export const updateCountryIndex = (category, userId, action) => updateIndex('country', category, userId, action);
 
-export const createCountryIndexInCollection = async collection =>
-  createIndexInCollection('country', collection, user => getCountryCategory(user));
+export const createCountryIndexInCollection = async collection => createIndexInCollection('country', collection, user => getCountryCategory(user));
 
-export const fetchUsersByCountryIndex = async (categories, offset = 0) =>
-  fetchUsersByIndex('country', categories, offset);
+export const fetchUsersByCountryIndex = async (categories, offset = 0) => fetchUsersByIndex('country', categories, offset);
 
-export const updateRoleIndex = (category, userId, action) =>
-  updateIndex('role', category, userId, action);
+export const updateRoleIndex = (category, userId, action) => updateIndex('role', category, userId, action);
 
-export const createRoleIndexInCollection = async collection =>
-  createIndexInCollection('role', collection, user => getRoleCategory(user));
+export const createRoleIndexInCollection = async collection => createIndexInCollection('role', collection, user => getRoleCategory(user));
 
-export const fetchUsersByRoleIndex = async (categories, offset = 0) =>
-  fetchUsersByIndex('role', categories, offset);
+export const fetchUsersByRoleIndex = async (categories, offset = 0) => fetchUsersByIndex('role', categories, offset);
 
-export const updateGetInTouchIndex = (categories, userId, action) =>
-  updateMultiIndex('getInTouch', categories, userId, action);
+export const updateGetInTouchIndex = (categories, userId, action) => updateMultiIndex('getInTouch', categories, userId, action);
 
-export const createGetInTouchIndexInCollection = async collection =>
-  createMultiIndexInCollection('getInTouch', collection, user =>
-    getGetInTouchKeys(user)
-  );
+export const createGetInTouchIndexInCollection = async collection => createMultiIndexInCollection('getInTouch', collection, user => getGetInTouchKeys(user));
 
-export const fetchUsersByGetInTouchIndex = async (categories, offset = 0) =>
-  fetchUsersByIndex('getInTouch', categories, offset);
+export const fetchUsersByGetInTouchIndex = async (categories, offset = 0) => fetchUsersByIndex('getInTouch', categories, offset);
 
-export const updateBirthIndex = (categories, userId, action) =>
-  updateMultiIndex('birth', categories, userId, action);
+export const updateBirthIndex = (categories, userId, action) => updateMultiIndex('birth', categories, userId, action);
 
-export const createBirthIndexInCollection = async collection =>
-  createMultiIndexInCollection('birth', collection, user => getBirthKeys(user));
+export const createBirthIndexInCollection = async collection => createMultiIndexInCollection('birth', collection, user => getBirthKeys(user));
 
-export const fetchUsersByBirthIndex = async (categories, offset = 0) =>
-  fetchUsersByIndex('birth', categories, offset);
+export const fetchUsersByBirthIndex = async (categories, offset = 0) => fetchUsersByIndex('birth', categories, offset);
 
 // Helper to collect matching user ids for all active checkbox filters using indexes
 
@@ -1630,9 +1579,7 @@ export const fetchUsersByBirthIndex = async (categories, offset = 0) =>
 export const indexUserData = async (userData, userId) => {
   const promises = [];
   if (userData.blood) {
-    promises.push(
-      updateBloodIndex(getBloodIndexCategory(userData.blood), userId, 'add'),
-    );
+    promises.push(updateBloodIndex(getBloodIndexCategory(userData.blood), userId, 'add'));
   }
   promises.push(updateMaritalIndex(getMaritalStatusCategory(userData), userId, 'add'));
   promises.push(updateCsectionIndex(categorizeCsection(userData.csection), userId, 'add'));
@@ -1700,12 +1647,7 @@ const filterByAge = (value, ageLimit = 30) => {
 };
 
 // Основна функція фільтрації
-export const filterMain = (
-  usersData,
-  filterForload,
-  filterSettings = {},
-  favoriteUsers = {}
-) => {
+export const filterMain = (usersData, filterForload, filterSettings = {}, favoriteUsers = {}) => {
   console.log('filterMain called with', {
     filterForload,
     filterSettings,
@@ -1751,7 +1693,15 @@ export const filterMain = (
 
     if (filterSettings.age && Object.values(filterSettings.age).some(v => !v)) {
       const cat = getAgeCategory(value);
-      filters.age = !!filterSettings.age[cat];
+      if (Object.prototype.hasOwnProperty.call(filterSettings.age, '37_plus')) {
+        if (cat === '37_42' || cat === '43_plus') {
+          filters.age = !!filterSettings.age['37_plus'];
+        } else {
+          filters.age = !!filterSettings.age[cat];
+        }
+      } else {
+        filters.age = !!filterSettings.age[cat];
+      }
     }
 
     if (filterSettings.country && Object.values(filterSettings.country).some(v => !v)) {
@@ -1835,7 +1785,6 @@ const sortUsers = filteredUsers => {
       return 0;
     });
 };
-
 
 export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSettings = {}, favoriteUsers = {}) => {
   const db = getDatabase();
@@ -2532,11 +2481,7 @@ export const removeCardAndSearchId = async userId => {
     console.log(`Дані користувача:`, userData);
 
     if (userData.blood) {
-      await updateBloodIndex(
-        getBloodIndexCategory(userData.blood),
-        userId,
-        'remove',
-      );
+      await updateBloodIndex(getBloodIndexCategory(userData.blood), userId, 'remove');
     }
 
     await updateMaritalIndex(getMaritalStatusCategory(userData), userId, 'remove');
@@ -2732,11 +2677,7 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
 
   entries = await fetchData(query(usersRef, orderByChild('getInTouch'), startAt(twoWeeksAheadDate)));
   entries = entries.filter(
-    ([, u]) =>
-      isValidDate(u.getInTouch) &&
-      u.getInTouch > twoWeeksAheadDate &&
-      u.getInTouch !== '2099-99-99' &&
-      u.getInTouch !== '9999-99-99'
+    ([, u]) => isValidDate(u.getInTouch) && u.getInTouch > twoWeeksAheadDate && u.getInTouch !== '2099-99-99' && u.getInTouch !== '9999-99-99'
   );
   pushUnique(entries);
 
@@ -2748,13 +2689,7 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
   entries = await fetchData(query(usersRef, orderByChild('getInTouch')));
   entries = entries.filter(([id, u]) => {
     const d = u.getInTouch;
-    return (
-      d &&
-      !isValidDate(d) &&
-      d !== '2099-99-99' &&
-      d !== '9999-99-99' &&
-      !fetchedIds.has(id)
-    );
+    return d && !isValidDate(d) && d !== '2099-99-99' && d !== '9999-99-99' && !fetchedIds.has(id);
   });
   pushUnique(entries);
 
