@@ -316,11 +316,12 @@ const InputDiv = styled.div`
   position: relative;
   margin: 10px 0;
   padding: 10px;
-  background-color: #fff;
+  background-color: inherit;
   border: 1px solid #ccc;
   border-radius: 5px;
   box-sizing: border-box;
   flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   height: auto;
 `;
@@ -400,6 +401,7 @@ const InputFieldContainer = styled.div`
   height: 100%;
   box-sizing: border-box;
   flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   height: auto;
   &::before {
