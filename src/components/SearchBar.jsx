@@ -23,7 +23,7 @@ const InputDiv = styled.div`
   align-items: center;
   position: relative;
   margin: 10px 0;
-  padding: 0 10px;
+  padding: 10px;
   background-color: #fff;
   border: 3px solid;
   border-image: linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet) 1;
@@ -47,14 +47,17 @@ const InputField = styled.textarea`
   border: none;
   outline: none;
   flex: 1;
-  padding-left: 10px;
+  display: flex;
+  align-items: center;
+  padding: 0 0 0 10px;
   max-width: 100%;
   min-width: 0;
   pointer-events: auto;
   resize: none;
   overflow: hidden;
-  line-height: 24px;
   min-height: 24px;
+  line-height: normal;
+  
 `;
 
 const ClearButton = styled.button`
