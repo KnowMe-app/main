@@ -46,7 +46,7 @@ const InputField = styled.textarea`
   border: none;
   outline: none;
   flex: 1;
-  padding-left: 10px;
+  padding: 4px 0 4px 10px;
   max-width: 100%;
   min-width: 0;
   pointer-events: auto;
