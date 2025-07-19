@@ -30,6 +30,9 @@ const PhotoItem = styled.div`
   width: 100px;
   height: 100px;
   position: relative;
+  border: 3px solid;
+  border-image: linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet) 1;
+  border-radius: 5px;
 `;
 
 const PhotoImage = styled.img`
