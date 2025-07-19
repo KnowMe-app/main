@@ -139,7 +139,7 @@ const DonorCard = styled.div`
   border: 1px solid ${color.gray};
   border-radius: 8px;
   padding: 16px;
-  background: ${color.oppositeAccent};
+  background: #f0f0f0;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   color: ${color.black};
   max-height: 80vh;

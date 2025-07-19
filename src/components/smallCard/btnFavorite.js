@@ -40,8 +40,10 @@ export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers, onRe
         height: '35px',
         borderRadius: '50%',
         background: color.accent5,
-        border: `${isFavorite ? 2 : 1}px solid ${isFavorite ? 'green' : '#ccc'}`,
-        color: isFavorite ? 'green' : 'lightgreen',
+        border: `${isFavorite ? 2 : 1}px solid ${
+          isFavorite ? color.accent : color.paleAccent
+        }`,
+        color: isFavorite ? color.accent : color.paleAccent,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
@@ -58,8 +60,8 @@ export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers, onRe
         viewBox="0 0 24 24"
         width="18"
         height="18"
-        fill={isFavorite ? 'green' : 'none'}
-        stroke={isFavorite ? 'green' : 'lightgreen'}
+        fill={isFavorite ? color.accent : 'none'}
+        stroke={isFavorite ? color.accent : color.paleAccent}
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
