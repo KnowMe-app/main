@@ -448,6 +448,7 @@ export const makeNewUser = async searchedValue => {
   await updateCsectionIndex(categorizeCsection(newUser.csection), newUserId, 'add');
   await updateCommentWordsIndex(getCommentLengthCategory(newUser.myComment), newUserId, 'add');
   await updateAgeIndex(getAgeCategory(newUser), newUserId, 'add');
+  await updateBmiIndex(getBmiCategory(newUser), newUserId, 'add');
   await updateRoleIndex(getRoleCategory(newUser), newUserId, 'add');
   await updateCountryIndex(getCountryCategory(newUser), newUserId, 'add');
 
@@ -907,6 +908,13 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
       await updateAgeIndex(newAge, userId, 'add');
     }
 
+    const oldBmi = getBmiCategory(currentUserData);
+    const newBmi = getBmiCategory(newUserData);
+    if (oldBmi !== newBmi) {
+      await updateBmiIndex(oldBmi, userId, 'remove');
+      await updateBmiIndex(newBmi, userId, 'add');
+    }
+
     const oldCountry = getCountryCategory(currentUserData);
     const newCountry = getCountryCategory(newUserData);
     if (oldCountry !== newCountry) {
@@ -1350,6 +1358,19 @@ const getAgeCategory = value => {
   return 'other';
 };
 
+const getBmiCategory = value => {
+  const weight = parseFloat(value.weight);
+  const height = parseFloat(value.height);
+  if (weight && height) {
+    const bmi = weight / ((height / 100) ** 2);
+    if (bmi < 18.5) return 'lt18_5';
+    if (bmi < 25) return '18_5_24_9';
+    if (bmi < 30) return '25_29_9';
+    return '30_plus';
+  }
+  return 'other';
+};
+
 const getCountryCategory = value => {
   const raw = (value.country || '').toString().trim();
   if (!raw) return 'unknown';
@@ -1549,6 +1570,12 @@ export const createAgeIndexInCollection = async collection => createIndexInColle
 
 export const fetchUsersByAgeIndex = async (categories, offset = 0) => fetchUsersByIndex('age', categories, offset);
 
+export const updateBmiIndex = (category, userId, action) => updateIndex('bmi', category, userId, action);
+
+export const createBmiIndexInCollection = async collection => createIndexInCollection('bmi', collection, user => getBmiCategory(user));
+
+export const fetchUsersByBmiIndex = async (categories, offset = 0) => fetchUsersByIndex('bmi', categories, offset);
+
 export const updateCountryIndex = (category, userId, action) => updateIndex('country', category, userId, action);
 
 export const createCountryIndexInCollection = async collection => createIndexInCollection('country', collection, user => getCountryCategory(user));
@@ -1588,6 +1615,7 @@ export const indexUserData = async (userData, userId) => {
   promises.push(updateFieldsIndex(getFieldCountCategory(userData), userId, 'add'));
   promises.push(updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'add'));
   promises.push(updateAgeIndex(getAgeCategory(userData), userId, 'add'));
+  promises.push(updateBmiIndex(getBmiCategory(userData), userId, 'add'));
   promises.push(updateCountryIndex(getCountryCategory(userData), userId, 'add'));
   promises.push(updateGetInTouchIndex(getGetInTouchKeys(userData), userId, 'add'));
   promises.push(updateBirthIndex(getBirthKeys(userData), userId, 'add'));
@@ -1702,6 +1730,11 @@ export const filterMain = (usersData, filterForload, filterSettings = {}, favori
       } else {
         filters.age = !!filterSettings.age[cat];
       }
+    }
+
+    if (filterSettings.bmi && Object.values(filterSettings.bmi).some(v => !v)) {
+      const cat = getBmiCategory(value);
+      filters.bmi = !!filterSettings.bmi[cat];
     }
 
     if (filterSettings.country && Object.values(filterSettings.country).some(v => !v)) {
@@ -2490,6 +2523,7 @@ export const removeCardAndSearchId = async userId => {
     await updateFieldsIndex(getFieldCountCategory(userData), userId, 'remove');
     await updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'remove');
     await updateAgeIndex(getAgeCategory(userData), userId, 'remove');
+    await updateBmiIndex(getBmiCategory(userData), userId, 'remove');
     await updateRoleIndex(getRoleCategory(userData), userId, 'remove');
     await updateCountryIndex(getCountryCategory(userData), userId, 'remove');
     await updateGetInTouchIndex(getGetInTouchKeys(userData), userId, 'remove');
