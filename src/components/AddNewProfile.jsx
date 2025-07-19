@@ -180,6 +180,12 @@ const Button = styled.button`
   }
 `;
 
+const ButtonsContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+`;
+
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const location = useLocation();
@@ -196,6 +202,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   const [filters, setFilters] = useState({});
+  const [isDeleting, setIsDeleting] = useState(false);
   const navigate = useNavigate();
 
   const handleBlur = () => {
@@ -480,27 +487,37 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // console.log('state :>> ', state);
     const handleRemoveUser = async () => {
       try {
-        // await removeSearchId(state.userId); // Виклик функції для видалення
-        await removeCardAndSearchId(state.userId); // Виклик функції для видалення
+        setIsDeleting(true);
+        await removeCardAndSearchId(state.userId);
         setUsers(prevUsers => {
           const updatedUsers = { ...prevUsers };
-          delete updatedUsers[state.userId]; // Видалення користувача за userId
-          return updatedUsers; // Повертаємо оновлений об'єкт користувачів
+          delete updatedUsers[state.userId];
+          return updatedUsers;
         });
-        setShowInfoModal(null); // Close modal after deletion
+        const res = await fetchNewUsersCollectionInRTDB({ name: '' });
+        if (res) setUsers(res);
         setSearch('');
+        setShowInfoModal(null);
         console.log(`User ${state.userId} deleted.`);
-        navigate('/add'); // Return to list screen after deletion
+        navigate('/add');
       } catch (error) {
         console.error('Error deleting user:', error);
+      } finally {
+        setIsDeleting(false);
       }
     };
 
     return (
       <>
-        <p>Видалити профіль?</p>
-        <SubmitButton onClick={handleRemoveUser}>Видалити</SubmitButton>
-        <SubmitButton onClick={() => setShowInfoModal(null)}>Відмінити</SubmitButton>
+        {isDeleting ? (
+          <span className="spinner" />
+        ) : (
+          <>
+            <p>Видалити профіль?</p>
+            <SubmitButton onClick={handleRemoveUser}>Видалити</SubmitButton>
+            <SubmitButton onClick={() => setShowInfoModal(null)}>Відмінити</SubmitButton>
+          </>
+        )}
       </>
     );
   };
@@ -791,7 +808,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </p>
             ) : null}
             <FilterPanel onChange={setFilters} />
-            <div>
+            <ButtonsContainer>
               {userNotFound && (
                 <Button onClick={handleAddUser} disabled={adding}>
                   {adding ? (
@@ -847,7 +864,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               {/* <UploadJson/> */}
               {/* <JsonToExcelButton/> */}
               {/* {users && <div>Знайдено {Object.keys(users).length}</div>} */}
-            </div>
+            </ButtonsContainer>
             {!userNotFound && (
               <>
                 <UsersList
