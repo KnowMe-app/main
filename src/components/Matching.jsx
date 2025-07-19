@@ -38,6 +38,15 @@ const Grid = styled.div`
 
 const CardWrapper = styled.div`
   width: 100%;
+  border: 2px solid ${color.gray3};
+  box-sizing: border-box;
+`;
+
+const CommentInput = styled.textarea`
+  width: 100%;
+  margin-top: ${props => props.mt || '5px'};
+  display: block;
+  box-sizing: border-box;
 `;
 
 const Card = styled.div`
@@ -289,16 +298,8 @@ const INITIAL_LOAD = 3;
 const LOAD_MORE = 1;
 
 const roleMatchesFilter = (user, filter) => {
-  const userRoles = Array.isArray(user.userRole)
-    ? user.userRole.map(r => String(r).toLowerCase())
-    : user.userRole
-    ? [String(user.userRole).toLowerCase()]
-    : [];
-  const roles = Array.isArray(user.role)
-    ? user.role.map(r => String(r).toLowerCase())
-    : user.role
-    ? [String(user.role).toLowerCase()]
-    : [];
+  const userRoles = Array.isArray(user.userRole) ? user.userRole.map(r => String(r).toLowerCase()) : user.userRole ? [String(user.userRole).toLowerCase()] : [];
+  const roles = Array.isArray(user.role) ? user.role.map(r => String(r).toLowerCase()) : user.role ? [String(user.role).toLowerCase()] : [];
   const allRoles = [...userRoles, ...roles];
   if (filter === 'donor') {
     return allRoles.some(r => ['ed', 'sm'].includes(r));
@@ -401,9 +402,7 @@ const Matching = () => {
 
   const fetchChunk = async (limit, key, exclude = new Set(), role) => {
     const res = await fetchLatestUsers(limit + exclude.size + 1, key);
-    const filtered = res.users.filter(
-      u => !exclude.has(u.userId) && roleMatchesFilter(u, role),
-    );
+    const filtered = res.users.filter(u => !exclude.has(u.userId) && roleMatchesFilter(u, role));
     const hasMore = filtered.length > limit || res.hasMore;
     const slice = filtered.slice(0, limit);
     const withPhotos = await Promise.all(
@@ -502,7 +501,7 @@ const Matching = () => {
           users.map(u => [u.userId, u]),
           null,
           filters,
-          favoriteUsers,
+          favoriteUsers
         ).map(([id, u]) => u)
       : users;
 
@@ -538,9 +537,7 @@ const Matching = () => {
 
   return (
     <>
-      {showFilters && (
-        <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />
-      )}
+      {showFilters && <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />}
       <FilterContainer show={showFilters} onClick={e => e.stopPropagation()}>
         <SearchBar
           searchFunc={searchUsersOnly}
@@ -557,22 +554,14 @@ const Matching = () => {
           <ActionButton onClick={loadDislikeCards}>👎</ActionButton>
           <ActionButton onClick={() => setShowFilters(s => !s)}>⚙</ActionButton>
         </TopActions>
-        {isAdmin && (
-          <p style={{ textAlign: 'center', color: 'black' }}>
-            {filteredUsers.length} карточок
-          </p>
-        )}
+        {isAdmin && <p style={{ textAlign: 'center', color: 'black' }}>{filteredUsers.length} карточок</p>}
 
         <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
           {filteredUsers.map(user => {
             const photo = getCurrentValue(user.photos);
             return (
               <CardWrapper key={user.userId}>
-                <Card
-                  data-card
-                  onClick={() => setSelected(user)}
-                  style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}
-                >
+                <Card data-card onClick={() => setSelected(user)} style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}>
                   <BtnFavorite
                     userId={user.userId}
                     favoriteUsers={favoriteUsers}
@@ -586,7 +575,7 @@ const Matching = () => {
                     onRemove={viewMode !== 'default' ? handleRemove : undefined}
                   />
                 </Card>
-                <textarea
+                <CommentInput
                   value={comments[user.userId] || ''}
                   onClick={e => e.stopPropagation()}
                   onChange={e => {
@@ -597,15 +586,11 @@ const Matching = () => {
                     const owner = auth.currentUser?.uid;
                     if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
                   }}
-                  style={{ width: '100%', marginTop: '5px' }}
                 />
               </CardWrapper>
             );
           })}
-          {loading &&
-            Array.from({ length: 4 }).map((_, idx) => (
-              <SkeletonCard data-card key={`skeleton-${idx}`} />
-            ))}
+          {loading && Array.from({ length: 4 }).map((_, idx) => <SkeletonCard data-card key={`skeleton-${idx}`} />)}
         </Grid>
       </div>
       {selected && (
@@ -658,14 +643,14 @@ const Matching = () => {
               <Icons>{fieldContactsIcons(selected)}</Icons>
               {getCurrentValue(selected.writer) && <div style={{ marginLeft: '10px' }}>{getCurrentValue(selected.writer)}</div>}
             </Contact>
-            <textarea
+            <CommentInput
+              mt="10px"
               value={comments[selected.userId] || ''}
               onChange={e => setComments(prev => ({ ...prev, [selected.userId]: e.target.value }))}
               onBlur={() => {
                 const owner = auth.currentUser?.uid;
                 if (owner) setUserComment(owner, selected.userId, comments[selected.userId] || '');
               }}
-              style={{ width: '100%', marginTop: '10px' }}
             />
             <Id
               onClick={() => {
@@ -687,9 +672,7 @@ const Matching = () => {
         />
       )}
       {showUserCard && selected && (
-        <ModalOverlay
-          onClick={() => setShowUserCard(false)}
-        >
+        <ModalOverlay onClick={() => setShowUserCard(false)}>
           <div onClick={e => e.stopPropagation()} style={{ maxHeight: '80vh', overflowY: 'auto' }}>
             <UserCard
               userData={selected}
