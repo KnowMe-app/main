@@ -72,7 +72,7 @@ export const ProfileForm = ({
   ];
 
   return (
-    <FormContainer>
+    <>
       {sortedFieldsToRender
         .filter(field => !['myComment', 'getInTouch', 'writer'].includes(field.name))
         .map((field, index) => (
@@ -294,7 +294,7 @@ export const ProfileForm = ({
           </PickerContainer>
         ))}
       <Photos state={state} setState={setState} />
-    </FormContainer>
+    </>
   );
 };
 
@@ -308,13 +308,6 @@ const PickerContainer = styled.div`
   @media (max-width: 768px) {
     background-color: #f5f5f5;
   }
-`;
-
-const FormContainer = styled.div`
-  width: 100%;
-  box-sizing: border-box;
-  background-color: #f0f0f0;
-  padding: 20px;
 `;
 
 const InputDiv = styled.div`
@@ -336,7 +329,6 @@ const InputField = styled.input`
   border: none;
   outline: none;
   flex: 1;
-  width: 100%;
   align-items: center;
   padding-left: ${({ fieldName, value }) => {
     if (fieldName === 'phone') return '20px';
