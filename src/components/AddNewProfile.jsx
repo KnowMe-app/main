@@ -497,6 +497,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const res = await fetchNewUsersCollectionInRTDB({ name: '' });
         if (res) setUsers(res);
         setSearch('');
+        setState({});
         setShowInfoModal(null);
         console.log(`User ${state.userId} deleted.`);
         navigate('/add');
