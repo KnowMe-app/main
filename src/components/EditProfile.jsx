@@ -80,6 +80,7 @@ const EditProfile = () => {
         await updateDataInNewUsersRTDB(state.userId, state, 'update');
       }
     }
+    setState(updatedState);
   };
 
   const handleBlur = () => handleSubmit();

@@ -162,6 +162,9 @@ const Button = styled.button`
   cursor: pointer;
   font-size: 12px;
   flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition:
     background-color 0.3s ease,
     box-shadow 0.3s ease;
@@ -485,8 +488,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           return updatedUsers; // Повертаємо оновлений об'єкт користувачів
         });
         setShowInfoModal(null); // Close modal after deletion
+        setSearch('');
         console.log(`User ${state.userId} deleted.`);
-        navigate(-1); // Return to previous screen after deletion
+        navigate('/add'); // Return to list screen after deletion
       } catch (error) {
         console.error('Error deleting user:', error);
       }

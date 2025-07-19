@@ -23,7 +23,7 @@ const InputDiv = styled.div`
   align-items: center;
   position: relative;
   margin: 10px 0;
-  padding: 10px;
+  padding: 4px 10px;
   background-color: #fff;
   border: 1px solid #ccc;
   border-radius: 5px;
@@ -53,7 +53,7 @@ const InputField = styled.textarea`
   resize: none;
   overflow: hidden;
   line-height: 1.2;
-  min-height: 35px;
+  min-height: 24px;
 `;
 
 const ClearButton = styled.button`

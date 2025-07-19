@@ -41,8 +41,10 @@ export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers, onRemov
         height: '35px',
         borderRadius: '50%',
         background: color.accent5,
-        border: `${isDisliked ? 2 : 1}px solid ${isDisliked ? 'red' : '#ccc'}`,
-        color: isDisliked ? 'red' : 'lightcoral',
+        border: `${isDisliked ? 2 : 1}px solid ${
+          isDisliked ? color.accent3 : color.paleAccent
+        }`,
+        color: isDisliked ? color.accent3 : color.paleAccent,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
@@ -59,8 +61,8 @@ export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers, onRemov
         viewBox="0 0 24 24"
         width="18"
         height="18"
-        fill={isDisliked ? 'red' : 'none'}
-        stroke={isDisliked ? 'red' : 'lightcoral'}
+        fill={isDisliked ? color.accent3 : 'none'}
+        stroke={isDisliked ? color.accent3 : color.paleAccent}
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
