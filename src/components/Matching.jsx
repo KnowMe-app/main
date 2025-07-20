@@ -267,7 +267,7 @@ const renderSelectedFields = user => {
     if (field.key === 'bmi') {
       const { weight, height } = user;
       if (weight && height) {
-        value = ((weight / (height * height)) * 10000).toFixed(2);
+        value = Math.round((weight / (height * height)) * 10000);
       } else {
         value = null;
       }
