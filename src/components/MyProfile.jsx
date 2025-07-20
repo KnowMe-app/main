@@ -78,30 +78,6 @@ const DotsButton = styled.button`
   display: flex;
 `;
 
-const TopActions = styled.div`
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: flex;
-  gap: 10px;
-  z-index: 10;
-`;
-
-const ActionButton = styled.button`
-  width: 35px;
-  height: 35px;
-  padding: 3px;
-  border: none;
-  background-color: ${color.accent5};
-  color: white;
-  border-radius: 50px;
-  cursor: pointer;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-`;
-
 const PickerContainer = styled.div`
   display: flex;
   /* flex-direction: column; */
@@ -797,16 +773,8 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, []);
 
   const dotsMenu = () => {
-    const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
     return (
       <>
-        {isAdmin && (
-          <>
-            <SubmitButton onClick={() => navigate('/my-profile')}>my-profile</SubmitButton>
-            <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>
-            <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>
-          </>
-        )}
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
         {!isEmailVerified && <VerifyEmail />}
@@ -819,18 +787,13 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     <Container>
       <InnerContainer>
         {isLoggedIn && (
-          <TopActions>
-            <ActionButton>❤</ActionButton>
-            <ActionButton>❌</ActionButton>
-            <ActionButton>⚙</ActionButton>
-            <DotsButton
-              onClick={() => {
-                setShowInfoModal('dotsMenu');
-              }}
-            >
-              ⋮
-            </DotsButton>
-          </TopActions>
+          <DotsButton
+            onClick={() => {
+              setShowInfoModal('dotsMenu');
+            }}
+          >
+            ⋮
+          </DotsButton>
         )}
         <StatusMessage published={state.publish}>
           {state.publish ? 'Анкета опублікована' : 'Анкета прихована'}
