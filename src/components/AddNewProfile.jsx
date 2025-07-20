@@ -496,7 +496,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const handleRemoveUser = async () => {
       try {
         setIsDeleting(true);
-        await removeCardAndSearchId(state.userId);
+        removeCardAndSearchId(state.userId).catch(console.error);
         setUsers(prevUsers => {
           const updatedUsers = { ...prevUsers };
           delete updatedUsers[state.userId];
