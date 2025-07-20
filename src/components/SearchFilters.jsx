@@ -40,7 +40,6 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
       {
         filterName: 'rh',
         label: '',
-        compact: true,
         options: [
           { val: '+', label: 'Rh+' },
           { val: '-', label: 'Rh-' },
