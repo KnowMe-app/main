@@ -1,8 +1,20 @@
 import React from 'react';
-import { addDislikeUser, removeDislikeUser, auth } from '../config';
+import {
+  addDislikeUser,
+  removeDislikeUser,
+  removeFavoriteUser,
+  auth,
+} from '../config';
 import { color } from '../styles';
 
-export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers, onRemove }) => {
+export const BtnDislike = ({
+  userId,
+  dislikeUsers = {},
+  setDislikeUsers,
+  onRemove,
+  favoriteUsers = {},
+  setFavoriteUsers,
+}) => {
   const isDisliked = !!dislikeUsers[userId];
 
   const toggleDislike = async () => {
@@ -24,7 +36,19 @@ export const BtnDislike = ({ userId, dislikeUsers = {}, setDislikeUsers, onRemov
       try {
         await addDislikeUser(userId);
         setDislikeUsers({ ...dislikeUsers, [userId]: true });
-        if (onRemove) onRemove(userId);
+        if (favoriteUsers[userId]) {
+          try {
+            await removeFavoriteUser(userId);
+          } catch (err) {
+            console.error('Failed to remove favorite when adding dislike:', err);
+          }
+          const upd = { ...favoriteUsers };
+          delete upd[userId];
+          if (setFavoriteUsers) setFavoriteUsers(upd);
+          if (onRemove) onRemove(userId);
+        } else if (onRemove) {
+          onRemove(userId);
+        }
       } catch (error) {
         console.error('Failed to add dislike:', error);
       }

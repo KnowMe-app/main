@@ -570,12 +570,16 @@ const Matching = () => {
                     userId={user.userId}
                     favoriteUsers={favoriteUsers}
                     setFavoriteUsers={setFavoriteUsers}
-                    onRemove={viewMode === 'favorites' ? handleRemove : undefined}
+                    dislikeUsers={dislikeUsers}
+                    setDislikeUsers={setDislikeUsers}
+                    onRemove={viewMode !== 'default' ? handleRemove : undefined}
                   />
                   <BtnDislike
                     userId={user.userId}
                     dislikeUsers={dislikeUsers}
                     setDislikeUsers={setDislikeUsers}
+                    favoriteUsers={favoriteUsers}
+                    setFavoriteUsers={setFavoriteUsers}
                     onRemove={viewMode !== 'default' ? handleRemove : undefined}
                   />
                 </Card>
