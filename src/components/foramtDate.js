@@ -14,8 +14,9 @@ export const getCurrentDate = () => {
   // Записуємо дату та час в потрібному форматі
   const todayMin = `${day}.${month}.${year} ${hours}:${minutes}:${seconds}`;
   const todayDays = `${day}.${month}.${year}`;
+  const todayDash = `${year}-${month}-${day}`;
 
-  return {todayMin, todayDays};
+  return { todayMin, todayDays, todayDash };
 };
 
 export const formatToLongDate = date => {

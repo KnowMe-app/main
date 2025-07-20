@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import styled, { css } from 'styled-components';
 import { FaUser, FaLock } from 'react-icons/fa';
-import { auth, updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
+import {
+  auth,
+  updateDataInFiresoreDB,
+  updateDataInRealtimeDB,
+  updateDataInNewUsersRTDB,
+} from './config';
 import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
 import { useNavigate } from 'react-router-dom';
@@ -233,6 +238,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       const uploadedInfo = {
         areTermsConfirmed: todayDays,
         lastLogin: todayDays,
+        lastLogin2: todayDash,
         email: state.email,
         userId: userCredential.user.uid,
         userRole: 'ed',
@@ -240,6 +246,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
 
       await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
       await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
+      await updateDataInNewUsersRTDB(userCredential.user.uid, { lastLogin2: todayDash }, 'update');
 
       localStorage.setItem('isLoggedIn', 'true');
       localStorage.setItem('userEmail', state.email);
@@ -258,7 +265,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
-  const { todayDays } = getCurrentDate();
+  const { todayDays, todayDash } = getCurrentDate();
 
   const handleRegistration = async () => {
     try {
@@ -270,6 +277,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         areTermsConfirmed: todayDays,
         registrationDate: todayDays,
         lastLogin: todayDays,
+        lastLogin2: todayDash,
         userId: userCredential.user.uid,
         userRole: 'ed',
       };
@@ -277,6 +285,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       await sendEmailVerification(userCredential.user);
       await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
       await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
+      await updateDataInNewUsersRTDB(userCredential.user.uid, { lastLogin2: todayDash }, 'update');
 
       localStorage.setItem('isLoggedIn', 'true');
       localStorage.setItem('userEmail', state.email);

@@ -6,6 +6,7 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
       field === 'lastAction' ||
       field === 'loadingCounter' ||
       field === 'lastLogin' ||
+      field === 'lastLogin2' ||
       field === 'deviceResize' ||
       field === 'deviceHeight' ||
       field === 'deviceWidth' ||
