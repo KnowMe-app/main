@@ -2692,14 +2692,20 @@ export const fetchAllUsersFromRTDB = async () => {
   }
 };
 
-export const indexLastLogin = async () => {
+export const indexLastLogin = async onProgress => {
   const snap = await get(ref2(database, 'newUsers'));
   if (!snap.exists()) return;
   const data = snap.val();
   const entries = Object.entries(data);
+  const total = entries.length;
+  let processed = 0;
+  let lastProgress = 0;
   for (const [uid, user] of entries) {
     const id = user.userId || uid;
-    if (id.length <= 20) continue;
+    if (id.length <= 20) {
+      processed += 1;
+      continue;
+    }
     let date = user.lastLogin2;
     if (!date && typeof user.lastLogin === 'string') {
       const parts = user.lastLogin.split('.');
@@ -2708,9 +2714,16 @@ export const indexLastLogin = async () => {
         date = `${yy}-${mm}-${dd}`;
       }
     }
-    if (!date) continue;
-    // eslint-disable-next-line no-await-in-loop
-    await update(ref2(database, `newUsers/${id}`), { lastLogin2: date });
+    if (date) {
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref2(database, `newUsers/${id}`), { lastLogin2: date });
+    }
+    processed += 1;
+    const progress = Math.floor((processed / total) * 100);
+    if (onProgress && progress % 10 === 0 && progress !== lastProgress) {
+      onProgress(progress);
+      lastProgress = progress;
+    }
   }
 };
 

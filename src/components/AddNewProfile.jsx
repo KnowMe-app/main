@@ -734,8 +734,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const indexLastLoginHandler = async () => {
-    await indexLastLogin();
-    toast.success('lastLogin2 indexed');
+    toast.loading('Indexing lastLogin2 0%', { id: 'index-lastlogin-progress' });
+    await indexLastLogin(progress => {
+      toast.loading(`Indexing lastLogin2 ${progress}%`, {
+        id: 'index-lastlogin-progress',
+      });
+    });
+    toast.success('lastLogin2 indexed', { id: 'index-lastlogin-progress' });
   };
 
   const fieldsToRender = getFieldsToRender(state);
