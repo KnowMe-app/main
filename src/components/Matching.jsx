@@ -617,7 +617,7 @@ const Matching = () => {
           <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>
         </>
       )}
-      <SubmitButton onClick={handleExit}>Exit</SubmitButton>
+      <ExitButton onClick={handleExit}>Exit</ExitButton>
     </>
   );
 
