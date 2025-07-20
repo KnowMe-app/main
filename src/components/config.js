@@ -2526,6 +2526,10 @@ export const removeCardAndSearchId = async userId => {
     const userData = userSnapshot.val();
     console.log(`Дані користувача:`, userData);
 
+    // Видаляємо картку користувача з newUsers перед оновленням індексів
+    await remove(ref2(db, `newUsers/${userId}`));
+    console.log(`Картка користувача видалена з newUsers: ${userId}`);
+
     if (userData.blood) {
       await updateBloodIndex(getBloodIndexCategory(userData.blood), userId, 'remove');
     }
@@ -2566,10 +2570,6 @@ export const removeCardAndSearchId = async userId => {
         }
       }
     }
-    // console.warn(`Видаляємо картку користувача з newUsers: ${userId}`);
-    // Видаляємо картку користувача з newUsers
-    await remove(ref2(db, `newUsers/${userId}`));
-    console.log(`Картка користувача видалена з newUsers: ${userId}`);
   } catch (error) {
     console.error(`Помилка під час видалення searchId для userId: ${userId}`, error);
   }
