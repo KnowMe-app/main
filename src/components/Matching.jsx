@@ -40,11 +40,13 @@ const CardWrapper = styled.div`
   width: 100%;
   border: 2px solid ${color.gray3};
   box-sizing: border-box;
+  border-radius: 8px;
+  overflow: hidden;
 `;
 
 const CommentInput = styled.textarea`
   width: 100%;
-  margin-top: ${props => props.mt || '5px'};
+  margin-top: ${props => props.mt || '0'};
   display: block;
   box-sizing: border-box;
 `;
@@ -55,7 +57,7 @@ const Card = styled.div`
   background-color: orange;
   background-size: cover;
   background-position: center;
-  border-radius: 8px;
+  border-radius: 0;
   position: relative;
 `;
 
