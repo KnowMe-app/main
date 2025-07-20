@@ -27,6 +27,7 @@ import { fieldContactsIcons } from './smallCard/fieldContacts';
 import PhotoViewer from './PhotoViewer';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
+import { useAutoResize } from '../hooks/useAutoResize';
 
 const Grid = styled.div`
   display: flex;
@@ -52,7 +53,28 @@ const CommentInput = styled.textarea`
   box-sizing: border-box;
   margin-left: auto;
   margin-right: auto;
+  resize: none;
+  overflow: hidden;
 `;
+
+const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) => {
+  const ref = useRef(null);
+  const autoResize = useAutoResize(ref, value);
+
+  return (
+    <CommentInput
+      {...rest}
+      ref={ref}
+      value={value}
+      onClick={onClick}
+      onChange={e => {
+        onChange && onChange(e);
+        autoResize(e.target);
+      }}
+      onBlur={onBlur}
+    />
+  );
+};
 
 const Card = styled.div`
   width: 100%;
@@ -584,7 +606,7 @@ const Matching = () => {
                     onRemove={viewMode !== 'default' ? handleRemove : undefined}
                   />
                 </Card>
-                <CommentInput
+                <ResizableCommentInput
                   value={comments[user.userId] || ''}
                   onClick={e => e.stopPropagation()}
                   onChange={e => {
@@ -652,7 +674,7 @@ const Matching = () => {
               <Icons>{fieldContactsIcons(selected)}</Icons>
               {getCurrentValue(selected.writer) && <div style={{ marginLeft: '10px' }}>{getCurrentValue(selected.writer)}</div>}
             </Contact>
-            <CommentInput
+            <ResizableCommentInput
               mt="10px"
               value={comments[selected.userId] || ''}
               onChange={e => setComments(prev => ({ ...prev, [selected.userId]: e.target.value }))}
