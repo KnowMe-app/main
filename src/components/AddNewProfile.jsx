@@ -494,8 +494,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           delete updatedUsers[state.userId];
           return updatedUsers;
         });
-        const res = await fetchNewUsersCollectionInRTDB({ name: '' });
-        if (res) setUsers(res);
+        fetchNewUsersCollectionInRTDB({ name: '' })
+          .then(res => {
+            if (res) setUsers(res);
+          })
+          .catch(err => console.error('Error reloading users:', err));
         setSearch('');
         setState({});
         setShowInfoModal(null);
