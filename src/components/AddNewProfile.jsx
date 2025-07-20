@@ -473,8 +473,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setAdding(false);
   };
   const dotsMenu = () => {
+    const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
     return (
       <>
+        {isAdmin && (
+          <>
+            <SubmitButton onClick={() => navigate('/my-profile')}>my-profile</SubmitButton>
+            <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>
+            <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>
+          </>
+        )}
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
         {!isEmailVerified && <VerifyEmail />}
