@@ -21,7 +21,7 @@ import {
   updateDataInNewUsersRTDB,
 } from './config';
 import { onValue, ref as refDb } from 'firebase/database';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
@@ -31,6 +31,8 @@ import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCurrentDate } from './foramtDate';
+import InfoModal from './InfoModal';
+import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
 
 
 const Grid = styled.div`
