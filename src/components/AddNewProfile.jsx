@@ -26,6 +26,7 @@ import {
   fetchAllUsersFromRTDB,
   fetchTotalNewUsersCount,
   fetchFilteredUsersByPage,
+  indexLastLogin,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -732,6 +733,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
+  const indexLastLoginHandler = async () => {
+    await indexLastLogin();
+    toast.success('lastLogin2 indexed');
+  };
+
   const fieldsToRender = getFieldsToRender(state);
 
 
@@ -855,6 +861,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </Button>
               <Button onClick={loadFavoriteUsers}>❤</Button>
               <Button onClick={indexData}>IndData</Button>
+              <Button onClick={indexLastLoginHandler}>indexLastLogin</Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {

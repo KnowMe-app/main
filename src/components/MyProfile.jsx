@@ -4,7 +4,11 @@ import styled, { css } from 'styled-components';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
 import { auth, fetchUserData } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
-import { updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
+import {
+  updateDataInFiresoreDB,
+  updateDataInRealtimeDB,
+  updateDataInNewUsersRTDB,
+} from './config';
 import { pickerFields } from './formFields';
 import {
   onAuthStateChanged,
@@ -541,7 +545,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setMissing(miss);
     if (Object.keys(miss).length) return;
     try {
-      const { todayDays } = getCurrentDate();
+      const { todayDays, todayDash } = getCurrentDate();
       const methods = await fetchSignInMethodsForEmail(auth, state.email);
       let userCredential;
       let uploadedInfo;
@@ -551,11 +555,13 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           email: state.email,
           areTermsConfirmed: todayDays,
           lastLogin: todayDays,
+          lastLogin2: todayDash,
           userId: userCredential.user.uid,
           userRole: 'ed',
         };
         await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
         await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
+        await updateDataInNewUsersRTDB(userCredential.user.uid, { lastLogin2: todayDash }, 'update');
       } else {
         userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
         await sendEmailVerification(userCredential.user);
@@ -564,11 +570,13 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           areTermsConfirmed: todayDays,
           registrationDate: todayDays,
           lastLogin: todayDays,
+          lastLogin2: todayDash,
           userId: userCredential.user.uid,
           userRole: 'ed',
         };
         await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
         await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
+        await updateDataInNewUsersRTDB(userCredential.user.uid, { lastLogin2: todayDash }, 'update');
       }
 
       localStorage.setItem('isLoggedIn', 'true');
@@ -650,7 +658,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return acc;
       }, {});
 
-      const { todayDays } = getCurrentDate();
+      const { todayDays, todayDash } = getCurrentDate();
       const defaults = {};
       if (!existingData?.userRole) defaults.userRole = 'ed';
       if (!existingData?.userId) defaults.userId = user.uid;
@@ -658,11 +666,15 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!existingData?.registrationDate) defaults.registrationDate = todayDays;
       if (!existingData?.areTermsConfirmed) defaults.areTermsConfirmed = todayDays;
       if (!existingData?.lastLogin) defaults.lastLogin = todayDays;
+      if (!existingData?.lastLogin2) defaults.lastLogin2 = todayDash;
 
       if (Object.keys(defaults).length) {
         await updateDataInRealtimeDB(user.uid, defaults, 'update');
         await updateDataInFiresoreDB(user.uid, defaults, 'check');
+        await updateDataInNewUsersRTDB(user.uid, { lastLogin2: todayDash }, 'update');
         Object.assign(processedData, defaults);
+      } else {
+        await updateDataInNewUsersRTDB(user.uid, { lastLogin2: todayDash }, 'update');
       }
 
       console.log('processedData :>> ', processedData);

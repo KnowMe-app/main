@@ -190,6 +190,32 @@ export const fetchLatestUsers = async (limit = 9, lastKey) => {
   };
 };
 
+export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
+  const usersRef = ref2(database, 'newUsers');
+  const realLimit = limit + 1;
+  const q =
+    lastDate !== undefined
+      ? query(usersRef, orderByChild('lastLogin2'), endBefore(lastDate), limitToLast(realLimit))
+      : query(usersRef, orderByChild('lastLogin2'), limitToLast(realLimit));
+
+  const snapshot = await get(q);
+  if (!snapshot.exists()) {
+    return { users: [], lastKey: null, hasMore: false };
+  }
+
+  let entries = Object.entries(snapshot.val()).sort((a, b) => b[1].lastLogin2.localeCompare(a[1].lastLogin2));
+
+  const hasMore = entries.length > limit;
+  if (hasMore) entries = entries.slice(0, limit);
+  const lastEntry = entries[entries.length - 1];
+
+  return {
+    users: entries.map(([id, data]) => ({ userId: id, ...data })),
+    lastKey: lastEntry ? lastEntry[1].lastLogin2 : null,
+    hasMore,
+  };
+};
+
 // Favorites are stored per owner so multiple users can have their own lists
 // Add userId to the current owner's favorites list
 export const addFavoriteUser = async userId => {
@@ -2663,6 +2689,28 @@ export const fetchAllUsersFromRTDB = async () => {
   } catch (error) {
     console.error('Помилка при отриманні даних:', error);
     return null;
+  }
+};
+
+export const indexLastLogin = async () => {
+  const snap = await get(ref2(database, 'newUsers'));
+  if (!snap.exists()) return;
+  const data = snap.val();
+  const entries = Object.entries(data);
+  for (const [uid, user] of entries) {
+    const id = user.userId || uid;
+    if (id.length <= 20) continue;
+    let date = user.lastLogin2;
+    if (!date && typeof user.lastLogin === 'string') {
+      const parts = user.lastLogin.split('.');
+      if (parts.length === 3) {
+        const [dd, mm, yy] = parts;
+        date = `${yy}-${mm}-${dd}`;
+      }
+    }
+    if (!date) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await update(ref2(database, `newUsers/${id}`), { lastLogin2: date });
   }
 };
 

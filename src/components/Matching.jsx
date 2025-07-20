@@ -6,6 +6,7 @@ import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
 import {
   fetchLatestUsers,
+  fetchUsersByLastLogin2,
   getAllUserPhotos,
   fetchFavoriteUsersData,
   fetchDislikeUsersData,
@@ -17,6 +18,7 @@ import {
   setUserComment,
   database,
   auth,
+  updateDataInNewUsersRTDB,
 } from './config';
 import { onValue, ref as refDb } from 'firebase/database';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -28,9 +30,8 @@ import PhotoViewer from './PhotoViewer';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
-import InfoModal from './InfoModal';
-import { signOut } from 'firebase/auth';
-import { FaHeart, FaTimes, FaFilter, FaEllipsisV } from 'react-icons/fa';
+import { getCurrentDate } from './foramtDate';
+
 
 const Grid = styled.div`
   display: flex;
@@ -425,6 +426,9 @@ const Matching = () => {
         return;
       }
 
+      const { todayDash } = getCurrentDate();
+      updateDataInNewUsersRTDB(user.uid, { lastLogin2: todayDash }, 'update');
+
       const favRef = refDb(database, `multiData/favorites/${user.uid}`);
       const disRef = refDb(database, `multiData/dislikes/${user.uid}`);
 
@@ -462,7 +466,7 @@ const Matching = () => {
   }, [filters.role]);
 
   const fetchChunk = async (limit, key, exclude = new Set(), role) => {
-    const res = await fetchLatestUsers(limit + exclude.size + 1, key);
+    const res = await fetchUsersByLastLogin2(limit + exclude.size + 1, key);
     const filtered = res.users.filter(u => !exclude.has(u.userId) && roleMatchesFilter(u, role));
     const hasMore = filtered.length > limit || res.hasMore;
     const slice = filtered.slice(0, limit);
@@ -472,7 +476,7 @@ const Matching = () => {
         return { ...user, photos };
       })
     );
-    const lastKeyResult = slice.length > 0 ? slice[slice.length - 1].userId : res.lastKey;
+    const lastKeyResult = slice.length > 0 ? slice[slice.length - 1].lastLogin2 : res.lastKey;
     return { users: withPhotos, lastKey: lastKeyResult, hasMore };
   };
 
