@@ -348,6 +348,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   const [focused, setFocused] = useState(null);
   console.log('focused :>> ', focused);
   const navigate = useNavigate();
+  const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const moreInfoRef = useRef(null);
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
 
@@ -561,6 +562,13 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   const dotsMenu = () => {
     return (
       <>
+        {isAdmin && (
+          <>
+            <SubmitButton onClick={() => navigate('/my-profile')}>my-profile</SubmitButton>
+            <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>
+            <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>
+          </>
+        )}
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
         {!isEmailVerified && <VerifyEmail />}
