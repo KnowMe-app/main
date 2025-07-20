@@ -5,7 +5,6 @@ import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
 import {
-  fetchLatestUsers,
   fetchUsersByLastLogin2,
   getAllUserPhotos,
   fetchFavoriteUsersData,
