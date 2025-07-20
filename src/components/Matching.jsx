@@ -28,6 +28,9 @@ import PhotoViewer from './PhotoViewer';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
+import InfoModal from './InfoModal';
+import { signOut } from 'firebase/auth';
+import { FaHeart, FaTimes, FaFilter, FaEllipsisV } from 'react-icons/fa';
 
 const Grid = styled.div`
   display: flex;
@@ -123,6 +126,36 @@ const ActionButton = styled.button`
   display: flex;
   align-items: center;
   justify-content: center;
+`;
+
+const SubmitButton = styled.button`
+  padding: 10px 20px;
+  color: black;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  align-self: flex-start;
+  border-bottom: 1px solid #ddd;
+  width: 100%;
+  transition: background-color 0.3s ease;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background-color: #f5f5f5;
+  }
+`;
+
+const ExitButton = styled(SubmitButton)`
+  background: none;
+  border-bottom: none;
+  transition: background-color 0.3s ease;
+  &:hover {
+    background-color: #f5f5f5;
+  }
 `;
 
 const FilterOverlay = styled.div`
@@ -356,6 +389,7 @@ const Matching = () => {
   const [comments, setComments] = useState({});
   const [showUserCard, setShowUserCard] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
@@ -496,6 +530,18 @@ const Matching = () => {
     setLoading(false);
   };
 
+  const handleExit = async () => {
+    try {
+      localStorage.removeItem('isLoggedIn');
+      localStorage.removeItem('userEmail');
+      setShowInfoModal(false);
+      navigate('/my-profile');
+      await signOut(auth);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
   const loadMore = React.useCallback(async () => {
     if (!hasMore || loadingRef.current || viewMode !== 'default') return;
     loadingRef.current = true;
@@ -562,6 +608,19 @@ const Matching = () => {
     };
   }, [loadMore, filteredUsers.length, hasMore]);
 
+  const dotsMenu = () => (
+    <>
+      {isAdmin && (
+        <>
+          <SubmitButton onClick={() => navigate('/my-profile')}>my-profile</SubmitButton>
+          <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>
+          <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>
+        </>
+      )}
+      <SubmitButton onClick={handleExit}>Exit</SubmitButton>
+    </>
+  );
+
   return (
     <>
       {showFilters && <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />}
@@ -577,9 +636,10 @@ const Matching = () => {
       </FilterContainer>
       <div style={{ position: 'relative' }}>
         <TopActions>
-          <ActionButton onClick={loadFavoriteCards}>❤</ActionButton>
-          <ActionButton onClick={loadDislikeCards}>👎</ActionButton>
-          <ActionButton onClick={() => setShowFilters(s => !s)}>⚙</ActionButton>
+          <ActionButton onClick={() => setShowFilters(s => !s)}><FaFilter /></ActionButton>
+          <ActionButton onClick={loadDislikeCards}><FaTimes /></ActionButton>
+          <ActionButton onClick={loadFavoriteCards}><FaHeart /></ActionButton>
+          <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
         </TopActions>
         {isAdmin && <p style={{ textAlign: 'center', color: 'black' }}>{filteredUsers.length} карточок</p>}
 
@@ -717,6 +777,9 @@ const Matching = () => {
             />
           </div>
         </ModalOverlay>
+      )}
+      {showInfoModal && (
+        <InfoModal onClose={() => setShowInfoModal(false)} text="dotsMenu" Context={dotsMenu} />
       )}
     </>
   );
