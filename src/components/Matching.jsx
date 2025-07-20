@@ -82,7 +82,7 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 const Card = styled.div`
   width: 100%;
   height: 40vh;
-  background-color: orange;
+  background: linear-gradient(135deg, orange, yellow);
   background-size: cover;
   background-position: center;
   border-radius: 0;
