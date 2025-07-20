@@ -39,6 +39,7 @@ const Grid = styled.div`
 const CardWrapper = styled.div`
   width: 100%;
   border: 2px solid ${color.gray3};
+  border-radius: 8px;
   box-sizing: border-box;
   border-radius: 8px;
   overflow: hidden;
@@ -49,6 +50,8 @@ const CommentInput = styled.textarea`
   margin-top: ${props => props.mt || '0'};
   display: block;
   box-sizing: border-box;
+  margin-left: auto;
+  margin-right: auto;
 `;
 
 const Card = styled.div`

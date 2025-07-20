@@ -307,14 +307,18 @@ export const fetchUserComment = async (ownerId, userId) => {
 };
 
 const addUserFromUsers = async (userId, users) => {
-  // Try to load user from the main collection first
-  let snap = await get(ref2(database, `users/${userId}`));
-  if (!snap.exists()) {
-    // Fallback to newUsers collection
-    snap = await get(ref2(database, `newUsers/${userId}`));
-  }
-  if (snap.exists()) {
-    users[userId] = { userId, ...snap.val() };
+  const userSnap = await get(ref2(database, `users/${userId}`));
+  const newUserSnap = await get(ref2(database, `newUsers/${userId}`));
+
+  const userData = userSnap.exists() ? userSnap.val() : {};
+  const newUserData = newUserSnap.exists() ? newUserSnap.val() : {};
+
+  if (userSnap.exists() || newUserSnap.exists()) {
+    users[userId] = {
+      userId,
+      ...newUserData,
+      ...userData,
+    };
   }
 };
 
@@ -338,7 +342,7 @@ const searchBySearchIdUsers = async (modifiedSearchValue, uniqueUserIds, users) 
         for (const [, val] of Object.entries(snap.val())) {
           const ids = Array.isArray(val) ? val : [val];
           for (const id of ids) {
-            if (!uniqueUserIds.has(id)) {
+            if (id.length > 20 && !uniqueUserIds.has(id)) {
               uniqueUserIds.add(id);
               await addUserFromUsers(id, users);
             }
@@ -366,7 +370,12 @@ const searchByPrefixesUsers = async (searchValue, uniqueUserIds, users) => {
           let fieldValue = userData[prefix];
           if (typeof fieldValue === 'string') fieldValue = fieldValue.trim();
           else return;
-          if (fieldValue && fieldValue.toLowerCase().includes(formatted.toLowerCase()) && !uniqueUserIds.has(userId)) {
+          if (
+            fieldValue &&
+            fieldValue.toLowerCase().includes(formatted.toLowerCase()) &&
+            userId.length > 20 &&
+            !uniqueUserIds.has(userId)
+          ) {
             uniqueUserIds.add(userId);
             users[userId] = { userId, ...userData };
           }
@@ -384,7 +393,7 @@ const searchUserByPartialUserIdUsers = async (userId, users) => {
     if (snapshot.exists()) {
       snapshot.forEach(userSnapshot => {
         const currentUserId = userSnapshot.key;
-        if (currentUserId.includes(userId)) {
+        if (currentUserId.includes(userId) && currentUserId.length > 20) {
           users[currentUserId] = { userId: currentUserId, ...userSnapshot.val() };
         }
       });
@@ -405,6 +414,10 @@ export const searchUsersOnly = async searchedValue => {
     await searchBySearchIdUsers(modifiedSearchValue, uniqueUserIds, users);
     await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
     await searchUserByPartialUserIdUsers(searchValue, users);
+    for (const id of Object.keys(users)) {
+      if (id.length <= 20) delete users[id];
+    }
+
     if (Object.keys(users).length === 1) {
       const id = Object.keys(users)[0];
       return users[id];
