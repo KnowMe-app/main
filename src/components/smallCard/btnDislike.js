@@ -69,6 +69,7 @@ export const BtnDislike = ({
           isDisliked ? color.iconActive : color.iconInactive
         }`,
         color: isDisliked ? color.iconActive : color.iconInactive,
+        zIndex: 1,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
