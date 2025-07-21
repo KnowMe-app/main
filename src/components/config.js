@@ -800,12 +800,18 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
   }
 };
 
-export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) => {
+export const updateDataInNewUsersRTDB = async (
+  userId,
+  uploadedInfo,
+  condition,
+  skipIndexing = false
+) => {
   try {
     const userRefRTDB = ref2(database, `newUsers/${userId}`);
-    const snapshot = await get(userRefRTDB);
-    const currentUserData = snapshot.exists() ? snapshot.val() : {};
+  const snapshot = await get(userRefRTDB);
+  const currentUserData = snapshot.exists() ? snapshot.val() : {};
 
+  if (!skipIndexing) {
     // Перебір ключів та їх обробка
     for (const key of keysToCheck) {
       const isEmptyString = uploadedInfo[key] === '';
@@ -895,88 +901,91 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
         }
       }
     }
+  }
 
     const newUserData = { ...currentUserData, ...uploadedInfo };
 
-    const oldBlood = currentUserData.blood;
-    const newBlood = newUserData.blood;
-    if (oldBlood !== newBlood) {
-      if (oldBlood) await updateBloodIndex(getBloodIndexCategory(oldBlood), userId, 'remove');
-      if (newBlood) await updateBloodIndex(getBloodIndexCategory(newBlood), userId, 'add');
+    if (!skipIndexing) {
+      const oldBlood = currentUserData.blood;
+      const newBlood = newUserData.blood;
+      if (oldBlood !== newBlood) {
+        if (oldBlood) await updateBloodIndex(getBloodIndexCategory(oldBlood), userId, 'remove');
+        if (newBlood) await updateBloodIndex(getBloodIndexCategory(newBlood), userId, 'add');
+      }
+
+      const oldMarital = getMaritalStatusCategory(currentUserData);
+      const newMarital = getMaritalStatusCategory(newUserData);
+      if (oldMarital !== newMarital) {
+        await updateMaritalIndex(oldMarital, userId, 'remove');
+        await updateMaritalIndex(newMarital, userId, 'add');
+      }
+
+      const oldCs = categorizeCsection(currentUserData.csection);
+      const newCs = categorizeCsection(newUserData.csection);
+      if (oldCs !== newCs) {
+        await updateCsectionIndex(oldCs, userId, 'remove');
+        await updateCsectionIndex(newCs, userId, 'add');
+      }
+
+      const oldUserCat = getUserIdCategory(currentUserData.userId || userId);
+      const newUserCat = getUserIdCategory(newUserData.userId || userId);
+      if (oldUserCat !== newUserCat) {
+        await updateUserIdIndex(oldUserCat, userId, 'remove');
+        await updateUserIdIndex(newUserCat, userId, 'add');
+      }
+
+      const oldFields = getFieldCountCategory(currentUserData);
+      const newFields = getFieldCountCategory(newUserData);
+      if (oldFields !== newFields) {
+        await updateFieldsIndex(oldFields, userId, 'remove');
+        await updateFieldsIndex(newFields, userId, 'add');
+      }
+
+      const oldComment = getCommentLengthCategory(currentUserData.myComment);
+      const newComment = getCommentLengthCategory(newUserData.myComment);
+      if (oldComment !== newComment) {
+        await updateCommentWordsIndex(oldComment, userId, 'remove');
+        await updateCommentWordsIndex(newComment, userId, 'add');
+      }
+
+      const oldAge = getAgeCategory(currentUserData);
+      const newAge = getAgeCategory(newUserData);
+      if (oldAge !== newAge) {
+        await updateAgeIndex(oldAge, userId, 'remove');
+        await updateAgeIndex(newAge, userId, 'add');
+      }
+
+      const oldBmi = getBmiCategory(currentUserData);
+      const newBmi = getBmiCategory(newUserData);
+      if (oldBmi !== newBmi) {
+        await updateBmiIndex(oldBmi, userId, 'remove');
+        await updateBmiIndex(newBmi, userId, 'add');
+      }
+
+      const oldCountry = getCountryCategory(currentUserData);
+      const newCountry = getCountryCategory(newUserData);
+      if (oldCountry !== newCountry) {
+        await updateCountryIndex(oldCountry, userId, 'remove');
+        await updateCountryIndex(newCountry, userId, 'add');
+      }
+
+      const oldRole = getRoleCategory(currentUserData);
+      const newRole = getRoleCategory(newUserData);
+      if (oldRole !== newRole) {
+        await updateRoleIndex(oldRole, userId, 'remove');
+        await updateRoleIndex(newRole, userId, 'add');
+      }
+
+      const oldTouch = getGetInTouchKeys(currentUserData);
+      const newTouch = getGetInTouchKeys(newUserData);
+      await updateGetInTouchIndex(oldTouch, userId, 'remove');
+      await updateGetInTouchIndex(newTouch, userId, 'add');
+
+      const oldBirth = getBirthKeys(currentUserData);
+      const newBirth = getBirthKeys(newUserData);
+      await updateBirthIndex(oldBirth, userId, 'remove');
+      await updateBirthIndex(newBirth, userId, 'add');
     }
-
-    const oldMarital = getMaritalStatusCategory(currentUserData);
-    const newMarital = getMaritalStatusCategory(newUserData);
-    if (oldMarital !== newMarital) {
-      await updateMaritalIndex(oldMarital, userId, 'remove');
-      await updateMaritalIndex(newMarital, userId, 'add');
-    }
-
-    const oldCs = categorizeCsection(currentUserData.csection);
-    const newCs = categorizeCsection(newUserData.csection);
-    if (oldCs !== newCs) {
-      await updateCsectionIndex(oldCs, userId, 'remove');
-      await updateCsectionIndex(newCs, userId, 'add');
-    }
-
-    const oldUserCat = getUserIdCategory(currentUserData.userId || userId);
-    const newUserCat = getUserIdCategory(newUserData.userId || userId);
-    if (oldUserCat !== newUserCat) {
-      await updateUserIdIndex(oldUserCat, userId, 'remove');
-      await updateUserIdIndex(newUserCat, userId, 'add');
-    }
-
-    const oldFields = getFieldCountCategory(currentUserData);
-    const newFields = getFieldCountCategory(newUserData);
-    if (oldFields !== newFields) {
-      await updateFieldsIndex(oldFields, userId, 'remove');
-      await updateFieldsIndex(newFields, userId, 'add');
-    }
-
-    const oldComment = getCommentLengthCategory(currentUserData.myComment);
-    const newComment = getCommentLengthCategory(newUserData.myComment);
-    if (oldComment !== newComment) {
-      await updateCommentWordsIndex(oldComment, userId, 'remove');
-      await updateCommentWordsIndex(newComment, userId, 'add');
-    }
-
-    const oldAge = getAgeCategory(currentUserData);
-    const newAge = getAgeCategory(newUserData);
-    if (oldAge !== newAge) {
-      await updateAgeIndex(oldAge, userId, 'remove');
-      await updateAgeIndex(newAge, userId, 'add');
-    }
-
-    const oldBmi = getBmiCategory(currentUserData);
-    const newBmi = getBmiCategory(newUserData);
-    if (oldBmi !== newBmi) {
-      await updateBmiIndex(oldBmi, userId, 'remove');
-      await updateBmiIndex(newBmi, userId, 'add');
-    }
-
-    const oldCountry = getCountryCategory(currentUserData);
-    const newCountry = getCountryCategory(newUserData);
-    if (oldCountry !== newCountry) {
-      await updateCountryIndex(oldCountry, userId, 'remove');
-      await updateCountryIndex(newCountry, userId, 'add');
-    }
-
-    const oldRole = getRoleCategory(currentUserData);
-    const newRole = getRoleCategory(newUserData);
-    if (oldRole !== newRole) {
-      await updateRoleIndex(oldRole, userId, 'remove');
-      await updateRoleIndex(newRole, userId, 'add');
-    }
-
-    const oldTouch = getGetInTouchKeys(currentUserData);
-    const newTouch = getGetInTouchKeys(newUserData);
-    await updateGetInTouchIndex(oldTouch, userId, 'remove');
-    await updateGetInTouchIndex(newTouch, userId, 'add');
-
-    const oldBirth = getBirthKeys(currentUserData);
-    const newBirth = getBirthKeys(newUserData);
-    await updateBirthIndex(oldBirth, userId, 'remove');
-    await updateBirthIndex(newBirth, userId, 'add');
 
     // Оновлення користувача в базі
 
