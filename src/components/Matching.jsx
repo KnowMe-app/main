@@ -303,7 +303,8 @@ const Table = styled.div`
 const MoreInfo = styled.div`
   background-color: ${color.paleAccent2};
   padding: 10px;
-  border-left: 4px solid ${color.accent};
+  border-left: 4px solid
+    ${props => (props.$isAdmin ? color.red : color.accent)};
   margin-bottom: 10px;
   font-size: 14px;
 `;
@@ -720,8 +721,8 @@ const Matching = () => {
               </Info>
             </ProfileSection>
             <Table>{renderSelectedFields(selected)}</Table>
-            {getCurrentValue(selected.myComment) && (
-              <MoreInfo>
+            {isAdmin && getCurrentValue(selected.myComment) && (
+              <MoreInfo $isAdmin={isAdmin}>
                 <strong>More information</strong>
                 <br />
                 {getCurrentValue(selected.myComment)}
