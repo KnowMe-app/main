@@ -52,6 +52,8 @@ const CommentInput = styled.textarea`
   box-sizing: border-box;
   margin-left: auto;
   margin-right: auto;
+  border: ${props => (props.plain ? 'none' : `1px solid ${color.gray3}`)};
+  border-radius: ${props => (props.plain ? '0' : '8px')};
 `;
 
 const Card = styled.div`
@@ -581,6 +583,7 @@ const Matching = () => {
                   />
                 </Card>
                 <CommentInput
+                  plain
                   value={comments[user.userId] || ''}
                   onClick={e => e.stopPropagation()}
                   onChange={e => {
