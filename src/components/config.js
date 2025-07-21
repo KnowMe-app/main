@@ -2693,31 +2693,59 @@ export const fetchAllUsersFromRTDB = async () => {
 };
 
 export const indexLastLogin = async onProgress => {
-  const snap = await get(ref2(database, 'newUsers'));
-  if (!snap.exists()) return;
-  const data = snap.val();
-  const entries = Object.entries(data);
+  const [newUsersSnap, usersSnap] = await Promise.all([
+    get(ref2(database, 'newUsers')),
+    get(ref2(database, 'users')),
+  ]);
+  if (!newUsersSnap.exists()) return;
+
+  const newUsersData = newUsersSnap.val();
+  const usersData = usersSnap.exists() ? usersSnap.val() : {};
+
+  const entries = Object.entries(newUsersData);
   const total = entries.length;
   let processed = 0;
   let lastProgress = 0;
+
+  const parseDate = str => {
+    const parts = str.split('.');
+    if (parts.length === 3) {
+      const [dd, mm, yy] = parts;
+      return `${yy}-${mm}-${dd}`;
+    }
+    return null;
+  };
+
   for (const [uid, user] of entries) {
     const id = user.userId || uid;
     if (id.length <= 20) {
       processed += 1;
       continue;
     }
+
     let date = user.lastLogin2;
+
     if (!date && typeof user.lastLogin === 'string') {
-      const parts = user.lastLogin.split('.');
-      if (parts.length === 3) {
-        const [dd, mm, yy] = parts;
-        date = `${yy}-${mm}-${dd}`;
+      date = parseDate(user.lastLogin);
+    }
+
+    if (!date) {
+      const other = usersData[id];
+      if (other) {
+        if (typeof other.lastLogin === 'string') {
+          date = parseDate(other.lastLogin);
+        }
+        if (!date && typeof other.createdAt === 'string') {
+          date = parseDate(other.createdAt);
+        }
       }
     }
+
     if (date) {
       // eslint-disable-next-line no-await-in-loop
       await update(ref2(database, `newUsers/${id}`), { lastLogin2: date });
     }
+
     processed += 1;
     const progress = Math.floor((processed / total) * 100);
     if (onProgress && progress % 10 === 0 && progress !== lastProgress) {
