@@ -10,6 +10,8 @@ import {
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { ProfileForm } from './ProfileForm';
+import { renderTopBlock } from "./smallCard/renderTopBlock";
+import { coloredCard } from "./styles";
 
 const Container = styled.div`
   display: flex;
@@ -121,6 +123,9 @@ const EditProfile = () => {
   return (
     <Container>
       <BackButton onClick={() => navigate(-1)}>Back</BackButton>
+      <div style={{ ...coloredCard() }}>
+        {renderTopBlock(state, () => {}, () => {}, setState)}
+      </div>
       <ProfileForm
         state={state}
         setState={setState}
