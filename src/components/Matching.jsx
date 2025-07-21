@@ -87,6 +87,22 @@ const Card = styled.div`
   background-position: center;
   border-radius: 0;
   position: relative;
+  overflow: hidden;
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 20%;
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.5) 100%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
 `;
 
 const loadingWave = keyframes`
