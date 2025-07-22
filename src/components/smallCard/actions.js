@@ -71,7 +71,7 @@ export const handleChange = (
 export const handleSubmit = async userData => {
   const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
   const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
-  const commonFields = ['lastAction'];
+  const commonFields = ['lastAction', 'lastLogin2'];
   const dublicateFields = ['weight', 'height'];
 
   // console.log('userData В handleSubmit', userData);
