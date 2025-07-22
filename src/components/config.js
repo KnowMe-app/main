@@ -191,7 +191,7 @@ export const fetchLatestUsers = async (limit = 9, lastKey) => {
 };
 
 export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
-  const usersRef = ref2(database, 'newUsers');
+  const usersRef = ref2(database, 'users');
   const realLimit = limit + 1;
   const q =
     lastDate !== undefined
@@ -999,6 +999,14 @@ export const updateDataInNewUsersRTDB = async (
     } else {
       console.log('set :>> ');
       await set(userRefRTDB, { ...uploadedInfo });
+    }
+
+    if (uploadedInfo.lastLogin2 !== undefined) {
+      try {
+        await update(ref2(database, `users/${userId}`), { lastLogin2: uploadedInfo.lastLogin2 });
+      } catch (e) {
+        console.error('Error updating lastLogin2 in users:', e);
+      }
     }
   } catch (error) {
     console.error('Сталася помилка під час збереження даних в Realtime Database3:', error);
@@ -2760,6 +2768,8 @@ export const indexLastLogin = async onProgress => {
     if (date) {
       // eslint-disable-next-line no-await-in-loop
       await update(ref2(database, `newUsers/${id}`), { lastLogin2: date });
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref2(database, `users/${id}`), { lastLogin2: date });
     }
 
     processed += 1;
