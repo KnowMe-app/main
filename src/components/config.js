@@ -2729,11 +2729,18 @@ export const indexLastLogin = async onProgress => {
       date = parseDate(user.lastLogin);
     }
 
+    if (!date && typeof user.registrationDate === 'string') {
+      date = parseDate(user.registrationDate);
+    }
+
     if (!date) {
       const other = usersData[id];
       if (other) {
         if (typeof other.lastLogin === 'string') {
           date = parseDate(other.lastLogin);
+        }
+        if (!date && typeof other.registrationDate === 'string') {
+          date = parseDate(other.registrationDate);
         }
         if (!date && typeof other.createdAt === 'string') {
           date = parseDate(other.createdAt);
