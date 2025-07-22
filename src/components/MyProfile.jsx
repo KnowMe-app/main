@@ -7,7 +7,6 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import {
   updateDataInFiresoreDB,
   updateDataInRealtimeDB,
-  updateDataInNewUsersRTDB,
 } from './config';
 import { pickerFields } from './formFields';
 import {
@@ -561,12 +560,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         };
         await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
         await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
-        await updateDataInNewUsersRTDB(
-          userCredential.user.uid,
-          { lastLogin2: todayDash },
-          'update',
-          true
-        );
       } else {
         userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
         await sendEmailVerification(userCredential.user);
@@ -581,12 +574,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         };
         await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
         await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
-        await updateDataInNewUsersRTDB(
-          userCredential.user.uid,
-          { lastLogin2: todayDash },
-          'update',
-          true
-        );
       }
 
       localStorage.setItem('isLoggedIn', 'true');
@@ -681,20 +668,10 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (Object.keys(defaults).length) {
         await updateDataInRealtimeDB(user.uid, defaults, 'update');
         await updateDataInFiresoreDB(user.uid, defaults, 'check');
-        await updateDataInNewUsersRTDB(
-          user.uid,
-          { lastLogin2: todayDash },
-          'update',
-          true
-        );
+        await updateDataInRealtimeDB(user.uid, { lastLogin2: todayDash }, 'update');
         Object.assign(processedData, defaults);
       } else {
-        await updateDataInNewUsersRTDB(
-          user.uid,
-          { lastLogin2: todayDash },
-          'update',
-          true
-        );
+        await updateDataInRealtimeDB(user.uid, { lastLogin2: todayDash }, 'update');
       }
 
       console.log('processedData :>> ', processedData);
