@@ -5,7 +5,7 @@ import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
 import {
-  fetchUsersByLastLogin2,
+  fetchUsersByLastLoginPaged,
   getAllUserPhotos,
   fetchFavoriteUsersData,
   fetchDislikeUsersData,
@@ -397,7 +397,7 @@ const roleMatchesFilter = (user, filter) => {
 const Matching = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
-  const [lastKey, setLastKey] = useState();
+  const [lastKey, setLastKey] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [selected, setSelected] = useState(null);
   const [showPhoto, setShowPhoto] = useState(false);
@@ -485,8 +485,8 @@ const Matching = () => {
     }
   }, [filters.role]);
 
-  const fetchChunk = async (limit, key, exclude = new Set(), role) => {
-    const res = await fetchUsersByLastLogin2(limit + exclude.size + 1, key);
+  const fetchChunk = async (limit, offset, exclude = new Set(), role) => {
+    const res = await fetchUsersByLastLoginPaged(offset, limit + exclude.size + 1);
     const filtered = res.users.filter(u => !exclude.has(u.userId) && roleMatchesFilter(u, role));
     const hasMore = filtered.length > limit || res.hasMore;
     const slice = filtered.slice(0, limit);
@@ -496,7 +496,7 @@ const Matching = () => {
         return { ...user, photos };
       })
     );
-    const lastKeyResult = slice.length > 0 ? slice[slice.length - 1].lastLogin2 : res.lastKey;
+    const lastKeyResult = res.lastKey;
     return { users: withPhotos, lastKey: lastKeyResult, hasMore };
   };
 
@@ -513,7 +513,7 @@ const Matching = () => {
         setDislikeUsers(disIds);
         exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
       }
-      const res = await fetchChunk(INITIAL_LOAD, undefined, exclude, roleFilter);
+      const res = await fetchChunk(INITIAL_LOAD, 0, exclude, roleFilter);
       loadedIdsRef.current = new Set(res.users.map(u => u.userId));
       setUsers(res.users);
       await loadCommentsFor(res.users);

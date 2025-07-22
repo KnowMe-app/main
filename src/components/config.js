@@ -2842,3 +2842,4 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
 }
 
 export { fetchFilteredUsersByPage } from './dateLoad';
+export { fetchUsersByLastLoginPaged } from './lastLoginLoad';
