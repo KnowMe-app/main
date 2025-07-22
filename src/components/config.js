@@ -23,6 +23,7 @@ import {
   runTransaction,
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE } from './constants';
+import { getCurrentDate } from './foramtDate';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -193,10 +194,11 @@ export const fetchLatestUsers = async (limit = 9, lastKey) => {
 export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
   const usersRef = ref2(database, 'users');
   const realLimit = limit + 1;
+  const { todayDash } = getCurrentDate();
   const q =
     lastDate !== undefined
       ? query(usersRef, orderByChild('lastLogin2'), endBefore(lastDate), limitToLast(realLimit))
-      : query(usersRef, orderByChild('lastLogin2'), limitToLast(realLimit));
+      : query(usersRef, orderByChild('lastLogin2'), endAt(todayDash), limitToLast(realLimit));
 
   const snapshot = await get(q);
   if (!snapshot.exists()) {
