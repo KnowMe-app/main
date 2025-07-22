@@ -190,6 +190,32 @@ export const fetchLatestUsers = async (limit = 9, lastKey) => {
   };
 };
 
+export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
+  const usersRef = ref2(database, 'newUsers');
+  const realLimit = limit + 1;
+  const q =
+    lastDate !== undefined
+      ? query(usersRef, orderByChild('lastLogin2'), endBefore(lastDate), limitToLast(realLimit))
+      : query(usersRef, orderByChild('lastLogin2'), limitToLast(realLimit));
+
+  const snapshot = await get(q);
+  if (!snapshot.exists()) {
+    return { users: [], lastKey: null, hasMore: false };
+  }
+
+  let entries = Object.entries(snapshot.val()).sort((a, b) => b[1].lastLogin2.localeCompare(a[1].lastLogin2));
+
+  const hasMore = entries.length > limit;
+  if (hasMore) entries = entries.slice(0, limit);
+  const lastEntry = entries[entries.length - 1];
+
+  return {
+    users: entries.map(([id, data]) => ({ userId: id, ...data })),
+    lastKey: lastEntry ? lastEntry[1].lastLogin2 : null,
+    hasMore,
+  };
+};
+
 // Favorites are stored per owner so multiple users can have their own lists
 // Add userId to the current owner's favorites list
 export const addFavoriteUser = async userId => {
@@ -774,12 +800,18 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
   }
 };
 
-export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) => {
+export const updateDataInNewUsersRTDB = async (
+  userId,
+  uploadedInfo,
+  condition,
+  skipIndexing = false
+) => {
   try {
     const userRefRTDB = ref2(database, `newUsers/${userId}`);
-    const snapshot = await get(userRefRTDB);
-    const currentUserData = snapshot.exists() ? snapshot.val() : {};
+  const snapshot = await get(userRefRTDB);
+  const currentUserData = snapshot.exists() ? snapshot.val() : {};
 
+  if (!skipIndexing) {
     // Перебір ключів та їх обробка
     for (const key of keysToCheck) {
       const isEmptyString = uploadedInfo[key] === '';
@@ -869,88 +901,91 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition) 
         }
       }
     }
+  }
 
     const newUserData = { ...currentUserData, ...uploadedInfo };
 
-    const oldBlood = currentUserData.blood;
-    const newBlood = newUserData.blood;
-    if (oldBlood !== newBlood) {
-      if (oldBlood) await updateBloodIndex(getBloodIndexCategory(oldBlood), userId, 'remove');
-      if (newBlood) await updateBloodIndex(getBloodIndexCategory(newBlood), userId, 'add');
+    if (!skipIndexing) {
+      const oldBlood = currentUserData.blood;
+      const newBlood = newUserData.blood;
+      if (oldBlood !== newBlood) {
+        if (oldBlood) await updateBloodIndex(getBloodIndexCategory(oldBlood), userId, 'remove');
+        if (newBlood) await updateBloodIndex(getBloodIndexCategory(newBlood), userId, 'add');
+      }
+
+      const oldMarital = getMaritalStatusCategory(currentUserData);
+      const newMarital = getMaritalStatusCategory(newUserData);
+      if (oldMarital !== newMarital) {
+        await updateMaritalIndex(oldMarital, userId, 'remove');
+        await updateMaritalIndex(newMarital, userId, 'add');
+      }
+
+      const oldCs = categorizeCsection(currentUserData.csection);
+      const newCs = categorizeCsection(newUserData.csection);
+      if (oldCs !== newCs) {
+        await updateCsectionIndex(oldCs, userId, 'remove');
+        await updateCsectionIndex(newCs, userId, 'add');
+      }
+
+      const oldUserCat = getUserIdCategory(currentUserData.userId || userId);
+      const newUserCat = getUserIdCategory(newUserData.userId || userId);
+      if (oldUserCat !== newUserCat) {
+        await updateUserIdIndex(oldUserCat, userId, 'remove');
+        await updateUserIdIndex(newUserCat, userId, 'add');
+      }
+
+      const oldFields = getFieldCountCategory(currentUserData);
+      const newFields = getFieldCountCategory(newUserData);
+      if (oldFields !== newFields) {
+        await updateFieldsIndex(oldFields, userId, 'remove');
+        await updateFieldsIndex(newFields, userId, 'add');
+      }
+
+      const oldComment = getCommentLengthCategory(currentUserData.myComment);
+      const newComment = getCommentLengthCategory(newUserData.myComment);
+      if (oldComment !== newComment) {
+        await updateCommentWordsIndex(oldComment, userId, 'remove');
+        await updateCommentWordsIndex(newComment, userId, 'add');
+      }
+
+      const oldAge = getAgeCategory(currentUserData);
+      const newAge = getAgeCategory(newUserData);
+      if (oldAge !== newAge) {
+        await updateAgeIndex(oldAge, userId, 'remove');
+        await updateAgeIndex(newAge, userId, 'add');
+      }
+
+      const oldBmi = getBmiCategory(currentUserData);
+      const newBmi = getBmiCategory(newUserData);
+      if (oldBmi !== newBmi) {
+        await updateBmiIndex(oldBmi, userId, 'remove');
+        await updateBmiIndex(newBmi, userId, 'add');
+      }
+
+      const oldCountry = getCountryCategory(currentUserData);
+      const newCountry = getCountryCategory(newUserData);
+      if (oldCountry !== newCountry) {
+        await updateCountryIndex(oldCountry, userId, 'remove');
+        await updateCountryIndex(newCountry, userId, 'add');
+      }
+
+      const oldRole = getRoleCategory(currentUserData);
+      const newRole = getRoleCategory(newUserData);
+      if (oldRole !== newRole) {
+        await updateRoleIndex(oldRole, userId, 'remove');
+        await updateRoleIndex(newRole, userId, 'add');
+      }
+
+      const oldTouch = getGetInTouchKeys(currentUserData);
+      const newTouch = getGetInTouchKeys(newUserData);
+      await updateGetInTouchIndex(oldTouch, userId, 'remove');
+      await updateGetInTouchIndex(newTouch, userId, 'add');
+
+      const oldBirth = getBirthKeys(currentUserData);
+      const newBirth = getBirthKeys(newUserData);
+      await updateBirthIndex(oldBirth, userId, 'remove');
+      await updateBirthIndex(newBirth, userId, 'add');
     }
-
-    const oldMarital = getMaritalStatusCategory(currentUserData);
-    const newMarital = getMaritalStatusCategory(newUserData);
-    if (oldMarital !== newMarital) {
-      await updateMaritalIndex(oldMarital, userId, 'remove');
-      await updateMaritalIndex(newMarital, userId, 'add');
-    }
-
-    const oldCs = categorizeCsection(currentUserData.csection);
-    const newCs = categorizeCsection(newUserData.csection);
-    if (oldCs !== newCs) {
-      await updateCsectionIndex(oldCs, userId, 'remove');
-      await updateCsectionIndex(newCs, userId, 'add');
-    }
-
-    const oldUserCat = getUserIdCategory(currentUserData.userId || userId);
-    const newUserCat = getUserIdCategory(newUserData.userId || userId);
-    if (oldUserCat !== newUserCat) {
-      await updateUserIdIndex(oldUserCat, userId, 'remove');
-      await updateUserIdIndex(newUserCat, userId, 'add');
-    }
-
-    const oldFields = getFieldCountCategory(currentUserData);
-    const newFields = getFieldCountCategory(newUserData);
-    if (oldFields !== newFields) {
-      await updateFieldsIndex(oldFields, userId, 'remove');
-      await updateFieldsIndex(newFields, userId, 'add');
-    }
-
-    const oldComment = getCommentLengthCategory(currentUserData.myComment);
-    const newComment = getCommentLengthCategory(newUserData.myComment);
-    if (oldComment !== newComment) {
-      await updateCommentWordsIndex(oldComment, userId, 'remove');
-      await updateCommentWordsIndex(newComment, userId, 'add');
-    }
-
-    const oldAge = getAgeCategory(currentUserData);
-    const newAge = getAgeCategory(newUserData);
-    if (oldAge !== newAge) {
-      await updateAgeIndex(oldAge, userId, 'remove');
-      await updateAgeIndex(newAge, userId, 'add');
-    }
-
-    const oldBmi = getBmiCategory(currentUserData);
-    const newBmi = getBmiCategory(newUserData);
-    if (oldBmi !== newBmi) {
-      await updateBmiIndex(oldBmi, userId, 'remove');
-      await updateBmiIndex(newBmi, userId, 'add');
-    }
-
-    const oldCountry = getCountryCategory(currentUserData);
-    const newCountry = getCountryCategory(newUserData);
-    if (oldCountry !== newCountry) {
-      await updateCountryIndex(oldCountry, userId, 'remove');
-      await updateCountryIndex(newCountry, userId, 'add');
-    }
-
-    const oldRole = getRoleCategory(currentUserData);
-    const newRole = getRoleCategory(newUserData);
-    if (oldRole !== newRole) {
-      await updateRoleIndex(oldRole, userId, 'remove');
-      await updateRoleIndex(newRole, userId, 'add');
-    }
-
-    const oldTouch = getGetInTouchKeys(currentUserData);
-    const newTouch = getGetInTouchKeys(newUserData);
-    await updateGetInTouchIndex(oldTouch, userId, 'remove');
-    await updateGetInTouchIndex(newTouch, userId, 'add');
-
-    const oldBirth = getBirthKeys(currentUserData);
-    const newBirth = getBirthKeys(newUserData);
-    await updateBirthIndex(oldBirth, userId, 'remove');
-    await updateBirthIndex(newBirth, userId, 'add');
 
     // Оновлення користувача в базі
 
@@ -2663,6 +2698,76 @@ export const fetchAllUsersFromRTDB = async () => {
   } catch (error) {
     console.error('Помилка при отриманні даних:', error);
     return null;
+  }
+};
+
+export const indexLastLogin = async onProgress => {
+  const [newUsersSnap, usersSnap] = await Promise.all([
+    get(ref2(database, 'newUsers')),
+    get(ref2(database, 'users')),
+  ]);
+  if (!newUsersSnap.exists()) return;
+
+  const newUsersData = newUsersSnap.val();
+  const usersData = usersSnap.exists() ? usersSnap.val() : {};
+
+  const entries = Object.entries(newUsersData);
+  const total = entries.length;
+  let processed = 0;
+  let lastProgress = 0;
+
+  const parseDate = str => {
+    const parts = str.split('.');
+    if (parts.length === 3) {
+      const [dd, mm, yy] = parts;
+      return `${yy}-${mm}-${dd}`;
+    }
+    return null;
+  };
+
+  for (const [uid, user] of entries) {
+    const id = user.userId || uid;
+    if (id.length <= 20) {
+      processed += 1;
+      continue;
+    }
+
+    let date = user.lastLogin2;
+
+    if (!date && typeof user.lastLogin === 'string') {
+      date = parseDate(user.lastLogin);
+    }
+
+    if (!date && typeof user.registrationDate === 'string') {
+      date = parseDate(user.registrationDate);
+    }
+
+    if (!date) {
+      const other = usersData[id];
+      if (other) {
+        if (typeof other.lastLogin === 'string') {
+          date = parseDate(other.lastLogin);
+        }
+        if (!date && typeof other.registrationDate === 'string') {
+          date = parseDate(other.registrationDate);
+        }
+        if (!date && typeof other.createdAt === 'string') {
+          date = parseDate(other.createdAt);
+        }
+      }
+    }
+
+    if (date) {
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref2(database, `newUsers/${id}`), { lastLogin2: date });
+    }
+
+    processed += 1;
+    const progress = Math.floor((processed / total) * 100);
+    if (onProgress && progress % 10 === 0 && progress !== lastProgress) {
+      onProgress(progress);
+      lastProgress = progress;
+    }
   }
 };
 

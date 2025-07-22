@@ -1,8 +1,20 @@
 import React from 'react';
-import { addFavoriteUser, removeFavoriteUser, auth } from '../config';
+import {
+  addFavoriteUser,
+  removeFavoriteUser,
+  removeDislikeUser,
+  auth,
+} from '../config';
 import { color } from '../styles';
 
-export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers, onRemove }) => {
+export const BtnFavorite = ({
+  userId,
+  favoriteUsers = {},
+  setFavoriteUsers,
+  onRemove,
+  dislikeUsers = {},
+  setDislikeUsers,
+}) => {
   const isFavorite = !!favoriteUsers[userId];
 
   const toggleFavorite = async () => {
@@ -24,6 +36,17 @@ export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers, onRe
       try {
         await addFavoriteUser(userId);
         setFavoriteUsers({ ...favoriteUsers, [userId]: true });
+        if (dislikeUsers[userId]) {
+          try {
+            await removeDislikeUser(userId);
+          } catch (err) {
+            console.error('Failed to remove dislike when adding favorite:', err);
+          }
+          const upd = { ...dislikeUsers };
+          delete upd[userId];
+          if (setDislikeUsers) setDislikeUsers(upd);
+          if (onRemove) onRemove(userId);
+        }
       } catch (error) {
         console.error('Failed to add favorite:', error);
       }
@@ -44,6 +67,7 @@ export const BtnFavorite = ({ userId, favoriteUsers = {}, setFavoriteUsers, onRe
           isFavorite ? color.iconActive : color.iconInactive
         }`,
         color: isFavorite ? color.iconActive : color.iconInactive,
+        zIndex: 1,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',

@@ -1,0 +1,9 @@
+{
+  "rules": {
+    "newUsers": {
+      ".read": true,
+      ".write": true,
+      ".indexOn": ["lastLogin2"]
+    }
+  }
+}
