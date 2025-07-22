@@ -2710,21 +2710,18 @@ export const fetchAllUsersFromRTDB = async () => {
 };
 
 export const indexLastLogin = async onProgress => {
-  const [newUsersSnap, usersSnap] = await Promise.all([
-    get(ref2(database, 'newUsers')),
-    get(ref2(database, 'users')),
-  ]);
-  if (!newUsersSnap.exists()) return;
+  const usersSnap = await get(ref2(database, 'users'));
+  if (!usersSnap.exists()) return;
 
-  const newUsersData = newUsersSnap.val();
-  const usersData = usersSnap.exists() ? usersSnap.val() : {};
+  const usersData = usersSnap.val();
 
-  const entries = Object.entries(newUsersData);
+  const entries = Object.entries(usersData);
   const total = entries.length;
   let processed = 0;
   let lastProgress = 0;
 
   const parseDate = str => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
     const parts = str.split('.');
     if (parts.length === 3) {
       const [dd, mm, yy] = parts;
@@ -2734,15 +2731,11 @@ export const indexLastLogin = async onProgress => {
   };
 
   for (const [uid, user] of entries) {
-    const id = user.userId || uid;
-    if (id.length <= 20) {
-      processed += 1;
-      continue;
-    }
+    const id = uid;
 
-    let date = user.lastLogin2;
+    let date;
 
-    if (!date && typeof user.lastLogin === 'string') {
+    if (typeof user.lastLogin === 'string') {
       date = parseDate(user.lastLogin);
     }
 
@@ -2751,26 +2744,11 @@ export const indexLastLogin = async onProgress => {
     }
 
     if (!date) {
-      const other = usersData[id];
-      if (other) {
-        if (typeof other.lastLogin === 'string') {
-          date = parseDate(other.lastLogin);
-        }
-        if (!date && typeof other.registrationDate === 'string') {
-          date = parseDate(other.registrationDate);
-        }
-        if (!date && typeof other.createdAt === 'string') {
-          date = parseDate(other.createdAt);
-        }
-      }
+      date = '2024-01-01';
     }
 
-    if (date) {
-      // eslint-disable-next-line no-await-in-loop
-      await update(ref2(database, `newUsers/${id}`), { lastLogin2: date });
-      // eslint-disable-next-line no-await-in-loop
-      await update(ref2(database, `users/${id}`), { lastLogin2: date });
-    }
+    // eslint-disable-next-line no-await-in-loop
+    await update(ref2(database, `users/${id}`), { lastLogin2: date });
 
     processed += 1;
     const progress = Math.floor((processed / total) * 100);
