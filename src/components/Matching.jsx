@@ -4,6 +4,7 @@ import { UserCard } from './UsersList';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
+import toast from 'react-hot-toast';
 import {
   fetchUsersByLastLoginPaged,
   getAllUserPhotos,
@@ -486,7 +487,16 @@ const Matching = () => {
   }, [filters.role]);
 
   const fetchChunk = async (limit, offset, exclude = new Set(), role) => {
-    const res = await fetchUsersByLastLoginPaged(offset, limit + exclude.size + 1);
+    const res = await fetchUsersByLastLoginPaged(
+      offset,
+      limit + exclude.size + 1,
+      undefined,
+      (_part, date) => {
+        if (date) {
+          toast.loading(`Searching ${date}`, { id: 'matching-progress' });
+        }
+      }
+    );
     const filtered = res.users.filter(u => !exclude.has(u.userId) && roleMatchesFilter(u, role));
     const hasMore = filtered.length > limit || res.hasMore;
     const slice = filtered.slice(0, limit);
@@ -497,6 +507,7 @@ const Matching = () => {
       })
     );
     const lastKeyResult = res.lastKey;
+    toast.dismiss('matching-progress');
     return { users: withPhotos, lastKey: lastKeyResult, hasMore };
   };
 
