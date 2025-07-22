@@ -738,7 +738,6 @@ const Matching = () => {
             {getCurrentValue(selected.moreInfo_main) && <MoreInfo>{getCurrentValue(selected.moreInfo_main)}</MoreInfo>}
             <Contact>
               <Icons>{fieldContactsIcons(selected)}</Icons>
-              {getCurrentValue(selected.writer) && <div style={{ marginLeft: '10px' }}>{getCurrentValue(selected.writer)}</div>}
             </Contact>
             <ResizableCommentInput
               mt="10px"
