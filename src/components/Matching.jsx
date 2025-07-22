@@ -47,7 +47,6 @@ const CardWrapper = styled.div`
   border: 2px solid ${color.gray3};
   border-radius: 8px;
   box-sizing: border-box;
-  border-radius: 8px;
   overflow: hidden;
 `;
 
@@ -60,6 +59,9 @@ const CommentInput = styled.textarea`
   margin-right: auto;
   resize: none;
   overflow: hidden;
+  border: ${props => (props.plain ? 'none' : `1px solid ${color.gray3}`)};
+  border-radius: ${props => (props.plain ? '0' : '8px')};
+  outline: ${props => (props.plain ? 'none' : 'auto')};
 `;
 
 const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) => {
@@ -689,6 +691,7 @@ const Matching = () => {
                   />
                 </Card>
                 <ResizableCommentInput
+                  plain
                   value={comments[user.userId] || ''}
                   onClick={e => e.stopPropagation()}
                   onChange={e => {
