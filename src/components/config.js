@@ -2710,16 +2710,12 @@ export const fetchAllUsersFromRTDB = async () => {
 };
 
 export const indexLastLogin = async onProgress => {
-  const [newUsersSnap, usersSnap] = await Promise.all([
-    get(ref2(database, 'newUsers')),
-    get(ref2(database, 'users')),
-  ]);
-  if (!newUsersSnap.exists()) return;
+  const usersSnap = await get(ref2(database, 'users'));
+  if (!usersSnap.exists()) return;
 
-  const newUsersData = newUsersSnap.val();
-  const usersData = usersSnap.exists() ? usersSnap.val() : {};
+  const usersData = usersSnap.val();
 
-  const entries = Object.entries(newUsersData);
+  const entries = Object.entries(usersData);
   const total = entries.length;
   let processed = 0;
   let lastProgress = 0;
@@ -2750,24 +2746,11 @@ export const indexLastLogin = async onProgress => {
       date = parseDate(user.registrationDate);
     }
 
-    if (!date) {
-      const other = usersData[id];
-      if (other) {
-        if (typeof other.lastLogin === 'string') {
-          date = parseDate(other.lastLogin);
-        }
-        if (!date && typeof other.registrationDate === 'string') {
-          date = parseDate(other.registrationDate);
-        }
-        if (!date && typeof other.createdAt === 'string') {
-          date = parseDate(other.createdAt);
-        }
-      }
+    if (!date && typeof user.createdAt === 'string') {
+      date = parseDate(user.createdAt);
     }
 
     if (date) {
-      // eslint-disable-next-line no-await-in-loop
-      await update(ref2(database, `newUsers/${id}`), { lastLogin2: date });
       // eslint-disable-next-line no-await-in-loop
       await update(ref2(database, `users/${id}`), { lastLogin2: date });
     }

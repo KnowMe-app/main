@@ -17,7 +17,7 @@ import {
   setUserComment,
   database,
   auth,
-  updateDataInNewUsersRTDB,
+  updateDataInRealtimeDB,
 } from './config';
 import { onValue, ref as refDb } from 'firebase/database';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -447,7 +447,7 @@ const Matching = () => {
       }
 
       const { todayDash } = getCurrentDate();
-      updateDataInNewUsersRTDB(user.uid, { lastLogin2: todayDash }, 'update');
+      updateDataInRealtimeDB(user.uid, { lastLogin2: todayDash }, 'update');
 
       const favRef = refDb(database, `multiData/favorites/${user.uid}`);
       const disRef = refDb(database, `multiData/dislikes/${user.uid}`);
