@@ -5,7 +5,7 @@ import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
 import {
-  fetchLatestUsers,
+  fetchUsersByLastLogin2,
   getAllUserPhotos,
   fetchFavoriteUsersData,
   fetchDislikeUsersData,
@@ -17,9 +17,10 @@ import {
   setUserComment,
   database,
   auth,
+  updateDataInNewUsersRTDB,
 } from './config';
 import { onValue, ref as refDb } from 'firebase/database';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
@@ -27,6 +28,11 @@ import { fieldContactsIcons } from './smallCard/fieldContacts';
 import PhotoViewer from './PhotoViewer';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
+import { useAutoResize } from '../hooks/useAutoResize';
+import { getCurrentDate } from './foramtDate';
+import InfoModal from './InfoModal';
+import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
+
 
 const Grid = styled.div`
   display: flex;
@@ -51,19 +57,56 @@ const CommentInput = styled.textarea`
   box-sizing: border-box;
   margin-left: auto;
   margin-right: auto;
+  resize: none;
+  overflow: hidden;
   border: ${props => (props.plain ? 'none' : `1px solid ${color.gray3}`)};
   border-radius: ${props => (props.plain ? '0' : '8px')};
   outline: ${props => (props.plain ? 'none' : 'auto')};
 `;
 
+const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) => {
+  const ref = useRef(null);
+  const autoResize = useAutoResize(ref, value);
+
+  return (
+    <CommentInput
+      {...rest}
+      ref={ref}
+      value={value}
+      onClick={onClick}
+      onChange={e => {
+        onChange && onChange(e);
+        autoResize(e.target);
+      }}
+      onBlur={onBlur}
+    />
+  );
+};
+
 const Card = styled.div`
   width: 100%;
   height: 40vh;
-  background-color: orange;
+  background: linear-gradient(135deg, orange, yellow);
   background-size: cover;
   background-position: center;
   border-radius: 0;
   position: relative;
+  overflow: hidden;
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 20%;
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.5) 100%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
 `;
 
 const loadingWave = keyframes`
@@ -103,6 +146,36 @@ const ActionButton = styled.button`
   display: flex;
   align-items: center;
   justify-content: center;
+`;
+
+const SubmitButton = styled.button`
+  padding: 10px 20px;
+  color: black;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  align-self: flex-start;
+  border-bottom: 1px solid #ddd;
+  width: 100%;
+  transition: background-color 0.3s ease;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background-color: #f5f5f5;
+  }
+`;
+
+const ExitButton = styled(SubmitButton)`
+  background: none;
+  border-bottom: none;
+  transition: background-color 0.3s ease;
+  &:hover {
+    background-color: #f5f5f5;
+  }
 `;
 
 const FilterOverlay = styled.div`
@@ -248,7 +321,8 @@ const Table = styled.div`
 const MoreInfo = styled.div`
   background-color: ${color.paleAccent2};
   padding: 10px;
-  border-left: 4px solid ${color.accent};
+  border-left: 4px solid
+    ${props => (props.$isAdmin ? color.red : color.accent)};
   margin-bottom: 10px;
   font-size: 14px;
 `;
@@ -336,6 +410,7 @@ const Matching = () => {
   const [comments, setComments] = useState({});
   const [showUserCard, setShowUserCard] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
@@ -370,6 +445,9 @@ const Matching = () => {
         setDislikeUsers({});
         return;
       }
+
+      const { todayDash } = getCurrentDate();
+      updateDataInNewUsersRTDB(user.uid, { lastLogin2: todayDash }, 'update');
 
       const favRef = refDb(database, `multiData/favorites/${user.uid}`);
       const disRef = refDb(database, `multiData/dislikes/${user.uid}`);
@@ -408,7 +486,7 @@ const Matching = () => {
   }, [filters.role]);
 
   const fetchChunk = async (limit, key, exclude = new Set(), role) => {
-    const res = await fetchLatestUsers(limit + exclude.size + 1, key);
+    const res = await fetchUsersByLastLogin2(limit + exclude.size + 1, key);
     const filtered = res.users.filter(u => !exclude.has(u.userId) && roleMatchesFilter(u, role));
     const hasMore = filtered.length > limit || res.hasMore;
     const slice = filtered.slice(0, limit);
@@ -418,7 +496,7 @@ const Matching = () => {
         return { ...user, photos };
       })
     );
-    const lastKeyResult = slice.length > 0 ? slice[slice.length - 1].userId : res.lastKey;
+    const lastKeyResult = slice.length > 0 ? slice[slice.length - 1].lastLogin2 : res.lastKey;
     return { users: withPhotos, lastKey: lastKeyResult, hasMore };
   };
 
@@ -474,6 +552,18 @@ const Matching = () => {
     setLastKey(null);
     setViewMode('dislikes');
     setLoading(false);
+  };
+
+  const handleExit = async () => {
+    try {
+      localStorage.removeItem('isLoggedIn');
+      localStorage.removeItem('userEmail');
+      setShowInfoModal(false);
+      navigate('/my-profile');
+      await signOut(auth);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   };
 
   const loadMore = React.useCallback(async () => {
@@ -542,6 +632,19 @@ const Matching = () => {
     };
   }, [loadMore, filteredUsers.length, hasMore]);
 
+  const dotsMenu = () => (
+    <>
+      {isAdmin && (
+        <>
+          <SubmitButton onClick={() => navigate('/my-profile')}>my-profile</SubmitButton>
+          <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>
+          <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>
+        </>
+      )}
+      <ExitButton onClick={handleExit}>Exit</ExitButton>
+    </>
+  );
+
   return (
     <>
       {showFilters && <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />}
@@ -557,9 +660,10 @@ const Matching = () => {
       </FilterContainer>
       <div style={{ position: 'relative' }}>
         <TopActions>
-          <ActionButton onClick={loadFavoriteCards}>❤</ActionButton>
-          <ActionButton onClick={loadDislikeCards}>👎</ActionButton>
-          <ActionButton onClick={() => setShowFilters(s => !s)}>⚙</ActionButton>
+          <ActionButton onClick={() => setShowFilters(s => !s)}><FaFilter /></ActionButton>
+          <ActionButton onClick={loadDislikeCards}><FaTimes /></ActionButton>
+          <ActionButton onClick={loadFavoriteCards}><FaHeart /></ActionButton>
+          <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
         </TopActions>
         {isAdmin && <p style={{ textAlign: 'center', color: 'black' }}>{filteredUsers.length} карточок</p>}
 
@@ -573,16 +677,20 @@ const Matching = () => {
                     userId={user.userId}
                     favoriteUsers={favoriteUsers}
                     setFavoriteUsers={setFavoriteUsers}
-                    onRemove={viewMode === 'favorites' ? handleRemove : undefined}
+                    dislikeUsers={dislikeUsers}
+                    setDislikeUsers={setDislikeUsers}
+                    onRemove={viewMode !== 'default' ? handleRemove : undefined}
                   />
                   <BtnDislike
                     userId={user.userId}
                     dislikeUsers={dislikeUsers}
                     setDislikeUsers={setDislikeUsers}
+                    favoriteUsers={favoriteUsers}
+                    setFavoriteUsers={setFavoriteUsers}
                     onRemove={viewMode !== 'default' ? handleRemove : undefined}
                   />
                 </Card>
-                <CommentInput
+                <ResizableCommentInput
                   plain
                   value={comments[user.userId] || ''}
                   onClick={e => e.stopPropagation()}
@@ -632,8 +740,8 @@ const Matching = () => {
               </Info>
             </ProfileSection>
             <Table>{renderSelectedFields(selected)}</Table>
-            {getCurrentValue(selected.myComment) && (
-              <MoreInfo>
+            {isAdmin && getCurrentValue(selected.myComment) && (
+              <MoreInfo $isAdmin={isAdmin}>
                 <strong>More information</strong>
                 <br />
                 {getCurrentValue(selected.myComment)}
@@ -651,7 +759,7 @@ const Matching = () => {
               <Icons>{fieldContactsIcons(selected)}</Icons>
               {getCurrentValue(selected.writer) && <div style={{ marginLeft: '10px' }}>{getCurrentValue(selected.writer)}</div>}
             </Contact>
-            <CommentInput
+            <ResizableCommentInput
               mt="10px"
               value={comments[selected.userId] || ''}
               onChange={e => setComments(prev => ({ ...prev, [selected.userId]: e.target.value }))}
@@ -694,6 +802,9 @@ const Matching = () => {
             />
           </div>
         </ModalOverlay>
+      )}
+      {showInfoModal && (
+        <InfoModal onClose={() => setShowInfoModal(false)} text="dotsMenu" Context={dotsMenu} />
       )}
     </>
   );
