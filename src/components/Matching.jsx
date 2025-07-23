@@ -376,7 +376,7 @@ const renderSelectedFields = user => {
   });
 };
 
-const INITIAL_LOAD = 3;
+const INITIAL_LOAD = 6;
 const LOAD_MORE = 1;
 
 const roleMatchesFilter = (user, filter) => {
@@ -486,16 +486,38 @@ const Matching = () => {
     }
   }, [filters.role]);
 
-  const fetchChunk = async (limit, offset, exclude = new Set(), role) => {
+  const fetchChunk = async (
+    limit,
+    offset,
+    exclude = new Set(),
+    role,
+    onPart
+  ) => {
+    const added = new Set();
+    const handleProgress = async (part, date) => {
+      if (date) {
+        toast.loading(`Searching ${date}`, { id: 'matching-progress' });
+      }
+      const arr = Object.entries(part).map(([id, data]) => ({ userId: id, ...data }));
+      const filtered = arr.filter(u => !exclude.has(u.userId) && roleMatchesFilter(u, role));
+      const unique = filtered.filter(u => !added.has(u.userId)).slice(0, limit - added.size);
+      if (unique.length > 0) {
+        const withPhotos = await Promise.all(
+          unique.map(async user => {
+            const photos = await getAllUserPhotos(user.userId);
+            return { ...user, photos };
+          })
+        );
+        withPhotos.forEach(u => added.add(u.userId));
+        if (onPart) onPart(withPhotos);
+      }
+    };
+
     const res = await fetchUsersByLastLoginPaged(
       offset,
       limit + exclude.size + 1,
       undefined,
-      (_part, date) => {
-        if (date) {
-          toast.loading(`Searching ${date}`, { id: 'matching-progress' });
-        }
-      }
+      handleProgress
     );
     console.log('[fetchChunk] loaded', res.users.length, 'offset', offset, 'limit', limit);
     const filtered = res.users.filter(u => !exclude.has(u.userId) && roleMatchesFilter(u, role));
@@ -520,15 +542,35 @@ const Matching = () => {
       const owner = auth.currentUser?.uid;
       let exclude = new Set();
       if (owner) {
-        const [favIds, disIds] = await Promise.all([fetchFavoriteUsers(owner), fetchDislikeUsers(owner)]);
+        const [favIds, disIds] = await Promise.all([
+          fetchFavoriteUsers(owner),
+          fetchDislikeUsers(owner),
+        ]);
         setFavoriteUsers(favIds);
         setDislikeUsers(disIds);
         exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
       }
-      const res = await fetchChunk(INITIAL_LOAD, 0, exclude, roleFilter);
+      const res = await fetchChunk(
+        INITIAL_LOAD,
+        0,
+        exclude,
+        roleFilter,
+        async part => {
+          const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
+          if (unique.length) {
+            unique.forEach(u => loadedIdsRef.current.add(u.userId));
+            setUsers(prev => [...prev, ...unique]);
+            await loadCommentsFor(unique);
+          }
+        }
+      );
       console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
-      loadedIdsRef.current = new Set(res.users.map(u => u.userId));
-      setUsers(res.users);
+      loadedIdsRef.current = new Set([...loadedIdsRef.current, ...res.users.map(u => u.userId)]);
+      setUsers(prev => {
+        const map = new Map(prev.map(u => [u.userId, u]));
+        res.users.forEach(u => map.set(u.userId, u));
+        return Array.from(map.values());
+      });
       await loadCommentsFor(res.users);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
@@ -584,9 +626,32 @@ const Matching = () => {
     loadingRef.current = true;
     setLoading(true);
     try {
-      const exclude = new Set([...Object.keys(favoriteUsers), ...Object.keys(dislikeUsers)]);
-      const res = await fetchChunk(LOAD_MORE, lastKey, exclude, roleFilter);
-      console.log('[loadMore] loaded', res.users.length, 'lastKey', lastKey, 'hasMore', res.hasMore);
+      const exclude = new Set([
+        ...Object.keys(favoriteUsers),
+        ...Object.keys(dislikeUsers),
+      ]);
+      const res = await fetchChunk(
+        LOAD_MORE,
+        lastKey,
+        exclude,
+        roleFilter,
+        async part => {
+          const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
+          if (unique.length) {
+            unique.forEach(u => loadedIdsRef.current.add(u.userId));
+            setUsers(prev => [...prev, ...unique]);
+            await loadCommentsFor(unique);
+          }
+        }
+      );
+      console.log(
+        '[loadMore] loaded',
+        res.users.length,
+        'lastKey',
+        lastKey,
+        'hasMore',
+        res.hasMore
+      );
       const unique = res.users.filter(u => !loadedIdsRef.current.has(u.userId));
       unique.forEach(u => loadedIdsRef.current.add(u.userId));
       setUsers(prev => [...prev, ...unique]);
