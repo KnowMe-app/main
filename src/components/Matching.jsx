@@ -475,12 +475,13 @@ const Matching = () => {
     };
   }, []);
 
-  const fetchChunk = async (
-    limit,
-    offset,
-    exclude = new Set(),
-    onPart
-  ) => {
+  const fetchChunk = React.useCallback(
+    async (
+      limit,
+      offset,
+      exclude = new Set(),
+      onPart
+    ) => {
     const added = new Set();
     const handleProgress = async (part, date) => {
       if (date) {
@@ -524,7 +525,7 @@ const Matching = () => {
     const lastKeyResult = res.lastKey;
     toast.dismiss('matching-progress');
     return { users: withPhotos, lastKey: lastKeyResult, hasMore };
-  };
+  }, [filters.role]);
 
   const loadInitial = React.useCallback(async () => {
     loadingRef.current = true;
@@ -570,7 +571,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [filters.role]);
+  }, [fetchChunk]);
 
   const loadFavoriteCards = async () => {
     const owner = auth.currentUser?.uid;
@@ -652,7 +653,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode, filters.role]);
+  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode, fetchChunk]);
 
   useEffect(() => {
     loadInitial();
