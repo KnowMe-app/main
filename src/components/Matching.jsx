@@ -497,6 +497,7 @@ const Matching = () => {
         }
       }
     );
+    console.log('[fetchChunk] loaded', res.users.length, 'offset', offset, 'limit', limit);
     const filtered = res.users.filter(u => !exclude.has(u.userId) && roleMatchesFilter(u, role));
     const hasMore = filtered.length > limit || res.hasMore;
     const slice = filtered.slice(0, limit);
@@ -525,6 +526,7 @@ const Matching = () => {
         exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
       }
       const res = await fetchChunk(INITIAL_LOAD, 0, exclude, roleFilter);
+      console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
       loadedIdsRef.current = new Set(res.users.map(u => u.userId));
       setUsers(res.users);
       await loadCommentsFor(res.users);
@@ -584,6 +586,7 @@ const Matching = () => {
     try {
       const exclude = new Set([...Object.keys(favoriteUsers), ...Object.keys(dislikeUsers)]);
       const res = await fetchChunk(LOAD_MORE, lastKey, exclude, roleFilter);
+      console.log('[loadMore] loaded', res.users.length, 'lastKey', lastKey, 'hasMore', res.hasMore);
       const unique = res.users.filter(u => !loadedIdsRef.current.has(u.userId));
       unique.forEach(u => loadedIdsRef.current.add(u.userId));
       setUsers(prev => [...prev, ...unique]);

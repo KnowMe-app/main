@@ -21,6 +21,8 @@ export async function fetchUsersByLastLoginPaged(
   const target = startOffset + limit;
   const totalLimit = target + 1;
 
+  console.log('[fetchUsersByLastLoginPaged] startOffset', startOffset, 'limit', limit);
+
   const combined = [];
   let dayOffset = 0;
 
@@ -30,6 +32,7 @@ export async function fetchUsersByLastLoginPaged(
     const dateStr = date.toISOString().split('T')[0];
     // eslint-disable-next-line no-await-in-loop
     const chunk = await fetchDateFn(dateStr, totalLimit - combined.length);
+    console.log('[fetchUsersByLastLoginPaged] fetched', dateStr, 'count', chunk.length);
 
     if (chunk.length > 0) {
       chunk.sort((a, b) => b[1].lastLogin2.localeCompare(a[1].lastLogin2));
