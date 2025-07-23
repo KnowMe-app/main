@@ -1,15 +1,14 @@
 import styled from 'styled-components';
 
 export const Container = styled.div`
-  max-width: 1280px;
-  min-height: calc(100vh - 400px);
-  margin: 0 auto 0;
+  width: 100%;
+  max-width: 480px;
+  min-height: 100vh;
+  margin: 0 auto;
   padding: 30px;
-  /* background-color: var(--primary-background-color); */
   box-shadow: var(--box-shadow);
   display: flex;
   flex-direction: column;
-  /* background: linear-gradient(to bottom, #ffa500, #ff8c00); */
 `;
 
 export const TitleH1 = styled.h1`
