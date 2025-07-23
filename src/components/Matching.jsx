@@ -379,20 +379,25 @@ const renderSelectedFields = user => {
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 1;
 
-const roleMatchesFilter = (user, filter) => {
-  const userRoles = Array.isArray(user.userRole) ? user.userRole.map(r => String(r).toLowerCase()) : user.userRole ? [String(user.userRole).toLowerCase()] : [];
-  const roles = Array.isArray(user.role) ? user.role.map(r => String(r).toLowerCase()) : user.role ? [String(user.role).toLowerCase()] : [];
+const roleMatchesFilter = (user, filter = {}) => {
+  const userRoles = Array.isArray(user.userRole)
+    ? user.userRole.map(r => String(r).toLowerCase())
+    : user.userRole
+    ? [String(user.userRole).toLowerCase()]
+    : [];
+  const roles = Array.isArray(user.role)
+    ? user.role.map(r => String(r).toLowerCase())
+    : user.role
+    ? [String(user.role).toLowerCase()]
+    : [];
   const allRoles = [...userRoles, ...roles];
-  if (filter === 'donor') {
-    return allRoles.some(r => ['ed', 'sm'].includes(r));
-  }
-  if (filter === 'agency') {
-    return allRoles.some(r => ['ag', 'cl'].includes(r));
-  }
-  if (filter === 'parent') {
-    return allRoles.some(r => ['ip'].includes(r));
-  }
-  return true;
+  const { ed, ag, ip } = filter;
+  const checks = [];
+  if (ed) checks.push(allRoles.some(r => ['ed', 'sm'].includes(r)));
+  if (ag) checks.push(allRoles.some(r => ['ag', 'cl'].includes(r)));
+  if (ip) checks.push(allRoles.some(r => ['ip'].includes(r)));
+  if (checks.length === 0) return true;
+  return checks.some(Boolean);
 };
 
 const Matching = () => {
@@ -406,7 +411,6 @@ const Matching = () => {
   const [dislikeUsers, setDislikeUsers] = useState({});
   const [viewMode, setViewMode] = useState('default');
   const [loading, setLoading] = useState(true);
-  const [roleFilter, setRoleFilter] = useState('donor');
   const [filters, setFilters] = useState({});
   const [comments, setComments] = useState({});
   const [showUserCard, setShowUserCard] = useState(false);
@@ -469,28 +473,12 @@ const Matching = () => {
     return () => {
       unsubscribeAuth();
     };
-  }, [roleFilter]);
-
-  useEffect(() => {
-    if (filters.role) {
-      const { ed, ag, ip } = filters.role;
-      if (ed && !ag && !ip) {
-        setRoleFilter('donor');
-      } else if (!ed && ag && !ip) {
-        setRoleFilter('agency');
-      } else if (!ed && !ag && ip) {
-        setRoleFilter('parent');
-      } else {
-        setRoleFilter('donor');
-      }
-    }
-  }, [filters.role]);
+  }, []);
 
   const fetchChunk = async (
     limit,
     offset,
     exclude = new Set(),
-    role,
     onPart
   ) => {
     const added = new Set();
@@ -499,7 +487,9 @@ const Matching = () => {
         toast.loading(`Searching ${date}`, { id: 'matching-progress' });
       }
       const arr = Object.entries(part).map(([id, data]) => ({ userId: id, ...data }));
-      const filtered = arr.filter(u => !exclude.has(u.userId) && roleMatchesFilter(u, role));
+      const filtered = arr.filter(
+        u => !exclude.has(u.userId) && roleMatchesFilter(u, filters.role)
+      );
       const unique = filtered.filter(u => !added.has(u.userId)).slice(0, limit - added.size);
       if (unique.length > 0) {
         const withPhotos = await Promise.all(
@@ -520,7 +510,9 @@ const Matching = () => {
       handleProgress
     );
     console.log('[fetchChunk] loaded', res.users.length, 'offset', offset, 'limit', limit);
-    const filtered = res.users.filter(u => !exclude.has(u.userId) && roleMatchesFilter(u, role));
+    const filtered = res.users.filter(
+      u => !exclude.has(u.userId) && roleMatchesFilter(u, filters.role)
+    );
     const hasMore = filtered.length > limit || res.hasMore;
     const slice = filtered.slice(0, limit);
     const withPhotos = await Promise.all(
@@ -554,7 +546,6 @@ const Matching = () => {
         INITIAL_LOAD,
         0,
         exclude,
-        roleFilter,
         async part => {
           const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
           if (unique.length) {
@@ -579,7 +570,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [roleFilter]);
+  }, [filters.role]);
 
   const loadFavoriteCards = async () => {
     const owner = auth.currentUser?.uid;
@@ -634,7 +625,6 @@ const Matching = () => {
         LOAD_MORE,
         lastKey,
         exclude,
-        roleFilter,
         async part => {
           const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
           if (unique.length) {
@@ -662,7 +652,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode, roleFilter]);
+  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode, filters.role]);
 
   useEffect(() => {
     loadInitial();
