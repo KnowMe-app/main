@@ -8,7 +8,7 @@ import {
   limitToFirst,
   get,
 } from 'firebase/database';
-import { PAGE_SIZE, MAX_LOOKBACK_DAYS } from './constants';
+import { PAGE_SIZE } from './constants';
 
 export async function defaultFetchByLastLogin(dateStr, limit) {
   const db = getDatabase();
@@ -41,7 +41,7 @@ export async function fetchUsersByLastLoginPaged(
   const combined = [];
   let dayOffset = 0;
 
-  while (combined.length < target && dayOffset < MAX_LOOKBACK_DAYS) {
+  while (combined.length < target) {
     const date = new Date(today);
     date.setDate(today.getDate() - dayOffset);
     const dd = String(date.getDate()).padStart(2, '0');
@@ -67,7 +67,8 @@ export async function fetchUsersByLastLoginPaged(
       partial.forEach(([pid, pdata]) => {
         partUsers[pid] = pdata;
       });
-      onProgress(partUsers, dateStr);
+      const cont = await onProgress(partUsers, dateStr);
+      if (cont === false) break;
     }
 
     dayOffset += 1;

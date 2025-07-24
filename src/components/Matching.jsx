@@ -400,26 +400,6 @@ const renderSelectedFields = user => {
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 1;
 
-const roleMatchesFilter = (user, filter = {}) => {
-  const userRoles = Array.isArray(user.userRole)
-    ? user.userRole.map(r => String(r).toLowerCase())
-    : user.userRole
-    ? [String(user.userRole).toLowerCase()]
-    : [];
-  const roles = Array.isArray(user.role)
-    ? user.role.map(r => String(r).toLowerCase())
-    : user.role
-    ? [String(user.role).toLowerCase()]
-    : [];
-  const allRoles = [...userRoles, ...roles];
-  const { ed, ag, ip } = filter;
-  const checks = [];
-  if (ed) checks.push(allRoles.some(r => ['ed', 'sm'].includes(r)));
-  if (ag) checks.push(allRoles.some(r => ['ag', 'cl'].includes(r)));
-  if (ip) checks.push(allRoles.some(r => ['ip'].includes(r)));
-  if (checks.length === 0) return true;
-  return checks.some(Boolean);
-};
 
 const Matching = () => {
   const navigate = useNavigate();
@@ -504,15 +484,23 @@ const Matching = () => {
       onPart
     ) => {
     const added = new Set();
+    let excludedCount = 0;
     const handleProgress = async (part, date) => {
       if (date) {
         toast.loading(`Searching ${date}`, { id: 'matching-progress' });
       }
       const arr = Object.entries(part).map(([id, data]) => ({ userId: id, ...data }));
-      const filtered = arr.filter(
-        u => !exclude.has(u.userId) && roleMatchesFilter(u, filters.role)
+      const filteredPairs = filterMain(
+        arr.map(u => [u.userId, u]),
+        null,
+        filters,
+        favoriteUsers
       );
+      const filtered = filteredPairs
+        .map(([id, u]) => u)
+        .filter(u => !exclude.has(u.userId));
       const unique = filtered.filter(u => !added.has(u.userId)).slice(0, limit - added.size);
+      excludedCount += arr.length - unique.length;
       if (unique.length > 0) {
         const withPhotos = await Promise.all(
           unique.map(async user => {
@@ -523,6 +511,7 @@ const Matching = () => {
         withPhotos.forEach(u => added.add(u.userId));
         if (onPart) onPart(withPhotos);
       }
+      if (added.size >= limit) return false;
     };
 
     const res = await fetchUsersByLastLoginPaged(
@@ -532,9 +521,16 @@ const Matching = () => {
       handleProgress
     );
     console.log('[fetchChunk] loaded', res.users.length, 'offset', offset, 'limit', limit);
-    const filtered = res.users.filter(
-      u => !exclude.has(u.userId) && roleMatchesFilter(u, filters.role)
+    const filteredPairsFinal = filterMain(
+      res.users.map(u => [u.userId, u]),
+      null,
+      filters,
+      favoriteUsers
     );
+    const filtered = filteredPairsFinal
+      .map(([id, u]) => u)
+      .filter(u => !exclude.has(u.userId));
+    excludedCount += res.users.length - filtered.length;
     const hasMore = filtered.length > limit || res.hasMore;
     const slice = filtered.slice(0, limit);
     const withPhotos = await Promise.all(
@@ -545,8 +541,9 @@ const Matching = () => {
     );
     const lastKeyResult = res.lastKey;
     toast.dismiss('matching-progress');
+    toast.success(`Виключено ${excludedCount} карточок`);
     return { users: withPhotos, lastKey: lastKeyResult, hasMore };
-  }, [filters.role]);
+  }, [filters, favoriteUsers]);
 
   const loadInitial = React.useCallback(async () => {
     loadingRef.current = true;
@@ -565,7 +562,7 @@ const Matching = () => {
         exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
       }
 
-      const cacheKey = JSON.stringify(filters.role || {});
+      const cacheKey = JSON.stringify(filters || {});
       const cached = loadCache(cacheKey);
       if (cached) {
         loadedIdsRef.current = new Set(cached.users.map(u => u.userId));
@@ -606,7 +603,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [fetchChunk, filters.role]);
+  }, [fetchChunk, filters]);
 
   const loadFavoriteCards = async () => {
     const owner = auth.currentUser?.uid;
@@ -684,7 +681,7 @@ const Matching = () => {
         const map = new Map(prev.map(u => [u.userId, u]));
         unique.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
-        const cacheKey = JSON.stringify(filters.role || {});
+        const cacheKey = JSON.stringify(filters || {});
         saveCache(cacheKey, { users: result, lastKey: res.lastKey, hasMore: res.hasMore });
         return result;
       });
@@ -695,7 +692,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode, fetchChunk, filters.role]);
+  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode, fetchChunk, filters]);
 
   useEffect(() => {
     loadInitial();
