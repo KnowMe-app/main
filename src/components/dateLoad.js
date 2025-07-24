@@ -1,5 +1,5 @@
 import { getDatabase, ref as ref2, query, orderByChild, equalTo, limitToFirst, get } from 'firebase/database';
-import { PAGE_SIZE, INVALID_DATE_TOKENS } from './constants';
+import { PAGE_SIZE, INVALID_DATE_TOKENS, MAX_LOOKBACK_DAYS } from './constants';
 
 export async function defaultFetchByDate(dateStr, limit) {
   const db = getDatabase();
@@ -35,7 +35,7 @@ export async function fetchFilteredUsersByPage(
   let dayOffset = 0;
   let invalidIndex = 0;
 
-  while (filtered.length < target) {
+  while (filtered.length < target && dayOffset < MAX_LOOKBACK_DAYS) {
     const fetchLimit = limit - filtered.length;
     const date = new Date(today);
     date.setDate(today.getDate() - dayOffset);
@@ -76,8 +76,7 @@ export async function fetchFilteredUsersByPage(
           partial.forEach(([pid, pdata]) => {
             partUsers[pid] = pdata;
           });
-          const cont = await onProgress(partUsers);
-          if (cont === false) break;
+          onProgress(partUsers);
         }
       }
     } else {
@@ -97,8 +96,7 @@ export async function fetchFilteredUsersByPage(
         partial.forEach(([pid, pdata]) => {
           partUsers[pid] = pdata;
         });
-        const cont = await onProgress(partUsers);
-        if (cont === false) break;
+        onProgress(partUsers);
       }
     }
     dayOffset += 1;
