@@ -34,6 +34,26 @@ import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
 
+const Container = styled.div`
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  background-color: #f5f5f5;
+
+  @media (max-width: 768px) {
+    padding: 0;
+  }
+`;
+
+const InnerContainer = styled.div`
+  max-width: 450px;
+  width: 100%;
+  box-sizing: border-box;
+  position: relative;
+`;
+
 
 const Grid = styled.div`
   display: flex;
@@ -728,21 +748,23 @@ const Matching = () => {
         />
         <FilterPanel mode="matching" hideUserId hideCommentLength onChange={setFilters} />
       </FilterContainer>
-      <div style={{ position: 'relative' }}>
-        <TopActions>
-          <ActionButton onClick={() => setShowFilters(s => !s)}><FaFilter /></ActionButton>
-          <ActionButton onClick={loadDislikeCards}><FaTimes /></ActionButton>
-          <ActionButton onClick={loadFavoriteCards}><FaHeart /></ActionButton>
-          <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
-        </TopActions>
-        {isAdmin && <p style={{ textAlign: 'center', color: 'black' }}>{filteredUsers.length} карточок</p>}
+      <Container>
+        <InnerContainer>
+          <div style={{ position: 'relative' }}>
+            <TopActions>
+              <ActionButton onClick={() => setShowFilters(s => !s)}><FaFilter /></ActionButton>
+              <ActionButton onClick={loadDislikeCards}><FaTimes /></ActionButton>
+              <ActionButton onClick={loadFavoriteCards}><FaHeart /></ActionButton>
+              <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
+            </TopActions>
+            {isAdmin && <p style={{ textAlign: 'center', color: 'black' }}>{filteredUsers.length} карточок</p>}
 
-        <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
-          {filteredUsers.map(user => {
-            const photo = getCurrentValue(user.photos);
-            return (
-              <CardWrapper key={user.userId}>
-                <Card data-card onClick={() => setSelected(user)} style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}>
+            <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
+              {filteredUsers.map(user => {
+                const photo = getCurrentValue(user.photos);
+                return (
+                  <CardWrapper key={user.userId}>
+                    <Card data-card onClick={() => setSelected(user)} style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}>
                   <BtnFavorite
                     userId={user.userId}
                     favoriteUsers={favoriteUsers}
@@ -777,10 +799,10 @@ const Matching = () => {
             );
           })}
           {loading && Array.from({ length: 4 }).map((_, idx) => <SkeletonCard data-card key={`skeleton-${idx}`} />)}
-        </Grid>
-      </div>
-      {selected && (
-        <ModalOverlay
+            </Grid>
+          </div>
+          {selected && (
+            <ModalOverlay
           onClick={() => {
             setSelected(null);
             setShowPhoto(false);
@@ -848,33 +870,35 @@ const Matching = () => {
               ID: {selected.userId ? selected.userId.slice(0, 5) : ''}
             </Id>
           </DonorCard>
-        </ModalOverlay>
-      )}
-      {showPhoto && (
-        <PhotoViewer
-          photos={Array.isArray(selected.photos) ? selected.photos : [getCurrentValue(selected.photos)].filter(Boolean)}
-          onClose={() => setShowPhoto(false)}
-        />
-      )}
-      {showUserCard && selected && (
-        <ModalOverlay onClick={() => setShowUserCard(false)}>
-          <div onClick={e => e.stopPropagation()} style={{ maxHeight: '80vh', overflowY: 'auto' }}>
-            <UserCard
-              userData={selected}
-              setUsers={() => {}}
-              setShowInfoModal={() => {}}
-              setState={() => {}}
-              favoriteUsers={{}}
-              setFavoriteUsers={() => {}}
-              currentFilter={null}
-              isDateInRange={() => true}
+            </ModalOverlay>
+          )}
+          {showPhoto && (
+            <PhotoViewer
+              photos={Array.isArray(selected.photos) ? selected.photos : [getCurrentValue(selected.photos)].filter(Boolean)}
+              onClose={() => setShowPhoto(false)}
             />
-          </div>
-        </ModalOverlay>
-      )}
-      {showInfoModal && (
-        <InfoModal onClose={() => setShowInfoModal(false)} text="dotsMenu" Context={dotsMenu} />
-      )}
+          )}
+          {showUserCard && selected && (
+            <ModalOverlay onClick={() => setShowUserCard(false)}>
+              <div onClick={e => e.stopPropagation()} style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+                <UserCard
+                  userData={selected}
+                  setUsers={() => {}}
+                  setShowInfoModal={() => {}}
+                  setState={() => {}}
+                  favoriteUsers={{}}
+                  setFavoriteUsers={() => {}}
+                  currentFilter={null}
+                  isDateInRange={() => true}
+                />
+              </div>
+            </ModalOverlay>
+          )}
+          {showInfoModal && (
+            <InfoModal onClose={() => setShowInfoModal(false)} text="dotsMenu" Context={dotsMenu} />
+          )}
+        </InnerContainer>
+      </Container>
     </>
   );
 };
