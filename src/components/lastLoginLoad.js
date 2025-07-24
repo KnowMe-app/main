@@ -8,7 +8,7 @@ import {
   limitToFirst,
   get,
 } from 'firebase/database';
-import { PAGE_SIZE } from './constants';
+import { PAGE_SIZE, MAX_LOOKBACK_DAYS } from './constants';
 
 export async function defaultFetchByLastLogin(dateStr, limit) {
   const db = getDatabase();
@@ -39,7 +39,7 @@ export async function fetchUsersByLastLoginPaged(
   console.log('[fetchUsersByLastLoginPaged] startOffset', startOffset, 'limit', limit);
 
   const combined = [];
-  const MAX_LOAD_DAYS = 3650; // safety cap ~10 years
+  const MAX_LOAD_DAYS = MAX_LOOKBACK_DAYS; // safety cap
   let dayOffset = 0;
 
   while (combined.length < target && dayOffset < MAX_LOAD_DAYS) {
