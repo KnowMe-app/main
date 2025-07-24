@@ -1,5 +1,5 @@
 import { getDatabase, ref as ref2, query, orderByChild, equalTo, limitToFirst, get } from 'firebase/database';
-import { PAGE_SIZE, INVALID_DATE_TOKENS } from './constants';
+import { PAGE_SIZE, INVALID_DATE_TOKENS, MAX_LOOKBACK_DAYS } from './constants';
 
 export async function defaultFetchByDate(dateStr, limit) {
   const db = getDatabase();
@@ -32,7 +32,7 @@ export async function fetchFilteredUsersByPage(
   const combined = [];
   let filtered = [];
 
-  const MAX_LOAD_DAYS = 3650; // safety cap ~10 years
+  const MAX_LOAD_DAYS = MAX_LOOKBACK_DAYS; // safety cap
   let dayOffset = 0;
   let invalidIndex = 0;
 
