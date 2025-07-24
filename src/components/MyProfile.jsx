@@ -591,6 +591,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       localStorage.setItem('isLoggedIn', 'true');
       localStorage.setItem('userEmail', state.email);
+      localStorage.removeItem('myProfileDraft');
 
       setIsLoggedIn(true);
       setState(prev => ({ ...prev, userId: userCredential.user.uid }));
@@ -629,6 +630,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
         await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
         setIsLoggedIn(true);
+        localStorage.removeItem('myProfileDraft');
         setState(prev => ({ ...prev, userId: userCredential.user.uid }));
       } catch (error) {
         if (error.code === 'auth/wrong-password') {

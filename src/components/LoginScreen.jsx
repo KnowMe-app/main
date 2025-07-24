@@ -250,6 +250,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
 
       localStorage.setItem('isLoggedIn', 'true');
       localStorage.setItem('userEmail', state.email);
+      localStorage.removeItem('myProfileDraft');
 
       setIsLoggedIn(true);
       if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
@@ -289,6 +290,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
 
       localStorage.setItem('isLoggedIn', 'true');
       localStorage.setItem('userEmail', state.email);
+      localStorage.removeItem('myProfileDraft');
 
       setIsLoggedIn(true);
       if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
