@@ -30,6 +30,7 @@ import PhotoViewer from './PhotoViewer';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
+import { loadCache, saveCache, clearCache } from "../hooks/useMatchingCache";
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
@@ -563,6 +564,18 @@ const Matching = () => {
         setDislikeUsers(disIds);
         exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
       }
+
+      const cacheKey = JSON.stringify(filters.role || {});
+      const cached = loadCache(cacheKey);
+      if (cached) {
+        loadedIdsRef.current = new Set(cached.users.map(u => u.userId));
+        setUsers(cached.users);
+        await loadCommentsFor(cached.users);
+        setLastKey(cached.lastKey);
+        setHasMore(cached.hasMore);
+        setViewMode('default');
+        return;
+      }
       const res = await fetchChunk(
         INITIAL_LOAD,
         0,
@@ -581,7 +594,9 @@ const Matching = () => {
       setUsers(prev => {
         const map = new Map(prev.map(u => [u.userId, u]));
         res.users.forEach(u => map.set(u.userId, u));
-        return Array.from(map.values());
+        const result = Array.from(map.values());
+        saveCache(cacheKey, { users: result, lastKey: res.lastKey, hasMore: res.hasMore });
+        return result;
       });
       await loadCommentsFor(res.users);
       setLastKey(res.lastKey);
@@ -665,7 +680,14 @@ const Matching = () => {
       );
       const unique = res.users.filter(u => !loadedIdsRef.current.has(u.userId));
       unique.forEach(u => loadedIdsRef.current.add(u.userId));
-      setUsers(prev => [...prev, ...unique]);
+      setUsers(prev => {
+        const map = new Map(prev.map(u => [u.userId, u]));
+        unique.forEach(u => map.set(u.userId, u));
+        const result = Array.from(map.values());
+        const cacheKey = JSON.stringify(filters.role || {});
+        saveCache(cacheKey, { users: result, lastKey: res.lastKey, hasMore: res.hasMore });
+        return result;
+      });
       await loadCommentsFor(unique);
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
