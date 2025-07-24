@@ -30,7 +30,7 @@ import PhotoViewer from './PhotoViewer';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
-import { loadCache, saveCache, clearCache } from "../hooks/useMatchingCache";
+import { loadCache, saveCache } from "../hooks/useMatchingCache";
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
@@ -606,7 +606,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [fetchChunk]);
+  }, [fetchChunk, filters.role]);
 
   const loadFavoriteCards = async () => {
     const owner = auth.currentUser?.uid;
@@ -695,7 +695,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode, fetchChunk]);
+  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode, fetchChunk, filters.role]);
 
   useEffect(() => {
     loadInitial();
