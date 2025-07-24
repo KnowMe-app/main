@@ -1,10 +1,25 @@
-// Functions for sequentially loading users by lastLogin2
-import { getDatabase, ref as ref2, query, orderByChild, equalTo, limitToFirst, get } from 'firebase/database';
+// Functions for sequentially loading users by lastLogin
+import {
+  getDatabase,
+  ref as ref2,
+  query,
+  orderByChild,
+  equalTo,
+  limitToFirst,
+  get,
+} from 'firebase/database';
 import { PAGE_SIZE, MAX_LOOKBACK_DAYS } from './constants';
 
 export async function defaultFetchByLastLogin(dateStr, limit) {
   const db = getDatabase();
-  const q = query(ref2(db, 'users'), orderByChild('lastLogin2'), equalTo(dateStr), limitToFirst(limit));
+  // Query users by lastLogin which is stored in dd.mm.yyyy format. Database has
+  // indexOn for this field.
+  const q = query(
+    ref2(db, 'users'),
+    orderByChild('lastLogin'),
+    equalTo(dateStr),
+    limitToFirst(limit)
+  );
   const snap = await get(q);
   return snap.exists() ? Object.entries(snap.val()) : [];
 }
@@ -29,13 +44,20 @@ export async function fetchUsersByLastLoginPaged(
   while (combined.length < target && dayOffset < MAX_LOOKBACK_DAYS) {
     const date = new Date(today);
     date.setDate(today.getDate() - dayOffset);
-    const dateStr = date.toISOString().split('T')[0];
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yy = date.getFullYear();
+    const dateStr = `${dd}.${mm}.${yy}`;
     // eslint-disable-next-line no-await-in-loop
     const chunk = await fetchDateFn(dateStr, totalLimit - combined.length);
     console.log('[fetchUsersByLastLoginPaged] fetched', dateStr, 'count', chunk.length);
 
     if (chunk.length > 0) {
-      chunk.sort((a, b) => b[1].lastLogin2.localeCompare(a[1].lastLogin2));
+      const parse = str => {
+        const [d, m, y] = str.split('.');
+        return `${y}-${m}-${d}`;
+      };
+      chunk.sort((a, b) => parse(b[1].lastLogin).localeCompare(parse(a[1].lastLogin)));
       combined.push(...chunk);
     }
 
