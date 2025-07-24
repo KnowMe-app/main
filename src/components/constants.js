@@ -9,4 +9,5 @@ export const INVALID_DATE_TOKENS = [''];
 
 // Maximum amount of days to look back when loading users by date.
 // Prevents infinite loops if the database contains sparse or malformed dates.
+// Historical constant kept for reference; not used in matching logic
 export const MAX_LOOKBACK_DAYS = 365;
