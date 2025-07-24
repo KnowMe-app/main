@@ -721,7 +721,9 @@ const Matching = () => {
   useEffect(() => {
     if (!gridRef.current || !hasMore) return;
 
-    const cards = gridRef.current.querySelectorAll('[data-card]');
+    const cards = gridRef.current.querySelectorAll(
+      '[data-card]:not([data-skeleton])'
+    );
     const index = filteredUsers.length > 3 ? filteredUsers.length - 3 : filteredUsers.length - 1;
     const target = cards[index];
     if (!target) return;
@@ -818,7 +820,10 @@ const Matching = () => {
               </CardWrapper>
             );
           })}
-          {loading && Array.from({ length: 4 }).map((_, idx) => <SkeletonCard data-card key={`skeleton-${idx}`} />)}
+          {loading &&
+            Array.from({ length: 4 }).map((_, idx) => (
+              <SkeletonCard data-card data-skeleton key={`skeleton-${idx}`} />
+            ))}
             </Grid>
           </div>
           {selected && (
