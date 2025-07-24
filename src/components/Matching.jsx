@@ -34,6 +34,7 @@ import { loadCache, saveCache } from "../hooks/useMatchingCache";
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
+import { handleEmptyFetch } from './loadMoreUtils';
 
 const Container = styled.div`
   display: flex;
@@ -687,8 +688,13 @@ const Matching = () => {
       if (res.excludedCount) {
         toast.success(`${res.excludedCount} excluded`, { id: 'matching-excluded' });
       }
+      if (handleEmptyFetch(res, lastKey, setHasMore)) {
+        toast.dismiss('matching-progress');
+        toast.error('No more cards found', { id: 'matching-no-more' });
+      } else {
+        setHasMore(res.hasMore);
+      }
       setLastKey(res.lastKey);
-      setHasMore(res.hasMore);
     } finally {
       loadingRef.current = false;
       setLoading(false);
