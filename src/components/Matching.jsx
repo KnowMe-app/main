@@ -542,6 +542,7 @@ const Matching = () => {
   }, [filters, favoriteUsers]);
 
   const loadInitial = React.useCallback(async () => {
+    console.log('[loadInitial] start');
     loadingRef.current = true;
     setLoading(true);
     loadedIdsRef.current = new Set();
@@ -561,6 +562,7 @@ const Matching = () => {
       const cacheKey = JSON.stringify(filters || {});
       const cached = loadCache(cacheKey);
       if (cached) {
+        console.log('[loadInitial] using cache', cached.users.length);
         loadedIdsRef.current = new Set(cached.users.map(u => u.userId));
         setUsers(cached.users);
         await loadCommentsFor(cached.users);
@@ -645,7 +647,11 @@ const Matching = () => {
   };
 
   const loadMore = React.useCallback(async () => {
-    if (!hasMore || loadingRef.current || viewMode !== 'default') return;
+    if (!hasMore || loadingRef.current || viewMode !== 'default') {
+      console.log('[loadMore] skip', { hasMore, loading: loadingRef.current, viewMode });
+      return;
+    }
+    console.log('[loadMore] start', { lastKey, hasMore });
     loadingRef.current = true;
     setLoading(true);
     try {
@@ -666,14 +672,7 @@ const Matching = () => {
           }
         }
       );
-      console.log(
-        '[loadMore] loaded',
-        res.users.length,
-        'lastKey',
-        lastKey,
-        'hasMore',
-        res.hasMore
-      );
+      console.log('[loadMore] loaded', res.users.length, 'lastKey', lastKey, 'hasMore', res.hasMore);
       const unique = res.users.filter(u => !loadedIdsRef.current.has(u.userId));
       unique.forEach(u => loadedIdsRef.current.add(u.userId));
       setUsers(prev => {
@@ -689,6 +688,7 @@ const Matching = () => {
         toast.success(`${res.excludedCount} excluded`, { id: 'matching-excluded' });
       }
       if (handleEmptyFetch(res, lastKey, setHasMore)) {
+        console.log('[loadMore] empty fetch, no more cards');
         toast.dismiss('matching-progress');
         toast.error('No more cards found', { id: 'matching-no-more' });
       } else {
@@ -702,6 +702,7 @@ const Matching = () => {
   }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode, fetchChunk, filters]);
 
   useEffect(() => {
+    console.log('[useEffect] calling loadInitial');
     loadInitial();
   }, [loadInitial]);
 
@@ -720,12 +721,15 @@ const Matching = () => {
 
   useEffect(() => {
     if (filteredUsers.length < 6 && hasMore) {
+      console.log('[useEffect] few users left, loading more');
       loadMore();
     }
   }, [filteredUsers.length, hasMore, loadMore]);
 
   useEffect(() => {
     if (!gridRef.current || !hasMore) return;
+
+    console.log('[useEffect] setting up IntersectionObserver');
 
     const cards = gridRef.current.querySelectorAll(
       '[data-card]:not([data-skeleton])'
@@ -737,6 +741,7 @@ const Matching = () => {
     const observer = new IntersectionObserver(
       entries => {
         if (entries[0].isIntersecting) {
+          console.log('[IntersectionObserver] trigger loadMore');
           loadMore();
         }
       },
