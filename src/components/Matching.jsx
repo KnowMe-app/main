@@ -614,7 +614,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [filters]);
+  }, [fetchChunk, filters]);
 
   const loadFavoriteCards = async () => {
     const owner = auth.currentUser?.uid;
