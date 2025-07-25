@@ -195,7 +195,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [search, setSearch] = useState(() => {
     const params = new URLSearchParams(location.search);
-    return params.get('search') || '';
+    const urlSearch = params.get('search');
+    if (urlSearch) return urlSearch;
+    return localStorage.getItem('searchQuery') || '';
   });
 
   const [state, setState] = useState({});
