@@ -410,6 +410,8 @@ const Matching = () => {
   const [showPhoto, setShowPhoto] = useState(false);
   const [favoriteUsers, setFavoriteUsers] = useState({});
   const [dislikeUsers, setDislikeUsers] = useState({});
+  const favoriteUsersRef = useRef(favoriteUsers);
+  const dislikeUsersRef = useRef(dislikeUsers);
   const [viewMode, setViewMode] = useState('default');
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({});
@@ -430,6 +432,14 @@ const Matching = () => {
     setHasMore(false);
     await loadCommentsFor(arr);
   };
+
+  useEffect(() => {
+    favoriteUsersRef.current = favoriteUsers;
+  }, [favoriteUsers]);
+
+  useEffect(() => {
+    dislikeUsersRef.current = dislikeUsers;
+  }, [dislikeUsers]);
 
   const loadCommentsFor = async list => {
     const owner = auth.currentUser?.uid;
@@ -494,7 +504,7 @@ const Matching = () => {
         arr.map(u => [u.userId, u]),
         null,
         filters,
-        favoriteUsers
+        favoriteUsersRef.current
       )
         .map(([id, u]) => u)
         .filter(u => !exclude.has(u.userId));
@@ -523,7 +533,7 @@ const Matching = () => {
       res.users.map(u => [u.userId, u]),
       null,
       filters,
-      favoriteUsers
+      favoriteUsersRef.current
     )
       .map(([id, u]) => u)
       .filter(u => !exclude.has(u.userId));
@@ -539,7 +549,7 @@ const Matching = () => {
     const lastKeyResult = res.lastKey;
     toast.dismiss('matching-progress');
     return { users: withPhotos, lastKey: lastKeyResult, hasMore, excludedCount: excluded };
-  }, [filters, favoriteUsers]);
+  }, [filters]);
 
   const loadInitial = React.useCallback(async () => {
     console.log('[loadInitial] start');
@@ -604,7 +614,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [fetchChunk, filters]);
+  }, [filters]);
 
   const loadFavoriteCards = async () => {
     const owner = auth.currentUser?.uid;
@@ -656,8 +666,8 @@ const Matching = () => {
     setLoading(true);
     try {
       const exclude = new Set([
-        ...Object.keys(favoriteUsers),
-        ...Object.keys(dislikeUsers),
+        ...Object.keys(favoriteUsersRef.current),
+        ...Object.keys(dislikeUsersRef.current),
       ]);
       const res = await fetchChunk(
         LOAD_MORE,
@@ -699,7 +709,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [hasMore, lastKey, favoriteUsers, dislikeUsers, viewMode, fetchChunk, filters]);
+  }, [hasMore, lastKey, viewMode, fetchChunk, filters]);
 
   useEffect(() => {
     console.log('[useEffect] calling loadInitial');
