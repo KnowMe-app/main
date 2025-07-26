@@ -446,7 +446,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [ownerId]);
 
   useEffect(() => {
-    localStorage.setItem('userFilters', JSON.stringify(filters));
+    localStorage.setItem('addFilters', JSON.stringify(filters));
   }, [filters]);
 
   useEffect(() => {
@@ -829,7 +829,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 {duplicates ? ` з (${duplicates})` : ''}
               </p>
             ) : null}
-            <FilterPanel onChange={setFilters} />
+            <FilterPanel onChange={setFilters} storageKey="addFilters" />
             <ButtonsContainer>
               {userNotFound && (
                 <Button onClick={handleAddUser} disabled={adding}>

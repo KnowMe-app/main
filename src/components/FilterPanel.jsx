@@ -54,9 +54,19 @@ const normalizeFilterGroup = (value, defaults) => {
   return typeof value === 'object' && value !== null ? { ...defaults, ...value } : { ...defaults };
 };
 
-const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false, mode = 'default' }) => {
-  const defaultFilters = useMemo(() => (mode === 'matching' ? defaultsMatching : defaultsAdd), [mode]);
-  const storageKey = mode === 'matching' ? 'matchingFilters' : 'userFilters';
+const FilterPanel = ({
+  onChange,
+  hideUserId = false,
+  hideCommentLength = false,
+  mode = 'default',
+  storageKey: customKey,
+}) => {
+  const defaultFilters = useMemo(
+    () => (mode === 'matching' ? defaultsMatching : defaultsAdd),
+    [mode],
+  );
+  const storageKey =
+    customKey || (mode === 'matching' ? 'matchingFilters' : 'userFilters');
 
   const getInitialFilters = () => {
     const stored = localStorage.getItem(storageKey);
