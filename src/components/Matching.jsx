@@ -419,6 +419,7 @@ const Matching = () => {
   const [showUserCard, setShowUserCard] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [userScrolled, setUserScrolled] = useState(false);
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
@@ -719,6 +720,14 @@ const Matching = () => {
   const gridRef = useRef(null);
   const observerRef = useRef(null);
 
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const onScroll = () => setUserScrolled(true);
+    grid.addEventListener('scroll', onScroll);
+    return () => grid.removeEventListener('scroll', onScroll);
+  }, []);
+
   const filteredUsers =
     filters && Object.keys(filters).length > 0
       ? filterMain(
@@ -737,7 +746,7 @@ const Matching = () => {
   }, [filteredUsers.length, hasMore, loadMore]);
 
   useEffect(() => {
-    if (!gridRef.current || !hasMore) return;
+    if (!gridRef.current || !hasMore || !userScrolled) return;
 
     console.log('[useEffect] setting up IntersectionObserver');
 
@@ -763,7 +772,7 @@ const Matching = () => {
     return () => {
       if (observerRef.current) observerRef.current.disconnect();
     };
-  }, [loadMore, filteredUsers.length, hasMore]);
+  }, [loadMore, filteredUsers.length, hasMore, userScrolled]);
 
   const dotsMenu = () => (
     <>
