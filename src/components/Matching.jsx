@@ -7,7 +7,7 @@ import { color } from './styles';
 import toast from 'react-hot-toast';
 import {
   fetchUsersByLastLoginPaged,
-  getAllUserPhotos,
+  fetchUserById,
   fetchFavoriteUsersData,
   fetchDislikeUsersData,
   fetchFavoriteUsers,
@@ -512,14 +512,12 @@ const Matching = () => {
       excluded += arr.length - filtered.length;
       const unique = filtered.filter(u => !added.has(u.userId)).slice(0, limit - added.size);
       if (unique.length > 0) {
-        const withPhotos = await Promise.all(
-          unique.map(async user => {
-            const photos = await getAllUserPhotos(user.userId);
-            return { ...user, photos };
-          })
+        const enriched = await Promise.all(
+          unique.map(user => fetchUserById(user.userId))
         );
-        withPhotos.forEach(u => added.add(u.userId));
-        if (onPart) onPart(withPhotos);
+        const valid = enriched.filter(Boolean);
+        valid.forEach(u => added.add(u.userId));
+        if (onPart) onPart(valid);
       }
     };
 
@@ -541,15 +539,13 @@ const Matching = () => {
     excluded += res.users.length - filtered.length;
     const hasMore = filtered.length > limit || res.hasMore;
     const slice = filtered.slice(0, limit);
-    const withPhotos = await Promise.all(
-      slice.map(async user => {
-        const photos = await getAllUserPhotos(user.userId);
-        return { ...user, photos };
-      })
+    const enrichedSlice = await Promise.all(
+      slice.map(user => fetchUserById(user.userId))
     );
+    const validSlice = enrichedSlice.filter(Boolean);
     const lastKeyResult = res.lastKey;
     toast.dismiss('matching-progress');
-    return { users: withPhotos, lastKey: lastKeyResult, hasMore, excludedCount: excluded };
+    return { users: validSlice, lastKey: lastKeyResult, hasMore, excludedCount: excluded };
   }, [filters]);
 
   const loadInitial = React.useCallback(async () => {
