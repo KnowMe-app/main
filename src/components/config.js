@@ -205,7 +205,11 @@ export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
     return { users: [], lastKey: null, hasMore: false };
   }
 
-  let entries = Object.entries(snapshot.val()).sort((a, b) => b[1].lastLogin2.localeCompare(a[1].lastLogin2));
+  let entries = Object.entries(snapshot.val()).sort((a, b) => {
+    const bDate = b[1].lastLogin2 || '';
+    const aDate = a[1].lastLogin2 || '';
+    return bDate.localeCompare(aDate);
+  });
 
   const hasMore = entries.length > limit;
   if (hasMore) entries = entries.slice(0, limit);
