@@ -567,7 +567,7 @@ const Matching = () => {
         setLastKey(cached.lastKey);
         setHasMore(cached.hasMore);
         setViewMode('default');
-        return;
+        // continue to fetch latest data to refresh cache
       }
       const res = await fetchChunk(
         INITIAL_LOAD,
