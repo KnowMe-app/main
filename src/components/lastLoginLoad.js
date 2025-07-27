@@ -58,7 +58,11 @@ export async function fetchUsersByLastLoginPaged(
         const [d, m, y] = str.split('.');
         return `${y}-${m}-${d}`;
       };
-      chunk.sort((a, b) => parse(b[1].lastLogin).localeCompare(parse(a[1].lastLogin)));
+      chunk.sort((a, b) => {
+        const bDate = b[1].lastLogin ? parse(b[1].lastLogin) : '';
+        const aDate = a[1].lastLogin ? parse(a[1].lastLogin) : '';
+        return bDate.localeCompare(aDate);
+      });
       combined.push(...chunk);
     }
 
