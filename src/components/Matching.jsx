@@ -44,7 +44,7 @@ const Container = styled.div`
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 10px;
+  padding: 5px;
   background-color: #f5f5f5;
 
   @media (max-width: 768px) {
@@ -123,7 +123,7 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 const Card = styled.div`
   width: 100%;
   height: ${({ $small, $hasPhoto }) => {
-    const base = $small ? 25 : 40;
+    const base = $small ? 30 : 50;
     return `${$hasPhoto ? base : base / 2}vh`;
   }};
   background: linear-gradient(135deg, orange, yellow);
@@ -159,7 +159,7 @@ const loadingWave = keyframes`
 `;
 
 const SkeletonCard = styled(Card)`
-  height: ${({ $small }) => ($small ? '25vh' : '40vh')};
+  height: ${({ $small }) => ($small ? '30vh' : '50vh')};
   background: linear-gradient(90deg, ${color.paleAccent2} 25%, ${color.paleAccent5} 50%, ${color.paleAccent2} 75%);
   background-size: 200% 100%;
   animation: ${loadingWave} 1.5s infinite;
