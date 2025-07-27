@@ -6,7 +6,7 @@ import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
 import toast from 'react-hot-toast';
 import {
-  fetchUsersByLastLoginPaged,
+  fetchUsersByLastLogin2,
   fetchUserById,
   fetchFavoriteUsersData,
   fetchDislikeUsersData,
@@ -404,7 +404,7 @@ const LOAD_MORE = 1;
 const Matching = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
-  const [lastKey, setLastKey] = useState(0);
+  const [lastKey, setLastKey] = useState(undefined);
   const [hasMore, setHasMore] = useState(true);
   const [selected, setSelected] = useState(null);
   const [showPhoto, setShowPhoto] = useState(false);
@@ -490,63 +490,42 @@ const Matching = () => {
   const fetchChunk = React.useCallback(
     async (
       limit,
-      offset,
+      lastDate,
       exclude = new Set(),
       onPart
     ) => {
-    const added = new Set();
-    let excluded = 0;
-    const handleProgress = async (part, date) => {
-      if (date) {
-        toast.loading(`Searching ${date}`, { id: 'matching-progress' });
-      }
-      const arr = Object.entries(part).map(([id, data]) => ({ userId: id, ...data }));
+      const res = await fetchUsersByLastLogin2(
+        limit + exclude.size + 1,
+        lastDate
+      );
+
       const filtered = filterMain(
-        arr.map(u => [u.userId, u]),
+        res.users.map(u => [u.userId, u]),
         null,
         filters,
         favoriteUsersRef.current
       )
         .map(([id, u]) => u)
         .filter(u => !exclude.has(u.userId));
-      excluded += arr.length - filtered.length;
-      const unique = filtered.filter(u => !added.has(u.userId)).slice(0, limit - added.size);
-      if (unique.length > 0) {
-        const enriched = await Promise.all(
-          unique.map(user => fetchUserById(user.userId))
-        );
-        const valid = enriched.filter(Boolean);
-        valid.forEach(u => added.add(u.userId));
-        if (onPart) onPart(valid);
-      }
-    };
 
-    const res = await fetchUsersByLastLoginPaged(
-      offset,
-      limit + exclude.size + 1,
-      undefined,
-      handleProgress
-    );
-    console.log('[fetchChunk] loaded', res.users.length, 'offset', offset, 'limit', limit);
-    const filtered = filterMain(
-      res.users.map(u => [u.userId, u]),
-      null,
-      filters,
-      favoriteUsersRef.current
-    )
-      .map(([id, u]) => u)
-      .filter(u => !exclude.has(u.userId));
-    excluded += res.users.length - filtered.length;
-    const hasMore = filtered.length > limit || res.hasMore;
-    const slice = filtered.slice(0, limit);
-    const enrichedSlice = await Promise.all(
-      slice.map(user => fetchUserById(user.userId))
-    );
-    const validSlice = enrichedSlice.filter(Boolean);
-    const lastKeyResult = res.lastKey;
-    toast.dismiss('matching-progress');
-    return { users: validSlice, lastKey: lastKeyResult, hasMore, excludedCount: excluded };
-  }, [filters]);
+      const excluded = res.users.length - filtered.length;
+      const hasMore = filtered.length > limit || res.hasMore;
+      const slice = filtered.slice(0, limit);
+      const enrichedSlice = await Promise.all(
+        slice.map(user => fetchUserById(user.userId))
+      );
+      const validSlice = enrichedSlice.filter(Boolean);
+      if (onPart) onPart(validSlice);
+
+      return {
+        users: validSlice,
+        lastKey: res.lastKey,
+        hasMore,
+        excludedCount: excluded,
+      };
+    },
+    [filters]
+  );
 
   const loadInitial = React.useCallback(async () => {
     console.log('[loadInitial] start');
@@ -580,7 +559,7 @@ const Matching = () => {
       }
       const res = await fetchChunk(
         INITIAL_LOAD,
-        0,
+        undefined,
         exclude,
         async part => {
           const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
@@ -696,7 +675,6 @@ const Matching = () => {
       }
       if (handleEmptyFetch(res, lastKey, setHasMore)) {
         console.log('[loadMore] empty fetch, no more cards');
-        toast.dismiss('matching-progress');
         toast.error('No more cards found', { id: 'matching-no-more' });
       } else {
         setHasMore(res.hasMore);
