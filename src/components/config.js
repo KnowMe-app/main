@@ -788,11 +788,15 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
     const userRefRTDB = ref2(database, `users/${userId}`);
     const cleanedUploadedInfo = removeUndefined(uploadedInfo);
     if (condition === 'update') {
-      await update(userRefRTDB, { ...cleanedUploadedInfo });
+      await update(userRefRTDB, cleanedUploadedInfo);
+    } else {
+      await set(userRefRTDB, cleanedUploadedInfo);
     }
-    await set(userRefRTDB, { ...cleanedUploadedInfo });
   } catch (error) {
-    console.error('Сталася помилка під час збереження даних в Realtime Database2:', error);
+    console.error(
+      'Сталася помилка під час збереження даних в Realtime Database2:',
+      error
+    );
     throw error;
   }
 };
