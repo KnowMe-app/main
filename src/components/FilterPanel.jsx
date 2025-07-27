@@ -29,7 +29,7 @@ const defaultsAdd = {
 };
 
 const defaultsMatching = {
-  role: { ed: true, ag: false, ip: false, other: false },
+  userRole: { ed: true, ag: false, ip: false, other: false },
   maritalStatus: { married: true, unmarried: true, other: true },
   bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true },
   rh: { '+': true, '-': true, other: true },
@@ -54,19 +54,9 @@ const normalizeFilterGroup = (value, defaults) => {
   return typeof value === 'object' && value !== null ? { ...defaults, ...value } : { ...defaults };
 };
 
-const FilterPanel = ({
-  onChange,
-  hideUserId = false,
-  hideCommentLength = false,
-  mode = 'default',
-  storageKey: customKey,
-}) => {
-  const defaultFilters = useMemo(
-    () => (mode === 'matching' ? defaultsMatching : defaultsAdd),
-    [mode],
-  );
-  const storageKey =
-    customKey || (mode === 'matching' ? 'matchingFilters' : 'userFilters');
+const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false, mode = 'default', storageKey: customKey }) => {
+  const defaultFilters = useMemo(() => (mode === 'matching' ? defaultsMatching : defaultsAdd), [mode]);
+  const storageKey = customKey || (mode === 'matching' ? 'matchingFilters' : 'userFilters');
 
   const getInitialFilters = () => {
     const stored = localStorage.getItem(storageKey);
@@ -75,7 +65,8 @@ const FilterPanel = ({
       const parsed = JSON.parse(stored);
       const result = {};
       for (const key of Object.keys(defaultFilters)) {
-        result[key] = normalizeFilterGroup(parsed[key], defaultFilters[key]);
+        const savedKey = parsed[key] !== undefined ? key : key === 'userRole' ? 'role' : key;
+        result[key] = normalizeFilterGroup(parsed[savedKey], defaultFilters[key]);
       }
       return result;
     } catch {
