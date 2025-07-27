@@ -422,6 +422,146 @@ const Id = styled.div`
   margin-top: 5px;
 `;
 
+const DescriptionPage = styled.div`
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: ${color.black};
+`;
+
+const SwipeableCard = ({
+  user,
+  photo,
+  role,
+  isAgency,
+  nameParts,
+  isAdmin,
+  favoriteUsers,
+  setFavoriteUsers,
+  dislikeUsers,
+  setDislikeUsers,
+  viewMode,
+  handleRemove,
+  togglePublish,
+  onSelect,
+}) => {
+  const slides = React.useMemo(() => {
+    const arr = Array.isArray(user.photos)
+      ? user.photos
+      : [getCurrentValue(user.photos)].filter(Boolean);
+    return [...arr, 'description'];
+  }, [user.photos]);
+
+  const [index, setIndex] = useState(0);
+  const startX = useRef(null);
+  const wasSwiped = useRef(false);
+
+  const handleTouchStart = e => {
+    if (e.touches && e.touches.length > 0) {
+      startX.current = e.touches[0].clientX;
+    }
+  };
+
+  const handleTouchEnd = e => {
+    if (startX.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - startX.current;
+    if (deltaX > 50) {
+      setIndex(i => Math.max(i - 1, 0));
+      wasSwiped.current = true;
+    } else if (deltaX < -50) {
+      setIndex(i => Math.min(i + 1, slides.length - 1));
+      wasSwiped.current = true;
+    }
+    startX.current = null;
+  };
+
+  const handleClick = () => {
+    if (wasSwiped.current) {
+      wasSwiped.current = false;
+      return;
+    }
+    onSelect(user);
+  };
+
+  const current = slides[index];
+  const style =
+    current !== 'description' && current
+      ? { backgroundImage: `url(${current})`, backgroundColor: 'transparent' }
+      : { backgroundColor: '#fff' };
+
+  return (
+    <Card
+      $small={isAgency}
+      $hasPhoto={!!photo}
+      data-card
+      onClick={handleClick}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      style={style}
+    >
+      {current === 'description' && <DescriptionPage>description</DescriptionPage>}
+      {isAdmin && (
+        <AdminToggle
+          published={user.publish}
+          onClick={e => {
+            e.stopPropagation();
+            togglePublish(user);
+          }}
+        />
+      )}
+      <BtnFavorite
+        userId={user.userId}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
+      <BtnDislike
+        userId={user.userId}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
+      {isAgency && (
+        <CardInfo>
+          <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
+          {nameParts && (
+            <div>
+              <strong>{nameParts}</strong>
+            </div>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+            }}
+          >
+            {getCurrentValue(user.country) && (
+              <span>{getCurrentValue(user.country)}</span>
+            )}
+            <Icons>{fieldContactsIcons(user)}</Icons>
+          </div>
+          {getCurrentValue(user.moreInfo_main) && (
+            <div style={{ whiteSpace: 'pre-wrap' }}>
+              {getCurrentValue(user.moreInfo_main)}
+            </div>
+          )}
+        </CardInfo>
+      )}
+    </Card>
+  );
+};
+
 const renderSelectedFields = user => {
   return FIELDS.map(field => {
     let value = user[field.key];
@@ -862,72 +1002,38 @@ const Matching = () => {
                   .join(' ');
                 return (
                   <CardWrapper key={user.userId}>
-                    <Card
-                      $small={isAgency}
-                      $hasPhoto={!!photo}
-                      data-card
-                      onClick={() => setSelected(user)}
-                      style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}
-                    >
-                      {isAdmin && (
-                        <AdminToggle
-                          published={user.publish}
-                          onClick={e => {
-                            e.stopPropagation();
-                            togglePublish(user);
-                          }}
-                        />
-                      )}
-                      <BtnFavorite
-                        userId={user.userId}
-                        favoriteUsers={favoriteUsers}
-                        setFavoriteUsers={setFavoriteUsers}
-                        dislikeUsers={dislikeUsers}
-                        setDislikeUsers={setDislikeUsers}
-                        onRemove={viewMode !== 'default' ? handleRemove : undefined}
-                      />
-                      <BtnDislike
-                        userId={user.userId}
-                        dislikeUsers={dislikeUsers}
-                        setDislikeUsers={setDislikeUsers}
-                        favoriteUsers={favoriteUsers}
-                        setFavoriteUsers={setFavoriteUsers}
-                        onRemove={viewMode !== 'default' ? handleRemove : undefined}
-                      />
-                      {isAgency && (
-                        <CardInfo>
-                          <RoleHeader>
-                            {role === 'ag' ? 'Agency' : 'Couple'}
-                          </RoleHeader>
-                          {nameParts && <div><strong>{nameParts}</strong></div>}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                            {getCurrentValue(user.country) && <span>{getCurrentValue(user.country)}</span>}
-                            <Icons>{fieldContactsIcons(user)}</Icons>
-                          </div>
-                          {getCurrentValue(user.moreInfo_main) && (
-                            <div style={{ whiteSpace: 'pre-wrap' }}>
-                              {getCurrentValue(user.moreInfo_main)}
-                            </div>
-                          )}
-                        </CardInfo>
-                      )}
-                    </Card>
+                    <SwipeableCard
+                      user={user}
+                      photo={photo}
+                      role={role}
+                      isAgency={isAgency}
+                      nameParts={nameParts}
+                      isAdmin={isAdmin}
+                      favoriteUsers={favoriteUsers}
+                      setFavoriteUsers={setFavoriteUsers}
+                      dislikeUsers={dislikeUsers}
+                      setDislikeUsers={setDislikeUsers}
+                      viewMode={viewMode}
+                      handleRemove={handleRemove}
+                      togglePublish={togglePublish}
+                      onSelect={setSelected}
+                    />
                     <ResizableCommentInput
                       plain
                       value={comments[user.userId] || ''}
                       onClick={e => e.stopPropagation()}
-                  onChange={e => {
-                    const val = e.target.value;
-                    setComments(prev => ({ ...prev, [user.userId]: val }));
-                  }}
-                  onBlur={() => {
-                    const owner = auth.currentUser?.uid;
-                    if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
-                  }}
-                />
-              </CardWrapper>
-            );
-          })}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setComments(prev => ({ ...prev, [user.userId]: val }));
+                      }}
+                      onBlur={() => {
+                        const owner = auth.currentUser?.uid;
+                        if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
+                      }}
+                    />
+                  </CardWrapper>
+                );
+              })}
           {loading &&
             Array.from({ length: 4 }).map((_, idx) => (
               <SkeletonCard data-card data-skeleton key={`skeleton-${idx}`} />
