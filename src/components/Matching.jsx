@@ -84,6 +84,7 @@ const CommentInput = styled.textarea`
   margin-right: auto;
   resize: none;
   overflow: hidden;
+  min-height: 20px;
   border: ${props => (props.plain ? 'none' : `1px solid ${color.gray3}`)};
   border-radius: ${props => (props.plain ? '0' : '8px')};
   outline: ${props => (props.plain ? 'none' : 'auto')};
@@ -390,7 +391,7 @@ const RoleHeader = styled(Title)`
 const AdminToggle = styled.div`
   position: absolute;
   top: 5px;
-  left: 5px;
+  right: 5px;
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -883,6 +884,10 @@ const Matching = () => {
                             {role === 'ag' ? 'Agency' : 'Couple'}
                           </RoleHeader>
                           {nameParts && <div><strong>{nameParts}</strong></div>}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                            {getCurrentValue(user.country) && <span>{getCurrentValue(user.country)}</span>}
+                            <Icons>{fieldContactsIcons(user)}</Icons>
+                          </div>
                           {getCurrentValue(user.moreInfo_main) && (
                             <div style={{ whiteSpace: 'pre-wrap' }}>
                               {getCurrentValue(user.moreInfo_main)}

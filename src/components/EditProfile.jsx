@@ -21,6 +21,7 @@ const Container = styled.div`
   box-sizing: border-box;
   max-width: 450px;
   width: 100%;
+  margin: 0 auto;
 `;
 
 const BackButton = styled.button`
