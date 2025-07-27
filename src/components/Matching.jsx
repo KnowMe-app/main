@@ -19,6 +19,8 @@ import {
   database,
   auth,
   updateDataInNewUsersRTDB,
+  updateDataInRealtimeDB,
+  updateDataInFiresoreDB,
 } from './config';
 import { onValue, ref as refDb } from 'firebase/database';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -367,9 +369,9 @@ const Icons = styled.div`
   color: ${color.accent};
 `;
 
-const AgencyInfo = styled.div`
+const CardInfo = styled.div`
   position: absolute;
-  bottom: 0;
+  top: 0;
   left: 0;
   width: 100%;
   padding: 5px;
@@ -377,6 +379,24 @@ const AgencyInfo = styled.div`
   color: ${color.black};
   font-size: 14px;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+`;
+
+const RoleHeader = styled(Title)`
+  margin-bottom: 2px;
+`;
+
+const AdminToggle = styled.div`
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: ${props => (props.published ? 'green' : 'red')};
+  z-index: 10;
+  cursor: pointer;
 `;
 
 const Id = styled.div`
@@ -437,6 +457,22 @@ const Matching = () => {
   const loadedIdsRef = useRef(new Set());
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
+  };
+
+  const togglePublish = async user => {
+    if (!isAdmin) return;
+    const newValue = !user.publish;
+    setUsers(prev =>
+      prev.map(u =>
+        u.userId === user.userId ? { ...u, publish: newValue } : u
+      )
+    );
+    try {
+      await updateDataInRealtimeDB(user.userId, { publish: newValue }, 'update');
+      await updateDataInFiresoreDB(user.userId, { publish: newValue }, 'update');
+    } catch (err) {
+      console.error('Failed to toggle publish', err);
+    }
   };
 
   const applySearchResults = async res => {
@@ -816,6 +852,15 @@ const Matching = () => {
                       onClick={() => setSelected(user)}
                       style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}
                     >
+                      {isAdmin && (
+                        <AdminToggle
+                          published={user.publish}
+                          onClick={e => {
+                            e.stopPropagation();
+                            togglePublish(user);
+                          }}
+                        />
+                      )}
                       <BtnFavorite
                         userId={user.userId}
                         favoriteUsers={favoriteUsers}
@@ -833,15 +878,17 @@ const Matching = () => {
                         onRemove={viewMode !== 'default' ? handleRemove : undefined}
                       />
                       {isAgency && (
-                        <AgencyInfo>
+                        <CardInfo>
+                          <RoleHeader>
+                            {role === 'ag' ? 'Agency' : 'Couple'}
+                          </RoleHeader>
                           {nameParts && <div><strong>{nameParts}</strong></div>}
                           {getCurrentValue(user.moreInfo_main) && (
-                            <div style={{ whiteSpace: 'pre-wrap' }}>{getCurrentValue(user.moreInfo_main)}</div>
+                            <div style={{ whiteSpace: 'pre-wrap' }}>
+                              {getCurrentValue(user.moreInfo_main)}
+                            </div>
                           )}
-                          <Icons style={{ marginTop: '5px' }}>
-                            {fieldContactsIcons(user)}
-                          </Icons>
-                        </AgencyInfo>
+                        </CardInfo>
                       )}
                     </Card>
                     <ResizableCommentInput
