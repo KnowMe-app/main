@@ -112,7 +112,10 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 
 const Card = styled.div`
   width: 100%;
-  height: ${props => (props.$small ? '25vh' : '40vh')};
+  height: ${({ $small, $hasPhoto }) => {
+    const base = $small ? 25 : 40;
+    return `${$hasPhoto ? base : base / 2}vh`;
+  }};
   background: linear-gradient(135deg, orange, yellow);
   background-size: cover;
   background-position: center;
@@ -146,6 +149,7 @@ const loadingWave = keyframes`
 `;
 
 const SkeletonCard = styled(Card)`
+  height: ${({ $small }) => ($small ? '25vh' : '40vh')};
   background: linear-gradient(90deg, ${color.paleAccent2} 25%, ${color.paleAccent5} 50%, ${color.paleAccent2} 75%);
   background-size: 200% 100%;
   animation: ${loadingWave} 1.5s infinite;
@@ -850,6 +854,7 @@ const Matching = () => {
                   <CardWrapper key={user.userId}>
                     <Card
                       $small={isAgency}
+                      $hasPhoto={!!photo}
                       data-card
                       onClick={() => setSelected(user)}
                       style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}
@@ -885,7 +890,7 @@ const Matching = () => {
                             {role === 'ag' ? 'Agency' : 'Couple'}
                           </RoleHeader>
                           {nameParts && <div><strong>{nameParts}</strong></div>}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', justifyContent: 'center' }}>
                             {getCurrentValue(user.country) && <span>{getCurrentValue(user.country)}</span>}
                             <Icons>{fieldContactsIcons(user)}</Icons>
                           </div>
