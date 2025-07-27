@@ -398,12 +398,7 @@ const searchByPrefixesUsers = async (searchValue, uniqueUserIds, users) => {
           let fieldValue = userData[prefix];
           if (typeof fieldValue === 'string') fieldValue = fieldValue.trim();
           else return;
-          if (
-            fieldValue &&
-            fieldValue.toLowerCase().includes(formatted.toLowerCase()) &&
-            userId.length > 20 &&
-            !uniqueUserIds.has(userId)
-          ) {
+          if (fieldValue && fieldValue.toLowerCase().includes(formatted.toLowerCase()) && userId.length > 20 && !uniqueUserIds.has(userId)) {
             uniqueUserIds.add(userId);
             users[userId] = { userId, ...userData };
           }
@@ -802,108 +797,103 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
   }
 };
 
-export const updateDataInNewUsersRTDB = async (
-  userId,
-  uploadedInfo,
-  condition,
-  skipIndexing = false
-) => {
+export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, skipIndexing = false) => {
   try {
     const userRefRTDB = ref2(database, `newUsers/${userId}`);
-  const snapshot = await get(userRefRTDB);
-  const currentUserData = snapshot.exists() ? snapshot.val() : {};
+    const snapshot = await get(userRefRTDB);
+    const currentUserData = snapshot.exists() ? snapshot.val() : {};
 
-  if (!skipIndexing) {
-    // Перебір ключів та їх обробка
-    for (const key of keysToCheck) {
-      const isEmptyString = uploadedInfo[key] === '';
+    if (!skipIndexing) {
+      // Перебір ключів та їх обробка
+      for (const key of keysToCheck) {
+        const isEmptyString = uploadedInfo[key] === '';
 
-      if (isEmptyString) {
-        console.log(`${key} має пусте значення. Видаляємо.`);
-        await updateSearchId(key, currentUserData[key], userId, 'remove'); // Видаляємо з searchId
-        uploadedInfo[key] = null; // Видаляємо ключ з newUsers/${userId}
-        continue; // Переходимо до наступного ключа
-      }
-
-      if (uploadedInfo[key] !== undefined) {
-        // console.log(`${key} uploadedInfo[key] :>> `, uploadedInfo[key]);
-
-        // Формуємо currentValues
-        const currentValues = Array.isArray(currentUserData?.[key])
-          ? currentUserData[key].filter(Boolean)
-          : typeof currentUserData?.[key] === 'object'
-            ? Object.values(currentUserData[key]).filter(Boolean)
-            : typeof currentUserData?.[key] === 'string'
-              ? [currentUserData[key]].filter(Boolean)
-              : [];
-
-        // Формуємо newValues
-        const newValues = Array.isArray(uploadedInfo[key])
-          ? uploadedInfo[key].filter(Boolean)
-          : typeof uploadedInfo[key] === 'object'
-            ? Object.values(uploadedInfo[key]).filter(Boolean)
-            : typeof uploadedInfo[key] === 'string'
-              ? [uploadedInfo[key]].filter(Boolean)
-              : [];
-
-        // console.log(`${key} currentValues :>> `, currentValues);
-        // console.log(`${key} newValues :>> `, newValues);
-
-        // Видаляємо значення, яких більше немає у новому масиві
-        for (const value of currentValues) {
-          let cleanedValue = value;
-
-          // Якщо ключ — це 'phone', прибираємо пробіли у значенні
-          if (key === 'phone') {
-            if (typeof value === 'number') {
-              cleanedValue = String(value).replace(/\s+/g, '');
-            } else if (typeof value === 'string') {
-              cleanedValue = value.replace(/\s+/g, '');
-            } else if (Array.isArray(value)) {
-              // Якщо value є масивом телефонів
-              cleanedValue = value.map(v => (typeof v === 'number' ? String(v) : v)).map(v => v.replace(/\s+/g, ''));
-            } else {
-              console.warn(`Неправильний тип даних для ключа 'phone':`, value);
-              cleanedValue = ''; // Запобігаємо помилці та уникаємо некоректного значення
-            }
-          }
-
-          if (!newValues.includes(cleanedValue)) {
-            await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'remove'); // Видаляємо конкретний ID
-          }
+        if (isEmptyString) {
+          console.log(`${key} має пусте значення. Видаляємо.`);
+          await updateSearchId(key, currentUserData[key], userId, 'remove'); // Видаляємо з searchId
+          uploadedInfo[key] = null; // Видаляємо ключ з newUsers/${userId}
+          continue; // Переходимо до наступного ключа
         }
 
-        // Додаємо нові значення, яких не було в старому масиві
-        for (const value of newValues) {
-          let cleanedValue = value;
+        if (uploadedInfo[key] !== undefined) {
+          // console.log(`${key} uploadedInfo[key] :>> `, uploadedInfo[key]);
 
-          // Якщо ключ — це 'phone', прибираємо пробіли у значенні
-          if (key === 'phone') {
-            if (typeof value === 'number') {
-              cleanedValue = String(value).replace(/\s+/g, '');
-            } else if (typeof value === 'string') {
-              cleanedValue = value.replace(/\s+/g, '');
-            } else if (Array.isArray(value)) {
-              // Якщо value є масивом телефонів
-              cleanedValue = value.map(v => (typeof v === 'number' ? String(v) : v)).map(v => v.replace(/\s+/g, ''));
-            } else {
-              console.warn(`Неправильний тип даних для ключа 'phone':`, value);
-              cleanedValue = ''; // Запобігаємо помилці та уникаємо некоректного значення
+          // Формуємо currentValues
+          const currentValues = Array.isArray(currentUserData?.[key])
+            ? currentUserData[key].filter(Boolean)
+            : typeof currentUserData?.[key] === 'object'
+              ? Object.values(currentUserData[key]).filter(Boolean)
+              : typeof currentUserData?.[key] === 'string'
+                ? [currentUserData[key]].filter(Boolean)
+                : [];
+
+          // Формуємо newValues
+          const newValues = Array.isArray(uploadedInfo[key])
+            ? uploadedInfo[key].filter(Boolean)
+            : typeof uploadedInfo[key] === 'object'
+              ? Object.values(uploadedInfo[key]).filter(Boolean)
+              : typeof uploadedInfo[key] === 'string'
+                ? [uploadedInfo[key]].filter(Boolean)
+                : [];
+
+          // console.log(`${key} currentValues :>> `, currentValues);
+          // console.log(`${key} newValues :>> `, newValues);
+
+          // Видаляємо значення, яких більше немає у новому масиві
+          for (const value of currentValues) {
+            let cleanedValue = value;
+
+            // Якщо ключ — це 'phone', прибираємо пробіли у значенні
+            if (key === 'phone') {
+              if (typeof value === 'number') {
+                cleanedValue = String(value).replace(/\s+/g, '');
+              } else if (typeof value === 'string') {
+                cleanedValue = value.replace(/\s+/g, '');
+              } else if (Array.isArray(value)) {
+                // Якщо value є масивом телефонів
+                cleanedValue = value.map(v => (typeof v === 'number' ? String(v) : v)).map(v => v.replace(/\s+/g, ''));
+              } else {
+                console.warn(`Неправильний тип даних для ключа 'phone':`, value);
+                cleanedValue = ''; // Запобігаємо помилці та уникаємо некоректного значення
+              }
+            }
+
+            if (!newValues.includes(cleanedValue)) {
+              await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'remove'); // Видаляємо конкретний ID
             }
           }
 
-          // console.log('cleanedValue :>> ', cleanedValue);
+          // Додаємо нові значення, яких не було в старому масиві
+          for (const value of newValues) {
+            let cleanedValue = value;
 
-          // Додаємо новий ID, якщо його ще немає в currentValues
-          if (!currentValues.includes(cleanedValue)) {
-            console.log('currentValues :>> ', currentValues);
-            console.log('cleanedValue :>> ', cleanedValue);
-            await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'); // Додаємо новий ID
+            // Якщо ключ — це 'phone', прибираємо пробіли у значенні
+            if (key === 'phone') {
+              if (typeof value === 'number') {
+                cleanedValue = String(value).replace(/\s+/g, '');
+              } else if (typeof value === 'string') {
+                cleanedValue = value.replace(/\s+/g, '');
+              } else if (Array.isArray(value)) {
+                // Якщо value є масивом телефонів
+                cleanedValue = value.map(v => (typeof v === 'number' ? String(v) : v)).map(v => v.replace(/\s+/g, ''));
+              } else {
+                console.warn(`Неправильний тип даних для ключа 'phone':`, value);
+                cleanedValue = ''; // Запобігаємо помилці та уникаємо некоректного значення
+              }
+            }
+
+            // console.log('cleanedValue :>> ', cleanedValue);
+
+            // Додаємо новий ID, якщо його ще немає в currentValues
+            if (!currentValues.includes(cleanedValue)) {
+              console.log('currentValues :>> ', currentValues);
+              console.log('cleanedValue :>> ', cleanedValue);
+              await updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'); // Додаємо новий ID
+            }
           }
         }
       }
     }
-  }
 
     const newUserData = { ...currentUserData, ...uploadedInfo };
 
@@ -1381,6 +1371,15 @@ const getRoleCategory = value => {
   return 'other';
 };
 
+const getUserRoleCategory = value => {
+  const role = (value.userRole || '').toString().trim().toLowerCase();
+  if (!role) return 'other';
+  if (role === 'ed') return 'ed';
+  if (role === 'ag') return 'ag';
+  if (role === 'ip') return 'ip';
+  return 'other';
+};
+
 const getMaritalStatusCategory = value => {
   if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return 'other';
   const m = value.maritalStatus.trim().toLowerCase();
@@ -1420,7 +1419,7 @@ const getBmiCategory = value => {
   const weight = parseFloat(value.weight);
   const height = parseFloat(value.height);
   if (weight && height) {
-    const bmi = weight / ((height / 100) ** 2);
+    const bmi = weight / (height / 100) ** 2;
     if (bmi < 18.5) return 'lt18_5';
     if (bmi < 25) return '18_5_24_9';
     if (bmi < 30) return '25_29_9';
@@ -1757,7 +1756,10 @@ export const filterMain = (usersData, filterForload, filterSettings = {}, favori
       filters.csection = !!filterSettings.csection[cat];
     }
 
-    if (filterSettings.role && Object.values(filterSettings.role).some(v => !v)) {
+    if (filterSettings.userRole && Object.values(filterSettings.userRole).some(v => !v)) {
+      const cat = getUserRoleCategory(value);
+      filters.userRole = !!filterSettings.userRole[cat];
+    } else if (filterSettings.role && Object.values(filterSettings.role).some(v => !v)) {
       const cat = getRoleCategory(value);
       filters.role = !!filterSettings.role[cat];
     }

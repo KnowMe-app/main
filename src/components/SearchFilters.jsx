@@ -7,7 +7,7 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
   if (mode === 'matching') {
     groups = [
       {
-        filterName: 'role',
+        filterName: 'userRole',
         label: '',
         options: [
           { val: 'ed', label: 'ДО' },
