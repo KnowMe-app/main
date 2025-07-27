@@ -37,6 +37,7 @@ import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
 import { handleEmptyFetch } from './loadMoreUtils';
+import { normalizeLocation } from './normalizeLocation';
 
 const Container = styled.div`
   display: flex;
@@ -939,8 +940,12 @@ const Matching = () => {
                   {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
                 </strong>
                 <br />
-                {getCurrentValue(selected.region) || ''}
-                {getCurrentValue(selected.city) ? `, ${getCurrentValue(selected.city)}` : ''}
+                {normalizeLocation([
+                  getCurrentValue(selected.region),
+                  getCurrentValue(selected.city),
+                ]
+                  .filter(Boolean)
+                  .join(', '))}
               </Info>
             </ProfileSection>
             <Table>{renderSelectedFields(selected)}</Table>
