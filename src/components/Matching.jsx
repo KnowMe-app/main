@@ -61,7 +61,7 @@ const Grid = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  padding: 10px;
+  padding: 10px 10px 0;
   justify-content: center;
 `;
 
