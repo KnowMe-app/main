@@ -14,6 +14,7 @@ import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
+import { normalizeLocation } from '../normalizeLocation';
 
 export const renderTopBlock = (
   userData,
@@ -78,7 +79,7 @@ export const renderTopBlock = (
             const locationParts = [];
             if (userData.region) locationParts.push(userData.region);
             if (userData.city) locationParts.push(userData.city);
-            return locationParts.join(', ');
+            return normalizeLocation(locationParts.join(', '));
           })()}
         </div>
       </div>
