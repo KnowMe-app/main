@@ -108,7 +108,7 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 
 const Card = styled.div`
   width: 100%;
-  height: 40vh;
+  height: ${props => (props.$small ? '25vh' : '40vh')};
   background: linear-gradient(135deg, orange, yellow);
   background-size: cover;
   background-position: center;
@@ -365,6 +365,18 @@ const Icons = styled.div`
   gap: 10px;
   font-size: 16px;
   color: ${color.accent};
+`;
+
+const AgencyInfo = styled.div`
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.8);
+  color: ${color.black};
+  font-size: 14px;
+  box-sizing: border-box;
 `;
 
 const Id = styled.div`
@@ -788,30 +800,54 @@ const Matching = () => {
             <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
               {filteredUsers.map(user => {
                 const photo = getCurrentValue(user.photos);
+                const role = (user.role || user.userRole || '')
+                  .toString()
+                  .trim()
+                  .toLowerCase();
+                const isAgency = role === 'ag' || role === 'ip';
+                const nameParts = [getCurrentValue(user.name), getCurrentValue(user.surname)]
+                  .filter(Boolean)
+                  .join(' ');
                 return (
                   <CardWrapper key={user.userId}>
-                    <Card data-card onClick={() => setSelected(user)} style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}>
-                  <BtnFavorite
-                    userId={user.userId}
-                    favoriteUsers={favoriteUsers}
-                    setFavoriteUsers={setFavoriteUsers}
-                    dislikeUsers={dislikeUsers}
-                    setDislikeUsers={setDislikeUsers}
-                    onRemove={viewMode !== 'default' ? handleRemove : undefined}
-                  />
-                  <BtnDislike
-                    userId={user.userId}
-                    dislikeUsers={dislikeUsers}
-                    setDislikeUsers={setDislikeUsers}
-                    favoriteUsers={favoriteUsers}
-                    setFavoriteUsers={setFavoriteUsers}
-                    onRemove={viewMode !== 'default' ? handleRemove : undefined}
-                  />
-                </Card>
-                <ResizableCommentInput
-                  plain
-                  value={comments[user.userId] || ''}
-                  onClick={e => e.stopPropagation()}
+                    <Card
+                      $small={isAgency}
+                      data-card
+                      onClick={() => setSelected(user)}
+                      style={photo ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' } : {}}
+                    >
+                      <BtnFavorite
+                        userId={user.userId}
+                        favoriteUsers={favoriteUsers}
+                        setFavoriteUsers={setFavoriteUsers}
+                        dislikeUsers={dislikeUsers}
+                        setDislikeUsers={setDislikeUsers}
+                        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+                      />
+                      <BtnDislike
+                        userId={user.userId}
+                        dislikeUsers={dislikeUsers}
+                        setDislikeUsers={setDislikeUsers}
+                        favoriteUsers={favoriteUsers}
+                        setFavoriteUsers={setFavoriteUsers}
+                        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+                      />
+                      {isAgency && (
+                        <AgencyInfo>
+                          {nameParts && <div><strong>{nameParts}</strong></div>}
+                          {getCurrentValue(user.moreInfo_main) && (
+                            <div style={{ whiteSpace: 'pre-wrap' }}>{getCurrentValue(user.moreInfo_main)}</div>
+                          )}
+                          <Icons style={{ marginTop: '5px' }}>
+                            {fieldContactsIcons(user)}
+                          </Icons>
+                        </AgencyInfo>
+                      )}
+                    </Card>
+                    <ResizableCommentInput
+                      plain
+                      value={comments[user.userId] || ''}
+                      onClick={e => e.stopPropagation()}
                   onChange={e => {
                     const val = e.target.value;
                     setComments(prev => ({ ...prev, [user.userId]: val }));
