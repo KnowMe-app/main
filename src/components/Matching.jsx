@@ -54,9 +54,19 @@ const Container = styled.div`
 
 const InnerContainer = styled.div`
   max-width: 450px;
-  width: 100%;
+  width: 90%;
+  background-color: #f0f0f0;
+  padding: 20px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
   box-sizing: border-box;
   position: relative;
+
+  @media (max-width: 768px) {
+    background-color: #f5f5f5;
+    box-shadow: 0 4px 8px #f5f5f5;
+    border-radius: 0;
+  }
 `;
 
 
@@ -835,7 +845,7 @@ const Matching = () => {
             </TopActions>
             {isAdmin && <p style={{ textAlign: 'center', color: 'black' }}>{filteredUsers.length} карточок</p>}
 
-            <Grid ref={gridRef} style={{ overflowY: 'auto', height: '80vh' }}>
+            <Grid ref={gridRef}>
               {filteredUsers.map(user => {
                 const photo = getCurrentValue(user.photos);
                 const role = (user.role || user.userRole || '')
