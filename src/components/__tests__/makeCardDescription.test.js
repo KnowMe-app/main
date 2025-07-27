@@ -45,3 +45,15 @@ test('makeCardDescription skips empty fields and enumerates correctly', () => {
     '6. Smith John',
   ]);
 });
+
+test('makeCardDescription normalizes location', () => {
+  const user = {
+    region: 'Дніпропетровська ',
+    city: "Кам'янське",
+  };
+
+  const description = makeCardDescription(user);
+  expect(description.startsWith("1. Дніпропетровська область, Кам'янське")).toBe(
+    true
+  );
+});

@@ -1,11 +1,13 @@
+import { normalizeLocation } from './normalizeLocation';
+
 export const makeCardDescription = user => {
   const birthsInfo = [user.ownKids, user.lastDelivery]
     .filter(Boolean)
     .join('-');
 
-  const location = [user.region, user.city]
-    .filter(Boolean)
-    .join(', ');
+  const location = normalizeLocation(
+    [user.region, user.city].filter(Boolean).join(', ')
+  );
 
   const birthDate = user.birth || '';
 
