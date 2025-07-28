@@ -83,8 +83,7 @@ const CardWrapper = styled.div`
   border: 2px solid ${color.gray3};
   border-radius: 8px;
   box-sizing: border-box;
-  position: relative;
-  overflow: visible;
+  overflow: hidden;
 `;
 
 const CommentInput = styled.textarea`
@@ -130,11 +129,9 @@ const Card = styled.div`
   background: linear-gradient(135deg, orange, yellow);
   background-size: cover;
   background-position: center;
-  border-radius: 8px;
+  border-radius: 0;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-  z-index: 1;
   &::after {
     content: '';
     position: absolute;
@@ -159,16 +156,6 @@ const loadingWave = keyframes`
   100% {
     background-position: calc(200px + 100%) 0;
   }
-`;
-
-const StackedCard = styled(Card)`
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform: rotate(3deg);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-  pointer-events: none;
-  z-index: 0;
 `;
 
 const SkeletonCard = styled(Card)`
@@ -551,35 +538,22 @@ const SwipeableCard = ({
   };
 
   const current = slides[index];
-  const nextIndex = (index + 1) % slides.length;
-  const nextSlide = slides[nextIndex];
   const style =
     current !== 'description' && current
       ? { backgroundImage: `url(${current})`, backgroundColor: 'transparent' }
       : { backgroundColor: '#fff' };
 
   return (
-    <>
-      {slides.length > 1 && nextSlide !== 'description' && (
-        <StackedCard
-          $small={isAgency}
-          $hasPhoto={!!photo}
-          style={{
-            backgroundImage: `url(${nextSlide})`,
-            backgroundColor: 'transparent',
-          }}
-        />
-      )}
-      <AnimatedCard
-        $dir={dir}
-        $small={isAgency}
-        $hasPhoto={!!photo}
-        data-card
-        onClick={handleClick}
+    <AnimatedCard
+      $dir={dir}
+      $small={isAgency}
+      $hasPhoto={!!photo}
+      data-card
+      onClick={handleClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-        style={style}
-      >
+      style={style}
+    >
       {current === 'description' && (
         <DescriptionPage style={{ whiteSpace: 'pre-wrap', padding: '10px' }}>
           {getCurrentValue(user.moreInfo_main) || 'No description'}
@@ -648,7 +622,6 @@ const SwipeableCard = ({
         </CardInfo>
       )}
     </AnimatedCard>
-    </>
   );
 };
 
