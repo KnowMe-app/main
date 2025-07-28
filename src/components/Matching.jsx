@@ -80,6 +80,8 @@ const Grid = styled.div`
   gap: 10px;
   padding: 10px 10px 0;
   justify-content: center;
+  max-height: 80vh;
+  overflow-y: auto;
 `;
 
 const CardWrapper = styled.div`
