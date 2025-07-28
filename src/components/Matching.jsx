@@ -56,7 +56,7 @@ const InnerContainer = styled.div`
   max-width: 480px;
   width: 100%;
   background-color: #f0f0f0;
-  padding: 20px;
+  padding: 20px 0;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
   box-sizing: border-box;
