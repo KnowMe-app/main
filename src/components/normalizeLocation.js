@@ -31,6 +31,12 @@ export const normalizeRegion = region => {
   return trimmed;
 };
 
+export const normalizeCountry = country => {
+  if (!country || typeof country !== 'string') return country;
+  const trimmed = country.trim();
+  return /^украина$/i.test(trimmed) ? 'Україна' : trimmed;
+};
+
 export const normalizeLocation = str => {
   if (!str || typeof str !== 'string') return str;
   const parts = str.split(',');
