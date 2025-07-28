@@ -385,6 +385,19 @@ const Icons = styled.div`
   color: ${color.accent};
 `;
 
+const BasicInfo = styled.div`
+  position: absolute;
+  bottom: 55px;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  color: white;
+  font-weight: bold;
+  text-shadow: 0 0 2px black;
+  pointer-events: none;
+  line-height: 1.2;
+`;
+
 const CardInfo = styled.div`
   position: absolute;
   top: 0;
@@ -433,6 +446,33 @@ const DescriptionPage = styled.div`
   color: ${color.black};
 `;
 
+const slideLeft = keyframes`
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+`;
+
+const slideRight = keyframes`
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+`;
+
+const AnimatedCard = styled(Card)`
+  animation: ${({ $dir }) =>
+    $dir === 'left'
+      ? slideLeft
+      : $dir === 'right'
+      ? slideRight
+      : 'none'} 0.3s ease;
+`;
+
 const SwipeableCard = ({
   user,
   photo,
@@ -457,6 +497,7 @@ const SwipeableCard = ({
   }, [user.photos]);
 
   const [index, setIndex] = useState(0);
+  const [dir, setDir] = useState(null);
   const startX = useRef(null);
   const wasSwiped = useRef(false);
 
@@ -470,14 +511,23 @@ const SwipeableCard = ({
     if (startX.current === null) return;
     const deltaX = e.changedTouches[0].clientX - startX.current;
     if (deltaX > 50) {
-      setIndex(i => Math.max(i - 1, 0));
+      setDir('right');
+      setIndex(i => (i - 1 + slides.length) % slides.length);
       wasSwiped.current = true;
     } else if (deltaX < -50) {
-      setIndex(i => Math.min(i + 1, slides.length - 1));
+      setDir('left');
+      setIndex(i => (i + 1) % slides.length);
       wasSwiped.current = true;
     }
     startX.current = null;
   };
+
+  useEffect(() => {
+    if (dir) {
+      const t = setTimeout(() => setDir(null), 300);
+      return () => clearTimeout(t);
+    }
+  }, [dir]);
 
   const handleClick = () => {
     if (wasSwiped.current) {
@@ -494,7 +544,8 @@ const SwipeableCard = ({
       : { backgroundColor: '#fff' };
 
   return (
-    <Card
+    <AnimatedCard
+      $dir={dir}
       $small={isAgency}
       $hasPhoto={!!photo}
       data-card
@@ -503,7 +554,19 @@ const SwipeableCard = ({
       onTouchEnd={handleTouchEnd}
       style={style}
     >
-      {current === 'description' && <DescriptionPage>description</DescriptionPage>}
+      {current === 'description' && (
+        <DescriptionPage style={{ whiteSpace: 'pre-wrap', padding: '10px' }}>
+          {getCurrentValue(user.moreInfo_main) || 'No description'}
+        </DescriptionPage>
+      )}
+      {index === 0 && (
+        <BasicInfo>
+          {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}
+          {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+          <br />
+          {[getCurrentValue(user.country), getCurrentValue(user.region)].filter(Boolean).join(', ')}
+        </BasicInfo>
+      )}
       {isAdmin && (
         <AdminToggle
           published={user.publish}
@@ -558,7 +621,7 @@ const SwipeableCard = ({
           )}
         </CardInfo>
       )}
-    </Card>
+    </AnimatedCard>
   );
 };
 
@@ -1089,7 +1152,6 @@ const Matching = () => {
                 {getCurrentValue(selected.profession)}
               </MoreInfo>
             )}
-            {getCurrentValue(selected.moreInfo_main) && <MoreInfo>{getCurrentValue(selected.moreInfo_main)}</MoreInfo>}
             <Contact>
               <Icons>{fieldContactsIcons(selected)}</Icons>
             </Contact>
