@@ -127,4 +127,3 @@ GitHub.
 
 ## Особенности
 - Добавлен фильтр возраста 43+
-\n## CardStack Demo\nSee `src/cardStack/README.md` for instructions on the swipeable card stack component.
