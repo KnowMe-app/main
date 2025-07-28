@@ -38,6 +38,7 @@ import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { normalizeLocation } from './normalizeLocation';
+import { CardStack } from './CardStack';
 
 const Container = styled.div`
   display: flex;
@@ -1063,6 +1064,8 @@ const Matching = () => {
               <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
             </TopActions>
             {isAdmin && <p style={{ textAlign: 'center', color: 'black' }}>{filteredUsers.length} карточок</p>}
+
+            <CardStack users={filteredUsers} />
 
             <Grid ref={gridRef}>
               {filteredUsers.map(user => {
