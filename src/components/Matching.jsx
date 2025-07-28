@@ -489,12 +489,22 @@ const SwipeableCard = ({
   togglePublish,
   onSelect,
 }) => {
+  const wordCount = text =>
+    text ? text.trim().split(/\s+/).filter(Boolean).length : 0;
+
+  const moreInfo = getCurrentValue(user.moreInfo_main);
+  const profession = getCurrentValue(user.profession);
+
+  const moreInfoWords = wordCount(moreInfo);
+  const professionWords = wordCount(profession);
+  const showDescriptionSlide = moreInfoWords > 10 || professionWords > 10;
+
   const slides = React.useMemo(() => {
     const arr = Array.isArray(user.photos)
       ? user.photos
       : [getCurrentValue(user.photos)].filter(Boolean);
-    return [...arr, 'description'];
-  }, [user.photos]);
+    return showDescriptionSlide ? [...arr, 'description'] : arr;
+  }, [user.photos, showDescriptionSlide]);
 
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(null);
@@ -556,7 +566,8 @@ const SwipeableCard = ({
     >
       {current === 'description' && (
         <DescriptionPage style={{ whiteSpace: 'pre-wrap', padding: '10px' }}>
-          {getCurrentValue(user.moreInfo_main) || 'No description'}
+          {moreInfoWords > 10 && <div>{moreInfo}</div>}
+          {professionWords > 10 && <div>{profession}</div>}
         </DescriptionPage>
       )}
       {index === 0 && (
@@ -614,10 +625,11 @@ const SwipeableCard = ({
             )}
             <Icons>{fieldContactsIcons(user)}</Icons>
           </div>
-          {getCurrentValue(user.moreInfo_main) && (
-            <div style={{ whiteSpace: 'pre-wrap' }}>
-              {getCurrentValue(user.moreInfo_main)}
-            </div>
+          {moreInfo && moreInfoWords <= 10 && (
+            <div style={{ whiteSpace: 'pre-wrap' }}>{moreInfo}</div>
+          )}
+          {profession && professionWords <= 10 && (
+            <div style={{ whiteSpace: 'pre-wrap' }}>{profession}</div>
           )}
         </CardInfo>
       )}
