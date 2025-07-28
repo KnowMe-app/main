@@ -277,13 +277,6 @@ const DonorCard = styled.div`
   position: relative;
 `;
 
-const DescriptionCard = styled(DonorCard)`
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  margin: 0;
-`;
-
 const Title = styled.div`
   color: ${color.accent};
   font-weight: bold;
@@ -453,44 +446,31 @@ const DescriptionPage = styled.div`
   color: ${color.black};
 `;
 
-
-const swipeOutLeft = keyframes`
+const slideLeft = keyframes`
   from {
-    transform: translateX(0) rotate(0);
+    transform: translateX(100%);
   }
   to {
-    transform: translateX(-150%) rotate(-20deg);
+    transform: translateX(0);
   }
 `;
 
-const swipeOutRight = keyframes`
+const slideRight = keyframes`
   from {
-    transform: translateX(0) rotate(0);
+    transform: translateX(-100%);
   }
   to {
-    transform: translateX(150%) rotate(20deg);
+    transform: translateX(0);
   }
 `;
 
-const StackContainer = styled.div`
-  position: relative;
-`;
-
-const StackCard = styled(Card)`
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-  transform: rotate(${props => props.$rot}deg);
-  transition: transform 0.3s ease;
-
-  &.swipe-left {
-    animation: ${swipeOutLeft} 0.3s forwards;
-  }
-  &.swipe-right {
-    animation: ${swipeOutRight} 0.3s forwards;
-  }
+const AnimatedCard = styled(Card)`
+  animation: ${({ $dir }) =>
+    $dir === 'left'
+      ? slideLeft
+      : $dir === 'right'
+      ? slideRight
+      : 'none'} 0.3s ease;
 `;
 
 const SwipeableCard = ({
@@ -515,10 +495,9 @@ const SwipeableCard = ({
       : [getCurrentValue(user.photos)].filter(Boolean);
     return [...arr, 'description'];
   }, [user.photos]);
-  const hasPhotos = slides.some(s => s !== 'description');
 
   const [index, setIndex] = useState(0);
-  const [swipeDir, setSwipeDir] = useState(null);
+  const [dir, setDir] = useState(null);
   const startX = useRef(null);
   const wasSwiped = useRef(false);
 
@@ -532,29 +511,23 @@ const SwipeableCard = ({
     if (startX.current === null) return;
     const deltaX = e.changedTouches[0].clientX - startX.current;
     if (deltaX > 50) {
-      setSwipeDir('right');
-      setTimeout(() => {
-        setIndex(i => (i - 1 + slides.length) % slides.length);
-        setSwipeDir(null);
-      }, 300);
+      setDir('right');
+      setIndex(i => (i - 1 + slides.length) % slides.length);
       wasSwiped.current = true;
     } else if (deltaX < -50) {
-      setSwipeDir('left');
-      setTimeout(() => {
-        setIndex(i => (i + 1) % slides.length);
-        setSwipeDir(null);
-      }, 300);
+      setDir('left');
+      setIndex(i => (i + 1) % slides.length);
       wasSwiped.current = true;
     }
     startX.current = null;
   };
 
   useEffect(() => {
-    if (swipeDir) {
-      const t = setTimeout(() => setSwipeDir(null), 300);
+    if (dir) {
+      const t = setTimeout(() => setDir(null), 300);
       return () => clearTimeout(t);
     }
-  }, [swipeDir]);
+  }, [dir]);
 
   const handleClick = () => {
     if (wasSwiped.current) {
@@ -564,148 +537,91 @@ const SwipeableCard = ({
     onSelect(user);
   };
 
-  const nextSlide = slides[(index + 1) % slides.length];
-  const slidesToShow = [slides[index], nextSlide];
+  const current = slides[index];
+  const style =
+    current !== 'description' && current
+      ? { backgroundImage: `url(${current})`, backgroundColor: 'transparent' }
+      : { backgroundColor: '#fff' };
 
   return (
-    <StackContainer
+    <AnimatedCard
+      $dir={dir}
       $small={isAgency}
       $hasPhoto={!!photo}
       data-card
+      onClick={handleClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
+      style={style}
     >
-      {slidesToShow.map((slide, idx) => {
-        const isCurrent = idx === 0;
-        const style =
-          slide !== 'description' && slide
-            ? { backgroundImage: `url(${slide})`, backgroundColor: 'transparent' }
-            : { backgroundColor: '#fff' };
-        const rot = idx === 0 ? 0 : 5;
-        return (
-          <StackCard
-            key={`${slide}-${idx}`}
-            className={isCurrent && swipeDir ? `swipe-${swipeDir}` : ''}
-            $rot={rot}
-            $small={isAgency}
-            $hasPhoto={!!photo}
-            style={style}
-            onClick={isCurrent ? handleClick : undefined}
+      {current === 'description' && (
+        <DescriptionPage style={{ whiteSpace: 'pre-wrap', padding: '10px' }}>
+          {getCurrentValue(user.moreInfo_main) || 'No description'}
+        </DescriptionPage>
+      )}
+      {index === 0 && (
+        <BasicInfo>
+          {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}
+          {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+          <br />
+          {[getCurrentValue(user.country), getCurrentValue(user.region)].filter(Boolean).join(', ')}
+        </BasicInfo>
+      )}
+      {isAdmin && (
+        <AdminToggle
+          published={user.publish}
+          onClick={e => {
+            e.stopPropagation();
+            togglePublish(user);
+          }}
+        />
+      )}
+      <BtnFavorite
+        userId={user.userId}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
+      <BtnDislike
+        userId={user.userId}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
+      {isAgency && (
+        <CardInfo>
+          <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
+          {nameParts && (
+            <div>
+              <strong>{nameParts}</strong>
+            </div>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+            }}
           >
-            {isCurrent && slide === 'description' && (
-              hasPhotos ? (
-                <DescriptionPage style={{ whiteSpace: 'pre-wrap', padding: '10px' }}>
-                  {getCurrentValue(user.moreInfo_main) || 'No description'}
-                </DescriptionPage>
-              ) : (
-                <DescriptionCard>
-                  <ProfileSection>
-                    <Info>
-                      <Title>Egg donor profile</Title>
-                      <strong>
-                        {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
-                        {user.birth ? `, ${utilCalculateAge(user.birth)}р` : ''}
-                      </strong>
-                      <br />
-                      {normalizeLocation([
-                        getCurrentValue(user.region),
-                        getCurrentValue(user.city),
-                      ]
-                        .filter(Boolean)
-                        .join(', '))}
-                    </Info>
-                  </ProfileSection>
-                  <Table>{renderSelectedFields(user)}</Table>
-                  {isAdmin && getCurrentValue(user.myComment) && (
-                    <MoreInfo $isAdmin={isAdmin}>
-                      <strong>More information</strong>
-                      <br />
-                      {getCurrentValue(user.myComment)}
-                    </MoreInfo>
-                  )}
-                  {getCurrentValue(user.profession) && (
-                    <MoreInfo>
-                      <strong>Profession</strong>
-                      <br />
-                      {getCurrentValue(user.profession)}
-                    </MoreInfo>
-                  )}
-                  <Contact>
-                    <Icons>{fieldContactsIcons(user)}</Icons>
-                  </Contact>
-                </DescriptionCard>
-              )
+            {getCurrentValue(user.country) && (
+              <span>{getCurrentValue(user.country)}</span>
             )}
-            {isCurrent && idx === 0 && hasPhotos && (
-              <BasicInfo>
-                {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}
-                {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
-                <br />
-                {[getCurrentValue(user.country), getCurrentValue(user.region)].filter(Boolean).join(', ')}
-              </BasicInfo>
-            )}
-            {isCurrent && isAdmin && (
-              <AdminToggle
-                published={user.publish}
-                onClick={e => {
-                  e.stopPropagation();
-                  togglePublish(user);
-                }}
-              />
-            )}
-            {isCurrent && (
-              <>
-                <BtnFavorite
-                  userId={user.userId}
-                  favoriteUsers={favoriteUsers}
-                  setFavoriteUsers={setFavoriteUsers}
-                  dislikeUsers={dislikeUsers}
-                  setDislikeUsers={setDislikeUsers}
-                  onRemove={viewMode !== 'default' ? handleRemove : undefined}
-                />
-                <BtnDislike
-                  userId={user.userId}
-                  dislikeUsers={dislikeUsers}
-                  setDislikeUsers={setDislikeUsers}
-                  favoriteUsers={favoriteUsers}
-                  setFavoriteUsers={setFavoriteUsers}
-                  onRemove={viewMode !== 'default' ? handleRemove : undefined}
-                />
-              </>
-            )}
-            {isCurrent && isAgency && (
-              <CardInfo>
-                <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
-                {nameParts && (
-                  <div>
-                    <strong>{nameParts}</strong>
-                  </div>
-                )}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    flexWrap: 'wrap',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {getCurrentValue(user.country) && (
-                    <span>{getCurrentValue(user.country)}</span>
-                  )}
-                  <Icons>{fieldContactsIcons(user)}</Icons>
-                </div>
-                {getCurrentValue(user.moreInfo_main) && (
-                  <div style={{ whiteSpace: 'pre-wrap' }}>
-                    {getCurrentValue(user.moreInfo_main)}
-                  </div>
-                )}
-              </CardInfo>
-            )}
-          </StackCard>
-        );
-      })}
-    </StackContainer>
+            <Icons>{fieldContactsIcons(user)}</Icons>
+          </div>
+          {getCurrentValue(user.moreInfo_main) && (
+            <div style={{ whiteSpace: 'pre-wrap' }}>
+              {getCurrentValue(user.moreInfo_main)}
+            </div>
+          )}
+        </CardInfo>
+      )}
+    </AnimatedCard>
   );
 };
 
