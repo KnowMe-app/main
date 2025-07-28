@@ -37,7 +37,11 @@ import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
 import { handleEmptyFetch } from './loadMoreUtils';
-import { normalizeLocation } from './normalizeLocation';
+import {
+  normalizeLocation,
+  normalizeCountry,
+  normalizeRegion,
+} from './normalizeLocation';
 
 const Container = styled.div`
   display: flex;
@@ -390,7 +394,7 @@ const BasicInfo = styled.div`
   bottom: 55px;
   left: 0;
   width: 100%;
-  text-align: center;
+  text-align: left;
   color: white;
   font-weight: bold;
   text-shadow: 0 0 2px black;
@@ -575,7 +579,12 @@ const SwipeableCard = ({
           {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}
           {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
           <br />
-          {[getCurrentValue(user.country), getCurrentValue(user.region)].filter(Boolean).join(', ')}
+          {[
+            normalizeCountry(getCurrentValue(user.country)),
+            normalizeRegion(getCurrentValue(user.region)),
+          ]
+            .filter(Boolean)
+            .join(', ')}
         </BasicInfo>
       )}
       {isAdmin && (
@@ -617,11 +626,11 @@ const SwipeableCard = ({
               alignItems: 'center',
               gap: '4px',
               flexWrap: 'wrap',
-              justifyContent: 'center',
+              justifyContent: 'flex-start',
             }}
           >
             {getCurrentValue(user.country) && (
-              <span>{getCurrentValue(user.country)}</span>
+              <span>{normalizeCountry(getCurrentValue(user.country))}</span>
             )}
             <Icons>{fieldContactsIcons(user)}</Icons>
           </div>
