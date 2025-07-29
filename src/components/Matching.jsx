@@ -93,12 +93,26 @@ const NextPhoto = styled.img`
   position: absolute;
   top: -5px;
   right: -5px;
+  transform: translateY(-5px);
   width: 100%;
   height: 100%;
   object-fit: cover;
   border: 2px solid ${color.gray3};
   border-radius: 8px;
   z-index: 0;
+`;
+
+const ThirdPhoto = styled.img`
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  transform: translateY(-10px);
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 2px solid ${color.gray4};
+  border-radius: 8px;
+  z-index: -1;
 `;
 
 const CardWrapper = styled.div`
@@ -550,10 +564,16 @@ const SwipeableCard = ({
       setDir('right');
       setIndex(i => (i - 1 + slides.length) % slides.length);
       wasSwiped.current = true;
+      setTimeout(() => {
+        wasSwiped.current = false;
+      }, 50);
     } else if (deltaX < -50) {
       setDir('left');
       setIndex(i => (i + 1) % slides.length);
       wasSwiped.current = true;
+      setTimeout(() => {
+        wasSwiped.current = false;
+      }, 50);
     }
     startX.current = null;
   };
@@ -1143,6 +1163,7 @@ const Matching = () => {
                   : [getCurrentValue(user.photos)].filter(Boolean);
                 const photo = photos[0];
                 const nextPhoto = photos[1];
+                const thirdPhoto = photos[2];
                 const role = (user.role || user.userRole || '')
                   .toString()
                   .trim()
@@ -1153,6 +1174,7 @@ const Matching = () => {
                   .join(' ');
                 return (
                   <CardContainer key={user.userId}>
+                    {thirdPhoto && <ThirdPhoto src={thirdPhoto} alt="third" />}
                     {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
                     <CardWrapper>
                       {photo ? (
