@@ -151,8 +151,34 @@ const Card = styled.div`
       rgba(0, 0, 0, 0.5) 100%
     );
     pointer-events: none;
-    z-index: 0;
+    z-index: 2;
   }
+`;
+
+const ImageWrapper = styled.div`
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+`;
+
+const BackImage = styled.div`
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  border-radius: inherit;
+  transform: translate(4px, -4px);
+  z-index: -1;
+`;
+
+const FrontImage = styled.div`
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  border-radius: inherit;
+  z-index: 0;
 `;
 
 const loadingWave = keyframes`
@@ -402,6 +428,7 @@ const BasicInfo = styled.div`
   text-shadow: 0 0 2px black;
   pointer-events: none;
   line-height: 1.2;
+  z-index: 3;
 `;
 
 const CardInfo = styled.div`
@@ -555,9 +582,7 @@ const SwipeableCard = ({
 
   const current = slides[index];
   const style =
-    current !== 'description' && current
-      ? { backgroundImage: `url(${current})`, backgroundColor: 'transparent' }
-      : { backgroundColor: '#fff' };
+    current !== 'description' && current ? {} : { backgroundColor: '#fff' };
 
   return (
     <AnimatedCard
@@ -570,6 +595,14 @@ const SwipeableCard = ({
       onTouchEnd={handleTouchEnd}
       style={style}
     >
+      {current !== 'description' && (
+        <ImageWrapper>
+          {index === 0 && slides.length > 1 && (
+            <BackImage style={{ backgroundImage: `url(${slides[1]})` }} />
+          )}
+          <FrontImage style={{ backgroundImage: `url(${current})` }} />
+        </ImageWrapper>
+      )}
       {current === 'description' && (
         <DescriptionPage style={{ whiteSpace: 'pre-wrap', padding: '10px' }}>
           {moreInfoWords > 10 && <div>{moreInfo}</div>}
