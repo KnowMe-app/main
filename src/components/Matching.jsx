@@ -90,6 +90,36 @@ const CardWrapper = styled.div`
   border-radius: 8px;
   box-sizing: border-box;
   overflow: hidden;
+  position: relative;
+`;
+
+const CardStack = styled.div`
+  position: relative;
+`;
+
+const StackedPhoto = styled.div`
+  position: absolute;
+  top: -5px;
+  left: 5px;
+  width: 100%;
+  height: ${({ $small, $hasPhoto }) => {
+    const base = $small ? 30 : 50;
+    return `${$hasPhoto ? base : base / 2}vh`;
+  }};
+  background-size: cover;
+  background-position: center;
+  z-index: 1;
+  pointer-events: none;
+`;
+
+const CommentOverlay = styled.div`
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 5px;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.7);
 `;
 
 const CommentInput = styled.textarea`
@@ -494,6 +524,9 @@ const SwipeableCard = ({
   handleRemove,
   togglePublish,
   onSelect,
+  commentValue,
+  onCommentChange,
+  onCommentBlur,
 }) => {
   const wordCount = text =>
     text ? text.trim().split(/\s+/).filter(Boolean).length : 0;
@@ -644,6 +677,15 @@ const SwipeableCard = ({
           )}
         </CardInfo>
       )}
+      <CommentOverlay>
+        <ResizableCommentInput
+          plain
+          value={commentValue}
+          onClick={e => e.stopPropagation()}
+          onChange={e => onCommentChange && onCommentChange(e.target.value)}
+          onBlur={onCommentBlur}
+        />
+      </CommentOverlay>
     </AnimatedCard>
   );
 };
@@ -1077,7 +1119,10 @@ const Matching = () => {
 
             <Grid ref={gridRef}>
               {filteredUsers.map(user => {
-                const photo = getCurrentValue(user.photos);
+                const photos = Array.isArray(user.photos)
+                  ? user.photos
+                  : [getCurrentValue(user.photos)].filter(Boolean);
+                const photo = photos[0];
                 const role = (user.role || user.userRole || '')
                   .toString()
                   .trim()
@@ -1088,35 +1133,44 @@ const Matching = () => {
                   .join(' ');
                 return (
                   <CardWrapper key={user.userId}>
-                    <SwipeableCard
-                      user={user}
-                      photo={photo}
-                      role={role}
-                      isAgency={isAgency}
-                      nameParts={nameParts}
-                      isAdmin={isAdmin}
-                      favoriteUsers={favoriteUsers}
-                      setFavoriteUsers={setFavoriteUsers}
-                      dislikeUsers={dislikeUsers}
-                      setDislikeUsers={setDislikeUsers}
-                      viewMode={viewMode}
-                      handleRemove={handleRemove}
-                      togglePublish={togglePublish}
-                      onSelect={setSelected}
-                    />
-                    <ResizableCommentInput
-                      plain
-                      value={comments[user.userId] || ''}
-                      onClick={e => e.stopPropagation()}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setComments(prev => ({ ...prev, [user.userId]: val }));
-                      }}
-                      onBlur={() => {
-                        const owner = auth.currentUser?.uid;
-                        if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
-                      }}
-                    />
+                    <CardStack>
+                      {photos[1] && (
+                        <StackedPhoto
+                          style={{ backgroundImage: `url(${photos[1]})` }}
+                          $small={isAgency}
+                          $hasPhoto={!!photos[1]}
+                        />
+                      )}
+                      <SwipeableCard
+                        user={user}
+                        photo={photo}
+                        role={role}
+                        isAgency={isAgency}
+                        nameParts={nameParts}
+                        isAdmin={isAdmin}
+                        favoriteUsers={favoriteUsers}
+                        setFavoriteUsers={setFavoriteUsers}
+                        dislikeUsers={dislikeUsers}
+                        setDislikeUsers={setDislikeUsers}
+                        viewMode={viewMode}
+                        handleRemove={handleRemove}
+                        togglePublish={togglePublish}
+                        onSelect={setSelected}
+                        commentValue={comments[user.userId] || ''}
+                        onCommentChange={val =>
+                          setComments(prev => ({ ...prev, [user.userId]: val }))
+                        }
+                        onCommentBlur={() => {
+                          const owner = auth.currentUser?.uid;
+                          if (owner)
+                            setUserComment(
+                              owner,
+                              user.userId,
+                              comments[user.userId] || ''
+                            );
+                        }}
+                      />
+                    </CardStack>
                   </CardWrapper>
                 );
               })}
