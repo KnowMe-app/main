@@ -84,12 +84,32 @@ const Grid = styled.div`
   overflow-y: auto;
 `;
 
+const CardContainer = styled.div`
+  position: relative;
+  width: 100%;
+`;
+
+const NextPhoto = styled.img`
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 2px solid ${color.gray3};
+  border-radius: 8px;
+  z-index: 0;
+`;
+
 const CardWrapper = styled.div`
+  position: relative;
   width: 100%;
   border: 2px solid ${color.gray3};
   border-radius: 8px;
   box-sizing: border-box;
   overflow: hidden;
+  background: #fff;
+  z-index: 1;
 `;
 
 const CommentInput = styled.textarea`
@@ -672,6 +692,47 @@ const renderSelectedFields = user => {
   });
 };
 
+const NoPhotoCard = ({ user }) => {
+  return (
+    <DonorCard style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh' }}>
+      <ProfileSection>
+        <Info>
+          <Title>Egg donor profile</Title>
+          <strong>
+            {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
+            {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+          </strong>
+          <br />
+          {normalizeLocation([
+            getCurrentValue(user.region),
+            getCurrentValue(user.city),
+          ]
+            .filter(Boolean)
+            .join(', '))}
+        </Info>
+      </ProfileSection>
+      <Table>{renderSelectedFields(user)}</Table>
+      {getCurrentValue(user.profession) && (
+        <MoreInfo>
+          <strong>Profession</strong>
+          <br />
+          {getCurrentValue(user.profession)}
+        </MoreInfo>
+      )}
+      {getCurrentValue(user.moreInfo_main) && (
+        <MoreInfo>
+          <strong>More information</strong>
+          <br />
+          {getCurrentValue(user.moreInfo_main)}
+        </MoreInfo>
+      )}
+      <Contact>
+        <Icons>{fieldContactsIcons(user)}</Icons>
+      </Contact>
+    </DonorCard>
+  );
+};
+
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 1;
 
@@ -1077,7 +1138,11 @@ const Matching = () => {
 
             <Grid ref={gridRef}>
               {filteredUsers.map(user => {
-                const photo = getCurrentValue(user.photos);
+                const photos = Array.isArray(user.photos)
+                  ? user.photos
+                  : [getCurrentValue(user.photos)].filter(Boolean);
+                const photo = photos[0];
+                const nextPhoto = photos[1];
                 const role = (user.role || user.userRole || '')
                   .toString()
                   .trim()
@@ -1087,37 +1152,44 @@ const Matching = () => {
                   .filter(Boolean)
                   .join(' ');
                 return (
-                  <CardWrapper key={user.userId}>
-                    <SwipeableCard
-                      user={user}
-                      photo={photo}
-                      role={role}
-                      isAgency={isAgency}
-                      nameParts={nameParts}
-                      isAdmin={isAdmin}
-                      favoriteUsers={favoriteUsers}
-                      setFavoriteUsers={setFavoriteUsers}
-                      dislikeUsers={dislikeUsers}
-                      setDislikeUsers={setDislikeUsers}
-                      viewMode={viewMode}
-                      handleRemove={handleRemove}
-                      togglePublish={togglePublish}
-                      onSelect={setSelected}
-                    />
-                    <ResizableCommentInput
-                      plain
-                      value={comments[user.userId] || ''}
-                      onClick={e => e.stopPropagation()}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setComments(prev => ({ ...prev, [user.userId]: val }));
-                      }}
-                      onBlur={() => {
-                        const owner = auth.currentUser?.uid;
-                        if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
-                      }}
-                    />
-                  </CardWrapper>
+                  <CardContainer key={user.userId}>
+                    {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
+                    <CardWrapper>
+                      {photo ? (
+                        <SwipeableCard
+                          user={user}
+                          photo={photo}
+                          role={role}
+                          isAgency={isAgency}
+                          nameParts={nameParts}
+                          isAdmin={isAdmin}
+                          favoriteUsers={favoriteUsers}
+                          setFavoriteUsers={setFavoriteUsers}
+                          dislikeUsers={dislikeUsers}
+                          setDislikeUsers={setDislikeUsers}
+                          viewMode={viewMode}
+                          handleRemove={handleRemove}
+                          togglePublish={togglePublish}
+                          onSelect={setSelected}
+                        />
+                      ) : (
+                        <NoPhotoCard user={user} />
+                      )}
+                      <ResizableCommentInput
+                        plain
+                        value={comments[user.userId] || ''}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setComments(prev => ({ ...prev, [user.userId]: val }));
+                        }}
+                        onBlur={() => {
+                          const owner = auth.currentUser?.uid;
+                          if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
+                        }}
+                      />
+                    </CardWrapper>
+                  </CardContainer>
                 );
               })}
           {loading &&
