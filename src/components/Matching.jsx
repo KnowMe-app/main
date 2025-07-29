@@ -724,9 +724,7 @@ const NoPhotoCard = ({
   handleRemove,
 }) => {
   return (
-    <DonorCard
-      style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh', padding: 0 }}
-    >
+    <DonorCard style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh' }}>
       <ProfileSection>
         <Info>
           <Title>
