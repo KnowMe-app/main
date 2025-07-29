@@ -29,6 +29,7 @@ import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
 import PhotoViewer from './PhotoViewer';
+import PhotoStack from './PhotoStack';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -479,174 +480,6 @@ const AnimatedCard = styled(Card)`
       : 'none'} 0.3s ease;
 `;
 
-const SwipeableCard = ({
-  user,
-  photo,
-  role,
-  isAgency,
-  nameParts,
-  isAdmin,
-  favoriteUsers,
-  setFavoriteUsers,
-  dislikeUsers,
-  setDislikeUsers,
-  viewMode,
-  handleRemove,
-  togglePublish,
-  onSelect,
-}) => {
-  const wordCount = text =>
-    text ? text.trim().split(/\s+/).filter(Boolean).length : 0;
-
-  const moreInfo = getCurrentValue(user.moreInfo_main);
-  const profession = getCurrentValue(user.profession);
-
-  const moreInfoWords = wordCount(moreInfo);
-  const professionWords = wordCount(profession);
-  const showDescriptionSlide = moreInfoWords > 10 || professionWords > 10;
-
-  const slides = React.useMemo(() => {
-    const arr = Array.isArray(user.photos)
-      ? user.photos
-      : [getCurrentValue(user.photos)].filter(Boolean);
-    return showDescriptionSlide ? [...arr, 'description'] : arr;
-  }, [user.photos, showDescriptionSlide]);
-
-  const [index, setIndex] = useState(0);
-  const [dir, setDir] = useState(null);
-  const startX = useRef(null);
-  const wasSwiped = useRef(false);
-
-  const handleTouchStart = e => {
-    if (e.touches && e.touches.length > 0) {
-      startX.current = e.touches[0].clientX;
-    }
-  };
-
-  const handleTouchEnd = e => {
-    if (startX.current === null) return;
-    const deltaX = e.changedTouches[0].clientX - startX.current;
-    if (deltaX > 50) {
-      setDir('right');
-      setIndex(i => (i - 1 + slides.length) % slides.length);
-      wasSwiped.current = true;
-    } else if (deltaX < -50) {
-      setDir('left');
-      setIndex(i => (i + 1) % slides.length);
-      wasSwiped.current = true;
-    }
-    startX.current = null;
-  };
-
-  useEffect(() => {
-    if (dir) {
-      const t = setTimeout(() => setDir(null), 300);
-      return () => clearTimeout(t);
-    }
-  }, [dir]);
-
-  const handleClick = () => {
-    if (wasSwiped.current) {
-      wasSwiped.current = false;
-      return;
-    }
-    onSelect(user);
-  };
-
-  const current = slides[index];
-  const style =
-    current !== 'description' && current
-      ? { backgroundImage: `url(${current})`, backgroundColor: 'transparent' }
-      : { backgroundColor: '#fff' };
-
-  return (
-    <AnimatedCard
-      $dir={dir}
-      $small={isAgency}
-      $hasPhoto={!!photo}
-      data-card
-      onClick={handleClick}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      style={style}
-    >
-      {current === 'description' && (
-        <DescriptionPage style={{ whiteSpace: 'pre-wrap', padding: '10px' }}>
-          {moreInfoWords > 10 && <div>{moreInfo}</div>}
-          {professionWords > 10 && <div>{profession}</div>}
-        </DescriptionPage>
-      )}
-      {index === 0 && (
-        <BasicInfo>
-          {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}
-          {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
-          <br />
-          {[
-            normalizeCountry(getCurrentValue(user.country)),
-            normalizeRegion(getCurrentValue(user.region)),
-          ]
-            .filter(Boolean)
-            .join(', ')}
-        </BasicInfo>
-      )}
-      {isAdmin && (
-        <AdminToggle
-          published={user.publish}
-          onClick={e => {
-            e.stopPropagation();
-            togglePublish(user);
-          }}
-        />
-      )}
-      <BtnFavorite
-        userId={user.userId}
-        favoriteUsers={favoriteUsers}
-        setFavoriteUsers={setFavoriteUsers}
-        dislikeUsers={dislikeUsers}
-        setDislikeUsers={setDislikeUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
-      />
-      <BtnDislike
-        userId={user.userId}
-        dislikeUsers={dislikeUsers}
-        setDislikeUsers={setDislikeUsers}
-        favoriteUsers={favoriteUsers}
-        setFavoriteUsers={setFavoriteUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
-      />
-      {isAgency && (
-        <CardInfo>
-          <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
-          {nameParts && (
-            <div>
-              <strong>{nameParts}</strong>
-            </div>
-          )}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              flexWrap: 'wrap',
-              justifyContent: 'flex-start',
-            }}
-          >
-            {getCurrentValue(user.country) && (
-              <span>{normalizeCountry(getCurrentValue(user.country))}</span>
-            )}
-            <Icons>{fieldContactsIcons(user)}</Icons>
-          </div>
-          {moreInfo && moreInfoWords <= 10 && (
-            <div style={{ whiteSpace: 'pre-wrap' }}>{moreInfo}</div>
-          )}
-          {profession && professionWords <= 10 && (
-            <div style={{ whiteSpace: 'pre-wrap' }}>{profession}</div>
-          )}
-        </CardInfo>
-      )}
-    </AnimatedCard>
-  );
-};
 
 const renderSelectedFields = user => {
   return FIELDS.map(field => {
@@ -1077,33 +910,9 @@ const Matching = () => {
 
             <Grid ref={gridRef}>
               {filteredUsers.map(user => {
-                const photo = getCurrentValue(user.photos);
-                const role = (user.role || user.userRole || '')
-                  .toString()
-                  .trim()
-                  .toLowerCase();
-                const isAgency = role === 'ag' || role === 'ip';
-                const nameParts = [getCurrentValue(user.name), getCurrentValue(user.surname)]
-                  .filter(Boolean)
-                  .join(' ');
                 return (
                   <CardWrapper key={user.userId}>
-                    <SwipeableCard
-                      user={user}
-                      photo={photo}
-                      role={role}
-                      isAgency={isAgency}
-                      nameParts={nameParts}
-                      isAdmin={isAdmin}
-                      favoriteUsers={favoriteUsers}
-                      setFavoriteUsers={setFavoriteUsers}
-                      dislikeUsers={dislikeUsers}
-                      setDislikeUsers={setDislikeUsers}
-                      viewMode={viewMode}
-                      handleRemove={handleRemove}
-                      togglePublish={togglePublish}
-                      onSelect={setSelected}
-                    />
+                    <PhotoStack user={user} onSelect={setSelected} />
                     <ResizableCommentInput
                       plain
                       value={comments[user.userId] || ''}
