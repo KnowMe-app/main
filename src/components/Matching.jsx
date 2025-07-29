@@ -710,7 +710,15 @@ const renderSelectedFields = user => {
   });
 };
 
-const NoPhotoCard = ({ user }) => {
+const NoPhotoCard = ({
+  user,
+  favoriteUsers,
+  setFavoriteUsers,
+  dislikeUsers,
+  setDislikeUsers,
+  viewMode,
+  handleRemove,
+}) => {
   return (
     <DonorCard style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh' }}>
       <ProfileSection>
@@ -747,6 +755,22 @@ const NoPhotoCard = ({ user }) => {
       <Contact>
         <Icons>{fieldContactsIcons(user)}</Icons>
       </Contact>
+      <BtnFavorite
+        userId={user.userId}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
+      <BtnDislike
+        userId={user.userId}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
     </DonorCard>
   );
 };
@@ -1201,7 +1225,15 @@ const Matching = () => {
                           onSelect={setSelected}
                         />
                       ) : (
-                        <NoPhotoCard user={user} />
+                        <NoPhotoCard
+                          user={user}
+                          favoriteUsers={favoriteUsers}
+                          setFavoriteUsers={setFavoriteUsers}
+                          dislikeUsers={dislikeUsers}
+                          setDislikeUsers={setDislikeUsers}
+                          viewMode={viewMode}
+                          handleRemove={handleRemove}
+                        />
                       )}
                       <ResizableCommentInput
                         plain
