@@ -321,6 +321,10 @@ const Title = styled.div`
   margin-bottom: 4px;
 `;
 
+const NameText = styled.span`
+  color: ${color.black};
+`;
+
 const ProfileSection = styled.div`
   display: flex;
   align-items: center;
@@ -723,11 +727,13 @@ const NoPhotoCard = ({
     <DonorCard style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh' }}>
       <ProfileSection>
         <Info>
-          <Title>Egg donor profile</Title>
-          <strong>
-            {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
-            {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
-          </strong>
+          <Title>
+            Egg donor profile -{' '}
+            <NameText>
+              {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
+              {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+            </NameText>
+          </Title>
           <br />
           {normalizeLocation([
             getCurrentValue(user.region),
