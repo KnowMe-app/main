@@ -19,9 +19,13 @@ import {
   database,
   auth,
   updateDataInNewUsersRTDB,
+  updateDataInRealtimeDB,
+  updateDataInFiresoreDB,
 } from './config';
 import { onValue, ref as refDb } from 'firebase/database';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { BtnFavorite } from './smallCard/btnFavorite';
+import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
 import PhotoViewer from './PhotoViewer';
@@ -34,7 +38,11 @@ import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
 import { handleEmptyFetch } from './loadMoreUtils';
-import { normalizeLocation } from './normalizeLocation';
+import {
+  normalizeLocation,
+  normalizeCountry,
+  normalizeRegion,
+} from './normalizeLocation';
 
 const Container = styled.div`
   display: flex;
@@ -384,6 +392,49 @@ const Icons = styled.div`
   color: ${color.accent};
 `;
 
+const BasicInfo = styled.div`
+  position: absolute;
+  bottom: 55px;
+  left: 0;
+  width: 100%;
+  text-align: left;
+  color: white;
+  font-weight: bold;
+  text-shadow: 0 0 2px black;
+  pointer-events: none;
+  line-height: 1.2;
+`;
+
+const CardInfo = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.8);
+  color: ${color.black};
+  font-size: 14px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+`;
+
+const RoleHeader = styled(Title)`
+  margin-bottom: 2px;
+`;
+
+const AdminToggle = styled.div`
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: ${props => (props.published ? 'green' : 'red')};
+  z-index: 10;
+  cursor: pointer;
+`;
+
 const Id = styled.div`
   font-size: 12px;
   color: ${color.gray3};
@@ -391,7 +442,43 @@ const Id = styled.div`
   margin-top: 5px;
 `;
 
+const DescriptionPage = styled.div`
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: ${color.black};
+`;
 
+const slideLeft = keyframes`
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+`;
+
+const slideRight = keyframes`
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+`;
+
+const AnimatedCard = styled(Card)`
+  animation: ${({ $dir }) =>
+    $dir === 'left'
+      ? slideLeft
+      : $dir === 'right'
+      ? slideRight
+      : 'none'} 0.3s ease;
+`;
 
 
 const renderSelectedFields = user => {
@@ -443,6 +530,25 @@ const Matching = () => {
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
+  const handleRemove = id => {
+    setUsers(prev => prev.filter(u => u.userId !== id));
+  };
+
+  const togglePublish = async user => {
+    if (!isAdmin) return;
+    const newValue = !user.publish;
+    setUsers(prev =>
+      prev.map(u =>
+        u.userId === user.userId ? { ...u, publish: newValue } : u
+      )
+    );
+    try {
+      await updateDataInRealtimeDB(user.userId, { publish: newValue }, 'update');
+      await updateDataInFiresoreDB(user.userId, { publish: newValue }, 'update');
+    } catch (err) {
+      console.error('Failed to toggle publish', err);
+    }
+  };
 
   const applySearchResults = async res => {
     const arr = Array.isArray(res) ? res : Object.values(res || {});
