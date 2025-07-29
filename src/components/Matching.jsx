@@ -91,9 +91,8 @@ const CardContainer = styled.div`
 
 const NextPhoto = styled.img`
   position: absolute;
-  top: -5px;
-  right: -5px;
-  transform: translateY(-5px);
+  top: -3px;
+  right: -3px;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -104,9 +103,8 @@ const NextPhoto = styled.img`
 
 const ThirdPhoto = styled.img`
   position: absolute;
-  top: -10px;
-  right: -10px;
-  transform: translateY(-10px);
+  top: -6px;
+  right: -6px;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -778,6 +776,14 @@ const Matching = () => {
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
+
+  const countWords = text =>
+    text ? text.trim().split(/\s+/).filter(Boolean).length : 0;
+
+  const selectedProfession = selected ? getCurrentValue(selected.profession) : '';
+  const selectedMoreInfoMain = selected ? getCurrentValue(selected.moreInfo_main) : '';
+  const selectedProfessionWords = countWords(selectedProfession);
+  const selectedMoreInfoWords = countWords(selectedMoreInfoMain);
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
@@ -1262,11 +1268,18 @@ const Matching = () => {
                 {getCurrentValue(selected.myComment)}
               </MoreInfo>
             )}
-            {getCurrentValue(selected.profession) && (
+            {selectedProfession && selectedProfessionWords <= 10 && (
               <MoreInfo>
                 <strong>Profession</strong>
                 <br />
-                {getCurrentValue(selected.profession)}
+                {selectedProfession}
+              </MoreInfo>
+            )}
+            {selectedMoreInfoMain && selectedMoreInfoWords <= 10 && (
+              <MoreInfo>
+                <strong>More information</strong>
+                <br />
+                {selectedMoreInfoMain}
               </MoreInfo>
             )}
             <Contact>
@@ -1292,6 +1305,24 @@ const Matching = () => {
               ID: {selected.userId ? selected.userId.slice(0, 5) : ''}
             </Id>
           </DonorCard>
+          {(selectedProfessionWords > 10 || selectedMoreInfoWords > 10) && (
+            <DonorCard onClick={e => e.stopPropagation()}>
+              {selectedProfessionWords > 10 && (
+                <MoreInfo>
+                  <strong>Profession</strong>
+                  <br />
+                  {selectedProfession}
+                </MoreInfo>
+              )}
+              {selectedMoreInfoWords > 10 && (
+                <MoreInfo>
+                  <strong>More information</strong>
+                  <br />
+                  {selectedMoreInfoMain}
+                </MoreInfo>
+              )}
+            </DonorCard>
+          )}
             </ModalOverlay>
           )}
           {showPhoto && (
