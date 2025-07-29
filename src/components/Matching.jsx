@@ -90,6 +90,39 @@ const CardWrapper = styled.div`
   border-radius: 8px;
   box-sizing: border-box;
   overflow: hidden;
+  position: relative;
+`;
+
+const NextPhoto = styled.img`
+  position: absolute;
+  top: -5px;
+  left: 5px;
+  width: 100%;
+  height: ${({ $small, $hasPhoto }) => {
+    const base = $small ? 30 : 50;
+    return `${$hasPhoto ? base : base / 2}vh`;
+  }};
+  object-fit: cover;
+  z-index: 0;
+  pointer-events: none;
+`;
+
+const InfoBlock = styled.div`
+  position: absolute;
+  top: -5px;
+  left: 5px;
+  width: 100%;
+  height: ${({ $small, $hasPhoto }) => {
+    const base = $small ? 30 : 50;
+    return `${$hasPhoto ? base : base / 2}vh`;
+  }};
+  background: #fff;
+  color: ${color.black};
+  padding: 5px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  z-index: 0;
+  pointer-events: none;
 `;
 
 const CommentInput = styled.textarea`
@@ -477,6 +510,7 @@ const AnimatedCard = styled(Card)`
       : $dir === 'right'
       ? slideRight
       : 'none'} 0.3s ease;
+  z-index: 1;
 `;
 
 const SwipeableCard = ({
@@ -1086,8 +1120,25 @@ const Matching = () => {
                 const nameParts = [getCurrentValue(user.name), getCurrentValue(user.surname)]
                   .filter(Boolean)
                   .join(' ');
+                const photosArr = Array.isArray(user.photos)
+                  ? user.photos
+                  : [getCurrentValue(user.photos)].filter(Boolean);
+                const nextPhoto = photosArr.length > 1 ? photosArr[1] : null;
                 return (
                   <CardWrapper key={user.userId}>
+                    {nextPhoto && (
+                      <NextPhoto
+                        src={nextPhoto}
+                        $small={isAgency}
+                        $hasPhoto={!!photo}
+                        alt="next"
+                      />
+                    )}
+                    {!nextPhoto && photosArr.length === 0 && (
+                      <InfoBlock $small={isAgency} $hasPhoto={!!photo}>
+                        {renderSelectedFields(user)}
+                      </InfoBlock>
+                    )}
                     <SwipeableCard
                       user={user}
                       photo={photo}
