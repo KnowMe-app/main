@@ -93,12 +93,25 @@ const NextPhoto = styled.img`
   position: absolute;
   top: -5px;
   right: -5px;
+  bottom: 5px;
   width: 100%;
-  height: 100%;
+  height: auto;
   object-fit: cover;
   border: 2px solid ${color.gray3};
   border-radius: 8px;
   z-index: 0;
+`;
+
+const ThirdCard = styled.div`
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  bottom: 10px;
+  width: 100%;
+  background: ${color.gray};
+  border: 2px solid ${color.gray3};
+  border-radius: 8px;
+  z-index: -1;
 `;
 
 const CardWrapper = styled.div`
@@ -550,10 +563,16 @@ const SwipeableCard = ({
       setDir('right');
       setIndex(i => (i - 1 + slides.length) % slides.length);
       wasSwiped.current = true;
+      setTimeout(() => {
+        wasSwiped.current = false;
+      }, 300);
     } else if (deltaX < -50) {
       setDir('left');
       setIndex(i => (i + 1) % slides.length);
       wasSwiped.current = true;
+      setTimeout(() => {
+        wasSwiped.current = false;
+      }, 300);
     }
     startX.current = null;
   };
@@ -567,7 +586,6 @@ const SwipeableCard = ({
 
   const handleClick = () => {
     if (wasSwiped.current) {
-      wasSwiped.current = false;
       return;
     }
     onSelect(user);
@@ -1153,6 +1171,7 @@ const Matching = () => {
                   .join(' ');
                 return (
                   <CardContainer key={user.userId}>
+                    <ThirdCard />
                     {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
                     <CardWrapper>
                       {photo ? (
