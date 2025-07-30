@@ -315,14 +315,16 @@ const DonorCard = styled.div`
   position: relative;
 `;
 
-const Title = styled.div`
+const Title = styled.span`
   color: ${color.accent};
   font-weight: bold;
   margin-bottom: 4px;
+  margin-right: 4px;
+  display: inline-block;
 `;
 
 const DonorName = styled.strong`
-  display: block;
+  display: inline;
   margin-bottom: 2px;
   line-height: 1.2;
 `;
