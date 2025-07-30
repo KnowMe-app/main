@@ -91,8 +91,8 @@ const CardContainer = styled.div`
 
 const NextPhoto = styled.img`
   position: absolute;
-  top: -3px;
-  right: -3px;
+  top: -4px;
+  right: -4px;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -103,8 +103,8 @@ const NextPhoto = styled.img`
 
 const ThirdPhoto = styled.img`
   position: absolute;
-  top: -6px;
-  right: -6px;
+  top: -8px;
+  right: -8px;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -371,7 +371,6 @@ const FIELDS = [
   { key: 'breastSize', label: 'Breast size' },
   { key: 'bodyType', label: 'Body type' },
   { key: 'maritalStatus', label: 'Marital status' },
-  { key: 'education', label: 'Education' },
   { key: 'ownKids', label: 'Own kids' },
   { key: 'reward', label: 'Expected reward $' },
   { key: 'experience', label: 'Donation exp' },
@@ -527,15 +526,10 @@ const SwipeableCard = ({
   togglePublish,
   onSelect,
 }) => {
-  const wordCount = text =>
-    text ? text.trim().split(/\s+/).filter(Boolean).length : 0;
-
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
-
-  const moreInfoWords = wordCount(moreInfo);
-  const professionWords = wordCount(profession);
-  const showDescriptionSlide = moreInfoWords > 10 || professionWords > 10;
+  const education = getCurrentValue(user.education);
+  const showDescriptionSlide = Boolean(moreInfo || profession || education);
 
   const slides = React.useMemo(() => {
     const arr = Array.isArray(user.photos)
@@ -610,8 +604,27 @@ const SwipeableCard = ({
     >
       {current === 'description' && (
         <DescriptionPage style={{ whiteSpace: 'pre-wrap', padding: '10px' }}>
-          {moreInfoWords > 10 && <div>{moreInfo}</div>}
-          {professionWords > 10 && <div>{profession}</div>}
+          {education && (
+            <div>
+              <strong>Education</strong>
+              <br />
+              {education}
+            </div>
+          )}
+          {profession && (
+            <div>
+              <strong>Profession</strong>
+              <br />
+              {profession}
+            </div>
+          )}
+          {moreInfo && (
+            <div>
+              <strong>More information</strong>
+              <br />
+              {moreInfo}
+            </div>
+          )}
         </DescriptionPage>
       )}
       {index === 0 && (
@@ -674,12 +687,7 @@ const SwipeableCard = ({
             )}
             <Icons>{fieldContactsIcons(user)}</Icons>
           </div>
-          {moreInfo && moreInfoWords <= 10 && (
-            <div style={{ whiteSpace: 'pre-wrap' }}>{moreInfo}</div>
-          )}
-          {profession && professionWords <= 10 && (
-            <div style={{ whiteSpace: 'pre-wrap' }}>{profession}</div>
-          )}
+          {/* description moved to separate card */}
         </CardInfo>
       )}
     </AnimatedCard>
@@ -711,11 +719,17 @@ const renderSelectedFields = user => {
 };
 
 const NoPhotoCard = ({ user }) => {
+  const profession = getCurrentValue(user.profession);
+  const moreInfoMain = getCurrentValue(user.moreInfo_main);
+  const education = getCurrentValue(user.education);
+  const showExtraCard = Boolean(profession || moreInfoMain || education);
+
   return (
-    <DonorCard style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh' }}>
-      <ProfileSection>
-        <Info>
-          <Title>Egg donor profile</Title>
+    <>
+      <DonorCard style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh' }}>
+        <ProfileSection>
+          <Info>
+            <Title>Egg donor profile</Title>
           <strong>
             {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
             {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
@@ -730,24 +744,36 @@ const NoPhotoCard = ({ user }) => {
         </Info>
       </ProfileSection>
       <Table>{renderSelectedFields(user)}</Table>
-      {getCurrentValue(user.profession) && (
-        <MoreInfo>
-          <strong>Profession</strong>
-          <br />
-          {getCurrentValue(user.profession)}
-        </MoreInfo>
-      )}
-      {getCurrentValue(user.moreInfo_main) && (
-        <MoreInfo>
-          <strong>More information</strong>
-          <br />
-          {getCurrentValue(user.moreInfo_main)}
-        </MoreInfo>
-      )}
       <Contact>
         <Icons>{fieldContactsIcons(user)}</Icons>
       </Contact>
-    </DonorCard>
+      </DonorCard>
+      {showExtraCard && (
+        <DonorCard style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh' }}>
+          {education && (
+            <MoreInfo>
+              <strong>Education</strong>
+              <br />
+              {education}
+            </MoreInfo>
+          )}
+          {profession && (
+            <MoreInfo>
+              <strong>Profession</strong>
+              <br />
+              {profession}
+            </MoreInfo>
+          )}
+          {moreInfoMain && (
+            <MoreInfo>
+              <strong>More information</strong>
+              <br />
+              {moreInfoMain}
+            </MoreInfo>
+          )}
+        </DonorCard>
+      )}
+    </>
   );
 };
 
@@ -777,13 +803,12 @@ const Matching = () => {
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
 
-  const countWords = text =>
-    text ? text.trim().split(/\s+/).filter(Boolean).length : 0;
-
   const selectedProfession = selected ? getCurrentValue(selected.profession) : '';
   const selectedMoreInfoMain = selected ? getCurrentValue(selected.moreInfo_main) : '';
-  const selectedProfessionWords = countWords(selectedProfession);
-  const selectedMoreInfoWords = countWords(selectedMoreInfoMain);
+  const selectedEducation = selected ? getCurrentValue(selected.education) : '';
+  const showExtraSelectedCard = Boolean(
+    selectedEducation || selectedProfession || selectedMoreInfoMain
+  );
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
@@ -1268,20 +1293,7 @@ const Matching = () => {
                 {getCurrentValue(selected.myComment)}
               </MoreInfo>
             )}
-            {selectedProfession && selectedProfessionWords <= 10 && (
-              <MoreInfo>
-                <strong>Profession</strong>
-                <br />
-                {selectedProfession}
-              </MoreInfo>
-            )}
-            {selectedMoreInfoMain && selectedMoreInfoWords <= 10 && (
-              <MoreInfo>
-                <strong>More information</strong>
-                <br />
-                {selectedMoreInfoMain}
-              </MoreInfo>
-            )}
+            {/* description moved to separate card */}
             <Contact>
               <Icons>{fieldContactsIcons(selected)}</Icons>
             </Contact>
@@ -1305,16 +1317,23 @@ const Matching = () => {
               ID: {selected.userId ? selected.userId.slice(0, 5) : ''}
             </Id>
           </DonorCard>
-          {(selectedProfessionWords > 10 || selectedMoreInfoWords > 10) && (
+          {showExtraSelectedCard && (
             <DonorCard onClick={e => e.stopPropagation()}>
-              {selectedProfessionWords > 10 && (
+              {selectedEducation && (
+                <MoreInfo>
+                  <strong>Education</strong>
+                  <br />
+                  {selectedEducation}
+                </MoreInfo>
+              )}
+              {selectedProfession && (
                 <MoreInfo>
                   <strong>Profession</strong>
                   <br />
                   {selectedProfession}
                 </MoreInfo>
               )}
-              {selectedMoreInfoWords > 10 && (
+              {selectedMoreInfoMain && (
                 <MoreInfo>
                   <strong>More information</strong>
                   <br />
