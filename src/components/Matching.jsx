@@ -534,6 +534,7 @@ const SwipeableCard = ({
   togglePublish,
   onSelect,
 }) => {
+  const navigate = useNavigate();
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
   const education = getCurrentValue(user.education);
@@ -730,6 +731,19 @@ const SwipeableCard = ({
             <Icons>{fieldContactsIcons(user)}</Icons>
           </div>
         </CardInfo>
+      )}
+      {(current === 'info' || current === 'main') && (
+        <Id
+          onClick={e => {
+            e.stopPropagation();
+            if (isAdmin) {
+              navigate(`/edit/${user.userId}`);
+            }
+          }}
+          style={{ cursor: isAdmin ? 'pointer' : 'default' }}
+        >
+          ID: {user.userId ? user.userId.slice(0, 5) : ''}
+        </Id>
       )}
     </AnimatedCard>
   );
