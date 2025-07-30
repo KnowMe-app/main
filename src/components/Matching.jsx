@@ -728,13 +728,13 @@ const NoPhotoCard = ({
       <ProfileSection>
         <Info>
           <Title>
-            Egg donor profile -{' '}
+            Egg donor{' '}
             <NameText>
               {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
               {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
             </NameText>
           </Title>
-          <br />
+
           {normalizeLocation([
             getCurrentValue(user.region),
             getCurrentValue(user.city),
@@ -1284,12 +1284,13 @@ const Matching = () => {
             <ProfileSection>
               {getCurrentValue(selected.photos) && <Photo src={getCurrentValue(selected.photos)} alt="Donor" onClick={() => setShowPhoto(true)} />}
               <Info>
-                <Title>Egg donor profile</Title>
-                <strong>
-                  {(getCurrentValue(selected.surname) || '').trim()} {(getCurrentValue(selected.name) || '').trim()}
-                  {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
-                </strong>
-                <br />
+                <Title>
+                  Egg donor{' '}
+                  <NameText>
+                    {(getCurrentValue(selected.surname) || '').trim()} {(getCurrentValue(selected.name) || '').trim()}
+                    {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
+                  </NameText>
+                </Title>
                 {normalizeLocation([
                   getCurrentValue(selected.region),
                   getCurrentValue(selected.city),
