@@ -321,10 +321,6 @@ const Title = styled.div`
   margin-bottom: 4px;
 `;
 
-const NameText = styled.span`
-  color: ${color.black};
-`;
-
 const ProfileSection = styled.div`
   display: flex;
   align-items: center;
