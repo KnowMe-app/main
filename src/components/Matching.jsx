@@ -649,8 +649,7 @@ const SwipeableCard = ({
             <Info>
               <Title>Egg donor</Title>
               <DonorName>
-                {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
-                {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+                {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}{user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
               </DonorName>
               <br />
               {normalizeLocation([
@@ -669,8 +668,7 @@ const SwipeableCard = ({
       )}
       {current === 'main' && (
         <BasicInfo>
-          {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}
-          {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+          {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}{user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
           <br />
           {[
             normalizeCountry(getCurrentValue(user.country)),
@@ -1251,8 +1249,7 @@ const Matching = () => {
               <Info>
                 <Title>Egg donor</Title>
                 <DonorName>
-                  {(getCurrentValue(selected.surname) || '').trim()} {(getCurrentValue(selected.name) || '').trim()}
-                  {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
+                  {(getCurrentValue(selected.surname) || '').trim()} {(getCurrentValue(selected.name) || '').trim()}{selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
                 </DonorName>
                 <br />
                 {normalizeLocation([
