@@ -426,8 +426,8 @@ const Icons = styled.div`
 const BasicInfo = styled.div`
   position: absolute;
   bottom: 55px;
-  left: 0;
-  width: 100%;
+  left: 10px;
+  right: 0;
   text-align: left;
   color: white;
   font-weight: bold;
