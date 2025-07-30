@@ -763,6 +763,72 @@ const renderSelectedFields = user => {
   });
 };
 
+const NoPhotoCard = ({
+  user,
+  favoriteUsers,
+  setFavoriteUsers,
+  dislikeUsers,
+  setDislikeUsers,
+  viewMode,
+  handleRemove,
+}) => {
+  return (
+    <DonorCard style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh' }}>
+      <ProfileSection>
+        <Info>
+          <Title>
+            Egg donor{' '}
+            <NameText>
+              {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
+              {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+            </NameText>
+          </Title>
+
+          {normalizeLocation([
+            getCurrentValue(user.region),
+            getCurrentValue(user.city),
+          ]
+            .filter(Boolean)
+            .join(', '))}
+        </Info>
+      </ProfileSection>
+      <Table>{renderSelectedFields(user)}</Table>
+      {getCurrentValue(user.profession) && (
+        <MoreInfo>
+          <strong>Profession</strong>
+          <br />
+          {getCurrentValue(user.profession)}
+        </MoreInfo>
+      )}
+      {getCurrentValue(user.moreInfo_main) && (
+        <MoreInfo>
+          <strong>More information</strong>
+          <br />
+          {getCurrentValue(user.moreInfo_main)}
+        </MoreInfo>
+      )}
+      <Contact>
+        <Icons>{fieldContactsIcons(user)}</Icons>
+      </Contact>
+      <BtnFavorite
+        userId={user.userId}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
+      <BtnDislike
+        userId={user.userId}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
+    </DonorCard>
+  );
+};
 
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 1;
