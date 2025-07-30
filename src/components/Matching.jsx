@@ -160,9 +160,9 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 
 const Card = styled.div`
   width: 100%;
-  height: ${({ $small, $hasPhoto }) => {
+  height: ${({ $small }) => {
     const base = $small ? 30 : 50;
-    return `${$hasPhoto ? base : base / 2}vh`;
+    return `${base}vh`;
   }};
   background: linear-gradient(135deg, orange, yellow);
   background-size: cover;
@@ -544,7 +544,9 @@ const SwipeableCard = ({
     const photos = Array.isArray(user.photos)
       ? user.photos
       : [getCurrentValue(user.photos)].filter(Boolean);
-    const base = ['main', ...photos];
+    const base = [];
+    if (photos.length > 0) base.push('main');
+    base.push(...photos);
     if (showDescriptionSlide) base.push('description');
     base.push('info');
     return base;
@@ -611,7 +613,6 @@ const SwipeableCard = ({
     <AnimatedCard
       $dir={dir}
       $small={isAgency}
-      $hasPhoto={!!photo}
       data-card
       onClick={handleClick}
       onTouchStart={handleTouchStart}
@@ -667,7 +668,7 @@ const SwipeableCard = ({
           </Contact>
         </InfoSlide>
       )}
-      {current === 'main' && (
+      {current === 'main' && photo && (
         <BasicInfo>
           {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}
           {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
@@ -680,7 +681,7 @@ const SwipeableCard = ({
             .join(', ')}
         </BasicInfo>
       )}
-      {current === 'main' && isAdmin && (
+      {((current === 'main' && photo) || (current === 'info' && !photo)) && isAdmin && (
         <AdminToggle
           published={user.publish}
           onClick={e => {
@@ -689,7 +690,7 @@ const SwipeableCard = ({
           }}
         />
       )}
-      {current === 'main' && (
+      {((current === 'main' && photo) || (current === 'info' && !photo)) && (
         <>
           <BtnFavorite
             userId={user.userId}
@@ -709,7 +710,7 @@ const SwipeableCard = ({
           />
         </>
       )}
-      {current === 'main' && isAgency && (
+      {current === 'main' && photo && isAgency && (
         <CardInfo>
           <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
           {nameParts && (
