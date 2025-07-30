@@ -207,8 +207,8 @@ const SkeletonCard = styled(Card)`
 
 const TopActions = styled.div`
   position: absolute;
-  top: 10px;
   right: 10px;
+  bottom: 10px;
   display: flex;
   gap: 10px;
   z-index: 10;
