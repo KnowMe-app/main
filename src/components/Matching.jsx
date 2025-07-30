@@ -321,6 +321,12 @@ const Title = styled.div`
   margin-bottom: 4px;
 `;
 
+const DonorName = styled.strong`
+  display: block;
+  margin-bottom: 2px;
+  line-height: 1.2;
+`;
+
 const ProfileSection = styled.div`
   display: flex;
   align-items: center;
@@ -635,12 +641,11 @@ const SwipeableCard = ({
         <InfoSlide>
           <ProfileSection>
             <Info>
-              <Title>Egg donor profile</Title>
-              <strong>
+              <Title>Egg donor</Title>
+              <DonorName>
                 {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
                 {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
-              </strong>
-              <br />
+              </DonorName>
               {normalizeLocation([
                 getCurrentValue(user.region),
                 getCurrentValue(user.city),
@@ -1255,12 +1260,11 @@ const Matching = () => {
             <ProfileSection>
               {getCurrentValue(selected.photos) && <Photo src={getCurrentValue(selected.photos)} alt="Donor" onClick={() => setShowPhoto(true)} />}
               <Info>
-                <Title>Egg donor profile</Title>
-                <strong>
+                <Title>Egg donor</Title>
+                <DonorName>
                   {(getCurrentValue(selected.surname) || '').trim()} {(getCurrentValue(selected.name) || '').trim()}
                   {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
-                </strong>
-                <br />
+                </DonorName>
                 {normalizeLocation([
                   getCurrentValue(selected.region),
                   getCurrentValue(selected.city),
