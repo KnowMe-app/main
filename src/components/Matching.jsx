@@ -728,13 +728,13 @@ const NoPhotoCard = ({
       <ProfileSection>
         <Info>
           <Title>
-            Egg donor profile -{' '}
+            Egg donor{' '}
             <NameText>
               {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
               {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
             </NameText>
           </Title>
-          <br />
+
           {normalizeLocation([
             getCurrentValue(user.region),
             getCurrentValue(user.city),
