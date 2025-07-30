@@ -714,7 +714,9 @@ const renderSelectedFields = user => {
 
 const NoPhotoCard = ({ user }) => {
   return (
-    <DonorCard style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh' }}>
+    <DonorCard
+      style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh', margin: 0 }}
+    >
       <ProfileSection>
         <Info>
           <Title>Egg donor profile</Title>
