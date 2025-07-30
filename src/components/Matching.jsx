@@ -60,7 +60,7 @@ const InnerContainer = styled.div`
   max-width: 480px;
   width: 100%;
   background-color: #f0f0f0;
-  padding: 20px 0;
+  padding: 20px 0 70px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
   box-sizing: border-box;
@@ -206,7 +206,7 @@ const SkeletonCard = styled(Card)`
 const TopActions = styled.div`
   position: absolute;
   right: 10px;
-  bottom: 10px;
+  bottom: -50px;
   display: flex;
   gap: 10px;
   z-index: 10;
