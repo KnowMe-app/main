@@ -648,6 +648,7 @@ const SwipeableCard = ({
                 {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
                 {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
               </DonorName>
+              <br />
               {normalizeLocation([
                 getCurrentValue(user.region),
                 getCurrentValue(user.city),
@@ -1267,6 +1268,7 @@ const Matching = () => {
                   {(getCurrentValue(selected.surname) || '').trim()} {(getCurrentValue(selected.name) || '').trim()}
                   {selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
                 </DonorName>
+                <br />
                 {normalizeLocation([
                   getCurrentValue(selected.region),
                   getCurrentValue(selected.city),
