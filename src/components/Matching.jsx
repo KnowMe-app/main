@@ -480,16 +480,6 @@ const Id = styled.div`
   margin-top: 5px;
 `;
 
-const DescriptionPage = styled.div`
-  width: 100%;
-  height: 100%;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  color: ${color.black};
-`;
 
 const InfoSlide = styled.div`
   width: 100%;
@@ -796,9 +786,6 @@ const Matching = () => {
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
-
-  const countWords = text =>
-    text ? text.trim().split(/\s+/).filter(Boolean).length : 0;
 
   const selectedProfession = selected ? getCurrentValue(selected.profession) : '';
   const selectedMoreInfoMain = selected ? getCurrentValue(selected.moreInfo_main) : '';
