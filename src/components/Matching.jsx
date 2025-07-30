@@ -541,12 +541,12 @@ const SwipeableCard = ({
   const showDescriptionSlide = Boolean(moreInfo || profession || education);
 
   const slides = React.useMemo(() => {
-    const photos = Array.isArray(user.photos)
-      ? user.photos
+    const photosArr = Array.isArray(user.photos)
+      ? user.photos.filter(Boolean)
       : [getCurrentValue(user.photos)].filter(Boolean);
-    const base = ['main', ...photos];
+    const base = ['main', 'info'];
     if (showDescriptionSlide) base.push('description');
-    base.push('info');
+    base.push(...photosArr.slice(1));
     return base;
   }, [user.photos, showDescriptionSlide]);
 
@@ -1172,7 +1172,7 @@ const Matching = () => {
             <Grid ref={gridRef}>
               {filteredUsers.map(user => {
                 const photos = Array.isArray(user.photos)
-                  ? user.photos
+                  ? user.photos.filter(Boolean)
                   : [getCurrentValue(user.photos)].filter(Boolean);
                 const photo = photos[0];
                 const nextPhoto = photos[1];
