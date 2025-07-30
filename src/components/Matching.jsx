@@ -488,6 +488,16 @@ const DescriptionPage = styled.div`
   color: ${color.black};
 `;
 
+const InfoSlide = styled.div`
+  width: 100%;
+  height: 100%;
+  background: #f0f0f0;
+  color: ${color.black};
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 10px;
+`;
+
 const slideLeft = keyframes`
   from {
     transform: translateX(100%);
@@ -545,7 +555,8 @@ const SwipeableCard = ({
     const arr = Array.isArray(user.photos)
       ? user.photos
       : [getCurrentValue(user.photos)].filter(Boolean);
-    return showDescriptionSlide ? [...arr, 'description'] : arr;
+    const base = showDescriptionSlide ? [...arr, 'description'] : arr;
+    return [...base, 'info'];
   }, [user.photos, showDescriptionSlide]);
 
   const [index, setIndex] = useState(0);
@@ -618,7 +629,45 @@ const SwipeableCard = ({
           {professionWords > 10 && <div>{profession}</div>}
         </DescriptionPage>
       )}
-      {index === 0 && (
+      {current === 'info' && (
+        <InfoSlide>
+          <ProfileSection>
+            <Info>
+              <Title>Egg donor profile</Title>
+              <strong>
+                {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
+                {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+              </strong>
+              <br />
+              {normalizeLocation([
+                getCurrentValue(user.region),
+                getCurrentValue(user.city),
+              ]
+                .filter(Boolean)
+                .join(', '))}
+            </Info>
+          </ProfileSection>
+          <Table>{renderSelectedFields(user)}</Table>
+          {getCurrentValue(user.profession) && (
+            <MoreInfo>
+              <strong>Profession</strong>
+              <br />
+              {getCurrentValue(user.profession)}
+            </MoreInfo>
+          )}
+          {getCurrentValue(user.moreInfo_main) && (
+            <MoreInfo>
+              <strong>More information</strong>
+              <br />
+              {getCurrentValue(user.moreInfo_main)}
+            </MoreInfo>
+          )}
+          <Contact>
+            <Icons>{fieldContactsIcons(user)}</Icons>
+          </Contact>
+        </InfoSlide>
+      )}
+      {current !== 'info' && index === 0 && (
         <BasicInfo>
           {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}
           {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
@@ -631,7 +680,7 @@ const SwipeableCard = ({
             .join(', ')}
         </BasicInfo>
       )}
-      {isAdmin && (
+      {current !== 'info' && isAdmin && (
         <AdminToggle
           published={user.publish}
           onClick={e => {
@@ -640,23 +689,27 @@ const SwipeableCard = ({
           }}
         />
       )}
-      <BtnFavorite
-        userId={user.userId}
-        favoriteUsers={favoriteUsers}
-        setFavoriteUsers={setFavoriteUsers}
-        dislikeUsers={dislikeUsers}
-        setDislikeUsers={setDislikeUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
-      />
-      <BtnDislike
-        userId={user.userId}
-        dislikeUsers={dislikeUsers}
-        setDislikeUsers={setDislikeUsers}
-        favoriteUsers={favoriteUsers}
-        setFavoriteUsers={setFavoriteUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
-      />
-      {isAgency && (
+      {current !== 'info' && (
+        <>
+          <BtnFavorite
+            userId={user.userId}
+            favoriteUsers={favoriteUsers}
+            setFavoriteUsers={setFavoriteUsers}
+            dislikeUsers={dislikeUsers}
+            setDislikeUsers={setDislikeUsers}
+            onRemove={viewMode !== 'default' ? handleRemove : undefined}
+          />
+          <BtnDislike
+            userId={user.userId}
+            dislikeUsers={dislikeUsers}
+            setDislikeUsers={setDislikeUsers}
+            favoriteUsers={favoriteUsers}
+            setFavoriteUsers={setFavoriteUsers}
+            onRemove={viewMode !== 'default' ? handleRemove : undefined}
+          />
+        </>
+      )}
+      {current !== 'info' && isAgency && (
         <CardInfo>
           <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
           {nameParts && (
