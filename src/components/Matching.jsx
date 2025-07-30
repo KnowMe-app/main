@@ -552,11 +552,13 @@ const SwipeableCard = ({
   const showDescriptionSlide = moreInfoWords > 10 || professionWords > 10;
 
   const slides = React.useMemo(() => {
-    const arr = Array.isArray(user.photos)
+    const photos = Array.isArray(user.photos)
       ? user.photos
       : [getCurrentValue(user.photos)].filter(Boolean);
-    const base = showDescriptionSlide ? [...arr, 'description'] : arr;
-    return [...base, 'info'];
+    const base = ['main', ...photos];
+    if (showDescriptionSlide) base.push('description');
+    base.push('info');
+    return base;
   }, [user.photos, showDescriptionSlide]);
 
   const [index, setIndex] = useState(0);
@@ -608,7 +610,11 @@ const SwipeableCard = ({
 
   const current = slides[index];
   const style =
-    current !== 'description' && current
+    current === 'main'
+      ? photo
+        ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' }
+        : { backgroundColor: '#fff' }
+      : current !== 'description' && current !== 'info'
       ? { backgroundImage: `url(${current})`, backgroundColor: 'transparent' }
       : { backgroundColor: '#fff' };
 
@@ -667,7 +673,7 @@ const SwipeableCard = ({
           </Contact>
         </InfoSlide>
       )}
-      {current !== 'info' && index === 0 && (
+      {current === 'main' && (
         <BasicInfo>
           {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}
           {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
@@ -680,7 +686,7 @@ const SwipeableCard = ({
             .join(', ')}
         </BasicInfo>
       )}
-      {current !== 'info' && isAdmin && (
+      {current === 'main' && isAdmin && (
         <AdminToggle
           published={user.publish}
           onClick={e => {
@@ -689,7 +695,7 @@ const SwipeableCard = ({
           }}
         />
       )}
-      {current !== 'info' && (
+      {current === 'main' && (
         <>
           <BtnFavorite
             userId={user.userId}
@@ -709,7 +715,7 @@ const SwipeableCard = ({
           />
         </>
       )}
-      {current !== 'info' && isAgency && (
+      {current === 'main' && isAgency && (
         <CardInfo>
           <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
           {nameParts && (
@@ -731,12 +737,6 @@ const SwipeableCard = ({
             )}
             <Icons>{fieldContactsIcons(user)}</Icons>
           </div>
-          {moreInfo && moreInfoWords <= 10 && (
-            <div style={{ whiteSpace: 'pre-wrap' }}>{moreInfo}</div>
-          )}
-          {profession && professionWords <= 10 && (
-            <div style={{ whiteSpace: 'pre-wrap' }}>{profession}</div>
-          )}
         </CardInfo>
       )}
     </AnimatedCard>
@@ -767,72 +767,6 @@ const renderSelectedFields = user => {
   });
 };
 
-const NoPhotoCard = ({
-  user,
-  favoriteUsers,
-  setFavoriteUsers,
-  dislikeUsers,
-  setDislikeUsers,
-  viewMode,
-  handleRemove,
-}) => {
-  return (
-    <DonorCard style={{ boxShadow: 'none', border: 'none', maxHeight: '40vh' }}>
-      <ProfileSection>
-        <Info>
-          <Title>
-            Egg donor profile -{' '}
-            <NameText>
-              {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}
-              {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
-            </NameText>
-          </Title>
-          <br />
-          {normalizeLocation([
-            getCurrentValue(user.region),
-            getCurrentValue(user.city),
-          ]
-            .filter(Boolean)
-            .join(', '))}
-        </Info>
-      </ProfileSection>
-      <Table>{renderSelectedFields(user)}</Table>
-      {getCurrentValue(user.profession) && (
-        <MoreInfo>
-          <strong>Profession</strong>
-          <br />
-          {getCurrentValue(user.profession)}
-        </MoreInfo>
-      )}
-      {getCurrentValue(user.moreInfo_main) && (
-        <MoreInfo>
-          <strong>More information</strong>
-          <br />
-          {getCurrentValue(user.moreInfo_main)}
-        </MoreInfo>
-      )}
-      <Contact>
-        <Icons>{fieldContactsIcons(user)}</Icons>
-      </Contact>
-      <BtnFavorite
-        userId={user.userId}
-        favoriteUsers={favoriteUsers}
-        setFavoriteUsers={setFavoriteUsers}
-        dislikeUsers={dislikeUsers}
-        setDislikeUsers={setDislikeUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
-      />
-      <BtnDislike
-        userId={user.userId}
-        dislikeUsers={dislikeUsers}
-        setDislikeUsers={setDislikeUsers}
-        favoriteUsers={favoriteUsers}
-        setFavoriteUsers={setFavoriteUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
-      />
-    </DonorCard>
-  );
-};
 
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 1;
@@ -1266,34 +1200,22 @@ const Matching = () => {
                     {thirdPhoto && <ThirdPhoto src={thirdPhoto} alt="third" />}
                     {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
                     <CardWrapper>
-                      {photo ? (
-                        <SwipeableCard
-                          user={user}
-                          photo={photo}
-                          role={role}
-                          isAgency={isAgency}
-                          nameParts={nameParts}
-                          isAdmin={isAdmin}
-                          favoriteUsers={favoriteUsers}
-                          setFavoriteUsers={setFavoriteUsers}
-                          dislikeUsers={dislikeUsers}
-                          setDislikeUsers={setDislikeUsers}
-                          viewMode={viewMode}
-                          handleRemove={handleRemove}
-                          togglePublish={togglePublish}
-                          onSelect={setSelected}
-                        />
-                      ) : (
-                        <NoPhotoCard
-                          user={user}
-                          favoriteUsers={favoriteUsers}
-                          setFavoriteUsers={setFavoriteUsers}
-                          dislikeUsers={dislikeUsers}
-                          setDislikeUsers={setDislikeUsers}
-                          viewMode={viewMode}
-                          handleRemove={handleRemove}
-                        />
-                      )}
+                      <SwipeableCard
+                        user={user}
+                        photo={photo}
+                        role={role}
+                        isAgency={isAgency}
+                        nameParts={nameParts}
+                        isAdmin={isAdmin}
+                        favoriteUsers={favoriteUsers}
+                        setFavoriteUsers={setFavoriteUsers}
+                        dislikeUsers={dislikeUsers}
+                        setDislikeUsers={setDislikeUsers}
+                        viewMode={viewMode}
+                        handleRemove={handleRemove}
+                        togglePublish={togglePublish}
+                        onSelect={setSelected}
+                      />
                       <ResizableCommentInput
                         plain
                         value={comments[user.userId] || ''}
