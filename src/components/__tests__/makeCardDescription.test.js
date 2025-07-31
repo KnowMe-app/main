@@ -23,7 +23,7 @@ test('makeCardDescription returns enumerated description with literal \\n', () =
   expect(parts.length).toBe(8);
   expect(parts[0]).toBe('1. 2-2023');
   expect(parts[1]).toBe('2. Kyivska, Kyiv');
-  expect(parts[7]).toBe('8. Doe Jane Petrovna');
+  expect(parts[7]).toBe('8. Jane Doe Petrovna');
 });
 
 test('makeCardDescription skips empty fields and enumerates correctly', () => {
@@ -42,7 +42,7 @@ test('makeCardDescription skips empty fields and enumerates correctly', () => {
     '3. ?',
     '4. ?',
     '5. 0555555555',
-    '6. Smith John',
+    '6. John Smith',
   ]);
 });
 

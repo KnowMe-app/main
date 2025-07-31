@@ -633,7 +633,7 @@ const SwipeableCard = ({
             <Info>
               <Title>Egg donor</Title>
               <DonorName>
-                {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}{user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+                {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}{user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
               </DonorName>
               <br />
               {[
