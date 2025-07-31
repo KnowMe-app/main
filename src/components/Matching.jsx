@@ -132,7 +132,7 @@ const CommentInput = styled.textarea`
   margin-right: auto;
   resize: none;
   overflow: hidden;
-  min-height: 20px;
+  min-height: 16px;
   border: ${props => (props.plain ? 'none' : `1px solid ${color.gray3}`)};
   border-radius: ${props => (props.plain ? '0' : '8px')};
   outline: ${props => (props.plain ? 'none' : 'auto')};
@@ -477,6 +477,9 @@ const Id = styled.div`
   color: ${color.gray3};
   text-align: right;
   margin-top: 5px;
+  display: inline-block;
+  margin-left: auto;
+  padding-right: 4px;
 `;
 
 
