@@ -49,7 +49,7 @@ export const makeCardDescription = user => {
     .map(p => String(p).replace(/^\+?38/, ''))
     .join(', ');
 
-  const fullName = [user.surname, user.name, user.fathersname]
+  const fullName = [user.name, user.surname, user.fathersname]
     .filter(Boolean)
     .join(' ');
 
