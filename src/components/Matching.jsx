@@ -123,14 +123,16 @@ const CardWrapper = styled.div`
 
 const CommentInput = styled.textarea`
   width: 100%;
-  margin-top: ${props => props.mt || '0'};
+  margin: 0;
   display: block;
   box-sizing: border-box;
   margin-left: auto;
   margin-right: auto;
+  padding: 0;
   resize: none;
   overflow: hidden;
   min-height: 16px;
+  line-height: 16px;
   border: ${props => (props.plain ? 'none' : `1px solid ${color.gray3}`)};
   border-radius: ${props => (props.plain ? '0' : '8px')};
   outline: ${props => (props.plain ? 'none' : 'auto')};
@@ -425,12 +427,14 @@ const AdminToggle = styled.div`
 `;
 
 const Id = styled.div`
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
   font-size: 12px;
   color: ${color.gray3};
   text-align: right;
-  margin-top: 5px;
   display: inline-block;
-  margin-left: auto;
   padding-right: 4px;
 `;
 
