@@ -88,26 +88,28 @@ const CardContainer = styled.div`
 
 const NextPhoto = styled.img`
   position: absolute;
-  top: -4px;
-  right: -4px;
+  top: 0;
+  right: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   border: 2px solid ${color.gray3};
   border-radius: 8px;
-  z-index: 0;
+  transform: translate(4px, -4px);
+  z-index: 1;
 `;
 
 const ThirdPhoto = styled.img`
   position: absolute;
-  top: -8px;
-  right: -8px;
+  top: 0;
+  right: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   border: 2px solid ${color.gray4};
   border-radius: 8px;
-  z-index: -1;
+  transform: translate(8px, -8px);
+  z-index: 0;
 `;
 
 const CardWrapper = styled.div`
@@ -118,7 +120,7 @@ const CardWrapper = styled.div`
   box-sizing: border-box;
   overflow: hidden;
   background: #fff;
-  z-index: 1;
+  z-index: 2;
 `;
 
 const CommentInput = styled.textarea`
