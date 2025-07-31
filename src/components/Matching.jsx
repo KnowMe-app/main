@@ -33,7 +33,7 @@ import { useAutoResize } from '../hooks/useAutoResize';
 import { loadCache, saveCache } from "../hooks/useMatchingCache";
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
-import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
+import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaArrowDown } from 'react-icons/fa';
 import { handleEmptyFetch } from './loadMoreUtils';
 import {
   normalizeCountry,
@@ -43,25 +43,25 @@ import {
 const Container = styled.div`
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  padding: 5px;
+  height: 100vh;
+  padding: 0;
   background-color: #f5f5f5;
-
-  @media (max-width: 768px) {
-    padding: 0;
-  }
 `;
 
 const InnerContainer = styled.div`
   max-width: 480px;
   width: 100%;
+  height: 100%;
   background-color: #f0f0f0;
-  padding: 20px 0 70px;
+  padding: 0;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
   box-sizing: border-box;
   position: relative;
+
+  display: flex;
+  flex-direction: column;
 
   @media (max-width: 768px) {
     background-color: #f5f5f5;
@@ -75,9 +75,9 @@ const Grid = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  padding: 10px 10px 0;
+  padding: 0 10px;
   justify-content: center;
-  max-height: 80vh;
+  flex: 1;
   overflow-y: auto;
 `;
 
@@ -205,7 +205,8 @@ const SkeletonCard = styled(Card)`
 const TopActions = styled.div`
   position: absolute;
   right: 10px;
-  bottom: -50px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   gap: 10px;
   z-index: 10;
@@ -224,6 +225,25 @@ const ActionButton = styled.button`
   display: flex;
   align-items: center;
   justify-content: center;
+`;
+
+const HeaderContainer = styled.div`
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+`;
+
+const CardCount = styled.p`
+  width: 100%;
+  margin: 0;
+  text-align: center;
+  color: black;
+`;
+
+const LoadMoreButton = styled(ActionButton)`
+  margin: 10px auto;
 `;
 
 const SubmitButton = styled.button`
@@ -720,7 +740,7 @@ const renderSelectedFields = user => {
 
 
 const INITIAL_LOAD = 6;
-const LOAD_MORE = 1;
+const LOAD_MORE = 6;
 
 const Matching = () => {
   const navigate = useNavigate();
@@ -738,7 +758,6 @@ const Matching = () => {
   const [comments, setComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
-  const [userScrolled, setUserScrolled] = useState(false);
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
@@ -1027,15 +1046,7 @@ const Matching = () => {
   }, [loadInitial]);
 
   const gridRef = useRef(null);
-  const observerRef = useRef(null);
 
-  useEffect(() => {
-    const grid = gridRef.current;
-    if (!grid) return;
-    const onScroll = () => setUserScrolled(true);
-    grid.addEventListener('scroll', onScroll);
-    return () => grid.removeEventListener('scroll', onScroll);
-  }, []);
 
   const filteredUsers =
     filters && Object.keys(filters).length > 0
@@ -1047,41 +1058,7 @@ const Matching = () => {
         ).map(([id, u]) => u)
       : users;
 
-  useEffect(() => {
-    if (filteredUsers.length < 6 && hasMore) {
-      console.log('[useEffect] few users left, loading more');
-      loadMore();
-    }
-  }, [filteredUsers.length, hasMore, loadMore]);
-
-  useEffect(() => {
-    if (!gridRef.current || !hasMore || !userScrolled) return;
-
-    console.log('[useEffect] setting up IntersectionObserver');
-
-    const cards = gridRef.current.querySelectorAll(
-      '[data-card]:not([data-skeleton])'
-    );
-    const index = filteredUsers.length > 3 ? filteredUsers.length - 3 : filteredUsers.length - 1;
-    const target = cards[index];
-    if (!target) return;
-
-    const observer = new IntersectionObserver(
-      entries => {
-        if (entries[0].isIntersecting) {
-          console.log('[IntersectionObserver] trigger loadMore');
-          loadMore();
-        }
-      },
-      { root: gridRef.current, rootMargin: '0px 0px 200px 0px' }
-    );
-
-    observer.observe(target);
-    observerRef.current = observer;
-    return () => {
-      if (observerRef.current) observerRef.current.disconnect();
-    };
-  }, [loadMore, filteredUsers.length, hasMore, userScrolled]);
+  // automatic loading disabled
 
   const dotsMenu = () => (
     <>
@@ -1111,20 +1088,21 @@ const Matching = () => {
       </FilterContainer>
       <Container>
         <InnerContainer>
-          <div style={{ position: 'relative' }}>
+          <HeaderContainer>
+            <CardCount>{filteredUsers.length} карточок</CardCount>
             <TopActions>
               <ActionButton onClick={() => setShowFilters(s => !s)}><FaFilter /></ActionButton>
               <ActionButton onClick={loadDislikeCards}><FaTimes /></ActionButton>
               <ActionButton onClick={loadFavoriteCards}><FaHeart /></ActionButton>
               <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
             </TopActions>
-            {isAdmin && <p style={{ textAlign: 'center', color: 'black' }}>{filteredUsers.length} карточок</p>}
+          </HeaderContainer>
 
-            <Grid ref={gridRef}>
-              {filteredUsers.map(user => {
-                const photos = Array.isArray(user.photos)
-                  ? user.photos.filter(Boolean)
-                  : [getCurrentValue(user.photos)].filter(Boolean);
+          <Grid ref={gridRef}>
+            {filteredUsers.map(user => {
+              const photos = Array.isArray(user.photos)
+                ? user.photos.filter(Boolean)
+                : [getCurrentValue(user.photos)].filter(Boolean);
                 const photo = photos[0];
                 const nextPhoto = photos[1];
                 const thirdPhoto = photos[2];
@@ -1186,9 +1164,13 @@ const Matching = () => {
           {loading &&
             Array.from({ length: 4 }).map((_, idx) => (
               <SkeletonCard data-card data-skeleton key={`skeleton-${idx}`} />
-            ))}
-            </Grid>
-          </div>
+              ))}
+          </Grid>
+          {hasMore && !loading && (
+            <LoadMoreButton onClick={loadMore}>
+              <FaArrowDown />
+            </LoadMoreButton>
+          )}
 
           {showInfoModal && (
             <InfoModal onClose={() => setShowInfoModal(false)} text="dotsMenu" Context={dotsMenu} />
