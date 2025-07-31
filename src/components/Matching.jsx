@@ -1270,12 +1270,26 @@ const Matching = () => {
                 {getCurrentValue(selected.myComment)}
               </MoreInfo>
             )}
-            <Contact>
-              <Icons>{fieldContactsIcons(selected)}</Icons>
-            </Contact>
-            <ResizableCommentInput
-              mt="10px"
-              value={comments[selected.userId] || ''}
+          <Contact>
+            <Icons>{fieldContactsIcons(selected)}</Icons>
+          </Contact>
+          <BtnFavorite
+            userId={selected.userId}
+            favoriteUsers={favoriteUsers}
+            setFavoriteUsers={setFavoriteUsers}
+            dislikeUsers={dislikeUsers}
+            setDislikeUsers={setDislikeUsers}
+          />
+          <BtnDislike
+            userId={selected.userId}
+            dislikeUsers={dislikeUsers}
+            setDislikeUsers={setDislikeUsers}
+            favoriteUsers={favoriteUsers}
+            setFavoriteUsers={setFavoriteUsers}
+          />
+          <ResizableCommentInput
+            mt="10px"
+            value={comments[selected.userId] || ''}
               onChange={e => setComments(prev => ({ ...prev, [selected.userId]: e.target.value }))}
               onBlur={() => {
                 const owner = auth.currentUser?.uid;
