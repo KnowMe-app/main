@@ -689,26 +689,22 @@ const SwipeableCard = ({
           }}
         />
       )}
-      {current === 'main' && (
-        <>
-          <BtnFavorite
-            userId={user.userId}
-            favoriteUsers={favoriteUsers}
-            setFavoriteUsers={setFavoriteUsers}
-            dislikeUsers={dislikeUsers}
-            setDislikeUsers={setDislikeUsers}
-            onRemove={viewMode !== 'default' ? handleRemove : undefined}
-          />
-          <BtnDislike
-            userId={user.userId}
-            dislikeUsers={dislikeUsers}
-            setDislikeUsers={setDislikeUsers}
-            favoriteUsers={favoriteUsers}
-            setFavoriteUsers={setFavoriteUsers}
-            onRemove={viewMode !== 'default' ? handleRemove : undefined}
-          />
-        </>
-      )}
+      <BtnFavorite
+        userId={user.userId}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
+      <BtnDislike
+        userId={user.userId}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
       {current === 'main' && isAgency && (
         <CardInfo>
           <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
