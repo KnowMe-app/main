@@ -556,12 +556,14 @@ const SwipeableCard = ({
   const wasSwiped = useRef(false);
 
   const handleTouchStart = e => {
+    if (slides.length <= 1) return;
     if (e.touches && e.touches.length > 0) {
       startX.current = e.touches[0].clientX;
     }
   };
 
   const handleTouchEnd = e => {
+    if (slides.length <= 1) return;
     if (startX.current === null) return;
     const deltaX = e.changedTouches[0].clientX - startX.current;
     if (deltaX > 50) {
@@ -678,7 +680,7 @@ const SwipeableCard = ({
             .join(', ')}
         </BasicInfo>
       )}
-      {current === 'main' && isAdmin && (
+      {(current === 'main' || (!photo && current === 'info')) && isAdmin && (
         <AdminToggle
           published={user.publish}
           onClick={e => {
@@ -687,26 +689,22 @@ const SwipeableCard = ({
           }}
         />
       )}
-      {current === (photo ? 'main' : 'info') && (
-        <>
-          <BtnFavorite
-            userId={user.userId}
-            favoriteUsers={favoriteUsers}
-            setFavoriteUsers={setFavoriteUsers}
-            dislikeUsers={dislikeUsers}
-            setDislikeUsers={setDislikeUsers}
-            onRemove={viewMode !== 'default' ? handleRemove : undefined}
-          />
-          <BtnDislike
-            userId={user.userId}
-            dislikeUsers={dislikeUsers}
-            setDislikeUsers={setDislikeUsers}
-            favoriteUsers={favoriteUsers}
-            setFavoriteUsers={setFavoriteUsers}
-            onRemove={viewMode !== 'default' ? handleRemove : undefined}
-          />
-        </>
-      )}
+      <BtnFavorite
+        userId={user.userId}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
+      <BtnDislike
+        userId={user.userId}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+      />
       {current === 'main' && isAgency && (
         <CardInfo>
           <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
@@ -1213,11 +1211,21 @@ const Matching = () => {
                           const val = e.target.value;
                           setComments(prev => ({ ...prev, [user.userId]: val }));
                         }}
-                        onBlur={() => {
+                      onBlur={() => {
                           const owner = auth.currentUser?.uid;
                           if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
                         }}
                       />
+                      {isAdmin && (
+                        <Id
+                          onClick={() => {
+                            navigate(`/edit/${user.userId}`);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          ID: {user.userId ? user.userId.slice(0, 5) : ''}
+                        </Id>
+                      )}
                     </CardWrapper>
                   </CardContainer>
                 );
