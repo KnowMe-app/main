@@ -732,19 +732,7 @@ const SwipeableCard = ({
           </div>
         </CardInfo>
       )}
-      {(current === 'info' || current === 'main') && (
-        <Id
-          onClick={e => {
-            e.stopPropagation();
-            if (isAdmin) {
-              navigate(`/edit/${user.userId}`);
-            }
-          }}
-          style={{ cursor: isAdmin ? 'pointer' : 'default' }}
-        >
-          ID: {user.userId ? user.userId.slice(0, 5) : ''}
-        </Id>
-      )}
+      {(current === 'info' || current === 'main') && null}
     </AnimatedCard>
   );
 };
