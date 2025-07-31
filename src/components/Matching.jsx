@@ -280,37 +280,9 @@ const FilterContainer = styled.div`
   overflow-y: auto;
 `;
 
-const ModalOverlay = styled.div`
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-`;
-
-// Styled components for detailed modal card
-const DonorCard = styled.div`
-  font-family: sans-serif;
-  max-width: 400px;
-  width: 90%;
-  margin: 10px;
-  border: none;
-  border-radius: 8px;
-  padding: 0;
-  background: #f0f0f0;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  color: ${color.black};
-  max-height: 80vh;
-  overflow-y: auto;
-  position: relative;
-`;
+// Components below were previously defined for a modal that is no longer
+// rendered. They were causing "assigned a value but never used" warnings
+// during builds, so the unused definitions have been removed.
 
 const Title = styled.span`
   color: ${color.accent};
@@ -334,26 +306,8 @@ const ProfileSection = styled.div`
   padding-bottom: 10px;
 `;
 
-const Photo = styled.img`
-  width: 90px;
-  border-radius: 8px;
-  margin-right: 10px;
-  object-fit: cover;
-  cursor: pointer;
-`;
-
 const Info = styled.div`
   flex: 1;
-`;
-
-const CloseButton = styled.button`
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 20px;
 `;
 
 // Fields to display in the details modal
