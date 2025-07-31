@@ -915,6 +915,7 @@ const Matching = () => {
     console.log('[loadInitial] start');
     loadingRef.current = true;
     setLoading(true);
+    setUsers([]); // clear previous list to avoid caching wrong data
     loadedIdsRef.current = new Set();
     try {
       const owner = auth.currentUser?.uid;
@@ -933,9 +934,12 @@ const Matching = () => {
       const cached = loadCache(cacheKey);
       if (cached) {
         console.log('[loadInitial] using cache', cached.users.length);
-        loadedIdsRef.current = new Set(cached.users.map(u => u.userId));
-        setUsers(cached.users);
-        await loadCommentsFor(cached.users);
+        const filteredCached = cached.users.filter(
+          u => !exclude.has(u.userId)
+        );
+        loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
+        setUsers(filteredCached);
+        await loadCommentsFor(filteredCached);
         setLastKey(cached.lastKey);
         setHasMore(cached.hasMore);
         setViewMode('default');
@@ -956,13 +960,9 @@ const Matching = () => {
       );
       console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
       loadedIdsRef.current = new Set([...loadedIdsRef.current, ...res.users.map(u => u.userId)]);
-      setUsers(prev => {
-        const map = new Map(prev.map(u => [u.userId, u]));
-        res.users.forEach(u => map.set(u.userId, u));
-        const result = Array.from(map.values());
-        saveCache(cacheKey, { users: result, lastKey: res.lastKey, hasMore: res.hasMore });
-        return result;
-      });
+      const result = Array.from(new Map(res.users.map(u => [u.userId, u])).values());
+      saveCache(cacheKey, { users: result, lastKey: res.lastKey, hasMore: res.hasMore });
+      setUsers(result);
       await loadCommentsFor(res.users);
       if (res.excludedCount) {
         toast.success(`${res.excludedCount} excluded`, { id: 'matching-excluded' });
