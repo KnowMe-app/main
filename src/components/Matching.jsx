@@ -160,9 +160,9 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 
 const Card = styled.div`
   width: 100%;
-  height: ${({ $small, $hasPhoto }) => {
+  height: ${({ $small }) => {
     const base = $small ? 30 : 50;
-    return `${$hasPhoto ? base : base / 2}vh`;
+    return `${base}vh`;
   }};
   background: linear-gradient(135deg, orange, yellow);
   background-size: cover;
@@ -545,11 +545,11 @@ const SwipeableCard = ({
     const photosArr = Array.isArray(user.photos)
       ? user.photos.filter(Boolean)
       : [getCurrentValue(user.photos)].filter(Boolean);
-    const base = ['main', 'info'];
+    const base = photo ? ['main', 'info'] : ['info'];
     if (showDescriptionSlide) base.push('description');
     base.push(...photosArr.slice(1));
     return base;
-  }, [user.photos, showDescriptionSlide]);
+  }, [user.photos, showDescriptionSlide, photo]);
 
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(null);
@@ -688,7 +688,7 @@ const SwipeableCard = ({
           }}
         />
       )}
-      {current === 'main' && (
+      {current === (photo ? 'main' : 'info') && (
         <>
           <BtnFavorite
             userId={user.userId}
