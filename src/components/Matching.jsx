@@ -38,7 +38,6 @@ import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV } from 'react-icons/fa';
 import { handleEmptyFetch } from './loadMoreUtils';
 import {
-  normalizeLocation,
   normalizeCountry,
   normalizeRegion,
 } from './normalizeLocation';
@@ -654,12 +653,12 @@ const SwipeableCard = ({
                 {(getCurrentValue(user.surname) || '').trim()} {(getCurrentValue(user.name) || '').trim()}{user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
               </DonorName>
               <br />
-              {normalizeLocation([
-                getCurrentValue(user.region),
-                getCurrentValue(user.city),
+              {[
+                normalizeCountry(getCurrentValue(user.country)),
+                normalizeRegion(getCurrentValue(user.region)),
               ]
                 .filter(Boolean)
-                .join(', '))}
+                .join(', ')}
             </Info>
           </ProfileSection>
           <Table>{renderSelectedFields(user)}</Table>
@@ -1261,12 +1260,12 @@ const Matching = () => {
                   {(getCurrentValue(selected.surname) || '').trim()} {(getCurrentValue(selected.name) || '').trim()}{selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
                 </DonorName>
                 <br />
-                {normalizeLocation([
-                  getCurrentValue(selected.region),
-                  getCurrentValue(selected.city),
+                {[
+                  normalizeCountry(getCurrentValue(selected.country)),
+                  normalizeRegion(getCurrentValue(selected.region)),
                 ]
                   .filter(Boolean)
-                  .join(', '))}
+                  .join(', ')}
               </Info>
             </ProfileSection>
             <Table>{renderSelectedFields(selected)}</Table>
