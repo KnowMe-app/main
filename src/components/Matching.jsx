@@ -534,7 +534,6 @@ const SwipeableCard = ({
   togglePublish,
   onSelect,
 }) => {
-  const navigate = useNavigate();
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
   const education = getCurrentValue(user.education);
