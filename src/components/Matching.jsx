@@ -28,7 +28,6 @@ import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
-import PhotoViewer from './PhotoViewer';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -532,7 +531,6 @@ const SwipeableCard = ({
   viewMode,
   handleRemove,
   togglePublish,
-  onSelect,
 }) => {
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
@@ -596,7 +594,10 @@ const SwipeableCard = ({
       wasSwiped.current = false;
       return;
     }
-    onSelect(user);
+    if (slides.length > 1) {
+      setDir('left');
+      setIndex(i => (i + 1) % slides.length);
+    }
   };
 
   const current = slides[index];
@@ -767,8 +768,6 @@ const Matching = () => {
   const [users, setUsers] = useState([]);
   const [lastKey, setLastKey] = useState(undefined);
   const [hasMore, setHasMore] = useState(true);
-  const [selected, setSelected] = useState(null);
-  const [showPhoto, setShowPhoto] = useState(false);
   const [favoriteUsers, setFavoriteUsers] = useState({});
   const [dislikeUsers, setDislikeUsers] = useState({});
   const favoriteUsersRef = useRef(favoriteUsers);
@@ -777,17 +776,12 @@ const Matching = () => {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({});
   const [comments, setComments] = useState({});
-  const [showUserCard, setShowUserCard] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [userScrolled, setUserScrolled] = useState(false);
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
-
-  const selectedProfession = selected ? getCurrentValue(selected.profession) : '';
-  const selectedMoreInfoMain = selected ? getCurrentValue(selected.moreInfo_main) : '';
-  const selectedEducation = selected ? getCurrentValue(selected.education) : '';
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
@@ -1201,7 +1195,6 @@ const Matching = () => {
                         viewMode={viewMode}
                         handleRemove={handleRemove}
                         togglePublish={togglePublish}
-                        onSelect={setSelected}
                       />
                       <ResizableCommentInput
                         plain
@@ -1236,133 +1229,7 @@ const Matching = () => {
             ))}
             </Grid>
           </div>
-          {selected && (
-            <ModalOverlay
-          onClick={() => {
-            setSelected(null);
-            setShowPhoto(false);
-          }}
-        >
-          <DonorCard onClick={e => e.stopPropagation()}>
-            <CloseButton
-              className="close"
-              onClick={() => {
-                setSelected(null);
-                setShowPhoto(false);
-              }}
-            >
-              ✕
-            </CloseButton>
-            <ProfileSection>
-              {getCurrentValue(selected.photos) && <Photo src={getCurrentValue(selected.photos)} alt="Donor" onClick={() => setShowPhoto(true)} />}
-              <Info>
-                <Title>Egg donor</Title>
-                <DonorName>
-                  {(getCurrentValue(selected.surname) || '').trim()} {(getCurrentValue(selected.name) || '').trim()}{selected.birth ? `, ${utilCalculateAge(selected.birth)}р` : ''}
-                </DonorName>
-                <br />
-                {normalizeLocation([
-                  getCurrentValue(selected.region),
-                  getCurrentValue(selected.city),
-                ]
-                  .filter(Boolean)
-                  .join(', '))}
-              </Info>
-            </ProfileSection>
-            <Table>{renderSelectedFields(selected)}</Table>
-            {isAdmin && getCurrentValue(selected.myComment) && (
-              <MoreInfo $isAdmin={isAdmin}>
-                <strong>More information</strong>
-                <br />
-                {getCurrentValue(selected.myComment)}
-              </MoreInfo>
-            )}
-          <Contact>
-            <Icons>{fieldContactsIcons(selected)}</Icons>
-          </Contact>
-          <BtnFavorite
-            userId={selected.userId}
-            favoriteUsers={favoriteUsers}
-            setFavoriteUsers={setFavoriteUsers}
-            dislikeUsers={dislikeUsers}
-            setDislikeUsers={setDislikeUsers}
-          />
-          <BtnDislike
-            userId={selected.userId}
-            dislikeUsers={dislikeUsers}
-            setDislikeUsers={setDislikeUsers}
-            favoriteUsers={favoriteUsers}
-            setFavoriteUsers={setFavoriteUsers}
-          />
-          <ResizableCommentInput
-            mt="10px"
-            value={comments[selected.userId] || ''}
-              onChange={e => setComments(prev => ({ ...prev, [selected.userId]: e.target.value }))}
-              onBlur={() => {
-                const owner = auth.currentUser?.uid;
-                if (owner) setUserComment(owner, selected.userId, comments[selected.userId] || '');
-              }}
-            />
-            <Id
-              onClick={() => {
-                if (isAdmin) {
-                  navigate(`/edit/${selected.userId}`);
-                }
-              }}
-              style={{ cursor: isAdmin ? 'pointer' : 'default' }}
-            >
-              ID: {selected.userId ? selected.userId.slice(0, 5) : ''}
-            </Id>
-          </DonorCard>
-          {(selectedEducation || selectedProfession || selectedMoreInfoMain) && (
-            <DonorCard onClick={e => e.stopPropagation()}>
-              {selectedEducation && (
-                <MoreInfo>
-                  <strong>Education</strong>
-                  <br />
-                  {selectedEducation}
-                </MoreInfo>
-              )}
-              {selectedProfession && (
-                <MoreInfo>
-                  <strong>Profession</strong>
-                  <br />
-                  {selectedProfession}
-                </MoreInfo>
-              )}
-              {selectedMoreInfoMain && (
-                <MoreInfo>
-                  <strong>More information</strong>
-                  <br />
-                  {selectedMoreInfoMain}
-                </MoreInfo>
-              )}
-            </DonorCard>
-          )}
-            </ModalOverlay>
-          )}
-          {showPhoto && (
-            <PhotoViewer
-              photos={Array.isArray(selected.photos) ? selected.photos : [getCurrentValue(selected.photos)].filter(Boolean)}
-              onClose={() => setShowPhoto(false)}
-            />
-          )}
-          {showUserCard && selected && (
-            <ModalOverlay onClick={() => setShowUserCard(false)}>
-              <div onClick={e => e.stopPropagation()} style={{ maxHeight: '80vh', overflowY: 'auto' }}>
-                <UserCard
-                  userData={selected}
-                  setUsers={() => {}}
-                  setShowInfoModal={() => {}}
-                  setState={() => {}}
-                  favoriteUsers={{}}
-                  setFavoriteUsers={() => {}}
-                  currentFilter={null}
-                  isDateInRange={() => true}
-                />
-              </div>
-            </ModalOverlay>
-          )}
+
           {showInfoModal && (
             <InfoModal onClose={() => setShowInfoModal(false)} text="dotsMenu" Context={dotsMenu} />
           )}
