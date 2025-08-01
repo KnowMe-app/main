@@ -198,7 +198,12 @@ export const fieldContactsIcons = data => {
     : [];
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+    <div
+      style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
+      onClick={e => e.stopPropagation()}
+      onTouchStart={e => e.stopPropagation()}
+      onTouchEnd={e => e.stopPropagation()}
+    >
       {phoneValues.map((val, idx) => {
         const processedVal = String(val).replace(/\s/g, '');
         return (
