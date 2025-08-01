@@ -112,6 +112,27 @@ const ThirdPhoto = styled.img`
   z-index: 0;
 `;
 
+const NextInfoCard = styled.div`
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 2px solid ${color.gray3};
+  border-radius: 8px;
+  transform: translate(4px, -4px);
+  z-index: 1;
+  background: #fff;
+  overflow: hidden;
+`;
+
+const ThirdInfoCard = styled(NextInfoCard)`
+  border-color: ${color.gray4};
+  transform: translate(8px, -8px);
+  z-index: 0;
+`;
+
 const CardWrapper = styled.div`
   position: relative;
   width: 100%;
@@ -747,6 +768,73 @@ const renderSelectedFields = user => {
   });
 };
 
+const getInfoSlidesCount = user => {
+  const moreInfo = getCurrentValue(user.moreInfo_main);
+  const profession = getCurrentValue(user.profession);
+  const education = getCurrentValue(user.education);
+  const showDescriptionSlide = Boolean(moreInfo || profession || education);
+  return 1 + (showDescriptionSlide ? 1 : 0);
+};
+
+const InfoCardContent = ({ user, variant }) => {
+  const moreInfo = getCurrentValue(user.moreInfo_main);
+  const profession = getCurrentValue(user.profession);
+  const education = getCurrentValue(user.education);
+
+  if (variant === 'description') {
+    return (
+      <InfoSlide>
+        {education && (
+          <MoreInfo>
+            <strong>Education</strong>
+            <br />
+            {education}
+          </MoreInfo>
+        )}
+        {profession && (
+          <MoreInfo>
+            <strong>Profession</strong>
+            <br />
+            {profession}
+          </MoreInfo>
+        )}
+        {moreInfo && (
+          <MoreInfo>
+            <strong>More information</strong>
+            <br />
+            {moreInfo}
+          </MoreInfo>
+        )}
+      </InfoSlide>
+    );
+  }
+
+  return (
+    <InfoSlide>
+      <ProfileSection>
+        <Info>
+          <Title>Egg donor</Title>
+          <DonorName>
+            {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}
+            {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+          </DonorName>
+          <br />
+          {[
+            normalizeCountry(getCurrentValue(user.country)),
+            normalizeRegion(getCurrentValue(user.region)),
+          ]
+            .filter(Boolean)
+            .join(', ')}
+        </Info>
+      </ProfileSection>
+      <Table>{renderSelectedFields(user)}</Table>
+      <Contact>
+        <Icons>{fieldContactsIcons(user)}</Icons>
+      </Contact>
+    </InfoSlide>
+  );
+};
+
 
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 6;
@@ -1112,9 +1200,10 @@ const Matching = () => {
               const photos = Array.isArray(user.photos)
                 ? user.photos.filter(Boolean)
                 : [getCurrentValue(user.photos)].filter(Boolean);
-                const photo = photos[0];
-                const nextPhoto = photos[1];
-                const thirdPhoto = photos[2];
+              const photo = photos[0];
+              const nextPhoto = photos[1];
+              const thirdPhoto = photos[2];
+              const infoSlides = getInfoSlidesCount(user);
                 const role = (user.role || user.userRole || '')
                   .toString()
                   .trim()
@@ -1125,7 +1214,17 @@ const Matching = () => {
                   .join(' ');
                 return (
                   <CardContainer key={user.userId}>
+                    {photos.length === 1 && infoSlides >= 2 && !thirdPhoto && (
+                      <ThirdInfoCard>
+                        <InfoCardContent user={user} variant="description" />
+                      </ThirdInfoCard>
+                    )}
                     {thirdPhoto && <ThirdPhoto src={thirdPhoto} alt="third" />}
+                    {photos.length === 1 && infoSlides >= 1 && !nextPhoto && (
+                      <NextInfoCard>
+                        <InfoCardContent user={user} variant="info" />
+                      </NextInfoCard>
+                    )}
                     {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
                     <CardWrapper>
                       <SwipeableCard
