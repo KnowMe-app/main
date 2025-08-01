@@ -93,6 +93,7 @@ const NextPhoto = styled.img`
   width: 100%;
   height: 100%;
   object-fit: cover;
+  box-sizing: border-box;
   border: 2px solid ${color.gray3};
   border-radius: 8px;
   transform: translate(4px, -4px);
@@ -106,6 +107,7 @@ const ThirdPhoto = styled.img`
   width: 100%;
   height: 100%;
   object-fit: cover;
+  box-sizing: border-box;
   border: 2px solid ${color.gray4};
   border-radius: 8px;
   transform: translate(8px, -8px);
