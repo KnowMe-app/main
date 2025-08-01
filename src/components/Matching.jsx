@@ -75,8 +75,6 @@ const Grid = styled.div`
   gap: 10px;
   padding: 0 10px;
   justify-content: center;
-  flex: 1;
-  overflow-y: auto;
 `;
 
 const CardContainer = styled.div`
