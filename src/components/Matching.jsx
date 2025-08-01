@@ -617,6 +617,14 @@ const SwipeableCard = ({
       ? { backgroundImage: `url(${current})`, backgroundColor: 'transparent' }
       : { backgroundColor: '#fff' };
 
+  const displayName = [
+    getCurrentValue(user.name),
+    getCurrentValue(user.surname),
+  ]
+    .filter(Boolean)
+    .map(v => String(v).trim())
+    .join(' ');
+
   return (
     <AnimatedCard
       $dir={dir}
@@ -659,7 +667,8 @@ const SwipeableCard = ({
             <Info>
               <Title>Egg donor</Title>
               <DonorName>
-                {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}{user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+                {displayName}
+                {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
               </DonorName>
               <br />
               {[
@@ -678,7 +687,8 @@ const SwipeableCard = ({
       )}
       {current === 'main' && (
         <BasicInfo>
-          {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}{user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+          {displayName}
+          {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
           <br />
           {[
             normalizeCountry(getCurrentValue(user.country)),
@@ -779,6 +789,14 @@ const InfoCardContent = ({ user, variant }) => {
   const profession = getCurrentValue(user.profession);
   const education = getCurrentValue(user.education);
 
+  const displayName = [
+    getCurrentValue(user.name),
+    getCurrentValue(user.surname),
+  ]
+    .filter(Boolean)
+    .map(v => String(v).trim())
+    .join(' ');
+
   if (variant === 'description') {
     return (
       <InfoSlide>
@@ -813,7 +831,7 @@ const InfoCardContent = ({ user, variant }) => {
         <Info>
           <Title>Egg donor</Title>
           <DonorName>
-            {(getCurrentValue(user.name) || '').trim()} {(getCurrentValue(user.surname) || '').trim()}
+            {displayName}
             {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
           </DonorName>
           <br />
@@ -1207,8 +1225,12 @@ const Matching = () => {
                   .trim()
                   .toLowerCase();
                 const isAgency = role === 'ag' || role === 'ip';
-                const nameParts = [getCurrentValue(user.name), getCurrentValue(user.surname)]
+                const nameParts = [
+                  getCurrentValue(user.name),
+                  getCurrentValue(user.surname),
+                ]
                   .filter(Boolean)
+                  .map(v => String(v).trim())
                   .join(' ');
                 return (
                   <CardContainer key={user.userId}>
