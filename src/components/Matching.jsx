@@ -98,6 +98,7 @@ const NextPhoto = styled.img`
   border-radius: 8px;
   transform: translate(4px, -4px);
   z-index: 1;
+  pointer-events: none;
 `;
 
 const ThirdPhoto = styled.img`
@@ -112,6 +113,7 @@ const ThirdPhoto = styled.img`
   border-radius: 8px;
   transform: translate(8px, -8px);
   z-index: 0;
+  pointer-events: none;
 `;
 
 const CardWrapper = styled.div`
@@ -503,6 +505,7 @@ const AnimatedCard = styled(Card)`
 const SwipeableCard = ({
   user,
   photo,
+  photos,
   role,
   isAgency,
   nameParts,
@@ -535,6 +538,26 @@ const SwipeableCard = ({
   const [dir, setDir] = useState(null);
   const startX = useRef(null);
   const wasSwiped = useRef(false);
+
+  const slideToPhoto = slide => {
+    if (slide === 'main') return photo;
+    if (slide !== 'info' && slide !== 'description') return slide;
+    return null;
+  };
+
+  const nextPhotoUrl = React.useMemo(() => {
+    if (slides.length <= 1) return null;
+    const url = slideToPhoto(slides[(index + 1) % slides.length]);
+    if (!url && photos.length === 1) return photo;
+    return url;
+  }, [index, slides, photo, photos]);
+
+  const thirdPhotoUrl = React.useMemo(() => {
+    if (slides.length <= 2) return null;
+    const url = slideToPhoto(slides[(index + 2) % slides.length]);
+    if (!url && photos.length === 1) return photo;
+    return url;
+  }, [index, slides, photo, photos]);
 
   const handleTouchStart = e => {
     if (slides.length <= 1) return;
@@ -572,14 +595,21 @@ const SwipeableCard = ({
     }
   }, [dir]);
 
-  const handleClick = () => {
+  const handleClick = e => {
     if (wasSwiped.current) {
       wasSwiped.current = false;
       return;
     }
     if (slides.length > 1) {
-      setDir('left');
-      setIndex(i => (i + 1) % slides.length);
+      const rect = e.currentTarget.getBoundingClientRect();
+      const isLeft = (e.clientX - rect.left) < rect.width / 2;
+      if (isLeft) {
+        setDir('right');
+        setIndex(i => (i - 1 + slides.length) % slides.length);
+      } else {
+        setDir('left');
+        setIndex(i => (i + 1) % slides.length);
+      }
     }
   };
 
@@ -594,7 +624,10 @@ const SwipeableCard = ({
       : { backgroundColor: '#fff' };
 
   return (
-    <AnimatedCard
+    <>
+      {thirdPhotoUrl && <ThirdPhoto src={thirdPhotoUrl} alt="third" />}
+      {nextPhotoUrl && <NextPhoto src={nextPhotoUrl} alt="next" />}
+      <AnimatedCard
       $dir={dir}
       $small={isAgency}
       $hasPhoto={!!photo}
@@ -715,6 +748,7 @@ const SwipeableCard = ({
       )}
       {(current === 'info' || current === 'main') && null}
     </AnimatedCard>
+    </>
   );
 };
 
@@ -1108,8 +1142,6 @@ const Matching = () => {
                 ? user.photos.filter(Boolean)
                 : [getCurrentValue(user.photos)].filter(Boolean);
                 const photo = photos[0];
-                const nextPhoto = photos[1];
-                const thirdPhoto = photos[2];
                 const role = (user.role || user.userRole || '')
                   .toString()
                   .trim()
@@ -1120,12 +1152,11 @@ const Matching = () => {
                   .join(' ');
                 return (
                   <CardContainer key={user.userId}>
-                    {thirdPhoto && <ThirdPhoto src={thirdPhoto} alt="third" />}
-                    {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
                     <CardWrapper>
                       <SwipeableCard
                         user={user}
                         photo={photo}
+                        photos={photos}
                         role={role}
                         isAgency={isAgency}
                         nameParts={nameParts}
