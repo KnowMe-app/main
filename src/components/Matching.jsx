@@ -570,14 +570,21 @@ const SwipeableCard = ({
     }
   }, [dir]);
 
-  const handleClick = () => {
+  const handleClick = e => {
     if (wasSwiped.current) {
       wasSwiped.current = false;
       return;
     }
     if (slides.length > 1) {
-      setDir('left');
-      setIndex(i => (i + 1) % slides.length);
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      if (clickX > rect.width / 2) {
+        setDir('left');
+        setIndex(i => (i + 1) % slides.length);
+      } else {
+        setDir('right');
+        setIndex(i => (i - 1 + slides.length) % slides.length);
+      }
     }
   };
 
