@@ -537,28 +537,25 @@ const SwipeableCard = ({
   const startX = useRef(null);
   const wasSwiped = useRef(false);
 
-  const slideToPhoto = React.useCallback(
-    slide => {
-      if (slide === 'main') return photo;
-      if (slide !== 'info' && slide !== 'description') return slide;
-      return null;
-    },
-    [photo]
-  );
+  const slideToPhoto = slide => {
+    if (slide === 'main') return photo;
+    if (slide !== 'info' && slide !== 'description') return slide;
+    return null;
+  };
 
   const nextPhotoUrl = React.useMemo(() => {
     if (slides.length <= 1) return null;
     const url = slideToPhoto(slides[(index + 1) % slides.length]);
     if (!url && photos.length === 1) return photo;
     return url;
-  }, [index, slides, photo, photos, slideToPhoto]);
+  }, [index, slides, photo, photos]);
 
   const thirdPhotoUrl = React.useMemo(() => {
     if (slides.length <= 2) return null;
     const url = slideToPhoto(slides[(index + 2) % slides.length]);
     if (!url && photos.length === 1) return photo;
     return url;
-  }, [index, slides, photo, photos, slideToPhoto]);
+  }, [index, slides, photo, photos]);
 
   const handleTouchStart = e => {
     if (slides.length <= 1) return;
