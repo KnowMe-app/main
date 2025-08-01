@@ -44,7 +44,6 @@ const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  height: 100vh;
   padding: 0;
   background-color: #f5f5f5;
 `;
@@ -52,7 +51,6 @@ const Container = styled.div`
 const InnerContainer = styled.div`
   max-width: 480px;
   width: 100%;
-  height: 100%;
   background-color: #f0f0f0;
   padding: 0;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
@@ -1168,13 +1166,13 @@ const Matching = () => {
           {loading &&
             Array.from({ length: 4 }).map((_, idx) => (
               <SkeletonCard data-card data-skeleton key={`skeleton-${idx}`} />
-              ))}
-          </Grid>
+            ))}
           {hasMore && !loading && (
             <LoadMoreButton onClick={loadMore}>
               <FaArrowDown />
             </LoadMoreButton>
           )}
+          </Grid>
 
           {showInfoModal && (
             <InfoModal onClose={() => setShowInfoModal(false)} text="dotsMenu" Context={dotsMenu} />
