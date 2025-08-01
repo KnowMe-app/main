@@ -522,6 +522,7 @@ const AnimatedCard = styled(Card)`
 const SwipeableCard = ({
   user,
   photo,
+  photos,
   role,
   isAgency,
   nameParts,
@@ -537,18 +538,7 @@ const SwipeableCard = ({
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
   const education = getCurrentValue(user.education);
-
-  const showDescriptionSlide = Boolean(moreInfo || profession || education);
-
-  const slides = React.useMemo(() => {
-    const photosArr = Array.isArray(user.photos)
-      ? user.photos.filter(Boolean)
-      : [getCurrentValue(user.photos)].filter(Boolean);
-    const base = photo ? ['main', 'info'] : ['info'];
-    if (showDescriptionSlide) base.push('description');
-    base.push(...photosArr.slice(1));
-    return base;
-  }, [user.photos, showDescriptionSlide, photo]);
+  const slides = React.useMemo(() => getSlides(user, photos), [user, photos]);
 
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(null);
@@ -774,6 +764,17 @@ const getInfoSlidesCount = user => {
   const education = getCurrentValue(user.education);
   const showDescriptionSlide = Boolean(moreInfo || profession || education);
   return 1 + (showDescriptionSlide ? 1 : 0);
+};
+
+const getSlides = (user, photos) => {
+  const moreInfo = getCurrentValue(user.moreInfo_main);
+  const profession = getCurrentValue(user.profession);
+  const education = getCurrentValue(user.education);
+  const showDescriptionSlide = Boolean(moreInfo || profession || education);
+  const base = photos[0] ? ['main', 'info'] : ['info'];
+  if (showDescriptionSlide) base.push('description');
+  base.push(...photos.slice(1));
+  return base;
 };
 
 const InfoCardContent = ({ user, variant }) => {
@@ -1201,35 +1202,40 @@ const Matching = () => {
                 ? user.photos.filter(Boolean)
                 : [getCurrentValue(user.photos)].filter(Boolean);
               const photo = photos[0];
-              const nextPhoto = photos[1];
-              const thirdPhoto = photos[2];
-              const infoSlides = getInfoSlidesCount(user);
-                const role = (user.role || user.userRole || '')
-                  .toString()
-                  .trim()
-                  .toLowerCase();
-                const isAgency = role === 'ag' || role === 'ip';
+              const slides = getSlides(user, photos);
+              const second = slides[1];
+              const third = slides[2];
+              const role = (user.role || user.userRole || '')
+                .toString()
+                .trim()
+                .toLowerCase();
+              const isAgency = role === 'ag' || role === 'ip';
                 const nameParts = [getCurrentValue(user.name), getCurrentValue(user.surname)]
                   .filter(Boolean)
                   .join(' ');
                 return (
                   <CardContainer key={user.userId}>
-                    {photos.length === 1 && infoSlides >= 2 && !thirdPhoto && (
-                      <ThirdInfoCard>
-                        <InfoCardContent user={user} variant="description" />
-                      </ThirdInfoCard>
-                    )}
-                    {thirdPhoto && <ThirdPhoto src={thirdPhoto} alt="third" />}
-                    {photos.length === 1 && infoSlides >= 1 && !nextPhoto && (
-                      <NextInfoCard>
-                        <InfoCardContent user={user} variant="info" />
-                      </NextInfoCard>
-                    )}
-                    {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
+                    {third &&
+                      (third === 'info' || third === 'description' ? (
+                        <ThirdInfoCard>
+                          <InfoCardContent user={user} variant={third} />
+                        </ThirdInfoCard>
+                      ) : (
+                        <ThirdPhoto src={third} alt="third" />
+                      ))}
+                    {second &&
+                      (second === 'info' || second === 'description' ? (
+                        <NextInfoCard>
+                          <InfoCardContent user={user} variant={second} />
+                        </NextInfoCard>
+                      ) : (
+                        <NextPhoto src={second} alt="next" />
+                      ))}
                     <CardWrapper>
                       <SwipeableCard
                         user={user}
                         photo={photo}
+                        photos={photos}
                         role={role}
                         isAgency={isAgency}
                         nameParts={nameParts}
