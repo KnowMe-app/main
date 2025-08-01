@@ -56,6 +56,7 @@ export const fieldContacts = (data, parentKey = '') => {
                         href={links[key](processedVal)}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
                         style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
                       >
                         {key === 'phone' ? `+${processedVal}` : processedVal}
@@ -66,6 +67,7 @@ export const fieldContacts = (data, parentKey = '') => {
                             href={links.telegramFromPhone(`+${val}`)} // Telegram отримує значення з пробілами
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
                             style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
                           >
                             Tg
@@ -74,6 +76,7 @@ export const fieldContacts = (data, parentKey = '') => {
                             href={links.viberFromPhone(processedVal)}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
                             style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
                           >
                             V
@@ -82,6 +85,7 @@ export const fieldContacts = (data, parentKey = '') => {
                             href={links.whatsappFromPhone(processedVal)}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
                             style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
                           >
                             W
@@ -109,6 +113,7 @@ export const fieldContacts = (data, parentKey = '') => {
                         href={links[key](processedValue)}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
                         style={{ color: 'inherit', textDecoration: 'none', marginRight: '8px' }}
                       >
                         {key === 'phone' ? `+${processedValue}` : processedValue}
@@ -119,6 +124,7 @@ export const fieldContacts = (data, parentKey = '') => {
                             href={links.telegramFromPhone(`+${value}`)} // Telegram отримує значення з пробілами
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
                             style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
                           >
                             Tg
@@ -127,6 +133,7 @@ export const fieldContacts = (data, parentKey = '') => {
                             href={links.viberFromPhone(processedValue)}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
                             style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
                           >
                             V
@@ -135,6 +142,7 @@ export const fieldContacts = (data, parentKey = '') => {
                             href={links.whatsappFromPhone(processedValue)}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
                             style={{ color: 'inherit', textDecoration: 'none', marginLeft: '8px' }}
                           >
                             W
@@ -207,6 +215,7 @@ export const fieldContactsIcons = data => {
               href={links.phone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
               style={{ color: color.black, textDecoration: 'none' }}
             >
               {`+${processedVal}`}
@@ -215,6 +224,7 @@ export const fieldContactsIcons = data => {
               href={links.telegramFromPhone(`+${val}`)}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
               style={{ color: 'inherit', textDecoration: 'none' }}
             >
               <FaTelegramPlane />
@@ -223,6 +233,7 @@ export const fieldContactsIcons = data => {
               href={links.viberFromPhone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
               style={{ color: 'inherit', textDecoration: 'none' }}
             >
               <FaViber />
@@ -231,6 +242,7 @@ export const fieldContactsIcons = data => {
               href={links.whatsappFromPhone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
               style={{ color: 'inherit', textDecoration: 'none' }}
             >
               <FaWhatsapp />
@@ -244,6 +256,7 @@ export const fieldContactsIcons = data => {
           href={links.email(processed.email)}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
           style={{ color: 'inherit', textDecoration: 'none' }}
         >
           <MdEmail />
@@ -255,6 +268,7 @@ export const fieldContactsIcons = data => {
           href={links.facebook(processed.facebook)}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
           style={{ color: 'inherit', textDecoration: 'none' }}
         >
           <FaFacebookF />
@@ -266,6 +280,7 @@ export const fieldContactsIcons = data => {
           href={links.instagram(processed.instagram)}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
           style={{ color: 'inherit', textDecoration: 'none' }}
         >
           <FaInstagram />
@@ -278,6 +293,7 @@ export const fieldContactsIcons = data => {
           href={links.telegram(val)}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
           style={{ color: 'inherit', textDecoration: 'none' }}
         >
           <FaTelegramPlane />
@@ -289,6 +305,7 @@ export const fieldContactsIcons = data => {
           href={links.tiktok(processed.tiktok)}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
           style={{ color: 'inherit', textDecoration: 'none' }}
         >
           <SiTiktok />
