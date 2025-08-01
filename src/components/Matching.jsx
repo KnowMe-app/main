@@ -524,7 +524,7 @@ const SwipeableCard = ({
 
   const slides = React.useMemo(() => {
     const photosArr = Array.isArray(user.photos)
-      ? user.photos.filter(Boolean)
+      ? Array.from(new Set(user.photos.filter(Boolean)))
       : [getCurrentValue(user.photos)].filter(Boolean);
     const base = photo ? ['main', 'info'] : ['info'];
     if (showDescriptionSlide) base.push('description');
@@ -1140,7 +1140,7 @@ const Matching = () => {
           <Grid ref={gridRef}>
             {filteredUsers.map(user => {
               const photos = Array.isArray(user.photos)
-                ? user.photos.filter(Boolean)
+                ? Array.from(new Set(user.photos.filter(Boolean)))
                 : [getCurrentValue(user.photos)].filter(Boolean);
                 const photo = photos[0];
                 const role = (user.role || user.userRole || '')
