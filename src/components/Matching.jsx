@@ -874,6 +874,7 @@ const Matching = () => {
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
+  const scrollRestoredRef = useRef(false);
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
@@ -1015,11 +1016,13 @@ const Matching = () => {
 
       const cacheKey = JSON.stringify(filters || {});
       const cached = loadCache(cacheKey);
+      let baseUsers = [];
       if (cached) {
         console.log('[loadInitial] using cache', cached.users.length);
         const filteredCached = cached.users.filter(
           u => !exclude.has(u.userId)
         );
+        baseUsers = filteredCached;
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
         setUsers(filteredCached);
         await loadCommentsFor(filteredCached);
@@ -1042,8 +1045,13 @@ const Matching = () => {
         }
       );
       console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
-      loadedIdsRef.current = new Set([...loadedIdsRef.current, ...res.users.map(u => u.userId)]);
-      const result = Array.from(new Map(res.users.map(u => [u.userId, u])).values());
+      loadedIdsRef.current = new Set([
+        ...loadedIdsRef.current,
+        ...res.users.map(u => u.userId),
+      ]);
+      const mergedMap = new Map(baseUsers.map(u => [u.userId, u]));
+      res.users.forEach(u => mergedMap.set(u.userId, u));
+      const result = Array.from(mergedMap.values());
       saveCache(cacheKey, { users: result, lastKey: res.lastKey, hasMore: res.hasMore });
       setUsers(result);
       await loadCommentsFor(res.users);
@@ -1157,6 +1165,22 @@ const Matching = () => {
     console.log('[useEffect] calling loadInitial');
     loadInitial();
   }, [loadInitial]);
+
+  useEffect(() => {
+    if (!scrollRestoredRef.current && users.length) {
+      const saved = parseInt(localStorage.getItem('matching-scroll') || '0', 10);
+      if (saved) {
+        window.scrollTo(0, saved);
+      }
+      scrollRestoredRef.current = true;
+    }
+  }, [users.length]);
+
+  useEffect(() => {
+    return () => {
+      localStorage.setItem('matching-scroll', String(window.scrollY));
+    };
+  }, []);
 
   const gridRef = useRef(null);
 
