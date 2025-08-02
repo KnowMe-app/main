@@ -1220,6 +1220,15 @@ const Matching = () => {
               const nextPhoto = photos[1];
               const thirdPhoto = photos[2];
               const infoSlides = getInfoSlidesCount(user);
+
+              const infoVariants = [];
+              if (infoSlides >= 1) infoVariants.push('info');
+              if (infoSlides >= 2) infoVariants.push('description');
+              if (!photo) infoVariants.shift();
+
+              const nextVariant = nextPhoto ? null : infoVariants.shift();
+              const thirdVariant = thirdPhoto ? null : infoVariants.shift();
+
                 const role = (user.role || user.userRole || '')
                   .toString()
                   .trim()
@@ -1234,15 +1243,15 @@ const Matching = () => {
                   .join(' ');
                 return (
                   <CardContainer key={user.userId}>
-                    {photos.length === 1 && infoSlides >= 2 && !thirdPhoto && (
+                    {thirdVariant && (
                       <ThirdInfoCard>
-                        <InfoCardContent user={user} variant="description" />
+                        <InfoCardContent user={user} variant={thirdVariant} />
                       </ThirdInfoCard>
                     )}
                     {thirdPhoto && <ThirdPhoto src={thirdPhoto} alt="third" />}
-                    {photos.length === 1 && infoSlides >= 1 && !nextPhoto && (
+                    {nextVariant && (
                       <NextInfoCard>
-                        <InfoCardContent user={user} variant="info" />
+                        <InfoCardContent user={user} variant={nextVariant} />
                       </NextInfoCard>
                     )}
                     {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
