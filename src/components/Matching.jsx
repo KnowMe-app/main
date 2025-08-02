@@ -875,6 +875,7 @@ const Matching = () => {
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
   const scrollRestoredRef = useRef(false);
+  const scrollSavedRef = useRef(false);
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
@@ -1168,17 +1169,23 @@ const Matching = () => {
 
   useEffect(() => {
     if (!scrollRestoredRef.current && users.length) {
-      const saved = parseInt(localStorage.getItem('matching-scroll') || '0', 10);
+      const saved = parseInt(
+        sessionStorage.getItem('matching-scroll') || '0',
+        10
+      );
       if (saved) {
         window.scrollTo(0, saved);
       }
       scrollRestoredRef.current = true;
+      sessionStorage.removeItem('matching-scroll');
     }
   }, [users.length]);
 
   useEffect(() => {
     return () => {
-      localStorage.setItem('matching-scroll', String(window.scrollY));
+      if (!scrollSavedRef.current) {
+        sessionStorage.setItem('matching-scroll', String(window.scrollY));
+      }
     };
   }, []);
 
@@ -1311,6 +1318,11 @@ const Matching = () => {
                       {isAdmin && (
                         <Id
                           onClick={() => {
+                            sessionStorage.setItem(
+                              'matching-scroll',
+                              String(window.scrollY)
+                            );
+                            scrollSavedRef.current = true;
                             navigate(`/edit/${user.userId}`);
                           }}
                           style={{ cursor: 'pointer' }}
