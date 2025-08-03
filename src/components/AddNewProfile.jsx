@@ -326,18 +326,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       let newValue;
       let removedValue;
 
-      if (isArray) {
-        // Якщо значення є масивом, фільтруємо масив, щоб видалити елемент за індексом
-        const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
-        removedValue = prevState[fieldName][idx];
+        if (isArray) {
+          // Якщо значення є масивом, фільтруємо масив, щоб видалити елемент за індексом
+          const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
+          removedValue = prevState[fieldName][idx];
 
-        // Якщо після фільтрації залишається лише одне значення, зберігаємо його як ключ-значення
-        newValue = filteredArray.length === 1 ? filteredArray[0] : filteredArray;
-      } else {
-        // Якщо значення не є масивом, видаляємо його
-        removedValue = prevState[fieldName];
-        newValue = '';
-      }
+          // Повертаємо порожній рядок, якщо масив спорожнів, один елемент — як значення, інакше — масив
+          newValue =
+            filteredArray.length === 0
+              ? ''
+              : filteredArray.length === 1
+              ? filteredArray[0]
+              : filteredArray;
+        } else {
+          // Якщо значення не є масивом, видаляємо його
+          removedValue = prevState[fieldName];
+          newValue = '';
+        }
 
       // Створюємо новий стан
       const newState = {
