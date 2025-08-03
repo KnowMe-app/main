@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
-import toast from 'react-hot-toast';
 import {
   fetchUsersByLastLogin2,
   fetchUserById,
@@ -878,11 +877,6 @@ const Matching = () => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
 
-  const showExcludedToast = count => {
-    const currentScroll = window.scrollY;
-    toast.success(`${count} excluded`, { id: 'matching-excluded' });
-    requestAnimationFrame(() => window.scrollTo(0, currentScroll));
-  };
 
   useLayoutEffect(() => {
     if (!loading && users.length > 0) {
@@ -1080,9 +1074,6 @@ const Matching = () => {
         return result;
       });
       await loadCommentsFor(res.users);
-      if (res.excludedCount) {
-        showExcludedToast(res.excludedCount);
-      }
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
       setViewMode('default');
@@ -1170,12 +1161,8 @@ const Matching = () => {
         return result;
       });
       await loadCommentsFor(unique);
-      if (res.excludedCount) {
-        showExcludedToast(res.excludedCount);
-      }
       if (handleEmptyFetch(res, lastKey, setHasMore)) {
         console.log('[loadMore] empty fetch, no more cards');
-        toast.error('No more cards found', { id: 'matching-no-more' });
       } else {
         setHasMore(res.hasMore);
       }
