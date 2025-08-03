@@ -83,7 +83,8 @@ const EditProfile = () => {
         await updateDataInNewUsersRTDB(state.userId, state, 'update');
       }
     }
-    setState(updatedState);
+    // Avoid overwriting local state with potentially stale data
+    // Callers like handleClear manage state updates themselves
   };
 
   const handleBlur = () => handleSubmit();
