@@ -109,9 +109,9 @@ export const ProfileForm = ({
                       />
                       {(value || value === '') && (
                         <ClearButton
-                          onClick={() => {
-                            handleClear(field.name, idx);
-                          }}
+                          type="button"
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => handleClear(field.name, idx)}
                         >
                           &times;
                         </ClearButton>
@@ -157,7 +157,15 @@ export const ProfileForm = ({
                     }}
                     onBlur={() => handleSubmit(state, 'overwrite')}
                   />
-                  {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times;</ClearButton>}
+                  {state[field.name] && (
+                    <ClearButton
+                      type="button"
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => handleClear(field.name)}
+                    >
+                      &times;
+                    </ClearButton>
+                  )}
                   {state[field.name] && (
                     <DelKeyValueBTN onClick={() => handleDelKeyValue(field.name)}>del</DelKeyValueBTN>
                   )}
