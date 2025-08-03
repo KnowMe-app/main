@@ -192,13 +192,15 @@ export const ProfileForm = ({
                     marginLeft: '10px',
                   }}
                   onClick={() => {
-                    setState(prevState => ({
-                      ...prevState,
-                      [field.name]:
+                    setState(prevState => {
+                      const updatedField =
                         Array.isArray(prevState[field.name]) && prevState[field.name].length > 0
                           ? [...prevState[field.name], '']
-                          : [prevState[field.name], ''],
-                    }));
+                          : [prevState[field.name], ''];
+                      const newState = { ...prevState, [field.name]: updatedField };
+                      handleSubmit(newState, 'overwrite');
+                      return newState;
+                    });
                   }}
                 >
                   +
