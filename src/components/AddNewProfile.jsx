@@ -321,35 +321,31 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleClear = (fieldName, idx) => {
     setState(prevState => {
-      // Перевірка, чи є значення масивом
       const isArray = Array.isArray(prevState[fieldName]);
-      let newValue;
+      const newState = { ...prevState };
       let removedValue;
 
       if (isArray) {
-        // Якщо значення є масивом, фільтруємо масив, щоб видалити елемент за індексом
         const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
         removedValue = prevState[fieldName][idx];
 
-        // Якщо після фільтрації залишається лише одне значення, зберігаємо його як ключ-значення
-        newValue = filteredArray.length === 1 ? filteredArray[0] : filteredArray;
+        if (filteredArray.length === 0 || (filteredArray.length === 1 && filteredArray[0] === '')) {
+          const deletedValue = prevState[fieldName];
+          delete newState[fieldName];
+          removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
+        } else if (filteredArray.length === 1) {
+          newState[fieldName] = filteredArray[0];
+        } else {
+          newState[fieldName] = filteredArray;
+        }
       } else {
-        // Якщо значення не є масивом, видаляємо його
         removedValue = prevState[fieldName];
-        newValue = '';
+        const deletedValue = prevState[fieldName];
+        delete newState[fieldName];
+        removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
       }
 
-      // Створюємо новий стан
-      const newState = {
-        ...prevState,
-        [fieldName]: newValue,
-      };
-
-      console.log('newState', newState);
-
-      // Викликаємо сабміт після оновлення стейту
       handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
-
       return newState;
     });
   };
