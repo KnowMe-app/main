@@ -874,7 +874,6 @@ const Matching = () => {
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
-  const scrollRestoredRef = useRef(false);
   const scrollSavedRef = useRef(false);
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
@@ -1168,27 +1167,15 @@ const Matching = () => {
   }, [loadInitial]);
 
   useEffect(() => {
-    if (!scrollRestoredRef.current && users.length) {
-      const anchor = sessionStorage.getItem('matching-anchor');
-      if (anchor) {
-        const el = document.getElementById(`card-${anchor}`);
-        if (el) {
-          el.scrollIntoView({ block: 'center' });
-        }
-        sessionStorage.removeItem('matching-anchor');
-      } else {
-        const saved = parseInt(
-          sessionStorage.getItem('matching-scroll') || '0',
-          10
-        );
-        if (saved) {
-          window.scrollTo(0, saved);
-        }
-        sessionStorage.removeItem('matching-scroll');
-      }
-      scrollRestoredRef.current = true;
+    const saved = parseInt(
+      sessionStorage.getItem('matching-scroll') || '0',
+      10
+    );
+    if (saved) {
+      window.scrollTo(0, saved);
     }
-  }, [users.length]);
+    sessionStorage.removeItem('matching-scroll');
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -1330,10 +1317,6 @@ const Matching = () => {
                             sessionStorage.setItem(
                               'matching-scroll',
                               String(window.scrollY)
-                            );
-                            sessionStorage.setItem(
-                              'matching-anchor',
-                              user.userId
                             );
                             scrollSavedRef.current = true;
                             navigate(`/edit/${user.userId}`);
