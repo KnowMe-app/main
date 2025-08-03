@@ -44,18 +44,17 @@ const EditProfile = () => {
     load();
   }, [userId]);
 
-  const formatDate = date => {
-    const dd = String(date.getDate()).padStart(2, '0');
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const yyyy = date.getFullYear();
-    return `${dd}.${mm}.${yyyy}`;
-  };
-
   const handleSubmit = async (newState, overwrite, delCondition) => {
     const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
     const commonFields = ['lastAction', 'lastLogin2'];
 
+    const formatDate = date => {
+      const dd = String(date.getDate()).padStart(2, '0');
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const yyyy = date.getFullYear();
+      return `${dd}.${mm}.${yyyy}`;
+    };
     const currentDate = formatDate(new Date());
 
     const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
@@ -84,6 +83,7 @@ const EditProfile = () => {
         await updateDataInNewUsersRTDB(state.userId, state, 'update');
       }
     }
+    setState(updatedState);
   };
 
   const handleBlur = () => handleSubmit();
@@ -103,8 +103,7 @@ const EditProfile = () => {
         newValue = '';
       }
 
-      const currentDate = formatDate(new Date());
-      const newState = { ...prev, [fieldName]: newValue, lastAction: currentDate };
+      const newState = { ...prev, [fieldName]: newValue };
       handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
       return newState;
     });
