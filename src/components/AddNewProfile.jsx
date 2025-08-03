@@ -321,32 +321,36 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleClear = (fieldName, idx) => {
     setState(prevState => {
+      // Перевірка, чи є значення масивом
       const isArray = Array.isArray(prevState[fieldName]);
+      let newValue;
       let removedValue;
 
       if (isArray) {
+        // Якщо значення є масивом, фільтруємо масив, щоб видалити елемент за індексом
         const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
         removedValue = prevState[fieldName][idx];
 
-        // Прибираємо порожні значення, щоб визначити, чи залишились валідні дані
-        const cleanedArray = filteredArray.filter(item => item !== '');
-
-        if (cleanedArray.length === 0) {
-          const { [fieldName]: _, ...rest } = prevState;
-          removeKeyFromFirebase(fieldName, prevState[fieldName], prevState.userId);
-          return rest;
-        }
-
-        const newValue = cleanedArray.length === 1 ? cleanedArray[0] : cleanedArray;
-        const newState = { ...prevState, [fieldName]: newValue };
-        handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
-        return newState;
+        // Якщо після фільтрації залишається лише одне значення, зберігаємо його як ключ-значення
+        newValue = filteredArray.length === 1 ? filteredArray[0] : filteredArray;
       } else {
+        // Якщо значення не є масивом, видаляємо його
         removedValue = prevState[fieldName];
-        const newState = { ...prevState, [fieldName]: '' };
-        handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
-        return newState;
+        newValue = '';
       }
+
+      // Створюємо новий стан
+      const newState = {
+        ...prevState,
+        [fieldName]: newValue,
+      };
+
+      console.log('newState', newState);
+
+      // Викликаємо сабміт після оновлення стейту
+      handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
+
+      return newState;
     });
   };
 
