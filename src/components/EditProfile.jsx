@@ -91,19 +91,29 @@ const EditProfile = () => {
   const handleClear = (fieldName, idx) => {
     setState(prev => {
       const isArray = Array.isArray(prev[fieldName]);
-      let newValue;
+      const newState = { ...prev };
       let removedValue;
 
       if (isArray) {
         const filtered = prev[fieldName].filter((_, i) => i !== idx);
         removedValue = prev[fieldName][idx];
-        newValue = filtered.length === 1 ? filtered[0] : filtered;
+
+        if (filtered.length === 0 || (filtered.length === 1 && filtered[0] === '')) {
+          const deletedValue = prev[fieldName];
+          delete newState[fieldName];
+          removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
+        } else if (filtered.length === 1) {
+          newState[fieldName] = filtered[0];
+        } else {
+          newState[fieldName] = filtered;
+        }
       } else {
         removedValue = prev[fieldName];
-        newValue = '';
+        const deletedValue = prev[fieldName];
+        delete newState[fieldName];
+        removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
       }
 
-      const newState = { ...prev, [fieldName]: newValue };
       handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
       return newState;
     });
