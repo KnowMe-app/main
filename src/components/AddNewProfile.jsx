@@ -331,8 +331,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
         removedValue = prevState[fieldName][idx];
 
-        // Якщо після фільтрації залишається лише одне значення, зберігаємо його як ключ-значення
-        newValue = filteredArray.length === 1 ? filteredArray[0] : filteredArray;
+        // Якщо після фільтрації залишився лише порожній рядок, зберігаємо масив
+        if (filteredArray.length === 0) {
+          newValue = '';
+        } else if (filteredArray.length === 1 && filteredArray[0] !== '') {
+          newValue = filteredArray[0];
+        } else {
+          newValue = filteredArray;
+        }
       } else {
         // Якщо значення не є масивом, видаляємо його
         removedValue = prevState[fieldName];
