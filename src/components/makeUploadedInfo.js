@@ -40,16 +40,16 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
             updatedField.push(state[field]);
             uploadedInfo[field] = updatedField;
           }
-        } else if (overwrite && typeof state[field] === 'string' && state[field] === '' && !Array.isArray(existingData[field])) {
+        }else if (overwrite && state[field]===''&& !Array.isArray(existingData[field])){
         console.log('Якщо це не масиви', state[field], existingData[field]);
         uploadedInfo[field] = '';
-      } else if (overwrite && !Array.isArray(state[field]) && !Array.isArray(existingData[field])) {
+      } else if (overwrite && !Array.isArray(state[field]==='') && !Array.isArray(existingData[field])){
         console.log('Якщо ЕxistingData не масив та state не масив і його треба перезаписати', state[field], existingData[field]);
         uploadedInfo[field] = state[field];
-      } else if (existingData[field] === '') {
+      } else if (existingData[field]===''){
         console.log('Якщо це не масиви', state[field], existingData[field]);
         uploadedInfo[field] = state[field];
-      } else if (!Array.isArray(state[field])) {
+      } else if (!Array.isArray(state[field])){
         console.log('Якщо ЕxistingData не масив та state не масив, то створюємо масив', state[field], existingData[field]);
         uploadedInfo[field] = [existingData[field], state[field]];
       } else {
