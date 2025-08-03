@@ -90,56 +90,50 @@ const EditProfile = () => {
         await updateDataInNewUsersRTDB(state.userId, state, 'update');
       }
     }
-    setState(prev => {
-      if (newState) {
-        const merged = { ...prev, ...updatedState };
-        Object.keys(prev).forEach(key => {
-          if (!(key in updatedState)) {
-            delete merged[key];
-          }
-        });
-        return merged;
-      }
-      return { ...prev, lastAction: currentDate };
-    });
+    setState(updatedState);
   };
 
   const handleBlur = () => handleSubmit();
 
   const handleClear = (fieldName, idx) => {
-    const isArray = Array.isArray(state[fieldName]);
-    const newState = { ...state };
-    let removedValue;
+    setState(prev => {
+      const isArray = Array.isArray(prev[fieldName]);
+      const newState = { ...prev };
+      let removedValue;
 
-    if (isArray) {
-      const filtered = state[fieldName].filter((_, i) => i !== idx);
-      removedValue = state[fieldName][idx];
+      if (isArray) {
+        const filtered = prev[fieldName].filter((_, i) => i !== idx);
+        removedValue = prev[fieldName][idx];
 
-      if (filtered.length === 0 || (filtered.length === 1 && filtered[0] === '')) {
-        const deletedValue = state[fieldName];
-        delete newState[fieldName];
-        removeKeyFromFirebase(fieldName, deletedValue, state.userId);
-      } else if (filtered.length === 1) {
-        newState[fieldName] = filtered[0];
+        if (filtered.length === 0 || (filtered.length === 1 && filtered[0] === '')) {
+          const deletedValue = prev[fieldName];
+          delete newState[fieldName];
+          removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
+        } else if (filtered.length === 1) {
+          newState[fieldName] = filtered[0];
+        } else {
+          newState[fieldName] = filtered;
+        }
       } else {
-        newState[fieldName] = filtered;
+        removedValue = prev[fieldName];
+        const deletedValue = prev[fieldName];
+        delete newState[fieldName];
+        removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
       }
-    } else {
-      removedValue = state[fieldName];
-      const deletedValue = state[fieldName];
-      delete newState[fieldName];
-      removeKeyFromFirebase(fieldName, deletedValue, state.userId);
-    }
 
-    handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
+      handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
+      return newState;
+    });
   };
 
   const handleDelKeyValue = fieldName => {
-    const newState = { ...state };
-    const deletedValue = newState[fieldName];
-    delete newState[fieldName];
-    removeKeyFromFirebase(fieldName, deletedValue, state.userId);
-    handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
+    setState(prev => {
+      const newState = { ...prev };
+      const deletedValue = newState[fieldName];
+      delete newState[fieldName];
+      removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
+      return newState;
+    });
   };
 
   if (!state) return null;
