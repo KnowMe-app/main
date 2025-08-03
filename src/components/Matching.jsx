@@ -878,6 +878,17 @@ const Matching = () => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
 
+  useEffect(() => {
+    const savedScroll = sessionStorage.getItem('matchingScroll');
+    if (savedScroll !== null) {
+      window.scrollTo(0, parseInt(savedScroll, 10));
+      sessionStorage.removeItem('matchingScroll');
+    }
+    return () => {
+      sessionStorage.setItem('matchingScroll', String(window.scrollY));
+    };
+  }, []);
+
   const togglePublish = async user => {
     if (!isAdmin) return;
     const newValue = !user.publish;
@@ -1042,10 +1053,21 @@ const Matching = () => {
         }
       );
       console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
-      loadedIdsRef.current = new Set([...loadedIdsRef.current, ...res.users.map(u => u.userId)]);
-      const result = Array.from(new Map(res.users.map(u => [u.userId, u])).values());
-      saveCache(cacheKey, { users: result, lastKey: res.lastKey, hasMore: res.hasMore });
-      setUsers(result);
+      loadedIdsRef.current = new Set([
+        ...loadedIdsRef.current,
+        ...res.users.map(u => u.userId),
+      ]);
+      setUsers(prev => {
+        const map = new Map(prev.map(u => [u.userId, u]));
+        res.users.forEach(u => map.set(u.userId, u));
+        const result = Array.from(map.values());
+        saveCache(cacheKey, {
+          users: result,
+          lastKey: res.lastKey,
+          hasMore: res.hasMore,
+        });
+        return result;
+      });
       await loadCommentsFor(res.users);
       if (res.excludedCount) {
         toast.success(`${res.excludedCount} excluded`, { id: 'matching-excluded' });
