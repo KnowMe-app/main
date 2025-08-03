@@ -881,7 +881,7 @@ const Matching = () => {
   const showExcludedToast = count => {
     const currentScroll = window.scrollY;
     toast.success(`${count} excluded`, { id: 'matching-excluded' });
-    window.scrollTo(0, currentScroll);
+    requestAnimationFrame(() => window.scrollTo(0, currentScroll));
   };
 
   useLayoutEffect(() => {
