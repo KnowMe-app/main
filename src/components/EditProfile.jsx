@@ -62,11 +62,18 @@ const EditProfile = () => {
     if (updatedState?.userId?.length > 20) {
       const { existingData } = await fetchUserById(updatedState.userId);
 
+      const sanitizedExistingData = { ...existingData };
+      if (delCondition) {
+        Object.keys(delCondition).forEach(key => {
+          delete sanitizedExistingData[key];
+        });
+      }
+
       const cleanedState = Object.fromEntries(
         Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
       );
 
-      const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
+      const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
 
       await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
       await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
