@@ -97,7 +97,12 @@ const EditProfile = () => {
       if (isArray) {
         const filtered = prev[fieldName].filter((_, i) => i !== idx);
         removedValue = prev[fieldName][idx];
-        newValue = filtered.length === 1 ? filtered[0] : filtered;
+        newValue =
+          filtered.length === 0
+            ? ''
+            : filtered.length === 1
+            ? filtered[0]
+            : filtered;
       } else {
         removedValue = prev[fieldName];
         newValue = '';
