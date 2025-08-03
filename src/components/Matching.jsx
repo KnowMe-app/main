@@ -878,6 +878,12 @@ const Matching = () => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
 
+  const showExcludedToast = count => {
+    const currentScroll = window.scrollY;
+    toast.success(`${count} excluded`, { id: 'matching-excluded' });
+    window.scrollTo(0, currentScroll);
+  };
+
   useLayoutEffect(() => {
     if (!loading && users.length > 0) {
       const savedScroll = sessionStorage.getItem('matchingScroll');
@@ -1075,7 +1081,7 @@ const Matching = () => {
       });
       await loadCommentsFor(res.users);
       if (res.excludedCount) {
-        toast.success(`${res.excludedCount} excluded`, { id: 'matching-excluded' });
+        showExcludedToast(res.excludedCount);
       }
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
@@ -1165,7 +1171,7 @@ const Matching = () => {
       });
       await loadCommentsFor(unique);
       if (res.excludedCount) {
-        toast.success(`${res.excludedCount} excluded`, { id: 'matching-excluded' });
+        showExcludedToast(res.excludedCount);
       }
       if (handleEmptyFetch(res, lastKey, setHasMore)) {
         console.log('[loadMore] empty fetch, no more cards');
