@@ -878,6 +878,17 @@ const Matching = () => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
 
+  useEffect(() => {
+    const savedScroll = sessionStorage.getItem('matchingScroll');
+    if (savedScroll !== null) {
+      window.scrollTo(0, parseInt(savedScroll, 10));
+      sessionStorage.removeItem('matchingScroll');
+    }
+    return () => {
+      sessionStorage.setItem('matchingScroll', String(window.scrollY));
+    };
+  }, []);
+
   const togglePublish = async user => {
     if (!isAdmin) return;
     const newValue = !user.publish;
