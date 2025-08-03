@@ -1169,24 +1169,15 @@ const Matching = () => {
 
   useEffect(() => {
     if (!scrollRestoredRef.current && users.length) {
-      const anchor = sessionStorage.getItem('matching-anchor');
-      if (anchor) {
-        const el = document.getElementById(`card-${anchor}`);
-        if (el) {
-          el.scrollIntoView({ block: 'center' });
-        }
-        sessionStorage.removeItem('matching-anchor');
-      } else {
-        const saved = parseInt(
-          sessionStorage.getItem('matching-scroll') || '0',
-          10
-        );
-        if (saved) {
-          window.scrollTo(0, saved);
-        }
-        sessionStorage.removeItem('matching-scroll');
+      const saved = parseInt(
+        sessionStorage.getItem('matching-scroll') || '0',
+        10
+      );
+      if (saved) {
+        window.scrollTo(0, saved);
       }
       scrollRestoredRef.current = true;
+      sessionStorage.removeItem('matching-scroll');
     }
   }, [users.length]);
 
@@ -1295,7 +1286,7 @@ const Matching = () => {
                       </NextInfoCard>
                     )}
                     {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
-                    <CardWrapper id={`card-${user.userId}`}>
+                    <CardWrapper>
                       <SwipeableCard
                         user={user}
                         photo={photo}
@@ -1330,10 +1321,6 @@ const Matching = () => {
                             sessionStorage.setItem(
                               'matching-scroll',
                               String(window.scrollY)
-                            );
-                            sessionStorage.setItem(
-                              'matching-anchor',
-                              user.userId
                             );
                             scrollSavedRef.current = true;
                             navigate(`/edit/${user.userId}`);
