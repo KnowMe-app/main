@@ -569,8 +569,8 @@ const addUserToResults = async (userId, users, userIdOrArray = null) => {
 
 const getDateFormats = input => {
   const trimmed = (input || '').trim();
-  const isoMatch = /^(\d{4})[-.\/](\d{2})[-.\/](\d{2})$/;
-  const dmyMatch = /^(\d{2})[-.\/](\d{2})[-.\/](\d{4})$/;
+  const isoMatch = /^(\d{4})[-./\\](\d{2})[-./\\](\d{2})$/;
+  const dmyMatch = /^(\d{2})[-./\\](\d{2})[-./\\](\d{4})$/;
   let yyyy, mm, dd;
 
   if (isoMatch.test(trimmed)) {
