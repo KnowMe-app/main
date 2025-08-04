@@ -170,7 +170,13 @@ export const ProfileForm = ({
                     </ClearButton>
                   )}
                   {state[field.name] && (
-                    <DelKeyValueBTN onClick={() => handleDelKeyValue(field.name)} disabled={isSubmitting}>del</DelKeyValueBTN>
+                    <DelKeyValueBTN
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => handleDelKeyValue(field.name)}
+                      disabled={isSubmitting}
+                    >
+                      del
+                    </DelKeyValueBTN>
                   )}
                 </InputFieldContainer>
 
