@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
@@ -876,26 +876,6 @@ const Matching = () => {
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
-
-
-  useLayoutEffect(() => {
-    if (!loading && users.length > 0) {
-      const savedScroll = sessionStorage.getItem('matchingScroll');
-      if (savedScroll !== null) {
-        const scrollPosition = parseInt(savedScroll, 10);
-        sessionStorage.removeItem('matchingScroll');
-        if (!Number.isNaN(scrollPosition) && scrollPosition !== window.scrollY) {
-          window.scrollTo(0, scrollPosition);
-        }
-      }
-    }
-  }, [loading, users.length]);
-
-  useEffect(() => {
-    return () => {
-      sessionStorage.setItem('matchingScroll', String(window.scrollY));
-    };
-  }, []);
 
   const togglePublish = async user => {
     if (!isAdmin) return;
