@@ -95,45 +95,57 @@ const EditProfile = () => {
 
   const handleBlur = () => handleSubmit();
 
-  const handleClear = (fieldName, idx) => {
+  const handleClear = async (fieldName, idx) => {
+    let deletedValue;
+    let updatedState;
+    let shouldRemoveKey = false;
+
     setState(prev => {
       const isArray = Array.isArray(prev[fieldName]);
       const newState = { ...prev };
-      let removedValue;
 
       if (isArray) {
         const filtered = prev[fieldName].filter((_, i) => i !== idx);
-        removedValue = prev[fieldName][idx];
+        deletedValue = prev[fieldName][idx];
 
         if (filtered.length === 0 || (filtered.length === 1 && filtered[0] === '')) {
-          const deletedValue = prev[fieldName];
           delete newState[fieldName];
-          removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
+          shouldRemoveKey = true;
         } else if (filtered.length === 1) {
           newState[fieldName] = filtered[0];
         } else {
           newState[fieldName] = filtered;
         }
       } else {
-        removedValue = prev[fieldName];
-        const deletedValue = prev[fieldName];
+        deletedValue = prev[fieldName];
         delete newState[fieldName];
-        removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
+        shouldRemoveKey = true;
       }
 
-      handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
+      updatedState = newState;
       return newState;
     });
+
+    if (shouldRemoveKey) {
+      await removeKeyFromFirebase(fieldName, deletedValue, updatedState.userId);
+    }
+    await handleSubmit(updatedState, 'overwrite', { [fieldName]: deletedValue });
   };
 
-  const handleDelKeyValue = fieldName => {
+  const handleDelKeyValue = async fieldName => {
+    let deletedValue;
+    let updatedState;
+
     setState(prev => {
       const newState = { ...prev };
-      const deletedValue = newState[fieldName];
+      deletedValue = newState[fieldName];
       delete newState[fieldName];
-      removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
+      updatedState = newState;
       return newState;
     });
+
+    await removeKeyFromFirebase(fieldName, deletedValue, updatedState.userId);
+    await handleSubmit(updatedState, 'overwrite', { [fieldName]: deletedValue });
   };
 
   if (!state) return null;
