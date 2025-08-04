@@ -319,61 +319,60 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   //   setState(prevState => ({ ...prevState, [fieldName]: '' }));
   // };
 
-  const handleClear = async (fieldName, idx) => {
-    let deletedValue;
-    let updatedState;
-    let shouldRemoveKey = false;
-
+  const handleClear = (fieldName, idx) => {
     setState(prevState => {
       const isArray = Array.isArray(prevState[fieldName]);
       const newState = { ...prevState };
+      let removedValue;
 
       if (isArray) {
         const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
-        deletedValue = prevState[fieldName][idx];
+        removedValue = prevState[fieldName][idx];
 
         if (filteredArray.length === 0 || (filteredArray.length === 1 && filteredArray[0] === '')) {
+          const deletedValue = prevState[fieldName];
           delete newState[fieldName];
-          shouldRemoveKey = true;
+          removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
         } else if (filteredArray.length === 1) {
           newState[fieldName] = filteredArray[0];
         } else {
           newState[fieldName] = filteredArray;
         }
       } else {
-        deletedValue = prevState[fieldName];
+        removedValue = prevState[fieldName];
+        const deletedValue = prevState[fieldName];
         delete newState[fieldName];
-        shouldRemoveKey = true;
+        removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
       }
 
-      updatedState = newState;
+      handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
       return newState;
     });
-
-    if (shouldRemoveKey) {
-      await removeKeyFromFirebase(fieldName, deletedValue, updatedState.userId);
-    }
-    await handleSubmit(updatedState, 'overwrite', { [fieldName]: deletedValue });
   };
 
-  const handleDelKeyValue = async fieldName => {
-    let deletedValue;
-    let updatedState;
-
+  const handleDelKeyValue = fieldName => {
     setState(prevState => {
+      // Створюємо копію попереднього стану
       const newState = { ...prevState };
 
-      deletedValue = newState[fieldName];
+      const deletedValue = newState[fieldName];
+
+      // Видаляємо ключ з нового стану
       delete newState[fieldName];
 
-      updatedState = newState;
+      // console.log('Видалили ключ з локального стану:', fieldName);
+      // console.log('newState:', newState);
+
+      // Встановлюємо значення 'del_key' для видалення
+      //  newState[fieldName] = 'del_key';
+
+      console.log(`Поле "${fieldName}" позначено для видалення`);
+
+      // Видалення ключа з Firebase
+      removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
+
       return newState; // Повертаємо оновлений стан
     });
-
-    await removeKeyFromFirebase(fieldName, deletedValue, updatedState.userId);
-    await handleSubmit(updatedState, 'overwrite', { [fieldName]: deletedValue });
-
-    console.log(`Поле "${fieldName}" позначено для видалення`);
   };
 
   const [isEmailVerified, setIsEmailVerified] = useState(false);
