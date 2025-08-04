@@ -567,6 +567,57 @@ const addUserToResults = async (userId, users, userIdOrArray = null) => {
   };
 };
 
+const getDateFormats = input => {
+  const trimmed = (input || '').trim();
+  const isoMatch = /^(\d{4})[-.\/](\d{2})[-.\/](\d{2})$/;
+  const dmyMatch = /^(\d{2})[-.\/](\d{2})[-.\/](\d{4})$/;
+  let yyyy, mm, dd;
+
+  if (isoMatch.test(trimmed)) {
+    [, yyyy, mm, dd] = trimmed.match(isoMatch);
+  } else if (dmyMatch.test(trimmed)) {
+    [, dd, mm, yyyy] = trimmed.match(dmyMatch);
+  } else {
+    return [];
+  }
+
+  return [`${yyyy}-${mm}-${dd}`, `${dd}.${mm}.${yyyy}`];
+};
+
+const searchByDate = async (searchValue, uniqueUserIds, users) => {
+  const dateFormats = getDateFormats(searchValue);
+  if (dateFormats.length === 0) return false;
+
+  const collections = ['newUsers', 'users'];
+  const fields = ['createdAt', 'lastCycle', 'lastAction', 'getInTouch'];
+
+  for (const date of dateFormats) {
+    for (const collection of collections) {
+      for (const field of fields) {
+        const q = query(ref2(database, collection), orderByChild(field), equalTo(date));
+        try {
+          const snapshot = await get(q);
+          if (snapshot.exists()) {
+            const promises = [];
+            snapshot.forEach(userSnapshot => {
+              const userId = userSnapshot.key;
+              if (!uniqueUserIds.has(userId)) {
+                uniqueUserIds.add(userId);
+                promises.push(addUserToResults(userId, users));
+              }
+            });
+            await Promise.all(promises);
+          }
+        } catch (error) {
+          if (isDev) console.error('Error searching by date:', error);
+        }
+      }
+    }
+  }
+
+  return true;
+};
+
 const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
   const ukSmPrefix = encodeKey('УК СМ ');
   const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(ukSmPrefix.toLowerCase());
@@ -701,9 +752,12 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
   // console.log('modifiedSearchValue3333333333333 :>> ', modifiedSearchValue);
 
   try {
-    await searchBySearchId(modifiedSearchValue, uniqueUserIds, users);
-    await searchByPrefixes(searchValue, uniqueUserIds, users);
-    await searchUserByPartialUserId(searchValue, users);
+    const isDateSearch = await searchByDate(searchValue, uniqueUserIds, users);
+    if (!isDateSearch) {
+      await searchBySearchId(modifiedSearchValue, uniqueUserIds, users);
+      await searchByPrefixes(searchValue, uniqueUserIds, users);
+      await searchUserByPartialUserId(searchValue, users);
+    }
 
     // if (users.length === 1) {
     //   console.log('Знайдено одного користувача:', users[0]);
