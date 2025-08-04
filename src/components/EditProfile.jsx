@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import {
@@ -33,7 +33,6 @@ const EditProfile = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
   const [state, setState] = useState(null);
-  const submitCounter = useRef(0);
 
   useEffect(() => {
     const load = async () => {
@@ -46,9 +45,6 @@ const EditProfile = () => {
   }, [userId]);
 
   const handleSubmit = async (newState, overwrite, delCondition) => {
-    submitCounter.current += 1;
-    const callId = submitCounter.current;
-
     const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
     const commonFields = ['lastAction', 'lastLogin2'];
@@ -94,10 +90,7 @@ const EditProfile = () => {
         await updateDataInNewUsersRTDB(state.userId, state, 'update');
       }
     }
-
-    if (callId === submitCounter.current) {
-      setState(prev => ({ ...prev, ...updatedState }));
-    }
+    setState(updatedState);
   };
 
   const handleBlur = () => handleSubmit();
