@@ -33,6 +33,7 @@ const EditProfile = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
   const [state, setState] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -49,48 +50,52 @@ const EditProfile = () => {
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
     const commonFields = ['lastAction', 'lastLogin2'];
 
-    const formatDate = date => {
-      const dd = String(date.getDate()).padStart(2, '0');
-      const mm = String(date.getMonth() + 1).padStart(2, '0');
-      const yyyy = date.getFullYear();
-      return `${dd}.${mm}.${yyyy}`;
-    };
-    const currentDate = formatDate(new Date());
+    setIsSubmitting(true);
+    try {
+      const formatDate = date => {
+        const dd = String(date.getDate()).padStart(2, '0');
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const yyyy = date.getFullYear();
+        return `${dd}.${mm}.${yyyy}`;
+      };
+      const currentDate = formatDate(new Date());
 
-    const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
+      const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
 
-    if (updatedState?.userId?.length > 20) {
-      const { existingData } = await fetchUserById(updatedState.userId);
+      if (updatedState?.userId?.length > 20) {
+        const { existingData } = await fetchUserById(updatedState.userId);
 
-      const sanitizedExistingData = { ...existingData };
-      if (delCondition) {
-        Object.keys(delCondition).forEach(key => {
-          delete sanitizedExistingData[key];
-        });
+        const sanitizedExistingData = { ...existingData };
+        if (delCondition) {
+          Object.keys(delCondition).forEach(key => {
+            delete sanitizedExistingData[key];
+          });
+        }
+
+        const cleanedState = Object.fromEntries(
+          Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
+        );
+
+        const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
+
+        await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
+        await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
+
+        const cleanedStateForNewUsers = Object.fromEntries(
+          Object.entries(updatedState).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key))
+        );
+
+        await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update');
+      } else if (state?.userId) {
+        if (newState) {
+          await updateDataInNewUsersRTDB(state.userId, newState, 'update');
+        } else {
+          await updateDataInNewUsersRTDB(state.userId, state, 'update');
+        }
       }
-
-      const cleanedState = Object.fromEntries(
-        Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
-      );
-
-      const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
-
-      await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
-      await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
-
-      const cleanedStateForNewUsers = Object.fromEntries(
-        Object.entries(updatedState).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key))
-      );
-
-      await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update');
-    } else if (state?.userId) {
-      if (newState) {
-        await updateDataInNewUsersRTDB(state.userId, newState, 'update');
-      } else {
-        await updateDataInNewUsersRTDB(state.userId, state, 'update');
-      }
+    } finally {
+      setIsSubmitting(false);
     }
-    setState(updatedState);
   };
 
   const handleBlur = () => handleSubmit();
@@ -152,7 +157,7 @@ const EditProfile = () => {
 
   return (
     <Container>
-      <BackButton onClick={() => navigate(-1)}>Back</BackButton>
+      <BackButton onClick={() => navigate(-1)} disabled={isSubmitting}>Back</BackButton>
       <div style={{ ...coloredCard() }}>
         {renderTopBlock(state, () => {}, () => {}, setState)}
       </div>
@@ -163,6 +168,7 @@ const EditProfile = () => {
         handleSubmit={handleSubmit}
         handleClear={handleClear}
         handleDelKeyValue={handleDelKeyValue}
+        isSubmitting={isSubmitting}
       />
     </Container>
   );

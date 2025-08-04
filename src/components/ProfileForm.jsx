@@ -33,6 +33,7 @@ export const ProfileForm = ({
   handleSubmit,
   handleClear,
   handleDelKeyValue,
+  isSubmitting,
 }) => {
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
@@ -112,6 +113,7 @@ export const ProfileForm = ({
                           type="button"
                           onMouseDown={e => e.preventDefault()}
                           onClick={() => handleClear(field.name, idx)}
+                          disabled={isSubmitting}
                         >
                           &times;
                         </ClearButton>
@@ -162,12 +164,13 @@ export const ProfileForm = ({
                       type="button"
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => handleClear(field.name)}
+                      disabled={isSubmitting}
                     >
                       &times;
                     </ClearButton>
                   )}
                   {state[field.name] && (
-                    <DelKeyValueBTN onClick={() => handleDelKeyValue(field.name)}>del</DelKeyValueBTN>
+                    <DelKeyValueBTN onClick={() => handleDelKeyValue(field.name)} disabled={isSubmitting}>del</DelKeyValueBTN>
                   )}
                 </InputFieldContainer>
 
@@ -202,6 +205,7 @@ export const ProfileForm = ({
                       return newState;
                     });
                   }}
+                  disabled={isSubmitting}
                 >
                   +
                 </Button>
@@ -221,6 +225,7 @@ export const ProfileForm = ({
                         return newState;
                       });
                     }}
+                    disabled={isSubmitting}
                   >
                     Так
                   </Button>
@@ -235,6 +240,7 @@ export const ProfileForm = ({
                         return newState;
                       });
                     }}
+                    disabled={isSubmitting}
                   >
                     Ні
                   </Button>
@@ -250,6 +256,7 @@ export const ProfileForm = ({
                         return newState;
                       });
                     }}
+                    disabled={isSubmitting}
                   >
                     Інше
                   </Button>
@@ -267,6 +274,7 @@ export const ProfileForm = ({
                         return newState;
                       });
                     }}
+                    disabled={isSubmitting}
                   >
                     Ні
                   </Button>
@@ -281,6 +289,7 @@ export const ProfileForm = ({
                         return newState;
                       });
                     }}
+                    disabled={isSubmitting}
                   >
                     1
                   </Button>
@@ -295,6 +304,7 @@ export const ProfileForm = ({
                         return newState;
                       });
                     }}
+                    disabled={isSubmitting}
                   >
                     2
                   </Button>
