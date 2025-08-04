@@ -882,8 +882,11 @@ const Matching = () => {
     if (!loading && users.length > 0) {
       const savedScroll = sessionStorage.getItem('matchingScroll');
       if (savedScroll !== null) {
-        window.scrollTo(0, parseInt(savedScroll, 10));
+        const scrollPosition = parseInt(savedScroll, 10);
         sessionStorage.removeItem('matchingScroll');
+        if (!Number.isNaN(scrollPosition) && scrollPosition !== window.scrollY) {
+          window.scrollTo(0, scrollPosition);
+        }
       }
     }
   }, [loading, users.length]);
