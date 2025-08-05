@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import {
@@ -12,6 +12,7 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { ProfileForm } from './ProfileForm';
 import { renderTopBlock } from "./smallCard/renderTopBlock";
 import { coloredCard } from "./styles";
+import { createLocalFirstSync } from '../hooks/localServerSync';
 
 const Container = styled.div`
   display: flex;
@@ -33,7 +34,58 @@ const EditProfile = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
   const [state, setState] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  async function remoteUpdate({ updatedState, overwrite, delCondition }) {
+    const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
+    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
+    const commonFields = ['lastAction', 'lastLogin2'];
+
+    if (updatedState?.userId?.length > 20) {
+      const { existingData } = await fetchUserById(updatedState.userId);
+
+      const sanitizedExistingData = { ...existingData };
+      if (delCondition) {
+        Object.keys(delCondition).forEach(key => {
+          delete sanitizedExistingData[key];
+        });
+      }
+
+      const cleanedState = Object.fromEntries(
+        Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
+      );
+
+      const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
+
+      await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
+      await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
+
+      const cleanedStateForNewUsers = Object.fromEntries(
+        Object.entries(updatedState).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key))
+      );
+
+      await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update');
+    } else if (updatedState?.userId) {
+      await updateDataInNewUsersRTDB(updatedState.userId, updatedState, 'update');
+    }
+
+    return updatedState;
+  }
+
+  const syncRef = useRef(
+    createLocalFirstSync('pendingProfileUpdate', null, async ({ data }) => {
+      setIsSyncing(true);
+      try {
+        await remoteUpdate(data);
+      } finally {
+        setIsSyncing(false);
+      }
+    }),
+  );
+
+  useEffect(() => {
+    syncRef.current.init();
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -45,57 +97,18 @@ const EditProfile = () => {
     load();
   }, [userId]);
 
-  const handleSubmit = async (newState, overwrite, delCondition) => {
-    const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
-    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
-    const commonFields = ['lastAction', 'lastLogin2'];
+  const handleSubmit = (newState, overwrite, delCondition) => {
+    const formatDate = date => {
+      const dd = String(date.getDate()).padStart(2, '0');
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const yyyy = date.getFullYear();
+      return `${dd}.${mm}.${yyyy}`;
+    };
+    const currentDate = formatDate(new Date());
 
-    setIsSubmitting(true);
-    try {
-      const formatDate = date => {
-        const dd = String(date.getDate()).padStart(2, '0');
-        const mm = String(date.getMonth() + 1).padStart(2, '0');
-        const yyyy = date.getFullYear();
-        return `${dd}.${mm}.${yyyy}`;
-      };
-      const currentDate = formatDate(new Date());
+    const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
 
-      const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
-
-      if (updatedState?.userId?.length > 20) {
-        const { existingData } = await fetchUserById(updatedState.userId);
-
-        const sanitizedExistingData = { ...existingData };
-        if (delCondition) {
-          Object.keys(delCondition).forEach(key => {
-            delete sanitizedExistingData[key];
-          });
-        }
-
-        const cleanedState = Object.fromEntries(
-          Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
-        );
-
-        const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
-
-        await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
-        await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
-
-        const cleanedStateForNewUsers = Object.fromEntries(
-          Object.entries(updatedState).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key))
-        );
-
-        await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update');
-      } else if (state?.userId) {
-        if (newState) {
-          await updateDataInNewUsersRTDB(state.userId, newState, 'update');
-        } else {
-          await updateDataInNewUsersRTDB(state.userId, state, 'update');
-        }
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
+    syncRef.current.update({ updatedState, overwrite, delCondition });
   };
 
   const handleBlur = () => handleSubmit();
@@ -145,7 +158,7 @@ const EditProfile = () => {
 
   return (
     <Container>
-      <BackButton onClick={() => navigate(-1)} disabled={isSubmitting}>Back</BackButton>
+      <BackButton onClick={() => navigate(-1)}>Back</BackButton>
       <div style={{ ...coloredCard() }}>
         {renderTopBlock(state, () => {}, () => {}, setState)}
       </div>
@@ -156,8 +169,8 @@ const EditProfile = () => {
         handleSubmit={handleSubmit}
         handleClear={handleClear}
         handleDelKeyValue={handleDelKeyValue}
-        isSubmitting={isSubmitting}
       />
+      {isSyncing && <div>Syncing...</div>}
     </Container>
   );
 };
