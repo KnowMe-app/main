@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
@@ -886,15 +886,17 @@ const Matching = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (restoreRef.current) return;
+  useLayoutEffect(() => {
+    if (restoreRef.current || loading || users.length === 0) return;
     const savedY = sessionStorage.getItem(SCROLL_Y_KEY);
     if (savedY !== null) {
-      window.scrollTo(0, Number(savedY));
-      restoreRef.current = true;
-      sessionStorage.removeItem(SCROLL_Y_KEY);
+      requestAnimationFrame(() => {
+        window.scrollTo(0, Number(savedY));
+        restoreRef.current = true;
+        sessionStorage.removeItem(SCROLL_Y_KEY);
+      });
     }
-  }, [users]);
+  }, [loading, users]);
 
   const togglePublish = async user => {
     if (!isAdmin) return;
