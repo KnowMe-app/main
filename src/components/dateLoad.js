@@ -3,9 +3,26 @@ import { PAGE_SIZE, INVALID_DATE_TOKENS, MAX_LOOKBACK_DAYS } from './constants';
 
 export async function defaultFetchByDate(dateStr, limit) {
   const db = getDatabase();
-  const q = query(ref2(db, 'newUsers'), orderByChild('getInTouch'), equalTo(dateStr), limitToFirst(limit));
-  const snap = await get(q);
-  return snap.exists() ? Object.entries(snap.val()) : [];
+
+  const collections = ['newUsers', 'users'];
+  const combined = {};
+
+  // Iterate through both collections and gather matching records
+  for (const col of collections) {
+    // eslint-disable-next-line no-await-in-loop
+    const q = query(ref2(db, col), orderByChild('getInTouch'), equalTo(dateStr), limitToFirst(limit));
+    // eslint-disable-next-line no-await-in-loop
+    const snap = await get(q);
+    if (snap.exists()) {
+      Object.entries(snap.val()).forEach(([id, data]) => {
+        if (!combined[id]) combined[id] = data;
+      });
+    }
+
+    if (Object.keys(combined).length >= limit) break;
+  }
+
+  return Object.entries(combined).slice(0, limit);
 }
 
 
