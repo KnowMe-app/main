@@ -52,6 +52,8 @@ import { PAGE_SIZE, database } from './config';
 import { onValue, ref } from 'firebase/database';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
+import { createLocalFirstSync } from '../hooks/localServerSync';
+import { generateUserId } from './generateUserId';
 
 const Container = styled.div`
   display: flex;
@@ -187,6 +189,10 @@ const ButtonsContainer = styled.div`
   gap: 10px;
 `;
 
+const profileSync = createLocalFirstSync('pendingProfile', null, ({ data }) =>
+  makeNewUser(data),
+);
+
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const location = useLocation();
@@ -208,6 +214,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const navigate = useNavigate();
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
+
+  useEffect(() => {
+    profileSync.init();
+    const cached = profileSync.getData();
+    if (cached) {
+      setState(cached);
+    }
+    const intervalId = setInterval(() => {
+      profileSync.pollServer();
+    }, 5000);
+    return () => clearInterval(intervalId);
+  }, []);
 
   const handleBlur = () => {
     handleSubmit();
@@ -465,10 +483,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [adding, setAdding] = useState(false);
 
-  const handleAddUser = async () => {
+  const handleAddUser = () => {
     setAdding(true);
-    const newUser = await makeNewUser(searchKeyValuePair);
-    setState(newUser);
+    const newProfile = { userId: generateUserId(), ...searchKeyValuePair };
+    profileSync.update(newProfile);
+    setState(profileSync.getData());
     setUserNotFound(false);
     setAdding(false);
   };
