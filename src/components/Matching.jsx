@@ -853,6 +853,7 @@ const InfoCardContent = ({ user, variant }) => {
 
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 6;
+const SCROLL_Y_KEY = 'matchingScrollY';
 
 const Matching = () => {
   const navigate = useNavigate();
@@ -873,9 +874,27 @@ const Matching = () => {
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
+  const restoreRef = useRef(false);
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
+
+  useEffect(() => {
+    window.history.scrollRestoration = 'manual';
+    return () => {
+      sessionStorage.setItem(SCROLL_Y_KEY, String(window.scrollY));
+    };
+  }, []);
+
+  useEffect(() => {
+    if (restoreRef.current) return;
+    const savedY = sessionStorage.getItem(SCROLL_Y_KEY);
+    if (savedY !== null) {
+      window.scrollTo(0, Number(savedY));
+      restoreRef.current = true;
+      sessionStorage.removeItem(SCROLL_Y_KEY);
+    }
+  }, [users]);
 
   const togglePublish = async user => {
     if (!isAdmin) return;
