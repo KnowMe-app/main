@@ -585,7 +585,9 @@ const getDateFormats = input => {
 };
 
 const searchByDate = async (searchValue, uniqueUserIds, users) => {
+  if (isDev) console.log('searchByDate → input:', searchValue);
   const dateFormats = getDateFormats(searchValue);
+  if (isDev) console.log('searchByDate → formats:', dateFormats);
   if (dateFormats.length === 0) return false;
 
   const collections = ['newUsers', 'users'];
@@ -594,13 +596,16 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
   for (const date of dateFormats) {
     for (const collection of collections) {
       for (const field of fields) {
+        if (isDev) console.log(`searchByDate → querying ${collection}.${field} for`, date);
         const q = query(ref2(database, collection), orderByChild(field), equalTo(date));
         try {
           const snapshot = await get(q);
+          if (isDev) console.log('snapshot.exists():', snapshot.exists());
           if (snapshot.exists()) {
             const promises = [];
             snapshot.forEach(userSnapshot => {
               const userId = userSnapshot.key;
+              if (isDev) console.log(`Found ${userId} in ${collection}.${field}`);
               if (!uniqueUserIds.has(userId)) {
                 uniqueUserIds.add(userId);
                 promises.push(addUserToResults(userId, users));
@@ -745,47 +750,37 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
 };
 
 export const fetchNewUsersCollectionInRTDB = async searchedValue => {
+  if (isDev) console.log('fetchNewUsersCollectionInRTDB → searchedValue:', searchedValue);
   const { searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
+  if (isDev)
+    console.log('fetchNewUsersCollectionInRTDB → params:', {
+      searchValue,
+      modifiedSearchValue,
+    });
   const users = {};
   const uniqueUserIds = new Set();
 
-  // console.log('modifiedSearchValue3333333333333 :>> ', modifiedSearchValue);
-
   try {
     const isDateSearch = await searchByDate(searchValue, uniqueUserIds, users);
+    if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
       await searchBySearchId(modifiedSearchValue, uniqueUserIds, users);
       await searchByPrefixes(searchValue, uniqueUserIds, users);
       await searchUserByPartialUserId(searchValue, users);
     }
 
-    // if (users.length === 1) {
-    //   console.log('Знайдено одного користувача:', users[0]);
-    //   return users[0];
-    // } else if (users.length > 1) {
-    //   console.log('Знайдено кілька користувачів:', users);
-    //   return users;
-    // }
-
-    // Якщо знайдено одного користувача
     if (Object.keys(users).length === 1) {
       const singleUserId = Object.keys(users)[0];
-      console.log('Знайдено одного користувача:', users[singleUserId]);
+      if (isDev) console.log('Знайдено одного користувача:', users[singleUserId]);
       return users[singleUserId];
     }
 
-    // Якщо знайдено кілька користувачів
     if (Object.keys(users).length > 1) {
-      console.log('Знайдено кілька користувачів:', users);
+      if (isDev) console.log('Знайдено кілька користувачів:', users);
       return users;
     }
 
-    // const userFromUsers = await searchUserByPartialUserId(searchValue, users);
-    // if (userFromUsers) {
-    //   return userFromUsers;
-    // }
-
-    console.log('Користувача не знайдено.');
+    if (isDev) console.log('Користувача не знайдено.');
     return {};
   } catch (error) {
     console.error('Error fetching data:', error);
