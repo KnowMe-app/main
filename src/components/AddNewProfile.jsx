@@ -54,7 +54,6 @@ import { onValue, ref } from 'firebase/database';
 // import { aiHandler } from './aiHandler';
 import { createLocalFirstSync } from '../hooks/localServerSync';
 import { createCache } from '../hooks/cardsCache';
-import { generateUserId } from './generateUserId';
 
 const Container = styled.div`
   display: flex;
@@ -191,7 +190,7 @@ const ButtonsContainer = styled.div`
 `;
 
 const profileSync = createLocalFirstSync('pendingProfile', null, ({ data }) =>
-  makeNewUser(data),
+  data?.userId ? data : makeNewUser(data),
 );
 const { loadCache: loadAddCache, saveCache: saveAddCache } = createCache('addCache');
 
@@ -499,11 +498,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [adding, setAdding] = useState(false);
 
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     setAdding(true);
-    const newProfile = { userId: generateUserId(), ...searchKeyValuePair };
+    const newProfile = await makeNewUser(searchKeyValuePair);
     profileSync.update(newProfile);
-    setState(profileSync.getData());
+    setState(newProfile);
     setUserNotFound(false);
     setAdding(false);
   };
