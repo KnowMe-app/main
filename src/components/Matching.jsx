@@ -880,6 +880,9 @@ const Matching = () => {
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
   const restoreRef = useRef(false);
+  const saveScrollPosition = () => {
+    sessionStorage.setItem(SCROLL_Y_KEY, String(window.scrollY));
+  };
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
@@ -892,9 +895,7 @@ const Matching = () => {
 
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
-    return () => {
-      sessionStorage.setItem(SCROLL_Y_KEY, String(window.scrollY));
-    };
+    return saveScrollPosition;
   }, []);
 
   useLayoutEffect(() => {
@@ -1131,6 +1132,7 @@ const Matching = () => {
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
       setShowInfoModal(false);
+      saveScrollPosition();
       navigate('/my-profile');
       await signOut(auth);
     } catch (error) {
@@ -1212,9 +1214,9 @@ const Matching = () => {
     <>
       {isAdmin && (
         <>
-          <SubmitButton onClick={() => navigate('/my-profile')}>my-profile</SubmitButton>
-          <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>
-          <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>
+          <SubmitButton onClick={() => { saveScrollPosition(); navigate('/my-profile'); }}>my-profile</SubmitButton>
+          <SubmitButton onClick={() => { saveScrollPosition(); navigate('/add'); }}>add</SubmitButton>
+          <SubmitButton onClick={() => { saveScrollPosition(); navigate('/matching'); }}>matching</SubmitButton>
         </>
       )}
       <ExitButton onClick={handleExit}>Exit</ExitButton>
@@ -1322,6 +1324,7 @@ const Matching = () => {
                       {isAdmin && (
                         <Id
                           onClick={() => {
+                            saveScrollPosition();
                             navigate(`/edit/${user.userId}`);
                           }}
                           style={{ cursor: 'pointer' }}
