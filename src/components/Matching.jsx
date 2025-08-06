@@ -29,7 +29,7 @@ import { fieldContactsIcons } from './smallCard/fieldContacts';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
-import { loadCache, saveCache } from "../hooks/useMatchingCache";
+import { loadCache, saveCache } from "../hooks/cardsCache";
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaArrowDown } from 'react-icons/fa';
@@ -883,6 +883,12 @@ const Matching = () => {
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
+
+  useEffect(() => {
+    if (viewMode !== 'default') return;
+    const cacheKey = JSON.stringify(filters || {});
+    saveCache(cacheKey, { users, lastKey, hasMore });
+  }, [users, lastKey, hasMore, filters, viewMode]);
 
   useEffect(() => {
     window.history.scrollRestoration = 'manual';

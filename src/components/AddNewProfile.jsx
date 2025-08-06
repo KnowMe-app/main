@@ -53,6 +53,7 @@ import { onValue, ref } from 'firebase/database';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 import { createLocalFirstSync } from '../hooks/localServerSync';
+import { createCache } from '../hooks/cardsCache';
 import { generateUserId } from './generateUserId';
 
 const Container = styled.div`
@@ -192,6 +193,7 @@ const ButtonsContainer = styled.div`
 const profileSync = createLocalFirstSync('pendingProfile', null, ({ data }) =>
   makeNewUser(data),
 );
+const { loadCache: loadAddCache, saveCache: saveAddCache } = createCache('addCache');
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
@@ -434,6 +436,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [dateOffset2, setDateOffset2] = useState(0);
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
 
+  useEffect(() => {
+    const cacheKey = JSON.stringify({ currentFilter, filters });
+    saveAddCache(cacheKey, { users, lastKey, hasMore, totalCount });
+  }, [users, lastKey, hasMore, totalCount, currentFilter, filters]);
+
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   const isDateInRange = dateStr => {
     const dates = Object.values(users)
@@ -464,10 +471,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [filters]);
 
   useEffect(() => {
-    setUsers({});
-    setLastKey(null);
-    setHasMore(true);
-    setTotalCount(0);
+    const cacheKey = JSON.stringify({ currentFilter, filters });
+    const cached = loadAddCache(cacheKey);
+    if (cached) {
+      setUsers(cached.users || {});
+      setLastKey(cached.lastKey ?? null);
+      setHasMore(cached.hasMore ?? true);
+      setTotalCount(cached.totalCount ?? Object.keys(cached.users || {}).length);
+    } else {
+      setUsers({});
+      setLastKey(null);
+      setHasMore(true);
+      setTotalCount(0);
+    }
     setCurrentPage(1);
     if (currentFilter) {
       if (currentFilter === 'DATE2') {
