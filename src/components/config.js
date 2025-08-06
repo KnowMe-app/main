@@ -468,13 +468,15 @@ export const makeNewUser = async searchedValue => {
   const newUserRef = push(newUsersRef); // Генеруємо унікальний ключ
   const newUserId = newUserRef.key;
 
-  // Форматування дати у форматі дд.мм.рррр
-  const createdAt = new Date().toLocaleDateString('uk-UA');
+  const now = new Date();
+  const createdAt = now.toLocaleDateString('uk-UA');
+  const createdAt2 = now.toISOString().split('T')[0];
 
   const newUser = {
     userId: newUserId,
     [searchKey]: searchValue,
     createdAt,
+    createdAt2,
   };
 
   // Записуємо нового користувача в базу даних
