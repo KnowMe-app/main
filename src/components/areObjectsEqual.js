@@ -1,32 +1,44 @@
 export const areObjectsEqual = (obj1, obj2) => {
-  // Перевірка на наявність об'єктів і їх типу
-  if (typeof obj1 !== 'object' || typeof obj2 !== 'object') {
-    // console.log('Об"єкти різні. Не об"єкт :>> ');
+  if (obj1 === obj2) {
+    return true;
+  }
+
+  if (
+    obj1 === null ||
+    obj2 === null ||
+    typeof obj1 !== 'object' ||
+    typeof obj2 !== 'object'
+  ) {
     return false;
   }
 
-  // Отримання масивів ключів об'єктів
-  const keys1 = Object.keys(obj1);
-  const keys2 = Object.keys(obj2);
+  const filterKeys = obj => Object.keys(obj).filter(key => key !== 'statusDate');
 
-  // Перевірка на рівну кількість ключів
+  const keys1 = filterKeys(obj1);
+  const keys2 = filterKeys(obj2);
+
   if (keys1.length !== keys2.length) {
-    // console.log('Об"єкти різні. Різна кіькість ключів :>> ');
     return false;
   }
 
-  // Перевірка значень кожного ключа
   for (const key of keys1) {
-    if (key !== 'statusDate') {
-      if (obj1[key] !== obj2[key]) {
-        // console.log('key :>> ', key);
-        // console.log('obj1[key] !== obj2[key] :>> ', obj1[key], obj2[key]);
-        // console.log('Об"єкти різні. Значення ключів різні :>> ');
+    if (!keys2.includes(key)) {
+      return false;
+    }
+
+    const val1 = obj1[key];
+    const val2 = obj2[key];
+    const bothObjects =
+      typeof val1 === 'object' && val1 !== null && typeof val2 === 'object' && val2 !== null;
+
+    if (bothObjects) {
+      if (!areObjectsEqual(val1, val2)) {
         return false;
       }
+    } else if (val1 !== val2) {
+      return false;
     }
   }
 
-  // Якщо всі перевірки пройшли, повертаємо true
   return true;
-}
+};
