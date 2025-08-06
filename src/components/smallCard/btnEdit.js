@@ -1,12 +1,10 @@
-import { fetchUserById } from 'components/config';
 import { CardMenuBtn } from 'components/styles';
 import React from 'react';
 
-export const btnEdit = (userId, setSearch, setState) => {
-  const handleCardClick = async () => {
-    const userData = await fetchUserById(userId);
+// Use already loaded card data instead of re-fetching from the server
+export const btnEdit = (userData, setSearch, setState) => {
+  const handleCardClick = () => {
     if (userData) {
-      console.log('Дані знайденого користувача: ', userData);
       setSearch(`${userData.userId}`);
       setState(userData);
     } else {
