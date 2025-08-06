@@ -454,6 +454,13 @@ const RoleHeader = styled(Title)`
   margin-bottom: 2px;
 `;
 
+const HeaderRow = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+`;
+
 const AdminToggle = styled.div`
   position: absolute;
   top: 5px;
@@ -724,12 +731,10 @@ const SwipeableCard = ({
       />
       {current === 'main' && isAgency && (
         <CardInfo>
-          <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
-          {nameParts && (
-            <div>
-              <strong>{nameParts}</strong>
-            </div>
-          )}
+          <HeaderRow>
+            <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
+            {nameParts && <strong>{nameParts}</strong>}
+          </HeaderRow>
           <div
             style={{
               display: 'flex',
