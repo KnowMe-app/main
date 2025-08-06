@@ -24,6 +24,7 @@ import {
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE } from './constants';
 import { getCurrentDate } from './foramtDate';
+import toast from 'react-hot-toast';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -2646,6 +2647,9 @@ export const removeCardAndSearchId = async userId => {
     await updateGetInTouchIndex(getGetInTouchKeys(userData), userId, 'remove');
     await updateBirthIndex(getBirthKeys(userData), userId, 'remove');
 
+    // Зберігаємо видалені значення для відображення в toast
+    const deletedFields = [];
+
     // Перебір ключів для перевірки
     for (const key of keysToCheck) {
       const valueToCheck = userData[key];
@@ -2656,6 +2660,7 @@ export const removeCardAndSearchId = async userId => {
       if (typeof valueToCheck === 'string') {
         console.log(`Видалення рядкового значення: ${key} -> ${valueToCheck}`);
         await updateSearchId(key, valueToCheck, userId, 'remove');
+        deletedFields.push(`${key} -> ${valueToCheck}`);
       }
 
       // Якщо значення — масив
@@ -2674,6 +2679,14 @@ export const removeCardAndSearchId = async userId => {
     // Видаляємо картку користувача з newUsers
     await remove(ref2(db, `newUsers/${userId}`));
     console.log(`Картка користувача видалена з newUsers: ${userId}`);
+
+    if (deletedFields.length) {
+      toast.success(`Видалені дані:\n${deletedFields.join('\n')}`, {
+        style: { whiteSpace: 'pre-line' },
+      });
+    } else {
+      toast.success(`Картка користувача видалена з newUsers: ${userId}`);
+    }
   } catch (error) {
     console.error(`Помилка під час видалення searchId для userId: ${userId}`, error);
   }
