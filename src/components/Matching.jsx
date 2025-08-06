@@ -1318,7 +1318,7 @@ const Matching = () => {
                         <Id
                           onClick={() => {
                             saveScrollPosition();
-                            navigate(`/edit/${user.userId}`);
+                            navigate(`/edit/${user.userId}`, { state: user });
                           }}
                           style={{ cursor: 'pointer' }}
                         >

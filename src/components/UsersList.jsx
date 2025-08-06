@@ -90,7 +90,7 @@ const UserCard = ({
       <div
         onClick={() => {
           if (isAdmin) {
-            navigate(`/edit/${userData.userId}`);
+            navigate(`/edit/${userData.userId}`, { state: userData });
           }
         }}
         style={{
