@@ -886,13 +886,6 @@ const Matching = () => {
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
-
-  useEffect(() => {
-    if (viewMode !== 'default') return;
-    const cacheKey = JSON.stringify(filters || {});
-    saveCache(cacheKey, { users, lastKey, hasMore });
-  }, [users, lastKey, hasMore, filters, viewMode]);
-
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
     return saveScrollPosition;
