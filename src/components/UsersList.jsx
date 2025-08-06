@@ -173,7 +173,7 @@ const UsersList = ({
             </div>
           ) : (
             <>
-              {btnEdit(userData.userId, setSearch, setState)}
+              {btnEdit(userData, setSearch, setState)}
               {btnCompare(index, users, setUsers, setShowInfoModal, setCompare, )}
               <UserCard
                 setShowInfoModal={setShowInfoModal}
