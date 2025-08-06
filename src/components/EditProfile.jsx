@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import {
   fetchUserById,
@@ -33,7 +33,8 @@ const BackButton = styled.button`
 const EditProfile = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
-  const [state, setState] = useState(null);
+  const location = useLocation();
+  const [state, setState] = useState(location.state || null);
   const [isSyncing, setIsSyncing] = useState(false);
 
   async function remoteUpdate({ updatedState, overwrite, delCondition }) {
@@ -88,14 +89,14 @@ const EditProfile = () => {
   }, []);
 
   useEffect(() => {
-    const load = async () => {
-      if (userId) {
+    if (!state && userId) {
+      const load = async () => {
         const data = await fetchUserById(userId);
         setState(data || { userId });
-      }
-    };
-    load();
-  }, [userId]);
+      };
+      load();
+    }
+  }, [state, userId]);
 
   const handleSubmit = (newState, overwrite, delCondition) => {
     const formatDate = date => {
