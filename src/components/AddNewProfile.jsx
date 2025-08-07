@@ -200,11 +200,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [userNotFound, setUserNotFound] = useState(false);
 
+  const SEARCH_KEY = 'addSearchQuery';
   const [search, setSearch] = useState(() => {
     const params = new URLSearchParams(location.search);
     const urlSearch = params.get('search');
     if (urlSearch) return urlSearch;
-    return localStorage.getItem('searchQuery') || '';
+    return localStorage.getItem(SEARCH_KEY) || '';
   });
 
   const [state, setState] = useState({});
@@ -821,6 +822,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             setState({});
             setSearchKeyValuePair(null);
           }}
+          storageKey={SEARCH_KEY}
         />
         {state.userId ? (
           <>

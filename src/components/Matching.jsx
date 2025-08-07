@@ -859,6 +859,7 @@ const InfoCardContent = ({ user, variant }) => {
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 6;
 const SCROLL_Y_KEY = 'matchingScrollY';
+const SEARCH_KEY = 'matchingSearchQuery';
 
 const Matching = () => {
   const navigate = useNavigate();
@@ -1184,6 +1185,10 @@ const Matching = () => {
   }, [hasMore, lastKey, viewMode, fetchChunk, filters]);
 
   useEffect(() => {
+    const savedSearch = localStorage.getItem(SEARCH_KEY);
+    if (savedSearch) {
+      return;
+    }
     console.log('[useEffect] calling loadInitial');
     loadInitial();
   }, [loadInitial]);
@@ -1226,6 +1231,8 @@ const Matching = () => {
           setUserNotFound={() => {}}
           wrapperStyle={{ width: '100%', marginBottom: '10px' }}
           leftIcon="🔍"
+          storageKey={SEARCH_KEY}
+          onClear={loadInitial}
         />
         <FilterPanel mode="matching" hideUserId hideCommentLength onChange={setFilters} />
       </FilterContainer>

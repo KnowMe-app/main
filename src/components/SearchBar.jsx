@@ -90,9 +90,10 @@ const SearchBar = ({
   onClear,
   wrapperStyle = {},
   leftIcon = SearchIcon,
+  storageKey = 'searchQuery',
 }) => {
   const [internalSearch, setInternalSearch] = useState(
-    () => localStorage.getItem('searchQuery') || '',
+    () => localStorage.getItem(storageKey) || '',
   );
 
   const search = externalSearch !== undefined ? externalSearch : internalSearch;
@@ -104,11 +105,11 @@ const SearchBar = ({
 
   useEffect(() => {
     if (search) {
-      localStorage.setItem('searchQuery', search);
+      localStorage.setItem(storageKey, search);
     } else {
-      localStorage.removeItem('searchQuery');
+      localStorage.removeItem(storageKey);
     }
-  }, [search]);
+  }, [search, storageKey]);
 
   useEffect(() => {
     if (search) {
