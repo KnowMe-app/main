@@ -881,15 +881,24 @@ const Matching = () => {
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
   const restoreRef = useRef(false);
+  const scrollPositionRef = useRef(0);
   const saveScrollPosition = () => {
-    sessionStorage.setItem(SCROLL_Y_KEY, String(window.scrollY));
+    sessionStorage.setItem(SCROLL_Y_KEY, String(scrollPositionRef.current));
   };
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
-    return saveScrollPosition;
+    const handleScroll = () => {
+      scrollPositionRef.current = window.scrollY;
+    };
+    handleScroll();
+    window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      saveScrollPosition();
+    };
   }, []);
 
   useLayoutEffect(() => {
