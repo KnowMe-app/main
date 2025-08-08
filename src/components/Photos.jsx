@@ -5,6 +5,20 @@ import { updateDataInNewUsersRTDB } from './config';
 import { color } from './styles';
 import PhotoViewer from './PhotoViewer';
 
+const convertDriveLinkToImage = link => {
+  if (typeof link !== 'string') return null;
+  let fileId = null;
+  const fileMatch = link.match(/\/file\/d\/([^/]+)/);
+  if (fileMatch) {
+    fileId = fileMatch[1];
+  }
+  const openMatch = link.match(/open\?id=([^&]+)/);
+  if (openMatch) {
+    fileId = openMatch[1];
+  }
+  return fileId ? `https://drive.google.com/uc?id=${fileId}` : link;
+};
+
 const Container = styled.div`
   padding-bottom: 10px;
   max-width: 400px;
@@ -102,15 +116,23 @@ export const Photos = ({ state, setState }) => {
     const load = async () => {
       try {
         const urls = await getAllUserPhotos(state.userId);
-        setState(prev => ({ ...prev, photos: urls }));
+        if (urls.length > 0) {
+          setState(prev => ({ ...prev, photos: urls }));
+        } else if (state.photos && state.photos.length > 0) {
+          const converted = state.photos
+            .map(convertDriveLinkToImage)
+            .filter(Boolean);
+          setState(prev => ({ ...prev, photos: converted }));
+        }
       } catch (e) {
         console.error('Error loading photos:', e);
       }
     };
-    if (state.userId && state.userId.length <= 20 && state.photos === undefined) {
+    if (state.userId && state.userId.length <= 20) {
       load();
     }
-  }, [state.userId, state.photos, setState]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.userId, setState]);
 
   const savePhotoList = async updatedPhotos => {
     if (state.userId.length <= 20) {
