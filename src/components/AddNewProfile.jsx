@@ -738,6 +738,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     alert(`Total cards in newUsers: ${count}`);
   };
 
+  const handleClearCache = () => {
+    localStorage.clear();
+    toast.success('Cache cleared');
+  };
+
   const makeIndex = async () => {
     toast.loading('Indexing newUsers 0%', { id: 'index-progress' });
     await createSearchIdsInCollection('newUsers', progress => {
@@ -873,6 +878,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </Button>
               )}
               <Button onClick={handleInfo}>Info</Button>
+              <Button onClick={handleClearCache}>ClearCache</Button>
               <Button
                 onClick={() => {
                   setUsers({});
