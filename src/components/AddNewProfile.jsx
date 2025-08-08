@@ -220,14 +220,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     profileSync.init();
     const cached = profileSync.getData();
-    if (cached) {
+    if (!search && cached) {
       setState(cached);
     }
     const intervalId = setInterval(() => {
       profileSync.pollServer();
     }, 5000);
     return () => clearInterval(intervalId);
-  }, []);
+  }, [search]);
 
   const handleBlur = () => {
     handleSubmit();
