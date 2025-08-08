@@ -72,13 +72,17 @@ export const btnCompare = (index, users, setUsers, setShowInfoModal, setCompare)
   
 
   window.handleClick = (key, nextVal, currentVal, userIdCur, userIdNext) => {
+    if (key === 'myComment') {
+      nextVal = decodeURIComponent(nextVal);
+      currentVal = decodeURIComponent(currentVal);
+    }
     const targetUserId = currentVal ? userIdNext : userIdCur;
     console.log('Target User ID:', targetUserId);
   
     if (users[targetUserId]) {
       const updatedUsers = { ...users };
   
-      if (key === 'getInTouch' || key === 'lastCycle') {
+      if (key === 'getInTouch' || key === 'lastCycle' || key === 'myComment') {
         updatedUsers[targetUserId][key] = currentVal || nextVal;
       } else {
         const mergedValue = mergeValues(key, currentVal, nextVal);
@@ -151,6 +155,11 @@ const handleCompareClick = (e, index, users, delKeys, setShowInfoModal, setCompa
 
     const isUserId = key === 'userId';
 
+    const rawCurrent = [...storedCurrent].join(', ');
+    const rawNext = [...storedNext].join(', ');
+    const encodedCurrent = key === 'myComment' ? encodeURIComponent(rawCurrent) : rawCurrent;
+    const encodedNext = key === 'myComment' ? encodeURIComponent(rawNext) : rawNext;
+
     rows += `
       <tr>
         <td style="width:20%; white-space: normal; word-break: break-word; cursor: pointer;">
@@ -158,13 +167,13 @@ const handleCompareClick = (e, index, users, delKeys, setShowInfoModal, setCompa
         </td>
         <td
           style="width:40%; white-space: normal; word-break: break-word; cursor: ${isUserId ? 'default' : 'pointer'};"
-          ${isUserId ? '' : `onclick="window.handleClick('${key}', '${[...storedNext].join(', ')}', '${[...storedCurrent].join(', ')}', '${currentUser.userId}', '${nextUser?.userId}')"`}
+          ${isUserId ? '' : `onclick="window.handleClick('${key}', '${encodedNext}', '${encodedCurrent}', '${currentUser.userId}', '${nextUser?.userId}')"`}
         >
           ${uniqueCurrent.join(', ') || ''}
         </td>
         <td
           style="width:40%; white-space: normal; word-break: break-word; cursor: ${isUserId ? 'default' : 'pointer'};"
-          ${isUserId ? '' : `onclick="window.handleClick('${key}', '${[...storedCurrent].join(', ')}', '${[...storedNext].join(', ')}', '${nextUser.userId}', '${currentUser?.userId}')"`}
+          ${isUserId ? '' : `onclick="window.handleClick('${key}', '${encodedCurrent}', '${encodedNext}', '${nextUser.userId}', '${currentUser?.userId}')"`}
         >
           ${uniqueNext.join(', ') || ''}
         </td>
