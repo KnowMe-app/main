@@ -5,6 +5,29 @@ import { updateDataInNewUsersRTDB } from './config';
 import { color } from './styles';
 import PhotoViewer from './PhotoViewer';
 
+const convertDriveLinkToImage = link => {
+  if (typeof link !== 'string') return null;
+  try {
+    const url = new URL(link);
+    if (url.hostname !== 'drive.google.com') {
+      return link;
+    }
+    if (url.pathname.startsWith('/file/d/')) {
+      const [, fileId] = url.pathname.split('/file/d/');
+      if (fileId) {
+        return `https://drive.google.com/uc?export=view&id=${fileId.split('/')[0]}`;
+      }
+    }
+    const id = url.searchParams.get('id');
+    if (id) {
+      return `https://drive.google.com/uc?export=view&id=${id}`;
+    }
+    return link;
+  } catch {
+    return link;
+  }
+};
+
 const Container = styled.div`
   padding-bottom: 10px;
   max-width: 400px;
@@ -101,19 +124,31 @@ export const Photos = ({ state, setState }) => {
   useEffect(() => {
     const load = async () => {
       try {
-        const urls = await getAllUserPhotos(state.userId);
-        setState(prev => ({ ...prev, photos: urls }));
+        let urls = [];
+        if (state.userId && state.userId.length <= 20) {
+          urls = await getAllUserPhotos(state.userId);
+        }
+        if (urls.length > 0) {
+          setState(prev => ({ ...prev, photos: urls }));
+        } else if (state.photos) {
+          const existing = Array.isArray(state.photos)
+            ? state.photos
+            : Object.values(state.photos);
+          const converted = existing
+            .map(convertDriveLinkToImage)
+            .filter(Boolean);
+          setState(prev => ({ ...prev, photos: converted }));
+        }
       } catch (e) {
         console.error('Error loading photos:', e);
       }
     };
-    if (state.userId && state.userId.length <= 20 && state.photos === undefined) {
-      load();
-    }
-  }, [state.userId, state.photos, setState]);
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.userId, setState]);
 
   const savePhotoList = async updatedPhotos => {
-    if (state.userId.length <= 20) {
+    if (!state.userId || state.userId.length <= 20) {
       return;
     }
     await updateDataInNewUsersRTDB(state.userId, { photos: updatedPhotos }, 'update');
@@ -154,7 +189,10 @@ export const Photos = ({ state, setState }) => {
       const newUrls = await Promise.all(
         photoArray.map(photo => getUrlofUploadedAvatar(photo, state.userId))
       );
-      const updatedPhotos = [...(state.photos || []), ...newUrls];
+      const existingPhotos = Array.isArray(state.photos)
+        ? state.photos
+        : Object.values(state.photos || {});
+      const updatedPhotos = [...existingPhotos, ...newUrls];
       setState(prevState => ({
         ...prevState,
         photos: updatedPhotos,
