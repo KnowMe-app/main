@@ -27,6 +27,8 @@ export const renderTopBlock = (
   isFromListOfUsers,
   favoriteUsers = {},
   setFavoriteUsers,
+  dislikeUsers = {},
+  setDislikeUsers = () => {},
   currentFilter,
   isDateInRange,
   showUserId = true,
@@ -40,6 +42,8 @@ export const renderTopBlock = (
         userId={userData.userId}
         favoriteUsers={favoriteUsers}
         setFavoriteUsers={setFavoriteUsers}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
       />
       {btnExport(userData)}
       <div>
@@ -47,7 +51,17 @@ export const renderTopBlock = (
         {userData.lastAction && ', '}
         {showUserId && userData.userId}
         {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') &&
-          fieldGetInTouch(userData, setUsers, setState, currentFilter, isDateInRange)}
+          fieldGetInTouch(
+            userData,
+            setUsers,
+            setState,
+            currentFilter,
+            isDateInRange,
+            favoriteUsers,
+            setFavoriteUsers,
+            dislikeUsers,
+            setDislikeUsers,
+          )}
         {fieldRole(userData, setUsers, setState)}
         {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') && fieldLastCycle(userData, setUsers, setState)}
         {fieldDeliveryInfo(setUsers, setState, userData)}
