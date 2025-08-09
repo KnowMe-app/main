@@ -225,10 +225,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setSearch(storedSearch);
         return;
       }
-      const cached = profileSync.getData();
-      if (cached) {
-        setState(cached);
-      }
+
+      // Clear any leftover cached profile data so a blank form is shown
+      profileSync.update(null);
+      setState({});
+
       const intervalId = setInterval(() => {
         profileSync.pollServer();
       }, 5000);
