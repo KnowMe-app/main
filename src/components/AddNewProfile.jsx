@@ -445,6 +445,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
+  const [dislikeUsersData, setDislikeUsersData] = useState({});
 
   useEffect(() => {
     const cacheKey = JSON.stringify({ currentFilter, filters });
@@ -850,6 +851,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 false,
                 favoriteUsersData,
                 setFavoriteUsersData,
+                dislikeUsersData,
+                setDislikeUsersData,
                 currentFilter,
                 isDateInRange,
                 false,
@@ -945,6 +948,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   users={paginatedUsers}
                   favoriteUsers={favoriteUsersData}
                   setFavoriteUsers={setFavoriteUsersData}
+                  dislikeUsers={dislikeUsersData}
+                  setDislikeUsers={setDislikeUsersData}
                   setUsers={setUsers}
                   setSearch={setSearch}
                   setState={setState}

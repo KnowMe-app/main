@@ -10,10 +10,11 @@ import { color } from '../styles';
 export const BtnDislike = ({
   userId,
   dislikeUsers = {},
-  setDislikeUsers,
+  setDislikeUsers = () => {},
   onRemove,
+  onAdd,
   favoriteUsers = {},
-  setFavoriteUsers,
+  setFavoriteUsers = () => {},
   style = {},
 }) => {
   const isDisliked = !!dislikeUsers[userId];
@@ -37,6 +38,7 @@ export const BtnDislike = ({
       try {
         await addDislikeUser(userId);
         setDislikeUsers({ ...dislikeUsers, [userId]: true });
+        if (onAdd) onAdd(userId);
         if (favoriteUsers[userId]) {
           try {
             await removeFavoriteUser(userId);

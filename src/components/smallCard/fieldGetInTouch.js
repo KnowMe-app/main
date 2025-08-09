@@ -1,6 +1,8 @@
 import { handleChange, handleSubmit } from './actions';
 const { formatDateToDisplay, formatDateAndFormula, formatDateToServer } = require('components/inputValidations');
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
+import { BtnDislike } from './btnDislike';
+import { BtnFavorite } from './btnFavorite';
 
 export const fieldGetInTouch = (
   userData,
@@ -8,6 +10,10 @@ export const fieldGetInTouch = (
   setState,
   currentFilter,
   isDateInRange,
+  favoriteUsers = {},
+  setFavoriteUsers = () => {},
+  dislikeUsers = {},
+  setDislikeUsers = () => {},
 ) => {
   const handleSendToEnd = () => {
     handleChange(
@@ -97,7 +103,35 @@ export const fieldGetInTouch = (
       <ActionButton label="3м" days={90} onClick={handleAddDays} />
       <ActionButton label="6м" days={180} onClick={handleAddDays} />
       <ActionButton label="1р" days={365} onClick={handleAddDays} />
-      <ActionButton label="99" onClick={handleSendToEnd} />
+      <BtnDislike
+        userId={userData.userId}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        onAdd={handleSendToEnd}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        style={{
+          position: 'static',
+          width: '25px',
+          height: '25px',
+          marginLeft: '5px',
+          marginRight: 0,
+        }}
+      />
+      <BtnFavorite
+        userId={userData.userId}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        style={{
+          position: 'static',
+          width: '25px',
+          height: '25px',
+          marginLeft: '5px',
+          marginRight: 0,
+        }}
+      />
     </div>
   );
 };

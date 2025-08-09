@@ -84,6 +84,8 @@ const UserCard = ({
   setState,
   favoriteUsers,
   setFavoriteUsers,
+  dislikeUsers,
+  setDislikeUsers,
   currentFilter,
   isDateInRange,
 }) => {
@@ -100,6 +102,8 @@ const UserCard = ({
         'isFromListOfUsers',
         favoriteUsers,
         setFavoriteUsers,
+        dislikeUsers,
+        setDislikeUsers,
         currentFilter,
         isDateInRange,
       )}
@@ -136,6 +140,8 @@ const UsersList = ({
   setCompare,
   favoriteUsers = {},
   setFavoriteUsers,
+  dislikeUsers = {},
+  setDislikeUsers,
   currentFilter,
   isDateInRange,
 }) => {
@@ -201,6 +207,8 @@ const UsersList = ({
                 setState={setState}
                 favoriteUsers={favoriteUsers}
                 setFavoriteUsers={setFavoriteUsers}
+                dislikeUsers={dislikeUsers}
+                setDislikeUsers={setDislikeUsers}
                 currentFilter={currentFilter}
                 isDateInRange={isDateInRange}
               />

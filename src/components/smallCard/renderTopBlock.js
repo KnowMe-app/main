@@ -1,7 +1,6 @@
 import React from 'react';
 import { btnDel } from './btnDel';
 import { btnExport } from './btnExport';
-import { BtnFavorite } from './btnFavorite';
 import { fieldDeliveryInfo } from './fieldDeliveryInfo';
 import { fieldWriter } from './fieldWritter';
 import { fieldContacts } from './fieldContacts';
@@ -26,7 +25,9 @@ export const renderTopBlock = (
   setState,
   isFromListOfUsers,
   favoriteUsers = {},
-  setFavoriteUsers,
+  setFavoriteUsers = () => {},
+  dislikeUsers = {},
+  setDislikeUsers = () => {},
   currentFilter,
   isDateInRange,
   showUserId = true,
@@ -36,19 +37,23 @@ export const renderTopBlock = (
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
       {btnDel(userData, setState, setShowInfoModal, isFromListOfUsers)}
-      <BtnFavorite
-        userId={userData.userId}
-        favoriteUsers={favoriteUsers}
-        setFavoriteUsers={setFavoriteUsers}
-        style={{ bottom: '45px' }}
-      />
       {btnExport(userData)}
       <div>
         {userData.lastAction && formatDateToDisplay(userData.lastAction)}
         {userData.lastAction && ', '}
         {showUserId && userData.userId}
         {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') &&
-          fieldGetInTouch(userData, setUsers, setState, currentFilter, isDateInRange)}
+          fieldGetInTouch(
+            userData,
+            setUsers,
+            setState,
+            currentFilter,
+            isDateInRange,
+            favoriteUsers,
+            setFavoriteUsers,
+            dislikeUsers,
+            setDislikeUsers,
+          )}
         {fieldRole(userData, setUsers, setState)}
         {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') && fieldLastCycle(userData, setUsers, setState)}
         {fieldDeliveryInfo(setUsers, setState, userData)}
