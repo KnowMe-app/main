@@ -145,6 +145,20 @@ export const Photos = ({ state, setState }) => {
         if (changed) {
           setState(prev => ({ ...prev, photos: converted }));
         }
+      } else {
+        const links = Object.entries(state)
+          .filter(([key, value]) =>
+            key.toLowerCase().startsWith('photo') &&
+            key !== 'photos' &&
+            typeof value === 'string' &&
+            value.trim() !== '',
+          )
+          .map(([, value]) => convertDriveLinkToImage(value))
+          .filter(Boolean);
+
+        if (links.length) {
+          setState(prev => ({ ...prev, photos: links }));
+        }
       }
     };
 
