@@ -219,14 +219,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     profileSync.init();
-    const cached = profileSync.getData();
-    if (!search && cached) {
-      setState(cached);
+    if (!search) {
+      const cached = profileSync.getData();
+      if (cached) {
+        setState(cached);
+      }
+      const intervalId = setInterval(() => {
+        profileSync.pollServer();
+      }, 5000);
+      return () => clearInterval(intervalId);
     }
-    const intervalId = setInterval(() => {
-      profileSync.pollServer();
-    }, 5000);
-    return () => clearInterval(intervalId);
   }, [search]);
 
   const handleBlur = () => {
