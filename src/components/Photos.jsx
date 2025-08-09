@@ -119,42 +119,38 @@ export const Photos = ({ state, setState }) => {
   const [viewerIndex, setViewerIndex] = useState(null);
   useEffect(() => {
     const load = async () => {
-      try {
-        const urls = await getAllUserPhotos(state.userId);
-        if (urls.length > 0) {
-          setState(prev => ({ ...prev, photos: urls }));
-          return;
+      if (state.userId && state.userId.length <= 20) {
+        try {
+          const urls = await getAllUserPhotos(state.userId);
+          if (urls.length > 0) {
+            setState(prev => ({ ...prev, photos: urls }));
+            return;
+          }
+        } catch (e) {
+          console.error('Error loading photos:', e);
         }
-      } catch (e) {
-        console.error('Error loading photos:', e);
       }
 
-      const existingPhotos = Array.isArray(state.photos)
-        ? state.photos
-        : Object.values(state.photos || {});
-      if (existingPhotos.length > 0) {
+      if (state.photos) {
+        const existingPhotos = Array.isArray(state.photos)
+          ? state.photos
+          : Object.values(state.photos || {});
         const converted = existingPhotos
           .map(convertDriveLinkToImage)
           .filter(Boolean);
-        setState(prev => ({ ...prev, photos: converted }));
+        const changed =
+          converted.length !== existingPhotos.length ||
+          converted.some((url, idx) => url !== existingPhotos[idx]);
+
+        if (changed) {
+          setState(prev => ({ ...prev, photos: converted }));
+        }
       }
     };
 
-    if (state.userId && state.userId.length <= 20) {
-      load();
-    } else if (state.photos) {
-      const existingPhotos = Array.isArray(state.photos)
-        ? state.photos
-        : Object.values(state.photos);
-      if (existingPhotos.length > 0) {
-        const converted = existingPhotos
-          .map(convertDriveLinkToImage)
-          .filter(Boolean);
-        setState(prev => ({ ...prev, photos: converted }));
-      }
-    }
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.userId, setState]);
+  }, [state.userId, state.photos, setState]);
 
   const savePhotoList = async updatedPhotos => {
     if (state.userId.length <= 20) {
