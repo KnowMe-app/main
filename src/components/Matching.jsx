@@ -905,12 +905,11 @@ const Matching = () => {
     if (restoreRef.current || loading || users.length === 0) return;
     const savedY = sessionStorage.getItem(SCROLL_Y_KEY);
     if (savedY !== null) {
-      const y = Number(savedY);
-      if (Math.abs(window.scrollY - y) > 1) {
-        window.scrollTo(0, y);
-      }
-      restoreRef.current = true;
-      sessionStorage.removeItem(SCROLL_Y_KEY);
+      requestAnimationFrame(() => {
+        window.scrollTo(0, Number(savedY));
+        restoreRef.current = true;
+        sessionStorage.removeItem(SCROLL_Y_KEY);
+      });
     }
   }, [loading, users]);
 
