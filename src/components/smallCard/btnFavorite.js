@@ -14,6 +14,7 @@ export const BtnFavorite = ({
   onRemove,
   dislikeUsers = {},
   setDislikeUsers,
+  style = {},
 }) => {
   const isFavorite = !!favoriteUsers[userId];
 
@@ -72,6 +73,7 @@ export const BtnFavorite = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        ...style,
       }}
       disabled={!auth.currentUser}
       onClick={e => {
