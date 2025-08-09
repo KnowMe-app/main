@@ -7,16 +7,21 @@ import PhotoViewer from './PhotoViewer';
 
 const convertDriveLinkToImage = link => {
   if (typeof link !== 'string') return null;
-  let fileId = null;
-  const fileMatch = link.match(/\/file\/d\/([^/]+)/);
-  if (fileMatch) {
-    fileId = fileMatch[1];
+
+  try {
+    const url = new URL(link);
+
+    if (url.hostname.includes('drive.google.com')) {
+      const fileMatch = url.pathname.match(/\/file\/d\/([^/]+)/);
+      const fileId = fileMatch ? fileMatch[1] : url.searchParams.get('id');
+
+      return fileId ? `https://drive.google.com/uc?id=${fileId}` : link;
+    }
+
+    return link;
+  } catch (e) {
+    return link;
   }
-  const openMatch = link.match(/open\?id=([^&]+)/);
-  if (openMatch) {
-    fileId = openMatch[1];
-  }
-  return fileId ? `https://drive.google.com/uc?id=${fileId}` : link;
 };
 
 const Container = styled.div`
@@ -118,18 +123,35 @@ export const Photos = ({ state, setState }) => {
         const urls = await getAllUserPhotos(state.userId);
         if (urls.length > 0) {
           setState(prev => ({ ...prev, photos: urls }));
-        } else if (state.photos && state.photos.length > 0) {
-          const converted = state.photos
-            .map(convertDriveLinkToImage)
-            .filter(Boolean);
-          setState(prev => ({ ...prev, photos: converted }));
+          return;
         }
       } catch (e) {
         console.error('Error loading photos:', e);
       }
+
+      const existingPhotos = Array.isArray(state.photos)
+        ? state.photos
+        : Object.values(state.photos || {});
+      if (existingPhotos.length > 0) {
+        const converted = existingPhotos
+          .map(convertDriveLinkToImage)
+          .filter(Boolean);
+        setState(prev => ({ ...prev, photos: converted }));
+      }
     };
+
     if (state.userId && state.userId.length <= 20) {
       load();
+    } else if (state.photos) {
+      const existingPhotos = Array.isArray(state.photos)
+        ? state.photos
+        : Object.values(state.photos);
+      if (existingPhotos.length > 0) {
+        const converted = existingPhotos
+          .map(convertDriveLinkToImage)
+          .filter(Boolean);
+        setState(prev => ({ ...prev, photos: converted }));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.userId, setState]);
