@@ -14,6 +14,7 @@ export const BtnDislike = ({
   onRemove,
   favoriteUsers = {},
   setFavoriteUsers,
+  style = {},
 }) => {
   const isDisliked = !!dislikeUsers[userId];
 
@@ -74,6 +75,7 @@ export const BtnDislike = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        ...style,
       }}
       disabled={!auth.currentUser}
       onClick={e => {
