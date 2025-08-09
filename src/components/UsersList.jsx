@@ -1,6 +1,4 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { auth } from './config';
 import { coloredCard, FadeContainer } from './styles';
 import { makeNewUser } from './config';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -87,9 +85,6 @@ const UserCard = ({
   currentFilter,
   isDateInRange,
 }) => {
-  const navigate = useNavigate();
-  const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
-
   return (
     <div>
       {renderTopBlock(
@@ -102,25 +97,10 @@ const UserCard = ({
         setFavoriteUsers,
         currentFilter,
         isDateInRange,
+        false,
       )}
       <div id={userData.userId} style={{ display: 'none' }}>
         {renderFields(userData)}
-      </div>
-      <div
-        onClick={() => {
-          if (isAdmin) {
-            navigate(`/edit/${userData.userId}`, { state: userData });
-          }
-        }}
-        style={{
-          fontSize: '12px',
-          color: 'gray',
-          textAlign: 'right',
-          marginTop: '5px',
-          cursor: isAdmin ? 'pointer' : 'default',
-        }}
-      >
-        ID: {userData.userId ? userData.userId.slice(0, 5) : ''}
       </div>
     </div>
   );
