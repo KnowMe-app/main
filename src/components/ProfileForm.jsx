@@ -5,6 +5,7 @@ import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { color } from './styles';
 import { pickerFieldsExtended as pickerFields } from './formFields';
+import { utilCalculateAge } from './smallCard/utilCalculateAge';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -24,6 +25,96 @@ export const getFieldsToRender = state => {
       ukrainianHint: key,
     })),
   ];
+};
+
+// Рекурсивне відображення всіх полів користувача, включно з вкладеними об'єктами та масивами
+const renderAllFields = (data, parentKey = '') => {
+  if (!data || typeof data !== 'object') {
+    console.error('Invalid data passed to renderAllFields:', data);
+    return null;
+  }
+
+  const extendedData = { ...data };
+  if (typeof extendedData.birth === 'string') {
+    extendedData.age = utilCalculateAge(extendedData.birth);
+  }
+
+  const priority = [
+    'name',
+    'surname',
+    'fathersname',
+    'birth',
+    'blood',
+    'maritalStatus',
+    'csection',
+    'weight',
+    'height',
+    'ownKids',
+    'lastDelivery',
+    'lastCycle',
+    'facebook',
+    'instagram',
+    'telegram',
+    'phone',
+    'tiktok',
+    'vk',
+    'writer',
+    'myComment',
+    'region',
+    'city',
+  ];
+
+  const sortedKeys = Object.keys(extendedData).sort((a, b) => {
+    const indexA = priority.indexOf(a);
+    const indexB = priority.indexOf(b);
+
+    if (indexA === -1 && indexB === -1) return 0;
+    if (indexA === -1) return 1;
+    if (indexB === -1) return -1;
+    return indexA - indexB;
+  });
+
+  return sortedKeys.map(key => {
+    const nestedKey = parentKey ? `${parentKey}.${key}` : key;
+    const value = extendedData[key];
+
+    if (Array.isArray(value)) {
+      return (
+        <div key={nestedKey}>
+          <strong>{key}:</strong>
+          <div style={{ marginLeft: '20px' }}>
+            {value.map((item, idx) =>
+              typeof item === 'object' && item !== null ? (
+                <div key={`${nestedKey}[${idx}]`}>
+                  <strong>[{idx}]:</strong>
+                  <div style={{ marginLeft: '20px' }}>{renderAllFields(item, `${nestedKey}[${idx}]`)}</div>
+                </div>
+              ) : (
+                <div key={`${nestedKey}[${idx}]`}>
+                  <strong>[{idx}]:</strong> {item != null ? item.toString() : '—'}
+                </div>
+              ),
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (typeof value === 'object' && value !== null) {
+      return (
+        <div key={nestedKey}>
+          <strong>{key}:</strong>
+          <div style={{ marginLeft: '20px' }}>{renderAllFields(value, nestedKey)}</div>
+        </div>
+      );
+    }
+
+    return (
+      <div key={nestedKey}>
+        <strong>{key}:</strong> {value != null ? value.toString() : '—'}
+      </div>
+    );
+  });
 };
 
 export const ProfileForm = ({
@@ -73,6 +164,11 @@ export const ProfileForm = ({
 
   return (
     <>
+      {state.userId && (
+        <div id={state.userId} style={{ display: 'none', textAlign: 'left' }}>
+          {renderAllFields(state)}
+        </div>
+      )}
       {sortedFieldsToRender
         .filter(field => !['myComment', 'getInTouch', 'writer'].includes(field.name))
         .map((field, index) => (
