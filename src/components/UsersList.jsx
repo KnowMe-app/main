@@ -36,8 +36,27 @@ const renderFields = (data, parentKey = '') => {
     const nestedKey = parentKey ? `${parentKey}.${key}` : key;
     const value = extendedData[key];
 
-    if (['attitude', 'photos', 'whiteList', 'blackList'].includes(key)) {
+    if (['attitude', 'whiteList', 'blackList'].includes(key)) {
       return null;
+    }
+
+    if (key === 'photos') {
+      const photosArray = Array.isArray(value) ? value : Object.values(value || {});
+      if (!photosArray.length) {
+        return null;
+      }
+      return (
+        <div key={nestedKey}>
+          <strong>{key}:</strong>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '5px' }}>
+            {photosArray.map((url, idx) => (
+              <div key={idx} style={{ wordBreak: 'break-all' }}>
+                {url}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
     }
 
     if (typeof value === 'object' && value !== null) {
