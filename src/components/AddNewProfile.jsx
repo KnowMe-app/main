@@ -220,6 +220,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     profileSync.init();
     if (!search) {
+      const storedSearch = localStorage.getItem(SEARCH_KEY);
+      if (storedSearch) {
+        setSearch(storedSearch);
+        return;
+      }
       const cached = profileSync.getData();
       if (cached) {
         setState(cached);
@@ -228,6 +233,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         profileSync.pollServer();
       }, 5000);
       return () => clearInterval(intervalId);
+    } else {
+      setState({});
     }
   }, [search]);
 
