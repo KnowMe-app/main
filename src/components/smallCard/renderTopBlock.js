@@ -19,6 +19,25 @@ import {
   normalizeRegion,
 } from '../normalizeLocation';
 
+const getParentBackground = element => {
+  let el = element;
+  let bg = window.getComputedStyle(el).backgroundColor;
+  while (el.parentElement && (bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent')) {
+    el = el.parentElement;
+    bg = window.getComputedStyle(el).backgroundColor;
+  }
+  return bg;
+};
+
+const getContrastColor = background => {
+  if (!background) return '#000';
+  const rgb = background.match(/\d+/g);
+  if (!rgb) return '#000';
+  const [r, g, b] = rgb.map(Number);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? '#000' : '#fff';
+};
+
 export const renderTopBlock = (
   userData,
   setUsers,
@@ -96,7 +115,12 @@ export const renderTopBlock = (
         onClick={() => {
           const details = document.getElementById(userData.userId);
           if (details) {
-            details.style.display = details.style.display === 'none' ? 'block' : 'none';
+            const isHidden = details.style.display === 'none';
+            details.style.display = isHidden ? 'block' : 'none';
+            if (isHidden) {
+              const bg = getParentBackground(details);
+              details.style.color = getContrastColor(bg);
+            }
           }
         }}
         style={{ position: 'absolute', bottom: '10px', right: '10px', cursor: 'pointer', color: '#ebe0c2', fontSize: '18px' }}
