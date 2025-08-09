@@ -852,6 +852,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 setFavoriteUsersData,
                 currentFilter,
                 isDateInRange,
+                false,
               )}
             </div>
 

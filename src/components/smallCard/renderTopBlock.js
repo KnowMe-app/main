@@ -29,6 +29,7 @@ export const renderTopBlock = (
   setFavoriteUsers,
   currentFilter,
   isDateInRange,
+  showUserId = true,
 ) => {
   if (!userData) return null;
 
@@ -44,7 +45,7 @@ export const renderTopBlock = (
       <div>
         {userData.lastAction && formatDateToDisplay(userData.lastAction)}
         {userData.lastAction && ', '}
-        {userData.userId}
+        {showUserId && userData.userId}
         {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') &&
           fieldGetInTouch(userData, setUsers, setState, currentFilter, isDateInRange)}
         {fieldRole(userData, setUsers, setState)}
