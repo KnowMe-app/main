@@ -40,7 +40,6 @@ export const renderTopBlock = (
         userId={userData.userId}
         favoriteUsers={favoriteUsers}
         setFavoriteUsers={setFavoriteUsers}
-        style={{ bottom: '45px' }}
       />
       {btnExport(userData)}
       <div>
