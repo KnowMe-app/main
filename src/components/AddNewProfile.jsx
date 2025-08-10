@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
@@ -27,6 +27,7 @@ import {
   fetchTotalNewUsersCount,
   fetchFilteredUsersByPage,
   indexLastLogin,
+  filterMain,
   // removeSpecificSearchId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -661,11 +662,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
-  const loadMoreUsers2 = async (currentFilters = filters) => {
-    let fav = favoriteUsersData;
-    if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
-      fav = await fetchFavoriteUsers(auth.currentUser.uid);
-      setFavoriteUsersData(fav);
+  const loadMoreUsers2 = useCallback(
+    async (currentFilters = filters) => {
+      localStorage.setItem('load2Filters', JSON.stringify(currentFilters));
+      let fav = favoriteUsersData;
+      if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
+        fav = await fetchFavoriteUsers(auth.currentUser.uid);
+        setFavoriteUsersData(fav);
     }
 
     if (isEditingRef.current) return { count: 0, hasMore };
@@ -679,13 +682,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       undefined,
       partial => {
         if (!isEditingRef.current) {
-          setUsers(prev => mergeWithoutOverwrite(prev, partial));
+          setUsers(prev => {
+            const merged = mergeWithoutOverwrite(prev, partial);
+            localStorage.setItem('load2Users', JSON.stringify(merged));
+            return merged;
+          });
         }
       }
     );
     if (res && Object.keys(res.users).length > 0) {
       if (!isEditingRef.current) {
-        setUsers(prev => mergeWithoutOverwrite(prev, res.users));
+        setUsers(prev => {
+          const merged = mergeWithoutOverwrite(prev, res.users);
+          localStorage.setItem('load2Users', JSON.stringify(merged));
+          return merged;
+        });
       }
       setDateOffset2(res.lastKey);
       setHasMore(res.hasMore);
@@ -694,8 +705,33 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
     setHasMore(false);
     return { count: 0, hasMore: false };
-  };
+  },
+  [favoriteUsersData, filters, dateOffset2, hasMore]
+  );
 
+  useEffect(() => {
+    if (currentFilter !== 'DATE2') return;
+    const entries = Object.entries(users);
+    const filtered = filterMain(entries, 'DATE2', filters, favoriteUsersData);
+    if (filtered.length !== entries.length) {
+      const nextUsers = {};
+      filtered.forEach(([id, data]) => {
+        nextUsers[id] = data;
+      });
+      setUsers(nextUsers);
+      localStorage.setItem('load2Users', JSON.stringify(nextUsers));
+      const needed = currentPage * PAGE_SIZE;
+      let loaded = filtered.length;
+      let more = hasMore;
+      (async () => {
+        while (more && loaded < needed) {
+          const { count, hasMore: nextMore } = await loadMoreUsers2();
+          loaded += count;
+          more = nextMore;
+        }
+      })();
+    }
+  }, [users, filters, currentFilter, currentPage, hasMore, favoriteUsersData, loadMoreUsers2]);
 
   const handlePageChange = async page => {
     const needed = page * PAGE_SIZE;
