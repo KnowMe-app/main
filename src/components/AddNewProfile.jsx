@@ -234,10 +234,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         profileSync.pollServer();
       }, 5000);
       return () => clearInterval(intervalId);
-    } else {
+    } else if (search !== state.userId) {
       setState({});
     }
-  }, [search]);
+  }, [search, state.userId]);
 
   const handleBlur = () => {
     handleSubmit();
