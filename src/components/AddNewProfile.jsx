@@ -670,6 +670,61 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (isEditingRef.current) return { count: 0, hasMore };
 
+    const cacheKey = JSON.stringify({ currentFilter: 'DATE2', filters: currentFilters });
+    if (dateOffset2 === 0) {
+      const cached = loadAddCache(cacheKey);
+      if (cached && cached.users) {
+        const today = new Date().toISOString().split('T')[0];
+        const isValid = d => {
+          if (!d) return true;
+          if (d === '2099-99-99' || d === '9999-99-99') return false;
+          return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
+        };
+        const validEntries = Object.entries(cached.users).filter(([, u]) =>
+          isValid(u.getInTouch)
+        );
+        const validUsers = Object.fromEntries(validEntries.slice(0, PAGE_SIZE));
+        if (validEntries.length >= PAGE_SIZE) {
+          if (!isEditingRef.current) {
+            setUsers(prev => mergeWithoutOverwrite(prev, validUsers));
+          }
+          setDateOffset2(cached.lastKey);
+          setHasMore(cached.hasMore);
+          return { count: Object.keys(validUsers).length, hasMore: cached.hasMore };
+        }
+        if (!isEditingRef.current && validEntries.length > 0) {
+          setUsers(prev => mergeWithoutOverwrite(prev, validUsers));
+        }
+        const resFromCache = await fetchFilteredUsersByPage(
+          validEntries.length,
+          undefined,
+          undefined,
+          currentFilters,
+          fav,
+          undefined,
+          partial => {
+            if (!isEditingRef.current) {
+              setUsers(prev => mergeWithoutOverwrite(prev, partial));
+            }
+          }
+        );
+        if (resFromCache && Object.keys(resFromCache.users).length > 0) {
+          if (!isEditingRef.current) {
+            setUsers(prev => mergeWithoutOverwrite(prev, resFromCache.users));
+          }
+          const combined = { ...validUsers, ...resFromCache.users };
+          setDateOffset2(resFromCache.lastKey);
+          setHasMore(resFromCache.hasMore);
+          return {
+            count: Object.keys(combined).length,
+            hasMore: resFromCache.hasMore,
+          };
+        }
+        setHasMore(false);
+        return { count: Object.keys(validUsers).length, hasMore: false };
+      }
+    }
+
     const res = await fetchFilteredUsersByPage(
       dateOffset2,
       undefined,
