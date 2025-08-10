@@ -165,7 +165,10 @@ export const ProfileForm = ({
   return (
     <>
       {state.userId && (
-        <div id={state.userId} style={{ display: 'none', textAlign: 'left' }}>
+        <div
+          id={state.userId}
+          style={{ display: 'none', textAlign: 'left', marginBottom: '8px' }}
+        >
           {renderAllFields(state)}
         </div>
       )}
