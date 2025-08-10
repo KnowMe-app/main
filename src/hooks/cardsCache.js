@@ -1,6 +1,6 @@
 const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-export const createCache = prefix => {
+export const createCache = (prefix, ttl = TTL_MS) => {
   const CACHE_PREFIX = `${prefix}:`;
 
   const loadCache = key => {
@@ -9,7 +9,11 @@ export const createCache = prefix => {
       const raw = localStorage.getItem(CACHE_PREFIX + key);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (!parsed.timestamp || Date.now() - parsed.timestamp > TTL_MS) {
+      if (
+        ttl &&
+        parsed.timestamp &&
+        Date.now() - parsed.timestamp > ttl
+      ) {
         localStorage.removeItem(CACHE_PREFIX + key);
         return null;
       }
@@ -22,7 +26,9 @@ export const createCache = prefix => {
   const saveCache = (key, data) => {
     if (!key) return;
     try {
-      const record = { data, timestamp: Date.now() };
+      const record = ttl
+        ? { data, timestamp: Date.now() }
+        : { data };
       localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(record));
     } catch {
       // ignore write errors
