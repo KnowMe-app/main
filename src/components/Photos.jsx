@@ -117,11 +117,23 @@ const HiddenFileInput = styled.input`
 
 export const Photos = ({ state, setState }) => {
   const [viewerIndex, setViewerIndex] = useState(null);
+  const photoKeys = Object.keys(state).filter(
+    k => k.toLowerCase().startsWith('photo') && k !== 'photos'
+  );
+  const photoValues = photoKeys.map(k => state[k]).join('|');
+
   useEffect(() => {
+    console.log('useEffect triggered', {
+      userId: state.userId,
+      photos: state.photos,
+      photoValues,
+    });
     const load = async () => {
       if (state.userId && state.userId.length <= 20) {
         try {
+          console.log('Fetching photos for user', state.userId);
           const urls = await getAllUserPhotos(state.userId);
+          console.log('Fetched URLs', urls);
           if (urls.length > 0) {
             setState(prev => ({ ...prev, photos: urls }));
             return;
@@ -135,9 +147,11 @@ export const Photos = ({ state, setState }) => {
         const existingPhotos = Array.isArray(state.photos)
           ? state.photos
           : Object.values(state.photos || {});
+        console.log('Existing photos', existingPhotos);
         const converted = existingPhotos
           .map(convertDriveLinkToImage)
           .filter(Boolean);
+        console.log('Converted photos', converted);
         const changed =
           converted.length !== existingPhotos.length ||
           converted.some((url, idx) => url !== existingPhotos[idx]);
@@ -155,6 +169,7 @@ export const Photos = ({ state, setState }) => {
           )
           .map(([, value]) => convertDriveLinkToImage(value))
           .filter(Boolean);
+        console.log('Links from state', links);
 
         if (links.length) {
           setState(prev => ({ ...prev, photos: links }));
@@ -164,7 +179,7 @@ export const Photos = ({ state, setState }) => {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.userId, state.photos, setState]);
+  }, [state.userId, state.photos, photoValues, setState]);
 
   const savePhotoList = async updatedPhotos => {
     if (state.userId.length <= 20) {
@@ -231,7 +246,9 @@ export const Photos = ({ state, setState }) => {
                   src={url}
                   alt={`user avatar ${index}`}
                   onClick={() => setViewerIndex(index)}
+                  onLoad={() => console.log('Image loaded', url)}
                   onError={e => {
+                    console.error('Image failed to load', url, e);
                     e.target.onerror = null;
                     e.target.src = '/logo192.png';
                   }}
