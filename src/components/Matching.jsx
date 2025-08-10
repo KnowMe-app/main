@@ -1103,7 +1103,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [fetchChunk, filters]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [fetchChunk]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const loadFavoriteCards = async () => {
     const owner = auth.currentUser?.uid;
@@ -1224,7 +1224,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [hasMore, lastKey, viewMode, fetchChunk, filters]);
+  }, [hasMore, lastKey, viewMode, fetchChunk]);
 
   useEffect(() => {
     const savedSearch = localStorage.getItem(SEARCH_KEY);
