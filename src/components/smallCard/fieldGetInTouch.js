@@ -61,7 +61,6 @@ export const fieldGetInTouch = (
 
   const handleDislike = async e => {
     e.stopPropagation();
-    handleSendToEnd();
     if (!auth.currentUser) {
       alert('Please sign in to manage dislikes');
       return;
@@ -72,10 +71,20 @@ export const fieldGetInTouch = (
         const updated = { ...dislikeUsers };
         delete updated[userData.userId];
         setDislikeUsers(updated);
+        handleChange(
+          setUsers,
+          setState,
+          userData.userId,
+          'getInTouch',
+          '',
+          true,
+          { currentFilter, isDateInRange }
+        );
       } catch (error) {
         console.error('Failed to remove dislike:', error);
       }
     } else {
+      handleSendToEnd();
       try {
         await addDislikeUser(userData.userId);
         const updated = { ...dislikeUsers, [userData.userId]: true };
@@ -125,6 +134,15 @@ export const fieldGetInTouch = (
           const upd = { ...dislikeUsers };
           delete upd[userData.userId];
           setDislikeUsers(upd);
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            'getInTouch',
+            '',
+            true,
+            { currentFilter, isDateInRange }
+          );
         }
       } catch (error) {
         console.error('Failed to add favorite:', error);
@@ -198,6 +216,7 @@ export const fieldGetInTouch = (
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          border: isDisliked ? '2px solid black' : 'none',
         }}
       >
         <svg
@@ -225,6 +244,7 @@ export const fieldGetInTouch = (
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          border: isFavorite ? '2px solid black' : 'none',
         }}
       >
         <svg
