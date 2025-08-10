@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAutoResize } from '../hooks/useAutoResize';
 import styled from 'styled-components';
+import { createCache } from '../hooks/cardsCache';
 
 const SearchIcon = (
   <svg
@@ -79,6 +80,9 @@ const ClearButton = styled.button`
   }
 `;
 
+const { loadCache: loadSearchCache, saveCache: saveSearchCache } =
+  createCache('searchResults');
+
 const SearchBar = ({
   searchFunc,
   setUsers,
@@ -118,6 +122,17 @@ const SearchBar = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const cachedSearch = async params => {
+    const key = JSON.stringify(params);
+    const cached = loadSearchCache(key);
+    if (cached) return cached;
+    const res = await searchFunc(params);
+    if (res && Object.keys(res).length > 0) {
+      saveSearchCache(key, res);
+    }
+    return res;
+  };
+
   const processUserSearch = async (platform, parseFunction, inputData) => {
     setUsers && setUsers({});
     const id = parseFunction(inputData.trim());
@@ -125,7 +140,7 @@ const SearchBar = ({
     if (id) {
       const result = { [platform]: id };
       onSearchKey && onSearchKey(result);
-      const res = await searchFunc(result);
+      const res = await cachedSearch(result);
       if (!res || Object.keys(res).length === 0) {
         setUserNotFound && setUserNotFound(true);
       } else {
@@ -154,7 +169,7 @@ const SearchBar = ({
       if (values.length > 0) {
         const results = {};
         for (const val of values) {
-          const res = await searchFunc({ name: val });
+          const res = await cachedSearch({ name: val });
           if (!res || Object.keys(res).length === 0) {
             results[`new_${val}`] = { _notFound: true, searchVal: val };
           } else if ('userId' in res) {
@@ -268,19 +283,19 @@ const SearchBar = ({
     if (await processUserSearch('phone', parsePhoneNumber, query)) return;
     if (await processUserSearch('other', parseOtherContact, query)) return;
 
-    let res = await searchFunc({ name: query.trim() });
+    let res = await cachedSearch({ name: query.trim() });
     onSearchKey && onSearchKey({ name: query.trim() });
     if (!res || Object.keys(res).length === 0) {
       const cleanedQuery = query.replace(/^ук\s*см\s*/i, '').trim();
       if (cleanedQuery && cleanedQuery !== query.trim()) {
-        res = await searchFunc({ name: cleanedQuery });
+          res = await cachedSearch({ name: cleanedQuery });
         onSearchKey && onSearchKey({ name: cleanedQuery });
       }
     }
     if (!res || Object.keys(res).length === 0) {
       const withPrefix = /^ук\s*см/i.test(query) ? null : `УК СМ ${query.trim()}`;
       if (withPrefix) {
-        res = await searchFunc({ name: withPrefix });
+          res = await cachedSearch({ name: withPrefix });
         onSearchKey && onSearchKey({ name: withPrefix });
       }
     }
