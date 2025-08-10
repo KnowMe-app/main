@@ -123,6 +123,7 @@ export const renderTopBlock = (
           if (details) {
             const isHidden = details.style.display === 'none';
             details.style.display = isHidden ? 'block' : 'none';
+            details.style.marginTop = isHidden ? '8px' : '0';
             if (isHidden) {
               const bg = getParentBackground(details);
               details.style.color = getContrastColor(bg);
