@@ -80,8 +80,45 @@ const ClearButton = styled.button`
   }
 `;
 
+const HistoryList = styled.ul`
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #ccc;
+  z-index: 10;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+`;
+
+const HistoryItem = styled.li`
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 10px;
+  cursor: pointer;
+
+  &:hover {
+    background-color: #f0f0f0;
+  }
+`;
+
+const HistoryRemove = styled.button`
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: gray;
+
+  &:hover {
+    color: black;
+  }
+`;
+
 const { loadCache: loadSearchCache, saveCache: saveSearchCache } =
   createCache('searchResults');
+const { loadCache: loadHistoryCache, saveCache: saveHistoryCache } =
+  createCache('searchHistory', 0);
 
 const SearchBar = ({
   searchFunc,
@@ -106,6 +143,33 @@ const SearchBar = ({
 
   const textareaRef = useRef(null);
   useAutoResize(textareaRef, search);
+
+  const [history, setHistory] = useState(
+    () => loadHistoryCache('queries') || [],
+  );
+  const [showHistory, setShowHistory] = useState(false);
+
+  const addToHistory = value => {
+    const trimmedVal = value.trim();
+    if (!trimmedVal) return;
+    setHistory(prev => {
+      const newHistory = [
+        trimmedVal,
+        ...prev.filter(v => v !== trimmedVal),
+      ].slice(0, 5);
+      saveHistoryCache('queries', newHistory);
+      return newHistory;
+    });
+  };
+
+  const removeFromHistory = (val, e) => {
+    e.stopPropagation();
+    setHistory(prev => {
+      const newHistory = prev.filter(v => v !== val);
+      saveHistoryCache('queries', newHistory);
+      return newHistory;
+    });
+  };
 
   useEffect(() => {
     if (search) {
@@ -160,6 +224,9 @@ const SearchBar = ({
     setUserNotFound && setUserNotFound(false);
     setState && setState({});
     const trimmed = query?.trim();
+    if (trimmed) {
+      addToHistory(trimmed);
+    }
     if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
       const inside = trimmed.slice(1, -1);
       const matches = inside.match(/"[^"]+"|[^\s,;]+/g) || [];
@@ -320,7 +387,11 @@ const SearchBar = ({
           rows={1}
           value={search || ''}
           onChange={e => setSearch(e.target.value)}
-          onBlur={() => writeData()}
+          onFocus={() => setShowHistory(true)}
+          onBlur={() => {
+            setTimeout(() => setShowHistory(false), 100);
+            writeData();
+          }}
         />
         {search && (
           <ClearButton
@@ -334,6 +405,26 @@ const SearchBar = ({
           </ClearButton>
         )}
       </InputFieldContainer>
+      {showHistory && history.length > 0 && (
+        <HistoryList>
+          {history.map(item => (
+            <HistoryItem
+              key={item}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => {
+                setSearch(item);
+                setShowHistory(false);
+                writeData(item);
+              }}
+            >
+              <span>{item}</span>
+              <HistoryRemove onClick={e => removeFromHistory(item, e)}>
+                &times;
+              </HistoryRemove>
+            </HistoryItem>
+          ))}
+        </HistoryList>
+      )}
     </InputDiv>
   );
 };
