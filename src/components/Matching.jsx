@@ -30,6 +30,7 @@ import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { loadCache, saveCache } from "../hooks/cardsCache";
+import { getCacheKey, clearAllCardsCache } from "../utils/cache";
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaArrowDown } from 'react-icons/fa';
@@ -934,6 +935,8 @@ const Matching = () => {
     setUsers(arr);
     setHasMore(false);
     await loadCommentsFor(arr);
+    setLastKey(null);
+    setViewMode('search');
   };
 
   useEffect(() => {
@@ -1048,7 +1051,7 @@ const Matching = () => {
         exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
       }
 
-      const cacheKey = JSON.stringify(filters || {});
+      const cacheKey = getCacheKey('default');
       const cached = loadCache(cacheKey);
       if (cached) {
         console.log('[loadInitial] using cache', cached.users.length);
@@ -1106,13 +1109,28 @@ const Matching = () => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
     setLoading(true);
+    setUsers([]);
+    const cacheKey = getCacheKey('favorite');
+    const cached = loadCache(cacheKey);
+    if (cached) {
+      loadedIdsRef.current = new Set(cached.users.map(u => u.userId));
+      setUsers(cached.users);
+      await loadCommentsFor(cached.users);
+      setHasMore(false);
+      setLastKey(null);
+      setViewMode('favorites');
+      setLoading(false);
+      return;
+    }
     const loaded = await fetchFavoriteUsersData(owner);
+    const list = Object.values(loaded);
     loadedIdsRef.current = new Set(Object.keys(loaded));
-    setUsers(Object.values(loaded));
-    await loadCommentsFor(Object.values(loaded));
+    setUsers(list);
+    await loadCommentsFor(list);
     setHasMore(false);
     setLastKey(null);
     setViewMode('favorites');
+    saveCache(cacheKey, { users: list });
     setLoading(false);
   };
 
@@ -1130,6 +1148,20 @@ const Matching = () => {
     setLoading(false);
   };
 
+  const searchUsers = async params => {
+    const [key, value] = Object.entries(params)[0] || [];
+    const term = key && value ? `${key}=${value}` : undefined;
+    const cacheKey = getCacheKey('search', term);
+    const cached = loadCache(cacheKey);
+    if (cached) return cached.raw;
+    const res = await searchUsersOnly(params);
+    if (res && Object.keys(res).length > 0) {
+      const arr = Array.isArray(res) ? res : Object.values(res);
+      saveCache(cacheKey, { raw: res, users: arr });
+    }
+    return res;
+  };
+
   const handleExit = async () => {
     try {
       localStorage.removeItem('isLoggedIn');
@@ -1138,6 +1170,7 @@ const Matching = () => {
       saveScrollPosition();
       navigate('/my-profile');
       await signOut(auth);
+      clearAllCardsCache();
     } catch (error) {
       console.error('Error signing out:', error);
     }
@@ -1176,7 +1209,7 @@ const Matching = () => {
         const map = new Map(prev.map(u => [u.userId, u]));
         unique.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
-        const cacheKey = JSON.stringify(filters || {});
+        const cacheKey = getCacheKey('default');
         saveCache(cacheKey, { users: result, lastKey: res.lastKey, hasMore: res.hasMore });
         return result;
       });
@@ -1235,7 +1268,7 @@ const Matching = () => {
       {showFilters && <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />}
       <FilterContainer show={showFilters} onClick={e => e.stopPropagation()}>
         <SearchBar
-          searchFunc={searchUsersOnly}
+          searchFunc={searchUsers}
           setUsers={applySearchResults}
           setUserNotFound={() => {}}
           wrapperStyle={{ width: '100%', marginBottom: '10px' }}

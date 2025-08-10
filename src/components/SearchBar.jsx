@@ -116,8 +116,6 @@ const HistoryRemove = styled.button`
   }
 `;
 
-const { loadCache: loadSearchCache, saveCache: saveSearchCache } =
-  createCache('searchResults');
 const { loadCache: loadHistoryCache, saveCache: saveHistoryCache } =
   createCache('searchHistory', 0);
 
@@ -188,14 +186,7 @@ const SearchBar = ({
   }, []);
 
   const cachedSearch = async params => {
-    const key = JSON.stringify(params);
-    const cached = loadSearchCache(key);
-    if (cached) return cached;
-    const res = await searchFunc(params);
-    if (res && Object.keys(res).length > 0) {
-      saveSearchCache(key, res);
-    }
-    return res;
+    return await searchFunc(params);
   };
 
   const processUserSearch = async (platform, parseFunction, inputData) => {
