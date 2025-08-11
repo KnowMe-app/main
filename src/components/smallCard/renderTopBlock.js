@@ -49,7 +49,6 @@ export const renderTopBlock = (
   setDislikeUsers = () => {},
   currentFilter,
   isDateInRange,
-  showUserId = true,
 ) => {
   if (!userData) return null;
 
@@ -60,7 +59,7 @@ export const renderTopBlock = (
       <div>
         {userData.lastAction && formatDateToDisplay(userData.lastAction)}
         {userData.lastAction && ', '}
-        {showUserId && userData.userId}
+        {userData.userId}
         {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') &&
           fieldGetInTouch(
             userData,
