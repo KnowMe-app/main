@@ -15,7 +15,9 @@ const convertDriveLinkToImage = link => {
       const fileMatch = url.pathname.match(/\/file\/d\/([^/]+)/);
       const fileId = fileMatch ? fileMatch[1] : url.searchParams.get('id');
 
-      return fileId ? `https://drive.google.com/uc?id=${fileId}` : link;
+      return fileId
+        ? `https://drive.google.com/uc?export=view&id=${fileId}`
+        : link;
     }
 
     return link;
