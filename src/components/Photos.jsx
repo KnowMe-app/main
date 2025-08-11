@@ -117,6 +117,11 @@ const HiddenFileInput = styled.input`
 
 export const Photos = ({ state, setState }) => {
   const [viewerIndex, setViewerIndex] = useState(null);
+  const photoKeys = Object.keys(state).filter(
+    k => k.toLowerCase().startsWith('photo') && k !== 'photos'
+  );
+  const photoValues = photoKeys.map(k => state[k]);
+
   useEffect(() => {
     const load = async () => {
       if (state.userId && state.userId.length <= 20) {
@@ -164,7 +169,7 @@ export const Photos = ({ state, setState }) => {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.userId, state.photos, setState]);
+  }, [state.userId, state.photos, setState, ...photoValues]);
 
   const savePhotoList = async updatedPhotos => {
     if (state.userId.length <= 20) {
