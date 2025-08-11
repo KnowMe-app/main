@@ -1185,6 +1185,7 @@ const Matching = () => {
     loadingRef.current = true;
     setLoading(true);
     try {
+      const cacheKey = getCacheKey('default');
       const exclude = new Set([
         ...Object.keys(favoriteUsersRef.current),
         ...Object.keys(dislikeUsersRef.current),
@@ -1209,7 +1210,6 @@ const Matching = () => {
         const map = new Map(prev.map(u => [u.userId, u]));
         unique.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
-        const cacheKey = getCacheKey('default');
         saveCache(cacheKey, { users: result, lastKey: res.lastKey, hasMore: res.hasMore });
         return result;
       });
