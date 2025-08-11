@@ -177,9 +177,9 @@ export const ProfileForm = ({
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
                 {state[field.name].map((value, idx) => (
                   <InputDiv key={`${field.name}-${idx}`}>
-                    <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
+                    <InputFieldContainer fieldName={field.name} value={value}>
                       <InputField
-                        fieldName={`${field.name}-${idx}`}
+                        fieldName={field.name}
                         as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
                         ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
                         inputMode={field.name === 'phone' ? 'numeric' : 'text'}
@@ -241,7 +241,7 @@ export const ProfileForm = ({
                       let value = e?.target?.value;
                       if (field.name === 'publish') {
                         value = value.toLowerCase() === 'true';
-                      } else if (field.name === 'telgram') {
+                      } else if (field.name === 'telegram') {
                         value = e?.target?.value;
                       }
                       setState(prevState => ({

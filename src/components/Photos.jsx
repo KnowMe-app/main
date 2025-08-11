@@ -117,7 +117,13 @@ const HiddenFileInput = styled.input`
 
 export const Photos = ({ state, setState }) => {
   const [viewerIndex, setViewerIndex] = useState(null);
+  const photoKeys = Object.keys(state).filter(
+    k => k.toLowerCase().startsWith('photo') && k !== 'photos'
+  );
+  const photoValues = photoKeys.map(k => state[k]);
+
   useEffect(() => {
+    console.log('Photos effect triggered', { photoValues, photos: state.photos });
     const load = async () => {
       if (state.userId && state.userId.length <= 20) {
         try {
@@ -164,7 +170,7 @@ export const Photos = ({ state, setState }) => {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.userId, state.photos, setState]);
+  }, [state.userId, state.photos, ...photoValues]);
 
   const savePhotoList = async updatedPhotos => {
     if (state.userId.length <= 20) {
@@ -231,7 +237,9 @@ export const Photos = ({ state, setState }) => {
                   src={url}
                   alt={`user avatar ${index}`}
                   onClick={() => setViewerIndex(index)}
+                  onLoad={() => console.log('loaded image', url)}
                   onError={e => {
+                    console.error('failed image', url);
                     e.target.onerror = null;
                     e.target.src = '/logo192.png';
                   }}
