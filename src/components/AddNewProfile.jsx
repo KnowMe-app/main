@@ -285,6 +285,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         await updateDataInNewUsersRTDB(state.userId, state, 'update');
       }
     }
+
+    profileSync.update(updatedState);
+    setUsers(prev => ({ ...prev, [updatedState.userId]: updatedState }));
   };
 
   const handleExit = async () => {
