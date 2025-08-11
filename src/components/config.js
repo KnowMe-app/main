@@ -413,7 +413,7 @@ const searchByPrefixesUsers = async (searchValue, uniqueUserIds, users) => {
   }
 };
 
-const searchUserByPartialUserIdUsers = async (userId, users) => {
+export const searchUserByPartialUserIdUsers = async (userId, users) => {
   try {
     const refToCollection = ref2(database, 'users');
     const partialQuery = query(refToCollection, orderByKey(), startAt(userId), endAt(userId + '\uf8ff'));
@@ -421,7 +421,7 @@ const searchUserByPartialUserIdUsers = async (userId, users) => {
     if (snapshot.exists()) {
       snapshot.forEach(userSnapshot => {
         const currentUserId = userSnapshot.key;
-        if (currentUserId.includes(userId) && currentUserId.length > 20) {
+        if (currentUserId.includes(userId)) {
           users[currentUserId] = { userId: currentUserId, ...userSnapshot.val() };
         }
       });
@@ -441,10 +441,7 @@ export const searchUsersOnly = async searchedValue => {
   try {
     await searchBySearchIdUsers(modifiedSearchValue, uniqueUserIds, users);
     await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
-    await searchUserByPartialUserIdUsers(searchValue, users);
-    for (const id of Object.keys(users)) {
-      if (id.length <= 20) delete users[id];
-    }
+    await searchUserByPartialUserId(searchValue, users);
 
     if (Object.keys(users).length === 1) {
       const id = Object.keys(users)[0];
@@ -509,7 +506,7 @@ const makeSearchKeyValue = searchedValue => {
   return { searchKey, searchValue, modifiedSearchValue, searchIdKey };
 };
 
-const searchUserByPartialUserId = async (userId, users) => {
+export const searchUserByPartialUserId = async (userId, users) => {
   try {
     const collections = ['users', 'newUsers']; // Масив колекцій, де здійснюється пошук
 
