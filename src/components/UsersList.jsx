@@ -101,7 +101,6 @@ const UserCard = ({
         setDislikeUsers,
         currentFilter,
         isDateInRange,
-        false,
       )}
       <div id={userData.userId} style={{ display: 'none' }}>
         {renderFields(userData)}

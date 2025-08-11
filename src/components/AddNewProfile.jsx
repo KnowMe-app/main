@@ -921,7 +921,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 setDislikeUsersData,
                 currentFilter,
                 isDateInRange,
-                false,
               )}
             </div>
 
