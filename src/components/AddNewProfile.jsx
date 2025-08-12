@@ -54,6 +54,11 @@ import { onValue, ref } from 'firebase/database';
 // import { aiHandler } from './aiHandler';
 import { createLocalFirstSync } from '../hooks/localServerSync';
 import { createCache } from '../hooks/cardsCache';
+import {
+  buildAddCacheKey,
+  setAddCacheKeys,
+  setFavoriteIds,
+} from 'utils/cache';
 
 const Container = styled.div`
   display: flex;
@@ -192,7 +197,11 @@ const ButtonsContainer = styled.div`
 const profileSync = createLocalFirstSync('pendingProfile', null, ({ data }) =>
   data?.userId ? data : makeNewUser(data),
 );
-const { loadCache: loadAddCache, saveCache: saveAddCache } = createCache('addCache');
+const {
+  loadCache: loadAddCache,
+  saveCache: saveAddCache,
+  mergeCache: mergeAddCache,
+} = createCache('addCache');
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
@@ -451,9 +460,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [dislikeUsersData, setDislikeUsersData] = useState({});
 
   useEffect(() => {
-    const cacheKey = JSON.stringify({ currentFilter, filters });
-    saveAddCache(cacheKey, { users, lastKey, hasMore, totalCount });
-  }, [users, lastKey, hasMore, totalCount, currentFilter, filters]);
+    const cacheKey = buildAddCacheKey(currentFilter, filters, search);
+    mergeAddCache(cacheKey, { users, lastKey, hasMore, totalCount });
+  }, [users, lastKey, hasMore, totalCount, currentFilter, filters, search]);
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   const isDateInRange = dateStr => {
@@ -474,7 +483,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const favRef = ref(database, `multiData/favorites/${ownerId}`);
     const unsubscribe = onValue(favRef, snap => {
-      setFavoriteUsersData(snap.exists() ? snap.val() : {});
+      const fav = snap.exists() ? snap.val() : {};
+      setFavoriteUsersData(fav);
+      setFavoriteIds(fav);
     });
 
     return () => unsubscribe();
@@ -496,7 +507,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [filters]);
 
   useEffect(() => {
-    const cacheKey = JSON.stringify({ currentFilter, filters });
+    const cacheKey = buildAddCacheKey(currentFilter, filters, search);
+    setAddCacheKeys(cacheKey, buildAddCacheKey('FAVORITE', filters, search));
     const cached = loadAddCache(cacheKey);
     if (cached) {
       setUsers(cached.users || {});
@@ -519,7 +531,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
     // loadMoreUsers depends on many state values, so we skip it from the deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, currentFilter]);
+  }, [filters, currentFilter, search]);
 
 
   const [adding, setAdding] = useState(false);
@@ -647,6 +659,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // Оновлюємо стан користувачів
       // Оновлюємо стан користувачів
       setUsers(prevUsers => mergeWithoutOverwrite(prevUsers, newUsers)); // Додаємо нових користувачів до попередніх без перезапису
+      const cacheKey = buildAddCacheKey(filterForload, currentFilters, search);
+      mergeAddCache(cacheKey, {
+        users: newUsers,
+        lastKey: res.lastKey,
+        hasMore: res.hasMore,
+        totalCount: res.totalCount,
+      });
       if (filterForload === 'DATE') {
         setDateOffset(prev => prev + PAGE_SIZE);
         setHasMore(res.hasMore);
@@ -673,7 +692,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (isEditingRef.current) return { count: 0, hasMore };
 
-    const cacheKey = JSON.stringify({ currentFilter: 'DATE2', filters: currentFilters });
+    const cacheKey = buildAddCacheKey('DATE2', currentFilters, search);
     if (dateOffset2 === 0) {
       const cached = loadAddCache(cacheKey);
       if (cached && cached.users) {
@@ -693,6 +712,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           }
           setDateOffset2(cached.lastKey);
           setHasMore(cached.hasMore);
+          mergeAddCache(cacheKey, {
+            users: validUsers,
+            lastKey: cached.lastKey,
+            hasMore: cached.hasMore,
+          });
           return { count: Object.keys(validUsers).length, hasMore: cached.hasMore };
         }
         if (!isEditingRef.current && validEntries.length > 0) {
@@ -718,12 +742,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           const combined = { ...validUsers, ...resFromCache.users };
           setDateOffset2(resFromCache.lastKey);
           setHasMore(resFromCache.hasMore);
+          mergeAddCache(cacheKey, {
+            users: combined,
+            lastKey: resFromCache.lastKey,
+            hasMore: resFromCache.hasMore,
+          });
           return {
             count: Object.keys(combined).length,
             hasMore: resFromCache.hasMore,
           };
         }
         setHasMore(false);
+        mergeAddCache(cacheKey, {
+          users: validUsers,
+          lastKey: null,
+          hasMore: false,
+        });
         return { count: Object.keys(validUsers).length, hasMore: false };
       }
     }
@@ -747,10 +781,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
       setDateOffset2(res.lastKey);
       setHasMore(res.hasMore);
+      mergeAddCache(cacheKey, {
+        users: res.users,
+        lastKey: res.lastKey,
+        hasMore: res.hasMore,
+      });
       const count = Object.keys(res.users).length;
       return { count, hasMore: res.hasMore };
     }
     setHasMore(false);
+    mergeAddCache(cacheKey, { users: {}, lastKey: null, hasMore: false });
     return { count: 0, hasMore: false };
   };
 

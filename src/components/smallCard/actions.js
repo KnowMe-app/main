@@ -1,4 +1,5 @@
 import { fetchUserById, updateDataInNewUsersRTDB } from "components/config";
+import { updateCachedUser } from "utils/cache";
 import { formatDateAndFormula } from "components/inputValidations";
 import { makeUploadedInfo } from "components/makeUploadedInfo";
 
@@ -103,6 +104,7 @@ export const handleSubmit = async userData => {
   console.log('cleanedStateForNewUsers!!!!!!!!!!!!!!', cleanedStateForNewUsers);
 
   await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
+  updateCachedUser({ ...cleanedStateForNewUsers, userId: userData.userId });
 };
 
 export const handleSubmitAll = async userData => {
@@ -118,4 +120,5 @@ export const handleSubmitAll = async userData => {
   const formattedDate = `${year}-${month}-${day}`; // Формат YYYY-MM-DD
   uploadedInfo.lastAction = formattedDate;
   await updateDataInNewUsersRTDB(userData.userId, uploadedInfo, 'update');
+  updateCachedUser({ ...uploadedInfo, userId: userData.userId });
 };
