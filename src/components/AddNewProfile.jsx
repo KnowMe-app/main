@@ -199,7 +199,6 @@ const profileSync = createLocalFirstSync('pendingProfile', null, ({ data }) =>
 );
 const {
   loadCache: loadAddCache,
-  saveCache: saveAddCache,
   mergeCache: mergeAddCache,
 } = createCache('addCache');
 
