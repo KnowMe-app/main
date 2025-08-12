@@ -35,13 +35,30 @@ export const createCache = (prefix, ttl = TTL_MS) => {
     }
   };
 
+  const mergeCache = (key, partial) => {
+    if (!key || !partial) return;
+    try {
+      const existing = loadCache(key) || {};
+      const merged = {
+        ...existing,
+        ...partial,
+        ...(existing.users || partial.users
+          ? { users: { ...(existing.users || {}), ...(partial.users || {}) } }
+          : {}),
+      };
+      saveCache(key, merged);
+    } catch {
+      saveCache(key, partial);
+    }
+  };
+
   const clearCache = key => {
     if (!key) return;
     localStorage.removeItem(CACHE_PREFIX + key);
   };
 
-  return { loadCache, saveCache, clearCache };
+  return { loadCache, saveCache, clearCache, mergeCache };
 };
 
 // default cache for matching to keep backward compatibility
-export const { loadCache, saveCache, clearCache } = createCache('matchingCache');
+export const { loadCache, saveCache, clearCache, mergeCache } = createCache('matchingCache');
