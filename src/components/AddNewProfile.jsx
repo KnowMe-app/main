@@ -242,8 +242,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         profileSync.pollServer();
       }, 5000);
       return () => clearInterval(intervalId);
-    } else if (search !== state.userId) {
-      setState({});
     }
   }, [search, state.userId]);
 
