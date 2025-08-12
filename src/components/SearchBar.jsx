@@ -309,12 +309,12 @@ const SearchBar = ({
     };
 
     const parseUserId = input => {
-      if (typeof input === 'string' && input.length === 20 && input.startsWith('-')) return input;
-      const alphanumericPattern = /^[a-zA-Z0-9]{28}$/;
-      if (alphanumericPattern.test(input)) return input;
-      const pattern = /(?:\bId\s*[:\s]+\s*)(\w+)/i;
-      const match = input.match(pattern);
-      if (match && match[1]) return match[1];
+      if (typeof input !== 'string') return null;
+      const trimmed = input.trim();
+      const pattern = /(?:\bId\s*[:\s]+)(\w+)/i;
+      const match = trimmed.match(pattern);
+      const candidate = (match ? match[1] : trimmed).trim();
+      if (/^-?[a-zA-Z0-9]{4,}$/.test(candidate)) return candidate;
       return null;
     };
 
