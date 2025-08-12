@@ -12,6 +12,7 @@ import {
   removeFavoriteUser,
   auth,
 } from '../config';
+import { updateCachedUser, setFavoriteIds } from 'utils/cache';
 
 export const fieldGetInTouch = (
   userData,
@@ -98,6 +99,8 @@ export const fieldGetInTouch = (
           const upd = { ...favoriteUsers };
           delete upd[userData.userId];
           setFavoriteUsers(upd);
+          setFavoriteIds(upd);
+          updateCachedUser(userData, { forceFavorite: true, removeFavorite: true });
         }
       } catch (error) {
         console.error('Failed to add dislike:', error);
@@ -117,6 +120,8 @@ export const fieldGetInTouch = (
         const updated = { ...favoriteUsers };
         delete updated[userData.userId];
         setFavoriteUsers(updated);
+        setFavoriteIds(updated);
+        updateCachedUser(userData, { forceFavorite: true, removeFavorite: true });
       } catch (error) {
         console.error('Failed to remove favorite:', error);
       }
@@ -125,6 +130,8 @@ export const fieldGetInTouch = (
         await addFavoriteUser(userData.userId);
         const updated = { ...favoriteUsers, [userData.userId]: true };
         setFavoriteUsers(updated);
+        setFavoriteIds(updated);
+        updateCachedUser(userData, { forceFavorite: true });
         if (dislikeUsers[userData.userId]) {
           try {
             await removeDislikeUser(userData.userId);

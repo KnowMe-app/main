@@ -6,9 +6,11 @@ import {
   auth,
 } from '../config';
 import { color } from '../styles';
+import { updateCachedUser, setFavoriteIds } from 'utils/cache';
 
 export const BtnFavorite = ({
   userId,
+  userData = {},
   favoriteUsers = {},
   setFavoriteUsers,
   onRemove,
@@ -28,6 +30,8 @@ export const BtnFavorite = ({
         const updated = { ...favoriteUsers };
         delete updated[userId];
         setFavoriteUsers(updated);
+        setFavoriteIds(updated);
+        updateCachedUser(userData || { userId }, { forceFavorite: true, removeFavorite: true });
         if (onRemove) onRemove(userId);
       } catch (error) {
         console.error('Failed to remove favorite:', error);
@@ -35,7 +39,10 @@ export const BtnFavorite = ({
     } else {
       try {
         await addFavoriteUser(userId);
-        setFavoriteUsers({ ...favoriteUsers, [userId]: true });
+        const updatedFav = { ...favoriteUsers, [userId]: true };
+        setFavoriteUsers(updatedFav);
+        setFavoriteIds(updatedFav);
+        updateCachedUser(userData || { userId }, { forceFavorite: true });
         if (dislikeUsers[userId]) {
           try {
             await removeDislikeUser(userId);

@@ -716,6 +716,7 @@ const SwipeableCard = ({
       )}
       <BtnFavorite
         userId={user.userId}
+        userData={user}
         favoriteUsers={favoriteUsers}
         setFavoriteUsers={setFavoriteUsers}
         dislikeUsers={dislikeUsers}
