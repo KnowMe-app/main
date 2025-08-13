@@ -38,10 +38,26 @@ export const createLocalFirstSync = (storageKey, initialData = null, remotePush)
       load();
     },
     getData: () => data,
-    update: newData => {
+    update: async newData => {
       data = newData;
-      save();
-      push();
+      const id = newData?.userId ?? newData?.updatedState?.userId;
+
+      if (!id && typeof remotePush === 'function') {
+        try {
+          const res = await remotePush({ data });
+          if (res) {
+            data = res;
+          }
+        } catch {
+          // ignore network errors
+        }
+        save();
+      } else {
+        save();
+        push();
+      }
+
+      return data;
     },
     pollServer: () => {
       push();
