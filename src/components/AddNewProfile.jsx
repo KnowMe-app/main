@@ -264,36 +264,37 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
 
-    if (updatedState?.userId?.length > 20) {
-      const { existingData } = await fetchUserById(updatedState.userId);
+    const syncedState = await profileSync.update(updatedState);
+    setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
+
+    if (syncedState?.userId?.length > 20) {
+      const { existingData } = await fetchUserById(syncedState.userId);
 
       const cleanedState = Object.fromEntries(
-        Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
+        Object.entries(syncedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
       );
 
       const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
 
       if (!makeIndex) {
-        await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
-        await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
+        await Promise.all([
+          updateDataInRealtimeDB(syncedState.userId, uploadedInfo, 'update'),
+          updateDataInFiresoreDB(syncedState.userId, uploadedInfo, 'check', delCondition),
+        ]);
       }
 
       const cleanedStateForNewUsers = Object.fromEntries(
-        Object.entries(updatedState).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key))
+        Object.entries(syncedState).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key))
       );
 
-      await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update');
+      await updateDataInNewUsersRTDB(syncedState.userId, cleanedStateForNewUsers, 'update');
     } else {
-      console.log('kkkkkkkkkk :>> ');
       if (newState) {
-        await updateDataInNewUsersRTDB(state.userId, newState, 'update');
+        await updateDataInNewUsersRTDB(syncedState.userId, newState, 'update');
       } else {
-        await updateDataInNewUsersRTDB(state.userId, state, 'update');
+        await updateDataInNewUsersRTDB(syncedState.userId, syncedState, 'update');
       }
     }
-
-    profileSync.update(updatedState);
-    setUsers(prev => ({ ...prev, [updatedState.userId]: updatedState }));
   };
 
   const handleExit = async () => {
@@ -536,7 +537,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleAddUser = async () => {
     setAdding(true);
     const newProfile = await makeNewUser(searchKeyValuePair);
-    profileSync.update(newProfile);
+    await profileSync.update(newProfile);
     setState(newProfile);
     setUserNotFound(false);
     setAdding(false);

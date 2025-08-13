@@ -103,8 +103,8 @@ export const handleSubmit = async userData => {
 
   console.log('cleanedStateForNewUsers!!!!!!!!!!!!!!', cleanedStateForNewUsers);
 
-  await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
   updateCachedUser({ ...cleanedStateForNewUsers, userId: userData.userId });
+  await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
 };
 
 export const handleSubmitAll = async userData => {
@@ -119,6 +119,6 @@ export const handleSubmitAll = async userData => {
   const day = String(currentDate.getDate()).padStart(2, '0');
   const formattedDate = `${year}-${month}-${day}`; // Формат YYYY-MM-DD
   uploadedInfo.lastAction = formattedDate;
-  await updateDataInNewUsersRTDB(userData.userId, uploadedInfo, 'update');
   updateCachedUser({ ...uploadedInfo, userId: userData.userId });
+  await updateDataInNewUsersRTDB(userData.userId, uploadedInfo, 'update');
 };
