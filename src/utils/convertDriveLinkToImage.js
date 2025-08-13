@@ -3,6 +3,13 @@ export const convertDriveLinkToImage = link => {
 
   try {
     const url = new URL(link);
+    // Skip processing for Firestore or Firebase Storage links
+    if (
+      url.hostname.includes('firebasestorage.googleapis.com') ||
+      url.hostname.includes('firestore.googleapis.com')
+    ) {
+      return link;
+    }
 
     if (url.hostname.includes('drive.google.com')) {
       const fileMatch = url.pathname.match(/\/file\/d\/([^/]+)/);
