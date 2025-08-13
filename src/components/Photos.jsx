@@ -1,7 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
-import { deletePhotos, getUrlofUploadedAvatar, getAllUserPhotos } from './config';
-import { updateDataInNewUsersRTDB } from './config';
+import {
+  deletePhotos,
+  getUrlofUploadedAvatar,
+  getAllUserPhotos,
+  updateDataInRealtimeDB,
+  updateDataInFiresoreDB,
+  updateDataInNewUsersRTDB,
+} from './config';
 import { color } from './styles';
 import PhotoViewer from './PhotoViewer';
 
@@ -184,10 +190,24 @@ export const Photos = ({ state, setState }) => {
   }, [state.userId, state.photos, photoValues, setState]);
 
   const savePhotoList = async updatedPhotos => {
-    if (state.userId.length <= 20) {
-      return;
+    await updateDataInRealtimeDB(
+      state.userId,
+      { photos: updatedPhotos },
+      'update'
+    );
+    await updateDataInFiresoreDB(
+      state.userId,
+      { photos: updatedPhotos },
+      'update'
+    );
+
+    if (state.userId.length > 20) {
+      await updateDataInNewUsersRTDB(
+        state.userId,
+        { photos: updatedPhotos },
+        'update'
+      );
     }
-    await updateDataInNewUsersRTDB(state.userId, { photos: updatedPhotos }, 'update');
   };
 
   const handleDeletePhoto = async index => {
