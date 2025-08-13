@@ -4,27 +4,7 @@ import { deletePhotos, getUrlofUploadedAvatar, getAllUserPhotos } from './config
 import { updateDataInNewUsersRTDB } from './config';
 import { color } from './styles';
 import PhotoViewer from './PhotoViewer';
-
-const convertDriveLinkToImage = link => {
-  if (typeof link !== 'string') return null;
-
-  try {
-    const url = new URL(link);
-
-    if (url.hostname.includes('drive.google.com')) {
-      const fileMatch = url.pathname.match(/\/file\/d\/([^/]+)/);
-      const fileId = fileMatch ? fileMatch[1] : url.searchParams.get('id');
-
-      return fileId
-        ? `https://drive.google.com/uc?export=view&id=${fileId}`
-        : link;
-    }
-
-    return link;
-  } catch (e) {
-    return link;
-  }
-};
+import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 
 const Container = styled.div`
   padding-bottom: 10px;

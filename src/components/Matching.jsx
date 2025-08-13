@@ -39,6 +39,7 @@ import {
   normalizeCountry,
   normalizeRegion,
 } from './normalizeLocation';
+import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 
 const Container = styled.div`
   display: flex;
@@ -547,8 +548,10 @@ const SwipeableCard = ({
 
   const slides = React.useMemo(() => {
     const photosArr = Array.isArray(user.photos)
-      ? user.photos.filter(Boolean)
-      : [getCurrentValue(user.photos)].filter(Boolean);
+      ? user.photos.filter(Boolean).map(convertDriveLinkToImage)
+      : [getCurrentValue(user.photos)]
+          .filter(Boolean)
+          .map(convertDriveLinkToImage);
     const base = photo ? ['main', 'info'] : ['info'];
     if (showDescriptionSlide) base.push('description');
     base.push(...photosArr.slice(1));
@@ -1293,8 +1296,10 @@ const Matching = () => {
           <Grid ref={gridRef}>
             {filteredUsers.map(user => {
               const photos = Array.isArray(user.photos)
-                ? user.photos.filter(Boolean)
-                : [getCurrentValue(user.photos)].filter(Boolean);
+                ? user.photos.filter(Boolean).map(convertDriveLinkToImage)
+                : [getCurrentValue(user.photos)]
+                    .filter(Boolean)
+                    .map(convertDriveLinkToImage);
               const photo = photos[0];
               const nextPhoto = photos[1];
               const thirdPhoto = photos[2];
