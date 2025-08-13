@@ -237,6 +237,19 @@ export const Photos = ({ state, setState }) => {
     }
   };
 
+  const handlePhotoClick = (url, index) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname.includes('drive.google.com')) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        return;
+      }
+    } catch {
+      // ignore malformed URLs and fallback to viewer
+    }
+    setViewerIndex(index);
+  };
+
   return (
     <Container>
       <PhotosWrapper>
@@ -247,7 +260,7 @@ export const Photos = ({ state, setState }) => {
                 <PhotoImage
                   src={url}
                   alt={`user avatar ${index}`}
-                  onClick={() => setViewerIndex(index)}
+                  onClick={() => handlePhotoClick(url, index)}
                   onLoad={() => console.log('Image loaded', url)}
                   onError={e => {
                     console.error('Image failed to load', url, e);
