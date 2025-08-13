@@ -450,7 +450,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [currentFilter, setCurrentFilter] = useState(null);
+  const [currentFilter, setCurrentFilter] = useState('DATE2');
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
@@ -757,6 +757,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         });
         return { count: Object.keys(validUsers).length, hasMore: false };
       }
+      setHasMore(false);
+      mergeAddCache(cacheKey, { users: {}, lastKey: null, hasMore: false });
+      return { count: 0, hasMore: false };
     }
 
     const res = await fetchFilteredUsersByPage(
