@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import styled, { css } from 'styled-components';
 import Photos from './Photos';
 import { inputUpdateValue } from './inputUpdatedValue';
@@ -131,25 +131,6 @@ export const ProfileForm = ({
   const autoResizeMyComment = useAutoResize(textareaRef, state.myComment);
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
 
-  const [toastEnabled, setToastEnabled] = useState(false);
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-
-  const toggleToast = () => setToastEnabled(prev => !prev);
-
-  const triggerToast = (key, value) => {
-    if (toastEnabled) {
-      setToastMessage(`${key}:${value}`);
-      setToastVisible(true);
-      setTimeout(() => setToastVisible(false), 2000);
-    }
-  };
-
-  const submitWithToast = async (key, value, newState, overwrite) => {
-    await handleSubmit(newState, overwrite);
-    triggerToast(key, value);
-  };
-
   const priorityOrder = [
     'birth',
     'name',
@@ -183,7 +164,6 @@ export const ProfileForm = ({
 
   return (
     <>
-      {toastVisible && <Toast>{toastMessage}</Toast>}
       {state.userId && (
         <div
           id={state.userId}
@@ -224,15 +204,7 @@ export const ProfileForm = ({
                             [field.name]: prevState[field.name].map((item, i) => (i === idx ? updatedValue : item)),
                           }));
                         }}
-                        onBlur={async e => {
-                          const newState = {
-                            ...state,
-                            [field.name]: state[field.name].map((item, i) =>
-                              i === idx ? e.target.value : item
-                            ),
-                          };
-                          await submitWithToast(field.name, e.target.value, newState, 'overwrite');
-                        }}
+                        onBlur={() => handleBlur(`${field.name}-${idx}`)}
                       />
                       {(value || value === '') && (
                           <ClearButton
@@ -282,10 +254,7 @@ export const ProfileForm = ({
                           : value,
                       }));
                     }}
-                    onBlur={async e => {
-                      const newState = { ...state, [field.name]: e.target.value };
-                      await submitWithToast(field.name, e.target.value, newState, 'overwrite');
-                    }}
+                    onBlur={() => handleSubmit(state, 'overwrite')}
                   />
                   {state[field.name] && (
                     <ClearButton
@@ -297,34 +266,12 @@ export const ProfileForm = ({
                     </ClearButton>
                   )}
                   {state[field.name] && (
-                    <>
-                      <DelKeyValueBTN
-                        onMouseDown={e => e.preventDefault()}
-                        onClick={() => handleDelKeyValue(field.name)}
-                      >
-                        del
-                      </DelKeyValueBTN>
-                      {index === 0 && (
-                        <ToastToggleBTN
-                          type="button"
-                          active={toastEnabled}
-                          onMouseDown={e => e.preventDefault()}
-                          onClick={toggleToast}
-                        >
-                          <svg
-                            width="24"
-                            height="24"
-                            viewBox="0 0 24 24"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path
-                              d="M4 7c0-3 3-5 8-5s8 2 8 5c0 1.1-.9 2-2 2v10c0 1.1-.9 2-2 2H8c-1.1 0-2-.9-2-2V9c-1.1 0-2-.9-2-2z"
-                              fill={toastEnabled ? 'orange' : 'gray'}
-                            />
-                          </svg>
-                        </ToastToggleBTN>
-                      )}
-                    </>
+                    <DelKeyValueBTN
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => handleDelKeyValue(field.name)}
+                    >
+                      del
+                    </DelKeyValueBTN>
                   )}
                 </InputFieldContainer>
 
@@ -348,14 +295,16 @@ export const ProfileForm = ({
                     marginBottom: Array.isArray(state[field.name]) ? '14px' : '0',
                     marginLeft: '10px',
                   }}
-                  onClick={async () => {
-                    const updatedField =
-                      Array.isArray(state[field.name]) && state[field.name].length > 0
-                        ? [...state[field.name], '']
-                        : [state[field.name], ''];
-                    const newState = { ...state, [field.name]: updatedField };
-                    setState(newState);
-                    await submitWithToast(field.name, '', newState, 'overwrite');
+                  onClick={() => {
+                    setState(prevState => {
+                      const updatedField =
+                        Array.isArray(prevState[field.name]) && prevState[field.name].length > 0
+                          ? [...prevState[field.name], '']
+                          : [prevState[field.name], ''];
+                      const newState = { ...prevState, [field.name]: updatedField };
+                      handleSubmit(newState, 'overwrite');
+                      return newState;
+                    });
                   }}
                 >
                   +
@@ -366,37 +315,44 @@ export const ProfileForm = ({
               field.options.length === 2 ? (
                 <ButtonGroup>
                   <Button
-                    onClick={async () => {
-                      const newState = {
-                        ...state,
-                        [field.name]: 'Yes',
-                      };
-                      setState(newState);
-                      await submitWithToast(field.name, 'Yes', newState, 'overwrite');
+                    onClick={() => {
+                      setState(prevState => {
+                        const newState = {
+                          ...prevState,
+                          [field.name]: 'Yes',
+                        };
+                        handleSubmit(newState, 'overwrite');
+                        return newState;
+                      });
                     }}
                   >
                     Так
                   </Button>
                   <Button
-                    onClick={async () => {
-                      const newState = {
-                        ...state,
-                        [field.name]: 'No',
-                      };
-                      setState(newState);
-                      await submitWithToast(field.name, 'No', newState, 'overwrite');
+                    onClick={() => {
+                      setState(prevState => {
+                        const newState = {
+                          ...prevState,
+                          [field.name]: 'No',
+                        };
+                        handleSubmit(newState, 'overwrite');
+                        return newState;
+                      });
                     }}
                   >
                     Ні
                   </Button>
                   <Button
-                    onClick={async () => {
-                      const newState = {
-                        ...state,
-                        [field.name]: 'Other',
-                      };
-                      setState(newState);
-                      await submitWithToast(field.name, 'Other', newState, 'overwrite');
+                    onClick={() => {
+                      setState(prevState => {
+                        const newState = {
+                          ...prevState,
+                          [field.name]: 'Other',
+                        };
+                        handleSubmit(newState, 'overwrite');
+                        handleBlur(field.name);
+                        return newState;
+                      });
                     }}
                   >
                     Інше
@@ -405,37 +361,43 @@ export const ProfileForm = ({
               ) : field.options.length === 3 ? (
                 <ButtonGroup>
                   <Button
-                    onClick={async () => {
-                      const newState = {
-                        ...state,
-                        [field.name]: '-',
-                      };
-                      setState(newState);
-                      await submitWithToast(field.name, '-', newState, 'overwrite');
+                    onClick={() => {
+                      setState(prevState => {
+                        const newState = {
+                          ...prevState,
+                          [field.name]: '-',
+                        };
+                        handleSubmit(newState, 'overwrite');
+                        return newState;
+                      });
                     }}
                   >
                     Ні
                   </Button>
                   <Button
-                    onClick={async () => {
-                      const newState = {
-                        ...state,
-                        [field.name]: '1',
-                      };
-                      setState(newState);
-                      await submitWithToast(field.name, '1', newState, 'overwrite');
+                    onClick={() => {
+                      setState(prevState => {
+                        const newState = {
+                          ...prevState,
+                          [field.name]: '1',
+                        };
+                        handleSubmit(newState, 'overwrite');
+                        return newState;
+                      });
                     }}
                   >
                     1
                   </Button>
                   <Button
-                    onClick={async () => {
-                      const newState = {
-                        ...state,
-                        [field.name]: '2',
-                      };
-                      setState(newState);
-                      await submitWithToast(field.name, '2', newState, 'overwrite');
+                    onClick={() => {
+                      setState(prevState => {
+                        const newState = {
+                          ...prevState,
+                          [field.name]: '2',
+                        };
+                        handleSubmit(newState, 'overwrite');
+                        return newState;
+                      });
                     }}
                   >
                     2
@@ -610,20 +572,6 @@ const DelKeyValueBTN = styled.button`
   }
 `;
 
-const ToastToggleBTN = styled.button`
-  position: absolute;
-  right: 45px;
-  top: 35px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  width: 35px;
-  height: 35px;
-`;
-
 const ButtonGroup = styled.div`
   display: flex;
   gap: 8px;
@@ -651,16 +599,5 @@ const Button = styled.button`
   &:active {
     transform: scale(0.98);
   }
-`;
-
-const Toast = styled.div`
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background-color: #333;
-  color: #fff;
-  padding: 10px 20px;
-  border-radius: 5px;
-  z-index: 1000;
 `;
 
