@@ -456,6 +456,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [dateOffset2, setDateOffset2] = useState(0);
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
   const [dislikeUsersData, setDislikeUsersData] = useState({});
+  const [isToastOn, setIsToastOn] = useState(false);
 
   useEffect(() => {
     const cacheKey = buildAddCacheKey(currentFilter, filters, search);
@@ -994,6 +995,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 setDislikeUsersData,
                 currentFilter,
                 isDateInRange,
+                isToastOn,
+                setIsToastOn,
               )}
             </div>
 

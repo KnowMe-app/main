@@ -2,6 +2,7 @@ import { fetchUserById, updateDataInNewUsersRTDB } from "components/config";
 import { updateCachedUser } from "utils/cache";
 import { formatDateAndFormula } from "components/inputValidations";
 import { makeUploadedInfo } from "components/makeUploadedInfo";
+import toast from 'react-hot-toast';
 
 export const handleChange = (
   setUsers,
@@ -10,7 +11,8 @@ export const handleChange = (
   key,
   value,
   click,
-  options = {}
+  options = {},
+  isToastOn = false
 ) => {
   const newValue = key === 'getInTouch' || key === 'lastCycle' ? formatDateAndFormula(value) : value;
 
@@ -25,7 +27,7 @@ export const handleChange = (
 
       if (!isMultiple) {
         const newState = { ...prevState, [key]: newValue };
-        click && handleSubmit({ ...newState, userId: userId || newState.userId });
+        click && handleSubmit({ ...newState, userId: userId || newState.userId }, 'overwrite', isToastOn);
         return newState;
       } else {
         const newState = {
@@ -35,7 +37,7 @@ export const handleChange = (
             [key]: newValue,
           },
         };
-        click && handleSubmit({ ...newState[userId], userId }, 'overwrite');
+        click && handleSubmit({ ...newState[userId], userId }, 'overwrite', isToastOn);
         return newState;
       }
     });
@@ -48,7 +50,7 @@ export const handleChange = (
           [key]: newValue,
         },
       };
-      click && handleSubmit({ ...newState[userId], userId }, 'overwrite');
+      click && handleSubmit({ ...newState[userId], userId }, 'overwrite', isToastOn);
       return newState;
     });
   }
@@ -69,7 +71,7 @@ export const handleChange = (
   }
 };
 
-export const handleSubmit = async userData => {
+export const handleSubmit = async (userData, condition, isToastOn) => {
   const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
   const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
   const commonFields = ['lastAction', 'lastLogin2'];
@@ -105,6 +107,9 @@ export const handleSubmit = async userData => {
 
   updateCachedUser({ ...cleanedStateForNewUsers, userId: userData.userId });
   await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
+  if (isToastOn) {
+    toast.success('Дані збережено', { duration: 2000 });
+  }
 };
 
 export const handleSubmitAll = async userData => {

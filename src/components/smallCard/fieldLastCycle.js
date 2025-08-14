@@ -43,7 +43,7 @@ const calculateNextDate = dateString => {
   // return `${dayFormatted}.${monthFormatted}`;
 };
 
-export const fieldLastCycle = (userData, setUsers, setState) => {
+export const fieldLastCycle = (userData, setUsers, setState, isToastOn) => {
   const nextCycle = calculateNextDate(userData.lastCycle);
 
   return (
@@ -66,7 +66,7 @@ export const fieldLastCycle = (userData, setUsers, setState) => {
             const serverFormattedDate = formatDateToServer(e.target.value);
             handleChange(setUsers, setState, userData.userId, 'lastCycle', serverFormattedDate);
           }}
-          onBlur={() => handleSubmit(userData, 'overwrite')}
+          onBlur={() => handleSubmit(userData, 'overwrite', isToastOn)}
           // placeholder="01.01.2021"
           style={{
             marginLeft: 0,
@@ -87,6 +87,8 @@ export const fieldLastCycle = (userData, setUsers, setState) => {
                   'getInTouch',
                   nextCycle,
                   true,
+                  {},
+                  isToastOn,
                 )
               }
               style={{ backgroundColor: '#007BFF' }}

@@ -2,7 +2,7 @@ import { handleChange, handleSubmit } from './actions';
 import { useRef } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize';
 
-export const FieldComment = ({ userData, setUsers, setState }) => {
+export const FieldComment = ({ userData, setUsers, setState, isToastOn }) => {
   // console.log('userData in RenderCommentInput :>> ', userData);
   const textareaRef = useRef(null);
   const autoResize = useAutoResize(textareaRef, userData.myComment);
@@ -30,7 +30,7 @@ export const FieldComment = ({ userData, setUsers, setState }) => {
           handleInputChange(e);
           autoResize(e.target);
         }}
-        onBlur={() => handleSubmit(userData, 'overwrite')}
+        onBlur={() => handleSubmit(userData, 'overwrite', isToastOn)}
         style={{
           // marginLeft: '10px',
           width: '100%',
