@@ -1,4 +1,5 @@
 import { createCache } from 'hooks/cardsCache';
+import { updateCard, addCardToList, removeCardFromList } from './cardsStorage';
 
 // Builds a cache key for cards list depending on mode and optional search term
 export const getCacheKey = (mode, term) =>
@@ -29,6 +30,11 @@ export const setAddCacheKeys = (activeKey, favoriteKey) => {
 
 export const setFavoriteIds = fav => {
   favoriteIds = fav || {};
+  try {
+    localStorage.setItem('favorite', JSON.stringify(Object.keys(favoriteIds)));
+  } catch {
+    // ignore write errors
+  }
 };
 
 const isFavorite = id => !!favoriteIds[id];
@@ -46,16 +52,23 @@ export const updateCachedUser = (
   if (currentAddCacheKey) {
     mergeAddCache(currentAddCacheKey, { users: { [user.userId]: user } });
   }
+  updateCard(user.userId, user);
   const shouldFav = forceFavorite || isFavorite(user.userId);
-  if (shouldFav && favoriteAddCacheKey) {
+  if (favoriteAddCacheKey) {
     if (removeFavorite) {
       const cached = loadAddCacheUtil(favoriteAddCacheKey) || {};
       if (cached.users) {
         delete cached.users[user.userId];
         saveAddCacheUtil(favoriteAddCacheKey, cached);
       }
-    } else {
+      removeCardFromList(user.userId, 'favorite');
+    } else if (shouldFav) {
       mergeAddCache(favoriteAddCacheKey, { users: { [user.userId]: user } });
+      addCardToList(user.userId, 'favorite');
     }
+  } else if (removeFavorite) {
+    removeCardFromList(user.userId, 'favorite');
+  } else if (shouldFav) {
+    addCardToList(user.userId, 'favorite');
   }
 };
