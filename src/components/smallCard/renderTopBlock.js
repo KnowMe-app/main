@@ -58,7 +58,9 @@ export const renderTopBlock = (
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
       {btnDel(userData, setState, setShowInfoModal, isFromListOfUsers)}
-      <BtnToast isToastOn={isToastOn} setIsToastOn={setIsToastOn} />
+      {!isFromListOfUsers && (
+        <BtnToast isToastOn={isToastOn} setIsToastOn={setIsToastOn} />
+      )}
       {btnExport(userData)}
       <div>
         {userData.lastAction && formatDateToDisplay(userData.lastAction)}
