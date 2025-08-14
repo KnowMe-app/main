@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAutoResize } from '../hooks/useAutoResize';
 import styled from 'styled-components';
-import { createCache } from '../hooks/cardsCache';
+import { createCache, loadCache } from '../hooks/cardsCache';
+import { getCacheKey } from '../utils/cache';
 
 const SearchIcon = (
   <svg
@@ -119,6 +120,116 @@ const HistoryRemove = styled.button`
 const { loadCache: loadHistoryCache, saveCache: saveHistoryCache } =
   createCache('searchHistory', 0);
 
+const parseFacebookId = url => {
+  const idParamRegex = /[?&]id=(\d+)/;
+  const matchIdParam = url.match(idParamRegex);
+  if (matchIdParam && matchIdParam[1]) return matchIdParam[1];
+  const facebookIdRegex = /facebook\.com\/(?:.*\/)?(\d+)$/;
+  const matchId = url.match(facebookIdRegex);
+  if (matchId && matchId[1]) return matchId[1];
+  const facebookUsernameRegex = /facebook\.com\/([\w.-]+)(?:[/?#]|$)/;
+  const matchUsername = url.match(facebookUsernameRegex);
+  if (matchUsername && matchUsername[1]) return matchUsername[1];
+  const numberRegex = /^\d{14,15}$/;
+  if (numberRegex.test(url)) return url;
+  const textFormatRegex = /(?:facebook|fb|фейсбук|фб)\s*:?\s*(\w+)/i;
+  const matchTextFormat = url.match(textFormatRegex);
+  if (matchTextFormat && matchTextFormat[1]) return matchTextFormat[1];
+  return null;
+};
+
+const parseInstagramId = input => {
+  if (typeof input === 'string' && input.includes('instagram')) {
+    const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
+    const match = input.match(instagramRegex);
+    if (match && match[1]) return match[1];
+  }
+  const pattern = /(?:\binst(?:agram)?\s*:?\s+|\binstagram\s*:?\s+|\bін(?:ст|стаграм)?\s*:?\s+|\bin\s*:?\s+)([a-zA-Z0-9._]+)/i;
+  const match = input.match(pattern);
+  if (match && match[1]) return match[1];
+  return null;
+};
+
+const parsePhoneNumber = phone => {
+  const cleanedPhone = phone.replace(/[\s()\-+]/g, '');
+  const digitCount = (cleanedPhone.match(/\d/g) || []).length;
+  if (digitCount < 10) return;
+  if (cleanedPhone.startsWith('0')) return '380' + cleanedPhone.slice(1);
+  if (cleanedPhone.startsWith('(')) {
+    const numberAfterCleaning = cleanedPhone.slice(1);
+    const cleanedAfterParenthesis = numberAfterCleaning.replace(/[\s()\-+]/g, '');
+    if (/^\d{10}$/.test(cleanedAfterParenthesis)) {
+      return '38' + cleanedAfterParenthesis.slice(1);
+    }
+  }
+  if (cleanedPhone.startsWith('38')) return cleanedPhone;
+  return;
+};
+
+const parseEmail = email => {
+  const cleanedEmail = email.trim().toLowerCase();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(cleanedEmail)) return;
+  const domain = cleanedEmail.split('@')[1];
+  if (!domain || !domain.includes('.')) return;
+  return cleanedEmail;
+};
+
+const parseTikTokLink = url => {
+  const tiktokRegex = /tiktok\.com\/(?:.*\/)?@?([a-zA-Z0-9._-]+)/;
+  const match = url.match(tiktokRegex);
+  if (match && match[1]) return match[1];
+  const tiktokVariationsRegex =
+    /(?:^|[^A-Za-z0-9\u0400-\u04FF_])(тікток|tiktok|tt|тт)[:\s]+([A-Za-z0-9._-]*[A-Za-z][A-Za-z0-9._-]*)/i;
+  const variationMatch = url.match(tiktokVariationsRegex);
+  if (variationMatch && variationMatch[2]) return variationMatch[2];
+  return null;
+};
+
+const parseUserId = input => {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  const pattern = /(?:\bId\s*[:\s]+)(\w+)/i;
+  const match = trimmed.match(pattern);
+  const candidate = (match ? match[1] : trimmed).trim();
+  if (/^-?[a-zA-Z0-9]{4,}$/.test(candidate)) return candidate;
+  return null;
+};
+
+const parseTelegramId = input => {
+  const urlPattern = /t\.me\/([^/?#]+)/;
+  const urlMatch = input.match(urlPattern);
+  if (urlMatch && urlMatch[1]) return urlMatch[1];
+  const atPattern = /^@(\w+)/;
+  const atMatch = input.match(atPattern);
+  if (atMatch && atMatch[1]) return atMatch[1];
+  const textPattern = /(?:телеграм|телега|teleg|t(?=\s|:)|т(?=\s|:))\s*:?\s([a-zA-Z0-9._]+)/i;
+  const textMatch = input.match(textPattern);
+  if (textMatch && textMatch[1]) return textMatch[1];
+  return null;
+};
+
+const parseOtherContact = input => input;
+
+const detectSearchParams = query => {
+  const trimmed = query.trim();
+  const parsers = [
+    ['facebook', parseFacebookId],
+    ['instagram', parseInstagramId],
+    ['telegram', parseTelegramId],
+    ['userId', parseUserId],
+    ['email', parseEmail],
+    ['tiktok', parseTikTokLink],
+    ['phone', parsePhoneNumber],
+    ['other', parseOtherContact],
+  ];
+  for (const [key, parser] of parsers) {
+    const val = parser(trimmed);
+    if (val) return { key, value: val };
+  }
+  return { key: 'name', value: trimmed };
+};
+
 const SearchBar = ({
   searchFunc,
   setUsers,
@@ -147,6 +258,21 @@ const SearchBar = ({
     () => loadHistoryCache('queries') || [],
   );
   const [showHistory, setShowHistory] = useState(false);
+
+  const loadCachedResult = (key, value) => {
+    const cacheKey = getCacheKey('search', `${key}=${value}`);
+    const cached = loadCache(cacheKey);
+    if (cached && cached.raw) {
+      setUserNotFound && setUserNotFound(false);
+      if ('userId' in cached.raw) {
+        setState && setState(cached.raw);
+      } else {
+        setUsers && setUsers(cached.raw);
+      }
+      return true;
+    }
+    return false;
+  };
 
   const addToHistory = value => {
     const trimmedVal = value.trim();
@@ -180,6 +306,8 @@ const SearchBar = ({
 
   useEffect(() => {
     if (search) {
+      const { key, value } = detectSearchParams(search);
+      loadCachedResult(key, value);
       writeData(search);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -190,10 +318,14 @@ const SearchBar = ({
   };
 
   const processUserSearch = async (platform, parseFunction, inputData) => {
-    setUsers && setUsers({});
     const id = parseFunction(inputData.trim());
 
     if (id) {
+      const hasCache = loadCachedResult(platform, id);
+      if (!hasCache) {
+        setState && setState({});
+        setUsers && setUsers({});
+      }
       const result = { [platform]: id };
       onSearchKey && onSearchKey(result);
       const res = await cachedSearch(result);
@@ -214,12 +346,13 @@ const SearchBar = ({
 
   const writeData = async (query = search) => {
     setUserNotFound && setUserNotFound(false);
-    setState && setState({});
     const trimmed = query?.trim();
     if (trimmed) {
       addToHistory(trimmed);
     }
     if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      setState && setState({});
+      setUsers && setUsers({});
       const inside = trimmed.slice(1, -1);
       const matches = inside.match(/"[^"]+"|[^\s,;]+/g) || [];
       const values = matches
@@ -242,97 +375,6 @@ const SearchBar = ({
       }
     }
 
-    const parseFacebookId = url => {
-      const idParamRegex = /[?&]id=(\d+)/;
-      const matchIdParam = url.match(idParamRegex);
-      if (matchIdParam && matchIdParam[1]) return matchIdParam[1];
-      const facebookIdRegex = /facebook\.com\/(?:.*\/)?(\d+)$/;
-      const matchId = url.match(facebookIdRegex);
-      if (matchId && matchId[1]) return matchId[1];
-      const facebookUsernameRegex = /facebook\.com\/([\w.-]+)(?:[/?#]|$)/;
-      const matchUsername = url.match(facebookUsernameRegex);
-      if (matchUsername && matchUsername[1]) return matchUsername[1];
-      const numberRegex = /^\d{14,15}$/;
-      if (numberRegex.test(url)) return url;
-      const textFormatRegex = /(?:facebook|fb|фейсбук|фб)\s*:?\s*(\w+)/i;
-      const matchTextFormat = url.match(textFormatRegex);
-      if (matchTextFormat && matchTextFormat[1]) return matchTextFormat[1];
-      return null;
-    };
-
-    const parseInstagramId = input => {
-      if (typeof input === 'string' && input.includes('instagram')) {
-        const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
-        const match = input.match(instagramRegex);
-        if (match && match[1]) return match[1];
-      }
-      const pattern = /(?:\binst(?:agram)?\s*:?\s+|\binstagram\s*:?\s+|\bін(?:ст|стаграм)?\s*:?\s+|\bin\s*:?\s+)([a-zA-Z0-9._]+)/i;
-      const match = input.match(pattern);
-      if (match && match[1]) return match[1];
-      return null;
-    };
-
-    const parsePhoneNumber = phone => {
-      const cleanedPhone = phone.replace(/[\s()\-+]/g, '');
-      const digitCount = (cleanedPhone.match(/\d/g) || []).length;
-      if (digitCount < 10) return;
-      if (cleanedPhone.startsWith('0')) return '380' + cleanedPhone.slice(1);
-      if (cleanedPhone.startsWith('(')) {
-        const numberAfterCleaning = cleanedPhone.slice(1);
-        const cleanedAfterParenthesis = numberAfterCleaning.replace(/[\s()\-+]/g, '');
-        if (/^\d{10}$/.test(cleanedAfterParenthesis)) {
-          return '38' + cleanedAfterParenthesis.slice(1);
-        }
-      }
-      if (cleanedPhone.startsWith('38')) return cleanedPhone;
-      return;
-    };
-
-    const parseEmail = email => {
-      const cleanedEmail = email.trim().toLowerCase();
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(cleanedEmail)) return;
-      const domain = cleanedEmail.split('@')[1];
-      if (!domain || !domain.includes('.')) return;
-      return cleanedEmail;
-    };
-
-    const parseTikTokLink = url => {
-      const tiktokRegex = /tiktok\.com\/(?:.*\/)?@?([a-zA-Z0-9._-]+)/;
-      const match = url.match(tiktokRegex);
-      if (match && match[1]) return match[1];
-      const tiktokVariationsRegex =
-        /(?:^|[^A-Za-z0-9\u0400-\u04FF_])(тікток|tiktok|tt|тт)[:\s]+([A-Za-z0-9._-]*[A-Za-z][A-Za-z0-9._-]*)/i;
-      const variationMatch = url.match(tiktokVariationsRegex);
-      if (variationMatch && variationMatch[2]) return variationMatch[2];
-      return null;
-    };
-
-    const parseUserId = input => {
-      if (typeof input !== 'string') return null;
-      const trimmed = input.trim();
-      const pattern = /(?:\bId\s*[:\s]+)(\w+)/i;
-      const match = trimmed.match(pattern);
-      const candidate = (match ? match[1] : trimmed).trim();
-      if (/^-?[a-zA-Z0-9]{4,}$/.test(candidate)) return candidate;
-      return null;
-    };
-
-    const parseTelegramId = input => {
-      const urlPattern = /t\.me\/([^/?#]+)/;
-      const urlMatch = input.match(urlPattern);
-      if (urlMatch && urlMatch[1]) return urlMatch[1];
-      const atPattern = /^@(\w+)/;
-      const atMatch = input.match(atPattern);
-      if (atMatch && atMatch[1]) return atMatch[1];
-      const textPattern = /(?:телеграм|телега|teleg|t(?=\s|:)|т(?=\s|:))\s*:?\s([a-zA-Z0-9._]+)/i;
-      const textMatch = input.match(textPattern);
-      if (textMatch && textMatch[1]) return textMatch[1];
-      return null;
-    };
-
-    const parseOtherContact = input => input;
-
     if (await processUserSearch('facebook', parseFacebookId, query)) return;
     if (await processUserSearch('instagram', parseInstagramId, query)) return;
     if (await processUserSearch('telegram', parseTelegramId, query)) return;
@@ -342,11 +384,17 @@ const SearchBar = ({
     if (await processUserSearch('phone', parsePhoneNumber, query)) return;
     if (await processUserSearch('other', parseOtherContact, query)) return;
 
-    let res = await cachedSearch({ name: query.trim() });
-    onSearchKey && onSearchKey({ name: query.trim() });
+    const nameTrim = query.trim();
+    const hasCache = loadCachedResult('name', nameTrim);
+    if (!hasCache) {
+      setState && setState({});
+      setUsers && setUsers({});
+    }
+    let res = await cachedSearch({ name: nameTrim });
+    onSearchKey && onSearchKey({ name: nameTrim });
     if (!res || Object.keys(res).length === 0) {
       const cleanedQuery = query.replace(/^ук\s*см\s*/i, '').trim();
-      if (cleanedQuery && cleanedQuery !== query.trim()) {
+      if (cleanedQuery && cleanedQuery !== nameTrim) {
           res = await cachedSearch({ name: cleanedQuery });
         onSearchKey && onSearchKey({ name: cleanedQuery });
       }
