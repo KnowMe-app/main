@@ -38,6 +38,7 @@ import { VerifyEmail } from './VerifyEmail';
 import { color, coloredCard } from './styles';
 //import { formatPhoneNumber } from './inputValidations';
 import { UsersList } from './UsersList';
+import { getFavorites, syncFavorites } from 'utils/favoritesStorage';
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -485,6 +486,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const fav = snap.exists() ? snap.val() : {};
       setFavoriteUsersData(fav);
       setFavoriteIds(fav);
+      syncFavorites(fav);
     });
 
     return () => unsubscribe();
@@ -628,10 +630,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
     if (isEditingRef.current) return { count: 0, hasMore };
     const param = filterForload === 'DATE' ? dateOffset : lastKey;
-    let fav = favoriteUsersData;
+    let fav = getFavorites();
     if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
+      syncFavorites(fav);
     }
     const res = await fetchPaginatedNewUsers(param, filterForload, currentFilters, fav);
     // console.log('res :>> ', res);
@@ -644,7 +647,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // console.log('res.users :>> ', res.users);
 
       // Використовуємо Object.entries для обробки res.users
-      const newUsers = Object.entries(res.users).reduce((acc, [userId, user]) => {
+      const newUsers = Object.entries(res.users)
+        .filter(([id]) => !currentFilters.favorite?.favOnly || fav[id])
+        .reduce((acc, [userId, user]) => {
         // Перевірка наявності поля userId, щоб уникнути помилок
         // console.log('3333 :>> ');
         if (user.userId) {
@@ -683,10 +688,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsers2 = async (currentFilters = filters) => {
-    let fav = favoriteUsersData;
+    let fav = getFavorites();
     if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
+      syncFavorites(fav);
     }
 
     if (isEditingRef.current) return { count: 0, hasMore };
@@ -701,8 +707,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           if (d === '2099-99-99' || d === '9999-99-99') return false;
           return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
         };
-        const validEntries = Object.entries(cached.users).filter(([, u]) =>
-          isValid(u.getInTouch)
+        const validEntries = Object.entries(cached.users).filter(
+          ([id, u]) => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[id]),
         );
         const validUsers = Object.fromEntries(validEntries.slice(0, PAGE_SIZE));
         if (validEntries.length >= PAGE_SIZE) {
@@ -729,16 +735,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           fav,
           undefined,
           partial => {
+            const filteredPartial = currentFilters.favorite?.favOnly
+              ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
+              : partial;
             if (!isEditingRef.current) {
-              setUsers(prev => mergeWithoutOverwrite(prev, partial));
+              setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
             }
-          }
+          },
         );
         if (resFromCache && Object.keys(resFromCache.users).length > 0) {
+          const filteredResUsers = currentFilters.favorite?.favOnly
+            ? Object.fromEntries(
+                Object.entries(resFromCache.users).filter(([id]) => fav[id]),
+              )
+            : resFromCache.users;
           if (!isEditingRef.current) {
-            setUsers(prev => mergeWithoutOverwrite(prev, resFromCache.users));
+            setUsers(prev => mergeWithoutOverwrite(prev, filteredResUsers));
           }
-          const combined = { ...validUsers, ...resFromCache.users };
+          const combined = { ...validUsers, ...filteredResUsers };
           setDateOffset2(resFromCache.lastKey);
           setHasMore(resFromCache.hasMore);
           mergeAddCache(cacheKey, {
@@ -772,23 +786,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       fav,
       undefined,
       partial => {
+        const filteredPartial = currentFilters.favorite?.favOnly
+          ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
+          : partial;
         if (!isEditingRef.current) {
-          setUsers(prev => mergeWithoutOverwrite(prev, partial));
+          setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
         }
-      }
+      },
     );
     if (res && Object.keys(res.users).length > 0) {
+      const filteredUsers = currentFilters.favorite?.favOnly
+        ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
+        : res.users;
       if (!isEditingRef.current) {
-        setUsers(prev => mergeWithoutOverwrite(prev, res.users));
+        setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
       }
       setDateOffset2(res.lastKey);
       setHasMore(res.hasMore);
       mergeAddCache(cacheKey, {
-        users: res.users,
+        users: filteredUsers,
         lastKey: res.lastKey,
         hasMore: res.hasMore,
       });
-      const count = Object.keys(res.users).length;
+      const count = Object.keys(filteredUsers).length;
       return { count, hasMore: res.hasMore };
     }
     setHasMore(false);
