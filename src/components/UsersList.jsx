@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { coloredCard, FadeContainer } from './styles';
 import { makeNewUser } from './config';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -86,6 +86,8 @@ const UserCard = ({
   setDislikeUsers,
   currentFilter,
   isDateInRange,
+  isToastOn,
+  setIsToastOn,
 }) => {
   return (
     <div>
@@ -101,6 +103,8 @@ const UserCard = ({
         setDislikeUsers,
         currentFilter,
         isDateInRange,
+        isToastOn,
+        setIsToastOn,
       )}
       <div id={userData.userId} style={{ display: 'none' }}>
         {renderFields(userData)}
@@ -124,6 +128,7 @@ const UsersList = ({
   currentFilter,
   isDateInRange,
 }) => {
+  const [isToastOn, setIsToastOn] = useState(false);
   const entries = Object.entries(users);
 
   const handleCreate = async value => {
@@ -190,6 +195,8 @@ const UsersList = ({
                 setDislikeUsers={setDislikeUsers}
                 currentFilter={currentFilter}
                 isDateInRange={isDateInRange}
+                isToastOn={isToastOn}
+                setIsToastOn={setIsToastOn}
               />
             </>
           )}

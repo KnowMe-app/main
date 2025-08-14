@@ -36,6 +36,7 @@ const EditProfile = () => {
   const location = useLocation();
   const [state, setState] = useState(location.state || null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isToastOn, setIsToastOn] = useState(false);
 
   async function remoteUpdate({ updatedState, overwrite, delCondition }) {
     const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
@@ -161,7 +162,21 @@ const EditProfile = () => {
     <Container>
       <BackButton onClick={() => navigate(-1)}>Back</BackButton>
       <div style={{ ...coloredCard() }}>
-        {renderTopBlock(state, () => {}, () => {}, setState)}
+        {renderTopBlock(
+          state,
+          () => {},
+          () => {},
+          setState,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          isToastOn,
+          setIsToastOn,
+        )}
       </div>
       <ProfileForm
         state={state}

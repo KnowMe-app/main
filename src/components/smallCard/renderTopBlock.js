@@ -8,6 +8,7 @@ import { fieldGetInTouch } from './fieldGetInTouch';
 import { fieldRole } from './fieldRole';
 import { fieldLastCycle } from './fieldLastCycle';
 import { FieldComment } from './FieldComment';
+import { BtnToast } from './btnToast';
 import { fieldBirth } from './fieldBirth';
 import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
@@ -49,12 +50,15 @@ export const renderTopBlock = (
   setDislikeUsers = () => {},
   currentFilter,
   isDateInRange,
+  isToastOn,
+  setIsToastOn,
 ) => {
   if (!userData) return null;
 
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
       {btnDel(userData, setState, setShowInfoModal, isFromListOfUsers)}
+      <BtnToast isToastOn={isToastOn} setIsToastOn={setIsToastOn} />
       {btnExport(userData)}
       <div>
         {userData.lastAction && formatDateToDisplay(userData.lastAction)}
@@ -71,9 +75,11 @@ export const renderTopBlock = (
             setFavoriteUsers,
             dislikeUsers,
             setDislikeUsers,
+            isToastOn,
           )}
-        {fieldRole(userData, setUsers, setState)}
-        {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') && fieldLastCycle(userData, setUsers, setState)}
+        {fieldRole(userData, setUsers, setState, isToastOn)}
+        {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') &&
+          fieldLastCycle(userData, setUsers, setState, isToastOn)}
         {fieldDeliveryInfo(setUsers, setState, userData)}
         {userData.birth && `${userData.birth} - `}
         {userData.birth && fieldBirth(userData.birth)}
@@ -113,8 +119,8 @@ export const renderTopBlock = (
       </div>
 
       {fieldContacts(userData)}
-      {fieldWriter(userData, setUsers, setState)}
-      <FieldComment userData={userData} setUsers={setUsers} setState={setState} />
+      {fieldWriter(userData, setUsers, setState, isToastOn)}
+      <FieldComment userData={userData} setUsers={setUsers} setState={setState} isToastOn={isToastOn} />
 
       <div
         onClick={() => {
