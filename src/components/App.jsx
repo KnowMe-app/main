@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Route, Routes, useNavigate  } from 'react-router-dom';
+import { Route, Routes, useNavigate, useLocation } from 'react-router-dom';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { MyProfile } from './MyProfile';
 import { SubmitForm } from './SubmitForm';
@@ -8,6 +8,7 @@ import Matching from './Matching';
 import EditProfile from './EditProfile';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './config';
+import { Toaster } from 'react-hot-toast';
 
 export const App = () => {
 
@@ -16,6 +17,9 @@ export const App = () => {
   // console.log('isLoggedIn :>> ', isLoggedIn);
 
   const navigate = useNavigate();
+  const location = useLocation();
+  const cardPages = ['/add', '/matching'];
+  const showToaster = cardPages.includes(location.pathname);
 
   useEffect(() => {
     const stored = localStorage.getItem('isLoggedIn');
@@ -44,14 +48,17 @@ export const App = () => {
   }, []);
 
   return (
-    <Routes>
-      <Route path="/" element={isAdmin ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />} />
-      <Route path="/submit" element={<SubmitForm />} />
-      <Route path="/my-profile"  element={<MyProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn}/>} />
-      {isAdmin && <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
-      {isAdmin && <Route path="/matching" element={<Matching />} />}
-      {isAdmin && <Route path="/edit/:userId" element={<EditProfile />} />}
-      <Route path="/policy" element={<PrivacyPolicy />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={isAdmin ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />} />
+        <Route path="/submit" element={<SubmitForm />} />
+        <Route path="/my-profile"  element={<MyProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn}/>} />
+        {isAdmin && <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
+        {isAdmin && <Route path="/matching" element={<Matching />} />}
+        {isAdmin && <Route path="/edit/:userId" element={<EditProfile />} />}
+        <Route path="/policy" element={<PrivacyPolicy />} />
+      </Routes>
+      {showToaster && <Toaster position="bottom-center" />}
+    </>
   );
 };
