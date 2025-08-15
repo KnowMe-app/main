@@ -458,11 +458,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
   const [dislikeUsersData, setDislikeUsersData] = useState({});
   const [isToastOn, setIsToastOn] = useState(false);
+  const prevCacheKey = useRef(buildAddCacheKey(currentFilter, filters, search));
 
   useEffect(() => {
-    const cacheKey = buildAddCacheKey(currentFilter, filters, search);
-    mergeAddCache(cacheKey, { users, lastKey, hasMore, totalCount });
-  }, [users, lastKey, hasMore, totalCount, currentFilter, filters, search]);
+    mergeAddCache(prevCacheKey.current, { users, lastKey, hasMore, totalCount });
+  }, [users, lastKey, hasMore, totalCount]);
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   const isDateInRange = dateStr => {
@@ -509,6 +509,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     const cacheKey = buildAddCacheKey(currentFilter, filters, search);
+    // зберігаємо попередні дані перед зміною ключа
+    mergeAddCache(prevCacheKey.current, { users, lastKey, hasMore, totalCount });
+    prevCacheKey.current = cacheKey;
+
     setAddCacheKeys(cacheKey, buildAddCacheKey('FAVORITE', filters, search));
     const cached = loadAddCache(cacheKey);
     if (cached) {
