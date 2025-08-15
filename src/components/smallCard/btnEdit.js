@@ -1,8 +1,7 @@
 import { CardMenuBtn } from 'components/styles';
 import React from 'react';
-import { createCache } from '../../hooks/cardsCache';
-
-const { saveCache: saveSearchCache } = createCache('searchResults');
+import { saveCache } from '../../hooks/cardsCache';
+import { getCacheKey } from '../../utils/cache';
 
 // Use already loaded card data instead of re-fetching from the server
 export const btnEdit = (userData, setSearch, setState) => {
@@ -10,7 +9,8 @@ export const btnEdit = (userData, setSearch, setState) => {
     if (userData) {
       setSearch(`${userData.userId}`);
       setState(userData);
-      saveSearchCache(JSON.stringify({ userId: userData.userId }), userData);
+      const cacheKey = getCacheKey('search', `userId=${userData.userId}`);
+      saveCache(cacheKey, { raw: userData });
     } else {
       console.log('Користувача не знайдено.');
     }
