@@ -262,6 +262,7 @@ const SearchBar = ({
   const loadCachedResult = (key, value) => {
     if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
       const inside = value.slice(1, -1);
+      // eslint-disable-next-line no-useless-escape
       const matches = inside.match(/"[^\"]+"|[^\s,;]+/g) || [];
       const values = matches
         .map(v => v.replace(/^"|"$/g, '').trim())
