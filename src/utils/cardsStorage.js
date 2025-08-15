@@ -83,3 +83,54 @@ export const getCardsByList = async (listKey, remoteFetch) => {
   return result;
 };
 
+// Fetches cards from a list in Local Storage, applies the same filtering
+// logic as the backend and, if after filtering there are less than `target`
+// cards, tries to fetch additional ones using `fetchMore`.
+//
+// `fetchMore` should return an array of `[id, data]` pairs which will be stored
+// in Local Storage under the provided `listKey`.
+export const getFilteredCardsByList = async (
+  listKey,
+  fetchMore,
+  filterForload,
+  filterSettings = {},
+  favoriteUsers = {},
+  target = 20,
+  filterMainFnParam,
+) => {
+  const cards = loadCards();
+  const ids = JSON.parse(localStorage.getItem(listKey)) || [];
+
+  let filterMainFn = filterMainFnParam;
+  if (!filterMainFn) {
+    // Dynamically import to avoid heavy config load when not needed
+    const mod = await import('../components/config');
+    ({ filterMain: filterMainFn } = mod);
+  }
+
+  const buildEntries = () =>
+    ids
+      .map(id => [id, cards[id]])
+      .filter(([, card]) => card);
+
+  let filtered = filterMainFn(buildEntries(), filterForload, filterSettings, favoriteUsers);
+
+  if (filtered.length < target && typeof fetchMore === 'function') {
+    const needed = target - filtered.length;
+    try {
+      const extra = await fetchMore(needed);
+      extra.forEach(([id, data]) => {
+        cards[id] = { ...data, id, updatedAt: Date.now() };
+        if (!ids.includes(id)) ids.push(id);
+      });
+      saveCards(cards);
+      localStorage.setItem(listKey, JSON.stringify(ids));
+      filtered = filterMainFn(buildEntries(), filterForload, filterSettings, favoriteUsers);
+    } catch {
+      // ignore fetch errors, return what we have
+    }
+  }
+
+  return filtered.slice(0, target).map(([id]) => cards[id]);
+};
+
