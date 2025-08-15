@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAutoResize } from '../hooks/useAutoResize';
 import styled from 'styled-components';
-import { createCache, loadCache } from '../hooks/cardsCache';
+import { createCache, loadCache, saveCache } from '../hooks/cardsCache';
 import { getCacheKey } from '../utils/cache';
 
 const SearchIcon = (
@@ -314,7 +314,15 @@ const SearchBar = ({
   }, []);
 
   const cachedSearch = async params => {
-    return await searchFunc(params);
+    const res = await searchFunc(params);
+    if (res && Object.keys(res).length > 0) {
+      const [key, value] = Object.entries(params)[0] || [];
+      if (key && value) {
+        const cacheKey = getCacheKey('search', `${key}=${value}`);
+        saveCache(cacheKey, { raw: res });
+      }
+    }
+    return res;
   };
 
   const processUserSearch = async (platform, parseFunction, inputData) => {
