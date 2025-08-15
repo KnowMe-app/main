@@ -1,9 +1,12 @@
-import { createCache } from 'hooks/cardsCache';
+import {
+  createCache,
+  getCacheKey,
+  loadCache,
+  saveCache,
+} from 'hooks/cardsCache';
 import { updateCard, addCardToList, removeCardFromList } from './cardsStorage';
 
-// Builds a cache key for cards list depending on mode and optional search term
-export const getCacheKey = (mode, term) =>
-  `cards:${mode}${term ? `:${term}` : ''}`;
+export { getCacheKey, loadCache, saveCache };
 
 // Removes all cached card lists regardless of mode or search term
 export const clearAllCardsCache = () => {
@@ -54,6 +57,28 @@ export const updateCachedUser = (
   }
   updateCard(user.userId, user);
   const shouldFav = forceFavorite || isFavorite(user.userId);
+
+  const searchKeys = [getCacheKey('search', `userId=${user.userId}`)];
+  if (typeof user.name === 'string') {
+    searchKeys.push(getCacheKey('search', `name=${user.name}`));
+  }
+  searchKeys.forEach(key => {
+    const cached = loadCache(key);
+    if (!cached) return;
+    if (removeFavorite) {
+      localStorage.removeItem(`matchingCache:${key}`);
+      return;
+    }
+    const raw = cached.raw;
+    if (!raw) return;
+    if (raw.userId === user.userId) {
+      saveCache(key, { raw: { ...raw, ...user } });
+    } else if (raw[user.userId]) {
+      raw[user.userId] = { ...raw[user.userId], ...user };
+      saveCache(key, { raw });
+    }
+  });
+
   if (favoriteAddCacheKey) {
     if (removeFavorite) {
       const cached = loadAddCacheUtil(favoriteAddCacheKey) || {};
