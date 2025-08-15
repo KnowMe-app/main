@@ -526,6 +526,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (currentFilter) {
       if (currentFilter === 'DATE2') {
         loadMoreUsers2();
+      } else if (currentFilter === 'FAVORITE') {
+        loadFavoriteUsers();
       } else {
         loadMoreUsers(currentFilter);
       }
@@ -878,7 +880,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLastKey(null);
     setCurrentPage(1);
     setTotalCount(Object.keys(sorted).length);
-    setCurrentFilter('FAVORITE');
   };
 
   const [duplicates, setDuplicates] = useState('');
@@ -1079,7 +1080,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               >
                 Load2
               </Button>
-              <Button onClick={loadFavoriteUsers}>❤</Button>
+              <Button onClick={() => setCurrentFilter('FAVORITE')}>❤</Button>
               <Button onClick={indexData}>IndData</Button>
               <Button onClick={indexLastLoginHandler}>indexLastLogin</Button>
               <Button onClick={makeIndex}>Index</Button>
