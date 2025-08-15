@@ -2,7 +2,10 @@ export const FAVORITES_KEY = 'favorites';
 
 export const getFavorites = () => {
   try {
-    return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || {};
+    const raw = JSON.parse(localStorage.getItem(FAVORITES_KEY)) || {};
+    return Object.fromEntries(
+      Object.entries(raw).map(([k, v]) => [k, !!v]),
+    );
   } catch {
     return {};
   }
@@ -11,11 +14,7 @@ export const getFavorites = () => {
 export const setFavorite = (id, isFav) => {
   try {
     const favs = getFavorites();
-    if (isFav) {
-      favs[id] = true;
-    } else {
-      delete favs[id];
-    }
+    favs[id] = !!isFav;
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs));
   } catch {
     // ignore write errors

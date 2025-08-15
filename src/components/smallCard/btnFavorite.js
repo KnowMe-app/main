@@ -28,10 +28,9 @@ export const BtnFavorite = ({
     if (isFavorite) {
       try {
         await removeFavoriteUser(userId);
-        const updated = { ...favoriteUsers };
-        delete updated[userId];
+        const updated = { ...favoriteUsers, [userId]: false };
         setFavoriteUsers(updated);
-        setFavoriteIds(updated);
+        setFavoriteIds(Object.fromEntries(Object.entries(updated).filter(([, v]) => v)));
         updateCachedUser(userData || { userId }, { forceFavorite: true, removeFavorite: true });
         setFavorite(userId, false);
         if (onRemove) onRemove(userId);
