@@ -1,5 +1,9 @@
 const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
+// Builds a cache key for cards list depending on mode and optional search term
+export const getCacheKey = (mode, term) =>
+  `cards:${mode}${term ? `:${term}` : ''}`;
+
 export const createCache = (prefix, ttl = TTL_MS) => {
   const CACHE_PREFIX = `${prefix}:`;
 
