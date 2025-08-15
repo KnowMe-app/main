@@ -260,6 +260,23 @@ const SearchBar = ({
   const [showHistory, setShowHistory] = useState(false);
 
   const loadCachedResult = (key, value) => {
+    if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
+      const inside = value.slice(1, -1);
+      const matches = inside.match(/"[^\"]+"|[^\s,;]+/g) || [];
+      const values = matches
+        .map(v => v.replace(/^"|"$/g, '').trim())
+        .filter(Boolean);
+      if (values.length > 0) {
+        const term = values.map(v => v).sort().join(',');
+        const cacheKey = getCacheKey('search', `names=${term}`);
+        const cached = loadCache(cacheKey);
+        if (cached && cached.raw) {
+          setUserNotFound && setUserNotFound(false);
+          setUsers && setUsers(cached.raw);
+          return true;
+        }
+      }
+    }
     const cacheKey = getCacheKey('search', `${key}=${value}`);
     const cached = loadCache(cacheKey);
     if (cached && cached.raw) {
@@ -359,6 +376,8 @@ const SearchBar = ({
       addToHistory(trimmed);
     }
     if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      const hasCache = loadCachedResult('name', trimmed);
+      if (hasCache) return;
       setState && setState({});
       setUsers && setUsers({});
       const inside = trimmed.slice(1, -1);
@@ -379,6 +398,8 @@ const SearchBar = ({
           }
         }
         setUsers && setUsers(results);
+        const term = values.map(v => v).sort().join(',');
+        saveCache(getCacheKey('search', `names=${term}`), { raw: results });
         return;
       }
     }
