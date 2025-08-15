@@ -632,8 +632,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
     if (isEditingRef.current) return { count: 0, hasMore };
     const param = filterForload === 'DATE' ? dateOffset : lastKey;
-    let fav = getFavorites();
-    if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
+    let favRaw = getFavorites();
+    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
+    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
       syncFavorites(fav);
@@ -690,8 +691,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsers2 = async (currentFilters = filters) => {
-    let fav = getFavorites();
-    if (currentFilters.favorite?.favOnly && Object.keys(fav).length === 0) {
+    let favRaw = getFavorites();
+    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
+    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
       syncFavorites(fav);
