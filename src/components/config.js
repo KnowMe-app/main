@@ -471,10 +471,15 @@ export const makeNewUser = async searchedValue => {
 
   const newUser = {
     userId: newUserId,
-    [searchKey]: searchValue,
     createdAt,
     createdAt2,
   };
+
+  if (searchKey !== 'userId') {
+    newUser[searchKey] = searchValue;
+  } else {
+    newUser.searchedUserId = searchValue;
+  }
 
   // Записуємо нового користувача в базу даних
   await set(newUserRef, newUser);
