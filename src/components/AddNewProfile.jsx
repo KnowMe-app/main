@@ -455,7 +455,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [currentFilter, setCurrentFilter] = useState('DATE2');
+  const [currentFilter, setCurrentFilter] = useState('');
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
   const [favoriteUsersData, setFavoriteUsersData] = useState({});
