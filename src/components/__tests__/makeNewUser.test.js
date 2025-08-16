@@ -1,3 +1,6 @@
+import { makeNewUser } from '../config';
+import * as db from 'firebase/database';
+
 jest.mock('firebase/app', () => ({
   initializeApp: jest.fn(() => ({})),
 }));
@@ -47,9 +50,6 @@ jest.mock('firebase/database', () => ({
   equalTo: jest.fn(),
   runTransaction: jest.fn(),
 }));
-
-import { makeNewUser } from '../config';
-import * as db from 'firebase/database';
 
 describe('makeNewUser', () => {
   beforeEach(() => {
