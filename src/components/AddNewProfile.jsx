@@ -59,6 +59,8 @@ import {
   buildAddCacheKey,
   setAddCacheKeys,
   setFavoriteIds,
+  clearAllCardsCache,
+  clearAddCache,
 } from 'utils/cache';
 
 const Container = styled.div`
@@ -916,7 +918,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleClearCache = () => {
-    localStorage.clear();
+    clearAllCardsCache();
+    clearAddCache();
+    localStorage.removeItem('addFilters');
     toast.success('Cache cleared');
   };
 

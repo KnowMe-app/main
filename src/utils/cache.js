@@ -17,6 +17,15 @@ export const clearAllCardsCache = () => {
     .forEach(key => localStorage.removeItem(key));
 };
 
+// Removes all cached AddNewProfile data
+export const clearAddCache = () => {
+  const ADD_PREFIX = 'addCache:';
+
+  Object.keys(localStorage)
+    .filter(key => key.startsWith(ADD_PREFIX))
+    .forEach(key => localStorage.removeItem(key));
+};
+
 // ----- AddNewProfile cache helpers -----
 
 export const buildAddCacheKey = (mode, filters = {}, term = '') =>
