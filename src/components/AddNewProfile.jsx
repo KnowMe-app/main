@@ -200,6 +200,7 @@ const profileSync = createLocalFirstSync('pendingProfile', null, ({ data }) =>
 );
 const {
   loadCache: loadAddCache,
+  saveCache: saveAddCache,
   mergeCache: mergeAddCache,
 } = createCache('addCache');
 
@@ -509,9 +510,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     const cacheKey = buildAddCacheKey(currentFilter, filters, search);
-    // зберігаємо попередні дані перед зміною ключа
-    mergeAddCache(prevCacheKey.current, { users, lastKey, hasMore, totalCount });
-    prevCacheKey.current = cacheKey;
+    // очищаємо попередній кеш та зберігаємо дані без об'єднання
+    if (prevCacheKey.current !== cacheKey) {
+      saveAddCache(prevCacheKey.current, { users, lastKey, hasMore, totalCount });
+      saveAddCache(cacheKey, {});
+      prevCacheKey.current = cacheKey;
+    }
 
     setAddCacheKeys(cacheKey, buildAddCacheKey('FAVORITE', filters, search));
     const cached = loadAddCache(cacheKey);
@@ -531,6 +535,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (currentFilter === 'DATE2') {
         loadMoreUsers2();
       } else if (currentFilter === 'FAVORITE') {
+        saveAddCache(buildAddCacheKey('FAVORITE', filters, search), {});
         loadFavoriteUsers();
       } else {
         loadMoreUsers(currentFilter);
@@ -881,11 +886,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         acc[id] = user;
         return acc;
       }, {});
+    const total = Object.keys(sorted).length;
+    saveAddCache(buildAddCacheKey('FAVORITE', filters, search), {
+      users: sorted,
+      lastKey: null,
+      hasMore: false,
+      totalCount: total,
+    });
     setUsers(sorted);
     setHasMore(false);
     setLastKey(null);
     setCurrentPage(1);
-    setTotalCount(Object.keys(sorted).length);
+    setTotalCount(total);
   };
 
   const [duplicates, setDuplicates] = useState('');
