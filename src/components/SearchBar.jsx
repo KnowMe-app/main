@@ -193,6 +193,8 @@ const parseUserId = input => {
   const pattern = /(?:\bId\s*[:\s]+)(\w+)/i;
   const match = trimmed.match(pattern);
   const candidate = (match ? match[1] : trimmed).trim();
+  const normalized = candidate.replace(/[+\s()-]/g, '');
+  if (/^(?:0|380)\d{9}$/.test(normalized)) return null;
   if (/^-?[a-zA-Z0-9]{4,}$/.test(candidate)) return candidate;
   return null;
 };
@@ -212,7 +214,7 @@ const parseTelegramId = input => {
 
 const parseOtherContact = input => input;
 
-const detectSearchParams = query => {
+export const detectSearchParams = query => {
   const trimmed = query.trim();
   const parsers = [
     ['facebook', parseFacebookId],
