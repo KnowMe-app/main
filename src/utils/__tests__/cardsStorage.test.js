@@ -1,4 +1,5 @@
 import { updateCard, getCardsByList, addCardToList } from '../cardsStorage';
+import { setIdsForQuery } from '../cardIndex';
 
 describe('cardsStorage', () => {
   beforeEach(() => {
@@ -33,7 +34,7 @@ describe('cardsStorage', () => {
     const expired = Date.now() - SIX_HOURS - 1000;
     const oldCard = { id: '1', title: 'Old', updatedAt: expired };
     localStorage.setItem('cards', JSON.stringify({ '1': oldCard }));
-    localStorage.setItem('favorite', JSON.stringify(['1']));
+    setIdsForQuery('favorite', ['1']);
 
     const remoteFetch = jest.fn().mockResolvedValue({ id: '1', title: 'Fresh' });
     const cards = await getCardsByList('favorite', remoteFetch);

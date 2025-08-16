@@ -5,6 +5,7 @@ import {
   saveCache,
 } from 'hooks/cardsCache';
 import { updateCard, addCardToList, removeCardFromList } from './cardsStorage';
+import { normalizeQueryKey } from './cardIndex';
 
 export { getCacheKey, loadCache, saveCache };
 
@@ -67,9 +68,9 @@ export const updateCachedUser = (
   updateCard(user.userId, user);
   const shouldFav = forceFavorite || isFavorite(user.userId);
 
-  const searchKeys = [getCacheKey('search', `userId=${user.userId}`)];
+  const searchKeys = [getCacheKey('search', normalizeQueryKey(`userId=${user.userId}`))];
   if (typeof user.name === 'string') {
-    searchKeys.push(getCacheKey('search', `name=${user.name}`));
+    searchKeys.push(getCacheKey('search', normalizeQueryKey(`name=${user.name}`)));
   }
   searchKeys.forEach(key => {
     const cached = loadCache(key);
