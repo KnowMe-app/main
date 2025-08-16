@@ -66,6 +66,7 @@ export const updateCachedUser = (
     mergeAddCache(currentAddCacheKey, { users: { [user.userId]: user } });
   }
   updateCard(user.userId, user);
+  addCardToList(user.userId, 'load2');
   const shouldFav = forceFavorite || isFavorite(user.userId);
 
   const searchKeys = [getCacheKey('search', normalizeQueryKey(`userId=${user.userId}`))];
