@@ -39,7 +39,7 @@ import { color, coloredCard } from './styles';
 //import { formatPhoneNumber } from './inputValidations';
 import { UsersList } from './UsersList';
 import { getFavorites, syncFavorites } from 'utils/favoritesStorage';
-import { getCardsByList, addCardToList, updateCard } from 'utils/cardsStorage';
+import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -230,11 +230,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const navigate = useNavigate();
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
 
-  const cacheFetchedUsers = usersObj => {
-    Object.entries(usersObj).forEach(([id, data]) => {
-      updateCard(id, data);
-      addCardToList(id, 'load2');
-    });
+  const cacheFetchedUsers = (usersObj, currentFilters = filters) => {
+    cacheLoad2Users(usersObj, currentFilters);
   };
 
   useEffect(() => {
@@ -671,8 +668,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   useEffect(() => {
+    if (currentFilter !== 'DATE2') return;
     (async () => {
-      const cachedCards = await getCardsByList('load2');
+      const cachedCards = await getLoad2Cards(filters);
       if (cachedCards.length) {
         const obj = cachedCards.reduce((acc, card) => {
           acc[card.id] = card;
@@ -681,7 +679,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setUsers(prev => mergeWithoutOverwrite(prev, obj));
       }
     })();
-  }, []);
+  }, [filters, currentFilter]);
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
     console.log('loadMoreUsers called with', {
@@ -721,7 +719,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
         return acc;
       }, {});
-      cacheFetchedUsers(newUsers);
+      cacheFetchedUsers(newUsers, currentFilters);
 
       // Оновлюємо стан користувачів
       // Оновлюємо стан користувачів
@@ -775,7 +773,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           ([id, u]) => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[id]),
         );
         const validUsers = Object.fromEntries(validEntries.slice(0, PAGE_SIZE));
-        cacheFetchedUsers(validUsers);
+        cacheFetchedUsers(validUsers, currentFilters);
         if (validEntries.length >= PAGE_SIZE) {
           if (!isEditingRef.current) {
             setUsers(prev => mergeWithoutOverwrite(prev, validUsers));
@@ -803,7 +801,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             const filteredPartial = currentFilters.favorite?.favOnly
               ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
               : partial;
-            cacheFetchedUsers(filteredPartial);
+            cacheFetchedUsers(filteredPartial, currentFilters);
             if (!isEditingRef.current) {
               setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
             }
@@ -815,7 +813,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 Object.entries(resFromCache.users).filter(([id]) => fav[id]),
               )
             : resFromCache.users;
-          cacheFetchedUsers(filteredResUsers);
+          cacheFetchedUsers(filteredResUsers, currentFilters);
           if (!isEditingRef.current) {
             setUsers(prev => mergeWithoutOverwrite(prev, filteredResUsers));
           }
@@ -856,7 +854,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const filteredPartial = currentFilters.favorite?.favOnly
           ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
           : partial;
-        cacheFetchedUsers(filteredPartial);
+        cacheFetchedUsers(filteredPartial, currentFilters);
         if (!isEditingRef.current) {
           setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
         }
@@ -866,7 +864,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const filteredUsers = currentFilters.favorite?.favOnly
         ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
         : res.users;
-      cacheFetchedUsers(filteredUsers);
+      cacheFetchedUsers(filteredUsers, currentFilters);
       if (!isEditingRef.current) {
         setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
       }
