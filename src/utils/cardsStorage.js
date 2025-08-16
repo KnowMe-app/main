@@ -1,33 +1,25 @@
-export const CARDS_KEY = 'cards';
-export const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+import {
+  loadCards,
+  saveCards,
+  getIdsByQuery,
+  setIdsForQuery,
+  touchCardInQueries,
+  TTL_MS,
+  saveCard as indexSaveCard,
+} from './cardIndex';
 
-export const loadCards = () => {
-  try {
-    return JSON.parse(localStorage.getItem(CARDS_KEY)) || {};
-  } catch {
-    return {};
-  }
-};
-
-export const saveCards = cards => {
-  try {
-    localStorage.setItem(CARDS_KEY, JSON.stringify(cards));
-  } catch {
-    // ignore write errors
-  }
-};
+export { TTL_MS };
 
 export const addCardToList = (cardId, listKey) => {
-  const list = JSON.parse(localStorage.getItem(listKey)) || [];
-  if (!list.includes(cardId)) {
-    localStorage.setItem(listKey, JSON.stringify([...list, cardId]));
+  const ids = getIdsByQuery(listKey);
+  if (!ids.includes(cardId)) {
+    setIdsForQuery(listKey, [...ids, cardId]);
   }
 };
 
 export const removeCardFromList = (cardId, listKey) => {
-  const list = JSON.parse(localStorage.getItem(listKey)) || [];
-  const filtered = list.filter(id => id !== cardId);
-  localStorage.setItem(listKey, JSON.stringify(filtered));
+  const ids = getIdsByQuery(listKey).filter(id => id !== cardId);
+  setIdsForQuery(listKey, ids);
 };
 
 export const updateCard = (cardId, data, remoteSave) => {
@@ -40,6 +32,7 @@ export const updateCard = (cardId, data, remoteSave) => {
   };
   cards[cardId] = updatedCard;
   saveCards(cards);
+  touchCardInQueries(cardId);
   if (typeof remoteSave === 'function') {
     Promise.resolve(remoteSave(updatedCard)).catch(() => {});
   }
@@ -48,7 +41,7 @@ export const updateCard = (cardId, data, remoteSave) => {
 
 export const getCardsByList = async (listKey, remoteFetch) => {
   const cards = loadCards();
-  const ids = JSON.parse(localStorage.getItem(listKey)) || [];
+  const ids = getIdsByQuery(listKey);
   const result = [];
   const freshIds = [];
 
@@ -79,7 +72,7 @@ export const getCardsByList = async (listKey, remoteFetch) => {
   }
 
   saveCards(cards);
-  localStorage.setItem(listKey, JSON.stringify(freshIds));
+  setIdsForQuery(listKey, freshIds);
   return result;
 };
 
@@ -99,19 +92,16 @@ export const getFilteredCardsByList = async (
   filterMainFnParam,
 ) => {
   const cards = loadCards();
-  const ids = JSON.parse(localStorage.getItem(listKey)) || [];
+  const ids = getIdsByQuery(listKey);
 
   let filterMainFn = filterMainFnParam;
   if (!filterMainFn) {
-    // Dynamically import to avoid heavy config load when not needed
     const mod = await import('../components/config');
     ({ filterMain: filterMainFn } = mod);
   }
 
   const buildEntries = () =>
-    ids
-      .map(id => [id, cards[id]])
-      .filter(([, card]) => card);
+    ids.map(id => [id, cards[id]]).filter(([, card]) => card);
 
   let filtered = filterMainFn(buildEntries(), filterForload, filterSettings, favoriteUsers);
 
@@ -124,7 +114,7 @@ export const getFilteredCardsByList = async (
         if (!ids.includes(id)) ids.push(id);
       });
       saveCards(cards);
-      localStorage.setItem(listKey, JSON.stringify(ids));
+      setIdsForQuery(listKey, ids);
       filtered = filterMainFn(buildEntries(), filterForload, filterSettings, favoriteUsers);
     } catch {
       // ignore fetch errors, return what we have
@@ -134,3 +124,4 @@ export const getFilteredCardsByList = async (
   return filtered.slice(0, target).map(([id]) => cards[id]);
 };
 
+export const saveCard = indexSaveCard;

@@ -1,4 +1,5 @@
 import { getFilteredCardsByList } from '../cardsStorage';
+import { setIdsForQuery, getIdsByQuery } from '../cardIndex';
 
 jest.mock('../../components/config', () => ({
   filterMain: jest.fn(users => users.filter(([, u]) => u.ok)),
@@ -15,7 +16,7 @@ describe('getFilteredCardsByList', () => {
       a: { id: 'a', ok: true, updatedAt: now },
       b: { id: 'b', ok: false, updatedAt: now },
     }));
-    localStorage.setItem('testList', JSON.stringify(['a', 'b']));
+    setIdsForQuery('testList', ['a', 'b']);
 
     const fetchMore = jest.fn(async count => {
       expect(count).toBe(1);
@@ -34,7 +35,7 @@ describe('getFilteredCardsByList', () => {
     expect(res.map(c => c.id)).toEqual(['a', 'c']);
     const storedCards = JSON.parse(localStorage.getItem('cards'));
     expect(storedCards.c.ok).toBe(true);
-    const ids = JSON.parse(localStorage.getItem('testList'));
+    const ids = getIdsByQuery('testList');
     expect(ids).toContain('c');
   });
 });

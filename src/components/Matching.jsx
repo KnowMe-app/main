@@ -31,6 +31,7 @@ import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { loadCache, saveCache } from "../hooks/cardsCache";
 import { getCacheKey, clearAllCardsCache } from "../utils/cache";
+import { normalizeQueryKey } from '../utils/cardIndex';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaArrowDown } from 'react-icons/fa';
@@ -1155,7 +1156,7 @@ const Matching = () => {
   const searchUsers = async params => {
     const [key, value] = Object.entries(params)[0] || [];
     const term = key && value ? `${key}=${value}` : undefined;
-    const cacheKey = getCacheKey('search', term);
+    const cacheKey = getCacheKey('search', term ? normalizeQueryKey(term) : term);
     const cached = loadCache(cacheKey);
     if (cached) return cached.raw;
     const res = await searchUsersOnly(params);

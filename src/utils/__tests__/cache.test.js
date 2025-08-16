@@ -1,5 +1,6 @@
 import { updateCachedUser } from '../cache';
 import { getCacheKey, loadCache, saveCache } from '../../hooks/cardsCache';
+import { normalizeQueryKey } from '../cardIndex';
 
 describe('updateCachedUser search cache', () => {
   beforeEach(() => {
@@ -8,14 +9,14 @@ describe('updateCachedUser search cache', () => {
 
   it('updates search cache entries with new data', () => {
     const oldUser = { userId: '1', name: 'John', favorite: false };
-    saveCache(getCacheKey('search', 'userId=1'), { raw: oldUser });
-    saveCache(getCacheKey('search', 'name=John'), { raw: { '1': oldUser } });
+    saveCache(getCacheKey('search', normalizeQueryKey('userId=1')), { raw: oldUser });
+    saveCache(getCacheKey('search', normalizeQueryKey('name=John')), { raw: { '1': oldUser } });
 
     const updatedUser = { userId: '1', name: 'John', favorite: true };
     updateCachedUser(updatedUser);
 
-    const byId = loadCache(getCacheKey('search', 'userId=1'));
-    const byName = loadCache(getCacheKey('search', 'name=John'));
+    const byId = loadCache(getCacheKey('search', normalizeQueryKey('userId=1')));
+    const byName = loadCache(getCacheKey('search', normalizeQueryKey('name=John')));
 
     expect(byId.raw.favorite).toBe(true);
     expect(byName.raw['1'].favorite).toBe(true);
@@ -23,12 +24,12 @@ describe('updateCachedUser search cache', () => {
 
   it('removes search cache entries on removeFavorite', () => {
     const user = { userId: '1', name: 'John', favorite: true };
-    saveCache(getCacheKey('search', 'userId=1'), { raw: user });
-    saveCache(getCacheKey('search', 'name=John'), { raw: { '1': user } });
+    saveCache(getCacheKey('search', normalizeQueryKey('userId=1')), { raw: user });
+    saveCache(getCacheKey('search', normalizeQueryKey('name=John')), { raw: { '1': user } });
 
     updateCachedUser(user, { removeFavorite: true });
 
-    expect(loadCache(getCacheKey('search', 'userId=1'))).toBeNull();
-    expect(loadCache(getCacheKey('search', 'name=John'))).toBeNull();
+    expect(loadCache(getCacheKey('search', normalizeQueryKey('userId=1')))).toBeNull();
+    expect(loadCache(getCacheKey('search', normalizeQueryKey('name=John')))).toBeNull();
   });
 });

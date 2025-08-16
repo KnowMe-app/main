@@ -3,6 +3,7 @@ import { useAutoResize } from '../hooks/useAutoResize';
 import styled from 'styled-components';
 import { createCache, loadCache, saveCache } from '../hooks/cardsCache';
 import { getCacheKey } from '../utils/cache';
+import { normalizeQueryKey } from '../utils/cardIndex';
 
 const SearchIcon = (
   <svg
@@ -269,7 +270,7 @@ const SearchBar = ({
         .filter(Boolean);
       if (values.length > 0) {
         const term = values.map(v => v).sort().join(',');
-        const cacheKey = getCacheKey('search', `names=${term}`);
+        const cacheKey = getCacheKey('search', normalizeQueryKey(`names=${term}`));
         const cached = loadCache(cacheKey);
         if (cached && cached.raw) {
           setUserNotFound && setUserNotFound(false);
@@ -278,7 +279,7 @@ const SearchBar = ({
         }
       }
     }
-    const cacheKey = getCacheKey('search', `${key}=${value}`);
+    const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
     const cached = loadCache(cacheKey);
     if (cached && cached.raw) {
       setUserNotFound && setUserNotFound(false);
@@ -336,7 +337,7 @@ const SearchBar = ({
     if (res && Object.keys(res).length > 0) {
       const [key, value] = Object.entries(params)[0] || [];
       if (key && value) {
-        const cacheKey = getCacheKey('search', `${key}=${value}`);
+        const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
         saveCache(cacheKey, { raw: res });
       }
     }
@@ -400,7 +401,7 @@ const SearchBar = ({
         }
         setUsers && setUsers(results);
         const term = values.map(v => v).sort().join(',');
-        saveCache(getCacheKey('search', `names=${term}`), { raw: results });
+        saveCache(getCacheKey('search', normalizeQueryKey(`names=${term}`)), { raw: results });
         return;
       }
     }
