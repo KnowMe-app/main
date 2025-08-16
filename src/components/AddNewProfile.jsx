@@ -479,6 +479,28 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return dateStr >= min && dateStr <= max;
   };
 
+  const getInTouchSortValue = d => {
+    const today = new Date().toISOString().split('T')[0];
+    if (d === '2099-99-99' || d === '9999-99-99') return { priority: 5 };
+    if (d == null) return { priority: 4 };
+    if (d === '') return { priority: 3 };
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      if (d === today) return { priority: 0, value: d };
+      if (d < today) return { priority: 1, value: d };
+      return { priority: 2, value: d };
+    }
+    return { priority: 2, value: d };
+  };
+
+  const compareUsersByGetInTouch = (a, b) => {
+    const av = getInTouchSortValue(a.getInTouch);
+    const bv = getInTouchSortValue(b.getInTouch);
+    if (av.priority !== bv.priority) return av.priority - bv.priority;
+    if (av.priority === 1) return bv.value.localeCompare(av.value);
+    if (av.priority === 2) return (av.value || '').localeCompare(bv.value || '');
+    return 0;
+  };
+
   const ownerId = auth.currentUser?.uid;
 
   useEffect(() => {
@@ -874,16 +896,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setFavoriteUsersData(favIds);
     const loaded = await fetchFavoriteUsersData(owner);
     const sorted = Object.entries(loaded)
-      .sort(([, a], [, b]) => {
-        const normalize = d =>
-          d && d !== '2099-99-99' && d !== '9999-99-99' ? d : '';
-        const aDate = normalize(a.getInTouch);
-        const bDate = normalize(b.getInTouch);
-        if (!aDate && !bDate) return 0;
-        if (!aDate) return 1;
-        if (!bDate) return -1;
-        return bDate.localeCompare(aDate);
-      })
+      .sort(([, a], [, b]) => compareUsersByGetInTouch(a, b))
       .reduce((acc, [id, user]) => {
         acc[id] = user;
         return acc;
@@ -974,19 +987,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
   const getSortedIds = () => {
     const ids = Object.keys(users);
-    if (currentFilter === 'FAVORITE') {
-      const normalize = d =>
-        d && d !== '2099-99-99' && d !== '9999-99-99' ? d : '';
-      return ids.sort((a, b) => {
-        const aDate = normalize(users[a]?.getInTouch);
-        const bDate = normalize(users[b]?.getInTouch);
-        if (!aDate && !bDate) return 0;
-        if (!aDate) return 1;
-        if (!bDate) return -1;
-        return bDate.localeCompare(aDate);
-      });
-    }
-    return ids;
+    return ids.sort((a, b) =>
+      compareUsersByGetInTouch(users[a] || {}, users[b] || {}),
+    );
   };
 
   const displayedUserIds = getSortedIds().slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
