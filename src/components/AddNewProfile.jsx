@@ -62,6 +62,7 @@ import {
   setFavoriteIds,
   clearAllCardsCache,
   clearAddCache,
+  updateCachedUser,
 } from 'utils/cache';
 
 const Container = styled.div`
@@ -270,6 +271,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
 
     const syncedState = await profileSync.update(updatedState);
+    updateCachedUser(syncedState);
     cacheFetchedUsers({ [syncedState.userId]: syncedState });
     setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
 
