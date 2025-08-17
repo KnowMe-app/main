@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
@@ -38,7 +38,7 @@ import { VerifyEmail } from './VerifyEmail';
 import { color, coloredCard } from './styles';
 //import { formatPhoneNumber } from './inputValidations';
 import { UsersList } from './UsersList';
-import { getFavorites, syncFavorites } from 'utils/favoritesStorage';
+import { getFavorites, syncFavorites, cacheFavoriteUsers } from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
@@ -229,10 +229,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const navigate = useNavigate();
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
-
-  const cacheFetchedUsers = (usersObj, currentFilters = filters) => {
-    cacheLoad2Users(usersObj, currentFilters);
-  };
 
   useEffect(() => {
     profileSync.init();
@@ -468,6 +464,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [dislikeUsersData, setDislikeUsersData] = useState({});
   const [isToastOn, setIsToastOn] = useState(false);
   const prevCacheKey = useRef(buildAddCacheKey(currentFilter, filters, search));
+
+  const cacheFetchedUsers = useCallback(
+    (usersObj, currentFilters = filters, mode = currentFilter) => {
+      if (mode === 'FAVORITE') {
+        cacheFavoriteUsers(usersObj);
+      } else {
+        cacheLoad2Users(usersObj, currentFilters);
+      }
+    },
+    [filters, currentFilter]
+  );
 
   useEffect(() => {
     mergeAddCache(prevCacheKey.current, { users, lastKey, hasMore, totalCount });

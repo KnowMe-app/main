@@ -1,4 +1,7 @@
+import { addCardToList, updateCard, getCardsByList } from './cardsStorage';
+
 export const FAVORITES_KEY = 'favorites';
+const FAVORITE_LIST_KEY = 'favorite';
 
 export const getFavorites = () => {
   try {
@@ -28,4 +31,14 @@ export const syncFavorites = remoteFavs => {
     // ignore write errors
   }
 };
+
+export const cacheFavoriteUsers = usersObj => {
+  Object.entries(usersObj).forEach(([id, data]) => {
+    updateCard(id, data);
+    addCardToList(id, FAVORITE_LIST_KEY);
+  });
+};
+
+export const getFavoriteCards = (remoteFetch) =>
+  getCardsByList(FAVORITE_LIST_KEY, remoteFetch);
 
