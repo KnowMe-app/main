@@ -41,6 +41,16 @@ import {
   normalizeRegion,
 } from './normalizeLocation';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
+import {
+  cacheFavoriteUsers,
+  syncFavorites,
+  getFavorites,
+} from '../utils/favoritesStorage';
+import {
+  cacheDislikedUsers,
+  syncDislikes,
+  getDislikes,
+} from '../utils/dislikesStorage';
 
 const Container = styled.div`
   display: flex;
@@ -729,6 +739,7 @@ const SwipeableCard = ({
       />
       <BtnDislike
         userId={user.userId}
+        userData={user}
         dislikeUsers={dislikeUsers}
         setDislikeUsers={setDislikeUsers}
         favoriteUsers={favoriteUsers}
@@ -1046,6 +1057,16 @@ const Matching = () => {
     try {
       const owner = auth.currentUser?.uid;
       let exclude = new Set();
+      const localFav = getFavorites();
+      const localDis = getDislikes();
+      if (Object.keys(localFav).length || Object.keys(localDis).length) {
+        setFavoriteUsers(localFav);
+        setDislikeUsers(localDis);
+        exclude = new Set([
+          ...Object.keys(localFav),
+          ...Object.keys(localDis),
+        ]);
+      }
       if (owner) {
         const [favIds, disIds] = await Promise.all([
           fetchFavoriteUsers(owner),
@@ -1053,6 +1074,8 @@ const Matching = () => {
         ]);
         setFavoriteUsers(favIds);
         setDislikeUsers(disIds);
+        syncFavorites(favIds);
+        syncDislikes(disIds);
         exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
       }
 
@@ -1128,6 +1151,7 @@ const Matching = () => {
       return;
     }
     const loaded = await fetchFavoriteUsersData(owner);
+    cacheFavoriteUsers(loaded);
     const list = Object.values(loaded);
     loadedIdsRef.current = new Set(Object.keys(loaded));
     setUsers(list);
@@ -1144,6 +1168,7 @@ const Matching = () => {
     if (!owner) return;
     setLoading(true);
     const loaded = await fetchDislikeUsersData(owner);
+    cacheDislikedUsers(loaded);
     loadedIdsRef.current = new Set(Object.keys(loaded));
     setUsers(Object.values(loaded));
     await loadCommentsFor(Object.values(loaded));

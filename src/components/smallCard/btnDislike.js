@@ -6,9 +6,13 @@ import {
   auth,
 } from '../config';
 import { color } from '../styles';
+import { setDislike, cacheDislikedUsers } from 'utils/dislikesStorage';
+import { setFavorite } from 'utils/favoritesStorage';
+import { removeCardFromList } from 'utils/cardsStorage';
 
 export const BtnDislike = ({
   userId,
+  userData = {},
   dislikeUsers = {},
   setDislikeUsers,
   onRemove,
@@ -28,6 +32,8 @@ export const BtnDislike = ({
         const updated = { ...dislikeUsers };
         delete updated[userId];
         setDislikeUsers(updated);
+        setDislike(userId, false);
+        removeCardFromList(userId, 'dislike');
         if (onRemove) onRemove(userId);
       } catch (error) {
         console.error('Failed to remove dislike:', error);
@@ -35,7 +41,10 @@ export const BtnDislike = ({
     } else {
       try {
         await addDislikeUser(userId);
-        setDislikeUsers({ ...dislikeUsers, [userId]: true });
+        const updated = { ...dislikeUsers, [userId]: true };
+        setDislikeUsers(updated);
+        setDislike(userId, true);
+        cacheDislikedUsers({ [userId]: userData });
         if (favoriteUsers[userId]) {
           try {
             await removeFavoriteUser(userId);
@@ -45,6 +54,7 @@ export const BtnDislike = ({
           const upd = { ...favoriteUsers };
           delete upd[userId];
           if (setFavoriteUsers) setFavoriteUsers(upd);
+          setFavorite(userId, false);
           if (onRemove) onRemove(userId);
         } else if (onRemove) {
           onRemove(userId);
