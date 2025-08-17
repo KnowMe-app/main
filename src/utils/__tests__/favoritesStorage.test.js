@@ -1,4 +1,4 @@
-import { getFavorites, setFavorite } from '../favoritesStorage';
+import { getFavorites, setFavorite, cacheFavoriteUsers, getFavoriteCards } from '../favoritesStorage';
 
 describe('favoritesStorage', () => {
   beforeEach(() => {
@@ -16,5 +16,13 @@ describe('favoritesStorage', () => {
     const favs = getFavorites();
     expect(favs['42']).toBe(false);
     expect(Object.keys(favs)).toEqual(['42']);
+  });
+
+  it('caches favorite users separately from load2', async () => {
+    cacheFavoriteUsers({ '1': { title: 'Fav Card' } });
+    const cards = await getFavoriteCards();
+    expect(cards[0].title).toBe('Fav Card');
+    const queries = JSON.parse(localStorage.getItem('queries'));
+    expect(queries['favorite'].ids).toEqual(['1']);
   });
 });
