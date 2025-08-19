@@ -12,7 +12,6 @@ import {
   fetchPaginatedNewUsers,
   fetchAllFilteredUsers,
   fetchFavoriteUsers,
-  fetchFavoriteUsersData,
   removeKeyFromFirebase,
   // fetchListOfUsers,
   makeNewUser,
@@ -38,7 +37,12 @@ import { VerifyEmail } from './VerifyEmail';
 import { color, coloredCard } from './styles';
 //import { formatPhoneNumber } from './inputValidations';
 import { UsersList } from './UsersList';
-import { getFavorites, syncFavorites, cacheFavoriteUsers } from 'utils/favoritesStorage';
+import {
+  getFavorites,
+  syncFavorites,
+  cacheFavoriteUsers,
+  getFavoriteCards,
+} from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
@@ -933,11 +937,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (!owner) return;
     const favIds = await fetchFavoriteUsers(owner);
     setFavoriteUsersData(favIds);
-    const loaded = await fetchFavoriteUsersData(owner);
-    const sorted = Object.entries(loaded)
-      .sort(([, a], [, b]) => compareUsersByGetInTouch(a, b))
-      .reduce((acc, [id, user]) => {
-        acc[id] = user;
+    const loadedArr = await getFavoriteCards(id => fetchUserById(id));
+    const sorted = loadedArr
+      .sort((a, b) => compareUsersByGetInTouch(a, b))
+      .reduce((acc, user) => {
+        acc[user.id] = user;
         return acc;
       }, {});
     const total = Object.keys(sorted).length;
