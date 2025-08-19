@@ -851,6 +851,40 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         });
         return { count: Object.keys(validUsers).length, hasMore: false };
       }
+      const res = await fetchFilteredUsersByPage(
+        0,
+        undefined,
+        undefined,
+        currentFilters,
+        fav,
+        undefined,
+        partial => {
+          const filteredPartial = currentFilters.favorite?.favOnly
+            ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
+            : partial;
+          cacheFetchedUsers(filteredPartial, currentFilters);
+          if (!isEditingRef.current) {
+            setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
+          }
+        },
+      );
+      if (res && Object.keys(res.users).length > 0) {
+        const filteredUsers = currentFilters.favorite?.favOnly
+          ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
+          : res.users;
+        cacheFetchedUsers(filteredUsers, currentFilters);
+        if (!isEditingRef.current) {
+          setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
+        }
+        setDateOffset2(res.lastKey);
+        setHasMore(res.hasMore);
+        mergeAddCache(cacheKey, {
+          users: filteredUsers,
+          lastKey: res.lastKey,
+          hasMore: res.hasMore,
+        });
+        return { count: Object.keys(filteredUsers).length, hasMore: res.hasMore };
+      }
       setHasMore(false);
       mergeAddCache(cacheKey, { users: {}, lastKey: null, hasMore: false });
       return { count: 0, hasMore: false };
