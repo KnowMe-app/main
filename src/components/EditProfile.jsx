@@ -13,8 +13,8 @@ import { ProfileForm } from './ProfileForm';
 import { renderTopBlock } from "./smallCard/renderTopBlock";
 import { coloredCard } from "./styles";
 import { createLocalFirstSync } from '../hooks/localServerSync';
-import { updateCard } from '../utils/cardsStorage';
 import { mergeCache, getCacheKey } from '../hooks/cardsCache';
+import { updateCachedUser } from '../utils/cache';
 
 const Container = styled.div`
   display: flex;
@@ -114,7 +114,7 @@ const EditProfile = () => {
       ? { ...newState, lastAction: currentDate }
       : { ...state, lastAction: currentDate };
 
-    updateCard(updatedState.userId, updatedState);
+    updateCachedUser(updatedState);
     mergeCache(getCacheKey('default'), {
       users: { [updatedState.userId]: updatedState },
     });
