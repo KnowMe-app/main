@@ -121,5 +121,9 @@ open multiple tabs, favorites stay in sync because the UI subscribes to realtime
 updates. You can sort or filter the list by favorites using the controls on the
 Add New Profile page.
 
+The Add New Profile page now caches favorites and date-based results using
+`cardsStorage` query lists (`favorite`, `load2`) instead of dedicated
+`addCache` keys.
+
 ## Features
 - Added 43+ age filter for profile search
