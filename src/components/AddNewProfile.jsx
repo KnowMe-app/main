@@ -767,6 +767,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (isEditingRef.current) return { count: 0, hasMore };
 
+    let offset = dateOffset2;
     if (dateOffset2 === 0) {
       const cachedArr = await getLoad2Cards(currentFilters, id => fetchUserById(id));
       const today = new Date().toISOString().split('T')[0];
@@ -787,15 +788,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!isEditingRef.current && slice.length > 0) {
         setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       }
-      setDateOffset2(slice.length);
+      offset = slice.length;
+      setDateOffset2(offset);
       setHasMore(filteredArr.length > slice.length);
-      if (slice.length >= PAGE_SIZE) {
+      const cacheKey = buildAddCacheKey('DATE2', currentFilters, search);
+      if (slice.length >= PAGE_SIZE && loadAddCache(cacheKey) !== undefined) {
         return { count: slice.length, hasMore: filteredArr.length > slice.length };
       }
     }
 
     const res = await fetchFilteredUsersByPage(
-      dateOffset2,
+      offset,
       undefined,
       undefined,
       currentFilters,
