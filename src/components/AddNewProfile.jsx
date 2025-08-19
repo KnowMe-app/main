@@ -44,6 +44,7 @@ import {
   getFavoriteCards,
 } from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
+import { setIdsForQuery } from 'utils/cardIndex';
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -870,8 +871,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const loadFavoriteUsers = async () => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
-    const favIds = await fetchFavoriteUsers(owner);
+
+    let favIds = getFavorites();
+    if (!Object.keys(favIds).length) {
+      favIds = await fetchFavoriteUsers(owner);
+      syncFavorites(favIds);
+    }
+
     setFavoriteUsersData(favIds);
+    setFavoriteIds(favIds);
+    setIdsForQuery('favorite', Object.keys(favIds));
     const loadedArr = await getFavoriteCards(id => fetchUserById(id));
     const sorted = loadedArr
       .sort((a, b) => compareUsersByGetInTouch(a, b))
