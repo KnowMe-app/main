@@ -172,3 +172,7 @@ const favoriteCards = await getCardsByList('favorite', fetchCard);
 
 Каждая карточка содержит поле `updatedAt`. При невозможности получить карточку с
 бекенда её идентификатор удаляется из соответствующего списка.
+
+Страница `AddNewProfile` использует эти списки `favorite` и `load2` через
+`cardsStorage`, избавившись от отдельного кеша `addCache` для избранного и
+загрузки по датам (`DATE2`).

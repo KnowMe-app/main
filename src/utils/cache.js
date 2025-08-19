@@ -33,12 +33,10 @@ export const buildAddCacheKey = (mode, filters = {}, term = '') =>
   `${mode || 'all'}:${term || ''}:${JSON.stringify(filters)}`;
 
 let currentAddCacheKey = '';
-let favoriteAddCacheKey = '';
 let favoriteIds = {};
 
-export const setAddCacheKeys = (activeKey, favoriteKey) => {
+export const setAddCacheKeys = activeKey => {
   currentAddCacheKey = activeKey;
-  favoriteAddCacheKey = favoriteKey;
 };
 
 export const setFavoriteIds = fav => {
@@ -52,11 +50,7 @@ export const setFavoriteIds = fav => {
 
 const isFavorite = id => !!favoriteIds[id];
 
-const {
-  loadCache: loadAddCacheUtil,
-  saveCache: saveAddCacheUtil,
-  mergeCache: mergeAddCache,
-} = createCache('addCache');
+const { mergeCache: mergeAddCache } = createCache('addCache');
 
 export const updateCachedUser = (
   user,
@@ -90,19 +84,7 @@ export const updateCachedUser = (
     }
   });
 
-  if (favoriteAddCacheKey) {
-    if (removeFavorite) {
-      const cached = loadAddCacheUtil(favoriteAddCacheKey) || {};
-      if (cached.users) {
-        delete cached.users[user.userId];
-        saveAddCacheUtil(favoriteAddCacheKey, cached);
-      }
-      removeCardFromList(user.userId, 'favorite');
-    } else if (shouldFav) {
-      mergeAddCache(favoriteAddCacheKey, { users: { [user.userId]: user } });
-      addCardToList(user.userId, 'favorite');
-    }
-  } else if (removeFavorite) {
+  if (removeFavorite) {
     removeCardFromList(user.userId, 'favorite');
   } else if (shouldFav) {
     addCardToList(user.userId, 'favorite');

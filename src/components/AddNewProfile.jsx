@@ -553,22 +553,31 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     const cacheKey = buildAddCacheKey(currentFilter, filters, search);
-    // очищаємо попередній кеш та зберігаємо дані без об'єднання
-    if (prevCacheKey.current !== cacheKey) {
+    const prevKeyMode = prevCacheKey.current.split(':')[0];
+    if (prevCacheKey.current && prevKeyMode !== 'FAVORITE' && prevKeyMode !== 'DATE2') {
       saveAddCache(prevCacheKey.current, { users, lastKey, hasMore, totalCount });
-      saveAddCache(cacheKey, {});
-      prevCacheKey.current = cacheKey;
     }
+    prevCacheKey.current = cacheKey;
 
-    setAddCacheKeys(cacheKey, buildAddCacheKey('FAVORITE', filters, search));
-    const cached = loadAddCache(cacheKey);
-    if (cached) {
-      cacheFetchedUsers(cached.users || {});
-      setUsers(cached.users || {});
-      setLastKey(cached.lastKey ?? null);
-      setHasMore(cached.hasMore ?? true);
-      setTotalCount(cached.totalCount ?? Object.keys(cached.users || {}).length);
+    const useAddCache = currentFilter !== 'FAVORITE' && currentFilter !== 'DATE2';
+    if (useAddCache) {
+      saveAddCache(cacheKey, {});
+      setAddCacheKeys(cacheKey);
+      const cached = loadAddCache(cacheKey);
+      if (cached) {
+        cacheFetchedUsers(cached.users || {});
+        setUsers(cached.users || {});
+        setLastKey(cached.lastKey ?? null);
+        setHasMore(cached.hasMore ?? true);
+        setTotalCount(cached.totalCount ?? Object.keys(cached.users || {}).length);
+      } else {
+        setUsers({});
+        setLastKey(null);
+        setHasMore(true);
+        setTotalCount(0);
+      }
     } else {
+      setAddCacheKeys('');
       setUsers({});
       setLastKey(null);
       setHasMore(true);
@@ -579,7 +588,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (currentFilter === 'DATE2') {
         loadMoreUsers2();
       } else if (currentFilter === 'FAVORITE') {
-        saveAddCache(buildAddCacheKey('FAVORITE', filters, search), {});
         loadFavoriteUsers();
       } else {
         loadMoreUsers(currentFilter);
@@ -680,19 +688,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return merged;
   };
 
-  useEffect(() => {
-    if (currentFilter !== 'DATE2') return;
-    (async () => {
-      const cachedCards = await getLoad2Cards(filters);
-      if (cachedCards.length) {
-        const obj = cachedCards.reduce((acc, card) => {
-          acc[card.id] = card;
-          return acc;
-        }, {});
-        setUsers(prev => mergeWithoutOverwrite(prev, obj));
-      }
-    })();
-  }, [filters, currentFilter]);
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
     console.log('loadMoreUsers called with', {
@@ -772,88 +767,31 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (isEditingRef.current) return { count: 0, hasMore };
 
-    const cacheKey = buildAddCacheKey('DATE2', currentFilters, search);
     if (dateOffset2 === 0) {
-      const cached = loadAddCache(cacheKey);
-      if (cached && cached.users) {
-        const today = new Date().toISOString().split('T')[0];
-        const isValid = d => {
-          if (!d) return true;
-          if (d === '2099-99-99' || d === '9999-99-99') return false;
-          return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
-        };
-        const validEntries = Object.entries(cached.users).filter(
-          ([id, u]) => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[id]),
-        );
-        const validUsers = Object.fromEntries(validEntries.slice(0, PAGE_SIZE));
-        cacheFetchedUsers(validUsers, currentFilters);
-        if (validEntries.length >= PAGE_SIZE) {
-          if (!isEditingRef.current) {
-            setUsers(prev => mergeWithoutOverwrite(prev, validUsers));
-          }
-          setDateOffset2(cached.lastKey);
-          setHasMore(cached.hasMore);
-          mergeAddCache(cacheKey, {
-            users: validUsers,
-            lastKey: cached.lastKey,
-            hasMore: cached.hasMore,
-          });
-          return { count: Object.keys(validUsers).length, hasMore: cached.hasMore };
-        }
-        if (!isEditingRef.current && validEntries.length > 0) {
-          setUsers(prev => mergeWithoutOverwrite(prev, validUsers));
-        }
-        const resFromCache = await fetchFilteredUsersByPage(
-          validEntries.length,
-          undefined,
-          undefined,
-          currentFilters,
-          fav,
-          undefined,
-          partial => {
-            const filteredPartial = currentFilters.favorite?.favOnly
-              ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
-              : partial;
-            cacheFetchedUsers(filteredPartial, currentFilters);
-            if (!isEditingRef.current) {
-              setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
-            }
-          },
-        );
-        if (resFromCache && Object.keys(resFromCache.users).length > 0) {
-          const filteredResUsers = currentFilters.favorite?.favOnly
-            ? Object.fromEntries(
-                Object.entries(resFromCache.users).filter(([id]) => fav[id]),
-              )
-            : resFromCache.users;
-          cacheFetchedUsers(filteredResUsers, currentFilters);
-          if (!isEditingRef.current) {
-            setUsers(prev => mergeWithoutOverwrite(prev, filteredResUsers));
-          }
-          const combined = { ...validUsers, ...filteredResUsers };
-          setDateOffset2(resFromCache.lastKey);
-          setHasMore(resFromCache.hasMore);
-          mergeAddCache(cacheKey, {
-            users: combined,
-            lastKey: resFromCache.lastKey,
-            hasMore: resFromCache.hasMore,
-          });
-          return {
-            count: Object.keys(combined).length,
-            hasMore: resFromCache.hasMore,
-          };
-        }
-        setHasMore(false);
-        mergeAddCache(cacheKey, {
-          users: validUsers,
-          lastKey: null,
-          hasMore: false,
-        });
-        return { count: Object.keys(validUsers).length, hasMore: false };
+      const cachedArr = await getLoad2Cards(currentFilters, id => fetchUserById(id));
+      const today = new Date().toISOString().split('T')[0];
+      const isValid = d => {
+        if (!d) return true;
+        if (d === '2099-99-99' || d === '9999-99-99') return false;
+        return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
+      };
+      const filteredArr = cachedArr.filter(
+        u => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[u.id]),
+      );
+      const slice = filteredArr.slice(0, PAGE_SIZE);
+      const cachedUsers = slice.reduce((acc, u) => {
+        acc[u.id] = u;
+        return acc;
+      }, {});
+      cacheFetchedUsers(cachedUsers, currentFilters);
+      if (!isEditingRef.current && slice.length > 0) {
+        setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       }
-      setHasMore(false);
-      mergeAddCache(cacheKey, { users: {}, lastKey: null, hasMore: false });
-      return { count: 0, hasMore: false };
+      setDateOffset2(slice.length);
+      setHasMore(filteredArr.length > slice.length);
+      if (slice.length >= PAGE_SIZE) {
+        return { count: slice.length, hasMore: filteredArr.length > slice.length };
+      }
     }
 
     const res = await fetchFilteredUsersByPage(
@@ -883,16 +821,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
       setDateOffset2(res.lastKey);
       setHasMore(res.hasMore);
-      mergeAddCache(cacheKey, {
-        users: filteredUsers,
-        lastKey: res.lastKey,
-        hasMore: res.hasMore,
-      });
       const count = Object.keys(filteredUsers).length;
       return { count, hasMore: res.hasMore };
     }
     setHasMore(false);
-    mergeAddCache(cacheKey, { users: {}, lastKey: null, hasMore: false });
     return { count: 0, hasMore: false };
   };
 
@@ -945,12 +877,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return acc;
       }, {});
     const total = Object.keys(sorted).length;
-    saveAddCache(buildAddCacheKey('FAVORITE', filters, search), {
-      users: sorted,
-      lastKey: null,
-      hasMore: false,
-      totalCount: total,
-    });
     cacheFetchedUsers(sorted);
     setUsers(sorted);
     setHasMore(false);
