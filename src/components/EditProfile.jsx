@@ -13,6 +13,8 @@ import { ProfileForm } from './ProfileForm';
 import { renderTopBlock } from "./smallCard/renderTopBlock";
 import { coloredCard } from "./styles";
 import { createLocalFirstSync } from '../hooks/localServerSync';
+import { updateCard } from '../utils/cardsStorage';
+import { mergeCache, getCacheKey } from '../hooks/cardsCache';
 
 const Container = styled.div`
   display: flex;
@@ -108,8 +110,14 @@ const EditProfile = () => {
     };
     const currentDate = formatDate(new Date());
 
-    const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
+    const updatedState = newState
+      ? { ...newState, lastAction: currentDate }
+      : { ...state, lastAction: currentDate };
 
+    updateCard(updatedState.userId, updatedState);
+    mergeCache(getCacheKey('default'), {
+      users: { [updatedState.userId]: updatedState },
+    });
     syncRef.current.update({ updatedState, overwrite, delCondition });
   };
 
