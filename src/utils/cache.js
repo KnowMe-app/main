@@ -12,10 +12,13 @@ export { getCacheKey, loadCache, saveCache };
 // Removes all cached card lists regardless of mode or search term
 export const clearAllCardsCache = () => {
   const CARDS_PREFIX = 'matchingCache:cards:';
+  const EXTRA_KEYS = ['cards', 'queries', 'favorites', 'favorite'];
 
   Object.keys(localStorage)
     .filter(key => key.startsWith(CARDS_PREFIX))
     .forEach(key => localStorage.removeItem(key));
+
+  EXTRA_KEYS.forEach(key => localStorage.removeItem(key));
 };
 
 // Removes all cached AddNewProfile data

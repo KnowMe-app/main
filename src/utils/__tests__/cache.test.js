@@ -1,4 +1,4 @@
-import { updateCachedUser } from '../cache';
+import { updateCachedUser, clearAllCardsCache } from '../cache';
 import { getCacheKey, loadCache, saveCache } from '../../hooks/cardsCache';
 import { normalizeQueryKey } from '../cardIndex';
 
@@ -31,5 +31,29 @@ describe('updateCachedUser search cache', () => {
 
     expect(loadCache(getCacheKey('search', normalizeQueryKey('userId=1')))).toBeNull();
     expect(loadCache(getCacheKey('search', normalizeQueryKey('name=John')))).toBeNull();
+  });
+});
+
+describe('clearAllCardsCache', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('removes matching cache and related keys', () => {
+    localStorage.setItem('matchingCache:cards:default', 'cached');
+    localStorage.setItem('cards', '{}');
+    localStorage.setItem('queries', '{}');
+    localStorage.setItem('favorites', '{}');
+    localStorage.setItem('favorite', '[]');
+    localStorage.setItem('other', 'value');
+
+    clearAllCardsCache();
+
+    expect(localStorage.getItem('matchingCache:cards:default')).toBeNull();
+    expect(localStorage.getItem('cards')).toBeNull();
+    expect(localStorage.getItem('queries')).toBeNull();
+    expect(localStorage.getItem('favorites')).toBeNull();
+    expect(localStorage.getItem('favorite')).toBeNull();
+    expect(localStorage.getItem('other')).toBe('value');
   });
 });
