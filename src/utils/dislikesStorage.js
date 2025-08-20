@@ -1,4 +1,10 @@
-import { addCardToList, updateCard, getCardsByList, removeCardFromList } from './cardsStorage';
+import {
+  addCardToList,
+  updateCard,
+  getCardsByList,
+  removeCardFromList,
+} from './cardsStorage';
+import { loadCards } from './cardIndex';
 
 export const DISLIKES_KEY = 'dislikes';
 const DISLIKE_LIST_KEY = 'dislike';
@@ -38,8 +44,10 @@ export const syncDislikes = remoteDislikes => {
 };
 
 export const cacheDislikedUsers = usersObj => {
+  const existing = loadCards();
   Object.entries(usersObj).forEach(([id, data]) => {
-    updateCard(id, data);
+    const merged = existing[id] ? { ...data, ...existing[id] } : data;
+    updateCard(id, merged);
     addCardToList(id, DISLIKE_LIST_KEY);
   });
 };
