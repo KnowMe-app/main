@@ -1,4 +1,5 @@
 import { addCardToList, updateCard, getCardsByList } from './cardsStorage';
+import { loadCards } from './cardIndex';
 
 export const FAVORITES_KEY = 'favorites';
 const FAVORITE_LIST_KEY = 'favorite';
@@ -33,8 +34,10 @@ export const syncFavorites = remoteFavs => {
 };
 
 export const cacheFavoriteUsers = usersObj => {
+  const existing = loadCards();
   Object.entries(usersObj).forEach(([id, data]) => {
-    updateCard(id, data);
+    const merged = existing[id] ? { ...data, ...existing[id] } : data;
+    updateCard(id, merged);
     addCardToList(id, FAVORITE_LIST_KEY);
   });
 };
