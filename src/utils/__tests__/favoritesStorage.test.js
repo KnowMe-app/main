@@ -1,4 +1,11 @@
-import { getFavorites, setFavorite, cacheFavoriteUsers, getFavoriteCards } from '../favoritesStorage';
+import {
+  getFavorites,
+  setFavorite,
+  cacheFavoriteUsers,
+  getFavoriteCards,
+  syncFavorites,
+  getFavoritesSyncedAt,
+} from '../favoritesStorage';
 
 describe('favoritesStorage', () => {
   beforeEach(() => {
@@ -24,5 +31,11 @@ describe('favoritesStorage', () => {
     expect(cards[0].title).toBe('Fav Card');
     const queries = JSON.parse(localStorage.getItem('queries'));
     expect(queries['favorite'].ids).toEqual(['1']);
+  });
+
+  it('records last sync time', () => {
+    expect(getFavoritesSyncedAt()).toBe(0);
+    syncFavorites({});
+    expect(getFavoritesSyncedAt()).toBeGreaterThan(0);
   });
 });

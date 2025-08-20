@@ -2,6 +2,23 @@ import { addCardToList, updateCard, getCardsByList } from './cardsStorage';
 
 export const FAVORITES_KEY = 'favorites';
 const FAVORITE_LIST_KEY = 'favorite';
+const FAVORITES_TS_KEY = 'favoritesSyncedAt';
+
+export const getFavoritesSyncedAt = () => {
+  try {
+    return parseInt(localStorage.getItem(FAVORITES_TS_KEY), 10) || 0;
+  } catch {
+    return 0;
+  }
+};
+
+export const setFavoritesSyncedAt = ts => {
+  try {
+    localStorage.setItem(FAVORITES_TS_KEY, String(ts));
+  } catch {
+    // ignore write errors
+  }
+};
 
 export const getFavorites = () => {
   try {
@@ -27,6 +44,7 @@ export const setFavorite = (id, isFav) => {
 export const syncFavorites = remoteFavs => {
   try {
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(remoteFavs || {}));
+    setFavoritesSyncedAt(Date.now());
   } catch {
     // ignore write errors
   }
