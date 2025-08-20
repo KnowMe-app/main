@@ -123,7 +123,7 @@ Add New Profile page.
 
 The Add New Profile page now caches favorites and date-based results using
 `cardsStorage` query lists (`favorite`, `load2`) instead of dedicated
-`addCache` keys.
+`addCache` keys. Other filters still rely on `addCache` for offline support.
 
 ## Features
 - Added 43+ age filter for profile search

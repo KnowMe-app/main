@@ -792,8 +792,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       offset = slice.length;
       setDateOffset2(offset);
       setHasMore(filteredArr.length > slice.length);
-      const cacheKey = buildAddCacheKey('DATE2', currentFilters, search);
-      if (slice.length >= PAGE_SIZE && loadAddCache(cacheKey) !== undefined) {
+      if (slice.length >= PAGE_SIZE) {
         return { count: slice.length, hasMore: filteredArr.length > slice.length };
       }
     }
