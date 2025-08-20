@@ -42,6 +42,7 @@ import {
   syncFavorites,
   cacheFavoriteUsers,
   getFavoriteCards,
+  getFavoritesSyncedAt,
 } from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
 import { setIdsForQuery } from 'utils/cardIndex';
@@ -69,6 +70,8 @@ import {
   clearAddCache,
   updateCachedUser,
 } from 'utils/cache';
+
+const SIX_HOURS = 6 * 60 * 60 * 1000;
 
 const Container = styled.div`
   display: flex;
@@ -700,7 +703,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const param = filterForload === 'DATE' ? dateOffset : lastKey;
     let favRaw = getFavorites();
     let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
-    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
+    const favLastSync = getFavoritesSyncedAt();
+    if (
+      currentFilters.favorite?.favOnly &&
+      (Object.keys(favRaw).length === 0 || Date.now() - favLastSync > SIX_HOURS)
+    ) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
       syncFavorites(fav);
@@ -760,7 +767,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const loadMoreUsers2 = async (currentFilters = filters) => {
     let favRaw = getFavorites();
     let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
-    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
+    const favLastSync = getFavoritesSyncedAt();
+    if (
+      currentFilters.favorite?.favOnly &&
+      (Object.keys(favRaw).length === 0 || Date.now() - favLastSync > SIX_HOURS)
+    ) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
       syncFavorites(fav);
@@ -871,11 +882,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const loadFavoriteUsers = async () => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
-
     let favIds = getFavorites();
-    if (!Object.keys(favIds).length) {
-      favIds = await fetchFavoriteUsers(owner);
-      syncFavorites(favIds);
+    const lastSync = getFavoritesSyncedAt();
+
+    // Refresh from backend if cache is empty or older than 6 hours
+    const shouldRefresh =
+      !Object.keys(favIds).length || Date.now() - lastSync > SIX_HOURS;
+
+    if (shouldRefresh) {
+      const remoteFavs = await fetchFavoriteUsers(owner);
+      if (Object.keys(remoteFavs).length) {
+        favIds = remoteFavs;
+        syncFavorites(remoteFavs);
+      }
     }
 
     setFavoriteUsersData(favIds);
