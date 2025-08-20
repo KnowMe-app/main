@@ -12,6 +12,7 @@ import {
   fetchPaginatedNewUsers,
   fetchAllFilteredUsers,
   fetchFavoriteUsers,
+  fetchFavoriteUsersData,
   removeKeyFromFirebase,
   // fetchListOfUsers,
   makeNewUser,
@@ -870,15 +871,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const loadFavoriteUsers = async () => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
-
-    let favIds = getFavorites();
-    if (!Object.keys(favIds).length) {
-      favIds = await fetchFavoriteUsers(owner);
-      syncFavorites(favIds);
-    }
-
+    const favUsers = await fetchFavoriteUsersData(owner);
+    const favIds = Object.keys(favUsers).reduce((acc, id) => {
+      acc[id] = true;
+      return acc;
+    }, {});
+    syncFavorites(favIds);
     setFavoriteUsersData(favIds);
     setFavoriteIds(favIds);
+    cacheFavoriteUsers(favUsers);
     setIdsForQuery('favorite', Object.keys(favIds));
     const loadedArr = await getFavoriteCards(id => fetchUserById(id));
     const sorted = loadedArr
