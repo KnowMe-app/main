@@ -175,4 +175,4 @@ const favoriteCards = await getCardsByList('favorite', fetchCard);
 
 Страница `AddNewProfile` использует эти списки `favorite` и `load2` через
 `cardsStorage`, избавившись от отдельного кеша `addCache` для избранного и
-загрузки по датам (`DATE2`).
+загрузки по датам (`DATE2`). `addCache` остаётся для офлайн‑режима при других фильтрах.
