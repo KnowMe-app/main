@@ -45,7 +45,7 @@ import {
   getFavoriteCards,
 } from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
-import { setIdsForQuery } from 'utils/cardIndex';
+import { setIdsForQuery, getIdsByQuery } from 'utils/cardIndex';
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -468,7 +468,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentFilter, setCurrentFilter] = useState('');
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
-  const [favoriteUsersData, setFavoriteUsersData] = useState({});
+  const initialFav = getFavorites();
+  const [favoriteUsersData, setFavoriteUsersData] = useState(initialFav);
   const [dislikeUsersData, setDislikeUsersData] = useState({});
   const [isToastOn, setIsToastOn] = useState(false);
   const prevCacheKey = useRef(buildAddCacheKey(currentFilter, filters, search));
@@ -525,18 +526,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const ownerId = auth.currentUser?.uid;
 
   useEffect(() => {
-    if (!ownerId) return;
-
-    const favRef = ref(database, `multiData/favorites/${ownerId}`);
-    const unsubscribe = onValue(favRef, snap => {
-      const fav = snap.exists() ? snap.val() : {};
-      setFavoriteUsersData(fav);
-      setFavoriteIds(fav);
-      syncFavorites(fav);
-    });
-
-    return () => unsubscribe();
-  }, [ownerId]);
+    setFavoriteIds(initialFav);
+  }, []);
 
   useEffect(() => {
     if (!ownerId) return;
@@ -877,6 +868,30 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const loadFavoriteUsers = async () => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
+
+    const existingIds = getIdsByQuery('favorite');
+    if (existingIds.length > 0) {
+      const favMap = getFavorites();
+      setFavoriteUsersData(favMap);
+      setFavoriteIds(favMap);
+      syncFavorites(favMap);
+      const loadedArr = await getFavoriteCards(id => fetchUserById(id));
+      const sorted = loadedArr
+        .sort((a, b) => compareUsersByGetInTouch(a, b))
+        .reduce((acc, user) => {
+          acc[user.id] = user;
+          return acc;
+        }, {});
+      const total = Object.keys(sorted).length;
+      cacheFetchedUsers(sorted);
+      setUsers(sorted);
+      setHasMore(false);
+      setLastKey(null);
+      setCurrentPage(1);
+      setTotalCount(total);
+      return;
+    }
+
     const favUsers = await fetchFavoriteUsersData(owner);
     const favIds = Object.keys(favUsers).reduce((acc, id) => {
       acc[id] = true;
