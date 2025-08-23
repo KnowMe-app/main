@@ -527,7 +527,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     setFavoriteIds(initialFav);
-  }, []);
+  }, [initialFav]);
 
   useEffect(() => {
     if (!ownerId) return;
