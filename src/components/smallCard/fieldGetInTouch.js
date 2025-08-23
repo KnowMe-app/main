@@ -13,6 +13,7 @@ import {
   auth,
 } from '../config';
 import { updateCachedUser, setFavoriteIds } from 'utils/cache';
+import { setFavorite } from 'utils/favoritesStorage';
 
 export const fieldGetInTouch = (
   userData,
@@ -104,6 +105,7 @@ export const fieldGetInTouch = (
           delete upd[userData.userId];
           setFavoriteUsers(upd);
           setFavoriteIds(upd);
+          setFavorite(userData.userId, false);
           updateCachedUser(userData, { forceFavorite: true, removeFavorite: true });
         }
       } catch (error) {
@@ -125,6 +127,7 @@ export const fieldGetInTouch = (
         delete updated[userData.userId];
         setFavoriteUsers(updated);
         setFavoriteIds(updated);
+        setFavorite(userData.userId, false);
         updateCachedUser(userData, { forceFavorite: true, removeFavorite: true });
       } catch (error) {
         console.error('Failed to remove favorite:', error);
@@ -135,6 +138,7 @@ export const fieldGetInTouch = (
         const updated = { ...favoriteUsers, [userData.userId]: true };
         setFavoriteUsers(updated);
         setFavoriteIds(updated);
+        setFavorite(userData.userId, true);
         updateCachedUser(userData, { forceFavorite: true });
         if (dislikeUsers[userData.userId]) {
           try {
