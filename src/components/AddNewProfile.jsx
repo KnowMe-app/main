@@ -45,7 +45,7 @@ import {
   getFavoriteCards,
 } from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
-import { setIdsForQuery } from 'utils/cardIndex';
+import { setIdsForQuery, loadQueries, TTL_MS } from 'utils/cardIndex';
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -871,8 +871,36 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const loadFavoriteUsers = async () => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
+
+    // Показати дані з localStorage перед зверненням до сервера
+    const localFavIds = getFavorites();
+    setFavoriteUsersData(localFavIds);
+    setFavoriteIds(localFavIds);
+    const localArr = await getFavoriteCards(id => fetchUserById(id));
+    const localSorted = localArr
+      .sort((a, b) => compareUsersByGetInTouch(a, b))
+      .reduce((acc, user) => {
+        acc[user.id] = user;
+        return acc;
+      }, {});
+    cacheFetchedUsers(localSorted);
+    setUsers(localSorted);
+    setHasMore(false);
+    setLastKey(null);
+    setCurrentPage(1);
+    setTotalCount(Object.keys(localSorted).length);
+
+    // Оновлювати локальну копію тільки якщо минуло більше TTL або її немає
+    const queries = loadQueries();
+    const entry = queries['favorite'];
+    const outdated = !entry || Date.now() - entry.updatedAt > TTL_MS;
+    if (!outdated) return;
+
     const favUsers = await fetchFavoriteUsersData(owner);
-    const favIds = Object.keys(favUsers).reduce((acc, id) => {
+    const ids = Object.keys(favUsers || {});
+    if (ids.length === 0) return; // не перезаписуємо індекс, якщо нічого не прийшло
+
+    const favIds = ids.reduce((acc, id) => {
       acc[id] = true;
       return acc;
     }, {});
@@ -880,21 +908,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setFavoriteUsersData(favIds);
     setFavoriteIds(favIds);
     cacheFavoriteUsers(favUsers);
-    setIdsForQuery('favorite', Object.keys(favIds));
-    const loadedArr = await getFavoriteCards(id => fetchUserById(id));
-    const sorted = loadedArr
+    setIdsForQuery('favorite', ids);
+
+    const remoteSorted = Object.entries(favUsers)
+      .map(([id, data]) => ({ ...data, id }))
       .sort((a, b) => compareUsersByGetInTouch(a, b))
       .reduce((acc, user) => {
         acc[user.id] = user;
         return acc;
       }, {});
-    const total = Object.keys(sorted).length;
-    cacheFetchedUsers(sorted);
-    setUsers(sorted);
-    setHasMore(false);
-    setLastKey(null);
-    setCurrentPage(1);
-    setTotalCount(total);
+    cacheFetchedUsers(remoteSorted);
+    setUsers(remoteSorted);
+    setTotalCount(Object.keys(remoteSorted).length);
   };
 
   const [duplicates, setDuplicates] = useState('');
