@@ -769,67 +769,73 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (isEditingRef.current) return { count: 0, hasMore };
 
+    const cachedArr = await getLoad2Cards(currentFilters, id => fetchUserById(id));
+    const today = new Date().toISOString().split('T')[0];
+    const isValid = d => {
+      if (!d) return true;
+      if (d === '2099-99-99' || d === '9999-99-99') return false;
+      return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
+    };
+    const filteredArr = cachedArr.filter(
+      u => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[u.id]),
+    );
+
     let offset = dateOffset2;
-    if (dateOffset2 === 0) {
-      const cachedArr = await getLoad2Cards(currentFilters, id => fetchUserById(id));
-      const today = new Date().toISOString().split('T')[0];
-      const isValid = d => {
-        if (!d) return true;
-        if (d === '2099-99-99' || d === '9999-99-99') return false;
-        return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
-      };
-      const filteredArr = cachedArr.filter(
-        u => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[u.id]),
-      );
-      const slice = filteredArr.slice(0, PAGE_SIZE);
+    let count = 0;
+
+    const slice = filteredArr.slice(offset, offset + PAGE_SIZE);
+    if (slice.length > 0) {
       const cachedUsers = slice.reduce((acc, u) => {
         acc[u.id] = u;
         return acc;
       }, {});
       cacheFetchedUsers(cachedUsers, currentFilters);
-      if (!isEditingRef.current && slice.length > 0) {
+      if (!isEditingRef.current) {
         setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       }
-      offset = slice.length;
-      setDateOffset2(offset);
-      setHasMore(filteredArr.length > slice.length);
-      if (slice.length >= PAGE_SIZE) {
-        return { count: slice.length, hasMore: filteredArr.length > slice.length };
+      offset += slice.length;
+      count += slice.length;
+    }
+
+    let more = filteredArr.length > offset;
+
+    if (!more && slice.length < PAGE_SIZE) {
+      const res = await fetchFilteredUsersByPage(
+        offset,
+        undefined,
+        undefined,
+        currentFilters,
+        fav,
+        undefined,
+        partial => {
+          const filteredPartial = currentFilters.favorite?.favOnly
+            ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
+            : partial;
+          cacheFetchedUsers(filteredPartial, currentFilters);
+          if (!isEditingRef.current) {
+            setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
+          }
+        },
+      );
+      if (res && Object.keys(res.users).length > 0) {
+        const filteredUsers = currentFilters.favorite?.favOnly
+          ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
+          : res.users;
+        cacheFetchedUsers(filteredUsers, currentFilters);
+        if (!isEditingRef.current) {
+          setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
+        }
+        offset = res.lastKey;
+        more = res.hasMore;
+        count += Object.keys(filteredUsers).length;
+      } else {
+        more = false;
       }
     }
 
-    const res = await fetchFilteredUsersByPage(
-      offset,
-      undefined,
-      undefined,
-      currentFilters,
-      fav,
-      undefined,
-      partial => {
-        const filteredPartial = currentFilters.favorite?.favOnly
-          ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
-          : partial;
-        cacheFetchedUsers(filteredPartial, currentFilters);
-        if (!isEditingRef.current) {
-          setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
-        }
-      },
-    );
-    if (res && Object.keys(res.users).length > 0) {
-      const filteredUsers = currentFilters.favorite?.favOnly
-        ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
-        : res.users;
-      cacheFetchedUsers(filteredUsers, currentFilters);
-      if (!isEditingRef.current) {
-        setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
-      }
-      setDateOffset2(res.lastKey);
-      setHasMore(res.hasMore);
-      const count = Object.keys(filteredUsers).length;
-      return { count, hasMore: res.hasMore };
-    }
-    setHasMore(false);
-    return { count: 0, hasMore: false };
+    setDateOffset2(offset);
+    setHasMore(more);
+    return { count, hasMore: more };
   };
 
 
