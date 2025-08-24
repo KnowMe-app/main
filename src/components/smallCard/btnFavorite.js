@@ -31,7 +31,7 @@ export const BtnFavorite = ({
         const updated = { ...favoriteUsers, [userId]: false };
         setFavoriteUsers(updated);
         setFavoriteIds(Object.fromEntries(Object.entries(updated).filter(([, v]) => v)));
-        updateCachedUser(userData || { userId }, { forceFavorite: true, removeFavorite: true });
+        updateCachedUser(userData || { userId }, { removeFavorite: true });
         setFavorite(userId, false);
         if (onRemove) onRemove(userId);
       } catch (error) {
@@ -43,7 +43,7 @@ export const BtnFavorite = ({
         const updatedFav = { ...favoriteUsers, [userId]: true };
         setFavoriteUsers(updatedFav);
         setFavoriteIds(updatedFav);
-        updateCachedUser(userData || { userId }, { forceFavorite: true });
+        updateCachedUser(userData || { userId });
         setFavorite(userId, true);
         if (dislikeUsers[userId]) {
           try {
