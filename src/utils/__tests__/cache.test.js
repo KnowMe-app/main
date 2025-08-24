@@ -1,4 +1,4 @@
-import { updateCachedUser, clearAllCardsCache } from '../cache';
+import { updateCachedUser, clearAllCardsCache, setFavoriteIds } from '../cache';
 import { getCacheKey, loadCache, saveCache } from '../../hooks/cardsCache';
 import { normalizeQueryKey, getIdsByQuery } from '../cardIndex';
 
@@ -35,7 +35,8 @@ describe('updateCachedUser search cache', () => {
 
   it('updates favorite and load2 lists', () => {
     const user = { userId: '1', name: 'John' };
-    updateCachedUser(user, { forceFavorite: true });
+    setFavoriteIds({ '1': true });
+    updateCachedUser(user);
     expect(getIdsByQuery('favorite')).toContain('1');
     expect(getIdsByQuery('load2')).toContain('1');
     updateCachedUser(user, { removeFavorite: true });

@@ -29,13 +29,10 @@ export const setFavoriteIds = fav => {
 
 const isFavorite = id => !!favoriteIds[id];
 
-export const updateCachedUser = (
-  user,
-  { forceFavorite = false, removeFavorite = false } = {},
-) => {
+export const updateCachedUser = (user, { removeFavorite = false } = {}) => {
   updateCard(user.userId, user);
   addCardToList(user.userId, 'load2');
-  const shouldFav = forceFavorite || isFavorite(user.userId);
+  const shouldFav = isFavorite(user.userId);
 
   const searchKeys = [getCacheKey('search', normalizeQueryKey(`userId=${user.userId}`))];
   if (typeof user.name === 'string') {
