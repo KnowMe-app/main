@@ -1,9 +1,4 @@
-import {
-  createCache,
-  getCacheKey,
-  loadCache,
-  saveCache,
-} from 'hooks/cardsCache';
+import { getCacheKey, loadCache, saveCache } from 'hooks/cardsCache';
 import { updateCard, addCardToList, removeCardFromList } from './cardsStorage';
 import { normalizeQueryKey } from './cardIndex';
 
@@ -21,26 +16,7 @@ export const clearAllCardsCache = () => {
   EXTRA_KEYS.forEach(key => localStorage.removeItem(key));
 };
 
-// Removes all cached AddNewProfile data
-export const clearAddCache = () => {
-  const ADD_PREFIX = 'addCache:';
-
-  Object.keys(localStorage)
-    .filter(key => key.startsWith(ADD_PREFIX))
-    .forEach(key => localStorage.removeItem(key));
-};
-
-// ----- AddNewProfile cache helpers -----
-
-export const buildAddCacheKey = (mode, filters = {}, term = '') =>
-  `${mode || 'all'}:${term || ''}:${JSON.stringify(filters)}`;
-
-let currentAddCacheKey = '';
 let favoriteIds = {};
-
-export const setAddCacheKeys = activeKey => {
-  currentAddCacheKey = activeKey;
-};
 
 export const setFavoriteIds = fav => {
   favoriteIds = fav || {};
@@ -53,15 +29,10 @@ export const setFavoriteIds = fav => {
 
 const isFavorite = id => !!favoriteIds[id];
 
-const { mergeCache: mergeAddCache } = createCache('addCache');
-
 export const updateCachedUser = (
   user,
   { forceFavorite = false, removeFavorite = false } = {},
 ) => {
-  if (currentAddCacheKey) {
-    mergeAddCache(currentAddCacheKey, { users: { [user.userId]: user } });
-  }
   updateCard(user.userId, user);
   addCardToList(user.userId, 'load2');
   const shouldFav = forceFavorite || isFavorite(user.userId);
