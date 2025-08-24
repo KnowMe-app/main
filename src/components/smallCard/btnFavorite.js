@@ -8,17 +8,19 @@ import {
 import { color } from '../styles';
 import { updateCachedUser, setFavoriteIds } from 'utils/cache';
 import { setFavorite } from 'utils/favoritesStorage';
+import { removeDislike } from 'utils/dislikesStorage';
+import { setDislikeIds } from 'utils/cache';
 
 export const BtnFavorite = ({
   userId,
   userData = {},
-  favoriteUsers = {},
+  favoriteUsers = [],
   setFavoriteUsers,
   onRemove,
-  dislikeUsers = {},
+  dislikeUsers = [],
   setDislikeUsers,
 }) => {
-  const isFavorite = !!favoriteUsers[userId];
+  const isFavorite = favoriteUsers.includes(userId);
 
   const toggleFavorite = async () => {
     if (!auth.currentUser) {
@@ -28,9 +30,9 @@ export const BtnFavorite = ({
     if (isFavorite) {
       try {
         await removeFavoriteUser(userId);
-        const updated = { ...favoriteUsers, [userId]: false };
+        const updated = favoriteUsers.filter(id => id !== userId);
         setFavoriteUsers(updated);
-        setFavoriteIds(Object.fromEntries(Object.entries(updated).filter(([, v]) => v)));
+        setFavoriteIds(updated);
         updateCachedUser(userData || { userId }, { removeFavorite: true });
         setFavorite(userId, false);
         if (onRemove) onRemove(userId);
@@ -40,20 +42,21 @@ export const BtnFavorite = ({
     } else {
       try {
         await addFavoriteUser(userId);
-        const updatedFav = { ...favoriteUsers, [userId]: true };
+        const updatedFav = [...favoriteUsers, userId];
         setFavoriteUsers(updatedFav);
         setFavoriteIds(updatedFav);
         updateCachedUser(userData || { userId });
         setFavorite(userId, true);
-        if (dislikeUsers[userId]) {
+        if (dislikeUsers.includes(userId)) {
           try {
             await removeDislikeUser(userId);
           } catch (err) {
             console.error('Failed to remove dislike when adding favorite:', err);
           }
-          const upd = { ...dislikeUsers };
-          delete upd[userId];
+          const upd = dislikeUsers.filter(id => id !== userId);
           if (setDislikeUsers) setDislikeUsers(upd);
+          setDislikeIds(upd);
+          removeDislike(userId);
           if (onRemove) onRemove(userId);
         }
       } catch (error) {

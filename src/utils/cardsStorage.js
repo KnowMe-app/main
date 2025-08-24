@@ -87,7 +87,7 @@ export const getFilteredCardsByList = async (
   fetchMore,
   filterForload,
   filterSettings = {},
-  favoriteUsers = {},
+  favoriteUsers = [],
   target = 20,
   filterMainFnParam,
 ) => {

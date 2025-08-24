@@ -1,26 +1,15 @@
-import {
-  getFavorites,
-  setFavorite,
-  cacheFavoriteUsers,
-  getFavoriteCards,
-} from '../favoritesStorage';
+import { getFavorites, setFavorite, cacheFavoriteUsers, getFavoriteCards } from '../favoritesStorage';
 
 describe('favoritesStorage', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('stores false for unfavorited ids instead of deleting', () => {
+  it('adds and removes favorites', () => {
     setFavorite('1', true);
+    setFavorite('2', true);
     setFavorite('2', false);
-    expect(getFavorites()).toEqual({ '1': true, '2': false });
-  });
-
-  it('retains unfavorited ids to avoid refetching', () => {
-    setFavorite('42', false);
-    const favs = getFavorites();
-    expect(favs['42']).toBe(false);
-    expect(Object.keys(favs)).toEqual(['42']);
+    expect(getFavorites()).toEqual(['1']);
   });
 
   it('caches favorite users separately from load2', async () => {

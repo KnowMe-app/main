@@ -6,20 +6,21 @@ import {
   auth,
 } from '../config';
 import { color } from '../styles';
-import { setDislike, cacheDislikedUsers } from 'utils/dislikesStorage';
+import { addDislike, removeDislike, cacheDislikedUsers } from 'utils/dislikesStorage';
+import { setDislikeIds } from 'utils/cache';
 import { setFavorite } from 'utils/favoritesStorage';
 import { removeCardFromList } from 'utils/cardsStorage';
 
 export const BtnDislike = ({
   userId,
   userData = {},
-  dislikeUsers = {},
+  dislikeUsers = [],
   setDislikeUsers,
   onRemove,
-  favoriteUsers = {},
+  favoriteUsers = [],
   setFavoriteUsers,
 }) => {
-  const isDisliked = !!dislikeUsers[userId];
+  const isDisliked = dislikeUsers.includes(userId);
 
   const toggleDislike = async () => {
     if (!auth.currentUser) {
@@ -29,10 +30,10 @@ export const BtnDislike = ({
     if (isDisliked) {
       try {
         await removeDislikeUser(userId);
-        const updated = { ...dislikeUsers };
-        delete updated[userId];
+        const updated = dislikeUsers.filter(id => id !== userId);
         setDislikeUsers(updated);
-        setDislike(userId, false);
+        setDislikeIds(updated);
+        removeDislike(userId);
         removeCardFromList(userId, 'dislike');
         if (onRemove) onRemove(userId);
       } catch (error) {
@@ -41,18 +42,18 @@ export const BtnDislike = ({
     } else {
       try {
         await addDislikeUser(userId);
-        const updated = { ...dislikeUsers, [userId]: true };
+        const updated = [...dislikeUsers, userId];
         setDislikeUsers(updated);
-        setDislike(userId, true);
+        setDislikeIds(updated);
+        addDislike(userId);
         cacheDislikedUsers({ [userId]: userData });
-        if (favoriteUsers[userId]) {
+        if (favoriteUsers.includes(userId)) {
           try {
             await removeFavoriteUser(userId);
           } catch (err) {
             console.error('Failed to remove favorite when adding dislike:', err);
           }
-          const upd = { ...favoriteUsers };
-          delete upd[userId];
+          const upd = favoriteUsers.filter(id => id !== userId);
           if (setFavoriteUsers) setFavoriteUsers(upd);
           setFavorite(userId, false);
           if (onRemove) onRemove(userId);
