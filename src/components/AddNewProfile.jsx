@@ -45,7 +45,12 @@ import {
   getFavoriteCards,
 } from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
-import { setIdsForQuery, getIdsByQuery } from 'utils/cardIndex';
+import {
+  setIdsForQuery,
+  getIdsByQuery,
+  getCard,
+  normalizeQueryKey,
+} from 'utils/cardIndex';
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -61,13 +66,9 @@ import { onValue, ref } from 'firebase/database';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 import { createLocalFirstSync } from '../hooks/localServerSync';
-import { createCache } from '../hooks/cardsCache';
 import {
-  buildAddCacheKey,
-  setAddCacheKeys,
   setFavoriteIds,
   clearAllCardsCache,
-  clearAddCache,
   updateCachedUser,
 } from 'utils/cache';
 
@@ -208,11 +209,6 @@ const ButtonsContainer = styled.div`
 const profileSync = createLocalFirstSync('pendingProfile', null, ({ data }) =>
   data?.userId ? data : makeNewUser(data),
 );
-const {
-  loadCache: loadAddCache,
-  saveCache: saveAddCache,
-  mergeCache: mergeAddCache,
-} = createCache('addCache');
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
@@ -472,7 +468,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [favoriteUsersData, setFavoriteUsersData] = useState(initialFav);
   const [dislikeUsersData, setDislikeUsersData] = useState({});
   const [isToastOn, setIsToastOn] = useState(false);
-  const prevCacheKey = useRef(buildAddCacheKey(currentFilter, filters, search));
 
   const cacheFetchedUsers = useCallback(
     (usersObj, currentFilters = filters, mode = currentFilter) => {
@@ -485,9 +480,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     [filters, currentFilter]
   );
 
-  useEffect(() => {
-    mergeAddCache(prevCacheKey.current, { users, lastKey, hasMore, totalCount });
-  }, [users, lastKey, hasMore, totalCount]);
+  const buildQueryKey = (mode, currentFilters = {}, term = '') =>
+    normalizeQueryKey(
+      `${mode || 'all'}:${term || ''}:${JSON.stringify(currentFilters)}`,
+    );
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   const isDateInRange = dateStr => {
@@ -545,48 +541,37 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [filters]);
 
   useEffect(() => {
-    const cacheKey = buildAddCacheKey(currentFilter, filters, search);
-    const prevKeyMode = prevCacheKey.current.split(':')[0];
-    if (prevCacheKey.current && prevKeyMode !== 'FAVORITE' && prevKeyMode !== 'DATE2') {
-      saveAddCache(prevCacheKey.current, { users, lastKey, hasMore, totalCount });
-    }
-    prevCacheKey.current = cacheKey;
-
-    const useAddCache = currentFilter !== 'FAVORITE' && currentFilter !== 'DATE2';
-    if (useAddCache) {
-      saveAddCache(cacheKey, {});
-      setAddCacheKeys(cacheKey);
-      const cached = loadAddCache(cacheKey);
-      if (cached) {
-        cacheFetchedUsers(cached.users || {});
-        setUsers(cached.users || {});
-        setLastKey(cached.lastKey ?? null);
-        setHasMore(cached.hasMore ?? true);
-        setTotalCount(cached.totalCount ?? Object.keys(cached.users || {}).length);
-      } else {
-        setUsers({});
-        setLastKey(null);
-        setHasMore(true);
-        setTotalCount(0);
-      }
-    } else {
-      setAddCacheKeys('');
-      setUsers({});
-      setLastKey(null);
-      setHasMore(true);
-      setTotalCount(0);
-    }
+    setUsers({});
+    setLastKey(null);
+    setHasMore(true);
+    setTotalCount(0);
     setCurrentPage(1);
-    if (currentFilter) {
-      if (currentFilter === 'DATE2') {
-        loadMoreUsers2();
-      } else if (currentFilter === 'FAVORITE') {
-        loadFavoriteUsers();
-      } else {
-        loadMoreUsers(currentFilter);
-      }
+
+    if (!currentFilter) return;
+
+    if (currentFilter === 'DATE2') {
+      loadMoreUsers2();
+      return;
     }
-    // loadMoreUsers depends on many state values, so we skip it from the deps
+
+    if (currentFilter === 'FAVORITE') {
+      loadFavoriteUsers();
+      return;
+    }
+
+    const queryKey = buildQueryKey(currentFilter, filters, search);
+    const ids = getIdsByQuery(queryKey);
+    const cards = ids.map(id => getCard(id)).filter(Boolean);
+    if (cards.length > 0) {
+      const cachedUsers = cards.reduce((acc, u) => {
+        acc[u.id] = u;
+        return acc;
+      }, {});
+      setUsers(cachedUsers);
+      setTotalCount(ids.length);
+    } else {
+      loadMoreUsers(currentFilter);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, currentFilter, search]);
 
@@ -723,15 +708,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       cacheFetchedUsers(newUsers, currentFilters);
 
       // Оновлюємо стан користувачів
-      // Оновлюємо стан користувачів
-      setUsers(prevUsers => mergeWithoutOverwrite(prevUsers, newUsers)); // Додаємо нових користувачів до попередніх без перезапису
-      const cacheKey = buildAddCacheKey(filterForload, currentFilters, search);
-      mergeAddCache(cacheKey, {
-        users: newUsers,
-        lastKey: res.lastKey,
-        hasMore: res.hasMore,
-        totalCount: res.totalCount,
-      });
+      setUsers(prevUsers => mergeWithoutOverwrite(prevUsers, newUsers));
+      const queryKey = buildQueryKey(filterForload, currentFilters, search);
+      const existingIds = getIdsByQuery(queryKey);
+      setIdsForQuery(queryKey, [
+        ...new Set([...existingIds, ...Object.keys(newUsers)]),
+      ]);
       if (filterForload === 'DATE') {
         setDateOffset(prev => prev + PAGE_SIZE);
         setHasMore(res.hasMore);
@@ -771,6 +753,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       u => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[u.id]),
     );
 
+    const collectedIds = filteredArr.map(u => u.id);
+
     let offset = dateOffset2;
     let count = 0;
 
@@ -781,6 +765,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return acc;
       }, {});
       cacheFetchedUsers(cachedUsers, currentFilters);
+      collectedIds.push(...Object.keys(cachedUsers));
       if (!isEditingRef.current) {
         setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       }
@@ -803,6 +788,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
             : partial;
           cacheFetchedUsers(filteredPartial, currentFilters);
+          collectedIds.push(...Object.keys(filteredPartial));
           if (!isEditingRef.current) {
             setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
           }
@@ -813,6 +799,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
           : res.users;
         cacheFetchedUsers(filteredUsers, currentFilters);
+        collectedIds.push(...Object.keys(filteredUsers));
         if (!isEditingRef.current) {
           setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
         }
@@ -823,6 +810,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         more = false;
       }
     }
+
+    const queryKey = buildQueryKey('DATE2', currentFilters, search);
+    const existingIds = getIdsByQuery(queryKey);
+    setIdsForQuery(queryKey, [
+      ...new Set([...existingIds, ...collectedIds]),
+    ]);
 
     setDateOffset2(offset);
     setHasMore(more);
@@ -936,7 +929,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleClearCache = () => {
     clearAllCardsCache();
-    clearAddCache();
     localStorage.removeItem('addFilters');
     toast.success('Cache cleared');
   };
