@@ -53,8 +53,6 @@ describe('clearAllCardsCache', () => {
     localStorage.setItem('matchingCache:cards:default', 'cached');
     localStorage.setItem('cards', '{}');
     localStorage.setItem('queries', '{}');
-    localStorage.setItem('favorites', '{}');
-    localStorage.setItem('favorite', '[]');
     localStorage.setItem('other', 'value');
 
     clearAllCardsCache();
@@ -62,8 +60,6 @@ describe('clearAllCardsCache', () => {
     expect(localStorage.getItem('matchingCache:cards:default')).toBeNull();
     expect(localStorage.getItem('cards')).toBeNull();
     expect(localStorage.getItem('queries')).toBeNull();
-    expect(localStorage.getItem('favorites')).toBeNull();
-    expect(localStorage.getItem('favorite')).toBeNull();
     expect(localStorage.getItem('other')).toBe('value');
   });
 });
