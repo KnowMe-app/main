@@ -274,7 +274,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const syncedState = await profileSync.update(updatedState);
     updateCachedUser(syncedState);
-    cacheFetchedUsers({ [syncedState.userId]: syncedState });
+    cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
     setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
 
     if (syncedState?.userId?.length > 20) {
@@ -470,14 +470,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isToastOn, setIsToastOn] = useState(false);
 
   const cacheFetchedUsers = useCallback(
-    (usersObj, currentFilters = filters, mode = currentFilter) => {
-      if (mode === 'FAVORITE') {
-        cacheFavoriteUsers(usersObj);
-      } else {
-        cacheLoad2Users(usersObj, currentFilters);
-      }
+    (usersObj, cacheFn, currentFilters = filters) => {
+      cacheFn(usersObj, currentFilters);
     },
-    [filters, currentFilter]
+    [filters]
   );
 
   const buildQueryKey = (mode, currentFilters = {}, term = '') =>
@@ -617,7 +613,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         });
         const res = await fetchNewUsersCollectionInRTDB({ name: '' });
         if (res) {
-          cacheFetchedUsers(res);
+          cacheFetchedUsers(res, cacheLoad2Users);
           setUsers(res);
         }
         setSearch('');
@@ -705,7 +701,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
         return acc;
       }, {});
-      cacheFetchedUsers(newUsers, currentFilters);
+      cacheFetchedUsers(newUsers, cacheLoad2Users, currentFilters);
 
       // Оновлюємо стан користувачів
       setUsers(prevUsers => mergeWithoutOverwrite(prevUsers, newUsers));
@@ -762,7 +758,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         acc[u.id] = u;
         return acc;
       }, {});
-      cacheFetchedUsers(cachedUsers, currentFilters);
+      cacheFetchedUsers(cachedUsers, cacheLoad2Users, currentFilters);
       if (!isEditingRef.current) {
         setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       }
@@ -784,7 +780,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           const filteredPartial = currentFilters.favorite?.favOnly
             ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
             : partial;
-          cacheFetchedUsers(filteredPartial, currentFilters);
+          cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
           if (!isEditingRef.current) {
             setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
           }
@@ -794,7 +790,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const filteredUsers = currentFilters.favorite?.favOnly
           ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
           : res.users;
-        cacheFetchedUsers(filteredUsers, currentFilters);
+        cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
         if (!isEditingRef.current) {
           setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
         }
@@ -865,7 +861,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           return acc;
         }, {});
       const total = Object.keys(sorted).length;
-      cacheFetchedUsers(sorted);
+      cacheFetchedUsers(sorted, cacheFavoriteUsers);
       setUsers(sorted);
       setHasMore(false);
       setLastKey(null);
@@ -892,7 +888,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return acc;
       }, {});
     const total = Object.keys(sorted).length;
-    cacheFetchedUsers(sorted);
+    cacheFetchedUsers(sorted, cacheFavoriteUsers);
     setUsers(sorted);
     setHasMore(false);
     setLastKey(null);
@@ -905,7 +901,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const searchDuplicates = async () => {
     const { mergedUsers, totalDuplicates } = await loadDuplicateUsers();
     // console.log('res :>> ', res);
-    cacheFetchedUsers(mergedUsers);
+    cacheFetchedUsers(mergedUsers, cacheLoad2Users);
     setUsers(prevUsers => ({ ...prevUsers, ...mergedUsers }));
     setDuplicates(totalDuplicates);
     // console.log('res!!!!!!!! :>> ', res.length);
