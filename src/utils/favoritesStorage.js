@@ -1,7 +1,7 @@
 import { addCardToList, updateCard, getCardsByList } from './cardsStorage';
 import { loadCards } from './cardIndex';
 
-export const FAVORITES_KEY = 'favorites';
+export const FAVORITES_KEY = 'queries/favorite';
 const FAVORITE_LIST_KEY = 'favorite';
 
 export const getFavorites = () => {

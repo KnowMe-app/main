@@ -12,7 +12,7 @@ export { getCacheKey, loadCache, saveCache };
 // Removes all cached card lists regardless of mode or search term
 export const clearAllCardsCache = () => {
   const CARDS_PREFIX = 'matchingCache:cards:';
-  const EXTRA_KEYS = ['cards', 'queries', 'favorites', 'favorite'];
+  const EXTRA_KEYS = ['cards', 'queries', 'queries/favorite', 'favorite'];
 
   Object.keys(localStorage)
     .filter(key => key.startsWith(CARDS_PREFIX))
