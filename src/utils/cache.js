@@ -1,13 +1,13 @@
 import { getCacheKey, loadCache, saveCache } from 'hooks/cardsCache';
 import { updateCard, addCardToList, removeCardFromList } from './cardsStorage';
-import { normalizeQueryKey } from './cardIndex';
+import { normalizeQueryKey, setIdsForQuery } from './cardIndex';
 
 export { getCacheKey, loadCache, saveCache };
 
 // Removes all cached card lists regardless of mode or search term
 export const clearAllCardsCache = () => {
   const CARDS_PREFIX = 'matchingCache:cards:';
-  const EXTRA_KEYS = ['cards', 'queries', 'favorites', 'favorite'];
+  const EXTRA_KEYS = ['cards', 'queries'];
 
   Object.keys(localStorage)
     .filter(key => key.startsWith(CARDS_PREFIX))
@@ -20,11 +20,8 @@ let favoriteIds = {};
 
 export const setFavoriteIds = fav => {
   favoriteIds = fav || {};
-  try {
-    localStorage.setItem('favorite', JSON.stringify(Object.keys(favoriteIds)));
-  } catch {
-    // ignore write errors
-  }
+  const ids = Object.keys(favoriteIds).filter(id => favoriteIds[id]);
+  setIdsForQuery('favorite', ids);
 };
 
 const isFavorite = id => !!favoriteIds[id];

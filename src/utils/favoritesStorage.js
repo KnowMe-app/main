@@ -1,36 +1,34 @@
 import { addCardToList, updateCard, getCardsByList } from './cardsStorage';
-import { loadCards } from './cardIndex';
+import { loadCards, loadQueries, saveQueries } from './cardIndex';
 
-export const FAVORITES_KEY = 'favorites';
 const FAVORITE_LIST_KEY = 'favorite';
 
 export const getFavorites = () => {
-  try {
-    const raw = JSON.parse(localStorage.getItem(FAVORITES_KEY)) || {};
-    return Object.fromEntries(
-      Object.entries(raw).map(([k, v]) => [k, !!v]),
-    );
-  } catch {
-    return {};
-  }
+  const queries = loadQueries();
+  const ids = queries[FAVORITE_LIST_KEY]?.ids || [];
+  return Object.fromEntries(ids.map(id => [id, true]));
 };
 
 export const setFavorite = (id, isFav) => {
-  try {
-    const favs = getFavorites();
-    favs[id] = !!isFav;
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs));
-  } catch {
-    // ignore write errors
+  const queries = loadQueries();
+  const entry = queries[FAVORITE_LIST_KEY] || { ids: [] };
+  const ids = new Set(entry.ids);
+  if (isFav) {
+    ids.add(id);
+  } else {
+    ids.delete(id);
   }
+  queries[FAVORITE_LIST_KEY] = { ids: Array.from(ids), updatedAt: Date.now() };
+  saveQueries(queries);
 };
 
 export const syncFavorites = remoteFavs => {
-  try {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(remoteFavs || {}));
-  } catch {
-    // ignore write errors
-  }
+  const queries = loadQueries();
+  queries[FAVORITE_LIST_KEY] = {
+    ids: Object.keys(remoteFavs || {}).filter(id => remoteFavs[id]),
+    updatedAt: Date.now(),
+  };
+  saveQueries(queries);
 };
 
 export const cacheFavoriteUsers = usersObj => {
@@ -42,6 +40,6 @@ export const cacheFavoriteUsers = usersObj => {
   });
 };
 
-export const getFavoriteCards = (remoteFetch) =>
+export const getFavoriteCards = remoteFetch =>
   getCardsByList(FAVORITE_LIST_KEY, remoteFetch);
 

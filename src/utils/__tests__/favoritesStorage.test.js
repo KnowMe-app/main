@@ -10,17 +10,17 @@ describe('favoritesStorage', () => {
     localStorage.clear();
   });
 
-  it('stores false for unfavorited ids instead of deleting', () => {
+  it('stores favorite ids only in queries', () => {
     setFavorite('1', true);
-    setFavorite('2', false);
-    expect(getFavorites()).toEqual({ '1': true, '2': false });
+    setFavorite('2', true);
+    setFavorite('1', false);
+    const queries = JSON.parse(localStorage.getItem('queries'));
+    expect(queries['favorite'].ids).toEqual(['2']);
   });
 
-  it('retains unfavorited ids to avoid refetching', () => {
-    setFavorite('42', false);
-    const favs = getFavorites();
-    expect(favs['42']).toBe(false);
-    expect(Object.keys(favs)).toEqual(['42']);
+  it('retrieves favorites from queries', () => {
+    setFavorite('1', true);
+    expect(getFavorites()).toEqual({ '1': true });
   });
 
   it('caches favorite users separately from load2', async () => {
