@@ -753,8 +753,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       u => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[u.id]),
     );
 
-    const collectedIds = filteredArr.map(u => u.id);
-
     let offset = dateOffset2;
     let count = 0;
 
@@ -765,7 +763,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return acc;
       }, {});
       cacheFetchedUsers(cachedUsers, currentFilters);
-      collectedIds.push(...Object.keys(cachedUsers));
       if (!isEditingRef.current) {
         setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       }
@@ -788,7 +785,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
             : partial;
           cacheFetchedUsers(filteredPartial, currentFilters);
-          collectedIds.push(...Object.keys(filteredPartial));
           if (!isEditingRef.current) {
             setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
           }
@@ -799,7 +795,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
           : res.users;
         cacheFetchedUsers(filteredUsers, currentFilters);
-        collectedIds.push(...Object.keys(filteredUsers));
         if (!isEditingRef.current) {
           setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
         }
@@ -810,12 +805,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         more = false;
       }
     }
-
-    const queryKey = buildQueryKey('DATE2', currentFilters, search);
-    const existingIds = getIdsByQuery(queryKey);
-    setIdsForQuery(queryKey, [
-      ...new Set([...existingIds, ...collectedIds]),
-    ]);
 
     setDateOffset2(offset);
     setHasMore(more);
