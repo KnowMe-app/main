@@ -45,6 +45,7 @@ import {
   getFavoriteCards,
 } from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
+import { getDislikes, syncDislikes } from 'utils/dislikesStorage';
 import {
   setIdsForQuery,
   getIdsByQuery,
@@ -466,7 +467,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [dateOffset2, setDateOffset2] = useState(0);
   const initialFav = getFavorites();
   const [favoriteUsersData, setFavoriteUsersData] = useState(initialFav);
-  const [dislikeUsersData, setDislikeUsersData] = useState({});
+  const initialDis = getDislikes();
+  const [dislikeUsersData, setDislikeUsersData] = useState(initialDis);
   const [isToastOn, setIsToastOn] = useState(false);
 
   const cacheFetchedUsers = useCallback(
@@ -526,7 +528,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const disRef = ref(database, `multiData/dislikes/${ownerId}`);
     const unsubscribe = onValue(disRef, snap => {
-      setDislikeUsersData(snap.exists() ? snap.val() : {});
+      const data = snap.exists() ? snap.val() : {};
+      setDislikeUsersData(data);
+      syncDislikes(data);
     });
 
     return () => unsubscribe();

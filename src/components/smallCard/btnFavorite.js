@@ -8,6 +8,7 @@ import {
 import { color } from '../styles';
 import { updateCachedUser, setFavoriteIds } from 'utils/cache';
 import { setFavorite } from 'utils/favoritesStorage';
+import { setDislike } from 'utils/dislikesStorage';
 
 export const BtnFavorite = ({
   userId,
@@ -54,6 +55,7 @@ export const BtnFavorite = ({
           const upd = { ...dislikeUsers };
           delete upd[userId];
           if (setDislikeUsers) setDislikeUsers(upd);
+          setDislike(userId, false);
           if (onRemove) onRemove(userId);
         }
       } catch (error) {
