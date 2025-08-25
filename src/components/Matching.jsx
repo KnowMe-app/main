@@ -965,6 +965,20 @@ const Matching = () => {
     dislikeUsersRef.current = dislikeUsers;
   }, [dislikeUsers]);
 
+  useEffect(() => {
+    setUsers(prev => {
+      if (viewMode === 'favorites') {
+        return prev.filter(u => favoriteUsers[u.userId]);
+      }
+      if (viewMode === 'dislikes') {
+        return prev.filter(u => dislikeUsers[u.userId]);
+      }
+      return prev.filter(
+        u => !favoriteUsers[u.userId] && !dislikeUsers[u.userId]
+      );
+    });
+  }, [favoriteUsers, dislikeUsers, viewMode]);
+
   const loadCommentsFor = async list => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
