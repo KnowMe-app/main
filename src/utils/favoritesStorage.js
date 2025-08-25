@@ -1,4 +1,9 @@
-import { addCardToList, updateCard, getCardsByList } from './cardsStorage';
+import {
+  addCardToList,
+  updateCard,
+  getCardsByList,
+  removeCardFromList,
+} from './cardsStorage';
 import { loadCards } from './cardIndex';
 
 export const FAVORITES_KEY = 'favorites';
@@ -6,28 +11,36 @@ const FAVORITE_LIST_KEY = 'favorite';
 
 export const getFavorites = () => {
   try {
-    const raw = JSON.parse(localStorage.getItem(FAVORITES_KEY)) || {};
-    return Object.fromEntries(
-      Object.entries(raw).map(([k, v]) => [k, !!v]),
-    );
+    return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || [];
   } catch {
-    return {};
+    return [];
   }
 };
 
-export const setFavorite = (id, isFav) => {
+export const addFavorite = id => {
   try {
-    const favs = getFavorites();
-    favs[id] = !!isFav;
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs));
+    const favs = new Set(getFavorites());
+    favs.add(id);
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favs]));
+    addCardToList(id, FAVORITE_LIST_KEY);
   } catch {
     // ignore write errors
   }
 };
 
-export const syncFavorites = remoteFavs => {
+export const removeFavorite = id => {
   try {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(remoteFavs || {}));
+    const favs = getFavorites().filter(f => f !== id);
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs));
+    removeCardFromList(id, FAVORITE_LIST_KEY);
+  } catch {
+    // ignore write errors
+  }
+};
+
+export const syncFavorites = ids => {
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids || []));
   } catch {
     // ignore write errors
   }

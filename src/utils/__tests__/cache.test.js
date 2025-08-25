@@ -1,4 +1,9 @@
-import { updateCachedUser, clearAllCardsCache, setFavoriteIds } from '../cache';
+import {
+  updateCachedUser,
+  clearAllCardsCache,
+  setFavoriteIds,
+  setDislikeIds,
+} from '../cache';
 import { getCacheKey, loadCache, saveCache } from '../../hooks/cardsCache';
 import { normalizeQueryKey, getIdsByQuery } from '../cardIndex';
 
@@ -35,12 +40,21 @@ describe('updateCachedUser search cache', () => {
 
   it('updates favorite and load2 lists', () => {
     const user = { userId: '1', name: 'John' };
-    setFavoriteIds({ '1': true });
+    setFavoriteIds(['1']);
     updateCachedUser(user);
     expect(getIdsByQuery('favorite')).toContain('1');
     expect(getIdsByQuery('load2')).toContain('1');
     updateCachedUser(user, { removeFavorite: true });
     expect(getIdsByQuery('favorite')).not.toContain('1');
+  });
+
+  it('updates dislike list', () => {
+    const user = { userId: '1', name: 'John' };
+    setDislikeIds(['1']);
+    updateCachedUser(user);
+    expect(getIdsByQuery('dislike')).toContain('1');
+    updateCachedUser(user, { removeDislike: true });
+    expect(getIdsByQuery('dislike')).not.toContain('1');
   });
 });
 
@@ -53,7 +67,7 @@ describe('clearAllCardsCache', () => {
     localStorage.setItem('matchingCache:cards:default', 'cached');
     localStorage.setItem('cards', '{}');
     localStorage.setItem('queries', '{}');
-    localStorage.setItem('favorites', '{}');
+    localStorage.setItem('favorites', '[]');
     localStorage.setItem('favorite', '[]');
     localStorage.setItem('other', 'value');
 
