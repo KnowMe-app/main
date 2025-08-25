@@ -270,10 +270,10 @@ export const fetchFavoriteUsers = async ownerId => {
   try {
     const favRef = ref2(database, `multiData/favorites/${ownerId}`);
     const snap = await get(favRef);
-    return snap.exists() ? snap.val() : {};
+    return snap.exists() ? Object.keys(snap.val() || {}) : [];
   } catch (error) {
     console.error('Error fetching favorite users:', error);
-    return {};
+    return [];
   }
 };
 
@@ -281,11 +281,10 @@ export const fetchFavoriteUsers = async ownerId => {
 export const fetchFavoriteUsersData = async ownerId => {
   try {
     const favoriteIds = await fetchFavoriteUsers(ownerId);
-    const ids = Object.keys(favoriteIds || {});
-    const results = await Promise.all(ids.map(id => fetchUserById(id)));
+    const results = await Promise.all(favoriteIds.map(id => fetchUserById(id)));
     const data = {};
     results.forEach((user, idx) => {
-      if (user) data[ids[idx]] = user;
+      if (user) data[favoriteIds[idx]] = user;
     });
     return data;
   } catch (error) {
@@ -298,21 +297,20 @@ export const fetchDislikeUsers = async ownerId => {
   try {
     const refPath = ref2(database, `multiData/dislikes/${ownerId}`);
     const snap = await get(refPath);
-    return snap.exists() ? snap.val() : {};
+    return snap.exists() ? Object.keys(snap.val() || {}) : [];
   } catch (error) {
     console.error('Error fetching dislike users:', error);
-    return {};
+    return [];
   }
 };
 
 export const fetchDislikeUsersData = async ownerId => {
   try {
     const dislikeIds = await fetchDislikeUsers(ownerId);
-    const ids = Object.keys(dislikeIds || {});
-    const results = await Promise.all(ids.map(id => fetchUserById(id)));
+    const results = await Promise.all(dislikeIds.map(id => fetchUserById(id)));
     const data = {};
     results.forEach((user, idx) => {
-      if (user) data[ids[idx]] = user;
+      if (user) data[dislikeIds[idx]] = user;
     });
     return data;
   } catch (error) {
@@ -1776,7 +1774,7 @@ const getCommentLengthCategory = comment => {
 };
 
 const isFavoriteUser = (userId, favorites) => {
-  return !!favorites[userId];
+  return Array.isArray(favorites) ? favorites.includes(userId) : false;
 };
 
 // Фільтр за віком
@@ -1794,7 +1792,7 @@ const filterByAge = (value, ageLimit = 30) => {
 };
 
 // Основна функція фільтрації
-export const filterMain = (usersData, filterForload, filterSettings = {}, favoriteUsers = {}) => {
+export const filterMain = (usersData, filterForload, filterSettings = {}, favoriteUsers = []) => {
   console.log('filterMain called with', {
     filterForload,
     filterSettings,
@@ -1941,7 +1939,7 @@ const sortUsers = filteredUsers => {
     });
 };
 
-export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSettings = {}, favoriteUsers = {}) => {
+export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSettings = {}, favoriteUsers = []) => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
   const limit = PAGE_SIZE + 1;
@@ -2696,7 +2694,7 @@ export const removeCardAndSearchId = async userId => {
   }
 };
 
-export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}, favoriteUsers = {}) => {
+export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}, favoriteUsers = []) => {
   try {
     const [newUsersSnapshot, usersSnapshot] = await Promise.all([get(ref2(database, 'newUsers')), get(ref2(database, 'users'))]);
 
@@ -2727,7 +2725,7 @@ export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}, 
   }
 };
 
-export const fetchTotalFilteredUsersCount = async (filterForload, filterSettings = {}, favoriteUsers = {}) => {
+export const fetchTotalFilteredUsersCount = async (filterForload, filterSettings = {}, favoriteUsers = []) => {
   const allUsers = await fetchAllFilteredUsers(filterForload, filterSettings, favoriteUsers);
   return Object.keys(allUsers).length;
 };

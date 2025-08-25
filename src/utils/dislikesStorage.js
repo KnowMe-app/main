@@ -11,25 +11,27 @@ const DISLIKE_LIST_KEY = 'dislike';
 
 export const getDislikes = () => {
   try {
-    const raw = JSON.parse(localStorage.getItem(DISLIKES_KEY)) || {};
-    return Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, !!v]));
+    return JSON.parse(localStorage.getItem(DISLIKES_KEY)) || [];
   } catch {
-    return {};
+    return [];
   }
 };
 
-export const setDislike = (id, isDisliked) => {
+export const addDislike = id => {
   try {
-    const dislikes = getDislikes();
-    if (isDisliked) {
-      dislikes[id] = true;
-    } else {
-      delete dislikes[id];
-    }
+    const dislikes = new Set(getDislikes());
+    dislikes.add(id);
+    localStorage.setItem(DISLIKES_KEY, JSON.stringify([...dislikes]));
+  } catch {
+    // ignore write errors
+  }
+};
+
+export const removeDislike = id => {
+  try {
+    const dislikes = getDislikes().filter(d => d !== id);
     localStorage.setItem(DISLIKES_KEY, JSON.stringify(dislikes));
-    if (!isDisliked) {
-      removeCardFromList(id, DISLIKE_LIST_KEY);
-    }
+    removeCardFromList(id, DISLIKE_LIST_KEY);
   } catch {
     // ignore write errors
   }
@@ -37,7 +39,7 @@ export const setDislike = (id, isDisliked) => {
 
 export const syncDislikes = remoteDislikes => {
   try {
-    localStorage.setItem(DISLIKES_KEY, JSON.stringify(remoteDislikes || {}));
+    localStorage.setItem(DISLIKES_KEY, JSON.stringify(remoteDislikes || []));
   } catch {
     // ignore write errors
   }

@@ -7,7 +7,7 @@ export { getCacheKey, loadCache, saveCache };
 // Removes all cached card lists regardless of mode or search term
 export const clearAllCardsCache = () => {
   const CARDS_PREFIX = 'matchingCache:cards:';
-  const EXTRA_KEYS = ['cards', 'queries', 'favorites', 'favorite'];
+  const EXTRA_KEYS = ['cards', 'queries', 'favorites', 'favorite', 'dislike'];
 
   Object.keys(localStorage)
     .filter(key => key.startsWith(CARDS_PREFIX))
@@ -16,23 +16,38 @@ export const clearAllCardsCache = () => {
   EXTRA_KEYS.forEach(key => localStorage.removeItem(key));
 };
 
-let favoriteIds = {};
+let favoriteIds = [];
+let dislikeIds = [];
 
-export const setFavoriteIds = fav => {
-  favoriteIds = fav || {};
+export const setFavoriteIds = ids => {
+  favoriteIds = Array.isArray(ids) ? ids : [];
   try {
-    localStorage.setItem('favorite', JSON.stringify(Object.keys(favoriteIds)));
+    localStorage.setItem('favorite', JSON.stringify(favoriteIds));
   } catch {
     // ignore write errors
   }
 };
 
-const isFavorite = id => !!favoriteIds[id];
+export const setDislikeIds = ids => {
+  dislikeIds = Array.isArray(ids) ? ids : [];
+  try {
+    localStorage.setItem('dislike', JSON.stringify(dislikeIds));
+  } catch {
+    // ignore write errors
+  }
+};
 
-export const updateCachedUser = (user, { removeFavorite = false } = {}) => {
+const isFavorite = id => favoriteIds.includes(id);
+const isDisliked = id => dislikeIds.includes(id);
+
+export const updateCachedUser = (
+  user,
+  { removeFavorite = false, removeDislike = false } = {}
+) => {
   updateCard(user.userId, user);
   addCardToList(user.userId, 'load2');
   const shouldFav = isFavorite(user.userId);
+  const shouldDislike = isDisliked(user.userId);
 
   const searchKeys = [getCacheKey('search', normalizeQueryKey(`userId=${user.userId}`))];
   if (typeof user.name === 'string') {
@@ -41,7 +56,7 @@ export const updateCachedUser = (user, { removeFavorite = false } = {}) => {
   searchKeys.forEach(key => {
     const cached = loadCache(key);
     if (!cached) return;
-    if (removeFavorite) {
+    if (removeFavorite || removeDislike) {
       localStorage.removeItem(`matchingCache:${key}`);
       return;
     }
@@ -59,5 +74,11 @@ export const updateCachedUser = (user, { removeFavorite = false } = {}) => {
     removeCardFromList(user.userId, 'favorite');
   } else if (shouldFav) {
     addCardToList(user.userId, 'favorite');
+  }
+
+  if (removeDislike) {
+    removeCardFromList(user.userId, 'dislike');
+  } else if (shouldDislike) {
+    addCardToList(user.userId, 'dislike');
   }
 };

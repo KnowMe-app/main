@@ -31,7 +31,7 @@ export async function fetchFilteredUsersByPage(
   fetchDateFn = defaultFetchByDate,
   fetchUserByIdFn,
   filterSettings = {},
-  favoriteUsers = {},
+  favoriteUsers = [],
   filterMainFnParam,
   onProgress
 ) {

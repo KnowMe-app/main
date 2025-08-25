@@ -44,6 +44,7 @@ import {
   cacheFavoriteUsers,
   getFavoriteCards,
 } from 'utils/favoritesStorage';
+import { getDislikes, syncDislikes } from 'utils/dislikesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
 import {
   setIdsForQuery,
@@ -68,6 +69,7 @@ import { onValue, ref } from 'firebase/database';
 import { createLocalFirstSync } from '../hooks/localServerSync';
 import {
   setFavoriteIds,
+  setDislikeIds,
   clearAllCardsCache,
   updateCachedUser,
 } from 'utils/cache';
@@ -465,8 +467,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
   const initialFav = getFavorites();
+  const initialDis = getDislikes();
   const [favoriteUsersData, setFavoriteUsersData] = useState(initialFav);
-  const [dislikeUsersData, setDislikeUsersData] = useState({});
+  const [dislikeUsersData, setDislikeUsersData] = useState(initialDis);
   const [isToastOn, setIsToastOn] = useState(false);
 
   const cacheFetchedUsers = useCallback(
@@ -519,14 +522,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     setFavoriteIds(initialFav);
-  }, [initialFav]);
+    setDislikeIds(initialDis);
+  }, [initialFav, initialDis]);
 
   useEffect(() => {
     if (!ownerId) return;
 
     const disRef = ref(database, `multiData/dislikes/${ownerId}`);
     const unsubscribe = onValue(disRef, snap => {
-      setDislikeUsersData(snap.exists() ? snap.val() : {});
+      const arr = snap.exists() ? Object.keys(snap.val() || {}) : [];
+      setDislikeUsersData(arr);
+      setDislikeIds(arr);
+      syncDislikes(arr);
     });
 
     return () => unsubscribe();
@@ -671,9 +678,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
     if (isEditingRef.current) return { count: 0, hasMore };
     const param = filterForload === 'DATE' ? dateOffset : lastKey;
-    let favRaw = getFavorites();
-    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
-    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
+    let fav = getFavorites();
+    if (currentFilters.favorite?.favOnly && fav.length === 0) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
       syncFavorites(fav);
@@ -690,7 +696,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       // Використовуємо Object.entries для обробки res.users
       const newUsers = Object.entries(res.users)
-        .filter(([id]) => !currentFilters.favorite?.favOnly || fav[id])
+        .filter(([id]) => !currentFilters.favorite?.favOnly || fav.includes(id))
         .reduce((acc, [userId, user]) => {
         // Перевірка наявності поля userId, щоб уникнути помилок
         // console.log('3333 :>> ');
@@ -728,9 +734,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsers2 = async (currentFilters = filters) => {
-    let favRaw = getFavorites();
-    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
-    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
+    let fav = getFavorites();
+    if (currentFilters.favorite?.favOnly && fav.length === 0) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
       syncFavorites(fav);
@@ -746,7 +751,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
     };
     const filteredArr = cachedArr.filter(
-      u => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[u.id]),
+      u => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav.includes(u.id)),
     );
 
     let offset = dateOffset2;
@@ -778,7 +783,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         undefined,
         partial => {
           const filteredPartial = currentFilters.favorite?.favOnly
-            ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
+            ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav.includes(id)))
             : partial;
           cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
           if (!isEditingRef.current) {
@@ -788,7 +793,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       );
       if (res && Object.keys(res.users).length > 0) {
         const filteredUsers = currentFilters.favorite?.favOnly
-          ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
+          ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav.includes(id)))
           : res.users;
         cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
         if (!isEditingRef.current) {
@@ -828,12 +833,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const noFilters = !filters || Object.values(filters).every(value => value === 'off');
 
     let fav = favoriteUsersData;
-    if (filters.favorite?.favOnly && Object.keys(fav).length === 0) {
+    if (filters.favorite?.favOnly && fav.length === 0) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
     }
 
-    const allUsers = noFilters ? await fetchAllUsersFromRTDB() : await fetchAllFilteredUsers(undefined, filters, fav);
+    const allUsers = noFilters
+      ? await fetchAllUsersFromRTDB()
+      : await fetchAllFilteredUsers(undefined, filters, fav);
 
     saveToContact(allUsers);
   };
@@ -871,15 +878,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     const favUsers = await fetchFavoriteUsersData(owner);
-    const favIds = Object.keys(favUsers).reduce((acc, id) => {
-      acc[id] = true;
-      return acc;
-    }, {});
+    const favIds = Object.keys(favUsers);
     syncFavorites(favIds);
     setFavoriteUsersData(favIds);
     setFavoriteIds(favIds);
     cacheFavoriteUsers(favUsers);
-    setIdsForQuery('favorite', Object.keys(favIds));
+    setIdsForQuery('favorite', favIds);
     const loadedArr = await getFavoriteCards(id => fetchUserById(id));
     const sorted = loadedArr
       .sort((a, b) => compareUsersByGetInTouch(a, b))
