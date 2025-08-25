@@ -31,7 +31,7 @@ import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { loadCache, saveCache } from "../hooks/cardsCache";
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
-import { normalizeQueryKey } from '../utils/cardIndex';
+import { normalizeQueryKey, getIdsByQuery, setIdsForQuery } from '../utils/cardIndex';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaArrowDown } from 'react-icons/fa';
@@ -51,6 +51,7 @@ import {
   cacheDislikedUsers,
   syncDislikes,
   getDislikes,
+  getDislikedCards,
 } from '../utils/dislikesStorage';
 
 const Container = styled.div`
@@ -1139,11 +1140,19 @@ const Matching = () => {
     if (!owner) return;
     setLoading(true);
     setUsers([]);
-    const localFav = getFavorites();
-    if (Object.keys(localFav).length > 0) {
-      setFavoriteUsers(localFav);
-      setFavoriteIds(localFav);
-      const list = await getFavoriteCards(id => fetchUserById(id));
+
+    const localIds = getIdsByQuery('favorite');
+    if (localIds.length > 0) {
+      const localFav = getFavorites();
+      const favMap = Object.fromEntries(
+        Object.keys(localFav)
+          .filter(id => id.length > 20)
+          .map(id => [id, true])
+      );
+      setFavoriteUsers(favMap);
+      setFavoriteIds(favMap);
+      const list = (await getFavoriteCards(id => fetchUserById(id)))
+        .filter(u => (u?.id || u?.userId || '').length > 20);
       loadedIdsRef.current = new Set(list.map(u => u.id));
       setUsers(list);
       await loadCommentsFor(list);
@@ -1153,16 +1162,17 @@ const Matching = () => {
       setLoading(false);
       return;
     }
+
     const favUsers = await fetchFavoriteUsersData(owner);
-    const favMap = Object.keys(favUsers).reduce((acc, id) => {
-      acc[id] = true;
-      return acc;
-    }, {});
+    const validEntries = Object.entries(favUsers).filter(([id]) => id.length > 20);
+    const favUsersFiltered = Object.fromEntries(validEntries);
+    const favMap = Object.fromEntries(validEntries.map(([id]) => [id, true]));
     syncFavorites(favMap);
     setFavoriteUsers(favMap);
     setFavoriteIds(favMap);
-    cacheFavoriteUsers(favUsers);
-    const list = await getFavoriteCards(id => fetchUserById(id));
+    cacheFavoriteUsers(favUsersFiltered);
+    const list = (await getFavoriteCards(id => fetchUserById(id)))
+      .filter(u => (u?.id || u?.userId || '').length > 20);
     loadedIdsRef.current = new Set(list.map(u => u.id));
     setUsers(list);
     await loadCommentsFor(list);
@@ -1176,11 +1186,41 @@ const Matching = () => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
     setLoading(true);
+
+    const localIds = getIdsByQuery('dislike');
+    if (localIds.length > 0) {
+      const localDis = getDislikes();
+      const disMap = Object.fromEntries(
+        Object.keys(localDis)
+          .filter(id => id.length > 20)
+          .map(id => [id, true])
+      );
+      setDislikeUsers(disMap);
+      setIdsForQuery('dislike', Object.keys(disMap));
+      const list = (await getDislikedCards(id => fetchUserById(id)))
+        .filter(u => (u?.id || u?.userId || '').length > 20);
+      loadedIdsRef.current = new Set(list.map(u => u.id));
+      setUsers(list);
+      await loadCommentsFor(list);
+      setHasMore(false);
+      setLastKey(null);
+      setViewMode('dislikes');
+      setLoading(false);
+      return;
+    }
+
     const loaded = await fetchDislikeUsersData(owner);
-    cacheDislikedUsers(loaded);
-    loadedIdsRef.current = new Set(Object.keys(loaded));
-    setUsers(Object.values(loaded));
-    await loadCommentsFor(Object.values(loaded));
+    const validEntries = Object.entries(loaded).filter(([id]) => id.length > 20);
+    const filtered = Object.fromEntries(validEntries);
+    const disMap = Object.fromEntries(validEntries.map(([id]) => [id, true]));
+    cacheDislikedUsers(filtered);
+    syncDislikes(disMap);
+    setDislikeUsers(disMap);
+    const list = (await getDislikedCards(id => fetchUserById(id)))
+      .filter(u => (u?.id || u?.userId || '').length > 20);
+    loadedIdsRef.current = new Set(list.map(u => u.id));
+    setUsers(list);
+    await loadCommentsFor(list);
     setHasMore(false);
     setLastKey(null);
     setViewMode('dislikes');
