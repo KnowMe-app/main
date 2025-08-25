@@ -529,12 +529,38 @@ const slideRight = keyframes`
   }
 `;
 
+const swipeLeft = keyframes`
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+`;
+
+const swipeRight = keyframes`
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+`;
+
 const AnimatedCard = styled(Card)`
   animation: ${({ $dir }) =>
     $dir === 'left'
       ? slideLeft
       : $dir === 'right'
       ? slideRight
+      : $dir === 'swipe-left'
+      ? swipeLeft
+      : $dir === 'swipe-right'
+      ? swipeRight
       : 'none'} 0.3s ease;
 `;
 
@@ -575,6 +601,13 @@ const SwipeableCard = ({
   const [dir, setDir] = useState(null);
   const startX = useRef(null);
   const wasSwiped = useRef(false);
+
+  const removeWithAnimation = direction => id => {
+    setDir(direction);
+    setTimeout(() => {
+      if (handleRemove) handleRemove(id);
+    }, 300);
+  };
 
   const handleTouchStart = e => {
     if (slides.length <= 1) return;
@@ -737,7 +770,9 @@ const SwipeableCard = ({
         setFavoriteUsers={setFavoriteUsers}
         dislikeUsers={dislikeUsers}
         setDislikeUsers={setDislikeUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+        onRemove={
+          viewMode !== 'default' ? removeWithAnimation('swipe-right') : undefined
+        }
       />
       <BtnDislike
         userId={user.userId}
@@ -746,7 +781,9 @@ const SwipeableCard = ({
         setDislikeUsers={setDislikeUsers}
         favoriteUsers={favoriteUsers}
         setFavoriteUsers={setFavoriteUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+        onRemove={
+          viewMode !== 'default' ? removeWithAnimation('swipe-left') : undefined
+        }
       />
       {current === 'main' && isAgency && (
         <CardInfo>
