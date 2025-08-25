@@ -30,7 +30,7 @@ import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { loadCache, saveCache } from "../hooks/cardsCache";
-import { getCacheKey, clearAllCardsCache } from "../utils/cache";
+import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
 import { normalizeQueryKey } from '../utils/cardIndex';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
@@ -45,6 +45,7 @@ import {
   cacheFavoriteUsers,
   syncFavorites,
   getFavorites,
+  getFavoriteCards,
 } from '../utils/favoritesStorage';
 import {
   cacheDislikedUsers,
@@ -1138,28 +1139,36 @@ const Matching = () => {
     if (!owner) return;
     setLoading(true);
     setUsers([]);
-    const cacheKey = getCacheKey('favorite');
-    const cached = loadCache(cacheKey);
-    if (cached) {
-      loadedIdsRef.current = new Set(cached.users.map(u => u.userId));
-      setUsers(cached.users);
-      await loadCommentsFor(cached.users);
+    const localFav = getFavorites();
+    if (Object.keys(localFav).length > 0) {
+      setFavoriteUsers(localFav);
+      setFavoriteIds(localFav);
+      const list = await getFavoriteCards(id => fetchUserById(id));
+      loadedIdsRef.current = new Set(list.map(u => u.id));
+      setUsers(list);
+      await loadCommentsFor(list);
       setHasMore(false);
       setLastKey(null);
       setViewMode('favorites');
       setLoading(false);
       return;
     }
-    const loaded = await fetchFavoriteUsersData(owner);
-    cacheFavoriteUsers(loaded);
-    const list = Object.values(loaded);
-    loadedIdsRef.current = new Set(Object.keys(loaded));
+    const favUsers = await fetchFavoriteUsersData(owner);
+    const favMap = Object.keys(favUsers).reduce((acc, id) => {
+      acc[id] = true;
+      return acc;
+    }, {});
+    syncFavorites(favMap);
+    setFavoriteUsers(favMap);
+    setFavoriteIds(favMap);
+    cacheFavoriteUsers(favUsers);
+    const list = await getFavoriteCards(id => fetchUserById(id));
+    loadedIdsRef.current = new Set(list.map(u => u.id));
     setUsers(list);
     await loadCommentsFor(list);
     setHasMore(false);
     setLastKey(null);
     setViewMode('favorites');
-    saveCache(cacheKey, { users: list });
     setLoading(false);
   };
 
