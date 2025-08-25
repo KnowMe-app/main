@@ -12,8 +12,9 @@ import {
   removeFavoriteUser,
   auth,
 } from '../config';
-import { updateCachedUser, setFavoriteIds } from 'utils/cache';
+import { updateCachedUser, setFavoriteIds, setDislikeIds } from 'utils/cache';
 import { setFavorite } from 'utils/favoritesStorage';
+import { addDislike, removeDislike, cacheDislikedUsers } from 'utils/dislikesStorage';
 
 export const fieldGetInTouch = (
   userData,
@@ -21,9 +22,9 @@ export const fieldGetInTouch = (
   setState,
   currentFilter,
   isDateInRange,
-  favoriteUsers = {},
+  favoriteUsers = [],
   setFavoriteUsers = () => {},
-  dislikeUsers = {},
+  dislikeUsers = [],
   setDislikeUsers = () => {},
   isToastOn = false,
 ) => {
@@ -61,8 +62,8 @@ export const fieldGetInTouch = (
     );
   };
 
-  const isFavorite = !!favoriteUsers[userData.userId];
-  const isDisliked = !!dislikeUsers[userData.userId];
+  const isFavorite = favoriteUsers.includes(userData.userId);
+  const isDisliked = dislikeUsers.includes(userData.userId);
 
   const handleDislike = async e => {
     e.stopPropagation();
@@ -73,9 +74,10 @@ export const fieldGetInTouch = (
     if (isDisliked) {
       try {
         await removeDislikeUser(userData.userId);
-        const updated = { ...dislikeUsers };
-        delete updated[userData.userId];
+        const updated = dislikeUsers.filter(id => id !== userData.userId);
         setDislikeUsers(updated);
+        setDislikeIds(updated);
+        removeDislike(userData.userId);
         handleChange(
           setUsers,
           setState,
@@ -93,16 +95,18 @@ export const fieldGetInTouch = (
       handleSendToEnd();
       try {
         await addDislikeUser(userData.userId);
-        const updated = { ...dislikeUsers, [userData.userId]: true };
+        const updated = [...dislikeUsers, userData.userId];
         setDislikeUsers(updated);
-        if (favoriteUsers[userData.userId]) {
+        setDislikeIds(updated);
+        addDislike(userData.userId);
+        cacheDislikedUsers({ [userData.userId]: userData });
+        if (favoriteUsers.includes(userData.userId)) {
           try {
             await removeFavoriteUser(userData.userId);
           } catch (err) {
             console.error('Failed to remove favorite when adding dislike:', err);
           }
-          const upd = { ...favoriteUsers };
-          delete upd[userData.userId];
+          const upd = favoriteUsers.filter(id => id !== userData.userId);
           setFavoriteUsers(upd);
           setFavoriteIds(upd);
           setFavorite(userData.userId, false);
@@ -123,8 +127,7 @@ export const fieldGetInTouch = (
     if (isFavorite) {
       try {
         await removeFavoriteUser(userData.userId);
-        const updated = { ...favoriteUsers };
-        delete updated[userData.userId];
+        const updated = favoriteUsers.filter(id => id !== userData.userId);
         setFavoriteUsers(updated);
         setFavoriteIds(updated);
         setFavorite(userData.userId, false);
@@ -135,20 +138,21 @@ export const fieldGetInTouch = (
     } else {
       try {
         await addFavoriteUser(userData.userId);
-        const updated = { ...favoriteUsers, [userData.userId]: true };
+        const updated = [...favoriteUsers, userData.userId];
         setFavoriteUsers(updated);
         setFavoriteIds(updated);
         setFavorite(userData.userId, true);
         updateCachedUser(userData);
-        if (dislikeUsers[userData.userId]) {
+        if (dislikeUsers.includes(userData.userId)) {
           try {
             await removeDislikeUser(userData.userId);
           } catch (err) {
             console.error('Failed to remove dislike when adding favorite:', err);
           }
-          const upd = { ...dislikeUsers };
-          delete upd[userData.userId];
+          const upd = dislikeUsers.filter(id => id !== userData.userId);
           setDislikeUsers(upd);
+          setDislikeIds(upd);
+          removeDislike(userData.userId);
           handleChange(
             setUsers,
             setState,

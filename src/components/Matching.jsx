@@ -30,7 +30,7 @@ import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { loadCache, saveCache } from "../hooks/cardsCache";
-import { getCacheKey, clearAllCardsCache } from "../utils/cache";
+import { getCacheKey, clearAllCardsCache, setDislikeIds, setFavoriteIds } from "../utils/cache";
 import { normalizeQueryKey } from '../utils/cardIndex';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
@@ -884,8 +884,8 @@ const Matching = () => {
   const [lastKey, setLastKey] = useState(undefined);
   const [hasMore, setHasMore] = useState(true);
   // removed selected user modal logic
-  const [favoriteUsers, setFavoriteUsers] = useState({});
-  const [dislikeUsers, setDislikeUsers] = useState({});
+  const [favoriteUsers, setFavoriteUsers] = useState([]);
+  const [dislikeUsers, setDislikeUsers] = useState([]);
   const favoriteUsersRef = useRef(favoriteUsers);
   const dislikeUsersRef = useRef(dislikeUsers);
   const [viewMode, setViewMode] = useState('default');
@@ -980,7 +980,8 @@ const Matching = () => {
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       if (!user) {
         setFavoriteUsers({});
-        setDislikeUsers({});
+        setDislikeUsers([]);
+        setDislikeIds([]);
         return;
       }
 
@@ -994,7 +995,9 @@ const Matching = () => {
         setFavoriteUsers(snap.exists() ? snap.val() : {});
       });
       const unsubDis = onValue(disRef, snap => {
-        setDislikeUsers(snap.exists() ? snap.val() : {});
+        const arr = snap.exists() ? Object.keys(snap.val() || {}) : [];
+        setDislikeUsers(arr);
+        setDislikeIds(arr);
       });
 
       return () => {
@@ -1059,24 +1062,26 @@ const Matching = () => {
       let exclude = new Set();
       const localFav = getFavorites();
       const localDis = getDislikes();
-      if (Object.keys(localFav).length || Object.keys(localDis).length) {
+      if (localFav.length || localDis.length) {
         setFavoriteUsers(localFav);
+        setFavoriteIds(localFav);
         setDislikeUsers(localDis);
-        exclude = new Set([
-          ...Object.keys(localFav),
-          ...Object.keys(localDis),
-        ]);
+        setDislikeIds(localDis);
+        exclude = new Set([...localFav, ...localDis]);
       }
       if (owner) {
-        const [favIds, disIds] = await Promise.all([
+        const [favIds, disObj] = await Promise.all([
           fetchFavoriteUsers(owner),
           fetchDislikeUsers(owner),
         ]);
+        const disIds = Object.keys(disObj || {});
         setFavoriteUsers(favIds);
+        setFavoriteIds(favIds);
         setDislikeUsers(disIds);
+        setDislikeIds(disIds);
         syncFavorites(favIds);
         syncDislikes(disIds);
-        exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
+        exclude = new Set([...favIds, ...disIds]);
       }
 
       const cacheKey = getCacheKey('default');
@@ -1217,8 +1222,8 @@ const Matching = () => {
     try {
       const cacheKey = getCacheKey('default');
       const exclude = new Set([
-        ...Object.keys(favoriteUsersRef.current),
-        ...Object.keys(dislikeUsersRef.current),
+        ...favoriteUsersRef.current,
+        ...dislikeUsersRef.current,
       ]);
       const res = await fetchChunk(
         LOAD_MORE,

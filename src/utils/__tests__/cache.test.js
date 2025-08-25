@@ -35,7 +35,7 @@ describe('updateCachedUser search cache', () => {
 
   it('updates favorite and load2 lists', () => {
     const user = { userId: '1', name: 'John' };
-    setFavoriteIds({ '1': true });
+    setFavoriteIds(['1']);
     updateCachedUser(user);
     expect(getIdsByQuery('favorite')).toContain('1');
     expect(getIdsByQuery('load2')).toContain('1');
@@ -53,7 +53,7 @@ describe('clearAllCardsCache', () => {
     localStorage.setItem('matchingCache:cards:default', 'cached');
     localStorage.setItem('cards', '{}');
     localStorage.setItem('queries', '{}');
-    localStorage.setItem('favorites', '{}');
+    localStorage.setItem('favorites', '[]');
     localStorage.setItem('favorite', '[]');
     localStorage.setItem('other', 'value');
 

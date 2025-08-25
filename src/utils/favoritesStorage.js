@@ -6,28 +6,26 @@ const FAVORITE_LIST_KEY = 'favorite';
 
 export const getFavorites = () => {
   try {
-    const raw = JSON.parse(localStorage.getItem(FAVORITES_KEY)) || {};
-    return Object.fromEntries(
-      Object.entries(raw).map(([k, v]) => [k, !!v]),
-    );
+    return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || [];
   } catch {
-    return {};
+    return [];
   }
 };
 
 export const setFavorite = (id, isFav) => {
   try {
-    const favs = getFavorites();
-    favs[id] = !!isFav;
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs));
+    const favs = new Set(getFavorites());
+    if (isFav) favs.add(id);
+    else favs.delete(id);
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favs]));
   } catch {
     // ignore write errors
   }
 };
 
-export const syncFavorites = remoteFavs => {
+export const syncFavorites = ids => {
   try {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(remoteFavs || {}));
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids || []));
   } catch {
     // ignore write errors
   }
