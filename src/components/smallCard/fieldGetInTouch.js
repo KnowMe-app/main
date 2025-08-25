@@ -14,6 +14,7 @@ import {
 } from '../config';
 import { updateCachedUser, setFavoriteIds } from 'utils/cache';
 import { setFavorite } from 'utils/favoritesStorage';
+import { setDislike } from 'utils/dislikesStorage';
 
 export const fieldGetInTouch = (
   userData,
@@ -76,6 +77,7 @@ export const fieldGetInTouch = (
         const updated = { ...dislikeUsers };
         delete updated[userData.userId];
         setDislikeUsers(updated);
+        setDislike(userData.userId, false);
         handleChange(
           setUsers,
           setState,
@@ -95,6 +97,7 @@ export const fieldGetInTouch = (
         await addDislikeUser(userData.userId);
         const updated = { ...dislikeUsers, [userData.userId]: true };
         setDislikeUsers(updated);
+        setDislike(userData.userId, true);
         if (favoriteUsers[userData.userId]) {
           try {
             await removeFavoriteUser(userData.userId);
@@ -149,6 +152,7 @@ export const fieldGetInTouch = (
           const upd = { ...dislikeUsers };
           delete upd[userData.userId];
           setDislikeUsers(upd);
+          setDislike(userData.userId, false);
           handleChange(
             setUsers,
             setState,

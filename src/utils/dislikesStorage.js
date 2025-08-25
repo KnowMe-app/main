@@ -4,43 +4,37 @@ import {
   getCardsByList,
   removeCardFromList,
 } from './cardsStorage';
-import { loadCards } from './cardIndex';
+import { loadCards, loadQueries, saveQueries } from './cardIndex';
 
-export const DISLIKES_KEY = 'dislikes';
 const DISLIKE_LIST_KEY = 'dislike';
 
 export const getDislikes = () => {
-  try {
-    const raw = JSON.parse(localStorage.getItem(DISLIKES_KEY)) || {};
-    return Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, !!v]));
-  } catch {
-    return {};
-  }
+  const queries = loadQueries();
+  const ids = queries[DISLIKE_LIST_KEY]?.ids || [];
+  return Object.fromEntries(ids.map(id => [id, true]));
 };
 
 export const setDislike = (id, isDisliked) => {
-  try {
-    const dislikes = getDislikes();
-    if (isDisliked) {
-      dislikes[id] = true;
-    } else {
-      delete dislikes[id];
-    }
-    localStorage.setItem(DISLIKES_KEY, JSON.stringify(dislikes));
-    if (!isDisliked) {
-      removeCardFromList(id, DISLIKE_LIST_KEY);
-    }
-  } catch {
-    // ignore write errors
+  const queries = loadQueries();
+  const entry = queries[DISLIKE_LIST_KEY] || { ids: [] };
+  const ids = new Set(entry.ids);
+  if (isDisliked) {
+    ids.add(id);
+  } else {
+    ids.delete(id);
+    removeCardFromList(id, DISLIKE_LIST_KEY);
   }
+  queries[DISLIKE_LIST_KEY] = { ids: Array.from(ids), updatedAt: Date.now() };
+  saveQueries(queries);
 };
 
 export const syncDislikes = remoteDislikes => {
-  try {
-    localStorage.setItem(DISLIKES_KEY, JSON.stringify(remoteDislikes || {}));
-  } catch {
-    // ignore write errors
-  }
+  const queries = loadQueries();
+  queries[DISLIKE_LIST_KEY] = {
+    ids: Object.keys(remoteDislikes || {}),
+    updatedAt: Date.now(),
+  };
+  saveQueries(queries);
 };
 
 export const cacheDislikedUsers = usersObj => {
