@@ -34,7 +34,7 @@ import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache"
 import { normalizeQueryKey, getIdsByQuery, setIdsForQuery } from '../utils/cardIndex';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
-import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaArrowDown } from 'react-icons/fa';
+import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaArrowDown, FaDownload } from 'react-icons/fa';
 import { handleEmptyFetch } from './loadMoreUtils';
 import {
   normalizeCountry,
@@ -1377,8 +1377,16 @@ const Matching = () => {
             <CardCount>{filteredUsers.length} карточок</CardCount>
             <TopActions>
               <ActionButton onClick={() => setShowFilters(s => !s)}><FaFilter /></ActionButton>
-              <ActionButton onClick={loadDislikeCards}><FaTimes /></ActionButton>
-              <ActionButton onClick={loadFavoriteCards}><FaHeart /></ActionButton>
+              {viewMode === 'dislikes' ? (
+                <ActionButton onClick={loadInitial}><FaDownload /></ActionButton>
+              ) : (
+                <ActionButton onClick={loadDislikeCards}><FaTimes /></ActionButton>
+              )}
+              {viewMode === 'favorites' ? (
+                <ActionButton onClick={loadInitial}><FaDownload /></ActionButton>
+              ) : (
+                <ActionButton onClick={loadFavoriteCards}><FaHeart /></ActionButton>
+              )}
               <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
             </TopActions>
           </HeaderContainer>
