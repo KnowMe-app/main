@@ -94,6 +94,24 @@ const Grid = styled.div`
 const CardContainer = styled.div`
   position: relative;
   width: 100%;
+  overflow: hidden;
+  max-height: 1000px;
+  transition: max-height 0.3s ease, margin 0.3s ease, opacity 0.3s ease,
+    transform 0.3s ease;
+
+  &.removing {
+    max-height: 0;
+    margin: 0;
+    opacity: 0;
+  }
+
+  &.removing.up {
+    transform: translateY(-100%);
+  }
+
+  &.removing.down {
+    transform: translateY(100%);
+  }
 `;
 
 const NextPhoto = styled.img`
@@ -888,6 +906,7 @@ const Matching = () => {
   // removed selected user modal logic
   const [favoriteUsers, setFavoriteUsers] = useState({});
   const [dislikeUsers, setDislikeUsers] = useState({});
+  const [removing, setRemoving] = useState({});
   const favoriteUsersRef = useRef(favoriteUsers);
   const dislikeUsersRef = useRef(dislikeUsers);
   const [viewMode, setViewMode] = useState('default');
@@ -904,8 +923,16 @@ const Matching = () => {
   const saveScrollPosition = () => {
     sessionStorage.setItem(SCROLL_Y_KEY, String(scrollPositionRef.current));
   };
-  const handleRemove = id => {
+  const handleRemove = (id, dir = 'up') => {
+    setRemoving(prev => ({ ...prev, [id]: dir }));
+  };
+
+  const handleTransitionEnd = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
+    setRemoving(prev => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
   };
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
@@ -1424,7 +1451,21 @@ const Matching = () => {
                   .map(v => String(v).trim())
                   .join(' ');
                 return (
-                  <CardContainer key={user.userId}>
+                  <CardContainer
+                    key={user.userId}
+                    className={
+                      removing[user.userId] ? `removing ${removing[user.userId]}` : ''
+                    }
+                    onTransitionEnd={e => {
+                      if (
+                        e.propertyName === 'max-height' &&
+                        e.target === e.currentTarget &&
+                        removing[user.userId]
+                      ) {
+                        handleTransitionEnd(user.userId);
+                      }
+                    }}
+                  >
                     {thirdVariant && (
                       <ThirdInfoCard>
                         <InfoCardContent user={user} variant={thirdVariant} />
