@@ -271,9 +271,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     };
     const currentDate = formatDate(new Date());
 
-    const updatedState = newState ? { ...newState, lastAction: currentDate } : { ...state, lastAction: currentDate };
+    const updatedState = newState
+      ? { ...newState, lastAction: currentDate }
+      : { ...state, lastAction: currentDate };
+
+    // Optimistically update local cache and UI state before syncing with server
+    updateCachedUser(updatedState);
+    cacheFetchedUsers({ [updatedState.userId]: updatedState }, cacheLoad2Users, filters);
+    setUsers(prev => ({ ...prev, [updatedState.userId]: updatedState }));
 
     const syncedState = await profileSync.update(updatedState);
+    // Ensure caches stay in sync with server response
     updateCachedUser(syncedState);
     cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
     setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
