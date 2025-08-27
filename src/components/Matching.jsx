@@ -96,7 +96,14 @@ const CardContainer = styled.div`
   width: 100%;
   overflow: hidden;
   max-height: 1000px;
-  transition: transform 0.3s ease;
+  transition: max-height 0.3s ease, margin 0.3s ease, opacity 0.3s ease,
+    transform 0.3s ease;
+
+  &.removing {
+    max-height: 0;
+    margin: 0;
+    opacity: 0;
+  }
 
   &.removing.up {
     transform: translateY(-100%);
@@ -104,13 +111,6 @@ const CardContainer = styled.div`
 
   &.removing.down {
     transform: translateY(100%);
-  }
-
-  &.collapsing {
-    transition: max-height 0.3s ease, margin 0.3s ease, opacity 0.3s ease;
-    max-height: 0;
-    margin: 0;
-    opacity: 0;
   }
 `;
 
@@ -929,27 +929,7 @@ const Matching = () => {
     sessionStorage.setItem(SCROLL_Y_KEY, String(scrollPositionRef.current));
   };
   const handleRemove = (id, dir = 'up') => {
-    setRemoving(prev => ({ ...prev, [id]: { dir, collapsing: false } }));
-
-    const el = document.getElementById(`card-${id}`);
-    if (!el) return;
-
-    const startCollapse = e => {
-      if (e.propertyName !== 'transform') return;
-      setRemoving(prev => ({
-        ...prev,
-        [id]: { ...prev[id], collapsing: true },
-      }));
-      el.removeEventListener('transitionend', startCollapse);
-      el.addEventListener('transitionend', finishRemoval, { once: true });
-    };
-
-    const finishRemoval = e => {
-      if (e.propertyName !== 'max-height') return;
-      handleTransitionEnd(id);
-    };
-
-    el.addEventListener('transitionend', startCollapse, { once: true });
+    setRemoving(prev => ({ ...prev, [id]: dir }));
   };
 
   const handleTransitionEnd = id => {
@@ -1483,14 +1463,18 @@ const Matching = () => {
                 return (
                   <CardContainer
                     key={user.userId}
-                    id={`card-${user.userId}`}
                     className={
-                      removing[user.userId]
-                        ? `removing ${removing[user.userId].dir} ${
-                            removing[user.userId].collapsing ? 'collapsing' : ''
-                          }`
-                        : ''
+                      removing[user.userId] ? `removing ${removing[user.userId]}` : ''
                     }
+                    onTransitionEnd={e => {
+                      if (
+                        e.propertyName === 'max-height' &&
+                        e.target === e.currentTarget &&
+                        removing[user.userId]
+                      ) {
+                        handleTransitionEnd(user.userId);
+                      }
+                    }}
                   >
                     {thirdVariant && (
                       <ThirdInfoCard>
