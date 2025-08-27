@@ -97,6 +97,11 @@ const CardContainer = styled.div`
   overflow: hidden;
   max-height: 1000px;
   transition: transform 0.3s ease, max-height 0.3s ease, margin 0.3s ease, opacity 0.3s ease;
+  will-change: transform, max-height, margin, opacity;
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
 
   &.removing.up {
     transform: translateY(-100%);
