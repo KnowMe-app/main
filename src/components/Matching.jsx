@@ -96,7 +96,7 @@ const CardContainer = styled.div`
   width: 100%;
   overflow: hidden;
   max-height: 1000px;
-  transition: transform 0.3s ease, max-height 0.3s ease, margin 0.3s ease, opacity 0.3s ease;
+  transition: transform 0.3s ease;
 
   &.removing.up {
     transform: translateY(-100%);
@@ -107,6 +107,7 @@ const CardContainer = styled.div`
   }
 
   &.collapsing {
+    transition: max-height 0.3s ease, margin 0.3s ease, opacity 0.3s ease;
     max-height: 0;
     margin: 0;
     opacity: 0;
@@ -940,16 +941,15 @@ const Matching = () => {
         [id]: { ...prev[id], collapsing: true },
       }));
       el.removeEventListener('transitionend', startCollapse);
+      el.addEventListener('transitionend', finishRemoval, { once: true });
     };
 
     const finishRemoval = e => {
       if (e.propertyName !== 'max-height') return;
-      el.removeEventListener('transitionend', finishRemoval);
       handleTransitionEnd(id);
     };
 
-    el.addEventListener('transitionend', startCollapse);
-    el.addEventListener('transitionend', finishRemoval);
+    el.addEventListener('transitionend', startCollapse, { once: true });
   };
 
   const handleTransitionEnd = id => {
