@@ -19,7 +19,6 @@ import {
   // removeSearchId,
   // createSearchIdsForAllUsers,
   createSearchIdsInCollection,
-  createIndexesSequentiallyInCollection,
   fetchUserById,
   loadDuplicateUsers,
   removeCardAndSearchId,
@@ -951,13 +950,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // });
   };
 
-  const indexData = async () => {
-    const collections = ['newUsers', 'users'];
-    for (const col of collections) {
-      await createIndexesSequentiallyInCollection(col);
-    }
-  };
-
   const indexLastLoginHandler = async () => {
     toast.loading('Indexing lastLogin2 0%', { id: 'index-lastlogin-progress' });
     await indexLastLogin(progress => {
@@ -1099,7 +1091,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 Load2
               </Button>
               <Button onClick={() => setCurrentFilter('FAVORITE')}>❤</Button>
-              <Button onClick={indexData}>IndData</Button>
               <Button onClick={indexLastLoginHandler}>indexLastLogin</Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}

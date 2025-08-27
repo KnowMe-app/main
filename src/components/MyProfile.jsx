@@ -564,8 +564,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         await updateDataInNewUsersRTDB(
           userCredential.user.uid,
           { lastLogin2: todayDash },
-          'update',
-          true
+          'update'
         );
       } else {
         userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
@@ -584,8 +583,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         await updateDataInNewUsersRTDB(
           userCredential.user.uid,
           { lastLogin2: todayDash },
-          'update',
-          true
+          'update'
         );
       }
 
@@ -686,16 +684,14 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         await updateDataInNewUsersRTDB(
           user.uid,
           { lastLogin2: todayDash },
-          'update',
-          true
+          'update'
         );
         Object.assign(processedData, defaults);
       } else {
         await updateDataInNewUsersRTDB(
           user.uid,
           { lastLogin2: todayDash },
-          'update',
-          true
+          'update'
         );
       }
 

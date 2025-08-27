@@ -20,7 +20,6 @@ import {
   endAt,
   endBefore,
   equalTo,
-  runTransaction,
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE } from './constants';
 import { getCurrentDate } from './foramtDate';
@@ -487,16 +486,6 @@ export const makeNewUser = async searchedValue => {
   // 6. Додаємо пару ключ-значення у searchId
   await update(searchIdRef, { [searchIdKey]: newUserId });
 
-  await updateUserIdIndex(getUserIdCategory(newUserId), newUserId, 'add');
-  await updateFieldsIndex(getFieldCountCategory(newUser), newUserId, 'add');
-  await updateMaritalIndex(getMaritalStatusCategory(newUser), newUserId, 'add');
-  await updateCsectionIndex(categorizeCsection(newUser.csection), newUserId, 'add');
-  await updateCommentWordsIndex(getCommentLengthCategory(newUser.myComment), newUserId, 'add');
-  await updateAgeIndex(getAgeCategory(newUser), newUserId, 'add');
-  await updateBmiIndex(getBmiCategory(newUser), newUserId, 'add');
-  await updateRoleIndex(getRoleCategory(newUser), newUserId, 'add');
-  await updateCountryIndex(getCountryCategory(newUser), newUserId, 'add');
-
   return {
     userId: newUserId,
     ...newUser,
@@ -957,90 +946,6 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
       }
     }
 
-    const newUserData = { ...currentUserData, ...uploadedInfo };
-
-    if (!skipIndexing) {
-      const oldBlood = currentUserData.blood;
-      const newBlood = newUserData.blood;
-      if (oldBlood !== newBlood) {
-        if (oldBlood) await updateBloodIndex(getBloodIndexCategory(oldBlood), userId, 'remove');
-        if (newBlood) await updateBloodIndex(getBloodIndexCategory(newBlood), userId, 'add');
-      }
-
-      const oldMarital = getMaritalStatusCategory(currentUserData);
-      const newMarital = getMaritalStatusCategory(newUserData);
-      if (oldMarital !== newMarital) {
-        await updateMaritalIndex(oldMarital, userId, 'remove');
-        await updateMaritalIndex(newMarital, userId, 'add');
-      }
-
-      const oldCs = categorizeCsection(currentUserData.csection);
-      const newCs = categorizeCsection(newUserData.csection);
-      if (oldCs !== newCs) {
-        await updateCsectionIndex(oldCs, userId, 'remove');
-        await updateCsectionIndex(newCs, userId, 'add');
-      }
-
-      const oldUserCat = getUserIdCategory(currentUserData.userId || userId);
-      const newUserCat = getUserIdCategory(newUserData.userId || userId);
-      if (oldUserCat !== newUserCat) {
-        await updateUserIdIndex(oldUserCat, userId, 'remove');
-        await updateUserIdIndex(newUserCat, userId, 'add');
-      }
-
-      const oldFields = getFieldCountCategory(currentUserData);
-      const newFields = getFieldCountCategory(newUserData);
-      if (oldFields !== newFields) {
-        await updateFieldsIndex(oldFields, userId, 'remove');
-        await updateFieldsIndex(newFields, userId, 'add');
-      }
-
-      const oldComment = getCommentLengthCategory(currentUserData.myComment);
-      const newComment = getCommentLengthCategory(newUserData.myComment);
-      if (oldComment !== newComment) {
-        await updateCommentWordsIndex(oldComment, userId, 'remove');
-        await updateCommentWordsIndex(newComment, userId, 'add');
-      }
-
-      const oldAge = getAgeCategory(currentUserData);
-      const newAge = getAgeCategory(newUserData);
-      if (oldAge !== newAge) {
-        await updateAgeIndex(oldAge, userId, 'remove');
-        await updateAgeIndex(newAge, userId, 'add');
-      }
-
-      const oldBmi = getBmiCategory(currentUserData);
-      const newBmi = getBmiCategory(newUserData);
-      if (oldBmi !== newBmi) {
-        await updateBmiIndex(oldBmi, userId, 'remove');
-        await updateBmiIndex(newBmi, userId, 'add');
-      }
-
-      const oldCountry = getCountryCategory(currentUserData);
-      const newCountry = getCountryCategory(newUserData);
-      if (oldCountry !== newCountry) {
-        await updateCountryIndex(oldCountry, userId, 'remove');
-        await updateCountryIndex(newCountry, userId, 'add');
-      }
-
-      const oldRole = getRoleCategory(currentUserData);
-      const newRole = getRoleCategory(newUserData);
-      if (oldRole !== newRole) {
-        await updateRoleIndex(oldRole, userId, 'remove');
-        await updateRoleIndex(newRole, userId, 'add');
-      }
-
-      const oldTouch = getGetInTouchKeys(currentUserData);
-      const newTouch = getGetInTouchKeys(newUserData);
-      await updateGetInTouchIndex(oldTouch, userId, 'remove');
-      await updateGetInTouchIndex(newTouch, userId, 'add');
-
-      const oldBirth = getBirthKeys(currentUserData);
-      const newBirth = getBirthKeys(newUserData);
-      await updateBirthIndex(oldBirth, userId, 'remove');
-      await updateBirthIndex(newBirth, userId, 'add');
-    }
-
     // Оновлення користувача в базі
 
     console.log('uploadedInfo :>> ', uploadedInfo);
@@ -1111,25 +1016,6 @@ const encodeKey = key => {
     .replace(/\//g, '_slash_')
     .replace(/\[/g, '_lbracket_')
     .replace(/\]/g, '_rbracket_');
-};
-
-const extractDateTokens = value => {
-  if (!value) return [];
-  const str = Array.isArray(value) ? value.join(' ') : value.toString();
-  const matches = str.match(/\d{4}-\d{2}-\d{2}/g);
-  return matches || [];
-};
-
-const getGetInTouchKeys = value => {
-  const dates = extractDateTokens(value.getInTouch);
-  if (dates.length === 0) return ['other'];
-  return dates.map(d => encodeKey(d));
-};
-
-const getBirthKeys = value => {
-  const dates = extractDateTokens(value.birth);
-  if (dates.length === 0) return ['other'];
-  return dates.map(d => encodeKey(d));
 };
 
 // Функція для оновлення або видалення пар у searchId
@@ -1516,252 +1402,6 @@ const getFieldCountCategory = value => {
   if (count < 8) return 'lt8';
   if (count < 12) return 'lt12';
   return 'other';
-};
-
-// ====================== Index helpers ======================
-const getBloodIndexCategory = blood => {
-  if (!blood) return 'unknown';
-  const normalized = blood.toString().trim().toLowerCase().replace(/\s+/g, '');
-  if (!normalized) return 'unknown';
-  if (/^[1234][+-]?$/.test(normalized)) return normalized;
-  if (/^[+-]$/.test(normalized)) return normalized;
-  return 'other';
-};
-
-// Generic helper to update usersIndex nodes
-export const updateIndex = async (indexName, category, userId, action) => {
-  if (!indexName || !category || !userId) return;
-  const indexRef = ref2(database, `usersIndex/${indexName}/${category}`);
-  await runTransaction(indexRef, current => {
-    if (action === 'add') {
-      if (current === null) {
-        return [userId];
-      }
-      if (Array.isArray(current)) {
-        if (!current.includes(userId)) {
-          return [...current, userId];
-        }
-        return current;
-      }
-      if (current !== userId) {
-        return [current, userId];
-      }
-      return Array.isArray(current) ? current : [current];
-    } else if (action === 'remove') {
-      if (current === null) {
-        return current;
-      }
-      if (Array.isArray(current)) {
-        const updated = current.filter(id => id !== userId);
-        return updated.length ? updated : null;
-      }
-      if (current === userId) {
-        return null;
-      }
-      return current;
-    }
-    return current;
-  });
-};
-
-export const updateMultiIndex = async (indexName, categories, userId, action) => {
-  const cats = Array.isArray(categories) ? categories : [categories];
-  for (const cat of cats) {
-    // eslint-disable-next-line no-await-in-loop
-    await updateIndex(indexName, cat, userId, action);
-  }
-};
-
-export const createMultiIndexInCollection = async (indexName, collection, getCats) => {
-  const ref = ref2(database, collection);
-  const snap = await get(ref);
-  if (!snap.exists()) return;
-  const data = snap.val();
-  const ids = Object.keys(data);
-  for (const uid of ids) {
-    const cats = getCats(data[uid], uid);
-    // eslint-disable-next-line no-await-in-loop
-    await updateMultiIndex(indexName, cats, uid, 'add');
-  }
-};
-
-export const createIndexInCollection = async (indexName, collection, categorizeFn) => {
-  const ref = ref2(database, collection);
-  const snap = await get(ref);
-  if (!snap.exists()) return;
-  const data = snap.val();
-  const ids = Object.keys(data);
-  for (const uid of ids) {
-    const cat = categorizeFn(data[uid], uid);
-    await updateIndex(indexName, cat, uid, 'add');
-  }
-};
-
-export const fetchUsersByIndex = async (indexName, categories, offset = 0) => {
-  const snap = await get(ref2(database, `usersIndex/${indexName}`));
-  if (!snap.exists()) return { users: {}, lastKey: null, hasMore: false };
-  const idx = snap.val();
-  let ids = [];
-  categories.forEach(cat => {
-    const val = idx[cat];
-    if (!val) return;
-    if (Array.isArray(val)) {
-      ids = ids.concat(val);
-    } else if (typeof val === 'object') {
-      ids = ids.concat(Object.keys(val));
-    } else {
-      ids.push(val);
-    }
-  });
-  ids = Array.from(new Set(ids));
-  const pageIds = ids.slice(offset, offset + PAGE_SIZE);
-  const results = await Promise.all(pageIds.map(id => fetchUserById(id)));
-  const users = {};
-  results.forEach((data, i) => {
-    if (data) users[pageIds[i]] = data;
-  });
-  const nextOffset = offset + pageIds.length;
-  const hasMore = ids.length > nextOffset;
-  const res = { users, lastKey: hasMore ? nextOffset : null, hasMore };
-  if (offset === 0) res.totalCount = ids.length;
-  return res;
-};
-
-export const updateBloodIndex = (category, userId, action) => updateIndex('blood', category, userId, action);
-
-// Create blood index for all users in given collection
-export const createBloodIndexInCollection = async collection => createIndexInCollection('blood', collection, user => getBloodIndexCategory(user.blood));
-
-export const fetchUsersByBloodIndex = async (categories, offset = 0) => fetchUsersByIndex('blood', categories, offset);
-
-export const updateMaritalIndex = (category, userId, action) => updateIndex('maritalStatus', category, userId, action);
-
-export const createMaritalIndexInCollection = async collection => createIndexInCollection('maritalStatus', collection, user => getMaritalStatusCategory(user));
-
-export const fetchUsersByMaritalIndex = async (categories, offset = 0) => fetchUsersByIndex('maritalStatus', categories, offset);
-
-export const updateCsectionIndex = (category, userId, action) => updateIndex('csection', category, userId, action);
-
-export const createCsectionIndexInCollection = async collection => createIndexInCollection('csection', collection, user => categorizeCsection(user.csection));
-
-export const fetchUsersByCsectionIndex = async (categories, offset = 0) => fetchUsersByIndex('csection', categories, offset);
-
-export const updateUserIdIndex = (category, userId, action) => updateIndex('userId', category, userId, action);
-
-export const createUserIdIndexInCollection = async collection => createIndexInCollection('userId', collection, (_, uid) => getUserIdCategory(uid));
-
-export const fetchUsersByUserIdIndex = async (categories, offset = 0) => fetchUsersByIndex('userId', categories, offset);
-
-// Get a set of all userIds that are already indexed in usersIndex/userId
-export const fetchAllIndexedUserIds = async () => {
-  const snap = await get(ref2(database, 'usersIndex/userId'));
-  if (!snap.exists()) return new Set();
-  const data = snap.val();
-  const set = new Set();
-  Object.values(data).forEach(val => {
-    if (Array.isArray(val)) {
-      val.forEach(id => set.add(id));
-    } else if (val && typeof val === 'object') {
-      Object.keys(val).forEach(id => set.add(id));
-    } else if (val) {
-      set.add(val);
-    }
-  });
-  return set;
-};
-
-export const updateFieldsIndex = (category, userId, action) => updateIndex('fields', category, userId, action);
-
-export const createFieldsIndexInCollection = async collection => createIndexInCollection('fields', collection, user => getFieldCountCategory(user));
-
-export const fetchUsersByFieldsIndex = async (categories, offset = 0) => fetchUsersByIndex('fields', categories, offset);
-
-export const updateCommentWordsIndex = (category, userId, action) => updateIndex('commentWords', category, userId, action);
-
-export const createCommentWordsIndexInCollection = async collection =>
-  createIndexInCollection('commentWords', collection, user => getCommentLengthCategory(user.myComment));
-
-export const fetchUsersByCommentWordsIndex = async (categories, offset = 0) => fetchUsersByIndex('commentWords', categories, offset);
-
-export const updateAgeIndex = (category, userId, action) => updateIndex('age', category, userId, action);
-
-export const createAgeIndexInCollection = async collection => createIndexInCollection('age', collection, user => getAgeCategory(user));
-
-export const fetchUsersByAgeIndex = async (categories, offset = 0) => fetchUsersByIndex('age', categories, offset);
-
-export const updateBmiIndex = (category, userId, action) => updateIndex('bmi', category, userId, action);
-
-export const createBmiIndexInCollection = async collection => createIndexInCollection('bmi', collection, user => getBmiCategory(user));
-
-export const fetchUsersByBmiIndex = async (categories, offset = 0) => fetchUsersByIndex('bmi', categories, offset);
-
-export const updateCountryIndex = (category, userId, action) => updateIndex('country', category, userId, action);
-
-export const createCountryIndexInCollection = async collection => createIndexInCollection('country', collection, user => getCountryCategory(user));
-
-export const fetchUsersByCountryIndex = async (categories, offset = 0) => fetchUsersByIndex('country', categories, offset);
-
-export const updateRoleIndex = (category, userId, action) => updateIndex('role', category, userId, action);
-
-export const createRoleIndexInCollection = async collection => createIndexInCollection('role', collection, user => getRoleCategory(user));
-
-export const fetchUsersByRoleIndex = async (categories, offset = 0) => fetchUsersByIndex('role', categories, offset);
-
-export const updateGetInTouchIndex = (categories, userId, action) => updateMultiIndex('getInTouch', categories, userId, action);
-
-export const createGetInTouchIndexInCollection = async collection => createMultiIndexInCollection('getInTouch', collection, user => getGetInTouchKeys(user));
-
-export const fetchUsersByGetInTouchIndex = async (categories, offset = 0) => fetchUsersByIndex('getInTouch', categories, offset);
-
-export const updateBirthIndex = (categories, userId, action) => updateMultiIndex('birth', categories, userId, action);
-
-export const createBirthIndexInCollection = async collection => createMultiIndexInCollection('birth', collection, user => getBirthKeys(user));
-
-export const fetchUsersByBirthIndex = async (categories, offset = 0) => fetchUsersByIndex('birth', categories, offset);
-
-// Helper to collect matching user ids for all active checkbox filters using indexes
-
-// Index all relevant categories for a single user
-export const indexUserData = async (userData, userId) => {
-  const promises = [];
-  if (userData.blood) {
-    promises.push(updateBloodIndex(getBloodIndexCategory(userData.blood), userId, 'add'));
-  }
-  promises.push(updateMaritalIndex(getMaritalStatusCategory(userData), userId, 'add'));
-  promises.push(updateCsectionIndex(categorizeCsection(userData.csection), userId, 'add'));
-  promises.push(updateRoleIndex(getRoleCategory(userData), userId, 'add'));
-  promises.push(updateUserIdIndex(getUserIdCategory(userData.userId || userId), userId, 'add'));
-  promises.push(updateFieldsIndex(getFieldCountCategory(userData), userId, 'add'));
-  promises.push(updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'add'));
-  promises.push(updateAgeIndex(getAgeCategory(userData), userId, 'add'));
-  promises.push(updateBmiIndex(getBmiCategory(userData), userId, 'add'));
-  promises.push(updateCountryIndex(getCountryCategory(userData), userId, 'add'));
-  promises.push(updateGetInTouchIndex(getGetInTouchKeys(userData), userId, 'add'));
-  promises.push(updateBirthIndex(getBirthKeys(userData), userId, 'add'));
-  await Promise.all(promises.filter(Boolean));
-};
-
-// Run indexing sequentially for every user in a collection
-export const createIndexesSequentiallyInCollection = async collection => {
-  const ref = ref2(database, collection);
-  const snap = await get(ref);
-  if (!snap.exists()) return;
-  const data = snap.val();
-
-  // Fetch ids already indexed to avoid re-indexing the same users
-  const indexedIds = await fetchAllIndexedUserIds();
-
-  const entries = Object.entries(data);
-  for (let i = 0; i < entries.length; i += BATCH_SIZE) {
-    const batch = entries.slice(i, i + BATCH_SIZE);
-    const promises = batch.map(([uid, user]) => {
-      const userId = user.userId || uid;
-      if (indexedIds.has(userId)) return undefined;
-      return indexUserData(user, uid);
-    });
-    // eslint-disable-next-line no-await-in-loop
-    await Promise.all(promises.filter(Boolean));
-  }
 };
 
 const getCommentLengthCategory = comment => {
@@ -2634,22 +2274,6 @@ export const removeCardAndSearchId = async userId => {
 
     const userData = userSnapshot.val();
     console.log(`Дані користувача:`, userData);
-
-    if (userData.blood) {
-      await updateBloodIndex(getBloodIndexCategory(userData.blood), userId, 'remove');
-    }
-
-    await updateMaritalIndex(getMaritalStatusCategory(userData), userId, 'remove');
-    await updateCsectionIndex(categorizeCsection(userData.csection), userId, 'remove');
-    await updateUserIdIndex(getUserIdCategory(userData.userId || userId), userId, 'remove');
-    await updateFieldsIndex(getFieldCountCategory(userData), userId, 'remove');
-    await updateCommentWordsIndex(getCommentLengthCategory(userData.myComment), userId, 'remove');
-    await updateAgeIndex(getAgeCategory(userData), userId, 'remove');
-    await updateBmiIndex(getBmiCategory(userData), userId, 'remove');
-    await updateRoleIndex(getRoleCategory(userData), userId, 'remove');
-    await updateCountryIndex(getCountryCategory(userData), userId, 'remove');
-    await updateGetInTouchIndex(getGetInTouchKeys(userData), userId, 'remove');
-    await updateBirthIndex(getBirthKeys(userData), userId, 'remove');
 
     // Зберігаємо видалені значення для відображення в toast
     const deletedFields = [];
