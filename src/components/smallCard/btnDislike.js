@@ -34,7 +34,7 @@ export const BtnDislike = ({
         setDislikeUsers(updated);
         setDislike(userId, false);
         removeCardFromList(userId, 'dislike');
-        if (onRemove) onRemove(userId, 'down');
+        if (onRemove) onRemove(userId);
       } catch (error) {
         console.error('Failed to remove dislike:', error);
       }
@@ -55,9 +55,9 @@ export const BtnDislike = ({
           delete upd[userId];
           if (setFavoriteUsers) setFavoriteUsers(upd);
           setFavorite(userId, false);
-          if (onRemove) onRemove(userId, 'down');
+          if (onRemove) onRemove(userId);
         } else if (onRemove) {
-          onRemove(userId, 'down');
+          onRemove(userId);
         }
       } catch (error) {
         console.error('Failed to add dislike:', error);

@@ -34,7 +34,7 @@ export const BtnFavorite = ({
         setFavoriteIds(Object.fromEntries(Object.entries(updated).filter(([, v]) => v)));
         updateCachedUser(userData || { userId }, { removeFavorite: true });
         setFavorite(userId, false);
-        if (onRemove) onRemove(userId, 'down');
+        if (onRemove) onRemove(userId);
       } catch (error) {
         console.error('Failed to remove favorite:', error);
       }
@@ -56,7 +56,7 @@ export const BtnFavorite = ({
           delete upd[userId];
           if (setDislikeUsers) setDislikeUsers(upd);
           setDislike(userId, false);
-          if (onRemove) onRemove(userId, 'up');
+          if (onRemove) onRemove(userId);
         }
       } catch (error) {
         console.error('Failed to add favorite:', error);
