@@ -282,6 +282,11 @@ const ActionButton = styled.button`
   display: flex;
   align-items: center;
   justify-content: center;
+  &:disabled {
+    background-color: ${color.gray3};
+    color: ${color.gray4};
+    cursor: default;
+  }
 `;
 
 const HeaderContainer = styled.div`
@@ -1428,17 +1433,22 @@ const Matching = () => {
           <HeaderContainer>
             <CardCount>{filteredUsers.length} карточок</CardCount>
             <TopActions>
+              {viewMode !== 'default' && (
+                <ActionButton onClick={loadInitial}><FaDownload /></ActionButton>
+              )}
               <ActionButton onClick={() => setShowFilters(s => !s)}><FaFilter /></ActionButton>
-              {viewMode === 'dislikes' ? (
-                <ActionButton onClick={loadInitial}><FaDownload /></ActionButton>
-              ) : (
-                <ActionButton onClick={loadDislikeCards}><FaTimes /></ActionButton>
-              )}
-              {viewMode === 'favorites' ? (
-                <ActionButton onClick={loadInitial}><FaDownload /></ActionButton>
-              ) : (
-                <ActionButton onClick={loadFavoriteCards}><FaHeart /></ActionButton>
-              )}
+              <ActionButton
+                onClick={loadDislikeCards}
+                disabled={viewMode === 'dislikes'}
+              >
+                <FaTimes />
+              </ActionButton>
+              <ActionButton
+                onClick={loadFavoriteCards}
+                disabled={viewMode === 'favorites'}
+              >
+                <FaHeart />
+              </ActionButton>
               <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
             </TopActions>
           </HeaderContainer>
