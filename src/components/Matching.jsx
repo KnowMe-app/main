@@ -94,10 +94,12 @@ const Grid = styled.div`
 const CardContainer = styled.div`
   position: relative;
   width: 100%;
+  overflow: hidden;
+  transition: max-height 0.3s ease, transform 0.3s ease, opacity 0.3s ease;
+  max-height: ${({ isRemoving }) => (isRemoving ? 0 : 1000)}px;
   &.removing {
     transform: translateY(-100%);
     opacity: 0;
-    transition: transform 0.3s ease, opacity 0.3s ease;
   }
 `;
 
@@ -747,7 +749,7 @@ const SwipeableCard = ({
         setFavoriteUsers={setFavoriteUsers}
         dislikeUsers={dislikeUsers}
         setDislikeUsers={setDislikeUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+        onRemove={handleRemove}
       />
       <BtnDislike
         userId={user.userId}
@@ -756,7 +758,7 @@ const SwipeableCard = ({
         setDislikeUsers={setDislikeUsers}
         favoriteUsers={favoriteUsers}
         setFavoriteUsers={setFavoriteUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+        onRemove={handleRemove}
       />
       {current === 'main' && isAgency && (
         <CardInfo>
@@ -982,11 +984,12 @@ const Matching = () => {
       if (viewMode === 'dislikes') {
         return prev.filter(u => dislikeUsers[u.userId]);
       }
-      return prev.filter(
-        u => !favoriteUsers[u.userId] && !dislikeUsers[u.userId]
-      );
+      return prev.filter(u => {
+        if (u.userId === removingId) return true;
+        return !favoriteUsers[u.userId] && !dislikeUsers[u.userId];
+      });
     });
-  }, [favoriteUsers, dislikeUsers, viewMode]);
+  }, [favoriteUsers, dislikeUsers, viewMode, removingId]);
 
   const loadCommentsFor = async list => {
     const owner = auth.currentUser?.uid;
@@ -1443,12 +1446,14 @@ const Matching = () => {
                     key={user.userId}
                     isRemoving={isRemoving}
                     className={isRemoving ? 'removing' : ''}
-                    onTransitionEnd={() =>
-                      isRemoving &&
-                      setUsers(prev =>
-                        prev.filter(u => u.userId !== removingId)
-                      )
-                    }
+                    onTransitionEnd={() => {
+                      if (isRemoving) {
+                        setUsers(prev =>
+                          prev.filter(u => u.userId !== removingId)
+                        );
+                        setRemovingId(null);
+                      }
+                    }}
                   >
                     {thirdVariant && (
                       <ThirdInfoCard>
