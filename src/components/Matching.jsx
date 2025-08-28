@@ -94,6 +94,11 @@ const Grid = styled.div`
 const CardContainer = styled.div`
   position: relative;
   width: 100%;
+  &.removing {
+    transform: translateY(-100%);
+    opacity: 0;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+  }
 `;
 
 const NextPhoto = styled.img`
@@ -901,6 +906,7 @@ const Matching = () => {
   const [comments, setComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [removingId, setRemovingId] = useState(null);
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
@@ -909,9 +915,7 @@ const Matching = () => {
   const saveScrollPosition = () => {
     sessionStorage.setItem(SCROLL_Y_KEY, String(scrollPositionRef.current));
   };
-  const handleRemove = id => {
-    setUsers(prev => prev.filter(u => u.userId !== id));
-  };
+  const handleRemove = id => setRemovingId(id);
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
     const handleScroll = () => {
@@ -1433,8 +1437,19 @@ const Matching = () => {
                   .filter(Boolean)
                   .map(v => String(v).trim())
                   .join(' ');
+                const isRemoving = user.userId === removingId;
                 return (
-                  <CardContainer key={user.userId}>
+                  <CardContainer
+                    key={user.userId}
+                    isRemoving={isRemoving}
+                    className={isRemoving ? 'removing' : ''}
+                    onTransitionEnd={() =>
+                      isRemoving &&
+                      setUsers(prev =>
+                        prev.filter(u => u.userId !== removingId)
+                      )
+                    }
+                  >
                     {thirdVariant && (
                       <ThirdInfoCard>
                         <InfoCardContent user={user} variant={thirdVariant} />
