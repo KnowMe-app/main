@@ -235,23 +235,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     profileSync.init();
+    const cachedProfile = profileSync.getData();
+    if (cachedProfile) {
+      setState(cachedProfile);
+    }
+
     if (!search) {
       const storedSearch = localStorage.getItem(SEARCH_KEY);
       if (storedSearch) {
         setSearch(storedSearch);
-        return;
       }
-
-      // Clear any leftover cached profile data so a blank form is shown
-      profileSync.update(null);
-      setState({});
-
-      const intervalId = setInterval(() => {
-        profileSync.pollServer();
-      }, 5000);
-      return () => clearInterval(intervalId);
     }
-  }, [search, state.userId]);
+  }, [search]);
 
   const handleBlur = () => {
     handleSubmit();
@@ -588,6 +583,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleAddUser = async () => {
     setAdding(true);
     const newProfile = await makeNewUser(searchKeyValuePair);
+    updateCachedUser(newProfile);
+    cacheFetchedUsers({ [newProfile.userId]: newProfile }, cacheLoad2Users, filters);
+    setUsers(prev => ({ ...prev, [newProfile.userId]: newProfile }));
     await profileSync.update(newProfile);
     setState(newProfile);
     setUserNotFound(false);
