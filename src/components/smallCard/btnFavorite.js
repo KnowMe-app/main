@@ -56,8 +56,8 @@ export const BtnFavorite = ({
           delete upd[userId];
           if (setDislikeUsers) setDislikeUsers(upd);
           setDislike(userId, false);
+          if (onRemove) onRemove(userId);
         }
-        if (onRemove) onRemove(userId);
       } catch (error) {
         console.error('Failed to add favorite:', error);
       }
