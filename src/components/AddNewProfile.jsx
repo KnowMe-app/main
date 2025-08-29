@@ -230,13 +230,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
 
   useEffect(() => {
-    if (!search) {
-      const storedSearch = localStorage.getItem(SEARCH_KEY);
-      if (storedSearch) {
-        setSearch(storedSearch);
-      }
+    const storedSearch = localStorage.getItem(SEARCH_KEY);
+    if (storedSearch) {
+      setSearch(storedSearch);
     }
-  }, [search]);
+  }, []); // run once
 
   const handleBlur = () => {
     handleSubmit();
@@ -989,6 +987,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           setUserNotFound={setUserNotFound}
           onSearchKey={setSearchKeyValuePair}
           onClear={() => {
+            localStorage.removeItem(SEARCH_KEY);
             setState({});
             setSearchKeyValuePair(null);
             setUsers({});
