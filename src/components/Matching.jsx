@@ -909,6 +909,9 @@ const Matching = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [removingId, setRemovingId] = useState(null);
+  const [removedIndex, setRemovedIndex] = useState(null);
+  const [removedHeight, setRemovedHeight] = useState(0);
+  const gridRef = useRef(null);
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
@@ -917,7 +920,14 @@ const Matching = () => {
   const saveScrollPosition = () => {
     sessionStorage.setItem(SCROLL_Y_KEY, String(scrollPositionRef.current));
   };
-  const handleRemove = id => setRemovingId(id);
+  const handleRemove = id => {
+    const index = users.findIndex(u => u.userId === id);
+    if (index !== -1 && gridRef.current?.children[index]) {
+      setRemovedIndex(index);
+      setRemovedHeight(gridRef.current.children[index].offsetHeight);
+    }
+    setRemovingId(id);
+  };
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
     const handleScroll = () => {
@@ -1340,9 +1350,6 @@ const Matching = () => {
     loadInitial();
   }, [loadInitial]);
 
-  const gridRef = useRef(null);
-
-
   const filteredUsers =
     filters && Object.keys(filters).length > 0
       ? filterMain(
@@ -1409,7 +1416,7 @@ const Matching = () => {
           </HeaderContainer>
 
           <Grid ref={gridRef}>
-            {filteredUsers.map(user => {
+            {filteredUsers.map((user, idx) => {
               const photos = Array.isArray(user.photos)
                 ? user.photos.filter(Boolean).map(convertDriveLinkToImage)
                 : [getCurrentValue(user.photos)]
@@ -1441,17 +1448,27 @@ const Matching = () => {
                   .map(v => String(v).trim())
                   .join(' ');
                 const isRemoving = user.userId === removingId;
+                const style =
+                  removedIndex !== null && idx > removedIndex
+                    ? {
+                        transform: `translateY(-${removedHeight}px)`,
+                        transition: 'transform 0.3s ease',
+                      }
+                    : undefined;
                 return (
                   <CardContainer
                     key={user.userId}
                     isRemoving={isRemoving}
                     className={isRemoving ? 'removing' : ''}
+                    style={style}
                     onTransitionEnd={() => {
                       if (isRemoving) {
                         setUsers(prev =>
                           prev.filter(u => u.userId !== removingId)
                         );
                         setRemovingId(null);
+                        setRemovedIndex(null);
+                        setRemovedHeight(0);
                       }
                     }}
                   >
