@@ -991,6 +991,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           onClear={() => {
             setState({});
             setSearchKeyValuePair(null);
+            setUsers({});
+            setUserNotFound(false);
           }}
           storageKey={SEARCH_KEY}
         />
