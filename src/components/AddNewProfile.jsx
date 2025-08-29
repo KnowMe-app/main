@@ -65,7 +65,6 @@ import { PAGE_SIZE, database } from './config';
 import { onValue, ref } from 'firebase/database';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
-import { createLocalFirstSync } from '../hooks/localServerSync';
 import {
   setFavoriteIds,
   clearAllCardsCache,
@@ -206,9 +205,6 @@ const ButtonsContainer = styled.div`
   gap: 10px;
 `;
 
-const profileSync = createLocalFirstSync('pendingProfile', null, ({ data }) =>
-  data?.userId ? data : makeNewUser(data),
-);
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
@@ -234,12 +230,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
 
   useEffect(() => {
-    profileSync.init();
-    const cachedProfile = profileSync.getData();
-    if (cachedProfile) {
-      setState(cachedProfile);
-    }
-
     if (!search) {
       const storedSearch = localStorage.getItem(SEARCH_KEY);
       if (storedSearch) {
@@ -274,11 +264,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     cacheFetchedUsers({ [updatedState.userId]: updatedState }, cacheLoad2Users, filters);
     setUsers(prev => ({ ...prev, [updatedState.userId]: updatedState }));
 
-    const syncedState = await profileSync.update(updatedState);
-    // Ensure caches stay in sync with server response
-    updateCachedUser(syncedState);
-    cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
-    setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
+    const syncedState = updatedState;
 
     if (syncedState?.userId?.length > 20) {
       const { existingData } = await fetchUserById(syncedState.userId);
@@ -586,7 +572,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     updateCachedUser(newProfile);
     cacheFetchedUsers({ [newProfile.userId]: newProfile }, cacheLoad2Users, filters);
     setUsers(prev => ({ ...prev, [newProfile.userId]: newProfile }));
-    await profileSync.update(newProfile);
     setState(newProfile);
     setUserNotFound(false);
     setAdding(false);

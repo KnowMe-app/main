@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import {
@@ -12,7 +12,6 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { ProfileForm } from './ProfileForm';
 import { renderTopBlock } from "./smallCard/renderTopBlock";
 import { coloredCard } from "./styles";
-import { createLocalFirstSync } from '../hooks/localServerSync';
 import { mergeCache, getCacheKey } from '../hooks/cardsCache';
 import { updateCachedUser } from '../utils/cache';
 
@@ -76,20 +75,6 @@ const EditProfile = () => {
     return updatedState;
   }
 
-  const syncRef = useRef(
-    createLocalFirstSync('pendingProfileUpdate', null, async ({ data }) => {
-      setIsSyncing(true);
-      try {
-        await remoteUpdate(data);
-      } finally {
-        setIsSyncing(false);
-      }
-    }),
-  );
-
-  useEffect(() => {
-    syncRef.current.init();
-  }, []);
 
   useEffect(() => {
     if (!state && userId) {
@@ -101,7 +86,7 @@ const EditProfile = () => {
     }
   }, [state, userId]);
 
-  const handleSubmit = (newState, overwrite, delCondition) => {
+  const handleSubmit = async (newState, overwrite, delCondition) => {
     const formatDate = date => {
       const dd = String(date.getDate()).padStart(2, '0');
       const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -118,7 +103,12 @@ const EditProfile = () => {
     mergeCache(getCacheKey('default'), {
       users: { [updatedState.userId]: updatedState },
     });
-    syncRef.current.update({ updatedState, overwrite, delCondition });
+    setIsSyncing(true);
+    try {
+      await remoteUpdate({ updatedState, overwrite, delCondition });
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleBlur = () => handleSubmit();
