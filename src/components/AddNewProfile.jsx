@@ -1124,7 +1124,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   dislikeUsers={dislikeUsersData}
                   setDislikeUsers={setDislikeUsersData}
                   setUsers={setUsers}
-                  setSearch={setSearch}
                   setState={setState}
                   currentFilter={currentFilter}
                   isDateInRange={isDateInRange}

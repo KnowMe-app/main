@@ -5,6 +5,7 @@ import { renderTopBlock } from './smallCard/renderTopBlock';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnEdit } from './smallCard/btnEdit';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
+import { useNavigate } from 'react-router-dom';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
 
 // Компонент для рендерингу полів користувача
@@ -113,7 +114,6 @@ const UserCard = ({
 const UsersList = ({
   users,
   setUsers,
-  setSearch,
   setState,
   setShowInfoModal,
   setCompare,
@@ -125,6 +125,7 @@ const UsersList = ({
   isDateInRange,
 }) => {
   const entries = Object.entries(users);
+  const navigate = useNavigate();
 
   const handleCreate = async value => {
     const res = await makeNewUser({ name: value });
@@ -177,7 +178,7 @@ const UsersList = ({
             </div>
           ) : (
             <>
-              {btnEdit(userData, setSearch, setState)}
+              {btnEdit(userData, navigate)}
               {btnCompare(index, users, setUsers, setShowInfoModal, setCompare, )}
               <UserCard
                 setShowInfoModal={setShowInfoModal}

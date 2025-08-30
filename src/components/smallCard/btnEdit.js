@@ -5,14 +5,16 @@ import { normalizeQueryKey, setIdsForQuery } from '../../utils/cardIndex';
 import { saveCard } from '../../utils/cardsStorage';
 
 // Use already loaded card data instead of re-fetching from the server
-export const btnEdit = (userData, setSearch, setState) => {
+export const btnEdit = (userData, navigate) => {
   const handleCardClick = () => {
     if (userData) {
-      setSearch(`${userData.userId}`);
-      setState(userData);
-      const cacheKey = getCacheKey('search', normalizeQueryKey(`userId=${userData.userId}`));
+      const cacheKey = getCacheKey(
+        'search',
+        normalizeQueryKey(`userId=${userData.userId}`)
+      );
       saveCard({ ...userData, id: userData.userId });
       setIdsForQuery(cacheKey, [userData.userId]);
+      navigate(`/edit/${userData.userId}`, { state: userData });
     } else {
       console.log('Користувача не знайдено.');
     }
