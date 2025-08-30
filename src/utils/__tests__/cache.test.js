@@ -19,6 +19,15 @@ describe('updateCachedUser', () => {
     updateCachedUser(user, { removeFavorite: true });
     expect(getIdsByQuery('favorite')).not.toContain('1');
   });
+
+  it('removes specified keys from cached user', () => {
+    const user = { userId: '1', name: 'John', email: 'john@example.com' };
+    updateCachedUser(user);
+    updateCachedUser({ userId: '1' }, { removeKeys: ['email'] });
+    const stored = getCard('1');
+    expect(stored.email).toBeUndefined();
+    expect(stored.name).toBe('John');
+  });
 });
 
 describe('clearAllCardsCache', () => {

@@ -22,7 +22,7 @@ export const removeCardFromList = (cardId, listKey) => {
   setIdsForQuery(listKey, ids);
 };
 
-export const updateCard = (cardId, data, remoteSave) => {
+export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   const cards = loadCards();
   const updatedCard = {
     ...cards[cardId],
@@ -30,6 +30,9 @@ export const updateCard = (cardId, data, remoteSave) => {
     id: cardId,
     updatedAt: Date.now(),
   };
+  removeKeys.forEach(key => {
+    delete updatedCard[key];
+  });
   cards[cardId] = updatedCard;
   saveCards(cards);
   touchCardInQueries(cardId);

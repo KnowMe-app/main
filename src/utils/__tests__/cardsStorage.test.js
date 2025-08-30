@@ -14,6 +14,14 @@ describe('cardsStorage', () => {
     expect(remoteSave).toHaveBeenCalledWith(card);
   });
 
+  it('removes specified keys from card', () => {
+    updateCard('1', { title: 'Old', email: 'a' });
+    updateCard('1', { title: 'New' }, undefined, ['email']);
+    const stored = JSON.parse(localStorage.getItem('cards'));
+    expect(stored['1'].email).toBeUndefined();
+    expect(stored['1'].title).toBe('New');
+  });
+
   it('shares updated data across lists without extra fetch', async () => {
     addCardToList('1', 'load2');
     addCardToList('1', 'favorite');
