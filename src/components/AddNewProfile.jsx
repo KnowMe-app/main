@@ -408,6 +408,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // Видалення ключа з Firebase
       removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
 
+      handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
       return newState; // Повертаємо оновлений стан
     });
   };

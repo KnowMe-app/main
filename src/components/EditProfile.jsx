@@ -150,6 +150,7 @@ const EditProfile = () => {
       const deletedValue = newState[fieldName];
       delete newState[fieldName];
       removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
+      handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
       return newState;
     });
   };
