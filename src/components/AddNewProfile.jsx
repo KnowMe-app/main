@@ -892,6 +892,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [duplicates, setDuplicates] = useState('');
   const [isDuplicateView, setIsDuplicateView] = useState(false);
 
+  useEffect(() => {
+    if (isDuplicateView && state.userId) {
+      const currentId = state.userId;
+      const handlePopState = () => {
+        setState({});
+        const el = document.getElementById(currentId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      };
+
+      window.history.pushState({ duplicateEdit: true }, '');
+      window.addEventListener('popstate', handlePopState);
+
+      return () => {
+        window.removeEventListener('popstate', handlePopState);
+      };
+    }
+  }, [isDuplicateView, state.userId]);
+
   const searchDuplicates = async () => {
     const { mergedUsers, totalDuplicates } = await loadDuplicateUsers();
     // console.log('res :>> ', res);
