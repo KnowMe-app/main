@@ -889,6 +889,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const [duplicates, setDuplicates] = useState('');
+  const [isDuplicateView, setIsDuplicateView] = useState(false);
 
   const searchDuplicates = async () => {
     const { mergedUsers, totalDuplicates } = await loadDuplicateUsers();
@@ -896,6 +897,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     cacheFetchedUsers(mergedUsers, cacheLoad2Users);
     setUsers(prevUsers => ({ ...prevUsers, ...mergedUsers }));
     setDuplicates(totalDuplicates);
+    setIsDuplicateView(true);
     // console.log('res!!!!!!!! :>> ', res.length);
   };
 
@@ -953,6 +955,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
   const getSortedIds = () => {
     const ids = Object.keys(users);
+    if (isDuplicateView) {
+      return ids;
+    }
     return ids.sort((a, b) =>
       compareUsersByGetInTouch(users[a] || {}, users[b] || {}),
     );
@@ -1057,6 +1062,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setCurrentPage(1);
                   setCurrentFilter('DATE');
                   setDateOffset(0);
+                  setDuplicates('');
+                  setIsDuplicateView(false);
                   loadMoreUsers('DATE');
                 }}
               >
@@ -1069,12 +1076,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setCurrentPage(1);
                   setCurrentFilter('DATE2');
                   setDateOffset2(0);
+                  setDuplicates('');
+                  setIsDuplicateView(false);
                   loadMoreUsers2();
                 }}
               >
                 Load2
               </Button>
-              <Button onClick={() => setCurrentFilter('FAVORITE')}>❤</Button>
+              <Button
+                onClick={() => {
+                  setCurrentFilter('FAVORITE');
+                  setDuplicates('');
+                  setIsDuplicateView(false);
+                }}
+              >
+                ❤
+              </Button>
               <Button onClick={indexLastLoginHandler}>indexLastLogin</Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
