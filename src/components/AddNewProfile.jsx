@@ -996,7 +996,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             localStorage.removeItem(SEARCH_KEY);
             setState({});
             setSearchKeyValuePair(null);
-            setUsers({});
+            // У режимі перегляду дублікатів зберігаємо поточний список
+            if (!isDuplicateView) {
+              setUsers({});
+            }
             setUserNotFound(false);
           }}
           storageKey={SEARCH_KEY}
