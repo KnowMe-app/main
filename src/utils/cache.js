@@ -4,16 +4,13 @@ import { setIdsForQuery } from './cardIndex';
 
 export { getCacheKey };
 
-// Removes all cached card lists regardless of mode or search term
+// Clears localStorage while preserving authentication state
 export const clearAllCardsCache = () => {
-  const CARDS_PREFIX = 'matchingCache:cards:';
-  const EXTRA_KEYS = ['cards', 'queries'];
+  const AUTH_KEYS = ['persist:auth', 'auth'];
 
   Object.keys(localStorage)
-    .filter(key => key.startsWith(CARDS_PREFIX))
+    .filter(key => !AUTH_KEYS.includes(key))
     .forEach(key => localStorage.removeItem(key));
-
-  EXTRA_KEYS.forEach(key => localStorage.removeItem(key));
 };
 
 let favoriteIds = {};

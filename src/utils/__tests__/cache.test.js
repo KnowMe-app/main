@@ -26,10 +26,11 @@ describe('clearAllCardsCache', () => {
     localStorage.clear();
   });
 
-  it('removes matching cache and related keys', () => {
+  it('clears all cache except auth data', () => {
     localStorage.setItem('matchingCache:cards:default', 'cached');
     localStorage.setItem('cards', '{}');
     localStorage.setItem('queries', '{}');
+    localStorage.setItem('persist:auth', '{"token":"123"}');
     localStorage.setItem('other', 'value');
 
     clearAllCardsCache();
@@ -37,6 +38,7 @@ describe('clearAllCardsCache', () => {
     expect(localStorage.getItem('matchingCache:cards:default')).toBeNull();
     expect(localStorage.getItem('cards')).toBeNull();
     expect(localStorage.getItem('queries')).toBeNull();
-    expect(localStorage.getItem('other')).toBe('value');
+    expect(localStorage.getItem('other')).toBeNull();
+    expect(localStorage.getItem('persist:auth')).toBe('{"token":"123"}');
   });
 });
