@@ -123,6 +123,7 @@ const UsersList = ({
   setDislikeUsers,
   currentFilter,
   isDateInRange,
+  isDuplicateView,
 }) => {
   const entries = Object.entries(users);
 
@@ -177,7 +178,7 @@ const UsersList = ({
             </div>
           ) : (
             <>
-              {btnEdit(userData, setSearch, setState)}
+              {btnEdit(userData, setSearch, setState, isDuplicateView)}
               {btnCompare(index, users, setUsers, setShowInfoModal, setCompare, )}
               <UserCard
                 setShowInfoModal={setShowInfoModal}
