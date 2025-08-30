@@ -258,7 +258,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       : { ...state, lastAction: currentDate };
 
     // Optimistically update local cache and UI state before syncing with server
-    updateCachedUser(updatedState);
+    const removeKeys = delCondition ? Object.keys(delCondition) : [];
+    updateCachedUser(updatedState, { removeKeys });
     cacheFetchedUsers({ [updatedState.userId]: updatedState }, cacheLoad2Users, filters);
     setUsers(prev => ({ ...prev, [updatedState.userId]: updatedState }));
 

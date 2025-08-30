@@ -99,7 +99,8 @@ const EditProfile = () => {
       ? { ...newState, lastAction: currentDate }
       : { ...state, lastAction: currentDate };
 
-    updateCachedUser(updatedState);
+    const removeKeys = delCondition ? Object.keys(delCondition) : [];
+    updateCachedUser(updatedState, { removeKeys });
     mergeCache(getCacheKey('default'), {
       users: { [updatedState.userId]: updatedState },
     });

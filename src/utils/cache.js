@@ -23,8 +23,11 @@ export const setFavoriteIds = fav => {
 
 const isFavorite = id => !!favoriteIds[id];
 
-export const updateCachedUser = (user, { removeFavorite = false } = {}) => {
-  updateCard(user.userId, user);
+export const updateCachedUser = (
+  user,
+  { removeFavorite = false, removeKeys = [] } = {},
+) => {
+  updateCard(user.userId, user, undefined, removeKeys);
   addCardToList(user.userId, 'load2');
   const shouldFav = isFavorite(user.userId);
 
