@@ -8,6 +8,8 @@ import {
   getIdsByQuery,
   getCard,
   setIdsForQuery,
+  loadQueries,
+  TTL_MS,
 } from '../utils/cardIndex';
 import { saveCard } from '../utils/cardsStorage';
 
@@ -315,6 +317,28 @@ const SearchBar = ({
     return false;
   };
 
+  const isCacheFresh = (key, value) => {
+    let cacheKey;
+    if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
+      const inside = value.slice(1, -1);
+      // eslint-disable-next-line no-useless-escape
+      const matches = inside.match(/"[^\"]+"|[^\s,;]+/g) || [];
+      const values = matches
+        .map(v => v.replace(/^"|"$/g, '').trim())
+        .filter(Boolean);
+      if (values.length > 0) {
+        const term = values.map(v => v).sort().join(',');
+        cacheKey = getCacheKey('search', normalizeQueryKey(`names=${term}`));
+      }
+    } else {
+      cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
+    }
+    if (!cacheKey) return false;
+    const queries = loadQueries();
+    const entry = queries[cacheKey];
+    return !!(entry && Date.now() - entry.updatedAt < TTL_MS);
+  };
+
   const addToHistory = value => {
     const trimmedVal = value.trim();
     if (!trimmedVal) return;
@@ -373,12 +397,14 @@ const SearchBar = ({
 
     if (id) {
       const hasCache = loadCachedResult(platform, id);
+      const freshCache = hasCache && isCacheFresh(platform, id);
+      const result = { [platform]: id };
+      onSearchKey && onSearchKey(result);
+      if (freshCache) return true;
       if (!hasCache) {
         setState && setState({});
         setUsers && setUsers({});
       }
-      const result = { [platform]: id };
-      onSearchKey && onSearchKey(result);
       const res = await cachedSearch(result);
       if (!res || Object.keys(res).length === 0) {
         setUserNotFound && setUserNotFound(true);
@@ -403,7 +429,8 @@ const SearchBar = ({
     }
     if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
       const hasCache = loadCachedResult('name', trimmed);
-      if (hasCache) return;
+      const freshCache = hasCache && isCacheFresh('name', trimmed);
+      if (freshCache) return;
       setState && setState({});
       setUsers && setUsers({});
       const inside = trimmed.slice(1, -1);
@@ -445,12 +472,14 @@ const SearchBar = ({
 
     const nameTrim = query.trim();
     const hasCache = loadCachedResult('name', nameTrim);
+    const freshCache = hasCache && isCacheFresh('name', nameTrim);
+    onSearchKey && onSearchKey({ name: nameTrim });
+    if (freshCache) return;
     if (!hasCache) {
       setState && setState({});
       setUsers && setUsers({});
     }
     let res = await cachedSearch({ name: nameTrim });
-    onSearchKey && onSearchKey({ name: nameTrim });
     if (!res || Object.keys(res).length === 0) {
       const cleanedQuery = query.replace(/^ук\s*см\s*/i, '').trim();
       if (cleanedQuery && cleanedQuery !== nameTrim) {
