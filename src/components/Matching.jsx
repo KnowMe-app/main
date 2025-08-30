@@ -31,7 +31,8 @@ import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { loadCache, saveCache } from "../hooks/cardsCache";
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
-import { normalizeQueryKey, getIdsByQuery, setIdsForQuery } from '../utils/cardIndex';
+import { normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard } from '../utils/cardIndex';
+import { saveCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaArrowDown, FaDownload } from 'react-icons/fa';
@@ -1250,12 +1251,21 @@ const Matching = () => {
     const [key, value] = Object.entries(params)[0] || [];
     const term = key && value ? `${key}=${value}` : undefined;
     const cacheKey = getCacheKey('search', term ? normalizeQueryKey(term) : term);
-    const cached = loadCache(cacheKey);
-    if (cached) return cached.raw;
+    const ids = getIdsByQuery(cacheKey);
+    if (ids.length > 0) {
+      const cards = ids.map(id => getCard(id)).filter(Boolean);
+      if (cards.length > 0) {
+        if (key === 'name' || key === 'names') {
+          return Object.fromEntries(cards.map(c => [c.userId, c]));
+        }
+        return cards[0];
+      }
+    }
     const res = await searchUsersOnly(params);
     if (res && Object.keys(res).length > 0) {
       const arr = Array.isArray(res) ? res : Object.values(res);
-      saveCache(cacheKey, { raw: res, users: arr });
+      arr.forEach(u => saveCard({ ...u, id: u.userId }));
+      setIdsForQuery(cacheKey, arr.map(u => u.userId));
     }
     return res;
   };

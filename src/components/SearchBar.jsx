@@ -1,9 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAutoResize } from '../hooks/useAutoResize';
 import styled from 'styled-components';
-import { createCache, loadCache, saveCache } from '../hooks/cardsCache';
+import { createCache } from '../hooks/cardsCache';
 import { getCacheKey } from '../utils/cache';
-import { normalizeQueryKey } from '../utils/cardIndex';
+import {
+  normalizeQueryKey,
+  getIdsByQuery,
+  getCard,
+  setIdsForQuery,
+} from '../utils/cardIndex';
+import { saveCard } from '../utils/cardsStorage';
 
 const SearchIcon = (
   <svg
@@ -273,24 +279,38 @@ const SearchBar = ({
       if (values.length > 0) {
         const term = values.map(v => v).sort().join(',');
         const cacheKey = getCacheKey('search', normalizeQueryKey(`names=${term}`));
-        const cached = loadCache(cacheKey);
-        if (cached && cached.raw) {
-          setUserNotFound && setUserNotFound(false);
-          setUsers && setUsers(cached.raw);
-          return true;
+        const ids = getIdsByQuery(cacheKey);
+        if (ids.length > 0) {
+          const results = {};
+          ids.forEach(id => {
+            const card = getCard(id);
+            if (card) results[id] = card;
+          });
+          if (Object.keys(results).length > 0) {
+            setUserNotFound && setUserNotFound(false);
+            setUsers && setUsers(results);
+            return true;
+          }
         }
       }
     }
     const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
-    const cached = loadCache(cacheKey);
-    if (cached && cached.raw) {
-      setUserNotFound && setUserNotFound(false);
-      if ('userId' in cached.raw) {
-        setState && setState(cached.raw);
-      } else {
-        setUsers && setUsers(cached.raw);
+    const ids = getIdsByQuery(cacheKey);
+    if (ids.length > 0) {
+      const cards = ids.map(id => getCard(id)).filter(Boolean);
+      if (cards.length > 0) {
+        setUserNotFound && setUserNotFound(false);
+        if (key === 'name' || key === 'names' || cards.length > 1) {
+          const map = {};
+          cards.forEach(c => {
+            map[c.userId] = c;
+          });
+          setUsers && setUsers(map);
+        } else {
+          setState && setState(cards[0]);
+        }
+        return true;
       }
-      return true;
     }
     return false;
   };
@@ -340,7 +360,9 @@ const SearchBar = ({
       const [key, value] = Object.entries(params)[0] || [];
       if (key && value) {
         const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
-        saveCache(cacheKey, { raw: res });
+        const arr = Array.isArray(res) ? res : Object.values(res);
+        arr.forEach(u => saveCard({ ...u, id: u.userId }));
+        setIdsForQuery(cacheKey, arr.map(u => u.userId));
       }
     }
     return res;
@@ -403,7 +425,11 @@ const SearchBar = ({
         }
         setUsers && setUsers(results);
         const term = values.map(v => v).sort().join(',');
-        saveCache(getCacheKey('search', normalizeQueryKey(`names=${term}`)), { raw: results });
+        const ids = Object.keys(results).filter(id => !results[id]._notFound);
+        setIdsForQuery(
+          getCacheKey('search', normalizeQueryKey(`names=${term}`)),
+          ids,
+        );
         return;
       }
     }
