@@ -1,7 +1,12 @@
 import { CardMenuBtn } from 'components/styles';
 import React from 'react';
 
-export const btnDel = (userData, setState, setShowInfoModal, isFromListOfUsers) => (
+export const btnDel = (
+  userData,
+  setShowInfoModal,
+  setUserIdToDelete,
+  isFromListOfUsers,
+) => (
   <CardMenuBtn
     style={{
       backgroundColor: 'red',
@@ -10,7 +15,7 @@ export const btnDel = (userData, setState, setShowInfoModal, isFromListOfUsers) 
     onClick={e => {
       e.stopPropagation(); // Запобігаємо активації кліку картки
       if (isFromListOfUsers === 'isFromListOfUsers') {
-        setState({ userId: userData.userId });
+        setUserIdToDelete(userData.userId);
       }
       setShowInfoModal('delConfirm');
     }}
