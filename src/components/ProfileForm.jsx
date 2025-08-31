@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import styled, { css } from 'styled-components';
 import Photos from './Photos';
 import { inputUpdateValue } from './inputUpdatedValue';
@@ -127,6 +127,17 @@ export const ProfileForm = ({
 }) => {
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
+  const [customField, setCustomField] = useState({ key: '', value: '' });
+
+  const handleAddCustomField = () => {
+    if (!customField.key) return;
+    setState(prevState => {
+      const newState = { ...prevState, [customField.key]: customField.value };
+      handleSubmit(newState, 'overwrite');
+      return newState;
+    });
+    setCustomField({ key: '', value: '' });
+  };
 
   const autoResizeMyComment = useAutoResize(textareaRef, state.myComment);
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
@@ -407,6 +418,20 @@ export const ProfileForm = ({
             ) : null}
           </PickerContainer>
         ))}
+      <KeyValueRow>
+        <CustomInput
+          placeholder="ключ"
+          value={customField.key}
+          onChange={e => setCustomField(prev => ({ ...prev, key: e.target.value }))}
+        />
+        <Colon>:</Colon>
+        <CustomInput
+          placeholder="значення"
+          value={customField.value}
+          onChange={e => setCustomField(prev => ({ ...prev, value: e.target.value }))}
+        />
+        <Button onClick={handleAddCustomField}>+</Button>
+      </KeyValueRow>
       <Photos state={state} setState={setState} />
     </>
   );
@@ -570,6 +595,33 @@ const DelKeyValueBTN = styled.button`
   &:hover {
     color: black;
   }
+`;
+
+const KeyValueRow = styled.div`
+  display: flex;
+  align-items: center;
+  position: relative;
+  margin: 10px 0;
+  padding: 10px;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  box-sizing: border-box;
+  width: 100%;
+`;
+
+const CustomInput = styled.input`
+  border: none;
+  outline: none;
+  flex: 1;
+  padding-left: 10px;
+  max-width: 100%;
+  min-width: 0;
+  height: 100%;
+`;
+
+const Colon = styled.span`
+  margin: 0 10px;
 `;
 
 const ButtonGroup = styled.div`
