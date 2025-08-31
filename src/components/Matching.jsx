@@ -656,6 +656,15 @@ const SwipeableCard = ({
     .join(' ');
   const contacts = fieldContactsIcons(user);
   const selectedFields = renderSelectedFields(user).filter(Boolean);
+  const locationInfo = getCurrentValue(user.country)
+    ? [
+        normalizeCountry(getCurrentValue(user.country)),
+        getCurrentValue(user.city) ||
+          normalizeRegion(getCurrentValue(user.region)),
+      ]
+        .filter(Boolean)
+        .join(', ')
+    : '';
 
   return (
     <AnimatedCard
@@ -705,7 +714,8 @@ const SwipeableCard = ({
               <br />
               {[
                 normalizeCountry(getCurrentValue(user.country)),
-                normalizeRegion(getCurrentValue(user.region)),
+                getCurrentValue(user.city) ||
+                  normalizeRegion(getCurrentValue(user.region)),
               ]
                 .filter(Boolean)
                 .join(', ')}
@@ -726,7 +736,8 @@ const SwipeableCard = ({
           <br />
           {[
             normalizeCountry(getCurrentValue(user.country)),
-            normalizeRegion(getCurrentValue(user.region)),
+            getCurrentValue(user.city) ||
+              normalizeRegion(getCurrentValue(user.region)),
           ]
             .filter(Boolean)
             .join(', ')}
@@ -768,15 +779,13 @@ const SwipeableCard = ({
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
+              alignItems: 'flex-end',
               gap: '4px',
               flexWrap: 'nowrap',
               justifyContent: 'flex-start',
             }}
           >
-            {getCurrentValue(user.country) && (
-              <span>{normalizeCountry(getCurrentValue(user.country))}</span>
-            )}
+            {locationInfo && <span>{locationInfo}</span>}
             {contacts && <Icons>{contacts}</Icons>}
           </div>
         </CardInfo>
@@ -885,7 +894,8 @@ const InfoCardContent = ({ user, variant }) => {
           <br />
           {[
             normalizeCountry(getCurrentValue(user.country)),
-            normalizeRegion(getCurrentValue(user.region)),
+            getCurrentValue(user.city) ||
+              normalizeRegion(getCurrentValue(user.region)),
           ]
             .filter(Boolean)
             .join(', ')}
