@@ -1,5 +1,11 @@
 describe('cardIndex queries', () => {
-  const { setIdsForQuery, getIdsByQuery, normalizeQueryKey, getCard } = require('../cardIndex');
+  const {
+    setIdsForQuery,
+    getIdsByQuery,
+    normalizeQueryKey,
+    getCard,
+    removeCard,
+  } = require('../cardIndex');
   const { updateCard } = require('../cardsStorage');
 
   beforeEach(() => {
@@ -23,5 +29,13 @@ describe('cardIndex queries', () => {
     expect(ids).toEqual(['1']);
     const card = getCard('1');
     expect(card.title).toBe('New');
+  });
+
+  it('removes card from cards and queries', () => {
+    updateCard('userId01', { name: 'A' });
+    setIdsForQuery('test', ['userId01']);
+    removeCard('userId01');
+    expect(getCard('userId01')).toBeNull();
+    expect(getIdsByQuery('test')).toEqual([]);
   });
 });

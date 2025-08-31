@@ -24,6 +24,7 @@ import {
 import { PAGE_SIZE, BATCH_SIZE } from './constants';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
+import { removeCard } from '../utils/cardIndex';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -2307,6 +2308,8 @@ export const removeCardAndSearchId = async userId => {
     // Видаляємо картку користувача з newUsers
     await remove(ref2(db, `newUsers/${userId}`));
     console.log(`Картка користувача видалена з newUsers: ${userId}`);
+
+    removeCard(userId);
 
     if (deletedFields.length) {
       toast.success(`Видалені дані:\n${deletedFields.join('\n')}`, {
