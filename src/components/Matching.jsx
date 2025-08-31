@@ -442,6 +442,7 @@ const Icons = styled.div`
   gap: 10px;
   font-size: 16px;
   color: ${color.accent};
+  align-items: center;
 `;
 
 const BasicInfo = styled.div`
@@ -765,7 +766,7 @@ const SwipeableCard = ({
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
-              flexWrap: 'wrap',
+              flexWrap: 'nowrap',
               justifyContent: 'flex-start',
             }}
           >
