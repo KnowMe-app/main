@@ -432,9 +432,9 @@ const Contact = styled.div`
   justify-content: flex-start;
   align-items: center;
   font-size: 14px;
-  border-top: 1px solid ${color.gray4};
-  padding-top: 10px;
-  margin-top: 10px;
+  border-top: ${props => (props.$withBorder ? `1px solid ${color.gray4}` : 'none')};
+  padding-top: ${props => (props.$withBorder ? '10px' : '0')};
+  margin-top: ${props => (props.$withBorder ? '10px' : '0')};
 `;
 
 const Icons = styled.div`
@@ -653,6 +653,8 @@ const SwipeableCard = ({
     .filter(Boolean)
     .map(v => String(v).trim())
     .join(' ');
+  const contacts = fieldContactsIcons(user);
+  const selectedFields = renderSelectedFields(user).filter(Boolean);
 
   return (
     <AnimatedCard
@@ -708,10 +710,12 @@ const SwipeableCard = ({
                 .join(', ')}
             </Info>
           </ProfileSection>
-          <Table>{renderSelectedFields(user)}</Table>
-          <Contact>
-            <Icons>{fieldContactsIcons(user)}</Icons>
-          </Contact>
+          {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
+          {contacts && (
+            <Contact $withBorder={selectedFields.length > 0}>
+              <Icons>{contacts}</Icons>
+            </Contact>
+          )}
         </InfoSlide>
       )}
       {current === 'main' && (
@@ -772,7 +776,7 @@ const SwipeableCard = ({
             {getCurrentValue(user.country) && (
               <span>{normalizeCountry(getCurrentValue(user.country))}</span>
             )}
-            <Icons>{fieldContactsIcons(user)}</Icons>
+            {contacts && <Icons>{contacts}</Icons>}
           </div>
         </CardInfo>
       )}
@@ -825,6 +829,8 @@ const InfoCardContent = ({ user, variant }) => {
     .filter(Boolean)
     .map(v => String(v).trim())
     .join(' ');
+  const contacts = fieldContactsIcons(user);
+  const selectedFields = renderSelectedFields(user).filter(Boolean);
 
   if (variant === 'description') {
     return (
@@ -872,10 +878,12 @@ const InfoCardContent = ({ user, variant }) => {
             .join(', ')}
         </Info>
       </ProfileSection>
-      <Table>{renderSelectedFields(user)}</Table>
-      <Contact>
-        <Icons>{fieldContactsIcons(user)}</Icons>
-      </Contact>
+      {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
+      {contacts && (
+        <Contact $withBorder={selectedFields.length > 0}>
+          <Icons>{contacts}</Icons>
+        </Contact>
+      )}
     </InfoSlide>
   );
 };

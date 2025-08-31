@@ -196,6 +196,17 @@ export const fieldContactsIcons = data => {
       ? processed.phone.filter(v => v)
       : [processed.phone]
     : [];
+  const hasContacts =
+    phoneValues.length > 0 ||
+    telegramValues.length > 0 ||
+    processed.email ||
+    processed.facebook ||
+    processed.instagram ||
+    processed.tiktok;
+
+  if (!hasContacts) {
+    return null;
+  }
 
   return (
     <div
