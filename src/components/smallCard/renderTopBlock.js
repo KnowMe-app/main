@@ -43,6 +43,7 @@ export const renderTopBlock = (
   setUsers,
   setShowInfoModal,
   setState,
+  setUserIdToDelete,
   isFromListOfUsers,
   favoriteUsers = {},
   setFavoriteUsers,
@@ -57,7 +58,7 @@ export const renderTopBlock = (
 
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
-      {btnDel(userData, setState, setShowInfoModal, isFromListOfUsers)}
+      {btnDel(userData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
       {!isFromListOfUsers && (
         <BtnToast isToastOn={isToastOn} setIsToastOn={setIsToastOn} />
       )}

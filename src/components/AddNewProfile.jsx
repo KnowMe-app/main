@@ -233,6 +233,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   const [filters, setFilters] = useState({});
   const [isDeleting, setIsDeleting] = useState(false);
+  const [userIdToDelete, setUserIdToDelete] = useState(null);
   const navigate = useNavigate();
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
 
@@ -349,6 +350,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // setIsModalOpen(false);
     setSelectedField(null);
     setShowInfoModal(false);
+    setUserIdToDelete(null);
   };
 
   const handleSelectOption = option => {
@@ -606,10 +608,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const handleRemoveUser = async () => {
       try {
         setIsDeleting(true);
-        await removeCardAndSearchId(state.userId);
+        const id = userIdToDelete || state.userId;
+        if (!id) return;
+        await removeCardAndSearchId(id);
         setUsers(prevUsers => {
           const updatedUsers = { ...prevUsers };
-          delete updatedUsers[state.userId];
+          delete updatedUsers[id];
           return updatedUsers;
         });
         const res = await fetchNewUsersCollectionInRTDB({ name: '' });
@@ -620,7 +624,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setSearch('');
         setState({});
         setShowInfoModal(null);
-        console.log(`User ${state.userId} deleted.`);
+        setUserIdToDelete(null);
+        console.log(`User ${id} deleted.`);
         navigate('/add');
       } catch (error) {
         console.error('Error deleting user:', error);
@@ -637,7 +642,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           <>
             <p>Видалити профіль?</p>
             <SubmitButton onClick={handleRemoveUser}>Видалити</SubmitButton>
-            <SubmitButton onClick={() => setShowInfoModal(null)}>Відмінити</SubmitButton>
+            <SubmitButton onClick={handleCloseModal}>Відмінити</SubmitButton>
           </>
         )}
       </>
@@ -1076,6 +1081,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 setUsers,
                 setShowInfoModal,
                 setState,
+                setUserIdToDelete,
                 false,
                 favoriteUsersData,
                 setFavoriteUsersData,
@@ -1193,6 +1199,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setUsers={setUsers}
                   setSearch={setSearch}
                   setState={setState}
+                  setUserIdToDelete={setUserIdToDelete}
                   currentFilter={currentFilter}
                   isDateInRange={isDateInRange}
                   isDuplicateView={isDuplicateView}

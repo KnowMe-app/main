@@ -167,6 +167,7 @@ const EditProfile = () => {
           () => {},
           () => {},
           setState,
+          () => {},
           undefined,
           undefined,
           undefined,

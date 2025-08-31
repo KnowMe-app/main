@@ -80,6 +80,7 @@ const UserCard = ({
   setUsers,
   setShowInfoModal,
   setState,
+  setUserIdToDelete,
   favoriteUsers,
   setFavoriteUsers,
   dislikeUsers,
@@ -94,6 +95,7 @@ const UserCard = ({
         setUsers,
         setShowInfoModal,
         setState,
+        setUserIdToDelete,
         'isFromListOfUsers',
         favoriteUsers,
         setFavoriteUsers,
@@ -117,6 +119,7 @@ const UsersList = ({
   setState,
   setShowInfoModal,
   setCompare,
+  setUserIdToDelete,
   favoriteUsers = {},
   setFavoriteUsers,
   dislikeUsers = {},
@@ -185,6 +188,7 @@ const UsersList = ({
                 userData={userData}
                 setUsers={setUsers}
                 setState={setState}
+                setUserIdToDelete={setUserIdToDelete}
                 favoriteUsers={favoriteUsers}
                 setFavoriteUsers={setFavoriteUsers}
                 dislikeUsers={dislikeUsers}
