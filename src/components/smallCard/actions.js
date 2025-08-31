@@ -1,4 +1,9 @@
-import { fetchUserById, updateDataInNewUsersRTDB } from "components/config";
+import {
+  fetchUserById,
+  updateDataInNewUsersRTDB,
+  updateDataInRealtimeDB,
+  updateDataInFiresoreDB
+} from "components/config";
 import { updateCachedUser } from "utils/cache";
 import { formatDateAndFormula } from "components/inputValidations";
 import { makeUploadedInfo } from "components/makeUploadedInfo";
@@ -112,9 +117,15 @@ export const handleSubmit = async (userData, condition, isToastOn) => {
   }
 };
 
-export const handleSubmitAll = async userData => {
+export const handleSubmitAll = async (userData, overwrite) => {
+  const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
+  const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
+  const commonFields = ['lastAction', 'lastLogin2'];
+
   const { existingData } = await fetchUserById(userData.userId);
-  const uploadedInfo = makeUploadedInfo(existingData, userData);
+  const uploadedInfo =
+    makeUploadedInfo(existingData, userData, overwrite) || {};
+
   const currentDate = new Date();
   currentDate.setDate(currentDate.getDate());
 
@@ -124,6 +135,21 @@ export const handleSubmitAll = async userData => {
   const day = String(currentDate.getDate()).padStart(2, '0');
   const formattedDate = `${year}-${month}-${day}`; // Формат YYYY-MM-DD
   uploadedInfo.lastAction = formattedDate;
+
   updateCachedUser({ ...uploadedInfo, userId: userData.userId });
-  await updateDataInNewUsersRTDB(userData.userId, uploadedInfo, 'update');
+
+  if (userData?.userId?.length > 20) {
+    await updateDataInRealtimeDB(userData.userId, uploadedInfo, 'update');
+    await updateDataInFiresoreDB(userData.userId, uploadedInfo, 'check');
+
+    const cleanedStateForNewUsers = Object.fromEntries(
+      Object.entries(uploadedInfo).filter(([key]) =>
+        [...fieldsForNewUsersOnly, ...contacts, ...commonFields].includes(key)
+      )
+    );
+
+    await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
+  } else {
+    await updateDataInNewUsersRTDB(userData.userId, uploadedInfo, 'update');
+  }
 };
