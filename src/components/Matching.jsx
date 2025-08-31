@@ -1475,6 +1475,7 @@ const Matching = () => {
                       />
                       <ResizableCommentInput
                         plain
+                        placeholder="Мій коментар / My comment"
                         value={comments[user.userId] || ''}
                         onClick={e => e.stopPropagation()}
                         onChange={e => {
