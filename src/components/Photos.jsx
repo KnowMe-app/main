@@ -108,6 +108,8 @@ export const Photos = ({ state, setState }) => {
   const photoKeys = Object.keys(state).filter(
     k => k.toLowerCase().startsWith('photo') && k !== 'photos'
   );
+  const arraysEqual = (a = [], b = []) =>
+    a.length === b.length && a.every((val, idx) => val === b[idx]);
   const photoValues = photoKeys.map(k => state[k]).join('|');
 
   useEffect(() => {
@@ -123,7 +125,9 @@ export const Photos = ({ state, setState }) => {
           const urls = await getAllUserPhotos(state.userId);
           console.log('Fetched URLs', urls);
           if (urls.length > 0) {
-            setState(prev => ({ ...prev, photos: urls }));
+            if (!arraysEqual(urls, state.photos)) {
+              setState(prev => ({ ...prev, photos: urls }));
+            }
             return;
           }
         } catch (e) {
@@ -167,7 +171,7 @@ export const Photos = ({ state, setState }) => {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.userId, state.photos, photoValues, setState]);
+  }, [state.userId, photoValues, setState]);
 
   const savePhotoList = async updatedPhotos => {
     await updateDataInRealtimeDB(
