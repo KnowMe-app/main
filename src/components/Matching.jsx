@@ -805,6 +805,14 @@ const renderSelectedFields = user => {
   });
 };
 
+const getInfoSlidesCount = user => {
+  const moreInfo = getCurrentValue(user.moreInfo_main);
+  const profession = getCurrentValue(user.profession);
+  const education = getCurrentValue(user.education);
+  const showDescriptionSlide = Boolean(moreInfo || profession || education);
+  return 1 + (showDescriptionSlide ? 1 : 0);
+};
+
 const InfoCardContent = ({ user, variant }) => {
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
@@ -1413,37 +1421,46 @@ const Matching = () => {
               const photo = photos[0];
               const nextPhoto = photos[1];
               const thirdPhoto = photos[2];
-              const moreInfo = getCurrentValue(user.moreInfo_main);
-              const profession = getCurrentValue(user.profession);
-              const education = getCurrentValue(user.education);
-              const showDescriptionSlide = Boolean(moreInfo || profession || education);
+              const role = (user.role || user.userRole || '')
+                .toString()
+                .trim()
+                .toLowerCase();
+              const isAgency = role === 'ag' || role === 'ip';
 
               const infoVariants = [];
-              if (!photo) infoVariants.push('info');
-              if (showDescriptionSlide) infoVariants.push('description');
+              if (role === 'ag') {
+                const moreInfo = getCurrentValue(user.moreInfo_main);
+                const profession = getCurrentValue(user.profession);
+                const education = getCurrentValue(user.education);
+                const showDescriptionSlide = Boolean(
+                  moreInfo || profession || education
+                );
+                if (!photo) infoVariants.push('info');
+                if (showDescriptionSlide) infoVariants.push('description');
+              } else {
+                const infoSlides = getInfoSlidesCount(user);
+                if (infoSlides >= 1) infoVariants.push('info');
+                if (infoSlides >= 2) infoVariants.push('description');
+                if (!photo) infoVariants.shift();
+              }
 
               const nextVariant = nextPhoto ? null : infoVariants.shift();
               const thirdVariant = thirdPhoto ? null : infoVariants.shift();
 
-                const role = (user.role || user.userRole || '')
-                  .toString()
-                  .trim()
-                  .toLowerCase();
-                const isAgency = role === 'ag' || role === 'ip';
-                const nameParts = [
-                  getCurrentValue(user.name),
-                  getCurrentValue(user.surname),
-                ]
-                  .filter(Boolean)
-                  .map(v => String(v).trim())
-                  .join(' ');
-                return (
-                  <CardContainer key={user.userId}>
-                    {thirdVariant && (
-                      <ThirdInfoCard>
-                        <InfoCardContent user={user} variant={thirdVariant} />
-                      </ThirdInfoCard>
-                    )}
+              const nameParts = [
+                getCurrentValue(user.name),
+                getCurrentValue(user.surname),
+              ]
+                .filter(Boolean)
+                .map(v => String(v).trim())
+                .join(' ');
+              return (
+                <CardContainer key={user.userId}>
+                  {thirdVariant && (
+                    <ThirdInfoCard>
+                      <InfoCardContent user={user} variant={thirdVariant} />
+                    </ThirdInfoCard>
+                  )}
                     {thirdPhoto && <ThirdPhoto src={thirdPhoto} alt="third" />}
                     {nextVariant && (
                       <NextInfoCard>
