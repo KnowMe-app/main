@@ -1036,7 +1036,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             >
               ⋮
             </DotsButton>
-            <ExitButton onClick={handleExit}>Exit</ExitButton>
           </TopButtons>
         )}
 
