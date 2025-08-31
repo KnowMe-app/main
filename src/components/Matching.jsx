@@ -694,7 +694,7 @@ const SwipeableCard = ({
         <InfoSlide>
           <ProfileSection>
             <Info>
-              <Title>Egg donor</Title>
+              <Title>{getRoleTitle(user)}</Title>
               <DonorName>
                 {displayName}
                 {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
@@ -813,6 +813,18 @@ const getInfoSlidesCount = user => {
   return 1 + (showDescriptionSlide ? 1 : 0);
 };
 
+const getRoleTitle = user => {
+  const role = (user.userRole || user.role || '')
+    .toString()
+    .trim()
+    .toLowerCase();
+
+  if (role === 'ag') return 'Agency';
+  if (role === 'ip') return 'Intended parents';
+  if (role === 'ed') return 'Egg donor';
+  return '';
+};
+
 const InfoCardContent = ({ user, variant }) => {
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
@@ -858,7 +870,7 @@ const InfoCardContent = ({ user, variant }) => {
     <InfoSlide>
       <ProfileSection>
         <Info>
-          <Title>Egg donor</Title>
+          <Title>{getRoleTitle(user)}</Title>
           <DonorName>
             {displayName}
             {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
