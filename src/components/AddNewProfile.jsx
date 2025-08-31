@@ -1195,7 +1195,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setState={setState}
                   currentFilter={currentFilter}
                   isDateInRange={isDateInRange}
-                  isDuplicateView={isDuplicateView}
                 />
                 <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
               </>

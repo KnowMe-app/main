@@ -5,12 +5,10 @@ import { normalizeQueryKey, setIdsForQuery } from '../../utils/cardIndex';
 import { saveCard } from '../../utils/cardsStorage';
 
 // Use already loaded card data instead of re-fetching from the server
-export const btnEdit = (userData, setSearch, setState, isDuplicateView = false) => {
+export const btnEdit = (userData, setSearch, setState) => {
   const handleCardClick = () => {
     if (userData) {
-      if (!isDuplicateView) {
-        setSearch(`${userData.userId}`);
-      }
+      setSearch(`${userData.userId}`);
       setState(userData);
       const cacheKey = getCacheKey('search', normalizeQueryKey(`userId=${userData.userId}`));
       saveCard({ ...userData, id: userData.userId });
