@@ -84,3 +84,27 @@ export const touchCardInQueries = cardId => {
   });
   if (changed) saveQueries(queries);
 };
+
+export const removeCard = id => {
+  if (!id) return;
+
+  const cards = loadCards();
+  if (cards[id]) {
+    delete cards[id];
+    saveCards(cards);
+  }
+
+  const queries = loadQueries();
+  let changed = false;
+  Object.keys(queries).forEach(key => {
+    const entry = queries[key];
+    if (entry.ids && entry.ids.includes(id)) {
+      entry.ids = entry.ids.filter(existingId => existingId !== id);
+      if (entry.ids.length === 0) {
+        delete queries[key];
+      }
+      changed = true;
+    }
+  });
+  if (changed) saveQueries(queries);
+};
