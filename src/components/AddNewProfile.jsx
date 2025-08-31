@@ -44,6 +44,7 @@ import {
   getFavoriteCards,
 } from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
+import { cacheDplUsers } from 'utils/dplStorage';
 import { getDislikes, syncDislikes } from 'utils/dislikesStorage';
 import {
   setIdsForQuery,
@@ -894,7 +895,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const searchDuplicates = async () => {
     const { mergedUsers, totalDuplicates } = await loadDuplicateUsers();
     // console.log('res :>> ', res);
-    cacheFetchedUsers(mergedUsers, cacheLoad2Users);
+    cacheFetchedUsers(mergedUsers, cacheDplUsers);
     setUsers(prevUsers => ({ ...prevUsers, ...mergedUsers }));
     setDuplicates(totalDuplicates);
     setIsDuplicateView(true);
