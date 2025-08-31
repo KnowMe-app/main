@@ -571,7 +571,7 @@ const SwipeableCard = ({
       : [getCurrentValue(user.photos)]
           .filter(Boolean)
           .map(convertDriveLinkToImage);
-    const base = photo ? ['main', 'info'] : ['info'];
+    const base = photo ? ['main'] : ['info'];
     if (showDescriptionSlide) base.push('description');
     base.push(...photosArr.slice(1));
     return base;
@@ -803,14 +803,6 @@ const renderSelectedFields = user => {
       </div>
     );
   });
-};
-
-const getInfoSlidesCount = user => {
-  const moreInfo = getCurrentValue(user.moreInfo_main);
-  const profession = getCurrentValue(user.profession);
-  const education = getCurrentValue(user.education);
-  const showDescriptionSlide = Boolean(moreInfo || profession || education);
-  return 1 + (showDescriptionSlide ? 1 : 0);
 };
 
 const InfoCardContent = ({ user, variant }) => {
@@ -1421,12 +1413,14 @@ const Matching = () => {
               const photo = photos[0];
               const nextPhoto = photos[1];
               const thirdPhoto = photos[2];
-              const infoSlides = getInfoSlidesCount(user);
+              const moreInfo = getCurrentValue(user.moreInfo_main);
+              const profession = getCurrentValue(user.profession);
+              const education = getCurrentValue(user.education);
+              const showDescriptionSlide = Boolean(moreInfo || profession || education);
 
               const infoVariants = [];
-              if (infoSlides >= 1) infoVariants.push('info');
-              if (infoSlides >= 2) infoVariants.push('description');
-              if (!photo) infoVariants.shift();
+              if (!photo) infoVariants.push('info');
+              if (showDescriptionSlide) infoVariants.push('description');
 
               const nextVariant = nextPhoto ? null : infoVariants.shift();
               const thirdVariant = thirdPhoto ? null : infoVariants.shift();
