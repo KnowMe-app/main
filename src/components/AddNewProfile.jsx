@@ -946,13 +946,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [isDuplicateView, state.userId]);
 
   const searchDuplicates = async () => {
+    const cached = await getDplCards();
+    if (cached.length > 0) {
+      const merged = cached.reduce((acc, user) => {
+        acc[user.id] = user;
+        return acc;
+      }, {});
+      setUsers(prev => ({ ...prev, ...merged }));
+      setDuplicates(Math.floor(cached.length / 2));
+      setIsDuplicateView(true);
+      return;
+    }
     const { mergedUsers, totalDuplicates } = await loadDuplicateUsers();
-    // console.log('res :>> ', res);
     cacheFetchedUsers(mergedUsers, cacheDplUsers);
     setUsers(prevUsers => ({ ...prevUsers, ...mergedUsers }));
     setDuplicates(totalDuplicates);
     setIsDuplicateView(true);
-    // console.log('res!!!!!!!! :>> ', res.length);
   };
 
   const handleInfo = async () => {
