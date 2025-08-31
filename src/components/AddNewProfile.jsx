@@ -44,7 +44,7 @@ import {
   getFavoriteCards,
 } from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
-import { cacheDplUsers } from 'utils/dplStorage';
+import { cacheDplUsers, getDplCards } from 'utils/dplStorage';
 import { getDislikes, syncDislikes } from 'utils/dislikesStorage';
 import {
   setIdsForQuery,
@@ -900,41 +900,30 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [duplicates, setDuplicates] = useState('');
   const [isDuplicateView, setIsDuplicateView] = useState(false);
 
-  const clearDuplicateCache = useCallback(() => {
-    sessionStorage.removeItem('duplicateUsers');
-    sessionStorage.removeItem('isDuplicateView');
-    sessionStorage.removeItem('duplicatesTotal');
-  }, []);
-
   useEffect(() => {
-    const flag = sessionStorage.getItem('isDuplicateView');
-    if (flag === 'true') {
-      const cachedUsers = sessionStorage.getItem('duplicateUsers');
-      if (cachedUsers) {
-        const parsed = JSON.parse(cachedUsers);
-        setUsers(prevUsers => ({ ...prevUsers, ...parsed }));
-        const dupCount = sessionStorage.getItem('duplicatesTotal');
-        if (dupCount) {
-          setDuplicates(Number(dupCount));
-        }
+    let backendDupData;
+    const verifyDuplicate = async id => {
+      if (!backendDupData) {
+        backendDupData = await loadDuplicateUsers();
       }
-      setIsDuplicateView(true);
-    }
-    return () => {
-      clearDuplicateCache();
+      return backendDupData?.mergedUsers?.[id] || null;
     };
-  }, [clearDuplicateCache]);
 
-  const firstRun = useRef(true);
-  useEffect(() => {
-    if (firstRun.current) {
-      firstRun.current = false;
-      return;
-    }
-    if (!isDuplicateView) {
-      clearDuplicateCache();
-    }
-  }, [isDuplicateView, clearDuplicateCache]);
+    (async () => {
+      const cached = await getDplCards(verifyDuplicate);
+      if (cached.length > 0) {
+        const merged = cached.reduce((acc, user) => {
+          acc[user.id] = user;
+          return acc;
+        }, {});
+        setUsers(prev => ({ ...prev, ...merged }));
+        setDuplicates(
+          backendDupData?.totalDuplicates || Math.floor(cached.length / 2),
+        );
+        setIsDuplicateView(true);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     if (isDuplicateView && state.userId) {
@@ -962,9 +951,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     cacheFetchedUsers(mergedUsers, cacheDplUsers);
     setUsers(prevUsers => ({ ...prevUsers, ...mergedUsers }));
     setDuplicates(totalDuplicates);
-    sessionStorage.setItem('duplicateUsers', JSON.stringify(mergedUsers));
-    sessionStorage.setItem('duplicatesTotal', String(totalDuplicates));
-    sessionStorage.setItem('isDuplicateView', 'true');
     setIsDuplicateView(true);
     // console.log('res!!!!!!!! :>> ', res.length);
   };
