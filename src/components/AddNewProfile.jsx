@@ -894,6 +894,42 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [duplicates, setDuplicates] = useState('');
   const [isDuplicateView, setIsDuplicateView] = useState(false);
 
+  const clearDuplicateCache = useCallback(() => {
+    sessionStorage.removeItem('duplicateUsers');
+    sessionStorage.removeItem('isDuplicateView');
+    sessionStorage.removeItem('duplicatesTotal');
+  }, []);
+
+  useEffect(() => {
+    const flag = sessionStorage.getItem('isDuplicateView');
+    if (flag === 'true') {
+      const cachedUsers = sessionStorage.getItem('duplicateUsers');
+      if (cachedUsers) {
+        const parsed = JSON.parse(cachedUsers);
+        setUsers(prevUsers => ({ ...prevUsers, ...parsed }));
+        const dupCount = sessionStorage.getItem('duplicatesTotal');
+        if (dupCount) {
+          setDuplicates(Number(dupCount));
+        }
+      }
+      setIsDuplicateView(true);
+    }
+    return () => {
+      clearDuplicateCache();
+    };
+  }, [clearDuplicateCache]);
+
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    if (!isDuplicateView) {
+      clearDuplicateCache();
+    }
+  }, [isDuplicateView, clearDuplicateCache]);
+
   useEffect(() => {
     if (isDuplicateView && state.userId) {
       const currentId = state.userId;
@@ -920,6 +956,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     cacheFetchedUsers(mergedUsers, cacheDplUsers);
     setUsers(prevUsers => ({ ...prevUsers, ...mergedUsers }));
     setDuplicates(totalDuplicates);
+    sessionStorage.setItem('duplicateUsers', JSON.stringify(mergedUsers));
+    sessionStorage.setItem('duplicatesTotal', String(totalDuplicates));
+    sessionStorage.setItem('isDuplicateView', 'true');
     setIsDuplicateView(true);
     // console.log('res!!!!!!!! :>> ', res.length);
   };
