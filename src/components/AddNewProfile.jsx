@@ -160,6 +160,12 @@ export const ExitButton = styled(SubmitButton)`
   }
 `;
 
+const TopButtons = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+`;
+
 // const iconMap = {
 //   user: <FaUser style={{ color: 'orange' }} />,
 //   mail: <FaMailBulk style={{ color: 'orange' }} />,
@@ -1035,15 +1041,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     <Container>
       <InnerContainer>
         {isLoggedIn && (
-          <DotsButton
-            onClick={() => {
-              setShowInfoModal('dotsMenu');
-            }}
-          >
-            ⋮
-          </DotsButton>
+          <TopButtons>
+            <DotsButton
+              style={{ marginLeft: 0 }}
+              onClick={() => {
+                setShowInfoModal('dotsMenu');
+              }}
+            >
+              ⋮
+            </DotsButton>
+            <ExitButton onClick={handleExit}>Exit</ExitButton>
+          </TopButtons>
         )}
-
 
         <SearchBar
           searchFunc={fetchNewUsersCollectionInRTDB}

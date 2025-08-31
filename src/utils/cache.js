@@ -4,12 +4,12 @@ import { setIdsForQuery } from './cardIndex';
 
 export { getCacheKey };
 
-// Clears localStorage while preserving authentication state
+// Clears localStorage but preserves the login flag
 export const clearAllCardsCache = () => {
-  const AUTH_KEYS = ['persist:auth', 'auth'];
+  const KEEP_KEYS = ['isLoggedIn'];
 
   Object.keys(localStorage)
-    .filter(key => !AUTH_KEYS.includes(key))
+    .filter(key => !KEEP_KEYS.includes(key))
     .forEach(key => localStorage.removeItem(key));
 };
 
