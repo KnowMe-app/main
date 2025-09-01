@@ -719,7 +719,7 @@ const SwipeableCard = ({
           )}
         </InfoSlide>
       )}
-      {current === 'main' && (
+      {current === 'main' && role !== 'ag' && (
         <BasicInfo>
           {displayName}
           {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
