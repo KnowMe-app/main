@@ -440,7 +440,7 @@ const Contact = styled.div`
 const Icons = styled.div`
   display: flex;
   gap: 10px;
-  font-size: 16px;
+  font-size: inherit;
   color: ${color.accent};
   align-items: center;
 `;
