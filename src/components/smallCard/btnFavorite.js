@@ -74,10 +74,10 @@ export const BtnFavorite = ({
         height: '35px',
         borderRadius: '50%',
         background: color.accent5,
-        border: `${isFavorite ? 2 : 1}px solid ${
-          isFavorite ? color.iconActive : color.iconInactive
+        border: `${isFavorite ? 3 : 2}px solid ${
+          isFavorite ? color.iconInactive : color.white
         }`,
-        color: isFavorite ? color.iconActive : color.iconInactive,
+        color: isFavorite ? color.iconInactive : color.white,
         zIndex: 1,
         cursor: 'pointer',
         display: 'flex',
@@ -95,9 +95,9 @@ export const BtnFavorite = ({
         viewBox="0 0 24 24"
         width="18"
         height="18"
-        fill={isFavorite ? color.iconActive : 'none'}
-        stroke={isFavorite ? color.iconActive : color.iconInactive}
-        strokeWidth="2"
+        fill={isFavorite ? color.iconInactive : 'none'}
+        stroke={isFavorite ? color.iconInactive : color.white}
+        strokeWidth={isFavorite ? 3 : 2}
         strokeLinecap="round"
         strokeLinejoin="round"
       >

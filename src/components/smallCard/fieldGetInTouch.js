@@ -237,7 +237,9 @@ export const fieldGetInTouch = (
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          border: isDisliked ? '2px solid black' : 'none',
+          border: `${isDisliked ? 3 : 2}px solid ${
+            isDisliked ? color.iconInactive : color.white
+          }`,
         }}
       >
         <svg
@@ -245,9 +247,9 @@ export const fieldGetInTouch = (
           viewBox="0 0 24 24"
           width="18"
           height="18"
-          fill={isDisliked ? color.iconActive : 'none'}
-          stroke={isDisliked ? color.iconActive : color.iconInactive}
-          strokeWidth="2"
+          fill="none"
+          stroke={isDisliked ? color.iconInactive : color.white}
+          strokeWidth={isDisliked ? 3 : 2}
           strokeLinecap="round"
           strokeLinejoin="round"
         >
@@ -265,7 +267,9 @@ export const fieldGetInTouch = (
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          border: isFavorite ? '2px solid black' : 'none',
+          border: `${isFavorite ? 3 : 2}px solid ${
+            isFavorite ? color.iconInactive : color.white
+          }`,
         }}
       >
         <svg
@@ -273,9 +277,9 @@ export const fieldGetInTouch = (
           viewBox="0 0 24 24"
           width="18"
           height="18"
-          fill={isFavorite ? color.iconActive : 'none'}
-          stroke={isFavorite ? color.iconActive : color.iconInactive}
-          strokeWidth="2"
+          fill={isFavorite ? color.iconInactive : 'none'}
+          stroke={isFavorite ? color.iconInactive : color.white}
+          strokeWidth={isFavorite ? 3 : 2}
           strokeLinecap="round"
           strokeLinejoin="round"
         >
