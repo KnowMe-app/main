@@ -77,9 +77,9 @@ export const BtnDislike = ({
         borderRadius: '50%',
         background: color.accent5,
         border: `${isDisliked ? 2 : 2}px solid ${
-          isDisliked ? color.iconInactive : color.white
+          isDisliked ? color.iconActive : color.white
         }`,
-        color: isDisliked ? color.iconInactive : color.white,
+        color: isDisliked ? color.iconActive : color.white,
         zIndex: 1,
         cursor: 'pointer',
         display: 'flex',
@@ -92,7 +92,7 @@ export const BtnDislike = ({
         toggleDislike();
       }}
     >
-      <FaTimes size={18} color={isDisliked ? color.iconInactive : color.white} />
+      <FaTimes size={18} color={isDisliked ? color.iconActive : color.white} />
     </button>
   );
 };
