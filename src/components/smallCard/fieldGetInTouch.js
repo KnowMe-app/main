@@ -15,7 +15,12 @@ import {
 import { updateCachedUser, setFavoriteIds } from 'utils/cache';
 import { setFavorite } from 'utils/favoritesStorage';
 import { setDislike } from 'utils/dislikesStorage';
-import { FaTimes, FaHeart, FaRegHeart } from 'react-icons/fa';
+import {
+  FaTimesCircle,
+  FaRegTimesCircle,
+  FaHeart,
+  FaRegHeart,
+} from 'react-icons/fa';
 
 export const fieldGetInTouch = (
   userData,
@@ -241,7 +246,11 @@ export const fieldGetInTouch = (
           border: `${isDisliked ? 2 : 0}px solid ${color.iconInactive}`,
         }}
       >
-        <FaTimes size={18} color={isDisliked ? color.iconInactive : color.white} />
+        {isDisliked ? (
+          <FaTimesCircle size={18} color={color.iconInactive} />
+        ) : (
+          <FaRegTimesCircle size={18} color={color.white} />
+        )}
       </OrangeBtn>
       <OrangeBtn
         onClick={handleLike}
