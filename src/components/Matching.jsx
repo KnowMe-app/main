@@ -576,7 +576,6 @@ const SwipeableCard = ({
     let base;
     if (role === 'ag') {
       base = ['main'];
-      if (!photo) base.push('info');
     } else {
       base = photo ? ['main'] : ['info'];
     }
@@ -1473,7 +1472,6 @@ const Matching = () => {
                 const showDescriptionSlide = Boolean(
                   moreInfo || profession || education
                 );
-                if (!photo) infoVariants.push('info');
                 if (showDescriptionSlide) infoVariants.push('description');
               } else {
                 const infoSlides = getInfoSlidesCount(user);
