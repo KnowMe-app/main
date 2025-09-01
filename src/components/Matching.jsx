@@ -425,6 +425,7 @@ const MoreInfo = styled.div`
     ${props => (props.$isAdmin ? color.red : color.accent)};
   margin-bottom: 10px;
   font-size: 14px;
+  white-space: pre-line;
 `;
 
 const Contact = styled.div`
