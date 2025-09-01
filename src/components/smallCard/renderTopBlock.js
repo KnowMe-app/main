@@ -3,7 +3,7 @@ import { btnDel } from './btnDel';
 import { btnExport } from './btnExport';
 import { fieldDeliveryInfo } from './fieldDeliveryInfo';
 import { fieldWriter } from './fieldWritter';
-import { fieldContacts } from './fieldContacts';
+import { fieldContactsIcons } from './fieldContacts';
 import { fieldGetInTouch } from './fieldGetInTouch';
 import { fieldRole } from './fieldRole';
 import { fieldLastCycle } from './fieldLastCycle';
@@ -111,17 +111,13 @@ export const renderTopBlock = (
             return parts.map((part, index) => <React.Fragment key={index}>{part} </React.Fragment>);
           })()}
         </div>
-        <div>
-          {[
-            normalizeCountry(userData.country),
-            normalizeRegion(userData.region),
-          ]
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {[normalizeCountry(userData.country), normalizeRegion(userData.region)]
             .filter(Boolean)
             .join(', ')}
+          {fieldContactsIcons(userData)}
         </div>
       </div>
-
-      {fieldContacts(userData)}
       {fieldWriter(userData, setUsers, setState, isToastOn)}
       <FieldComment userData={userData} setUsers={setUsers} setState={setState} isToastOn={isToastOn} />
 
