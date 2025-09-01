@@ -1201,11 +1201,7 @@ const Matching = () => {
     const localIds = getIdsByQuery('favorite');
     if (localIds.length > 0) {
       const localFav = getFavorites();
-      const favMap = Object.fromEntries(
-        Object.keys(localFav)
-          .filter(id => id.length > 20)
-          .map(id => [id, true])
-      );
+      const favMap = Object.fromEntries(Object.keys(localFav).map(id => [id, true]));
       setFavoriteUsers(favMap);
       setFavoriteIds(favMap);
       const list = (await getFavoriteCards(id => fetchUserById(id)))
@@ -1221,13 +1217,11 @@ const Matching = () => {
     }
 
     const favUsers = await fetchFavoriteUsersData(owner);
-    const validEntries = Object.entries(favUsers).filter(([id]) => id.length > 20);
-    const favUsersFiltered = Object.fromEntries(validEntries);
-    const favMap = Object.fromEntries(validEntries.map(([id]) => [id, true]));
+    const favMap = Object.fromEntries(Object.keys(favUsers).map(id => [id, true]));
     syncFavorites(favMap);
     setFavoriteUsers(favMap);
     setFavoriteIds(favMap);
-    cacheFavoriteUsers(favUsersFiltered);
+    cacheFavoriteUsers(favUsers);
     const list = (await getFavoriteCards(id => fetchUserById(id)))
       .filter(u => (u?.id || u?.userId || '').length > 20);
     loadedIdsRef.current = new Set(list.map(u => u.id));
@@ -1247,11 +1241,7 @@ const Matching = () => {
     const localIds = getIdsByQuery('dislike');
     if (localIds.length > 0) {
       const localDis = getDislikes();
-      const disMap = Object.fromEntries(
-        Object.keys(localDis)
-          .filter(id => id.length > 20)
-          .map(id => [id, true])
-      );
+      const disMap = Object.fromEntries(Object.keys(localDis).map(id => [id, true]));
       setDislikeUsers(disMap);
       setIdsForQuery('dislike', Object.keys(disMap));
       const list = (await getDislikedCards(id => fetchUserById(id)))
@@ -1267,10 +1257,8 @@ const Matching = () => {
     }
 
     const loaded = await fetchDislikeUsersData(owner);
-    const validEntries = Object.entries(loaded).filter(([id]) => id.length > 20);
-    const filtered = Object.fromEntries(validEntries);
-    const disMap = Object.fromEntries(validEntries.map(([id]) => [id, true]));
-    cacheDislikedUsers(filtered);
+    const disMap = Object.fromEntries(Object.keys(loaded).map(id => [id, true]));
+    cacheDislikedUsers(loaded);
     syncDislikes(disMap);
     setDislikeUsers(disMap);
     const list = (await getDislikedCards(id => fetchUserById(id)))
