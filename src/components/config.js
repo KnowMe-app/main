@@ -375,7 +375,7 @@ const searchBySearchIdUsers = async (modifiedSearchValue, uniqueUserIds, users) 
         for (const [, val] of Object.entries(snap.val())) {
           const ids = Array.isArray(val) ? val : [val];
           for (const id of ids) {
-            if (id.length > 20 && !uniqueUserIds.has(id)) {
+            if (!uniqueUserIds.has(id)) {
               uniqueUserIds.add(id);
               await addUserFromUsers(id, users);
             }
@@ -403,7 +403,7 @@ const searchByPrefixesUsers = async (searchValue, uniqueUserIds, users) => {
           let fieldValue = userData[prefix];
           if (typeof fieldValue === 'string') fieldValue = fieldValue.trim();
           else return;
-          if (fieldValue && fieldValue.toLowerCase().includes(formatted.toLowerCase()) && userId.length > 20 && !uniqueUserIds.has(userId)) {
+          if (fieldValue && fieldValue.toLowerCase().includes(formatted.toLowerCase()) && !uniqueUserIds.has(userId)) {
             uniqueUserIds.add(userId);
             users[userId] = { userId, ...userData };
           }
