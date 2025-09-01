@@ -75,10 +75,10 @@ export const BtnDislike = ({
         height: '35px',
         borderRadius: '50%',
         background: color.accent5,
-        border: `${isDisliked ? 2 : 1}px solid ${
-          isDisliked ? color.iconActive : color.iconInactive
+        border: `${isDisliked ? 3 : 2}px solid ${
+          isDisliked ? color.iconInactive : color.white
         }`,
-        color: isDisliked ? color.iconActive : color.iconInactive,
+        color: isDisliked ? color.iconInactive : color.white,
         zIndex: 1,
         cursor: 'pointer',
         display: 'flex',
@@ -96,9 +96,9 @@ export const BtnDislike = ({
         viewBox="0 0 24 24"
         width="18"
         height="18"
-        fill={isDisliked ? color.iconActive : 'none'}
-        stroke={isDisliked ? color.iconActive : color.iconInactive}
-        strokeWidth="2"
+        fill="none"
+        stroke={isDisliked ? color.iconInactive : color.white}
+        strokeWidth={isDisliked ? 3 : 2}
         strokeLinecap="round"
         strokeLinejoin="round"
       >
