@@ -572,11 +572,17 @@ const SwipeableCard = ({
       : [getCurrentValue(user.photos)]
           .filter(Boolean)
           .map(convertDriveLinkToImage);
-    const base = photo ? ['main'] : ['info'];
+    let base;
+    if (role === 'ag') {
+      base = ['main'];
+      if (!photo) base.push('info');
+    } else {
+      base = photo ? ['main'] : ['info'];
+    }
     if (showDescriptionSlide) base.push('description');
     base.push(...photosArr.slice(1));
     return base;
-  }, [user.photos, showDescriptionSlide, photo]);
+  }, [user.photos, showDescriptionSlide, photo, role]);
 
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(null);
