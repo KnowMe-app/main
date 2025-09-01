@@ -3,7 +3,7 @@ import {
   FaFacebookF,
   FaInstagram,
   FaTelegramPlane,
-  FaPhoneAlt,
+  FaPhoneVolume,
   FaViber,
   FaWhatsapp,
 } from 'react-icons/fa';
@@ -11,7 +11,7 @@ import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getCurrentValue } from '../getCurrentValue';
 
-const ICON_SIZE = 20;
+const ICON_SIZE = 16;
 
 export const fieldContacts = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
@@ -179,6 +179,17 @@ export const fieldContactsIcons = data => {
     whatsappFromPhone: value => `https://wa.me/${value.replace(/\s+/g, '')}`,
   };
 
+  const iconStyle = { width: ICON_SIZE, height: ICON_SIZE };
+  const linkStyle = {
+    color: 'inherit',
+    textDecoration: 'none',
+    lineHeight: 0,
+    display: 'inline-flex',
+    alignItems: 'center',
+    margin: 0,
+    padding: 0,
+  };
+
 
   const processed = Object.fromEntries(
     Object.entries(data).map(([k, v]) => [k, getCurrentValue(v)])
@@ -212,7 +223,7 @@ export const fieldContactsIcons = data => {
 
   return (
     <div
-      style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
       onClick={e => e.stopPropagation()}
       onTouchStart={e => e.stopPropagation()}
       onTouchEnd={e => e.stopPropagation()}
@@ -225,33 +236,33 @@ export const fieldContactsIcons = data => {
               href={links.phone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: 'inherit', textDecoration: 'none' }}
+              style={linkStyle}
             >
-              <FaPhoneAlt size={ICON_SIZE} />
+              <FaPhoneVolume style={iconStyle} />
             </a>
             <a
               href={links.telegramFromPhone(`+${val}`)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: 'inherit', textDecoration: 'none' }}
+              style={linkStyle}
             >
-              <FaTelegramPlane size={ICON_SIZE} />
+              <FaTelegramPlane style={iconStyle} />
             </a>
             <a
               href={links.viberFromPhone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: 'inherit', textDecoration: 'none' }}
+              style={linkStyle}
             >
-              <FaViber size={ICON_SIZE} />
+              <FaViber style={iconStyle} />
             </a>
             <a
               href={links.whatsappFromPhone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: 'inherit', textDecoration: 'none' }}
+              style={linkStyle}
             >
-              <FaWhatsapp size={ICON_SIZE} />
+              <FaWhatsapp style={iconStyle} />
             </a>
           </React.Fragment>
         );
@@ -262,9 +273,9 @@ export const fieldContactsIcons = data => {
           href={links.email(processed.email)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
+          style={linkStyle}
         >
-          <MdEmail size={ICON_SIZE} />
+          <MdEmail style={iconStyle} />
         </a>
       )}
 
@@ -273,9 +284,9 @@ export const fieldContactsIcons = data => {
           href={links.facebook(processed.facebook)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
+          style={linkStyle}
         >
-          <FaFacebookF size={ICON_SIZE} />
+          <FaFacebookF style={iconStyle} />
         </a>
       )}
 
@@ -284,9 +295,9 @@ export const fieldContactsIcons = data => {
           href={links.instagram(processed.instagram)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
+          style={linkStyle}
         >
-          <FaInstagram size={ICON_SIZE} />
+          <FaInstagram style={iconStyle} />
         </a>
       )}
 
@@ -296,9 +307,9 @@ export const fieldContactsIcons = data => {
           href={links.telegram(val)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
+          style={linkStyle}
         >
-          <FaTelegramPlane size={ICON_SIZE} />
+          <FaTelegramPlane style={iconStyle} />
         </a>
       ))}
 
@@ -307,9 +318,9 @@ export const fieldContactsIcons = data => {
           href={links.tiktok(processed.tiktok)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
+          style={linkStyle}
         >
-          <SiTiktok size={ICON_SIZE} />
+          <SiTiktok style={iconStyle} />
         </a>
       )}
     </div>
