@@ -55,6 +55,12 @@ import {
   getDislikedCards,
 } from '../utils/dislikesStorage';
 
+const isValidId = id => typeof id === 'string' && id.length > 20;
+const filterLongIds = obj =>
+  Object.fromEntries(Object.entries(obj || {}).filter(([id]) => isValidId(id)));
+const filterLongUsers = list =>
+  list.filter(u => isValidId(u?.id || u?.userId));
+
 const Container = styled.div`
   display: flex;
   flex-direction: column;
@@ -993,9 +999,10 @@ const Matching = () => {
 
   const applySearchResults = async res => {
     const arr = Array.isArray(res) ? res : Object.values(res || {});
-    setUsers(arr);
+    const filtered = arr.filter(u => isValidId(u?.userId));
+    setUsers(filtered);
     setHasMore(false);
-    await loadCommentsFor(arr);
+    await loadCommentsFor(filtered);
     setLastKey(null);
     setViewMode('search');
   };
@@ -1049,12 +1056,14 @@ const Matching = () => {
       const favRef = refDb(database, `multiData/favorites/${user.uid}`);
       const disRef = refDb(database, `multiData/dislikes/${user.uid}`);
 
-      const unsubFav = onValue(favRef, snap => {
-        setFavoriteUsers(snap.exists() ? snap.val() : {});
-      });
-      const unsubDis = onValue(disRef, snap => {
-        setDislikeUsers(snap.exists() ? snap.val() : {});
-      });
+        const unsubFav = onValue(favRef, snap => {
+          const data = snap.exists() ? filterLongIds(snap.val()) : {};
+          setFavoriteUsers(data);
+        });
+        const unsubDis = onValue(disRef, snap => {
+          const data = snap.exists() ? filterLongIds(snap.val()) : {};
+          setDislikeUsers(data);
+        });
 
       return () => {
         unsubFav();
@@ -1079,14 +1088,14 @@ const Matching = () => {
         lastDate
       );
 
-      const filtered = filterMain(
-        res.users.map(u => [u.userId, u]),
-        null,
-        filters,
-        favoriteUsersRef.current
-      )
+        const filtered = filterMain(
+          res.users.map(u => [u.userId, u]),
+          null,
+          filters,
+          favoriteUsersRef.current
+        )
         .map(([id, u]) => u)
-        .filter(u => !exclude.has(u.userId));
+        .filter(u => isValidId(u.userId) && !exclude.has(u.userId));
 
       const excluded = res.users.length - filtered.length;
       const hasMore = filtered.length > limit || res.hasMore;
@@ -1116,8 +1125,8 @@ const Matching = () => {
     try {
       const owner = auth.currentUser?.uid;
       let exclude = new Set();
-      const localFav = getFavorites();
-      const localDis = getDislikes();
+        const localFav = filterLongIds(getFavorites());
+        const localDis = filterLongIds(getDislikes());
       if (Object.keys(localFav).length || Object.keys(localDis).length) {
         setFavoriteUsers(localFav);
         setDislikeUsers(localDis);
@@ -1131,19 +1140,24 @@ const Matching = () => {
           fetchFavoriteUsers(owner),
           fetchDislikeUsers(owner),
         ]);
-        setFavoriteUsers(favIds);
-        setDislikeUsers(disIds);
-        syncFavorites(favIds);
-        syncDislikes(disIds);
-        exclude = new Set([...Object.keys(favIds), ...Object.keys(disIds)]);
-      }
+          const favFiltered = filterLongIds(favIds);
+          const disFiltered = filterLongIds(disIds);
+          setFavoriteUsers(favFiltered);
+          setDislikeUsers(disFiltered);
+          syncFavorites(favFiltered);
+          syncDislikes(disFiltered);
+          exclude = new Set([
+            ...Object.keys(favFiltered),
+            ...Object.keys(disFiltered),
+          ]);
+        }
 
       const cacheKey = getCacheKey('default');
       const cached = loadCache(cacheKey);
       if (cached) {
         console.log('[loadInitial] using cache', cached.users.length);
         const filteredCached = cached.users.filter(
-          u => !exclude.has(u.userId)
+          u => isValidId(u.userId) && !exclude.has(u.userId)
         );
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
         setUsers(filteredCached);
@@ -1198,14 +1212,15 @@ const Matching = () => {
     setLoading(true);
     setUsers([]);
 
-    const localIds = getIdsByQuery('favorite');
-    if (localIds.length > 0) {
-      const localFav = getFavorites();
-      const favMap = Object.fromEntries(Object.keys(localFav).map(id => [id, true]));
-      setFavoriteUsers(favMap);
-      setFavoriteIds(favMap);
-      const list = (await getFavoriteCards(id => fetchUserById(id)))
-        .filter(u => (u?.id || u?.userId || '').length > 20);
+      const localIds = getIdsByQuery('favorite').filter(isValidId);
+      if (localIds.length > 0) {
+        const localFav = filterLongIds(getFavorites());
+        const favMap = Object.fromEntries(Object.keys(localFav).map(id => [id, true]));
+        setFavoriteUsers(favMap);
+        setFavoriteIds(favMap);
+        const list = filterLongUsers(
+          await getFavoriteCards(id => fetchUserById(id))
+        );
       loadedIdsRef.current = new Set(list.map(u => u.id));
       setUsers(list);
       await loadCommentsFor(list);
@@ -1216,14 +1231,15 @@ const Matching = () => {
       return;
     }
 
-    const favUsers = await fetchFavoriteUsersData(owner);
-    const favMap = Object.fromEntries(Object.keys(favUsers).map(id => [id, true]));
-    syncFavorites(favMap);
-    setFavoriteUsers(favMap);
-    setFavoriteIds(favMap);
-    cacheFavoriteUsers(favUsers);
-    const list = (await getFavoriteCards(id => fetchUserById(id)))
-      .filter(u => (u?.id || u?.userId || '').length > 20);
+      const favUsers = filterLongIds(await fetchFavoriteUsersData(owner));
+      const favMap = Object.fromEntries(Object.keys(favUsers).map(id => [id, true]));
+      syncFavorites(favMap);
+      setFavoriteUsers(favMap);
+      setFavoriteIds(favMap);
+      cacheFavoriteUsers(favUsers);
+      const list = filterLongUsers(
+        await getFavoriteCards(id => fetchUserById(id))
+      );
     loadedIdsRef.current = new Set(list.map(u => u.id));
     setUsers(list);
     await loadCommentsFor(list);
@@ -1238,14 +1254,15 @@ const Matching = () => {
     if (!owner) return;
     setLoading(true);
 
-    const localIds = getIdsByQuery('dislike');
-    if (localIds.length > 0) {
-      const localDis = getDislikes();
-      const disMap = Object.fromEntries(Object.keys(localDis).map(id => [id, true]));
+      const localIds = getIdsByQuery('dislike').filter(isValidId);
+      if (localIds.length > 0) {
+        const localDis = filterLongIds(getDislikes());
+        const disMap = Object.fromEntries(Object.keys(localDis).map(id => [id, true]));
       setDislikeUsers(disMap);
       setIdsForQuery('dislike', Object.keys(disMap));
-      const list = (await getDislikedCards(id => fetchUserById(id)))
-        .filter(u => (u?.id || u?.userId || '').length > 20);
+        const list = filterLongUsers(
+          await getDislikedCards(id => fetchUserById(id))
+        );
       loadedIdsRef.current = new Set(list.map(u => u.id));
       setUsers(list);
       await loadCommentsFor(list);
@@ -1256,13 +1273,14 @@ const Matching = () => {
       return;
     }
 
-    const loaded = await fetchDislikeUsersData(owner);
-    const disMap = Object.fromEntries(Object.keys(loaded).map(id => [id, true]));
-    cacheDislikedUsers(loaded);
-    syncDislikes(disMap);
-    setDislikeUsers(disMap);
-    const list = (await getDislikedCards(id => fetchUserById(id)))
-      .filter(u => (u?.id || u?.userId || '').length > 20);
+      const loaded = filterLongIds(await fetchDislikeUsersData(owner));
+      const disMap = Object.fromEntries(Object.keys(loaded).map(id => [id, true]));
+      cacheDislikedUsers(loaded);
+      syncDislikes(disMap);
+      setDislikeUsers(disMap);
+      const list = filterLongUsers(
+        await getDislikedCards(id => fetchUserById(id))
+      );
     loadedIdsRef.current = new Set(list.map(u => u.id));
     setUsers(list);
     await loadCommentsFor(list);
@@ -1276,9 +1294,9 @@ const Matching = () => {
     const [key, value] = Object.entries(params)[0] || [];
     const term = key && value ? `${key}=${value}` : undefined;
     const cacheKey = getCacheKey('search', term ? normalizeQueryKey(term) : term);
-    const ids = getIdsByQuery(cacheKey);
+    const ids = getIdsByQuery(cacheKey).filter(isValidId);
     if (ids.length > 0) {
-      const cards = ids.map(id => getCard(id)).filter(Boolean);
+      const cards = ids.map(id => getCard(id)).filter(c => c && isValidId(c.userId));
       if (cards.length > 0) {
         if (key === 'name' || key === 'names') {
           return Object.fromEntries(cards.map(c => [c.userId, c]));
@@ -1289,8 +1307,12 @@ const Matching = () => {
     const res = await searchUsersOnly(params);
     if (res && Object.keys(res).length > 0) {
       const arr = Array.isArray(res) ? res : Object.values(res);
-      arr.forEach(u => saveCard({ ...u, id: u.userId }));
-      setIdsForQuery(cacheKey, arr.map(u => u.userId));
+      const filtered = arr.filter(u => isValidId(u.userId));
+      filtered.forEach(u => saveCard({ ...u, id: u.userId }));
+      setIdsForQuery(cacheKey, filtered.map(u => u.userId));
+      return Array.isArray(res)
+        ? filtered
+        : Object.fromEntries(filtered.map(u => [u.userId, u]));
     }
     return res;
   };
@@ -1378,7 +1400,9 @@ const Matching = () => {
           null,
           filters,
           favoriteUsers
-        ).map(([id, u]) => u)
+        )
+          .map(([id, u]) => u)
+          .filter(u => isValidId(u.userId))
       : users;
 
   // automatic loading disabled
