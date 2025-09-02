@@ -666,8 +666,8 @@ const SwipeableCard = ({
     .filter(Boolean)
     .map(v => String(v).trim())
     .join(' ');
-  const showContactsAfterCity = role === 'ed' && !photo;
-  const contacts = fieldContactsIcons(user);
+  const showContactsAfterCity = role === 'ed';
+  const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
   const selectedFields = renderSelectedFields(user).filter(Boolean);
   const locationInfo = getCurrentValue(user.country)
     ? [
@@ -881,11 +881,8 @@ const InfoCardContent = ({ user, variant }) => {
     .toString()
     .trim()
     .toLowerCase();
-  const hasPhoto = Array.isArray(user.photos)
-    ? user.photos.filter(Boolean).length > 0
-    : Boolean(getCurrentValue(user.photos));
-  const showContactsAfterCity = role === 'ed' && !hasPhoto;
-  const contacts = fieldContactsIcons(user);
+  const showContactsAfterCity = role === 'ed';
+  const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
   const selectedFields = renderSelectedFields(user).filter(Boolean);
   const locationInfo = getCurrentValue(user.country)
     ? [
