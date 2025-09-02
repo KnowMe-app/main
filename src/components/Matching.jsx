@@ -1059,10 +1059,12 @@ const Matching = () => {
         const unsubFav = onValue(favRef, snap => {
           const data = snap.exists() ? filterLongIds(snap.val()) : {};
           setFavoriteUsers(data);
+          syncFavorites(snap.val());
         });
         const unsubDis = onValue(disRef, snap => {
           const data = snap.exists() ? filterLongIds(snap.val()) : {};
           setDislikeUsers(data);
+          syncDislikes(snap.val());
         });
 
       return () => {
@@ -1382,10 +1384,6 @@ const Matching = () => {
   }, [hasMore, lastKey, viewMode, fetchChunk]);
 
   useEffect(() => {
-    const savedSearch = localStorage.getItem(SEARCH_KEY);
-    if (savedSearch) {
-      return;
-    }
     console.log('[useEffect] calling loadInitial');
     loadInitial();
   }, [loadInitial]);
