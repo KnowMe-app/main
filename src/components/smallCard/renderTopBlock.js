@@ -3,7 +3,7 @@ import { btnDel } from './btnDel';
 import { btnExport } from './btnExport';
 import { fieldDeliveryInfo } from './fieldDeliveryInfo';
 import { fieldWriter } from './fieldWritter';
-import { fieldContactsIcons } from './fieldContacts';
+import { fieldContacts } from './fieldContacts';
 import { fieldGetInTouch } from './fieldGetInTouch';
 import { fieldRole } from './fieldRole';
 import { fieldLastCycle } from './fieldLastCycle';
@@ -115,7 +115,7 @@ export const renderTopBlock = (
           {[normalizeCountry(userData.country), normalizeRegion(userData.region)]
             .filter(Boolean)
             .join(', ')}
-          {fieldContactsIcons(userData)}
+          {fieldContacts(userData)}
         </div>
       </div>
       {fieldWriter(userData, setUsers, setState, isToastOn)}
