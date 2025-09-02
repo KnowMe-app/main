@@ -976,6 +976,7 @@ const Matching = () => {
   const favoriteUsersRef = useRef(favoriteUsers);
   const dislikeUsersRef = useRef(dislikeUsers);
   const [viewMode, setViewMode] = useState('default');
+  const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({});
   const [comments, setComments] = useState({});
@@ -993,6 +994,9 @@ const Matching = () => {
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
   };
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+  }, [viewMode]);
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
     const handleScroll = () => {
@@ -1177,7 +1181,13 @@ const Matching = () => {
   const loadInitial = React.useCallback(async () => {
     console.log('[loadInitial] start');
     loadingRef.current = true;
+    const startMode = viewModeRef.current;
     setLoading(true);
+    if (startMode !== 'default') {
+      loadingRef.current = false;
+      setLoading(false);
+      return;
+    }
     setUsers([]); // clear previous list to avoid caching wrong data
     loadedIdsRef.current = new Set();
     try {
@@ -1212,7 +1222,7 @@ const Matching = () => {
 
       const cacheKey = getCacheKey('default');
       const cached = loadCache(cacheKey);
-      if (cached) {
+      if (cached && viewModeRef.current === startMode) {
         console.log('[loadInitial] using cache', cached.users.length);
         const filteredCached = cached.users.filter(
           u => isValidId(u.userId) && !exclude.has(u.userId)
@@ -1220,6 +1230,7 @@ const Matching = () => {
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
         setUsers(filteredCached);
         await loadCommentsFor(filteredCached);
+        if (viewModeRef.current !== startMode) return;
         setLastKey(cached.lastKey);
         setHasMore(cached.hasMore);
         setViewMode('default');
@@ -1230,6 +1241,7 @@ const Matching = () => {
         undefined,
         exclude,
         async part => {
+          if (viewModeRef.current !== startMode) return;
           const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
           if (unique.length) {
             unique.forEach(u => loadedIdsRef.current.add(u.userId));
@@ -1238,6 +1250,7 @@ const Matching = () => {
           }
         }
       );
+      if (viewModeRef.current !== startMode) return;
       console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
       loadedIdsRef.current = new Set([
         ...loadedIdsRef.current,
@@ -1255,6 +1268,7 @@ const Matching = () => {
         return result;
       });
       await loadCommentsFor(res.users);
+      if (viewModeRef.current !== startMode) return;
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
       setViewMode('default');
@@ -1263,6 +1277,12 @@ const Matching = () => {
       setLoading(false);
     }
   }, [fetchChunk]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+
+  const reloadDefault = React.useCallback(() => {
+    viewModeRef.current = 'default';
+    setViewMode('default');
+    loadInitial();
+  }, [loadInitial]);
 
   const loadFavoriteCards = async () => {
     setLoading(true);
@@ -1448,8 +1468,8 @@ const Matching = () => {
 
   useEffect(() => {
     console.log('[useEffect] calling loadInitial');
-    loadInitial();
-  }, [loadInitial]);
+    reloadDefault();
+  }, [reloadDefault]);
 
   const gridRef = useRef(null);
 
@@ -1492,7 +1512,7 @@ const Matching = () => {
           wrapperStyle={{ width: '100%', marginBottom: '10px' }}
           leftIcon="🔍"
           storageKey={SEARCH_KEY}
-          onClear={loadInitial}
+          onClear={reloadDefault}
         />
         <FilterPanel mode="matching" hideUserId hideCommentLength onChange={setFilters} />
       </FilterContainer>
@@ -1502,7 +1522,7 @@ const Matching = () => {
             <CardCount>{filteredUsers.length} карточок</CardCount>
             <TopActions>
               {viewMode !== 'default' && (
-                <ActionButton onClick={loadInitial}><FaDownload /></ActionButton>
+                <ActionButton onClick={reloadDefault}><FaDownload /></ActionButton>
               )}
               <ActionButton onClick={() => setShowFilters(s => !s)}><FaFilter /></ActionButton>
               <ActionButton
