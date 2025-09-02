@@ -583,7 +583,7 @@ const SwipeableCard = ({
     if (role === 'ag') {
       base = ['main'];
     } else {
-      base = photo ? ['main'] : ['info'];
+      base = photo ? ['main', 'info'] : ['info'];
     }
     if (showDescriptionSlide) base.push('description');
     base.push(...photosArr.slice(1));
