@@ -945,6 +945,7 @@ const Matching = () => {
   const [comments, setComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [ownerId, setOwnerId] = useState(null);
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
@@ -980,6 +981,20 @@ const Matching = () => {
       });
     }
   }, [loading, users]);
+
+  const getOwnerId = () => auth.currentUser?.uid || localStorage.getItem('ownerId');
+  const waitForOwnerId = () =>
+    new Promise(resolve => {
+      const check = () => {
+        const id = getOwnerId();
+        if (id) {
+          resolve(id);
+        } else {
+          setTimeout(check, 100);
+        }
+      };
+      check();
+    });
 
   const togglePublish = async user => {
     if (!isAdmin) return;
@@ -1046,8 +1061,10 @@ const Matching = () => {
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       if (user) {
         localStorage.setItem('ownerId', user.uid);
+        setOwnerId(user.uid);
       } else {
         localStorage.removeItem('ownerId');
+        setOwnerId('');
         setFavoriteUsers({});
         setDislikeUsers({});
         return;
@@ -1212,10 +1229,13 @@ const Matching = () => {
   }, [fetchChunk]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const loadFavoriteCards = async () => {
-    const owner = auth.currentUser?.uid || localStorage.getItem('ownerId');
-    if (!owner) return;
     setLoading(true);
     setUsers([]);
+    const owner = await waitForOwnerId();
+    if (!owner) {
+      setLoading(false);
+      return;
+    }
 
       const localIds = getIdsByQuery('favorite').filter(isValidId);
       if (localIds.length > 0) {
@@ -1255,9 +1275,12 @@ const Matching = () => {
   };
 
   const loadDislikeCards = async () => {
-    const owner = auth.currentUser?.uid || localStorage.getItem('ownerId');
-    if (!owner) return;
     setLoading(true);
+    const owner = await waitForOwnerId();
+    if (!owner) {
+      setLoading(false);
+      return;
+    }
 
       const localIds = getIdsByQuery('dislike').filter(isValidId);
       if (localIds.length > 0) {
@@ -1448,19 +1471,24 @@ const Matching = () => {
               <ActionButton onClick={() => setShowFilters(s => !s)}><FaFilter /></ActionButton>
               <ActionButton
                 onClick={loadDislikeCards}
-                disabled={viewMode === 'dislikes'}
+                disabled={viewMode === 'dislikes' || !ownerId}
               >
                 <FaTimes />
               </ActionButton>
               <ActionButton
                 onClick={loadFavoriteCards}
-                disabled={viewMode === 'favorites'}
+                disabled={viewMode === 'favorites' || !ownerId}
               >
                 <FaHeart />
               </ActionButton>
               <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
             </TopActions>
           </HeaderContainer>
+          {!ownerId && (
+            <p style={{ textAlign: 'center', padding: '0 10px' }}>
+              {ownerId === '' ? 'Owner not found' : 'Loading owner...'}
+            </p>
+          )}
 
           <Grid ref={gridRef}>
             {filteredUsers.map(user => {
