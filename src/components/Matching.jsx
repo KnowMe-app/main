@@ -666,6 +666,7 @@ const SwipeableCard = ({
     .filter(Boolean)
     .map(v => String(v).trim())
     .join(' ');
+  const showContactsAfterCity = role === 'ed' && !photo;
   const contacts = fieldContactsIcons(user);
   const selectedFields = renderSelectedFields(user).filter(Boolean);
   const locationInfo = getCurrentValue(user.country)
@@ -724,17 +725,30 @@ const SwipeableCard = ({
                 {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
               </DonorName>
               <br />
-              {[
-                normalizeCountry(getCurrentValue(user.country)),
-                getCurrentValue(user.city) ||
-                  normalizeRegion(getCurrentValue(user.region)),
-              ]
-                .filter(Boolean)
-                .join(', ')}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  flexWrap: 'nowrap',
+                  justifyContent: 'flex-start',
+                }}
+              >
+                {
+                  [
+                    normalizeCountry(getCurrentValue(user.country)),
+                    getCurrentValue(user.city) ||
+                      normalizeRegion(getCurrentValue(user.region)),
+                  ]
+                    .filter(Boolean)
+                    .join(', ')
+                }
+                {showContactsAfterCity && contacts && <Icons>{contacts}</Icons>}
+              </div>
             </Info>
           </ProfileSection>
           {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
-          {contacts && (
+          {!showContactsAfterCity && contacts && (
             <Contact $withBorder={selectedFields.length > 0}>
               <Icons>{contacts}</Icons>
             </Contact>
@@ -863,8 +877,25 @@ const InfoCardContent = ({ user, variant }) => {
     .filter(Boolean)
     .map(v => String(v).trim())
     .join(' ');
+  const role = (user.userRole || user.role || '')
+    .toString()
+    .trim()
+    .toLowerCase();
+  const hasPhoto = Array.isArray(user.photos)
+    ? user.photos.filter(Boolean).length > 0
+    : Boolean(getCurrentValue(user.photos));
+  const showContactsAfterCity = role === 'ed' && !hasPhoto;
   const contacts = fieldContactsIcons(user);
   const selectedFields = renderSelectedFields(user).filter(Boolean);
+  const locationInfo = getCurrentValue(user.country)
+    ? [
+        normalizeCountry(getCurrentValue(user.country)),
+        getCurrentValue(user.city) ||
+          normalizeRegion(getCurrentValue(user.region)),
+      ]
+        .filter(Boolean)
+        .join(', ')
+    : '';
 
   if (variant === 'description') {
     return (
@@ -904,17 +935,22 @@ const InfoCardContent = ({ user, variant }) => {
             {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
           </DonorName>
           <br />
-          {[
-            normalizeCountry(getCurrentValue(user.country)),
-            getCurrentValue(user.city) ||
-              normalizeRegion(getCurrentValue(user.region)),
-          ]
-            .filter(Boolean)
-            .join(', ')}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              flexWrap: 'nowrap',
+              justifyContent: 'flex-start',
+            }}
+          >
+            {locationInfo}
+            {showContactsAfterCity && contacts && <Icons>{contacts}</Icons>}
+          </div>
         </Info>
       </ProfileSection>
       {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
-      {contacts && (
+      {!showContactsAfterCity && contacts && (
         <Contact $withBorder={selectedFields.length > 0}>
           <Icons>{contacts}</Icons>
         </Contact>
