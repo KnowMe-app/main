@@ -9,11 +9,25 @@ import {
 } from 'react-icons/fa';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
-import { getCurrentValue } from '../getCurrentValue';
 
 const ICON_SIZE = 16;
 
-// Render phone numbers with Telegram, Viber and Facebook icons
+const collectValues = value => {
+  const result = [];
+  const visit = val => {
+    if (Array.isArray(val)) {
+      val.forEach(visit);
+    } else if (val && typeof val === 'object') {
+      Object.values(val).forEach(visit);
+    } else if (val !== undefined && val !== null && val !== '') {
+      result.push(val);
+    }
+  };
+  visit(value);
+  return result;
+};
+
+// Render phone numbers with all contact icons
 export const fieldContacts = data => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderContacts:', data);
@@ -22,9 +36,14 @@ export const fieldContacts = data => {
 
   const links = {
     phone: value => `tel:+${value}`,
+    telegram: value => `https://t.me/${value}`,
+    instagram: value => `https://instagram.com/${value}`,
+    tiktok: value => `https://www.tiktok.com/@${value}`,
+    facebook: value => `https://facebook.com/${value}`,
+    email: value => `mailto:${value}`,
     telegramFromPhone: value => `https://t.me/${value.replace(/\s+/g, '')}`,
     viberFromPhone: value => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`,
-    facebook: value => `https://facebook.com/${value}`,
+    whatsappFromPhone: value => `https://wa.me/${value.replace(/\s+/g, '')}`,
   };
 
   const iconStyle = { width: ICON_SIZE, height: ICON_SIZE };
@@ -45,19 +64,26 @@ export const fieldContacts = data => {
     padding: 0,
   };
 
-  const processed = Object.fromEntries(
-    Object.entries(data).map(([k, v]) => [k, getCurrentValue(v)])
+  const phoneValues = collectValues(data.phone).map(val =>
+    String(val).replace(/\s/g, '')
   );
+  const emailValues = collectValues(data.email);
+  const facebookValues = collectValues(data.facebook);
+  const instagramValues = collectValues(data.instagram);
+  const telegramValues = collectValues(data.telegram).filter(
+    v => !String(v).trim().startsWith('УК СМ')
+  );
+  const tiktokValues = collectValues(data.tiktok);
 
-  const phoneValues = processed.phone
-    ? Array.isArray(processed.phone)
-      ? processed.phone.filter(v => v)
-      : [processed.phone]
-    : [];
+  const hasContacts =
+    phoneValues.length ||
+    emailValues.length ||
+    facebookValues.length ||
+    instagramValues.length ||
+    telegramValues.length ||
+    tiktokValues.length;
 
-  const hasFacebook = !!processed.facebook;
-
-  if (phoneValues.length === 0 && !hasFacebook) {
+  if (!hasContacts) {
     return null;
   }
 
@@ -68,50 +94,105 @@ export const fieldContacts = data => {
       onTouchStart={e => e.stopPropagation()}
       onTouchEnd={e => e.stopPropagation()}
     >
-      {phoneValues.map((val, idx) => {
-        const processedVal = String(val).replace(/\s/g, '');
-        return (
-          <span
-            key={`phone-${idx}`}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+      {phoneValues.map((val, idx) => (
+        <span
+          key={`phone-${idx}`}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+        >
+          <a
+            href={links.phone(val)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={numberLinkStyle}
           >
-            <a
-              href={links.phone(processedVal)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={numberLinkStyle}
-            >
-              {`+${processedVal}`}
-            </a>
-            <a
-              href={links.telegramFromPhone(`+${val}`)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={iconLinkStyle}
-            >
-              <FaTelegramPlane style={iconStyle} />
-            </a>
-            <a
-              href={links.viberFromPhone(processedVal)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={iconLinkStyle}
-            >
-              <FaViber style={iconStyle} />
-            </a>
-          </span>
-        );
-      })}
-      {hasFacebook && (
+            {`+${val}`}
+          </a>
+          <a
+            href={links.telegramFromPhone(`+${val}`)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={iconLinkStyle}
+          >
+            <FaTelegramPlane style={iconStyle} />
+          </a>
+          <a
+            href={links.viberFromPhone(val)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={iconLinkStyle}
+          >
+            <FaViber style={iconStyle} />
+          </a>
+          <a
+            href={links.whatsappFromPhone(val)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={iconLinkStyle}
+          >
+            <FaWhatsapp style={iconStyle} />
+          </a>
+        </span>
+      ))}
+
+      {emailValues.map((val, idx) => (
         <a
-          href={links.facebook(processed.facebook)}
+          key={`email-${idx}`}
+          href={links.email(val)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={iconLinkStyle}
+        >
+          <MdEmail style={iconStyle} />
+        </a>
+      ))}
+
+      {facebookValues.map((val, idx) => (
+        <a
+          key={`facebook-${idx}`}
+          href={links.facebook(val)}
           target="_blank"
           rel="noopener noreferrer"
           style={iconLinkStyle}
         >
           <FaFacebookF style={iconStyle} />
         </a>
-      )}
+      ))}
+
+      {instagramValues.map((val, idx) => (
+        <a
+          key={`instagram-${idx}`}
+          href={links.instagram(val)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={iconLinkStyle}
+        >
+          <FaInstagram style={iconStyle} />
+        </a>
+      ))}
+
+      {telegramValues.map((val, idx) => (
+        <a
+          key={`telegram-${idx}`}
+          href={links.telegram(val)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={iconLinkStyle}
+        >
+          <FaTelegramPlane style={iconStyle} />
+        </a>
+      ))}
+
+      {tiktokValues.map((val, idx) => (
+        <a
+          key={`tiktok-${idx}`}
+          href={links.tiktok(val)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={iconLinkStyle}
+        >
+          <SiTiktok style={iconStyle} />
+        </a>
+      ))}
     </div>
   );
 };
@@ -147,32 +228,24 @@ export const fieldContactsIcons = data => {
     padding: 0,
   };
 
-
-  const processed = Object.fromEntries(
-    Object.entries(data).map(([k, v]) => [k, getCurrentValue(v)])
+  const phoneValues = collectValues(data.phone).map(val =>
+    String(val).replace(/\s/g, '')
   );
+  const emailValues = collectValues(data.email);
+  const facebookValues = collectValues(data.facebook);
+  const instagramValues = collectValues(data.instagram);
+  const telegramValues = collectValues(data.telegram).filter(
+    v => !String(v).trim().startsWith('УК СМ')
+  );
+  const tiktokValues = collectValues(data.tiktok);
 
-  // Filter out telegram links starting with "УК СМ"
-  const telegramValues = processed.telegram
-    ? Array.isArray(processed.telegram)
-      ? processed.telegram.filter(v => v && !String(v).trim().startsWith('УК СМ'))
-      : String(processed.telegram).trim().startsWith('УК СМ')
-        ? []
-        : [processed.telegram]
-    : [];
-
-  const phoneValues = processed.phone
-    ? Array.isArray(processed.phone)
-      ? processed.phone.filter(v => v)
-      : [processed.phone]
-    : [];
   const hasContacts =
-    phoneValues.length > 0 ||
-    telegramValues.length > 0 ||
-    processed.email ||
-    processed.facebook ||
-    processed.instagram ||
-    processed.tiktok;
+    phoneValues.length ||
+    emailValues.length ||
+    facebookValues.length ||
+    instagramValues.length ||
+    telegramValues.length ||
+    tiktokValues.length;
 
   if (!hasContacts) {
     return null;
@@ -185,78 +258,78 @@ export const fieldContactsIcons = data => {
       onTouchStart={e => e.stopPropagation()}
       onTouchEnd={e => e.stopPropagation()}
     >
-      {phoneValues.map((val, idx) => {
-        const processedVal = String(val).replace(/\s/g, '');
-        return (
-          <React.Fragment key={`phone-${idx}`}>
-            <a
-              href={links.phone(processedVal)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={linkStyle}
-            >
-              <FaPhoneVolume style={iconStyle} />
-            </a>
-            <a
-              href={links.telegramFromPhone(`+${val}`)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={linkStyle}
-            >
-              <FaTelegramPlane style={iconStyle} />
-            </a>
-            <a
-              href={links.viberFromPhone(processedVal)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={linkStyle}
-            >
-              <FaViber style={iconStyle} />
-            </a>
-            <a
-              href={links.whatsappFromPhone(processedVal)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={linkStyle}
-            >
-              <FaWhatsapp style={iconStyle} />
-            </a>
-          </React.Fragment>
-        );
-      })}
+      {phoneValues.map((val, idx) => (
+        <React.Fragment key={`phone-${idx}`}>
+          <a
+            href={links.phone(val)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={linkStyle}
+          >
+            <FaPhoneVolume style={iconStyle} />
+          </a>
+          <a
+            href={links.telegramFromPhone(`+${val}`)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={linkStyle}
+          >
+            <FaTelegramPlane style={iconStyle} />
+          </a>
+          <a
+            href={links.viberFromPhone(val)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={linkStyle}
+          >
+            <FaViber style={iconStyle} />
+          </a>
+          <a
+            href={links.whatsappFromPhone(val)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={linkStyle}
+          >
+            <FaWhatsapp style={iconStyle} />
+          </a>
+        </React.Fragment>
+      ))}
 
-      {processed.email && (
+      {emailValues.map((val, idx) => (
         <a
-          href={links.email(processed.email)}
+          key={`email-${idx}`}
+          href={links.email(val)}
           target="_blank"
           rel="noopener noreferrer"
           style={linkStyle}
         >
           <MdEmail style={iconStyle} />
         </a>
-      )}
+      ))}
 
-      {processed.facebook && (
+      {facebookValues.map((val, idx) => (
         <a
-          href={links.facebook(processed.facebook)}
+          key={`facebook-${idx}`}
+          href={links.facebook(val)}
           target="_blank"
           rel="noopener noreferrer"
           style={linkStyle}
         >
           <FaFacebookF style={iconStyle} />
         </a>
-      )}
+      ))}
 
-      {processed.instagram && (
+      {instagramValues.map((val, idx) => (
         <a
-          href={links.instagram(processed.instagram)}
+          key={`instagram-${idx}`}
+          href={links.instagram(val)}
           target="_blank"
           rel="noopener noreferrer"
           style={linkStyle}
         >
           <FaInstagram style={iconStyle} />
         </a>
-      )}
+      ))}
 
       {telegramValues.map((val, idx) => (
         <a
@@ -270,16 +343,17 @@ export const fieldContactsIcons = data => {
         </a>
       ))}
 
-      {processed.tiktok && (
+      {tiktokValues.map((val, idx) => (
         <a
-          href={links.tiktok(processed.tiktok)}
+          key={`tiktok-${idx}`}
+          href={links.tiktok(val)}
           target="_blank"
           rel="noopener noreferrer"
           style={linkStyle}
         >
           <SiTiktok style={iconStyle} />
         </a>
-      )}
+      ))}
     </div>
   );
 };
