@@ -89,7 +89,7 @@ export const fieldContacts = data => {
 
   return (
     <div
-      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
       onClick={e => e.stopPropagation()}
       onTouchStart={e => e.stopPropagation()}
       onTouchEnd={e => e.stopPropagation()}
@@ -107,150 +107,92 @@ export const fieldContacts = data => {
           >
             {`+${val}`}
           </a>
-          {idx === 0 && (
-            <>
-              <a
-                href={links.telegramFromPhone(`+${val}`)}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={iconLinkStyle}
-              >
-                <FaTelegramPlane style={iconStyle} />
-              </a>
-              <a
-                href={links.viberFromPhone(val)}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={iconLinkStyle}
-              >
-                <FaViber style={iconStyle} />
-              </a>
-              <a
-                href={links.whatsappFromPhone(val)}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={iconLinkStyle}
-              >
-                <FaWhatsapp style={iconStyle} />
-              </a>
-              {emailValues.map((email, eIdx) => (
-                <a
-                  key={`email-${eIdx}`}
-                  href={links.email(email)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={iconLinkStyle}
-                >
-                  <MdEmail style={iconStyle} />
-                </a>
-              ))}
-              {facebookValues.map((fb, fIdx) => (
-                <a
-                  key={`facebook-${fIdx}`}
-                  href={links.facebook(fb)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={iconLinkStyle}
-                >
-                  <FaFacebookF style={iconStyle} />
-                </a>
-              ))}
-              {instagramValues.map((inst, iIdx) => (
-                <a
-                  key={`instagram-${iIdx}`}
-                  href={links.instagram(inst)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={iconLinkStyle}
-                >
-                  <FaInstagram style={iconStyle} />
-                </a>
-              ))}
-              {telegramValues.map((tg, tIdx) => (
-                <a
-                  key={`telegram-${tIdx}`}
-                  href={links.telegram(tg)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={iconLinkStyle}
-                >
-                  <FaTelegramPlane style={iconStyle} />
-                </a>
-              ))}
-              {tiktokValues.map((tt, tkIdx) => (
-                <a
-                  key={`tiktok-${tkIdx}`}
-                  href={links.tiktok(tt)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={iconLinkStyle}
-                >
-                  <SiTiktok style={iconStyle} />
-                </a>
-              ))}
-            </>
-          )}
+          <a
+            href={links.telegramFromPhone(`+${val}`)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={iconLinkStyle}
+          >
+            <FaTelegramPlane style={iconStyle} />
+          </a>
+          <a
+            href={links.viberFromPhone(val)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={iconLinkStyle}
+          >
+            <FaViber style={iconStyle} />
+          </a>
+          <a
+            href={links.whatsappFromPhone(val)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={iconLinkStyle}
+          >
+            <FaWhatsapp style={iconStyle} />
+          </a>
         </span>
       ))}
-      {phoneValues.length === 0 && (
-        <>
-          {emailValues.map((val, idx) => (
-            <a
-              key={`email-${idx}`}
-              href={links.email(val)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={iconLinkStyle}
-            >
-              <MdEmail style={iconStyle} />
-            </a>
-          ))}
-          {facebookValues.map((val, idx) => (
-            <a
-              key={`facebook-${idx}`}
-              href={links.facebook(val)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={iconLinkStyle}
-            >
-              <FaFacebookF style={iconStyle} />
-            </a>
-          ))}
-          {instagramValues.map((val, idx) => (
-            <a
-              key={`instagram-${idx}`}
-              href={links.instagram(val)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={iconLinkStyle}
-            >
-              <FaInstagram style={iconStyle} />
-            </a>
-          ))}
-          {telegramValues.map((val, idx) => (
-            <a
-              key={`telegram-${idx}`}
-              href={links.telegram(val)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={iconLinkStyle}
-            >
-              <FaTelegramPlane style={iconStyle} />
-            </a>
-          ))}
-          {tiktokValues.map((val, idx) => (
-            <a
-              key={`tiktok-${idx}`}
-              href={links.tiktok(val)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={iconLinkStyle}
-            >
-              <SiTiktok style={iconStyle} />
-            </a>
-          ))}
-        </>
-      )}
+
+      {emailValues.map((val, idx) => (
+        <a
+          key={`email-${idx}`}
+          href={links.email(val)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={iconLinkStyle}
+        >
+          <MdEmail style={iconStyle} />
+        </a>
+      ))}
+
+      {facebookValues.map((val, idx) => (
+        <a
+          key={`facebook-${idx}`}
+          href={links.facebook(val)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={iconLinkStyle}
+        >
+          <FaFacebookF style={iconStyle} />
+        </a>
+      ))}
+
+      {instagramValues.map((val, idx) => (
+        <a
+          key={`instagram-${idx}`}
+          href={links.instagram(val)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={iconLinkStyle}
+        >
+          <FaInstagram style={iconStyle} />
+        </a>
+      ))}
+
+      {telegramValues.map((val, idx) => (
+        <a
+          key={`telegram-${idx}`}
+          href={links.telegram(val)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={iconLinkStyle}
+        >
+          <FaTelegramPlane style={iconStyle} />
+        </a>
+      ))}
+
+      {tiktokValues.map((val, idx) => (
+        <a
+          key={`tiktok-${idx}`}
+          href={links.tiktok(val)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={iconLinkStyle}
+        >
+          <SiTiktok style={iconStyle} />
+        </a>
+      ))}
     </div>
   );
 };
