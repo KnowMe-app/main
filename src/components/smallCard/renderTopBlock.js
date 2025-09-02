@@ -53,7 +53,7 @@ export const renderTopBlock = (
 ) => {
   if (!userData) return null;
 
-  const region = normalizeRegion(userData.region)?.replace(/\s*область$/i, '');
+  const region = normalizeRegion(userData.region);
 
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
@@ -110,8 +110,15 @@ export const renderTopBlock = (
             return parts.map((part, index) => <React.Fragment key={index}>{part} </React.Fragment>);
           })()}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          {region}
+        {region && <div>{region}</div>}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: '4px',
+          }}
+        >
           {fieldContacts(userData)}
         </div>
       </div>
