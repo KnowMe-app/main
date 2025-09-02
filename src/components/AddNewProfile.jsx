@@ -307,6 +307,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     try {
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
+      localStorage.removeItem('ownerId');
       setState({});
       setIsLoggedIn(false);
       setShowInfoModal(false);
@@ -428,8 +429,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
       if (user && user.emailVerified) {
+        localStorage.setItem('ownerId', user.uid);
         setIsEmailVerified(true);
       } else {
+        localStorage.removeItem('ownerId');
         setIsEmailVerified(false);
       }
     });

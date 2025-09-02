@@ -26,6 +26,7 @@ margin-bottom: 20px;
           try {
             const unsubscribe = onAuthStateChanged(auth, async user => {
               if (user) {
+                localStorage.setItem('ownerId', user.uid);
                 try {
                   await sendEmailVerification(user);
                   console.log('sendEmailVerification(user) :>> ',);
@@ -37,6 +38,8 @@ margin-bottom: 20px;
                       console.log('Помилка надсилання підтвердження');
                   }
                 }
+              } else {
+                localStorage.removeItem('ownerId');
               }
             });
             return () => {

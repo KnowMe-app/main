@@ -528,6 +528,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
       localStorage.removeItem('myProfileDraft');
+      localStorage.removeItem('ownerId');
       setState(initialProfileState);
       setIsLoggedIn(false);
       setShowInfoModal(false);
@@ -708,9 +709,11 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
       if (user) {
+        localStorage.setItem('ownerId', user.uid);
         console.log('User is logged in: ', user.uid);
         fetchData(user);
       } else {
+        localStorage.removeItem('ownerId');
         console.log('No user is logged in.');
       }
     });
@@ -793,8 +796,10 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
       if (user && user.emailVerified) {
+        localStorage.setItem('ownerId', user.uid);
         setIsEmailVerified(true);
       } else {
+        localStorage.removeItem('ownerId');
         setIsEmailVerified(false);
       }
     });
