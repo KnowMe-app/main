@@ -6,6 +6,7 @@ import {
   FaViber,
   FaWhatsapp,
   FaVk,
+  FaPhone,
 } from 'react-icons/fa';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -222,7 +223,10 @@ const icons = {
   });
 };
 
-export const fieldContactsIcons = data => {
+export const fieldContactsIcons = (
+  data,
+  { phoneAsIcon = false, iconSize = 12 } = {}
+) => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderContacts:', data);
     return null;
@@ -242,7 +246,6 @@ export const fieldContactsIcons = data => {
     whatsappFromPhone: value => `https://wa.me/${value.replace(/\s+/g, '')}`,
   };
 
-
   const processed = Object.fromEntries(
     Object.entries(data).map(([k, v]) => [k, getCurrentValue(v)])
   );
@@ -250,7 +253,9 @@ export const fieldContactsIcons = data => {
   // Filter out telegram links starting with "УК СМ"
   const telegramValues = processed.telegram
     ? Array.isArray(processed.telegram)
-      ? processed.telegram.filter(v => v && !String(v).trim().startsWith('УК СМ'))
+      ? processed.telegram.filter(
+          v => v && !String(v).trim().startsWith('УК СМ')
+        )
       : String(processed.telegram).trim().startsWith('УК СМ')
         ? []
         : [processed.telegram]
@@ -262,6 +267,155 @@ export const fieldContactsIcons = data => {
       : [processed.phone]
     : [];
 
+  const iconStyle = {
+    verticalAlign: 'middle',
+    width: `${iconSize}px`,
+    height: `${iconSize}px`,
+    fontSize: `${iconSize}px`,
+  };
+
+  const phoneBtnStyleLocal = {
+    color: 'inherit',
+    textDecoration: 'none',
+    marginLeft: '8px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: `${iconSize + 8}px`,
+    height: `${iconSize + 8}px`,
+    lineHeight: '0',
+    border: `1px solid ${color.white}`,
+    borderRadius: '50%',
+  };
+
+  const elements = [];
+
+  phoneValues.forEach((val, idx) => {
+    const processedVal = String(val).replace(/\s/g, '');
+    elements.push(
+      <React.Fragment key={`phone-${idx}`}>
+        <a
+          href={links.phone(processedVal)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: phoneAsIcon ? 'inherit' : color.black, textDecoration: 'none' }}
+        >
+          {phoneAsIcon ? <FaPhone style={iconStyle} /> : `+${processedVal}`}
+        </a>
+        <a
+          href={links.telegramFromPhone(`+${val}`)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ ...phoneBtnStyleLocal, marginLeft: 0, border: 'none' }}
+        >
+          <FaTelegramPlane style={iconStyle} />
+        </a>
+        <a
+          href={links.viberFromPhone(processedVal)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ ...phoneBtnStyleLocal, marginLeft: 0, border: 'none' }}
+        >
+          <FaViber style={iconStyle} />
+        </a>
+        <a
+          href={links.whatsappFromPhone(processedVal)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ ...phoneBtnStyleLocal, marginLeft: 0, border: 'none' }}
+        >
+          <FaWhatsapp style={iconStyle} />
+        </a>
+      </React.Fragment>
+    );
+  });
+
+  if (processed.email) {
+    elements.push(
+      <a
+        key="email"
+        href={links.email(processed.email)}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: 'inherit', textDecoration: 'none' }}
+      >
+        <MdEmail style={iconStyle} />
+      </a>
+    );
+  }
+
+  if (processed.facebook) {
+    elements.push(
+      <a
+        key="facebook"
+        href={links.facebook(processed.facebook)}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: 'inherit', textDecoration: 'none' }}
+      >
+        <FaFacebookF style={iconStyle} />
+      </a>
+    );
+  }
+
+  if (processed.instagram) {
+    elements.push(
+      <a
+        key="instagram"
+        href={links.instagram(processed.instagram)}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: 'inherit', textDecoration: 'none' }}
+      >
+        <FaInstagram style={iconStyle} />
+      </a>
+    );
+  }
+
+  telegramValues.forEach((val, idx) => {
+    elements.push(
+      <a
+        key={`telegram-${idx}`}
+        href={links.telegram(val)}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: 'inherit', textDecoration: 'none' }}
+      >
+        <FaTelegramPlane style={iconStyle} />
+      </a>
+    );
+  });
+
+  if (processed.tiktok) {
+    elements.push(
+      <a
+        key="tiktok"
+        href={links.tiktok(processed.tiktok)}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: 'inherit', textDecoration: 'none' }}
+      >
+        <SiTiktok style={iconStyle} />
+      </a>
+    );
+  }
+
+  if (processed.vk) {
+    elements.push(
+      <a
+        key="vk"
+        href={links.vk(processed.vk)}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: 'inherit', textDecoration: 'none' }}
+      >
+        <FaVk style={iconStyle} />
+      </a>
+    );
+  }
+
+  if (elements.length === 0) return null;
+
   return (
     <div
       style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
@@ -269,112 +423,7 @@ export const fieldContactsIcons = data => {
       onTouchStart={e => e.stopPropagation()}
       onTouchEnd={e => e.stopPropagation()}
     >
-      {phoneValues.map((val, idx) => {
-        const processedVal = String(val).replace(/\s/g, '');
-        return (
-          <React.Fragment key={`phone-${idx}`}>
-            <a
-              href={links.phone(processedVal)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: color.black, textDecoration: 'none' }}
-            >
-              {`+${processedVal}`}
-            </a>
-            <a
-              href={links.telegramFromPhone(`+${val}`)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ ...phoneBtnStyle, marginLeft: 0, border: 'none' }}
-            >
-              <FaTelegramPlane style={iconStyle} />
-            </a>
-            <a
-              href={links.viberFromPhone(processedVal)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ ...phoneBtnStyle, marginLeft: 0, border: 'none' }}
-            >
-              <FaViber style={iconStyle} />
-            </a>
-            <a
-              href={links.whatsappFromPhone(processedVal)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ ...phoneBtnStyle, marginLeft: 0, border: 'none' }}
-            >
-              <FaWhatsapp style={iconStyle} />
-            </a>
-          </React.Fragment>
-        );
-      })}
-
-      {processed.email && (
-        <a
-          href={links.email(processed.email)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
-        >
-          <MdEmail style={iconStyle} />
-        </a>
-      )}
-
-      {processed.facebook && (
-        <a
-          href={links.facebook(processed.facebook)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
-        >
-          <FaFacebookF style={iconStyle} />
-        </a>
-      )}
-
-      {processed.instagram && (
-        <a
-          href={links.instagram(processed.instagram)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
-        >
-          <FaInstagram style={iconStyle} />
-        </a>
-      )}
-
-      {telegramValues.map((val, idx) => (
-        <a
-          key={`telegram-${idx}`}
-          href={links.telegram(val)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
-        >
-          <FaTelegramPlane style={iconStyle} />
-        </a>
-      ))}
-
-      {processed.tiktok && (
-        <a
-          href={links.tiktok(processed.tiktok)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
-        >
-          <SiTiktok style={iconStyle} />
-        </a>
-      )}
-
-      {processed.vk && (
-        <a
-          href={links.vk(processed.vk)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
-        >
-          <FaVk style={iconStyle} />
-        </a>
-      )}
+      {elements}
     </div>
   );
 };
