@@ -791,7 +791,7 @@ const SwipeableCard = ({
           <div
             style={{
               display: 'flex',
-              alignItems: 'flex-end',
+              alignItems: 'center',
               gap: '4px',
               flexWrap: 'nowrap',
               justifyContent: 'flex-start',
