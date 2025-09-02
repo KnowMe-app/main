@@ -33,9 +33,15 @@ export const App = () => {
   // Special page for admin
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
-      if (user && user.uid === process.env.REACT_APP_USER1) {
-        setIsAdmin(true);
+      if (user) {
+        localStorage.setItem('ownerId', user.uid);
+        if (user.uid === process.env.REACT_APP_USER1) {
+          setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
+        }
       } else {
+        localStorage.removeItem('ownerId');
         setIsAdmin(false);
       }
     });

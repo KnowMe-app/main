@@ -1044,7 +1044,10 @@ const Matching = () => {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
-      if (!user) {
+      if (user) {
+        localStorage.setItem('ownerId', user.uid);
+      } else {
+        localStorage.removeItem('ownerId');
         setFavoriteUsers({});
         setDislikeUsers({});
         return;
@@ -1209,7 +1212,7 @@ const Matching = () => {
   }, [fetchChunk]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const loadFavoriteCards = async () => {
-    const owner = auth.currentUser?.uid;
+    const owner = auth.currentUser?.uid || localStorage.getItem('ownerId');
     if (!owner) return;
     setLoading(true);
     setUsers([]);
@@ -1252,7 +1255,7 @@ const Matching = () => {
   };
 
   const loadDislikeCards = async () => {
-    const owner = auth.currentUser?.uid;
+    const owner = auth.currentUser?.uid || localStorage.getItem('ownerId');
     if (!owner) return;
     setLoading(true);
 
@@ -1323,6 +1326,7 @@ const Matching = () => {
     try {
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
+      localStorage.removeItem('ownerId');
       setShowInfoModal(false);
       saveScrollPosition();
       navigate('/my-profile');
