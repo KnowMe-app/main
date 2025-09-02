@@ -11,6 +11,8 @@ import { SiTiktok } from 'react-icons/si';
 import { getCurrentValue } from '../getCurrentValue';
 import { color } from '../styles';
 
+const iconStyle = { verticalAlign: 'middle' };
+
 export const fieldContacts = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderContacts:', data);
@@ -32,12 +34,12 @@ export const fieldContacts = (data, parentKey = '') => {
   };
 
   const icons = {
-    facebook: <FaFacebookF />,
-    instagram: <FaInstagram />,
-    telegram: <FaTelegramPlane />,
-    telegramFromPhone: <FaTelegramPlane />,
-    viberFromPhone: <FaViber />,
-    whatsappFromPhone: <FaWhatsapp />,
+    facebook: <FaFacebookF style={iconStyle} />,
+    instagram: <FaInstagram style={iconStyle} />,
+    telegram: <FaTelegramPlane style={iconStyle} />,
+    telegramFromPhone: <FaTelegramPlane style={iconStyle} />,
+    viberFromPhone: <FaViber style={iconStyle} />,
+    whatsappFromPhone: <FaWhatsapp style={iconStyle} />,
   };
 
   return Object.keys(data).map(key => {
@@ -263,7 +265,7 @@ export const fieldContactsIcons = data => {
               rel="noopener noreferrer"
               style={{ color: 'inherit', textDecoration: 'none' }}
             >
-              <FaTelegramPlane />
+              <FaTelegramPlane style={iconStyle} />
             </a>
             <a
               href={links.viberFromPhone(processedVal)}
@@ -271,7 +273,7 @@ export const fieldContactsIcons = data => {
               rel="noopener noreferrer"
               style={{ color: 'inherit', textDecoration: 'none' }}
             >
-              <FaViber />
+              <FaViber style={iconStyle} />
             </a>
             <a
               href={links.whatsappFromPhone(processedVal)}
@@ -279,7 +281,7 @@ export const fieldContactsIcons = data => {
               rel="noopener noreferrer"
               style={{ color: 'inherit', textDecoration: 'none' }}
             >
-              <FaWhatsapp />
+              <FaWhatsapp style={iconStyle} />
             </a>
           </React.Fragment>
         );
@@ -292,7 +294,7 @@ export const fieldContactsIcons = data => {
           rel="noopener noreferrer"
           style={{ color: 'inherit', textDecoration: 'none' }}
         >
-          <MdEmail />
+          <MdEmail style={iconStyle} />
         </a>
       )}
 
@@ -303,7 +305,7 @@ export const fieldContactsIcons = data => {
           rel="noopener noreferrer"
           style={{ color: 'inherit', textDecoration: 'none' }}
         >
-          <FaFacebookF />
+          <FaFacebookF style={iconStyle} />
         </a>
       )}
 
@@ -314,7 +316,7 @@ export const fieldContactsIcons = data => {
           rel="noopener noreferrer"
           style={{ color: 'inherit', textDecoration: 'none' }}
         >
-          <FaInstagram />
+          <FaInstagram style={iconStyle} />
         </a>
       )}
 
@@ -326,7 +328,7 @@ export const fieldContactsIcons = data => {
           rel="noopener noreferrer"
           style={{ color: 'inherit', textDecoration: 'none' }}
         >
-          <FaTelegramPlane />
+          <FaTelegramPlane style={iconStyle} />
         </a>
       ))}
 
@@ -337,7 +339,7 @@ export const fieldContactsIcons = data => {
           rel="noopener noreferrer"
           style={{ color: 'inherit', textDecoration: 'none' }}
         >
-          <SiTiktok />
+          <SiTiktok style={iconStyle} />
         </a>
       )}
     </div>
