@@ -14,10 +14,7 @@ import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
-import {
-  normalizeCountry,
-  normalizeRegion,
-} from '../normalizeLocation';
+import { normalizeRegion } from '../normalizeLocation';
 
 const getParentBackground = element => {
   let el = element;
@@ -55,6 +52,8 @@ export const renderTopBlock = (
   setIsToastOn = () => {},
 ) => {
   if (!userData) return null;
+
+  const region = normalizeRegion(userData.region)?.replace(/\s*область$/i, '');
 
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
@@ -112,9 +111,7 @@ export const renderTopBlock = (
           })()}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          {[normalizeCountry(userData.country), normalizeRegion(userData.region)]
-            .filter(Boolean)
-            .join(', ')}
+          {region}
           {fieldContacts(userData)}
         </div>
       </div>
