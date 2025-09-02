@@ -5,6 +5,7 @@ import {
   FaTelegramPlane,
   FaViber,
   FaWhatsapp,
+  FaVk,
 } from 'react-icons/fa';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -51,14 +52,16 @@ export const fieldContacts = (data, parentKey = '') => {
     whatsappFromPhone: value => `https://wa.me/${value.replace(/\s+/g, '')}`,
   };
 
-  const icons = {
-    facebook: <FaFacebookF style={iconStyle} />,
-    instagram: <FaInstagram style={iconStyle} />,
-    telegram: <FaTelegramPlane style={iconStyle} />,
-    telegramFromPhone: <FaTelegramPlane style={iconStyle} />,
-    viberFromPhone: <FaViber style={iconStyle} />,
-    whatsappFromPhone: <FaWhatsapp style={iconStyle} />,
-  };
+const icons = {
+  facebook: <FaFacebookF style={iconStyle} />,
+  instagram: <FaInstagram style={iconStyle} />,
+  telegram: <FaTelegramPlane style={iconStyle} />,
+  telegramFromPhone: <FaTelegramPlane style={iconStyle} />,
+  viberFromPhone: <FaViber style={iconStyle} />,
+  whatsappFromPhone: <FaWhatsapp style={iconStyle} />,
+  tiktok: <SiTiktok style={iconStyle} />,
+  vk: <FaVk style={iconStyle} />,
+};
 
   return Object.keys(data).map(key => {
     const nestedKey = parentKey ? `${parentKey}.${key}` : key;
@@ -359,6 +362,17 @@ export const fieldContactsIcons = data => {
           style={{ color: 'inherit', textDecoration: 'none' }}
         >
           <SiTiktok style={iconStyle} />
+        </a>
+      )}
+
+      {processed.vk && (
+        <a
+          href={links.vk(processed.vk)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: 'inherit', textDecoration: 'none' }}
+        >
+          <FaVk style={iconStyle} />
         </a>
       )}
     </div>
