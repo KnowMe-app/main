@@ -11,7 +11,12 @@ import { SiTiktok } from 'react-icons/si';
 import { getCurrentValue } from '../getCurrentValue';
 import { color } from '../styles';
 
-const iconStyle = { verticalAlign: 'middle' };
+const iconStyle = {
+  verticalAlign: 'middle',
+  width: '12px',
+  height: '12px',
+  fontSize: '12px',
+};
 const phoneBtnStyle = {
   color: 'inherit',
   textDecoration: 'none',
@@ -21,6 +26,7 @@ const phoneBtnStyle = {
   justifyContent: 'center',
   width: '20px',
   height: '20px',
+  lineHeight: '0',
   border: `1px solid ${color.white}`,
   borderRadius: '50%',
 };
@@ -276,7 +282,7 @@ export const fieldContactsIcons = data => {
               href={links.telegramFromPhone(`+${val}`)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ ...phoneBtnStyle, marginLeft: 0 }}
+              style={{ ...phoneBtnStyle, marginLeft: 0, border: 'none' }}
             >
               <FaTelegramPlane style={iconStyle} />
             </a>
@@ -284,7 +290,7 @@ export const fieldContactsIcons = data => {
               href={links.viberFromPhone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ ...phoneBtnStyle, marginLeft: 0 }}
+              style={{ ...phoneBtnStyle, marginLeft: 0, border: 'none' }}
             >
               <FaViber style={iconStyle} />
             </a>
@@ -292,7 +298,7 @@ export const fieldContactsIcons = data => {
               href={links.whatsappFromPhone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ ...phoneBtnStyle, marginLeft: 0 }}
+              style={{ ...phoneBtnStyle, marginLeft: 0, border: 'none' }}
             >
               <FaWhatsapp style={iconStyle} />
             </a>
