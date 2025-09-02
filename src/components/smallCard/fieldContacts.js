@@ -12,6 +12,18 @@ import { getCurrentValue } from '../getCurrentValue';
 import { color } from '../styles';
 
 const iconStyle = { verticalAlign: 'middle' };
+const phoneBtnStyle = {
+  color: 'inherit',
+  textDecoration: 'none',
+  marginLeft: '8px',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '20px',
+  height: '20px',
+  border: `1px solid ${color.white}`,
+  borderRadius: '50%',
+};
 
 export const fieldContacts = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
@@ -53,9 +65,20 @@ export const fieldContacts = (data, parentKey = '') => {
     if (links[key]) {
       const label = icons[key] ? icons[key] : `${key}:`;
       return (
-        <div key={nestedKey} style={{ whiteSpace: 'normal' }}>
+        <div
+          key={nestedKey}
+          style={{
+            whiteSpace: 'normal',
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '4px',
+          }}
+        >
           {!['email', 'phone'].includes(key) && (
-            <strong style={{ marginRight: '4px' }}>{label}</strong>
+            <strong style={{ marginRight: '4px', display: 'flex', alignItems: 'center' }}>
+              {label}
+            </strong>
           )}
           {Array.isArray(value)
             ? value
@@ -67,7 +90,11 @@ export const fieldContacts = (data, parentKey = '') => {
                     return (
                       <span
                         key={`${nestedKey}-${idx}`}
-                        style={{ display: 'inline-block', marginRight: '8px' }}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          marginRight: '8px',
+                        }}
                       >
                         <a
                           href={links[key](processedVal)}
@@ -83,11 +110,7 @@ export const fieldContacts = (data, parentKey = '') => {
                               href={links.telegramFromPhone(`+${val}`)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              style={{
-                                color: 'inherit',
-                                textDecoration: 'none',
-                                marginLeft: '8px',
-                              }}
+                              style={phoneBtnStyle}
                             >
                               {icons.telegramFromPhone}
                             </a>
@@ -95,11 +118,7 @@ export const fieldContacts = (data, parentKey = '') => {
                               href={links.viberFromPhone(processedVal)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              style={{
-                                color: 'inherit',
-                                textDecoration: 'none',
-                                marginLeft: '8px',
-                              }}
+                              style={phoneBtnStyle}
                             >
                               {icons.viberFromPhone}
                             </a>
@@ -107,11 +126,7 @@ export const fieldContacts = (data, parentKey = '') => {
                               href={links.whatsappFromPhone(processedVal)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              style={{
-                                color: 'inherit',
-                                textDecoration: 'none',
-                                marginLeft: '8px',
-                              }}
+                              style={phoneBtnStyle}
                             >
                               {icons.whatsappFromPhone}
                             </a>
@@ -123,7 +138,11 @@ export const fieldContacts = (data, parentKey = '') => {
                     return (
                       <span
                         key={`${nestedKey}-${idx}`}
-                        style={{ display: 'inline-block', marginRight: '8px' }}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          marginRight: '8px',
+                        }}
                       >
                         {val}
                       </span>
@@ -135,7 +154,13 @@ export const fieldContacts = (data, parentKey = '') => {
                   const processedValue =
                     key === 'phone' ? value.replace(/\s/g, '') : value;
                   return (
-                    <span style={{ display: 'inline-block', marginRight: '8px' }}>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        marginRight: '8px',
+                      }}
+                    >
                       <a
                         href={links[key](processedValue)}
                         target="_blank"
@@ -152,11 +177,7 @@ export const fieldContacts = (data, parentKey = '') => {
                             href={links.telegramFromPhone(`+${value}`)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            style={{
-                              color: 'inherit',
-                              textDecoration: 'none',
-                              marginLeft: '8px',
-                            }}
+                            style={phoneBtnStyle}
                           >
                             {icons.telegramFromPhone}
                           </a>
@@ -164,11 +185,7 @@ export const fieldContacts = (data, parentKey = '') => {
                             href={links.viberFromPhone(processedValue)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            style={{
-                              color: 'inherit',
-                              textDecoration: 'none',
-                              marginLeft: '8px',
-                            }}
+                            style={phoneBtnStyle}
                           >
                             {icons.viberFromPhone}
                           </a>
@@ -176,11 +193,7 @@ export const fieldContacts = (data, parentKey = '') => {
                             href={links.whatsappFromPhone(processedValue)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            style={{
-                              color: 'inherit',
-                              textDecoration: 'none',
-                              marginLeft: '8px',
-                            }}
+                            style={phoneBtnStyle}
                           >
                             {icons.whatsappFromPhone}
                           </a>
@@ -263,7 +276,7 @@ export const fieldContactsIcons = data => {
               href={links.telegramFromPhone(`+${val}`)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: 'inherit', textDecoration: 'none' }}
+              style={{ ...phoneBtnStyle, marginLeft: 0 }}
             >
               <FaTelegramPlane style={iconStyle} />
             </a>
@@ -271,7 +284,7 @@ export const fieldContactsIcons = data => {
               href={links.viberFromPhone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: 'inherit', textDecoration: 'none' }}
+              style={{ ...phoneBtnStyle, marginLeft: 0 }}
             >
               <FaViber style={iconStyle} />
             </a>
@@ -279,7 +292,7 @@ export const fieldContactsIcons = data => {
               href={links.whatsappFromPhone(processedVal)}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: 'inherit', textDecoration: 'none' }}
+              style={{ ...phoneBtnStyle, marginLeft: 0 }}
             >
               <FaWhatsapp style={iconStyle} />
             </a>
