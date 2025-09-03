@@ -1062,17 +1062,14 @@ const Matching = () => {
   }, [dislikeUsers]);
 
   useEffect(() => {
-    setUsers(prev => {
-      if (viewMode === 'favorites') {
-        return prev.filter(u => favoriteUsers[u.userId]);
-      }
-      if (viewMode === 'dislikes') {
-        return prev.filter(u => dislikeUsers[u.userId]);
-      }
-      return prev.filter(
+    if (viewMode === 'favorites' || viewMode === 'dislikes') {
+      return;
+    }
+    setUsers(prev =>
+      prev.filter(
         u => !favoriteUsers[u.userId] && !dislikeUsers[u.userId]
-      );
-    });
+      )
+    );
   }, [favoriteUsers, dislikeUsers, viewMode]);
 
   const loadCommentsFor = async list => {
@@ -1276,6 +1273,7 @@ const Matching = () => {
   }, [loadInitial]);
 
   const loadFavoriteCards = async () => {
+    setViewMode('favorites');
     setLoading(true);
     setUsers([]);
     const owner = await waitForOwnerId();
@@ -1298,7 +1296,6 @@ const Matching = () => {
       await loadCommentsFor(list);
       setHasMore(false);
       setLastKey(null);
-      setViewMode('favorites');
       setLoading(false);
       return;
     }
@@ -1317,12 +1314,13 @@ const Matching = () => {
     await loadCommentsFor(list);
     setHasMore(false);
     setLastKey(null);
-    setViewMode('favorites');
     setLoading(false);
   };
 
   const loadDislikeCards = async () => {
+    setViewMode('dislikes');
     setLoading(true);
+    setUsers([]);
     const owner = await waitForOwnerId();
     if (!owner) {
       setLoading(false);
@@ -1343,7 +1341,6 @@ const Matching = () => {
       await loadCommentsFor(list);
       setHasMore(false);
       setLastKey(null);
-      setViewMode('dislikes');
       setLoading(false);
       return;
     }
@@ -1361,7 +1358,6 @@ const Matching = () => {
     await loadCommentsFor(list);
     setHasMore(false);
     setLastKey(null);
-    setViewMode('dislikes');
     setLoading(false);
   };
 
