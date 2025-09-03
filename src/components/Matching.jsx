@@ -26,6 +26,7 @@ import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
+import { fieldMaritalStatus } from './smallCard/fieldMaritalStatus';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -831,11 +832,38 @@ const renderSelectedFields = user => {
 
     value = getCurrentValue(value);
 
+    if (field.key === 'maritalStatus') {
+      const role = (user.userRole || '').toString().trim().toLowerCase();
+      if (role === 'ed' && value) {
+        const normalized = value.toString().trim().toLowerCase();
+        if (
+          ['yes', 'так', '+', 'married', 'заміжня', 'одружена'].includes(
+            normalized
+          )
+        ) {
+          value = 'Married';
+        } else if (
+          [
+            'no',
+            'ні',
+            '-',
+            'single',
+            'unmarried',
+            'незаміжня',
+            'не заміжня',
+          ].includes(normalized)
+        ) {
+          value = 'Single';
+        }
+      }
+    }
+
     if (value === undefined || value === '' || value === null) return null;
 
     return (
       <div key={field.key}>
-        <strong>{field.label}</strong> {String(value)}
+        <strong>{field.label}</strong>{' '}
+        {field.key === 'maritalStatus' ? fieldMaritalStatus(value) : String(value)}
       </div>
     );
   });
