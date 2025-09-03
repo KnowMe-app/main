@@ -99,6 +99,10 @@ const icons = {
                   try {
                     const processedVal =
                       key === 'phone' ? val.replace(/\s/g, '') : val;
+                    const displayVal =
+                      key === 'otherLink' && processedVal.length > 15
+                        ? `${processedVal.slice(0, 15)}...`
+                        : processedVal;
                     return (
                       <span
                         key={`${nestedKey}-${idx}`}
@@ -114,7 +118,7 @@ const icons = {
                           rel="noopener noreferrer"
                           style={{ color: 'inherit', textDecoration: 'none' }}
                         >
-                          {key === 'phone' ? `+${processedVal}` : processedVal}
+                          {key === 'phone' ? `+${processedVal}` : displayVal}
                         </a>
                         {key === 'phone' && (
                           <>
@@ -165,6 +169,10 @@ const icons = {
                 try {
                   const processedValue =
                     key === 'phone' ? value.replace(/\s/g, '') : value;
+                  const displayValue =
+                    key === 'otherLink' && processedValue.length > 15
+                      ? `${processedValue.slice(0, 15)}...`
+                      : processedValue;
                   return (
                     <span
                       style={{
@@ -181,7 +189,7 @@ const icons = {
                       >
                         {key === 'phone'
                           ? `+${processedValue}`
-                          : processedValue}
+                          : displayValue}
                       </a>
                       {key === 'phone' && (
                         <>
