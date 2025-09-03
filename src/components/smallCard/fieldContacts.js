@@ -6,9 +6,9 @@ import {
   FaViber,
   FaWhatsapp,
   FaVk,
-  FaPhone,
   FaGlobe,
 } from 'react-icons/fa';
+import { BsTelephone } from 'react-icons/bs';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getCurrentValue } from '../getCurrentValue';
@@ -302,7 +302,7 @@ export const fieldContactsIcons = (
           rel="noopener noreferrer"
           style={{ color: phoneAsIcon ? 'inherit' : color.black, textDecoration: 'none' }}
         >
-          {phoneAsIcon ? <FaPhone style={iconStyle} /> : `+${processedVal}`}
+          {phoneAsIcon ? <BsTelephone style={iconStyle} /> : `+${processedVal}`}
         </a>
         <a
           href={links.telegramFromPhone(`+${val}`)}
