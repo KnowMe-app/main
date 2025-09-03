@@ -736,7 +736,9 @@ const SwipeableCard = ({
                 }}
               >
                 {locationInfo}
-                {showContactsAfterCity && contacts && <Icons>{contacts}</Icons>}
+                {showContactsAfterCity && contacts && (
+                  <Icons style={{ marginLeft: '8px' }}>{contacts}</Icons>
+                )}
               </div>
             </Info>
           </ProfileSection>
@@ -930,7 +932,9 @@ const InfoCardContent = ({ user, variant }) => {
             }}
           >
             {locationInfo}
-            {showContactsAfterCity && contacts && <Icons>{contacts}</Icons>}
+            {showContactsAfterCity && contacts && (
+              <Icons style={{ marginLeft: '8px' }}>{contacts}</Icons>
+            )}
           </div>
         </Info>
       </ProfileSection>
