@@ -666,18 +666,19 @@ const SwipeableCard = ({
     .filter(Boolean)
     .map(v => String(v).trim())
     .join(' ');
-  const showContactsAfterCity = role === 'ed';
+  const showContactsAfterCity = (role || '').includes('ed');
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
   const selectedFields = renderSelectedFields(user).filter(Boolean);
-  const locationInfo = getCurrentValue(user.country)
-    ? [
-        normalizeCountry(getCurrentValue(user.country)),
-        getCurrentValue(user.city) ||
-          normalizeRegion(getCurrentValue(user.region)),
-      ]
+  const cityInfo =
+    getCurrentValue(user.city) ||
+    normalizeRegion(getCurrentValue(user.region));
+  const locationInfo = showContactsAfterCity
+    ? cityInfo || ''
+    : getCurrentValue(user.country)
+    ? [normalizeCountry(getCurrentValue(user.country)), cityInfo]
         .filter(Boolean)
         .join(', ')
-    : '';
+    : cityInfo || '';
 
   return (
     <AnimatedCard
@@ -734,15 +735,7 @@ const SwipeableCard = ({
                   justifyContent: 'flex-start',
                 }}
               >
-                {
-                  [
-                    normalizeCountry(getCurrentValue(user.country)),
-                    getCurrentValue(user.city) ||
-                      normalizeRegion(getCurrentValue(user.region)),
-                  ]
-                    .filter(Boolean)
-                    .join(', ')
-                }
+                {locationInfo}
                 {showContactsAfterCity && contacts && <Icons>{contacts}</Icons>}
               </div>
             </Info>
@@ -760,13 +753,7 @@ const SwipeableCard = ({
           {displayName}
           {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
           <br />
-          {[
-            normalizeCountry(getCurrentValue(user.country)),
-            getCurrentValue(user.city) ||
-              normalizeRegion(getCurrentValue(user.region)),
-          ]
-            .filter(Boolean)
-            .join(', ')}
+          {locationInfo}
         </BasicInfo>
       )}
       {(current === 'main' || (!photo && current === 'info')) && isAdmin && (
@@ -881,18 +868,19 @@ const InfoCardContent = ({ user, variant }) => {
     .toString()
     .trim()
     .toLowerCase();
-  const showContactsAfterCity = role === 'ed';
+  const showContactsAfterCity = role.includes('ed');
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
   const selectedFields = renderSelectedFields(user).filter(Boolean);
-  const locationInfo = getCurrentValue(user.country)
-    ? [
-        normalizeCountry(getCurrentValue(user.country)),
-        getCurrentValue(user.city) ||
-          normalizeRegion(getCurrentValue(user.region)),
-      ]
+  const cityInfo =
+    getCurrentValue(user.city) ||
+    normalizeRegion(getCurrentValue(user.region));
+  const locationInfo = showContactsAfterCity
+    ? cityInfo || ''
+    : getCurrentValue(user.country)
+    ? [normalizeCountry(getCurrentValue(user.country)), cityInfo]
         .filter(Boolean)
         .join(', ')
-    : '';
+    : cityInfo || '';
 
   if (variant === 'description') {
     return (
