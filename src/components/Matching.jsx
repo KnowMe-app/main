@@ -171,6 +171,7 @@ const CommentInput = styled.textarea`
   margin-left: auto;
   margin-right: auto;
   padding: 0;
+  padding-right: 40px;
   resize: none;
   overflow: hidden;
   min-height: 16px;
@@ -178,6 +179,11 @@ const CommentInput = styled.textarea`
   border: ${props => (props.plain ? 'none' : `1px solid ${color.gray3}`)};
   border-radius: ${props => (props.plain ? '0' : '8px')};
   outline: ${props => (props.plain ? 'none' : 'auto')};
+`;
+
+const CommentBox = styled.div`
+  position: relative;
+  width: 100%;
 `;
 
 const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) => {
@@ -505,7 +511,7 @@ const AdminToggle = styled.div`
 const Id = styled.div`
   position: absolute;
   right: 10px;
-  bottom: 10px;
+  top: 0;
   z-index: 2;
   font-size: 12px;
   color: ${color.gray3};
@@ -1605,31 +1611,33 @@ const Matching = () => {
                         handleRemove={handleRemove}
                         togglePublish={togglePublish}
                       />
-                      <ResizableCommentInput
-                        plain
-                        placeholder="Мій коментар / My comment"
-                        value={comments[user.userId] || ''}
-                        onClick={e => e.stopPropagation()}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setComments(prev => ({ ...prev, [user.userId]: val }));
-                        }}
-                      onBlur={() => {
-                          const owner = auth.currentUser?.uid;
-                          if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
-                        }}
-                      />
-                      {isAdmin && (
-                        <Id
-                          onClick={() => {
-                            saveScrollPosition();
-                            navigate(`/edit/${user.userId}`, { state: user });
+                      <CommentBox>
+                        <ResizableCommentInput
+                          plain
+                          placeholder="Мій коментар / My comment"
+                          value={comments[user.userId] || ''}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setComments(prev => ({ ...prev, [user.userId]: val }));
                           }}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          ID: {user.userId ? user.userId.slice(0, 5) : ''}
-                        </Id>
-                      )}
+                          onBlur={() => {
+                            const owner = auth.currentUser?.uid;
+                            if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
+                          }}
+                        />
+                        {isAdmin && (
+                          <Id
+                            onClick={() => {
+                              saveScrollPosition();
+                              navigate(`/edit/${user.userId}`, { state: user });
+                            }}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            ID: {user.userId ? user.userId.slice(0, 5) : ''}
+                          </Id>
+                        )}
+                      </CommentBox>
                     </CardWrapper>
                   </CardContainer>
                 );
