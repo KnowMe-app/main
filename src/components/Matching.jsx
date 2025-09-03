@@ -243,12 +243,74 @@ const loadingWave = keyframes`
   }
 `;
 
-const SkeletonCard = styled(Card)`
+const SkeletonCardInner = styled.div`
+  position: relative;
+  width: 100%;
   height: ${({ $small }) => ($small ? '30vh' : '50vh')};
-  background: linear-gradient(90deg, ${color.paleAccent2} 25%, ${color.paleAccent5} 50%, ${color.paleAccent2} 75%);
-  background-size: 200% 100%;
-  animation: ${loadingWave} 1.5s infinite;
+  overflow: hidden;
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 20%;
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.5) 100%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
 `;
+
+const SkeletonPhoto = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='30' r='20' fill='%23ccc'/%3E%3Crect x='15' y='55' width='70' height='35' fill='%23ccc'/%3E%3C/svg%3E");
+  background-size: cover;
+  background-position: center;
+  filter: blur(20px);
+`;
+
+const SkeletonInfo = styled.div`
+  position: absolute;
+  bottom: 55px;
+  left: 10px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+`;
+
+const SkeletonLine = styled.div`
+  height: 12px;
+  background: ${color.paleAccent3};
+  opacity: 0.7;
+  border-radius: 4px;
+  width: ${({ $w }) => $w || '80%'};
+  animation: ${loadingWave} 1.5s infinite;
+  background-size: 200% 100%;
+  background-image: linear-gradient(90deg, ${color.paleAccent2} 25%, ${color.paleAccent5} 50%, ${color.paleAccent2} 75%);
+`;
+
+const MatchingSkeleton = ({ $small }) => (
+  <CardWrapper data-card data-skeleton>
+    <SkeletonCardInner $small={$small}>
+      <SkeletonPhoto />
+      <SkeletonInfo>
+        <SkeletonLine $w="60%" />
+        <SkeletonLine $w="40%" />
+        <SkeletonLine $w="50%" />
+      </SkeletonInfo>
+    </SkeletonCardInner>
+  </CardWrapper>
+);
 
 const TopActions = styled.div`
   position: absolute;
@@ -1644,7 +1706,7 @@ const Matching = () => {
               })}
           {loading &&
             Array.from({ length: 4 }).map((_, idx) => (
-              <SkeletonCard data-card data-skeleton key={`skeleton-${idx}`} />
+              <MatchingSkeleton key={`skeleton-${idx}`} />
             ))}
           {hasMore && !loading && (
             <LoadMoreButton onClick={loadMore}>
