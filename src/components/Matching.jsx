@@ -723,32 +723,34 @@ const SwipeableCard = ({
           <ProfileSection>
             <Info>
               <Title>{getRoleTitle(user)}</Title>
-              <DonorName>
-                {displayName}
-                {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
-              </DonorName>
-              <br />
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  flexWrap: 'nowrap',
-                  justifyContent: 'flex-start',
-                }}
-              >
-                {locationInfo}
-              </div>
-            </Info>
-          </ProfileSection>
-          {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
-          {contacts && (
-            <Contact $withBorder={selectedFields.length > 0}>
-              <Icons>{contacts}</Icons>
-            </Contact>
-          )}
-        </InfoSlide>
+          <DonorName>
+            {displayName}
+            {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+          </DonorName>
+          <br />
+          <div
+            style={{
+              display: 'flex',
+              alignItems: isEggDonor ? 'flex-start' : 'center',
+              gap: '4px',
+              flexWrap: 'nowrap',
+              justifyContent: 'flex-start',
+              flexDirection: isEggDonor ? 'column' : 'row',
+            }}
+          >
+            <span>{locationInfo}</span>
+            {isEggDonor && contacts && <Icons>{contacts}</Icons>}
+          </div>
+        </Info>
+      </ProfileSection>
+      {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
+      {!isEggDonor && contacts && (
+        <Contact $withBorder={selectedFields.length > 0}>
+          <Icons>{contacts}</Icons>
+        </Contact>
       )}
+    </InfoSlide>
+  )}
       {current === 'main' && role !== 'ag' && (
         <BasicInfo>
           {displayName}
@@ -926,18 +928,20 @@ const InfoCardContent = ({ user, variant }) => {
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
+              alignItems: isEggDonor ? 'flex-start' : 'center',
               gap: '4px',
               flexWrap: 'nowrap',
               justifyContent: 'flex-start',
+              flexDirection: isEggDonor ? 'column' : 'row',
             }}
           >
-            {locationInfo}
+            <span>{locationInfo}</span>
+            {isEggDonor && contacts && <Icons>{contacts}</Icons>}
           </div>
         </Info>
       </ProfileSection>
       {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
-      {contacts && (
+      {!isEggDonor && contacts && (
         <Contact $withBorder={selectedFields.length > 0}>
           <Icons>{contacts}</Icons>
         </Contact>
