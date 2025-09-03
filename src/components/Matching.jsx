@@ -175,10 +175,6 @@ const CommentInput = styled.textarea`
   overflow: hidden;
   min-height: 16px;
   line-height: 16px;
-  text-align: center;
-  &::placeholder {
-    text-align: center;
-  }
   border: ${props => (props.plain ? 'none' : `1px solid ${color.gray3}`)};
   border-radius: ${props => (props.plain ? '0' : '8px')};
   outline: ${props => (props.plain ? 'none' : 'auto')};
