@@ -101,7 +101,8 @@ export const renderTopBlock = (
         <div style={{ whiteSpace: 'pre-wrap', display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
           {(() => {
             const parts = [];
-            if (userData.maritalStatus) parts.push(fieldMaritalStatus(userData.maritalStatus));
+            if (userData.maritalStatus)
+              parts.push(fieldMaritalStatus(userData.maritalStatus, userData.userRole));
             if (userData.blood) parts.push(fieldBlood(userData.blood));
             if (userData.height) parts.push(userData.height);
             if (userData.height && userData.weight) parts.push('/');
