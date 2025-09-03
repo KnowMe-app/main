@@ -168,12 +168,10 @@ const CommentInput = styled.textarea`
   margin: 0;
   display: block;
   box-sizing: border-box;
-  margin-left: auto;
-  margin-right: auto;
-  padding: 0;
-  padding-right: 40px;
+  padding: 0 40px 0 0;
   resize: none;
   overflow: hidden;
+  height: 16px;
   min-height: 16px;
   line-height: 16px;
   border: ${props => (props.plain ? 'none' : `1px solid ${color.gray3}`)};
@@ -193,6 +191,7 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
   return (
     <CommentInput
       {...rest}
+      rows={1}
       ref={ref}
       value={value}
       onClick={onClick}
