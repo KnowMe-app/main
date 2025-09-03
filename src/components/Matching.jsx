@@ -666,19 +666,21 @@ const SwipeableCard = ({
     .filter(Boolean)
     .map(v => String(v).trim())
     .join(' ');
-  const showContactsAfterCity = (role || '').includes('ed');
+  const isEggDonor = (role || '').includes('ed');
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
   const selectedFields = renderSelectedFields(user).filter(Boolean);
-  const cityInfo =
-    getCurrentValue(user.city) ||
-    normalizeRegion(getCurrentValue(user.region));
-  const locationInfo = showContactsAfterCity
-    ? cityInfo || ''
+  const regionInfo = normalizeRegion(getCurrentValue(user.region));
+  const cityInfo = getCurrentValue(user.city);
+  const locationInfo = isEggDonor
+    ? regionInfo || ''
     : getCurrentValue(user.country)
-    ? [normalizeCountry(getCurrentValue(user.country)), cityInfo]
+    ? [
+        normalizeCountry(getCurrentValue(user.country)),
+        cityInfo || regionInfo,
+      ]
         .filter(Boolean)
         .join(', ')
-    : cityInfo || '';
+    : cityInfo || regionInfo;
 
   return (
     <AnimatedCard
@@ -736,12 +738,11 @@ const SwipeableCard = ({
                 }}
               >
                 {locationInfo}
-                {showContactsAfterCity && contacts && <Icons>{contacts}</Icons>}
               </div>
             </Info>
           </ProfileSection>
           {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
-          {!showContactsAfterCity && contacts && (
+          {contacts && (
             <Contact $withBorder={selectedFields.length > 0}>
               <Icons>{contacts}</Icons>
             </Contact>
@@ -868,19 +869,21 @@ const InfoCardContent = ({ user, variant }) => {
     .toString()
     .trim()
     .toLowerCase();
-  const showContactsAfterCity = role.includes('ed');
+  const isEggDonor = role.includes('ed');
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
   const selectedFields = renderSelectedFields(user).filter(Boolean);
-  const cityInfo =
-    getCurrentValue(user.city) ||
-    normalizeRegion(getCurrentValue(user.region));
-  const locationInfo = showContactsAfterCity
-    ? cityInfo || ''
+  const regionInfo = normalizeRegion(getCurrentValue(user.region));
+  const cityInfo = getCurrentValue(user.city);
+  const locationInfo = isEggDonor
+    ? regionInfo || ''
     : getCurrentValue(user.country)
-    ? [normalizeCountry(getCurrentValue(user.country)), cityInfo]
+    ? [
+        normalizeCountry(getCurrentValue(user.country)),
+        cityInfo || regionInfo,
+      ]
         .filter(Boolean)
         .join(', ')
-    : cityInfo || '';
+    : cityInfo || regionInfo;
 
   if (variant === 'description') {
     return (
@@ -930,12 +933,11 @@ const InfoCardContent = ({ user, variant }) => {
             }}
           >
             {locationInfo}
-            {showContactsAfterCity && contacts && <Icons>{contacts}</Icons>}
           </div>
         </Info>
       </ProfileSection>
       {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
-      {!showContactsAfterCity && contacts && (
+      {contacts && (
         <Contact $withBorder={selectedFields.length > 0}>
           <Icons>{contacts}</Icons>
         </Contact>
