@@ -1,17 +1,17 @@
 import { AttentionDiv } from 'components/styles';
 
-export const fieldMaritalStatus = (maritalStatus, userRole) => {
+export const fieldMaritalStatus = maritalStatus => {
   let text;
   switch (maritalStatus) {
     case 'Yes':
     case 'Так':
     case '+':
-      text = userRole === 'ed' ? 'Married' : 'Заміжня';
+      text = 'Заміжня';
       break;
     case 'No':
     case 'Ні':
     case '-':
-      text = userRole === 'ed' ? 'Single' : 'Незаміжня';
+      text = 'Незаміжня';
       break;
     default:
       text = maritalStatus || '';
