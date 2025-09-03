@@ -49,7 +49,7 @@ export const renderTopBlock = (
   currentFilter,
   isDateInRange,
   isToastOn = false,
-  setIsToastOn = () => {},
+  setIsToastOn = () => {}
 ) => {
   if (!userData) return null;
 
@@ -58,15 +58,16 @@ export const renderTopBlock = (
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
       {btnDel(userData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
-      {!isFromListOfUsers && (
-        <BtnToast isToastOn={isToastOn} setIsToastOn={setIsToastOn} />
-      )}
+      {!isFromListOfUsers && <BtnToast isToastOn={isToastOn} setIsToastOn={setIsToastOn} />}
       {btnExport(userData)}
       <div>
         {userData.lastAction && formatDateToDisplay(userData.lastAction)}
         {userData.lastAction && ', '}
         {userData.userId}
-        {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') &&
+        {userData.userRole !== 'ag' &&
+          userData.userRole !== 'ip' &&
+          userData.role !== 'ag' &&
+          userData.role !== 'ip' &&
           fieldGetInTouch(
             userData,
             setUsers,
@@ -77,10 +78,13 @@ export const renderTopBlock = (
             setFavoriteUsers,
             dislikeUsers,
             setDislikeUsers,
-            isToastOn,
+            isToastOn
           )}
         {fieldRole(userData, setUsers, setState, isToastOn)}
-        {(userData.userRole !== 'ag' && userData.userRole !== 'ip' && userData.role !== 'ag' && userData.role !== 'ip') &&
+        {userData.userRole !== 'ag' &&
+          userData.userRole !== 'ip' &&
+          userData.role !== 'ag' &&
+          userData.role !== 'ip' &&
           fieldLastCycle(userData, setUsers, setState, isToastOn)}
         {fieldDeliveryInfo(setUsers, setState, userData)}
         {userData.birth && `${userData.birth} - `}
@@ -91,9 +95,20 @@ export const renderTopBlock = (
         <strong>
           {(() => {
             const nameParts = [];
-            if (userData.surname) nameParts.push(userData.surname);
+
+            if (Array.isArray(userData.surname)) {
+              if (userData.surname.length === 2) {
+                nameParts.push(`${userData.surname[1]} (${userData.surname[0]})`);
+              } else if (userData.surname.length > 0) {
+                nameParts.push(userData.surname.join(' '));
+              }
+            } else if (userData.surname) {
+              nameParts.push(userData.surname);
+            }
+
             if (userData.name) nameParts.push(userData.name);
             if (userData.fathersname) nameParts.push(userData.fathersname);
+
             return nameParts.length > 0 ? `${nameParts.join(' ')}` : '';
           })()}
         </strong>
