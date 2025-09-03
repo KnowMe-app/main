@@ -7,6 +7,7 @@ import {
   FaWhatsapp,
   FaVk,
   FaPhone,
+  FaGlobe,
 } from 'react-icons/fa';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -62,6 +63,7 @@ const icons = {
   whatsappFromPhone: <FaWhatsapp style={iconStyle} />,
   tiktok: <SiTiktok style={iconStyle} />,
   vk: <FaVk style={iconStyle} />,
+  otherLink: <FaGlobe style={iconStyle} />,
 };
 
   return Object.keys(data).map(key => {
@@ -412,6 +414,25 @@ export const fieldContactsIcons = (
         <FaVk style={iconStyle} />
       </a>
     );
+  }
+
+  if (processed.otherLink) {
+    const others = Array.isArray(processed.otherLink)
+      ? processed.otherLink.filter(v => v)
+      : [processed.otherLink];
+    others.forEach((val, idx) => {
+      elements.push(
+        <a
+          key={`otherLink-${idx}`}
+          href={links.otherLink(val)}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: 'inherit', textDecoration: 'none' }}
+        >
+          <FaGlobe style={iconStyle} />
+        </a>
+      );
+    });
   }
 
   if (elements.length === 0) return null;
