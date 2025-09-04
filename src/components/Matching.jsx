@@ -55,11 +55,14 @@ import {
   getDislikedCards,
 } from '../utils/dislikesStorage';
 
-const isValidId = id => typeof id === 'string' && id.length > 20;
+const isValidId = id => typeof id === 'string' && id.length >= 20;
 const filterLongIds = obj =>
   Object.fromEntries(Object.entries(obj || {}).filter(([id]) => isValidId(id)));
 const filterLongUsers = list =>
   list.filter(u => isValidId(u?.id || u?.userId));
+
+const compareUsersByLastLogin2 = (a = {}, b = {}) =>
+  (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
 
 const Container = styled.div`
   display: flex;
@@ -1199,14 +1202,16 @@ const Matching = () => {
       const disRef = refDb(database, `multiData/dislikes/${user.uid}`);
 
         const unsubFav = onValue(favRef, snap => {
-          const data = snap.exists() ? filterLongIds(snap.val()) : {};
+          const raw = snap.exists() ? snap.val() : {};
+          const data = filterLongIds(raw);
           setFavoriteUsers(data);
-          syncFavorites(snap.val());
+          syncFavorites(data);
         });
         const unsubDis = onValue(disRef, snap => {
-          const data = snap.exists() ? filterLongIds(snap.val()) : {};
+          const raw = snap.exists() ? snap.val() : {};
+          const data = filterLongIds(raw);
           setDislikeUsers(data);
-          syncDislikes(snap.val());
+          syncDislikes(data);
         });
 
       return () => {
@@ -1311,6 +1316,7 @@ const Matching = () => {
         );
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
         setUsers(filteredCached);
+        setIdsForQuery('default', filteredCached.map(u => u.userId));
         await loadCommentsFor(filteredCached);
         if (viewModeRef.current !== startMode) return;
         setLastKey(cached.lastKey);
@@ -1347,6 +1353,7 @@ const Matching = () => {
           lastKey: res.lastKey,
           hasMore: res.hasMore,
         });
+        setIdsForQuery('default', result.map(u => u.userId));
         return result;
       });
       await loadCommentsFor(res.users);
@@ -1376,15 +1383,15 @@ const Matching = () => {
       return;
     }
 
-      const localIds = getIdsByQuery('favorite').filter(isValidId);
-      if (localIds.length > 0) {
-        const localFav = filterLongIds(getFavorites());
-        const favMap = Object.fromEntries(Object.keys(localFav).map(id => [id, true]));
-        setFavoriteUsers(favMap);
-        setFavoriteIds(favMap);
-        const list = filterLongUsers(
-          await getFavoriteCards(id => fetchUserById(id))
-        );
+    const localIds = getIdsByQuery('favorite').filter(isValidId);
+    if (localIds.length > 0) {
+      const favMap = filterLongIds(getFavorites());
+      setFavoriteUsers(favMap);
+      setFavoriteIds(favMap);
+      syncFavorites(favMap);
+      const list = filterLongUsers(
+        await getFavoriteCards(id => fetchUserById(id))
+      ).sort(compareUsersByLastLogin2);
       loadedIdsRef.current = new Set(list.map(u => u.id));
       setUsers(list);
       await loadCommentsFor(list);
@@ -1394,15 +1401,16 @@ const Matching = () => {
       return;
     }
 
-      const favUsers = filterLongIds(await fetchFavoriteUsersData(owner));
-      const favMap = Object.fromEntries(Object.keys(favUsers).map(id => [id, true]));
-      syncFavorites(favMap);
-      setFavoriteUsers(favMap);
-      setFavoriteIds(favMap);
-      cacheFavoriteUsers(favUsers);
-      const list = filterLongUsers(
-        await getFavoriteCards(id => fetchUserById(id))
-      );
+    const favUsers = filterLongIds(await fetchFavoriteUsersData(owner));
+    const favMap = Object.fromEntries(Object.keys(favUsers).map(id => [id, true]));
+    syncFavorites(favMap);
+    setFavoriteUsers(favMap);
+    setFavoriteIds(favMap);
+    cacheFavoriteUsers(favUsers);
+    setIdsForQuery('favorite', Object.keys(favMap));
+    const list = filterLongUsers(
+      await getFavoriteCards(id => fetchUserById(id))
+    ).sort(compareUsersByLastLogin2);
     loadedIdsRef.current = new Set(list.map(u => u.id));
     setUsers(list);
     await loadCommentsFor(list);
@@ -1421,15 +1429,15 @@ const Matching = () => {
       return;
     }
 
-      const localIds = getIdsByQuery('dislike').filter(isValidId);
-      if (localIds.length > 0) {
-        const localDis = filterLongIds(getDislikes());
-        const disMap = Object.fromEntries(Object.keys(localDis).map(id => [id, true]));
+    const localIds = getIdsByQuery('dislike').filter(isValidId);
+    if (localIds.length > 0) {
+      const localDis = filterLongIds(getDislikes());
+      const disMap = Object.fromEntries(Object.keys(localDis).map(id => [id, true]));
       setDislikeUsers(disMap);
       setIdsForQuery('dislike', Object.keys(disMap));
-        const list = filterLongUsers(
-          await getDislikedCards(id => fetchUserById(id))
-        );
+      const list = filterLongUsers(
+        await getDislikedCards(id => fetchUserById(id))
+      ).sort(compareUsersByLastLogin2);
       loadedIdsRef.current = new Set(list.map(u => u.id));
       setUsers(list);
       await loadCommentsFor(list);
@@ -1439,14 +1447,15 @@ const Matching = () => {
       return;
     }
 
-      const loaded = filterLongIds(await fetchDislikeUsersData(owner));
-      const disMap = Object.fromEntries(Object.keys(loaded).map(id => [id, true]));
-      cacheDislikedUsers(loaded);
-      syncDislikes(disMap);
-      setDislikeUsers(disMap);
-      const list = filterLongUsers(
-        await getDislikedCards(id => fetchUserById(id))
-      );
+    const loaded = filterLongIds(await fetchDislikeUsersData(owner));
+    const disMap = Object.fromEntries(Object.keys(loaded).map(id => [id, true]));
+    cacheDislikedUsers(loaded);
+    syncDislikes(disMap);
+    setDislikeUsers(disMap);
+    setIdsForQuery('dislike', Object.keys(disMap));
+    const list = filterLongUsers(
+      await getDislikedCards(id => fetchUserById(id))
+    ).sort(compareUsersByLastLogin2);
     loadedIdsRef.current = new Set(list.map(u => u.id));
     setUsers(list);
     await loadCommentsFor(list);
@@ -1532,6 +1541,7 @@ const Matching = () => {
         unique.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
         saveCache(cacheKey, { users: result, lastKey: res.lastKey, hasMore: res.hasMore });
+        setIdsForQuery('default', result.map(u => u.userId));
         return result;
       });
       await loadCommentsFor(unique);
