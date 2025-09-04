@@ -26,7 +26,6 @@ import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import { fieldContactsIcons } from './smallCard/fieldContacts';
-import { fieldMaritalStatus } from './smallCard/fieldMaritalStatus';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -924,7 +923,7 @@ const renderSelectedFields = user => {
     return (
       <div key={field.key}>
         <strong>{field.label}</strong>{' '}
-        {field.key === 'maritalStatus' ? fieldMaritalStatus(value) : String(value)}
+        {String(value)}
       </div>
     );
   });
