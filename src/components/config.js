@@ -327,9 +327,12 @@ export const setUserComment = async (commentId, text) => {
     if (!user) {
       throw new Error('User not authenticated');
     }
+    if (!commentId || typeof text !== 'string') {
+      throw new Error('cardId і text обовʼязкові');
+    }
     await set(
       ref2(database, `multiData/comments/${user.uid}/${commentId}`),
-      { cardId: commentId, text }
+      { cardId: commentId, text, authorId: user.uid }
     );
   } catch (error) {
     console.error('Error setting comment:', error);
