@@ -339,6 +339,43 @@ export const fetchUserComment = async (ownerId, userId) => {
   }
 };
 
+export const fetchUserComments = async (ownerId, userIds = []) => {
+  try {
+    const snap = await get(ref2(database, `multiData/comments/${ownerId}`));
+    const all = snap.exists() ? snap.val() : {};
+    const result = {};
+    userIds.forEach(id => {
+      result[id] = all[id] || '';
+    });
+    return result;
+  } catch (error) {
+    console.error('Error fetching comments:', error);
+    return {};
+  }
+};
+
+export const fetchUsersByIds = async ids => {
+  try {
+    const [newUsersSnap, usersSnap] = await Promise.all([
+      get(ref2(database, 'newUsers')),
+      get(ref2(database, 'users')),
+    ]);
+    const newUsers = newUsersSnap.exists() ? newUsersSnap.val() : {};
+    const users = usersSnap.exists() ? usersSnap.val() : {};
+    const result = {};
+    ids.forEach(id => {
+      const data = { userId: id, ...(newUsers[id] || {}), ...(users[id] || {}) };
+      if (Object.keys(data).length > 1) {
+        result[id] = data;
+      }
+    });
+    return result;
+  } catch (error) {
+    console.error('Error fetching users by ids:', error);
+    return {};
+  }
+};
+
 const addUserFromUsers = async (userId, users) => {
   const userSnap = await get(ref2(database, `users/${userId}`));
   const newUserSnap = await get(ref2(database, `newUsers/${userId}`));

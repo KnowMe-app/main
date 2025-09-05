@@ -12,8 +12,9 @@ import {
   fetchDislikeUsers,
   filterMain,
   searchUsersOnly,
-  fetchUserComment,
+  fetchUserComments,
   setUserComment,
+  fetchUsersByIds,
   database,
   auth,
   updateDataInNewUsersRTDB,
@@ -54,6 +55,11 @@ import {
   getDislikes,
   getDislikedCards,
 } from '../utils/dislikesStorage';
+import {
+  loadComments,
+  saveComments,
+  setLocalComment,
+} from '../utils/commentsStorage';
 
 const isValidId = id => typeof id === 'string' && id.length >= 20;
 const filterLongIds = obj =>
@@ -1172,14 +1178,33 @@ const Matching = () => {
   const loadCommentsFor = async list => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
-    const results = await Promise.all(list.map(u => fetchUserComment(owner, u.userId)));
-    setComments(prev => {
-      const copy = { ...prev };
-      list.forEach((u, idx) => {
-        copy[u.userId] = results[idx] || '';
-      });
-      return copy;
+    const ids = list.map(u => u.userId);
+    const cache = loadComments();
+    const needFetch = [];
+    const commentsMap = {};
+    ids.forEach(id => {
+      if (cache[id]) {
+        commentsMap[id] = cache[id].text;
+      } else {
+        needFetch.push(id);
+      }
     });
+    let fetched = {};
+    if (needFetch.length) {
+      fetched = await fetchUserComments(owner, needFetch);
+    }
+    const newStore = {};
+    ids.forEach(id => {
+      const text = fetched[id] ?? commentsMap[id] ?? '';
+      const stored = cache[id];
+      newStore[id] = {
+        text,
+        updatedAt: stored ? stored.updatedAt : Date.now(),
+      };
+      commentsMap[id] = text;
+    });
+    saveComments(newStore);
+    setComments(prev => ({ ...prev, ...commentsMap }));
   };
 
   useEffect(() => {
@@ -1249,10 +1274,9 @@ const Matching = () => {
       const excluded = res.users.length - filtered.length;
       const hasMore = filtered.length > limit || res.hasMore;
       const slice = filtered.slice(0, limit);
-      const enrichedSlice = await Promise.all(
-        slice.map(user => fetchUserById(user.userId))
-      );
-      const validSlice = enrichedSlice.filter(Boolean);
+      const ids = slice.map(user => user.userId);
+      const enrichedMap = await fetchUsersByIds(ids);
+      const validSlice = ids.map(id => enrichedMap[id]).filter(Boolean);
       if (onPart) onPart(validSlice);
 
       return {
@@ -1721,7 +1745,11 @@ const Matching = () => {
                           }}
                           onBlur={() => {
                             const owner = auth.currentUser?.uid;
-                            if (owner) setUserComment(owner, user.userId, comments[user.userId] || '');
+                            if (owner) {
+                              const text = comments[user.userId] || '';
+                              setUserComment(owner, user.userId, text);
+                              setLocalComment(user.userId, text);
+                            }
                           }}
                         />
                         {isAdmin && (
