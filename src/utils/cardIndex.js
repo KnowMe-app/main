@@ -1,6 +1,8 @@
+import { CACHE_TTL_MS } from './cacheConstants';
+
 export const CARDS_KEY = 'cards';
 export const QUERIES_KEY = 'queries';
-export const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+export const TTL_MS = CACHE_TTL_MS;
 
 const loadJson = key => {
   try {

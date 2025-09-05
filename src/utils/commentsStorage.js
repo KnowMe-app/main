@@ -1,5 +1,7 @@
+import { CACHE_TTL_MS } from './cacheConstants';
+
 const COMMENTS_KEY = 'commentsCache';
-const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const TTL_MS = CACHE_TTL_MS;
 
 export const loadComments = () => {
   try {
