@@ -341,11 +341,15 @@ export const fetchUserComment = async (ownerId, userId) => {
 
 export const fetchUserComments = async (ownerId, userIds = []) => {
   try {
-    const snap = await get(ref2(database, `multiData/comments/${ownerId}`));
-    const all = snap.exists() ? snap.val() : {};
+    const snaps = await Promise.all(
+      userIds.map(id =>
+        get(ref2(database, `multiData/comments/${ownerId}/${id}`))
+      )
+    );
     const result = {};
-    userIds.forEach(id => {
-      result[id] = all[id] || '';
+    snaps.forEach((snap, idx) => {
+      result[userIds[idx]] = snap.exists() ? snap.val() : '';
+
     });
     return result;
   } catch (error) {
