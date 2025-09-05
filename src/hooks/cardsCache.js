@@ -1,4 +1,6 @@
-const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+import { CACHE_TTL_MS } from '../utils/cacheConstants';
+
+const TTL_MS = CACHE_TTL_MS;
 
 // Builds a cache key for cards list depending on mode and optional search term
 export const getCacheKey = (mode, term) =>

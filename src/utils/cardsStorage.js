@@ -45,33 +45,37 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
 export const getCardsByList = async (listKey, remoteFetch) => {
   const cards = loadCards();
   const ids = getIdsByQuery(listKey);
-  const result = [];
   const freshIds = [];
+  const result = [];
 
-  for (const id of ids) {
-    let card = cards[id];
-    let isValid = true;
-    if (!card || Date.now() - card.updatedAt > TTL_MS) {
-      if (typeof remoteFetch === 'function') {
-        try {
-          const fresh = await remoteFetch(id);
-          if (!fresh) {
-            isValid = false;
-          } else {
-            card = { ...fresh, id, updatedAt: Date.now() };
-            cards[id] = card;
-          }
-        } catch {
-          isValid = false;
-        }
-      } else {
-        isValid = false;
-      }
-    }
-    if (isValid && card) {
+  const staleIds = [];
+  ids.forEach(id => {
+    const card = cards[id];
+    if (card && Date.now() - card.updatedAt <= TTL_MS) {
       result.push(card);
       freshIds.push(id);
+    } else {
+      staleIds.push(id);
     }
+  });
+
+  if (staleIds.length > 0 && typeof remoteFetch === 'function') {
+    const fetched = await Promise.all(
+      staleIds.map(id =>
+        remoteFetch(id)
+          .then(res => [id, res])
+          .catch(() => [id, null])
+      )
+    );
+
+    fetched.forEach(([id, fresh]) => {
+      if (fresh) {
+        const card = { ...fresh, id, updatedAt: Date.now() };
+        cards[id] = card;
+        result.push(card);
+        freshIds.push(id);
+      }
+    });
   }
 
   saveCards(cards);
