@@ -1744,10 +1744,9 @@ const Matching = () => {
                             setComments(prev => ({ ...prev, [user.userId]: val }));
                           }}
                           onBlur={() => {
-                            const owner = auth.currentUser?.uid;
-                            if (owner) {
+                            if (auth.currentUser) {
                               const text = comments[user.userId] || '';
-                              setUserComment(owner, user.userId, text);
+                              setUserComment(user.userId, text);
                               setLocalComment(user.userId, text);
                             }
                           }}
