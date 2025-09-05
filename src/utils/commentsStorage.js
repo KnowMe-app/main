@@ -26,9 +26,9 @@ export const saveComments = comments => {
   }
 };
 
-export const setLocalComment = (id, text) => {
+export const setLocalComment = (id, text, updatedAt = Date.now()) => {
   const comments = loadComments();
-  comments[id] = { text, updatedAt: Date.now() };
+  comments[id] = { text, updatedAt };
   saveComments(comments);
 };
 
