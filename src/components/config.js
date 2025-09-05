@@ -321,9 +321,16 @@ export const fetchDislikeUsersData = async ownerId => {
   }
 };
 
-export const setUserComment = async (ownerId, userId, comment) => {
+export const setUserComment = async (commentId, text) => {
   try {
-    await set(ref2(database, `multiData/comments/${ownerId}/${userId}`), comment);
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    await set(
+      ref2(database, `multiData/comments/${user.uid}/${commentId}`),
+      { cardId: commentId, text }
+    );
   } catch (error) {
     console.error('Error setting comment:', error);
   }
@@ -332,7 +339,7 @@ export const setUserComment = async (ownerId, userId, comment) => {
 export const fetchUserComment = async (ownerId, userId) => {
   try {
     const snap = await get(ref2(database, `multiData/comments/${ownerId}/${userId}`));
-    return snap.exists() ? snap.val() : '';
+    return snap.exists() ? snap.val().text : '';
   } catch (error) {
     console.error('Error fetching comment:', error);
     return '';
@@ -348,8 +355,7 @@ export const fetchUserComments = async (ownerId, userIds = []) => {
     );
     const result = {};
     snaps.forEach((snap, idx) => {
-      result[userIds[idx]] = snap.exists() ? snap.val() : '';
-
+      result[userIds[idx]] = snap.exists() ? snap.val().text : '';
     });
     return result;
   } catch (error) {
