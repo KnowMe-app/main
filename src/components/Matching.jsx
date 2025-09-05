@@ -59,7 +59,6 @@ import {
   loadComments,
   saveComments,
   setLocalComment,
-  pruneComments,
 } from '../utils/commentsStorage';
 
 const isValidId = id => typeof id === 'string' && id.length >= 20;
@@ -1180,7 +1179,6 @@ const Matching = () => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
     const ids = list.map(u => u.userId);
-    pruneComments(ids);
     const cache = loadComments();
     const needFetch = [];
     const commentsMap = {};

@@ -349,6 +349,7 @@ export const fetchUserComments = async (ownerId, userIds = []) => {
     const result = {};
     snaps.forEach((snap, idx) => {
       result[userIds[idx]] = snap.exists() ? snap.val() : '';
+
     });
     return result;
   } catch (error) {
