@@ -59,6 +59,7 @@ import {
   loadComments,
   saveComments,
   setLocalComment,
+  pruneComments,
 } from '../utils/commentsStorage';
 
 const isValidId = id => typeof id === 'string' && id.length >= 20;
@@ -1062,6 +1063,7 @@ const SEARCH_KEY = 'matchingSearchQuery';
 const Matching = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
+  const usersRef = useRef(users);
   const [lastKey, setLastKey] = useState(undefined);
   const [hasMore, setHasMore] = useState(true);
   // removed selected user modal logic
@@ -1165,6 +1167,19 @@ const Matching = () => {
   }, [dislikeUsers]);
 
   useEffect(() => {
+    usersRef.current = users;
+    const ids = users.map(u => u.userId);
+    pruneComments(ids);
+    setComments(prev => {
+      const map = {};
+      ids.forEach(id => {
+        if (prev[id]) map[id] = prev[id];
+      });
+      return map;
+    });
+  }, [users]);
+
+  useEffect(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') {
       return;
     }
@@ -1178,33 +1193,29 @@ const Matching = () => {
   const loadCommentsFor = async list => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
-    const ids = list.map(u => u.userId);
+    const ids = Array.from(
+      new Set([...usersRef.current.map(u => u.userId), ...list.map(u => u.userId)])
+    );
     const cache = loadComments();
-    const needFetch = [];
+    const fetched = await fetchUserComments(owner, ids);
+    const newStore = {};
     const commentsMap = {};
     ids.forEach(id => {
-      if (cache[id]) {
-        commentsMap[id] = cache[id].text;
+      const arr = fetched[id] || [];
+      const server = arr[0];
+      const local = cache[id];
+      if (server && (!local || server.updatedAt > local.updatedAt)) {
+        newStore[id] = server;
+        commentsMap[id] = server.text;
+      } else if (local) {
+        newStore[id] = local;
+        commentsMap[id] = local.text;
       } else {
-        needFetch.push(id);
+        commentsMap[id] = '';
       }
     });
-    let fetched = {};
-    if (needFetch.length) {
-      fetched = await fetchUserComments(owner, needFetch);
-    }
-    const newStore = {};
-    ids.forEach(id => {
-      const text = fetched[id] ?? commentsMap[id] ?? '';
-      const stored = cache[id];
-      newStore[id] = {
-        text,
-        updatedAt: stored ? stored.updatedAt : Date.now(),
-      };
-      commentsMap[id] = text;
-    });
     saveComments(newStore);
-    setComments(prev => ({ ...prev, ...commentsMap }));
+    setComments(commentsMap);
   };
 
   useEffect(() => {
@@ -1743,11 +1754,11 @@ const Matching = () => {
                             const val = e.target.value;
                             setComments(prev => ({ ...prev, [user.userId]: val }));
                           }}
-                          onBlur={() => {
+                          onBlur={async () => {
                             if (auth.currentUser) {
                               const text = comments[user.userId] || '';
-                              setUserComment(user.userId, text);
-                              setLocalComment(user.userId, text);
+                              const res = await setUserComment(user.userId, text);
+                              setLocalComment(user.userId, text, res?.updatedAt);
                             }
                           }}
                         />

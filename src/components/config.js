@@ -321,44 +321,77 @@ export const fetchDislikeUsersData = async ownerId => {
   }
 };
 
-export const setUserComment = async (commentId, text) => {
+export const setUserComment = async (cardId, text) => {
   try {
     const user = auth.currentUser;
     if (!user) {
       throw new Error('User not authenticated');
     }
-    if (!commentId || typeof text !== 'string') {
+    if (!cardId || typeof text !== 'string') {
       throw new Error('cardId і text обовʼязкові');
     }
-    await set(
-      ref2(database, `multiData/comments/${user.uid}/${commentId}`),
-      { cardId: commentId, text, authorId: user.uid }
-    );
+    const commentsRef = ref2(database, `multiData/comments/${user.uid}`);
+    const q = query(commentsRef, orderByChild('cardId'), equalTo(cardId));
+    const snap = await get(q);
+    const updatedAt = Date.now();
+    if (snap.exists()) {
+      const key = Object.keys(snap.val())[0];
+      await set(ref2(database, `multiData/comments/${user.uid}/${key}`), {
+        cardId,
+        text,
+        authorId: user.uid,
+        updatedAt,
+      });
+      return { commentId: key, updatedAt };
+    }
+    const newRef = push(commentsRef);
+    await set(newRef, { cardId, text, authorId: user.uid, updatedAt });
+    return { commentId: newRef.key, updatedAt };
   } catch (error) {
     console.error('Error setting comment:', error);
+    return null;
   }
 };
 
-export const fetchUserComment = async (ownerId, userId) => {
+export const fetchUserComment = async (ownerId, cardId) => {
   try {
-    const snap = await get(ref2(database, `multiData/comments/${ownerId}/${userId}`));
-    return snap.exists() ? snap.val().text : '';
+    const q = query(
+      ref2(database, `multiData/comments/${ownerId}`),
+      orderByChild('cardId'),
+      equalTo(cardId)
+    );
+    const snap = await get(q);
+    if (!snap.exists()) return [];
+    return Object.entries(snap.val()).map(([commentId, value]) => ({
+      commentId,
+      cardId: value.cardId,
+      text: value.text,
+      updatedAt: value.updatedAt || 0,
+    }));
   } catch (error) {
     console.error('Error fetching comment:', error);
-    return '';
+    return [];
   }
 };
 
-export const fetchUserComments = async (ownerId, userIds = []) => {
+export const fetchUserComments = async (ownerId, cardIds = []) => {
   try {
+    const commentsRef = ref2(database, `multiData/comments/${ownerId}`);
     const snaps = await Promise.all(
-      userIds.map(id =>
-        get(ref2(database, `multiData/comments/${ownerId}/${id}`))
+      cardIds.map(cardId =>
+        get(query(commentsRef, orderByChild('cardId'), equalTo(cardId)))
       )
     );
     const result = {};
     snaps.forEach((snap, idx) => {
-      result[userIds[idx]] = snap.exists() ? snap.val().text : '';
+      if (snap.exists()) {
+        const arr = Object.entries(snap.val()).map(([commentId, val]) => ({
+          commentId,
+          text: val.text || '',
+          updatedAt: val.updatedAt || 0,
+        }));
+        result[cardIds[idx]] = arr;
+      }
     });
     return result;
   } catch (error) {
@@ -369,16 +402,25 @@ export const fetchUserComments = async (ownerId, userIds = []) => {
 
 export const fetchUsersByIds = async ids => {
   try {
-    const [newUsersSnap, usersSnap] = await Promise.all([
-      get(ref2(database, 'newUsers')),
-      get(ref2(database, 'users')),
-    ]);
-    const newUsers = newUsersSnap.exists() ? newUsersSnap.val() : {};
-    const users = usersSnap.exists() ? usersSnap.val() : {};
+    const snaps = await Promise.all(
+      ids.map(id =>
+        Promise.all([
+          get(ref2(database, `newUsers/${id}`)),
+          get(ref2(database, `users/${id}`)),
+        ]).then(([newSnap, userSnap]) => {
+          const data = {
+            userId: id,
+            ...(newSnap.exists() ? newSnap.val() : {}),
+            ...(userSnap.exists() ? userSnap.val() : {}),
+          };
+          return Object.keys(data).length > 1 ? [id, data] : null;
+        })
+      )
+    );
     const result = {};
-    ids.forEach(id => {
-      const data = { userId: id, ...(newUsers[id] || {}), ...(users[id] || {}) };
-      if (Object.keys(data).length > 1) {
+    snaps.forEach(entry => {
+      if (entry) {
+        const [id, data] = entry;
         result[id] = data;
       }
     });
