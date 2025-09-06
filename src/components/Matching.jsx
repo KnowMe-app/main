@@ -1602,16 +1602,16 @@ const Matching = () => {
 
 
   const filteredUsers =
-    filters && Object.keys(filters).length > 0
-      ? filterMain(
+    viewMode === 'favorites' || viewMode === 'dislikes' || !filters || Object.keys(filters).length === 0
+      ? users
+      : filterMain(
           users.map(u => [u.userId, u]),
           null,
           filters,
           favoriteUsers
         )
           .map(([id, u]) => u)
-          .filter(u => isValidId(u.userId))
-      : users;
+          .filter(u => isValidId(u.userId));
 
   // automatic loading disabled
 
