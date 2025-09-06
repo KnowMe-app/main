@@ -437,12 +437,27 @@ export const ProfileForm = ({
           placeholder="ключ"
           value={customField.key}
           onChange={e => setCustomField(prev => ({ ...prev, key: e.target.value }))}
+          onBlur={() => {
+            if (customField.key && customField.value) {
+              handleAddCustomField();
+            }
+          }}
         />
         <Colon>:</Colon>
         <CustomInput
           placeholder="значення"
           value={customField.value}
           onChange={e => setCustomField(prev => ({ ...prev, value: e.target.value }))}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              handleAddCustomField();
+            }
+          }}
+          onBlur={() => {
+            if (customField.key && customField.value) {
+              handleAddCustomField();
+            }
+          }}
         />
         <Button onClick={handleAddCustomField}>+</Button>
       </KeyValueRow>
