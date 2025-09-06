@@ -72,7 +72,12 @@ const EditProfile = () => {
       await updateDataInNewUsersRTDB(updatedState.userId, updatedState, 'update');
     }
 
-    return updatedState;
+    try {
+      const fresh = await fetchUserById(updatedState.userId);
+      return fresh || updatedState;
+    } catch {
+      return updatedState;
+    }
   }
 
 
@@ -94,10 +99,10 @@ const EditProfile = () => {
       return `${dd}.${mm}.${yyyy}`;
     };
     const currentDate = formatDate(new Date());
-
-    const updatedState = newState
-      ? { ...newState, lastAction: currentDate }
-      : { ...state, lastAction: currentDate };
+    const now = Date.now();
+    const baseState = newState ? { ...newState } : { ...state };
+    const updatedState = { ...baseState, lastAction: currentDate, updatedAt: now };
+    setState(updatedState);
 
     const removeKeys = delCondition ? Object.keys(delCondition) : [];
     updateCachedUser(updatedState, { removeKeys });
@@ -106,7 +111,14 @@ const EditProfile = () => {
     });
     setIsSyncing(true);
     try {
-      await remoteUpdate({ updatedState, overwrite, delCondition });
+      const serverData = await remoteUpdate({ updatedState, overwrite, delCondition });
+      if (serverData?.updatedAt && serverData.updatedAt > updatedState.updatedAt) {
+        updateCachedUser(serverData);
+        mergeCache(getCacheKey('default'), {
+          users: { [serverData.userId]: serverData },
+        });
+        setState(serverData);
+      }
     } finally {
       setIsSyncing(false);
     }

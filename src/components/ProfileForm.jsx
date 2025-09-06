@@ -6,6 +6,7 @@ import { useAutoResize } from '../hooks/useAutoResize';
 import { color } from './styles';
 import { pickerFieldsExtended as pickerFields } from './formFields';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
+import { parseDDMMYYYY } from '../utils/parseDDMMYYYY';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -185,9 +186,16 @@ export const ProfileForm = ({
       )}
       {sortedFieldsToRender
         .filter(field => !['myComment', 'getInTouch', 'writer'].includes(field.name))
-        .map((field, index) => (
-          <PickerContainer key={index}>
-            {Array.isArray(state[field.name]) ? (
+        .map((field, index) => {
+          const displayValue =
+            field.name === 'updatedAt'
+              ? new Date(
+                  state.updatedAt ?? parseDDMMYYYY(state.lastAction)
+                ).toLocaleDateString('uk-UA')
+              : state[field.name] || '';
+          return (
+            <PickerContainer key={index}>
+              {Array.isArray(state[field.name]) ? (
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
                 {state[field.name].map((value, idx) => (
                   <InputDiv key={`${field.name}-${idx}`}>
@@ -244,30 +252,34 @@ export const ProfileForm = ({
                     ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
-                    value={state[field.name] || ''}
-                    onChange={e => {
-                      if (field.name === 'myComment') {
-                        autoResizeMyComment(e.target);
-                      }
-                      if (field.name === 'moreInfo_main') {
-                        autoResizeMoreInfo(e.target);
-                      }
-                      let value = e?.target?.value;
-                      if (field.name === 'publish') {
-                        value = value.toLowerCase() === 'true';
-                      } else if (field.name === 'telgram') {
-                        value = e?.target?.value;
-                      }
-                      setState(prevState => ({
-                        ...prevState,
-                        [field.name]: Array.isArray(prevState[field.name])
-                          ? [value, ...(prevState[field.name].slice(1) || [])]
-                          : value,
-                      }));
-                    }}
-                    onBlur={() => handleSubmit(state, 'overwrite')}
+                    value={displayValue}
+                    {...(field.name === 'updatedAt'
+                      ? { readOnly: true }
+                      : {
+                          onChange: e => {
+                            if (field.name === 'myComment') {
+                              autoResizeMyComment(e.target);
+                            }
+                            if (field.name === 'moreInfo_main') {
+                              autoResizeMoreInfo(e.target);
+                            }
+                            let value = e?.target?.value;
+                            if (field.name === 'publish') {
+                              value = value.toLowerCase() === 'true';
+                            } else if (field.name === 'telgram') {
+                              value = e?.target?.value;
+                            }
+                            setState(prevState => ({
+                              ...prevState,
+                              [field.name]: Array.isArray(prevState[field.name])
+                                ? [value, ...(prevState[field.name].slice(1) || [])]
+                                : value,
+                            }));
+                          },
+                          onBlur: () => handleSubmit(state, 'overwrite'),
+                        })}
                   />
-                  {state[field.name] && (
+                  {field.name !== 'updatedAt' && state[field.name] && (
                     <ClearButton
                       type="button"
                       onMouseDown={e => e.preventDefault()}
@@ -276,7 +288,7 @@ export const ProfileForm = ({
                       &times;
                     </ClearButton>
                   )}
-                  {state[field.name] && (
+                  {field.name !== 'updatedAt' && state[field.name] && (
                     <DelKeyValueBTN
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => handleDelKeyValue(field.name)}
@@ -293,7 +305,8 @@ export const ProfileForm = ({
               </InputDiv>
             )}
 
-            {state[field.name] &&
+            {field.name !== 'updatedAt' &&
+              state[field.name] &&
               (Array.isArray(state[field.name])
                 ? state[field.name].length === 0 || state[field.name][state[field.name].length - 1] !== ''
                 : true) &&
@@ -417,7 +430,8 @@ export const ProfileForm = ({
               ) : null
             ) : null}
           </PickerContainer>
-        ))}
+        );
+        })}
       <KeyValueRow>
         <CustomInput
           placeholder="ключ"

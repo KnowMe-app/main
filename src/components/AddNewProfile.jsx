@@ -260,12 +260,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return `${dd}.${mm}.${yyyy}`;
     };
     const currentDate = formatDate(new Date());
-
-    const updatedState = newState
-      ? { ...newState, lastAction: currentDate }
-      : { ...state, lastAction: currentDate };
+    const now = Date.now();
+    const baseState = newState ? { ...newState } : { ...state };
+    const updatedState = { ...baseState, lastAction: currentDate, updatedAt: now };
 
     // Optimistically update local cache and UI state before syncing with server
+    setState(updatedState);
     const removeKeys = delCondition ? Object.keys(delCondition) : [];
     updateCachedUser(updatedState, { removeKeys });
     cacheFetchedUsers({ [updatedState.userId]: updatedState }, cacheLoad2Users, filters);
@@ -300,6 +300,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       } else {
         await updateDataInNewUsersRTDB(syncedState.userId, syncedState, 'update');
       }
+    }
+
+    try {
+      const serverData = await fetchUserById(syncedState.userId);
+      if (serverData?.updatedAt && serverData.updatedAt > syncedState.updatedAt) {
+        updateCachedUser(serverData);
+        cacheFetchedUsers({ [serverData.userId]: serverData }, cacheLoad2Users, filters);
+        setUsers(prev => ({ ...prev, [serverData.userId]: serverData }));
+        setState(serverData);
+      }
+    } catch {
+      // ignore fetch errors
     }
   };
 
