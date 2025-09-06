@@ -35,8 +35,7 @@ describe('clearAllCardsCache', () => {
     localStorage.clear();
   });
 
-  it('clears all cache except login state', () => {
-    localStorage.setItem('matchingCache:cards:default', 'cached');
+  it('removes only cards and queries entries', () => {
     localStorage.setItem('cards', '{}');
     localStorage.setItem('queries', '{}');
     localStorage.setItem('isLoggedIn', 'true');
@@ -44,10 +43,9 @@ describe('clearAllCardsCache', () => {
 
     clearAllCardsCache();
 
-    expect(localStorage.getItem('matchingCache:cards:default')).toBeNull();
     expect(localStorage.getItem('cards')).toBeNull();
     expect(localStorage.getItem('queries')).toBeNull();
-    expect(localStorage.getItem('other')).toBeNull();
+    expect(localStorage.getItem('other')).toBe('value');
     expect(localStorage.getItem('isLoggedIn')).toBe('true');
   });
 });

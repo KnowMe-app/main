@@ -1,16 +1,12 @@
 import { getCacheKey } from 'hooks/cardsCache';
 import { updateCard, addCardToList, removeCardFromList } from './cardsStorage';
-import { setIdsForQuery } from './cardIndex';
+import { setIdsForQuery, CARDS_KEY, QUERIES_KEY } from './cardIndex';
 
 export { getCacheKey };
 
-// Clears localStorage but preserves the login flag
+// Clears cached cards and queries from localStorage
 export const clearAllCardsCache = () => {
-  const KEEP_KEYS = ['isLoggedIn'];
-
-  Object.keys(localStorage)
-    .filter(key => !KEEP_KEYS.includes(key))
-    .forEach(key => localStorage.removeItem(key));
+  [CARDS_KEY, QUERIES_KEY].forEach(key => localStorage.removeItem(key));
 };
 
 let favoriteIds = {};

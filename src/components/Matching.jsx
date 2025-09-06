@@ -30,10 +30,9 @@ import { fieldContactsIcons } from './smallCard/fieldContacts';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
-import { loadCache, saveCache } from "../hooks/cardsCache";
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
 import { normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard } from '../utils/cardIndex';
-import { saveCard } from '../utils/cardsStorage';
+import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaArrowDown, FaDownload } from 'react-icons/fa';
@@ -1342,11 +1341,10 @@ const Matching = () => {
           ]);
         }
 
-      const cacheKey = getCacheKey('default');
-      const cached = loadCache(cacheKey);
-      if (cached && viewModeRef.current === startMode) {
-        console.log('[loadInitial] using cache', cached.users.length);
-        const filteredCached = cached.users.filter(
+      const cached = await getCardsByList('default');
+      if (cached.length && viewModeRef.current === startMode) {
+        console.log('[loadInitial] using cache', cached.length);
+        const filteredCached = cached.filter(
           u => isValidId(u.userId) && !exclude.has(u.userId)
         );
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
@@ -1354,8 +1352,6 @@ const Matching = () => {
         setIdsForQuery('default', filteredCached.map(u => u.userId));
         await loadCommentsFor(filteredCached);
         if (viewModeRef.current !== startMode) return;
-        setLastKey(cached.lastKey);
-        setHasMore(cached.hasMore);
         setViewMode('default');
         // continue to fetch latest data to refresh cache
       }
@@ -1379,15 +1375,11 @@ const Matching = () => {
         ...loadedIdsRef.current,
         ...res.users.map(u => u.userId),
       ]);
+      res.users.forEach(u => updateCard(u.userId, u));
       setUsers(prev => {
         const map = new Map(prev.map(u => [u.userId, u]));
         res.users.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
-        saveCache(cacheKey, {
-          users: result,
-          lastKey: res.lastKey,
-          hasMore: res.hasMore,
-        });
         setIdsForQuery('default', result.map(u => u.userId));
         return result;
       });
@@ -1517,7 +1509,7 @@ const Matching = () => {
     if (res && Object.keys(res).length > 0) {
       const arr = Array.isArray(res) ? res : Object.values(res);
       const filtered = arr.filter(u => isValidId(u.userId));
-      filtered.forEach(u => saveCard({ ...u, id: u.userId }));
+      filtered.forEach(u => updateCard(u.userId, u));
       setIdsForQuery(cacheKey, filtered.map(u => u.userId));
       return Array.isArray(res)
         ? filtered
@@ -1550,7 +1542,6 @@ const Matching = () => {
     loadingRef.current = true;
     setLoading(true);
     try {
-      const cacheKey = getCacheKey('default');
       const exclude = new Set([
         ...Object.keys(favoriteUsersRef.current),
         ...Object.keys(dislikeUsersRef.current),
@@ -1571,11 +1562,11 @@ const Matching = () => {
       console.log('[loadMore] loaded', res.users.length, 'lastKey', lastKey, 'hasMore', res.hasMore);
       const unique = res.users.filter(u => !loadedIdsRef.current.has(u.userId));
       unique.forEach(u => loadedIdsRef.current.add(u.userId));
+      res.users.forEach(u => updateCard(u.userId, u));
       setUsers(prev => {
         const map = new Map(prev.map(u => [u.userId, u]));
         unique.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
-        saveCache(cacheKey, { users: result, lastKey: res.lastKey, hasMore: res.hasMore });
         setIdsForQuery('default', result.map(u => u.userId));
         return result;
       });

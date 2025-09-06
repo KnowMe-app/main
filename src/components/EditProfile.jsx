@@ -12,7 +12,6 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { ProfileForm } from './ProfileForm';
 import { renderTopBlock } from "./smallCard/renderTopBlock";
 import { coloredCard } from "./styles";
-import { mergeCache, getCacheKey } from '../hooks/cardsCache';
 import { updateCachedUser } from '../utils/cache';
 
 const Container = styled.div`
@@ -106,17 +105,11 @@ const EditProfile = () => {
 
     const removeKeys = delCondition ? Object.keys(delCondition) : [];
     updateCachedUser(updatedState, { removeKeys });
-    mergeCache(getCacheKey('default'), {
-      users: { [updatedState.userId]: updatedState },
-    });
     setIsSyncing(true);
     try {
       const serverData = await remoteUpdate({ updatedState, overwrite, delCondition });
       if (serverData?.updatedAt && serverData.updatedAt > updatedState.updatedAt) {
         updateCachedUser(serverData);
-        mergeCache(getCacheKey('default'), {
-          users: { [serverData.userId]: serverData },
-        });
         setState(serverData);
       }
     } finally {
