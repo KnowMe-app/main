@@ -476,16 +476,16 @@ export const ProfileForm = ({
               const week = parseInt(e.target.value, 10);
               if (!isNaN(week)) {
                 const today = new Date();
-                const dueDate = new Date(today);
-                dueDate.setDate(today.getDate() + (40 - week) * 7);
-                const getInTouch = new Date(dueDate);
+                const lastDelivery = new Date(today);
+                lastDelivery.setDate(today.getDate() + (40 - week) * 7);
+                const getInTouch = new Date(lastDelivery);
                 getInTouch.setMonth(getInTouch.getMonth() + 9);
                 const format = d =>
                   `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
                 const updatedState = {
                   ...state,
                   pregnancyWeek: e.target.value,
-                  dueDate: format(dueDate),
+                  lastDelivery: format(lastDelivery),
                   getInTouch: format(getInTouch),
                 };
                 if (state.ownKids !== undefined && state.ownKids !== '') {
