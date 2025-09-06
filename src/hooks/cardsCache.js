@@ -65,6 +65,3 @@ export const createCache = (prefix, ttl = TTL_MS) => {
 
   return { loadCache, saveCache, clearCache, mergeCache };
 };
-
-// default cache for matching to keep backward compatibility
-export const { loadCache, saveCache, clearCache, mergeCache } = createCache('matchingCache');
