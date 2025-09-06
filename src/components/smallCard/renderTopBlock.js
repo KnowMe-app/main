@@ -15,6 +15,7 @@ import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
+import { fetchUserById } from '../config';
 
 const getParentBackground = element => {
   let el = element;
@@ -141,7 +142,29 @@ export const renderTopBlock = (
       <FieldComment userData={userData} setUsers={setUsers} setState={setState} isToastOn={isToastOn} />
 
       <div
-        onClick={() => {
+        onClick={async () => {
+          try {
+            const fresh = await fetchUserById(userData.userId);
+            if (fresh) {
+              if (setUsers) {
+                setUsers(prev => {
+                  if (Array.isArray(prev)) {
+                    return prev.map(u => (u.userId === userData.userId ? fresh : u));
+                  }
+                  if (typeof prev === 'object' && prev !== null) {
+                    return { ...prev, [userData.userId]: fresh };
+                  }
+                  return prev;
+                });
+              }
+              if (setState) {
+                setState(prev => ({ ...prev, ...fresh }));
+              }
+            }
+          } catch (error) {
+            console.error(error);
+          }
+
           const details = document.getElementById(userData.userId);
           if (details) {
             const isHidden = details.style.display === 'none';
