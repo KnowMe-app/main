@@ -41,7 +41,7 @@ const EditProfile = () => {
   async function remoteUpdate({ updatedState, overwrite, delCondition }) {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer'];
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
-    const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'dueDate', 'ownKids'];
+    const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids'];
 
     if (updatedState?.userId?.length > 20) {
       const { existingData } = await fetchUserById(updatedState.userId);
@@ -64,7 +64,7 @@ const EditProfile = () => {
 
       const cleanedStateForNewUsers = Object.fromEntries(
         Object.entries(updatedState).filter(([key]) =>
-          [...fieldsForNewUsersOnly, ...contacts, 'getInTouch', 'dueDate', 'ownKids'].includes(key)
+          [...fieldsForNewUsersOnly, ...contacts, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
         )
       );
 
