@@ -185,7 +185,7 @@ export const ProfileForm = ({
         </div>
       )}
       {sortedFieldsToRender
-        .filter(field => !['myComment', 'getInTouch', 'writer'].includes(field.name))
+        .filter(field => !['myComment', 'getInTouch', 'writer', 'pregnancyWeek'].includes(field.name))
         .map((field, index) => {
           const displayValue =
             field.name === 'updatedAt'
@@ -446,6 +446,56 @@ export const ProfileForm = ({
         />
         <Button onClick={handleAddCustomField}>+</Button>
       </KeyValueRow>
+      <InputDiv>
+        <InputFieldContainer fieldName="pregnancyWeek" value={state.pregnancyWeek}>
+          <InputField
+            fieldName="pregnancyWeek"
+            inputMode="numeric"
+            name="pregnancyWeek"
+            value={state.pregnancyWeek || ''}
+            placeholder="25"
+            onChange={e =>
+              setState(prev => ({ ...prev, pregnancyWeek: e.target.value }))
+            }
+            onBlur={e => {
+              const week = parseInt(e.target.value, 10);
+              if (!isNaN(week)) {
+                const today = new Date();
+                const dueDate = new Date(today);
+                dueDate.setDate(today.getDate() + (40 - week) * 7);
+                const getInTouch = new Date(dueDate);
+                getInTouch.setMonth(getInTouch.getMonth() + 9);
+                const format = d =>
+                  `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+                const updatedState = {
+                  ...state,
+                  pregnancyWeek: e.target.value,
+                  dueDate: format(dueDate),
+                  getInTouch: format(getInTouch),
+                };
+                if (state.ownKids !== undefined && state.ownKids !== '') {
+                  updatedState.ownKids = Number(state.ownKids) + 1;
+                }
+                setState(updatedState);
+                handleSubmit(updatedState, 'overwrite');
+              }
+            }}
+          />
+          {state.pregnancyWeek && (
+            <ClearButton
+              type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() =>
+                setState(prev => ({ ...prev, pregnancyWeek: '' }))
+              }
+            >
+              &times;
+            </ClearButton>
+          )}
+        </InputFieldContainer>
+        <Hint fieldName="pregnancyWeek" isActive={state.pregnancyWeek}>25</Hint>
+        <Placeholder isActive={state.pregnancyWeek}>Тиждень вагітності</Placeholder>
+      </InputDiv>
       <Photos state={state} setState={setState} />
     </>
   );

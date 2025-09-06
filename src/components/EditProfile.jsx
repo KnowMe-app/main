@@ -39,9 +39,9 @@ const EditProfile = () => {
   const [isToastOn, setIsToastOn] = useState(false);
 
   async function remoteUpdate({ updatedState, overwrite, delCondition }) {
-    const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
+    const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer'];
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
-    const commonFields = ['lastAction', 'lastLogin2'];
+    const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'dueDate', 'ownKids'];
 
     if (updatedState?.userId?.length > 20) {
       const { existingData } = await fetchUserById(updatedState.userId);
@@ -63,7 +63,9 @@ const EditProfile = () => {
       await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
 
       const cleanedStateForNewUsers = Object.fromEntries(
-        Object.entries(updatedState).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts].includes(key))
+        Object.entries(updatedState).filter(([key]) =>
+          [...fieldsForNewUsersOnly, ...contacts, 'getInTouch', 'dueDate', 'ownKids'].includes(key)
+        )
       );
 
       await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update');
