@@ -522,7 +522,7 @@ const Contact = styled.div`
 
 const Icons = styled.div`
   display: flex;
-  gap: 10px;
+  gap: 4px;
   font-size: inherit;
   color: ${color.accent};
   align-items: center;
@@ -813,11 +813,10 @@ const SwipeableCard = ({
           <div
             style={{
               display: 'flex',
-              alignItems: isEggDonor ? 'flex-start' : 'center',
+              alignItems: 'center',
               gap: '4px',
               flexWrap: 'nowrap',
               justifyContent: 'flex-start',
-              flexDirection: isEggDonor ? 'column' : 'row',
             }}
           >
             <span>{locationInfo}</span>
@@ -1043,11 +1042,10 @@ const InfoCardContent = ({ user, variant }) => {
           <div
             style={{
               display: 'flex',
-              alignItems: isEggDonor ? 'flex-start' : 'center',
+              alignItems: 'center',
               gap: '4px',
               flexWrap: 'nowrap',
               justifyContent: 'flex-start',
-              flexDirection: isEggDonor ? 'column' : 'row',
             }}
           >
             <span>{locationInfo}</span>
