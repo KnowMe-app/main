@@ -788,9 +788,15 @@ const SwipeableCard = ({
           )}
           {moreInfo && (
             <MoreInfo>
-              <strong>More information</strong>
-              <br />
-              {moreInfo}
+              {role === 'ag' ? (
+                moreInfo
+              ) : (
+                <>
+                  <strong>More information</strong>
+                  <br />
+                  {moreInfo}
+                </>
+              )}
             </MoreInfo>
           )}
         </InfoSlide>
@@ -1010,9 +1016,15 @@ const InfoCardContent = ({ user, variant }) => {
         )}
         {moreInfo && (
           <MoreInfo>
-            <strong>More information</strong>
-            <br />
-            {moreInfo}
+            {role === 'ag' ? (
+              moreInfo
+            ) : (
+              <>
+                <strong>More information</strong>
+                <br />
+                {moreInfo}
+              </>
+            )}
           </MoreInfo>
         )}
       </InfoSlide>
