@@ -62,8 +62,6 @@ import {
 } from '../utils/commentsStorage';
 
 const isValidId = id => typeof id === 'string' && id.length >= 20;
-const filterLongIds = obj =>
-  Object.fromEntries(Object.entries(obj || {}).filter(([id]) => isValidId(id)));
 const filterLongUsers = list =>
   list.filter(u => isValidId(u?.id || u?.userId));
 
@@ -1247,14 +1245,12 @@ const Matching = () => {
       const disRef = refDb(database, `multiData/dislikes/${user.uid}`);
 
         const unsubFav = onValue(favRef, snap => {
-          const raw = snap.exists() ? snap.val() : {};
-          const data = filterLongIds(raw);
+          const data = snap.exists() ? snap.val() : {};
           setFavoriteUsers(data);
           syncFavorites(data);
         });
         const unsubDis = onValue(disRef, snap => {
-          const raw = snap.exists() ? snap.val() : {};
-          const data = filterLongIds(raw);
+          const data = snap.exists() ? snap.val() : {};
           setDislikeUsers(data);
           syncDislikes(data);
         });
@@ -1324,8 +1320,8 @@ const Matching = () => {
     try {
       const owner = auth.currentUser?.uid;
       let exclude = new Set();
-        const localFav = filterLongIds(getFavorites());
-        const localDis = filterLongIds(getDislikes());
+        const localFav = getFavorites();
+        const localDis = getDislikes();
       if (Object.keys(localFav).length || Object.keys(localDis).length) {
         setFavoriteUsers(localFav);
         setDislikeUsers(localDis);
@@ -1339,15 +1335,13 @@ const Matching = () => {
           fetchFavoriteUsers(owner),
           fetchDislikeUsers(owner),
         ]);
-          const favFiltered = filterLongIds(favIds);
-          const disFiltered = filterLongIds(disIds);
-          setFavoriteUsers(favFiltered);
-          setDislikeUsers(disFiltered);
-          syncFavorites(favFiltered);
-          syncDislikes(disFiltered);
+          setFavoriteUsers(favIds);
+          setDislikeUsers(disIds);
+          syncFavorites(favIds);
+          syncDislikes(disIds);
           exclude = new Set([
-            ...Object.keys(favFiltered),
-            ...Object.keys(disFiltered),
+            ...Object.keys(favIds),
+            ...Object.keys(disIds),
           ]);
         }
 
@@ -1422,7 +1416,7 @@ const Matching = () => {
 
     const localIds = getIdsByQuery('favorite').filter(isValidId);
     if (localIds.length > 0) {
-      const favMap = filterLongIds(getFavorites());
+      const favMap = getFavorites();
       setFavoriteUsers(favMap);
       setFavoriteIds(favMap);
       syncFavorites(favMap);
@@ -1438,7 +1432,7 @@ const Matching = () => {
       return;
     }
 
-    const favUsers = filterLongIds(await fetchFavoriteUsersData(owner));
+    const favUsers = await fetchFavoriteUsersData(owner);
     const favMap = Object.fromEntries(Object.keys(favUsers).map(id => [id, true]));
     syncFavorites(favMap);
     setFavoriteUsers(favMap);
@@ -1468,7 +1462,7 @@ const Matching = () => {
 
     const localIds = getIdsByQuery('dislike').filter(isValidId);
     if (localIds.length > 0) {
-      const localDis = filterLongIds(getDislikes());
+      const localDis = getDislikes();
       const disMap = Object.fromEntries(Object.keys(localDis).map(id => [id, true]));
       setDislikeUsers(disMap);
       setIdsForQuery('dislike', Object.keys(disMap));
@@ -1484,7 +1478,7 @@ const Matching = () => {
       return;
     }
 
-    const loaded = filterLongIds(await fetchDislikeUsersData(owner));
+    const loaded = await fetchDislikeUsersData(owner);
     const disMap = Object.fromEntries(Object.keys(loaded).map(id => [id, true]));
     cacheDislikedUsers(loaded);
     syncDislikes(disMap);
