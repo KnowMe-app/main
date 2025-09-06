@@ -38,7 +38,14 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
 
   const monthsAgo = effectiveLastDelivery ? utilCalculateMonthsAgo(effectiveLastDelivery) : null;
 
-  const whenGetInTouch = deliveryDate ? new Date(deliveryDate.getFullYear(), deliveryDate.getMonth() + 18, deliveryDate.getDate()) : null;
+  const monthsToAdd = (() => {
+    const val = (csection || '').toLowerCase().replace(/\s/g, '');
+    return ['кс-', '-', 'no', 'ні', '0'].includes(val) ? 9 : 18;
+  })();
+
+  const whenGetInTouch = deliveryDate
+    ? new Date(deliveryDate.getFullYear(), deliveryDate.getMonth() + monthsToAdd, deliveryDate.getDate())
+    : null;
 
   // Форматування дати у формат "дд.мм.рррр"
   const formatDate = date =>
