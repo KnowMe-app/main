@@ -284,18 +284,18 @@ export const fieldContactsIcons = (
     fontSize: `${iconSize}px`,
   };
 
-  const phoneBtnStyleLocal = {
-    color: 'inherit',
-    textDecoration: 'none',
-    marginLeft: '8px',
+  const linkStyle = {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
     width: `${iconSize + 8}px`,
     height: `${iconSize + 8}px`,
+    margin: 0,
+    padding: 0,
+    border: 'none',
+    textDecoration: 'none',
+    color: 'inherit',
     lineHeight: '0',
-    border: `1px solid ${color.white}`,
-    borderRadius: '50%',
   };
 
   const elements = [];
@@ -308,7 +308,17 @@ export const fieldContactsIcons = (
           href={links.phone(processedVal)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: phoneAsIcon ? 'inherit' : color.black, textDecoration: 'none' }}
+          style={
+            phoneAsIcon
+              ? linkStyle
+              : {
+                  ...linkStyle,
+                  width: 'auto',
+                  height: 'auto',
+                  color: color.black,
+                  lineHeight: 'normal',
+                }
+          }
         >
           {phoneAsIcon ? <FaPhoneVolume style={iconStyle} /> : `+${processedVal}`}
         </a>
@@ -316,7 +326,7 @@ export const fieldContactsIcons = (
           href={links.telegramFromPhone(`+${val}`)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ ...phoneBtnStyleLocal, marginLeft: 0, border: 'none' }}
+          style={linkStyle}
         >
           <FaTelegramPlane style={iconStyle} />
         </a>
@@ -324,7 +334,7 @@ export const fieldContactsIcons = (
           href={links.viberFromPhone(processedVal)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ ...phoneBtnStyleLocal, marginLeft: 0, border: 'none' }}
+          style={linkStyle}
         >
           <FaViber style={iconStyle} />
         </a>
@@ -332,7 +342,7 @@ export const fieldContactsIcons = (
           href={links.whatsappFromPhone(processedVal)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ ...phoneBtnStyleLocal, marginLeft: 0, border: 'none' }}
+          style={linkStyle}
         >
           <FaWhatsapp style={iconStyle} />
         </a>
@@ -347,7 +357,7 @@ export const fieldContactsIcons = (
         href={links.email(processed.email)}
         target="_blank"
         rel="noopener noreferrer"
-        style={{ color: 'inherit', textDecoration: 'none' }}
+        style={linkStyle}
       >
         <MdEmail style={iconStyle} />
       </a>
@@ -361,7 +371,7 @@ export const fieldContactsIcons = (
         href={links.facebook(processed.facebook)}
         target="_blank"
         rel="noopener noreferrer"
-        style={{ color: 'inherit', textDecoration: 'none' }}
+        style={linkStyle}
       >
         <FaFacebookF style={iconStyle} />
       </a>
@@ -375,7 +385,7 @@ export const fieldContactsIcons = (
         href={links.instagram(processed.instagram)}
         target="_blank"
         rel="noopener noreferrer"
-        style={{ color: 'inherit', textDecoration: 'none' }}
+        style={linkStyle}
       >
         <FaInstagram style={iconStyle} />
       </a>
@@ -389,7 +399,7 @@ export const fieldContactsIcons = (
         href={links.telegram(val)}
         target="_blank"
         rel="noopener noreferrer"
-        style={{ color: 'inherit', textDecoration: 'none' }}
+        style={linkStyle}
       >
         <FaTelegramPlane style={iconStyle} />
       </a>
@@ -403,7 +413,7 @@ export const fieldContactsIcons = (
         href={links.tiktok(processed.tiktok)}
         target="_blank"
         rel="noopener noreferrer"
-        style={{ color: 'inherit', textDecoration: 'none' }}
+        style={linkStyle}
       >
         <SiTiktok style={iconStyle} />
       </a>
@@ -417,7 +427,7 @@ export const fieldContactsIcons = (
         href={links.vk(processed.vk)}
         target="_blank"
         rel="noopener noreferrer"
-        style={{ color: 'inherit', textDecoration: 'none' }}
+        style={linkStyle}
       >
         <FaVk style={iconStyle} />
       </a>
@@ -435,7 +445,7 @@ export const fieldContactsIcons = (
           href={links.otherLink(val)}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: 'inherit', textDecoration: 'none' }}
+          style={linkStyle}
         >
           <FaGlobe style={iconStyle} />
         </a>
@@ -447,7 +457,7 @@ export const fieldContactsIcons = (
 
   return (
     <div
-      style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
+      style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}
       onClick={e => e.stopPropagation()}
       onTouchStart={e => e.stopPropagation()}
       onTouchEnd={e => e.stopPropagation()}
