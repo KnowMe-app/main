@@ -2,7 +2,6 @@ import React from 'react';
 import { handleChange, handleSubmit } from './actions';
 import { formatDateToDisplay, formatDateToServer } from 'components/inputValidations';
 import { UnderlinedInput, AttentionButton, color } from 'components/styles';
-import { ReactComponent as PregnantIcon } from 'assets/icons/pregnant.svg';
 
 const calculateNextDate = dateString => {
   if (!dateString) return '';
@@ -78,12 +77,17 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           const getInTouch = new Date(lastDelivery);
           getInTouch.setMonth(getInTouch.getMonth() + 9);
 
+          const ownKids = Number(userData.ownKids || 0) + 1;
+
           handleChange(
             setUsers,
             setState,
             userData.userId,
             'lastDelivery',
             formatDate(lastDelivery),
+            true,
+            {},
+            isToastOn,
           );
 
           handleChange(
@@ -92,6 +96,17 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             userData.userId,
             'getInTouch',
             formatDateToServer(formatDate(getInTouch)),
+            true,
+            {},
+            isToastOn,
+          );
+
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            'ownKids',
+            ownKids,
             true,
             {},
             isToastOn,
@@ -128,13 +143,20 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             color: 'white',
           }}
         />
-        <PregnantIcon
+        <span
           onClick={handlePregnantClick}
-          style={{ cursor: 'pointer', width: 20, height: 20, fill: isPregnant ? color.accent : 'white' }}
-        />
+          style={{
+            cursor: 'pointer',
+            marginLeft: '10px',
+            marginRight: '5px',
+            color: isPregnant ? color.accent : 'white',
+          }}
+        >
+          {isPregnant ? 'вагітна' : 'місячні'}
+        </span>
         {!isPregnant && nextCycle && (
           <React.Fragment>
-            <span style={{ marginLeft: '10px', marginRight: '5px', color: 'white' }}>місячні -</span>
+            <span style={{ marginRight: '5px', color: 'white' }}>-</span>
             <AttentionButton
               onClick={() =>
                 handleChange(
