@@ -325,6 +325,15 @@ export const removeSpaceAndNewLine = value => {
       }
       return today.toISOString().split('T')[0]; // Повертаємо у форматі YYYY-MM-DD
     }
+
+    // Якщо формат типу "22т", "22t" або "22w" (тижнів тому)
+    const weeksPattern = /^(\d+)(т|t|w)$/i;
+    const matchWeeks = input.match(weeksPattern);
+    if (matchWeeks) {
+      const weeks = parseInt(matchWeeks[1], 10);
+      today.setDate(today.getDate() - weeks * 7);
+      return today.toISOString().split('T')[0]; // Повертаємо у форматі YYYY-MM-DD
+    }
   
     // Якщо формат типу "360-90"
     const offsetPattern = /^(\d+)-(\d+)$/;

@@ -65,6 +65,77 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   const nextCycle = React.useMemo(() => calculateNextDate(userData.lastCycle), [userData.lastCycle]);
 
+  const handleLastCycleChange = e => {
+    const value = e.target.value.trim();
+    const weekPattern = /^(\d+)([тtw])$/i;
+
+    if (isPregnant && weekPattern.test(value)) {
+      const weeks = parseInt(value, 10);
+      const today = new Date();
+      const lastCycleDate = new Date(today);
+      lastCycleDate.setDate(today.getDate() - weeks * 7);
+
+      const lastDelivery = new Date(lastCycleDate);
+      lastDelivery.setDate(lastDelivery.getDate() + 7 * 40);
+
+      const getInTouch = new Date(lastDelivery);
+      getInTouch.setMonth(getInTouch.getMonth() + 9);
+
+      const existingLastDelivery = parseDate(userData.lastDelivery);
+      const hasUpcomingDelivery = existingLastDelivery && existingLastDelivery > today;
+      const ownKids = hasUpcomingDelivery
+        ? Number(userData.ownKids || 0)
+        : Number(userData.ownKids || 0) + 1;
+
+      handleChange(
+        setUsers,
+        setState,
+        userData.userId,
+        'lastCycle',
+        formatDateToServer(formatDate(lastCycleDate)),
+        true,
+        {},
+        isToastOn,
+      );
+
+      handleChange(
+        setUsers,
+        setState,
+        userData.userId,
+        'lastDelivery',
+        formatDate(lastDelivery),
+        true,
+        {},
+        isToastOn,
+      );
+
+      handleChange(
+        setUsers,
+        setState,
+        userData.userId,
+        'getInTouch',
+        formatDateToServer(formatDate(getInTouch)),
+        true,
+        {},
+        isToastOn,
+      );
+
+      handleChange(
+        setUsers,
+        setState,
+        userData.userId,
+        'ownKids',
+        ownKids,
+        true,
+        {},
+        isToastOn,
+      );
+    } else {
+      const serverFormattedDate = formatDateToServer(value);
+      handleChange(setUsers, setState, userData.userId, 'lastCycle', serverFormattedDate);
+    }
+  };
+
   const handlePregnantClick = () => {
     setIsPregnant(prev => {
       const newState = !prev;
@@ -132,10 +203,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           type="text"
           value={formatDateToDisplay(userData.lastCycle) || ''}
           placeholder="міс"
-          onChange={e => {
-            const serverFormattedDate = formatDateToServer(e.target.value);
-            handleChange(setUsers, setState, userData.userId, 'lastCycle', serverFormattedDate);
-          }}
+          onChange={handleLastCycleChange}
           onBlur={() => handleSubmit(userData, 'overwrite', isToastOn)}
           style={{
             marginLeft: 0,
