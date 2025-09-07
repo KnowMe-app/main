@@ -1,9 +1,11 @@
 import { handleChange } from './actions';
 import { utilCalculateMonthsAgo } from './utilCalculateMonthsAgo';
 import { AttentionButton } from 'components/styles';
+import { formatDateToDisplay } from 'components/inputValidations';
 
 export const fieldDeliveryInfo = (setUsers, setState, userData) => {
   const { ownKids, lastDelivery, csection } = userData;
+  const formattedLastDelivery = formatDateToDisplay(lastDelivery);
 
   // Функція для парсингу дати з формату дд.мм.рррр
   const parseCsectionDate = dateString => {
@@ -27,7 +29,7 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
   };
 
   // Використовуємо `csection` як дату останніх пологів, якщо `lastDelivery` не задано
-  const effectiveLastDelivery = lastDelivery || (csection && parseCsectionDate(csection));
+  const effectiveLastDelivery = formattedLastDelivery || (csection && parseCsectionDate(csection));
 
   // Додаємо перевірку перед викликом `split`
   let deliveryDate = null;

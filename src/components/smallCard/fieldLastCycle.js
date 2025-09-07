@@ -62,6 +62,7 @@ const formatDate = date => {
 
 export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   const [isPregnant, setIsPregnant] = React.useState(false);
+  const submittedRef = React.useRef(false);
 
   const nextCycle = React.useMemo(() => calculateNextDate(userData.lastCycle), [userData.lastCycle]);
 
@@ -87,49 +88,29 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         ? Number(userData.ownKids || 0)
         : Number(userData.ownKids || 0) + 1;
 
-      handleChange(
-        setUsers,
-        setState,
-        userData.userId,
-        'lastCycle',
-        formatDateToServer(formatDate(lastCycleDate)),
-        true,
-        {},
-        isToastOn,
-      );
+      const lastCycleFormatted = formatDateToServer(formatDate(lastCycleDate));
+      const lastDeliveryFormatted = formatDateToServer(formatDate(lastDelivery));
+      const getInTouchFormatted = formatDateToServer(formatDate(getInTouch));
 
-      handleChange(
-        setUsers,
-        setState,
-        userData.userId,
-        'lastDelivery',
-        formatDate(lastDelivery),
-        true,
-        {},
-        isToastOn,
-      );
-
-      handleChange(
-        setUsers,
-        setState,
-        userData.userId,
-        'getInTouch',
-        formatDateToServer(formatDate(getInTouch)),
-        true,
-        {},
-        isToastOn,
-      );
-
-      handleChange(
-        setUsers,
-        setState,
-        userData.userId,
-        'ownKids',
+      handleChange(setUsers, setState, userData.userId, {
+        lastCycle: lastCycleFormatted,
+        lastDelivery: lastDeliveryFormatted,
+        getInTouch: getInTouchFormatted,
         ownKids,
-        true,
-        {},
+      });
+
+      handleSubmit(
+        {
+          ...userData,
+          lastCycle: lastCycleFormatted,
+          lastDelivery: lastDeliveryFormatted,
+          getInTouch: getInTouchFormatted,
+          ownKids,
+        },
+        'overwrite',
         isToastOn,
       );
+      submittedRef.current = true;
     } else {
       const serverFormattedDate = formatDateToServer(value);
       handleChange(setUsers, setState, userData.userId, 'lastCycle', serverFormattedDate);
@@ -150,38 +131,26 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
           const ownKids = Number(userData.ownKids || 0) + 1;
 
-          handleChange(
-            setUsers,
-            setState,
-            userData.userId,
-            'lastDelivery',
-            formatDate(lastDelivery),
-            true,
-            {},
-            isToastOn,
-          );
+          const lastDeliveryFormatted = formatDateToServer(formatDate(lastDelivery));
+          const getInTouchFormatted = formatDateToServer(formatDate(getInTouch));
 
-          handleChange(
-            setUsers,
-            setState,
-            userData.userId,
-            'getInTouch',
-            formatDateToServer(formatDate(getInTouch)),
-            true,
-            {},
-            isToastOn,
-          );
-
-          handleChange(
-            setUsers,
-            setState,
-            userData.userId,
-            'ownKids',
+          handleChange(setUsers, setState, userData.userId, {
+            lastDelivery: lastDeliveryFormatted,
+            getInTouch: getInTouchFormatted,
             ownKids,
-            true,
-            {},
+          });
+
+          handleSubmit(
+            {
+              ...userData,
+              lastDelivery: lastDeliveryFormatted,
+              getInTouch: getInTouchFormatted,
+              ownKids,
+            },
+            'overwrite',
             isToastOn,
           );
+          submittedRef.current = true;
         }
       }
       return newState;
@@ -204,7 +173,12 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           value={formatDateToDisplay(userData.lastCycle) || ''}
           placeholder="міс"
           onChange={handleLastCycleChange}
-          onBlur={() => handleSubmit(userData, 'overwrite', isToastOn)}
+          onBlur={() => {
+            if (!submittedRef.current) {
+              handleSubmit(userData, 'overwrite', isToastOn);
+            }
+            submittedRef.current = false;
+          }}
           style={{
             marginLeft: 0,
             textAlign: 'left',

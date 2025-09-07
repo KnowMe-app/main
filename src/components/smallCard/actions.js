@@ -5,7 +5,7 @@ import {
   updateDataInFiresoreDB
 } from "components/config";
 import { updateCachedUser } from "utils/cache";
-import { formatDateAndFormula } from "components/inputValidations";
+import { formatDateAndFormula, formatDateToServer } from "components/inputValidations";
 import { makeUploadedInfo } from "components/makeUploadedInfo";
 import toast from 'react-hot-toast';
 
@@ -19,7 +19,72 @@ export const handleChange = (
   options = {},
   isToastOn = false
 ) => {
-  const newValue = key === 'getInTouch' || key === 'lastCycle' ? formatDateAndFormula(value) : value;
+  const formatValue = (k, v) => {
+    if (k === 'getInTouch' || k === 'lastCycle') return formatDateAndFormula(v);
+    if (k === 'lastDelivery') return formatDateToServer(v);
+    return v;
+  };
+
+  if (typeof key === 'object' && key !== null) {
+    const updates = key;
+    const clickFlag = value;
+    const opts = click || {};
+    const toast = options === undefined ? false : isToastOn;
+    const formatted = Object.fromEntries(
+      Object.entries(updates).map(([k, v]) => [k, formatValue(k, v)])
+    );
+
+    if (setState) setState(prev => ({ ...prev, ...formatted }));
+
+    const applyUpdates = prevState => {
+      const isMultiple =
+        typeof prevState === 'object' &&
+        !Array.isArray(prevState) &&
+        Object.keys(prevState).every(id => typeof prevState[id] === 'object');
+
+      if (!isMultiple) {
+        const newState = { ...prevState, ...formatted };
+        clickFlag &&
+          handleSubmit(
+            { ...newState, userId: userId || newState.userId },
+            'overwrite',
+            toast,
+          );
+        return newState;
+      } else {
+        const newState = {
+          ...prevState,
+          [userId]: {
+            ...prevState[userId],
+            ...formatted,
+          },
+        };
+        clickFlag &&
+          handleSubmit({ ...newState[userId], userId }, 'overwrite', toast);
+        return newState;
+      }
+    };
+
+    setUsers(applyUpdates);
+
+    if (
+      formatted.getInTouch &&
+      opts.currentFilter === 'DATE2' &&
+      opts.isDateInRange &&
+      !opts.isDateInRange(formatted.getInTouch)
+    ) {
+      setUsers(prev => {
+        const copy = { ...prev };
+        if (copy[userId]) {
+          copy[userId]._pendingRemove = true;
+        }
+        return copy;
+      });
+    }
+    return;
+  }
+
+  const newValue = formatValue(key, value);
 
   if (setState) setState(prev => ({ ...prev, [key]: newValue }));
 
@@ -28,11 +93,19 @@ export const handleChange = (
       // console.log('prevState!!!!!!!!! :>> ', prevState);
       // Зроблено в основному для видалення юзера серед масиву карточок, а не з середини
 
-      const isMultiple = typeof prevState === 'object' && !Array.isArray(prevState) && Object.keys(prevState).every(id => typeof prevState[id] === 'object');
+      const isMultiple =
+        typeof prevState === 'object' &&
+        !Array.isArray(prevState) &&
+        Object.keys(prevState).every(id => typeof prevState[id] === 'object');
 
       if (!isMultiple) {
         const newState = { ...prevState, [key]: newValue };
-        click && handleSubmit({ ...newState, userId: userId || newState.userId }, 'overwrite', isToastOn);
+        click &&
+          handleSubmit(
+            { ...newState, userId: userId || newState.userId },
+            'overwrite',
+            isToastOn,
+          );
         return newState;
       } else {
         const newState = {
@@ -42,7 +115,8 @@ export const handleChange = (
             [key]: newValue,
           },
         };
-        click && handleSubmit({ ...newState[userId], userId }, 'overwrite', isToastOn);
+        click &&
+          handleSubmit({ ...newState[userId], userId }, 'overwrite', isToastOn);
         return newState;
       }
     });
@@ -55,7 +129,8 @@ export const handleChange = (
           [key]: newValue,
         },
       };
-      click && handleSubmit({ ...newState[userId], userId }, 'overwrite', isToastOn);
+      click &&
+        handleSubmit({ ...newState[userId], userId }, 'overwrite', isToastOn);
       return newState;
     });
   }
@@ -89,7 +164,10 @@ export const handleSubmit = async (userData, condition, isToastOn) => {
   // console.log('1111 :>> ');
   // const uploadedInfo = makeUploadedInfo(existingData, userData);
   console.log('userData!!!!!!!!!!!!!!!!!!!!!!!!! :>> ', userData);
-  const uploadedInfo = userData;
+  const uploadedInfo = { ...userData };
+  if (uploadedInfo.lastDelivery) {
+    uploadedInfo.lastDelivery = formatDateToServer(uploadedInfo.lastDelivery);
+  }
 
   // Оновлюємо поле lastAction поточною датою у форматі рррр-мм-дд
   const currentDate = new Date();
@@ -105,7 +183,9 @@ export const handleSubmit = async (userData, condition, isToastOn) => {
 
   // Фільтруємо ключі, щоб видалити зайві поля
   const cleanedStateForNewUsers = Object.fromEntries(
-    Object.entries(uploadedInfo).filter(([key]) => [...fieldsForNewUsersOnly, ...contacts, ...commonFields, ...dublicateFields].includes(key))
+    Object.entries(uploadedInfo).filter(([key]) =>
+      [...fieldsForNewUsersOnly, ...contacts, ...commonFields, ...dublicateFields].includes(key)
+    )
   );
 
   console.log('cleanedStateForNewUsers!!!!!!!!!!!!!!', cleanedStateForNewUsers);
@@ -125,6 +205,9 @@ export const handleSubmitAll = async (userData, overwrite) => {
   const { existingData } = await fetchUserById(userData.userId);
   const uploadedInfo =
     makeUploadedInfo(existingData, userData, overwrite) || {};
+  if (uploadedInfo.lastDelivery) {
+    uploadedInfo.lastDelivery = formatDateToServer(uploadedInfo.lastDelivery);
+  }
 
   const currentDate = new Date();
   currentDate.setDate(currentDate.getDate());
