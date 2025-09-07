@@ -6,7 +6,7 @@ import { fieldWriter } from './fieldWritter';
 import { fieldContacts } from './fieldContacts';
 import { fieldGetInTouch } from './fieldGetInTouch';
 import { fieldRole } from './fieldRole';
-import { fieldLastCycle } from './fieldLastCycle';
+import { FieldLastCycle } from './fieldLastCycle';
 import { FieldComment } from './FieldComment';
 import { BtnToast } from './btnToast';
 import { fieldBirth } from './fieldBirth';
@@ -85,8 +85,14 @@ export const renderTopBlock = (
         {userData.userRole !== 'ag' &&
           userData.userRole !== 'ip' &&
           userData.role !== 'ag' &&
-          userData.role !== 'ip' &&
-          fieldLastCycle(userData, setUsers, setState, isToastOn)}
+          userData.role !== 'ip' && (
+            <FieldLastCycle
+              userData={userData}
+              setUsers={setUsers}
+              setState={setState}
+              isToastOn={isToastOn}
+            />
+          )}
         {fieldDeliveryInfo(setUsers, setState, userData)}
         {userData.birth && `${userData.birth} - `}
         {userData.birth && fieldBirth(userData.birth)}
