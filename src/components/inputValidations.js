@@ -404,12 +404,12 @@ export const removeSpaceAndNewLine = value => {
      // Перетворення дати з формату YYYY-MM-DD в DD.MM.YYYY
   export const formatDateToDisplay = (dateString) => {
     if (!dateString) return '';
-    const parts = dateString.split('-');
-    if (parts.length === 3) {
-      const [year, month, day] = parts;
+    const dashPattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (dashPattern.test(dateString)) {
+      const [year, month, day] = dateString.split('-');
       return `${day}.${month}.${year}`;
     }
-    return dateString; // Повертаємо оригінал, якщо формат неправильний
+    return dateString; // якщо вже у форматі дд.мм.рррр або невірний
   };
 
 // Перетворення дати з формату DD.MM.YYYY в YYYY-MM-DD

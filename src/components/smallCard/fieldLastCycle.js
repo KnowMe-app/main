@@ -37,7 +37,6 @@ const calculateNextDate = dateString => {
 
 const parseDate = dateString => {
   if (!dateString) return null;
-
   const inputPattern = /^\d{2}\.\d{2}\.\d{4}$/;
   if (inputPattern.test(dateString)) {
     const [day, month, year] = dateString.split('.');
@@ -48,6 +47,15 @@ const parseDate = dateString => {
   if (storagePattern.test(dateString)) {
     const [year, month, day] = dateString.split('-').map(Number);
     return new Date(year, month - 1, day);
+  }
+
+  const weekPattern = /^(\d+)([тtw])$/i;
+  if (weekPattern.test(dateString)) {
+    const weeks = parseInt(dateString, 10);
+    const today = new Date();
+    const lastCycleDate = new Date(today);
+    lastCycleDate.setDate(today.getDate() - weeks * 7);
+    return lastCycleDate;
   }
 
   return null;
@@ -65,6 +73,13 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   const submittedRef = React.useRef(false);
 
   const nextCycle = React.useMemo(() => calculateNextDate(userData.lastCycle), [userData.lastCycle]);
+
+  React.useEffect(() => {
+    const date = parseDate(userData.lastDelivery);
+    if (date) {
+      setIsPregnant(date > new Date());
+    }
+  }, [userData.lastDelivery]);
 
   const handleLastCycleChange = e => {
     const value = e.target.value.trim();
@@ -121,7 +136,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     setIsPregnant(prev => {
       const newState = !prev;
       if (!prev) {
-        const lastCycleDate = parseDate(userData.lastCycle);
+        let lastCycleDate = parseDate(userData.lastCycle);
         if (lastCycleDate) {
           const lastDelivery = new Date(lastCycleDate);
           lastDelivery.setDate(lastDelivery.getDate() + 7 * 40);
@@ -129,12 +144,19 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           const getInTouch = new Date(lastDelivery);
           getInTouch.setMonth(getInTouch.getMonth() + 9);
 
-          const ownKids = Number(userData.ownKids || 0) + 1;
+          const existingLastDelivery = parseDate(userData.lastDelivery);
+          const today = new Date();
+          const hasUpcomingDelivery = existingLastDelivery && existingLastDelivery > today;
+          const ownKids = hasUpcomingDelivery
+            ? Number(userData.ownKids || 0)
+            : Number(userData.ownKids || 0) + 1;
 
+          const lastCycleFormatted = formatDateToServer(formatDate(lastCycleDate));
           const lastDeliveryFormatted = formatDateToServer(formatDate(lastDelivery));
           const getInTouchFormatted = formatDateToServer(formatDate(getInTouch));
 
           handleChange(setUsers, setState, userData.userId, {
+            lastCycle: lastCycleFormatted,
             lastDelivery: lastDeliveryFormatted,
             getInTouch: getInTouchFormatted,
             ownKids,
@@ -143,6 +165,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           handleSubmit(
             {
               ...userData,
+              lastCycle: lastCycleFormatted,
               lastDelivery: lastDeliveryFormatted,
               getInTouch: getInTouchFormatted,
               ownKids,

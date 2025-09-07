@@ -154,7 +154,7 @@ export const handleChange = (
 export const handleSubmit = async (userData, condition, isToastOn) => {
   const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
   const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
-  const commonFields = ['lastAction', 'lastLogin2'];
+  const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids'];
   const dublicateFields = ['weight', 'height'];
 
   // console.log('userData В handleSubmit', userData);
@@ -200,7 +200,7 @@ export const handleSubmit = async (userData, condition, isToastOn) => {
 export const handleSubmitAll = async (userData, overwrite) => {
   const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
   const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
-  const commonFields = ['lastAction', 'lastLogin2'];
+  const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids'];
 
   const { existingData } = await fetchUserById(userData.userId);
   const uploadedInfo =
