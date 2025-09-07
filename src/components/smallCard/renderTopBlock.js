@@ -16,6 +16,7 @@ import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
 import { fetchUserById } from '../config';
+import { updateCard } from 'utils/cardsStorage';
 
 const getParentBackground = element => {
   let el = element;
@@ -152,6 +153,7 @@ export const renderTopBlock = (
           try {
             const fresh = await fetchUserById(userData.userId);
             if (fresh) {
+              updateCard(userData.userId, { ...fresh, updatedAt: Date.now() });
               if (setUsers) {
                 setUsers(prev => {
                   if (Array.isArray(prev)) {
