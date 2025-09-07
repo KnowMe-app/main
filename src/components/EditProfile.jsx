@@ -13,6 +13,7 @@ import { ProfileForm } from './ProfileForm';
 import { renderTopBlock } from "./smallCard/renderTopBlock";
 import { coloredCard } from "./styles";
 import { updateCachedUser } from '../utils/cache';
+import { getCard } from '../utils/cardIndex';
 
 const Container = styled.div`
   display: flex;
@@ -34,7 +35,7 @@ const EditProfile = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const [state, setState] = useState(location.state || null);
+  const [state, setState] = useState(() => getCard(userId) || location.state || null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isToastOn, setIsToastOn] = useState(false);
 
