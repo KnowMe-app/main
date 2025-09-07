@@ -1,7 +1,8 @@
 import { normalizeLocation } from './normalizeLocation';
+import { formatDateToDisplay } from 'components/inputValidations';
 
 export const makeCardDescription = user => {
-  const birthsInfo = [user.ownKids, user.lastDelivery]
+  const birthsInfo = [user.ownKids, formatDateToDisplay(user.lastDelivery)]
     .filter(Boolean)
     .join('-');
 
