@@ -54,11 +54,11 @@ const parseDate = dateString => {
   return null;
 };
 
-const formatDateForServer = date => {
+const formatDate = date => {
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year = date.getFullYear();
-  return formatDateToServer(`${day}.${month}.${year}`);
+  return `${day}.${month}.${year}`;
 };
 
 export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
@@ -83,7 +83,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             setState,
             userData.userId,
             'lastDelivery',
-            formatDateForServer(lastDelivery),
+            formatDate(lastDelivery),
           );
 
           handleChange(
@@ -91,7 +91,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             setState,
             userData.userId,
             'getInTouch',
-            formatDateForServer(getInTouch),
+            formatDateToServer(formatDate(getInTouch)),
             true,
             {},
             isToastOn,
