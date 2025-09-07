@@ -282,7 +282,6 @@ export const pickerFieldsExtended = [
   { name: 'userId', placeholder: 'userId', svg: 'user', ukrainianHint: 'Id' },
   { name: 'role', placeholder: 'см/до/смдо/агент', svg: 'user', ukrainianHint: 'СМДО?' },
   { name: 'myComment', placeholder: 'коментар', svg: 'user', ukrainianHint: 'Коментра' },
-  { name: 'pregnancyWeek', placeholder: '25', hint: 'pregnancy week', svg: 'no', ukrainianHint: 'Тиждень вагітності' },
   { name: 'getInTouch', placeholder: '30.01.2025', svg: 'user', ukrainianHint: 'Коли звернутись' },
   { name: 'lastAction', placeholder: '-', svg: 'user', ukrainianHint: 'Останні зміни' },
   { name: 'lastLogin2', placeholder: '-', svg: 'user', ukrainianHint: 'Останній логін' },
