@@ -16,8 +16,7 @@ import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
 import { fetchUserById } from '../config';
-import { updateCard, TTL_MS } from 'utils/cardsStorage';
-import { getCard } from 'utils/cardIndex';
+import { updateCard } from 'utils/cardsStorage';
 
 const getParentBackground = element => {
   let el = element;
@@ -164,53 +163,29 @@ export const renderTopBlock = (
             }
           };
 
-          const isStale = !userData.updatedAt || Date.now() - userData.updatedAt > TTL_MS;
-          if (isStale) {
-            const cached = getCard(userData.userId);
-            if (cached) {
+          try {
+            const fresh = await fetchUserById(userData.userId);
+            if (fresh) {
+              const updated = updateCard(userData.userId, fresh);
               if (setUsers) {
                 setUsers(prev => {
                   if (Array.isArray(prev)) {
-                    return prev.map(u => (u.userId === userData.userId ? cached : u));
+                    return prev.map(u => (u.userId === userData.userId ? updated : u));
                   }
                   if (typeof prev === 'object' && prev !== null) {
-                    return { ...prev, [userData.userId]: cached };
+                    return { ...prev, [userData.userId]: updated };
                   }
                   return prev;
                 });
               }
               if (setState) {
-                setState(prev => ({ ...prev, ...cached }));
+                setState(prev => ({ ...prev, ...updated }));
               }
-              toggleDetails();
-            } else {
-              try {
-                const fresh = await fetchUserById(userData.userId);
-                if (fresh) {
-                  const updated = updateCard(userData.userId, fresh);
-                  if (setUsers) {
-                    setUsers(prev => {
-                      if (Array.isArray(prev)) {
-                        return prev.map(u => (u.userId === userData.userId ? updated : u));
-                      }
-                      if (typeof prev === 'object' && prev !== null) {
-                        return { ...prev, [userData.userId]: updated };
-                      }
-                      return prev;
-                    });
-                  }
-                  if (setState) {
-                    setState(prev => ({ ...prev, ...updated }));
-                  }
-                }
-              } catch (error) {
-                console.error(error);
-              }
-              toggleDetails();
             }
-          } else {
-            toggleDetails();
+          } catch (error) {
+            console.error(error);
           }
+          toggleDetails();
         }}
         style={{ position: 'absolute', bottom: '10px', right: '10px', cursor: 'pointer', color: '#ebe0c2', fontSize: '18px' }}
       >
