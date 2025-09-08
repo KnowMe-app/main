@@ -71,6 +71,7 @@ const formatDate = date => {
 export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   const [isPregnant, setIsPregnant] = React.useState(false);
   const submittedRef = React.useRef(false);
+  const prevDataRef = React.useRef(null);
 
   const nextCycle = React.useMemo(() => calculateNextDate(userData.lastCycle), [userData.lastCycle]);
 
@@ -83,49 +84,50 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   const handleLastCycleChange = e => {
     const value = e.target.value.trim();
-    const weekPattern = /^(\d+)([тtw])$/i;
+    const date = parseDate(value);
 
-    if (isPregnant && weekPattern.test(value)) {
-      const weeks = parseInt(value, 10);
-      const today = new Date();
-      const lastCycleDate = new Date(today);
-      lastCycleDate.setDate(today.getDate() - weeks * 7);
+    if (date) {
+      const lastCycleFormatted = formatDateToServer(formatDate(date));
 
-      const lastDelivery = new Date(lastCycleDate);
-      lastDelivery.setDate(lastDelivery.getDate() + 7 * 40);
+      if (isPregnant) {
+        const lastDelivery = new Date(date);
+        lastDelivery.setDate(lastDelivery.getDate() + 7 * 40);
 
-      const getInTouch = new Date(lastDelivery);
-      getInTouch.setMonth(getInTouch.getMonth() + 9);
+        const getInTouch = new Date(lastDelivery);
+        getInTouch.setMonth(getInTouch.getMonth() + 9);
 
-      const existingLastDelivery = parseDate(userData.lastDelivery);
-      const hasUpcomingDelivery = existingLastDelivery && existingLastDelivery > today;
-      const ownKids = hasUpcomingDelivery
-        ? Number(userData.ownKids || 0)
-        : Number(userData.ownKids || 0) + 1;
+        const existingLastDelivery = parseDate(userData.lastDelivery);
+        const today = new Date();
+        const hasUpcomingDelivery = existingLastDelivery && existingLastDelivery > today;
+        const ownKids = hasUpcomingDelivery
+          ? Number(userData.ownKids || 0)
+          : Number(userData.ownKids || 0) + 1;
 
-      const lastCycleFormatted = formatDateToServer(formatDate(lastCycleDate));
-      const lastDeliveryFormatted = formatDateToServer(formatDate(lastDelivery));
-      const getInTouchFormatted = formatDateToServer(formatDate(getInTouch));
+        const lastDeliveryFormatted = formatDateToServer(formatDate(lastDelivery));
+        const getInTouchFormatted = formatDateToServer(formatDate(getInTouch));
 
-      handleChange(setUsers, setState, userData.userId, {
-        lastCycle: lastCycleFormatted,
-        lastDelivery: lastDeliveryFormatted,
-        getInTouch: getInTouchFormatted,
-        ownKids,
-      });
-
-      handleSubmit(
-        {
-          ...userData,
+        handleChange(setUsers, setState, userData.userId, {
           lastCycle: lastCycleFormatted,
           lastDelivery: lastDeliveryFormatted,
           getInTouch: getInTouchFormatted,
           ownKids,
-        },
-        'overwrite',
-        isToastOn,
-      );
-      submittedRef.current = true;
+        });
+
+        handleSubmit(
+          {
+            ...userData,
+            lastCycle: lastCycleFormatted,
+            lastDelivery: lastDeliveryFormatted,
+            getInTouch: getInTouchFormatted,
+            ownKids,
+          },
+          'overwrite',
+          isToastOn,
+        );
+        submittedRef.current = true;
+      } else {
+        handleChange(setUsers, setState, userData.userId, 'lastCycle', lastCycleFormatted);
+      }
     } else {
       const serverFormattedDate = formatDateToServer(value);
       handleChange(setUsers, setState, userData.userId, 'lastCycle', serverFormattedDate);
@@ -135,8 +137,16 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   const handlePregnantClick = () => {
     setIsPregnant(prev => {
       const newState = !prev;
-      if (!prev) {
-        let lastCycleDate = parseDate(userData.lastCycle);
+      if (newState) {
+        if (!prevDataRef.current) {
+          prevDataRef.current = {
+            lastCycle: userData.lastCycle,
+            lastDelivery: userData.lastDelivery,
+            getInTouch: userData.getInTouch,
+            ownKids: userData.ownKids,
+          };
+        }
+        const lastCycleDate = parseDate(userData.lastCycle);
         if (lastCycleDate) {
           const lastDelivery = new Date(lastCycleDate);
           lastDelivery.setDate(lastDelivery.getDate() + 7 * 40);
@@ -175,6 +185,15 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           );
           submittedRef.current = true;
         }
+      } else if (prevDataRef.current) {
+        handleChange(setUsers, setState, userData.userId, prevDataRef.current);
+        handleSubmit(
+          { ...userData, ...prevDataRef.current },
+          'overwrite',
+          isToastOn,
+        );
+        submittedRef.current = true;
+        prevDataRef.current = null;
       }
       return newState;
     });
