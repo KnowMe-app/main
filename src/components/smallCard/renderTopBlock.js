@@ -16,7 +16,8 @@ import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
 import { fetchUserById } from '../config';
-import { updateCard } from 'utils/cardsStorage';
+import { updateCard, TTL_MS } from 'utils/cardsStorage';
+import { getCard } from 'utils/cardIndex';
 
 const getParentBackground = element => {
   let el = element;
@@ -150,38 +151,65 @@ export const renderTopBlock = (
 
       <div
         onClick={async () => {
-          try {
-            const fresh = await fetchUserById(userData.userId);
-            if (fresh) {
-              updateCard(userData.userId, { ...fresh, updatedAt: Date.now() });
+          const details = document.getElementById(userData.userId);
+          const toggleDetails = () => {
+            if (details) {
+              const isHidden = details.style.display === 'none';
+              details.style.display = isHidden ? 'block' : 'none';
+              details.style.marginTop = isHidden ? '8px' : '0';
+              if (isHidden) {
+                const bg = getParentBackground(details);
+                details.style.color = getContrastColor(bg);
+              }
+            }
+          };
+
+          const isStale = !userData.updatedAt || Date.now() - userData.updatedAt > TTL_MS;
+          if (isStale) {
+            const cached = getCard(userData.userId);
+            if (cached) {
               if (setUsers) {
                 setUsers(prev => {
                   if (Array.isArray(prev)) {
-                    return prev.map(u => (u.userId === userData.userId ? fresh : u));
+                    return prev.map(u => (u.userId === userData.userId ? cached : u));
                   }
                   if (typeof prev === 'object' && prev !== null) {
-                    return { ...prev, [userData.userId]: fresh };
+                    return { ...prev, [userData.userId]: cached };
                   }
                   return prev;
                 });
               }
               if (setState) {
-                setState(prev => ({ ...prev, ...fresh }));
+                setState(prev => ({ ...prev, ...cached }));
               }
+              toggleDetails();
+            } else {
+              try {
+                const fresh = await fetchUserById(userData.userId);
+                if (fresh) {
+                  updateCard(userData.userId, { ...fresh, updatedAt: Date.now() });
+                  if (setUsers) {
+                    setUsers(prev => {
+                      if (Array.isArray(prev)) {
+                        return prev.map(u => (u.userId === userData.userId ? fresh : u));
+                      }
+                      if (typeof prev === 'object' && prev !== null) {
+                        return { ...prev, [userData.userId]: fresh };
+                      }
+                      return prev;
+                    });
+                  }
+                  if (setState) {
+                    setState(prev => ({ ...prev, ...fresh }));
+                  }
+                }
+              } catch (error) {
+                console.error(error);
+              }
+              toggleDetails();
             }
-          } catch (error) {
-            console.error(error);
-          }
-
-          const details = document.getElementById(userData.userId);
-          if (details) {
-            const isHidden = details.style.display === 'none';
-            details.style.display = isHidden ? 'block' : 'none';
-            details.style.marginTop = isHidden ? '8px' : '0';
-            if (isHidden) {
-              const bg = getParentBackground(details);
-              details.style.color = getContrastColor(bg);
-            }
+          } else {
+            toggleDetails();
           }
         }}
         style={{ position: 'absolute', bottom: '10px', right: '10px', cursor: 'pointer', color: '#ebe0c2', fontSize: '18px' }}
