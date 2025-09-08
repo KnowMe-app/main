@@ -7,6 +7,7 @@ import { color } from './styles';
 import { pickerFieldsExtended as pickerFields } from './formFields';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import { parseDDMMYYYY } from '../utils/parseDDMMYYYY';
+import { formatDateToDisplay } from 'components/inputValidations';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -192,6 +193,8 @@ export const ProfileForm = ({
               ? new Date(
                   state.updatedAt ?? parseDDMMYYYY(state.lastAction)
                 ).toLocaleDateString('uk-UA')
+              : field.name === 'lastDelivery'
+              ? formatDateToDisplay(state.lastDelivery)
               : state[field.name] || '';
           return (
             <PickerContainer key={index}>
