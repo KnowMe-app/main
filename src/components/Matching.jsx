@@ -328,9 +328,10 @@ const TopActions = styled.div`
   z-index: 10;
 `;
 
-const ActionButton = styled.button.attrs({ className: 'accent-block' })`
+const ActionButton = styled.button`
   width: 35px;
   height: 35px;
+  padding: 3px;
   border: none;
   background-color: ${color.accent5};
   color: white;

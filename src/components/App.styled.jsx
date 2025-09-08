@@ -22,7 +22,10 @@ export const TitleH2 = styled.h2`
   margin-bottom: 10px;
 `;
 
-export const Button = styled.button.attrs({ className: 'accent-block' })`
+export const Button = styled.button`
+  margin-left: 10px;
+  /* margin-bottom: 10px; */
+  padding: 5px 5px;
   width: 40px;
   height: 40px;
   background-color: var(--accent-color);
@@ -34,6 +37,6 @@ export const Button = styled.button.attrs({ className: 'accent-block' })`
   &:hover,
   &:focus {
     background-color: var(--accent-color-hover);
-  }
+  };
   align-self: flex-end;
 `;

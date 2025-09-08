@@ -10,8 +10,6 @@
   --box-shadow: 0px 0px 10px 5px rgba(0, 0, 0, 0.2);
   --border: 1px solid #122236;
   --animation-timing-function: 300ms cubic-bezier(0.4, 0, 0.2, 1) 0s;
-  --accent-block-padding: 4px;
-  --accent-block-margin: 8px;
 }
 
 body,
@@ -79,11 +77,6 @@ body {
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
-}
-
-.accent-block {
-  padding: var(--accent-block-padding);
-  margin: var(--accent-block-margin);
 }
 
 .spinner {
