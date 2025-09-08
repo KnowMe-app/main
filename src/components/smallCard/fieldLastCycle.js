@@ -1,7 +1,11 @@
 import React from 'react';
 import { handleChange, handleSubmit } from './actions';
 import { formatDateToDisplay, formatDateToServer } from 'components/inputValidations';
-import { UnderlinedInput, AttentionButton, color } from 'components/styles';
+import {
+  UnderlinedInput,
+  AttentionButton,
+  AttentionDiv,
+} from 'components/styles';
 
 const calculateNextDate = dateString => {
   if (!dateString) return '';
@@ -227,17 +231,31 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             color: 'white',
           }}
         />
-        <span
-          onClick={handlePregnantClick}
-          style={{
-            cursor: 'pointer',
-            marginLeft: '10px',
-            marginRight: '5px',
-            color: isPregnant ? color.accent : 'white',
-          }}
-        >
-          {isPregnant ? 'вагітна' : 'місячні'}
-        </span>
+        {isPregnant ? (
+          <AttentionDiv
+            onClick={handlePregnantClick}
+            style={{
+              cursor: 'pointer',
+              marginLeft: '10px',
+              marginRight: '5px',
+              backgroundColor: 'hotpink',
+            }}
+          >
+            вагітна
+          </AttentionDiv>
+        ) : (
+          <span
+            onClick={handlePregnantClick}
+            style={{
+              cursor: 'pointer',
+              marginLeft: '10px',
+              marginRight: '5px',
+              color: 'white',
+            }}
+          >
+            місячні
+          </span>
+        )}
         {!isPregnant && nextCycle && (
           <React.Fragment>
             <span style={{ marginRight: '5px', color: 'white' }}>-</span>
