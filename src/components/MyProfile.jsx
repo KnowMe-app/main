@@ -265,15 +265,17 @@ export const SubmitButton = styled.button`
   }
 `;
 
-const PublishButton = styled.button.attrs({ className: 'accent-block' })`
+const PublishButton = styled.button`
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: var(--accent-block-margin) auto;
+  margin: 5px auto 0 auto;
   color: white;
   border: none;
   border-radius: 5px;
+  cursor: pointer;
   font-size: 16px;
+  padding: 10px 20px;
   background-color: ${color.accent5};
   text-align: center;
   font-weight: bold;
