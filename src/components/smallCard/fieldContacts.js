@@ -65,6 +65,7 @@ const icons = {
   vk: <FaVk style={iconStyle} />,
   otherLink: <FaGlobe style={iconStyle} />,
   phone: <FaPhoneVolume style={iconStyle} />,
+  email: <MdEmail style={iconStyle} />,
 };
 
   return Object.keys(data).map(key => {
@@ -88,7 +89,7 @@ const icons = {
             gap: '2px',
           }}
         >
-          {key !== 'email' && (
+          {label && (
             <strong style={{ marginRight: '2px', display: 'flex', alignItems: 'center' }}>
               {label}
             </strong>

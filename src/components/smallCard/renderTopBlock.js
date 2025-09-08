@@ -121,16 +121,16 @@ export const renderTopBlock = (
           })()}
         </strong>
         {/* {renderCsection(userData.csection)}  */}
-        <div style={{ whiteSpace: 'pre-wrap', display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+        <div style={{ whiteSpace: 'pre-wrap', display: 'flex', alignItems: 'center', gap: '2px', flexWrap: 'wrap' }}>
           {(() => {
             const parts = [];
             if (userData.maritalStatus) parts.push(fieldMaritalStatus(userData.maritalStatus));
             if (userData.blood) parts.push(fieldBlood(userData.blood));
             if (userData.height) parts.push(userData.height);
             if (userData.height && userData.weight) parts.push('/');
-            if (userData.weight) parts.push(`${userData.weight} -`);
+            if (userData.weight) parts.push(`${userData.weight}-`);
             if (userData.weight && userData.height) parts.push(fieldIMT(userData.weight, userData.height));
-            return parts.map((part, index) => <React.Fragment key={index}>{part} </React.Fragment>);
+            return parts.map((part, index) => <React.Fragment key={index}>{part}</React.Fragment>);
           })()}
         </div>
         {region && <div>{region}</div>}
