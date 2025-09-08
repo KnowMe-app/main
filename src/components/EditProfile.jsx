@@ -14,6 +14,11 @@ import { renderTopBlock } from "./smallCard/renderTopBlock";
 import { coloredCard } from "./styles";
 import { updateCachedUser } from '../utils/cache';
 import { getCard } from '../utils/cardIndex';
+import {
+  formatDateAndFormula,
+  formatDateToDisplay,
+  formatDateToServer,
+} from 'components/inputValidations';
 
 const Container = styled.div`
   display: flex;
@@ -87,7 +92,11 @@ const EditProfile = () => {
     if (!state && userId) {
       const load = async () => {
         const data = await fetchUserById(userId);
-        setState(data || { userId });
+        setState(
+          data
+            ? { ...data, lastDelivery: formatDateToDisplay(data.lastDelivery) }
+            : { userId },
+        );
       };
       load();
     }
@@ -108,12 +117,23 @@ const EditProfile = () => {
 
     const removeKeys = delCondition ? Object.keys(delCondition) : [];
     updateCachedUser(updatedState, { removeKeys });
+
+    const syncedState = {
+      ...updatedState,
+      lastDelivery: formatDateToServer(
+        formatDateAndFormula(updatedState.lastDelivery),
+      ),
+    };
     setIsSyncing(true);
     try {
-      const serverData = await remoteUpdate({ updatedState, overwrite, delCondition });
+      const serverData = await remoteUpdate({ updatedState: syncedState, overwrite, delCondition });
       if (serverData?.updatedAt && serverData.updatedAt > updatedState.updatedAt) {
-        updateCachedUser(serverData);
-        setState(serverData);
+        const formattedServerData = {
+          ...serverData,
+          lastDelivery: formatDateToDisplay(serverData.lastDelivery),
+        };
+        updateCachedUser(formattedServerData);
+        setState(formattedServerData);
       }
     } finally {
       setIsSyncing(false);

@@ -71,6 +71,11 @@ import {
   clearAllCardsCache,
   updateCachedUser,
 } from 'utils/cache';
+import {
+  formatDateAndFormula,
+  formatDateToDisplay,
+  formatDateToServer,
+} from 'components/inputValidations';
 
 const Container = styled.div`
   display: flex;
@@ -271,7 +276,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     cacheFetchedUsers({ [updatedState.userId]: updatedState }, cacheLoad2Users, filters);
     setUsers(prev => ({ ...prev, [updatedState.userId]: updatedState }));
 
-    const syncedState = updatedState;
+    const syncedState = {
+      ...updatedState,
+      lastDelivery: formatDateToServer(
+        formatDateAndFormula(updatedState.lastDelivery)
+      ),
+    };
 
     if (syncedState?.userId?.length > 20) {
       const { existingData } = await fetchUserById(syncedState.userId);
@@ -298,7 +308,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       await updateDataInNewUsersRTDB(syncedState.userId, cleanedStateForNewUsers, 'update');
     } else {
       if (newState) {
-        await updateDataInNewUsersRTDB(syncedState.userId, newState, 'update');
+        await updateDataInNewUsersRTDB(
+          syncedState.userId,
+          { ...newState, lastDelivery: syncedState.lastDelivery },
+          'update',
+        );
       } else {
         await updateDataInNewUsersRTDB(syncedState.userId, syncedState, 'update');
       }
@@ -307,10 +321,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     try {
       const serverData = await fetchUserById(syncedState.userId);
       if (serverData?.updatedAt && serverData.updatedAt > syncedState.updatedAt) {
-        updateCachedUser(serverData);
-        cacheFetchedUsers({ [serverData.userId]: serverData }, cacheLoad2Users, filters);
-        setUsers(prev => ({ ...prev, [serverData.userId]: serverData }));
-        setState(serverData);
+        const formattedServer = {
+          ...serverData,
+          lastDelivery: formatDateToDisplay(serverData.lastDelivery),
+        };
+        updateCachedUser(formattedServer);
+        cacheFetchedUsers(
+          { [formattedServer.userId]: formattedServer },
+          cacheLoad2Users,
+          filters,
+        );
+        setUsers(prev => ({ ...prev, [formattedServer.userId]: formattedServer }));
+        setState(formattedServer);
       }
     } catch {
       // ignore fetch errors
