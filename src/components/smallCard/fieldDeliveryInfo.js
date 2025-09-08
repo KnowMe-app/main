@@ -98,7 +98,6 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
               true,
             );
           }}
-          style={{ backgroundColor: '#28A745' }}
         >
           кс {csection}
         </AttentionButton>

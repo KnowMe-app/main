@@ -226,7 +226,6 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             submittedRef.current = false;
           }}
           style={{
-            marginLeft: 0,
             textAlign: 'left',
             color: 'white',
           }}
@@ -236,8 +235,6 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             onClick={handlePregnantClick}
             style={{
               cursor: 'pointer',
-              marginLeft: '10px',
-              marginRight: '5px',
               backgroundColor: 'hotpink',
             }}
           >
@@ -248,8 +245,6 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             onClick={handlePregnantClick}
             style={{
               cursor: 'pointer',
-              marginLeft: '10px',
-              marginRight: '5px',
               color: 'white',
             }}
           >
@@ -258,7 +253,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         )}
         {!isPregnant && nextCycle && (
           <React.Fragment>
-            <span style={{ marginRight: '5px', color: 'white' }}>-</span>
+            <span style={{ color: 'white' }}>-</span>
             <AttentionButton
               onClick={() =>
                 handleChange(
