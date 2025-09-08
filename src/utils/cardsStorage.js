@@ -28,7 +28,8 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
     ...cards[cardId],
     ...data,
     id: cardId,
-    updatedAt: data.updatedAt ?? Date.now(),
+    updatedAt: Date.now(),
+    ...(data.updatedAt ? { serverUpdatedAt: data.updatedAt } : {}),
   };
   removeKeys.forEach(key => {
     delete updatedCard[key];

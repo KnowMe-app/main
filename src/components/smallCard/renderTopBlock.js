@@ -17,6 +17,7 @@ import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
 import { fetchUserById } from '../config';
 import { updateCard } from 'utils/cardsStorage';
+import { getCard } from 'utils/cardIndex';
 
 const getParentBackground = element => {
   let el = element;
@@ -164,9 +165,14 @@ export const renderTopBlock = (
           };
 
           try {
-            const fresh = await fetchUserById(userData.userId);
-            if (fresh) {
-              const updated = updateCard(userData.userId, fresh);
+            let updated = getCard(userData.userId);
+            if (!updated) {
+              const fresh = await fetchUserById(userData.userId);
+              if (fresh) {
+                updated = updateCard(userData.userId, fresh);
+              }
+            }
+            if (updated) {
               if (setUsers) {
                 setUsers(prev => {
                   if (Array.isArray(prev)) {
