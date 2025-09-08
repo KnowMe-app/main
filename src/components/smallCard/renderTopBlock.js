@@ -128,7 +128,7 @@ export const renderTopBlock = (
             if (userData.blood) parts.push(fieldBlood(userData.blood));
             if (userData.height) parts.push(userData.height);
             if (userData.height && userData.weight) parts.push('/');
-            if (userData.weight) parts.push(`${userData.weight} - `);
+            if (userData.weight) parts.push(`${userData.weight} -`);
             if (userData.weight && userData.height) parts.push(fieldIMT(userData.weight, userData.height));
             return parts.map((part, index) => <React.Fragment key={index}>{part} </React.Fragment>);
           })()}
