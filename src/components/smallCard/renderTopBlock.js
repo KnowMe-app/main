@@ -187,20 +187,20 @@ export const renderTopBlock = (
               try {
                 const fresh = await fetchUserById(userData.userId);
                 if (fresh) {
-                  updateCard(userData.userId, { ...fresh, updatedAt: Date.now() });
+                  const updated = updateCard(userData.userId, fresh);
                   if (setUsers) {
                     setUsers(prev => {
                       if (Array.isArray(prev)) {
-                        return prev.map(u => (u.userId === userData.userId ? fresh : u));
+                        return prev.map(u => (u.userId === userData.userId ? updated : u));
                       }
                       if (typeof prev === 'object' && prev !== null) {
-                        return { ...prev, [userData.userId]: fresh };
+                        return { ...prev, [userData.userId]: updated };
                       }
                       return prev;
                     });
                   }
                   if (setState) {
-                    setState(prev => ({ ...prev, ...fresh }));
+                    setState(prev => ({ ...prev, ...updated }));
                   }
                 }
               } catch (error) {

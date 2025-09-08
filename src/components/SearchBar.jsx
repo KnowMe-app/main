@@ -11,7 +11,7 @@ import {
   loadQueries,
   TTL_MS,
 } from '../utils/cardIndex';
-import { saveCard } from '../utils/cardsStorage';
+import { updateCard } from '../utils/cardsStorage';
 
 const SearchIcon = (
   <svg
@@ -380,16 +380,32 @@ const SearchBar = ({
 
   const cachedSearch = async params => {
     const res = await searchFunc(params);
-    if (res && Object.keys(res).length > 0) {
-      const [key, value] = Object.entries(params)[0] || [];
-      if (key && value) {
-        const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
-        const arr = Array.isArray(res) ? res : Object.values(res);
-        arr.forEach(u => saveCard({ ...u, id: u.userId }));
-        setIdsForQuery(cacheKey, arr.map(u => u.userId));
-      }
+    if (!res || Object.keys(res).length === 0) {
+      return res;
     }
-    return res;
+
+    const [key, value] = Object.entries(params)[0] || [];
+    const arr = Array.isArray(res)
+      ? res
+      : 'userId' in res
+        ? [res]
+        : Object.values(res);
+    const updatedArr = arr.map(u => updateCard(u.userId, u));
+
+    if (key && value) {
+      const cacheKey = getCacheKey(
+        'search',
+        normalizeQueryKey(`${key}=${value}`),
+      );
+      setIdsForQuery(cacheKey, updatedArr.map(u => u.userId));
+    }
+
+    if (Array.isArray(res)) return updatedArr;
+    if ('userId' in res) return updatedArr[0];
+    return updatedArr.reduce((acc, card) => {
+      acc[card.userId] = card;
+      return acc;
+    }, {});
   };
 
   const processUserSearch = async (platform, parseFunction, inputData) => {
