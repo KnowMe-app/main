@@ -23,7 +23,7 @@ const iconStyle = {
 const phoneBtnStyle = {
   color: 'inherit',
   textDecoration: 'none',
-  marginLeft: '8px',
+  marginLeft: '4px',
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -64,6 +64,7 @@ const icons = {
   tiktok: <SiTiktok style={iconStyle} />,
   vk: <FaVk style={iconStyle} />,
   otherLink: <FaGlobe style={iconStyle} />,
+  phone: <FaPhoneVolume style={iconStyle} />,
 };
 
   return Object.keys(data).map(key => {
@@ -84,11 +85,11 @@ const icons = {
             display: 'flex',
             alignItems: 'center',
             flexWrap: 'wrap',
-            gap: '4px',
+            gap: '2px',
           }}
         >
-          {!['email', 'phone'].includes(key) && (
-            <strong style={{ marginRight: '4px', display: 'flex', alignItems: 'center' }}>
+          {key !== 'email' && (
+            <strong style={{ marginRight: '2px', display: 'flex', alignItems: 'center' }}>
               {label}
             </strong>
           )}
