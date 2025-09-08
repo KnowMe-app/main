@@ -77,18 +77,16 @@ const Label = styled.label`
     `}
 `;
 
-const SubmitButton = styled.button`
+const SubmitButton = styled.button.attrs({ className: 'accent-block' })`
   cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 5px auto 0 auto;
+  margin: var(--accent-block-margin) auto;
   color: ${({ disabled }) => (disabled ? '#b0b0b0' : 'white')};
   border: none;
   border-radius: 5px;
-  cursor: pointer;
   font-size: 16px;
-  padding: 10px 20px;
   background-color: ${({ disabled }) => (disabled ? '#d0d0d0' : color.accent5)}; /* Сірий для вимкненої кнопки, синій для активної */
   text-align: center;
   font-weight: bold;

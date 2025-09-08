@@ -76,9 +76,8 @@ const UploadButtonWrapper = styled.div`
   margin-top: 20px;
 `;
 
-const UploadButtonLabel = styled.label`
+const UploadButtonLabel = styled.label.attrs({ className: 'accent-block' })`
   display: inline-block;
-  padding: 10px 20px;
   background-color: ${color.accent5};
   color: white;
   border-radius: 5px;
@@ -90,12 +89,12 @@ const UploadButtonLabel = styled.label`
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
 
   &:hover {
-    background-color: ${color.accent}; 
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); 
+    background-color: ${color.accent};
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   }
 
   &:active {
-    transform: scale(0.98); 
+    transform: scale(0.98);
   }
 `;
 
