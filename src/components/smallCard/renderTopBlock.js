@@ -165,14 +165,25 @@ export const renderTopBlock = (
           };
 
           try {
-            let updated = getCard(userData.userId);
-            if (!updated) {
-              const fresh = await fetchUserById(userData.userId);
-              if (fresh) {
-                updated = updateCard(userData.userId, fresh);
+            const cached = getCard(userData.userId);
+            let updated = cached;
+
+            const fresh = await fetchUserById(userData.userId);
+            if (fresh) {
+              const isNewer =
+                !cached ||
+                !cached.serverUpdatedAt ||
+                !fresh.serverUpdatedAt ||
+                new Date(fresh.serverUpdatedAt) > new Date(cached.serverUpdatedAt);
+
+              if (isNewer) {
+                updated = fresh;
               }
             }
+
             if (updated) {
+              updated = updateCard(userData.userId, updated);
+
               if (setUsers) {
                 setUsers(prev => {
                   if (Array.isArray(prev)) {
@@ -184,6 +195,7 @@ export const renderTopBlock = (
                   return prev;
                 });
               }
+
               if (setState) {
                 setState(prev => ({ ...prev, ...updated }));
               }
