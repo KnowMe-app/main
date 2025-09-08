@@ -101,8 +101,8 @@ const icons = {
                     const processedVal =
                       key === 'phone' ? val.replace(/\s/g, '') : val;
                     const displayVal =
-                      key === 'otherLink' && processedVal.length > 15
-                        ? `${processedVal.slice(0, 15)}...`
+                      key === 'otherLink' && processedVal.length > 25
+                        ? `${processedVal.slice(0, 25)}...`
                         : processedVal;
                     return (
                       <span
@@ -171,8 +171,8 @@ const icons = {
                   const processedValue =
                     key === 'phone' ? value.replace(/\s/g, '') : value;
                   const displayValue =
-                    key === 'otherLink' && processedValue.length > 15
-                      ? `${processedValue.slice(0, 15)}...`
+                    key === 'otherLink' && processedValue.length > 25
+                      ? `${processedValue.slice(0, 25)}...`
                       : processedValue;
                   return (
                     <span
