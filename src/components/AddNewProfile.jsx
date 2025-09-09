@@ -600,7 +600,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const cards = ids.map(id => getCard(id)).filter(Boolean);
     if (cards.length > 0) {
       const cachedUsers = cards.reduce((acc, u) => {
-        acc[u.id] = u;
+        acc[u.userId] = u;
         return acc;
       }, {});
       setUsers(cachedUsers);
@@ -791,7 +791,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
     };
     const filteredArr = cachedArr.filter(
-      u => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[u.id]),
+      u => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[u.userId]),
     );
 
     let offset = dateOffset2;
@@ -800,7 +800,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const slice = filteredArr.slice(offset, offset + PAGE_SIZE);
     if (slice.length > 0) {
       const cachedUsers = slice.reduce((acc, u) => {
-        acc[u.id] = u;
+        acc[u.userId] = u;
         return acc;
       }, {});
       cacheFetchedUsers(cachedUsers, cacheLoad2Users, currentFilters);
@@ -902,7 +902,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const sorted = loadedArr
         .sort((a, b) => compareUsersByGetInTouch(a, b))
         .reduce((acc, user) => {
-          acc[user.id] = user;
+          acc[user.userId] = user;
           return acc;
         }, {});
       const total = Object.keys(sorted).length;
@@ -929,7 +929,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const sorted = loadedArr
       .sort((a, b) => compareUsersByGetInTouch(a, b))
       .reduce((acc, user) => {
-        acc[user.id] = user;
+        acc[user.userId] = user;
         return acc;
       }, {});
     const total = Object.keys(sorted).length;
@@ -957,7 +957,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const cached = await getDplCards(verifyDuplicate);
       if (cached.length > 0) {
         const merged = cached.reduce((acc, user) => {
-          acc[user.id] = user;
+          acc[user.userId] = user;
           return acc;
         }, {});
         setUsers(prev => ({ ...prev, ...merged }));
@@ -993,7 +993,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const cached = await getDplCards();
     if (cached.length > 0) {
       const merged = cached.reduce((acc, user) => {
-        acc[user.id] = user;
+        acc[user.userId] = user;
         return acc;
       }, {});
       setUsers(prev => ({ ...prev, ...merged }));

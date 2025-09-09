@@ -40,11 +40,11 @@ describe('cardsStorage', () => {
   it('refreshes expired card from backend', async () => {
     const SIX_HOURS = 6 * 60 * 60 * 1000;
     const expired = Date.now() - SIX_HOURS - 1000;
-    const oldCard = { id: '1', title: 'Old', updatedAt: expired };
+    const oldCard = { userId: '1', title: 'Old', updatedAt: expired };
     localStorage.setItem('cards', JSON.stringify({ '1': oldCard }));
     setIdsForQuery('favorite', ['1']);
 
-    const remoteFetch = jest.fn().mockResolvedValue({ id: '1', title: 'Fresh' });
+    const remoteFetch = jest.fn().mockResolvedValue({ userId: '1', title: 'Fresh' });
     const cards = await getCardsByList('favorite', remoteFetch);
 
     expect(remoteFetch).toHaveBeenCalledWith('1');

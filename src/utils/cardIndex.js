@@ -42,9 +42,9 @@ export const getCard = id => {
 };
 
 export const saveCard = card => {
-  if (!card || !card.id) return;
+  if (!card || !card.userId) return;
   const cards = loadCards();
-  cards[card.id] = { ...card, id: card.id, updatedAt: Date.now() };
+  cards[card.userId] = { ...card, userId: card.userId, updatedAt: Date.now() };
   saveCards(cards);
 };
 
