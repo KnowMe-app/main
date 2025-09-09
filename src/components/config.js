@@ -24,7 +24,9 @@ import {
 import { PAGE_SIZE, BATCH_SIZE } from './constants';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
-import { removeCard } from '../utils/cardIndex';
+import { removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
+import { updateCard } from '../utils/cardsStorage';
+import { getCacheKey } from '../utils/cache';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -164,6 +166,34 @@ export const fetchUsersCollectionInRTDB = async () => {
   } else {
     return []; // Повертаємо пустий масив, якщо немає даних
   }
+};
+
+export const fetchAllUsers = async () => {
+  const [usersSnap, newUsersSnap] = await Promise.all([
+    get(ref2(database, 'users')),
+    get(ref2(database, 'newUsers')),
+  ]);
+  const usersData = usersSnap.exists() ? usersSnap.val() : {};
+  const newUsersData = newUsersSnap.exists() ? newUsersSnap.val() : {};
+  const ids = new Set([
+    ...Object.keys(usersData),
+    ...Object.keys(newUsersData),
+  ]);
+  const allIds = [];
+  ids.forEach(id => {
+    const merged = { ...(usersData[id] || {}), ...(newUsersData[id] || {}) };
+    updateCard(id, merged);
+    allIds.push(id);
+    Object.entries(merged).forEach(([key, value]) => {
+      if (value === undefined || value === null) return;
+      const cacheKey = getCacheKey(
+        'search',
+        normalizeQueryKey(`${key}=${value}`),
+      );
+      setIdsForQuery(cacheKey, [id]);
+    });
+  });
+  setIdsForQuery('allUsers', allIds);
 };
 
 export const fetchLatestUsers = async (limit = 9, lastKey) => {

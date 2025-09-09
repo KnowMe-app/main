@@ -132,4 +132,29 @@ export const getFilteredCardsByList = async (
   return filtered.slice(0, target).map(([id]) => cards[id]);
 };
 
+export const searchCachedCards = term => {
+  const search = String(term || '').toLowerCase();
+  if (!search) return {};
+  const cards = loadCards();
+  const results = {};
+  Object.entries(cards).forEach(([id, card]) => {
+    const matched = Object.entries(card || {}).some(([key, value]) => {
+      if (String(key).toLowerCase().includes(search)) return true;
+      if (value === undefined || value === null) return false;
+      if (typeof value === 'object') {
+        try {
+          return JSON.stringify(value).toLowerCase().includes(search);
+        } catch {
+          return false;
+        }
+      }
+      return String(value).toLowerCase().includes(search);
+    });
+    if (matched) {
+      results[id] = card;
+    }
+  });
+  return results;
+};
+
 export const saveCard = indexSaveCard;
