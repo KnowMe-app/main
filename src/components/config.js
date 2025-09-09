@@ -363,20 +363,20 @@ export const setUserComment = async (cardId, text) => {
     const commentsRef = ref2(database, `multiData/comments/${user.uid}`);
     const q = query(commentsRef, orderByChild('cardId'), equalTo(cardId));
     const snap = await get(q);
-    const updatedAt = Date.now();
+    const lastAction = Date.now();
     if (snap.exists()) {
       const key = Object.keys(snap.val())[0];
       await set(ref2(database, `multiData/comments/${user.uid}/${key}`), {
         cardId,
         text,
         authorId: user.uid,
-        updatedAt,
+        lastAction,
       });
-      return { commentId: key, updatedAt };
+      return { commentId: key, lastAction };
     }
     const newRef = push(commentsRef);
-    await set(newRef, { cardId, text, authorId: user.uid, updatedAt });
-    return { commentId: newRef.key, updatedAt };
+    await set(newRef, { cardId, text, authorId: user.uid, lastAction });
+    return { commentId: newRef.key, lastAction };
   } catch (error) {
     console.error('Error setting comment:', error);
     return null;
@@ -396,7 +396,7 @@ export const fetchUserComment = async (ownerId, cardId) => {
       commentId,
       cardId: value.cardId,
       text: value.text,
-      updatedAt: value.updatedAt || 0,
+      lastAction: value.lastAction || 0,
     }));
   } catch (error) {
     console.error('Error fetching comment:', error);
@@ -418,7 +418,7 @@ export const fetchUserComments = async (ownerId, cardIds = []) => {
         const arr = Object.entries(snap.val()).map(([commentId, val]) => ({
           commentId,
           text: val.text || '',
-          updatedAt: val.updatedAt || 0,
+          lastAction: val.lastAction || 0,
         }));
         result[cardIds[idx]] = arr;
       }

@@ -138,7 +138,7 @@ GitHub.
 ```json
 {
   "cards": {
-    "1": { "id": "1", "title": "Card 1", "updatedAt": 1690000000000 }
+    "1": { "id": "1", "title": "Card 1", "lastAction": 1690000000000 }
   },
   "load2": ["1"],
   "favorite": ["1"]
@@ -170,7 +170,7 @@ const load2Cards = await getCardsByList('load2', fetchCard);
 const favoriteCards = await getCardsByList('favorite', fetchCard);
 ```
 
-Каждая карточка содержит поле `updatedAt`. При невозможности получить карточку с
+Каждая карточка содержит поле `lastAction`. При невозможности получить карточку с
 бекенда её идентификатор удаляется из соответствующего списка.
 
 Страница `AddNewProfile` использует эти списки `favorite` и `load2` через

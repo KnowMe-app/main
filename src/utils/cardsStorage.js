@@ -7,6 +7,7 @@ import {
   TTL_MS,
   saveCard as indexSaveCard,
 } from './cardIndex';
+import { normalizeLastAction } from './normalizeLastAction';
 
 export { TTL_MS };
 
@@ -28,8 +29,7 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
     ...cards[cardId],
     ...data,
     userId: cardId,
-    updatedAt: Date.now(),
-    ...(data.updatedAt ? { serverUpdatedAt: data.updatedAt } : {}),
+    lastAction: normalizeLastAction(data.lastAction) || Date.now(),
   };
   delete updatedCard.id;
   removeKeys.forEach(key => {
@@ -39,7 +39,8 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   saveCards(cards);
   touchCardInQueries(cardId);
   if (typeof remoteSave === 'function') {
-    Promise.resolve(remoteSave(updatedCard)).catch(() => {});
+    const { lastAction, ...toSend } = updatedCard;
+    Promise.resolve(remoteSave(toSend)).catch(() => {});
   }
   return updatedCard;
 };
@@ -53,7 +54,7 @@ export const getCardsByList = async (listKey, remoteFetch) => {
   const staleIds = [];
   ids.forEach(id => {
     const card = cards[id];
-    if (card && Date.now() - card.updatedAt <= TTL_MS) {
+    if (card && Date.now() - card.lastAction <= TTL_MS) {
       result.push(card);
       freshIds.push(id);
     } else {
@@ -73,7 +74,11 @@ export const getCardsByList = async (listKey, remoteFetch) => {
     fetched.forEach(([id, fresh]) => {
       if (fresh) {
         const { id: _, ...rest } = fresh;
-        const card = { ...rest, userId: id, updatedAt: Date.now() };
+        const card = {
+          ...rest,
+          userId: id,
+          lastAction: normalizeLastAction(rest.lastAction) || Date.now(),
+        };
         cards[id] = card;
         result.push(card);
         freshIds.push(id);
@@ -121,7 +126,11 @@ export const getFilteredCardsByList = async (
       const extra = await fetchMore(needed);
       extra.forEach(([id, data]) => {
         const { id: _, ...rest } = data;
-        cards[id] = { ...rest, userId: id, updatedAt: Date.now() };
+        cards[id] = {
+          ...rest,
+          userId: id,
+          lastAction: normalizeLastAction(rest.lastAction) || Date.now(),
+        };
         if (!ids.includes(id)) ids.push(id);
       });
       saveCards(cards);

@@ -19,6 +19,7 @@ import {
   formatDateToDisplay,
   formatDateToServer,
 } from 'components/inputValidations';
+import { normalizeLastAction } from 'utils/normalizeLastAction';
 
 const Container = styled.div`
   display: flex;
@@ -94,7 +95,11 @@ const EditProfile = () => {
         const data = await fetchUserById(userId);
         setState(
           data
-            ? { ...data, lastDelivery: formatDateToDisplay(data.lastDelivery) }
+            ? {
+                ...data,
+                lastAction: normalizeLastAction(data.lastAction),
+                lastDelivery: formatDateToDisplay(data.lastDelivery),
+              }
             : { userId },
         );
       };
@@ -103,16 +108,9 @@ const EditProfile = () => {
   }, [state, userId]);
 
   const handleSubmit = async (newState, overwrite, delCondition) => {
-    const formatDate = date => {
-      const dd = String(date.getDate()).padStart(2, '0');
-      const mm = String(date.getMonth() + 1).padStart(2, '0');
-      const yyyy = date.getFullYear();
-      return `${dd}.${mm}.${yyyy}`;
-    };
-    const currentDate = formatDate(new Date());
     const now = Date.now();
     const baseState = newState ? { ...newState } : { ...state };
-    const updatedState = { ...baseState, lastAction: currentDate, updatedAt: now };
+    const updatedState = { ...baseState, lastAction: now };
     setState(updatedState);
 
     const removeKeys = delCondition ? Object.keys(delCondition) : [];
@@ -127,9 +125,11 @@ const EditProfile = () => {
     setIsSyncing(true);
     try {
       const serverData = await remoteUpdate({ updatedState: syncedState, overwrite, delCondition });
-      if (serverData?.updatedAt && serverData.updatedAt > updatedState.updatedAt) {
+      const serverLast = normalizeLastAction(serverData?.lastAction);
+      if (serverLast && serverLast > updatedState.lastAction) {
         const formattedServerData = {
           ...serverData,
+          lastAction: serverLast,
           lastDelivery: formatDateToDisplay(serverData.lastDelivery),
         };
         updateCachedUser(formattedServerData);

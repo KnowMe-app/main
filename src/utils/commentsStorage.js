@@ -10,7 +10,7 @@ export const loadComments = () => {
     const parsed = JSON.parse(raw);
     const result = {};
     Object.entries(parsed).forEach(([id, entry]) => {
-      if (entry && (!entry.updatedAt || Date.now() - entry.updatedAt <= TTL_MS)) {
+      if (entry && (!entry.lastAction || Date.now() - entry.lastAction <= TTL_MS)) {
         result[id] = entry;
       }
     });
@@ -28,9 +28,9 @@ export const saveComments = comments => {
   }
 };
 
-export const setLocalComment = (id, text, updatedAt = Date.now()) => {
+export const setLocalComment = (id, text, lastAction = Date.now()) => {
   const comments = loadComments();
-  comments[id] = { text, updatedAt };
+  comments[id] = { text, lastAction };
   saveComments(comments);
 };
 

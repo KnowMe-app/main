@@ -6,8 +6,8 @@ import { useAutoResize } from '../hooks/useAutoResize';
 import { color } from './styles';
 import { pickerFieldsExtended as pickerFields } from './formFields';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
-import { parseDDMMYYYY } from '../utils/parseDDMMYYYY';
 import { formatDateToDisplay } from 'components/inputValidations';
+import { normalizeLastAction } from 'utils/normalizeLastAction';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -189,10 +189,8 @@ export const ProfileForm = ({
         .filter(field => !['myComment', 'getInTouch', 'writer'].includes(field.name))
         .map((field, index) => {
           const displayValue =
-            field.name === 'updatedAt'
-              ? new Date(
-                  state.updatedAt ?? parseDDMMYYYY(state.lastAction)
-                ).toLocaleDateString('uk-UA')
+            field.name === 'lastAction'
+              ? formatDateToDisplay(normalizeLastAction(state.lastAction))
               : field.name === 'lastDelivery'
               ? formatDateToDisplay(state.lastDelivery)
               : state[field.name] || '';
@@ -256,7 +254,7 @@ export const ProfileForm = ({
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={displayValue}
-                    {...(field.name === 'updatedAt'
+                    {...(field.name === 'lastAction'
                       ? { readOnly: true }
                       : {
                           onChange: e => {
@@ -282,7 +280,7 @@ export const ProfileForm = ({
                           onBlur: () => handleSubmit(state, 'overwrite'),
                         })}
                   />
-                  {field.name !== 'updatedAt' && state[field.name] && (
+                  {field.name !== 'lastAction' && state[field.name] && (
                     <ClearButton
                       type="button"
                       onMouseDown={e => e.preventDefault()}
@@ -291,7 +289,7 @@ export const ProfileForm = ({
                       &times;
                     </ClearButton>
                   )}
-                  {field.name !== 'updatedAt' && state[field.name] && (
+                  {field.name !== 'lastAction' && state[field.name] && (
                     <DelKeyValueBTN
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => handleDelKeyValue(field.name)}
@@ -308,7 +306,7 @@ export const ProfileForm = ({
               </InputDiv>
             )}
 
-            {field.name !== 'updatedAt' &&
+            {field.name !== 'lastAction' &&
               state[field.name] &&
               (Array.isArray(state[field.name])
                 ? state[field.name].length === 0 || state[field.name][state[field.name].length - 1] !== ''

@@ -13,8 +13,8 @@ describe('getFilteredCardsByList', () => {
   it('filters stored cards and fetches more when needed', async () => {
     const now = Date.now();
     localStorage.setItem('cards', JSON.stringify({
-      a: { userId: 'a', ok: true, updatedAt: now },
-      b: { userId: 'b', ok: false, updatedAt: now },
+      a: { userId: 'a', ok: true, lastAction: now },
+      b: { userId: 'b', ok: false, lastAction: now },
     }));
     setIdsForQuery('testList', ['a', 'b']);
 
