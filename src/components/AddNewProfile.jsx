@@ -76,6 +76,7 @@ import {
   formatDateToDisplay,
   formatDateToServer,
 } from 'components/inputValidations';
+import { normalizeLastAction } from 'utils/normalizeLastAction';
 
 const Container = styled.div`
   display: flex;
@@ -258,16 +259,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids'];
 
-    const formatDate = date => {
-      const dd = String(date.getDate()).padStart(2, '0');
-      const mm = String(date.getMonth() + 1).padStart(2, '0');
-      const yyyy = date.getFullYear();
-      return `${dd}.${mm}.${yyyy}`;
-    };
-    const currentDate = formatDate(new Date());
     const now = Date.now();
     const baseState = newState ? { ...newState } : { ...state };
-    const updatedState = { ...baseState, lastAction: currentDate, updatedAt: now };
+    const updatedState = { ...baseState, lastAction: now };
 
     // Optimistically update local cache and UI state before syncing with server
     setState(updatedState);
@@ -320,9 +314,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     try {
       const serverData = await fetchUserById(syncedState.userId);
-      if (serverData?.updatedAt && serverData.updatedAt > syncedState.updatedAt) {
+      const serverLast = normalizeLastAction(serverData?.lastAction);
+      if (serverLast && serverLast > syncedState.lastAction) {
         const formattedServer = {
           ...serverData,
+          lastAction: serverLast,
           lastDelivery: formatDateToDisplay(serverData.lastDelivery),
         };
         updateCachedUser(formattedServer);

@@ -37,14 +37,14 @@ export const getCard = id => {
   const cards = loadCards();
   const card = cards[id];
   if (!card) return null;
-  if (Date.now() - card.updatedAt > TTL_MS) return null;
+  if (Date.now() - card.lastAction > TTL_MS) return null;
   return card;
 };
 
 export const saveCard = card => {
   if (!card || !card.userId) return;
   const cards = loadCards();
-  cards[card.userId] = { ...card, userId: card.userId, updatedAt: Date.now() };
+  cards[card.userId] = { ...card, userId: card.userId, lastAction: Date.now() };
   saveCards(cards);
 };
 
@@ -53,7 +53,7 @@ export const getIdsByQuery = queryKey => {
   const queries = loadQueries();
   const entry = queries[key];
   if (!entry) return [];
-  if (Date.now() - entry.updatedAt > TTL_MS) {
+  if (Date.now() - entry.lastAction > TTL_MS) {
     delete queries[key];
     saveQueries(queries);
     return [];
@@ -70,7 +70,7 @@ export const getIdsByQuery = queryKey => {
 export const setIdsForQuery = (queryKey, ids) => {
   const key = normalizeQueryKey(queryKey);
   const queries = loadQueries();
-  queries[key] = { ids: ids.slice(), updatedAt: Date.now() };
+  queries[key] = { ids: ids.slice(), lastAction: Date.now() };
   saveQueries(queries);
 };
 
@@ -80,7 +80,7 @@ export const touchCardInQueries = cardId => {
   Object.keys(queries).forEach(key => {
     const entry = queries[key];
     if (entry.ids && entry.ids.includes(cardId)) {
-      entry.updatedAt = Date.now();
+      entry.lastAction = Date.now();
       changed = true;
     }
   });

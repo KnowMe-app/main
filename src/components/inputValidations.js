@@ -402,14 +402,37 @@ export const removeSpaceAndNewLine = value => {
   };
   
      // Перетворення дати з формату YYYY-MM-DD в DD.MM.YYYY
-  export const formatDateToDisplay = (dateString) => {
-    if (!dateString) return '';
-    const dashPattern = /^\d{4}-\d{2}-\d{2}$/;
-    if (dashPattern.test(dateString)) {
-      const [year, month, day] = dateString.split('-');
-      return `${day}.${month}.${year}`;
+  export const formatDateToDisplay = date => {
+    if (date === undefined || date === null || date === '') return '';
+
+    let timestamp;
+
+    if (typeof date === 'number') {
+      if (date > 1e9) timestamp = date;
+    } else if (typeof date === 'string') {
+      const trimmed = date.trim();
+      if (/^\d{10,}$/.test(trimmed)) {
+        const num = Number(trimmed);
+        if (!Number.isNaN(num)) timestamp = num;
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+        const [year, month, day] = trimmed.split('-');
+        return `${day}.${month}.${year}`;
+      } else if (/^\d{2}\.\d{2}\.\d{4}$/.test(trimmed)) {
+        return trimmed;
+      } else {
+        return trimmed;
+      }
     }
-    return dateString; // якщо вже у форматі дд.мм.рррр або невірний
+
+    if (timestamp !== undefined) {
+      const d = new Date(timestamp);
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return `${dd}.${mm}.${yyyy}`;
+    }
+
+    return String(date);
   };
 
 // Перетворення дати з формату DD.MM.YYYY в YYYY-MM-DD

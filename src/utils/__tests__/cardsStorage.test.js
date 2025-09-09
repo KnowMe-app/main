@@ -11,7 +11,8 @@ describe('cardsStorage', () => {
     const card = updateCard('1', { title: 'Card 1' }, remoteSave);
     const stored = JSON.parse(localStorage.getItem('cards'));
     expect(stored['1'].title).toBe('Card 1');
-    expect(remoteSave).toHaveBeenCalledWith(card);
+    expect(remoteSave).toHaveBeenCalledWith({ title: 'Card 1', userId: '1' });
+    expect(card).toHaveProperty('lastAction');
   });
 
   it('removes specified keys from card', () => {
@@ -40,7 +41,7 @@ describe('cardsStorage', () => {
   it('refreshes expired card from backend', async () => {
     const SIX_HOURS = 6 * 60 * 60 * 1000;
     const expired = Date.now() - SIX_HOURS - 1000;
-    const oldCard = { userId: '1', title: 'Old', updatedAt: expired };
+    const oldCard = { userId: '1', title: 'Old', lastAction: expired };
     localStorage.setItem('cards', JSON.stringify({ '1': oldCard }));
     setIdsForQuery('favorite', ['1']);
 

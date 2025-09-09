@@ -343,7 +343,7 @@ const SearchBar = ({
     if (!cacheKey) return false;
     const queries = loadQueries();
     const entry = queries[cacheKey];
-    return !!(entry && Date.now() - entry.updatedAt < TTL_MS);
+    return !!(entry && Date.now() - entry.lastAction < TTL_MS);
   };
 
   const addToHistory = value => {

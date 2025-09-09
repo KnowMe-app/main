@@ -1210,7 +1210,7 @@ const Matching = () => {
       const arr = fetched[id] || [];
       const server = arr[0];
       const local = cache[id];
-      if (server && (!local || server.updatedAt > local.updatedAt)) {
+      if (server && (!local || server.lastAction > local.lastAction)) {
         newStore[id] = server;
         commentsMap[id] = server.text;
       } else if (local) {
@@ -1752,7 +1752,7 @@ const Matching = () => {
                             if (auth.currentUser) {
                               const text = comments[user.userId] || '';
                               const res = await setUserComment(user.userId, text);
-                              setLocalComment(user.userId, text, res?.updatedAt);
+                              setLocalComment(user.userId, text, res?.lastAction);
                             }
                           }}
                         />

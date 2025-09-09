@@ -18,6 +18,7 @@ import { normalizeRegion } from '../normalizeLocation';
 import { fetchUserById } from '../config';
 import { updateCard } from 'utils/cardsStorage';
 import { getCard } from 'utils/cardIndex';
+import { normalizeLastAction } from 'utils/normalizeLastAction';
 
 const getParentBackground = element => {
   let el = element;
@@ -64,7 +65,8 @@ export const renderTopBlock = (
       {!isFromListOfUsers && <BtnToast isToastOn={isToastOn} setIsToastOn={setIsToastOn} />}
       {btnExport(userData)}
       <div>
-        {userData.lastAction && formatDateToDisplay(userData.lastAction)}
+        {userData.lastAction &&
+          formatDateToDisplay(normalizeLastAction(userData.lastAction))}
         {userData.lastAction && ', '}
         {userData.userId}
         {userData.userRole !== 'ag' &&
@@ -170,11 +172,9 @@ export const renderTopBlock = (
 
             const fresh = await fetchUserById(userData.userId);
             if (fresh) {
-              const isNewer =
-                !cached ||
-                !cached.serverUpdatedAt ||
-                !fresh.serverUpdatedAt ||
-                new Date(fresh.serverUpdatedAt) > new Date(cached.serverUpdatedAt);
+              const cachedTs = normalizeLastAction(cached?.lastAction);
+              const freshTs = normalizeLastAction(fresh.lastAction);
+              const isNewer = !cached || !cachedTs || !freshTs || freshTs > cachedTs;
 
               if (isNewer) {
                 updated = fresh;

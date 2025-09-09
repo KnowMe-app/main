@@ -18,7 +18,7 @@ export const setFavorite = (id, isFav) => {
   } else {
     ids.delete(id);
   }
-  queries[FAVORITE_LIST_KEY] = { ids: Array.from(ids), updatedAt: Date.now() };
+  queries[FAVORITE_LIST_KEY] = { ids: Array.from(ids), lastAction: Date.now() };
   saveQueries(queries);
 };
 
@@ -26,7 +26,7 @@ export const syncFavorites = remoteFavs => {
   const queries = loadQueries();
   queries[FAVORITE_LIST_KEY] = {
     ids: Object.keys(remoteFavs || {}).filter(id => remoteFavs[id]),
-    updatedAt: Date.now(),
+    lastAction: Date.now(),
   };
   saveQueries(queries);
 };
