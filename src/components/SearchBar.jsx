@@ -203,7 +203,14 @@ const parseUserId = input => {
   const candidate = (match ? match[1] : trimmed).trim();
   const normalized = candidate.replace(/[+\s()-]/g, '');
   if (/^(?:0|380)\d{9}$/.test(normalized)) return null;
-  if (/^-?[a-zA-Z0-9]{4,}$/.test(candidate)) return candidate;
+  const patterns = [
+    /^AA\d{4}$/,
+    /^AB\d{4}$/,
+    /^VK\d{5}$/,
+    /^-[A-Za-z0-9-]{4,}$/,
+    /^[A-Za-z0-9]{28}$/,
+  ];
+  if (patterns.some(p => p.test(candidate))) return candidate;
   return null;
 };
 
