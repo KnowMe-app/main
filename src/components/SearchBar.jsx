@@ -11,7 +11,7 @@ import {
   loadQueries,
   TTL_MS,
 } from '../utils/cardIndex';
-import { updateCard } from '../utils/cardsStorage';
+import { updateCard, searchCachedCards } from '../utils/cardsStorage';
 
 const SearchIcon = (
   <svg
@@ -442,6 +442,26 @@ const SearchBar = ({
     const trimmed = query?.trim();
     if (trimmed) {
       addToHistory(trimmed);
+    }
+    if (trimmed && trimmed.startsWith('!')) {
+      const term = trimmed.slice(1).trim();
+      const ids = getIdsByQuery('allUsers');
+      if (ids.length === 0) {
+        const { fetchAllUsers } = await import('./config');
+        await fetchAllUsers();
+      }
+      const results = searchCachedCards(term);
+      if (Object.keys(results).length === 0) {
+        setState && setState({});
+        setUsers && setUsers({});
+        setUserNotFound && setUserNotFound(true);
+      } else {
+        setState && setState({});
+        setUsers && setUsers(results);
+        const cacheKey = getCacheKey('search', normalizeQueryKey(term));
+        setIdsForQuery(cacheKey, Object.keys(results));
+      }
+      return;
     }
     if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
       const hasCache = loadCachedResult('name', trimmed);
