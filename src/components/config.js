@@ -838,23 +838,7 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
 
 export const fetchNewUsersCollectionInRTDB = async searchedValue => {
   if (isDev) console.log('fetchNewUsersCollectionInRTDB → searchedValue:', searchedValue);
-  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
-  if (
-    searchValue === '__exists__' ||
-    !keysToCheck.includes(searchKey)
-  ) {
-    const allCards = await getUserCards();
-    const filtered = allCards.filter(card => {
-      const val = card[searchKey];
-      if (searchValue === '__exists__') return val !== undefined;
-      return val !== undefined && String(val) === String(searchValue);
-    });
-    if (filtered.length === 1) return filtered[0];
-    return filtered.reduce((acc, card) => {
-      acc[card.userId] = card;
-      return acc;
-    }, {});
-  }
+  const { searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   if (isDev)
     console.log('fetchNewUsersCollectionInRTDB → params:', {
       searchValue,
