@@ -27,10 +27,11 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   const updatedCard = {
     ...cards[cardId],
     ...data,
-    id: cardId,
+    userId: cardId,
     updatedAt: Date.now(),
     ...(data.updatedAt ? { serverUpdatedAt: data.updatedAt } : {}),
   };
+  delete updatedCard.id;
   removeKeys.forEach(key => {
     delete updatedCard[key];
   });
@@ -71,7 +72,8 @@ export const getCardsByList = async (listKey, remoteFetch) => {
 
     fetched.forEach(([id, fresh]) => {
       if (fresh) {
-        const card = { ...fresh, id, updatedAt: Date.now() };
+        const { id: _, ...rest } = fresh;
+        const card = { ...rest, userId: id, updatedAt: Date.now() };
         cards[id] = card;
         result.push(card);
         freshIds.push(id);
@@ -118,7 +120,8 @@ export const getFilteredCardsByList = async (
     try {
       const extra = await fetchMore(needed);
       extra.forEach(([id, data]) => {
-        cards[id] = { ...data, id, updatedAt: Date.now() };
+        const { id: _, ...rest } = data;
+        cards[id] = { ...rest, userId: id, updatedAt: Date.now() };
         if (!ids.includes(id)) ids.push(id);
       });
       saveCards(cards);

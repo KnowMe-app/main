@@ -11,7 +11,7 @@ export const btnEdit = (userData, setSearch, setState) => {
       setSearch(`${userData.userId}`);
       setState(userData);
       const cacheKey = getCacheKey('search', normalizeQueryKey(`userId=${userData.userId}`));
-      saveCard({ ...userData, id: userData.userId });
+      saveCard(userData);
       setIdsForQuery(cacheKey, [userData.userId]);
     } else {
       console.log('Користувача не знайдено.');

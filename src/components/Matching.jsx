@@ -62,8 +62,7 @@ import {
 } from '../utils/commentsStorage';
 
 const isValidId = id => typeof id === 'string' && id.length >= 20;
-const filterLongUsers = list =>
-  list.filter(u => isValidId(u?.id || u?.userId));
+const filterLongUsers = list => list.filter(u => isValidId(u?.userId));
 
 const compareUsersByLastLogin2 = (a = {}, b = {}) =>
   (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
@@ -1423,7 +1422,7 @@ const Matching = () => {
       const list = filterLongUsers(
         await getFavoriteCards(id => fetchUserById(id))
       ).sort(compareUsersByLastLogin2);
-      loadedIdsRef.current = new Set(list.map(u => u.id));
+      loadedIdsRef.current = new Set(list.map(u => u.userId));
       setUsers(list);
       await loadCommentsFor(list);
       setHasMore(false);
@@ -1442,7 +1441,7 @@ const Matching = () => {
     const list = filterLongUsers(
       await getFavoriteCards(id => fetchUserById(id))
     ).sort(compareUsersByLastLogin2);
-    loadedIdsRef.current = new Set(list.map(u => u.id));
+    loadedIdsRef.current = new Set(list.map(u => u.userId));
     setUsers(list);
     await loadCommentsFor(list);
     setHasMore(false);
@@ -1469,7 +1468,7 @@ const Matching = () => {
       const list = filterLongUsers(
         await getDislikedCards(id => fetchUserById(id))
       ).sort(compareUsersByLastLogin2);
-      loadedIdsRef.current = new Set(list.map(u => u.id));
+      loadedIdsRef.current = new Set(list.map(u => u.userId));
       setUsers(list);
       await loadCommentsFor(list);
       setHasMore(false);
@@ -1487,7 +1486,7 @@ const Matching = () => {
     const list = filterLongUsers(
       await getDislikedCards(id => fetchUserById(id))
     ).sort(compareUsersByLastLogin2);
-    loadedIdsRef.current = new Set(list.map(u => u.id));
+    loadedIdsRef.current = new Set(list.map(u => u.userId));
     setUsers(list);
     await loadCommentsFor(list);
     setHasMore(false);

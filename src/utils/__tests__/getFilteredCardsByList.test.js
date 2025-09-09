@@ -13,14 +13,14 @@ describe('getFilteredCardsByList', () => {
   it('filters stored cards and fetches more when needed', async () => {
     const now = Date.now();
     localStorage.setItem('cards', JSON.stringify({
-      a: { id: 'a', ok: true, updatedAt: now },
-      b: { id: 'b', ok: false, updatedAt: now },
+      a: { userId: 'a', ok: true, updatedAt: now },
+      b: { userId: 'b', ok: false, updatedAt: now },
     }));
     setIdsForQuery('testList', ['a', 'b']);
 
     const fetchMore = jest.fn(async count => {
       expect(count).toBe(1);
-      return [['c', { ok: true }]];
+      return [['c', { userId: 'c', ok: true }]];
     });
 
     const res = await getFilteredCardsByList(
@@ -32,7 +32,7 @@ describe('getFilteredCardsByList', () => {
       2,
     );
 
-    expect(res.map(c => c.id)).toEqual(['a', 'c']);
+    expect(res.map(c => c.userId)).toEqual(['a', 'c']);
     const storedCards = JSON.parse(localStorage.getItem('cards'));
     expect(storedCards.c.ok).toBe(true);
     const ids = getIdsByQuery('testList');
