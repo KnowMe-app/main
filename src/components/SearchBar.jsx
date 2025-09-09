@@ -224,6 +224,12 @@ const parseOtherContact = input => input;
 
 export const detectSearchParams = query => {
   const trimmed = query.trim();
+  const keyValMatch = /^([A-Za-z0-9_]+):(.*)$/.exec(trimmed);
+  if (keyValMatch) {
+    const field = keyValMatch[1];
+    const val = keyValMatch[2].trim();
+    return { key: field, value: val || '__exists__' };
+  }
   const parsers = [
     ['facebook', parseFacebookId],
     ['instagram', parseInstagramId],
@@ -442,6 +448,40 @@ const SearchBar = ({
     const trimmed = query?.trim();
     if (trimmed) {
       addToHistory(trimmed);
+    }
+    const { key: customKey, value: customVal } = detectSearchParams(trimmed || '');
+    const knownKeys = [
+      'facebook',
+      'instagram',
+      'telegram',
+      'userId',
+      'email',
+      'tiktok',
+      'phone',
+      'other',
+      'name',
+    ];
+    if (customKey && !knownKeys.includes(customKey)) {
+      const hasCache = loadCachedResult(customKey, customVal);
+      const freshCache = hasCache && isCacheFresh(customKey, customVal);
+      onSearchKey && onSearchKey({ [customKey]: customVal });
+      if (freshCache) return;
+      if (!hasCache) {
+        setState && setState({});
+        setUsers && setUsers({});
+      }
+      const res = await cachedSearch({ [customKey]: customVal });
+      if (!res || Object.keys(res).length === 0) {
+        setUserNotFound && setUserNotFound(true);
+      } else {
+        setUserNotFound && setUserNotFound(false);
+        if ('userId' in res) {
+          setState && setState(res);
+        } else {
+          setUsers && setUsers(res);
+        }
+      }
+      return;
     }
     if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
       const hasCache = loadCachedResult('name', trimmed);
