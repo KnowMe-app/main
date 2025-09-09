@@ -6,8 +6,19 @@ describe('detectSearchParams', () => {
     expect(result).toEqual({ key: 'phone', value: '380957209136' });
   });
 
-  it('detects numeric userId when not phone-like', () => {
-    const result = detectSearchParams('123456');
-    expect(result).toEqual({ key: 'userId', value: '123456' });
+  it.each([
+    'AA1234',
+    'AB1234',
+    'VK12345',
+    '-abcd',
+    '1234567890123456789012345678',
+  ])('detects %s as userId', val => {
+    const result = detectSearchParams(val);
+    expect(result).toEqual({ key: 'userId', value: val });
+  });
+
+  it('places random string into other', () => {
+    const result = detectSearchParams('randomstring');
+    expect(result).toEqual({ key: 'other', value: 'randomstring' });
   });
 });
