@@ -469,7 +469,7 @@ const SearchBar = ({
   const writeData = async (query = search) => {
     setUserNotFound && setUserNotFound(false);
     const trimmed = query?.trim();
-    if (trimmed) {
+    if (trimmed && !trimmed.startsWith('!')) {
       addToHistory(trimmed);
     }
     if (trimmed && trimmed.startsWith('!')) {
@@ -628,7 +628,7 @@ const SearchBar = ({
               key={item}
               onMouseDown={e => e.preventDefault()}
               onClick={() => {
-                setSearch(item);
+                if (!item.startsWith('!')) setSearch(item);
                 setShowHistory(false);
                 writeData(item);
               }}
