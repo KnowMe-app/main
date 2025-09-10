@@ -25,8 +25,9 @@ describe('favoritesStorage', () => {
 
   it('caches favorite users separately from load2', async () => {
     cacheFavoriteUsers({ '1': { title: 'Fav Card' } });
-    const cards = await getFavoriteCards();
+    const { cards, fromCache } = await getFavoriteCards();
     expect(cards[0].title).toBe('Fav Card');
+    expect(fromCache).toBe(true);
     const queries = JSON.parse(localStorage.getItem('queries'));
     expect(queries['favorite'].ids).toEqual(['1']);
   });

@@ -40,6 +40,6 @@ export const cacheFavoriteUsers = usersObj => {
   });
 };
 
-export const getFavoriteCards = remoteFetch =>
+export const getFavoriteCards = async remoteFetch =>
   getCardsByList(FAVORITE_LIST_KEY, remoteFetch);
 

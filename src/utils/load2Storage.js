@@ -14,5 +14,5 @@ export const cacheLoad2Users = (usersObj, filters = {}) => {
   });
 };
 
-export const getLoad2Cards = (filters = {}, remoteFetch) =>
+export const getLoad2Cards = async (filters = {}, remoteFetch) =>
   getCardsByList(buildLoad2Key(filters), remoteFetch);
