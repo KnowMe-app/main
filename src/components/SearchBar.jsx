@@ -9,6 +9,7 @@ import {
   getCard,
   setIdsForQuery,
   loadQueries,
+  saveQueries,
   TTL_MS,
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
@@ -459,8 +460,16 @@ const SearchBar = ({
         `${filterForload || 'all'}:${JSON.stringify(filters || {})}`,
       );
       const cacheKey = `allUsers:${filtersKey}`;
-      let ids = getIdsByQuery(cacheKey);
-      if (ids.length === 0) {
+      const queries = loadQueries();
+      const entry = queries[cacheKey];
+      let ids = [];
+      if (entry && Date.now() - entry.lastAction < TTL_MS) {
+        ids = getIdsByQuery(cacheKey);
+      } else {
+        if (entry) {
+          delete queries[cacheKey];
+          saveQueries(queries);
+        }
         const { cacheFilteredUsers } = await import('./config');
         await cacheFilteredUsers(filterForload, filters, favoriteUsers, cacheKey);
         ids = getIdsByQuery(cacheKey);

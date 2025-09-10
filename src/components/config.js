@@ -2472,13 +2472,74 @@ export const removeCardAndSearchId = async userId => {
     console.error(`Помилка під час видалення searchId для userId: ${userId}`, error);
   }
 };
+// Повертає прості фільтри, які можна застосувати на сервері
+const getServerFilters = filterSettings => {
+  const simpleKeys = ['csection', 'userRole', 'role', 'maritalStatus', 'bloodGroup', 'rh'];
+  const result = {};
+  simpleKeys.forEach(key => {
+    const cfg = filterSettings[key];
+    if (cfg && Object.values(cfg).some(v => !v)) {
+      result[key] = Object.keys(cfg).filter(k => cfg[k]);
+    }
+  });
+  return result;
+};
+
+// Виконує запити до вказаного шляху з урахуванням простих фільтрів
+const fetchByPathWithFilters = async (path, filters) => {
+  const dataById = {};
+  const sets = [];
+
+  for (const [key, values] of Object.entries(filters)) {
+    const ids = new Set();
+    await Promise.all(
+      values.map(async value => {
+        const q = query(ref2(database, path), orderByChild(key), equalTo(value));
+        const snap = await get(q);
+        if (snap.exists()) {
+          Object.entries(snap.val()).forEach(([id, data]) => {
+            ids.add(id);
+            dataById[id] = { ...(dataById[id] || {}), ...data };
+          });
+        }
+      }),
+    );
+    sets.push(ids);
+  }
+
+  let finalIds = sets.length > 0 ? Array.from(sets[0]) : Object.keys(dataById);
+  for (let i = 1; i < sets.length; i++) {
+    finalIds = finalIds.filter(id => sets[i].has(id));
+  }
+
+  const result = {};
+  finalIds.forEach(id => {
+    result[id] = { userId: id, ...dataById[id] };
+  });
+
+  return result;
+};
 
 export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}, favoriteUsers = {}) => {
   try {
-    const [newUsersSnapshot, usersSnapshot] = await Promise.all([get(ref2(database, 'newUsers')), get(ref2(database, 'users'))]);
+    const serverFilters = getServerFilters(filterSettings);
 
-    const newUsersData = newUsersSnapshot.exists() ? newUsersSnapshot.val() : {};
-    const usersData = usersSnapshot.exists() ? usersSnapshot.val() : {};
+    let newUsersData = {};
+    let usersData = {};
+
+    if (Object.keys(serverFilters).length > 0) {
+      [newUsersData, usersData] = await Promise.all([
+        fetchByPathWithFilters('newUsers', serverFilters),
+        fetchByPathWithFilters('users', serverFilters),
+      ]);
+    } else {
+      const [newUsersSnapshot, usersSnapshot] = await Promise.all([
+        get(ref2(database, 'newUsers')),
+        get(ref2(database, 'users')),
+      ]);
+      newUsersData = newUsersSnapshot.exists() ? newUsersSnapshot.val() : {};
+      usersData = usersSnapshot.exists() ? usersSnapshot.val() : {};
+    }
 
     const allUserIds = new Set([...Object.keys(newUsersData), ...Object.keys(usersData)]);
 
