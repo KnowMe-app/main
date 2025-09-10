@@ -1463,9 +1463,8 @@ const Matching = () => {
       const disMap = Object.fromEntries(Object.keys(localDis).map(id => [id, true]));
       setDislikeUsers(disMap);
       setIdsForQuery('dislike', Object.keys(disMap));
-      const list = filterLongUsers(
-        await getDislikedCards(id => fetchUserById(id))
-      ).sort(compareUsersByLastLogin2);
+      const { cards: disCards } = await getDislikedCards(id => fetchUserById(id));
+      const list = filterLongUsers(disCards).sort(compareUsersByLastLogin2);
       loadedIdsRef.current = new Set(list.map(u => u.userId));
       setUsers(list);
       await loadCommentsFor(list);
@@ -1481,9 +1480,8 @@ const Matching = () => {
     syncDislikes(disMap);
     setDislikeUsers(disMap);
     setIdsForQuery('dislike', Object.keys(disMap));
-    const list = filterLongUsers(
-      await getDislikedCards(id => fetchUserById(id))
-    ).sort(compareUsersByLastLogin2);
+    const { cards: disCards } = await getDislikedCards(id => fetchUserById(id));
+    const list = filterLongUsers(disCards).sort(compareUsersByLastLogin2);
     loadedIdsRef.current = new Set(list.map(u => u.userId));
     setUsers(list);
     await loadCommentsFor(list);
