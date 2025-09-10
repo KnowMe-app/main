@@ -282,6 +282,17 @@ const SearchBar = ({
     () => loadHistoryCache('queries') || [],
   );
   const [showHistory, setShowHistory] = useState(false);
+  const [remaining, setRemaining] = useState(0);
+
+  useEffect(() => {
+    if (remaining > 0) {
+      toast.loading(`Filtering... ${remaining} left`, {
+        id: 'remaining-counter',
+      });
+    } else {
+      toast.dismiss('remaining-counter');
+    }
+  }, [remaining]);
 
   useEffect(() => {
     if (dataSource === undefined || dataSource === null) return;
@@ -483,9 +494,12 @@ const SearchBar = ({
       }
       const allResults = searchCachedCards(term);
       const results = {};
-      ids.forEach(id => {
+      setRemaining(ids.length);
+      for (const id of ids) {
         if (allResults[id]) results[id] = allResults[id];
-      });
+        setRemaining(r => r - 1);
+        await new Promise(requestAnimationFrame);
+      }
       if (Object.keys(results).length === 0) {
         setState && setState({});
         setUsers && setUsers({});
