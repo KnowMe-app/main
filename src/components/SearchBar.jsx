@@ -498,7 +498,7 @@ const SearchBar = ({
       for (const id of ids) {
         if (allResults[id]) results[id] = allResults[id];
         setRemaining(r => r - 1);
-        await new Promise(requestAnimationFrame);
+        await new Promise(resolve => requestAnimationFrame(resolve));
       }
       if (Object.keys(results).length === 0) {
         setState && setState({});
