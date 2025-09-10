@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import toast from 'react-hot-toast';
 import { useAutoResize } from '../hooks/useAutoResize';
 import styled from 'styled-components';
 import { createCache } from '../hooks/cardsCache';
@@ -264,6 +265,7 @@ const SearchBar = ({
   filters = {},
   filterForload,
   favoriteUsers = {},
+  dataSource,
 }) => {
   const [internalSearch, setInternalSearch] = useState(
     () => localStorage.getItem(storageKey) || '',
@@ -280,6 +282,11 @@ const SearchBar = ({
     () => loadHistoryCache('queries') || [],
   );
   const [showHistory, setShowHistory] = useState(false);
+
+  useEffect(() => {
+    if (dataSource === undefined || dataSource === null) return;
+    toast.success(dataSource ? 'Дані з локального сховища' : 'Дані з бекенду');
+  }, [dataSource]);
 
   const loadCachedResult = (key, value) => {
     if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {

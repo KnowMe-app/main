@@ -50,8 +50,9 @@ export const getCardsByList = async (listKey, remoteFetch) => {
   const ids = getIdsByQuery(listKey);
   const freshIds = [];
   const result = [];
-
   const staleIds = [];
+  let fromCache = true;
+
   ids.forEach(id => {
     const card = cards[id];
     if (card && Date.now() - card.lastAction <= TTL_MS) {
@@ -82,13 +83,14 @@ export const getCardsByList = async (listKey, remoteFetch) => {
         cards[id] = card;
         result.push(card);
         freshIds.push(id);
+        fromCache = false;
       }
     });
   }
 
   saveCards(cards);
   setIdsForQuery(listKey, freshIds);
-  return result;
+  return { cards: result, fromCache };
 };
 
 // Fetches cards from a list in Local Storage, applies the same filtering

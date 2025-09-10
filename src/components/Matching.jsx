@@ -1344,7 +1344,7 @@ const Matching = () => {
           ]);
         }
 
-      const cached = await getCardsByList('default');
+      const { cards: cached } = await getCardsByList('default');
       if (cached.length && viewModeRef.current === startMode) {
         console.log('[loadInitial] using cache', cached.length);
         const filteredCached = cached.filter(
@@ -1419,9 +1419,8 @@ const Matching = () => {
       setFavoriteUsers(favMap);
       setFavoriteIds(favMap);
       syncFavorites(favMap);
-      const list = filterLongUsers(
-        await getFavoriteCards(id => fetchUserById(id))
-      ).sort(compareUsersByLastLogin2);
+      const { cards: favCards } = await getFavoriteCards(id => fetchUserById(id));
+      const list = filterLongUsers(favCards).sort(compareUsersByLastLogin2);
       loadedIdsRef.current = new Set(list.map(u => u.userId));
       setUsers(list);
       await loadCommentsFor(list);
@@ -1438,9 +1437,8 @@ const Matching = () => {
     setFavoriteIds(favMap);
     cacheFavoriteUsers(favUsers);
     setIdsForQuery('favorite', Object.keys(favMap));
-    const list = filterLongUsers(
-      await getFavoriteCards(id => fetchUserById(id))
-    ).sort(compareUsersByLastLogin2);
+    const { cards: favCards } = await getFavoriteCards(id => fetchUserById(id));
+    const list = filterLongUsers(favCards).sort(compareUsersByLastLogin2);
     loadedIdsRef.current = new Set(list.map(u => u.userId));
     setUsers(list);
     await loadCommentsFor(list);

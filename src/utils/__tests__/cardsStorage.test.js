@@ -30,10 +30,18 @@ describe('cardsStorage', () => {
     updateCard('1', { title: 'Updated' });
 
     const remoteFetch = jest.fn();
-    const load2Cards = await getCardsByList('load2', remoteFetch);
-    const favoriteCards = await getCardsByList('favorite', remoteFetch);
+    const { cards: load2Cards, fromCache: fromCache1 } = await getCardsByList(
+      'load2',
+      remoteFetch,
+    );
+    const { cards: favoriteCards, fromCache: fromCache2 } = await getCardsByList(
+      'favorite',
+      remoteFetch,
+    );
 
     expect(remoteFetch).not.toHaveBeenCalled();
+    expect(fromCache1).toBe(true);
+    expect(fromCache2).toBe(true);
     expect(load2Cards[0].title).toBe('Updated');
     expect(favoriteCards[0].title).toBe('Updated');
   });
@@ -45,10 +53,13 @@ describe('cardsStorage', () => {
     localStorage.setItem('cards', JSON.stringify({ '1': oldCard }));
     setIdsForQuery('favorite', ['1']);
 
-    const remoteFetch = jest.fn().mockResolvedValue({ userId: '1', title: 'Fresh' });
-    const cards = await getCardsByList('favorite', remoteFetch);
+    const remoteFetch = jest
+      .fn()
+      .mockResolvedValue({ userId: '1', title: 'Fresh' });
+    const { cards, fromCache } = await getCardsByList('favorite', remoteFetch);
 
     expect(remoteFetch).toHaveBeenCalledWith('1');
+    expect(fromCache).toBe(false);
     expect(cards[0].title).toBe('Fresh');
     const stored = JSON.parse(localStorage.getItem('cards'));
     expect(stored['1'].title).toBe('Fresh');

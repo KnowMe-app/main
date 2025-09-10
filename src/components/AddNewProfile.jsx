@@ -502,6 +502,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const initialDis = getDislikes();
   const [dislikeUsersData, setDislikeUsersData] = useState(initialDis);
   const [isToastOn, setIsToastOn] = useState(false);
+  const [dataSource, setDataSource] = useState(null);
 
   const cacheFetchedUsers = useCallback(
     (usersObj, cacheFn, currentFilters = filters) => {
@@ -779,7 +780,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (isEditingRef.current) return { count: 0, hasMore };
 
-    const cachedArr = await getLoad2Cards(currentFilters, id => fetchUserById(id));
+    const { cards: cachedArr, fromCache } = await getLoad2Cards(
+      currentFilters,
+      id => fetchUserById(id),
+    );
+    toast.success(fromCache ? 'Дані з локального сховища' : 'Дані з бекенду');
+    setDataSource(fromCache);
     const today = new Date().toISOString().split('T')[0];
     const isValid = d => {
       if (!d) return true;
@@ -894,7 +900,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setFavoriteUsersData(favMap);
       setFavoriteIds(favMap);
       syncFavorites(favMap);
-      const loadedArr = await getFavoriteCards(id => fetchUserById(id));
+      const { cards: loadedArr, fromCache } = await getFavoriteCards(
+        id => fetchUserById(id),
+      );
+      toast.success(fromCache ? 'Дані з локального сховища' : 'Дані з бекенду');
+      setDataSource(fromCache);
       const sorted = loadedArr
         .sort((a, b) => compareUsersByGetInTouch(a, b))
         .reduce((acc, user) => {
@@ -921,7 +931,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setFavoriteIds(favIds);
     cacheFavoriteUsers(favUsers);
     setIdsForQuery('favorite', Object.keys(favIds));
-    const loadedArr = await getFavoriteCards(id => fetchUserById(id));
+    const { cards: loadedArr, fromCache } = await getFavoriteCards(
+      id => fetchUserById(id),
+    );
+    toast.success(fromCache ? 'Дані з локального сховища' : 'Дані з бекенду');
+    setDataSource(fromCache);
     const sorted = loadedArr
       .sort((a, b) => compareUsersByGetInTouch(a, b))
       .reduce((acc, user) => {
@@ -950,7 +964,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     };
 
     (async () => {
-      const cached = await getDplCards(verifyDuplicate);
+      const { cards: cached } = await getDplCards(verifyDuplicate);
       if (cached.length > 0) {
         const merged = cached.reduce((acc, user) => {
           acc[user.userId] = user;
@@ -986,7 +1000,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [isDuplicateView, state.userId]);
 
   const searchDuplicates = async () => {
-    const cached = await getDplCards();
+    const { cards: cached } = await getDplCards();
     if (cached.length > 0) {
       const merged = cached.reduce((acc, user) => {
         acc[user.userId] = user;
@@ -1110,6 +1124,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           filters={filters}
           filterForload={currentFilter}
           favoriteUsers={favoriteUsersData}
+          dataSource={dataSource}
         />
         {state.userId ? (
           <>
@@ -1153,7 +1168,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 {duplicates ? ` з (${duplicates})` : ''}
               </p>
             ) : null}
-            <FilterPanel onChange={setFilters} storageKey="addFilters" />
+            <FilterPanel
+              onChange={setFilters}
+              storageKey="addFilters"
+              dataSource={dataSource}
+            />
             <ButtonsContainer>
               {userNotFound && (
                 <Button onClick={handleAddUser} disabled={adding}>
@@ -1240,6 +1259,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setUserIdToDelete={setUserIdToDelete}
                   currentFilter={currentFilter}
                   isDateInRange={isDateInRange}
+                  dataSource={dataSource}
                 />
                 <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
               </>

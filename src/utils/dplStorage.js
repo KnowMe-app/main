@@ -12,5 +12,5 @@ export const cacheDplUsers = usersObj => {
   });
 };
 
-export const getDplCards = remoteFetch =>
+export const getDplCards = async remoteFetch =>
   getCardsByList(DPL_LIST_KEY, remoteFetch);
