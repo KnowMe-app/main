@@ -1154,6 +1154,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               handleSubmit={handleSubmit}
               handleClear={handleClear}
               handleDelKeyValue={handleDelKeyValue}
+              dataSource={dataSource}
             />
           </>
         ) : (
