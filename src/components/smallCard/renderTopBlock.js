@@ -19,6 +19,7 @@ import { fetchUserById } from '../config';
 import { updateCard } from 'utils/cardsStorage';
 import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import toast from 'react-hot-toast';
 
 const getParentBackground = element => {
   let el = element;
@@ -169,6 +170,7 @@ export const renderTopBlock = (
           try {
             const cached = getCard(userData.userId);
             let updated = cached;
+            let source = 'cache';
 
             const fresh = await fetchUserById(userData.userId);
             if (fresh) {
@@ -178,10 +180,19 @@ export const renderTopBlock = (
 
               if (isNewer) {
                 updated = fresh;
+                source = 'backend';
               }
             }
 
             if (updated) {
+              if (isToastOn) {
+                toast.success(
+                  source === 'backend'
+                    ? 'Data loaded from backend'
+                    : 'Data loaded from cache'
+                );
+              }
+
               updated = updateCard(userData.userId, updated);
 
               if (setUsers) {
@@ -202,6 +213,9 @@ export const renderTopBlock = (
             }
           } catch (error) {
             console.error(error);
+            if (isToastOn) {
+              toast.error(error.message);
+            }
           }
           toggleDetails();
         }}
