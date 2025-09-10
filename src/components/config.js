@@ -196,6 +196,34 @@ export const fetchAllUsers = async () => {
   setIdsForQuery('allUsers', allIds);
 };
 
+export const cacheFilteredUsers = async (
+  filterForload,
+  filterSettings = {},
+  favoriteUsers = {},
+  cacheKey,
+) => {
+  const usersObj = await fetchAllFilteredUsers(
+    filterForload,
+    filterSettings,
+    favoriteUsers,
+  );
+  const ids = [];
+  Object.entries(usersObj).forEach(([id, data]) => {
+    updateCard(id, data);
+    ids.push(id);
+    Object.entries(data).forEach(([key, value]) => {
+      if (value === undefined || value === null) return;
+      const keyCache = getCacheKey(
+        'search',
+        normalizeQueryKey(`${key}=${value}`),
+      );
+      setIdsForQuery(keyCache, [id]);
+    });
+  });
+  if (cacheKey) setIdsForQuery(cacheKey, ids);
+  return ids;
+};
+
 export const fetchLatestUsers = async (limit = 9, lastKey) => {
   const usersRef = ref2(database, 'users');
   const realLimit = limit + 1;

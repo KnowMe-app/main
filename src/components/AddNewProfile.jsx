@@ -1107,6 +1107,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             setUserNotFound(false);
           }}
           storageKey={SEARCH_KEY}
+          filters={filters}
+          filterForload={currentFilter}
+          favoriteUsers={favoriteUsersData}
         />
         {state.userId ? (
           <>
