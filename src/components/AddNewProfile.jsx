@@ -915,59 +915,55 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
 
-    const existingIds = getIdsByQuery('favorite');
-    if (existingIds.length > 0) {
-      const favMap = getFavorites();
-      setFavoriteUsersData(favMap);
-      setFavoriteIds(favMap);
-      syncFavorites(favMap);
-      const { cards: loadedArr, fromCache } = await getFavoriteCards(
-        id => fetchUserById(id),
-      );
-      setDataSource(fromCache ? 'cache' : 'backend');
-      const sorted = loadedArr
-        .sort((a, b) => compareUsersByGetInTouch(a, b))
-        .reduce((acc, user) => {
-          acc[user.userId] = user;
-          return acc;
-        }, {});
-      const total = Object.keys(sorted).length;
-      cacheFetchedUsers(sorted, cacheFavoriteUsers);
-      setUsers(sorted);
-      setHasMore(false);
-      setLastKey(null);
-      setCurrentPage(1);
-      setTotalCount(total);
-      return;
-    }
+    const { cards: cachedArr, fromCache } = await getFavoriteCards(
+      id => fetchUserById(id),
+    );
+    let hasCacheData = fromCache && cachedArr.length > 0;
+    let hasBackendData = !fromCache && cachedArr.length > 0;
 
-    const favUsers = await fetchFavoriteUsersData(owner);
-    const favIds = Object.keys(favUsers).reduce((acc, id) => {
-      acc[id] = true;
+    const loaded = cachedArr.reduce((acc, user) => {
+      acc[user.userId] = user;
       return acc;
     }, {});
+
+    const favIds = getFavorites();
+
+    const favUsers = await fetchFavoriteUsersData(owner);
+    Object.entries(favUsers).forEach(([id, user]) => {
+      favIds[id] = true;
+      if (!loaded[id]) {
+        loaded[id] = user;
+        hasBackendData = true;
+      }
+    });
+
     syncFavorites(favIds);
     setFavoriteUsersData(favIds);
     setFavoriteIds(favIds);
-    cacheFavoriteUsers(favUsers);
+
+    cacheFetchedUsers(loaded, cacheFavoriteUsers);
     setIdsForQuery('favorite', Object.keys(favIds));
-    const { cards: loadedArr, fromCache } = await getFavoriteCards(
-      id => fetchUserById(id),
-    );
-    setDataSource(fromCache ? 'cache' : 'backend');
-    const sorted = loadedArr
+
+    const sorted = Object.values(loaded)
       .sort((a, b) => compareUsersByGetInTouch(a, b))
       .reduce((acc, user) => {
         acc[user.userId] = user;
         return acc;
       }, {});
     const total = Object.keys(sorted).length;
-    cacheFetchedUsers(sorted, cacheFavoriteUsers);
     setUsers(sorted);
     setHasMore(false);
     setLastKey(null);
     setCurrentPage(1);
     setTotalCount(total);
+
+    const source =
+      hasCacheData && hasBackendData
+        ? 'mixed'
+        : hasBackendData
+        ? 'backend'
+        : 'cache';
+    setDataSource(source);
   };
 
   const [duplicates, setDuplicates] = useState('');
