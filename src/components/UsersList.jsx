@@ -1,5 +1,4 @@
-import React, { useEffect } from 'react';
-import toast from 'react-hot-toast';
+import React from 'react';
 import { coloredCard, FadeContainer } from './styles';
 import { makeNewUser } from './config';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -127,14 +126,8 @@ const UsersList = ({
   setDislikeUsers,
   currentFilter,
   isDateInRange,
-  dataSource,
 }) => {
   const entries = Object.entries(users);
-
-  useEffect(() => {
-    if (dataSource === undefined || dataSource === null) return;
-    toast.success(dataSource ? 'Дані з локального сховища' : 'Дані з бекенду');
-  }, [dataSource]);
 
   const handleCreate = async value => {
     const res = await makeNewUser({ name: value });

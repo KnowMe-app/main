@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import toast from 'react-hot-toast';
 import { SearchFilters } from './SearchFilters';
 
 const defaultsAdd = {
@@ -55,7 +54,7 @@ const normalizeFilterGroup = (value, defaults) => {
   return typeof value === 'object' && value !== null ? { ...defaults, ...value } : { ...defaults };
 };
 
-const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false, mode = 'default', storageKey: customKey, dataSource }) => {
+const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false, mode = 'default', storageKey: customKey }) => {
   const defaultFilters = useMemo(() => (mode === 'matching' ? defaultsMatching : defaultsAdd), [mode]);
   const storageKey = customKey || (mode === 'matching' ? 'matchingFilters' : 'userFilters');
 
@@ -81,11 +80,6 @@ const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false, 
     localStorage.setItem(storageKey, JSON.stringify(filters));
     if (onChange) onChange(filters);
   }, [filters, onChange, storageKey]);
-
-  useEffect(() => {
-    if (dataSource === undefined || dataSource === null) return;
-    toast.success(dataSource ? 'Дані з локального сховища' : 'Дані з бекенду');
-  }, [dataSource]);
 
   return <SearchFilters filters={filters} onChange={setFilters} hideUserId={hideUserId} hideCommentLength={hideCommentLength} mode={mode} />;
 };

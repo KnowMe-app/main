@@ -265,7 +265,6 @@ const SearchBar = ({
   filters = {},
   filterForload,
   favoriteUsers = {},
-  dataSource,
 }) => {
   const [internalSearch, setInternalSearch] = useState(
     () => localStorage.getItem(storageKey) || '',
@@ -293,11 +292,6 @@ const SearchBar = ({
       toast.dismiss('remaining-counter');
     }
   }, [remaining]);
-
-  useEffect(() => {
-    if (dataSource === undefined || dataSource === null) return;
-    toast.success(dataSource ? 'Дані з локального сховища' : 'Дані з бекенду');
-  }, [dataSource]);
 
   const loadCachedResult = (key, value) => {
     if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
