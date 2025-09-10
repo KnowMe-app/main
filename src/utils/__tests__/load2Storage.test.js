@@ -15,4 +15,10 @@ describe('load2Storage', () => {
     const key = buildLoad2Key(filters);
     expect(queries[key].ids).toEqual(['1']);
   });
+
+  it('returns fromCache false when cache is empty', async () => {
+    const { cards, fromCache } = await getLoad2Cards({ city: 'Lviv' });
+    expect(cards).toEqual([]);
+    expect(fromCache).toBe(false);
+  });
 });

@@ -502,12 +502,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const initialDis = getDislikes();
   const [dislikeUsersData, setDislikeUsersData] = useState(initialDis);
   const [isToastOn, setIsToastOn] = useState(false);
-  const [isLocalData, setIsLocalData] = useState(null);
+  const [dataSource, setDataSource] = useState(null);
 
   useEffect(() => {
-    if (isLocalData === null) return;
-    toast.success(isLocalData ? 'Дані з локального сховища' : 'Дані з бекенду');
-  }, [isLocalData]);
+    if (dataSource === null) return;
+    const message =
+      dataSource === 'cache'
+        ? 'Дані з локального сховища'
+        : dataSource === 'backend'
+        ? 'Дані з бекенду'
+        : 'Дані з локального сховища та бекенду';
+    toast.success(message);
+  }, [dataSource]);
 
   const cacheFetchedUsers = useCallback(
     (usersObj, cacheFn, currentFilters = filters) => {
@@ -726,7 +732,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       syncFavorites(fav);
     }
     const res = await fetchPaginatedNewUsers(param, filterForload, currentFilters, fav);
-    setIsLocalData(false);
+    setDataSource('backend');
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
@@ -790,7 +796,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       currentFilters,
       id => fetchUserById(id),
     );
-    setIsLocalData(fromCache);
+    const hasCacheData = cachedArr.length > 0;
+    let hasBackendData = false;
     const today = new Date().toISOString().split('T')[0];
     const isValid = d => {
       if (!d) return true;
@@ -831,13 +838,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         partial => {
           const filteredPartial = currentFilters.favorite?.favOnly
             ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
-            : partial;
-          cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
-          if (!isEditingRef.current) {
-            setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
-          }
-        },
-      );
+          : partial;
+        cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
+        if (!isEditingRef.current) {
+          setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
+        }
+        if (Object.keys(filteredPartial).length > 0) hasBackendData = true;
+      },
+    );
       if (res && Object.keys(res.users).length > 0) {
         const filteredUsers = currentFilters.favorite?.favOnly
           ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
@@ -849,6 +857,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         offset = res.lastKey;
         more = res.hasMore;
         count += Object.keys(filteredUsers).length;
+        hasBackendData = true;
       } else {
         more = false;
       }
@@ -856,6 +865,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     setDateOffset2(offset);
     setHasMore(more);
+    const source =
+      hasCacheData && hasBackendData
+        ? 'mixed'
+        : hasBackendData
+        ? 'backend'
+        : 'cache';
+    setDataSource(source);
     return { count, hasMore: more };
   };
 
@@ -908,7 +924,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const { cards: loadedArr, fromCache } = await getFavoriteCards(
         id => fetchUserById(id),
       );
-      setIsLocalData(fromCache);
+      setDataSource(fromCache ? 'cache' : 'backend');
       const sorted = loadedArr
         .sort((a, b) => compareUsersByGetInTouch(a, b))
         .reduce((acc, user) => {
@@ -938,7 +954,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const { cards: loadedArr, fromCache } = await getFavoriteCards(
       id => fetchUserById(id),
     );
-    setIsLocalData(fromCache);
+    setDataSource(fromCache ? 'cache' : 'backend');
     const sorted = loadedArr
       .sort((a, b) => compareUsersByGetInTouch(a, b))
       .reduce((acc, user) => {

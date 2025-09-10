@@ -51,7 +51,7 @@ export const getCardsByList = async (listKey, remoteFetch) => {
   const { ids, lastAction } = getQueryEntry(listKey);
   const freshIds = [];
   const result = [];
-  let fromCache = true;
+  let fromCache = ids.length > 0;
 
   if (lastAction && Date.now() - lastAction <= TTL_MS) {
     ids.forEach(id => {
