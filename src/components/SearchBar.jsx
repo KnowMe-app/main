@@ -260,6 +260,9 @@ const SearchBar = ({
   wrapperStyle = {},
   leftIcon = SearchIcon,
   storageKey = 'searchQuery',
+  filters = {},
+  filterForload,
+  favoriteUsers = {},
 }) => {
   const [internalSearch, setInternalSearch] = useState(
     () => localStorage.getItem(storageKey) || '',
@@ -452,12 +455,21 @@ const SearchBar = ({
     }
     if (trimmed && trimmed.startsWith('!')) {
       const term = trimmed.slice(1).trim();
-      const ids = getIdsByQuery('allUsers');
+      const filtersKey = normalizeQueryKey(
+        `${filterForload || 'all'}:${JSON.stringify(filters || {})}`,
+      );
+      const cacheKey = `allUsers:${filtersKey}`;
+      let ids = getIdsByQuery(cacheKey);
       if (ids.length === 0) {
-        const { fetchAllUsers } = await import('./config');
-        await fetchAllUsers();
+        const { cacheFilteredUsers } = await import('./config');
+        await cacheFilteredUsers(filterForload, filters, favoriteUsers, cacheKey);
+        ids = getIdsByQuery(cacheKey);
       }
-      const results = searchCachedCards(term);
+      const allResults = searchCachedCards(term);
+      const results = {};
+      ids.forEach(id => {
+        if (allResults[id]) results[id] = allResults[id];
+      });
       if (Object.keys(results).length === 0) {
         setState && setState({});
         setUsers && setUsers({});
@@ -465,8 +477,11 @@ const SearchBar = ({
       } else {
         setState && setState({});
         setUsers && setUsers(results);
-        const cacheKey = getCacheKey('search', normalizeQueryKey(term));
-        setIdsForQuery(cacheKey, Object.keys(results));
+        const searchKey = getCacheKey(
+          'search',
+          normalizeQueryKey(`${term}:${filtersKey}`),
+        );
+        setIdsForQuery(searchKey, Object.keys(results));
       }
       return;
     }
