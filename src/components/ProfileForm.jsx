@@ -1,6 +1,5 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import styled, { css } from 'styled-components';
-import toast from 'react-hot-toast';
 import Photos from './Photos';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -127,16 +126,10 @@ export const ProfileForm = ({
   handleSubmit,
   handleClear,
   handleDelKeyValue,
-  dataSource,
 }) => {
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
   const [customField, setCustomField] = useState({ key: '', value: '' });
-
-  useEffect(() => {
-    if (dataSource === undefined || dataSource === null) return;
-    toast.success(dataSource ? 'Дані з локального сховища' : 'Дані з бекенду');
-  }, [dataSource]);
 
   const handleAddCustomField = () => {
     if (!customField.key) return;

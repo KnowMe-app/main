@@ -502,7 +502,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const initialDis = getDislikes();
   const [dislikeUsersData, setDislikeUsersData] = useState(initialDis);
   const [isToastOn, setIsToastOn] = useState(false);
-  const [dataSource, setDataSource] = useState(null);
+  const [isLocalData, setIsLocalData] = useState(null);
+
+  useEffect(() => {
+    if (isLocalData === null) return;
+    toast.success(isLocalData ? 'Дані з локального сховища' : 'Дані з бекенду');
+  }, [isLocalData]);
 
   const cacheFetchedUsers = useCallback(
     (usersObj, cacheFn, currentFilters = filters) => {
@@ -721,8 +726,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       syncFavorites(fav);
     }
     const res = await fetchPaginatedNewUsers(param, filterForload, currentFilters, fav);
-    setDataSource(false);
-    toast.success('Дані з бекенду');
+    setIsLocalData(false);
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
@@ -786,8 +790,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       currentFilters,
       id => fetchUserById(id),
     );
-    toast.success(fromCache ? 'Дані з локального сховища' : 'Дані з бекенду');
-    setDataSource(fromCache);
+    setIsLocalData(fromCache);
     const today = new Date().toISOString().split('T')[0];
     const isValid = d => {
       if (!d) return true;
@@ -905,8 +908,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const { cards: loadedArr, fromCache } = await getFavoriteCards(
         id => fetchUserById(id),
       );
-      toast.success(fromCache ? 'Дані з локального сховища' : 'Дані з бекенду');
-      setDataSource(fromCache);
+      setIsLocalData(fromCache);
       const sorted = loadedArr
         .sort((a, b) => compareUsersByGetInTouch(a, b))
         .reduce((acc, user) => {
@@ -936,8 +938,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const { cards: loadedArr, fromCache } = await getFavoriteCards(
       id => fetchUserById(id),
     );
-    toast.success(fromCache ? 'Дані з локального сховища' : 'Дані з бекенду');
-    setDataSource(fromCache);
+    setIsLocalData(fromCache);
     const sorted = loadedArr
       .sort((a, b) => compareUsersByGetInTouch(a, b))
       .reduce((acc, user) => {
@@ -1126,7 +1127,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           filters={filters}
           filterForload={currentFilter}
           favoriteUsers={favoriteUsersData}
-          dataSource={dataSource}
         />
         {state.userId ? (
           <>
@@ -1156,7 +1156,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               handleSubmit={handleSubmit}
               handleClear={handleClear}
               handleDelKeyValue={handleDelKeyValue}
-              dataSource={dataSource}
             />
           </>
         ) : (
@@ -1174,7 +1173,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             <FilterPanel
               onChange={setFilters}
               storageKey="addFilters"
-              dataSource={dataSource}
             />
             <ButtonsContainer>
               {userNotFound && (
@@ -1262,7 +1260,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setUserIdToDelete={setUserIdToDelete}
                   currentFilter={currentFilter}
                   isDateInRange={isDateInRange}
-                  dataSource={dataSource}
                 />
                 <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
               </>
