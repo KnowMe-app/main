@@ -6,6 +6,7 @@ import {
   touchCardInQueries,
   TTL_MS,
   saveCard as indexSaveCard,
+  getQueryEntry,
 } from './cardIndex';
 import { normalizeLastAction } from './normalizeLastAction';
 
@@ -47,45 +48,56 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
 
 export const getCardsByList = async (listKey, remoteFetch) => {
   const cards = loadCards();
-  const ids = getIdsByQuery(listKey);
+  const { ids, lastAction } = getQueryEntry(listKey);
   const freshIds = [];
   const result = [];
-  const staleIds = [];
   let fromCache = true;
 
-  ids.forEach(id => {
-    const card = cards[id];
-    if (card && Date.now() - card.lastAction <= TTL_MS) {
-      result.push(card);
-      freshIds.push(id);
-    } else {
-      staleIds.push(id);
-    }
-  });
-
-  if (staleIds.length > 0 && typeof remoteFetch === 'function') {
-    const fetched = await Promise.all(
-      staleIds.map(id =>
-        remoteFetch(id)
-          .then(res => [id, res])
-          .catch(() => [id, null])
-      )
-    );
-
-    fetched.forEach(([id, fresh]) => {
-      if (fresh) {
-        const { id: _, ...rest } = fresh;
-        const card = {
-          ...rest,
-          userId: id,
-          lastAction: normalizeLastAction(rest.lastAction) || Date.now(),
-        };
-        cards[id] = card;
+  if (lastAction && Date.now() - lastAction <= TTL_MS) {
+    ids.forEach(id => {
+      const card = cards[id];
+      if (card) {
         result.push(card);
         freshIds.push(id);
-        fromCache = false;
       }
     });
+  } else {
+    const staleIds = [];
+
+    ids.forEach(id => {
+      const card = cards[id];
+      if (card && Date.now() - card.lastAction <= TTL_MS) {
+        result.push(card);
+        freshIds.push(id);
+      } else {
+        staleIds.push(id);
+      }
+    });
+
+    if (staleIds.length > 0 && typeof remoteFetch === 'function') {
+      const fetched = await Promise.all(
+        staleIds.map(id =>
+          remoteFetch(id)
+            .then(res => [id, res])
+            .catch(() => [id, null])
+        )
+      );
+
+      fetched.forEach(([id, fresh]) => {
+        if (fresh) {
+          const { id: _, ...rest } = fresh;
+          const card = {
+            ...rest,
+            userId: id,
+            lastAction: normalizeLastAction(rest.lastAction) || Date.now(),
+          };
+          cards[id] = card;
+          result.push(card);
+          freshIds.push(id);
+          fromCache = false;
+        }
+      });
+    }
   }
 
   saveCards(cards);

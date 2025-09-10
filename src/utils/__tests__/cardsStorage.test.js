@@ -52,6 +52,10 @@ describe('cardsStorage', () => {
     const oldCard = { userId: '1', title: 'Old', lastAction: expired };
     localStorage.setItem('cards', JSON.stringify({ '1': oldCard }));
     setIdsForQuery('favorite', ['1']);
+    // expire list entry
+    const queries = JSON.parse(localStorage.getItem('queries'));
+    queries['favorite'].lastAction = expired;
+    localStorage.setItem('queries', JSON.stringify(queries));
 
     const remoteFetch = jest
       .fn()
@@ -63,6 +67,21 @@ describe('cardsStorage', () => {
     expect(cards[0].title).toBe('Fresh');
     const stored = JSON.parse(localStorage.getItem('cards'));
     expect(stored['1'].title).toBe('Fresh');
+  });
+
+  it('returns stale cards from cache when list is fresh', async () => {
+    const SIX_HOURS = 6 * 60 * 60 * 1000;
+    const expired = Date.now() - SIX_HOURS - 1000;
+    const oldCard = { userId: '1', title: 'Old', lastAction: expired };
+    localStorage.setItem('cards', JSON.stringify({ '1': oldCard }));
+    setIdsForQuery('favorite', ['1']);
+
+    const remoteFetch = jest.fn();
+    const { cards, fromCache } = await getCardsByList('favorite', remoteFetch);
+
+    expect(remoteFetch).not.toHaveBeenCalled();
+    expect(fromCache).toBe(true);
+    expect(cards[0].title).toBe('Old');
   });
 });
 
