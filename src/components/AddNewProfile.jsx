@@ -796,8 +796,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       currentFilters,
       id => fetchUserById(id),
     );
-    const hasCacheData = cachedArr.length > 0;
-    let hasBackendData = false;
+    const hasCacheData = fromCache && cachedArr.length > 0;
+    let hasBackendData = !fromCache && cachedArr.length > 0;
     const today = new Date().toISOString().split('T')[0];
     const isValid = d => {
       if (!d) return true;
