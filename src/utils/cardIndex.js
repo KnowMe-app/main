@@ -48,21 +48,31 @@ export const saveCard = card => {
   saveCards(cards);
 };
 
-export const getIdsByQuery = queryKey => {
+export const getQueryEntry = queryKey => {
   const key = normalizeQueryKey(queryKey);
   const queries = loadQueries();
   const entry = queries[key];
-  if (!entry) return [];
-  if (Date.now() - entry.lastAction > TTL_MS) {
+  const cards = loadCards();
+  const ids = entry?.ids?.filter(id => cards[id]) || [];
+  if (entry && ids.length !== entry.ids.length) {
+    queries[key].ids = ids;
+    saveQueries(queries);
+  }
+  return {
+    ids,
+    lastAction: entry?.lastAction || 0,
+  };
+};
+
+export const getIdsByQuery = queryKey => {
+  const { ids, lastAction } = getQueryEntry(queryKey);
+  if (!lastAction) return [];
+  if (Date.now() - lastAction > TTL_MS) {
+    const key = normalizeQueryKey(queryKey);
+    const queries = loadQueries();
     delete queries[key];
     saveQueries(queries);
     return [];
-  }
-  const cards = loadCards();
-  const ids = entry.ids.filter(id => cards[id]);
-  if (ids.length !== entry.ids.length) {
-    queries[key].ids = ids;
-    saveQueries(queries);
   }
   return ids;
 };
