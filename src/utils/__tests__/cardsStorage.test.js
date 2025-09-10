@@ -6,6 +6,14 @@ describe('cardsStorage', () => {
     localStorage.clear();
   });
 
+  it('returns fromCache false when list is empty', async () => {
+    const remoteFetch = jest.fn();
+    const { cards, fromCache } = await getCardsByList('missing', remoteFetch);
+    expect(cards).toEqual([]);
+    expect(fromCache).toBe(false);
+    expect(remoteFetch).not.toHaveBeenCalled();
+  });
+
   it('updates card and triggers remote save', () => {
     const remoteSave = jest.fn().mockResolvedValue(undefined);
     const card = updateCard('1', { title: 'Card 1' }, remoteSave);
