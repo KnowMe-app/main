@@ -721,6 +721,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       syncFavorites(fav);
     }
     const res = await fetchPaginatedNewUsers(param, filterForload, currentFilters, fav);
+    setDataSource(false);
+    toast.success('Дані з бекенду');
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
