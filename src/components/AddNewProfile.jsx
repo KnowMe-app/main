@@ -502,18 +502,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const initialDis = getDislikes();
   const [dislikeUsersData, setDislikeUsersData] = useState(initialDis);
   const [isToastOn, setIsToastOn] = useState(false);
-  const [dataSource, setDataSource] = useState(null);
+  const [cacheCount, setCacheCount] = useState(0);
+  const [backendCount, setBackendCount] = useState(0);
 
   useEffect(() => {
-    if (dataSource === null) return;
+    if (cacheCount === 0 && backendCount === 0) return;
     const message =
-      dataSource === 'cache'
-        ? 'Дані з локального сховища'
-        : dataSource === 'backend'
-        ? 'Дані з бекенду'
-        : 'Дані з локального сховища та бекенду';
+      cacheCount > 0 && backendCount > 0
+        ? `${cacheCount} cards from local storage and ${backendCount} from backend`
+        : cacheCount > 0
+        ? `${cacheCount} cards from local storage`
+        : `${backendCount} cards from backend`;
     toast.success(message);
-  }, [dataSource]);
+  }, [cacheCount, backendCount]);
 
   const cacheFetchedUsers = useCallback(
     (usersObj, cacheFn, currentFilters = filters) => {
@@ -590,11 +591,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setHasMore(true);
     setTotalCount(0);
     setCurrentPage(1);
+    setCacheCount(0);
+    setBackendCount(0);
 
     if (!currentFilter) return;
 
     if (currentFilter === 'DATE2') {
-      loadMoreUsers2();
+      loadMoreUsers2().then(({ cacheCount, backendCount }) => {
+        setCacheCount(cacheCount);
+        setBackendCount(backendCount);
+      });
       return;
     }
 
@@ -613,9 +619,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }, {});
       setUsers(cachedUsers);
       setTotalCount(ids.length);
-      setDataSource('cache');
+       setCacheCount(cards.length);
+       setBackendCount(0);
     } else {
-      loadMoreUsers(currentFilter);
+      loadMoreUsers(currentFilter).then(({ cacheCount, backendCount }) => {
+        setCacheCount(cacheCount);
+        setBackendCount(backendCount);
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, currentFilter, search]);
@@ -733,7 +743,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       syncFavorites(fav);
     }
     const res = await fetchPaginatedNewUsers(param, filterForload, currentFilters, fav);
-    setDataSource('backend');
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
@@ -772,13 +781,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
         setHasMore(res.hasMore); // Оновлюємо hasMore
       }
-      const count = Object.keys(newUsers).length;
-      console.log('loaded users count', count);
+      const backendCount = Object.keys(newUsers).length;
+      console.log('loaded users count', backendCount);
       console.log('next lastKey', res.lastKey);
-      return { count, hasMore: res.hasMore };
+      return { cacheCount: 0, backendCount, hasMore: res.hasMore };
     } else {
       setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
-      return { count: 0, hasMore: false };
+      return { cacheCount: 0, backendCount: 0, hasMore: false };
     }
   };
 
@@ -791,14 +800,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       syncFavorites(fav);
     }
 
-    if (isEditingRef.current) return { count: 0, hasMore };
+    if (isEditingRef.current)
+      return { cacheCount: 0, backendCount: 0, hasMore };
 
     const { cards: cachedArr, fromCache } = await getLoad2Cards(
       currentFilters,
       id => fetchUserById(id),
     );
-    const hasCacheData = fromCache && cachedArr.length > 0;
-    let hasBackendData = !fromCache && cachedArr.length > 0;
+    let cacheCount = 0;
+    let backendCount = 0;
     const today = new Date().toISOString().split('T')[0];
     const isValid = d => {
       if (!d) return true;
@@ -810,7 +820,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
 
     let offset = dateOffset2;
-    let count = 0;
 
     const slice = filteredArr.slice(offset, offset + PAGE_SIZE);
     if (slice.length > 0) {
@@ -823,7 +832,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       }
       offset += slice.length;
-      count += slice.length;
+      if (fromCache) cacheCount += slice.length;
+      else backendCount += slice.length;
     }
 
     let more = filteredArr.length > offset;
@@ -844,9 +854,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         if (!isEditingRef.current) {
           setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
         }
-        if (Object.keys(filteredPartial).length > 0) hasBackendData = true;
-      },
-    );
+        backendCount += Object.keys(filteredPartial).length;
+        },
+      );
       if (res && Object.keys(res.users).length > 0) {
         const filteredUsers = currentFilters.favorite?.favOnly
           ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
@@ -857,8 +867,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
         offset = res.lastKey;
         more = res.hasMore;
-        count += Object.keys(filteredUsers).length;
-        hasBackendData = true;
+        backendCount += Object.keys(filteredUsers).length;
       } else {
         more = false;
       }
@@ -866,14 +875,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     setDateOffset2(offset);
     setHasMore(more);
-    const source =
-      hasCacheData && hasBackendData
-        ? 'mixed'
-        : hasBackendData
-        ? 'backend'
-        : 'cache';
-    setDataSource(source);
-    return { count, hasMore: more };
+    return { cacheCount, backendCount, hasMore: more };
   };
 
 
@@ -881,15 +883,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const needed = page * PAGE_SIZE;
     let loaded = Object.keys(users).length;
     let more = hasMore;
+    let cacheLoaded = 0;
+    let backendLoaded = 0;
 
     while (more && loaded < needed) {
-      const { count, hasMore: nextMore } =
+      const { cacheCount, backendCount, hasMore: nextMore } =
         currentFilter === 'DATE2'
           ? await loadMoreUsers2()
           : await loadMoreUsers(currentFilter);
-      loaded += count;
+      cacheLoaded += cacheCount;
+      backendLoaded += backendCount;
+      loaded += cacheCount + backendCount;
       more = nextMore;
     }
+    setCacheCount(cacheLoaded);
+    setBackendCount(backendLoaded);
     setCurrentPage(page);
   };
 
@@ -919,8 +927,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const { cards: cachedArr, fromCache } = await getFavoriteCards(
       id => fetchUserById(id),
     );
-    let hasCacheData = fromCache && cachedArr.length > 0;
-    let hasBackendData = !fromCache && cachedArr.length > 0;
+    let cacheCount = fromCache ? cachedArr.length : 0;
+    let backendCount = fromCache ? 0 : cachedArr.length;
 
     const loaded = cachedArr.reduce((acc, user) => {
       acc[user.userId] = user;
@@ -934,7 +942,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       favIds[id] = true;
       if (!loaded[id]) {
         loaded[id] = user;
-        hasBackendData = true;
+        backendCount += 1;
       }
     });
 
@@ -957,14 +965,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLastKey(null);
     setCurrentPage(1);
     setTotalCount(total);
-
-    const source =
-      hasCacheData && hasBackendData
-        ? 'mixed'
-        : hasBackendData
-        ? 'backend'
-        : 'cache';
-    setDataSource(source);
+    setCacheCount(cacheCount);
+    setBackendCount(backendCount);
   };
 
   const [duplicates, setDuplicates] = useState('');
@@ -1200,7 +1202,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               <Button onClick={handleInfo}>Info</Button>
               <Button onClick={handleClearCache}>ClearCache</Button>
               <Button
-                onClick={() => {
+                onClick={async () => {
                   setUsers({});
                   setLastKey(null);
                   setHasMore(true);
@@ -1209,13 +1211,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setDateOffset(0);
                   setDuplicates('');
                   setIsDuplicateView(false);
-                  loadMoreUsers('DATE');
+                  const { cacheCount, backendCount } = await loadMoreUsers('DATE');
+                  setCacheCount(cacheCount);
+                  setBackendCount(backendCount);
                 }}
               >
                 Load
               </Button>
               <Button
-                onClick={() => {
+                onClick={async () => {
                   setUsers({});
                   setHasMore(true);
                   setCurrentPage(1);
@@ -1223,7 +1227,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setDateOffset2(0);
                   setDuplicates('');
                   setIsDuplicateView(false);
-                  loadMoreUsers2();
+                  const { cacheCount, backendCount } = await loadMoreUsers2();
+                  setCacheCount(cacheCount);
+                  setBackendCount(backendCount);
                 }}
               >
                 Load2
