@@ -613,6 +613,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }, {});
       setUsers(cachedUsers);
       setTotalCount(ids.length);
+      setDataSource('cache');
     } else {
       loadMoreUsers(currentFilter);
     }
