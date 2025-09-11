@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import toast from 'react-hot-toast';
 import { useAutoResize } from '../hooks/useAutoResize';
 import styled from 'styled-components';
 import { createCache } from '../hooks/cardsCache';
@@ -280,6 +281,17 @@ const SearchBar = ({
     () => loadHistoryCache('queries') || [],
   );
   const [showHistory, setShowHistory] = useState(false);
+  const [remaining, setRemaining] = useState(0);
+
+  useEffect(() => {
+    if (remaining > 0) {
+      toast.loading(`Filtering... ${remaining} left`, {
+        id: 'remaining-counter',
+      });
+    } else {
+      toast.dismiss('remaining-counter');
+    }
+  }, [remaining]);
 
   const loadCachedResult = (key, value) => {
     if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
@@ -474,7 +486,14 @@ const SearchBar = ({
         await cacheFilteredUsers(filterForload, filters, favoriteUsers, cacheKey);
         ids = getIdsByQuery(cacheKey);
       }
-      const results = searchCachedCards(term, ids);
+      const allResults = searchCachedCards(term);
+      const results = {};
+      setRemaining(ids.length);
+      for (const id of ids) {
+        if (allResults[id]) results[id] = allResults[id];
+        setRemaining(r => r - 1);
+        await new Promise(resolve => requestAnimationFrame(resolve));
+      }
       if (Object.keys(results).length === 0) {
         setState && setState({});
         setUsers && setUsers({});
