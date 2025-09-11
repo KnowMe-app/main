@@ -12,22 +12,6 @@ import { normalizeLastAction } from './normalizeLastAction';
 
 export { TTL_MS };
 
-const buildSearchText = card =>
-  Object.values(card || {})
-    .map(value => {
-      if (value === undefined || value === null) return '';
-      if (typeof value === 'object') {
-        try {
-          return JSON.stringify(value);
-        } catch {
-          return '';
-        }
-      }
-      return String(value);
-    })
-    .join(' ')
-    .toLowerCase();
-
 export const addCardToList = (cardId, listKey) => {
   const ids = getIdsByQuery(listKey);
   if (!ids.includes(cardId)) {
@@ -52,12 +36,11 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   removeKeys.forEach(key => {
     delete updatedCard[key];
   });
-  updatedCard._searchText = buildSearchText(updatedCard);
   cards[cardId] = updatedCard;
   saveCards(cards);
   touchCardInQueries(cardId);
   if (typeof remoteSave === 'function') {
-    const { lastAction, _searchText, ...toSend } = updatedCard;
+    const { lastAction, ...toSend } = updatedCard;
     Promise.resolve(remoteSave(toSend)).catch(() => {});
   }
   return updatedCard;
@@ -108,7 +91,6 @@ export const getCardsByList = async (listKey, remoteFetch) => {
             userId: id,
             lastAction: normalizeLastAction(rest.lastAction) || Date.now(),
           };
-          card._searchText = buildSearchText(card);
           cards[id] = card;
           result.push(card);
           freshIds.push(id);
@@ -158,13 +140,11 @@ export const getFilteredCardsByList = async (
       const extra = await fetchMore(needed);
       extra.forEach(([id, data]) => {
         const { id: _, ...rest } = data;
-        const card = {
+        cards[id] = {
           ...rest,
           userId: id,
           lastAction: normalizeLastAction(rest.lastAction) || Date.now(),
         };
-        card._searchText = buildSearchText(card);
-        cards[id] = card;
         if (!ids.includes(id)) ids.push(id);
       });
       saveCards(cards);
@@ -178,17 +158,25 @@ export const getFilteredCardsByList = async (
   return filtered.slice(0, target).map(([id]) => cards[id]);
 };
 
-export const searchCachedCards = (term, ids) => {
+export const searchCachedCards = term => {
   const search = String(term || '').toLowerCase();
   if (!search) return {};
   const cards = loadCards();
   const results = {};
-  const list = Array.isArray(ids) && ids.length ? ids : Object.keys(cards);
-  list.forEach(id => {
-    const card = cards[id];
-    if (!card) return;
-    const text = card._searchText || buildSearchText(card);
-    if (text.includes(search)) {
+  Object.entries(cards).forEach(([id, card]) => {
+    const matched = Object.entries(card || {}).some(([key, value]) => {
+      if (String(key).toLowerCase().includes(search)) return true;
+      if (value === undefined || value === null) return false;
+      if (typeof value === 'object') {
+        try {
+          return JSON.stringify(value).toLowerCase().includes(search);
+        } catch {
+          return false;
+        }
+      }
+      return String(value).toLowerCase().includes(search);
+    });
+    if (matched) {
       results[id] = card;
     }
   });
