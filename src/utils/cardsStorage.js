@@ -12,6 +12,22 @@ import { normalizeLastAction } from './normalizeLastAction';
 
 export { TTL_MS };
 
+const buildSearchText = card =>
+  Object.values(card || {})
+    .map(value => {
+      if (value === undefined || value === null) return '';
+      if (typeof value === 'object') {
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return '';
+        }
+      }
+      return String(value);
+    })
+    .join(' ')
+    .toLowerCase();
+
 export const addCardToList = (cardId, listKey) => {
   const ids = getIdsByQuery(listKey);
   if (!ids.includes(cardId)) {
@@ -140,11 +156,12 @@ export const getFilteredCardsByList = async (
       const extra = await fetchMore(needed);
       extra.forEach(([id, data]) => {
         const { id: _, ...rest } = data;
-        cards[id] = {
+        const card = {
           ...rest,
           userId: id,
           lastAction: normalizeLastAction(rest.lastAction) || Date.now(),
         };
+        cards[id] = card;
         if (!ids.includes(id)) ids.push(id);
       });
       saveCards(cards);
@@ -158,25 +175,17 @@ export const getFilteredCardsByList = async (
   return filtered.slice(0, target).map(([id]) => cards[id]);
 };
 
-export const searchCachedCards = term => {
+export const searchCachedCards = (term, ids) => {
   const search = String(term || '').toLowerCase();
   if (!search) return {};
   const cards = loadCards();
   const results = {};
-  Object.entries(cards).forEach(([id, card]) => {
-    const matched = Object.entries(card || {}).some(([key, value]) => {
-      if (String(key).toLowerCase().includes(search)) return true;
-      if (value === undefined || value === null) return false;
-      if (typeof value === 'object') {
-        try {
-          return JSON.stringify(value).toLowerCase().includes(search);
-        } catch {
-          return false;
-        }
-      }
-      return String(value).toLowerCase().includes(search);
-    });
-    if (matched) {
+  const list = Array.isArray(ids) && ids.length ? ids : Object.keys(cards);
+  list.forEach(id => {
+    const card = cards[id];
+    if (!card) return;
+    const text = buildSearchText(card);
+    if (text.includes(search)) {
       results[id] = card;
     }
   });
