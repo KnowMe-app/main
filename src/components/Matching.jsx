@@ -61,7 +61,8 @@ import {
   pruneComments,
 } from '../utils/commentsStorage';
 
-const isValidId = id => typeof id === 'string' && id.length >= 20;
+// Filter out users with invalid identifiers; IDs must be longer than 20 characters
+const isValidId = id => typeof id === 'string' && id.length > 20;
 const filterLongUsers = list => list.filter(u => isValidId(u?.userId));
 
 const compareUsersByLastLogin2 = (a = {}, b = {}) =>
