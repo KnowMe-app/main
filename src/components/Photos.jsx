@@ -103,7 +103,7 @@ const HiddenFileInput = styled.input`
   display: none; /* Ховаємо справжній input */
 `;
 
-export const Photos = ({ state, setState }) => {
+export const Photos = ({ state, setState, collection }) => {
   const [viewerIndex, setViewerIndex] = useState(null);
   const photoKeys = Object.keys(state).filter(
     k => k.toLowerCase().startsWith('photo') && k !== 'photos'
@@ -119,10 +119,10 @@ export const Photos = ({ state, setState }) => {
       photoValues,
     });
     const load = async () => {
-      if (state.userId && state.userId.length <= 20) {
+      if (state.userId) {
         try {
           console.log('Fetching photos for user', state.userId);
-          const urls = await getAllUserPhotos(state.userId);
+          const urls = await getAllUserPhotos(state.userId, collection);
           console.log('Fetched URLs', urls);
           if (urls.length > 0) {
             if (!arraysEqual(urls, state.photos)) {
@@ -171,22 +171,22 @@ export const Photos = ({ state, setState }) => {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.userId, photoValues, setState]);
+  }, [state.userId, photoValues, setState, collection]);
 
   const savePhotoList = async updatedPhotos => {
-    await updateDataInRealtimeDB(
-      state.userId,
-      { photos: updatedPhotos },
-      'update'
-    );
-    await updateDataInFiresoreDB(
-      state.userId,
-      { photos: updatedPhotos },
-      'update'
-    );
-
-    if (state.userId.length > 20) {
+    if (collection === 'newUsers') {
       await updateDataInNewUsersRTDB(
+        state.userId,
+        { photos: updatedPhotos },
+        'update'
+      );
+    } else {
+      await updateDataInRealtimeDB(
+        state.userId,
+        { photos: updatedPhotos },
+        'update'
+      );
+      await updateDataInFiresoreDB(
         state.userId,
         { photos: updatedPhotos },
         'update'

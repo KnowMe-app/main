@@ -130,6 +130,7 @@ export const ProfileForm = ({
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
   const [customField, setCustomField] = useState({ key: '', value: '' });
+  const [collection, setCollection] = useState('newUsers');
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
@@ -492,10 +493,31 @@ export const ProfileForm = ({
         />
         <Button onClick={handleAddCustomField}>+</Button>
       </KeyValueRow>
-        <Photos state={state} setState={setState} />
+      <PhotosBlock>
+        <CollectionToggle
+          value={collection}
+          onChange={e => setCollection(e.target.value)}
+        >
+          <option value="users">users</option>
+          <option value="newUsers">newUsers</option>
+        </CollectionToggle>
+        <Photos state={state} setState={setState} collection={collection} />
+      </PhotosBlock>
     </>
   );
 };
+
+const PhotosBlock = styled.div`
+  position: relative;
+  max-width: 400px;
+  margin: 0 auto;
+`;
+
+const CollectionToggle = styled.select`
+  position: absolute;
+  top: 0;
+  right: 0;
+`;
 
 const PickerContainer = styled.div`
   display: flex;
