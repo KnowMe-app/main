@@ -493,6 +493,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
   const [totalCount, setTotalCount] = useState(0);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState('');
   const [dateOffset, setDateOffset] = useState(0);
@@ -596,16 +597,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (!currentFilter) return;
 
+    setSearchLoading(true);
+
     if (currentFilter === 'DATE2') {
-      loadMoreUsers2().then(({ cacheCount, backendCount }) => {
-        setCacheCount(cacheCount);
-        setBackendCount(backendCount);
-      });
+      loadMoreUsers2()
+        .then(({ cacheCount, backendCount }) => {
+          setCacheCount(cacheCount);
+          setBackendCount(backendCount);
+        })
+        .finally(() => setSearchLoading(false));
       return;
     }
 
     if (currentFilter === 'FAVORITE') {
-      loadFavoriteUsers();
+      loadFavoriteUsers().finally(() => setSearchLoading(false));
       return;
     }
 
@@ -619,13 +624,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }, {});
       setUsers(cachedUsers);
       setTotalCount(ids.length);
-       setCacheCount(cards.length);
-       setBackendCount(0);
+      setCacheCount(cards.length);
+      setBackendCount(0);
+      setSearchLoading(false);
     } else {
-      loadMoreUsers(currentFilter).then(({ cacheCount, backendCount }) => {
-        setCacheCount(cacheCount);
-        setBackendCount(backendCount);
-      });
+      loadMoreUsers(currentFilter)
+        .then(({ cacheCount, backendCount }) => {
+          setCacheCount(cacheCount);
+          setBackendCount(backendCount);
+        })
+        .finally(() => setSearchLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, currentFilter, search]);
@@ -1176,7 +1184,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         ) : (
           <div>
             {users && !userNotFound ? (
-              <p style={{ textAlign: 'center', color: 'black' }}>Знайдено {totalCount} користувачів.</p>
+              <p style={{ textAlign: 'center', color: 'black' }}>
+                Знайдено {searchLoading ? <span className="spinner" /> : totalCount} користувачів.
+              </p>
             ) : userNotFound ? (
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
             ) : Object.keys(users).length > 1 ? (
