@@ -12,22 +12,6 @@ import { normalizeLastAction } from './normalizeLastAction';
 
 export { TTL_MS };
 
-const buildSearchText = card =>
-  Object.values(card || {})
-    .map(value => {
-      if (value === undefined || value === null) return '';
-      if (typeof value === 'object') {
-        try {
-          return JSON.stringify(value);
-        } catch {
-          return '';
-        }
-      }
-      return String(value);
-    })
-    .join(' ')
-    .toLowerCase();
-
 export const addCardToList = (cardId, listKey) => {
   const ids = getIdsByQuery(listKey);
   if (!ids.includes(cardId)) {
@@ -184,7 +168,7 @@ export const searchCachedCards = (term, ids) => {
   list.forEach(id => {
     const card = cards[id];
     if (!card) return;
-    const text = buildSearchText(card);
+    const text = (card.myComment || '').toLowerCase();
     if (text.includes(search)) {
       results[id] = card;
     }
