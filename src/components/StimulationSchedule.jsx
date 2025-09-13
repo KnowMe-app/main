@@ -169,7 +169,12 @@ export const generateSchedule = base => {
 export const serializeSchedule = sched =>
   sched
     .filter(item => item.date)
-    .map(item => `${item.date.toISOString().slice(0, 10)} - ${item.label}`)
+    .map(item => {
+      const y = item.date.getFullYear();
+      const m = String(item.date.getMonth() + 1).padStart(2, '0');
+      const d = String(item.date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d} - ${item.label}`;
+    })
     .join('\n');
 
 const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }) => {
@@ -285,8 +290,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     setSchedule(prev => {
       const copy = [...prev];
       const item = copy[idx];
-      const baseDate = item.date;
-      const newDate = new Date(baseDate);
+      const newDate = new Date(item.date);
       newDate.setDate(newDate.getDate() + delta);
 
       const applyAdjust = (it, d, refBase) => {
@@ -327,7 +331,6 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         return { ...it, date: adj.date, label: lbl };
       };
 
-      // adjust changed item and compute actual shift
       const adjustedItem = applyAdjust(
         item,
         newDate,
@@ -335,22 +338,9 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           ? copy.find(v => v.key === 'transfer')?.date || base
           : base,
       );
-      const actualDelta = Math.round((adjustedItem.date - baseDate) / (1000 * 60 * 60 * 24));
       copy[idx] = adjustedItem;
 
-      // shift subsequent items by actualDelta
-      const usIndex = copy.findIndex(v => v.key === 'us');
-      const limit = usIndex !== -1 && idx < usIndex ? usIndex : idx;
-      for (let j = idx + 1; j < copy.length && j <= limit; j++) {
-        const it = copy[j];
-        const ref = postTransferKeys.includes(it.key)
-          ? copy.find(v => v.key === 'transfer')?.date || base
-          : base;
-        const nd = new Date(it.date);
-        nd.setDate(nd.getDate() + actualDelta);
-        copy[j] = applyAdjust(it, nd, ref);
-      }
-
+      copy.sort((a, b) => a.date - b.date);
       saveSchedule(copy);
       return copy;
     });
@@ -358,11 +348,117 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
 
   if (!userData?.stimulation || !base || schedule.length === 0) return null;
 
-  const year = base.getFullYear();
+  const rendered = [];
+  let currentYear = null;
+
+  schedule
+    .filter(item => item.date)
+    .forEach((item, i) => {
+      const dateStr = formatDisplay(item.date);
+      const weekday = weekdayNames[item.date.getDay()];
+      const year = item.date.getFullYear();
+      if (year !== currentYear) {
+        rendered.push(<div key={`year-${year}`}>{year}</div>);
+        currentYear = year;
+      }
+      rendered.push(
+        <div
+          key={item.key}
+          style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
+            <div>
+              {dateStr} {weekday} -
+            </div>
+            {editingIndex === i ? (
+              <input
+                value={item.label}
+                autoFocus
+                onChange={e =>
+                  setSchedule(prev => {
+                    const copy = [...prev];
+                    const idx = prev.findIndex(v => v.key === item.key);
+                    copy[idx] = { ...copy[idx], label: e.target.value };
+                    return copy;
+                  })
+                }
+                onBlur={() => {
+                  setEditingIndex(null);
+                  setSchedule(prev => {
+                    const copy = [...prev];
+                    saveSchedule(copy);
+                    return copy;
+                  });
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.target.blur();
+                  }
+                }}
+                style={{ flex: 1 }}
+              />
+            ) : (
+              <div
+                onClick={() => setEditingIndex(i)}
+                style={{ cursor: 'pointer', flex: 1 }}
+              >
+                {item.label}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
+            <OrangeBtn
+              onClick={() => shiftDate(schedule.findIndex(v => v.key === item.key), -1)}
+              style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '4px',
+                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                fontSize: '16px',
+                fontWeight: 'bold',
+              }}
+            >
+              -
+            </OrangeBtn>
+            <OrangeBtn
+              onClick={() => shiftDate(schedule.findIndex(v => v.key === item.key), 1)}
+              style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '4px',
+                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                fontSize: '16px',
+                fontWeight: 'bold',
+              }}
+            >
+              +
+            </OrangeBtn>
+            <OrangeBtn
+              onClick={() =>
+                setSchedule(prev => {
+                  const updated = prev.filter(v => v.key !== item.key);
+                  saveSchedule(updated);
+                  return updated;
+                })
+              }
+              style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '4px',
+                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                fontSize: '16px',
+                fontWeight: 'bold',
+              }}
+            >
+              ×
+            </OrangeBtn>
+          </div>
+        </div>,
+      );
+    });
 
   return (
     <div style={{ marginTop: '8px' }}>
-      <div>{year}</div>
       <div style={{ display: 'flex', gap: '2px', margin: '4px 0' }}>
         <input
           type="text"
@@ -402,103 +498,38 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           AP
         </OrangeBtn>
       </div>
-      {schedule.filter(item => item.date).map((item, i) => {
-        const dateStr = formatDisplay(item.date);
-        const weekday = weekdayNames[item.date.getDay()];
-        return (
-          <div
-            key={i}
-            style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
-              <div>
-                {dateStr} {weekday} -
-              </div>
-              {editingIndex === i ? (
-                <input
-                  value={item.label}
-                  autoFocus
-                  onChange={e =>
-                    setSchedule(prev => {
-                      const copy = [...prev];
-                      copy[i] = { ...copy[i], label: e.target.value };
-                      return copy;
-                    })
-                  }
-                  onBlur={() => {
-                    setEditingIndex(null);
-                    setSchedule(prev => {
-                      const copy = [...prev];
-                      saveSchedule(copy);
-                      return copy;
-                    });
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      e.target.blur();
-                    }
-                  }}
-                  style={{ flex: 1 }}
-                />
-              ) : (
-                <div
-                  onClick={() => setEditingIndex(i)}
-                  style={{ cursor: 'pointer', flex: 1 }}
-                >
-                  {item.label}
-                </div>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
-              <OrangeBtn
-                onClick={() => shiftDate(i, -1)}
-                style={{
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '4px',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                }}
-              >
-                -
-              </OrangeBtn>
-              <OrangeBtn
-                onClick={() => shiftDate(i, 1)}
-                style={{
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '4px',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                }}
-              >
-                +
-              </OrangeBtn>
-              <OrangeBtn
-                onClick={() =>
-                  setSchedule(prev => {
-                    const updated = prev.filter((_, idx) => idx !== i);
-                    saveSchedule(updated);
-                    return updated;
-                  })
-                }
-                style={{
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '4px',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                }}
-              >
-                ×
-              </OrangeBtn>
-            </div>
-          </div>
-        );
-      })}
+      {rendered}
+      <OrangeBtn
+        onClick={() => {
+          let text = '';
+          let yr = null;
+          schedule
+            .filter(item => item.date)
+            .sort((a, b) => a.date - b.date)
+            .forEach(it => {
+              const y = it.date.getFullYear();
+              const dateStr = formatDisplay(it.date);
+              if (y !== yr) {
+                if (text) text += '\n';
+                text += `${y}\n`;
+                yr = y;
+              }
+              text += `${dateStr} ${it.label}\n`;
+            });
+          navigator.clipboard.writeText(text.trim());
+        }}
+        style={{
+          marginTop: '4px',
+          width: 'fit-content',
+          padding: '2px 8px',
+          borderRadius: '4px',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+          fontSize: '16px',
+          fontWeight: 'bold',
+        }}
+      >
+        експорт
+      </OrangeBtn>
     </div>
   );
 };
