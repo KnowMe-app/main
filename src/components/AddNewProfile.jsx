@@ -1175,7 +1175,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 isToastOn,
                 setIsToastOn,
               )}
-              <StimulationSchedule userData={state} />
+              <StimulationSchedule
+                userData={state}
+                setUsers={setUsers}
+                setState={setState}
+                isToastOn={isToastOn}
+              />
             </div>
 
             <ProfileForm

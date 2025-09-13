@@ -76,6 +76,9 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   const [status, setStatus] = React.useState('menstruation');
   const submittedRef = React.useRef(false);
   const prevDataRef = React.useRef(null);
+  const [localValue, setLocalValue] = React.useState(
+    formatDateToDisplay(userData.lastCycle) || ''
+  );
 
   const nextCycle = React.useMemo(() => calculateNextDate(userData.lastCycle), [userData.lastCycle]);
 
@@ -90,9 +93,13 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     }
   }, [userData.lastDelivery, userData.stimulation]);
 
-  const handleLastCycleChange = e => {
-    const value = e.target.value.trim();
-    const date = parseDate(value);
+  React.useEffect(() => {
+    setLocalValue(formatDateToDisplay(userData.lastCycle) || '');
+  }, [userData.lastCycle]);
+
+  const processLastCycle = value => {
+    const val = value.trim();
+    const date = parseDate(val);
 
     if (date) {
       const lastCycleFormatted = formatDateToServer(formatDate(date));
@@ -134,12 +141,20 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         );
         submittedRef.current = true;
       } else {
-      handleChange(setUsers, setState, userData.userId, 'lastCycle', lastCycleFormatted);
+        handleChange(setUsers, setState, userData.userId, 'lastCycle', lastCycleFormatted);
+        handleSubmit({ ...userData, lastCycle: lastCycleFormatted }, 'overwrite', isToastOn);
+        submittedRef.current = true;
       }
     } else {
-      const serverFormattedDate = formatDateToServer(value);
+      const serverFormattedDate = formatDateToServer(val);
       handleChange(setUsers, setState, userData.userId, 'lastCycle', serverFormattedDate);
+      handleSubmit({ ...userData, lastCycle: serverFormattedDate }, 'overwrite', isToastOn);
+      submittedRef.current = true;
     }
+  };
+
+  const handleLastCycleChange = e => {
+    setLocalValue(e.target.value);
   };
 
   const handleStatusClick = () => {
@@ -245,10 +260,11 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
         <UnderlinedInput
           type="text"
-          value={formatDateToDisplay(userData.lastCycle) || ''}
+          value={localValue}
           placeholder="міс"
           onChange={handleLastCycleChange}
           onBlur={() => {
+            processLastCycle(localValue);
             if (!submittedRef.current) {
               handleSubmit(userData, 'overwrite', isToastOn);
             }
