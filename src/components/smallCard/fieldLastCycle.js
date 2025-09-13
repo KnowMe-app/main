@@ -2,6 +2,7 @@ import React from 'react';
 import { handleChange, handleSubmit } from './actions';
 import { formatDateToDisplay, formatDateToServer } from 'components/inputValidations';
 import { generateSchedule, serializeSchedule } from '../StimulationSchedule';
+import InfoModal from 'components/InfoModal';
 import {
   UnderlinedInput,
   AttentionButton,
@@ -80,6 +81,8 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   const [localValue, setLocalValue] = React.useState(
     formatDateToDisplay(userData.lastCycle) || ''
   );
+  const [showConfirm, setShowConfirm] = React.useState(false);
+  const pendingValueRef = React.useRef('');
 
   const nextCycle = React.useMemo(() => calculateNextDate(userData.lastCycle), [userData.lastCycle]);
 
@@ -162,42 +165,38 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     setStatus(prev => {
       const newState = prev === 'menstruation' ? 'stimulation' : prev === 'stimulation' ? 'pregnant' : 'menstruation';
       if (newState === 'stimulation') {
-        const baseDate = parseDate(userData.lastCycle);
-        let scheduleString = '';
-        if (baseDate) {
-          const sched = generateSchedule(baseDate);
-          scheduleString = serializeSchedule(sched);
-        }
         handleChange(
           setUsers,
           setState,
           userData.userId,
-          { stimulation: true, stimulationSchedule: scheduleString },
+          { stimulation: true },
           true,
           {},
           isToastOn,
         );
         handleSubmit(
-          { ...userData, stimulation: true, stimulationSchedule: scheduleString },
+          { ...userData, stimulation: true },
           'overwrite',
           isToastOn,
         );
         submittedRef.current = true;
       } else if (prev === 'stimulation') {
+        const updates = { stimulation: false };
+        const submitObj = { ...userData, stimulation: false };
+        if (userData.stimulationSchedule !== undefined) {
+          updates.stimulationSchedule = undefined;
+          submitObj.stimulationSchedule = undefined;
+        }
         handleChange(
           setUsers,
           setState,
           userData.userId,
-          { stimulation: false, stimulationSchedule: '' },
+          updates,
           true,
           {},
           isToastOn,
         );
-        handleSubmit(
-          { ...userData, stimulation: false, stimulationSchedule: '' },
-          'overwrite',
-          isToastOn,
-        );
+        handleSubmit(submitObj, 'overwrite', isToastOn);
         submittedRef.current = true;
       }
       if (newState === 'pregnant') {
@@ -264,6 +263,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   const recalcSchedule = React.useCallback(
     dateString => {
+      if (userData.stimulationSchedule === undefined) return;
       const baseDate = parseDate(dateString);
       if (!baseDate) return;
       const sched = generateSchedule(baseDate);
@@ -276,7 +276,58 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         scheduleString,
       );
     },
-    [setUsers, setState, userData.userId],
+    [setUsers, setState, userData.userId, userData.stimulationSchedule],
+  );
+
+  const handleBlur = () => {
+    const prevDisplay = formatDateToDisplay(userData.lastCycle) || '';
+    if (localValue.trim() === prevDisplay.trim()) {
+      return;
+    }
+    if (userData.stimulationSchedule !== undefined) {
+      pendingValueRef.current = localValue;
+      setShowConfirm(true);
+      return;
+    }
+    processLastCycle(localValue);
+    if (status === 'stimulation') {
+      recalcSchedule(localValue);
+    }
+    if (!submittedRef.current) {
+      handleSubmit(userData, 'overwrite', isToastOn);
+    }
+    submittedRef.current = false;
+  };
+
+  const ConfirmReset = () => (
+    <div>
+      <p>Змінити дату місячних? Графік стимуляції буде скинуто.</p>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
+        <button
+          onClick={() => {
+            setShowConfirm(false);
+            processLastCycle(pendingValueRef.current);
+            if (status === 'stimulation') {
+              recalcSchedule(pendingValueRef.current);
+            }
+            if (!submittedRef.current) {
+              handleSubmit(userData, 'overwrite', isToastOn);
+            }
+            submittedRef.current = false;
+          }}
+        >
+          Так
+        </button>
+        <button
+          onClick={() => {
+            setShowConfirm(false);
+            setLocalValue(formatDateToDisplay(userData.lastCycle) || '');
+          }}
+        >
+          Ні
+        </button>
+      </div>
+    </div>
   );
 
   const saveSchedule = React.useCallback(() => {
@@ -314,16 +365,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           value={localValue}
           placeholder="міс"
           onChange={handleLastCycleChange}
-          onBlur={() => {
-            processLastCycle(localValue);
-            if (status === 'stimulation') {
-              recalcSchedule(localValue);
-            }
-            if (!submittedRef.current) {
-              handleSubmit(userData, 'overwrite', isToastOn);
-            }
-            submittedRef.current = false;
-          }}
+          onBlur={handleBlur}
           style={{
             textAlign: 'left',
             color: 'white',
@@ -391,6 +433,18 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           </React.Fragment>
         )}
       </div>
+      {showConfirm && (
+        <InfoModal
+          onClose={e => {
+            if (e.target === e.currentTarget) {
+              setShowConfirm(false);
+              setLocalValue(formatDateToDisplay(userData.lastCycle) || '');
+            }
+          }}
+          text="dotsMenu"
+          Context={ConfirmReset}
+        />
+      )}
     </React.Fragment>
   );
 };
