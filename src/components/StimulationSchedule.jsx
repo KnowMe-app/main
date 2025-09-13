@@ -165,7 +165,8 @@ export const generateSchedule = base => {
 
 export const serializeSchedule = sched =>
   sched
-    .map(item => `${formatDisplay(item.date)} - ${item.label}`)
+    .filter(item => item.date)
+    .map(item => `${item.date.toISOString().slice(0, 10)} - ${item.label}`)
     .join('\n');
 
 const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }) => {
@@ -205,31 +206,35 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       if (typeof userData.stimulationSchedule === 'string') {
         const lines = userData.stimulationSchedule.split('\n').filter(Boolean);
         let visitCount = 0;
-        const parsed = lines.map((line, idx) => {
-          const [datePart, ...labelParts] = line.split(' - ');
-          const label = labelParts.join(' - ').trim();
-          const date = parseDate(datePart.trim());
-          let key = '';
-          if (/перенос/.test(label)) key = 'transfer';
-          else if (/ХГЧ/.test(label)) key = 'hcg';
-          else if (/УЗД|ЗД/.test(label)) key = 'us';
-          else if (/Прийом на (\d+)й тиждень/.test(label)) {
-            const week = /Прийом на (\d+)й тиждень/.exec(label)[1];
-            key = `week${week}`;
-          } else if (/й день/.test(label)) {
-            visitCount += 1;
-            key = `visit${visitCount}`;
-          } else {
-            key = `ap-${idx}`;
-          }
-          return { key, date, label };
-        });
+        const parsed = lines
+          .map((line, idx) => {
+            const [datePart, ...labelParts] = line.split(' - ');
+            const label = labelParts.join(' - ').trim();
+            const date = parseDate(datePart.trim());
+            let key = '';
+            if (/перенос/.test(label)) key = 'transfer';
+            else if (/ХГЧ/.test(label)) key = 'hcg';
+            else if (/УЗД|ЗД/.test(label)) key = 'us';
+            else if (/Прийом на (\d+)й тиждень/.test(label)) {
+              const week = /Прийом на (\d+)й тиждень/.exec(label)[1];
+              key = `week${week}`;
+            } else if (/й день/.test(label)) {
+              visitCount += 1;
+              key = `visit${visitCount}`;
+            } else {
+              key = `ap-${idx}`;
+            }
+            return { key, date, label };
+          })
+          .filter(item => item.date);
         setSchedule(parsed);
       } else {
-        const parsed = userData.stimulationSchedule.map(item => ({
-          ...item,
-          date: parseDate(item.date),
-        }));
+        const parsed = userData.stimulationSchedule
+          .map(item => ({
+            ...item,
+            date: parseDate(item.date),
+          }))
+          .filter(item => item.date);
         setSchedule(parsed);
       }
     } else {
@@ -377,7 +382,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           AP
         </OrangeBtn>
       </div>
-      {schedule.map((item, i) => {
+      {schedule.filter(item => item.date).map((item, i) => {
         const dateStr = formatDisplay(item.date);
         const weekday = weekdayNames[item.date.getDay()];
         return (
