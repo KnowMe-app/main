@@ -7,6 +7,7 @@ import {
   UnderlinedInput,
   AttentionButton,
   AttentionDiv,
+  OrangeBtn,
 } from 'components/styles';
 
 const calculateNextDate = dateString => {
@@ -357,6 +358,22 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     );
   }, [setUsers, setState, userData, isToastOn]);
 
+  const handleSetToday = () => {
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const year = today.getFullYear();
+    const formatted = `${day}.${month}.${year}`;
+    processLastCycle(formatted);
+    if (status === 'stimulation') {
+      recalcSchedule(formatted);
+    }
+    if (!submittedRef.current) {
+      handleSubmit(userData, 'overwrite', isToastOn);
+    }
+    submittedRef.current = false;
+  };
+
   return (
     <React.Fragment>
       <style>
@@ -379,6 +396,12 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             color: 'white',
           }}
         />
+        <OrangeBtn
+          onClick={handleSetToday}
+          style={{ width: '25px', height: '25px', marginLeft: '5px' }}
+        >
+          T
+        </OrangeBtn>
         {status === 'pregnant' ? (
           <React.Fragment>
             <AttentionDiv
