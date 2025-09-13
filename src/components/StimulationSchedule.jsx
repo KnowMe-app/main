@@ -377,6 +377,22 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         rendered.push(<div key={`year-${year}`}>{year}</div>);
         currentYear = year;
       }
+      if (item.key === 'visit1') {
+        rendered.push(
+          <div
+            key={item.key}
+            style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
+              <div>
+                {dateStr} {weekday}
+              </div>
+              <div style={{ flex: 1 }}>{item.label}</div>
+            </div>
+          </div>,
+        );
+        return;
+      }
       rendered.push(
         <div
           key={item.key}
