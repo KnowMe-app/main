@@ -1,4 +1,5 @@
 import React from 'react';
+import { handleChange, handleSubmit } from './smallCard/actions';
 
 const parseDate = str => {
   if (!str) return null;
@@ -15,11 +16,17 @@ const parseDate = str => {
   return null;
 };
 
-const formatDate = date => {
+const formatDateToServer = date => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const formatDisplay = date => {
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
-  return `${day}.${month}.${year}`;
+  return `${day}.${month}`;
 };
 
 const isWeekend = date => {
@@ -32,43 +39,56 @@ const diffDays = (date, base) =>
 
 const adjustForward = (date, base) => {
   let day = diffDays(date, base);
+  let moved = false;
   while (isWeekend(date)) {
     date.setDate(date.getDate() + 1);
     day = diffDays(date, base);
+    moved = true;
   }
-  return { date, day };
+  return { date, day, sign: moved ? '+' : '' };
 };
 
 const adjustBackward = (date, base) => {
   let day = diffDays(date, base);
+  let moved = false;
   while (isWeekend(date)) {
     date.setDate(date.getDate() - 1);
     day = diffDays(date, base);
+    moved = true;
   }
-  return { date, day };
+  return { date, day, sign: moved ? '-' : '' };
 };
 
-const StimulationSchedule = ({ userData }) => {
-  const base = parseDate(userData?.lastCycle);
-  if (!userData?.stimulation || !base) return null;
+const weekdayNames = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 
+const generateSchedule = base => {
   const visits = [];
 
   // Day 2
   let d = new Date(base);
   d.setDate(base.getDate() + 1);
   let first = adjustForward(d, base);
-  visits.push(`${formatDate(first.date)} - ${first.day}й день циклу`);
+  visits.push({
+    key: 'visit1',
+    date: first.date,
+    label: `${first.day}й день${first.sign ? ` - ${first.sign}` : ''}`,
+  });
+  const shifted = first.day === 4;
 
-  // Day 7
+  // Day 7 (may shift to 8)
   d = new Date(base);
-  d.setDate(base.getDate() + 6);
+  d.setDate(base.getDate() + 6 + (shifted ? 1 : 0));
   let second = adjustBackward(d, base);
-  visits.push(`${formatDate(second.date)} - ${second.day}й день циклу`);
+  visits.push({
+    key: 'visit2',
+    date: second.date,
+    label: `${second.day}й день${second.sign ? ` - ${second.sign}` : ''}`,
+  });
 
-  // Days 11-13
+  // Days 11-13 or 13-15
+  let start = 11 + (shifted ? 2 : 0);
   let third;
-  for (let n = 11; n <= 13; n++) {
+  for (let n = start; n <= start + 2; n++) {
     d = new Date(base);
     d.setDate(base.getDate() + n - 1);
     if (!isWeekend(d)) {
@@ -78,10 +98,14 @@ const StimulationSchedule = ({ userData }) => {
   }
   if (!third) {
     d = new Date(base);
-    d.setDate(base.getDate() + 12);
+    d.setDate(base.getDate() + start + 1);
     third = adjustBackward(d, base);
   }
-  visits.push(`${formatDate(third.date)} - ${third.day}й день циклу`);
+  visits.push({
+    key: 'visit3',
+    date: third.date,
+    label: `${third.day}й день${third.sign ? ` - ${third.sign}` : ''}`,
+  });
 
   // Transfer 19-22
   let transfer;
@@ -89,7 +113,7 @@ const StimulationSchedule = ({ userData }) => {
     d = new Date(base);
     d.setDate(base.getDate() + n - 1);
     if (!isWeekend(d)) {
-      transfer = { date: d, day: n };
+      transfer = { date: d, day: n, sign: '' };
       break;
     }
   }
@@ -98,25 +122,133 @@ const StimulationSchedule = ({ userData }) => {
     d.setDate(base.getDate() + 21);
     transfer = adjustBackward(d, base);
   }
-  visits.push(`${formatDate(transfer.date)} - ${transfer.day}й день циклу (перенос)`);
+  visits.push({
+    key: 'transfer',
+    date: transfer.date,
+    label: `${transfer.day}й день (перенос)${transfer.sign ? ` - ${transfer.sign}` : ''}`,
+  });
 
   // HCG 12 days after transfer
   d = new Date(transfer.date);
   d.setDate(d.getDate() + 12);
   let hcg = adjustForward(d, transfer.date);
-  visits.push(`${formatDate(hcg.date)} - ХГЧ`);
+  visits.push({
+    key: 'hcg',
+    date: hcg.date,
+    label: `ХГЧ${hcg.sign ? ` - ${hcg.sign}` : ''}`,
+  });
 
   // Ultrasound 28 days after transfer
   d = new Date(transfer.date);
   d.setDate(d.getDate() + 28);
   let us = adjustForward(d, transfer.date);
-  visits.push(`${formatDate(us.date)} - УЗД`);
+  visits.push({
+    key: 'us',
+    date: us.date,
+    label: `УЗД${us.sign ? ` - ${us.sign}` : ''}`,
+  });
+
+  return visits;
+};
+
+const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }) => {
+  const base = parseDate(userData?.lastCycle);
+  const [schedule, setSchedule] = React.useState([]);
+
+  const saveSchedule = React.useCallback(
+    sched => {
+      const payload = sched.map(item => ({
+        key: item.key,
+        date: formatDateToServer(item.date),
+        label: item.label,
+      }));
+      if (setUsers && setState) {
+        handleChange(
+          setUsers,
+          setState,
+          userData.userId,
+          'stimulationSchedule',
+          payload,
+          true,
+          {},
+          isToastOn,
+        );
+      } else if (setState) {
+        setState(prev => ({ ...prev, stimulationSchedule: payload }));
+        handleSubmit(
+          { ...userData, stimulationSchedule: payload },
+          'overwrite',
+          isToastOn,
+        );
+      }
+    },
+    [setUsers, setState, userData, isToastOn],
+  );
+
+  React.useEffect(() => {
+    if (!userData?.stimulation || !base) return;
+    if (userData.stimulationSchedule) {
+      const parsed = userData.stimulationSchedule.map(item => ({
+        ...item,
+        date: parseDate(item.date),
+      }));
+      setSchedule(parsed);
+    } else {
+      const gen = generateSchedule(base);
+      setSchedule(gen);
+      saveSchedule(gen);
+    }
+  }, [userData.stimulationSchedule, userData.stimulation, base, saveSchedule]);
+
+  const shiftDate = (idx, delta) => {
+    setSchedule(prev => {
+      const copy = [...prev];
+      const item = copy[idx];
+      const newDate = new Date(item.date);
+      newDate.setDate(newDate.getDate() + delta);
+
+      if (item.key === 'hcg' || item.key === 'us') {
+        const adjusted = delta > 0 ? adjustForward(newDate, base) : adjustBackward(newDate, base);
+        const labelText = item.key === 'hcg' ? 'ХГЧ' : 'УЗД';
+        copy[idx] = {
+          ...item,
+          date: adjusted.date,
+          label: `${labelText}${adjusted.sign ? ` - ${adjusted.sign}` : ''}`,
+        };
+      } else {
+        const adjusted = delta > 0 ? adjustForward(newDate, base) : adjustBackward(newDate, base);
+        const newLabel = `${adjusted.day}й день${
+          item.key === 'transfer' ? ' (перенос)' : ''
+        }${adjusted.sign ? ` - ${adjusted.sign}` : ''}`;
+        copy[idx] = { ...item, date: adjusted.date, label: newLabel };
+      }
+
+      saveSchedule(copy);
+      return copy;
+    });
+  };
+
+  if (!userData?.stimulation || !base || schedule.length === 0) return null;
+
+  const year = base.getFullYear();
 
   return (
     <div style={{ marginTop: '8px' }}>
-      {visits.map((v, i) => (
-        <div key={i}>{v}</div>
-      ))}
+      <div>{year}</div>
+      {schedule.map((item, i) => {
+        const dateStr = formatDisplay(item.date);
+        const weekday = weekdayNames[item.date.getDay()];
+        return (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <button onClick={() => shiftDate(i, -1)}>-</button>
+            <div>
+              {dateStr} - {item.label}
+              {i === 1 && ` (${weekday})`}
+            </div>
+            <button onClick={() => shiftDate(i, 1)}>+</button>
+          </div>
+        );
+      })}
     </div>
   );
 };
