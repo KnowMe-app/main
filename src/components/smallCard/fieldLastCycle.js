@@ -73,7 +73,7 @@ const formatDate = date => {
 };
 
 export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
-  const [isPregnant, setIsPregnant] = React.useState(false);
+  const [status, setStatus] = React.useState('menstruation');
   const submittedRef = React.useRef(false);
   const prevDataRef = React.useRef(null);
 
@@ -81,10 +81,14 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   React.useEffect(() => {
     const date = parseDate(userData.lastDelivery);
-    if (date) {
-      setIsPregnant(date > new Date());
+    if (date && date > new Date()) {
+      setStatus('pregnant');
+    } else if (userData.stimulation) {
+      setStatus('stimulation');
+    } else {
+      setStatus('menstruation');
     }
-  }, [userData.lastDelivery]);
+  }, [userData.lastDelivery, userData.stimulation]);
 
   const handleLastCycleChange = e => {
     const value = e.target.value.trim();
@@ -93,7 +97,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     if (date) {
       const lastCycleFormatted = formatDateToServer(formatDate(date));
 
-      if (isPregnant) {
+      if (status === 'pregnant') {
         const lastDelivery = new Date(date);
         lastDelivery.setDate(lastDelivery.getDate() + 7 * 40);
 
@@ -130,7 +134,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         );
         submittedRef.current = true;
       } else {
-        handleChange(setUsers, setState, userData.userId, 'lastCycle', lastCycleFormatted);
+      handleChange(setUsers, setState, userData.userId, 'lastCycle', lastCycleFormatted);
       }
     } else {
       const serverFormattedDate = formatDateToServer(value);
@@ -138,10 +142,35 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     }
   };
 
-  const handlePregnantClick = () => {
-    setIsPregnant(prev => {
-      const newState = !prev;
-      if (newState) {
+  const handleStatusClick = () => {
+    setStatus(prev => {
+      const newState = prev === 'menstruation' ? 'stimulation' : prev === 'stimulation' ? 'pregnant' : 'menstruation';
+      if (newState === 'stimulation') {
+        handleChange(
+          setUsers,
+          setState,
+          userData.userId,
+          'stimulation',
+          true,
+          true,
+          {},
+          isToastOn,
+        );
+        submittedRef.current = true;
+      } else if (prev === 'stimulation') {
+        handleChange(
+          setUsers,
+          setState,
+          userData.userId,
+          'stimulation',
+          false,
+          true,
+          {},
+          isToastOn,
+        );
+        submittedRef.current = true;
+      }
+      if (newState === 'pregnant') {
         if (!prevDataRef.current) {
           prevDataRef.current = {
             lastCycle: userData.lastCycle,
@@ -189,7 +218,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           );
           submittedRef.current = true;
         }
-      } else if (prevDataRef.current) {
+      } else if (prev === 'pregnant' && prevDataRef.current) {
         handleChange(setUsers, setState, userData.userId, prevDataRef.current);
         handleSubmit(
           { ...userData, ...prevDataRef.current },
@@ -230,9 +259,9 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             color: 'white',
           }}
         />
-        {isPregnant ? (
+        {status === 'pregnant' ? (
           <AttentionDiv
-            onClick={handlePregnantClick}
+            onClick={handleStatusClick}
             style={{
               cursor: 'pointer',
               backgroundColor: 'hotpink',
@@ -240,9 +269,19 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           >
             вагітна
           </AttentionDiv>
+        ) : status === 'stimulation' ? (
+          <AttentionDiv
+            onClick={handleStatusClick}
+            style={{
+              cursor: 'pointer',
+              backgroundColor: 'orange',
+            }}
+          >
+            стимуляція
+          </AttentionDiv>
         ) : (
           <span
-            onClick={handlePregnantClick}
+            onClick={handleStatusClick}
             style={{
               cursor: 'pointer',
               color: 'white',
@@ -251,7 +290,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             місячні
           </span>
         )}
-        {!isPregnant && nextCycle && (
+        {status !== 'pregnant' && nextCycle && (
           <React.Fragment>
             <span style={{ color: 'white' }}>-</span>
             <AttentionButton

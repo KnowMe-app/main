@@ -55,6 +55,7 @@ import {
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
+import StimulationSchedule from './StimulationSchedule';
 // import { UploadJson } from './topBtns/uploadNewJSON';
 import { btnExportUsers } from './topBtns/btnExportUsers';
 import { btnMerge } from './smallCard/btnMerge';
@@ -1170,6 +1171,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 isToastOn,
                 setIsToastOn,
               )}
+              <StimulationSchedule userData={state} />
             </div>
 
             <ProfileForm
