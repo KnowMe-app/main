@@ -66,6 +66,7 @@ describe('makeNewUser', () => {
     const newUser = db.set.mock.calls[0][1];
     expect(newUser.userId).toBe('generatedId');
     expect(newUser.searchedUserId).toBe('searchedId');
+    expect(newUser.cycleStatus).toBe('menstruation');
   });
 
   it('adds field for non-userId searches', async () => {
@@ -74,6 +75,7 @@ describe('makeNewUser', () => {
     expect(newUser.userId).toBe('generatedId');
     expect(newUser.email).toBe('test@example.com');
     expect(newUser.searchedUserId).toBeUndefined();
+    expect(newUser.cycleStatus).toBe('menstruation');
   });
 });
 

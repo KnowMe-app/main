@@ -229,7 +229,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   );
 
   React.useEffect(() => {
-    if (!userData?.stimulation || !base) return;
+    if (userData?.cycleStatus !== 'stimulation' || !base) return;
 
     const gen = generateSchedule(base);
     const expectedFirst = gen[0]?.date;
@@ -278,7 +278,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     } else {
       setSchedule(gen);
     }
-  }, [userData.stimulationSchedule, userData.stimulation, base, userData.lastCycle]);
+  }, [userData.stimulationSchedule, userData.cycleStatus, base, userData.lastCycle]);
 
   const postTransferKeys = React.useMemo(() => ['hcg', 'us'], []);
 
@@ -354,7 +354,8 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     });
   };
 
-  if (!userData?.stimulation || !base || schedule.length === 0) return null;
+  if (userData?.cycleStatus !== 'stimulation' || !base || schedule.length === 0)
+    return null;
 
   const rendered = [];
   let currentYear = null;

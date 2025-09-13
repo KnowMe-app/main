@@ -152,9 +152,25 @@ export const handleChange = (
 };
 
 export const handleSubmit = (userData, condition, isToastOn) => {
-  const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
+  const fieldsForNewUsersOnly = [
+    'role',
+    'getInTouch',
+    'lastCycle',
+    'myComment',
+    'writer',
+    'cycleStatus',
+    'stimulationSchedule',
+  ];
   const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
-  const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids'];
+  const commonFields = [
+    'lastAction',
+    'lastLogin2',
+    'getInTouch',
+    'lastDelivery',
+    'ownKids',
+    'cycleStatus',
+    'stimulationSchedule',
+  ];
   const dublicateFields = ['weight', 'height'];
 
   const uploadedInfo = { ...userData };
@@ -184,9 +200,25 @@ export const handleSubmit = (userData, condition, isToastOn) => {
 };
 
 export const handleSubmitAll = async (userData, overwrite) => {
-  const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
+  const fieldsForNewUsersOnly = [
+    'role',
+    'getInTouch',
+    'lastCycle',
+    'myComment',
+    'writer',
+    'cycleStatus',
+    'stimulationSchedule',
+  ];
   const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
-  const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids'];
+  const commonFields = [
+    'lastAction',
+    'lastLogin2',
+    'getInTouch',
+    'lastDelivery',
+    'ownKids',
+    'cycleStatus',
+    'stimulationSchedule',
+  ];
 
   const { existingData } = await fetchUserById(userData.userId);
   const uploadedInfo =

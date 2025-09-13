@@ -256,9 +256,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
-    const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer'];
+    const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
-    const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids'];
+    const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     const now = Date.now();
     const baseState = newState ? { ...newState } : { ...state };
@@ -321,6 +321,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           ...serverData,
           lastAction: serverLast,
           lastDelivery: formatDateToDisplay(serverData.lastDelivery),
+          cycleStatus: serverData.cycleStatus || 'menstruation',
         };
         updateCachedUser(formattedServer);
         cacheFetchedUsers(
@@ -1175,12 +1176,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 isToastOn,
                 setIsToastOn,
               )}
-              <StimulationSchedule
-                userData={state}
-                setUsers={setUsers}
-                setState={setState}
-                isToastOn={isToastOn}
-              />
+              {state.cycleStatus === 'stimulation' && (
+                <StimulationSchedule
+                  userData={state}
+                  setUsers={setUsers}
+                  setState={setState}
+                  isToastOn={isToastOn}
+                />
+              )}
             </div>
 
             <ProfileForm
