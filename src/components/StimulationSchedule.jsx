@@ -344,7 +344,10 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
             label: it.label,
           };
         }
-        const lbl = `${adj.day}й день${it.key === 'transfer' ? ' (перенос)' : ''}`;
+        let lbl = `${adj.day}й день${it.key === 'transfer' ? ' (перенос)' : ''}${adj.sign ? ` ${adj.sign}` : ''}`;
+        if (!adj.sign) {
+          lbl = lbl.replace(/-$/, '').trim();
+        }
         return { ...it, date: adj.date, label: lbl };
       };
 
