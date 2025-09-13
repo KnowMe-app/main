@@ -72,7 +72,7 @@ const generateSchedule = base => {
   visits.push({
     key: 'visit1',
     date: first.date,
-    label: `${first.day}й день${first.sign ? ` - ${first.sign}` : ''}`,
+    label: `${first.day}й день${first.sign ? ` ${first.sign}` : ''}`,
   });
   const shifted = first.day === 4;
 
@@ -83,7 +83,7 @@ const generateSchedule = base => {
   visits.push({
     key: 'visit2',
     date: second.date,
-    label: `${second.day}й день${second.sign ? ` - ${second.sign}` : ''}`,
+    label: `${second.day}й день${second.sign ? ` ${second.sign}` : ''}`,
   });
 
   // Days 11-13 or 13-15
@@ -105,7 +105,7 @@ const generateSchedule = base => {
   visits.push({
     key: 'visit3',
     date: third.date,
-    label: `${third.day}й день${third.sign ? ` - ${third.sign}` : ''}`,
+    label: `${third.day}й день${third.sign ? ` ${third.sign}` : ''}`,
   });
 
   // Transfer 19-22
@@ -126,7 +126,7 @@ const generateSchedule = base => {
   visits.push({
     key: 'transfer',
     date: transfer.date,
-    label: `${transfer.day}й день (перенос)${transfer.sign ? ` - ${transfer.sign}` : ''}`,
+    label: `${transfer.day}й день (перенос)${transfer.sign ? ` ${transfer.sign}` : ''}`,
   });
 
   // HCG 12 days after transfer
@@ -136,7 +136,7 @@ const generateSchedule = base => {
   visits.push({
     key: 'hcg',
     date: hcg.date,
-    label: `ХГЧ${hcg.sign ? ` - ${hcg.sign}` : ''}`,
+    label: `ХГЧ на 12й день${hcg.sign ? ` ${hcg.sign}` : ''}`,
   });
 
   // Ultrasound 28 days after transfer
@@ -146,7 +146,7 @@ const generateSchedule = base => {
   visits.push({
     key: 'us',
     date: us.date,
-    label: `УЗД${us.sign ? ` - ${us.sign}` : ''}`,
+    label: `УЗД${us.sign ? ` ${us.sign}` : ''}`,
   });
 
   return visits;
@@ -212,15 +212,15 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const applyAdjust = (it, d, refBase) => {
         const adj = delta > 0 ? adjustForward(d, refBase) : adjustBackward(d, refBase);
         if (it.key === 'hcg' || it.key === 'us') {
-          const labelText = it.key === 'hcg' ? 'ХГЧ' : 'УЗД';
+          const labelText = it.key === 'hcg' ? 'ХГЧ на 12й день' : 'УЗД';
           return {
             ...it,
             date: adj.date,
-            label: `${labelText}${adj.sign ? ` - ${adj.sign}` : ''}`,
+            label: `${labelText}${adj.sign ? ` ${adj.sign}` : ''}`,
           };
         }
         const lbl = `${adj.day}й день${it.key === 'transfer' ? ' (перенос)' : ''}${
-          adj.sign ? ` - ${adj.sign}` : ''
+          adj.sign ? ` ${adj.sign}` : ''
         }`;
         return { ...it, date: adj.date, label: lbl };
       };
@@ -260,21 +260,39 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         const weekday = weekdayNames[item.date.getDay()];
         return (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <OrangeBtn
-              onClick={() => shiftDate(i, -1)}
-              style={{ width: '25px', height: '25px', marginRight: '4px' }}
-            >
-              -
-            </OrangeBtn>
             <div>
               {dateStr} - {item.label} ({weekday})
             </div>
-            <OrangeBtn
-              onClick={() => shiftDate(i, 1)}
-              style={{ width: '25px', height: '25px', marginLeft: '4px' }}
+            <div
+              style={{ display: 'flex', gap: '4px', marginLeft: 'auto' }}
             >
-              +
-            </OrangeBtn>
+              <OrangeBtn
+                onClick={() => shiftDate(i, -1)}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '4px',
+                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                  fontSize: '20px',
+                  fontWeight: 'bold',
+                }}
+              >
+                -
+              </OrangeBtn>
+              <OrangeBtn
+                onClick={() => shiftDate(i, 1)}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '4px',
+                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                  fontSize: '20px',
+                  fontWeight: 'bold',
+                }}
+              >
+                +
+              </OrangeBtn>
+            </div>
           </div>
         );
       })}
