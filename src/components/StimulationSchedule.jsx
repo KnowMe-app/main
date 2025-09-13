@@ -56,12 +56,19 @@ const weekdayNames = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 export const generateSchedule = base => {
   const visits = [];
 
+  // Day 1 (base)
+  visits.push({
+    key: 'visit1',
+    date: new Date(base),
+    label: '1й день',
+  });
+
   // Day 2
   let d = new Date(base);
   d.setDate(base.getDate() + 1);
   const first = adjustForward(d, base);
   visits.push({
-    key: 'visit1',
+    key: 'visit2',
     date: first.date,
     label: `${first.day}й день`,
   });
@@ -74,7 +81,7 @@ export const generateSchedule = base => {
     second = adjustForward(new Date(d), base);
   }
   visits.push({
-    key: 'visit2',
+    key: 'visit3',
     date: second.date,
     label: `${second.day}й день${second.sign ? ` ${second.sign}` : ''}`,
   });
@@ -96,7 +103,7 @@ export const generateSchedule = base => {
     third = adjustBackward(d, base);
   }
   visits.push({
-    key: 'visit3',
+    key: 'visit4',
     date: third.date,
     label: `${third.day}й день${third.sign ? ` ${third.sign}` : ''}`,
   });
@@ -284,7 +291,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
 
       const applyAdjust = (it, d, refBase) => {
         let adj = delta > 0 ? adjustForward(d, refBase) : adjustBackward(d, refBase);
-        if (it.key === 'visit2' && adj.day < 6) {
+        if (it.key === 'visit3' && adj.day < 6) {
           const min = new Date(base);
           min.setDate(base.getDate() + 5);
           adj = adjustForward(min, base);
