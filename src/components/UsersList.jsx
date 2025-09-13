@@ -2,6 +2,7 @@ import React from 'react';
 import { coloredCard, FadeContainer } from './styles';
 import { makeNewUser } from './config';
 import { renderTopBlock } from './smallCard/renderTopBlock';
+import StimulationSchedule from './StimulationSchedule';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnEdit } from './smallCard/btnEdit';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
@@ -104,6 +105,7 @@ const UserCard = ({
         currentFilter,
         isDateInRange,
       )}
+      <StimulationSchedule userData={userData} />
       <div id={userData.userId} style={{ display: 'none' }}>
         {renderFields(userData)}
       </div>
