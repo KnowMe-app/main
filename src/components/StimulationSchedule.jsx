@@ -356,15 +356,26 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
 
   if (!userData?.stimulation || !base || schedule.length === 0) return null;
 
+  const today = new Date().setHours(0, 0, 0, 0);
+  let foundToday = false;
+
   const rendered = [];
   let currentYear = null;
 
-  schedule
-    .filter(item => item.date)
-    .forEach((item, i) => {
+  const filtered = schedule.filter(item => item.date);
+  filtered.forEach((item, i) => {
       const dateStr = formatDisplay(item.date);
       const weekday = weekdayNames[item.date.getDay()];
       const year = item.date.getFullYear();
+      const isToday = item.date.getTime() === today;
+      const rowStyle = {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        marginBottom: '2px',
+        ...(isToday ? { backgroundColor: '#FFECB3', color: '#000' } : {}),
+      };
+      if (isToday) foundToday = true;
       if (year !== currentYear) {
         if (currentYear !== null) {
           rendered.push(
@@ -379,10 +390,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       }
       if (item.key === 'visit1') {
         rendered.push(
-          <div
-            key={item.key}
-            style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}
-          >
+          <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
               <div>
                 {dateStr} {weekday}
@@ -391,103 +399,123 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
             </div>
           </div>,
         );
-        return;
-      }
-      rendered.push(
-        <div
-          key={item.key}
-          style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
-            <div>
-              {dateStr} {weekday}
+      } else {
+        rendered.push(
+          <div key={item.key} style={rowStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
+              <div>
+                {dateStr} {weekday}
+              </div>
+              {editingIndex === i ? (
+                <input
+                  value={item.label}
+                  autoFocus
+                  onChange={e =>
+                    setSchedule(prev => {
+                      const copy = [...prev];
+                      const idx = prev.findIndex(v => v.key === item.key);
+                      copy[idx] = { ...copy[idx], label: e.target.value };
+                      return copy;
+                    })
+                  }
+                  onBlur={() => {
+                    setEditingIndex(null);
+                    setSchedule(prev => {
+                      const copy = [...prev];
+                      saveSchedule(copy);
+                      return copy;
+                    });
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.target.blur();
+                    }
+                  }}
+                  style={{ flex: 1 }}
+                />
+              ) : (
+                <div
+                  onClick={() => setEditingIndex(i)}
+                  style={{ cursor: 'pointer', flex: 1 }}
+                >
+                  {item.label}
+                </div>
+              )}
             </div>
-            {editingIndex === i ? (
-              <input
-                value={item.label}
-                autoFocus
-                onChange={e =>
+            <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
+              <OrangeBtn
+                onClick={() => shiftDate(schedule.findIndex(v => v.key === item.key), -1)}
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '4px',
+                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                }}
+              >
+                -
+              </OrangeBtn>
+              <OrangeBtn
+                onClick={() => shiftDate(schedule.findIndex(v => v.key === item.key), 1)}
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '4px',
+                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                }}
+              >
+                +
+              </OrangeBtn>
+              <OrangeBtn
+                onClick={() =>
                   setSchedule(prev => {
-                    const copy = [...prev];
-                    const idx = prev.findIndex(v => v.key === item.key);
-                    copy[idx] = { ...copy[idx], label: e.target.value };
-                    return copy;
+                    const updated = prev.filter(v => v.key !== item.key);
+                    saveSchedule(updated);
+                    return updated;
                   })
                 }
-                onBlur={() => {
-                  setEditingIndex(null);
-                  setSchedule(prev => {
-                    const copy = [...prev];
-                    saveSchedule(copy);
-                    return copy;
-                  });
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '4px',
+                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
                 }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.target.blur();
-                  }
-                }}
-                style={{ flex: 1 }}
-              />
-            ) : (
-              <div
-                onClick={() => setEditingIndex(i)}
-                style={{ cursor: 'pointer', flex: 1 }}
               >
-                {item.label}
-              </div>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
-            <OrangeBtn
-              onClick={() => shiftDate(schedule.findIndex(v => v.key === item.key), -1)}
-              style={{
-                width: '24px',
-                height: '24px',
-                borderRadius: '4px',
-                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                fontSize: '16px',
-                fontWeight: 'bold',
-              }}
-            >
-              -
-            </OrangeBtn>
-            <OrangeBtn
-              onClick={() => shiftDate(schedule.findIndex(v => v.key === item.key), 1)}
-              style={{
-                width: '24px',
-                height: '24px',
-                borderRadius: '4px',
-                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                fontSize: '16px',
-                fontWeight: 'bold',
-              }}
-            >
-              +
-            </OrangeBtn>
-            <OrangeBtn
-              onClick={() =>
-                setSchedule(prev => {
-                  const updated = prev.filter(v => v.key !== item.key);
-                  saveSchedule(updated);
-                  return updated;
-                })
-              }
-              style={{
-                width: '24px',
-                height: '24px',
-                borderRadius: '4px',
-                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                fontSize: '16px',
-                fontWeight: 'bold',
-              }}
-            >
-              ×
-            </OrangeBtn>
-          </div>
-        </div>,
-      );
+                ×
+              </OrangeBtn>
+            </div>
+          </div>,
+        );
+      }
+      const next = filtered[i + 1];
+      if (!foundToday && next && today > item.date.getTime() && today < next.date.getTime()) {
+        rendered.push(
+          <div
+            key={`today-sep-${i}`}
+            style={{ height: '3px', backgroundColor: '#FFECB3' }}
+          />,
+        );
+      }
     });
+
+  if (!foundToday) {
+    const first = filtered[0];
+    const last = filtered[filtered.length - 1];
+    if (first && today < first.date.getTime()) {
+      rendered.unshift(
+        <div key="today-start" style={{ height: '3px', backgroundColor: '#FFECB3' }} />,
+      );
+    } else if (last && today > last.date.getTime()) {
+      rendered.push(
+        <div key="today-end" style={{ height: '3px', backgroundColor: '#FFECB3' }} />,
+      );
+    }
+  }
 
   return (
     <div style={{ marginTop: '8px' }}>
