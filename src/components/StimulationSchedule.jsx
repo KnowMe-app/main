@@ -149,12 +149,30 @@ const generateSchedule = base => {
     label: `УЗД${us.sign ? ` ${us.sign}` : ''}`,
   });
 
+  // Pregnancy visits at specific weeks
+  const weeks = [8, 10, 12, 16, 18, 28, 36, 40];
+  weeks.forEach(week => {
+    let wd = new Date(transfer.date);
+    wd.setDate(wd.getDate() + week * 7);
+    const adj = adjustForward(wd, transfer.date);
+    const baseLabel =
+      week === 40
+        ? `Прийом на ${week}й тиждень - пологи`
+        : `Прийом на ${week}й тиждень`;
+    visits.push({
+      key: `week${week}`,
+      date: adj.date,
+      label: `${baseLabel}${adj.sign ? ` ${adj.sign}` : ''}`,
+    });
+  });
+
   return visits;
 };
 
 const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }) => {
   const base = parseDate(userData?.lastCycle);
   const [schedule, setSchedule] = React.useState([]);
+  const [apDescription, setApDescription] = React.useState('');
 
   const saveSchedule = React.useCallback(
     sched => {
@@ -201,6 +219,22 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     }
   }, [userData.stimulationSchedule, userData.stimulation, base, saveSchedule]);
 
+  const postTransferKeys = React.useMemo(
+    () => [
+      'hcg',
+      'us',
+      'week8',
+      'week10',
+      'week12',
+      'week16',
+      'week18',
+      'week28',
+      'week36',
+      'week40',
+    ],
+    [],
+  );
+
   const shiftDate = (idx, delta) => {
     setSchedule(prev => {
       const copy = [...prev];
@@ -211,12 +245,31 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
 
       const applyAdjust = (it, d, refBase) => {
         const adj = delta > 0 ? adjustForward(d, refBase) : adjustBackward(d, refBase);
-        if (it.key === 'hcg' || it.key === 'us') {
-          const labelText = it.key === 'hcg' ? 'ХГЧ на 12й день' : 'УЗД';
+        if (postTransferKeys.includes(it.key)) {
+          const labelMap = {
+            hcg: 'ХГЧ на 12й день',
+            us: 'УЗД',
+            week8: 'Прийом на 8й тиждень',
+            week10: 'Прийом на 10й тиждень',
+            week12: 'Прийом на 12й тиждень',
+            week16: 'Прийом на 16й тиждень',
+            week18: 'Прийом на 18й тиждень',
+            week28: 'Прийом на 28й тиждень',
+            week36: 'Прийом на 36й тиждень',
+            week40: 'Прийом на 40й тиждень - пологи',
+          };
+          const labelText = labelMap[it.key];
           return {
             ...it,
             date: adj.date,
             label: `${labelText}${adj.sign ? ` ${adj.sign}` : ''}`,
+          };
+        }
+        if (it.key.startsWith('ap')) {
+          return {
+            ...it,
+            date: adj.date,
+            label: `${it.label}${adj.sign ? ` ${adj.sign}` : ''}`,
           };
         }
         const lbl = `${adj.day}й день${it.key === 'transfer' ? ' (перенос)' : ''}${
@@ -226,16 +279,20 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       };
 
       // adjust changed item and compute actual shift
-      const adjustedItem = applyAdjust(item, newDate, item.key === 'hcg' || item.key === 'us'
-        ? copy.find(v => v.key === 'transfer')?.date || base
-        : base);
+      const adjustedItem = applyAdjust(
+        item,
+        newDate,
+        postTransferKeys.includes(item.key)
+          ? copy.find(v => v.key === 'transfer')?.date || base
+          : base,
+      );
       const actualDelta = Math.round((adjustedItem.date - baseDate) / (1000 * 60 * 60 * 24));
       copy[idx] = adjustedItem;
 
       // shift subsequent items by actualDelta
       for (let j = idx + 1; j < copy.length; j++) {
         const it = copy[j];
-        const ref = it.key === 'hcg' || it.key === 'us'
+        const ref = postTransferKeys.includes(it.key)
           ? copy.find(v => v.key === 'transfer')?.date || base
           : base;
         const nd = new Date(it.date);
@@ -255,6 +312,42 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   return (
     <div style={{ marginTop: '8px' }}>
       <div>{year}</div>
+      <div style={{ display: 'flex', gap: '4px', margin: '8px 0' }}>
+        <input
+          type="text"
+          value={apDescription}
+          onChange={e => setApDescription(e.target.value)}
+          placeholder="опис"
+          style={{ flex: 1 }}
+        />
+        <OrangeBtn
+          onClick={() => {
+            const today = new Date();
+            const adj = adjustForward(today, today);
+            const newItem = {
+              key: `ap-${Date.now()}`,
+              date: adj.date,
+              label: apDescription || 'AP',
+            };
+            setSchedule(prev => {
+              const updated = [...prev, newItem];
+              saveSchedule(updated);
+              return updated;
+            });
+            setApDescription('');
+          }}
+          style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '4px',
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+            fontSize: '20px',
+            fontWeight: 'bold',
+          }}
+        >
+          AP
+        </OrangeBtn>
+      </div>
       {schedule.map((item, i) => {
         const dateStr = formatDisplay(item.date);
         const weekday = weekdayNames[item.date.getDay()];
