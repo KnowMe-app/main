@@ -262,18 +262,32 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     });
   };
 
-  const recalcSchedule = React.useCallback(() => {
-    const baseDate = parseDate(userData.lastCycle);
-    if (!baseDate) return;
-    const sched = generateSchedule(baseDate);
-    const scheduleString = serializeSchedule(sched);
+  const recalcSchedule = React.useCallback(
+    dateString => {
+      const baseDate = parseDate(dateString);
+      if (!baseDate) return;
+      const sched = generateSchedule(baseDate);
+      const scheduleString = serializeSchedule(sched);
+      handleChange(
+        setUsers,
+        setState,
+        userData.userId,
+        'stimulationSchedule',
+        scheduleString,
+      );
+    },
+    [setUsers, setState, userData.userId],
+  );
+
+  const saveSchedule = React.useCallback(() => {
+    const scheduleString = userData.stimulationSchedule || '';
     handleChange(
       setUsers,
       setState,
       userData.userId,
       'stimulationSchedule',
       scheduleString,
-      true,
+      false,
       {},
       isToastOn,
     );
@@ -302,6 +316,9 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           onChange={handleLastCycleChange}
           onBlur={() => {
             processLastCycle(localValue);
+            if (status === 'stimulation') {
+              recalcSchedule(localValue);
+            }
             if (!submittedRef.current) {
               handleSubmit(userData, 'overwrite', isToastOn);
             }
@@ -334,7 +351,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
               стимуляція
             </AttentionDiv>
             <AttentionButton
-              onClick={recalcSchedule}
+              onClick={saveSchedule}
               style={{ backgroundColor: 'orange' }}
             >
               ↻
