@@ -262,6 +262,28 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     });
   };
 
+  const recalcSchedule = React.useCallback(() => {
+    const baseDate = parseDate(userData.lastCycle);
+    if (!baseDate) return;
+    const sched = generateSchedule(baseDate);
+    const scheduleString = serializeSchedule(sched);
+    handleChange(
+      setUsers,
+      setState,
+      userData.userId,
+      'stimulationSchedule',
+      scheduleString,
+      true,
+      {},
+      isToastOn,
+    );
+    handleSubmit(
+      { ...userData, stimulationSchedule: scheduleString },
+      'overwrite',
+      isToastOn,
+    );
+  }, [setUsers, setState, userData, isToastOn]);
+
   return (
     <React.Fragment>
       <style>
@@ -301,15 +323,23 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             вагітна
           </AttentionDiv>
         ) : status === 'stimulation' ? (
-          <AttentionDiv
-            onClick={handleStatusClick}
-            style={{
-              cursor: 'pointer',
-              backgroundColor: 'orange',
-            }}
-          >
-            стимуляція
-          </AttentionDiv>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <AttentionDiv
+              onClick={handleStatusClick}
+              style={{
+                cursor: 'pointer',
+                backgroundColor: 'orange',
+              }}
+            >
+              стимуляція
+            </AttentionDiv>
+            <AttentionButton
+              onClick={recalcSchedule}
+              style={{ backgroundColor: 'orange' }}
+            >
+              ↻
+            </AttentionButton>
+          </div>
         ) : (
           <span
             onClick={handleStatusClick}

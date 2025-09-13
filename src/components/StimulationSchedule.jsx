@@ -59,17 +59,16 @@ export const generateSchedule = base => {
   // Day 2
   let d = new Date(base);
   d.setDate(base.getDate() + 1);
-  let first = adjustForward(d, base);
+  const first = adjustForward(d, base);
   visits.push({
     key: 'visit1',
     date: first.date,
-    label: `${first.day}й день${first.sign ? ` ${first.sign}` : ''}`,
+    label: `${first.day}й день`,
   });
-  const shifted = first.day === 4;
 
   // Day 7 (may shift to 8 but never earlier than 6)
   d = new Date(base);
-  d.setDate(base.getDate() + 6 + (shifted ? 1 : 0));
+  d.setDate(base.getDate() + 6);
   let second = adjustBackward(new Date(d), base);
   if (second.day < 6) {
     second = adjustForward(new Date(d), base);
@@ -80,14 +79,14 @@ export const generateSchedule = base => {
     label: `${second.day}й день${second.sign ? ` ${second.sign}` : ''}`,
   });
 
-  // Days 11-13 or 13-15
-  let start = 11 + (shifted ? 2 : 0);
+  // Days 11-13
+  let start = 11;
   let third;
   for (let n = start; n <= start + 2; n++) {
     d = new Date(base);
     d.setDate(base.getDate() + n - 1);
     if (!isWeekend(d)) {
-      third = { date: d, day: n };
+      third = { date: d, day: n, sign: '' };
       break;
     }
   }
@@ -202,11 +201,16 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
 
   React.useEffect(() => {
     if (!userData?.stimulation || !base) return;
+
+    const gen = generateSchedule(base);
+    const expectedFirst = gen[0]?.date;
+
     if (userData.stimulationSchedule) {
+      let parsed;
       if (typeof userData.stimulationSchedule === 'string') {
         const lines = userData.stimulationSchedule.split('\n').filter(Boolean);
         let visitCount = 0;
-        const parsed = lines
+        parsed = lines
           .map((line, idx) => {
             const [datePart, ...labelParts] = line.split(' - ');
             const label = labelParts.join(' - ').trim();
@@ -227,21 +231,33 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
             return { key, date, label };
           })
           .filter(item => item.date);
-        setSchedule(parsed);
       } else {
-        const parsed = userData.stimulationSchedule
+        parsed = userData.stimulationSchedule
           .map(item => ({
             ...item,
             date: parseDate(item.date),
           }))
           .filter(item => item.date);
+      }
+
+      const firstDate = parsed[0]?.date;
+      if (!firstDate || firstDate.toDateString() !== expectedFirst?.toDateString()) {
+        setSchedule(gen);
+        saveSchedule(gen);
+      } else {
         setSchedule(parsed);
       }
     } else {
-      const gen = generateSchedule(base);
       setSchedule(gen);
+      saveSchedule(gen);
     }
-  }, [userData.stimulationSchedule, userData.stimulation, base]);
+  }, [
+    userData.stimulationSchedule,
+    userData.stimulation,
+    base,
+    userData.lastCycle,
+    saveSchedule,
+  ]);
 
   const postTransferKeys = React.useMemo(
     () => [
