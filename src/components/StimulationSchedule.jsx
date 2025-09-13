@@ -144,15 +144,12 @@ export const generateSchedule = base => {
   });
 
   // Pregnancy visits at specific weeks
-  const weeks = [8, 10, 12, 16, 18, 28, 36, 40];
+  const weeks = [8, 10, 12, 16, 18, 28, 36, 38, 40];
   weeks.forEach(week => {
     let wd = new Date(transfer.date);
     wd.setDate(wd.getDate() + week * 7);
     const adj = adjustForward(wd, transfer.date);
-    const baseLabel =
-      week === 40
-        ? `Прийом на ${week}й тиждень - пологи`
-        : `Прийом на ${week}й тиждень`;
+    const baseLabel = week === 40 ? `${week}т пологи` : `${week}т`;
     visits.push({
       key: `week${week}`,
       date: adj.date,
@@ -173,6 +170,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   const base = parseDate(userData?.lastCycle);
   const [schedule, setSchedule] = React.useState([]);
   const [apDescription, setApDescription] = React.useState('');
+  const [editingIndex, setEditingIndex] = React.useState(null);
 
   const saveSchedule = React.useCallback(
     sched => {
@@ -215,8 +213,8 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
             if (/перенос/.test(label)) key = 'transfer';
             else if (/ХГЧ/.test(label)) key = 'hcg';
             else if (/УЗД|ЗД/.test(label)) key = 'us';
-            else if (/Прийом на (\d+)й тиждень/.test(label)) {
-              const week = /Прийом на (\d+)й тиждень/.exec(label)[1];
+            else if(/(\d+)т/.test(label)) {
+              const week = /(\d+)т/.exec(label)[1];
               key = `week${week}`;
             } else if (/й день/.test(label)) {
               visitCount += 1;
@@ -254,6 +252,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       'week18',
       'week28',
       'week36',
+      'week38',
       'week40',
     ],
     [],
@@ -275,19 +274,17 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           adj = adjustForward(min, base);
         }
         if (postTransferKeys.includes(it.key)) {
-          const labelMap = {
-            hcg: 'ХГЧ на 12й день',
-            us: 'УЗД',
-            week8: 'Прийом на 8й тиждень',
-            week10: 'Прийом на 10й тиждень',
-            week12: 'Прийом на 12й тиждень',
-            week16: 'Прийом на 16й тиждень',
-            week18: 'Прийом на 18й тиждень',
-            week28: 'Прийом на 28й тиждень',
-            week36: 'Прийом на 36й тиждень',
-            week40: 'Прийом на 40й тиждень - пологи',
-          };
-          const labelText = labelMap[it.key];
+          const transferDate = copy.find(v => v.key === 'transfer')?.date || base;
+          const diff = Math.round((adj.date - transferDate) / (1000 * 60 * 60 * 24));
+          const weeks = Math.floor(diff / 7);
+          const days = diff % 7;
+          let custom = it.label.replace(/^\d+т\d*д?\s*/, '').trim();
+          let labelText = `${weeks}т${days ? `${days}д` : ''}`;
+          if (weeks === 40 && days === 0) {
+            labelText += ' пологи';
+            if (custom.startsWith('пологи')) custom = custom.replace(/^пологи\s*/, '');
+          }
+          if (custom) labelText += ` ${custom}`;
           return {
             ...it,
             date: adj.date,
@@ -390,8 +387,44 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
             key={i}
             style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}
           >
-            <div>
-              {dateStr} {weekday} - {item.label}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
+              <div>
+                {dateStr} {weekday} -
+              </div>
+              {editingIndex === i ? (
+                <input
+                  value={item.label}
+                  autoFocus
+                  onChange={e =>
+                    setSchedule(prev => {
+                      const copy = [...prev];
+                      copy[i] = { ...copy[i], label: e.target.value };
+                      return copy;
+                    })
+                  }
+                  onBlur={() => {
+                    setEditingIndex(null);
+                    setSchedule(prev => {
+                      const copy = [...prev];
+                      saveSchedule(copy);
+                      return copy;
+                    });
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.target.blur();
+                    }
+                  }}
+                  style={{ flex: 1 }}
+                />
+              ) : (
+                <div
+                  onClick={() => setEditingIndex(i)}
+                  style={{ cursor: 'pointer', flex: 1 }}
+                >
+                  {item.label}
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
               <OrangeBtn
