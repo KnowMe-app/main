@@ -547,12 +547,13 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
               .forEach(it => {
                 const y = it.date.getFullYear();
                 const dateStr = formatDisplay(it.date);
+                const weekday = weekdayNames[it.date.getDay()];
                 if (y !== yr) {
                   if (text) text += '\n';
                   text += `${y}\n`;
                   yr = y;
                 }
-                text += `${dateStr} ${it.label}\n`;
+                text += `${dateStr} ${weekday} ${it.label}\n`;
               });
             navigator.clipboard.writeText(text.trim());
           }}
