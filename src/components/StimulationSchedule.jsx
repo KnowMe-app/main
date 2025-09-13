@@ -173,7 +173,7 @@ export const serializeSchedule = sched =>
       const y = item.date.getFullYear();
       const m = String(item.date.getMonth() + 1).padStart(2, '0');
       const d = String(item.date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d} - ${item.label}`;
+      return `${y}-${m}-${d}\t${item.label}`;
     })
     .join('\n');
 
@@ -222,8 +222,8 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         let visitCount = 0;
         parsed = lines
           .map((line, idx) => {
-            const [datePart, ...labelParts] = line.split(' - ');
-            const label = labelParts.join(' - ').trim();
+            const [datePart, ...labelParts] = line.split('\t');
+            const label = labelParts.join('\t').trim();
             const date = parseDate(datePart.trim());
             let key = '';
             if (/перенос/.test(label)) key = 'transfer';
@@ -368,7 +368,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
             <div>
-              {dateStr} {weekday} -
+              {dateStr} {weekday}
             </div>
             {editingIndex === i ? (
               <input
