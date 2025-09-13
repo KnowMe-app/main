@@ -17,13 +17,6 @@ const parseDate = str => {
   return null;
 };
 
-const formatDateToServer = date => {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-};
-
 const formatDisplay = date => {
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -40,13 +33,11 @@ const diffDays = (date, base) =>
 
 const adjustForward = (date, base) => {
   let day = diffDays(date, base);
-  let moved = false;
   while (isWeekend(date)) {
     date.setDate(date.getDate() + 1);
     day = diffDays(date, base);
-    moved = true;
   }
-  return { date, day, sign: moved ? '+' : '' };
+  return { date, day, sign: '' };
 };
 
 const adjustBackward = (date, base) => {
@@ -62,7 +53,7 @@ const adjustBackward = (date, base) => {
 
 const weekdayNames = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 
-const generateSchedule = base => {
+export const generateSchedule = base => {
   const visits = [];
 
   // Day 2
@@ -76,10 +67,13 @@ const generateSchedule = base => {
   });
   const shifted = first.day === 4;
 
-  // Day 7 (may shift to 8)
+  // Day 7 (may shift to 8 but never earlier than 6)
   d = new Date(base);
   d.setDate(base.getDate() + 6 + (shifted ? 1 : 0));
-  let second = adjustBackward(d, base);
+  let second = adjustBackward(new Date(d), base);
+  if (second.day < 6) {
+    second = adjustForward(new Date(d), base);
+  }
   visits.push({
     key: 'visit2',
     date: second.date,
@@ -169,6 +163,11 @@ const generateSchedule = base => {
   return visits;
 };
 
+export const serializeSchedule = sched =>
+  sched
+    .map(item => `${formatDisplay(item.date)} - ${item.label}`)
+    .join('\n');
+
 const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }) => {
   const base = parseDate(userData?.lastCycle);
   const [schedule, setSchedule] = React.useState([]);
@@ -176,26 +175,22 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
 
   const saveSchedule = React.useCallback(
     sched => {
-      const payload = sched.map(item => ({
-        key: item.key,
-        date: formatDateToServer(item.date),
-        label: item.label,
-      }));
+      const scheduleString = serializeSchedule(sched);
       if (setUsers && setState) {
         handleChange(
           setUsers,
           setState,
           userData.userId,
           'stimulationSchedule',
-          payload,
+          scheduleString,
           true,
           {},
           isToastOn,
         );
       } else if (setState) {
-        setState(prev => ({ ...prev, stimulationSchedule: payload }));
+        setState(prev => ({ ...prev, stimulationSchedule: scheduleString }));
         handleSubmit(
-          { ...userData, stimulationSchedule: payload },
+          { ...userData, stimulationSchedule: scheduleString },
           'overwrite',
           isToastOn,
         );
@@ -207,17 +202,41 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   React.useEffect(() => {
     if (!userData?.stimulation || !base) return;
     if (userData.stimulationSchedule) {
-      const parsed = userData.stimulationSchedule.map(item => ({
-        ...item,
-        date: parseDate(item.date),
-      }));
-      setSchedule(parsed);
+      if (typeof userData.stimulationSchedule === 'string') {
+        const lines = userData.stimulationSchedule.split('\n').filter(Boolean);
+        let visitCount = 0;
+        const parsed = lines.map((line, idx) => {
+          const [datePart, ...labelParts] = line.split(' - ');
+          const label = labelParts.join(' - ').trim();
+          const date = parseDate(datePart.trim());
+          let key = '';
+          if (/перенос/.test(label)) key = 'transfer';
+          else if (/ХГЧ/.test(label)) key = 'hcg';
+          else if (/УЗД|ЗД/.test(label)) key = 'us';
+          else if (/Прийом на (\d+)й тиждень/.test(label)) {
+            const week = /Прийом на (\d+)й тиждень/.exec(label)[1];
+            key = `week${week}`;
+          } else if (/й день/.test(label)) {
+            visitCount += 1;
+            key = `visit${visitCount}`;
+          } else {
+            key = `ap-${idx}`;
+          }
+          return { key, date, label };
+        });
+        setSchedule(parsed);
+      } else {
+        const parsed = userData.stimulationSchedule.map(item => ({
+          ...item,
+          date: parseDate(item.date),
+        }));
+        setSchedule(parsed);
+      }
     } else {
       const gen = generateSchedule(base);
       setSchedule(gen);
-      saveSchedule(gen);
     }
-  }, [userData.stimulationSchedule, userData.stimulation, base, saveSchedule]);
+  }, [userData.stimulationSchedule, userData.stimulation, base]);
 
   const postTransferKeys = React.useMemo(
     () => [
@@ -244,7 +263,12 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       newDate.setDate(newDate.getDate() + delta);
 
       const applyAdjust = (it, d, refBase) => {
-        const adj = delta > 0 ? adjustForward(d, refBase) : adjustBackward(d, refBase);
+        let adj = delta > 0 ? adjustForward(d, refBase) : adjustBackward(d, refBase);
+        if (it.key === 'visit2' && adj.day < 6) {
+          const min = new Date(base);
+          min.setDate(base.getDate() + 5);
+          adj = adjustForward(min, base);
+        }
         if (postTransferKeys.includes(it.key)) {
           const labelMap = {
             hcg: 'ХГЧ на 12й день',
@@ -290,7 +314,9 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       copy[idx] = adjustedItem;
 
       // shift subsequent items by actualDelta
-      for (let j = idx + 1; j < copy.length; j++) {
+      const usIndex = copy.findIndex(v => v.key === 'us');
+      const limit = usIndex !== -1 && idx < usIndex ? usIndex : idx;
+      for (let j = idx + 1; j < copy.length && j <= limit; j++) {
         const it = copy[j];
         const ref = postTransferKeys.includes(it.key)
           ? copy.find(v => v.key === 'transfer')?.date || base
@@ -312,7 +338,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   return (
     <div style={{ marginTop: '8px' }}>
       <div>{year}</div>
-      <div style={{ display: 'flex', gap: '4px', margin: '8px 0' }}>
+      <div style={{ display: 'flex', gap: '2px', margin: '4px 0' }}>
         <input
           type="text"
           value={apDescription}
@@ -330,18 +356,21 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
               label: apDescription || 'AP',
             };
             setSchedule(prev => {
-              const updated = [...prev, newItem];
+              const updated = [...prev];
+              const index = updated.findIndex(it => it.date > newItem.date);
+              if (index === -1) updated.push(newItem);
+              else updated.splice(index, 0, newItem);
               saveSchedule(updated);
               return updated;
             });
             setApDescription('');
           }}
           style={{
-            width: '32px',
-            height: '32px',
+            width: '24px',
+            height: '24px',
             borderRadius: '4px',
             boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-            fontSize: '20px',
+            fontSize: '16px',
             fontWeight: 'bold',
           }}
         >
@@ -352,21 +381,21 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         const dateStr = formatDisplay(item.date);
         const weekday = weekdayNames[item.date.getDay()];
         return (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
             <div>
               {dateStr} - {item.label} ({weekday})
             </div>
             <div
-              style={{ display: 'flex', gap: '4px', marginLeft: 'auto' }}
+              style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}
             >
               <OrangeBtn
                 onClick={() => shiftDate(i, -1)}
                 style={{
-                  width: '32px',
-                  height: '32px',
+                  width: '24px',
+                  height: '24px',
                   borderRadius: '4px',
                   boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                  fontSize: '20px',
+                  fontSize: '16px',
                   fontWeight: 'bold',
                 }}
               >
@@ -375,15 +404,34 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
               <OrangeBtn
                 onClick={() => shiftDate(i, 1)}
                 style={{
-                  width: '32px',
-                  height: '32px',
+                  width: '24px',
+                  height: '24px',
                   borderRadius: '4px',
                   boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                  fontSize: '20px',
+                  fontSize: '16px',
                   fontWeight: 'bold',
                 }}
               >
                 +
+              </OrangeBtn>
+              <OrangeBtn
+                onClick={() =>
+                  setSchedule(prev => {
+                    const updated = prev.filter((_, idx) => idx !== i);
+                    saveSchedule(updated);
+                    return updated;
+                  })
+                }
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '4px',
+                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                }}
+              >
+                ×
               </OrangeBtn>
             </div>
           </div>

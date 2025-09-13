@@ -1,6 +1,7 @@
 import React from 'react';
 import { handleChange, handleSubmit } from './actions';
 import { formatDateToDisplay, formatDateToServer } from 'components/inputValidations';
+import { generateSchedule, serializeSchedule } from '../StimulationSchedule';
 import {
   UnderlinedInput,
   AttentionButton,
@@ -161,14 +162,24 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     setStatus(prev => {
       const newState = prev === 'menstruation' ? 'stimulation' : prev === 'stimulation' ? 'pregnant' : 'menstruation';
       if (newState === 'stimulation') {
+        const baseDate = parseDate(userData.lastCycle);
+        let scheduleString = '';
+        if (baseDate) {
+          const sched = generateSchedule(baseDate);
+          scheduleString = serializeSchedule(sched);
+        }
         handleChange(
           setUsers,
           setState,
           userData.userId,
-          'stimulation',
-          true,
+          { stimulation: true, stimulationSchedule: scheduleString },
           true,
           {},
+          isToastOn,
+        );
+        handleSubmit(
+          { ...userData, stimulation: true, stimulationSchedule: scheduleString },
+          'overwrite',
           isToastOn,
         );
         submittedRef.current = true;
@@ -177,10 +188,14 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           setUsers,
           setState,
           userData.userId,
-          'stimulation',
-          false,
+          { stimulation: false, stimulationSchedule: '' },
           true,
           {},
+          isToastOn,
+        );
+        handleSubmit(
+          { ...userData, stimulation: false, stimulationSchedule: '' },
+          'overwrite',
           isToastOn,
         );
         submittedRef.current = true;
