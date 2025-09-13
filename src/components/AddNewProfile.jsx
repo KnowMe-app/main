@@ -1131,7 +1131,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         <SearchBar
           searchFunc={fetchNewUsersCollectionInRTDB}
           search={search}
-          setSearch={setSearch}
+          setSearch={value => {
+            setSearchLoading(true);
+            setTotalCount(0);
+            setSearch(value);
+          }}
           setUsers={setUsers}
           setState={setState}
           setUserNotFound={setUserNotFound}
@@ -1196,7 +1200,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </p>
             ) : null}
             <FilterPanel
-              onChange={setFilters}
+              onChange={f => {
+                setSearchLoading(true);
+                setTotalCount(0);
+                setFilters(f);
+              }}
               storageKey="addFilters"
             />
             <ButtonsContainer>
