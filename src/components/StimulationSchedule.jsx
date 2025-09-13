@@ -280,22 +280,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     }
   }, [userData.stimulationSchedule, userData.stimulation, base, userData.lastCycle]);
 
-  const postTransferKeys = React.useMemo(
-    () => [
-      'hcg',
-      'us',
-      'week8',
-      'week10',
-      'week12',
-      'week16',
-      'week18',
-      'week28',
-      'week36',
-      'week38',
-      'week40',
-    ],
-    [],
-  );
+  const postTransferKeys = React.useMemo(() => ['hcg', 'us'], []);
 
   React.useEffect(() => {
     const transferItem = schedule.find(v => v.key === 'transfer');
@@ -313,7 +298,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
 
       const applyAdjust = (it, d, refBase) => {
         let adj = { date: d, day: diffDays(d, refBase), sign: '' };
-        if (postTransferKeys.includes(it.key)) {
+        if (it.key.startsWith('week') || postTransferKeys.includes(it.key)) {
           const transferDate =
             copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
           const diff = Math.round((adj.date - transferDate) / (1000 * 60 * 60 * 24));
@@ -354,7 +339,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const adjustedItem = applyAdjust(
         item,
         newDate,
-        postTransferKeys.includes(item.key)
+        item.key.startsWith('week') || postTransferKeys.includes(item.key)
           ? copy.find(v => v.key === 'transfer')?.date || transferRef.current || base
           : base,
       );
