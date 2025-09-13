@@ -260,21 +260,13 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const firstDate = parsed[0]?.date;
       if (!firstDate || firstDate.toDateString() !== expectedFirst?.toDateString()) {
         setSchedule(gen);
-        saveSchedule(gen);
       } else {
         setSchedule(parsed);
       }
     } else {
       setSchedule(gen);
-      saveSchedule(gen);
     }
-  }, [
-    userData.stimulationSchedule,
-    userData.stimulation,
-    base,
-    userData.lastCycle,
-    saveSchedule,
-  ]);
+  }, [userData.stimulationSchedule, userData.stimulation, base, userData.lastCycle]);
 
   const postTransferKeys = React.useMemo(
     () => [
