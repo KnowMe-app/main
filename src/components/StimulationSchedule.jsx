@@ -1,13 +1,20 @@
 import React from 'react';
 import { handleChange, handleSubmit } from './smallCard/actions';
 import { OrangeBtn } from 'components/styles';
+import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 
 const parseDate = str => {
   if (!str) return null;
-  const inputPattern = /^\d{2}\.\d{2}\.\d{4}$/;
-  if (inputPattern.test(str)) {
+  const fullPattern = /^\d{2}\.\d{2}\.\d{4}$/;
+  if (fullPattern.test(str)) {
     const [day, month, year] = str.split('.');
     return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+  const shortPattern = /^\d{2}\.\d{2}$/;
+  if (shortPattern.test(str)) {
+    const [day, month] = str.split('.').map(Number);
+    const year = new Date().getFullYear();
+    return new Date(year, month - 1, day);
   }
   const storagePattern = /^\d{4}-\d{2}-\d{2}$/;
   if (storagePattern.test(str)) {
@@ -358,6 +365,14 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const weekday = weekdayNames[item.date.getDay()];
       const year = item.date.getFullYear();
       if (year !== currentYear) {
+        if (currentYear !== null) {
+          rendered.push(
+            <div
+              key={`sep-${year}`}
+              style={{ borderTop: '1px solid #ccc', margin: '4px 0' }}
+            />,
+          );
+        }
         rendered.push(<div key={`year-${year}`}>{year}</div>);
         currentYear = year;
       }
@@ -469,12 +484,20 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         />
         <OrangeBtn
           onClick={() => {
-            const today = new Date();
-            const adj = adjustForward(today, today);
+            let description = apDescription.trim();
+            const match = description.match(/^(\d{2}\.\d{2}(?:\.\d{4})?)/);
+            let date = match ? parseDate(match[1]) : null;
+            if (match) {
+              description = description.slice(match[1].length).trim();
+            }
+            if (!date) {
+              const today = new Date();
+              date = adjustForward(today, today).date;
+            }
             const newItem = {
               key: `ap-${Date.now()}`,
-              date: adj.date,
-              label: apDescription || 'AP',
+              date,
+              label: description || 'AP',
             };
             setSchedule(prev => {
               const updated = [...prev];
@@ -497,39 +520,42 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         >
           AP
         </OrangeBtn>
+        <OrangeBtn
+          onClick={() => {
+            let text = '';
+            let yr = null;
+            schedule
+              .filter(item => item.date)
+              .sort((a, b) => a.date - b.date)
+              .forEach(it => {
+                const y = it.date.getFullYear();
+                const dateStr = formatDisplay(it.date);
+                if (y !== yr) {
+                  if (text) text += '\n';
+                  text += `${y}\n`;
+                  yr = y;
+                }
+                text += `${dateStr} ${it.label}\n`;
+              });
+            navigator.clipboard.writeText(text.trim());
+          }}
+          style={{
+            width: '24px',
+            height: '24px',
+            borderRadius: '4px',
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            marginLeft: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <ClipboardIcon style={{ width: '16px', height: '16px' }} />
+        </OrangeBtn>
       </div>
       {rendered}
-      <OrangeBtn
-        onClick={() => {
-          let text = '';
-          let yr = null;
-          schedule
-            .filter(item => item.date)
-            .sort((a, b) => a.date - b.date)
-            .forEach(it => {
-              const y = it.date.getFullYear();
-              const dateStr = formatDisplay(it.date);
-              if (y !== yr) {
-                if (text) text += '\n';
-                text += `${y}\n`;
-                yr = y;
-              }
-              text += `${dateStr} ${it.label}\n`;
-            });
-          navigator.clipboard.writeText(text.trim());
-        }}
-        style={{
-          marginTop: '4px',
-          width: 'fit-content',
-          padding: '2px 8px',
-          borderRadius: '4px',
-          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-          fontSize: '16px',
-          fontWeight: 'bold',
-        }}
-      >
-        експорт
-      </OrangeBtn>
     </div>
   );
 };
