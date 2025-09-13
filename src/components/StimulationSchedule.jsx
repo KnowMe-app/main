@@ -312,7 +312,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       newDate.setDate(newDate.getDate() + delta);
 
       const applyAdjust = (it, d, refBase) => {
-        let adj = delta > 0 ? adjustForward(d, refBase) : adjustBackward(d, refBase);
+        let adj = { date: d, day: diffDays(d, refBase), sign: '' };
         if (postTransferKeys.includes(it.key)) {
           const transferDate =
             copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
@@ -329,24 +329,22 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           return {
             ...it,
             date: adj.date,
-            label: `${labelText}${adj.sign ? ` ${adj.sign}` : ''}`,
+            label: labelText,
           };
         }
         if (it.key === 'visit3' && adj.day < 6) {
           const min = new Date(base);
           min.setDate(base.getDate() + 5);
-          adj = adjustForward(min, base);
+          adj = { date: min, day: diffDays(min, base), sign: '' };
         }
         if (it.key.startsWith('ap')) {
           return {
             ...it,
             date: adj.date,
-            label: `${it.label}${adj.sign ? ` ${adj.sign}` : ''}`,
+            label: it.label,
           };
         }
-        const lbl = `${adj.day}й день${it.key === 'transfer' ? ' (перенос)' : ''}${
-          adj.sign ? ` ${adj.sign}` : ''
-        }`;
+        const lbl = `${adj.day}й день${it.key === 'transfer' ? ' (перенос)' : ''}`;
         return { ...it, date: adj.date, label: lbl };
       };
 
@@ -507,7 +505,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
             }
             if (!date) {
               const today = new Date();
-              date = adjustForward(today, today).date;
+              date = today;
             }
             const newItem = {
               key: `ap-${Date.now()}`,
