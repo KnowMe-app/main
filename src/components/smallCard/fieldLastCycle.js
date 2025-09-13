@@ -86,6 +86,14 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   const nextCycle = React.useMemo(() => calculateNextDate(userData.lastCycle), [userData.lastCycle]);
 
+  const weeksSinceLastCycle = React.useMemo(() => {
+    const lastCycleDate = parseDate(userData.lastCycle);
+    if (!lastCycleDate) return 0;
+    return Math.floor(
+      (Date.now() - lastCycleDate.getTime()) / (7 * 24 * 60 * 60 * 1000),
+    );
+  }, [userData.lastCycle]);
+
   React.useEffect(() => {
     const date = parseDate(userData.lastDelivery);
     if (date && date > new Date()) {
@@ -372,15 +380,18 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           }}
         />
         {status === 'pregnant' ? (
-          <AttentionDiv
-            onClick={handleStatusClick}
-            style={{
-              cursor: 'pointer',
-              backgroundColor: 'hotpink',
-            }}
-          >
-            вагітна
-          </AttentionDiv>
+          <React.Fragment>
+            <AttentionDiv
+              onClick={handleStatusClick}
+              style={{
+                cursor: 'pointer',
+                backgroundColor: 'hotpink',
+              }}
+            >
+              вагітна
+            </AttentionDiv>
+            <span>{`${weeksSinceLastCycle}т`}</span>
+          </React.Fragment>
         ) : status === 'stimulation' ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <AttentionDiv
