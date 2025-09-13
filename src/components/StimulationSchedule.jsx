@@ -1,5 +1,6 @@
 import React from 'react';
 import { handleChange, handleSubmit } from './smallCard/actions';
+import { OrangeBtn } from 'components/styles';
 
 const parseDate = str => {
   if (!str) return null;
@@ -204,23 +205,42 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     setSchedule(prev => {
       const copy = [...prev];
       const item = copy[idx];
-      const newDate = new Date(item.date);
+      const baseDate = item.date;
+      const newDate = new Date(baseDate);
       newDate.setDate(newDate.getDate() + delta);
 
-      if (item.key === 'hcg' || item.key === 'us') {
-        const adjusted = delta > 0 ? adjustForward(newDate, base) : adjustBackward(newDate, base);
-        const labelText = item.key === 'hcg' ? 'ХГЧ' : 'УЗД';
-        copy[idx] = {
-          ...item,
-          date: adjusted.date,
-          label: `${labelText}${adjusted.sign ? ` - ${adjusted.sign}` : ''}`,
-        };
-      } else {
-        const adjusted = delta > 0 ? adjustForward(newDate, base) : adjustBackward(newDate, base);
-        const newLabel = `${adjusted.day}й день${
-          item.key === 'transfer' ? ' (перенос)' : ''
-        }${adjusted.sign ? ` - ${adjusted.sign}` : ''}`;
-        copy[idx] = { ...item, date: adjusted.date, label: newLabel };
+      const applyAdjust = (it, d, refBase) => {
+        const adj = delta > 0 ? adjustForward(d, refBase) : adjustBackward(d, refBase);
+        if (it.key === 'hcg' || it.key === 'us') {
+          const labelText = it.key === 'hcg' ? 'ХГЧ' : 'УЗД';
+          return {
+            ...it,
+            date: adj.date,
+            label: `${labelText}${adj.sign ? ` - ${adj.sign}` : ''}`,
+          };
+        }
+        const lbl = `${adj.day}й день${it.key === 'transfer' ? ' (перенос)' : ''}${
+          adj.sign ? ` - ${adj.sign}` : ''
+        }`;
+        return { ...it, date: adj.date, label: lbl };
+      };
+
+      // adjust changed item and compute actual shift
+      const adjustedItem = applyAdjust(item, newDate, item.key === 'hcg' || item.key === 'us'
+        ? copy.find(v => v.key === 'transfer')?.date || base
+        : base);
+      const actualDelta = Math.round((adjustedItem.date - baseDate) / (1000 * 60 * 60 * 24));
+      copy[idx] = adjustedItem;
+
+      // shift subsequent items by actualDelta
+      for (let j = idx + 1; j < copy.length; j++) {
+        const it = copy[j];
+        const ref = it.key === 'hcg' || it.key === 'us'
+          ? copy.find(v => v.key === 'transfer')?.date || base
+          : base;
+        const nd = new Date(it.date);
+        nd.setDate(nd.getDate() + actualDelta);
+        copy[j] = applyAdjust(it, nd, ref);
       }
 
       saveSchedule(copy);
@@ -240,12 +260,21 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         const weekday = weekdayNames[item.date.getDay()];
         return (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <button onClick={() => shiftDate(i, -1)}>-</button>
+            <OrangeBtn
+              onClick={() => shiftDate(i, -1)}
+              style={{ width: '25px', height: '25px', marginRight: '4px' }}
+            >
+              -
+            </OrangeBtn>
             <div>
-              {dateStr} - {item.label}
-              {i === 1 && ` (${weekday})`}
+              {dateStr} - {item.label} ({weekday})
             </div>
-            <button onClick={() => shiftDate(i, 1)}>+</button>
+            <OrangeBtn
+              onClick={() => shiftDate(i, 1)}
+              style={{ width: '25px', height: '25px', marginLeft: '4px' }}
+            >
+              +
+            </OrangeBtn>
           </div>
         );
       })}
