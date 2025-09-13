@@ -189,6 +189,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   const [schedule, setSchedule] = React.useState([]);
   const [apDescription, setApDescription] = React.useState('');
   const [editingIndex, setEditingIndex] = React.useState(null);
+  const transferRef = React.useRef(null);
 
   const saveSchedule = React.useCallback(
     sched => {
@@ -209,6 +210,17 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         handleSubmit(
           { ...userData, stimulationSchedule: scheduleString },
           'overwrite',
+          isToastOn,
+        );
+      } else if (setUsers) {
+        handleChange(
+          setUsers,
+          null,
+          userData.userId,
+          'stimulationSchedule',
+          scheduleString,
+          true,
+          {},
           isToastOn,
         );
       }
@@ -293,6 +305,13 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     [],
   );
 
+  React.useEffect(() => {
+    const transferItem = schedule.find(v => v.key === 'transfer');
+    if (transferItem) {
+      transferRef.current = transferItem.date;
+    }
+  }, [schedule]);
+
   const shiftDate = (idx, delta) => {
     setSchedule(prev => {
       const copy = [...prev];
@@ -302,13 +321,9 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
 
       const applyAdjust = (it, d, refBase) => {
         let adj = delta > 0 ? adjustForward(d, refBase) : adjustBackward(d, refBase);
-        if (it.key === 'visit3' && adj.day < 6) {
-          const min = new Date(base);
-          min.setDate(base.getDate() + 5);
-          adj = adjustForward(min, base);
-        }
         if (postTransferKeys.includes(it.key)) {
-          const transferDate = copy.find(v => v.key === 'transfer')?.date || base;
+          const transferDate =
+            copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
           const diff = Math.round((adj.date - transferDate) / (1000 * 60 * 60 * 24));
           const weeks = Math.floor(diff / 7);
           const days = diff % 7;
@@ -324,6 +339,11 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
             date: adj.date,
             label: `${labelText}${adj.sign ? ` ${adj.sign}` : ''}`,
           };
+        }
+        if (it.key === 'visit3' && adj.day < 6) {
+          const min = new Date(base);
+          min.setDate(base.getDate() + 5);
+          adj = adjustForward(min, base);
         }
         if (it.key.startsWith('ap')) {
           return {
@@ -342,10 +362,13 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         item,
         newDate,
         postTransferKeys.includes(item.key)
-          ? copy.find(v => v.key === 'transfer')?.date || base
+          ? copy.find(v => v.key === 'transfer')?.date || transferRef.current || base
           : base,
       );
       copy[idx] = adjustedItem;
+      if (item.key === 'transfer') {
+        transferRef.current = adjustedItem.date;
+      }
 
       copy.sort((a, b) => a.date - b.date);
       saveSchedule(copy);

@@ -151,19 +151,12 @@ export const handleChange = (
   }
 };
 
-export const handleSubmit = async (userData, condition, isToastOn) => {
+export const handleSubmit = (userData, condition, isToastOn) => {
   const fieldsForNewUsersOnly = ['role', 'getInTouch', 'lastCycle', 'myComment', 'writer'];
   const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
   const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids'];
   const dublicateFields = ['weight', 'height'];
 
-  // console.log('userData В handleSubmit', userData);
-  //  const { existingData } = await fetchUserData(userData.userId);
-  // console.log('userData.userId :>> ', userData.userId);
-  // const { existingData } = await fetchUserById(userData.userId);
-  // console.log('1111 :>> ');
-  // const uploadedInfo = makeUploadedInfo(existingData, userData);
-  console.log('userData!!!!!!!!!!!!!!!!!!!!!!!!! :>> ', userData);
   const uploadedInfo = { ...userData };
   if (uploadedInfo.lastDelivery) {
     uploadedInfo.lastDelivery = formatDateToServer(uploadedInfo.lastDelivery);
@@ -179,10 +172,12 @@ export const handleSubmit = async (userData, condition, isToastOn) => {
     )
   );
 
-  console.log('cleanedStateForNewUsers!!!!!!!!!!!!!!', cleanedStateForNewUsers);
-
   updateCachedUser({ ...cleanedStateForNewUsers, userId: userData.userId });
-  await updateDataInNewUsersRTDB(userData.userId, cleanedStateForNewUsers, 'update');
+  void updateDataInNewUsersRTDB(
+    userData.userId,
+    cleanedStateForNewUsers,
+    'update',
+  );
   if (isToastOn) {
     toast.success('Дані збережено', { duration: 2000 });
   }
