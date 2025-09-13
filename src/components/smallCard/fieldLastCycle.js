@@ -405,7 +405,14 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
       }
     `}
       </style>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          flexWrap: 'nowrap',
+        }}
+      >
         <UnderlinedInput
           type="text"
           value={localValue}
