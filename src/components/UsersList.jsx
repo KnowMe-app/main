@@ -105,7 +105,9 @@ const UserCard = ({
         currentFilter,
         isDateInRange,
       )}
-      <StimulationSchedule userData={userData} setUsers={setUsers} setState={setState} />
+      {userData.cycleStatus === 'stimulation' && (
+        <StimulationSchedule userData={userData} setUsers={setUsers} setState={setState} />
+      )}
       <div id={userData.userId} style={{ display: 'none' }}>
         {renderFields(userData)}
       </div>

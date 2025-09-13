@@ -76,7 +76,9 @@ const formatDate = date => {
 };
 
 export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
-  const [status, setStatus] = React.useState('menstruation');
+  const [status, setStatus] = React.useState(
+    userData.cycleStatus || 'menstruation',
+  );
   const submittedRef = React.useRef(false);
   const prevDataRef = React.useRef(null);
   const [localValue, setLocalValue] = React.useState(
@@ -96,15 +98,8 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   }, [userData.lastCycle]);
 
   React.useEffect(() => {
-    const date = parseDate(userData.lastDelivery);
-    if (date && date > new Date()) {
-      setStatus('pregnant');
-    } else if (userData.stimulation) {
-      setStatus('stimulation');
-    } else {
-      setStatus('menstruation');
-    }
-  }, [userData.lastDelivery, userData.stimulation]);
+    setStatus(userData.cycleStatus || 'menstruation');
+  }, [userData.cycleStatus]);
 
   React.useEffect(() => {
     setLocalValue(formatDateToDisplay(userData.lastCycle) || '');
@@ -139,6 +134,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           lastDelivery: lastDeliveryFormatted,
           getInTouch: getInTouchFormatted,
           ownKids,
+          cycleStatus: status,
         });
 
         handleSubmit(
@@ -148,20 +144,35 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             lastDelivery: lastDeliveryFormatted,
             getInTouch: getInTouchFormatted,
             ownKids,
+            cycleStatus: status,
           },
           'overwrite',
           isToastOn,
         );
         submittedRef.current = true;
       } else {
-        handleChange(setUsers, setState, userData.userId, 'lastCycle', lastCycleFormatted);
-        handleSubmit({ ...userData, lastCycle: lastCycleFormatted }, 'overwrite', isToastOn);
+        handleChange(setUsers, setState, userData.userId, {
+          lastCycle: lastCycleFormatted,
+          cycleStatus: status,
+        });
+        handleSubmit(
+          { ...userData, lastCycle: lastCycleFormatted, cycleStatus: status },
+          'overwrite',
+          isToastOn,
+        );
         submittedRef.current = true;
       }
     } else {
       const serverFormattedDate = formatDateToServer(val);
-      handleChange(setUsers, setState, userData.userId, 'lastCycle', serverFormattedDate);
-      handleSubmit({ ...userData, lastCycle: serverFormattedDate }, 'overwrite', isToastOn);
+      handleChange(setUsers, setState, userData.userId, {
+        lastCycle: serverFormattedDate,
+        cycleStatus: status,
+      });
+      handleSubmit(
+        { ...userData, lastCycle: serverFormattedDate, cycleStatus: status },
+        'overwrite',
+        isToastOn,
+      );
       submittedRef.current = true;
     }
   };
@@ -172,26 +183,31 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   const handleStatusClick = () => {
     setStatus(prev => {
-      const newState = prev === 'menstruation' ? 'stimulation' : prev === 'stimulation' ? 'pregnant' : 'menstruation';
+      const newState =
+        prev === 'menstruation'
+          ? 'stimulation'
+          : prev === 'stimulation'
+          ? 'pregnant'
+          : 'menstruation';
       if (newState === 'stimulation') {
         handleChange(
           setUsers,
           setState,
           userData.userId,
-          { stimulation: true },
+          { stimulation: true, cycleStatus: 'stimulation' },
           true,
           {},
           isToastOn,
         );
         handleSubmit(
-          { ...userData, stimulation: true },
+          { ...userData, stimulation: true, cycleStatus: 'stimulation' },
           'overwrite',
           isToastOn,
         );
         submittedRef.current = true;
       } else if (prev === 'stimulation') {
-        const updates = { stimulation: false };
-        const submitObj = { ...userData, stimulation: false };
+        const updates = { stimulation: false, cycleStatus: newState };
+        const submitObj = { ...userData, stimulation: false, cycleStatus: newState };
         if (userData.stimulationSchedule !== undefined) {
           updates.stimulationSchedule = undefined;
           submitObj.stimulationSchedule = undefined;
@@ -241,6 +257,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             lastDelivery: lastDeliveryFormatted,
             getInTouch: getInTouchFormatted,
             ownKids,
+            cycleStatus: 'pregnant',
           });
 
           handleSubmit(
@@ -250,6 +267,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
               lastDelivery: lastDeliveryFormatted,
               getInTouch: getInTouchFormatted,
               ownKids,
+              cycleStatus: 'pregnant',
             },
             'overwrite',
             isToastOn,
@@ -257,9 +275,12 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           submittedRef.current = true;
         }
       } else if (prev === 'pregnant' && prevDataRef.current) {
-        handleChange(setUsers, setState, userData.userId, prevDataRef.current);
+        handleChange(setUsers, setState, userData.userId, {
+          ...prevDataRef.current,
+          cycleStatus: newState,
+        });
         handleSubmit(
-          { ...userData, ...prevDataRef.current },
+          { ...userData, ...prevDataRef.current, cycleStatus: newState },
           'overwrite',
           isToastOn,
         );

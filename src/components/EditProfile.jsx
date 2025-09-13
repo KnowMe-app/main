@@ -47,9 +47,9 @@ const EditProfile = () => {
   const [isToastOn, setIsToastOn] = useState(false);
 
   async function remoteUpdate({ updatedState, overwrite, delCondition }) {
-    const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer'];
+    const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
-    const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids'];
+    const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     if (updatedState?.userId?.length > 20) {
       const { existingData } = await fetchUserById(updatedState.userId);
@@ -132,6 +132,7 @@ const EditProfile = () => {
           ...serverData,
           lastAction: serverLast,
           lastDelivery: formatDateToDisplay(serverData.lastDelivery),
+          cycleStatus: serverData.cycleStatus || 'menstruation',
         };
         updateCachedUser(formattedServerData);
         setState(formattedServerData);
@@ -207,7 +208,9 @@ const EditProfile = () => {
           isToastOn,
           setIsToastOn,
         )}
-        <StimulationSchedule userData={state} setState={setState} isToastOn={isToastOn} />
+        {state.cycleStatus === 'stimulation' && (
+          <StimulationSchedule userData={state} setState={setState} isToastOn={isToastOn} />
+        )}
       </div>
       <ProfileForm
         state={state}

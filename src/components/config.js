@@ -623,6 +623,7 @@ export const makeNewUser = async searchedValue => {
     userId: newUserId,
     createdAt,
     createdAt2,
+    cycleStatus: 'menstruation',
   };
 
   if (searchKey !== 'userId') {
