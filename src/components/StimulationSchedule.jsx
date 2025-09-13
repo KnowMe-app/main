@@ -386,13 +386,14 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         const dateStr = formatDisplay(item.date);
         const weekday = weekdayNames[item.date.getDay()];
         return (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+          <div
+            key={i}
+            style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}
+          >
             <div>
-              {dateStr} - {item.label} ({weekday})
+              {dateStr} {weekday} - {item.label}
             </div>
-            <div
-              style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}
-            >
+            <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
               <OrangeBtn
                 onClick={() => shiftDate(i, -1)}
                 style={{
