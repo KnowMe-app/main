@@ -3,7 +3,7 @@ import { handleChange, handleSubmit } from './actions';
 import { formatDateToDisplay, formatDateToServer } from 'components/inputValidations';
 import { generateSchedule, serializeSchedule } from '../StimulationSchedule';
 import InfoModal from 'components/InfoModal';
-import { UnderlinedInput, AttentionButton, AttentionDiv, OrangeBtn } from 'components/styles';
+import { UnderlinedInput, AttentionButton, AttentionDiv, OrangeBtn, color } from 'components/styles';
 
 const calculateNextDate = dateString => {
   if (!dateString) return '';
@@ -284,7 +284,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     <div>
       <p>Змінити дату місячних? Графік стимуляції буде скинуто.</p>
       <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-        <button
+        <AttentionButton
           onClick={() => {
             setShowConfirm(false);
             processLastCycle(pendingValueRef.current);
@@ -296,17 +296,19 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             }
             submittedRef.current = false;
           }}
+          style={{ backgroundColor: color.accent5 }}
         >
           Так
-        </button>
-        <button
+        </AttentionButton>
+        <AttentionButton
           onClick={() => {
             setShowConfirm(false);
             setLocalValue(formatDateToDisplay(userData.lastCycle) || '');
           }}
+          style={{ backgroundColor: color.accent5 }}
         >
           Ні
-        </button>
+        </AttentionButton>
       </div>
     </div>
   );
