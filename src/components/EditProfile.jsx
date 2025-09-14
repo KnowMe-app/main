@@ -209,7 +209,7 @@ const EditProfile = () => {
   return (
     <Container>
       <BackButton onClick={() => navigate(-1)}>Back</BackButton>
-      <div style={{ ...coloredCard() }}>
+      <div style={{ ...coloredCard(), marginBottom: '8px' }}>
         {renderTopBlock(
           state,
           () => {},
@@ -226,12 +226,12 @@ const EditProfile = () => {
           isToastOn,
           setIsToastOn,
         )}
-        {state.cycleStatus === 'stimulation' && (
-          <div style={{ padding: '7px', position: 'relative', marginTop: '8px' }}>
-            <StimulationSchedule userData={state} setState={setState} isToastOn={isToastOn} />
-          </div>
-        )}
       </div>
+      {state.cycleStatus === 'stimulation' && (
+        <div style={{ ...coloredCard(), padding: '7px', marginBottom: '8px' }}>
+          <StimulationSchedule userData={state} setState={setState} isToastOn={isToastOn} />
+        </div>
+      )}
       <ProfileForm
         state={state}
         setState={setState}

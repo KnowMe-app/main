@@ -91,22 +91,24 @@ const UserCard = ({
 }) => {
   return (
     <div>
-      {renderTopBlock(
-        userData,
-        setUsers,
-        setShowInfoModal,
-        setState,
-        setUserIdToDelete,
-        'isFromListOfUsers',
-        favoriteUsers,
-        setFavoriteUsers,
-        dislikeUsers,
-        setDislikeUsers,
-        currentFilter,
-        isDateInRange,
-      )}
+      <div style={{ ...coloredCard(), marginBottom: '8px' }}>
+        {renderTopBlock(
+          userData,
+          setUsers,
+          setShowInfoModal,
+          setState,
+          setUserIdToDelete,
+          'isFromListOfUsers',
+          favoriteUsers,
+          setFavoriteUsers,
+          dislikeUsers,
+          setDislikeUsers,
+          currentFilter,
+          isDateInRange,
+        )}
+      </div>
       {userData.cycleStatus === 'stimulation' && (
-        <div style={{ padding: '7px', position: 'relative', marginTop: '8px' }}>
+        <div style={{ ...coloredCard(), padding: '7px', marginBottom: '8px' }}>
           <StimulationSchedule userData={userData} setUsers={setUsers} setState={setState} />
         </div>
       )}
