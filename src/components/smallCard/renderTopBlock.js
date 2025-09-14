@@ -185,13 +185,11 @@ export const renderTopBlock = (
             }
 
             if (updated) {
-              if (isToastOn) {
-                toast.success(
-                  source === 'backend'
-                    ? 'Data loaded from backend'
-                    : 'Data loaded from cache'
-                );
-              }
+              toast.success(
+                source === 'backend'
+                  ? 'Data loaded from backend'
+                  : 'Data loaded from cache'
+              );
 
               updated = updateCard(userData.userId, updated);
 
@@ -213,9 +211,7 @@ export const renderTopBlock = (
             }
           } catch (error) {
             console.error(error);
-            if (isToastOn) {
-              toast.error(error.message);
-            }
+            toast.error(error.message);
           }
           toggleDetails();
         }}
