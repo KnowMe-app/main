@@ -10,9 +10,9 @@ import {
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { ProfileForm } from './ProfileForm';
-import { renderTopBlock } from "./smallCard/renderTopBlock";
-import StimulationSchedule from "./StimulationSchedule";
-import { coloredCard } from "./styles";
+import { renderTopBlock } from './smallCard/renderTopBlock';
+import StimulationSchedule from './StimulationSchedule';
+import { coloredCard } from './styles';
 import { updateCachedUser } from '../utils/cache';
 import { getCard } from '../utils/cardIndex';
 import {
@@ -21,6 +21,7 @@ import {
   formatDateToServer,
 } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import toast from 'react-hot-toast';
 
 const Container = styled.div`
   display: flex;
@@ -44,7 +45,8 @@ const EditProfile = () => {
   const location = useLocation();
   const [state, setState] = useState(() => getCard(userId) || location.state || null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isToastOn, setIsToastOn] = useState(false);
+  const [isToastOn, setIsToastOn] = useState(true);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   async function remoteUpdate({ updatedState, overwrite, delCondition }) {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
@@ -91,22 +93,33 @@ const EditProfile = () => {
 
 
   useEffect(() => {
-    if (!state && userId) {
-      const load = async () => {
-        const data = await fetchUserById(userId);
-        setState(
-          data
-            ? {
-                ...data,
-                lastAction: normalizeLastAction(data.lastAction),
-                lastDelivery: formatDateToDisplay(data.lastDelivery),
-              }
-            : { userId },
-        );
-      };
-      load();
+    if (!isDataLoaded) {
+      if (state) {
+        if (isToastOn) {
+          toast.success('Data loaded from cache');
+        }
+        setIsDataLoaded(true);
+      } else if (userId) {
+        const load = async () => {
+          const data = await fetchUserById(userId);
+          setState(
+            data
+              ? {
+                  ...data,
+                  lastAction: normalizeLastAction(data.lastAction),
+                  lastDelivery: formatDateToDisplay(data.lastDelivery),
+                }
+              : { userId },
+          );
+          if (isToastOn) {
+            toast.success('Data loaded from backend');
+          }
+          setIsDataLoaded(true);
+        };
+        load();
+      }
     }
-  }, [state, userId]);
+  }, [state, userId, isToastOn, isDataLoaded]);
 
   const handleSubmit = async (newState, overwrite, delCondition) => {
     const now = Date.now();
