@@ -47,6 +47,7 @@ const EditProfile = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isToastOn, setIsToastOn] = useState(true);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [dataSource, setDataSource] = useState('');
 
   async function remoteUpdate({ updatedState, overwrite, delCondition }) {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
@@ -95,31 +96,33 @@ const EditProfile = () => {
   useEffect(() => {
     if (!isDataLoaded) {
       if (state) {
-        if (isToastOn) {
-          toast.success('Data loaded from cache');
-        }
+        setDataSource('cache');
         setIsDataLoaded(true);
       } else if (userId) {
         const load = async () => {
-          const data = await fetchUserById(userId);
-          setState(
-            data
-              ? {
-                  ...data,
-                  lastAction: normalizeLastAction(data.lastAction),
-                  lastDelivery: formatDateToDisplay(data.lastDelivery),
-                }
-              : { userId },
-          );
-          if (isToastOn) {
-            toast.success('Data loaded from backend');
+          try {
+            const data = await fetchUserById(userId);
+            const formatted =
+              data
+                ? {
+                    ...data,
+                    lastAction: normalizeLastAction(data.lastAction),
+                    lastDelivery: formatDateToDisplay(data.lastDelivery),
+                  }
+                : { userId };
+            setState(formatted);
+            updateCachedUser(formatted);
+            setDataSource('backend');
+          } catch (error) {
+            toast.error(error.message);
+          } finally {
+            setIsDataLoaded(true);
           }
-          setIsDataLoaded(true);
         };
         load();
       }
     }
-  }, [state, userId, isToastOn, isDataLoaded]);
+  }, [state, userId, isDataLoaded]);
 
   const handleSubmit = async (newState, overwrite, delCondition) => {
     const now = Date.now();
@@ -239,6 +242,7 @@ const EditProfile = () => {
         handleSubmit={handleSubmit}
         handleClear={handleClear}
         handleDelKeyValue={handleDelKeyValue}
+        dataSource={dataSource}
       />
       {isSyncing && <div>Syncing...</div>}
     </Container>

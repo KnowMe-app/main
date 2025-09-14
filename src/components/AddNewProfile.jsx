@@ -72,6 +72,7 @@ import {
   clearAllCardsCache,
   updateCachedUser,
 } from 'utils/cache';
+import { updateCard } from 'utils/cardsStorage';
 import {
   formatDateAndFormula,
   formatDateToDisplay,
@@ -515,19 +516,42 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const initialDis = getDislikes();
   const [dislikeUsersData, setDislikeUsersData] = useState(initialDis);
   const [isToastOn, setIsToastOn] = useState(false);
-  const [cacheCount, setCacheCount] = useState(0);
-  const [backendCount, setBackendCount] = useState(0);
+  const [, setCacheCount] = useState(0);
+  const [, setBackendCount] = useState(0);
+  const [profileSource, setProfileSource] = useState('');
 
   useEffect(() => {
-    if (cacheCount === 0 && backendCount === 0) return;
-    const message =
-      cacheCount > 0 && backendCount > 0
-        ? `${cacheCount} cards from local storage and ${backendCount} from backend`
-        : cacheCount > 0
-        ? `${cacheCount} cards from local storage`
-        : `${backendCount} cards from backend`;
-    toast.success(message);
-  }, [cacheCount, backendCount]);
+    if (!state.userId || profileSource) return;
+
+    if (Object.keys(state).length > 1) {
+      setProfileSource('cache');
+      return;
+    }
+
+    const cached = getCard(state.userId);
+    if (cached) {
+      setState(cached);
+      setProfileSource('cache');
+    } else {
+      (async () => {
+        try {
+          const data = await fetchUserById(state.userId);
+          if (data) {
+            updateCard(state.userId, data);
+            setState(data);
+          }
+        } catch (error) {
+          toast.error(error.message);
+        } finally {
+          setProfileSource('backend');
+        }
+      })();
+    }
+  }, [state, profileSource, setState]);
+
+  useEffect(() => {
+    if (!state.userId) setProfileSource('');
+  }, [state.userId]);
 
   const cacheFetchedUsers = useCallback(
     (usersObj, cacheFn, currentFilters = filters) => {
@@ -1207,6 +1231,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               handleSubmit={handleSubmit}
               handleClear={handleClear}
               handleDelKeyValue={handleDelKeyValue}
+              dataSource={profileSource}
             />
           </>
         ) : (
