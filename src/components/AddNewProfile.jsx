@@ -990,7 +990,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setBackendCount(backendCount);
   };
 
-  const [duplicates, setDuplicates] = useState('');
+  const [, setDuplicates] = useState('');
   const [isDuplicateView, setIsDuplicateView] = useState(false);
 
   useEffect(() => {
