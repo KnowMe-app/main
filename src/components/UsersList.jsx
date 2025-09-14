@@ -106,7 +106,9 @@ const UserCard = ({
         isDateInRange,
       )}
       {userData.cycleStatus === 'stimulation' && (
-        <StimulationSchedule userData={userData} setUsers={setUsers} setState={setState} />
+        <div style={{ padding: '7px', position: 'relative', marginTop: '8px' }}>
+          <StimulationSchedule userData={userData} setUsers={setUsers} setState={setState} />
+        </div>
       )}
       <div id={userData.userId} style={{ display: 'none' }}>
         {renderFields(userData)}

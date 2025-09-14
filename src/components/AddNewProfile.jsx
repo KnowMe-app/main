@@ -1177,12 +1177,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 setIsToastOn,
               )}
               {state.cycleStatus === 'stimulation' && (
-                <StimulationSchedule
-                  userData={state}
-                  setUsers={setUsers}
-                  setState={setState}
-                  isToastOn={isToastOn}
-                />
+                <div style={{ padding: '7px', position: 'relative', marginTop: '8px' }}>
+                  <StimulationSchedule
+                    userData={state}
+                    setUsers={setUsers}
+                    setState={setState}
+                    isToastOn={isToastOn}
+                  />
+                </div>
               )}
             </div>
 
