@@ -505,6 +505,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
   const [totalCount, setTotalCount] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState('');
   const [dateOffset, setDateOffset] = useState(0);
@@ -609,6 +610,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (!currentFilter) return;
 
     setSearchLoading(true);
+    setHasSearched(true);
 
     if (currentFilter === 'DATE2') {
       loadMoreUsers2()
@@ -1144,6 +1146,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           search={search}
           setSearch={value => {
             setSearchLoading(true);
+            setHasSearched(true);
             setTotalCount(0);
             setSearch(value);
           }}
@@ -1208,21 +1211,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </>
         ) : (
           <div>
-            {users && !userNotFound ? (
+            {(searchLoading || hasSearched) && !userNotFound && (
               <p style={{ textAlign: 'center', color: 'black' }}>
                 Знайдено {searchLoading ? <span className="spinner" /> : totalCount} користувачів.
               </p>
-            ) : userNotFound ? (
+            )}
+            {userNotFound && hasSearched && (
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
-            ) : Object.keys(users).length > 1 ? (
-              <p style={{ textAlign: 'center', color: 'black' }}>
-                {totalCount} користувачів
-                {duplicates ? ` з (${duplicates})` : ''}
-              </p>
-            ) : null}
+            )}
             <FilterPanel
               onChange={f => {
                 setSearchLoading(true);
+                setHasSearched(true);
                 setTotalCount(0);
                 setFilters(f);
               }}
