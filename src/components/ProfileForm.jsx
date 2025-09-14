@@ -535,8 +535,8 @@ const InputDiv = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 10px 0;
-  padding: 10px;
+  margin: 5px 0;
+  padding: 5px;
   background-color: #fff;
   border: 1px solid #ccc;
   border-radius: 5px;
@@ -683,8 +683,8 @@ const KeyValueRow = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 10px 0;
-  padding: 10px;
+  margin: 5px 0;
+  padding: 5px;
   background-color: #fff;
   border: 1px solid #ccc;
   border-radius: 5px;
