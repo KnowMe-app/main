@@ -117,15 +117,20 @@ const EditProfile = () => {
     const removeKeys = delCondition ? Object.keys(delCondition) : [];
     updateCachedUser(updatedState, { removeKeys });
 
+    const formattedLastDelivery = formatDateToServer(
+      formatDateAndFormula(updatedState.lastDelivery),
+    );
     const syncedState = {
       ...updatedState,
-      lastDelivery: formatDateToServer(
-        formatDateAndFormula(updatedState.lastDelivery),
-      ),
+      ...(formattedLastDelivery ? { lastDelivery: formattedLastDelivery } : {}),
     };
     setIsSyncing(true);
     try {
-      const serverData = await remoteUpdate({ updatedState: syncedState, overwrite, delCondition });
+      const serverData = await remoteUpdate({
+        updatedState: syncedState,
+        overwrite,
+        delCondition,
+      });
       const serverLast = normalizeLastAction(serverData?.lastAction);
       if (serverLast && serverLast > updatedState.lastAction) {
         const formattedServerData = {

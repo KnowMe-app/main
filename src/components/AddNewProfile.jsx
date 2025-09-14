@@ -271,11 +271,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     cacheFetchedUsers({ [updatedState.userId]: updatedState }, cacheLoad2Users, filters);
     setUsers(prev => ({ ...prev, [updatedState.userId]: updatedState }));
 
+    const formattedLastDelivery = formatDateToServer(
+      formatDateAndFormula(updatedState.lastDelivery)
+    );
+
     const syncedState = {
       ...updatedState,
-      lastDelivery: formatDateToServer(
-        formatDateAndFormula(updatedState.lastDelivery)
-      ),
+      ...(formattedLastDelivery ? { lastDelivery: formattedLastDelivery } : {}),
     };
 
     if (syncedState?.userId?.length > 20) {
@@ -300,13 +302,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         )
       );
 
-      await updateDataInNewUsersRTDB(syncedState.userId, cleanedStateForNewUsers, 'update');
+      await updateDataInNewUsersRTDB(
+        syncedState.userId,
+        cleanedStateForNewUsers,
+        'update'
+      );
     } else {
       if (newState) {
+        const newStateWithDelivery = formattedLastDelivery
+          ? { ...newState, lastDelivery: formattedLastDelivery }
+          : { ...newState };
         await updateDataInNewUsersRTDB(
           syncedState.userId,
-          { ...newState, lastDelivery: syncedState.lastDelivery },
-          'update',
+          newStateWithDelivery,
+          'update'
         );
       } else {
         await updateDataInNewUsersRTDB(syncedState.userId, syncedState, 'update');

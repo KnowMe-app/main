@@ -30,11 +30,22 @@ export const handleChange = (
     const clickFlag = value;
     const opts = click || {};
     const toast = options === undefined ? false : isToastOn;
+    const formattedEntries = Object.entries(updates).map(([k, v]) => [k, formatValue(k, v)]);
     const formatted = Object.fromEntries(
-      Object.entries(updates).map(([k, v]) => [k, formatValue(k, v)])
+      formattedEntries.filter(([k, v]) => !(k === 'lastDelivery' && !v))
     );
+    const removeKeys = formattedEntries
+      .filter(([k, v]) => k === 'lastDelivery' && !v)
+      .map(([k]) => k);
 
-    if (setState) setState(prev => ({ ...prev, ...formatted }));
+    if (setState)
+      setState(prev => {
+        const newState = { ...prev, ...formatted };
+        removeKeys.forEach(key => {
+          delete newState[key];
+        });
+        return newState;
+      });
 
     const applyUpdates = prevState => {
       const isMultiple =
@@ -44,6 +55,9 @@ export const handleChange = (
 
       if (!isMultiple) {
         const newState = { ...prevState, ...formatted };
+        removeKeys.forEach(key => {
+          delete newState[key];
+        });
         clickFlag &&
           handleSubmit(
             { ...newState, userId: userId || newState.userId },
@@ -59,6 +73,11 @@ export const handleChange = (
             ...formatted,
           },
         };
+        removeKeys.forEach(key => {
+          if (newState[userId]) {
+            delete newState[userId][key];
+          }
+        });
         clickFlag &&
           handleSubmit({ ...newState[userId], userId }, 'overwrite', toast);
         return newState;
@@ -86,7 +105,16 @@ export const handleChange = (
 
   const newValue = formatValue(key, value);
 
-  if (setState) setState(prev => ({ ...prev, [key]: newValue }));
+  if (setState)
+    setState(prev => {
+      const newState = { ...prev };
+      if (key === 'lastDelivery' && !newValue) {
+        delete newState[key];
+      } else {
+        newState[key] = newValue;
+      }
+      return newState;
+    });
 
   if (setState) {
     setUsers(prevState => {
@@ -99,7 +127,12 @@ export const handleChange = (
         Object.keys(prevState).every(id => typeof prevState[id] === 'object');
 
       if (!isMultiple) {
-        const newState = { ...prevState, [key]: newValue };
+        const newState = { ...prevState };
+        if (key === 'lastDelivery' && !newValue) {
+          delete newState[key];
+        } else {
+          newState[key] = newValue;
+        }
         click &&
           handleSubmit(
             { ...newState, userId: userId || newState.userId },
@@ -112,7 +145,12 @@ export const handleChange = (
           ...prevState,
           [userId]: {
             ...prevState[userId],
-            [key]: newValue,
+            ...(key === 'lastDelivery' && !newValue
+              ? (() => {
+                  const { [key]: _, ...rest } = prevState[userId];
+                  return rest;
+                })()
+              : { [key]: newValue }),
           },
         };
         click &&
@@ -126,7 +164,12 @@ export const handleChange = (
         ...prevState,
         [userId]: {
           ...prevState[userId],
-          [key]: newValue,
+          ...(key === 'lastDelivery' && !newValue
+            ? (() => {
+                const { [key]: _, ...rest } = prevState[userId];
+                return rest;
+              })()
+            : { [key]: newValue }),
         },
       };
       click &&
@@ -176,6 +219,8 @@ export const handleSubmit = (userData, condition, isToastOn) => {
   const uploadedInfo = { ...userData };
   if (uploadedInfo.lastDelivery) {
     uploadedInfo.lastDelivery = formatDateToServer(uploadedInfo.lastDelivery);
+  } else {
+    delete uploadedInfo.lastDelivery;
   }
 
   // Оновлюємо поле lastAction поточною датою в мілісекундах
@@ -225,6 +270,8 @@ export const handleSubmitAll = async (userData, overwrite) => {
     makeUploadedInfo(existingData, userData, overwrite) || {};
   if (uploadedInfo.lastDelivery) {
     uploadedInfo.lastDelivery = formatDateToServer(uploadedInfo.lastDelivery);
+  } else {
+    delete uploadedInfo.lastDelivery;
   }
 
   uploadedInfo.lastAction = Date.now();
