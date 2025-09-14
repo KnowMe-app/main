@@ -227,7 +227,9 @@ const EditProfile = () => {
           setIsToastOn,
         )}
         {state.cycleStatus === 'stimulation' && (
-          <StimulationSchedule userData={state} setState={setState} isToastOn={isToastOn} />
+          <div style={{ padding: '7px', position: 'relative', marginTop: '8px' }}>
+            <StimulationSchedule userData={state} setState={setState} isToastOn={isToastOn} />
+          </div>
         )}
       </div>
       <ProfileForm
