@@ -17,7 +17,6 @@ import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
 import { fetchUserById } from '../config';
 import { updateCard } from 'utils/cardsStorage';
-import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import toast from 'react-hot-toast';
 
@@ -168,30 +167,11 @@ export const renderTopBlock = (
           };
 
           try {
-            const cached = getCard(userData.userId);
-            let updated = cached;
-            let source = 'cache';
-
             const fresh = await fetchUserById(userData.userId);
             if (fresh) {
-              const cachedTs = normalizeLastAction(cached?.lastAction);
-              const freshTs = normalizeLastAction(fresh.lastAction);
-              const isNewer = !cached || !cachedTs || !freshTs || freshTs > cachedTs;
+              toast.success('Data loaded from backend');
 
-              if (isNewer) {
-                updated = fresh;
-                source = 'backend';
-              }
-            }
-
-            if (updated) {
-              toast.success(
-                source === 'backend'
-                  ? 'Data loaded from backend'
-                  : 'Data loaded from cache'
-              );
-
-              updated = updateCard(userData.userId, updated);
+              const updated = updateCard(userData.userId, fresh);
 
               if (setUsers) {
                 setUsers(prev => {

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import styled, { css } from 'styled-components';
 import Photos from './Photos';
 import { inputUpdateValue } from './inputUpdatedValue';
@@ -8,6 +8,7 @@ import { pickerFieldsExtended as pickerFields } from './formFields';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import toast from 'react-hot-toast';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -126,11 +127,22 @@ export const ProfileForm = ({
   handleSubmit,
   handleClear,
   handleDelKeyValue,
+  dataSource,
 }) => {
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
   const [customField, setCustomField] = useState({ key: '', value: '' });
   const [collection, setCollection] = useState('newUsers');
+
+  useEffect(() => {
+    if (dataSource) {
+      toast.success(
+        dataSource === 'backend'
+          ? 'Data loaded from backend'
+          : 'Data loaded from local storage'
+      );
+    }
+  }, [dataSource]);
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
