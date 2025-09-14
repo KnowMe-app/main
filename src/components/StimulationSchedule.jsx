@@ -49,13 +49,11 @@ const adjustForward = (date, base) => {
 
 const adjustBackward = (date, base) => {
   let day = diffDays(date, base);
-  let moved = false;
   while (isWeekend(date)) {
     date.setDate(date.getDate() - 1);
     day = diffDays(date, base);
-    moved = true;
   }
-  return { date, day, sign: moved ? '-' : '' };
+  return { date, day, sign: '' };
 };
 
 const weekdayNames = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
