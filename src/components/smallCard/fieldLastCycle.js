@@ -3,12 +3,7 @@ import { handleChange, handleSubmit } from './actions';
 import { formatDateToDisplay, formatDateToServer } from 'components/inputValidations';
 import { generateSchedule, serializeSchedule } from '../StimulationSchedule';
 import InfoModal from 'components/InfoModal';
-import {
-  UnderlinedInput,
-  AttentionButton,
-  AttentionDiv,
-  OrangeBtn,
-} from 'components/styles';
+import { UnderlinedInput, AttentionButton, AttentionDiv, OrangeBtn } from 'components/styles';
 
 const calculateNextDate = dateString => {
   if (!dateString) return '';
@@ -76,14 +71,10 @@ const formatDate = date => {
 };
 
 export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
-  const [status, setStatus] = React.useState(
-    userData.cycleStatus || 'menstruation',
-  );
+  const [status, setStatus] = React.useState(userData.cycleStatus || 'menstruation');
   const submittedRef = React.useRef(false);
   const prevDataRef = React.useRef(null);
-  const [localValue, setLocalValue] = React.useState(
-    formatDateToDisplay(userData.lastCycle) || ''
-  );
+  const [localValue, setLocalValue] = React.useState(formatDateToDisplay(userData.lastCycle) || '');
   const [showConfirm, setShowConfirm] = React.useState(false);
   const pendingValueRef = React.useRef('');
 
@@ -92,9 +83,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   const weeksSinceLastCycle = React.useMemo(() => {
     const lastCycleDate = parseDate(userData.lastCycle);
     if (!lastCycleDate) return 0;
-    return Math.floor(
-      (Date.now() - lastCycleDate.getTime()) / (7 * 24 * 60 * 60 * 1000),
-    );
+    return Math.floor((Date.now() - lastCycleDate.getTime()) / (7 * 24 * 60 * 60 * 1000));
   }, [userData.lastCycle]);
 
   React.useEffect(() => {
@@ -104,6 +93,17 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   React.useEffect(() => {
     setLocalValue(formatDateToDisplay(userData.lastCycle) || '');
   }, [userData.lastCycle]);
+
+  React.useEffect(() => {
+    if (userData.cycleStatus === 'pregnant' && !prevDataRef.current) {
+      prevDataRef.current = {
+        lastCycle: userData.lastCycle,
+        lastDelivery: userData.lastDelivery,
+        getInTouch: userData.getInTouch,
+        ownKids: userData.ownKids,
+      };
+    }
+  }, [userData]);
 
   const processLastCycle = value => {
     const val = value.trim();
@@ -122,9 +122,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         const existingLastDelivery = parseDate(userData.lastDelivery);
         const today = new Date();
         const hasUpcomingDelivery = existingLastDelivery && existingLastDelivery > today;
-        const ownKids = hasUpcomingDelivery
-          ? Number(userData.ownKids || 0)
-          : Number(userData.ownKids || 0) + 1;
+        const ownKids = hasUpcomingDelivery ? Number(userData.ownKids || 0) : Number(userData.ownKids || 0) + 1;
 
         const lastDeliveryFormatted = formatDateToServer(formatDate(lastDelivery));
         const getInTouchFormatted = formatDateToServer(formatDate(getInTouch));
@@ -147,7 +145,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             cycleStatus: status,
           },
           'overwrite',
-          isToastOn,
+          isToastOn
         );
         submittedRef.current = true;
       } else {
@@ -155,11 +153,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           lastCycle: lastCycleFormatted,
           cycleStatus: status,
         });
-        handleSubmit(
-          { ...userData, lastCycle: lastCycleFormatted, cycleStatus: status },
-          'overwrite',
-          isToastOn,
-        );
+        handleSubmit({ ...userData, lastCycle: lastCycleFormatted, cycleStatus: status }, 'overwrite', isToastOn);
         submittedRef.current = true;
       }
     } else {
@@ -168,11 +162,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         lastCycle: serverFormattedDate,
         cycleStatus: status,
       });
-      handleSubmit(
-        { ...userData, lastCycle: serverFormattedDate, cycleStatus: status },
-        'overwrite',
-        isToastOn,
-      );
+      handleSubmit({ ...userData, lastCycle: serverFormattedDate, cycleStatus: status }, 'overwrite', isToastOn);
       submittedRef.current = true;
     }
   };
@@ -183,27 +173,10 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   const handleStatusClick = () => {
     setStatus(prev => {
-      const newState =
-        prev === 'menstruation'
-          ? 'stimulation'
-          : prev === 'stimulation'
-          ? 'pregnant'
-          : 'menstruation';
+      const newState = prev === 'menstruation' ? 'stimulation' : prev === 'stimulation' ? 'pregnant' : 'menstruation';
       if (newState === 'stimulation') {
-        handleChange(
-          setUsers,
-          setState,
-          userData.userId,
-          { stimulation: true, cycleStatus: 'stimulation' },
-          true,
-          {},
-          isToastOn,
-        );
-        handleSubmit(
-          { ...userData, stimulation: true, cycleStatus: 'stimulation' },
-          'overwrite',
-          isToastOn,
-        );
+        handleChange(setUsers, setState, userData.userId, { stimulation: true, cycleStatus: 'stimulation' }, true, {}, isToastOn);
+        handleSubmit({ ...userData, stimulation: true, cycleStatus: 'stimulation' }, 'overwrite', isToastOn);
         submittedRef.current = true;
       } else if (prev === 'stimulation') {
         const updates = { stimulation: false, cycleStatus: newState };
@@ -212,15 +185,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           updates.stimulationSchedule = undefined;
           submitObj.stimulationSchedule = undefined;
         }
-        handleChange(
-          setUsers,
-          setState,
-          userData.userId,
-          updates,
-          true,
-          {},
-          isToastOn,
-        );
+        handleChange(setUsers, setState, userData.userId, updates, true, {}, isToastOn);
         handleSubmit(submitObj, 'overwrite', isToastOn);
         submittedRef.current = true;
       }
@@ -244,9 +209,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           const existingLastDelivery = parseDate(userData.lastDelivery);
           const today = new Date();
           const hasUpcomingDelivery = existingLastDelivery && existingLastDelivery > today;
-          const ownKids = hasUpcomingDelivery
-            ? Number(userData.ownKids || 0)
-            : Number(userData.ownKids || 0) + 1;
+          const ownKids = hasUpcomingDelivery ? Number(userData.ownKids || 0) : Number(userData.ownKids || 0) + 1;
 
           const lastCycleFormatted = formatDateToServer(formatDate(lastCycleDate));
           const lastDeliveryFormatted = formatDateToServer(formatDate(lastDelivery));
@@ -270,20 +233,14 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
               cycleStatus: 'pregnant',
             },
             'overwrite',
-            isToastOn,
+            isToastOn
           );
           submittedRef.current = true;
         }
-      } else if (prev === 'pregnant' && prevDataRef.current) {
-        handleChange(setUsers, setState, userData.userId, {
-          ...prevDataRef.current,
-          cycleStatus: newState,
-        });
-        handleSubmit(
-          { ...userData, ...prevDataRef.current, cycleStatus: newState },
-          'overwrite',
-          isToastOn,
-        );
+      } else if (prev === 'pregnant') {
+        const updates = prevDataRef.current ? { ...prevDataRef.current, cycleStatus: newState } : { cycleStatus: newState };
+        handleChange(setUsers, setState, userData.userId, updates);
+        handleSubmit({ ...userData, ...updates }, 'overwrite', isToastOn);
         submittedRef.current = true;
         prevDataRef.current = null;
       }
@@ -298,15 +255,9 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
       if (!baseDate) return;
       const sched = generateSchedule(baseDate);
       const scheduleString = serializeSchedule(sched);
-      handleChange(
-        setUsers,
-        setState,
-        userData.userId,
-        'stimulationSchedule',
-        scheduleString,
-      );
+      handleChange(setUsers, setState, userData.userId, 'stimulationSchedule', scheduleString);
     },
-    [setUsers, setState, userData.userId, userData.stimulationSchedule],
+    [setUsers, setState, userData.userId, userData.stimulationSchedule]
   );
 
   const handleBlur = () => {
@@ -362,21 +313,8 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   const saveSchedule = React.useCallback(() => {
     const scheduleString = userData.stimulationSchedule || '';
-    handleChange(
-      setUsers,
-      setState,
-      userData.userId,
-      'stimulationSchedule',
-      scheduleString,
-      false,
-      {},
-      isToastOn,
-    );
-    handleSubmit(
-      { ...userData, stimulationSchedule: scheduleString },
-      'overwrite',
-      isToastOn,
-    );
+    handleChange(setUsers, setState, userData.userId, 'stimulationSchedule', scheduleString, false, {}, isToastOn);
+    handleSubmit({ ...userData, stimulationSchedule: scheduleString }, 'overwrite', isToastOn);
   }, [setUsers, setState, userData, isToastOn]);
 
   const handleSetToday = () => {
@@ -424,10 +362,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             color: 'white',
           }}
         />
-        <OrangeBtn
-          onClick={handleSetToday}
-          style={{ width: '25px', height: '25px', marginLeft: '5px' }}
-        >
+        <OrangeBtn onClick={handleSetToday} style={{ width: '25px', height: '25px', marginLeft: '5px' }}>
           T
         </OrangeBtn>
         {status === 'pregnant' ? (
@@ -454,10 +389,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             >
               стимуляція
             </AttentionDiv>
-            <AttentionButton
-              onClick={saveSchedule}
-              style={{ backgroundColor: 'orange' }}
-            >
+            <AttentionButton onClick={saveSchedule} style={{ backgroundColor: 'orange' }}>
               ↻
             </AttentionButton>
           </div>
@@ -476,18 +408,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           <React.Fragment>
             <span style={{ color: 'white' }}>-</span>
             <AttentionButton
-              onClick={() =>
-                handleChange(
-                  setUsers,
-                  setState,
-                  userData.userId,
-                  'getInTouch',
-                  nextCycle,
-                  true,
-                  {},
-                  isToastOn,
-                )
-              }
+              onClick={() => handleChange(setUsers, setState, userData.userId, 'getInTouch', nextCycle, true, {}, isToastOn)}
               style={{ backgroundColor: '#007BFF' }}
             >
               {nextCycle.slice(0, 5)}
@@ -510,4 +431,3 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     </React.Fragment>
   );
 };
-
