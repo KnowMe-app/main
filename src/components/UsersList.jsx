@@ -146,7 +146,7 @@ const UserCard = ({
           setShowInfoModal,
           setState,
           setUserIdToDelete,
-          'isFromListOfUsers',
+          true,
           favoriteUsers,
           setFavoriteUsers,
           dislikeUsers,

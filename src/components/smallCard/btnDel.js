@@ -5,7 +5,7 @@ export const btnDel = (
   userData,
   setShowInfoModal,
   setUserIdToDelete,
-  isFromListOfUsers,
+  isFromListOfUsers = false,
 ) => (
   <CardMenuBtn
     style={{
@@ -14,7 +14,7 @@ export const btnDel = (
     }}
     onClick={e => {
       e.stopPropagation(); // Запобігаємо активації кліку картки
-      if (isFromListOfUsers === 'isFromListOfUsers') {
+      if (isFromListOfUsers) {
         setUserIdToDelete(userData.userId);
       }
       setShowInfoModal('delConfirm');

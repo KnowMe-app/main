@@ -154,7 +154,8 @@ export const renderTopBlock = (
       <FieldComment userData={userData} setUsers={setUsers} setState={setState} isToastOn={isToastOn} />
 
       <div
-        onClick={async () => {
+        onClick={async e => {
+          e.stopPropagation();
           const details = document.getElementById(userData.userId);
           const toggleDetails = () => {
             if (details) {
@@ -191,7 +192,7 @@ export const renderTopBlock = (
                 });
               }
 
-              if (setState) {
+              if (setState && !isFromListOfUsers) {
                 setState(prev => ({ ...prev, ...updated }));
               }
 
