@@ -78,16 +78,27 @@ const renderFields = (
     }
 
     return (
-      <div key={nestedKey}>
-        <strong>{key}</strong>
+      <div
+        key={nestedKey}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+          width: '100%',
+        }}
+      >
+        <span style={{ wordBreak: 'break-word', flex: '1 1 auto' }}>
+          <strong>{key}</strong>
+          {': '}
+          {value != null ? value.toString() : '—'}
+        </span>
         <button
-          style={{ marginLeft: '5px', cursor: 'pointer' }}
-          onClick={() => removeField(userId, nestedKey, setUsers, setState, isToastOn)}
+          style={{ cursor: 'pointer' }}
+          onClick={() => removeField(userId, nestedKey, setUsers, setState, isToastOn, nestedKey)}
         >
           X
         </button>
-        {': '}
-        {value != null ? value.toString() : '—'}
       </div>
     );
   });

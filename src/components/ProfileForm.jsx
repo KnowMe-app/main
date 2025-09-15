@@ -90,7 +90,7 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
           <strong>{key}</strong>
           <button
             style={removeButtonStyle}
-            onClick={() => removeField(state?.userId, nestedKey, setState)}
+            onClick={() => removeField(state?.userId, nestedKey, setState, undefined, false, nestedKey)}
           >
             X
           </button>
@@ -104,7 +104,7 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
                     <strong>[{idx}]</strong>
                     <button
                       style={removeButtonStyle}
-                      onClick={() => removeField(state?.userId, arrayKey, setState)}
+                      onClick={() => removeField(state?.userId, arrayKey, setState, undefined, false, arrayKey)}
                     >
                       X
                     </button>
@@ -121,7 +121,7 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
                   <strong>[{idx}]</strong>
                   <button
                     style={removeButtonStyle}
-                    onClick={() => removeField(state?.userId, arrayKey, setState)}
+                    onClick={() => removeField(state?.userId, arrayKey, setState, undefined, false, arrayKey)}
                   >
                     X
                   </button>
@@ -141,7 +141,7 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
           <strong>{key}</strong>
           <button
             style={removeButtonStyle}
-            onClick={() => removeField(state?.userId, nestedKey, setState)}
+            onClick={() => removeField(state?.userId, nestedKey, setState, undefined, false, nestedKey)}
           >
             X
           </button>
@@ -156,7 +156,7 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
         <strong>{key}</strong>
         <button
           style={removeButtonStyle}
-          onClick={() => removeField(state?.userId, nestedKey, setState)}
+          onClick={() => removeField(state?.userId, nestedKey, setState, undefined, false, nestedKey)}
         >
           X
         </button>

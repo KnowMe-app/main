@@ -24,18 +24,82 @@ export const removeCardFromList = (cardId, listKey) => {
   setIdsForQuery(listKey, ids);
 };
 
+const removeNestedValue = (current, segments, depth = 0) => {
+  if (current === undefined || current === null) {
+    return { changed: false, value: current };
+  }
+
+  const key = segments[depth];
+  const isLast = depth === segments.length - 1;
+
+  if (Array.isArray(current)) {
+    if (!/^\d+$/.test(key)) {
+      return { changed: false, value: current };
+    }
+
+    const index = Number(key);
+    if (index < 0 || index >= current.length) {
+      return { changed: false, value: current };
+    }
+
+    if (isLast) {
+      const next = current.slice();
+      next.splice(index, 1);
+      return { changed: true, value: next };
+    }
+
+    const { changed, value } = removeNestedValue(current[index], segments, depth + 1);
+    if (!changed) {
+      return { changed: false, value: current };
+    }
+
+    const next = current.slice();
+    next[index] = value;
+    return { changed: true, value: next };
+  }
+
+  if (typeof current === 'object') {
+    if (!Object.prototype.hasOwnProperty.call(current, key)) {
+      return { changed: false, value: current };
+    }
+
+    if (isLast) {
+      const { [key]: _, ...rest } = current;
+      return { changed: true, value: rest };
+    }
+
+    const { changed, value } = removeNestedValue(current[key], segments, depth + 1);
+    if (!changed) {
+      return { changed: false, value: current };
+    }
+
+    return { changed: true, value: { ...current, [key]: value } };
+  }
+
+  return { changed: false, value: current };
+};
+
 export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   const cards = loadCards();
-  const updatedCard = {
+  let updatedCard = {
     ...cards[cardId],
     ...data,
     userId: cardId,
     lastAction: normalizeLastAction(data.lastAction) || Date.now(),
   };
   delete updatedCard.id;
-  removeKeys.forEach(key => {
-    delete updatedCard[key];
-  });
+
+  removeKeys
+    .map(key => String(key).trim())
+    .filter(key => key && key !== 'userId')
+    .forEach(path => {
+      const segments = path.split('.');
+      const { changed, value } = removeNestedValue(updatedCard, segments);
+      if (changed) {
+        updatedCard = value;
+      }
+    });
+
   cards[cardId] = updatedCard;
   saveCards(cards);
   touchCardInQueries(cardId);

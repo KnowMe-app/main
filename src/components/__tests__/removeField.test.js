@@ -27,11 +27,14 @@ describe('removeField', () => {
   let actions;
   let removeField;
   let config;
+  let cache;
 
   beforeEach(() => {
     jest.resetModules();
     config = require('components/config');
     config.updateDataInNewUsersRTDB.mockClear();
+    cache = require('utils/cache');
+    cache.updateCachedUser.mockClear();
     actions = require('../smallCard/actions');
     removeField = actions.removeField;
   });
@@ -54,6 +57,10 @@ describe('removeField', () => {
       userId,
       expect.objectContaining({ ownKids: ['first', 'third'] }),
       'update',
+    );
+    expect(cache.updateCachedUser).toHaveBeenCalledWith(
+      expect.objectContaining({ userId }),
+      expect.objectContaining({ removeKeys: expect.arrayContaining(['ownKids.1']) }),
     );
   });
 
@@ -99,6 +106,39 @@ describe('removeField', () => {
       userId,
       expect.objectContaining({ ownKids: ['alpha', 'gamma'] }),
       'update',
+    );
+    expect(cache.updateCachedUser).toHaveBeenCalledWith(
+      expect.objectContaining({ userId }),
+      expect.objectContaining({ removeKeys: expect.arrayContaining(['ownKids.1']) }),
+    );
+  });
+
+  test('removes top-level fields from backend and cache', () => {
+    const userId = 'user-789';
+    let usersState = {
+      [userId]: {
+        userId,
+        myComment: 'to remove',
+        other: 'keep',
+      },
+    };
+
+    const setUsers = jest.fn(updater => {
+      usersState = updater(usersState);
+      return usersState;
+    });
+
+    removeField(userId, 'myComment', setUsers);
+
+    expect(usersState[userId].myComment).toBeUndefined();
+    expect(config.updateDataInNewUsersRTDB).toHaveBeenCalledWith(
+      userId,
+      expect.objectContaining({ myComment: null }),
+      'update',
+    );
+    expect(cache.updateCachedUser).toHaveBeenCalledWith(
+      expect.objectContaining({ userId }),
+      expect.objectContaining({ removeKeys: expect.arrayContaining(['myComment']) }),
     );
   });
 });
