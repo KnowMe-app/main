@@ -192,38 +192,73 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   const saveSchedule = React.useCallback(
     sched => {
       const scheduleString = serializeSchedule(sched);
+      const defaultString = base
+        ? serializeSchedule(generateSchedule(base))
+        : '';
+      const isDefault = base && scheduleString === defaultString;
       if (setUsers && setState) {
-        handleChange(
-          setUsers,
-          setState,
-          userData.userId,
-          'stimulationSchedule',
-          scheduleString,
-          true,
-          {},
-          isToastOn,
-        );
+        if (isDefault) {
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            { stimulationSchedule: undefined },
+            true,
+            {},
+            isToastOn,
+          );
+        } else {
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            'stimulationSchedule',
+            scheduleString,
+            true,
+            {},
+            isToastOn,
+          );
+        }
       } else if (setState) {
-        setState(prev => ({ ...prev, stimulationSchedule: scheduleString }));
-        handleSubmit(
-          { ...userData, stimulationSchedule: scheduleString },
-          'overwrite',
-          isToastOn,
-        );
+        if (isDefault) {
+          setState(prev => {
+            const copy = { ...prev };
+            delete copy.stimulationSchedule;
+            return copy;
+          });
+        } else {
+          setState(prev => ({ ...prev, stimulationSchedule: scheduleString }));
+        }
+        const submitObj = { ...userData };
+        if (!isDefault) submitObj.stimulationSchedule = scheduleString;
+        else delete submitObj.stimulationSchedule;
+        handleSubmit(submitObj, 'overwrite', isToastOn);
       } else if (setUsers) {
-        handleChange(
-          setUsers,
-          null,
-          userData.userId,
-          'stimulationSchedule',
-          scheduleString,
-          true,
-          {},
-          isToastOn,
-        );
+        if (isDefault) {
+          handleChange(
+            setUsers,
+            null,
+            userData.userId,
+            { stimulationSchedule: undefined },
+            true,
+            {},
+            isToastOn,
+          );
+        } else {
+          handleChange(
+            setUsers,
+            null,
+            userData.userId,
+            'stimulationSchedule',
+            scheduleString,
+            true,
+            {},
+            isToastOn,
+          );
+        }
       }
     },
-    [setUsers, setState, userData, isToastOn],
+    [setUsers, setState, userData, isToastOn, base],
   );
 
   React.useEffect(() => {
