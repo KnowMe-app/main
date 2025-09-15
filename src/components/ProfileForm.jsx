@@ -9,6 +9,7 @@ import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import toast from 'react-hot-toast';
+import { removeField } from './smallCard/actions';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -30,8 +31,10 @@ export const getFieldsToRender = state => {
   ];
 };
 
+const removeButtonStyle = { marginLeft: '5px', cursor: 'pointer' };
+
 // Рекурсивне відображення всіх полів користувача, включно з вкладеними об'єктами та масивами
-const renderAllFields = (data, parentKey = '') => {
+const renderAllFields = (data, parentKey = '', state, setState) => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderAllFields:', data);
     return null;
@@ -84,20 +87,49 @@ const renderAllFields = (data, parentKey = '') => {
     if (Array.isArray(value)) {
       return (
         <div key={nestedKey}>
-          <strong>{key}:</strong>
+          <strong>{key}</strong>
+          <button
+            style={removeButtonStyle}
+            onClick={() => removeField(state?.userId, nestedKey, setState)}
+          >
+            X
+          </button>
+          {': '}
           <div style={{ marginLeft: '20px' }}>
-            {value.map((item, idx) =>
-              typeof item === 'object' && item !== null ? (
-                <div key={`${nestedKey}[${idx}]`}>
-                  <strong>[{idx}]:</strong>
-                  <div style={{ marginLeft: '20px' }}>{renderAllFields(item, `${nestedKey}[${idx}]`)}</div>
+            {value.map((item, idx) => {
+              const arrayKey = `${nestedKey}.${idx}`;
+              if (typeof item === 'object' && item !== null) {
+                return (
+                  <div key={arrayKey}>
+                    <strong>[{idx}]</strong>
+                    <button
+                      style={removeButtonStyle}
+                      onClick={() => removeField(state?.userId, arrayKey, setState)}
+                    >
+                      X
+                    </button>
+                    {': '}
+                    <div style={{ marginLeft: '20px' }}>
+                      {renderAllFields(item, arrayKey, state, setState)}
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={arrayKey}>
+                  <strong>[{idx}]</strong>
+                  <button
+                    style={removeButtonStyle}
+                    onClick={() => removeField(state?.userId, arrayKey, setState)}
+                  >
+                    X
+                  </button>
+                  {': '}
+                  {item != null ? item.toString() : '—'}
                 </div>
-              ) : (
-                <div key={`${nestedKey}[${idx}]`}>
-                  <strong>[{idx}]:</strong> {item != null ? item.toString() : '—'}
-                </div>
-              ),
-            )}
+              );
+            })}
           </div>
         </div>
       );
@@ -106,15 +138,30 @@ const renderAllFields = (data, parentKey = '') => {
     if (typeof value === 'object' && value !== null) {
       return (
         <div key={nestedKey}>
-          <strong>{key}:</strong>
-          <div style={{ marginLeft: '20px' }}>{renderAllFields(value, nestedKey)}</div>
+          <strong>{key}</strong>
+          <button
+            style={removeButtonStyle}
+            onClick={() => removeField(state?.userId, nestedKey, setState)}
+          >
+            X
+          </button>
+          {': '}
+          <div style={{ marginLeft: '20px' }}>{renderAllFields(value, nestedKey, state, setState)}</div>
         </div>
       );
     }
 
     return (
       <div key={nestedKey}>
-        <strong>{key}:</strong> {value != null ? value.toString() : '—'}
+        <strong>{key}</strong>
+        <button
+          style={removeButtonStyle}
+          onClick={() => removeField(state?.userId, nestedKey, setState)}
+        >
+          X
+        </button>
+        {': '}
+        {value != null ? value.toString() : '—'}
       </div>
     );
   });
@@ -198,7 +245,7 @@ export const ProfileForm = ({
           id={state.userId}
           style={{ display: 'none', textAlign: 'left', marginBottom: '8px' }}
         >
-          {renderAllFields(state)}
+          {renderAllFields(state, '', state, setState)}
         </div>
       )}
       {sortedFieldsToRender
