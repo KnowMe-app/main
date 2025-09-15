@@ -6,11 +6,10 @@ import StimulationSchedule from './StimulationSchedule';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnEdit } from './smallCard/btnEdit';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
-import { updateCard } from '../utils/cardsStorage';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
 
 // Компонент для рендерингу полів користувача
-const renderFields = (data, parentKey = '', backendKeys = new Set(), removeField) => {
+const renderFields = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderFields:', data);
     return null;
@@ -20,7 +19,6 @@ const renderFields = (data, parentKey = '', backendKeys = new Set(), removeField
   if (typeof extendedData.birth === 'string') {
     extendedData.age = utilCalculateAge(extendedData.birth);
   }
-  delete extendedData._backendKeys;
 
   const sortedKeys = Object.keys(extendedData).sort((a, b) => {
     const priority = ['name', 'surname', 'fathersname', 'birth', 'blood', 'maritalStatus', 'csection', 'weight', 'height', 'ownKids', 'lastDelivery', 'lastCycle', 'facebook', 'instagram', 'telegram', 'phone', 'tiktok', 'vk', 'writer', 'myComment', 'region', 'city'];
@@ -33,7 +31,7 @@ const renderFields = (data, parentKey = '', backendKeys = new Set(), removeField
     return indexA - indexB;
   });
 
-  return sortedKeys.map(key => {
+  return sortedKeys.map((key) => {
     const nestedKey = parentKey ? `${parentKey}.${key}` : key;
     const value = extendedData[key];
 
@@ -51,14 +49,8 @@ const renderFields = (data, parentKey = '', backendKeys = new Set(), removeField
           <strong>{key}:</strong>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '5px' }}>
             {photosArray.map((url, idx) => (
-              <div key={idx} style={{ wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span>{url}</span>
-                <button
-                  onClick={() => removeField(`${nestedKey}.${idx}`)}
-                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'red' }}
-                >
-                  ×
-                </button>
+              <div key={idx} style={{ wordBreak: 'break-all' }}>
+                {url}
               </div>
             ))}
           </div>
@@ -70,30 +62,14 @@ const renderFields = (data, parentKey = '', backendKeys = new Set(), removeField
       return (
         <div key={nestedKey}>
           <strong>{key}:</strong>
-          <div style={{ marginLeft: '20px' }}>{renderFields(value, nestedKey, backendKeys, removeField)}</div>
+          <div style={{ marginLeft: '20px' }}>{renderFields(value, nestedKey)}</div>
         </div>
       );
     }
 
     return (
-      <div
-        key={nestedKey}
-        style={{
-          color: backendKeys.has(nestedKey) ? 'green' : 'inherit',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-        }}
-      >
-        <span>
-          <strong>{key}:</strong> {value != null ? value.toString() : '—'}
-        </span>
-        <button
-          onClick={() => removeField(nestedKey)}
-          style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'red' }}
-        >
-          ×
-        </button>
+      <div key={nestedKey}>
+        <strong>{key}:</strong> {value != null ? value.toString() : '—'}
       </div>
     );
   });
@@ -113,53 +89,6 @@ const UserCard = ({
   currentFilter,
   isDateInRange,
 }) => {
-  const removeField = path => {
-    const keys = path.split('.');
-    setUsers(prev => {
-      const copy = { ...prev };
-      const user = JSON.parse(JSON.stringify(copy[userData.userId]));
-      let obj = user;
-      for (let i = 0; i < keys.length - 1; i += 1) {
-        obj = obj[keys[i]];
-        if (obj === undefined) return prev;
-      }
-      const last = keys[keys.length - 1];
-      if (Array.isArray(obj)) {
-        obj.splice(Number(last), 1);
-      } else {
-        delete obj[last];
-      }
-      if (Array.isArray(user._backendKeys)) {
-        user._backendKeys = user._backendKeys.filter(k => k !== path && !k.startsWith(`${path}.`));
-      }
-      const topKey = keys[0];
-      copy[userData.userId] = user;
-      if (keys.length === 1) {
-        updateCard(userData.userId, {}, undefined, [topKey]);
-      } else {
-        updateCard(userData.userId, { [topKey]: user[topKey] });
-      }
-      return copy;
-    });
-    if (setState) {
-      setState(prev => {
-        const updated = JSON.parse(JSON.stringify(prev));
-        let obj = updated;
-        for (let i = 0; i < keys.length - 1; i += 1) {
-          obj = obj[keys[i]];
-          if (obj === undefined) return updated;
-        }
-        const last = keys[keys.length - 1];
-        if (Array.isArray(obj)) {
-          obj.splice(Number(last), 1);
-        } else {
-          delete obj[last];
-        }
-        return updated;
-      });
-    }
-  };
-
   return (
     <div>
       <div style={{ ...coloredCard(), marginBottom: '8px' }}>
@@ -184,7 +113,7 @@ const UserCard = ({
         </div>
       )}
       <div id={userData.userId} style={{ display: 'none' }}>
-        {renderFields(userData, '', new Set(userData._backendKeys || []), removeField)}
+        {renderFields(userData)}
       </div>
     </div>
   );
