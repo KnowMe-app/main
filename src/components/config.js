@@ -623,7 +623,6 @@ export const makeNewUser = async searchedValue => {
     userId: newUserId,
     createdAt,
     createdAt2,
-    cycleStatus: 'menstruation',
   };
 
   if (searchKey !== 'userId') {
@@ -1009,13 +1008,15 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     if (!skipIndexing) {
       // Перебір ключів та їх обробка
       for (const key of keysToCheck) {
-        const isEmptyString = uploadedInfo[key] === '';
+        const shouldRemoveKey = uploadedInfo[key] === '' || uploadedInfo[key] === null;
 
-        if (isEmptyString) {
-          console.log(`${key} має пусте значення. Видаляємо.`);
-          await updateSearchId(key, currentUserData[key], userId, 'remove'); // Видаляємо з searchId
-          uploadedInfo[key] = null; // Видаляємо ключ з newUsers/${userId}
-          continue; // Переходимо до наступного ключа
+        if (shouldRemoveKey) {
+          console.log(`${key} має пусте або null значення. Видаляємо.`);
+          if (currentUserData[key] !== undefined && currentUserData[key] !== null) {
+            await updateSearchId(key, currentUserData[key], userId, 'remove');
+          }
+          uploadedInfo[key] = null;
+          continue;
         }
 
         if (uploadedInfo[key] !== undefined) {

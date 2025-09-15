@@ -200,11 +200,14 @@ export const removeField = (
   setUsers,
   setState,
   isToastOn = false,
+  removedKey = nestedKey,
 ) => {
   const keys = nestedKey.split('.');
 
   const removePath = obj => {
-    if (obj === undefined || obj === null) return obj;
+    if (obj === undefined || obj === null) {
+      return { changed: false, value: obj };
+    }
 
     const removeRecursive = (current, depth) => {
       if (current === undefined || current === null) {
@@ -261,34 +264,57 @@ export const removeField = (
       return { changed: false, value: current };
     };
 
-    const { changed, value } = removeRecursive(obj, 0);
-    return changed ? value : obj;
+    return removeRecursive(obj, 0);
   };
 
-  if (setState) {
-    setState(prev => removePath(prev));
+  if (typeof setState === 'function') {
+    setState(prev => {
+      const { changed, value } = removePath(prev);
+      return changed ? value : prev;
+    });
   }
+
+  if (typeof setUsers !== 'function') {
+    return;
+  }
+
+  const removalKey = removedKey ?? nestedKey;
+  const removalList = removalKey ? [removalKey] : [];
 
   setUsers(prev => {
     const isMultiple =
+      prev &&
       typeof prev === 'object' &&
       !Array.isArray(prev) &&
       Object.keys(prev).every(id => typeof prev[id] === 'object');
 
     if (isMultiple) {
-      const updatedUser = removePath(prev[userId]);
+      const targetUser = prev[userId];
+      const { changed, value } = removePath(targetUser);
+      if (!changed) {
+        return prev;
+      }
+      const updatedUser = value ?? {};
       const newState = { ...prev, [userId]: updatedUser };
-      handleSubmit({ ...updatedUser, userId }, 'overwrite', isToastOn);
+      handleSubmit({ ...updatedUser, userId }, 'overwrite', isToastOn, removalList);
       return newState;
     }
 
-    const newState = removePath(prev);
-    handleSubmit({ ...newState, userId: userId || newState.userId }, 'overwrite', isToastOn);
-    return newState;
+    const { changed, value } = removePath(prev);
+    if (!changed) {
+      return prev;
+    }
+    const updated = value ?? {};
+    const resolvedUserId = userId || updated.userId;
+    if (!resolvedUserId) {
+      return updated;
+    }
+    handleSubmit({ ...updated, userId: resolvedUserId }, 'overwrite', isToastOn, removalList);
+    return updated;
   });
 };
 
-export const handleSubmit = (userData, condition, isToastOn) => {
+export const handleSubmit = (userData, condition, isToastOn, removeKeys = []) => {
   const fieldsForNewUsersOnly = [
     'role',
     'getInTouch',
@@ -327,10 +353,36 @@ export const handleSubmit = (userData, condition, isToastOn) => {
     )
   );
 
-  updateCachedUser({ ...cleanedStateForNewUsers, userId: userData.userId });
+  const removalTargets = Array.isArray(removeKeys)
+    ? removeKeys.map(key => String(key)).filter(Boolean)
+    : [];
+
+  const backendPayload = { ...cleanedStateForNewUsers };
+  const nestedRemovalPayload = {};
+
+  removalTargets.forEach(path => {
+    if (path.includes('.')) {
+      const [topLevel] = path.split('.');
+      if (!(topLevel in backendPayload)) {
+        nestedRemovalPayload[path.replace(/\./g, '/')] = null;
+      }
+    } else if (path !== 'userId') {
+      backendPayload[path] = null;
+    }
+  });
+
+  const payloadForBackend = {
+    ...backendPayload,
+    ...nestedRemovalPayload,
+  };
+
+  updateCachedUser(
+    { ...backendPayload, userId: userData.userId },
+    { removeKeys: removalTargets },
+  );
   void updateDataInNewUsersRTDB(
     userData.userId,
-    cleanedStateForNewUsers,
+    payloadForBackend,
     'update',
   );
   if (isToastOn) {

@@ -79,7 +79,7 @@ const formatDate = date => {
 };
 
 export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
-  const [status, setStatus] = React.useState(userData.cycleStatus || 'menstruation');
+  const [status, setStatus] = React.useState(userData.cycleStatus ?? '');
   const submittedRef = React.useRef(false);
   const [localValue, setLocalValue] = React.useState(formatDateToDisplay(userData.lastCycle) || '');
   const [showConfirm, setShowConfirm] = React.useState(false);
@@ -99,7 +99,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   );
 
   React.useEffect(() => {
-    setStatus(userData.cycleStatus || 'menstruation');
+    setStatus(userData.cycleStatus ?? '');
   }, [userData.cycleStatus]);
 
   React.useEffect(() => {
@@ -109,11 +109,16 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   const processLastCycle = value => {
     const val = value.trim();
     const date = parseDate(val);
+    const normalizedStatus = status || (val ? 'menstruation' : '');
+
+    if (!status && normalizedStatus) {
+      setStatus(normalizedStatus);
+    }
 
     if (date) {
       const lastCycleFormatted = formatDateToServer(formatDate(date));
 
-      if (status === 'pregnant') {
+      if (normalizedStatus === 'pregnant') {
         const lastDelivery = new Date(date);
         lastDelivery.setDate(lastDelivery.getDate() + 7 * 40);
 
@@ -133,20 +138,24 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           lastDelivery: lastDeliveryFormatted,
           getInTouch: getInTouchFormatted,
           ownKids,
-          cycleStatus: status,
+          cycleStatus: normalizedStatus,
         };
         handleChange(setUsers, setState, userData.userId, updates);
         handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
         submittedRef.current = true;
       } else {
-        const updates = { lastCycle: lastCycleFormatted, cycleStatus: status };
+        const updates = normalizedStatus
+          ? { lastCycle: lastCycleFormatted, cycleStatus: normalizedStatus }
+          : { lastCycle: lastCycleFormatted };
         handleChange(setUsers, setState, userData.userId, updates);
         handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
         submittedRef.current = true;
       }
     } else {
       const serverFormattedDate = formatDateToServer(val);
-      const updates = { lastCycle: serverFormattedDate, cycleStatus: status };
+      const updates = normalizedStatus
+        ? { lastCycle: serverFormattedDate, cycleStatus: normalizedStatus }
+        : { lastCycle: serverFormattedDate };
       handleChange(setUsers, setState, userData.userId, updates);
       handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
       submittedRef.current = true;
