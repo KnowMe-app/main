@@ -176,8 +176,7 @@ export const renderTopBlock = (
           try {
             fresh = await fetchUserById(userData.userId);
             if (fresh) {
-              const backendKeys = Object.keys(fresh);
-              const updated = updateCard(userData.userId, { ...fresh, __backendKeys: backendKeys });
+              const updated = updateCard(userData.userId, fresh);
 
               if (setUsers) {
                 setUsers(prev => {
