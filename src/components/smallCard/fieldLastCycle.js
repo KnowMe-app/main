@@ -63,6 +63,14 @@ const parseDate = dateString => {
   return null;
 };
 
+const isDefaultSchedule = (lastCycle, scheduleString) => {
+  if (!lastCycle || !scheduleString) return false;
+  const baseDate = parseDate(lastCycle);
+  if (!baseDate) return false;
+  const defaultString = serializeSchedule(generateSchedule(baseDate));
+  return defaultString === scheduleString;
+};
+
 const formatDate = date => {
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -85,6 +93,11 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     if (!lastCycleDate) return 0;
     return Math.floor((Date.now() - lastCycleDate.getTime()) / (7 * 24 * 60 * 60 * 1000));
   }, [userData.lastCycle]);
+
+  const scheduleIsDefault = React.useMemo(
+    () => isDefaultSchedule(userData.lastCycle, userData.stimulationSchedule),
+    [userData.lastCycle, userData.stimulationSchedule]
+  );
 
   React.useEffect(() => {
     setStatus(userData.cycleStatus || 'menstruation');
@@ -250,12 +263,14 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   const recalcSchedule = React.useCallback(
     dateString => {
-      if (userData.stimulationSchedule === undefined) return;
       const baseDate = parseDate(dateString);
-      if (!baseDate) return;
+      if (!baseDate) return '';
       const sched = generateSchedule(baseDate);
       const scheduleString = serializeSchedule(sched);
-      handleChange(setUsers, setState, userData.userId, 'stimulationSchedule', scheduleString);
+      if (userData.stimulationSchedule !== undefined) {
+        handleChange(setUsers, setState, userData.userId, 'stimulationSchedule', scheduleString);
+      }
+      return scheduleString;
     },
     [setUsers, setState, userData.userId, userData.stimulationSchedule]
   );
@@ -265,14 +280,29 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     if (localValue.trim() === prevDisplay.trim()) {
       return;
     }
-    if (userData.stimulationSchedule !== undefined) {
+    if (userData.stimulationSchedule !== undefined && !scheduleIsDefault) {
       pendingValueRef.current = localValue;
       setShowConfirm(true);
       return;
     }
     processLastCycle(localValue);
+    let newSchedule;
     if (status === 'stimulation') {
-      recalcSchedule(localValue);
+      newSchedule = recalcSchedule(localValue);
+      if (isDefaultSchedule(localValue, newSchedule)) {
+        handleChange(
+          setUsers,
+          setState,
+          userData.userId,
+          { stimulationSchedule: undefined },
+          false,
+          {},
+          isToastOn,
+        );
+        const submitObj = { ...userData };
+        delete submitObj.stimulationSchedule;
+        handleSubmit(submitObj, 'overwrite', isToastOn);
+      }
     }
     if (!submittedRef.current) {
       handleSubmit(userData, 'overwrite', isToastOn);
@@ -288,8 +318,23 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           onClick={() => {
             setShowConfirm(false);
             processLastCycle(pendingValueRef.current);
+            let newSchedule;
             if (status === 'stimulation') {
-              recalcSchedule(pendingValueRef.current);
+              newSchedule = recalcSchedule(pendingValueRef.current);
+              if (isDefaultSchedule(pendingValueRef.current, newSchedule)) {
+                handleChange(
+                  setUsers,
+                  setState,
+                  userData.userId,
+                  { stimulationSchedule: undefined },
+                  false,
+                  {},
+                  isToastOn,
+                );
+                const submitObj = { ...userData };
+                delete submitObj.stimulationSchedule;
+                handleSubmit(submitObj, 'overwrite', isToastOn);
+              }
             }
             if (!submittedRef.current) {
               handleSubmit(userData, 'overwrite', isToastOn);
@@ -315,8 +360,36 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   const saveSchedule = React.useCallback(() => {
     const scheduleString = userData.stimulationSchedule || '';
-    handleChange(setUsers, setState, userData.userId, 'stimulationSchedule', scheduleString, false, {}, isToastOn);
-    handleSubmit({ ...userData, stimulationSchedule: scheduleString }, 'overwrite', isToastOn);
+    if (isDefaultSchedule(userData.lastCycle, scheduleString)) {
+      handleChange(
+        setUsers,
+        setState,
+        userData.userId,
+        { stimulationSchedule: undefined },
+        false,
+        {},
+        isToastOn,
+      );
+      const submitObj = { ...userData };
+      delete submitObj.stimulationSchedule;
+      handleSubmit(submitObj, 'overwrite', isToastOn);
+    } else {
+      handleChange(
+        setUsers,
+        setState,
+        userData.userId,
+        'stimulationSchedule',
+        scheduleString,
+        false,
+        {},
+        isToastOn,
+      );
+      handleSubmit(
+        { ...userData, stimulationSchedule: scheduleString },
+        'overwrite',
+        isToastOn,
+      );
+    }
   }, [setUsers, setState, userData, isToastOn]);
 
   const handleSetToday = () => {
@@ -325,9 +398,29 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const year = today.getFullYear();
     const formatted = `${day}.${month}.${year}`;
+    if (userData.stimulationSchedule !== undefined && !scheduleIsDefault) {
+      pendingValueRef.current = formatted;
+      setShowConfirm(true);
+      return;
+    }
     processLastCycle(formatted);
+    let newSchedule;
     if (status === 'stimulation') {
-      recalcSchedule(formatted);
+      newSchedule = recalcSchedule(formatted);
+      if (isDefaultSchedule(formatted, newSchedule)) {
+        handleChange(
+          setUsers,
+          setState,
+          userData.userId,
+          { stimulationSchedule: undefined },
+          false,
+          {},
+          isToastOn,
+        );
+        const submitObj = { ...userData };
+        delete submitObj.stimulationSchedule;
+        handleSubmit(submitObj, 'overwrite', isToastOn);
+      }
     }
     if (!submittedRef.current) {
       handleSubmit(userData, 'overwrite', isToastOn);
