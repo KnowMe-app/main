@@ -166,11 +166,14 @@ export const renderTopBlock = (
             }
           };
 
-          try {
-            const fresh = await fetchUserById(userData.userId);
-            if (fresh) {
-              toast.success('Data loaded from backend');
+          toggleDetails();
 
+          let fresh = null;
+          let toastFn = toast.error;
+          let toastMsg = 'Failed to load data';
+          try {
+            fresh = await fetchUserById(userData.userId);
+            if (fresh) {
               const updated = updateCard(userData.userId, fresh);
 
               if (setUsers) {
@@ -188,12 +191,18 @@ export const renderTopBlock = (
               if (setState) {
                 setState(prev => ({ ...prev, ...updated }));
               }
+
+              toastFn = toast.success;
+              toastMsg = 'Data loaded from backend';
+            } else {
+              toastMsg = 'No fresh data available';
             }
           } catch (error) {
             console.error(error);
-            toast.error(error.message);
+            toastMsg = error.message;
+          } finally {
+            toastFn(toastMsg);
           }
-          toggleDetails();
         }}
         style={{ position: 'absolute', bottom: '10px', right: '10px', cursor: 'pointer', color: '#ebe0c2', fontSize: '18px' }}
       >
