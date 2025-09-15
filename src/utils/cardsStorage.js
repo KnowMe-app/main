@@ -24,6 +24,19 @@ export const removeCardFromList = (cardId, listKey) => {
   setIdsForQuery(listKey, ids);
 };
 
+export const clearCardCache = cardId => {
+  if (!cardId) {
+    return;
+  }
+
+  const cards = loadCards();
+
+  if (cards[cardId]) {
+    delete cards[cardId];
+    saveCards(cards);
+  }
+};
+
 const removeNestedValue = (current, segments, depth = 0) => {
   if (current === undefined || current === null) {
     return { changed: false, value: current };
