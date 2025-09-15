@@ -204,16 +204,65 @@ export const removeField = (
   const keys = nestedKey.split('.');
 
   const removePath = obj => {
-    if (!obj) return obj;
-    const newObj = { ...obj };
-    let current = newObj;
-    for (let i = 0; i < keys.length - 1; i++) {
-      if (!current[keys[i]]) return obj;
-      current[keys[i]] = { ...current[keys[i]] };
-      current = current[keys[i]];
-    }
-    delete current[keys[keys.length - 1]];
-    return newObj;
+    if (obj === undefined || obj === null) return obj;
+
+    const removeRecursive = (current, depth) => {
+      if (current === undefined || current === null) {
+        return { changed: false, value: current };
+      }
+
+      const key = keys[depth];
+      const isLast = depth === keys.length - 1;
+
+      if (Array.isArray(current)) {
+        if (!/^\d+$/.test(key)) {
+          return { changed: false, value: current };
+        }
+
+        const index = Number(key);
+        if (index < 0 || index >= current.length) {
+          return { changed: false, value: current };
+        }
+
+        if (isLast) {
+          const newArray = current.slice();
+          newArray.splice(index, 1);
+          return { changed: true, value: newArray };
+        }
+
+        const { changed, value } = removeRecursive(current[index], depth + 1);
+        if (!changed) {
+          return { changed: false, value: current };
+        }
+
+        const newArray = current.slice();
+        newArray[index] = value;
+        return { changed: true, value: newArray };
+      }
+
+      if (typeof current === 'object') {
+        if (!Object.prototype.hasOwnProperty.call(current, key)) {
+          return { changed: false, value: current };
+        }
+
+        if (isLast) {
+          const { [key]: _, ...rest } = current;
+          return { changed: true, value: rest };
+        }
+
+        const { changed, value } = removeRecursive(current[key], depth + 1);
+        if (!changed) {
+          return { changed: false, value: current };
+        }
+
+        return { changed: true, value: { ...current, [key]: value } };
+      }
+
+      return { changed: false, value: current };
+    };
+
+    const { changed, value } = removeRecursive(obj, 0);
+    return changed ? value : obj;
   };
 
   if (setState) {
