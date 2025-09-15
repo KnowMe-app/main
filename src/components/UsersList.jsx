@@ -86,10 +86,9 @@ const renderFields = (
           display: 'inline-flex',
           alignItems: 'center',
           gap: '4px',
-          width: '100%',
         }}
       >
-        <span style={{ wordBreak: 'break-word', flex: '0 1 auto' }}>
+        <span style={{ wordBreak: 'break-word' }}>
           <strong>{key}</strong>
           {': '}
           {value != null ? value.toString() : '—'}
