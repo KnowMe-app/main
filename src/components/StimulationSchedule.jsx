@@ -183,7 +183,7 @@ export const serializeSchedule = sched =>
     .join('\n');
 
 const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }) => {
-  const base = parseDate(userData?.lastCycle);
+  const base = React.useMemo(() => parseDate(userData?.lastCycle), [userData?.lastCycle]);
   const [schedule, setSchedule] = React.useState([]);
   const [apDescription, setApDescription] = React.useState('');
   const [editingIndex, setEditingIndex] = React.useState(null);
