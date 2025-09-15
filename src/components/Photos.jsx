@@ -112,6 +112,57 @@ export const Photos = ({ state, setState, collection }) => {
     a.length === b.length && a.every((val, idx) => val === b[idx]);
   const photoValues = photoKeys.map(k => state[k]).join('|');
 
+  const normalizePhotosArray = value => {
+    if (!value) {
+      return [];
+    }
+
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      return [value];
+    }
+
+    if (typeof value === 'object') {
+      return Object.values(value);
+    }
+
+    return [];
+  };
+
+  const commitPhotosUpdate = updater => {
+    setState(prevState => {
+      const prevHasPhotos = Object.prototype.hasOwnProperty.call(prevState, 'photos');
+      const prevPhotosArray = normalizePhotosArray(prevState.photos);
+      const nextRaw =
+        typeof updater === 'function'
+          ? updater(prevPhotosArray)
+          : updater;
+      const nextPhotosArray = normalizePhotosArray(nextRaw);
+
+      if (nextPhotosArray.length === 0) {
+        if (!prevHasPhotos) {
+          return prevState;
+        }
+
+        const { photos, ...rest } = prevState;
+        return rest;
+      }
+
+      if (
+        arraysEqual(nextPhotosArray, prevPhotosArray) &&
+        prevHasPhotos &&
+        Array.isArray(prevState.photos)
+      ) {
+        return prevState;
+      }
+
+      return { ...prevState, photos: nextPhotosArray };
+    });
+  };
+
   useEffect(() => {
     console.log('useEffect triggered', {
       userId: state.userId,
@@ -126,7 +177,7 @@ export const Photos = ({ state, setState, collection }) => {
           console.log('Fetched URLs', urls);
           if (urls.length > 0) {
             if (!arraysEqual(urls, state.photos)) {
-              setState(prev => ({ ...prev, photos: urls }));
+              commitPhotosUpdate(urls);
             }
             return;
           }
@@ -149,7 +200,7 @@ export const Photos = ({ state, setState, collection }) => {
           converted.some((url, idx) => url !== existingPhotos[idx]);
 
         if (changed) {
-          setState(prev => ({ ...prev, photos: converted }));
+          commitPhotosUpdate(converted);
         }
       } else {
         const links = Object.entries(state)
@@ -164,7 +215,7 @@ export const Photos = ({ state, setState, collection }) => {
         console.log('Links from state', links);
 
         if (links.length) {
-          setState(prev => ({ ...prev, photos: links }));
+          commitPhotosUpdate(links);
         }
       }
     };
@@ -200,10 +251,7 @@ export const Photos = ({ state, setState, collection }) => {
 
     try {
       await deletePhotos(state.userId, [photoUrl]);
-      setState(prevState => ({
-        ...prevState,
-        photos: newPhotos,
-      }));
+      commitPhotosUpdate(newPhotos);
 
       await savePhotoList(newPhotos);
     } catch (error) {
@@ -230,10 +278,7 @@ export const Photos = ({ state, setState, collection }) => {
         photoArray.map(photo => getUrlofUploadedAvatar(photo, state.userId))
       );
       const updatedPhotos = [...(state.photos || []), ...newUrls];
-      setState(prevState => ({
-        ...prevState,
-        photos: updatedPhotos,
-      }));
+      commitPhotosUpdate(updatedPhotos);
 
       await savePhotoList(updatedPhotos);
     } catch (error) {
