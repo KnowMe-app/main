@@ -84,23 +84,30 @@ const renderFields = (
         key={nestedKey}
         style={{
           display: 'inline-flex',
-          alignItems: 'center',
+          alignItems: 'flex-end',
           gap: '4px',
-          width: '100%',
+          flexWrap: 'wrap',
         }}
       >
-        <span style={{ wordBreak: 'break-word', flex: '0 1 auto' }}>
+        <span
+          style={{
+            wordBreak: 'break-word',
+            whiteSpace: 'pre-wrap',
+            display: 'inline',
+          }}
+        >
           <strong>{key}</strong>
           {': '}
           {value != null ? value.toString() : '—'}
         </span>
         <OrangeBtn
+          type="button"
           style={{
             width: '25px',
             height: '25px',
             marginLeft: '5px',
             marginRight: 0,
-            display: 'flex',
+            display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
             border: `1px solid ${color.iconActive}`,
@@ -108,7 +115,7 @@ const renderFields = (
           }}
           onClick={() => removeField(userId, nestedKey, setUsers, setState, isToastOn, nestedKey)}
         >
-          <FaTimes />
+          <FaTimes size={14} color={color.white} />
         </OrangeBtn>
       </div>
     );
