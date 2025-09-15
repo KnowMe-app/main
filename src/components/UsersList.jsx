@@ -6,10 +6,18 @@ import StimulationSchedule from './StimulationSchedule';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnEdit } from './smallCard/btnEdit';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
+import { removeField } from './smallCard/actions';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
 
 // Компонент для рендерингу полів користувача
-const renderFields = (data, parentKey = '') => {
+const renderFields = (
+  data,
+  parentKey = '',
+  userId,
+  setUsers,
+  setState,
+  isToastOn = false,
+) => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderFields:', data);
     return null;
@@ -62,14 +70,24 @@ const renderFields = (data, parentKey = '') => {
       return (
         <div key={nestedKey}>
           <strong>{key}:</strong>
-          <div style={{ marginLeft: '20px' }}>{renderFields(value, nestedKey)}</div>
+          <div style={{ marginLeft: '20px' }}>
+            {renderFields(value, nestedKey, userId, setUsers, setState, isToastOn)}
+          </div>
         </div>
       );
     }
 
     return (
       <div key={nestedKey}>
-        <strong>{key}:</strong> {value != null ? value.toString() : '—'}
+        <strong>{key}</strong>
+        <button
+          style={{ marginLeft: '5px', cursor: 'pointer' }}
+          onClick={() => removeField(userId, nestedKey, setUsers, setState, isToastOn)}
+        >
+          X
+        </button>
+        {': '}
+        {value != null ? value.toString() : '—'}
       </div>
     );
   });
@@ -88,6 +106,7 @@ const UserCard = ({
   setDislikeUsers,
   currentFilter,
   isDateInRange,
+  isToastOn = false,
 }) => {
   return (
     <div>
@@ -105,15 +124,21 @@ const UserCard = ({
           setDislikeUsers,
           currentFilter,
           isDateInRange,
+          isToastOn,
         )}
       </div>
       {userData.cycleStatus === 'stimulation' && (
         <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-          <StimulationSchedule userData={userData} setUsers={setUsers} setState={setState} />
+          <StimulationSchedule
+            userData={userData}
+            setUsers={setUsers}
+            setState={setState}
+            isToastOn={isToastOn}
+          />
         </div>
       )}
       <div id={userData.userId} style={{ display: 'none' }}>
-        {renderFields(userData)}
+        {renderFields(userData, '', userData.userId, setUsers, setState, isToastOn)}
       </div>
     </div>
   );
@@ -134,6 +159,7 @@ const UsersList = ({
   setDislikeUsers,
   currentFilter,
   isDateInRange,
+  isToastOn = false,
 }) => {
   const entries = Object.entries(users);
 
@@ -202,6 +228,7 @@ const UsersList = ({
                 setDislikeUsers={setDislikeUsers}
                 currentFilter={currentFilter}
                 isDateInRange={isDateInRange}
+                isToastOn={isToastOn}
               />
             </>
           )}

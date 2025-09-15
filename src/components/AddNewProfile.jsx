@@ -1343,6 +1343,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setUserIdToDelete={setUserIdToDelete}
                   currentFilter={currentFilter}
                   isDateInRange={isDateInRange}
+                  isToastOn={isToastOn}
                 />
                 <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
               </>
