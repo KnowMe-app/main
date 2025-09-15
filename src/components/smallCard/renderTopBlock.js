@@ -16,7 +16,7 @@ import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
 import { fetchUserById } from '../config';
-import { updateCard } from 'utils/cardsStorage';
+import { updateCard, clearCardCache } from 'utils/cardsStorage';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import toast from 'react-hot-toast';
 
@@ -176,6 +176,7 @@ export const renderTopBlock = (
           try {
             fresh = await fetchUserById(userData.userId);
             if (fresh) {
+              clearCardCache(userData.userId);
               const updated = updateCard(userData.userId, fresh);
 
               if (setUsers) {
