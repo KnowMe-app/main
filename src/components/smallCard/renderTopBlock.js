@@ -97,9 +97,11 @@ export const renderTopBlock = (
               isToastOn={isToastOn}
             />
           )}
-        {fieldDeliveryInfo(setUsers, setState, userData)}
-        {userData.birth && `${userData.birth} - `}
-        {userData.birth && fieldBirth(userData.birth)}
+        <div>{fieldDeliveryInfo(setUsers, setState, userData)}</div>
+        <div>
+          {userData.birth && `${userData.birth} - `}
+          {userData.birth && fieldBirth(userData.birth)}
+        </div>
       </div>
       {/* <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div> */}
       <div>
