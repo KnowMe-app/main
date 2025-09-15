@@ -194,6 +194,51 @@ export const handleChange = (
   }
 };
 
+export const removeField = (
+  userId,
+  nestedKey,
+  setUsers,
+  setState,
+  isToastOn = false,
+) => {
+  const keys = nestedKey.split('.');
+
+  const removePath = obj => {
+    if (!obj) return obj;
+    const newObj = { ...obj };
+    let current = newObj;
+    for (let i = 0; i < keys.length - 1; i++) {
+      if (!current[keys[i]]) return obj;
+      current[keys[i]] = { ...current[keys[i]] };
+      current = current[keys[i]];
+    }
+    delete current[keys[keys.length - 1]];
+    return newObj;
+  };
+
+  if (setState) {
+    setState(prev => removePath(prev));
+  }
+
+  setUsers(prev => {
+    const isMultiple =
+      typeof prev === 'object' &&
+      !Array.isArray(prev) &&
+      Object.keys(prev).every(id => typeof prev[id] === 'object');
+
+    if (isMultiple) {
+      const updatedUser = removePath(prev[userId]);
+      const newState = { ...prev, [userId]: updatedUser };
+      handleSubmit({ ...updatedUser, userId }, 'overwrite', isToastOn);
+      return newState;
+    }
+
+    const newState = removePath(prev);
+    handleSubmit({ ...newState, userId: userId || newState.userId }, 'overwrite', isToastOn);
+    return newState;
+  });
+};
+
 export const handleSubmit = (userData, condition, isToastOn) => {
   const fieldsForNewUsersOnly = [
     'role',
