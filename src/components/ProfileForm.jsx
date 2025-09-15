@@ -3,13 +3,14 @@ import styled, { css } from 'styled-components';
 import Photos from './Photos';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
-import { color } from './styles';
+import { color, OrangeBtn } from './styles';
 import { pickerFieldsExtended as pickerFields } from './formFields';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
+import { FaTimes } from 'react-icons/fa';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -31,7 +32,17 @@ export const getFieldsToRender = state => {
   ];
 };
 
-const removeButtonStyle = { marginLeft: '5px', cursor: 'pointer' };
+const removeButtonStyle = {
+  width: '25px',
+  height: '25px',
+  marginLeft: '5px',
+  marginRight: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: `1px solid ${color.iconActive}`,
+  padding: 0,
+};
 
 // Рекурсивне відображення всіх полів користувача, включно з вкладеними об'єктами та масивами
 const renderAllFields = (data, parentKey = '', state, setState) => {
@@ -88,12 +99,13 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
       return (
         <div key={nestedKey}>
           <strong>{key}</strong>
-          <button
+          <OrangeBtn
+            type="button"
             style={removeButtonStyle}
             onClick={() => removeField(state?.userId, nestedKey, setState, undefined, false, nestedKey)}
           >
-            X
-          </button>
+            <FaTimes size={14} color={color.white} />
+          </OrangeBtn>
           {': '}
           <div style={{ marginLeft: '20px' }}>
             {value.map((item, idx) => {
@@ -102,12 +114,13 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
                 return (
                   <div key={arrayKey}>
                     <strong>[{idx}]</strong>
-                    <button
+                    <OrangeBtn
+                      type="button"
                       style={removeButtonStyle}
                       onClick={() => removeField(state?.userId, arrayKey, setState, undefined, false, arrayKey)}
                     >
-                      X
-                    </button>
+                      <FaTimes size={14} color={color.white} />
+                    </OrangeBtn>
                     {': '}
                     <div style={{ marginLeft: '20px' }}>
                       {renderAllFields(item, arrayKey, state, setState)}
@@ -119,12 +132,13 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
               return (
                 <div key={arrayKey}>
                   <strong>[{idx}]</strong>
-                  <button
+                  <OrangeBtn
+                    type="button"
                     style={removeButtonStyle}
                     onClick={() => removeField(state?.userId, arrayKey, setState, undefined, false, arrayKey)}
                   >
-                    X
-                  </button>
+                    <FaTimes size={14} color={color.white} />
+                  </OrangeBtn>
                   {': '}
                   {item != null ? item.toString() : '—'}
                 </div>
@@ -139,12 +153,13 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
       return (
         <div key={nestedKey}>
           <strong>{key}</strong>
-          <button
+          <OrangeBtn
+            type="button"
             style={removeButtonStyle}
             onClick={() => removeField(state?.userId, nestedKey, setState, undefined, false, nestedKey)}
           >
-            X
-          </button>
+            <FaTimes size={14} color={color.white} />
+          </OrangeBtn>
           {': '}
           <div style={{ marginLeft: '20px' }}>{renderAllFields(value, nestedKey, state, setState)}</div>
         </div>
@@ -154,12 +169,13 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
     return (
       <div key={nestedKey}>
         <strong>{key}</strong>
-        <button
+        <OrangeBtn
+          type="button"
           style={removeButtonStyle}
           onClick={() => removeField(state?.userId, nestedKey, setState, undefined, false, nestedKey)}
         >
-          X
-        </button>
+          <FaTimes size={14} color={color.white} />
+        </OrangeBtn>
         {': '}
         {value != null ? value.toString() : '—'}
       </div>
