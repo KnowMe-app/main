@@ -108,7 +108,7 @@ const UserCard = ({
         )}
       </div>
       {userData.cycleStatus === 'stimulation' && (
-        <div style={{ ...coloredCard(), padding: '7px', marginBottom: '8px' }}>
+        <div style={{ ...coloredCard(), marginBottom: '8px' }}>
           <StimulationSchedule userData={userData} setUsers={setUsers} setState={setState} />
         </div>
       )}

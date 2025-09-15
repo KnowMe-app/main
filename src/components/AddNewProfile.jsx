@@ -1214,7 +1214,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               )}
             </div>
             {state.cycleStatus === 'stimulation' && (
-              <div style={{ ...coloredCard(), padding: '7px', marginBottom: '8px' }}>
+              <div style={{ ...coloredCard(), marginBottom: '8px' }}>
                 <StimulationSchedule
                   userData={state}
                   setUsers={setUsers}

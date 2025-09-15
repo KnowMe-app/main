@@ -517,7 +517,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   }
 
   return (
-    <div style={{ marginTop: '8px' }}>
+    <div style={{ padding: '7px', position: 'relative' }}>
       <div style={{ display: 'flex', gap: '2px', margin: '4px 0' }}>
         <input
           type="text"
