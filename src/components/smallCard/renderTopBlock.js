@@ -20,29 +20,6 @@ import { updateCard } from 'utils/cardsStorage';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import toast from 'react-hot-toast';
 
-const collectBackendKeys = (obj, prefix = '', result = new Set()) => {
-  Object.entries(obj || {}).forEach(([key, val]) => {
-    const path = prefix ? `${prefix}.${key}` : key;
-    if (val && typeof val === 'object') {
-      if (Array.isArray(val)) {
-        val.forEach((item, idx) => {
-          const arrPath = `${path}.${idx}`;
-          if (item && typeof item === 'object') {
-            collectBackendKeys(item, arrPath, result);
-          } else {
-            result.add(arrPath);
-          }
-        });
-      } else {
-        collectBackendKeys(val, path, result);
-      }
-    } else {
-      result.add(path);
-    }
-  });
-  return result;
-};
-
 const getParentBackground = element => {
   let el = element;
   let bg = window.getComputedStyle(el).backgroundColor;
@@ -199,9 +176,7 @@ export const renderTopBlock = (
           try {
             fresh = await fetchUserById(userData.userId);
             if (fresh) {
-              const backendKeys = Array.from(collectBackendKeys(fresh));
               const updated = updateCard(userData.userId, fresh);
-              updated._backendKeys = backendKeys;
 
               if (setUsers) {
                 setUsers(prev => {
