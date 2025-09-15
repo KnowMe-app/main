@@ -1,6 +1,7 @@
 import React from 'react';
 import { coloredCard, FadeContainer } from './styles';
-import { makeNewUser } from './config';
+import { makeNewUser, removeKeyFromFirebase } from './config';
+import { updateCard } from 'utils/cardsStorage';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
 import { btnCompare } from './smallCard/btnCompare';
@@ -9,7 +10,60 @@ import { utilCalculateAge } from './smallCard/utilCalculateAge';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
 
 // Компонент для рендерингу полів користувача
-const renderFields = (data, parentKey = '') => {
+const handleDeleteField = async (userData, field, setUsers, setState) => {
+  await removeKeyFromFirebase(field, userData[field], userData.userId);
+  const updated = updateCard(userData.userId, {}, undefined, [field]);
+  if (setUsers) {
+    setUsers(prev => {
+      if (Array.isArray(prev)) {
+        return prev.map(u => (u.userId === userData.userId ? updated : u));
+      }
+      if (typeof prev === 'object' && prev !== null) {
+        return { ...prev, [userData.userId]: updated };
+      }
+      return prev;
+    });
+  }
+  if (setState) {
+    setState(prev => ({ ...prev, ...updated }));
+  }
+};
+
+const handleDeleteArrayItem = async (userData, field, index, setUsers, setState) => {
+  const current = Array.isArray(userData[field]) ? [...userData[field]] : [];
+  const removedValue = current[index];
+  const updatedArray = current.filter((_, i) => i !== index);
+
+  await removeKeyFromFirebase(field, removedValue, userData.userId);
+
+  let data = {};
+  let removeKeys = [];
+  if (updatedArray.length === 0) {
+    removeKeys = [field];
+  } else if (updatedArray.length === 1) {
+    data[field] = updatedArray[0];
+  } else {
+    data[field] = updatedArray;
+  }
+
+  const updated = updateCard(userData.userId, data, undefined, removeKeys);
+  if (setUsers) {
+    setUsers(prev => {
+      if (Array.isArray(prev)) {
+        return prev.map(u => (u.userId === userData.userId ? updated : u));
+      }
+      if (typeof prev === 'object' && prev !== null) {
+        return { ...prev, [userData.userId]: updated };
+      }
+      return prev;
+    });
+  }
+  if (setState) {
+    setState(prev => ({ ...prev, ...updated }));
+  }
+};
+
+const renderFields = (data, backendKeys = [], onDeleteField, onDeleteArrayItem, parentKey = '') => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderFields:', data);
     return null;
@@ -31,7 +85,7 @@ const renderFields = (data, parentKey = '') => {
     return indexA - indexB;
   });
 
-  return sortedKeys.map((key) => {
+  return sortedKeys.map(key => {
     const nestedKey = parentKey ? `${parentKey}.${key}` : key;
     const value = extendedData[key];
 
@@ -39,37 +93,84 @@ const renderFields = (data, parentKey = '') => {
       return null;
     }
 
-    if (key === 'photos') {
-      const photosArray = Array.isArray(value) ? value : Object.values(value || {});
-      if (!photosArray.length) {
-        return null;
-      }
-      return (
-        <div key={nestedKey}>
-          <strong>{key}:</strong>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '5px' }}>
-            {photosArray.map((url, idx) => (
-              <div key={idx} style={{ wordBreak: 'break-all' }}>
-                {url}
-              </div>
-            ))}
+    const isHighlighted = !parentKey && backendKeys.includes(key);
+    const wrapperStyle = isHighlighted
+      ? { backgroundColor: '#d4edda', padding: '2px' }
+      : {};
+
+    const btnStyle = {
+      cursor: 'pointer',
+      marginLeft: '4px',
+      background: 'none',
+      border: 'none',
+    };
+
+    if (Array.isArray(value) || key === 'photos') {
+      const arr = Array.isArray(value) ? value : Object.values(value || {});
+      if (arr.length === 0) return null;
+
+      if (arr.length > 1) {
+        return (
+          <div key={nestedKey} style={wrapperStyle}>
+            <strong>{key}:</strong>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '5px' }}>
+              {arr.map((item, idx) => (
+                <div
+                  key={idx}
+                  style={{ wordBreak: 'break-all', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  {item != null ? item.toString() : '—'}
+                  {onDeleteArrayItem && (
+                    <button
+                      style={btnStyle}
+                      onClick={() => onDeleteArrayItem(key, idx)}
+                    >
+                      ✖
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
+        );
+      }
+
+      const single = arr[0];
+      return (
+        <div
+          key={nestedKey}
+          style={{ ...wrapperStyle, display: 'flex', alignItems: 'center', gap: '4px' }}
+        >
+          <strong>{key}:</strong> {single != null ? single.toString() : '—'}
+          {onDeleteField && (
+            <button style={btnStyle} onClick={() => onDeleteField(key)}>
+              ✖
+            </button>
+          )}
         </div>
       );
     }
 
     if (typeof value === 'object' && value !== null) {
       return (
-        <div key={nestedKey}>
+        <div key={nestedKey} style={wrapperStyle}>
           <strong>{key}:</strong>
-          <div style={{ marginLeft: '20px' }}>{renderFields(value, nestedKey)}</div>
+          <div style={{ marginLeft: '20px' }}>{renderFields(value, backendKeys, undefined, undefined, nestedKey)}</div>
         </div>
       );
     }
 
     return (
-      <div key={nestedKey}>
+      <div
+        key={nestedKey}
+        style={{ ...wrapperStyle, display: 'flex', alignItems: 'center', gap: '4px' }}
+      >
         <strong>{key}:</strong> {value != null ? value.toString() : '—'}
+        {onDeleteField && (
+          <button style={btnStyle} onClick={() => onDeleteField(key)}>
+            ✖
+          </button>
+        )}
       </div>
     );
   });
@@ -113,7 +214,12 @@ const UserCard = ({
         </div>
       )}
       <div id={userData.userId} style={{ display: 'none' }}>
-        {renderFields(userData)}
+        {renderFields(
+          userData,
+          userData.__backendKeys || [],
+          field => handleDeleteField(userData, field, setUsers, setState),
+          (field, idx) => handleDeleteArrayItem(userData, field, idx, setUsers, setState)
+        )}
       </div>
     </div>
   );
