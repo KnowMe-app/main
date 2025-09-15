@@ -188,77 +188,34 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   const [apDescription, setApDescription] = React.useState('');
   const [editingIndex, setEditingIndex] = React.useState(null);
   const transferRef = React.useRef(null);
+  const hasChanges = React.useRef(false);
 
   const saveSchedule = React.useCallback(
     sched => {
+      if (!hasChanges.current) return;
       const scheduleString = serializeSchedule(sched);
-      const defaultString = base
-        ? serializeSchedule(generateSchedule(base))
-        : '';
+      const defaultString = base ? serializeSchedule(generateSchedule(base)) : '';
       const isDefault = base && scheduleString === defaultString;
+      const update = isDefault
+        ? { stimulationSchedule: undefined }
+        : { stimulationSchedule: scheduleString };
+
       if (setUsers && setState) {
-        if (isDefault) {
-          handleChange(
-            setUsers,
-            setState,
-            userData.userId,
-            { stimulationSchedule: undefined },
-            true,
-            {},
-            isToastOn,
-          );
-        } else {
-          handleChange(
-            setUsers,
-            setState,
-            userData.userId,
-            'stimulationSchedule',
-            scheduleString,
-            true,
-            {},
-            isToastOn,
-          );
-        }
+        handleChange(setUsers, setState, userData.userId, update);
       } else if (setState) {
-        if (isDefault) {
-          setState(prev => {
-            const copy = { ...prev };
-            delete copy.stimulationSchedule;
-            return copy;
-          });
-        } else {
-          setState(prev => ({ ...prev, stimulationSchedule: scheduleString }));
-        }
-        const submitObj = { ...userData };
-        if (!isDefault) submitObj.stimulationSchedule = scheduleString;
-        else delete submitObj.stimulationSchedule;
-        handleSubmit(submitObj, 'overwrite', isToastOn);
+        setState(prev => {
+          const copy = { ...prev };
+          if (isDefault) delete copy.stimulationSchedule;
+          else copy.stimulationSchedule = scheduleString;
+          return copy;
+        });
       } else if (setUsers) {
-        if (isDefault) {
-          handleChange(
-            setUsers,
-            null,
-            userData.userId,
-            { stimulationSchedule: undefined },
-            true,
-            {},
-            isToastOn,
-          );
-        } else {
-          handleChange(
-            setUsers,
-            null,
-            userData.userId,
-            'stimulationSchedule',
-            scheduleString,
-            true,
-            {},
-            isToastOn,
-          );
-        }
+        handleChange(setUsers, null, userData.userId, update);
       }
+      handleSubmit({ userId: userData.userId, ...update }, 'overwrite', isToastOn);
+      hasChanges.current = !isDefault;
     },
-    [setUsers, setState, userData, isToastOn, base],
+    [setUsers, setState, userData.userId, isToastOn, base],
   );
 
   React.useEffect(() => {
@@ -382,6 +339,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       }
 
       copy.sort((a, b) => a.date - b.date);
+      hasChanges.current = true;
       saveSchedule(copy);
       return copy;
     });
@@ -456,6 +414,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                     setEditingIndex(null);
                     setSchedule(prev => {
                       const copy = [...prev];
+                      hasChanges.current = true;
                       saveSchedule(copy);
                       return copy;
                     });
@@ -507,6 +466,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                 onClick={() =>
                   setSchedule(prev => {
                     const updated = prev.filter(v => v.key !== item.key);
+                    hasChanges.current = true;
                     saveSchedule(updated);
                     return updated;
                   })
@@ -583,6 +543,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
               const index = updated.findIndex(it => it.date > newItem.date);
               if (index === -1) updated.push(newItem);
               else updated.splice(index, 0, newItem);
+              hasChanges.current = true;
               saveSchedule(updated);
               return updated;
             });

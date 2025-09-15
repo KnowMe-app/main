@@ -81,7 +81,6 @@ const formatDate = date => {
 export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   const [status, setStatus] = React.useState(userData.cycleStatus || 'menstruation');
   const submittedRef = React.useRef(false);
-  const prevDataRef = React.useRef(null);
   const [localValue, setLocalValue] = React.useState(formatDateToDisplay(userData.lastCycle) || '');
   const [showConfirm, setShowConfirm] = React.useState(false);
   const pendingValueRef = React.useRef('');
@@ -107,17 +106,6 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
     setLocalValue(formatDateToDisplay(userData.lastCycle) || '');
   }, [userData.lastCycle]);
 
-  React.useEffect(() => {
-    if (userData.cycleStatus === 'pregnant' && !prevDataRef.current) {
-      prevDataRef.current = {
-        lastCycle: userData.lastCycle,
-        lastDelivery: userData.lastDelivery,
-        getInTouch: userData.getInTouch,
-        ownKids: userData.ownKids,
-      };
-    }
-  }, [userData]);
-
   const processLastCycle = value => {
     const val = value.trim();
     const date = parseDate(val);
@@ -140,42 +128,27 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         const lastDeliveryFormatted = formatDateToServer(formatDate(lastDelivery));
         const getInTouchFormatted = formatDateToServer(formatDate(getInTouch));
 
-        handleChange(setUsers, setState, userData.userId, {
+        const updates = {
           lastCycle: lastCycleFormatted,
           lastDelivery: lastDeliveryFormatted,
           getInTouch: getInTouchFormatted,
           ownKids,
           cycleStatus: status,
-        });
-
-        handleSubmit(
-          {
-            ...userData,
-            lastCycle: lastCycleFormatted,
-            lastDelivery: lastDeliveryFormatted,
-            getInTouch: getInTouchFormatted,
-            ownKids,
-            cycleStatus: status,
-          },
-          'overwrite',
-          isToastOn
-        );
+        };
+        handleChange(setUsers, setState, userData.userId, updates);
+        handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
         submittedRef.current = true;
       } else {
-        handleChange(setUsers, setState, userData.userId, {
-          lastCycle: lastCycleFormatted,
-          cycleStatus: status,
-        });
-        handleSubmit({ ...userData, lastCycle: lastCycleFormatted, cycleStatus: status }, 'overwrite', isToastOn);
+        const updates = { lastCycle: lastCycleFormatted, cycleStatus: status };
+        handleChange(setUsers, setState, userData.userId, updates);
+        handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
         submittedRef.current = true;
       }
     } else {
       const serverFormattedDate = formatDateToServer(val);
-      handleChange(setUsers, setState, userData.userId, {
-        lastCycle: serverFormattedDate,
-        cycleStatus: status,
-      });
-      handleSubmit({ ...userData, lastCycle: serverFormattedDate, cycleStatus: status }, 'overwrite', isToastOn);
+      const updates = { lastCycle: serverFormattedDate, cycleStatus: status };
+      handleChange(setUsers, setState, userData.userId, updates);
+      handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
       submittedRef.current = true;
     }
   };
@@ -186,31 +159,11 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   const handleStatusClick = () => {
     setStatus(prev => {
-      const newState = prev === 'menstruation' ? 'stimulation' : prev === 'stimulation' ? 'pregnant' : 'menstruation';
-      if (newState === 'stimulation') {
-        handleChange(setUsers, setState, userData.userId, { stimulation: true, cycleStatus: 'stimulation' }, true, {}, isToastOn);
-        handleSubmit({ ...userData, stimulation: true, cycleStatus: 'stimulation' }, 'overwrite', isToastOn);
-        submittedRef.current = true;
-      } else if (prev === 'stimulation') {
-        const updates = { stimulation: false, cycleStatus: newState };
-        const submitObj = { ...userData, stimulation: false, cycleStatus: newState };
-        if (userData.stimulationSchedule !== undefined) {
-          updates.stimulationSchedule = undefined;
-          submitObj.stimulationSchedule = undefined;
-        }
-        handleChange(setUsers, setState, userData.userId, updates, true, {}, isToastOn);
-        handleSubmit(submitObj, 'overwrite', isToastOn);
-        submittedRef.current = true;
-      }
+      const newState =
+        prev === 'menstruation' ? 'stimulation' : prev === 'stimulation' ? 'pregnant' : 'menstruation';
+      const updates = { cycleStatus: newState };
+
       if (newState === 'pregnant') {
-        if (!prevDataRef.current) {
-          prevDataRef.current = {
-            lastCycle: userData.lastCycle,
-            lastDelivery: userData.lastDelivery,
-            getInTouch: userData.getInTouch,
-            ownKids: userData.ownKids,
-          };
-        }
         const lastCycleDate = parseDate(userData.lastCycle);
         if (lastCycleDate) {
           const lastDelivery = new Date(lastCycleDate);
@@ -222,58 +175,39 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           const existingLastDelivery = parseDate(userData.lastDelivery);
           const today = new Date();
           const hasUpcomingDelivery = existingLastDelivery && existingLastDelivery > today;
-          const ownKids = hasUpcomingDelivery ? Number(userData.ownKids || 0) : Number(userData.ownKids || 0) + 1;
+          const ownKids = hasUpcomingDelivery
+            ? Number(userData.ownKids || 0)
+            : Number(userData.ownKids || 0) + 1;
 
-          const lastCycleFormatted = formatDateToServer(formatDate(lastCycleDate));
-          const lastDeliveryFormatted = formatDateToServer(formatDate(lastDelivery));
-          const getInTouchFormatted = formatDateToServer(formatDate(getInTouch));
-
-          handleChange(setUsers, setState, userData.userId, {
-            lastCycle: lastCycleFormatted,
-            lastDelivery: lastDeliveryFormatted,
-            getInTouch: getInTouchFormatted,
-            ownKids,
-            cycleStatus: 'pregnant',
-          });
-
-          handleSubmit(
-            {
-              ...userData,
-              lastCycle: lastCycleFormatted,
-              lastDelivery: lastDeliveryFormatted,
-              getInTouch: getInTouchFormatted,
-              ownKids,
-              cycleStatus: 'pregnant',
-            },
-            'overwrite',
-            isToastOn
-          );
-          submittedRef.current = true;
+          updates.lastCycle = formatDateToServer(formatDate(lastCycleDate));
+          updates.lastDelivery = formatDateToServer(formatDate(lastDelivery));
+          updates.getInTouch = formatDateToServer(formatDate(getInTouch));
+          updates.ownKids = ownKids;
         }
-      } else if (prev === 'pregnant') {
-        const updates = prevDataRef.current ? { ...prevDataRef.current, cycleStatus: newState } : { cycleStatus: newState };
-        handleChange(setUsers, setState, userData.userId, updates);
-        handleSubmit({ ...userData, ...updates }, 'overwrite', isToastOn);
-        submittedRef.current = true;
-        prevDataRef.current = null;
+      } else {
+        if (prev === 'pregnant') {
+          ['getInTouch', 'lastDelivery', 'ownKids'].forEach(field => {
+            if (userData[field] !== undefined) updates[field] = undefined;
+          });
+        }
+        if (prev === 'stimulation' && userData.stimulationSchedule !== undefined) {
+          updates.stimulationSchedule = undefined;
+        }
       }
+
+      handleChange(setUsers, setState, userData.userId, updates);
+      handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
+      submittedRef.current = true;
       return newState;
     });
   };
 
-  const recalcSchedule = React.useCallback(
-    dateString => {
-      const baseDate = parseDate(dateString);
-      if (!baseDate) return '';
-      const sched = generateSchedule(baseDate);
-      const scheduleString = serializeSchedule(sched);
-      if (userData.stimulationSchedule !== undefined) {
-        handleChange(setUsers, setState, userData.userId, 'stimulationSchedule', scheduleString);
-      }
-      return scheduleString;
-    },
-    [setUsers, setState, userData.userId, userData.stimulationSchedule]
-  );
+  const recalcSchedule = React.useCallback(dateString => {
+    const baseDate = parseDate(dateString);
+    if (!baseDate) return '';
+    const sched = generateSchedule(baseDate);
+    return serializeSchedule(sched);
+  }, []);
 
   const handleBlur = () => {
     const prevDisplay = formatDateToDisplay(userData.lastCycle) || '';
@@ -299,13 +233,15 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           {},
           isToastOn,
         );
-        const submitObj = { ...userData };
-        delete submitObj.stimulationSchedule;
-        handleSubmit(submitObj, 'overwrite', isToastOn);
+        handleSubmit(
+          { userId: userData.userId, stimulationSchedule: undefined },
+          'overwrite',
+          isToastOn,
+        );
       }
     }
     if (!submittedRef.current) {
-      handleSubmit(userData, 'overwrite', isToastOn);
+      handleSubmit({ userId: userData.userId }, 'overwrite', isToastOn);
     }
     submittedRef.current = false;
   };
@@ -331,13 +267,15 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
                   {},
                   isToastOn,
                 );
-                const submitObj = { ...userData };
-                delete submitObj.stimulationSchedule;
-                handleSubmit(submitObj, 'overwrite', isToastOn);
+                handleSubmit(
+                  { userId: userData.userId, stimulationSchedule: undefined },
+                  'overwrite',
+                  isToastOn,
+                );
               }
             }
             if (!submittedRef.current) {
-              handleSubmit(userData, 'overwrite', isToastOn);
+              handleSubmit({ userId: userData.userId }, 'overwrite', isToastOn);
             }
             submittedRef.current = false;
           }}
@@ -370,9 +308,11 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         {},
         isToastOn,
       );
-      const submitObj = { ...userData };
-      delete submitObj.stimulationSchedule;
-      handleSubmit(submitObj, 'overwrite', isToastOn);
+      handleSubmit(
+        { userId: userData.userId, stimulationSchedule: undefined },
+        'overwrite',
+        isToastOn,
+      );
     } else {
       handleChange(
         setUsers,
@@ -385,7 +325,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         isToastOn,
       );
       handleSubmit(
-        { ...userData, stimulationSchedule: scheduleString },
+        { userId: userData.userId, stimulationSchedule: scheduleString },
         'overwrite',
         isToastOn,
       );
@@ -417,13 +357,15 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           {},
           isToastOn,
         );
-        const submitObj = { ...userData };
-        delete submitObj.stimulationSchedule;
-        handleSubmit(submitObj, 'overwrite', isToastOn);
+        handleSubmit(
+          { userId: userData.userId, stimulationSchedule: undefined },
+          'overwrite',
+          isToastOn,
+        );
       }
     }
     if (!submittedRef.current) {
-      handleSubmit(userData, 'overwrite', isToastOn);
+      handleSubmit({ userId: userData.userId }, 'overwrite', isToastOn);
     }
     submittedRef.current = false;
   };
