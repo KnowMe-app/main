@@ -39,80 +39,6 @@ const getContrastColor = background => {
   return luminance > 0.5 ? '#000' : '#fff';
 };
 
-const removeNestedValue = (current, segments, depth = 0) => {
-  if (current === undefined || current === null) {
-    return { changed: false, value: current };
-  }
-
-  const key = segments[depth];
-  const isLast = depth === segments.length - 1;
-
-  if (Array.isArray(current)) {
-    if (!/^\d+$/.test(key)) {
-      return { changed: false, value: current };
-    }
-
-    const index = Number(key);
-    if (index < 0 || index >= current.length) {
-      return { changed: false, value: current };
-    }
-
-    if (isLast) {
-      const next = current.slice();
-      next.splice(index, 1);
-      return { changed: true, value: next };
-    }
-
-    const { changed, value } = removeNestedValue(current[index], segments, depth + 1);
-    if (!changed) {
-      return { changed: false, value: current };
-    }
-
-    const next = current.slice();
-    next[index] = value;
-    return { changed: true, value: next };
-  }
-
-  if (typeof current === 'object') {
-    if (!Object.prototype.hasOwnProperty.call(current, key)) {
-      return { changed: false, value: current };
-    }
-
-    if (isLast) {
-      const { [key]: _, ...rest } = current;
-      return { changed: true, value: rest };
-    }
-
-    const { changed, value } = removeNestedValue(current[key], segments, depth + 1);
-    if (!changed) {
-      return { changed: false, value: current };
-    }
-
-    return { changed: true, value: { ...current, [key]: value } };
-  }
-
-  return { changed: false, value: current };
-};
-
-const removePathsFromObject = (source, paths = []) => {
-  if (!source || typeof source !== 'object') {
-    return source;
-  }
-
-  if (!Array.isArray(paths) || paths.length === 0) {
-    return source;
-  }
-
-  return paths
-    .map(path => String(path).trim())
-    .filter(path => path && path !== 'userId')
-    .reduce((acc, path) => {
-      const segments = path.split('.');
-      const { changed, value } = removeNestedValue(acc, segments);
-      return changed ? value : acc;
-    }, source);
-};
-
 export const renderTopBlock = (
   userData,
   setUsers,
@@ -250,21 +176,7 @@ export const renderTopBlock = (
           try {
             fresh = await fetchUserById(userData.userId);
             if (fresh) {
-              const removalTargets = [];
-              const hadLocalPhotos = Object.prototype.hasOwnProperty.call(userData, 'photos');
-              const photosMissingInFresh =
-                !Object.prototype.hasOwnProperty.call(fresh, 'photos') || fresh.photos == null;
-
-              if (hadLocalPhotos && photosMissingInFresh) {
-                removalTargets.push('photos');
-              }
-
-              const updated = updateCard(
-                userData.userId,
-                fresh,
-                undefined,
-                removalTargets,
-              );
+              const updated = updateCard(userData.userId, fresh);
 
               if (setUsers) {
                 setUsers(prev => {
@@ -279,22 +191,7 @@ export const renderTopBlock = (
               }
 
               if (setState) {
-                setState(prev => {
-                  if (!prev || typeof prev !== 'object') {
-                    return { ...updated };
-                  }
-
-                  if (!removalTargets.length) {
-                    return { ...prev, ...updated };
-                  }
-
-                  const cleanedPrev = removePathsFromObject(prev, removalTargets);
-                  if (!cleanedPrev || typeof cleanedPrev !== 'object') {
-                    return { ...updated };
-                  }
-
-                  return { ...cleanedPrev, ...updated };
-                });
+                setState(prev => ({ ...prev, ...updated }));
               }
 
               toastFn = toast.success;
