@@ -1,4 +1,6 @@
 import React from 'react';
+import { OrangeBtn, color } from 'components/styles';
+import { FaTimes } from 'react-icons/fa';
 import { coloredCard, FadeContainer } from './styles';
 import { makeNewUser } from './config';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -83,22 +85,31 @@ const renderFields = (
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '8px',
+          gap: '4px',
           width: '100%',
         }}
       >
-        <span style={{ wordBreak: 'break-word', flex: '1 1 auto' }}>
+        <span style={{ wordBreak: 'break-word', flex: '0 1 auto' }}>
           <strong>{key}</strong>
           {': '}
           {value != null ? value.toString() : '—'}
         </span>
-        <button
-          style={{ cursor: 'pointer' }}
+        <OrangeBtn
+          style={{
+            width: '25px',
+            height: '25px',
+            marginLeft: '5px',
+            marginRight: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: `1px solid ${color.iconActive}`,
+            padding: 0,
+          }}
           onClick={() => removeField(userId, nestedKey, setUsers, setState, isToastOn, nestedKey)}
         >
-          X
-        </button>
+          <FaTimes />
+        </OrangeBtn>
       </div>
     );
   });
