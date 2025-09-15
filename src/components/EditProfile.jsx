@@ -231,7 +231,7 @@ const EditProfile = () => {
         )}
       </div>
       {state.cycleStatus === 'stimulation' && (
-        <div style={{ ...coloredCard(), padding: '7px', marginBottom: '8px' }}>
+        <div style={{ ...coloredCard(), marginBottom: '8px' }}>
           <StimulationSchedule userData={state} setState={setState} isToastOn={isToastOn} />
         </div>
       )}
