@@ -1,126 +1,12 @@
 import React from 'react';
-import { OrangeBtn, color } from 'components/styles';
-import { FaTimes } from 'react-icons/fa';
 import { coloredCard, FadeContainer } from './styles';
 import { makeNewUser } from './config';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnEdit } from './smallCard/btnEdit';
-import { utilCalculateAge } from './smallCard/utilCalculateAge';
-import { removeField } from './smallCard/actions';
+import { renderAllFields } from './ProfileForm';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
-
-// Компонент для рендерингу полів користувача
-const renderFields = (
-  data,
-  parentKey = '',
-  userId,
-  setUsers,
-  setState,
-  isToastOn = false,
-) => {
-  if (!data || typeof data !== 'object') {
-    console.error('Invalid data passed to renderFields:', data);
-    return null;
-  }
-
-  const extendedData = { ...data };
-  if (typeof extendedData.birth === 'string') {
-    extendedData.age = utilCalculateAge(extendedData.birth);
-  }
-
-  const sortedKeys = Object.keys(extendedData).sort((a, b) => {
-    const priority = ['name', 'surname', 'fathersname', 'birth', 'blood', 'maritalStatus', 'csection', 'weight', 'height', 'ownKids', 'lastDelivery', 'lastCycle', 'facebook', 'instagram', 'telegram', 'phone', 'tiktok', 'vk', 'writer', 'myComment', 'region', 'city'];
-    const indexA = priority.indexOf(a);
-    const indexB = priority.indexOf(b);
-
-    if (indexA === -1 && indexB === -1) return 0;
-    if (indexA === -1) return 1;
-    if (indexB === -1) return -1;
-    return indexA - indexB;
-  });
-
-  return sortedKeys.map((key) => {
-    const nestedKey = parentKey ? `${parentKey}.${key}` : key;
-    const value = extendedData[key];
-
-    if (['attitude', 'whiteList', 'blackList'].includes(key)) {
-      return null;
-    }
-
-    if (key === 'photos') {
-      const photosArray = Array.isArray(value) ? value : Object.values(value || {});
-      if (!photosArray.length) {
-        return null;
-      }
-      return (
-        <div key={nestedKey}>
-          <strong>{key}:</strong>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '5px' }}>
-            {photosArray.map((url, idx) => (
-              <div key={idx} style={{ wordBreak: 'break-all' }}>
-                {url}
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    if (typeof value === 'object' && value !== null) {
-      return (
-        <div key={nestedKey}>
-          <strong>{key}:</strong>
-          <div style={{ marginLeft: '20px' }}>
-            {renderFields(value, nestedKey, userId, setUsers, setState, isToastOn)}
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div
-        key={nestedKey}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'flex-end',
-          gap: '4px',
-          flexWrap: 'wrap',
-        }}
-      >
-        <span
-          style={{
-            wordBreak: 'break-word',
-            whiteSpace: 'pre-wrap',
-            display: 'inline',
-          }}
-        >
-          <strong>{key}</strong>
-          {': '}
-          {value != null ? value.toString() : '—'}
-        </span>
-        <OrangeBtn
-          type="button"
-          style={{
-            width: '25px',
-            height: '25px',
-            marginLeft: '5px',
-            marginRight: 0,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: `1px solid ${color.iconActive}`,
-            padding: 0,
-          }}
-          onClick={() => removeField(userId, nestedKey, setUsers, setState, isToastOn, nestedKey)}
-        >
-          <FaTimes size={14} color={color.white} />
-        </OrangeBtn>
-      </div>
-    );
-  });
-};
 
 // Компонент для рендерингу картки користувача
 const UserCard = ({
@@ -167,7 +53,12 @@ const UserCard = ({
         </div>
       )}
       <div id={userData.userId} style={{ display: 'none' }}>
-        {renderFields(userData, '', userData.userId, setUsers, setState, isToastOn)}
+        {renderAllFields(userData, '', {
+          userId: userData.userId,
+          setUsers,
+          stateUpdater: setState,
+          isToastOn,
+        })}
       </div>
     </div>
   );
