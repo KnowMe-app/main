@@ -56,6 +56,7 @@ import {
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
+import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 // import { UploadJson } from './topBtns/uploadNewJSON';
 import { btnExportUsers } from './topBtns/btnExportUsers';
 import { btnMerge } from './smallCard/btnMerge';
@@ -1125,6 +1126,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const fieldsToRender = getFieldsToRender(state);
 
+  const effectiveCycleStatus = getEffectiveCycleStatus(state);
+  const scheduleUserData = state
+    ? { ...state, cycleStatus: effectiveCycleStatus ?? state.cycleStatus }
+    : state;
+  const shouldShowSchedule = ['stimulation', 'pregnant'].includes(effectiveCycleStatus);
+
 
   // const fieldsToRender = [
   //   ...pickerFields,
@@ -1213,10 +1220,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 setIsToastOn,
               )}
             </div>
-            {state.cycleStatus === 'stimulation' && (
+            {shouldShowSchedule && state && (
               <div style={{ ...coloredCard(), marginBottom: '8px' }}>
                 <StimulationSchedule
-                  userData={state}
+                  userData={scheduleUserData}
                   setUsers={setUsers}
                   setState={setState}
                   isToastOn={isToastOn}

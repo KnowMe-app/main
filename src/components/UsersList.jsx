@@ -2,11 +2,12 @@ import React from 'react';
 import { coloredCard, FadeContainer } from './styles';
 import { makeNewUser } from './config';
 import { renderTopBlock } from './smallCard/renderTopBlock';
-import StimulationSchedule from './StimulationSchedule';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnEdit } from './smallCard/btnEdit';
 import { renderAllFields } from './ProfileForm';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
+import StimulationSchedule from './StimulationSchedule';
+import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 
 // Компонент для рендерингу картки користувача
 const UserCard = ({
@@ -23,6 +24,13 @@ const UserCard = ({
   isDateInRange,
   isToastOn = false,
 }) => {
+  const effectiveStatus = getEffectiveCycleStatus(userData);
+  const scheduleUserData = {
+    ...userData,
+    cycleStatus: effectiveStatus ?? userData?.cycleStatus,
+  };
+  const shouldShowSchedule = ['stimulation', 'pregnant'].includes(effectiveStatus);
+
   return (
     <div>
       <div style={{ ...coloredCard(), marginBottom: '8px' }}>
@@ -42,10 +50,10 @@ const UserCard = ({
           isToastOn,
         )}
       </div>
-      {userData.cycleStatus === 'stimulation' && (
+      {shouldShowSchedule && (
         <div style={{ ...coloredCard(), marginBottom: '8px' }}>
           <StimulationSchedule
-            userData={userData}
+            userData={scheduleUserData}
             setUsers={setUsers}
             setState={setState}
             isToastOn={isToastOn}

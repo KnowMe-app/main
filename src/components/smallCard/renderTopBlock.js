@@ -18,6 +18,7 @@ import { normalizeRegion } from '../normalizeLocation';
 import { fetchUserById } from '../config';
 import { updateCard, clearCardCache } from 'utils/cardsStorage';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import toast from 'react-hot-toast';
 
 const getParentBackground = element => {
@@ -57,24 +58,25 @@ export const renderTopBlock = (
 ) => {
   if (!userData) return null;
 
-  const region = normalizeRegion(userData.region);
+  const cardData = { ...userData, cycleStatus: getEffectiveCycleStatus(userData) };
+  const region = normalizeRegion(cardData.region);
 
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
-      {btnDel(userData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
+      {btnDel(cardData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
       {!isFromListOfUsers && <BtnToast isToastOn={isToastOn} setIsToastOn={setIsToastOn} />}
-      {btnExport(userData)}
+      {btnExport(cardData)}
       <div>
-        {userData.lastAction &&
-          formatDateToDisplay(normalizeLastAction(userData.lastAction))}
-        {userData.lastAction && ', '}
-        {userData.userId}
-        {userData.userRole !== 'ag' &&
-          userData.userRole !== 'ip' &&
-          userData.role !== 'ag' &&
-          userData.role !== 'ip' &&
+        {cardData.lastAction &&
+          formatDateToDisplay(normalizeLastAction(cardData.lastAction))}
+        {cardData.lastAction && ', '}
+        {cardData.userId}
+        {cardData.userRole !== 'ag' &&
+          cardData.userRole !== 'ip' &&
+          cardData.role !== 'ag' &&
+          cardData.role !== 'ip' &&
           fieldGetInTouch(
-            userData,
+            cardData,
             setUsers,
             setState,
             currentFilter,
@@ -85,22 +87,22 @@ export const renderTopBlock = (
             setDislikeUsers,
             isToastOn
           )}
-        {fieldRole(userData, setUsers, setState, isToastOn)}
-        {userData.userRole !== 'ag' &&
-          userData.userRole !== 'ip' &&
-          userData.role !== 'ag' &&
-          userData.role !== 'ip' && (
+        {fieldRole(cardData, setUsers, setState, isToastOn)}
+        {cardData.userRole !== 'ag' &&
+          cardData.userRole !== 'ip' &&
+          cardData.role !== 'ag' &&
+          cardData.role !== 'ip' && (
             <FieldLastCycle
-              userData={userData}
+              userData={cardData}
               setUsers={setUsers}
               setState={setState}
               isToastOn={isToastOn}
             />
           )}
-        <div>{fieldDeliveryInfo(setUsers, setState, userData)}</div>
+        <div>{fieldDeliveryInfo(setUsers, setState, cardData)}</div>
         <div>
-          {userData.birth && `${userData.birth} - `}
-          {userData.birth && fieldBirth(userData.birth)}
+          {cardData.birth && `${cardData.birth} - `}
+          {cardData.birth && fieldBirth(cardData.birth)}
         </div>
       </div>
       {/* <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div> */}
@@ -109,32 +111,32 @@ export const renderTopBlock = (
           {(() => {
             const nameParts = [];
 
-            if (Array.isArray(userData.surname)) {
-              if (userData.surname.length === 2) {
-                nameParts.push(`${userData.surname[1]} (${userData.surname[0]})`);
-              } else if (userData.surname.length > 0) {
-                nameParts.push(userData.surname.join(' '));
+            if (Array.isArray(cardData.surname)) {
+              if (cardData.surname.length === 2) {
+                nameParts.push(`${cardData.surname[1]} (${cardData.surname[0]})`);
+              } else if (cardData.surname.length > 0) {
+                nameParts.push(cardData.surname.join(' '));
               }
-            } else if (userData.surname) {
-              nameParts.push(userData.surname);
+            } else if (cardData.surname) {
+              nameParts.push(cardData.surname);
             }
 
-            if (userData.name) nameParts.push(userData.name);
-            if (userData.fathersname) nameParts.push(userData.fathersname);
+            if (cardData.name) nameParts.push(cardData.name);
+            if (cardData.fathersname) nameParts.push(cardData.fathersname);
 
             return nameParts.length > 0 ? `${nameParts.join(' ')}` : '';
           })()}
         </strong>
-        {/* {renderCsection(userData.csection)}  */}
+        {/* {renderCsection(cardData.csection)}  */}
         <div style={{ whiteSpace: 'pre-wrap', display: 'flex', alignItems: 'center', gap: '2px', flexWrap: 'wrap' }}>
           {(() => {
             const parts = [];
-            if (userData.maritalStatus) parts.push(fieldMaritalStatus(userData.maritalStatus));
-            if (userData.blood) parts.push(fieldBlood(userData.blood));
-            if (userData.height) parts.push(userData.height);
-            if (userData.height && userData.weight) parts.push('/');
-            if (userData.weight) parts.push(`${userData.weight}-`);
-            if (userData.weight && userData.height) parts.push(fieldIMT(userData.weight, userData.height));
+            if (cardData.maritalStatus) parts.push(fieldMaritalStatus(cardData.maritalStatus));
+            if (cardData.blood) parts.push(fieldBlood(cardData.blood));
+            if (cardData.height) parts.push(cardData.height);
+            if (cardData.height && cardData.weight) parts.push('/');
+            if (cardData.weight) parts.push(`${cardData.weight}-`);
+            if (cardData.weight && cardData.height) parts.push(fieldIMT(cardData.weight, cardData.height));
             return parts.map((part, index) => <React.Fragment key={index}>{part}</React.Fragment>);
           })()}
         </div>
@@ -147,16 +149,16 @@ export const renderTopBlock = (
             gap: '4px',
           }}
         >
-          {fieldContacts(userData)}
+          {fieldContacts(cardData)}
         </div>
       </div>
-      {fieldWriter(userData, setUsers, setState, isToastOn)}
-      <FieldComment userData={userData} setUsers={setUsers} setState={setState} isToastOn={isToastOn} />
+      {fieldWriter(cardData, setUsers, setState, isToastOn)}
+      <FieldComment userData={cardData} setUsers={setUsers} setState={setState} isToastOn={isToastOn} />
 
       <div
         onClick={async e => {
           e.stopPropagation();
-          const details = document.getElementById(userData.userId);
+          const details = document.getElementById(cardData.userId);
           const toggleDetails = () => {
             if (details) {
               const isHidden = details.style.display === 'none';
@@ -175,18 +177,18 @@ export const renderTopBlock = (
           let toastFn = toast.error;
           let toastMsg = 'Failed to load data';
           try {
-            fresh = await fetchUserById(userData.userId);
+            fresh = await fetchUserById(cardData.userId);
             if (fresh) {
-              clearCardCache(userData.userId);
-              const updated = updateCard(userData.userId, fresh);
+              clearCardCache(cardData.userId);
+              const updated = updateCard(cardData.userId, fresh);
 
               if (setUsers) {
                 setUsers(prev => {
                   if (Array.isArray(prev)) {
-                    return prev.map(u => (u.userId === userData.userId ? updated : u));
+                    return prev.map(u => (u.userId === cardData.userId ? updated : u));
                   }
                   if (typeof prev === 'object' && prev !== null) {
-                    return { ...prev, [userData.userId]: updated };
+                    return { ...prev, [cardData.userId]: updated };
                   }
                   return prev;
                 });
