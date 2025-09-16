@@ -22,6 +22,7 @@ import {
 } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import toast from 'react-hot-toast';
+import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 
 const Container = styled.div`
   display: flex;
@@ -207,6 +208,12 @@ const EditProfile = () => {
     });
   };
 
+  const effectiveCycleStatus = getEffectiveCycleStatus(state);
+  const scheduleUserData = state
+    ? { ...state, cycleStatus: effectiveCycleStatus ?? state.cycleStatus }
+    : state;
+  const shouldShowSchedule = ['stimulation', 'pregnant'].includes(effectiveCycleStatus);
+
   if (!state) return null;
 
   return (
@@ -230,9 +237,13 @@ const EditProfile = () => {
           setIsToastOn,
         )}
       </div>
-      {state.cycleStatus === 'stimulation' && (
+      {shouldShowSchedule && state && (
         <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-          <StimulationSchedule userData={state} setState={setState} isToastOn={isToastOn} />
+          <StimulationSchedule
+            userData={scheduleUserData}
+            setState={setState}
+            isToastOn={isToastOn}
+          />
         </div>
       )}
       <ProfileForm

@@ -2,6 +2,7 @@ import React from 'react';
 import { handleChange, handleSubmit } from './smallCard/actions';
 import { OrangeBtn } from 'components/styles';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
+import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 
 const parseDate = str => {
   if (!str) return null;
@@ -184,6 +185,7 @@ export const serializeSchedule = sched =>
 
 const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }) => {
   const base = React.useMemo(() => parseDate(userData?.lastCycle), [userData?.lastCycle]);
+  const effectiveStatus = getEffectiveCycleStatus(userData);
   const [schedule, setSchedule] = React.useState([]);
   const [apDescription, setApDescription] = React.useState('');
   const [editingIndex, setEditingIndex] = React.useState(null);
@@ -219,7 +221,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   );
 
   React.useEffect(() => {
-    if (userData?.cycleStatus !== 'stimulation' || !base) return;
+    if (!['stimulation', 'pregnant'].includes(effectiveStatus) || !base) return;
 
     const gen = generateSchedule(base);
     const expectedFirst = gen[0]?.date;
@@ -268,7 +270,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     } else {
       setSchedule(gen);
     }
-  }, [userData.stimulationSchedule, userData.cycleStatus, base, userData.lastCycle]);
+  }, [userData.stimulationSchedule, effectiveStatus, base, userData.lastCycle]);
 
   const postTransferKeys = React.useMemo(() => ['hcg', 'us'], []);
 
@@ -345,7 +347,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     });
   };
 
-  if (userData?.cycleStatus !== 'stimulation' || !base || schedule.length === 0)
+  if (!['stimulation', 'pregnant'].includes(effectiveStatus) || !base || schedule.length === 0)
     return null;
 
   const today = new Date().setHours(0, 0, 0, 0);
