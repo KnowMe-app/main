@@ -266,21 +266,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const baseState = newState ? { ...newState } : { ...state };
     const updatedState = { ...baseState, lastAction: now };
 
-    // Optimistically update local cache and UI state before syncing with server
-    setState(updatedState);
-    const removeKeys = delCondition ? Object.keys(delCondition) : [];
-    updateCachedUser(updatedState, { removeKeys });
-    cacheFetchedUsers({ [updatedState.userId]: updatedState }, cacheLoad2Users, filters);
-    setUsers(prev => ({ ...prev, [updatedState.userId]: updatedState }));
-
     const formattedLastDelivery = formatDateToServer(
       formatDateAndFormula(updatedState.lastDelivery)
     );
 
-    const syncedState = {
-      ...updatedState,
-      ...(formattedLastDelivery ? { lastDelivery: formattedLastDelivery } : {}),
-    };
+    const syncedState = { ...updatedState };
+
+    if (formattedLastDelivery) {
+      syncedState.lastDelivery = formattedLastDelivery;
+    } else {
+      delete syncedState.lastDelivery;
+    }
+
+    // Optimistically update local cache and UI state before syncing with server
+    setState(syncedState);
+    const removeKeys = delCondition ? Object.keys(delCondition) : [];
+    updateCachedUser(syncedState, { removeKeys });
+    cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
+    setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
 
     if (syncedState?.userId?.length > 20) {
       const { existingData } = await fetchUserById(syncedState.userId);
@@ -311,9 +314,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       );
     } else {
       if (newState) {
-        const newStateWithDelivery = formattedLastDelivery
-          ? { ...newState, lastDelivery: formattedLastDelivery }
-          : { ...newState };
+        const newStateWithDelivery = { ...newState };
+
+        if (formattedLastDelivery) {
+          newStateWithDelivery.lastDelivery = formattedLastDelivery;
+        } else {
+          delete newStateWithDelivery.lastDelivery;
+        }
         await updateDataInNewUsersRTDB(
           syncedState.userId,
           newStateWithDelivery,
