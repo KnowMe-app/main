@@ -30,7 +30,15 @@ export const FieldComment = ({ userData, setUsers, setState, isToastOn }) => {
           handleInputChange(e);
           autoResize(e.target);
         }}
-        onBlur={() => handleSubmit(userData, 'overwrite', isToastOn)}
+        onBlur={() => {
+          const currentComment =
+            textareaRef.current?.value ?? userData.myComment ?? '';
+          const payload = {
+            ...userData,
+            myComment: currentComment,
+          };
+          handleSubmit(payload, 'overwrite', isToastOn);
+        }}
         style={{
           // marginLeft: '10px',
           width: '100%',

@@ -204,18 +204,29 @@ export const fieldGetInTouch = (
             false
           );
         }}
-        onBlur={() => {
+        onBlur={e => {
+          const rawValue = e?.target?.value ?? '';
+          const serverFormattedDate = formatDateToServer(
+            formatDateAndFormula(rawValue)
+          );
+
           handleChange(
             setUsers,
             setState,
             userData.userId,
             'getInTouch',
-            userData.getInTouch,
+            serverFormattedDate,
             false,
             { currentFilter, isDateInRange },
             isToastOn,
           );
-          handleSubmit(userData, 'overwrite', isToastOn);
+
+          const updatedUser = {
+            ...userData,
+            getInTouch: serverFormattedDate,
+          };
+
+          handleSubmit(updatedUser, 'overwrite', isToastOn);
         }}
         style={{
           marginLeft: 0,
