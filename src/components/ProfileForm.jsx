@@ -42,14 +42,56 @@ const removeButtonStyle = {
   justifyContent: 'center',
   border: `1px solid ${color.iconActive}`,
   padding: 0,
+  flexShrink: 0,
+};
+
+const fieldRowStyle = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: '8px',
+  flexWrap: 'wrap',
+  marginBottom: '4px',
+};
+
+const fieldValueStyle = {
+  wordBreak: 'break-word',
+  whiteSpace: 'pre-wrap',
+};
+
+const nestedValueContainerStyle = {
+  flex: '1 1 auto',
+  minWidth: 0,
+};
+
+const nestedIndentStyle = {
+  marginLeft: '20px',
 };
 
 // Рекурсивне відображення всіх полів користувача, включно з вкладеними об'єктами та масивами
-const renderAllFields = (data, parentKey = '', state, setState) => {
+export const renderAllFields = (data, parentKey = '', options = {}) => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderAllFields:', data);
     return null;
   }
+
+  const { userId, setUsers, stateUpdater, isToastOn = false } = options;
+  const effectiveSetUsers = typeof setUsers === 'function' ? setUsers : stateUpdater;
+  const canRemove = typeof effectiveSetUsers === 'function';
+
+  const handleRemove = keyPath => {
+    if (!canRemove) {
+      return;
+    }
+
+    removeField(
+      userId,
+      keyPath,
+      effectiveSetUsers,
+      stateUpdater,
+      isToastOn,
+      keyPath,
+    );
+  };
 
   const extendedData = { ...data };
   if (typeof extendedData.birth === 'string') {
@@ -97,53 +139,76 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
 
     if (Array.isArray(value)) {
       return (
-        <div key={nestedKey}>
-          <strong>{key}</strong>
-          <OrangeBtn
-            type="button"
-            style={removeButtonStyle}
-            onClick={() => removeField(state?.userId, nestedKey, setState, undefined, false, nestedKey)}
-          >
-            <FaTimes size={14} color={color.white} />
-          </OrangeBtn>
-          {': '}
-          <div style={{ marginLeft: '20px' }}>
-            {value.map((item, idx) => {
-              const arrayKey = `${nestedKey}.${idx}`;
-              if (typeof item === 'object' && item !== null) {
-                return (
-                  <div key={arrayKey}>
-                    <strong>[{idx}]</strong>
-                    <OrangeBtn
-                      type="button"
-                      style={removeButtonStyle}
-                      onClick={() => removeField(state?.userId, arrayKey, setState, undefined, false, arrayKey)}
-                    >
-                      <FaTimes size={14} color={color.white} />
-                    </OrangeBtn>
-                    {': '}
-                    <div style={{ marginLeft: '20px' }}>
-                      {renderAllFields(item, arrayKey, state, setState)}
-                    </div>
-                  </div>
-                );
-              }
+        <div key={nestedKey} style={{ marginBottom: '8px' }}>
+          <div style={fieldRowStyle}>
+            <span style={fieldValueStyle}>
+              <strong>{key}</strong>
+              {': '}
+            </span>
+            <div style={{ ...nestedValueContainerStyle }}>
+              <div style={nestedIndentStyle}>
+                {value.length > 0 ? (
+                  value.map((item, idx) => {
+                    const arrayKey = `${nestedKey}.${idx}`;
 
-              return (
-                <div key={arrayKey}>
-                  <strong>[{idx}]</strong>
-                  <OrangeBtn
-                    type="button"
-                    style={removeButtonStyle}
-                    onClick={() => removeField(state?.userId, arrayKey, setState, undefined, false, arrayKey)}
-                  >
-                    <FaTimes size={14} color={color.white} />
-                  </OrangeBtn>
-                  {': '}
-                  {item != null ? item.toString() : '—'}
-                </div>
-              );
-            })}
+                    if (typeof item === 'object' && item !== null) {
+                      return (
+                        <div key={arrayKey} style={fieldRowStyle}>
+                          <span style={fieldValueStyle}>
+                            <strong>[{idx}]</strong>
+                            {': '}
+                          </span>
+                          <div style={{ ...nestedValueContainerStyle }}>
+                            <div style={nestedIndentStyle}>
+                              {renderAllFields(item, arrayKey, options)}
+                            </div>
+                          </div>
+                          {canRemove && (
+                            <OrangeBtn
+                              type="button"
+                              style={removeButtonStyle}
+                              onClick={() => handleRemove(arrayKey)}
+                            >
+                              <FaTimes size={14} color={color.white} />
+                            </OrangeBtn>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={arrayKey} style={fieldRowStyle}>
+                        <span style={fieldValueStyle}>
+                          <strong>[{idx}]</strong>
+                          {': '}
+                          {item != null ? item.toString() : '—'}
+                        </span>
+                        {canRemove && (
+                          <OrangeBtn
+                            type="button"
+                            style={removeButtonStyle}
+                            onClick={() => handleRemove(arrayKey)}
+                          >
+                            <FaTimes size={14} color={color.white} />
+                          </OrangeBtn>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <span style={fieldValueStyle}>—</span>
+                )}
+              </div>
+            </div>
+            {canRemove && (
+              <OrangeBtn
+                type="button"
+                style={removeButtonStyle}
+                onClick={() => handleRemove(nestedKey)}
+              >
+                <FaTimes size={14} color={color.white} />
+              </OrangeBtn>
+            )}
           </div>
         </div>
       );
@@ -151,33 +216,45 @@ const renderAllFields = (data, parentKey = '', state, setState) => {
 
     if (typeof value === 'object' && value !== null) {
       return (
-        <div key={nestedKey}>
-          <strong>{key}</strong>
-          <OrangeBtn
-            type="button"
-            style={removeButtonStyle}
-            onClick={() => removeField(state?.userId, nestedKey, setState, undefined, false, nestedKey)}
-          >
-            <FaTimes size={14} color={color.white} />
-          </OrangeBtn>
-          {': '}
-          <div style={{ marginLeft: '20px' }}>{renderAllFields(value, nestedKey, state, setState)}</div>
+        <div key={nestedKey} style={{ marginBottom: '8px' }}>
+          <div style={fieldRowStyle}>
+            <span style={fieldValueStyle}>
+              <strong>{key}</strong>
+              {': '}
+            </span>
+            <div style={{ ...nestedValueContainerStyle }}>
+              <div style={nestedIndentStyle}>{renderAllFields(value, nestedKey, options)}</div>
+            </div>
+            {canRemove && (
+              <OrangeBtn
+                type="button"
+                style={removeButtonStyle}
+                onClick={() => handleRemove(nestedKey)}
+              >
+                <FaTimes size={14} color={color.white} />
+              </OrangeBtn>
+            )}
+          </div>
         </div>
       );
     }
 
     return (
-      <div key={nestedKey}>
-        <strong>{key}</strong>
-        <OrangeBtn
-          type="button"
-          style={removeButtonStyle}
-          onClick={() => removeField(state?.userId, nestedKey, setState, undefined, false, nestedKey)}
-        >
-          <FaTimes size={14} color={color.white} />
-        </OrangeBtn>
-        {': '}
-        {value != null ? value.toString() : '—'}
+      <div key={nestedKey} style={fieldRowStyle}>
+        <span style={fieldValueStyle}>
+          <strong>{key}</strong>
+          {': '}
+          {value != null ? value.toString() : '—'}
+        </span>
+        {canRemove && (
+          <OrangeBtn
+            type="button"
+            style={removeButtonStyle}
+            onClick={() => handleRemove(nestedKey)}
+          >
+            <FaTimes size={14} color={color.white} />
+          </OrangeBtn>
+        )}
       </div>
     );
   });
@@ -261,7 +338,7 @@ export const ProfileForm = ({
           id={state.userId}
           style={{ display: 'none', textAlign: 'left', marginBottom: '8px' }}
         >
-          {renderAllFields(state, '', state, setState)}
+          {renderAllFields(state, '', { userId: state?.userId, setUsers: setState })}
         </div>
       )}
       {sortedFieldsToRender
