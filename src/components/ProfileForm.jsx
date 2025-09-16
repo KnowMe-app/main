@@ -47,13 +47,15 @@ const removeButtonStyle = {
 
 const fieldRowStyle = {
   display: 'flex',
-  alignItems: 'flex-start',
+  alignItems: 'center',
+  justifyContent: 'space-between',
   gap: '8px',
-  flexWrap: 'wrap',
+  flexWrap: 'nowrap',
   marginBottom: '4px',
 };
 
 const fieldValueStyle = {
+  flex: 1,
   wordBreak: 'break-word',
   whiteSpace: 'pre-wrap',
 };
