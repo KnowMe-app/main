@@ -33,9 +33,9 @@ export const getFieldsToRender = state => {
 };
 
 const removeButtonStyle = {
-  width: '25px',
-  height: '25px',
-  marginLeft: '5px',
+  width: '20px',
+  height: '20px',
+  marginLeft: '3px',
   marginRight: 0,
   display: 'inline-flex',
   alignItems: 'center',
@@ -169,7 +169,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
                               style={removeButtonStyle}
                               onClick={() => handleRemove(arrayKey)}
                             >
-                              <FaTimes size={14} color={color.white} />
+                              <FaTimes size={12} color={color.white} />
                             </OrangeBtn>
                           )}
                         </div>
@@ -189,7 +189,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
                             style={removeButtonStyle}
                             onClick={() => handleRemove(arrayKey)}
                           >
-                            <FaTimes size={14} color={color.white} />
+                            <FaTimes size={12} color={color.white} />
                           </OrangeBtn>
                         )}
                       </div>
@@ -206,7 +206,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
                 style={removeButtonStyle}
                 onClick={() => handleRemove(nestedKey)}
               >
-                <FaTimes size={14} color={color.white} />
+                <FaTimes size={12} color={color.white} />
               </OrangeBtn>
             )}
           </div>
@@ -231,7 +231,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
                 style={removeButtonStyle}
                 onClick={() => handleRemove(nestedKey)}
               >
-                <FaTimes size={14} color={color.white} />
+                <FaTimes size={12} color={color.white} />
               </OrangeBtn>
             )}
           </div>
@@ -252,7 +252,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
             style={removeButtonStyle}
             onClick={() => handleRemove(nestedKey)}
           >
-            <FaTimes size={14} color={color.white} />
+            <FaTimes size={12} color={color.white} />
           </OrangeBtn>
         )}
       </div>
