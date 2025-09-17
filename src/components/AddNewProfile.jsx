@@ -688,13 +688,30 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleAddUser = async () => {
     setAdding(true);
-    const newProfile = await makeNewUser(searchKeyValuePair);
-    updateCachedUser(newProfile);
-    cacheFetchedUsers({ [newProfile.userId]: newProfile }, cacheLoad2Users, filters);
-    setUsers(prev => ({ ...prev, [newProfile.userId]: newProfile }));
-    setState(newProfile);
-    setUserNotFound(false);
-    setAdding(false);
+    try {
+      const rawSearch = search || '';
+      const hasSearchText = rawSearch.trim().length > 0;
+
+      if (!hasSearchText && searchKeyValuePair) {
+        setSearchKeyValuePair(null);
+      }
+
+      const newProfile = await makeNewUser(
+        hasSearchText ? searchKeyValuePair : null,
+        rawSearch,
+      );
+      updateCachedUser(newProfile);
+      cacheFetchedUsers(
+        { [newProfile.userId]: newProfile },
+        cacheLoad2Users,
+        filters,
+      );
+      setUsers(prev => ({ ...prev, [newProfile.userId]: newProfile }));
+      setState(newProfile);
+      setUserNotFound(false);
+    } finally {
+      setAdding(false);
+    }
   };
   const dotsMenu = () => {
     return (
