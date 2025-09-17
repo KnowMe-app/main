@@ -4,6 +4,7 @@ import {
   formatInstagram,
   formatNumber,
   formatTelegram,
+  formatVk,
   formatDate,
   removeSpacesLeaveEnter,
   removeExtraSpaces,
@@ -43,6 +44,10 @@ export const inputUpdateValue = (value, field, data) => {
       ? formatTelegram(value)
       : field.name === 'facebook'
       ? formatFacebook(value)
+      : field.name === 'vk'
+      ? Array.isArray(value)
+        ? value.map(item => formatVk(item))
+        : formatVk(value)
       : field.name === 'instagram'
       ? formatInstagram(value)
       : field.name === 'email'

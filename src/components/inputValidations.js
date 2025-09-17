@@ -118,7 +118,48 @@ export const removeSpaceAndNewLine = value => {
       }
     }
   };
-  
+
+  export const formatVk = value => {
+    if (value === undefined || value === null) {
+      return value;
+    }
+
+    let normalized = String(value).trim();
+    if (!normalized) {
+      return '';
+    }
+
+    const labelMatch = normalized.match(/^(?:vk|вк)\s*[:=]?\s*(.+)$/i);
+    if (labelMatch && labelMatch[1]) {
+      normalized = labelMatch[1].trim();
+    }
+
+    normalized = normalized
+      .replace(/^https?:\/\/(?:www\.)?(?:m\.)?vk\.com\//i, '')
+      .replace(/^vk\.com\//i, '')
+      .replace(/^m\.vk\.com\//i, '')
+      .replace(/^www\.vk\.com\//i, '');
+
+    normalized = normalized.replace(/^@/, '');
+    normalized = normalized.split(/[?#]/)[0];
+    normalized = normalized.split('/')[0];
+    normalized = normalized.replace(/\s+/g, '');
+
+    if (!normalized) {
+      return '';
+    }
+
+    if (/^id\d+$/i.test(normalized)) {
+      return `id${normalized.slice(2)}`;
+    }
+
+    if (/^\d+$/.test(normalized)) {
+      return `id${normalized}`;
+    }
+
+    return normalized;
+  };
+
   export const formatTelegram = nick => {
     // Видаляємо символ "@" з початку ніка
     if (nick.includes('@')) {

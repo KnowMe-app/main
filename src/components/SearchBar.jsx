@@ -196,6 +196,42 @@ const parseTikTokLink = url => {
   return null;
 };
 
+const normalizeVkValue = rawValue => {
+  if (typeof rawValue !== 'string') return null;
+  let value = rawValue.trim();
+  if (!value) return null;
+
+  const labelMatch = value.match(/^(?:vk|вк)\s*[:=]?\s*(.+)$/i);
+  if (labelMatch && labelMatch[1]) {
+    value = labelMatch[1].trim();
+  }
+
+  value = value
+    .replace(/^https?:\/\/(?:www\.)?(?:m\.)?vk\.com\//i, '')
+    .replace(/^vk\.com\//i, '')
+    .replace(/^m\.vk\.com\//i, '')
+    .replace(/^www\.vk\.com\//i, '');
+
+  value = value.replace(/^@/, '');
+  value = value.split(/[?#]/)[0];
+  value = value.split('/')[0];
+  value = value.replace(/\s+/g, '');
+
+  if (!value) return null;
+
+  if (/^id\d+$/i.test(value)) {
+    return `id${value.slice(2)}`;
+  }
+
+  if (/^\d+$/.test(value)) {
+    return `id${value}`;
+  }
+
+  return value;
+};
+
+const parseVk = value => normalizeVkValue(value);
+
 const parseUserId = input => {
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
@@ -240,6 +276,7 @@ export const detectSearchParams = query => {
     ['email', parseEmail],
     ['tiktok', parseTikTokLink],
     ['phone', parsePhoneNumber],
+    ['vk', parseVk],
     ['other', parseOtherContact],
   ];
   for (const [key, parser] of parsers) {
@@ -543,6 +580,7 @@ const SearchBar = ({
     if (await processUserSearch('email', parseEmail, query)) return;
     if (await processUserSearch('tiktok', parseTikTokLink, query)) return;
     if (await processUserSearch('phone', parsePhoneNumber, query)) return;
+    if (await processUserSearch('vk', parseVk, query)) return;
     if (await processUserSearch('other', parseOtherContact, query)) return;
 
     const nameTrim = query.trim();
