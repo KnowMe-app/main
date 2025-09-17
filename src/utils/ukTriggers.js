@@ -109,7 +109,7 @@ export const parseUkTrigger = input => {
 
   extract(
     'instagram',
-    /(?:^|\s)(?:інстаграм|інста|insta(?:gram)?|ig)\s*[:\-]?\s*@?([A-Za-z0-9._]+)/gi,
+    /(?:^|\s)(?:інстаграм|інста|insta(?:gram)?|ig)\s*[:-]?\s*@?([A-Za-z0-9._]+)/gi,
     value => sanitizeHandle(value),
   );
 
@@ -121,7 +121,7 @@ export const parseUkTrigger = input => {
 
   extract(
     'tiktok',
-    /(?:^|\s)(?:тікток|tiktok|tik\s*tok|tt)\s*[:\-]?\s*@?([A-Za-z0-9._-]+)/gi,
+    /(?:^|\s)(?:тікток|tiktok|tik\s*tok|tt)\s*[:-]?\s*@?([A-Za-z0-9._-]+)/gi,
     value => sanitizeHandle(value),
   );
 
@@ -133,7 +133,7 @@ export const parseUkTrigger = input => {
 
   extract(
     'facebook',
-    /(?:^|\s)(?:facebook|фб|fb)\s*[:\-]?\s*@?([A-Za-z0-9.]+)/gi,
+    /(?:^|\s)(?:facebook|фб|fb)\s*[:-]?\s*@?([A-Za-z0-9.]+)/gi,
     value => sanitizeHandle(value) ?? value,
   );
 
@@ -145,7 +145,7 @@ export const parseUkTrigger = input => {
 
   extract(
     'vk',
-    /(?:^|\s)(?:vk|вк)\s*[:\-]?\s*@?([A-Za-z0-9._]+)/gi,
+    /(?:^|\s)(?:vk|вк)\s*[:-]?\s*@?([A-Za-z0-9._]+)/gi,
     value => sanitizeHandle(value),
   );
 
@@ -157,7 +157,7 @@ export const parseUkTrigger = input => {
 
   extract(
     'telegram',
-    /(?:^|\s)(?:telegram|телеграм|телега|tg|тг)\s*[:\-]?\s*@?([A-Za-z0-9._]+)/gi,
+    /(?:^|\s)(?:telegram|телеграм|телега|tg|тг)\s*[:-]?\s*@?([A-Za-z0-9._]+)/gi,
     value => sanitizeHandle(value),
   );
 
