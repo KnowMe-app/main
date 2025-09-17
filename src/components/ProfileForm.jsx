@@ -48,14 +48,15 @@ const removeButtonStyle = {
 const fieldRowStyle = {
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'space-between',
+  justifyContent: 'flex-start',
   gap: '8px',
   flexWrap: 'nowrap',
   marginBottom: '4px',
 };
 
 const fieldValueStyle = {
-  flex: 1,
+  flexShrink: 1,
+  minWidth: 0,
   wordBreak: 'break-word',
   whiteSpace: 'pre-wrap',
 };
