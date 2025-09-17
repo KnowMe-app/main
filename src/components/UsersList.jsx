@@ -92,7 +92,7 @@ const UsersList = ({
   const entries = Object.entries(users);
 
   const handleCreate = async value => {
-    const res = await makeNewUser({ name: value });
+    const res = await makeNewUser({ name: value }, value);
     setUsers(prev => {
       const copy = { ...prev };
       delete copy[`new_${value}`];
