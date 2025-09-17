@@ -1,4 +1,4 @@
-import { handleChange, handleSubmit } from './actions';
+import { handleChange } from './actions';
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
 
 export const fieldRole = (userData, setUsers, setState, isToastOn) => {
@@ -12,7 +12,18 @@ export const fieldRole = (userData, setUsers, setState, isToastOn) => {
         type="text"
         value={userData.role || ''}
         onChange={e => handleChange(setUsers, setState, userData.userId, 'role', e.target.value)}
-        onBlur={() => handleSubmit(userData, 'overwrite', isToastOn)}
+        onBlur={e =>
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            'role',
+            e.target.value,
+            true,
+            {},
+            isToastOn,
+          )
+        }
         style={{ marginLeft: 0, textAlign: 'left', width: '6ch' }}
       />
       {['ed', 'ip', 'ag'].map(role => (
