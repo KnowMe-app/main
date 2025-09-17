@@ -12,6 +12,20 @@ import { normalizeLastAction } from './normalizeLastAction';
 
 export { TTL_MS };
 
+const getCardCacheTimestamp = card => {
+  if (!card) return 0;
+  const { cachedAt } = card;
+  if (typeof cachedAt === 'number' && Number.isFinite(cachedAt)) {
+    return cachedAt;
+  }
+  const parsedCachedAt = Number(cachedAt);
+  if (Number.isFinite(parsedCachedAt) && parsedCachedAt > 0) {
+    return parsedCachedAt;
+  }
+  const normalizedLastAction = normalizeLastAction(card.lastAction);
+  return typeof normalizedLastAction === 'number' ? normalizedLastAction : 0;
+};
+
 export const addCardToList = (cardId, listKey) => {
   const ids = getIdsByQuery(listKey);
   if (!ids.includes(cardId)) {
@@ -94,13 +108,20 @@ const removeNestedValue = (current, segments, depth = 0) => {
 
 export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   const cards = loadCards();
+  const existing = cards[cardId] || {};
   let updatedCard = {
-    ...cards[cardId],
+    ...existing,
     ...data,
     userId: cardId,
-    lastAction: normalizeLastAction(data.lastAction) || Date.now(),
+    cachedAt: Date.now(),
   };
   delete updatedCard.id;
+
+  if (data.lastAction !== undefined) {
+    const normalized = normalizeLastAction(data.lastAction);
+    updatedCard.lastAction =
+      normalized !== undefined ? normalized : data.lastAction;
+  }
 
   removeKeys
     .map(key => String(key).trim())
@@ -117,7 +138,7 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   saveCards(cards);
   touchCardInQueries(cardId);
   if (typeof remoteSave === 'function') {
-    const { lastAction, ...toSend } = updatedCard;
+    const { lastAction, cachedAt, ...toSend } = updatedCard;
     Promise.resolve(remoteSave(toSend)).catch(() => {});
   }
   return updatedCard;
@@ -125,15 +146,19 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
 
 export const getCardsByList = async (listKey, remoteFetch) => {
   const cards = loadCards();
-  const { ids, lastAction } = getQueryEntry(listKey);
+  const { ids, cachedAt: queryCachedAt } = getQueryEntry(listKey);
   const freshIds = [];
   const result = [];
   let fromCache = ids.length > 0;
 
-  if (lastAction && Date.now() - lastAction <= TTL_MS) {
+  if (queryCachedAt && Date.now() - queryCachedAt <= TTL_MS) {
     ids.forEach(id => {
       const card = cards[id];
       if (card) {
+        const cacheTime = getCardCacheTimestamp(card);
+        if (!card.cachedAt && cacheTime) {
+          card.cachedAt = cacheTime;
+        }
         result.push(card);
         freshIds.push(id);
       }
@@ -143,7 +168,11 @@ export const getCardsByList = async (listKey, remoteFetch) => {
 
     ids.forEach(id => {
       const card = cards[id];
-      if (card && Date.now() - card.lastAction <= TTL_MS) {
+      const cacheTime = getCardCacheTimestamp(card);
+      if (card && cacheTime && Date.now() - cacheTime <= TTL_MS) {
+        if (!card.cachedAt) {
+          card.cachedAt = cacheTime;
+        }
         result.push(card);
         freshIds.push(id);
       } else {
@@ -163,11 +192,17 @@ export const getCardsByList = async (listKey, remoteFetch) => {
       fetched.forEach(([id, fresh]) => {
         if (fresh) {
           const { id: _, ...rest } = fresh;
+          const now = Date.now();
           const card = {
             ...rest,
             userId: id,
-            lastAction: normalizeLastAction(rest.lastAction) || Date.now(),
+            cachedAt: now,
           };
+          if (rest.lastAction !== undefined) {
+            const normalized = normalizeLastAction(rest.lastAction);
+            card.lastAction =
+              normalized !== undefined ? normalized : rest.lastAction;
+          }
           cards[id] = card;
           result.push(card);
           freshIds.push(id);
@@ -217,11 +252,17 @@ export const getFilteredCardsByList = async (
       const extra = await fetchMore(needed);
       extra.forEach(([id, data]) => {
         const { id: _, ...rest } = data;
+        const now = Date.now();
         const card = {
           ...rest,
           userId: id,
-          lastAction: normalizeLastAction(rest.lastAction) || Date.now(),
+          cachedAt: now,
         };
+        if (rest.lastAction !== undefined) {
+          const normalized = normalizeLastAction(rest.lastAction);
+          card.lastAction =
+            normalized !== undefined ? normalized : rest.lastAction;
+        }
         cards[id] = card;
         if (!ids.includes(id)) ids.push(id);
       });
@@ -253,4 +294,7 @@ export const searchCachedCards = (term, ids) => {
   return results;
 };
 
-export const saveCard = indexSaveCard;
+export const saveCard = card => {
+  if (!card || !card.userId) return;
+  indexSaveCard({ ...card, cachedAt: Date.now() });
+};

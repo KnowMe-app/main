@@ -20,7 +20,10 @@ describe('cardsStorage', () => {
     const stored = JSON.parse(localStorage.getItem('cards'));
     expect(stored['1'].title).toBe('Card 1');
     expect(remoteSave).toHaveBeenCalledWith({ title: 'Card 1', userId: '1' });
-    expect(card).toHaveProperty('lastAction');
+    expect(card).toHaveProperty('cachedAt');
+    expect(typeof card.cachedAt).toBe('number');
+    expect(stored['1'].cachedAt).toBe(card.cachedAt);
+    expect(card.lastAction).toBeUndefined();
   });
 
   it('removes specified keys from card', () => {
@@ -62,7 +65,7 @@ describe('cardsStorage', () => {
     setIdsForQuery('favorite', ['1']);
     // expire list entry
     const queries = JSON.parse(localStorage.getItem('queries'));
-    queries['favorite'].lastAction = expired;
+    queries['favorite'].cachedAt = expired;
     localStorage.setItem('queries', JSON.stringify(queries));
 
     const remoteFetch = jest

@@ -24,15 +24,22 @@ export const setDislike = (id, isDisliked) => {
     ids.delete(id);
     removeCardFromList(id, DISLIKE_LIST_KEY);
   }
-  queries[DISLIKE_LIST_KEY] = { ids: Array.from(ids), lastAction: Date.now() };
+  const now = Date.now();
+  queries[DISLIKE_LIST_KEY] = {
+    ids: Array.from(ids),
+    cachedAt: now,
+    lastAction: now,
+  };
   saveQueries(queries);
 };
 
 export const syncDislikes = remoteDislikes => {
   const queries = loadQueries();
+  const now = Date.now();
   queries[DISLIKE_LIST_KEY] = {
     ids: Object.keys(remoteDislikes || {}),
-    lastAction: Date.now(),
+    cachedAt: now,
+    lastAction: now,
   };
   saveQueries(queries);
 };

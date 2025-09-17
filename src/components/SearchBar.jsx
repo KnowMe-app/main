@@ -347,7 +347,15 @@ const SearchBar = ({
     if (!cacheKey) return false;
     const queries = loadQueries();
     const entry = queries[cacheKey];
-    return !!(entry && Date.now() - entry.lastAction < TTL_MS);
+    if (!entry) return false;
+    const timestampSource =
+      typeof entry.cachedAt === 'number' && Number.isFinite(entry.cachedAt)
+        ? entry.cachedAt
+        : Number(entry.cachedAt ?? entry.lastAction ?? 0);
+    if (!Number.isFinite(timestampSource) || timestampSource <= 0) {
+      return false;
+    }
+    return Date.now() - timestampSource < TTL_MS;
   };
 
   const addToHistory = value => {
@@ -463,7 +471,11 @@ const SearchBar = ({
       const queries = loadQueries();
       const entry = queries[cacheKey];
       let ids = [];
-      if (entry && Date.now() - entry.lastAction < TTL_MS) {
+      const timestampSource =
+        typeof entry?.cachedAt === 'number' && Number.isFinite(entry.cachedAt)
+          ? entry.cachedAt
+          : Number(entry?.cachedAt ?? entry?.lastAction ?? 0);
+      if (entry && Number.isFinite(timestampSource) && timestampSource > 0 && Date.now() - timestampSource < TTL_MS) {
         ids = getIdsByQuery(cacheKey);
       } else {
         if (entry) {
