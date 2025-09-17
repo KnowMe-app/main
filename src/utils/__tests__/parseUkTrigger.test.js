@@ -11,7 +11,7 @@ describe('parseUkTriggerQuery', () => {
     const result = parseUkTriggerQuery('УК СМ Анна Марія');
     expect(result).toEqual({
       contactType: 'telegram',
-      contactValues: ['УК СМ Анна Марія'],
+ contactValues: ['УК СМ Анна Марія'],
       name: 'Анна',
       surname: 'Марія',
       handle: null,
@@ -23,11 +23,12 @@ describe('parseUkTriggerQuery', () => {
     const result = parseUkTriggerQuery('   УК СМ   Анна  Марія   @anna_user ');
     expect(result).toEqual({
       contactType: 'telegram',
-      contactValues: ['УК СМ Анна Марія @anna_user', 'anna_user'],
+  contactValues: ['УК СМ Анна Марія @anna_user', 'anna_user'],
       name: 'Анна',
       surname: 'Марія',
       handle: 'anna_user',
       searchPair: { telegram: 'УК СМ Анна Марія @anna_user' },
+
     });
   });
 
@@ -40,6 +41,7 @@ describe('parseUkTriggerQuery', () => {
       surname: '',
       handle: 'just_nickname',
       searchPair: { telegram: 'УК СМ @just_nickname' },
+
     });
   });
 

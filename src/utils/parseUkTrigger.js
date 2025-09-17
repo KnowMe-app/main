@@ -22,6 +22,7 @@ export const parseUkTriggerQuery = rawQuery => {
     ? `${normalizedTriggerPrefix} ${normalizedAfterTrigger}`
     : normalizedTriggerPrefix;
 
+
   const handleMatch = afterTrigger.match(/@([A-Za-z0-9_.]+)/);
   const handle = handleMatch ? handleMatch[1] : null;
 
@@ -34,6 +35,7 @@ export const parseUkTriggerQuery = rawQuery => {
   const surname = nameParts.slice(1).join(' ') || '';
 
   const contactValues = [normalizedQuery];
+
   if (handle) {
     contactValues.push(handle);
   }
