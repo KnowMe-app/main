@@ -605,56 +605,6 @@ export const searchUsersOnly = async searchedValue => {
   }
 };
 
-const ukTriggerRegex =
-  /^\s*(?:[УU][КK])\s*(?:[CС][MМ]|[IІ][PР]|[ДD][ОO])(?:\s*[:\-–—]?\s*)/iu;
-
-const telegramHandleRegex = /(?:@|(?:https?:\/\/)?t\.me\/)@?([A-Za-z0-9_]+)/i;
-
-const parseUkPrefixedValue = value => {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!ukTriggerRegex.test(trimmed)) return null;
-
-  const remainder = trimmed.replace(ukTriggerRegex, '').trim();
-
-  let cleanedHandle;
-  let workingRemainder = remainder;
-  const handleMatch = remainder.match(telegramHandleRegex);
-
-  if (handleMatch) {
-    cleanedHandle = handleMatch[1];
-    const before = remainder.slice(0, handleMatch.index).trim();
-    const after = remainder
-      .slice(handleMatch.index + handleMatch[0].length)
-      .trim();
-    workingRemainder = `${before} ${after}`.trim();
-  }
-
-  const tokens = workingRemainder
-    .split(/\s+/)
-    .map(token =>
-      token.replace(/^[^0-9A-Za-zА-Яа-яЁёІіЇїЄєҐґ]+|[^0-9A-Za-zА-Яа-яЁёІіЇїЄєҐґ]+$/g, '')
-    )
-    .filter(Boolean);
-  const [name, surname] = tokens;
-
-  return {
-    original: trimmed,
-    name: name || undefined,
-    surname: surname || undefined,
-    handle: cleanedHandle || undefined,
-  };
-};
-
-const addSearchIdEntry = (updates, key, value, userId, { stripSpaces } = {}) => {
-  if (!value) return;
-  const normalized = String(value).trim().toLowerCase();
-  if (!normalized) return;
-  const cleaned = stripSpaces ? normalized.replace(/\s+/g, '') : normalized;
-  if (!cleaned) return;
-  updates[`${key}_${encodeKey(cleaned)}`] = userId;
-};
-
 export const makeNewUser = async searchedValue => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
@@ -681,42 +631,11 @@ export const makeNewUser = async searchedValue => {
     newUser.searchedUserId = searchValue;
   }
 
-  const parsedUkValue = parseUkPrefixedValue(searchValue);
-  const searchIdUpdates = { [searchIdKey]: newUserId };
-
-  if (parsedUkValue) {
-    const { handle, name, surname, original } = parsedUkValue;
-
-    if (name) {
-      newUser.name = name;
-      addSearchIdEntry(searchIdUpdates, 'name', name, newUserId, {
-        stripSpaces: true,
-      });
-    }
-
-    if (surname) {
-      newUser.surname = surname;
-      addSearchIdEntry(searchIdUpdates, 'surname', surname, newUserId, {
-        stripSpaces: true,
-      });
-    }
-
-    if (handle) {
-      const telegramValues = [];
-      if (original) {
-        telegramValues.push(original);
-      }
-      telegramValues.push(handle);
-      newUser.telegram = telegramValues;
-      addSearchIdEntry(searchIdUpdates, 'telegram', handle, newUserId);
-    }
-  }
-
   // Записуємо нового користувача в базу даних
   await set(newUserRef, newUser);
 
   // 6. Додаємо пару ключ-значення у searchId
-  await update(searchIdRef, searchIdUpdates);
+  await update(searchIdRef, { [searchIdKey]: newUserId });
 
   return {
     userId: newUserId,
