@@ -506,66 +506,34 @@ const addUserFromUsers = async (userId, users) => {
   }
 };
 
-const buildSearchIdVariants = searchValue => {
-  const variants = new Set();
-  if (searchValue === undefined || searchValue === null) return [];
-
-  const toVariant = raw => {
-    if (!raw) return;
-    const normalized = String(raw).trim().toLowerCase();
-    if (!normalized) return;
-    variants.add(encodeKey(normalized).toLowerCase());
-  };
-
-  const trimmed = String(searchValue).trim();
-  toVariant(trimmed);
-
-  const withoutSpaces = trimmed.replace(/\s+/g, '');
-  if (withoutSpaces !== trimmed) toVariant(withoutSpaces);
-
-  const withoutUkSmPrefix = trimmed.replace(/^ук\s*см\s*/i, '');
-  if (withoutUkSmPrefix !== trimmed) {
-    toVariant(withoutUkSmPrefix);
-    const collapsed = withoutUkSmPrefix.replace(/\s+/g, '');
-    if (collapsed !== withoutUkSmPrefix) toVariant(collapsed);
-  }
-
-  const handleMatch = trimmed.match(/@([a-z0-9._]+)/i);
-  if (handleMatch && handleMatch[1]) {
-    toVariant(handleMatch[1]);
-  }
-
-  return Array.from(variants);
-};
-
-const buildSearchIdKeys = searchValue => {
-  const encodedVariants = buildSearchIdVariants(searchValue);
-  const keys = new Set();
-  encodedVariants.forEach(variant => {
-    keysToCheck.forEach(prefix => {
-      const baseKey = `${prefix}_${variant}`;
-      keys.add(baseKey);
-      if (variant.startsWith('0')) keys.add(`${prefix}_38${variant}`);
-      if (variant.startsWith('+')) keys.add(`${prefix}_${variant.slice(1)}`);
-    });
-  });
-  return Array.from(keys);
-};
-
-const searchBySearchIdUsers = async (searchValue, uniqueUserIds, users) => {
-  const searchKeys = buildSearchIdKeys(searchValue);
-  const searchPromises = searchKeys.map(async key => {
-    const snap = await get(ref2(database, `searchId/${key}`));
-    if (snap.exists()) {
-      const val = snap.val();
-      const ids = Array.isArray(val) ? val : [val];
-      for (const id of ids) {
-        if (!uniqueUserIds.has(id)) {
-          uniqueUserIds.add(id);
-          await addUserFromUsers(id, users);
+const searchBySearchIdUsers = async (modifiedSearchValue, uniqueUserIds, users) => {
+  const ukSmPrefix = encodeKey('УК СМ ');
+  const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(ukSmPrefix.toLowerCase());
+  const searchPromises = keysToCheck.flatMap(prefix => {
+    const baseKey = `${prefix}_${modifiedSearchValue.toLowerCase()}`;
+    const searchKeys = [baseKey];
+    if (hasUkSm) {
+      const withoutPrefix = modifiedSearchValue.slice(ukSmPrefix.length).toLowerCase();
+      searchKeys.push(`${prefix}_${withoutPrefix}`);
+    } else {
+      searchKeys.push(`${prefix}_${ukSmPrefix.toLowerCase()}${modifiedSearchValue.toLowerCase()}`);
+    }
+    if (modifiedSearchValue.startsWith('0')) searchKeys.push(`${prefix}_38${modifiedSearchValue.toLowerCase()}`);
+    if (modifiedSearchValue.startsWith('+')) searchKeys.push(`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`);
+    return searchKeys.map(async sk => {
+      const snap = await get(query(ref2(database, 'searchId'), orderByKey(), startAt(sk), endAt(`${sk}\uf8ff`)));
+      if (snap.exists()) {
+        for (const [, val] of Object.entries(snap.val())) {
+          const ids = Array.isArray(val) ? val : [val];
+          for (const id of ids) {
+            if (!uniqueUserIds.has(id)) {
+              uniqueUserIds.add(id);
+              await addUserFromUsers(id, users);
+            }
+          }
         }
       }
-    }
+    });
   });
   await Promise.all(searchPromises);
 };
@@ -618,11 +586,11 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
 };
 
 export const searchUsersOnly = async searchedValue => {
-  const { searchValue } = makeSearchKeyValue(searchedValue);
+  const { searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const users = {};
   const uniqueUserIds = new Set();
   try {
-    await searchBySearchIdUsers(searchValue, uniqueUserIds, users);
+    await searchBySearchIdUsers(modifiedSearchValue, uniqueUserIds, users);
     await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
     await searchUserByPartialUserId(searchValue, users);
 
@@ -835,24 +803,56 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
   return true;
 };
 
-const searchBySearchId = async (searchValue, uniqueUserIds, users) => {
-  const searchKeys = buildSearchIdKeys(searchValue);
-  const searchPromises = searchKeys.map(async key => {
-    const snap = await get(ref2(database, `searchId/${key}`));
-    if (snap.exists()) {
-      const value = snap.val();
-      if (Array.isArray(value)) {
-        for (const userId of value) {
-          if (!uniqueUserIds.has(userId)) {
-            uniqueUserIds.add(userId);
-            await addUserToResults(userId, users, value);
+const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
+  const ukSmPrefix = encodeKey('УК СМ ');
+  const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(ukSmPrefix.toLowerCase());
+
+  const searchPromises = keysToCheck.flatMap(prefix => {
+    const baseKey = `${prefix}_${modifiedSearchValue.toLowerCase()}`;
+    const searchKeys = [baseKey];
+
+    if (hasUkSm) {
+      const withoutPrefix = modifiedSearchValue.slice(ukSmPrefix.length).toLowerCase();
+      searchKeys.push(`${prefix}_${withoutPrefix}`);
+    } else {
+      searchKeys.push(`${prefix}_${ukSmPrefix.toLowerCase()}${modifiedSearchValue.toLowerCase()}`);
+    }
+
+    if (modifiedSearchValue.startsWith('0')) {
+      searchKeys.push(`${prefix}_38${modifiedSearchValue.toLowerCase()}`);
+    }
+    if (modifiedSearchValue.startsWith('+')) {
+      searchKeys.push(`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`);
+    }
+    // console.log('searchBySearchId :>> ',);
+    return searchKeys.map(async searchKeyPrefix => {
+      const searchIdSnapshot = await get(query(ref2(database, 'searchId'), orderByKey(), startAt(searchKeyPrefix), endAt(`${searchKeyPrefix}\uf8ff`)));
+
+      if (searchIdSnapshot.exists()) {
+        const matchingKeys = searchIdSnapshot.val();
+
+        // console.log('matchingKeys11111111111111 :>> ', matchingKeys);
+
+        for (const [, userIdOrArray] of Object.entries(matchingKeys)) {
+          if (Array.isArray(userIdOrArray)) {
+            // console.log('userIdOrArray2222222222 :>> ', userIdOrArray);
+            for (const userId of userIdOrArray) {
+              // console.log('userId33333333333333 :>> ', userId);
+              if (!uniqueUserIds.has(userId)) {
+                uniqueUserIds.add(userId);
+                await addUserToResults(userId, users, userIdOrArray);
+              }
+            }
+          } else {
+            if (!uniqueUserIds.has(userIdOrArray)) {
+              uniqueUserIds.add(userIdOrArray);
+              // console.log('uniqueUserIds.add(userIdOrArray) :>> ');
+              await addUserToResults(userIdOrArray, users);
+            }
           }
         }
-      } else if (!uniqueUserIds.has(value)) {
-        uniqueUserIds.add(value);
-        await addUserToResults(value, users);
       }
-    }
+    });
   });
 
   await Promise.all(searchPromises);
@@ -944,7 +944,7 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
     const isDateSearch = await searchByDate(searchValue, uniqueUserIds, users);
     if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
-      await searchBySearchId(searchValue, uniqueUserIds, users);
+      await searchBySearchId(modifiedSearchValue, uniqueUserIds, users);
       await searchByPrefixes(searchValue, uniqueUserIds, users);
       await searchUserByPartialUserId(searchValue, users);
     }
