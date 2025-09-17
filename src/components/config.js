@@ -505,35 +505,92 @@ const addUserFromUsers = async (userId, users) => {
   }
 };
 
+const buildSearchFragments = (modifiedSearchValue, ukSmPrefix, hasUkSm) => {
+  if (!modifiedSearchValue) return [];
+
+  const lowerModified = modifiedSearchValue.toLowerCase();
+  const lowerUkSm = ukSmPrefix.toLowerCase();
+  const fragments = new Set([lowerModified]);
+
+  if (hasUkSm) {
+    const withoutPrefix = lowerModified.slice(lowerUkSm.length);
+    if (withoutPrefix) fragments.add(withoutPrefix);
+  } else {
+    fragments.add(`${lowerUkSm}${lowerModified}`);
+  }
+
+  if (modifiedSearchValue.startsWith('0')) {
+    fragments.add(`38${lowerModified}`);
+  }
+
+  if (modifiedSearchValue.startsWith('+')) {
+    const withoutPlus = modifiedSearchValue.slice(1).toLowerCase();
+    if (withoutPlus) fragments.add(withoutPlus);
+  }
+
+  return Array.from(fragments).filter(Boolean);
+};
+
+const KEY_RANGE_SUFFIX = String.fromCharCode(0xf8ff);
+
+const fetchSearchIdEntriesByPrefix = async prefix => {
+  const results = {};
+  const searchIdRef = ref2(database, 'searchId');
+  const queries = [
+    { start: `${prefix}*`, end: `${prefix}*${KEY_RANGE_SUFFIX}` },
+    { start: `${prefix}_`, end: `${prefix}_${KEY_RANGE_SUFFIX}` },
+  ];
+
+  for (const { start, end } of queries) {
+    try {
+      const snapshot = await get(query(searchIdRef, orderByKey(), startAt(start), endAt(end)));
+      if (snapshot.exists()) {
+        Object.assign(results, snapshot.val());
+      }
+    } catch (error) {
+      if (isDev) {
+        console.error(`Error fetching searchId keys for range ${start} - ${end}:`, error);
+      }
+    }
+  }
+
+  return results;
+};
+
 const searchBySearchIdUsers = async (modifiedSearchValue, uniqueUserIds, users) => {
   const ukSmPrefix = encodeKey('УК СМ ');
-  const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(ukSmPrefix.toLowerCase());
-  const searchPromises = keysToCheck.flatMap(prefix => {
-    const baseKey = `${prefix}_${modifiedSearchValue.toLowerCase()}`;
-    const searchKeys = [baseKey];
-    if (hasUkSm) {
-      const withoutPrefix = modifiedSearchValue.slice(ukSmPrefix.length).toLowerCase();
-      searchKeys.push(`${prefix}_${withoutPrefix}`);
-    } else {
-      searchKeys.push(`${prefix}_${ukSmPrefix.toLowerCase()}${modifiedSearchValue.toLowerCase()}`);
-    }
-    if (modifiedSearchValue.startsWith('0')) searchKeys.push(`${prefix}_38${modifiedSearchValue.toLowerCase()}`);
-    if (modifiedSearchValue.startsWith('+')) searchKeys.push(`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`);
-    return searchKeys.map(async sk => {
-      const snap = await get(query(ref2(database, 'searchId'), orderByKey(), startAt(sk), endAt(`${sk}\uf8ff`)));
-      if (snap.exists()) {
-        for (const [, val] of Object.entries(snap.val())) {
-          const ids = Array.isArray(val) ? val : [val];
-          for (const id of ids) {
-            if (!uniqueUserIds.has(id)) {
-              uniqueUserIds.add(id);
-              await addUserFromUsers(id, users);
-            }
-          }
+  const lowerUkSmPrefix = ukSmPrefix.toLowerCase();
+  const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(lowerUkSmPrefix);
+  const fragments = buildSearchFragments(modifiedSearchValue, ukSmPrefix, hasUkSm);
+
+  if (!fragments.length) return;
+
+  const searchPromises = keysToCheck.map(async prefix => {
+    const entries = await fetchSearchIdEntriesByPrefix(prefix);
+    if (!entries || !Object.keys(entries).length) return;
+
+    const prefixLower = prefix.toLowerCase();
+
+    for (const [key, value] of Object.entries(entries)) {
+      const lowerKey = key.toLowerCase();
+      const matchesPrefix =
+        lowerKey.startsWith(`${prefixLower}*`) || lowerKey.startsWith(`${prefixLower}_`);
+
+      if (!matchesPrefix) continue;
+
+      const matchesFragments = fragments.some(fragment => lowerKey.includes(fragment));
+      if (!matchesFragments) continue;
+
+      const ids = Array.isArray(value) ? value : [value];
+      for (const id of ids) {
+        if (!uniqueUserIds.has(id)) {
+          uniqueUserIds.add(id);
+          await addUserFromUsers(id, users);
         }
       }
-    });
+    }
   });
+
   await Promise.all(searchPromises);
 };
 
@@ -770,54 +827,40 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
 
 const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
   const ukSmPrefix = encodeKey('УК СМ ');
-  const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(ukSmPrefix.toLowerCase());
+  const lowerUkSmPrefix = ukSmPrefix.toLowerCase();
+  const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(lowerUkSmPrefix);
+  const fragments = buildSearchFragments(modifiedSearchValue, ukSmPrefix, hasUkSm);
 
-  const searchPromises = keysToCheck.flatMap(prefix => {
-    const baseKey = `${prefix}_${modifiedSearchValue.toLowerCase()}`;
-    const searchKeys = [baseKey];
+  if (!fragments.length) return;
 
-    if (hasUkSm) {
-      const withoutPrefix = modifiedSearchValue.slice(ukSmPrefix.length).toLowerCase();
-      searchKeys.push(`${prefix}_${withoutPrefix}`);
-    } else {
-      searchKeys.push(`${prefix}_${ukSmPrefix.toLowerCase()}${modifiedSearchValue.toLowerCase()}`);
-    }
+  const searchPromises = keysToCheck.map(async prefix => {
+    const entries = await fetchSearchIdEntriesByPrefix(prefix);
+    if (!entries || !Object.keys(entries).length) return;
 
-    if (modifiedSearchValue.startsWith('0')) {
-      searchKeys.push(`${prefix}_38${modifiedSearchValue.toLowerCase()}`);
-    }
-    if (modifiedSearchValue.startsWith('+')) {
-      searchKeys.push(`${prefix}_${modifiedSearchValue.slice(1).toLowerCase()}`);
-    }
-    // console.log('searchBySearchId :>> ',);
-    return searchKeys.map(async searchKeyPrefix => {
-      const searchIdSnapshot = await get(query(ref2(database, 'searchId'), orderByKey(), startAt(searchKeyPrefix), endAt(`${searchKeyPrefix}\uf8ff`)));
+    const prefixLower = prefix.toLowerCase();
 
-      if (searchIdSnapshot.exists()) {
-        const matchingKeys = searchIdSnapshot.val();
+    for (const [key, userIdOrArray] of Object.entries(entries)) {
+      const lowerKey = key.toLowerCase();
+      const matchesPrefix =
+        lowerKey.startsWith(`${prefixLower}*`) || lowerKey.startsWith(`${prefixLower}_`);
 
-        // console.log('matchingKeys11111111111111 :>> ', matchingKeys);
+      if (!matchesPrefix) continue;
 
-        for (const [, userIdOrArray] of Object.entries(matchingKeys)) {
-          if (Array.isArray(userIdOrArray)) {
-            // console.log('userIdOrArray2222222222 :>> ', userIdOrArray);
-            for (const userId of userIdOrArray) {
-              // console.log('userId33333333333333 :>> ', userId);
-              if (!uniqueUserIds.has(userId)) {
-                uniqueUserIds.add(userId);
-                await addUserToResults(userId, users, userIdOrArray);
-              }
-            }
-          } else {
-            if (!uniqueUserIds.has(userIdOrArray)) {
-              uniqueUserIds.add(userIdOrArray);
-              // console.log('uniqueUserIds.add(userIdOrArray) :>> ');
-              await addUserToResults(userIdOrArray, users);
-            }
+      const matchesFragments = fragments.some(fragment => lowerKey.includes(fragment));
+      if (!matchesFragments) continue;
+
+      if (Array.isArray(userIdOrArray)) {
+        for (const userId of userIdOrArray) {
+          if (!uniqueUserIds.has(userId)) {
+            uniqueUserIds.add(userId);
+            await addUserToResults(userId, users, userIdOrArray);
           }
         }
+      } else if (!uniqueUserIds.has(userIdOrArray)) {
+        uniqueUserIds.add(userIdOrArray);
+        await addUserToResults(userIdOrArray, users);
       }
-    });
+    }
   });
 
   await Promise.all(searchPromises);
