@@ -38,4 +38,26 @@ describe('cardIndex queries', () => {
     expect(getCard('userId01')).toBeNull();
     expect(getIdsByQuery('test')).toEqual([]);
   });
+
+  it('migrates legacy timestamps to cachedAt fields', () => {
+    const now = Date.now();
+    localStorage.setItem(
+      'cards',
+      JSON.stringify({
+        userId01: { userId: 'userId01', name: 'Legacy', lastAction: now },
+      }),
+    );
+    localStorage.setItem(
+      'queries',
+      JSON.stringify({ test: { ids: ['userId01'], lastAction: now } }),
+    );
+
+    expect(getIdsByQuery('test')).toEqual(['userId01']);
+    const storedQueries = JSON.parse(localStorage.getItem('queries'));
+    expect(storedQueries.test.cachedAt).toBe(now);
+
+    const card = getCard('userId01');
+    expect(card).not.toBeNull();
+    expect(card.cachedAt).toBe(now);
+  });
 });
