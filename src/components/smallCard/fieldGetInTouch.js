@@ -1,4 +1,4 @@
-import { handleChange, handleSubmit } from './actions';
+import { handleChange } from './actions';
 import {
   formatDateToDisplay,
   formatDateAndFormula,
@@ -216,17 +216,10 @@ export const fieldGetInTouch = (
             userData.userId,
             'getInTouch',
             serverFormattedDate,
-            false,
+            true,
             { currentFilter, isDateInRange },
             isToastOn,
           );
-
-          const updatedUser = {
-            ...userData,
-            getInTouch: serverFormattedDate,
-          };
-
-          handleSubmit(updatedUser, 'overwrite', isToastOn);
         }}
         style={{
           marginLeft: 0,

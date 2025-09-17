@@ -1,4 +1,4 @@
-import { handleChange, handleSubmit } from './actions';
+import { handleChange } from './actions';
 import { useRef } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize';
 
@@ -31,13 +31,17 @@ export const FieldComment = ({ userData, setUsers, setState, isToastOn }) => {
           autoResize(e.target);
         }}
         onBlur={() => {
-          const currentComment =
-            textareaRef.current?.value ?? userData.myComment ?? '';
-          const payload = {
-            ...userData,
-            myComment: currentComment,
-          };
-          handleSubmit(payload, 'overwrite', isToastOn);
+          const currentComment = textareaRef.current?.value ?? '';
+          handleChange(
+            setUsers,
+            setState,
+            userData.userId,
+            'myComment',
+            currentComment,
+            true,
+            {},
+            isToastOn,
+          );
         }}
         style={{
           // marginLeft: '10px',

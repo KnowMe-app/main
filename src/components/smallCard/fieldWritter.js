@@ -1,4 +1,4 @@
-import { handleChange, handleSubmit } from './actions';
+import { handleChange } from './actions';
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
 
 export const fieldWriter = (userData, setUsers, setState, isToastOn) => {
@@ -25,7 +25,18 @@ export const fieldWriter = (userData, setUsers, setState, isToastOn) => {
           // placeholder="Введіть ім'я"
           value={userData.writer || ''}
           onChange={e => handleChange(setUsers, setState, userData.userId, 'writer', e.target.value)}
-          onBlur={() => handleSubmit(userData, 'overwrite', isToastOn)}
+          onBlur={e =>
+            handleChange(
+              setUsers,
+              setState,
+              userData.userId,
+              'writer',
+              e.target.value,
+              true,
+              {},
+              isToastOn,
+            )
+          }
           style={{
             flexGrow: 1, // Займає залишковий простір
             maxWidth: '100%', // Обмежує ширину контейнером
