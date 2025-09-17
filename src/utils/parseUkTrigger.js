@@ -10,7 +10,18 @@ export const parseUkTriggerQuery = rawQuery => {
   if (!match) return null;
 
   const afterTrigger = match[3] || '';
-  const compactValue = trimmed.replace(/\s+/g, '');
+
+  const normalizedAfterTrigger = afterTrigger
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
+
+  const normalizedTriggerPrefix = `${match[1].toUpperCase()} ${match[2].toUpperCase()}`;
+  const normalizedQuery = normalizedAfterTrigger
+    ? `${normalizedTriggerPrefix} ${normalizedAfterTrigger}`
+    : normalizedTriggerPrefix;
+
 
   const handleMatch = afterTrigger.match(/@([A-Za-z0-9_.]+)/);
   const handle = handleMatch ? handleMatch[1] : null;
@@ -23,7 +34,8 @@ export const parseUkTriggerQuery = rawQuery => {
   const name = nameParts[0] || '';
   const surname = nameParts.slice(1).join(' ') || '';
 
-  const contactValues = [compactValue];
+  const contactValues = [normalizedQuery];
+
   if (handle) {
     contactValues.push(handle);
   }
@@ -34,7 +46,7 @@ export const parseUkTriggerQuery = rawQuery => {
     name,
     surname,
     handle,
-    searchPair: { telegram: contactValues[0] },
+    searchPair: { telegram: normalizedQuery },
   };
 };
 

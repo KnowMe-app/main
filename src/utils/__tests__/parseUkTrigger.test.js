@@ -11,11 +11,11 @@ describe('parseUkTriggerQuery', () => {
     const result = parseUkTriggerQuery('УК СМ Анна Марія');
     expect(result).toEqual({
       contactType: 'telegram',
-      contactValues: ['УКСМАннаМарія'],
+ contactValues: ['УК СМ Анна Марія'],
       name: 'Анна',
       surname: 'Марія',
       handle: null,
-      searchPair: { telegram: 'УКСМАннаМарія' },
+      searchPair: { telegram: 'УК СМ Анна Марія' },
     });
   });
 
@@ -23,11 +23,12 @@ describe('parseUkTriggerQuery', () => {
     const result = parseUkTriggerQuery('   УК СМ   Анна  Марія   @anna_user ');
     expect(result).toEqual({
       contactType: 'telegram',
-      contactValues: ['УКСМАннаМарія@anna_user', 'anna_user'],
+  contactValues: ['УК СМ Анна Марія @anna_user', 'anna_user'],
       name: 'Анна',
       surname: 'Марія',
       handle: 'anna_user',
-      searchPair: { telegram: 'УКСМАннаМарія@anna_user' },
+      searchPair: { telegram: 'УК СМ Анна Марія @anna_user' },
+
     });
   });
 
@@ -35,17 +36,18 @@ describe('parseUkTriggerQuery', () => {
     const result = parseUkTriggerQuery('УК СМ @just_nickname');
     expect(result).toEqual({
       contactType: 'telegram',
-      contactValues: ['УКСМ@just_nickname', 'just_nickname'],
+      contactValues: ['УК СМ @just_nickname', 'just_nickname'],
       name: '',
       surname: '',
       handle: 'just_nickname',
-      searchPair: { telegram: 'УКСМ@just_nickname' },
+      searchPair: { telegram: 'УК СМ @just_nickname' },
+
     });
   });
 
   it('supports other triggers (УК ІР, УК IP, УК ДО)', () => {
-    expect(parseUkTriggerQuery('УК ІР Іван @ivan').searchPair.telegram).toBe('УКІРІван@ivan');
-    expect(parseUkTriggerQuery('УК IP Петро').searchPair.telegram).toBe('УКIPПетро');
-    expect(parseUkTriggerQuery('УК ДО Марія').searchPair.telegram).toBe('УКДОМарія');
+    expect(parseUkTriggerQuery('УК ІР Іван @ivan').searchPair.telegram).toBe('УК ІР Іван @ivan');
+    expect(parseUkTriggerQuery('УК IP Петро').searchPair.telegram).toBe('УК IP Петро');
+    expect(parseUkTriggerQuery('УК ДО Марія').searchPair.telegram).toBe('УК ДО Марія');
   });
 });
