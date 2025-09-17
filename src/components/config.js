@@ -25,6 +25,7 @@ import { PAGE_SIZE, BATCH_SIZE } from './constants';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
 import { removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
+import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { updateCard } from '../utils/cardsStorage';
 import { getCacheKey } from '../utils/cache';
 
@@ -605,12 +606,25 @@ export const searchUsersOnly = async searchedValue => {
   }
 };
 
-export const makeNewUser = async searchedValue => {
+export const makeNewUser = async (searchedValue, rawQuery = '') => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
   const searchIdRef = ref2(db, 'searchId');
 
-  const { searchKey, searchValue, searchIdKey } = makeSearchKeyValue(searchedValue);
+  const parsedQuery = parseUkTriggerQuery(rawQuery);
+  const trimmedRawQuery = typeof rawQuery === 'string' ? rawQuery.trim() : '';
+  const fallbackSearchPair =
+    !parsedQuery && !searchedValue && trimmedRawQuery
+      ? { name: trimmedRawQuery }
+      : null;
+  const effectiveSearchValue =
+    parsedQuery?.searchPair || searchedValue || fallbackSearchPair;
+  const hasSearchPair =
+    effectiveSearchValue && Object.keys(effectiveSearchValue).length > 0;
+
+  const searchMeta = hasSearchPair
+    ? makeSearchKeyValue(effectiveSearchValue)
+    : null;
 
   const newUserRef = push(newUsersRef); // Генеруємо унікальний ключ
   const newUserId = newUserRef.key;
@@ -625,17 +639,38 @@ export const makeNewUser = async searchedValue => {
     createdAt2,
   };
 
-  if (searchKey !== 'userId') {
-    newUser[searchKey] = searchValue;
-  } else {
-    newUser.searchedUserId = searchValue;
+  if (parsedQuery) {
+    const { contactType, contactValues, name, surname } = parsedQuery;
+    newUser[contactType] = contactValues;
+    newUser.name = name;
+    newUser.surname = surname;
+  }
+
+  if (searchMeta) {
+    const { searchKey, searchValue } = searchMeta;
+
+    if (searchKey === 'userId') {
+      newUser.searchedUserId = searchValue;
+    } else if (!parsedQuery || searchKey !== parsedQuery.contactType) {
+      newUser[searchKey] = searchValue;
+    }
   }
 
   // Записуємо нового користувача в базу даних
   await set(newUserRef, newUser);
 
-  // 6. Додаємо пару ключ-значення у searchId
-  await update(searchIdRef, { [searchIdKey]: newUserId });
+  if (searchMeta) {
+    const { searchIdKey } = searchMeta;
+    const searchIdUpdates = { [searchIdKey]: newUserId };
+
+    if (parsedQuery?.handle) {
+      const normalizedHandle = parsedQuery.handle.toLowerCase();
+      const handleKey = `telegram_${encodeKey(normalizedHandle)}`;
+      searchIdUpdates[handleKey] = newUserId;
+    }
+
+    await update(searchIdRef, searchIdUpdates);
+  }
 
   return {
     userId: newUserId,
