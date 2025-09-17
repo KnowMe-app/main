@@ -13,7 +13,6 @@ import {
   TTL_MS,
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
-import { parseUkTrigger } from '../utils/ukTriggers';
 
 const SearchIcon = (
   <svg
@@ -554,15 +553,9 @@ const SearchBar = ({
       if (values.length > 0) {
         const results = {};
         for (const val of values) {
-          const ukTriggerInfo = parseUkTrigger(val);
-          const searchName = ukTriggerInfo?.normalizedName || val;
-          const res = await cachedSearch({ name: searchName });
+          const res = await cachedSearch({ name: val });
           if (!res || Object.keys(res).length === 0) {
-            results[`new_${val}`] = {
-              _notFound: true,
-              searchVal: val,
-              ...(ukTriggerInfo?.prefill ? { prefill: ukTriggerInfo.prefill } : {}),
-            };
+            results[`new_${val}`] = { _notFound: true, searchVal: val };
           } else if ('userId' in res) {
             results[res.userId] = res;
           } else {
@@ -590,67 +583,30 @@ const SearchBar = ({
     if (await processUserSearch('vk', parseVk, query)) return;
     if (await processUserSearch('other', parseOtherContact, query)) return;
 
-    const trimmedOriginal = (query || '').trim();
-    const ukTriggerInfo = trimmedOriginal ? parseUkTrigger(query) : null;
-
-    const variants = [];
-    const variantSet = new Set();
-    const addVariant = value => {
-      const normalized = (value || '').trim();
-      if (!normalized) return;
-      const key = normalized.toLowerCase();
-      if (variantSet.has(key)) return;
-      variantSet.add(key);
-      variants.push(normalized);
-    };
-
-    const normalizedName = ukTriggerInfo?.normalizedName?.trim();
-    if (normalizedName) addVariant(normalizedName);
-    addVariant(trimmedOriginal);
-
-    const cleanedWithoutPrefix =
-      (ukTriggerInfo?.withoutPrefix || '').trim() ||
-      (trimmedOriginal ? trimmedOriginal.replace(/^ук\s*см\s*/i, '').trim() : '');
-    addVariant(cleanedWithoutPrefix);
-
-    const prefixBase = normalizedName || cleanedWithoutPrefix || trimmedOriginal;
-    if (prefixBase) {
-      const withPrefixVariant = /^ук\s*см/i.test(prefixBase)
-        ? prefixBase
-        : `УК СМ ${prefixBase}`.trim();
-      addVariant(withPrefixVariant);
-    }
-
-    if (variants.length === 0) return;
-
-    const emittedKeys = new Set();
-    const emitSearchKey = value => {
-      const payload = (value || '').trim();
-      if (!payload) return;
-      const key = payload.toLowerCase();
-      if (emittedKeys.has(key)) return;
-      emittedKeys.add(key);
-      onSearchKey && onSearchKey({ name: payload });
-    };
-
-    emitSearchKey(trimmedOriginal);
-
-    const [primaryVariant, ...fallbackVariants] = variants;
-    emitSearchKey(primaryVariant);
-    const hasCache = loadCachedResult('name', primaryVariant);
-    const freshCache = hasCache && isCacheFresh('name', primaryVariant);
+    const nameTrim = query.trim();
+    const hasCache = loadCachedResult('name', nameTrim);
+    const freshCache = hasCache && isCacheFresh('name', nameTrim);
+    onSearchKey && onSearchKey({ name: nameTrim });
     if (freshCache) return;
     if (!hasCache) {
       setState && setState({});
       setUsers && setUsers({});
     }
-    let res = await cachedSearch({ name: primaryVariant });
-    for (const variant of fallbackVariants) {
-      if (res && Object.keys(res).length > 0) break;
-      emitSearchKey(variant);
-      res = await cachedSearch({ name: variant });
+    let res = await cachedSearch({ name: nameTrim });
+    if (!res || Object.keys(res).length === 0) {
+      const cleanedQuery = query.replace(/^ук\s*см\s*/i, '').trim();
+      if (cleanedQuery && cleanedQuery !== nameTrim) {
+          res = await cachedSearch({ name: cleanedQuery });
+        onSearchKey && onSearchKey({ name: cleanedQuery });
+      }
     }
-
+    if (!res || Object.keys(res).length === 0) {
+      const withPrefix = /^ук\s*см/i.test(query) ? null : `УК СМ ${query.trim()}`;
+      if (withPrefix) {
+          res = await cachedSearch({ name: withPrefix });
+        onSearchKey && onSearchKey({ name: withPrefix });
+      }
+    }
     if (!res || Object.keys(res).length === 0) {
       setUserNotFound && setUserNotFound(true);
     } else {
