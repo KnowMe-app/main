@@ -574,10 +574,10 @@ const SearchBar = ({
       }
     }
 
+    if (await processUserSearch('userId', parseUserId, query)) return;
     if (await processUserSearch('facebook', parseFacebookId, query)) return;
     if (await processUserSearch('instagram', parseInstagramId, query)) return;
     if (await processUserSearch('telegram', parseTelegramId, query)) return;
-    if (await processUserSearch('userId', parseUserId, query)) return;
     if (await processUserSearch('email', parseEmail, query)) return;
     if (await processUserSearch('tiktok', parseTikTokLink, query)) return;
     if (await processUserSearch('phone', parsePhoneNumber, query)) return;
