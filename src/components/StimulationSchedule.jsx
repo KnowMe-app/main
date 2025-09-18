@@ -158,9 +158,9 @@ export const generateSchedule = base => {
   // Pregnancy visits at specific weeks
   const weeks = [8, 10, 12, 16, 18, 28, 36, 38, 40];
   weeks.forEach(week => {
-    let wd = new Date(transfer.date);
+    let wd = new Date(base);
     wd.setDate(wd.getDate() + week * 7);
-    const adj = adjustForward(wd, transfer.date);
+    const adj = adjustForward(wd, base);
     const baseLabel = week === 40 ? `${week}т пологи` : `${week}т`;
     visits.push({
       key: `week${week}`,
@@ -288,11 +288,30 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const newDate = new Date(item.date);
       newDate.setDate(newDate.getDate() + delta);
 
-      const applyAdjust = (it, d, refBase) => {
+      const transferDate =
+        copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
+
+      const applyAdjust = (it, d) => {
+        const refBase = postTransferKeys.includes(it.key) ? transferDate : base;
         let adj = { date: d, day: diffDays(d, refBase), sign: '' };
-        if (it.key.startsWith('week') || postTransferKeys.includes(it.key)) {
-          const transferDate =
-            copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
+        if (it.key.startsWith('week')) {
+          const diff = Math.round((adj.date - base) / (1000 * 60 * 60 * 24));
+          const weeks = Math.floor(diff / 7);
+          const days = diff % 7;
+          let custom = it.label.replace(/^\d+т\d*д?\s*/, '').trim();
+          let labelText = `${weeks}т${days ? `${days}д` : ''}`;
+          if (weeks === 40 && days === 0) {
+            labelText += ' пологи';
+            if (custom.startsWith('пологи')) custom = custom.replace(/^пологи\s*/, '');
+          }
+          if (custom) labelText += ` ${custom}`;
+          return {
+            ...it,
+            date: adj.date,
+            label: labelText,
+          };
+        }
+        if (postTransferKeys.includes(it.key)) {
           const diff = Math.round((adj.date - transferDate) / (1000 * 60 * 60 * 24));
           const weeks = Math.floor(diff / 7);
           const days = diff % 7;
@@ -328,13 +347,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         return { ...it, date: adj.date, label: lbl };
       };
 
-      const adjustedItem = applyAdjust(
-        item,
-        newDate,
-        item.key.startsWith('week') || postTransferKeys.includes(item.key)
-          ? copy.find(v => v.key === 'transfer')?.date || transferRef.current || base
-          : base,
-      );
+      const adjustedItem = applyAdjust(item, newDate);
       copy[idx] = adjustedItem;
       if (item.key === 'transfer') {
         transferRef.current = adjustedItem.date;
