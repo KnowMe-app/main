@@ -87,10 +87,22 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
 
   const nextCycle = React.useMemo(() => calculateNextDate(userData.lastCycle), [userData.lastCycle]);
 
-  const weeksSinceLastCycle = React.useMemo(() => {
+  const pregnancyDuration = React.useMemo(() => {
     const lastCycleDate = parseDate(userData.lastCycle);
-    if (!lastCycleDate) return 0;
-    return Math.floor((Date.now() - lastCycleDate.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    if (!lastCycleDate) {
+      return { weeks: 0, days: 0 };
+    }
+
+    const diffMs = Date.now() - lastCycleDate.getTime();
+    if (diffMs <= 0) {
+      return { weeks: 0, days: 0 };
+    }
+
+    const totalDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+    const weeks = Math.floor(totalDays / 7);
+    const days = totalDays % 7;
+
+    return { weeks, days };
   }, [userData.lastCycle]);
 
   const scheduleIsDefault = React.useMemo(
@@ -422,7 +434,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
             >
               вагітна
             </AttentionDiv>
-            <span>{`${weeksSinceLastCycle}т`}</span>
+            <span>{`${pregnancyDuration.weeks}т${pregnancyDuration.days}д`}</span>
           </React.Fragment>
         ) : status === 'stimulation' ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
