@@ -54,19 +54,120 @@ export const fieldContacts = (data, parentKey = '') => {
     whatsappFromPhone: value => `https://wa.me/${value.replace(/\s+/g, '')}`,
   };
 
-const icons = {
-  facebook: <FaFacebookF style={iconStyle} />,
-  instagram: <FaInstagram style={iconStyle} />,
-  telegram: <FaTelegramPlane style={iconStyle} />,
-  telegramFromPhone: <FaTelegramPlane style={iconStyle} />,
-  viberFromPhone: <FaViber style={iconStyle} />,
-  whatsappFromPhone: <FaWhatsapp style={iconStyle} />,
-  tiktok: <SiTiktok style={iconStyle} />,
-  vk: <FaVk style={iconStyle} />,
-  otherLink: <FaGlobe style={iconStyle} />,
-  phone: <FaPhoneVolume style={iconStyle} />,
-  email: <MdEmail style={iconStyle} />,
-};
+  const icons = {
+    facebook: <FaFacebookF style={iconStyle} />,
+    instagram: <FaInstagram style={iconStyle} />,
+    telegram: <FaTelegramPlane style={iconStyle} />,
+    telegramFromPhone: <FaTelegramPlane style={iconStyle} />,
+    viberFromPhone: <FaViber style={iconStyle} />,
+    whatsappFromPhone: <FaWhatsapp style={iconStyle} />,
+    tiktok: <SiTiktok style={iconStyle} />,
+    vk: <FaVk style={iconStyle} />,
+    otherLink: <FaGlobe style={iconStyle} />,
+    phone: <FaPhoneVolume style={iconStyle} />,
+    email: <MdEmail style={iconStyle} />,
+  };
+
+  const copyButtonStyle = {
+    color: 'inherit',
+    textDecoration: 'none',
+    cursor: 'pointer',
+  };
+
+  const fallbackCopyText = text => {
+    if (typeof document === 'undefined' || !text) {
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'absolute';
+    textarea.style.left = '-9999px';
+
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    try {
+      document.execCommand('copy');
+    } catch (error) {
+      console.error('Fallback copy failed', error);
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  };
+
+  const copyTextToClipboard = text => {
+    if (!text) {
+      return;
+    }
+
+    if (
+      typeof navigator !== 'undefined' &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText === 'function'
+    ) {
+      navigator.clipboard.writeText(text).catch(() => {
+        fallbackCopyText(text);
+      });
+    } else {
+      fallbackCopyText(text);
+    }
+  };
+
+  const renderContactContent = (contactKey, processedValueForLink, displayValue) => {
+    const valueString =
+      typeof processedValueForLink === 'string'
+        ? processedValueForLink
+        : String(processedValueForLink ?? '');
+
+    const hasWhitespace = contactKey === 'telegram' && /\s/.test(valueString);
+
+    if (hasWhitespace) {
+      const trimmedValue = valueString.trim();
+
+      const handleCopy = event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!trimmedValue) {
+          return;
+        }
+
+        copyTextToClipboard(trimmedValue);
+      };
+
+      const handleKeyDown = event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          handleCopy(event);
+        }
+      };
+
+      return (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={handleCopy}
+          onKeyDown={handleKeyDown}
+          style={copyButtonStyle}
+        >
+          {displayValue}
+        </span>
+      );
+    }
+
+    return (
+      <a
+        href={links[contactKey](processedValueForLink)}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: 'inherit', textDecoration: 'none' }}
+      >
+        {displayValue}
+      </a>
+    );
+  };
 
   return Object.keys(data).map(key => {
     const nestedKey = parentKey ? `${parentKey}.${key}` : key;
@@ -105,6 +206,11 @@ const icons = {
                       key === 'otherLink' && processedVal.length > 25
                         ? `${processedVal.slice(0, 25)}...`
                         : processedVal;
+                    const contactElement = renderContactContent(
+                      key,
+                      processedVal,
+                      key === 'phone' ? `+${processedVal}` : displayVal
+                    );
                     return (
                       <span
                         key={`${nestedKey}-${idx}`}
@@ -114,14 +220,7 @@ const icons = {
                           marginRight: '8px',
                         }}
                       >
-                        <a
-                          href={links[key](processedVal)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: 'inherit', textDecoration: 'none' }}
-                        >
-                          {key === 'phone' ? `+${processedVal}` : displayVal}
-                        </a>
+                        {contactElement}
                         {key === 'phone' && (
                           <>
                             <a
@@ -175,6 +274,11 @@ const icons = {
                     key === 'otherLink' && processedValue.length > 25
                       ? `${processedValue.slice(0, 25)}...`
                       : processedValue;
+                  const contactElement = renderContactContent(
+                    key,
+                    processedValue,
+                    key === 'phone' ? `+${processedValue}` : displayValue
+                  );
                   return (
                     <span
                       style={{
@@ -183,16 +287,7 @@ const icons = {
                         marginRight: '8px',
                       }}
                     >
-                      <a
-                        href={links[key](processedValue)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: 'inherit', textDecoration: 'none' }}
-                      >
-                        {key === 'phone'
-                          ? `+${processedValue}`
-                          : displayValue}
-                      </a>
+                      {contactElement}
                       {key === 'phone' && (
                         <>
                           <a
