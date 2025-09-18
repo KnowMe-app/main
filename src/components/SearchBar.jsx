@@ -429,11 +429,21 @@ const SearchBar = ({
   useEffect(() => {
     if (search) {
       const { key, value } = detectSearchParams(search);
+      console.log('[SearchBar] Restored persisted search', {
+        raw: search,
+        detectedKey: key,
+        detectedValue: value,
+      });
       loadCachedResult(key, value);
       writeData(search);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const emitSearchLabel = params => {
+    console.log('[SearchBar] Search label applied', params);
+    onSearchKey && onSearchKey(params);
+  };
 
   const cachedSearch = async params => {
     const res = await searchFunc(params);
@@ -466,13 +476,21 @@ const SearchBar = ({
   };
 
   const processUserSearch = async (platform, parseFunction, inputData) => {
-    const id = parseFunction(inputData.trim());
+    const trimmedInput = inputData.trim();
+    const id = parseFunction(trimmedInput);
+
+    console.log('[SearchBar] Parser evaluation', {
+      platform,
+      raw: inputData,
+      trimmed: trimmedInput,
+      parsed: id,
+    });
 
     if (id) {
       const hasCache = loadCachedResult(platform, id);
       const freshCache = hasCache && isCacheFresh(platform, id);
       const result = { [platform]: id };
-      onSearchKey && onSearchKey(result);
+      emitSearchLabel(result);
       if (freshCache) return true;
       if (!hasCache) {
         setState && setState({});
@@ -497,6 +515,10 @@ const SearchBar = ({
   const writeData = async (query = search) => {
     setUserNotFound && setUserNotFound(false);
     const trimmed = query?.trim();
+
+    if (typeof query === 'string') {
+      console.log('[SearchBar] Incoming query', { raw: query, trimmed });
+    }
     if (trimmed && !trimmed.startsWith('!')) {
       addToHistory(trimmed);
     }
@@ -505,6 +527,11 @@ const SearchBar = ({
       const filtersKey = normalizeQueryKey(
         `${filterForload || 'all'}:${JSON.stringify(filters || {})}`,
       );
+      console.log('[SearchBar] Detected bulk command search', {
+        raw: trimmed,
+        command: term,
+        filtersKey,
+      });
       const cacheKey = `allUsers:${filtersKey}`;
       const queries = loadQueries();
       const entry = queries[cacheKey];
@@ -552,6 +579,10 @@ const SearchBar = ({
         .map(v => v.replace(/^"|"$/g, '').trim())
         .filter(Boolean);
       if (values.length > 0) {
+        console.log('[SearchBar] Processing grouped name search', {
+          raw: trimmed,
+          cleanedValues: values,
+        });
         const results = {};
         for (const val of values) {
           const res = await cachedSearch({ name: val });
@@ -585,9 +616,13 @@ const SearchBar = ({
     if (await processUserSearch('other', parseOtherContact, query)) return;
 
     const nameTrim = query.trim();
+    console.log('[SearchBar] Defaulting to name search', {
+      raw: query,
+      cleaned: nameTrim,
+    });
     const hasCache = loadCachedResult('name', nameTrim);
     const freshCache = hasCache && isCacheFresh('name', nameTrim);
-    onSearchKey && onSearchKey({ name: nameTrim });
+    emitSearchLabel({ name: nameTrim });
     if (freshCache) return;
     if (!hasCache) {
       setState && setState({});
@@ -597,15 +632,23 @@ const SearchBar = ({
     if (!res || Object.keys(res).length === 0) {
       const cleanedQuery = query.replace(/^ук\s*см\s*/i, '').trim();
       if (cleanedQuery && cleanedQuery !== nameTrim) {
+        console.log('[SearchBar] Retrying name search without prefix', {
+          raw: query,
+          cleaned: cleanedQuery,
+        });
           res = await cachedSearch({ name: cleanedQuery });
-        onSearchKey && onSearchKey({ name: cleanedQuery });
+        emitSearchLabel({ name: cleanedQuery });
       }
     }
     if (!res || Object.keys(res).length === 0) {
       const withPrefix = /^ук\s*см/i.test(query) ? null : `УК СМ ${query.trim()}`;
       if (withPrefix) {
+        console.log('[SearchBar] Retrying name search with enforced prefix', {
+          raw: query,
+          cleaned: withPrefix,
+        });
           res = await cachedSearch({ name: withPrefix });
-        onSearchKey && onSearchKey({ name: withPrefix });
+        emitSearchLabel({ name: withPrefix });
       }
     }
     if (!res || Object.keys(res).length === 0) {
