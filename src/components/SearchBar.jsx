@@ -13,6 +13,7 @@ import {
   TTL_MS,
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
+import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 
 const SearchIcon = (
   <svg
@@ -268,6 +269,11 @@ const parseTelegramId = input => {
 const parseOtherContact = input => input;
 
 export const detectSearchParams = query => {
+  const parsedUkTrigger = parseUkTriggerQuery(query);
+  if (parsedUkTrigger?.searchPair?.telegram) {
+    return { key: 'telegram', value: parsedUkTrigger.searchPair.telegram };
+  }
+
   const trimmed = query.trim();
   const parsers = [
     ['facebook', parseFacebookId],
@@ -602,6 +608,45 @@ const SearchBar = ({
           ids,
         );
         return;
+      }
+    }
+
+    const ukTrigger = parseUkTriggerQuery(query);
+    if (ukTrigger?.searchPair?.telegram) {
+      const normalizedTelegram = ukTrigger.searchPair.telegram;
+      const searchCandidates = [normalizedTelegram];
+      if (ukTrigger.handle) {
+        searchCandidates.push(ukTrigger.handle);
+      }
+
+      for (const [index, candidate] of searchCandidates.entries()) {
+        const telegramValue = candidate?.trim();
+        if (!telegramValue) continue;
+
+        const hasCache = loadCachedResult('telegram', telegramValue);
+        const freshCache = hasCache && isCacheFresh('telegram', telegramValue);
+
+        if (index === 0) {
+          emitSearchLabel({ telegram: telegramValue });
+        }
+
+        if (freshCache) return;
+
+        if (!hasCache) {
+          setState && setState({});
+          setUsers && setUsers({});
+        }
+
+        const res = await cachedSearch({ telegram: telegramValue });
+        if (res && Object.keys(res).length > 0) {
+          setUserNotFound && setUserNotFound(false);
+          if ('userId' in res) {
+            setState && setState(res);
+          } else {
+            setUsers && setUsers(res);
+          }
+          return;
+        }
       }
     }
 
