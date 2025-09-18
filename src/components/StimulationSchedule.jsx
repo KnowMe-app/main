@@ -31,6 +31,83 @@ const formatDisplay = date => {
   return `${day}.${month}`;
 };
 
+const normalizeDate = date => {
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
+  return normalized;
+};
+
+const parseWeeksDaysToken = (token, baseDate) => {
+  if (!token || !baseDate) return null;
+  const normalizedToken = token.toLowerCase();
+  const match = normalizedToken.match(/^(\d+)т(?:(\d+)д?)?$/);
+  if (!match) return null;
+  const weeks = Number(match[1]);
+  const days = match[2] ? Number(match[2]) : 0;
+  const result = normalizeDate(baseDate);
+  result.setDate(result.getDate() + weeks * 7 + days);
+  return result;
+};
+
+const computeCustomDateAndLabel = (input, baseDate, referenceDate) => {
+  if (!input) return { date: null, label: '' };
+  const normalizedInput = input.trim().replace(/\s+/g, ' ');
+  if (!normalizedInput) return { date: null, label: '' };
+  const [token, ...restParts] = normalizedInput.split(' ');
+  const rest = restParts.join(' ');
+  const baseNormalized = baseDate ? normalizeDate(baseDate) : null;
+  const referenceNormalized = referenceDate ? normalizeDate(referenceDate) : null;
+  let date = null;
+
+  if (token) {
+    date = parseWeeksDaysToken(token, baseDate);
+    if (!date) {
+      const shortMatch = token.match(/^(\d{2})\.(\d{2})$/);
+      if (shortMatch) {
+        const day = Number(shortMatch[1]);
+        const monthIndex = Number(shortMatch[2]) - 1;
+        const pivot = referenceNormalized || baseNormalized || normalizeDate(new Date());
+        const candidateYears = new Set();
+        if (referenceNormalized) {
+          candidateYears.add(referenceNormalized.getFullYear());
+          candidateYears.add(referenceNormalized.getFullYear() + 1);
+          candidateYears.add(referenceNormalized.getFullYear() - 1);
+        }
+        if (baseNormalized) {
+          candidateYears.add(baseNormalized.getFullYear());
+          candidateYears.add(baseNormalized.getFullYear() + 1);
+          candidateYears.add(baseNormalized.getFullYear() - 1);
+        }
+        candidateYears.add(new Date().getFullYear());
+        let bestCandidate = null;
+        let bestDiff = Infinity;
+        candidateYears.forEach(year => {
+          const candidate = new Date(year, monthIndex, day);
+          candidate.setHours(0, 0, 0, 0);
+          const diffValue = pivot ? Math.abs(candidate.getTime() - pivot.getTime()) : 0;
+          if (diffValue < bestDiff) {
+            bestDiff = diffValue;
+            bestCandidate = candidate;
+          }
+        });
+        date = bestCandidate;
+      } else {
+        const parsedDate = parseDate(token);
+        if (parsedDate) {
+          date = normalizeDate(parsedDate);
+        }
+      }
+    }
+  }
+
+  if (date) {
+    const label = `${formatDisplay(date)}${rest ? ` ${rest}` : ''}`;
+    return { date, label };
+  }
+
+  return { date: null, label: normalizedInput };
+};
+
 const isWeekend = date => {
   const day = date.getDay();
   return day === 0 || day === 6;
@@ -188,6 +265,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   const effectiveStatus = getEffectiveCycleStatus(userData);
   const [schedule, setSchedule] = React.useState([]);
   const [apDescription, setApDescription] = React.useState('');
+  const [apDerivedDate, setApDerivedDate] = React.useState(null);
   const [editingIndex, setEditingIndex] = React.useState(null);
   const transferRef = React.useRef(null);
   const hasChanges = React.useRef(false);
@@ -363,13 +441,33 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   if (!['stimulation', 'pregnant'].includes(effectiveStatus) || !base || schedule.length === 0)
     return null;
 
-  const today = new Date().setHours(0, 0, 0, 0);
+  const todayDate = normalizeDate(new Date());
+  const today = todayDate.getTime();
   let foundToday = false;
 
   const rendered = [];
   let currentYear = null;
 
   const filtered = schedule.filter(item => item.date);
+  if (!filtered.some(item => item.date.getTime() === today)) {
+    const baseForDiff = base ? normalizeDate(base) : null;
+    if (baseForDiff) {
+      const msInDay = 1000 * 60 * 60 * 24;
+      const diff = Math.round((todayDate.getTime() - baseForDiff.getTime()) / msInDay);
+      const totalDays = Math.max(diff, 0);
+      const weeks = Math.floor(totalDays / 7);
+      const days = totalDays % 7;
+      const comment = `${weeks}т${days}д`;
+      const placeholder = {
+        key: 'today-placeholder',
+        date: new Date(todayDate),
+        label: comment,
+      };
+      const index = filtered.findIndex(item => item.date.getTime() > today);
+      if (index === -1) filtered.push(placeholder);
+      else filtered.splice(index, 0, placeholder);
+    }
+  }
   filtered.forEach((item, i) => {
       const dateStr = formatDisplay(item.date);
       const weekday = weekdayNames[item.date.getDay()];
@@ -395,7 +493,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         rendered.push(<div key={`year-${year}`}>{year}</div>);
         currentYear = year;
       }
-      if (item.key === 'visit1') {
+      if (item.key === 'visit1' || item.key === 'today-placeholder') {
         rendered.push(
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
@@ -429,6 +527,26 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                     setEditingIndex(null);
                     setSchedule(prev => {
                       const copy = [...prev];
+                      const idx = copy.findIndex(v => v.key === item.key);
+                      if (idx === -1) return prev;
+                      const current = copy[idx];
+                      let updated = { ...current, label: current.label.trim() };
+                      if (current.key.startsWith('ap-')) {
+                        const computed = computeCustomDateAndLabel(
+                          updated.label,
+                          base,
+                          current.date,
+                        );
+                        if (computed.date) {
+                          updated = {
+                            ...updated,
+                            date: computed.date,
+                            label: computed.label,
+                          };
+                        }
+                      }
+                      copy[idx] = updated;
+                      copy.sort((a, b) => a.date - b.date);
                       hasChanges.current = true;
                       saveSchedule(copy);
                       return copy;
@@ -532,26 +650,54 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         <input
           type="text"
           value={apDescription}
-          onChange={e => setApDescription(e.target.value)}
-          placeholder="опис"
+          onChange={e => {
+            setApDescription(e.target.value);
+            setApDerivedDate(null);
+          }}
+          onBlur={() =>
+            setApDescription(prev => {
+              const result = computeCustomDateAndLabel(prev, base, apDerivedDate || base);
+              if (result.date) {
+                setApDerivedDate(result.date);
+                return result.label;
+              }
+              setApDerivedDate(null);
+              return prev.trim();
+            })
+          }
+          placeholder="10.05 УЗД"
           style={{ flex: 1 }}
         />
         <OrangeBtn
           onClick={() => {
             let description = apDescription.trim();
-            const match = description.match(/^(\d{2}\.\d{2}(?:\.\d{4})?)/);
-            let date = match ? parseDate(match[1]) : null;
-            if (match) {
-              description = description.slice(match[1].length).trim();
+            const computed = computeCustomDateAndLabel(
+              description,
+              base,
+              apDerivedDate || base,
+            );
+            let date = apDerivedDate || computed.date;
+            let label = computed.label;
+            if (!date) {
+              const match = description.match(/^(\d{2}\.\d{2}(?:\.\d{4})?)/);
+              if (match) {
+                const parsedDate = parseDate(match[1]);
+                if (parsedDate) {
+                  date = normalizeDate(parsedDate);
+                  const rest = description.slice(match[1].length).trim();
+                  label = `${formatDisplay(date)}${rest ? ` ${rest}` : ''}`;
+                }
+              }
             }
             if (!date) {
-              const today = new Date();
-              date = today;
+              const fallback = normalizeDate(new Date());
+              date = fallback;
+              label = description || 'AP';
             }
             const newItem = {
               key: `ap-${Date.now()}`,
               date,
-              label: description || 'AP',
+              label: label || formatDisplay(date),
             };
             setSchedule(prev => {
               const updated = [...prev];
@@ -563,6 +709,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
               return updated;
             });
             setApDescription('');
+            setApDerivedDate(null);
           }}
           style={{
             width: '24px',
@@ -573,7 +720,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
             fontWeight: 'bold',
           }}
         >
-          AP
+          +
         </OrangeBtn>
         <OrangeBtn
           onClick={() => {
