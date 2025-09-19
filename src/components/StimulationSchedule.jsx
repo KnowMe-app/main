@@ -126,26 +126,27 @@ const getWeeksDaysTokenForDate = (date, reference) => {
 const sanitizeDescription = text => {
   if (!text) return '';
   let result = text.trim();
-  const weekdayRegex = /^(нд|пн|вт|ср|чт|пт|сб)\b/i;
+  const weekdayRegex = /^(нд|пн|вт|ср|чт|пт|сб)(?=\s|$|[.,!?])/i;
+  const stripLeadingDelimiters = value => value.replace(/^[\s.,!?]+/, '');
   while (result) {
     const dateMatch = result.match(/^(\d{2}\.\d{2}(?:\.\d{4})?)/);
     if (dateMatch) {
-      result = result.slice(dateMatch[1].length).trim();
+      result = stripLeadingDelimiters(result.slice(dateMatch[1].length));
       continue;
     }
     const weekdayMatch = result.match(weekdayRegex);
     if (weekdayMatch) {
-      result = result.slice(weekdayMatch[0].length).trim();
+      result = stripLeadingDelimiters(result.slice(weekdayMatch[0].length));
       continue;
     }
     const tokenMatch = extractWeeksDaysPrefix(result);
     if (tokenMatch) {
-      result = result.slice(tokenMatch.length).trim();
+      result = stripLeadingDelimiters(result.slice(tokenMatch.length));
       continue;
     }
     break;
   }
-  return result;
+  return result.trim();
 };
 
 const buildCustomEventLabel = (date, referenceDate, description) => {
@@ -1138,6 +1139,12 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       {rendered}
     </div>
   );
+};
+
+export {
+  sanitizeDescription,
+  buildCustomEventLabel,
+  computeCustomDateAndLabel,
 };
 
 export default StimulationSchedule;
