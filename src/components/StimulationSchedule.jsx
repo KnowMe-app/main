@@ -37,18 +37,47 @@ const normalizeDate = date => {
   return normalized;
 };
 
+const weekdayNames = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+
 const formatWeeksDaysToken = (weeks, days = 0) => {
-  const normalizedWeeks = Number.isFinite(weeks) ? Number(weeks) : 0;
-  const normalizedDays = Number.isFinite(days) ? Number(days) : 0;
-  return `${normalizedWeeks}т${normalizedDays}д`;
+  let normalizedWeeks = Number.isFinite(weeks) ? Math.trunc(Number(weeks)) : 0;
+  let normalizedDays = Number.isFinite(days) ? Math.trunc(Number(days)) : 0;
+
+  if (normalizedDays < 0) {
+    const adjust = Math.ceil(Math.abs(normalizedDays) / 7);
+    normalizedWeeks -= adjust;
+    normalizedDays += adjust * 7;
+  }
+
+  if (normalizedDays >= 7) {
+    const extraWeeks = Math.floor(normalizedDays / 7);
+    normalizedWeeks += extraWeeks;
+    normalizedDays -= extraWeeks * 7;
+  }
+
+  if (normalizedWeeks < 0) {
+    normalizedWeeks = 0;
+  }
+
+  if (normalizedDays < 0) {
+    normalizedDays = 0;
+  }
+
+  const displayDay = normalizedDays + 1;
+  return `${normalizedWeeks}т${displayDay}д`;
 };
 
 const normalizeWeeksDaysToken = token => {
   if (!token) return null;
   const match = token.toString().trim().toLowerCase().match(/^(\d+)т(?:(\d+)д?)?$/);
   if (!match) return null;
-  const weeks = Number(match[1]);
-  const days = match[2] ? Number(match[2]) : 0;
+  const rawWeeks = Number(match[1]);
+  const rawDays = match[2] ? Number(match[2]) : 1;
+  const safeWeeks = Number.isFinite(rawWeeks) ? Math.max(Math.trunc(rawWeeks), 0) : 0;
+  const safeDays = Number.isFinite(rawDays) ? Math.max(Math.trunc(rawDays), 1) : 1;
+  const totalDays = safeWeeks * 7 + (safeDays - 1);
+  const weeks = Math.floor(totalDays / 7);
+  const days = totalDays % 7;
   return {
     weeks,
     days,
@@ -89,8 +118,54 @@ const getWeeksDaysTokenForDate = (date, reference) => {
   return {
     weeks,
     days,
+    displayDays: days + 1,
     token: formatWeeksDaysToken(weeks, days),
   };
+};
+
+const sanitizeDescription = text => {
+  if (!text) return '';
+  let result = text.trim();
+  const weekdayRegex = /^(нд|пн|вт|ср|чт|пт|сб)\b/i;
+  while (result) {
+    const dateMatch = result.match(/^(\d{2}\.\d{2}(?:\.\d{4})?)/);
+    if (dateMatch) {
+      result = result.slice(dateMatch[1].length).trim();
+      continue;
+    }
+    const weekdayMatch = result.match(weekdayRegex);
+    if (weekdayMatch) {
+      result = result.slice(weekdayMatch[0].length).trim();
+      continue;
+    }
+    const tokenMatch = extractWeeksDaysPrefix(result);
+    if (tokenMatch) {
+      result = result.slice(tokenMatch.length).trim();
+      continue;
+    }
+    break;
+  }
+  return result;
+};
+
+const buildCustomEventLabel = (date, referenceDate, description) => {
+  if (!date) return (description || '').trim();
+  const normalizedDate = normalizeDate(date);
+  const dateStr = formatDisplay(normalizedDate);
+  const weekday = weekdayNames[normalizedDate.getDay()];
+  const normalizedReference = referenceDate ? normalizeDate(referenceDate) : null;
+  const tokenInfo = normalizedReference
+    ? getWeeksDaysTokenForDate(normalizedDate, normalizedReference)
+    : null;
+  const trimmedDescription = sanitizeDescription(description);
+  const parts = [dateStr, weekday];
+  if (tokenInfo?.token) {
+    parts.push(tokenInfo.token);
+  }
+  if (trimmedDescription) {
+    parts.push(trimmedDescription);
+  }
+  return parts.join(' ').trim();
 };
 
 const isSameDay = (a, b) => {
@@ -99,31 +174,30 @@ const isSameDay = (a, b) => {
 };
 
 const computeCustomDateAndLabel = (input, baseDate, referenceDate) => {
-  if (!input) return { date: null, label: '' };
+  if (!input) return { date: null, label: '', description: '', raw: '' };
   const normalizedInput = input.trim().replace(/\s+/g, ' ');
-  if (!normalizedInput) return { date: null, label: '' };
-  const [token, ...restParts] = normalizedInput.split(' ');
-  const rest = restParts.join(' ');
+  if (!normalizedInput) return { date: null, label: '', description: '', raw: '' };
+
+  const tokens = normalizedInput.split(' ').filter(Boolean);
   const baseNormalized = baseDate ? normalizeDate(baseDate) : null;
   const referenceNormalized = referenceDate ? normalizeDate(referenceDate) : null;
+  const anchor = baseNormalized || referenceNormalized;
+
   let date = null;
+  const descriptionTokens = [];
 
-  if (token) {
-    const weeksDays = normalizeWeeksDaysToken(token);
-    if (weeksDays) {
-      const anchor = baseNormalized || referenceNormalized;
-      if (anchor) {
-        date = parseWeeksDaysToken(weeksDays.normalized, anchor);
-      }
-      if (date) {
-        const trimmedRest = rest.trim();
-        const label = trimmedRest ? `${weeksDays.normalized} ${trimmedRest}` : weeksDays.normalized;
-        return { date, label };
-      }
-    }
-
+  for (const part of tokens) {
     if (!date) {
-      const shortMatch = token.match(/^(\d{2})\.(\d{2})$/);
+      const weeksDays = normalizeWeeksDaysToken(part);
+      if (weeksDays && anchor) {
+        const computedDate = parseWeeksDaysToken(weeksDays.normalized, anchor);
+        if (computedDate) {
+          date = computedDate;
+          continue;
+        }
+      }
+
+      const shortMatch = part.match(/^(\d{2})\.(\d{2})$/);
       if (shortMatch) {
         const day = Number(shortMatch[1]);
         const monthIndex = Number(shortMatch[2]) - 1;
@@ -151,23 +225,31 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate) => {
             bestCandidate = candidate;
           }
         });
-        date = bestCandidate;
-      } else {
-        const parsedDate = parseDate(token);
-        if (parsedDate) {
-          date = normalizeDate(parsedDate);
+        if (bestCandidate) {
+          date = bestCandidate;
+          continue;
         }
       }
+
+      const parsedDate = parseDate(part);
+      if (parsedDate) {
+        date = normalizeDate(parsedDate);
+        continue;
+      }
     }
+
+    descriptionTokens.push(part);
   }
 
+  const description = sanitizeDescription(descriptionTokens.join(' '));
   if (date) {
-    const trimmedRest = rest.trim();
-    const label = `${formatDisplay(date)}${trimmedRest ? ` ${trimmedRest}` : ''}`;
-    return { date, label };
+    const referenceForLabel = baseNormalized || referenceNormalized;
+    const label = buildCustomEventLabel(date, referenceForLabel, description);
+    return { date, label, description, raw: normalizedInput };
   }
 
-  return { date: null, label: normalizedInput };
+  const fallbackDescription = description || normalizedInput;
+  return { date: null, label: '', description: fallbackDescription, raw: normalizedInput };
 };
 
 const isWeekend = date => {
@@ -195,8 +277,6 @@ const adjustBackward = (date, base) => {
   }
   return { date, day, sign: '' };
 };
-
-const weekdayNames = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 
 export const generateSchedule = base => {
   const visits = [];
@@ -472,7 +552,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           const weeks = Math.floor(diff / 7);
           const days = diff % 7;
           let custom = it.label.replace(/^\d+т\d*д?\s*/, '').trim();
-          let labelText = `${weeks}т${days ? `${days}д` : ''}`;
+          let labelText = formatWeeksDaysToken(weeks, days);
           if (weeks === 40 && days === 0) {
             labelText += ' пологи';
             if (custom.startsWith('пологи')) custom = custom.replace(/^пологи\s*/, '');
@@ -489,7 +569,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           const weeks = Math.floor(diff / 7);
           const days = diff % 7;
           let custom = it.label.replace(/^\d+т\d*д?\s*/, '').trim();
-          let labelText = `${weeks}т${days ? `${days}д` : ''}`;
+          let labelText = formatWeeksDaysToken(weeks, days);
           if (weeks === 40 && days === 0) {
             labelText += ' пологи';
             if (custom.startsWith('пологи')) custom = custom.replace(/^пологи\s*/, '');
@@ -507,16 +587,10 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           adj = { date: min, day: diffDays(min, base), sign: '' };
         }
         if (it.key.startsWith('ap')) {
-          let labelText = it.label;
-          const prefix = extractWeeksDaysPrefix(labelText);
-          if (prefix) {
-            const reference = base || transferDate;
-            const recalculated = getWeeksDaysTokenForDate(adj.date, reference);
-            if (recalculated) {
-              const rest = labelText.slice(prefix.length).trim();
-              labelText = rest ? `${recalculated.token} ${rest}` : recalculated.token;
-            }
-          }
+          const reference = base || transferDate;
+          const parsed = computeCustomDateAndLabel(it.label, base, it.date);
+          const description = parsed.description || parsed.raw || it.label;
+          const labelText = buildCustomEventLabel(adj.date, reference, description);
           return {
             ...it,
             date: adj.date,
@@ -573,7 +647,22 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       else filtered.splice(index, 0, placeholder);
     }
   }
-  filtered.forEach((item, i) => {
+  const displayItems = filtered.filter((item, idx, arr) => {
+    if (item.key !== 'today-placeholder') return true;
+    const trimmedLabel = (item.label || '').trim();
+    const normalizedToken = normalizeWeeksDaysToken(trimmedLabel);
+    if (!normalizedToken || normalizedToken.normalized !== trimmedLabel.toLowerCase()) {
+      return true;
+    }
+    return !arr.some(
+      (other, otherIdx) =>
+        otherIdx !== idx &&
+        other.key !== 'today-placeholder' &&
+        isSameDay(other.date, item.date),
+    );
+  });
+
+  displayItems.forEach((item, i) => {
       const dateStr = formatDisplay(item.date);
       const weekday = weekdayNames[item.date.getDay()];
       const year = item.date.getFullYear();
@@ -605,7 +694,16 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
               <div>
                 {dateStr} {weekday}
               </div>
-              <div style={{ flex: 1 }}>{item.label}</div>
+              <div
+                style={{
+                  flex: 1,
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {item.label}
+              </div>
             </div>
           </div>,
         );
@@ -692,14 +790,18 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                             base,
                             updated.date,
                           );
-                          if (computed.date) {
-                            dateChanged = !isSameDay(computed.date, updated.date);
-                            updated = {
-                              ...updated,
-                              date: computed.date,
-                              label: computed.label,
-                            };
-                          }
+                          const reference = base || transferDate;
+                          const nextDate = computed.date || updated.date;
+                          const description = computed.description || computed.raw || trimmedLabel;
+                          const nextLabel = nextDate
+                            ? buildCustomEventLabel(nextDate, reference, description)
+                            : trimmedLabel;
+                          dateChanged = !isSameDay(nextDate, updated.date);
+                          updated = {
+                            ...updated,
+                            date: nextDate,
+                            label: nextLabel,
+                          };
                         }
                       }
 
@@ -729,7 +831,13 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
               ) : (
                 <div
                   onClick={() => setEditingIndex(i)}
-                  style={{ cursor: 'pointer', flex: 1 }}
+                  style={{
+                    cursor: 'pointer',
+                    flex: 1,
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                    wordBreak: 'break-word',
+                  }}
                 >
                   {item.label}
                 </div>
@@ -826,7 +934,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           </div>,
         );
       }
-      const next = filtered[i + 1];
+      const next = displayItems[i + 1];
       if (!foundToday && next && today > item.date.getTime() && today < next.date.getTime()) {
         rendered.push(
           <div
@@ -838,8 +946,8 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     });
 
   if (!foundToday) {
-    const first = filtered[0];
-    const last = filtered[filtered.length - 1];
+    const first = displayItems[0];
+    const last = displayItems[displayItems.length - 1];
     if (first && today < first.date.getTime()) {
       rendered.unshift(
         <div key="today-start" style={{ height: '3px', backgroundColor: '#FFECB3' }} />,
@@ -857,6 +965,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         <input
           type="text"
           value={apDescription}
+          className="stimulation-custom-event-input"
           onChange={e => {
             setApDescription(e.target.value);
             setApDerivedDate(null);
@@ -869,42 +978,56 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                 return result.label;
               }
               setApDerivedDate(null);
-              return prev.trim();
+              const fallback = (result.description || result.raw || prev).trim();
+              return fallback;
             })
           }
-          placeholder="10.05 УЗД"
+          placeholder="10.08 УЗД"
           style={{ flex: 1 }}
         />
         <OrangeBtn
           onClick={() => {
-            let description = apDescription.trim();
+            const normalizedInput = apDescription.trim();
             const computed = computeCustomDateAndLabel(
-              description,
+              normalizedInput,
               base,
               apDerivedDate || base,
             );
+            const sanitizedInput = sanitizeDescription(normalizedInput);
             let date = apDerivedDate || computed.date;
-            let label = computed.label;
+            let descriptionForLabel = computed.description || sanitizedInput;
             if (!date) {
-              const match = description.match(/^(\d{2}\.\d{2}(?:\.\d{4})?)/);
+              const match = normalizedInput.match(/(\d{2}\.\d{2}(?:\.\d{4})?)/);
               if (match) {
                 const parsedDate = parseDate(match[1]);
                 if (parsedDate) {
                   date = normalizeDate(parsedDate);
-                  const rest = description.slice(match[1].length).trim();
-                  label = `${formatDisplay(date)}${rest ? ` ${rest}` : ''}`;
+                  const remainder = normalizedInput.replace(match[1], '').trim();
+                  descriptionForLabel = sanitizeDescription(remainder);
                 }
               }
             }
             if (!date) {
-              const fallback = normalizeDate(new Date());
-              date = fallback;
-              label = description || 'AP';
+              date = normalizeDate(new Date());
+              if (!descriptionForLabel) {
+                descriptionForLabel = sanitizedInput || computed.raw || normalizedInput || 'AP';
+              }
             }
+            if (!descriptionForLabel && computed.raw) {
+              descriptionForLabel = sanitizeDescription(computed.raw);
+            }
+            if (!descriptionForLabel && normalizedInput) {
+              descriptionForLabel = sanitizedInput;
+            }
+            if (!descriptionForLabel) {
+              descriptionForLabel = 'AP';
+            }
+            const referenceForLabel = base || date;
+            const label = buildCustomEventLabel(date, referenceForLabel, descriptionForLabel);
             const newItem = {
               key: `ap-${Date.now()}`,
               date,
-              label: label || formatDisplay(date),
+              label,
             };
             setSchedule(prev => {
               const updated = [...prev];
@@ -945,7 +1068,20 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                   text += `${y}\n`;
                   yr = y;
                 }
-                text += `${dateStr} ${weekday} ${it.label}\n`;
+                const labelValue = (it.label || '').trim();
+                const prefix = `${dateStr} ${weekday}`;
+                const lineLabelLower = labelValue.toLowerCase();
+                const prefixLower = prefix.toLowerCase();
+                let line = labelValue;
+                if (!lineLabelLower.startsWith(prefixLower)) {
+                  if (lineLabelLower.startsWith(dateStr.toLowerCase())) {
+                    const withoutDate = labelValue.slice(dateStr.length).trim();
+                    line = `${prefix} ${withoutDate}`.trim();
+                  } else {
+                    line = `${prefix} ${labelValue}`.trim();
+                  }
+                }
+                text += `${line}\n`;
               });
             navigator.clipboard.writeText(text.trim());
           }}

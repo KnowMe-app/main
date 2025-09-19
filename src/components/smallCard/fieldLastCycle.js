@@ -170,17 +170,17 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   const pregnancyDuration = React.useMemo(() => {
     const lastCycleDate = parseDate(userData.lastCycle);
     if (!lastCycleDate) {
-      return { weeks: 0, days: 0 };
+      return { weeks: 0, days: 1 };
     }
 
     const diffMs = Date.now() - lastCycleDate.getTime();
     if (diffMs <= 0) {
-      return { weeks: 0, days: 0 };
+      return { weeks: 0, days: 1 };
     }
 
     const totalDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
     const weeks = Math.floor(totalDays / 7);
-    const days = totalDays % 7;
+    const days = (totalDays % 7) + 1;
 
     return { weeks, days };
   }, [userData.lastCycle]);
