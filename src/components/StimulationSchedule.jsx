@@ -668,11 +668,37 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const prefix = `${dateStr} ${weekday}`;
       const labelValue =
         item.label === null || item.label === undefined ? '' : String(item.label);
-      const labelLower = labelValue.toLowerCase();
+      const trimmedLabel = labelValue.trim();
+      const labelLower = trimmedLabel.toLowerCase();
       const prefixLower = prefix.toLowerCase();
-      const displayLabel = labelLower.startsWith(prefixLower)
-        ? labelValue.slice(prefix.length).trim()
-        : labelValue;
+      let remainder = trimmedLabel;
+      let hadPrefix = false;
+      if (labelLower.startsWith(prefixLower)) {
+        hadPrefix = true;
+        remainder = trimmedLabel.slice(prefix.length).trim();
+      }
+      const tokenInfo = extractWeeksDaysPrefix(remainder);
+      let normalizedToken = '';
+      let remainderWithoutToken = remainder;
+      if (tokenInfo) {
+        normalizedToken = tokenInfo.normalized;
+        remainderWithoutToken = remainder.slice(tokenInfo.length).trim();
+      }
+      const sanitizedRemainder = sanitizeDescription(remainderWithoutToken);
+      const displayParts = [];
+      if (hadPrefix) {
+        displayParts.push(weekday);
+      }
+      if (normalizedToken) {
+        displayParts.push(normalizedToken);
+      }
+      if (sanitizedRemainder) {
+        displayParts.push(sanitizedRemainder);
+      }
+      let displayLabel = displayParts.join(' ').trim();
+      if (!displayLabel) {
+        displayLabel = normalizedToken || sanitizedRemainder || remainder;
+      }
       const year = item.date.getFullYear();
       const isToday = item.date.getTime() === today;
       const rowStyle = {
