@@ -57,52 +57,62 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate) => {
   const rest = restParts.join(' ');
   const baseNormalized = baseDate ? normalizeDate(baseDate) : null;
   const referenceNormalized = referenceDate ? normalizeDate(referenceDate) : null;
-  let date = null;
 
   if (token) {
-    date = parseWeeksDaysToken(token, baseDate);
-    if (!date) {
-      const shortMatch = token.match(/^(\d{2})\.(\d{2})$/);
-      if (shortMatch) {
-        const day = Number(shortMatch[1]);
-        const monthIndex = Number(shortMatch[2]) - 1;
-        const pivot = referenceNormalized || baseNormalized || normalizeDate(new Date());
-        const candidateYears = new Set();
-        if (referenceNormalized) {
-          candidateYears.add(referenceNormalized.getFullYear());
-          candidateYears.add(referenceNormalized.getFullYear() + 1);
-          candidateYears.add(referenceNormalized.getFullYear() - 1);
-        }
-        if (baseNormalized) {
-          candidateYears.add(baseNormalized.getFullYear());
-          candidateYears.add(baseNormalized.getFullYear() + 1);
-          candidateYears.add(baseNormalized.getFullYear() - 1);
-        }
-        candidateYears.add(new Date().getFullYear());
-        let bestCandidate = null;
-        let bestDiff = Infinity;
-        candidateYears.forEach(year => {
-          const candidate = new Date(year, monthIndex, day);
-          candidate.setHours(0, 0, 0, 0);
-          const diffValue = pivot ? Math.abs(candidate.getTime() - pivot.getTime()) : 0;
-          if (diffValue < bestDiff) {
-            bestDiff = diffValue;
-            bestCandidate = candidate;
-          }
-        });
-        date = bestCandidate;
-      } else {
-        const parsedDate = parseDate(token);
-        if (parsedDate) {
-          date = normalizeDate(parsedDate);
-        }
+    const weeksTokenMatch = token.match(/^(\d+)т(?:(\d+)д?)?$/i);
+    if (weeksTokenMatch) {
+      const weeks = Number(weeksTokenMatch[1]);
+      const days = weeksTokenMatch[2] ? Number(weeksTokenMatch[2]) : 0;
+      const normalizedToken = `${weeks}т${days ? `${days}д` : ''}`;
+      const dateFromToken = parseWeeksDaysToken(normalizedToken, baseDate);
+      if (dateFromToken) {
+        return {
+          date: dateFromToken,
+          label: `${normalizedToken}${rest ? ` ${rest}` : ''}`,
+        };
       }
     }
-  }
 
-  if (date) {
-    const label = `${formatDisplay(date)}${rest ? ` ${rest}` : ''}`;
-    return { date, label };
+    const shortMatch = token.match(/^(\d{2})\.(\d{2})$/);
+    if (shortMatch) {
+      const day = Number(shortMatch[1]);
+      const monthIndex = Number(shortMatch[2]) - 1;
+      const pivot = referenceNormalized || baseNormalized || normalizeDate(new Date());
+      const candidateYears = new Set();
+      if (referenceNormalized) {
+        candidateYears.add(referenceNormalized.getFullYear());
+        candidateYears.add(referenceNormalized.getFullYear() + 1);
+        candidateYears.add(referenceNormalized.getFullYear() - 1);
+      }
+      if (baseNormalized) {
+        candidateYears.add(baseNormalized.getFullYear());
+        candidateYears.add(baseNormalized.getFullYear() + 1);
+        candidateYears.add(baseNormalized.getFullYear() - 1);
+      }
+      candidateYears.add(new Date().getFullYear());
+      let bestCandidate = null;
+      let bestDiff = Infinity;
+      candidateYears.forEach(year => {
+        const candidate = new Date(year, monthIndex, day);
+        candidate.setHours(0, 0, 0, 0);
+        const diffValue = pivot ? Math.abs(candidate.getTime() - pivot.getTime()) : 0;
+        if (diffValue < bestDiff) {
+          bestDiff = diffValue;
+          bestCandidate = candidate;
+        }
+      });
+      if (bestCandidate) {
+        const label = `${formatDisplay(bestCandidate)}${rest ? ` ${rest}` : ''}`;
+        return { date: bestCandidate, label };
+      }
+    } else {
+      const parsedDate = parseDate(token);
+      if (parsedDate) {
+        const normalized = normalizeDate(parsedDate);
+        const label = `${formatDisplay(normalized)}${rest ? ` ${rest}` : ''}`;
+        return { date: normalized, label };
+      }
+    }
   }
 
   return { date: null, label: normalizedInput };
@@ -318,9 +328,12 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
             if (/перенос/.test(label)) key = 'transfer';
             else if (/ХГЧ/.test(label)) key = 'hcg';
             else if (/УЗД|ЗД/.test(label)) key = 'us';
-            else if(/(\d+)т/.test(label)) {
-              const week = /(\d+)т/.exec(label)[1];
-              key = `week${week}`;
+            else if (/(\d+)т(?!\d+д)/i.test(label)) {
+              const weekMatch = /(\d+)т(?!\d+д)/i.exec(label);
+              if (weekMatch) {
+                const week = weekMatch[1];
+                key = `week${week}`;
+              }
             } else if (/й день/.test(label)) {
               visitCount += 1;
               key = `visit${visitCount}`;
@@ -493,7 +506,8 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         rendered.push(<div key={`year-${year}`}>{year}</div>);
         currentYear = year;
       }
-      if (item.key === 'visit1' || item.key === 'today-placeholder') {
+      const isVisit1ReadOnly = item.key === 'visit1' && !isToday;
+      if (isVisit1ReadOnly) {
         rendered.push(
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
@@ -519,6 +533,16 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                     setSchedule(prev => {
                       const copy = [...prev];
                       const idx = prev.findIndex(v => v.key === item.key);
+                      if (idx === -1) {
+                        const newItem = {
+                          key: item.key,
+                          date: normalizeDate(item.date),
+                          label: e.target.value,
+                        };
+                        const next = [...prev, newItem];
+                        next.sort((a, b) => a.date - b.date);
+                        return next;
+                      }
                       copy[idx] = { ...copy[idx], label: e.target.value };
                       return copy;
                     })
@@ -528,14 +552,18 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                     setSchedule(prev => {
                       const copy = [...prev];
                       const idx = copy.findIndex(v => v.key === item.key);
-                      if (idx === -1) return prev;
-                      const current = copy[idx];
-                      let updated = { ...current, label: current.label.trim() };
-                      if (current.key.startsWith('ap-')) {
+                      const existing = idx === -1 ? { ...item } : copy[idx];
+                      const trimmedLabel = (existing.label || '').trim().replace(/\s+/g, ' ');
+                      let updated = {
+                        ...existing,
+                        label: trimmedLabel,
+                        date: normalizeDate(existing.date),
+                      };
+                      if (updated.key.startsWith('ap-')) {
                         const computed = computeCustomDateAndLabel(
                           updated.label,
                           base,
-                          current.date,
+                          existing.date,
                         );
                         if (computed.date) {
                           updated = {
@@ -544,8 +572,59 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                             label: computed.label,
                           };
                         }
+                      } else {
+                        const tokenMatch = updated.label.match(/^(\d+)т(\d+)д(?=\s|$)/i);
+                        if (tokenMatch) {
+                          const weeks = Number(tokenMatch[1]);
+                          const hasDays = tokenMatch[2] !== undefined;
+                          const days = hasDays ? Number(tokenMatch[2]) : 0;
+                          const normalizedToken = `${weeks}т${hasDays ? `${days}д` : ''}`;
+                          const rest = updated.label.slice(tokenMatch[0].length).trim();
+                          const normalizedLabel = rest
+                            ? `${normalizedToken} ${rest}`
+                            : normalizedToken;
+                          const transferItem = copy.find(v => v.key === 'transfer');
+                          const transferDate = transferItem?.date || transferRef.current;
+                          const reference = postTransferKeys.includes(updated.key)
+                            ? transferDate || base
+                            : base;
+                          const recalculated = parseWeeksDaysToken(normalizedToken, reference);
+                          if (recalculated) {
+                            updated = {
+                              ...updated,
+                              date: recalculated,
+                              label: normalizedLabel,
+                            };
+                          }
+                        }
                       }
-                      copy[idx] = updated;
+
+                      let targetItem = updated;
+                      let targetIndex = idx;
+                      if (
+                        updated.key === 'today-placeholder' &&
+                        updated.date &&
+                        updated.date.getTime() !== today
+                      ) {
+                        targetItem = {
+                          ...updated,
+                          key: `ap-${Date.now()}`,
+                        };
+                        if (idx !== -1) {
+                          copy.splice(idx, 1);
+                          targetIndex = -1;
+                        }
+                      }
+
+                      if (targetIndex === -1) {
+                        copy.push(targetItem);
+                      } else {
+                        copy[targetIndex] = targetItem;
+                      }
+
+                      if (targetItem.key === 'transfer') {
+                        transferRef.current = targetItem.date;
+                      }
                       copy.sort((a, b) => a.date - b.date);
                       hasChanges.current = true;
                       saveSchedule(copy);
@@ -561,7 +640,17 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                 />
               ) : (
                 <div
-                  onClick={() => setEditingIndex(i)}
+                  onClick={() => {
+                    if (item.key === 'today-placeholder') {
+                      setSchedule(prev => {
+                        if (prev.some(v => v.key === item.key)) return prev;
+                        const next = [...prev, { ...item, date: normalizeDate(item.date) }];
+                        next.sort((a, b) => a.date - b.date);
+                        return next;
+                      });
+                    }
+                    setEditingIndex(i);
+                  }}
                   style={{ cursor: 'pointer', flex: 1 }}
                 >
                   {item.label}
