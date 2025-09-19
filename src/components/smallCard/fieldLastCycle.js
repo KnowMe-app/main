@@ -63,12 +63,92 @@ const parseDate = dateString => {
   return null;
 };
 
+const normalizeDate = date => {
+  if (!date) return null;
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
+  return normalized;
+};
+
+const isSameDay = (a, b) => {
+  if (!a || !b) return false;
+  return normalizeDate(a).getTime() === normalizeDate(b).getTime();
+};
+
+const normalizeScheduleEntries = schedule => {
+  if (!schedule) return [];
+  if (Array.isArray(schedule)) {
+    const today = normalizeDate(new Date());
+    return schedule
+      .map(item => {
+        const date = parseDate(item.date);
+        if (!date) return null;
+        let key = item.key || '';
+        if (!key) {
+          if (/перенос/.test(item.label || '')) key = 'transfer';
+          else if (/ХГЧ/.test(item.label || '')) key = 'hcg';
+          else if (/УЗД|ЗД/.test(item.label || '')) key = 'us';
+        }
+        if (!key) key = `ap-${date.getTime()}`;
+        if (key === 'today-placeholder' && !isSameDay(date, today)) {
+          key = `ap-${date.getTime()}`;
+        }
+        return {
+          ...item,
+          key,
+          date,
+        };
+      })
+      .filter(item => item && item.date);
+  }
+
+  const lines = String(schedule)
+    .split('\n')
+    .filter(Boolean);
+  const today = normalizeDate(new Date());
+  let visitCount = 0;
+
+  return lines
+    .map((line, idx) => {
+      const parts = line.split('\t');
+      const datePart = parts[0]?.trim();
+      const storedKey = parts.length > 2 ? parts[1]?.trim() : '';
+      const label = parts
+        .slice(parts.length > 2 ? 2 : 1)
+        .join('\t')
+        .trim();
+      const date = parseDate(datePart);
+      if (!date) return null;
+      let key = storedKey;
+      if (!key) {
+        if (/перенос/.test(label)) key = 'transfer';
+        else if (/ХГЧ/.test(label)) key = 'hcg';
+        else if (/УЗД|ЗД/.test(label)) key = 'us';
+        else if (/й день/.test(label)) {
+          visitCount += 1;
+          key = `visit${visitCount}`;
+        } else if (/(\d+)т/.test(label)) {
+          const week = /(\d+)т/.exec(label)[1];
+          key = `week${week}`;
+        } else {
+          key = `ap-${idx}`;
+        }
+      }
+      if (key === 'today-placeholder' && !isSameDay(date, today)) {
+        key = `ap-${idx}`;
+      }
+      return { key, date, label };
+    })
+    .filter(item => item && item.date);
+};
+
 const isDefaultSchedule = (lastCycle, scheduleString) => {
   if (!lastCycle || !scheduleString) return false;
   const baseDate = parseDate(lastCycle);
   if (!baseDate) return false;
   const defaultString = serializeSchedule(generateSchedule(baseDate));
-  return defaultString === scheduleString;
+  const normalized = serializeSchedule(normalizeScheduleEntries(scheduleString));
+  return defaultString === normalized;
 };
 
 const formatDate = date => {

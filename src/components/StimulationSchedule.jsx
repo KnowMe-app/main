@@ -37,16 +37,65 @@ const normalizeDate = date => {
   return normalized;
 };
 
-const parseWeeksDaysToken = (token, baseDate) => {
-  if (!token || !baseDate) return null;
-  const normalizedToken = token.toLowerCase();
-  const match = normalizedToken.match(/^(\d+)т(?:(\d+)д?)?$/);
+const formatWeeksDaysToken = (weeks, days = 0) => {
+  const normalizedWeeks = Number.isFinite(weeks) ? Number(weeks) : 0;
+  const normalizedDays = Number.isFinite(days) ? Number(days) : 0;
+  return `${normalizedWeeks}т${normalizedDays}д`;
+};
+
+const normalizeWeeksDaysToken = token => {
+  if (!token) return null;
+  const match = token.toString().trim().toLowerCase().match(/^(\d+)т(?:(\d+)д?)?$/);
   if (!match) return null;
   const weeks = Number(match[1]);
   const days = match[2] ? Number(match[2]) : 0;
+  return {
+    weeks,
+    days,
+    normalized: formatWeeksDaysToken(weeks, days),
+  };
+};
+
+const extractWeeksDaysPrefix = value => {
+  if (!value) return null;
+  const match = value.trim().match(/^(\d+т\d*д?)(?=\s|$)/i);
+  if (!match) return null;
+  const normalized = normalizeWeeksDaysToken(match[1]);
+  if (!normalized) return null;
+  return {
+    ...normalized,
+    raw: match[1],
+    length: match[1].length,
+  };
+};
+
+const parseWeeksDaysToken = (token, baseDate) => {
+  if (!token || !baseDate) return null;
+  const normalized = normalizeWeeksDaysToken(token);
+  if (!normalized) return null;
   const result = normalizeDate(baseDate);
-  result.setDate(result.getDate() + weeks * 7 + days);
+  result.setDate(result.getDate() + normalized.weeks * 7 + normalized.days);
   return result;
+};
+
+const getWeeksDaysTokenForDate = (date, reference) => {
+  if (!date || !reference) return null;
+  const normalizedDate = normalizeDate(date);
+  const normalizedRef = normalizeDate(reference);
+  const diffMs = normalizedDate.getTime() - normalizedRef.getTime();
+  const totalDays = Math.max(Math.round(diffMs / (1000 * 60 * 60 * 24)), 0);
+  const weeks = Math.floor(totalDays / 7);
+  const days = totalDays % 7;
+  return {
+    weeks,
+    days,
+    token: formatWeeksDaysToken(weeks, days),
+  };
+};
+
+const isSameDay = (a, b) => {
+  if (!a || !b) return false;
+  return normalizeDate(a).getTime() === normalizeDate(b).getTime();
 };
 
 const computeCustomDateAndLabel = (input, baseDate, referenceDate) => {
@@ -60,7 +109,19 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate) => {
   let date = null;
 
   if (token) {
-    date = parseWeeksDaysToken(token, baseDate);
+    const weeksDays = normalizeWeeksDaysToken(token);
+    if (weeksDays) {
+      const anchor = baseNormalized || referenceNormalized;
+      if (anchor) {
+        date = parseWeeksDaysToken(weeksDays.normalized, anchor);
+      }
+      if (date) {
+        const trimmedRest = rest.trim();
+        const label = trimmedRest ? `${weeksDays.normalized} ${trimmedRest}` : weeksDays.normalized;
+        return { date, label };
+      }
+    }
+
     if (!date) {
       const shortMatch = token.match(/^(\d{2})\.(\d{2})$/);
       if (shortMatch) {
@@ -101,7 +162,8 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate) => {
   }
 
   if (date) {
-    const label = `${formatDisplay(date)}${rest ? ` ${rest}` : ''}`;
+    const trimmedRest = rest.trim();
+    const label = `${formatDisplay(date)}${trimmedRest ? ` ${trimmedRest}` : ''}`;
     return { date, label };
   }
 
@@ -256,7 +318,8 @@ export const serializeSchedule = sched =>
       const y = item.date.getFullYear();
       const m = String(item.date.getMonth() + 1).padStart(2, '0');
       const d = String(item.date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}\t${item.label}`;
+      const key = item.key || '';
+      return `${y}-${m}-${d}\t${key}\t${item.label}`;
     })
     .join('\n');
 
@@ -309,34 +372,66 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       if (typeof userData.stimulationSchedule === 'string') {
         const lines = userData.stimulationSchedule.split('\n').filter(Boolean);
         let visitCount = 0;
+        const todayNormalized = normalizeDate(new Date());
         parsed = lines
           .map((line, idx) => {
-            const [datePart, ...labelParts] = line.split('\t');
-            const label = labelParts.join('\t').trim();
-            const date = parseDate(datePart.trim());
-            let key = '';
-            if (/перенос/.test(label)) key = 'transfer';
-            else if (/ХГЧ/.test(label)) key = 'hcg';
-            else if (/УЗД|ЗД/.test(label)) key = 'us';
-            else if(/(\d+)т/.test(label)) {
-              const week = /(\d+)т/.exec(label)[1];
-              key = `week${week}`;
-            } else if (/й день/.test(label)) {
-              visitCount += 1;
-              key = `visit${visitCount}`;
-            } else {
+            const parts = line.split('\t');
+            const datePart = parts[0]?.trim();
+            const storedKey = parts.length > 2 ? parts[1]?.trim() : '';
+            const label = parts
+              .slice(parts.length > 2 ? 2 : 1)
+              .join('\t')
+              .trim();
+            const date = parseDate(datePart);
+            if (!date) return null;
+            let key = storedKey;
+            if (!key) {
+              if (/перенос/.test(label)) key = 'transfer';
+              else if (/ХГЧ/.test(label)) key = 'hcg';
+              else if (/УЗД|ЗД/.test(label)) key = 'us';
+              else if (/(\d+)т/.test(label)) {
+                const week = /(\d+)т/.exec(label)[1];
+                key = `week${week}`;
+              } else if (/й день/.test(label)) {
+                visitCount += 1;
+                key = `visit${visitCount}`;
+              } else {
+                key = `ap-${idx}`;
+              }
+            }
+            if (key === 'today-placeholder' && !isSameDay(date, todayNormalized)) {
               key = `ap-${idx}`;
             }
             return { key, date, label };
           })
-          .filter(item => item.date);
+          .filter(item => item && item.date);
       } else {
+        const todayNormalized = normalizeDate(new Date());
         parsed = userData.stimulationSchedule
-          .map(item => ({
-            ...item,
-            date: parseDate(item.date),
-          }))
-          .filter(item => item.date);
+          .map(item => {
+            const date = parseDate(item.date);
+            if (!date) return null;
+            let key = item.key || '';
+            if (!key) {
+              if (/перенос/.test(item.label || '')) key = 'transfer';
+              else if (/ХГЧ/.test(item.label || '')) key = 'hcg';
+              else if (/УЗД|ЗД/.test(item.label || '')) key = 'us';
+              else if (/(\d+)т/.test(item.label || '')) {
+                const week = /(\d+)т/.exec(item.label || '')[1];
+                key = `week${week}`;
+              }
+            }
+            if (!key) key = `ap-${date.getTime()}`;
+            if (key === 'today-placeholder' && !isSameDay(date, todayNormalized)) {
+              key = `ap-${date.getTime()}`;
+            }
+            return {
+              ...item,
+              key,
+              date,
+            };
+          })
+          .filter(item => item && item.date);
       }
 
       const firstDate = parsed[0]?.date;
@@ -412,10 +507,20 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           adj = { date: min, day: diffDays(min, base), sign: '' };
         }
         if (it.key.startsWith('ap')) {
+          let labelText = it.label;
+          const prefix = extractWeeksDaysPrefix(labelText);
+          if (prefix) {
+            const reference = base || transferDate;
+            const recalculated = getWeeksDaysTokenForDate(adj.date, reference);
+            if (recalculated) {
+              const rest = labelText.slice(prefix.length).trim();
+              labelText = rest ? `${recalculated.token} ${rest}` : recalculated.token;
+            }
+          }
           return {
             ...it,
             date: adj.date,
-            label: it.label,
+            label: labelText,
           };
         }
         let lbl = `${adj.day}й день${it.key === 'transfer' ? ' (перенос)' : ''}${adj.sign ? ` ${adj.sign}` : ''}`;
@@ -457,7 +562,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const totalDays = Math.max(diff, 0);
       const weeks = Math.floor(totalDays / 7);
       const days = totalDays % 7;
-      const comment = `${weeks}т${days}д`;
+      const comment = formatWeeksDaysToken(weeks, days);
       const placeholder = {
         key: 'today-placeholder',
         date: new Date(todayDate),
@@ -493,7 +598,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         rendered.push(<div key={`year-${year}`}>{year}</div>);
         currentYear = year;
       }
-      if (item.key === 'visit1' || item.key === 'today-placeholder') {
+      if (item.key === 'visit1') {
         rendered.push(
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
@@ -505,6 +610,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           </div>,
         );
       } else {
+        const isPlaceholder = item.key === 'today-placeholder';
         rendered.push(
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
@@ -518,7 +624,11 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                   onChange={e =>
                     setSchedule(prev => {
                       const copy = [...prev];
-                      const idx = prev.findIndex(v => v.key === item.key);
+                      const idx = copy.findIndex(v => v.key === item.key);
+                      if (idx === -1) {
+                        copy.push({ ...item, label: e.target.value });
+                        return copy;
+                      }
                       copy[idx] = { ...copy[idx], label: e.target.value };
                       return copy;
                     })
@@ -527,26 +637,83 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                     setEditingIndex(null);
                     setSchedule(prev => {
                       const copy = [...prev];
-                      const idx = copy.findIndex(v => v.key === item.key);
-                      if (idx === -1) return prev;
+                      let idx = copy.findIndex(v => v.key === item.key);
+                      if (idx === -1) {
+                        copy.push({ ...item });
+                        idx = copy.length - 1;
+                      }
                       const current = copy[idx];
-                      let updated = { ...current, label: current.label.trim() };
-                      if (current.key.startsWith('ap-')) {
-                        const computed = computeCustomDateAndLabel(
-                          updated.label,
-                          base,
-                          current.date,
-                        );
-                        if (computed.date) {
+                      const trimmedLabel = (current.label || '').trim();
+                      let updated = { ...current, label: trimmedLabel };
+                      const transferDate =
+                        copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
+                      let dateChanged = false;
+
+                      if (isPlaceholder) {
+                        const tokenInfo = base ? getWeeksDaysTokenForDate(updated.date, base) : null;
+                        const prefix = extractWeeksDaysPrefix(trimmedLabel);
+                        const rest = prefix
+                          ? trimmedLabel.slice(prefix.length).trim()
+                          : trimmedLabel.trim();
+                        if (tokenInfo) {
                           updated = {
                             ...updated,
-                            date: computed.date,
-                            label: computed.label,
+                            label: rest ? `${tokenInfo.token} ${rest}` : tokenInfo.token,
                           };
                         }
+                      } else {
+                        const prefix = extractWeeksDaysPrefix(trimmedLabel);
+                        if (prefix) {
+                          const rest = trimmedLabel.slice(prefix.length).trim();
+                          let reference = base;
+                          if (postTransferKeys.includes(updated.key)) {
+                            reference = transferDate;
+                          }
+                          if (updated.key.startsWith('ap-')) {
+                            reference = base || transferDate;
+                          }
+                          if (reference) {
+                            const computedDate = parseWeeksDaysToken(prefix.normalized, reference);
+                            if (computedDate && !isSameDay(computedDate, updated.date)) {
+                              updated = {
+                                ...updated,
+                                date: computedDate,
+                              };
+                              dateChanged = true;
+                            }
+                          }
+                          updated = {
+                            ...updated,
+                            label: rest ? `${prefix.normalized} ${rest}` : prefix.normalized,
+                          };
+                        } else if (updated.key.startsWith('ap-')) {
+                          const computed = computeCustomDateAndLabel(
+                            trimmedLabel,
+                            base,
+                            updated.date,
+                          );
+                          if (computed.date) {
+                            dateChanged = !isSameDay(computed.date, updated.date);
+                            updated = {
+                              ...updated,
+                              date: computed.date,
+                              label: computed.label,
+                            };
+                          }
+                        }
                       }
+
+                      const labelChanged = updated.label !== current.label;
+                      dateChanged = dateChanged || !isSameDay(updated.date, current.date);
+
+                      if (!labelChanged && !dateChanged) {
+                        return prev;
+                      }
+
                       copy[idx] = updated;
-                      copy.sort((a, b) => a.date - b.date);
+                      if (dateChanged) {
+                        copy.sort((a, b) => a.date - b.date);
+                      }
                       hasChanges.current = true;
                       saveSchedule(copy);
                       return copy;
@@ -569,52 +736,92 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
               )}
             </div>
             <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
-              <OrangeBtn
-                onClick={() => shiftDate(schedule.findIndex(v => v.key === item.key), -1)}
-                style={{
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '4px',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                }}
-              >
-                -
-              </OrangeBtn>
-              <OrangeBtn
-                onClick={() => shiftDate(schedule.findIndex(v => v.key === item.key), 1)}
-                style={{
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '4px',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                }}
-              >
-                +
-              </OrangeBtn>
-              <OrangeBtn
-                onClick={() =>
-                  setSchedule(prev => {
-                    const updated = prev.filter(v => v.key !== item.key);
-                    hasChanges.current = true;
-                    saveSchedule(updated);
-                    return updated;
-                  })
-                }
-                style={{
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '4px',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                  fontSize: '16px',
-                  fontWeight: 'bold',
-                }}
-              >
-                ×
-              </OrangeBtn>
+              {isPlaceholder ? (
+                <OrangeBtn
+                  onClick={() => {
+                    const tokenInfo = base ? getWeeksDaysTokenForDate(item.date, base) : null;
+                    const resetLabel = tokenInfo ? tokenInfo.token : item.label.split(' ')[0] || '';
+                    setSchedule(prev => {
+                      const copy = [...prev];
+                      const idx = copy.findIndex(v => v.key === item.key);
+                      if (idx === -1) {
+                        copy.push({ ...item, label: resetLabel });
+                      } else {
+                        copy[idx] = { ...copy[idx], label: resetLabel };
+                      }
+                      copy.sort((a, b) => a.date - b.date);
+                      hasChanges.current = true;
+                      saveSchedule(copy);
+                      return copy;
+                    });
+                  }}
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '4px',
+                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  ×
+                </OrangeBtn>
+              ) : (
+                <React.Fragment>
+                  <OrangeBtn
+                    onClick={() => {
+                      const idx = schedule.findIndex(v => v.key === item.key);
+                      if (idx !== -1) shiftDate(idx, -1);
+                    }}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    -
+                  </OrangeBtn>
+                  <OrangeBtn
+                    onClick={() => {
+                      const idx = schedule.findIndex(v => v.key === item.key);
+                      if (idx !== -1) shiftDate(idx, 1);
+                    }}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    +
+                  </OrangeBtn>
+                  <OrangeBtn
+                    onClick={() =>
+                      setSchedule(prev => {
+                        const updated = prev.filter(v => v.key !== item.key);
+                        hasChanges.current = true;
+                        saveSchedule(updated);
+                        return updated;
+                      })
+                    }
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    ×
+                  </OrangeBtn>
+                </React.Fragment>
+              )}
             </div>
           </div>,
         );
