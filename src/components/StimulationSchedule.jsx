@@ -665,6 +665,14 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   displayItems.forEach((item, i) => {
       const dateStr = formatDisplay(item.date);
       const weekday = weekdayNames[item.date.getDay()];
+      const prefix = `${dateStr} ${weekday}`;
+      const labelValue =
+        item.label === null || item.label === undefined ? '' : String(item.label);
+      const labelLower = labelValue.toLowerCase();
+      const prefixLower = prefix.toLowerCase();
+      const displayLabel = labelLower.startsWith(prefixLower)
+        ? labelValue.slice(prefix.length).trim()
+        : labelValue;
       const year = item.date.getFullYear();
       const isToday = item.date.getTime() === today;
       const rowStyle = {
@@ -702,7 +710,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                   wordBreak: 'break-word',
                 }}
               >
-                {item.label}
+                {displayLabel}
               </div>
             </div>
           </div>,
@@ -839,7 +847,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                     wordBreak: 'break-word',
                   }}
                 >
-                  {item.label}
+                  {displayLabel}
                 </div>
               )}
             </div>
