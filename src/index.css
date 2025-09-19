@@ -95,3 +95,13 @@ code {
     transform: rotate(360deg);
   }
 }
+
+.stimulation-custom-event-input::placeholder {
+  color: rgba(0, 0, 0, 0.55);
+  opacity: 1;
+}
+
+.stimulation-custom-event-input::-webkit-input-placeholder {
+  color: rgba(0, 0, 0, 0.55);
+  opacity: 1;
+}
