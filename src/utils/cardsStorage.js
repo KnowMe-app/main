@@ -116,6 +116,9 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
     cachedAt: Date.now(),
   };
   delete updatedCard.id;
+  if (Object.prototype.hasOwnProperty.call(updatedCard, 'duplicate')) {
+    delete updatedCard.duplicate;
+  }
 
   if (data.lastAction !== undefined) {
     const normalized = normalizeLastAction(data.lastAction);
