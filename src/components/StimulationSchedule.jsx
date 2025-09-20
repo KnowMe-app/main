@@ -409,7 +409,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   const [schedule, setSchedule] = React.useState([]);
   const [apDescription, setApDescription] = React.useState('');
   const [apDerivedDate, setApDerivedDate] = React.useState(null);
-  const [editingIndex, setEditingIndex] = React.useState(null);
+  const [editingKey, setEditingKey] = React.useState(null);
   const transferRef = React.useRef(null);
   const hasChanges = React.useRef(false);
 
@@ -662,7 +662,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     );
   });
 
-  displayItems.forEach((item, i) => {
+  displayItems.forEach((item, index) => {
       const dateStr = formatDisplay(item.date);
       const weekday = weekdayNames[item.date.getDay()];
       const prefix = `${dateStr} ${weekday}`;
@@ -746,13 +746,14 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         );
       } else {
         const isPlaceholder = item.key === 'today-placeholder';
+        const isEditing = editingKey === item.key;
         rendered.push(
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
               <div>
                 {dateStr} {weekday}
               </div>
-              {editingIndex === i ? (
+              {isEditing ? (
                 <input
                   value={inputValue}
                   autoFocus
@@ -761,7 +762,13 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                       const copy = [...prev];
                       const idx = copy.findIndex(v => v.key === item.key);
                       if (idx === -1) {
-                        copy.push({ ...item, label: e.target.value });
+                        const next = { ...item, label: e.target.value };
+                        const insertAt = copy.findIndex(v => v.date > next.date);
+                        if (insertAt === -1) {
+                          copy.push(next);
+                        } else {
+                          copy.splice(insertAt, 0, next);
+                        }
                         return copy;
                       }
                       copy[idx] = { ...copy[idx], label: e.target.value };
@@ -769,13 +776,20 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                     })
                   }
                   onBlur={() => {
-                    setEditingIndex(null);
+                    setEditingKey(null);
                     setSchedule(prev => {
                       const copy = [...prev];
                       let idx = copy.findIndex(v => v.key === item.key);
                       if (idx === -1) {
-                        copy.push({ ...item });
-                        idx = copy.length - 1;
+                        const next = { ...item };
+                        const insertAt = copy.findIndex(v => v.date > next.date);
+                        if (insertAt === -1) {
+                          copy.push(next);
+                          idx = copy.length - 1;
+                        } else {
+                          copy.splice(insertAt, 0, next);
+                          idx = insertAt;
+                        }
                       }
                       const current = copy[idx];
                       const trimmedLabel = (current.label || '').trim();
@@ -867,7 +881,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                 />
               ) : (
                 <div
-                  onClick={() => setEditingIndex(i)}
+                  onClick={() => setEditingKey(item.key)}
                   style={{
                     cursor: 'pointer',
                     flex: 1,
@@ -971,11 +985,11 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           </div>,
         );
       }
-      const next = displayItems[i + 1];
+      const next = displayItems[index + 1];
       if (!foundToday && next && today > item.date.getTime() && today < next.date.getTime()) {
         rendered.push(
           <div
-            key={`today-sep-${i}`}
+            key={`today-sep-${index}`}
             style={{ height: '3px', backgroundColor: '#FFECB3' }}
           />,
         );
