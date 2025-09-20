@@ -687,18 +687,18 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       }
       const sanitizedRemainder = sanitizeDescription(remainderWithoutToken);
       const displayParts = [];
-      if (hadPrefix) {
-        displayParts.push(weekday);
-      }
       if (normalizedToken) {
         displayParts.push(normalizedToken);
       }
       if (sanitizedRemainder) {
         displayParts.push(sanitizedRemainder);
       }
+      if (displayParts.length === 0 && hadPrefix) {
+        displayParts.push(weekday);
+      }
       let displayLabel = displayParts.join(' ').trim();
       if (!displayLabel) {
-        displayLabel = normalizedToken || sanitizedRemainder || remainder;
+        displayLabel = normalizedToken || sanitizedRemainder || remainder || trimmedLabel;
       }
       const year = item.date.getFullYear();
       const isToday = item.date.getTime() === today;
