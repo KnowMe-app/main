@@ -149,6 +149,74 @@ const sanitizeDescription = text => {
   return result.trim();
 };
 
+const stripManualRemainder = value => (value ? value.replace(/^[\s.,!?()-]+/, '') : '');
+
+const parseLeadingDate = (value, fallbackDate) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?=\s|$)/);
+  if (isoMatch) {
+    const year = Number(isoMatch[1]);
+    const monthIndex = Number(isoMatch[2]) - 1;
+    const day = Number(isoMatch[3]);
+    const candidate = new Date(year, monthIndex, day);
+    if (candidate.getMonth() !== monthIndex) return null;
+    candidate.setHours(0, 0, 0, 0);
+    const remainder = stripManualRemainder(trimmed.slice(isoMatch[0].length));
+    return { date: candidate, remainder };
+  }
+
+  const fullMatch = trimmed.match(/^(\d{2})\.(\d{2})\.(\d{4})(?=\s|$)/);
+  if (fullMatch) {
+    const day = Number(fullMatch[1]);
+    const monthIndex = Number(fullMatch[2]) - 1;
+    const year = Number(fullMatch[3]);
+    const candidate = new Date(year, monthIndex, day);
+    if (candidate.getMonth() !== monthIndex) return null;
+    candidate.setHours(0, 0, 0, 0);
+    const remainder = stripManualRemainder(trimmed.slice(fullMatch[0].length));
+    return { date: candidate, remainder };
+  }
+
+  const shortMatch = trimmed.match(/^(\d{2})\.(\d{2})(?=\s|$)/);
+  if (shortMatch) {
+    const day = Number(shortMatch[1]);
+    const monthIndex = Number(shortMatch[2]) - 1;
+    const fallback = fallbackDate ? new Date(fallbackDate) : new Date();
+    const year = fallback.getFullYear();
+    const candidate = new Date(year, monthIndex, day);
+    if (candidate.getMonth() !== monthIndex) return null;
+    candidate.setHours(0, 0, 0, 0);
+    const remainder = stripManualRemainder(trimmed.slice(shortMatch[0].length));
+    return { date: candidate, remainder };
+  }
+
+  return null;
+};
+
+const buildPostTransferLabel = (key, label, date, transferDate) => {
+  if (!transferDate || !date) return label;
+  const normalizedDate = normalizeDate(date);
+  const normalizedTransfer = normalizeDate(transferDate);
+  const diffRaw = Math.round(
+    (normalizedDate.getTime() - normalizedTransfer.getTime()) / (1000 * 60 * 60 * 24),
+  );
+  const safeDiff = diffRaw < 0 ? 0 : diffRaw;
+  const weeks = Math.floor(safeDiff / 7);
+  const days = safeDiff % 7;
+  const prefix = formatWeeksDaysToken(weeks, days);
+  const baseText = key === 'hcg' ? `ХГЧ на ${safeDiff}й день` : `УЗД на ${safeDiff}й день`;
+  const afterPrefix = (label || '').replace(/^\d+т\d*д?\s*/i, '').trim();
+  const cleanupPattern = key === 'hcg'
+    ? /^ХГЧ(?:\s+на\s+\d+й\s+день)?/i
+    : /^УЗД(?:\s+на\s+\d+й\s+день)?/i;
+  const extra = stripManualRemainder(afterPrefix.replace(cleanupPattern, '').trim());
+  const description = extra ? `${baseText} ${extra}` : baseText;
+  return `${prefix} ${description}`.trim();
+};
+
 const buildCustomEventLabel = (date, referenceDate, description) => {
   if (!date) return (description || '').trim();
   const normalizedDate = normalizeDate(date);
@@ -535,6 +603,89 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     }
   }, [schedule]);
 
+  const adjustItemForDate = (item, target, { baseDate = base, transferDate, overrideLabel } = {}) => {
+    if (!item || !target) return item;
+    const normalizedDate = normalizeDate(target);
+    const labelSource = typeof overrideLabel === 'string' ? overrideLabel : item.label;
+    const baseDateValue = baseDate || null;
+    const effectiveTransfer = transferDate || baseDateValue;
+
+    if (postTransferKeys.includes(item.key)) {
+      const labelText = buildPostTransferLabel(item.key, labelSource, normalizedDate, effectiveTransfer);
+      return {
+        ...item,
+        date: normalizedDate,
+        label: labelText,
+      };
+    }
+
+    let adjustedDate = normalizedDate;
+    let adj =
+      baseDateValue && adjustedDate
+        ? { date: adjustedDate, day: diffDays(adjustedDate, baseDateValue), sign: '' }
+        : { date: adjustedDate, day: null, sign: '' };
+
+    if (item.key.startsWith('week') && baseDateValue) {
+      const diff = Math.round((adjustedDate - baseDateValue) / (1000 * 60 * 60 * 24));
+      const weeks = Math.floor(diff / 7);
+      const days = diff % 7;
+      let custom = (labelSource || '').replace(/^\d+т\d*д?\s*/, '').trim();
+      let labelText = formatWeeksDaysToken(weeks, days);
+      if (weeks === 40 && days === 0) {
+        labelText += ' пологи';
+        if (custom.startsWith('пологи')) custom = custom.replace(/^пологи\s*/, '');
+      }
+      if (custom) labelText += ` ${custom}`;
+      return {
+        ...item,
+        date: adjustedDate,
+        label: labelText,
+      };
+    }
+
+    if (item.key === 'visit3' && baseDateValue && adj.day !== null && adj.day < 6) {
+      const min = new Date(baseDateValue);
+      min.setDate(baseDateValue.getDate() + 5);
+      const normalizedMin = normalizeDate(min);
+      return adjustItemForDate(item, normalizedMin, { baseDate: baseDateValue, transferDate, overrideLabel });
+    }
+
+    if (item.key.startsWith('ap')) {
+      const reference = baseDateValue || effectiveTransfer;
+      const parsed = computeCustomDateAndLabel(labelSource, baseDateValue, item.date);
+      const description = parsed.description || parsed.raw || labelSource;
+      const labelText = buildCustomEventLabel(adjustedDate, reference, description);
+      return {
+        ...item,
+        date: adjustedDate,
+        label: labelText,
+      };
+    }
+
+    if (baseDateValue && adj.day !== null) {
+      let lbl = `${adj.day}й день${item.key === 'transfer' ? ' (перенос)' : ''}${
+        adj.sign ? ` ${adj.sign}` : ''
+      }`;
+      if (!adj.sign) {
+        lbl = lbl.replace(/-$/, '').trim();
+      }
+      if (overrideLabel && overrideLabel.trim()) {
+        lbl = `${lbl} ${overrideLabel.trim()}`.trim();
+      }
+      return {
+        ...item,
+        date: adjustedDate,
+        label: lbl,
+      };
+    }
+
+    return {
+      ...item,
+      date: adjustedDate,
+      label: labelSource,
+    };
+  };
+
   const shiftDate = (idx, delta) => {
     setSchedule(prev => {
       const copy = [...prev];
@@ -545,67 +696,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const transferDate =
         copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
 
-      const applyAdjust = (it, d) => {
-        const refBase = postTransferKeys.includes(it.key) ? transferDate : base;
-        let adj = { date: d, day: diffDays(d, refBase), sign: '' };
-        if (it.key.startsWith('week')) {
-          const diff = Math.round((adj.date - base) / (1000 * 60 * 60 * 24));
-          const weeks = Math.floor(diff / 7);
-          const days = diff % 7;
-          let custom = it.label.replace(/^\d+т\d*д?\s*/, '').trim();
-          let labelText = formatWeeksDaysToken(weeks, days);
-          if (weeks === 40 && days === 0) {
-            labelText += ' пологи';
-            if (custom.startsWith('пологи')) custom = custom.replace(/^пологи\s*/, '');
-          }
-          if (custom) labelText += ` ${custom}`;
-          return {
-            ...it,
-            date: adj.date,
-            label: labelText,
-          };
-        }
-        if (postTransferKeys.includes(it.key)) {
-          const diff = Math.round((adj.date - transferDate) / (1000 * 60 * 60 * 24));
-          const weeks = Math.floor(diff / 7);
-          const days = diff % 7;
-          let custom = it.label.replace(/^\d+т\d*д?\s*/, '').trim();
-          let labelText = formatWeeksDaysToken(weeks, days);
-          if (weeks === 40 && days === 0) {
-            labelText += ' пологи';
-            if (custom.startsWith('пологи')) custom = custom.replace(/^пологи\s*/, '');
-          }
-          if (custom) labelText += ` ${custom}`;
-          return {
-            ...it,
-            date: adj.date,
-            label: labelText,
-          };
-        }
-        if (it.key === 'visit3' && adj.day < 6) {
-          const min = new Date(base);
-          min.setDate(base.getDate() + 5);
-          adj = { date: min, day: diffDays(min, base), sign: '' };
-        }
-        if (it.key.startsWith('ap')) {
-          const reference = base || transferDate;
-          const parsed = computeCustomDateAndLabel(it.label, base, it.date);
-          const description = parsed.description || parsed.raw || it.label;
-          const labelText = buildCustomEventLabel(adj.date, reference, description);
-          return {
-            ...it,
-            date: adj.date,
-            label: labelText,
-          };
-        }
-        let lbl = `${adj.day}й день${it.key === 'transfer' ? ' (перенос)' : ''}${adj.sign ? ` ${adj.sign}` : ''}`;
-        if (!adj.sign) {
-          lbl = lbl.replace(/-$/, '').trim();
-        }
-        return { ...it, date: adj.date, label: lbl };
-      };
-
-      const adjustedItem = applyAdjust(item, newDate);
+      const adjustedItem = adjustItemForDate(item, newDate, { baseDate: base, transferDate });
       copy[idx] = adjustedItem;
       if (item.key === 'transfer') {
         transferRef.current = adjustedItem.date;
@@ -840,6 +931,20 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                             date: nextDate,
                             label: nextLabel,
                           };
+                        } else {
+                          const manualAnchor =
+                            updated.date ||
+                            (postTransferKeys.includes(updated.key) ? transferDate : base);
+                          const manualInfo = parseLeadingDate(trimmedLabel, manualAnchor);
+                          if (manualInfo && manualInfo.date) {
+                            const adjusted = adjustItemForDate(updated, manualInfo.date, {
+                              baseDate: base,
+                              transferDate,
+                              overrideLabel: manualInfo.remainder,
+                            });
+                            dateChanged = !isSameDay(adjusted.date, current.date);
+                            updated = adjusted;
+                          }
                         }
                       }
 
