@@ -726,7 +726,7 @@ export const searchUserByPartialUserId = async (userId, users) => {
   }
 };
 
-const addUserToResults = async (userId, users, userIdOrArray = null) => {
+const addUserToResults = async (userId, users) => {
   const userSnapshotInNewUsers = await get(ref2(database, `newUsers/${userId}`));
   const userFromNewUsers = userSnapshotInNewUsers.exists() ? userSnapshotInNewUsers.val() : {};
 
@@ -743,7 +743,6 @@ const addUserToResults = async (userId, users, userIdOrArray = null) => {
     userId,
     ...userFromNewUsers,
     ...userFromUsers,
-    ...(userIdOrArray ? { duplicate: userIdOrArray } : {}), // Додаємо ключ duplicate, якщо userIdOrArray не null
   };
 };
 
@@ -840,7 +839,7 @@ const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
               // console.log('userId33333333333333 :>> ', userId);
               if (!uniqueUserIds.has(userId)) {
                 uniqueUserIds.add(userId);
-                await addUserToResults(userId, users, userIdOrArray);
+                await addUserToResults(userId, users);
               }
             }
           } else {
