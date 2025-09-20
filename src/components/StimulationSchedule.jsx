@@ -358,11 +358,10 @@ export const generateSchedule = base => {
   // HCG 12 days after transfer
   d = new Date(transfer.date);
   d.setDate(d.getDate() + 12);
-  let hcg = adjustForward(d, transfer.date);
   visits.push({
     key: 'hcg',
-    date: hcg.date,
-    label: `ХГЧ на 12й день${hcg.sign ? ` ${hcg.sign}` : ''}`,
+    date: d,
+    label: 'ХГЧ на 12й день',
   });
 
   // Ultrasound 28 days after transfer
