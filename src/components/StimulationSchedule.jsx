@@ -722,6 +722,9 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         rendered.push(<div key={`year-${year}`}>{year}</div>);
         currentYear = year;
       }
+      const isCustomEvent = (item.key || '').startsWith('ap-');
+      const inputValue = isCustomEvent ? String(displayLabel || '') : labelValue;
+
       if (item.key === 'visit1') {
         rendered.push(
           <div key={item.key} style={rowStyle}>
@@ -752,7 +755,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
               </div>
               {editingIndex === i ? (
                 <input
-                  value={item.label}
+                  value={inputValue}
                   autoFocus
                   onChange={e =>
                     setSchedule(prev => {
