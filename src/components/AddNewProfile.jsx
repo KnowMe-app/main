@@ -561,22 +561,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (!state.userId) setProfileSource('');
   }, [state.userId]);
 
-  useEffect(() => {
-    if (currentFilter !== 'FAVORITE') return;
-
-    const favoriteCount = Object.values(favoriteUsersData || {}).filter(Boolean)
-      .length;
-
-    if (favoriteCount !== totalCount) {
-      setTotalCount(favoriteCount);
-    }
-
-    const maxPage = Math.max(1, Math.ceil(favoriteCount / PAGE_SIZE) || 1);
-    if (currentPage > maxPage) {
-      setCurrentPage(maxPage);
-    }
-  }, [currentFilter, favoriteUsersData, totalCount, currentPage]);
-
   const cacheFetchedUsers = useCallback(
     (usersObj, cacheFn, currentFilters = filters) => {
       cacheFn(usersObj, currentFilters);
@@ -1045,8 +1029,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         acc[user.userId] = user;
         return acc;
       }, {});
-    const total = Object.values(favIds).filter(Boolean).length ||
-      Object.keys(sorted).length;
+    const total = Object.keys(sorted).length;
     setUsers(sorted);
     setHasMore(false);
     setLastKey(null);
@@ -1191,20 +1174,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
   };
 
-  const sortedIds = getSortedIds();
-  const isFavoriteMode =
-    currentFilter === 'FAVORITE' || filters?.favorite?.favOnly;
-  const limit = isFavoriteMode && totalCount
-    ? Math.min(totalCount, sortedIds.length)
-    : sortedIds.length;
-  const idsForDisplay = isFavoriteMode
-    ? sortedIds.slice(0, limit)
-    : sortedIds;
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const displayedUserIds = idsForDisplay.slice(
-    startIndex,
-    startIndex + PAGE_SIZE,
-  );
+  const displayedUserIds = getSortedIds().slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const paginatedUsers = displayedUserIds.reduce((acc, id) => {
     acc[id] = users[id];
     return acc;
