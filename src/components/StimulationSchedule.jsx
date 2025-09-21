@@ -98,6 +98,18 @@ const extractWeeksDaysPrefix = value => {
   };
 };
 
+const extractDayPrefix = value => {
+  if (!value) return null;
+  const match = value.trim().match(/^(\d+)\s*й(?:\s+день)?/i);
+  if (!match) return null;
+  const rawDay = Number(match[1]);
+  if (!Number.isFinite(rawDay)) return null;
+  return {
+    day: Math.max(Math.trunc(rawDay), 0),
+    length: match[0].length,
+  };
+};
+
 const parseWeeksDaysToken = (token, baseDate) => {
   if (!token || !baseDate) return null;
   const normalized = normalizeWeeksDaysToken(token);
@@ -147,6 +159,49 @@ const sanitizeDescription = text => {
     break;
   }
   return result.trim();
+};
+
+const normalizeDayNumber = day => {
+  const raw = Number(day);
+  if (!Number.isFinite(raw)) return 0;
+  return Math.max(Math.trunc(raw), 0);
+};
+
+const buildHcgLabel = (day, suffix) => {
+  const normalizedDay = normalizeDayNumber(day);
+  const sanitizedSuffix = sanitizeDescription(suffix);
+  const trimmed = sanitizedSuffix.replace(/\s+/g, ' ').trim();
+  let normalizedSuffix = 'ХГЧ';
+  if (trimmed) {
+    const withoutPrefix = trimmed.replace(/^хгч/i, '').trim();
+    if (!withoutPrefix) {
+      normalizedSuffix = 'ХГЧ';
+    } else if (/^[,.;:]/.test(withoutPrefix)) {
+      normalizedSuffix = `ХГЧ${withoutPrefix}`;
+    } else {
+      normalizedSuffix = `ХГЧ ${withoutPrefix}`;
+    }
+  }
+  return `${normalizedDay}й день ${normalizedSuffix}`.trim();
+};
+
+const buildUsLabel = (day, suffix, sign = '') => {
+  const normalizedDay = normalizeDayNumber(day);
+  const sanitizedSuffix = sanitizeDescription(suffix);
+  const trimmed = sanitizedSuffix.replace(/\s+/g, ' ').trim();
+  let normalizedSuffix = 'УЗД, підтвердження вагітності';
+  if (trimmed) {
+    const withoutPrefix = trimmed.replace(/^узд/i, '').trim();
+    if (!withoutPrefix) {
+      normalizedSuffix = 'УЗД';
+    } else if (/^[,.;:]/.test(withoutPrefix)) {
+      normalizedSuffix = `УЗД${withoutPrefix}`;
+    } else {
+      normalizedSuffix = `УЗД ${withoutPrefix}`;
+    }
+  }
+  const label = `${normalizedDay}й день ${normalizedSuffix}`.trim();
+  return sign ? `${label} ${sign}`.trim() : label;
 };
 
 const buildCustomEventLabel = (date, referenceDate, description) => {
@@ -356,22 +411,24 @@ export const generateSchedule = base => {
   });
 
   // HCG 12 days after transfer
-  d = new Date(transfer.date);
+  const transferBase = normalizeDate(transfer.date);
+  d = new Date(transferBase);
   d.setDate(d.getDate() + 11);
+  const hcgDay = diffDays(d, transferBase);
   visits.push({
     key: 'hcg',
     date: d,
-    label: 'ХГЧ на 12й день',
+    label: buildHcgLabel(hcgDay),
   });
 
   // Ultrasound 28 days after transfer
-  d = new Date(transfer.date);
+  d = new Date(transferBase);
   d.setDate(d.getDate() + 27);
-  let us = adjustForward(d, transfer.date);
+  let us = adjustForward(d, transferBase);
   visits.push({
     key: 'us',
     date: us.date,
-    label: `УЗД${us.sign ? ` ${us.sign}` : ''}`,
+    label: buildUsLabel(us.day, 'УЗД, підтвердження вагітності', us.sign),
   });
 
   // Pregnancy visits at specific weeks
@@ -545,8 +602,10 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
 
       const applyAdjust = (it, d) => {
-        const refBase = postTransferKeys.includes(it.key) ? transferDate : base;
-        let adj = { date: d, day: diffDays(d, refBase), sign: '' };
+        const isPostTransferKey = postTransferKeys.includes(it.key);
+        const preferredBase = isPostTransferKey && transferDate ? transferDate : base;
+        const effectiveBase = preferredBase || base || transferDate || d;
+        let adj = { date: d, day: diffDays(d, effectiveBase), sign: '' };
         if (it.key.startsWith('week')) {
           const diff = Math.round((adj.date - base) / (1000 * 60 * 60 * 24));
           const weeks = Math.floor(diff / 7);
@@ -561,6 +620,43 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           return {
             ...it,
             date: adj.date,
+            label: labelText,
+          };
+        }
+        if (it.key === 'hcg') {
+          const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
+          const normalizedDate = normalizeDate(adj.date);
+          const reference = normalizedTransfer || (base ? normalizeDate(base) : null);
+          const dayNumber = reference ? diffDays(normalizedDate, reference) : adj.day;
+          const trimmedLabel = (it.label || '').trim();
+          const prefix = extractDayPrefix(trimmedLabel);
+          const suffix = prefix ? trimmedLabel.slice(prefix.length).trim() : trimmedLabel;
+          const labelText = buildHcgLabel(dayNumber, suffix || 'ХГЧ');
+          return {
+            ...it,
+            date: normalizedDate,
+            label: labelText,
+          };
+        }
+        if (it.key === 'us') {
+          const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
+          const normalizedBase = base ? normalizeDate(base) : null;
+          const normalizedDate = normalizeDate(adj.date);
+          const reference = normalizedTransfer || normalizedBase;
+          const dayNumber = reference ? diffDays(normalizedDate, reference) : adj.day;
+          const trimmedLabel = (it.label || '').trim();
+          const prefix = extractDayPrefix(trimmedLabel);
+          const suffix = prefix
+            ? trimmedLabel.slice(prefix.length).trim()
+            : trimmedLabel;
+          const labelText = buildUsLabel(
+            dayNumber,
+            suffix || 'УЗД, підтвердження вагітності',
+            adj.sign,
+          );
+          return {
+            ...it,
+            date: normalizedDate,
             label: labelText,
           };
         }
@@ -835,6 +931,55 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                             ...updated,
                             label: rest ? `${prefix.normalized} ${rest}` : prefix.normalized,
                           };
+                        } else if (updated.key === 'hcg') {
+                          const dayInfo = extractDayPrefix(trimmedLabel);
+                          if (dayInfo) {
+                            const rest = trimmedLabel.slice(dayInfo.length).trim();
+                            if (transferDate) {
+                              const normalizedTransfer = normalizeDate(transferDate);
+                              const computedDate = new Date(normalizedTransfer);
+                              computedDate.setDate(
+                                normalizedTransfer.getDate() + dayInfo.day - 1,
+                              );
+                              if (!isSameDay(computedDate, updated.date)) {
+                                updated = {
+                                  ...updated,
+                                  date: computedDate,
+                                };
+                                dateChanged = true;
+                              }
+                            }
+                            updated = {
+                              ...updated,
+                              label: buildHcgLabel(dayInfo.day, rest || 'ХГЧ'),
+                            };
+                          }
+                        } else if (updated.key === 'us') {
+                          const dayInfo = extractDayPrefix(trimmedLabel);
+                          if (dayInfo) {
+                            const rest = trimmedLabel.slice(dayInfo.length).trim();
+                            const transferBase = transferDate ? normalizeDate(transferDate) : null;
+                            const baseForFallback = base ? normalizeDate(base) : null;
+                            const reference = transferBase || baseForFallback;
+                            if (reference) {
+                              const computedDate = new Date(reference);
+                              computedDate.setDate(reference.getDate() + dayInfo.day - 1);
+                              if (!isSameDay(computedDate, updated.date)) {
+                                updated = {
+                                  ...updated,
+                                  date: computedDate,
+                                };
+                                dateChanged = true;
+                              }
+                            }
+                            updated = {
+                              ...updated,
+                              label: buildUsLabel(
+                                dayInfo.day,
+                                rest || 'УЗД, підтвердження вагітності',
+                              ),
+                            };
+                          }
                         } else if (updated.key.startsWith('ap-')) {
                           const computed = computeCustomDateAndLabel(
                             trimmedLabel,
