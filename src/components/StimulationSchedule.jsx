@@ -235,6 +235,30 @@ const getTransferSuffixFromLabel = (key, label) => {
   return transferRelativeConfig[key]?.defaultSuffix || '';
 };
 
+const buildPostTransferLabel = (key, labelSource, date, transferReference) => {
+  if (!date) {
+    return typeof labelSource === 'string' ? labelSource : '';
+  }
+
+  const normalizedDate = normalizeDate(date);
+  const normalizedReference = transferReference ? normalizeDate(transferReference) : null;
+  const suffix = getTransferSuffixFromLabel(key, labelSource);
+
+  if (!normalizedReference) {
+    const fallback = typeof labelSource === 'string' ? labelSource.trim() : '';
+    if (fallback) return fallback;
+    return buildTransferDayLabel(key, 1, suffix);
+  }
+
+  const diff = Math.round(
+    (normalizedDate.getTime() - normalizedReference.getTime()) / (1000 * 60 * 60 * 24),
+  );
+  const sign = diff > 0 ? '+' : diff < 0 ? '-' : '';
+  const dayNumber = Math.abs(diff) + 1;
+
+  return buildTransferDayLabel(key, dayNumber, suffix, sign);
+};
+
 const buildCustomEventLabel = (date, referenceDate, description) => {
   if (!date) return (description || '').trim();
   const normalizedDate = normalizeDate(date);
@@ -337,6 +361,67 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate) => {
 
   const fallbackDescription = description || normalizedInput;
   return { date: null, label: '', description: fallbackDescription, raw: normalizedInput };
+};
+
+const parseLeadingDate = (input, anchorDate) => {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(/^(\d{2}\.\d{2}(?:\.\d{4})?|\d{4}-\d{2}-\d{2})/);
+  if (!match) return null;
+
+  const rawDate = match[1];
+  let parsedDate = null;
+
+  if (/^\d{2}\.\d{2}$/.test(rawDate)) {
+    const [dayStr, monthStr] = rawDate.split('.');
+    const day = Number(dayStr);
+    const monthIndex = Number(monthStr) - 1;
+    if (Number.isFinite(day) && Number.isFinite(monthIndex)) {
+      const normalizedAnchor = anchorDate ? normalizeDate(anchorDate) : null;
+      const pivot = normalizedAnchor || normalizeDate(new Date());
+      const candidateYears = new Set([
+        pivot.getFullYear(),
+        pivot.getFullYear() + 1,
+        pivot.getFullYear() - 1,
+        new Date().getFullYear(),
+      ]);
+      let bestCandidate = null;
+      let bestDiff = Infinity;
+      candidateYears.forEach(year => {
+        const candidate = new Date(year, monthIndex, day);
+        candidate.setHours(0, 0, 0, 0);
+        const diff = Math.abs(candidate.getTime() - pivot.getTime());
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestCandidate = candidate;
+        }
+      });
+      parsedDate = bestCandidate;
+    }
+  } else {
+    parsedDate = parseDate(rawDate);
+  }
+
+  if (!parsedDate) return null;
+
+  const normalizedDate = normalizeDate(parsedDate);
+  let remainder = trimmed.slice(rawDate.length);
+  const stripLeading = value => value.replace(/^[-\s,.;:!]+/, '');
+  remainder = stripLeading(remainder);
+  const weekdayMatch = remainder.match(/^(нд|пн|вт|ср|чт|пт|сб)(?=\s|$|[.,!?-])/i);
+  if (weekdayMatch) {
+    remainder = remainder.slice(weekdayMatch[0].length);
+    remainder = stripLeading(remainder);
+  }
+
+  const normalizedRemainder = remainder.trim();
+
+  return {
+    date: normalizedDate,
+    remainder: normalizedRemainder || undefined,
+  };
 };
 
 const isWeekend = date => {
