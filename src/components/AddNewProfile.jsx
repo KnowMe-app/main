@@ -639,7 +639,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setCacheCount(0);
     setBackendCount(0);
 
-    if (!currentFilter) return;
+    if (!currentFilter) {
+      setSearchLoading(false);
+      setHasSearched(false);
+      return;
+    }
 
     setSearchLoading(true);
     setHasSearched(true);
