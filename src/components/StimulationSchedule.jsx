@@ -39,6 +39,8 @@ const normalizeDate = date => {
 
 const weekdayNames = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 
+const DEFAULT_TRANSFER_DAY_THRESHOLD = 30;
+
 const formatWeeksDaysToken = (weeks, days = 0) => {
   let normalizedWeeks = Number.isFinite(weeks) ? Math.trunc(Number(weeks)) : 0;
   let normalizedDays = Number.isFinite(days) ? Math.trunc(Number(days)) : 0;
@@ -145,6 +147,8 @@ const sanitizeDescription = text => {
   const weekdayRegex = /^(нд|пн|вт|ср|чт|пт|сб)(?=\s|$|[.,!?])/i;
   const stripLeadingDelimiters = value => value.replace(/^[\s.,!?]+/, '');
   while (result) {
+    const trimmedStart = result.trimStart();
+    if (!trimmedStart) break;
     const dateMatch = result.match(/^(\d{2}\.\d{2}(?:\.\d{4})?)/);
     if (dateMatch) {
       result = stripLeadingDelimiters(result.slice(dateMatch[1].length));
@@ -158,6 +162,13 @@ const sanitizeDescription = text => {
     const tokenMatch = extractWeeksDaysPrefix(result);
     if (tokenMatch) {
       result = stripLeadingDelimiters(result.slice(tokenMatch.length));
+      continue;
+    }
+    const dayPrefix = extractDayPrefix(trimmedStart);
+    if (dayPrefix) {
+      const leadingWhitespaceLength = result.length - trimmedStart.length;
+      const sliceIndex = leadingWhitespaceLength + dayPrefix.length;
+      result = stripLeadingDelimiters(result.slice(sliceIndex));
       continue;
     }
     break;
@@ -259,24 +270,45 @@ const buildPostTransferLabel = (key, labelSource, date, transferReference) => {
   return buildTransferDayLabel(key, dayNumber, suffix, sign);
 };
 
-const buildCustomEventLabel = (date, referenceDate, description) => {
+const buildCustomEventLabel = (date, referenceDate, description, options = {}) => {
   if (!date) return (description || '').trim();
   const normalizedDate = normalizeDate(date);
   const dateStr = formatDisplay(normalizedDate);
   const weekday = weekdayNames[normalizedDate.getDay()];
   const normalizedReference = referenceDate ? normalizeDate(referenceDate) : null;
-  const tokenInfo = normalizedReference
-    ? getWeeksDaysTokenForDate(normalizedDate, normalizedReference)
-    : null;
+  const { transferDate: transferOption, transferThresholdDays = DEFAULT_TRANSFER_DAY_THRESHOLD } =
+    options || {};
+  const normalizedTransfer = transferOption ? normalizeDate(transferOption) : null;
   const trimmedDescription = sanitizeDescription(description);
+
+  let dayPrefix = null;
+  if (normalizedTransfer && normalizedDate.getTime() >= normalizedTransfer.getTime()) {
+    const diff = Math.round(
+      (normalizedDate.getTime() - normalizedTransfer.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    const threshold = Number.isFinite(transferThresholdDays)
+      ? Math.max(Math.trunc(transferThresholdDays), 0)
+      : DEFAULT_TRANSFER_DAY_THRESHOLD;
+    if (threshold > 0 && diff <= threshold - 1) {
+      dayPrefix = `${diff + 1}й день`;
+    }
+  }
+
+  let tokenInfo = null;
+  if (!dayPrefix && normalizedReference) {
+    tokenInfo = getWeeksDaysTokenForDate(normalizedDate, normalizedReference);
+  }
+
   const parts = [dateStr, weekday];
-  if (tokenInfo?.token) {
+  if (dayPrefix) {
+    parts.push(dayPrefix);
+  } else if (tokenInfo?.token) {
     parts.push(tokenInfo.token);
   }
   if (trimmedDescription) {
     parts.push(trimmedDescription);
   }
-  return parts.join(' ').trim();
+  return parts.filter(Boolean).join(' ').trim();
 };
 
 const isSameDay = (a, b) => {
@@ -284,7 +316,7 @@ const isSameDay = (a, b) => {
   return normalizeDate(a).getTime() === normalizeDate(b).getTime();
 };
 
-const computeCustomDateAndLabel = (input, baseDate, referenceDate) => {
+const computeCustomDateAndLabel = (input, baseDate, referenceDate, options = {}) => {
   if (!input) return { date: null, label: '', description: '', raw: '' };
   const normalizedInput = input.trim().replace(/\s+/g, ' ');
   if (!normalizedInput) return { date: null, label: '', description: '', raw: '' };
@@ -293,6 +325,7 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate) => {
   const baseNormalized = baseDate ? normalizeDate(baseDate) : null;
   const referenceNormalized = referenceDate ? normalizeDate(referenceDate) : null;
   const anchor = baseNormalized || referenceNormalized;
+  const { transferDate: transferOption, transferThresholdDays } = options || {};
 
   let date = null;
   const descriptionTokens = [];
@@ -355,7 +388,10 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate) => {
   const description = sanitizeDescription(descriptionTokens.join(' '));
   if (date) {
     const referenceForLabel = baseNormalized || referenceNormalized;
-    const label = buildCustomEventLabel(date, referenceForLabel, description);
+    const label = buildCustomEventLabel(date, referenceForLabel, description, {
+      transferDate: transferOption,
+      transferThresholdDays,
+    });
     return { date, label, description, raw: normalizedInput };
   }
 
@@ -759,9 +795,13 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
 
     if (item.key.startsWith('ap')) {
       const reference = baseDateValue || effectiveTransfer;
-      const parsed = computeCustomDateAndLabel(labelSource, baseDateValue, item.date);
+      const parsed = computeCustomDateAndLabel(labelSource, baseDateValue, item.date, {
+        transferDate,
+      });
       const description = parsed.description || parsed.raw || labelSource;
-      const labelText = buildCustomEventLabel(adjustedDate, reference, description);
+      const labelText = buildCustomEventLabel(adjustedDate, reference, description, {
+        transferDate,
+      });
       return {
         ...item,
         date: adjustedDate,
@@ -800,13 +840,14 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const newDate = new Date(item.date);
       newDate.setDate(newDate.getDate() + delta);
 
-      const transferDate =
-        copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
+      const transferFromSchedule =
+        copy.find(v => v.key === 'transfer')?.date || transferRef.current || null;
+      const transferReference = transferFromSchedule || base;
 
       const applyAdjust = (it, d) => {
         const isPostTransferKey = postTransferKeys.includes(it.key);
-        const preferredBase = isPostTransferKey && transferDate ? transferDate : base;
-        const effectiveBase = preferredBase || base || transferDate || d;
+        const preferredBase = isPostTransferKey && transferReference ? transferReference : base;
+        const effectiveBase = preferredBase || base || transferReference || d;
         let adj = { date: d, day: diffDays(d, effectiveBase), sign: '' };
         if (it.key.startsWith('week')) {
           const diff = Math.round((adj.date - base) / (1000 * 60 * 60 * 24));
@@ -827,7 +868,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         }
         if (transferRelativeConfig[it.key]) {
           const normalizedDate = normalizeDate(adj.date);
-          const reference = getTransferRelativeReference(transferDate, base);
+          const reference = getTransferRelativeReference(transferFromSchedule, base);
           const dayNumber = reference ? diffDays(normalizedDate, reference) : adj.day;
           const suffix = getTransferSuffixFromLabel(it.key, it.label);
           const labelText = buildTransferDayLabel(it.key, dayNumber, suffix, adj.sign);
@@ -838,7 +879,8 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           };
         }
         if (postTransferKeys.includes(it.key)) {
-          const diff = Math.round((adj.date - transferDate) / (1000 * 60 * 60 * 24));
+          const referencePoint = transferReference || base || adj.date;
+          const diff = Math.round((adj.date - referencePoint) / (1000 * 60 * 60 * 24));
           const weeks = Math.floor(diff / 7);
           const days = diff % 7;
           let custom = it.label.replace(/^\d+т\d*д?\s*/, '').trim();
@@ -860,10 +902,14 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           adj = { date: min, day: diffDays(min, base), sign: '' };
         }
         if (it.key.startsWith('ap')) {
-          const reference = base || transferDate;
-          const parsed = computeCustomDateAndLabel(it.label, base, it.date);
+          const reference = base || transferReference;
+          const parsed = computeCustomDateAndLabel(it.label, base, it.date, {
+            transferDate: transferFromSchedule,
+          });
           const description = parsed.description || parsed.raw || it.label;
-          const labelText = buildCustomEventLabel(adj.date, reference, description);
+          const labelText = buildCustomEventLabel(adj.date, reference, description, {
+            transferDate: transferFromSchedule,
+          });
           return {
             ...it,
             date: adj.date,
@@ -1067,8 +1113,9 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                       const current = copy[idx];
                       const trimmedLabel = (current.label || '').trim();
                       let updated = { ...current, label: trimmedLabel };
-                      const transferDate =
-                        copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
+                      const transferFromSchedule =
+                        copy.find(v => v.key === 'transfer')?.date || transferRef.current || null;
+                      const transferReference = transferFromSchedule || base;
                       let dateChanged = false;
 
                       if (isPlaceholder) {
@@ -1089,10 +1136,10 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                           const rest = trimmedLabel.slice(prefix.length).trim();
                           let reference = base;
                           if (postTransferKeys.includes(updated.key)) {
-                            reference = transferDate;
+                            reference = transferReference;
                           }
                           if (updated.key.startsWith('ap-')) {
-                            reference = base || transferDate;
+                            reference = base || transferReference;
                           }
                           if (reference) {
                             const computedDate = parseWeeksDaysToken(prefix.normalized, reference);
@@ -1113,7 +1160,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                           if (dayInfo) {
                             const computedDate = computeDateFromTransferDay(
                               dayInfo.day,
-                              transferDate,
+                              transferFromSchedule,
                               base,
                             );
                             if (computedDate && !isSameDay(computedDate, updated.date)) {
@@ -1138,12 +1185,15 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                             trimmedLabel,
                             base,
                             updated.date,
+                            { transferDate: transferFromSchedule },
                           );
-                          const reference = base || transferDate;
+                          const reference = base || transferReference;
                           const nextDate = computed.date || updated.date;
                           const description = computed.description || computed.raw || trimmedLabel;
                           const nextLabel = nextDate
-                            ? buildCustomEventLabel(nextDate, reference, description)
+                            ? buildCustomEventLabel(nextDate, reference, description, {
+                                transferDate: transferFromSchedule,
+                              })
                             : trimmedLabel;
                           dateChanged = !isSameDay(nextDate, updated.date);
                           updated = {
@@ -1154,12 +1204,12 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                         } else {
                           const manualAnchor =
                             updated.date ||
-                            (postTransferKeys.includes(updated.key) ? transferDate : base);
+                            (postTransferKeys.includes(updated.key) ? transferReference : base);
                           const manualInfo = parseLeadingDate(trimmedLabel, manualAnchor);
                           if (manualInfo && manualInfo.date) {
                             const adjusted = adjustItemForDate(updated, manualInfo.date, {
                               baseDate: base,
-                              transferDate,
+                              transferDate: transferFromSchedule,
                               overrideLabel: manualInfo.remainder,
                             });
                             dateChanged = !isSameDay(adjusted.date, current.date);
@@ -1335,7 +1385,9 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           }}
           onBlur={() =>
             setApDescription(prev => {
-              const result = computeCustomDateAndLabel(prev, base, apDerivedDate || base);
+              const result = computeCustomDateAndLabel(prev, base, apDerivedDate || base, {
+                transferDate: transferRef.current,
+              });
               if (result.date) {
                 setApDerivedDate(result.date);
                 return result.label;
@@ -1351,10 +1403,12 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         <OrangeBtn
           onClick={() => {
             const normalizedInput = apDescription.trim();
+            const transferDate = transferRef.current;
             const computed = computeCustomDateAndLabel(
               normalizedInput,
               base,
               apDerivedDate || base,
+              { transferDate },
             );
             const sanitizedInput = sanitizeDescription(normalizedInput);
             let date = apDerivedDate || computed.date;
@@ -1385,8 +1439,10 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
             if (!descriptionForLabel) {
               descriptionForLabel = 'AP';
             }
-            const referenceForLabel = base || date;
-            const label = buildCustomEventLabel(date, referenceForLabel, descriptionForLabel);
+            const referenceForLabel = base || transferDate || date;
+            const label = buildCustomEventLabel(date, referenceForLabel, descriptionForLabel, {
+              transferDate,
+            });
             const newItem = {
               key: `ap-${Date.now()}`,
               date,
