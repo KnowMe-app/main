@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { SearchFilters } from './SearchFilters';
 
 const defaultsAdd = {
@@ -75,11 +75,16 @@ const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false, 
   };
 
   const [filters, setFilters] = useState(getInitialFilters);
+  const onChangeRef = useRef(onChange);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(filters));
-    if (onChange) onChange(filters);
-  }, [filters, onChange, storageKey]);
+    if (onChangeRef.current) onChangeRef.current(filters);
+  }, [filters, storageKey]);
 
   return <SearchFilters filters={filters} onChange={setFilters} hideUserId={hideUserId} hideCommentLength={hideCommentLength} mode={mode} />;
 };
