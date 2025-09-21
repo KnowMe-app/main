@@ -241,10 +241,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   const [filters, setFilters] = useState({});
+  const filtersRef = useRef(filters);
+  const hasInitializedFiltersRef = useRef(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState(null);
   const navigate = useNavigate();
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
+
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   useEffect(() => {
     const storedSearch = localStorage.getItem(SEARCH_KEY);
@@ -527,6 +533,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [, setCacheCount] = useState(0);
   const [, setBackendCount] = useState(0);
   const [profileSource, setProfileSource] = useState('');
+
+  const handleFilterChange = useCallback(nextFilters => {
+    const nextValue = nextFilters ?? {};
+    const prevValue = filtersRef.current ?? {};
+
+    if (!hasInitializedFiltersRef.current) {
+      hasInitializedFiltersRef.current = true;
+      filtersRef.current = nextValue;
+      setFilters(nextValue);
+      return;
+    }
+
+    const prevSerialized = JSON.stringify(prevValue);
+    const nextSerialized = JSON.stringify(nextValue);
+
+    if (prevSerialized === nextSerialized) {
+      filtersRef.current = nextValue;
+      return;
+    }
+
+    filtersRef.current = nextValue;
+    setSearchLoading(true);
+    setHasSearched(true);
+    setTotalCount(0);
+    setFilters(nextValue);
+  }, [setFilters, setHasSearched, setSearchLoading, setTotalCount]);
 
   useEffect(() => {
     if (!state.userId || profileSource) return;
@@ -1293,15 +1325,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             {userNotFound && hasSearched && (
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
             )}
-            <FilterPanel
-              onChange={f => {
-                setSearchLoading(true);
-                setHasSearched(true);
-                setTotalCount(0);
-                setFilters(f);
-              }}
-              storageKey="addFilters"
-            />
+            <FilterPanel onChange={handleFilterChange} storageKey="addFilters" />
             <ButtonsContainer>
               {userNotFound && (
                 <Button onClick={handleAddUser} disabled={adding}>
