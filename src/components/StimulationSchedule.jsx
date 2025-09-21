@@ -98,6 +98,21 @@ const extractWeeksDaysPrefix = value => {
   };
 };
 
+const extractDayPrefix = value => {
+  if (!value) return null;
+  const match = value.trim().match(/^(\d+)\s*й(?:\s+день)?/i);
+  if (!match) return null;
+  const rawDay = Number(match[1]);
+  if (!Number.isFinite(rawDay)) return null;
+  const day = Math.trunc(rawDay);
+  return {
+    day,
+    raw: match[0],
+    length: match[0].length,
+    normalized: `${day}й день`,
+  };
+};
+
 const parseWeeksDaysToken = (token, baseDate) => {
   if (!token || !baseDate) return null;
   const normalized = normalizeWeeksDaysToken(token);
@@ -215,6 +230,7 @@ const buildPostTransferLabel = (key, label, date, transferDate) => {
   const extra = stripManualRemainder(afterPrefix.replace(cleanupPattern, '').trim());
   const description = extra ? `${baseText} ${extra}` : baseText;
   return `${prefix} ${description}`.trim();
+
 };
 
 const buildCustomEventLabel = (date, referenceDate, description) => {
@@ -426,10 +442,11 @@ export const generateSchedule = base => {
   // HCG 12 days after transfer
   d = new Date(transfer.date);
   d.setDate(d.getDate() + 11);
+  const hcgDay = diffDays(d, transfer.date);
   visits.push({
     key: 'hcg',
     date: d,
-    label: 'ХГЧ на 12й день',
+    label: buildHcgLabel(hcgDay),
   });
 
   // Ultrasound 28 days after transfer
@@ -439,7 +456,7 @@ export const generateSchedule = base => {
   visits.push({
     key: 'us',
     date: us.date,
-    label: `УЗД${us.sign ? ` ${us.sign}` : ''}`,
+    label: buildUsLabel(us.day, 'УЗД, підтвердження вагітності', us.sign),
   });
 
   // Pregnancy visits at specific weeks
@@ -695,7 +712,9 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const transferDate =
         copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
 
+
       const adjustedItem = adjustItemForDate(item, newDate, { baseDate: base, transferDate });
+
       copy[idx] = adjustedItem;
       if (item.key === 'transfer') {
         transferRef.current = adjustedItem.date;
@@ -926,6 +945,55 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                             ...updated,
                             label: rest ? `${prefix.normalized} ${rest}` : prefix.normalized,
                           };
+                        } else if (updated.key === 'hcg') {
+                          const dayInfo = extractDayPrefix(trimmedLabel);
+                          if (dayInfo) {
+                            const rest = trimmedLabel.slice(dayInfo.length).trim();
+                            if (transferDate) {
+                              const normalizedTransfer = normalizeDate(transferDate);
+                              const computedDate = new Date(normalizedTransfer);
+                              computedDate.setDate(
+                                normalizedTransfer.getDate() + dayInfo.day - 1,
+                              );
+                              if (!isSameDay(computedDate, updated.date)) {
+                                updated = {
+                                  ...updated,
+                                  date: computedDate,
+                                };
+                                dateChanged = true;
+                              }
+                            }
+                            updated = {
+                              ...updated,
+                              label: buildHcgLabel(dayInfo.day, rest || 'ХГЧ'),
+                            };
+                          }
+                        } else if (updated.key === 'us') {
+                          const dayInfo = extractDayPrefix(trimmedLabel);
+                          if (dayInfo) {
+                            const rest = trimmedLabel.slice(dayInfo.length).trim();
+                            if (transferDate) {
+                              const normalizedTransfer = normalizeDate(transferDate);
+                              const computedDate = new Date(normalizedTransfer);
+                              computedDate.setDate(
+                                normalizedTransfer.getDate() + dayInfo.day - 1,
+                              );
+                              if (!isSameDay(computedDate, updated.date)) {
+                                updated = {
+                                  ...updated,
+                                  date: computedDate,
+                                };
+                                dateChanged = true;
+                              }
+                            }
+                            updated = {
+                              ...updated,
+                              label: buildUsLabel(
+                                dayInfo.day,
+                                rest || 'УЗД, підтвердження вагітності',
+                              ),
+                            };
+                          }
                         } else if (updated.key.startsWith('ap-')) {
                           const computed = computeCustomDateAndLabel(
                             trimmedLabel,
