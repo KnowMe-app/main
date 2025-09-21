@@ -1016,20 +1016,30 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
     });
 
-    syncFavorites(favIds);
-    setFavoriteUsersData(favIds);
-    setFavoriteIds(favIds);
+    const normalizedFavs = Object.fromEntries(
+      Object.entries(favIds).filter(([, value]) => value),
+    );
+
+    syncFavorites(normalizedFavs);
+    setFavoriteUsersData(normalizedFavs);
+    setFavoriteIds(normalizedFavs);
 
     cacheFetchedUsers(loaded, cacheFavoriteUsers);
-    setIdsForQuery('favorite', Object.keys(favIds));
+    setIdsForQuery(
+      'favorite',
+      Object.keys(normalizedFavs),
+    );
 
-    const sorted = Object.values(loaded)
-      .sort((a, b) => compareUsersByGetInTouch(a, b))
-      .reduce((acc, user) => {
-        acc[user.userId] = user;
-        return acc;
-      }, {});
-    const total = Object.keys(sorted).length;
+    const sortedUsers = Object.keys(normalizedFavs)
+      .map(id => loaded[id])
+      .filter(Boolean)
+      .sort((a, b) => compareUsersByGetInTouch(a, b));
+
+    const sorted = sortedUsers.reduce((acc, user) => {
+      acc[user.userId] = user;
+      return acc;
+    }, {});
+    const total = sortedUsers.length;
     setUsers(sorted);
     setHasMore(false);
     setLastKey(null);
@@ -1163,7 +1173,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // ];
 
 
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
+  const shouldPaginate = currentFilter !== 'FAVORITE';
+  const totalPages = shouldPaginate ? Math.ceil(totalCount / PAGE_SIZE) || 1 : 1;
   const getSortedIds = () => {
     const ids = Object.keys(users);
     if (isDuplicateView) {
@@ -1174,7 +1185,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
   };
 
-  const displayedUserIds = getSortedIds().slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const sortedIds = getSortedIds();
+  const displayedUserIds = shouldPaginate
+    ? sortedIds.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+    : sortedIds;
   const paginatedUsers = displayedUserIds.reduce((acc, id) => {
     acc[id] = users[id];
     return acc;
