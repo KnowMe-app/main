@@ -98,6 +98,22 @@ const extractWeeksDaysPrefix = value => {
   };
 };
 
+const extractDayPrefix = value => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d+)\s*й(?:\s+день)?/i);
+  if (!match) return null;
+  const rawDay = Number(match[1]);
+  if (!Number.isFinite(rawDay)) return null;
+  const length = match[0].length;
+  const rest = trimmed.slice(length).trim();
+  return {
+    day: Math.max(Math.trunc(rawDay), 0),
+    length,
+    rest,
+  };
+};
+
 const parseWeeksDaysToken = (token, baseDate) => {
   if (!token || !baseDate) return null;
   const normalized = normalizeWeeksDaysToken(token);
@@ -149,72 +165,74 @@ const sanitizeDescription = text => {
   return result.trim();
 };
 
-const stripManualRemainder = value => (value ? value.replace(/^[\s.,!?()-]+/, '') : '');
-
-const parseLeadingDate = (value, fallbackDate) => {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?=\s|$)/);
-  if (isoMatch) {
-    const year = Number(isoMatch[1]);
-    const monthIndex = Number(isoMatch[2]) - 1;
-    const day = Number(isoMatch[3]);
-    const candidate = new Date(year, monthIndex, day);
-    if (candidate.getMonth() !== monthIndex) return null;
-    candidate.setHours(0, 0, 0, 0);
-    const remainder = stripManualRemainder(trimmed.slice(isoMatch[0].length));
-    return { date: candidate, remainder };
-  }
-
-  const fullMatch = trimmed.match(/^(\d{2})\.(\d{2})\.(\d{4})(?=\s|$)/);
-  if (fullMatch) {
-    const day = Number(fullMatch[1]);
-    const monthIndex = Number(fullMatch[2]) - 1;
-    const year = Number(fullMatch[3]);
-    const candidate = new Date(year, monthIndex, day);
-    if (candidate.getMonth() !== monthIndex) return null;
-    candidate.setHours(0, 0, 0, 0);
-    const remainder = stripManualRemainder(trimmed.slice(fullMatch[0].length));
-    return { date: candidate, remainder };
-  }
-
-  const shortMatch = trimmed.match(/^(\d{2})\.(\d{2})(?=\s|$)/);
-  if (shortMatch) {
-    const day = Number(shortMatch[1]);
-    const monthIndex = Number(shortMatch[2]) - 1;
-    const fallback = fallbackDate ? new Date(fallbackDate) : new Date();
-    const year = fallback.getFullYear();
-    const candidate = new Date(year, monthIndex, day);
-    if (candidate.getMonth() !== monthIndex) return null;
-    candidate.setHours(0, 0, 0, 0);
-    const remainder = stripManualRemainder(trimmed.slice(shortMatch[0].length));
-    return { date: candidate, remainder };
-  }
-
-  return null;
+const normalizeDayNumber = day => {
+  const raw = Number(day);
+  if (!Number.isFinite(raw)) return 0;
+  return Math.max(Math.trunc(raw), 0);
 };
 
-const buildPostTransferLabel = (key, label, date, transferDate) => {
-  if (!transferDate || !date) return label;
-  const normalizedDate = normalizeDate(date);
-  const normalizedTransfer = normalizeDate(transferDate);
-  const diffRaw = Math.round(
-    (normalizedDate.getTime() - normalizedTransfer.getTime()) / (1000 * 60 * 60 * 24),
-  );
-  const safeDiff = diffRaw < 0 ? 0 : diffRaw;
-  const weeks = Math.floor(safeDiff / 7);
-  const days = safeDiff % 7;
-  const prefix = formatWeeksDaysToken(weeks, days);
-  const baseText = key === 'hcg' ? `ХГЧ на ${safeDiff}й день` : `УЗД на ${safeDiff}й день`;
-  const afterPrefix = (label || '').replace(/^\d+т\d*д?\s*/i, '').trim();
-  const cleanupPattern = key === 'hcg'
-    ? /^ХГЧ(?:\s+на\s+\d+й\s+день)?/i
-    : /^УЗД(?:\s+на\s+\d+й\s+день)?/i;
-  const extra = stripManualRemainder(afterPrefix.replace(cleanupPattern, '').trim());
-  const description = extra ? `${baseText} ${extra}` : baseText;
-  return `${prefix} ${description}`.trim();
+const transferRelativeConfig = {
+  hcg: {
+    baseLabel: 'ХГЧ',
+    defaultSuffix: 'ХГЧ',
+    prefix: /^хгч/i,
+  },
+  us: {
+    baseLabel: 'УЗД',
+    defaultSuffix: 'УЗД, підтвердження вагітності',
+    prefix: /^узд/i,
+  },
+};
+
+const normalizeTransferSuffix = (key, suffix) => {
+  const config = transferRelativeConfig[key];
+  const sanitized = sanitizeDescription(suffix);
+  const trimmed = sanitized.replace(/\s+/g, ' ').trim();
+  if (!config) return trimmed;
+  if (!trimmed) return config.defaultSuffix;
+  const withoutPrefix = trimmed.replace(config.prefix, '').trim();
+  if (!withoutPrefix) {
+    return config.baseLabel;
+  }
+  if (/^[,.;:]/.test(withoutPrefix)) {
+    return `${config.baseLabel}${withoutPrefix}`;
+  }
+  return `${config.baseLabel} ${withoutPrefix}`;
+};
+
+const buildTransferDayLabel = (key, day, suffix, sign = '') => {
+  const normalizedDay = normalizeDayNumber(day);
+  const normalizedSuffix = normalizeTransferSuffix(key, suffix);
+  const label = `${normalizedDay}й день ${normalizedSuffix}`.trim();
+  return sign ? `${label} ${sign}`.trim() : label;
+};
+
+const buildHcgLabel = (day, suffix) => buildTransferDayLabel('hcg', day, suffix);
+
+const buildUsLabel = (day, suffix, sign = '') =>
+  buildTransferDayLabel('us', day, suffix, sign);
+
+const getTransferRelativeReference = (transferDate, base) => {
+  const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
+  if (normalizedTransfer) return normalizedTransfer;
+  return base ? normalizeDate(base) : null;
+};
+
+const computeDateFromTransferDay = (day, transferDate, base) => {
+  const reference = getTransferRelativeReference(transferDate, base);
+  if (!reference) return null;
+  const normalizedDay = normalizeDayNumber(day);
+  const computed = new Date(reference);
+  computed.setDate(reference.getDate() + normalizedDay - 1);
+  return computed;
+};
+
+const getTransferSuffixFromLabel = (key, label) => {
+  const trimmed = (label || '').trim();
+  const dayInfo = extractDayPrefix(trimmed);
+  const suffix = dayInfo ? dayInfo.rest : trimmed;
+  if (suffix) return suffix;
+  return transferRelativeConfig[key]?.defaultSuffix || '';
 };
 
 const buildCustomEventLabel = (date, referenceDate, description) => {
@@ -424,22 +442,24 @@ export const generateSchedule = base => {
   });
 
   // HCG 12 days after transfer
-  d = new Date(transfer.date);
+  const transferBase = normalizeDate(transfer.date);
+  d = new Date(transferBase);
   d.setDate(d.getDate() + 11);
+  const hcgDay = diffDays(d, transferBase);
   visits.push({
     key: 'hcg',
     date: d,
-    label: 'ХГЧ на 12й день',
+    label: buildHcgLabel(hcgDay),
   });
 
   // Ultrasound 28 days after transfer
-  d = new Date(transfer.date);
+  d = new Date(transferBase);
   d.setDate(d.getDate() + 27);
-  let us = adjustForward(d, transfer.date);
+  let us = adjustForward(d, transferBase);
   visits.push({
     key: 'us',
     date: us.date,
-    label: `УЗД${us.sign ? ` ${us.sign}` : ''}`,
+    label: buildUsLabel(us.day, 'УЗД, підтвердження вагітності', us.sign),
   });
 
   // Pregnancy visits at specific weeks
@@ -593,7 +613,10 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     }
   }, [userData.stimulationSchedule, effectiveStatus, base, userData.lastCycle]);
 
-  const postTransferKeys = React.useMemo(() => ['hcg', 'us'], []);
+  const postTransferKeys = React.useMemo(
+    () => Object.keys(transferRelativeConfig),
+    [],
+  );
 
   React.useEffect(() => {
     const transferItem = schedule.find(v => v.key === 'transfer');
@@ -695,7 +718,81 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const transferDate =
         copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
 
-      const adjustedItem = adjustItemForDate(item, newDate, { baseDate: base, transferDate });
+      const applyAdjust = (it, d) => {
+        const isPostTransferKey = postTransferKeys.includes(it.key);
+        const preferredBase = isPostTransferKey && transferDate ? transferDate : base;
+        const effectiveBase = preferredBase || base || transferDate || d;
+        let adj = { date: d, day: diffDays(d, effectiveBase), sign: '' };
+        if (it.key.startsWith('week')) {
+          const diff = Math.round((adj.date - base) / (1000 * 60 * 60 * 24));
+          const weeks = Math.floor(diff / 7);
+          const days = diff % 7;
+          let custom = it.label.replace(/^\d+т\d*д?\s*/, '').trim();
+          let labelText = formatWeeksDaysToken(weeks, days);
+          if (weeks === 40 && days === 0) {
+            labelText += ' пологи';
+            if (custom.startsWith('пологи')) custom = custom.replace(/^пологи\s*/, '');
+          }
+          if (custom) labelText += ` ${custom}`;
+          return {
+            ...it,
+            date: adj.date,
+            label: labelText,
+          };
+        }
+        if (transferRelativeConfig[it.key]) {
+          const normalizedDate = normalizeDate(adj.date);
+          const reference = getTransferRelativeReference(transferDate, base);
+          const dayNumber = reference ? diffDays(normalizedDate, reference) : adj.day;
+          const suffix = getTransferSuffixFromLabel(it.key, it.label);
+          const labelText = buildTransferDayLabel(it.key, dayNumber, suffix, adj.sign);
+          return {
+            ...it,
+            date: normalizedDate,
+            label: labelText,
+          };
+        }
+        if (postTransferKeys.includes(it.key)) {
+          const diff = Math.round((adj.date - transferDate) / (1000 * 60 * 60 * 24));
+          const weeks = Math.floor(diff / 7);
+          const days = diff % 7;
+          let custom = it.label.replace(/^\d+т\d*д?\s*/, '').trim();
+          let labelText = formatWeeksDaysToken(weeks, days);
+          if (weeks === 40 && days === 0) {
+            labelText += ' пологи';
+            if (custom.startsWith('пологи')) custom = custom.replace(/^пологи\s*/, '');
+          }
+          if (custom) labelText += ` ${custom}`;
+          return {
+            ...it,
+            date: adj.date,
+            label: labelText,
+          };
+        }
+        if (it.key === 'visit3' && adj.day < 6) {
+          const min = new Date(base);
+          min.setDate(base.getDate() + 5);
+          adj = { date: min, day: diffDays(min, base), sign: '' };
+        }
+        if (it.key.startsWith('ap')) {
+          const reference = base || transferDate;
+          const parsed = computeCustomDateAndLabel(it.label, base, it.date);
+          const description = parsed.description || parsed.raw || it.label;
+          const labelText = buildCustomEventLabel(adj.date, reference, description);
+          return {
+            ...it,
+            date: adj.date,
+            label: labelText,
+          };
+        }
+        let lbl = `${adj.day}й день${it.key === 'transfer' ? ' (перенос)' : ''}${adj.sign ? ` ${adj.sign}` : ''}`;
+        if (!adj.sign) {
+          lbl = lbl.replace(/-$/, '').trim();
+        }
+        return { ...it, date: adj.date, label: lbl };
+      };
+
+      const adjustedItem = applyAdjust(item, newDate);
       copy[idx] = adjustedItem;
       if (item.key === 'transfer') {
         transferRef.current = adjustedItem.date;
@@ -926,6 +1023,31 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                             ...updated,
                             label: rest ? `${prefix.normalized} ${rest}` : prefix.normalized,
                           };
+                        } else if (transferRelativeConfig[updated.key]) {
+                          const dayInfo = extractDayPrefix(trimmedLabel);
+                          if (dayInfo) {
+                            const computedDate = computeDateFromTransferDay(
+                              dayInfo.day,
+                              transferDate,
+                              base,
+                            );
+                            if (computedDate && !isSameDay(computedDate, updated.date)) {
+                              updated = {
+                                ...updated,
+                                date: computedDate,
+                              };
+                              dateChanged = true;
+                            }
+                            const suffix = dayInfo.rest || transferRelativeConfig[updated.key].defaultSuffix;
+                            updated = {
+                              ...updated,
+                              label: buildTransferDayLabel(
+                                updated.key,
+                                dayInfo.day,
+                                suffix,
+                              ),
+                            };
+                          }
                         } else if (updated.key.startsWith('ap-')) {
                           const computed = computeCustomDateAndLabel(
                             trimmedLabel,
