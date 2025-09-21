@@ -1,5 +1,6 @@
 import React from 'react';
 import { handleChange, handleSubmit } from './smallCard/actions';
+import { formatDateToServer } from 'components/inputValidations';
 import { OrangeBtn } from 'components/styles';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
@@ -29,6 +30,13 @@ const formatDisplay = date => {
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   return `${day}.${month}`;
+};
+
+const formatFullDate = date => {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}.${month}.${year}`;
 };
 
 const normalizeDate = date => {
@@ -585,6 +593,16 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
   const [editingKey, setEditingKey] = React.useState(null);
   const transferRef = React.useRef(null);
   const hasChanges = React.useRef(false);
+  const preCycleActive = React.useMemo(
+    () =>
+      schedule.some(
+        item =>
+          item.key === 'pre-dipherelin' ||
+          item.key === 'pre-visit1' ||
+          /диферелін/i.test(String(item.label || '')),
+      ),
+    [schedule],
+  );
 
   const saveSchedule = React.useCallback(
     sched => {
@@ -613,6 +631,95 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     },
     [setUsers, setState, userData.userId, isToastOn, base],
   );
+
+  const handleActivateDipherelin = React.useCallback(() => {
+    if (!base || preCycleActive) return;
+
+    const existingFirst = schedule.find(item => item.key === 'visit1') || schedule[0];
+    const normalizedBase = normalizeDate(existingFirst?.date || base);
+    const dayOneLabel = existingFirst?.label || '1й день';
+
+    const preDayOne = {
+      key: 'pre-visit1',
+      date: normalizedBase,
+      label: dayOneLabel,
+    };
+
+    let dayEightDate = new Date(normalizedBase);
+    dayEightDate.setDate(dayEightDate.getDate() + 7);
+    const adjustedDayEight = adjustForward(dayEightDate, normalizedBase);
+    const preUltrasound = {
+      key: 'pre-uzd',
+      date: normalizeDate(adjustedDayEight.date),
+      label: `${adjustedDayEight.day}й день УЗД`,
+    };
+
+    let difEvent = null;
+    for (let n = 19; n <= 22; n += 1) {
+      const candidate = new Date(normalizedBase);
+      candidate.setDate(normalizedBase.getDate() + n - 1);
+      if (!isWeekend(candidate)) {
+        difEvent = {
+          date: normalizeDate(candidate),
+          day: diffDays(candidate, normalizedBase),
+        };
+        break;
+      }
+    }
+
+    if (!difEvent) {
+      const fallback = new Date(normalizedBase);
+      fallback.setDate(normalizedBase.getDate() + 21);
+      const adjusted = adjustBackward(fallback, normalizedBase);
+      difEvent = {
+        date: normalizeDate(adjusted.date),
+        day: adjusted.day,
+      };
+    }
+
+    const preDipherelin = {
+      key: 'pre-dipherelin',
+      date: difEvent.date,
+      label: `${difEvent.day}й день Диферелін`,
+    };
+
+    const nextCycleStart = new Date(difEvent.date);
+    nextCycleStart.setDate(nextCycleStart.getDate() + 9);
+    const normalizedNextCycle = normalizeDate(nextCycleStart);
+
+    const nextCycleVisits = generateSchedule(normalizedNextCycle).map(item => ({
+      ...item,
+      date: normalizeDate(item.date),
+    }));
+
+    const combinedSchedule = [preDayOne, preUltrasound, preDipherelin, ...nextCycleVisits];
+
+    setSchedule(combinedSchedule);
+    hasChanges.current = true;
+    saveSchedule(combinedSchedule);
+
+    const formattedNextCycle = formatDateToServer(formatFullDate(normalizedNextCycle));
+    if (formattedNextCycle) {
+      const updates = { lastCycle: formattedNextCycle };
+      if (setUsers && setState) {
+        handleChange(setUsers, setState, userData.userId, updates);
+      } else if (setState) {
+        setState(prev => ({ ...prev, lastCycle: formattedNextCycle }));
+      } else if (setUsers) {
+        handleChange(setUsers, null, userData.userId, updates);
+      }
+      handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
+    }
+  }, [
+    base,
+    preCycleActive,
+    schedule,
+    saveSchedule,
+    setUsers,
+    setState,
+    userData.userId,
+    isToastOn,
+  ]);
 
   React.useEffect(() => {
     if (!['stimulation', 'pregnant'].includes(effectiveStatus) || !base) return;
@@ -687,11 +794,21 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           .filter(item => item && item.date);
       }
 
-      const firstDate = parsed[0]?.date;
-      if (!firstDate || firstDate.toDateString() !== expectedFirst?.toDateString()) {
-        setSchedule(gen);
-      } else {
+      const hasStoredPreCycle = parsed.some(
+        item =>
+          item.key === 'pre-visit1' ||
+          item.key === 'pre-dipherelin' ||
+          /диферелін/i.test(String(item.label || '')),
+      );
+      if (hasStoredPreCycle) {
         setSchedule(parsed);
+      } else {
+        const firstDate = parsed[0]?.date;
+        if (!firstDate || firstDate.toDateString() !== expectedFirst?.toDateString()) {
+          setSchedule(gen);
+        } else {
+          setSchedule(parsed);
+        }
       }
     } else {
       setSchedule(gen);
@@ -997,7 +1114,11 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const isCustomEvent = (item.key || '').startsWith('ap-');
       const inputValue = isCustomEvent ? String(displayLabel || '') : labelValue;
 
-      if (item.key === 'visit1') {
+      const isFirstDayRow = item.key === 'visit1' || item.key === 'pre-visit1';
+      const showDipherelinButton =
+        (!preCycleActive && item.key === 'visit1') || item.key === 'pre-visit1';
+
+      if (isFirstDayRow) {
         rendered.push(
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
@@ -1015,6 +1136,22 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                 {displayLabel}
               </div>
             </div>
+            {showDipherelinButton ? (
+              <OrangeBtn
+                onClick={handleActivateDipherelin}
+                style={{
+                  minWidth: '88px',
+                  height: '24px',
+                  borderRadius: '4px',
+                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  padding: '0 8px',
+                }}
+              >
+                Диферелін
+              </OrangeBtn>
+            ) : null}
           </div>,
         );
       } else {
