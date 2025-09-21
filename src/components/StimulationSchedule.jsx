@@ -192,6 +192,32 @@ const transferRelativeConfig = {
   },
 };
 
+const preCycleKeyConfig = {
+  'pre-visit1': { defaultSuffix: '' },
+  'pre-uzd': { defaultSuffix: 'УЗД' },
+  'pre-dipherelin': { defaultSuffix: 'Диферелін' },
+};
+
+const preCycleKeySet = new Set(Object.keys(preCycleKeyConfig));
+
+const getPreCycleSuffix = (key, source) => {
+  if (!preCycleKeySet.has(key)) return '';
+  const baseSource = typeof source === 'string' ? source : '';
+  const dayInfo = extractDayPrefix(baseSource);
+  const remainder = dayInfo ? dayInfo.rest : baseSource;
+  const sanitized = sanitizeDescription(remainder);
+  if (sanitized) return sanitized;
+  return preCycleKeyConfig[key]?.defaultSuffix || '';
+};
+
+const buildPreCycleLabel = (key, day, suffixSource) => {
+  if (!preCycleKeySet.has(key)) return '';
+  const normalizedDay = Math.max(normalizeDayNumber(day), 1);
+  const normalizedSuffix = sanitizeDescription(suffixSource);
+  const effectiveSuffix = normalizedSuffix || preCycleKeyConfig[key]?.defaultSuffix || '';
+  return `${normalizedDay}й день${effectiveSuffix ? ` ${effectiveSuffix}` : ''}`.trim();
+};
+
 const normalizeTransferSuffix = (key, suffix) => {
   const config = transferRelativeConfig[key];
   const sanitized = sanitizeDescription(suffix);
@@ -604,6 +630,11 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     [schedule],
   );
 
+  const preCycleBase = React.useMemo(() => {
+    const preItem = schedule.find(entry => entry.key === 'pre-visit1');
+    return preItem ? normalizeDate(preItem.date) : null;
+  }, [schedule]);
+
   const saveSchedule = React.useCallback(
     sched => {
       if (!hasChanges.current) return;
@@ -827,12 +858,26 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     }
   }, [schedule]);
 
-  const adjustItemForDate = (item, target, { baseDate = base, transferDate, overrideLabel } = {}) => {
+  const adjustItemForDate = (item, target, { baseDate, transferDate, overrideLabel } = {}) => {
     if (!item || !target) return item;
     const normalizedDate = normalizeDate(target);
     const labelSource = typeof overrideLabel === 'string' ? overrideLabel : item.label;
-    const baseDateValue = baseDate || null;
-    const effectiveTransfer = transferDate || baseDateValue;
+    const isPreCycleKey = preCycleKeySet.has(item.key);
+    const normalizedBaseOverride = baseDate ? normalizeDate(baseDate) : null;
+    let baseDateValue = normalizedBaseOverride;
+    if (!baseDateValue) {
+      if (isPreCycleKey) {
+        if (item.key === 'pre-visit1') baseDateValue = normalizedDate;
+        else if (preCycleBase) baseDateValue = new Date(preCycleBase);
+        else baseDateValue = null;
+      } else if (base) {
+        baseDateValue = new Date(base);
+      } else {
+        baseDateValue = null;
+      }
+    }
+    const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
+    const effectiveTransfer = normalizedTransfer || baseDateValue;
 
     if (postTransferKeys.includes(item.key)) {
       const labelText = buildPostTransferLabel(item.key, labelSource, normalizedDate, effectiveTransfer);
@@ -848,6 +893,16 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       baseDateValue && adjustedDate
         ? { date: adjustedDate, day: diffDays(adjustedDate, baseDateValue), sign: '' }
         : { date: adjustedDate, day: null, sign: '' };
+
+    if (isPreCycleKey && baseDateValue) {
+      const suffix = getPreCycleSuffix(item.key, labelSource);
+      const labelText = buildPreCycleLabel(item.key, adj.day ?? 1, suffix);
+      return {
+        ...item,
+        date: adjustedDate,
+        label: labelText,
+      };
+    }
 
     if (item.key.startsWith('week') && baseDateValue) {
       const diff = Math.round((adjustedDate - baseDateValue) / (1000 * 60 * 60 * 24));
@@ -919,14 +974,90 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
 
       const transferDate =
         copy.find(v => v.key === 'transfer')?.date || transferRef.current || base;
+      const normalizedTransferDate = transferDate ? normalizeDate(transferDate) : null;
+      const normalizedBaseDate = base ? normalizeDate(base) : null;
+
+      if (item.key === 'visit1') {
+        const normalizedOldDate = normalizeDate(item.date);
+        const normalizedNewDate = normalizeDate(newDate);
+        const deltaMs = normalizedNewDate.getTime() - normalizedOldDate.getTime();
+        const deltaDays = Math.round(deltaMs / (1000 * 60 * 60 * 24));
+
+        const targetDates = new Map();
+        copy.forEach(entry => {
+          if (preCycleKeySet.has(entry.key)) {
+            targetDates.set(entry.key, normalizeDate(entry.date));
+          } else if (entry.key === 'visit1') {
+            targetDates.set(entry.key, normalizedNewDate);
+          } else {
+            const shifted = new Date(entry.date);
+            shifted.setDate(shifted.getDate() + deltaDays);
+            targetDates.set(entry.key, normalizeDate(shifted));
+          }
+        });
+
+        const updatedTransferDate = targetDates.get('transfer') || null;
+        const updatedSchedule = copy.map(entry => {
+          if (preCycleKeySet.has(entry.key)) {
+            return { ...entry };
+          }
+          const target = targetDates.get(entry.key) || entry.date;
+          return adjustItemForDate(entry, target, {
+            baseDate: normalizedNewDate,
+            transferDate: updatedTransferDate,
+          });
+        });
+
+        const sorted = [...updatedSchedule].sort((a, b) => a.date - b.date);
+        const nextTransfer = sorted.find(v => v.key === 'transfer')?.date || null;
+        transferRef.current = nextTransfer || updatedTransferDate || null;
+
+        hasChanges.current = true;
+        saveSchedule(sorted);
+
+        const formattedNewBase = formatDateToServer(formatFullDate(normalizedNewDate));
+        if (formattedNewBase) {
+          const updates = { lastCycle: formattedNewBase };
+          if (setUsers && setState) {
+            handleChange(setUsers, setState, userData.userId, updates);
+          } else if (setState) {
+            setState(prevState => ({ ...prevState, lastCycle: formattedNewBase }));
+          } else if (setUsers) {
+            handleChange(setUsers, null, userData.userId, updates);
+          }
+          handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
+        }
+
+        return sorted;
+      }
 
       const applyAdjust = (it, d) => {
+        const normalizedTarget = normalizeDate(d);
         const isPostTransferKey = postTransferKeys.includes(it.key);
-        const preferredBase = isPostTransferKey && transferDate ? transferDate : base;
-        const effectiveBase = preferredBase || base || transferDate || d;
-        let adj = { date: d, day: diffDays(d, effectiveBase), sign: '' };
-        if (it.key.startsWith('week')) {
-          const diff = Math.round((adj.date - base) / (1000 * 60 * 60 * 24));
+        const isPreCycleKey = preCycleKeySet.has(it.key);
+        let baseForDay = null;
+        if (isPreCycleKey) {
+          if (it.key === 'pre-visit1') baseForDay = normalizedTarget;
+          else if (preCycleBase) baseForDay = new Date(preCycleBase);
+        } else if (isPostTransferKey && normalizedTransferDate) {
+          baseForDay = normalizedTransferDate;
+        } else {
+          baseForDay = normalizedBaseDate;
+        }
+        const dayValue = baseForDay ? diffDays(normalizedTarget, baseForDay) : null;
+        const adj = { date: normalizedTarget, day: dayValue, sign: '' };
+
+        if (isPreCycleKey) {
+          const suffix = getPreCycleSuffix(it.key, it.label);
+          const labelText = buildPreCycleLabel(it.key, dayValue ?? 1, suffix);
+          return {
+            ...it,
+            date: normalizedTarget,
+            label: labelText,
+          };
+        }
+        if (it.key.startsWith('week') && normalizedBaseDate) {
+          const diff = Math.round((normalizedTarget - normalizedBaseDate) / (1000 * 60 * 60 * 24));
           const weeks = Math.floor(diff / 7);
           const days = diff % 7;
           let custom = it.label.replace(/^\d+т\d*д?\s*/, '').trim();
@@ -938,24 +1069,23 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           if (custom) labelText += ` ${custom}`;
           return {
             ...it,
-            date: adj.date,
+            date: normalizedTarget,
             label: labelText,
           };
         }
         if (transferRelativeConfig[it.key]) {
-          const normalizedDate = normalizeDate(adj.date);
-          const reference = getTransferRelativeReference(transferDate, base);
-          const dayNumber = reference ? diffDays(normalizedDate, reference) : adj.day;
+          const reference = getTransferRelativeReference(normalizedTransferDate, normalizedBaseDate);
+          const dayNumber = reference ? diffDays(normalizedTarget, reference) : dayValue;
           const suffix = getTransferSuffixFromLabel(it.key, it.label);
           const labelText = buildTransferDayLabel(it.key, dayNumber, suffix, adj.sign);
           return {
             ...it,
-            date: normalizedDate,
+            date: normalizedTarget,
             label: labelText,
           };
         }
-        if (postTransferKeys.includes(it.key)) {
-          const diff = Math.round((adj.date - transferDate) / (1000 * 60 * 60 * 24));
+        if (isPostTransferKey && normalizedTransferDate) {
+          const diff = Math.round((normalizedTarget - normalizedTransferDate) / (1000 * 60 * 60 * 24));
           const weeks = Math.floor(diff / 7);
           const days = diff % 7;
           let custom = it.label.replace(/^\d+т\d*д?\s*/, '').trim();
@@ -967,31 +1097,37 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           if (custom) labelText += ` ${custom}`;
           return {
             ...it,
-            date: adj.date,
+            date: normalizedTarget,
             label: labelText,
           };
         }
-        if (it.key === 'visit3' && adj.day < 6) {
-          const min = new Date(base);
-          min.setDate(base.getDate() + 5);
-          adj = { date: min, day: diffDays(min, base), sign: '' };
+        if (it.key === 'visit3' && dayValue !== null && normalizedBaseDate && dayValue < 6) {
+          const min = new Date(normalizedBaseDate);
+          min.setDate(normalizedBaseDate.getDate() + 5);
+          const adjustedMin = normalizeDate(min);
+          return applyAdjust(it, adjustedMin);
         }
         if (it.key.startsWith('ap')) {
-          const reference = base || transferDate;
-          const parsed = computeCustomDateAndLabel(it.label, base, it.date);
+          const reference = normalizedBaseDate || normalizedTransferDate;
+          const parsed = computeCustomDateAndLabel(it.label, normalizedBaseDate, it.date);
           const description = parsed.description || parsed.raw || it.label;
-          const labelText = buildCustomEventLabel(adj.date, reference, description);
+          const labelText = buildCustomEventLabel(normalizedTarget, reference, description);
           return {
             ...it,
-            date: adj.date,
+            date: normalizedTarget,
             label: labelText,
           };
         }
-        let lbl = `${adj.day}й день${it.key === 'transfer' ? ' (перенос)' : ''}${adj.sign ? ` ${adj.sign}` : ''}`;
-        if (!adj.sign) {
-          lbl = lbl.replace(/-$/, '').trim();
+        if (dayValue !== null) {
+          let lbl = `${dayValue}й день${it.key === 'transfer' ? ' (перенос)' : ''}${
+            adj.sign ? ` ${adj.sign}` : ''
+          }`;
+          if (!adj.sign) {
+            lbl = lbl.replace(/-$/, '').trim();
+          }
+          return { ...it, date: normalizedTarget, label: lbl };
         }
-        return { ...it, date: adj.date, label: lbl };
+        return { ...it, date: normalizedTarget, label: it.label };
       };
 
       const adjustedItem = applyAdjust(item, newDate);
@@ -1117,6 +1253,7 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const isFirstDayRow = item.key === 'visit1' || item.key === 'pre-visit1';
       const showDipherelinButton =
         (!preCycleActive && item.key === 'visit1') || item.key === 'pre-visit1';
+      const showFirstDayShiftControls = item.key === 'visit1' && preCycleActive;
 
       if (isFirstDayRow) {
         rendered.push(
@@ -1136,22 +1273,62 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                 {displayLabel}
               </div>
             </div>
-            {showDipherelinButton ? (
-              <OrangeBtn
-                onClick={handleActivateDipherelin}
-                style={{
-                  minWidth: '88px',
-                  height: '24px',
-                  borderRadius: '4px',
-                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                  fontSize: '14px',
-                  fontWeight: 'bold',
-                  padding: '0 8px',
-                }}
-              >
-                Диферелін
-              </OrangeBtn>
-            ) : null}
+            {(showDipherelinButton || showFirstDayShiftControls) && (
+              <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
+                {showDipherelinButton ? (
+                  <OrangeBtn
+                    onClick={handleActivateDipherelin}
+                    style={{
+                      minWidth: '88px',
+                      height: '24px',
+                      borderRadius: '4px',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      padding: '0 8px',
+                    }}
+                  >
+                    Диферелін
+                  </OrangeBtn>
+                ) : null}
+                {showFirstDayShiftControls ? (
+                  <React.Fragment>
+                    <OrangeBtn
+                      onClick={() => {
+                        const firstIdx = schedule.findIndex(v => v.key === item.key);
+                        if (firstIdx !== -1) shiftDate(firstIdx, -1);
+                      }}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '4px',
+                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                        fontSize: '16px',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      -
+                    </OrangeBtn>
+                    <OrangeBtn
+                      onClick={() => {
+                        const firstIdx = schedule.findIndex(v => v.key === item.key);
+                        if (firstIdx !== -1) shiftDate(firstIdx, 1);
+                      }}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '4px',
+                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                        fontSize: '16px',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      +
+                    </OrangeBtn>
+                  </React.Fragment>
+                ) : null}
+              </div>
+            )}
           </div>,
         );
       } else {
@@ -1291,11 +1468,15 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
                         } else {
                           const manualAnchor =
                             updated.date ||
-                            (postTransferKeys.includes(updated.key) ? transferDate : base);
+                            (postTransferKeys.includes(updated.key)
+                              ? transferDate
+                              : preCycleKeySet.has(updated.key)
+                              ? preCycleBase
+                              : base);
                           const manualInfo = parseLeadingDate(trimmedLabel, manualAnchor);
                           if (manualInfo && manualInfo.date) {
                             const adjusted = adjustItemForDate(updated, manualInfo.date, {
-                              baseDate: base,
+                              baseDate: preCycleKeySet.has(updated.key) ? preCycleBase : base,
                               transferDate,
                               overrideLabel: manualInfo.remainder,
                             });
