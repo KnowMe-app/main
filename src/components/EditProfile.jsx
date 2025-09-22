@@ -243,6 +243,10 @@ const EditProfile = () => {
             userData={scheduleUserData}
             setState={setState}
             isToastOn={isToastOn}
+            onLastCyclePersisted={({ lastCycle, needsSync }) => {
+              if (!needsSync || !lastCycle) return;
+              setState(prev => ({ ...prev, lastCycle }));
+            }}
           />
         </div>
       )}

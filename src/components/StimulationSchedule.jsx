@@ -321,7 +321,7 @@ const buildPostTransferLabel = (key, labelSource, date, transferReference) => {
   const diff = Math.round(
     (normalizedDate.getTime() - normalizedReference.getTime()) / (1000 * 60 * 60 * 24),
   );
-  const sign = diff > 0 ? '+' : diff < 0 ? '-' : '';
+  const sign = diff < 0 ? '-' : '';
   const dayNumber = Math.abs(diff) + 1;
 
   return buildTransferDayLabel(key, dayNumber, suffix, sign);
@@ -696,7 +696,13 @@ export const serializeSchedule = sched =>
     })
     .join('\n');
 
-const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }) => {
+const StimulationSchedule = ({
+  userData,
+  setUsers,
+  setState,
+  isToastOn = false,
+  onLastCyclePersisted,
+}) => {
   const base = React.useMemo(() => parseDate(userData?.lastCycle), [userData?.lastCycle]);
   const effectiveStatus = getEffectiveCycleStatus(userData);
   const [schedule, setSchedule] = React.useState([]);
@@ -785,21 +791,42 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
     };
   }, [setUsers, setState, userData.userId, isToastOn]);
 
-  const persistLastCycleDate = React.useCallback(newBaseDate => {
-    if (!newBaseDate) return;
-    const context = persistContextRef.current;
-    const formattedNextCycle = formatDateToServer(formatFullDate(newBaseDate));
-    if (!formattedNextCycle) return;
-    const updates = { lastCycle: formattedNextCycle };
-    if (context.setUsers && context.setState) {
-      handleChange(context.setUsers, context.setState, context.userId, updates);
-    } else if (context.setState) {
-      context.setState(prev => ({ ...prev, lastCycle: formattedNextCycle }));
-    } else if (context.setUsers) {
-      handleChange(context.setUsers, null, context.userId, updates);
-    }
-    handleSubmit({ userId: context.userId, ...updates }, 'overwrite', context.isToastOn);
-  }, []);
+  const persistLastCycleDate = React.useCallback(
+    newBaseDate => {
+      if (!newBaseDate) return;
+      const context = persistContextRef.current;
+      const normalizedDate = normalizeDate(newBaseDate);
+      const formattedNextCycle = formatDateToServer(formatFullDate(normalizedDate));
+      if (!formattedNextCycle) return;
+      const updates = { lastCycle: formattedNextCycle };
+      let stateSynced = false;
+      if (context.setUsers && context.setState) {
+        handleChange(context.setUsers, context.setState, context.userId, updates);
+        stateSynced = true;
+      } else if (context.setState) {
+        context.setState(prev => ({ ...prev, lastCycle: formattedNextCycle }));
+        stateSynced = true;
+      } else if (context.setUsers) {
+        handleChange(context.setUsers, null, context.userId, updates);
+        stateSynced = true;
+      }
+
+      if (typeof onLastCyclePersisted === 'function') {
+        onLastCyclePersisted({
+          lastCycle: formattedNextCycle,
+          date: normalizedDate,
+          needsSync: !stateSynced,
+        });
+      }
+
+      handleSubmit(
+        { userId: context.userId, ...updates },
+        'overwrite',
+        context.isToastOn,
+      );
+    },
+    [onLastCyclePersisted],
+  );
 
   const handleActivateDipherelin = React.useCallback(() => {
     if (!base || preCycleActive) return;
@@ -1167,13 +1194,12 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         }
 
         const preVisitItem = prev.find(entry => entry.key === 'pre-visit1');
-        let shiftedPreBase = preVisitItem?.date ? new Date(preVisitItem.date) : null;
-        if (shiftedPreBase) {
-          shiftedPreBase.setDate(shiftedPreBase.getDate() + deltaDays);
-          shiftedPreBase = normalizeDate(shiftedPreBase);
-        }
+        const preservedPreBase = preVisitItem?.date ? normalizeDate(preVisitItem.date) : null;
 
-        const updated = prev.map(scheduleItem => {
+        const preservedPreCycle = prev.filter(item => isPreCycleKey(item?.key));
+        const itemsToShift = prev.filter(item => !isPreCycleKey(item?.key));
+
+        const shiftedItems = itemsToShift.map(scheduleItem => {
           if (!scheduleItem?.date) return scheduleItem;
           const targetDate =
             scheduleItem.key === 'visit1'
@@ -1187,17 +1213,21 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
           return adjustItemForDate(scheduleItem, targetDate, {
             baseDate: normalizedNewBase,
             transferDate: shiftedTransfer,
-            preCycleBase: shiftedPreBase,
+            preCycleBase: preservedPreBase,
           });
         });
 
         transferRef.current = shiftedTransfer || null;
 
-        const sorted = [...updated].sort((a, b) => a.date - b.date);
+        const sortedShifted = [...shiftedItems].sort((a, b) => {
+          if (!a?.date || !b?.date) return 0;
+          return a.date - b.date;
+        });
+        const combined = [...preservedPreCycle, ...sortedShifted];
         hasChanges.current = true;
-        saveSchedule(sorted);
+        saveSchedule(combined);
         didUpdate = true;
-        return sorted;
+        return combined;
       });
 
       if (didUpdate) {
