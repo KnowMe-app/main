@@ -563,6 +563,23 @@ const adjustBackward = (date, base) => {
   return { date, day, sign: '' };
 };
 
+const adjustToNextWorkingDay = (date, base) => {
+  if (!date) return null;
+  const candidate = new Date(date);
+  candidate.setHours(0, 0, 0, 0);
+  const normalizedBase = base ? normalizeDate(base) : null;
+
+  if (!normalizedBase) {
+    while (isWeekend(candidate)) {
+      candidate.setDate(candidate.getDate() + 1);
+    }
+    return { date: normalizeDate(candidate), day: null, sign: '' };
+  }
+
+  const adjusted = adjustForward(candidate, normalizedBase);
+  return { ...adjusted, date: normalizeDate(adjusted.date) };
+};
+
 export const generateSchedule = base => {
   const visits = [];
 
@@ -881,7 +898,14 @@ const StimulationSchedule = ({
 
     const nextCycleStart = new Date(difEvent.date);
     nextCycleStart.setDate(nextCycleStart.getDate() + 9);
-    const normalizedNextCycle = normalizeDate(nextCycleStart);
+    const adjustedNextCycle =
+      adjustToNextWorkingDay(nextCycleStart, normalizedBase) ||
+      {
+        date: normalizeDate(nextCycleStart),
+        day: normalizedBase ? diffDays(nextCycleStart, normalizedBase) : null,
+        sign: '',
+      };
+    const normalizedNextCycle = normalizeDate(adjustedNextCycle.date);
 
     const nextCycleVisits = generateSchedule(normalizedNextCycle).map(item => ({
       ...item,
@@ -1134,6 +1158,7 @@ const StimulationSchedule = ({
   }, [postTransferKeys, preCycleBaseDate, resolvedBaseDate]);
 
   const shiftDate = (idx, delta) => {
+    let persistTarget = null;
     setSchedule(prev => {
       const copy = [...prev];
       const item = copy[idx];
@@ -1159,11 +1184,19 @@ const StimulationSchedule = ({
         transferRef.current = adjustedItem.date;
       }
 
+      if (adjustedItem.key === 'pre-visit1') {
+        persistTarget = adjustedItem.date;
+      }
+
       copy.sort((a, b) => a.date - b.date);
       hasChanges.current = true;
       saveSchedule(copy);
       return copy;
     });
+
+    if (persistTarget) {
+      persistLastCycleDate(persistTarget);
+    }
   };
 
   const rebaseScheduleFromDayOne = React.useCallback(
@@ -1186,44 +1219,66 @@ const StimulationSchedule = ({
           (normalizedNewBase.getTime() - currentBase.getTime()) / MS_PER_DAY,
         );
 
-        const transferItem = prev.find(entry => entry.key === 'transfer');
-        let shiftedTransfer = transferItem?.date ? new Date(transferItem.date) : null;
-        if (shiftedTransfer) {
-          shiftedTransfer.setDate(shiftedTransfer.getDate() + deltaDays);
-          shiftedTransfer = normalizeDate(shiftedTransfer);
-        }
-
         const preVisitItem = prev.find(entry => entry.key === 'pre-visit1');
         const preservedPreBase = preVisitItem?.date ? normalizeDate(preVisitItem.date) : null;
 
         const preservedPreCycle = prev.filter(item => isPreCycleKey(item?.key));
         const itemsToShift = prev.filter(item => !isPreCycleKey(item?.key));
 
-        const shiftedItems = itemsToShift.map(scheduleItem => {
-          if (!scheduleItem?.date) return scheduleItem;
-          const targetDate =
-            scheduleItem.key === 'visit1'
-              ? normalizedNewBase
-              : (() => {
-                  const next = new Date(scheduleItem.date);
-                  next.setDate(next.getDate() + deltaDays);
-                  return next;
-                })();
+        const regenerated = generateSchedule(normalizedNewBase).map(item => ({
+          ...item,
+          date: normalizeDate(item.date),
+        }));
+        const regeneratedMap = new Map(regenerated.map(item => [item.key, item]));
+        const regeneratedTransfer = regeneratedMap.get('transfer')?.date || null;
+        const normalizedTransfer = regeneratedTransfer ? normalizeDate(regeneratedTransfer) : null;
 
-          return adjustItemForDate(scheduleItem, targetDate, {
+        const shiftCustomItem = scheduleItem => {
+          if (!scheduleItem?.date) return scheduleItem;
+          const next = new Date(scheduleItem.date);
+          next.setDate(next.getDate() + deltaDays);
+          return adjustItemForDate(scheduleItem, next, {
             baseDate: normalizedNewBase,
-            transferDate: shiftedTransfer,
+            transferDate: normalizedTransfer,
             preCycleBase: preservedPreBase,
           });
+        };
+
+        const shiftedItems = itemsToShift.map(scheduleItem => {
+          if (!scheduleItem) return scheduleItem;
+
+          if (scheduleItem.key === 'visit1') {
+            const generatedVisit1 = regeneratedMap.get('visit1');
+            const overrideLabel = generatedVisit1?.label || scheduleItem.label;
+            return adjustItemForDate(scheduleItem, normalizedNewBase, {
+              baseDate: normalizedNewBase,
+              transferDate: normalizedTransfer,
+              overrideLabel,
+              preCycleBase: preservedPreBase,
+            });
+          }
+
+          const generatedMatch = regeneratedMap.get(scheduleItem.key);
+          if (generatedMatch) {
+            return adjustItemForDate(scheduleItem, generatedMatch.date, {
+              baseDate: normalizedNewBase,
+              transferDate: normalizedTransfer,
+              overrideLabel: scheduleItem.label,
+              preCycleBase: preservedPreBase,
+            });
+          }
+
+          return shiftCustomItem(scheduleItem);
         });
 
-        transferRef.current = shiftedTransfer || null;
-
-        const sortedShifted = [...shiftedItems].sort((a, b) => {
+        const combined = [...preservedPreCycle, ...shiftedItems].filter(Boolean);
+        combined.sort((a, b) => {
           if (!a?.date || !b?.date) return 0;
           return a.date - b.date;
         });
-        const combined = [...preservedPreCycle, ...sortedShifted];
+
+        transferRef.current = normalizedTransfer || null;
+
         hasChanges.current = true;
         saveSchedule(combined);
         didUpdate = true;
@@ -1377,7 +1432,7 @@ const StimulationSchedule = ({
 
       if (isFirstDayRow) {
         const firstDayIndex = schedule.findIndex(entry => entry.key === item.key);
-        const showAdjustmentButtons = preCycleActive || item.key === 'pre-visit1';
+        const showAdjustmentButtons = preCycleActive && item.key === 'visit1';
         const handleFirstDayShift = delta => {
           if (item.key === 'visit1') {
             const target = new Date(item.date);
