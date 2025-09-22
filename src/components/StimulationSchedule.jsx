@@ -119,6 +119,7 @@ const extractDayPrefix = value => {
     day: Math.max(Math.trunc(rawDay), 0),
     length,
     rest,
+    raw: match[0].trim(),
   };
 };
 
@@ -1182,10 +1183,20 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
         normalizedToken = tokenInfo.normalized;
         remainderWithoutToken = remainder.slice(tokenInfo.length).trim();
       }
-      const sanitizedRemainder = sanitizeDescription(remainderWithoutToken);
+      const dayInfo = extractDayPrefix(remainderWithoutToken);
+      let normalizedDayPrefix = '';
+      let remainderWithoutDay = remainderWithoutToken;
+      if (dayInfo) {
+        normalizedDayPrefix = dayInfo.raw || `${Math.max(dayInfo.day, 1)}й день`;
+        remainderWithoutDay = dayInfo.rest;
+      }
+      const sanitizedRemainder = sanitizeDescription(remainderWithoutDay);
       const displayParts = [];
       if (normalizedToken) {
         displayParts.push(normalizedToken);
+      }
+      if (normalizedDayPrefix) {
+        displayParts.push(normalizedDayPrefix);
       }
       if (sanitizedRemainder) {
         displayParts.push(sanitizedRemainder);
