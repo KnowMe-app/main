@@ -1230,7 +1230,20 @@ const StimulationSchedule = ({ userData, setUsers, setState, isToastOn = false }
       const totalDays = Math.max(diff, 0);
       const weeks = Math.floor(totalDays / 7);
       const days = totalDays % 7;
-      const comment = formatWeeksDaysToken(weeks, days);
+      const normalizedBaseForPlaceholder = normalizeDate(baseForDiff);
+      const transferSource =
+        transferRef.current ||
+        schedule.find(entry => entry.key === 'transfer' && entry.date)?.date ||
+        null;
+      const normalizedTransferForPlaceholder = transferSource
+        ? normalizeDate(transferSource)
+        : null;
+      const computedPrefix = getSchedulePrefixForDate(
+        todayDate,
+        normalizedBaseForPlaceholder,
+        normalizedTransferForPlaceholder,
+      );
+      const comment = computedPrefix || formatWeeksDaysToken(weeks, days);
       const placeholder = {
         key: 'today-placeholder',
         date: new Date(todayDate),
