@@ -156,7 +156,15 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   const normalizedDate = normalizeDate(date);
   const normalizedBase = baseDate ? normalizeDate(baseDate) : null;
   const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
-  const referenceForDay = normalizedBase || normalizedTransfer;
+
+  let referenceForDay = null;
+  if (normalizedTransfer && normalizedDate.getTime() >= normalizedTransfer.getTime()) {
+    referenceForDay = normalizedTransfer;
+  } else if (normalizedBase) {
+    referenceForDay = normalizedBase;
+  } else if (normalizedTransfer) {
+    referenceForDay = normalizedTransfer;
+  }
 
   if (!referenceForDay) {
     return '';
