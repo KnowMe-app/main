@@ -1301,6 +1301,39 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setUsers={setUsers}
                   setState={setState}
                   isToastOn={isToastOn}
+                  onLastCyclePersisted={({ lastCycle, needsSync }) => {
+                    if (!needsSync || !lastCycle) return;
+                    const targetUserId = scheduleUserData?.userId;
+                    if (!targetUserId) return;
+                    if (typeof setState === 'function') {
+                      setState(prev => {
+                        if (!prev || prev.userId !== targetUserId) return prev;
+                        return { ...prev, lastCycle };
+                      });
+                    }
+                    if (typeof setUsers === 'function') {
+                      setUsers(prev => {
+                        if (!prev) return prev;
+                        if (Array.isArray(prev)) {
+                          return prev.map(item =>
+                            item?.userId === targetUserId ? { ...item, lastCycle } : item,
+                          );
+                        }
+                        if (typeof prev === 'object') {
+                          const current = prev[targetUserId];
+                          if (!current) return prev;
+                          return {
+                            ...prev,
+                            [targetUserId]: {
+                              ...current,
+                              lastCycle,
+                            },
+                          };
+                        }
+                        return prev;
+                      });
+                    }
+                  }}
                 />
               </div>
             )}
