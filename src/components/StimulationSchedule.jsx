@@ -158,7 +158,7 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
 
   let referenceForDay = null;
-  if (normalizedTransfer && normalizedDate.getTime() >= normalizedTransfer.getTime()) {
+  if (normalizedTransfer && normalizedDate.getTime() > normalizedTransfer.getTime()) {
     referenceForDay = normalizedTransfer;
   } else if (normalizedBase) {
     referenceForDay = normalizedBase;
@@ -701,6 +701,139 @@ export const generateSchedule = base => {
   return visits;
 };
 
+export const adjustItemForDate = (
+  item,
+  target,
+  {
+    baseDate = null,
+    transferDate,
+    overrideLabel,
+    preCycleBase = null,
+    postTransferKeys = Object.keys(transferRelativeConfig),
+  } = {},
+) => {
+  if (!item || !target) return item;
+
+  const normalizedDate = normalizeDate(target);
+  const labelSource = typeof overrideLabel === 'string' ? overrideLabel : item.label;
+  const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
+  const normalizedPreBase = preCycleBase ? normalizeDate(preCycleBase) : null;
+  const isPreItem = isPreCycleKey(item.key);
+
+  let baseCandidate = baseDate || null;
+  if (isPreItem && normalizedPreBase) {
+    baseCandidate = normalizedPreBase;
+  }
+  if (item.key === 'visit1' || item.key === 'pre-visit1') {
+    baseCandidate = normalizedDate;
+  }
+
+  const baseDateValue = baseCandidate ? normalizeDate(baseCandidate) : null;
+  const effectiveTransfer =
+    normalizedTransfer || (!isPreItem && baseDateValue ? baseDateValue : null);
+  const effectivePostTransferKeys = Array.isArray(postTransferKeys)
+    ? postTransferKeys
+    : Object.keys(transferRelativeConfig);
+
+  if (effectivePostTransferKeys.includes(item.key)) {
+    const labelText = buildPostTransferLabel(
+      item.key,
+      labelSource,
+      normalizedDate,
+      effectiveTransfer,
+    );
+    return {
+      ...item,
+      date: normalizedDate,
+      label: labelText,
+    };
+  }
+
+  const adjustedDate = normalizedDate;
+  const adj =
+    baseDateValue && adjustedDate
+      ? { date: adjustedDate, day: diffDays(adjustedDate, baseDateValue), sign: '' }
+      : { date: adjustedDate, day: null, sign: '' };
+
+  if (item.key?.startsWith('week') && baseDateValue) {
+    const prefix = getSchedulePrefixForDate(adjustedDate, baseDateValue, normalizedTransfer);
+    let suffix = sanitizeDescription(labelSource);
+    if (suffix) {
+      suffix = suffix.replace(/\s*[+-]$/, '').trim();
+    }
+    let labelText = prefix;
+    if (suffix) {
+      labelText = labelText ? `${labelText} ${suffix}` : suffix;
+    }
+    return {
+      ...item,
+      date: adjustedDate,
+      label: labelText.trim(),
+    };
+  }
+
+  if (item.key === 'visit3' && baseDateValue && adj.day !== null && adj.day < 6) {
+    const min = new Date(baseDateValue);
+    min.setDate(baseDateValue.getDate() + 5);
+    const normalizedMin = normalizeDate(min);
+    return adjustItemForDate(item, normalizedMin, {
+      baseDate: baseDateValue,
+      transferDate: normalizedTransfer || effectiveTransfer,
+      overrideLabel,
+      preCycleBase: normalizedPreBase || baseDateValue,
+      postTransferKeys: effectivePostTransferKeys,
+    });
+  }
+
+  if (item.key?.startsWith('ap')) {
+    const parsed = computeCustomDateAndLabel(
+      labelSource,
+      baseDateValue,
+      item.date,
+      normalizedTransfer,
+    );
+    const description = parsed.description || parsed.raw || labelSource;
+    const baseForLabel = baseDateValue || effectiveTransfer || adjustedDate;
+    const labelText = buildCustomEventLabel(
+      adjustedDate,
+      baseForLabel,
+      normalizedTransfer,
+      description,
+    );
+    return {
+      ...item,
+      date: adjustedDate,
+      label: labelText,
+    };
+  }
+
+  if (baseDateValue && adj.day !== null) {
+    const prefix = getSchedulePrefixForDate(adjustedDate, baseDateValue, normalizedTransfer);
+    let suffix = sanitizeDescription(labelSource);
+    if (suffix) {
+      suffix = suffix.replace(/\s*[+-]$/, '').trim();
+    }
+    let lbl = prefix;
+    if (suffix) {
+      lbl = lbl ? `${lbl} ${suffix}` : suffix;
+    }
+    if (adj.sign) {
+      lbl = lbl ? `${lbl} ${adj.sign}` : adj.sign;
+    }
+    return {
+      ...item,
+      date: adjustedDate,
+      label: lbl.trim(),
+    };
+  }
+
+  return {
+    ...item,
+    date: adjustedDate,
+    label: labelSource,
+  };
+};
+
 export const serializeSchedule = sched =>
   sched
     .filter(item => item.date)
@@ -1033,129 +1166,16 @@ const StimulationSchedule = ({
     }
   }, [schedule]);
 
-  const adjustItemForDate = React.useCallback(
-    (
-      item,
-      target,
-      {
-        baseDate = resolvedBaseDate,
-        transferDate,
-        overrideLabel,
-        preCycleBase = preCycleBaseDate,
-      } = {},
-    ) => {
-      if (!item || !target) return item;
-
-      const normalizedDate = normalizeDate(target);
-      const labelSource = typeof overrideLabel === 'string' ? overrideLabel : item.label;
-      const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
-    const normalizedPreBase = preCycleBase ? normalizeDate(preCycleBase) : null;
-    const isPreItem = isPreCycleKey(item.key);
-
-    let baseCandidate = baseDate || null;
-    if (isPreItem && normalizedPreBase) {
-      baseCandidate = normalizedPreBase;
-    }
-    if (item.key === 'visit1' || item.key === 'pre-visit1') {
-      baseCandidate = normalizedDate;
-    }
-
-    const baseDateValue = baseCandidate ? normalizeDate(baseCandidate) : null;
-    const effectiveTransfer =
-      normalizedTransfer || (!isPreItem && baseDateValue ? baseDateValue : null);
-
-    if (postTransferKeys.includes(item.key)) {
-      const labelText = buildPostTransferLabel(
-        item.key,
-        labelSource,
-        normalizedDate,
-        effectiveTransfer,
-      );
-      return {
-        ...item,
-        date: normalizedDate,
-        label: labelText,
-      };
-    }
-
-    const adjustedDate = normalizedDate;
-    const adj =
-      baseDateValue && adjustedDate
-        ? { date: adjustedDate, day: diffDays(adjustedDate, baseDateValue), sign: '' }
-        : { date: adjustedDate, day: null, sign: '' };
-
-    if (item.key.startsWith('week') && baseDateValue) {
-      const prefix = getSchedulePrefixForDate(adjustedDate, baseDateValue, normalizedTransfer);
-      let suffix = sanitizeDescription(labelSource);
-      if (suffix) {
-        suffix = suffix.replace(/\s*[+-]$/, '').trim();
-      }
-      let labelText = prefix;
-      if (suffix) {
-        labelText = labelText ? `${labelText} ${suffix}` : suffix;
-      }
-      return {
-        ...item,
-        date: adjustedDate,
-        label: labelText.trim(),
-      };
-    }
-
-    if (item.key === 'visit3' && baseDateValue && adj.day !== null && adj.day < 6) {
-      const min = new Date(baseDateValue);
-      min.setDate(baseDateValue.getDate() + 5);
-      const normalizedMin = normalizeDate(min);
-      return adjustItemForDate(item, normalizedMin, {
-        baseDate: baseDateValue,
-        transferDate: normalizedTransfer || effectiveTransfer,
-        overrideLabel,
-        preCycleBase: normalizedPreBase || baseDateValue,
-      });
-    }
-
-    if (item.key.startsWith('ap')) {
-      const parsed = computeCustomDateAndLabel(
-        labelSource,
-        baseDateValue,
-        item.date,
-        normalizedTransfer,
-      );
-      const description = parsed.description || parsed.raw || labelSource;
-      const baseForLabel = baseDateValue || effectiveTransfer || adjustedDate;
-      const labelText = buildCustomEventLabel(adjustedDate, baseForLabel, normalizedTransfer, description);
-      return {
-        ...item,
-        date: adjustedDate,
-        label: labelText,
-      };
-    }
-
-    if (baseDateValue && adj.day !== null) {
-      const prefix = getSchedulePrefixForDate(adjustedDate, baseDateValue, normalizedTransfer);
-      let suffix = sanitizeDescription(labelSource);
-      if (suffix) {
-        suffix = suffix.replace(/\s*[+-]$/, '').trim();
-      }
-      let lbl = prefix;
-      if (suffix) {
-        lbl = lbl ? `${lbl} ${suffix}` : suffix;
-      }
-      if (adj.sign) {
-        lbl = lbl ? `${lbl} ${adj.sign}` : adj.sign;
-      }
-      return {
-        ...item,
-        date: adjustedDate,
-        label: lbl.trim(),
-      };
-    }
-
-    return {
-      ...item,
-      date: adjustedDate,
-      label: labelSource,
-    };
-  }, [postTransferKeys, preCycleBaseDate, resolvedBaseDate]);
+  const adjustItemForDateFn = React.useCallback(
+    (item, target, options = {}) =>
+      adjustItemForDate(item, target, {
+        baseDate: resolvedBaseDate,
+        preCycleBase: preCycleBaseDate,
+        postTransferKeys,
+        ...options,
+      }),
+    [postTransferKeys, preCycleBaseDate, resolvedBaseDate],
+  );
 
   const shiftDate = (idx, delta) => {
     let persistTarget = null;
@@ -1172,7 +1192,7 @@ const StimulationSchedule = ({
         copy.find(entry => entry.key === 'transfer')?.date || transferRef.current || null;
       const statePreBase = copy.find(entry => entry.key === 'pre-visit1')?.date || preCycleBaseDate;
 
-      const adjustedItem = adjustItemForDate(item, newDate, {
+      const adjustedItem = adjustItemForDateFn(item, newDate, {
         baseDate: stateBase,
         transferDate: stateTransfer,
         preCycleBase: statePreBase,
@@ -1237,7 +1257,7 @@ const StimulationSchedule = ({
           if (!scheduleItem?.date) return scheduleItem;
           const next = new Date(scheduleItem.date);
           next.setDate(next.getDate() + deltaDays);
-          return adjustItemForDate(scheduleItem, next, {
+          return adjustItemForDateFn(scheduleItem, next, {
             baseDate: normalizedNewBase,
             transferDate: normalizedTransfer,
             preCycleBase: preservedPreBase,
@@ -1250,7 +1270,7 @@ const StimulationSchedule = ({
           if (scheduleItem.key === 'visit1') {
             const generatedVisit1 = regeneratedMap.get('visit1');
             const overrideLabel = generatedVisit1?.label || scheduleItem.label;
-            return adjustItemForDate(scheduleItem, normalizedNewBase, {
+            return adjustItemForDateFn(scheduleItem, normalizedNewBase, {
               baseDate: normalizedNewBase,
               transferDate: normalizedTransfer,
               overrideLabel,
@@ -1260,7 +1280,7 @@ const StimulationSchedule = ({
 
           const generatedMatch = regeneratedMap.get(scheduleItem.key);
           if (generatedMatch) {
-            return adjustItemForDate(scheduleItem, generatedMatch.date, {
+            return adjustItemForDateFn(scheduleItem, generatedMatch.date, {
               baseDate: normalizedNewBase,
               transferDate: normalizedTransfer,
               overrideLabel: scheduleItem.label,
@@ -1289,7 +1309,7 @@ const StimulationSchedule = ({
         persistLastCycleDate(normalizedNewBase);
       }
     },
-    [adjustItemForDate, persistLastCycleDate, resolvedBaseDate, saveSchedule],
+    [adjustItemForDateFn, persistLastCycleDate, resolvedBaseDate, saveSchedule],
   );
 
   if (
@@ -1669,7 +1689,7 @@ const StimulationSchedule = ({
                               : scheduleBaseDate);
                           const manualInfo = parseLeadingDate(trimmedLabel, manualAnchor);
                           if (manualInfo && manualInfo.date) {
-                            const adjusted = adjustItemForDate(updated, manualInfo.date, {
+                            const adjusted = adjustItemForDateFn(updated, manualInfo.date, {
                               baseDate: scheduleBaseDate,
                               transferDate,
                               overrideLabel: manualInfo.remainder,
