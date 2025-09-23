@@ -1,9 +1,9 @@
+import { adjustItemForDate } from 'components/StimulationSchedule';
+
 jest.mock('components/smallCard/actions', () => ({
   handleChange: jest.fn(),
   handleSubmit: jest.fn(),
 }));
-
-import { adjustItemForDate } from 'components/StimulationSchedule';
 
 describe('adjustItemForDate', () => {
   it('preserves transfer day numbering when recalculating on the transfer date', () => {
