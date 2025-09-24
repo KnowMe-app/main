@@ -619,10 +619,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [setFilters, setHasSearched, setSearchLoading, setTotalCount]);
 
   useEffect(() => {
-    if (!state.userId || profileSource) return;
+    if (!state.userId) return;
 
     if (Object.keys(state).length > 1) {
-      setProfileSource('cache');
+      if (!profileSource) {
+        setProfileSource('cache');
+      }
       return;
     }
 
@@ -631,6 +633,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setState(cached);
       setProfileSource('cache');
     } else {
+      setProfileSource('loading');
       (async () => {
         try {
           const data = await fetchUserById(state.userId);
