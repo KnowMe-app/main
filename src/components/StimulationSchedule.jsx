@@ -170,6 +170,10 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
     return '';
   }
 
+  if (normalizedDate.getTime() < referenceForDay.getTime()) {
+    return '';
+  }
+
   let useDayPrefix = true;
   if (normalizedTransfer) {
     const cutoff = new Date(normalizedTransfer);
