@@ -366,36 +366,10 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate, transferDate)
     if (safeDay === null || safeMonthIndex === null) {
       return null;
     }
-    const pivot =
-      referenceNormalized ||
-      baseNormalized ||
-      transferNormalized ||
-      normalizeDate(new Date());
-    const candidateYears = new Set();
-    const collectYears = normalized => {
-      if (!normalized) return;
-      const year = normalized.getFullYear();
-      candidateYears.add(year);
-      candidateYears.add(year + 1);
-      candidateYears.add(year - 1);
-    };
-    collectYears(referenceNormalized);
-    collectYears(baseNormalized);
-    collectYears(transferNormalized);
-    candidateYears.add(pivot.getFullYear());
-    candidateYears.add(new Date().getFullYear());
-    let bestCandidate = null;
-    let bestDiff = Infinity;
-    candidateYears.forEach(year => {
-      const candidate = new Date(year, safeMonthIndex, safeDay);
-      candidate.setHours(0, 0, 0, 0);
-      const diffValue = Math.abs(candidate.getTime() - pivot.getTime());
-      if (diffValue < bestDiff) {
-        bestDiff = diffValue;
-        bestCandidate = candidate;
-      }
-    });
-    return bestCandidate;
+    const currentYear = new Date().getFullYear();
+    const candidate = new Date(currentYear, safeMonthIndex, safeDay);
+    candidate.setHours(0, 0, 0, 0);
+    return candidate;
   };
 
   const dayInfo = extractDayPrefix(workingInput);
@@ -524,26 +498,10 @@ const parseLeadingDate = (input, anchorDate) => {
     const day = Number(dayStr);
     const monthIndex = Number(monthStr) - 1;
     if (Number.isFinite(day) && Number.isFinite(monthIndex)) {
-      const normalizedAnchor = anchorDate ? normalizeDate(anchorDate) : null;
-      const pivot = normalizedAnchor || normalizeDate(new Date());
-      const candidateYears = new Set([
-        pivot.getFullYear(),
-        pivot.getFullYear() + 1,
-        pivot.getFullYear() - 1,
-        new Date().getFullYear(),
-      ]);
-      let bestCandidate = null;
-      let bestDiff = Infinity;
-      candidateYears.forEach(year => {
-        const candidate = new Date(year, monthIndex, day);
-        candidate.setHours(0, 0, 0, 0);
-        const diff = Math.abs(candidate.getTime() - pivot.getTime());
-        if (diff < bestDiff) {
-          bestDiff = diff;
-          bestCandidate = candidate;
-        }
-      });
-      parsedDate = bestCandidate;
+      const currentYear = new Date().getFullYear();
+      const candidate = new Date(currentYear, monthIndex, day);
+      candidate.setHours(0, 0, 0, 0);
+      parsedDate = candidate;
     }
   } else {
     parsedDate = parseDate(rawDate);
@@ -1096,7 +1054,6 @@ const StimulationSchedule = ({
     if (!['stimulation', 'pregnant'].includes(effectiveStatus) || !base) return;
 
     const gen = generateSchedule(base);
-    const expectedFirst = gen[0]?.date;
 
     if (userData.stimulationSchedule) {
       let parsed;
@@ -1165,21 +1122,20 @@ const StimulationSchedule = ({
           .filter(item => item && item.date);
       }
 
-      const hasStoredPreCycle = parsed.some(
+      const sortedParsed = [...parsed].sort((a, b) => a.date - b.date);
+
+      const hasStoredPreCycle = sortedParsed.some(
         item =>
           item.key === 'pre-visit1' ||
           item.key === 'pre-dipherelin' ||
           /диферелін/i.test(String(item.label || '')),
       );
       if (hasStoredPreCycle) {
-        setSchedule(parsed);
+        setSchedule(sortedParsed);
+      } else if (sortedParsed.length) {
+        setSchedule(sortedParsed);
       } else {
-        const firstDate = parsed[0]?.date;
-        if (!firstDate || firstDate.toDateString() !== expectedFirst?.toDateString()) {
-          setSchedule(gen);
-        } else {
-          setSchedule(parsed);
-        }
+        setSchedule(gen);
       }
     } else {
       setSchedule(gen);
