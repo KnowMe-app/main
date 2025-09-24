@@ -1190,8 +1190,10 @@ const StimulationSchedule = ({
       newDate.setDate(newDate.getDate() + delta);
 
       const stateBase = copy.find(entry => entry.key === 'visit1')?.date || resolvedBaseDate;
-      const stateTransfer =
+      const currentTransfer =
         copy.find(entry => entry.key === 'transfer')?.date || transferRef.current || null;
+      const stateTransfer =
+        item.key === 'transfer' ? newDate : currentTransfer;
       const statePreBase = copy.find(entry => entry.key === 'pre-visit1')?.date || preCycleBaseDate;
 
       const adjustedItem = adjustItemForDateFn(item, newDate, {
