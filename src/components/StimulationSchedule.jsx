@@ -360,6 +360,44 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate, transferDate)
   let workingInput = normalizedInput;
   let date = null;
 
+  const resolveShortDate = (dayValue, monthValue) => {
+    const safeDay = Number.isFinite(dayValue) ? Math.max(Math.trunc(dayValue), 1) : null;
+    const safeMonthIndex = Number.isFinite(monthValue) ? Math.trunc(monthValue) : null;
+    if (safeDay === null || safeMonthIndex === null) {
+      return null;
+    }
+    const pivot =
+      referenceNormalized ||
+      baseNormalized ||
+      transferNormalized ||
+      normalizeDate(new Date());
+    const candidateYears = new Set();
+    const collectYears = normalized => {
+      if (!normalized) return;
+      const year = normalized.getFullYear();
+      candidateYears.add(year);
+      candidateYears.add(year + 1);
+      candidateYears.add(year - 1);
+    };
+    collectYears(referenceNormalized);
+    collectYears(baseNormalized);
+    collectYears(transferNormalized);
+    candidateYears.add(pivot.getFullYear());
+    candidateYears.add(new Date().getFullYear());
+    let bestCandidate = null;
+    let bestDiff = Infinity;
+    candidateYears.forEach(year => {
+      const candidate = new Date(year, safeMonthIndex, safeDay);
+      candidate.setHours(0, 0, 0, 0);
+      const diffValue = Math.abs(candidate.getTime() - pivot.getTime());
+      if (diffValue < bestDiff) {
+        bestDiff = diffValue;
+        bestCandidate = candidate;
+      }
+    });
+    return bestCandidate;
+  };
+
   const dayInfo = extractDayPrefix(workingInput);
   if (dayInfo && (baseNormalized || transferNormalized || referenceNormalized)) {
     const normalizedDay = Math.max(Math.trunc(dayInfo.day), 1);
@@ -417,41 +455,35 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate, transferDate)
         }
       }
 
+      const fusedMatch = part.match(/^(\d{2}\.\d{2}(?:\.\d{4})?)(?!\d)/);
+      if (fusedMatch) {
+        const rawDateToken = fusedMatch[1];
+        let candidate = null;
+        if (/^\d{2}\.\d{2}$/.test(rawDateToken)) {
+          const [dayStr, monthStr] = rawDateToken.split('.');
+          candidate = resolveShortDate(Number(dayStr), Number(monthStr) - 1);
+        } else {
+          const parsed = parseDate(rawDateToken);
+          if (parsed) {
+            candidate = normalizeDate(parsed);
+          }
+        }
+        if (candidate) {
+          date = candidate;
+          const remainder = part.slice(rawDateToken.length);
+          const trimmedRemainder = remainder.replace(/^[\s.,;:!?(){}\u005B\u005D-]+/, '');
+          if (trimmedRemainder) {
+            descriptionTokens.push(trimmedRemainder);
+          }
+          continue;
+        }
+      }
+
       const shortMatch = part.match(/^(\d{2})\.(\d{2})$/);
       if (shortMatch) {
-        const day = Number(shortMatch[1]);
-        const monthIndex = Number(shortMatch[2]) - 1;
-        const pivot = referenceNormalized || baseNormalized || transferNormalized || normalizeDate(new Date());
-        const candidateYears = new Set();
-        if (referenceNormalized) {
-          candidateYears.add(referenceNormalized.getFullYear());
-          candidateYears.add(referenceNormalized.getFullYear() + 1);
-          candidateYears.add(referenceNormalized.getFullYear() - 1);
-        }
-        if (baseNormalized) {
-          candidateYears.add(baseNormalized.getFullYear());
-          candidateYears.add(baseNormalized.getFullYear() + 1);
-          candidateYears.add(baseNormalized.getFullYear() - 1);
-        }
-        if (transferNormalized) {
-          candidateYears.add(transferNormalized.getFullYear());
-          candidateYears.add(transferNormalized.getFullYear() + 1);
-          candidateYears.add(transferNormalized.getFullYear() - 1);
-        }
-        candidateYears.add(new Date().getFullYear());
-        let bestCandidate = null;
-        let bestDiff = Infinity;
-        candidateYears.forEach(year => {
-          const candidate = new Date(year, monthIndex, day);
-          candidate.setHours(0, 0, 0, 0);
-          const diffValue = pivot ? Math.abs(candidate.getTime() - pivot.getTime()) : 0;
-          if (diffValue < bestDiff) {
-            bestDiff = diffValue;
-            bestCandidate = candidate;
-          }
-        });
-        if (bestCandidate) {
-          date = bestCandidate;
+        const candidate = resolveShortDate(Number(shortMatch[1]), Number(shortMatch[2]) - 1);
+        if (candidate) {
+          date = candidate;
           continue;
         }
       }
@@ -1886,7 +1918,26 @@ const StimulationSchedule = ({
               );
               if (result.date) {
                 setApDerivedDate(result.date);
-                return result.label;
+                if (result.label) {
+                  return result.label;
+                }
+                const transferForLabel = transferRef.current;
+                const baseForLabel = resolvedBaseDate || transferForLabel || result.date;
+                const fallbackDescription =
+                  result.description ||
+                  sanitizeDescription(result.raw) ||
+                  sanitizeDescription(prev);
+                const fallbackLabel = buildCustomEventLabel(
+                  result.date,
+                  baseForLabel,
+                  transferForLabel,
+                  fallbackDescription,
+                );
+                if (fallbackLabel) {
+                  return fallbackLabel;
+                }
+                const fallbackValue = (result.raw || formatDisplay(result.date) || '').trim();
+                return fallbackValue;
               }
               setApDerivedDate(null);
               const fallback = (result.description || result.raw || prev).trim();
