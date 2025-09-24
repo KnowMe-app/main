@@ -570,6 +570,16 @@ const adjustToNextWorkingDay = (date, base) => {
   return { ...adjusted, date: normalizeDate(adjusted.date) };
 };
 
+const buildUnadjustedDayInfo = (date, base) => {
+  const normalizedDate = normalizeDate(date);
+  if (!base) {
+    return { date: normalizedDate, day: null, sign: '' };
+  }
+  const normalizedBase = normalizeDate(base);
+  const day = diffDays(normalizedDate, normalizedBase);
+  return { date: normalizedDate, day, sign: '' };
+};
+
 export const generateSchedule = base => {
   const visits = [];
 
@@ -672,7 +682,7 @@ export const generateSchedule = base => {
   weeks.forEach(week => {
     let wd = new Date(base);
     wd.setDate(wd.getDate() + week * 7);
-    const adj = adjustForward(wd, base);
+    const adj = week === 40 ? buildUnadjustedDayInfo(wd, base) : adjustForward(wd, base);
     const prefix = getSchedulePrefixForDate(adj.date, base, transferBase);
     let labelText = prefix;
     if (week === 40) {
