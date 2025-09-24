@@ -331,11 +331,54 @@ const buildPostTransferLabel = (key, labelSource, date, transferReference) => {
   return buildTransferDayLabel(key, dayNumber, suffix, sign);
 };
 
+const STIMULATION_RANGE_EXTENSION_DAYS = DAY_PREFIX_TRANSFER_WINDOW_DAYS;
+
+const isWithinStimulationRange = (date, baseDate, transferDate) => {
+  if (!date) return false;
+  if (!baseDate && !transferDate) return false;
+
+  const normalizedDate = normalizeDate(date);
+  const normalizedBase = baseDate ? normalizeDate(baseDate) : null;
+  const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
+
+  const rangeStart = normalizedBase || normalizedTransfer;
+  if (!rangeStart) {
+    return false;
+  }
+
+  if (normalizedDate.getTime() < rangeStart.getTime()) {
+    return false;
+  }
+
+  let rangeEnd = null;
+  if (normalizedTransfer) {
+    rangeEnd = new Date(normalizedTransfer);
+    rangeEnd.setDate(rangeEnd.getDate() + STIMULATION_RANGE_EXTENSION_DAYS);
+  } else if (normalizedBase) {
+    rangeEnd = new Date(normalizedBase);
+    rangeEnd.setDate(rangeEnd.getDate() + STIMULATION_RANGE_EXTENSION_DAYS);
+  }
+
+  if (rangeEnd && normalizedDate.getTime() > rangeEnd.getTime()) {
+    return false;
+  }
+
+  return true;
+};
+
 const buildCustomEventLabel = (date, baseDate, transferDate, description) => {
   const trimmedDescription = sanitizeDescription(description);
   if (!date) return trimmedDescription;
 
-  const prefix = getSchedulePrefixForDate(date, baseDate, transferDate);
+  const normalizedDate = normalizeDate(date);
+  const normalizedBase = baseDate ? normalizeDate(baseDate) : null;
+  const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
+
+  let prefix = '';
+  if (isWithinStimulationRange(normalizedDate, normalizedBase, normalizedTransfer)) {
+    prefix = getSchedulePrefixForDate(normalizedDate, normalizedBase, normalizedTransfer);
+  }
+
   const parts = [];
   if (prefix) {
     parts.push(prefix);
@@ -484,6 +527,72 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate, transferDate)
 
   const fallbackDescription = description || normalizedInput;
   return { date: null, label: '', description: fallbackDescription, raw: normalizedInput };
+};
+
+const prepareCustomEventItem = (
+  input,
+  { derivedDate = null, baseDate = null, referenceDate = null, transferDate = null } = {},
+) => {
+  if (!input) return null;
+  const normalizedInput = input.trim();
+  if (!normalizedInput) return null;
+
+  const sanitizedInput = sanitizeDescription(normalizedInput);
+  const computed = computeCustomDateAndLabel(
+    normalizedInput,
+    baseDate,
+    referenceDate || baseDate || derivedDate,
+    transferDate,
+  );
+
+  let date = derivedDate || computed.date;
+  let descriptionForLabel = computed.description || sanitizedInput;
+
+  if (!date) {
+    const inlineMatch = normalizedInput.match(/(\d{2}\.\d{2}(?:\.\d{4})?)/);
+    if (inlineMatch) {
+      const parsedInline = parseDate(inlineMatch[1]);
+      if (parsedInline) {
+        date = normalizeDate(parsedInline);
+        const remainder = normalizedInput.replace(inlineMatch[1], '').trim();
+        descriptionForLabel = sanitizeDescription(remainder);
+      }
+    }
+  }
+
+  if (!date) {
+    const parsedDirect = parseDate(normalizedInput);
+    if (parsedDirect) {
+      date = normalizeDate(parsedDirect);
+    }
+  }
+
+  if (!date) {
+    date = normalizeDate(new Date());
+    if (!descriptionForLabel) {
+      descriptionForLabel = sanitizedInput || computed.raw || normalizedInput || 'AP';
+    }
+  }
+
+  if (!descriptionForLabel && computed.raw) {
+    descriptionForLabel = sanitizeDescription(computed.raw);
+  }
+
+  if (!descriptionForLabel && normalizedInput) {
+    descriptionForLabel = sanitizedInput;
+  }
+
+  if (!descriptionForLabel) {
+    descriptionForLabel = 'AP';
+  }
+
+  const baseForLabel = baseDate || transferDate || date;
+  const label = buildCustomEventLabel(date, baseForLabel, transferDate, descriptionForLabel);
+
+  return {
+    date,
+    label,
+  };
 };
 
 const parseLeadingDate = (input, anchorDate) => {
@@ -1880,8 +1989,20 @@ const StimulationSchedule = ({
           }}
           onBlur={() =>
             setApDescription(prev => {
+              const currentValue = typeof prev === 'string' ? prev : '';
+              const trimmedValue = currentValue.trim();
+              if (!trimmedValue) {
+                setApDerivedDate(null);
+                return '';
+              }
+
+              if (trimmedValue.includes('\n')) {
+                setApDerivedDate(null);
+                return trimmedValue;
+              }
+
               const result = computeCustomDateAndLabel(
-                prev,
+                trimmedValue,
                 resolvedBaseDate,
                 apDerivedDate || resolvedBaseDate,
                 transferRef.current,
@@ -1896,7 +2017,7 @@ const StimulationSchedule = ({
                 const fallbackDescription =
                   result.description ||
                   sanitizeDescription(result.raw) ||
-                  sanitizeDescription(prev);
+                  sanitizeDescription(trimmedValue);
                 const fallbackLabel = buildCustomEventLabel(
                   result.date,
                   baseForLabel,
@@ -1910,7 +2031,7 @@ const StimulationSchedule = ({
                 return fallbackValue;
               }
               setApDerivedDate(null);
-              const fallback = (result.description || result.raw || prev).trim();
+              const fallback = (result.description || result.raw || trimmedValue).trim();
               return fallback;
             })
           }
@@ -1919,60 +2040,62 @@ const StimulationSchedule = ({
         />
         <OrangeBtn
           onClick={() => {
-            const normalizedInput = apDescription.trim();
-            const computed = computeCustomDateAndLabel(
-              normalizedInput,
-              resolvedBaseDate,
-              apDerivedDate || resolvedBaseDate,
-              transferRef.current,
-            );
-            const sanitizedInput = sanitizeDescription(normalizedInput);
-            let date = apDerivedDate || computed.date;
-            let descriptionForLabel = computed.description || sanitizedInput;
-            if (!date) {
-              const match = normalizedInput.match(/(\d{2}\.\d{2}(?:\.\d{4})?)/);
-              if (match) {
-                const parsedDate = parseDate(match[1]);
-                if (parsedDate) {
-                  date = normalizeDate(parsedDate);
-                  const remainder = normalizedInput.replace(match[1], '').trim();
-                  descriptionForLabel = sanitizeDescription(remainder);
+            const normalizedInput = apDescription.replace(/\r\n/g, '\n').trim();
+            if (!normalizedInput) return;
+
+            const cleanedLines = normalizedInput
+              .split('\n')
+              .map(line => line.replace(/^[-–—•*]+\s*/, '').trim())
+              .filter(Boolean);
+
+            if (!cleanedLines.length) {
+              return;
+            }
+
+            const derivedForFirstLine = cleanedLines.length === 1 ? apDerivedDate : null;
+            const referenceForCompute = derivedForFirstLine || resolvedBaseDate || null;
+            const timestamp = Date.now();
+
+            const newItems = cleanedLines
+              .map((line, index) => {
+                const prepared = prepareCustomEventItem(line, {
+                  derivedDate: index === 0 ? derivedForFirstLine : null,
+                  baseDate: resolvedBaseDate,
+                  referenceDate: referenceForCompute,
+                  transferDate: transferRef.current,
+                });
+                if (!prepared) {
+                  return null;
                 }
+                return {
+                  ...prepared,
+                  key: `ap-${timestamp + index}`,
+                };
+              })
+              .filter(Boolean);
+
+            if (!newItems.length) {
+              return;
+            }
+
+            newItems.sort((a, b) => {
+              if (a.date && b.date) {
+                const diff = a.date.getTime() - b.date.getTime();
+                if (diff !== 0) return diff;
               }
-            }
-            if (!date) {
-              date = normalizeDate(new Date());
-              if (!descriptionForLabel) {
-                descriptionForLabel = sanitizedInput || computed.raw || normalizedInput || 'AP';
-              }
-            }
-            if (!descriptionForLabel && computed.raw) {
-              descriptionForLabel = sanitizeDescription(computed.raw);
-            }
-            if (!descriptionForLabel && normalizedInput) {
-              descriptionForLabel = sanitizedInput;
-            }
-            if (!descriptionForLabel) {
-              descriptionForLabel = 'AP';
-            }
-            const transferForLabel = transferRef.current;
-            const baseForLabel = resolvedBaseDate || transferForLabel || date;
-            const label = buildCustomEventLabel(
-              date,
-              baseForLabel,
-              transferForLabel,
-              descriptionForLabel,
-            );
-            const newItem = {
-              key: `ap-${Date.now()}`,
-              date,
-              label,
-            };
+              return a.key.localeCompare(b.key);
+            });
+
             setSchedule(prev => {
               const updated = [...prev];
-              const index = updated.findIndex(it => it.date > newItem.date);
-              if (index === -1) updated.push(newItem);
-              else updated.splice(index, 0, newItem);
+              newItems.forEach(item => {
+                const insertIndex = updated.findIndex(it => it.date > item.date);
+                if (insertIndex === -1) {
+                  updated.push(item);
+                } else {
+                  updated.splice(insertIndex, 0, item);
+                }
+              });
               hasChanges.current = true;
               saveSchedule(updated);
               return updated;
