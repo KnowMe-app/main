@@ -1644,7 +1644,7 @@ const StimulationSchedule = ({
   });
 
   const baseRowBackgroundColor = 'rgba(16, 16, 16, 0.6)';
-  const alternateRowBackgroundColor = 'rgba(16, 16, 16, 0.45)';
+  const alternateRowBackgroundColor = 'rgba(16, 16, 16, 0.52)';
   const scheduleHorizontalPadding = 7;
 
   displayItems.forEach((item, index) => {
