@@ -278,13 +278,13 @@ export const ProfileForm = ({
   const [collection, setCollection] = useState('newUsers');
 
   useEffect(() => {
-    if (dataSource) {
-      toast.success(
-        dataSource === 'backend'
-          ? 'Data loaded from backend'
-          : 'Data loaded from local storage'
-      );
-    }
+    if (!dataSource || dataSource === 'loading') return;
+
+    toast.success(
+      dataSource === 'backend'
+        ? 'Data loaded from backend'
+        : 'Data loaded from local storage'
+    );
   }, [dataSource]);
 
   const handleAddCustomField = () => {
