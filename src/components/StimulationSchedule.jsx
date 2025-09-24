@@ -233,6 +233,55 @@ const sanitizeDescription = text => {
   return result.trim();
 };
 
+const splitCustomEventEntries = value => {
+  if (typeof value !== 'string') return [];
+  const normalized = value.replace(/\r\n/g, '\n').trim();
+  if (!normalized) return [];
+
+  const stripBullet = line => line.replace(/^[-–—•*]+\s*/, '').trim();
+
+  const newlineParts = normalized
+    .split('\n')
+    .map(part => stripBullet(part))
+    .filter(Boolean);
+
+  if (newlineParts.length > 1) {
+    return newlineParts;
+  }
+
+  const singleLine = newlineParts[0] || '';
+  if (!singleLine) {
+    return [];
+  }
+
+  const dateRegex = /(\d{2}\.\d{2}(?:\.\d{2,4})?)/g;
+  const matches = Array.from(singleLine.matchAll(dateRegex));
+  if (matches.length <= 1) {
+    return [singleLine];
+  }
+
+  const segments = [];
+  const leading = singleLine.slice(0, matches[0].index).trim();
+
+  matches.forEach((match, index) => {
+    const start = match.index;
+    const end = index + 1 < matches.length ? matches[index + 1].index : singleLine.length;
+    if (typeof start !== 'number' || start < 0) return;
+    let segment = singleLine.slice(start, end).trim();
+    if (!segment) return;
+    if (index === 0 && leading) {
+      segment = `${leading} ${segment}`.trim();
+    }
+    segments.push(stripBullet(segment));
+  });
+
+  if (!segments.length) {
+    return [singleLine];
+  }
+
+  return segments;
+};
+
 const normalizeDayNumber = day => {
   const raw = Number(day);
   if (!Number.isFinite(raw)) return 0;
@@ -1991,20 +2040,23 @@ const StimulationSchedule = ({
           }}
           onBlur={() =>
             setApDescription(prev => {
-              const currentValue = typeof prev === 'string' ? prev : '';
+              const currentValue = typeof prev === 'string' ? prev.replace(/\r\n/g, '\n') : '';
               const trimmedValue = currentValue.trim();
               if (!trimmedValue) {
                 setApDerivedDate(null);
                 return '';
               }
 
-              if (trimmedValue.includes('\n')) {
+              const entries = splitCustomEventEntries(trimmedValue);
+              if (entries.length > 1) {
                 setApDerivedDate(null);
-                return trimmedValue;
+                return entries.join('\n');
               }
 
+              const singleValue = entries[0] || trimmedValue;
+
               const result = computeCustomDateAndLabel(
-                trimmedValue,
+                singleValue,
                 resolvedBaseDate,
                 apDerivedDate || resolvedBaseDate,
                 transferRef.current,
@@ -2019,7 +2071,7 @@ const StimulationSchedule = ({
                 const fallbackDescription =
                   result.description ||
                   sanitizeDescription(result.raw) ||
-                  sanitizeDescription(trimmedValue);
+                  sanitizeDescription(singleValue);
                 const fallbackLabel = buildCustomEventLabel(
                   result.date,
                   baseForLabel,
@@ -2033,7 +2085,7 @@ const StimulationSchedule = ({
                 return fallbackValue;
               }
               setApDerivedDate(null);
-              const fallback = (result.description || result.raw || trimmedValue).trim();
+              const fallback = (result.description || result.raw || singleValue).trim();
               return fallback;
             })
           }
@@ -2045,10 +2097,7 @@ const StimulationSchedule = ({
             const normalizedInput = apDescription.replace(/\r\n/g, '\n').trim();
             if (!normalizedInput) return;
 
-            const cleanedLines = normalizedInput
-              .split('\n')
-              .map(line => line.replace(/^[-–—•*]+\s*/, '').trim())
-              .filter(Boolean);
+            const cleanedLines = splitCustomEventEntries(normalizedInput);
 
             if (!cleanedLines.length) {
               return;
@@ -2174,6 +2223,7 @@ export {
   sanitizeDescription,
   buildCustomEventLabel,
   computeCustomDateAndLabel,
+  splitCustomEventEntries,
 };
 
 export default StimulationSchedule;
