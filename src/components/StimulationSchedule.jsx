@@ -1049,6 +1049,7 @@ const StimulationSchedule = ({
   const [apDescription, setApDescription] = React.useState('');
   const [apDerivedDate, setApDerivedDate] = React.useState(null);
   const [editingKey, setEditingKey] = React.useState(null);
+  const [pendingDelete, setPendingDelete] = React.useState(null);
   const transferRef = React.useRef(null);
   const hasChanges = React.useRef(false);
   const preCycleActive = React.useMemo(
@@ -1555,6 +1556,30 @@ const StimulationSchedule = ({
     },
     [adjustItemForDateFn, persistLastCycleDate, resolvedBaseDate, saveSchedule],
   );
+
+  const requestDeleteItem = React.useCallback(item => {
+    if (!item) return;
+    setPendingDelete(item);
+  }, []);
+
+  const handleCancelDelete = React.useCallback(() => {
+    setPendingDelete(null);
+  }, []);
+
+  const handleConfirmDelete = React.useCallback(() => {
+    if (!pendingDelete) return;
+
+    setSchedule(prev => {
+      const updated = prev.filter(v => v.key !== pendingDelete.key);
+      if (updated.length === prev.length) {
+        return prev;
+      }
+      hasChanges.current = true;
+      saveSchedule(updated);
+      return updated;
+    });
+    setPendingDelete(null);
+  }, [pendingDelete, saveSchedule]);
 
   if (
     !['stimulation', 'pregnant'].includes(effectiveStatus) ||
@@ -2080,14 +2105,7 @@ const StimulationSchedule = ({
                     +
                   </OrangeBtn>
                   <OrangeBtn
-                    onClick={() =>
-                      setSchedule(prev => {
-                        const updated = prev.filter(v => v.key !== item.key);
-                        hasChanges.current = true;
-                        saveSchedule(updated);
-                        return updated;
-                      })
-                    }
+                    onClick={() => requestDeleteItem(item)}
                     style={{
                       width: '24px',
                       height: '24px',
@@ -2318,6 +2336,59 @@ const StimulationSchedule = ({
         </OrangeBtn>
       </div>
       {rendered}
+      {pendingDelete && (
+        <div
+          onClick={handleCancelDelete}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={event => event.stopPropagation()}
+            style={{
+              backgroundColor: '#fff',
+              padding: '20px',
+              borderRadius: '8px',
+              maxWidth: '320px',
+              width: '90%',
+              color: '#000',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+            }}
+          >
+            <p style={{ marginBottom: '12px' }}>Видалити подію з графіку стимуляції?</p>
+            {pendingDelete?.label ? (
+              <p style={{ margin: '0 0 16px', fontWeight: 'bold' }}>{pendingDelete.label}</p>
+            ) : (
+              <p style={{ margin: '0 0 16px', fontWeight: 'bold' }}>Подія без назви</p>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                onClick={handleCancelDelete}
+                type="button"
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  border: '1px solid #ccc',
+                  backgroundColor: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                Скасувати
+              </button>
+              <OrangeBtn onClick={handleConfirmDelete}>Видалити</OrangeBtn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
