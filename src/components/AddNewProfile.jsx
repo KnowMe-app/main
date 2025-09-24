@@ -225,6 +225,7 @@ const ButtonsContainer = styled.div`
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const location = useLocation();
+  const lastUrlUserIdRef = useRef(new URLSearchParams(location.search).get('userId'));
 
   const [userNotFound, setUserNotFound] = useState(false);
 
@@ -557,11 +558,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setSearch(prev => (prev ? prev : urlUserId));
     }
 
-    if (urlUserId && urlUserId !== state.userId) {
-      setProfileSource('');
-      setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
+    if (urlUserId) {
+      if (lastUrlUserIdRef.current !== urlUserId) {
+        lastUrlUserIdRef.current = urlUserId;
+        setProfileSource('');
+        setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
+      }
+    } else {
+      lastUrlUserIdRef.current = null;
     }
-  }, [location.search, state.userId]);
+  }, [location.search, setSearch, setState]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
