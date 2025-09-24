@@ -1590,6 +1590,10 @@ const StimulationSchedule = ({
     );
   });
 
+  const baseRowBackgroundColor = 'rgba(16, 16, 16, 0.6)';
+  const alternateRowBackgroundColor = 'rgba(16, 16, 16, 0.45)';
+  const scheduleHorizontalPadding = 7;
+
   displayItems.forEach((item, index) => {
       const dateStr = formatDisplay(item.date);
       const weekday = weekdayNames[item.date.getDay()];
@@ -1639,12 +1643,21 @@ const StimulationSchedule = ({
       }
       const year = item.date.getFullYear();
       const isToday = item.date.getTime() === today;
+      const isEvenRow = index % 2 === 0;
+      const rowBackgroundColor = isToday
+        ? '#FFECB3'
+        : isEvenRow
+          ? baseRowBackgroundColor
+          : alternateRowBackgroundColor;
       const rowStyle = {
         display: 'flex',
         alignItems: 'center',
         gap: '4px',
-        marginBottom: '2px',
-        ...(isToday ? { backgroundColor: '#FFECB3', color: '#000' } : {}),
+        margin: `0 -${scheduleHorizontalPadding}px 2px`,
+        padding: '6px 10px',
+        borderRadius: '6px',
+        backgroundColor: rowBackgroundColor,
+        ...(isToday ? { color: '#000' } : {}),
       };
       if (isToday) foundToday = true;
       if (year !== currentYear) {
