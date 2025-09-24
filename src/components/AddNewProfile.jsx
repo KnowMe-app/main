@@ -231,12 +231,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const SEARCH_KEY = 'addSearchQuery';
   const [search, setSearch] = useState(() => {
     const params = new URLSearchParams(location.search);
-    const urlSearch = params.get('search');
-    if (urlSearch) return urlSearch;
+    if (params.has('search')) {
+      return params.get('search') || '';
+    }
+    const urlUserId = params.get('userId');
+    if (urlUserId) return urlUserId;
     return localStorage.getItem(SEARCH_KEY) || '';
   });
 
-  const [state, setState] = useState({});
+  const [state, setState] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    const urlUserId = params.get('userId');
+    return urlUserId ? { userId: urlUserId } : {};
+  });
   const isEditingRef = useRef(false);
 
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
@@ -253,11 +260,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [filters]);
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.has('search') || params.has('userId')) {
+      return;
+    }
     const storedSearch = localStorage.getItem(SEARCH_KEY);
     if (storedSearch) {
       setSearch(storedSearch);
     }
-  }, []); // run once
+  }, [location.search]);
 
   const handleBlur = () => {
     handleSubmit();
@@ -533,6 +544,47 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [, setCacheCount] = useState(0);
   const [, setBackendCount] = useState(0);
   const [profileSource, setProfileSource] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const urlUserId = params.get('userId');
+    const hasSearchParam = params.has('search');
+    const urlSearchValue = hasSearchParam ? params.get('search') || '' : null;
+
+    if (hasSearchParam) {
+      setSearch(prev => (prev === urlSearchValue ? prev : urlSearchValue));
+    } else if (urlUserId) {
+      setSearch(prev => (prev ? prev : urlUserId));
+    }
+
+    if (urlUserId && urlUserId !== state.userId) {
+      setProfileSource('');
+      setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
+    }
+  }, [location.search, state.userId]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const currentUserId = params.get('userId');
+
+    if (state.userId) {
+      if (currentUserId !== state.userId) {
+        params.set('userId', state.userId);
+        const nextSearch = params.toString();
+        const nextSearchString = nextSearch ? `?${nextSearch}` : '';
+        if (nextSearchString !== location.search) {
+          navigate({ pathname: location.pathname, search: nextSearchString }, { replace: true });
+        }
+      }
+    } else if (currentUserId) {
+      params.delete('userId');
+      const nextSearch = params.toString();
+      const nextSearchString = nextSearch ? `?${nextSearch}` : '';
+      if (nextSearchString !== location.search) {
+        navigate({ pathname: location.pathname, search: nextSearchString }, { replace: true });
+      }
+    }
+  }, [state.userId, location.pathname, location.search, navigate]);
 
   const handleFilterChange = useCallback(nextFilters => {
     const nextValue = nextFilters ?? {};
