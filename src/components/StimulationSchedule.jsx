@@ -47,6 +47,34 @@ const normalizeDate = date => {
 
 const weekdayNames = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 
+const removeWeekdayFromLineStart = (text, dateStr) => {
+  if (!text) return '';
+
+  const normalized = text.trim().replace(/\s+/g, ' ');
+  const lowerNormalized = normalized.toLowerCase();
+  const lowerDate = dateStr.toLowerCase();
+
+  if (!lowerNormalized.startsWith(lowerDate)) {
+    return normalized;
+  }
+
+  const remainder = normalized.slice(dateStr.length).trim();
+  if (!remainder) {
+    return dateStr;
+  }
+
+  const [firstToken, ...restTokens] = remainder.split(' ');
+  const normalizedFirst = firstToken.toLowerCase();
+  const hasWeekday = weekdayNames.some(name => normalizedFirst === name.toLowerCase());
+
+  if (!hasWeekday) {
+    return normalized;
+  }
+
+  const rest = restTokens.join(' ').trim();
+  return rest ? `${dateStr} ${rest}` : dateStr;
+};
+
 const formatWeeksDaysToken = (weeks, days = 0) => {
   let normalizedWeeks = Number.isFinite(weeks) ? Math.trunc(Number(weeks)) : 0;
   let normalizedDays = Number.isFinite(days) ? Math.trunc(Number(days)) : 0;
@@ -2237,14 +2265,13 @@ const StimulationSchedule = ({
               .forEach(it => {
                 const y = it.date.getFullYear();
                 const dateStr = formatDisplay(it.date);
-                const weekday = weekdayNames[it.date.getDay()];
                 if (y !== yr) {
                   if (text) text += '\n';
                   text += `${y}\n`;
                   yr = y;
                 }
                 const labelValue = (it.label || '').trim();
-                const prefix = `${dateStr} ${weekday}`;
+                const prefix = dateStr;
                 const lineLabelLower = labelValue.toLowerCase();
                 const prefixLower = prefix.toLowerCase();
                 let line = labelValue;
@@ -2256,7 +2283,8 @@ const StimulationSchedule = ({
                     line = `${prefix} ${labelValue}`.trim();
                   }
                 }
-                text += `${line}\n`;
+                const sanitizedLine = removeWeekdayFromLineStart(line, dateStr);
+                text += `${sanitizedLine}\n`;
               });
             navigator.clipboard.writeText(text.trim());
           }}
