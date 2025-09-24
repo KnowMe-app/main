@@ -1337,22 +1337,75 @@ const StimulationSchedule = ({
     [postTransferKeys, preCycleBaseDate, resolvedBaseDate],
   );
 
+  const applyTransferDateToDependents = React.useCallback(
+    (items, transferDate) => {
+      if (!transferDate || !Array.isArray(items) || items.length === 0) {
+        return items;
+      }
+
+      const normalizedTransfer = normalizeDate(transferDate);
+      const baseForState =
+        items.find(entry => entry.key === 'visit1')?.date || resolvedBaseDate || null;
+      const preBaseForState =
+        items.find(entry => entry.key === 'pre-visit1')?.date || preCycleBaseDate || null;
+
+      let didUpdate = false;
+      const next = [...items];
+
+      const updateWithTarget = (index, targetDate) => {
+        if (index === -1 || !targetDate) return;
+        const current = next[index];
+        if (!current) return;
+        const adjusted = adjustItemForDateFn(current, targetDate, {
+          baseDate: baseForState,
+          transferDate: normalizedTransfer,
+          preCycleBase: preBaseForState,
+        });
+        if (adjusted && adjusted !== current) {
+          next[index] = adjusted;
+          didUpdate = true;
+        }
+      };
+
+      const hcgIndex = next.findIndex(entry => entry.key === 'hcg');
+      if (hcgIndex !== -1) {
+        const hcgTarget = new Date(normalizedTransfer);
+        hcgTarget.setDate(hcgTarget.getDate() + 11);
+        updateWithTarget(hcgIndex, hcgTarget);
+      }
+
+      const usIndex = next.findIndex(entry => entry.key === 'us');
+      if (usIndex !== -1) {
+        const usCandidate = new Date(normalizedTransfer);
+        usCandidate.setDate(usCandidate.getDate() + 27);
+        const adjustedUs = adjustForward(new Date(usCandidate), normalizedTransfer);
+        const usTarget = adjustedUs?.date
+          ? normalizeDate(adjustedUs.date)
+          : normalizeDate(usCandidate);
+        updateWithTarget(usIndex, usTarget);
+      }
+
+      return didUpdate ? next : items;
+    },
+    [adjustItemForDateFn, preCycleBaseDate, resolvedBaseDate],
+  );
+
   const shiftDate = (idx, delta) => {
     let persistTarget = null;
     setSchedule(prev => {
-      const copy = [...prev];
-      const item = copy[idx];
+      let next = [...prev];
+      const item = next[idx];
       if (!item || !item.date) return prev;
 
       const newDate = new Date(item.date);
       newDate.setDate(newDate.getDate() + delta);
 
-      const stateBase = copy.find(entry => entry.key === 'visit1')?.date || resolvedBaseDate;
+      const stateBase = next.find(entry => entry.key === 'visit1')?.date || resolvedBaseDate;
       const currentTransfer =
-        copy.find(entry => entry.key === 'transfer')?.date || transferRef.current || null;
+        next.find(entry => entry.key === 'transfer')?.date || transferRef.current || null;
       const stateTransfer =
         item.key === 'transfer' ? newDate : currentTransfer;
-      const statePreBase = copy.find(entry => entry.key === 'pre-visit1')?.date || preCycleBaseDate;
+      const statePreBase = next.find(entry => entry.key === 'pre-visit1')?.date || preCycleBaseDate;
 
       const adjustedItem = adjustItemForDateFn(item, newDate, {
         baseDate: stateBase,
@@ -1360,20 +1413,21 @@ const StimulationSchedule = ({
         preCycleBase: statePreBase,
       });
 
-      copy[idx] = adjustedItem;
+      next[idx] = adjustedItem;
 
       if (adjustedItem.key === 'transfer') {
         transferRef.current = adjustedItem.date;
+        next = applyTransferDateToDependents(next, adjustedItem.date);
       }
 
       if (adjustedItem.key === 'pre-visit1') {
         persistTarget = adjustedItem.date;
       }
 
-      copy.sort((a, b) => a.date - b.date);
+      next.sort((a, b) => a.date - b.date);
       hasChanges.current = true;
-      saveSchedule(copy);
-      return copy;
+      saveSchedule(next);
+      return next;
     });
 
     if (persistTarget) {
@@ -1727,28 +1781,28 @@ const StimulationSchedule = ({
                     setEditingKey(null);
                     let rebaseTarget = null;
                     setSchedule(prev => {
-                      const copy = [...prev];
-                      let idx = copy.findIndex(v => v.key === item.key);
+                      let next = [...prev];
+                      let idx = next.findIndex(v => v.key === item.key);
                       if (idx === -1) {
-                        const next = { ...item };
-                        const insertAt = copy.findIndex(v => v.date > next.date);
+                        const inserted = { ...item };
+                        const insertAt = next.findIndex(v => v.date > inserted.date);
                         if (insertAt === -1) {
-                          copy.push(next);
-                          idx = copy.length - 1;
+                          next.push(inserted);
+                          idx = next.length - 1;
                         } else {
-                          copy.splice(insertAt, 0, next);
+                          next.splice(insertAt, 0, inserted);
                           idx = insertAt;
                         }
                       }
-                      const current = copy[idx];
+                      const current = next[idx];
                       const trimmedLabel = (current.label || '').trim();
                       let updated = { ...current, label: trimmedLabel };
                       const scheduleBaseDate =
-                        copy.find(v => v.key === 'visit1')?.date || resolvedBaseDate || base;
+                        next.find(v => v.key === 'visit1')?.date || resolvedBaseDate || base;
                       const preBaseForState =
-                        copy.find(v => v.key === 'pre-visit1')?.date || preCycleBaseDate || null;
+                        next.find(v => v.key === 'pre-visit1')?.date || preCycleBaseDate || null;
                       const transferDate =
-                        copy.find(v => v.key === 'transfer')?.date ||
+                        next.find(v => v.key === 'transfer')?.date ||
                         transferRef.current ||
                         scheduleBaseDate ||
                         null;
@@ -1875,13 +1929,21 @@ const StimulationSchedule = ({
                         return prev;
                       }
 
-                      copy[idx] = updated;
+                      next[idx] = updated;
+
+                      if (updated.key === 'transfer') {
+                        transferRef.current = updated.date;
+                        if (dateChanged) {
+                          next = applyTransferDateToDependents(next, updated.date);
+                        }
+                      }
+
                       if (dateChanged) {
-                        copy.sort((a, b) => a.date - b.date);
+                        next.sort((a, b) => a.date - b.date);
                       }
                       hasChanges.current = true;
-                      saveSchedule(copy);
-                      return copy;
+                      saveSchedule(next);
+                      return next;
                     });
                     if (rebaseTarget) {
                       rebaseScheduleFromDayOne(rebaseTarget);
