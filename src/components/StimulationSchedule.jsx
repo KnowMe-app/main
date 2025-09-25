@@ -1063,6 +1063,11 @@ const StimulationSchedule = ({
     [schedule],
   );
 
+  const isDipherelinApplied = React.useMemo(
+    () => schedule.some(item => item.key === 'pre-dipherelin'),
+    [schedule],
+  );
+
   const preCycleBaseDate = React.useMemo(() => {
     const preVisit = schedule.find(entry => entry.key === 'pre-visit1' && entry.date);
     if (!preVisit) return null;
@@ -1250,6 +1255,13 @@ const StimulationSchedule = ({
     saveSchedule,
     persistLastCycleDate,
   ]);
+
+  const handleDipherelinButtonClick = React.useCallback(() => {
+    if (isDipherelinApplied) {
+      return;
+    }
+    handleActivateDipherelin();
+  }, [handleActivateDipherelin, isDipherelinApplied]);
 
   React.useEffect(() => {
     if (!['stimulation', 'pregnant'].includes(effectiveStatus) || !base) return;
@@ -1813,15 +1825,16 @@ const StimulationSchedule = ({
               ) : null}
               {showDipherelinButton ? (
                 <OrangeBtn
-                  onClick={handleActivateDipherelin}
+                  onClick={handleDipherelinButtonClick}
                   style={{
-                    minWidth: '88px',
+                    width: '76px',
                     height: '24px',
                     borderRadius: '4px',
                     boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
                     fontSize: '14px',
                     fontWeight: 'bold',
                     padding: '0 8px',
+                    textDecoration: isDipherelinApplied ? 'none' : 'line-through',
                   }}
                 >
                   Диферелін
@@ -2419,4 +2432,3 @@ export {
 };
 
 export default StimulationSchedule;
-
