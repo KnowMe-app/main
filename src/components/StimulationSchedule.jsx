@@ -1644,7 +1644,25 @@ const StimulationSchedule = ({
   });
 
   const baseRowBackgroundColor = 'rgba(16, 16, 16, 0.6)';
-  const alternateRowBackgroundColor = 'rgba(16, 16, 16, 0.52)';
+  const alternateRowBackgroundColor = (() => {
+    const createAlternateShade = (color, differenceFraction = 0.02) => {
+      if (typeof color !== 'string') return color;
+      const rgbaMatch = color
+        .trim()
+        .match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([0-9]*\.?[0-9]+)\s*)?\)$/i);
+      if (!rgbaMatch) return color;
+      const [, r, g, b, alphaRaw] = rgbaMatch;
+      const alpha = alphaRaw !== undefined ? parseFloat(alphaRaw) : 1;
+      if (!Number.isFinite(alpha)) return color;
+      const adjustedAlpha = Math.max(
+        0,
+        Math.min(1, Number((alpha * (1 - differenceFraction)).toFixed(3))),
+      );
+      if (adjustedAlpha === alpha) return color;
+      return `rgba(${r.trim()}, ${g.trim()}, ${b.trim()}, ${adjustedAlpha})`;
+    };
+    return createAlternateShade(baseRowBackgroundColor, 0.02);
+  })();
   const scheduleHorizontalPadding = 7;
 
   displayItems.forEach((item, index) => {
