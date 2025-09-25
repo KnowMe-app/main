@@ -891,6 +891,88 @@ export const generateSchedule = base => {
   return visits;
 };
 
+const buildDipherelinSchedule = (baseDate, { dayOneLabel } = {}) => {
+  if (!baseDate) return null;
+
+  const normalizedBase = normalizeDate(baseDate);
+  if (!normalizedBase || Number.isNaN(normalizedBase.getTime())) {
+    return null;
+  }
+
+  const normalizedLabel = typeof dayOneLabel === 'string' && dayOneLabel.trim()
+    ? dayOneLabel.trim()
+    : '1й день';
+
+  const preDayOne = {
+    key: 'pre-visit1',
+    date: normalizedBase,
+    label: normalizedLabel,
+  };
+
+  let dayEightDate = new Date(normalizedBase);
+  dayEightDate.setDate(dayEightDate.getDate() + 7);
+  const adjustedDayEight = adjustForward(dayEightDate, normalizedBase);
+  const preUltrasound = {
+    key: 'pre-uzd',
+    date: normalizeDate(adjustedDayEight.date),
+    label: `${adjustedDayEight.day}й день УЗД`,
+  };
+
+  let difEvent = null;
+  for (let n = 19; n <= 22; n += 1) {
+    const candidate = new Date(normalizedBase);
+    candidate.setDate(normalizedBase.getDate() + n - 1);
+    if (!isWeekend(candidate)) {
+      difEvent = {
+        date: normalizeDate(candidate),
+        day: diffDays(candidate, normalizedBase),
+      };
+      break;
+    }
+  }
+
+  if (!difEvent) {
+    const fallback = new Date(normalizedBase);
+    fallback.setDate(normalizedBase.getDate() + 21);
+    const adjusted = adjustBackward(fallback, normalizedBase);
+    difEvent = {
+      date: normalizeDate(adjusted.date),
+      day: adjusted.day,
+    };
+  }
+
+  const preDipherelin = {
+    key: 'pre-dipherelin',
+    date: difEvent.date,
+    label: `${difEvent.day}й день Диферелін`,
+  };
+
+  const nextCycleStart = new Date(difEvent.date);
+  nextCycleStart.setDate(nextCycleStart.getDate() + 9);
+  const adjustedNextCycle =
+    adjustToNextWorkingDay(nextCycleStart, normalizedBase) || {
+      date: normalizeDate(nextCycleStart),
+      day: normalizedBase ? diffDays(nextCycleStart, normalizedBase) : null,
+      sign: '',
+    };
+  const normalizedNextCycle = normalizeDate(adjustedNextCycle.date);
+
+  const nextCycleVisits = generateSchedule(normalizedNextCycle).map(item => ({
+    ...item,
+    date: normalizeDate(item.date),
+  }));
+
+  return {
+    schedule: [preDayOne, preUltrasound, preDipherelin, ...nextCycleVisits],
+    nextCycleDate: normalizedNextCycle,
+  };
+};
+
+export const generateScheduleWithDipherelin = base => {
+  const built = buildDipherelinSchedule(base);
+  return built ? built.schedule : [];
+};
+
 export const adjustItemForDate = (
   item,
   target,
@@ -1088,6 +1170,10 @@ const StimulationSchedule = ({
       const scheduleString = serializeSchedule(sched);
       const baseForDefaults = (() => {
         if (Array.isArray(sched)) {
+          const preVisit = sched.find(entry => entry?.key === 'pre-visit1' && entry.date);
+          if (preVisit) {
+            return normalizeDate(preVisit.date);
+          }
           const nextFirst = sched.find(entry => entry?.key === 'visit1' && entry.date);
           if (nextFirst) {
             return normalizeDate(nextFirst.date);
@@ -1096,7 +1182,7 @@ const StimulationSchedule = ({
         return base ? normalizeDate(base) : null;
       })();
       const defaultString = baseForDefaults
-        ? serializeSchedule(generateSchedule(baseForDefaults))
+        ? serializeSchedule(generateScheduleWithDipherelin(baseForDefaults))
         : '';
       const isDefault = Boolean(baseForDefaults) && scheduleString === defaultString;
       const update = isDefault
@@ -1174,99 +1260,45 @@ const StimulationSchedule = ({
     [onLastCyclePersisted],
   );
 
-  const handleActivateDipherelin = React.useCallback(() => {
-    if (!base || preCycleActive) return;
-
-    const existingFirst = schedule.find(item => item.key === 'visit1') || schedule[0];
-    const normalizedBase = normalizeDate(existingFirst?.date || base);
-    const dayOneLabel = existingFirst?.label || '1й день';
-
-    const preDayOne = {
-      key: 'pre-visit1',
-      date: normalizedBase,
-      label: dayOneLabel,
-    };
-
-    let dayEightDate = new Date(normalizedBase);
-    dayEightDate.setDate(dayEightDate.getDate() + 7);
-    const adjustedDayEight = adjustForward(dayEightDate, normalizedBase);
-    const preUltrasound = {
-      key: 'pre-uzd',
-      date: normalizeDate(adjustedDayEight.date),
-      label: `${adjustedDayEight.day}й день УЗД`,
-    };
-
-    let difEvent = null;
-    for (let n = 19; n <= 22; n += 1) {
-      const candidate = new Date(normalizedBase);
-      candidate.setDate(normalizedBase.getDate() + n - 1);
-      if (!isWeekend(candidate)) {
-        difEvent = {
-          date: normalizeDate(candidate),
-          day: diffDays(candidate, normalizedBase),
-        };
-        break;
-      }
+  const handleDeactivateDipherelin = React.useCallback(() => {
+    if (!isDipherelinApplied) {
+      return;
     }
 
-    if (!difEvent) {
-      const fallback = new Date(normalizedBase);
-      fallback.setDate(normalizedBase.getDate() + 21);
-      const adjusted = adjustBackward(fallback, normalizedBase);
-      difEvent = {
-        date: normalizeDate(adjusted.date),
-        day: adjusted.day,
-      };
+    const baseForShortened = preCycleBaseDate || base;
+    if (!baseForShortened) {
+      return;
     }
 
-    const preDipherelin = {
-      key: 'pre-dipherelin',
-      date: difEvent.date,
-      label: `${difEvent.day}й день Диферелін`,
-    };
-
-    const nextCycleStart = new Date(difEvent.date);
-    nextCycleStart.setDate(nextCycleStart.getDate() + 9);
-    const adjustedNextCycle =
-      adjustToNextWorkingDay(nextCycleStart, normalizedBase) ||
-      {
-        date: normalizeDate(nextCycleStart),
-        day: normalizedBase ? diffDays(nextCycleStart, normalizedBase) : null,
-        sign: '',
-      };
-    const normalizedNextCycle = normalizeDate(adjustedNextCycle.date);
-
-    const nextCycleVisits = generateSchedule(normalizedNextCycle).map(item => ({
+    const normalizedBaseForShortened = normalizeDate(baseForShortened);
+    const shortenedSchedule = generateSchedule(normalizedBaseForShortened).map(item => ({
       ...item,
       date: normalizeDate(item.date),
     }));
 
-    const combinedSchedule = [preDayOne, preUltrasound, preDipherelin, ...nextCycleVisits];
-
-    setSchedule(combinedSchedule);
+    setSchedule(shortenedSchedule);
     hasChanges.current = true;
-    saveSchedule(combinedSchedule);
-
-    persistLastCycleDate(normalizedNextCycle);
+    saveSchedule(shortenedSchedule);
+    persistLastCycleDate(normalizedBaseForShortened);
   }, [
+    isDipherelinApplied,
+    preCycleBaseDate,
     base,
-    preCycleActive,
-    schedule,
     saveSchedule,
     persistLastCycleDate,
   ]);
 
   const handleDipherelinButtonClick = React.useCallback(() => {
     if (isDipherelinApplied) {
-      return;
+      handleDeactivateDipherelin();
     }
-    handleActivateDipherelin();
-  }, [handleActivateDipherelin, isDipherelinApplied]);
+  }, [handleDeactivateDipherelin, isDipherelinApplied]);
 
   React.useEffect(() => {
     if (!['stimulation', 'pregnant'].includes(effectiveStatus) || !base) return;
 
-    const gen = generateSchedule(base);
+    const defaultWithDipherelin = generateScheduleWithDipherelin(base);
+    const shortenedDefault = generateSchedule(base);
 
     if (userData.stimulationSchedule) {
       let parsed;
@@ -1336,24 +1368,20 @@ const StimulationSchedule = ({
       }
 
       const sortedParsed = [...parsed].sort((a, b) => a.date - b.date);
-
-      const hasStoredPreCycle = sortedParsed.some(
-        item =>
-          item.key === 'pre-visit1' ||
-          item.key === 'pre-dipherelin' ||
-          /диферелін/i.test(String(item.label || '')),
-      );
-      if (hasStoredPreCycle) {
-        setSchedule(sortedParsed);
-      } else if (sortedParsed.length) {
+      if (sortedParsed.length) {
         setSchedule(sortedParsed);
       } else {
-        setSchedule(gen);
+        setSchedule(defaultWithDipherelin.length ? defaultWithDipherelin : shortenedDefault);
       }
     } else {
-      setSchedule(gen);
+      setSchedule(defaultWithDipherelin.length ? defaultWithDipherelin : shortenedDefault);
     }
-  }, [userData.stimulationSchedule, effectiveStatus, base, userData.lastCycle]);
+  }, [
+    userData.stimulationSchedule,
+    effectiveStatus,
+    base,
+    userData.lastCycle,
+  ]);
 
   const postTransferKeys = React.useMemo(
     () => Object.keys(transferRelativeConfig),
@@ -1827,13 +1855,14 @@ const StimulationSchedule = ({
                 <OrangeBtn
                   onClick={handleDipherelinButtonClick}
                   style={{
-                    width: '76px',
+                    width: 'calc(3 * 24px + 2 * 2px)',
                     height: '24px',
                     borderRadius: '4px',
                     boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
                     fontSize: '14px',
                     fontWeight: 'bold',
                     padding: '0 8px',
+                    boxSizing: 'border-box',
                     textDecoration: isDipherelinApplied ? 'none' : 'line-through',
                   }}
                 >
