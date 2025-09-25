@@ -1,7 +1,7 @@
 import React from 'react';
 import { handleChange, handleSubmit } from './actions';
 import { formatDateToDisplay, formatDateToServer } from 'components/inputValidations';
-import { generateSchedule, serializeSchedule } from '../StimulationSchedule';
+import { generateScheduleWithDipherelin, serializeSchedule } from '../StimulationSchedule';
 import InfoModal from 'components/InfoModal';
 import { UnderlinedInput, AttentionButton, AttentionDiv, OrangeBtn, color } from 'components/styles';
 
@@ -143,11 +143,18 @@ const normalizeScheduleEntries = schedule => {
 };
 
 const isDefaultSchedule = (lastCycle, scheduleString) => {
-  if (!lastCycle || !scheduleString) return false;
-  const baseDate = parseDate(lastCycle);
+  if (!scheduleString) return false;
+  const normalizedEntries = normalizeScheduleEntries(scheduleString);
+  if (!normalizedEntries.length) return false;
+
+  const baseFromSchedule = normalizedEntries.find(
+    entry => entry?.key === 'pre-visit1' && entry.date,
+  );
+  const baseDate = baseFromSchedule?.date || parseDate(lastCycle);
   if (!baseDate) return false;
-  const defaultString = serializeSchedule(generateSchedule(baseDate));
-  const normalized = serializeSchedule(normalizeScheduleEntries(scheduleString));
+
+  const defaultString = serializeSchedule(generateScheduleWithDipherelin(baseDate));
+  const normalized = serializeSchedule(normalizedEntries);
   return defaultString === normalized;
 };
 
@@ -306,7 +313,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
   const recalcSchedule = React.useCallback(dateString => {
     const baseDate = parseDate(dateString);
     if (!baseDate) return '';
-    const sched = generateSchedule(baseDate);
+    const sched = generateScheduleWithDipherelin(baseDate);
     return serializeSchedule(sched);
   }, []);
 
