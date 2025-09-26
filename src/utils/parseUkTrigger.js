@@ -1,4 +1,4 @@
-const TRIGGER_PATTERN = /^(ук)\s*(см|ір|ip|до)\s*(.*)$/i;
+const TRIGGER_PATTERN = /^(ук)\s*(см|ір|ip|до|агент)\s*(.*)$/i;
 
 export const parseUkTriggerQuery = rawQuery => {
   if (typeof rawQuery !== 'string') return null;

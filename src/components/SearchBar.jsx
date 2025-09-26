@@ -199,13 +199,20 @@ const parseTikTokLink = url => {
 
 const normalizeVkValue = rawValue => {
   if (typeof rawValue !== 'string') return null;
-  let value = rawValue.trim();
-  if (!value) return null;
+  const trimmed = rawValue.trim();
+  if (!trimmed) return null;
 
-  const labelMatch = value.match(/^(?:vk|вк)\s*[:=]?\s*(.+)$/i);
-  if (labelMatch && labelMatch[1]) {
-    value = labelMatch[1].trim();
+  const labelMatch = trimmed.match(/^(?:vk|вк)\s*[:=]?\s*(.+)$/i);
+  const hasVkLabel = Boolean(labelMatch);
+  const hasVkDomain = /(?:^|[\s:=\/])vk\.com(?:\/|\b)/i.test(trimmed);
+  const hasExplicitId = /\b(?:id|club|public)\d+\b/i.test(trimmed);
+  const isExplicitIdOnly = /^(?:id|club|public)\d+$/i.test(trimmed);
+
+  if (!hasVkLabel && !hasVkDomain && !hasExplicitId && !isExplicitIdOnly) {
+    return null;
   }
+
+  let value = hasVkLabel ? labelMatch[1].trim() : trimmed;
 
   value = value
     .replace(/^https?:\/\/(?:www\.)?(?:m\.)?vk\.com\//i, '')
