@@ -1557,95 +1557,6 @@ const StimulationSchedule = ({
     [adjustItemForDateFn, persistLastCycleDate, resolvedBaseDate, saveSchedule],
   );
 
-  const adjustNextCycleGap = React.useCallback(
-    newVisitDate => {
-      if (!newVisitDate) return;
-      const normalizedNewBase = normalizeDate(newVisitDate);
-
-      setSchedule(prev => {
-        if (!Array.isArray(prev) || prev.length === 0) return prev;
-        const currentFirst = prev.find(entry => entry.key === 'visit1' && entry.date);
-        if (!currentFirst?.date) return prev;
-        const currentBase = normalizeDate(currentFirst.date);
-        if (!currentBase) return prev;
-        if (normalizedNewBase.getTime() === currentBase.getTime()) {
-          return prev;
-        }
-
-        const MS_PER_DAY = 1000 * 60 * 60 * 24;
-        const deltaDays = Math.round(
-          (normalizedNewBase.getTime() - currentBase.getTime()) / MS_PER_DAY,
-        );
-
-        const preVisitItem = prev.find(entry => entry.key === 'pre-visit1');
-        const preservedPreBase = preVisitItem?.date ? normalizeDate(preVisitItem.date) : null;
-
-        const preservedPreCycle = prev.filter(item => isPreCycleKey(item?.key));
-        const itemsToShift = prev.filter(item => !isPreCycleKey(item?.key));
-
-        const regenerated = generateSchedule(normalizedNewBase).map(item => ({
-          ...item,
-          date: normalizeDate(item.date),
-        }));
-        const regeneratedMap = new Map(regenerated.map(item => [item.key, item]));
-        const regeneratedTransfer = regeneratedMap.get('transfer')?.date || null;
-        const normalizedTransfer = regeneratedTransfer ? normalizeDate(regeneratedTransfer) : null;
-
-        const shiftCustomItem = scheduleItem => {
-          if (!scheduleItem?.date) return scheduleItem;
-          const next = new Date(scheduleItem.date);
-          next.setDate(next.getDate() + deltaDays);
-          return adjustItemForDateFn(scheduleItem, next, {
-            baseDate: normalizedNewBase,
-            transferDate: normalizedTransfer,
-            preCycleBase: preservedPreBase,
-          });
-        };
-
-        const shiftedItems = itemsToShift.map(scheduleItem => {
-          if (!scheduleItem) return scheduleItem;
-
-          if (scheduleItem.key === 'visit1') {
-            const generatedVisit1 = regeneratedMap.get('visit1');
-            const overrideLabel = generatedVisit1?.label || scheduleItem.label;
-            return adjustItemForDateFn(scheduleItem, normalizedNewBase, {
-              baseDate: normalizedNewBase,
-              transferDate: normalizedTransfer,
-              overrideLabel,
-              preCycleBase: preservedPreBase,
-            });
-          }
-
-          const generatedMatch = regeneratedMap.get(scheduleItem.key);
-          if (generatedMatch) {
-            return adjustItemForDateFn(scheduleItem, generatedMatch.date, {
-              baseDate: normalizedNewBase,
-              transferDate: normalizedTransfer,
-              overrideLabel: scheduleItem.label,
-              preCycleBase: preservedPreBase,
-            });
-          }
-
-          return shiftCustomItem(scheduleItem);
-        });
-
-        const combined = [...preservedPreCycle, ...shiftedItems].filter(Boolean);
-        combined.sort((a, b) => {
-          if (!a?.date || !b?.date) return 0;
-          return a.date - b.date;
-        });
-
-        transferRef.current = normalizedTransfer || null;
-
-        hasChanges.current = true;
-        saveSchedule(combined);
-        return combined;
-      });
-
-    },
-    [adjustItemForDateFn, saveSchedule],
-  );
-
   const requestDeleteItem = React.useCallback(item => {
     if (!item) return;
     setPendingDelete(item);
@@ -1846,11 +1757,7 @@ const StimulationSchedule = ({
           if (item.key === 'visit1') {
             const target = new Date(item.date);
             target.setDate(target.getDate() + delta);
-            if (preCycleActive) {
-              adjustNextCycleGap(target);
-            } else {
-              rebaseScheduleFromDayOne(target);
-            }
+            rebaseScheduleFromDayOne(target);
           } else if (firstDayIndex !== -1) {
             shiftDate(firstDayIndex, delta);
           }
