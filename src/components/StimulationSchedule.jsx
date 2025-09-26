@@ -333,6 +333,8 @@ const PRE_CYCLE_KEYS = new Set(['pre-visit1', 'pre-uzd', 'pre-dipherelin']);
 
 const isPreCycleKey = key => PRE_CYCLE_KEYS.has(key);
 
+const isCustomKey = key => typeof key === 'string' && key.startsWith('ap-');
+
 const normalizeTransferSuffix = (key, suffix) => {
   const config = transferRelativeConfig[key];
   const sanitized = sanitizeDescription(suffix);
@@ -1497,9 +1499,18 @@ const StimulationSchedule = ({
         const regeneratedMap = new Map(regenerated.map(item => [item.key, item]));
         const regeneratedTransfer = regeneratedMap.get('transfer')?.date || null;
         const normalizedTransfer = regeneratedTransfer ? normalizeDate(regeneratedTransfer) : null;
+        const normalizedCurrentBase = normalizeDate(currentBase);
 
         const shiftCustomItem = scheduleItem => {
-          if (!scheduleItem?.date) return scheduleItem;
+          if (!scheduleItem) return scheduleItem;
+          if (isCustomKey(scheduleItem.key)) {
+            return scheduleItem;
+          }
+          if (!scheduleItem.date) return scheduleItem;
+          const normalizedItemDate = normalizeDate(scheduleItem.date);
+          if (normalizedItemDate.getTime() < normalizedCurrentBase.getTime()) {
+            return scheduleItem;
+          }
           const next = new Date(scheduleItem.date);
           next.setDate(next.getDate() + deltaDays);
           return adjustItemForDateFn(scheduleItem, next, {
@@ -1511,6 +1522,14 @@ const StimulationSchedule = ({
 
         const shiftedItems = itemsToShift.map(scheduleItem => {
           if (!scheduleItem) return scheduleItem;
+          const normalizedItemDate = scheduleItem.date ? normalizeDate(scheduleItem.date) : null;
+
+          if (
+            normalizedItemDate &&
+            normalizedItemDate.getTime() < normalizedCurrentBase.getTime()
+          ) {
+            return scheduleItem;
+          }
 
           if (scheduleItem.key === 'visit1') {
             const generatedVisit1 = regeneratedMap.get('visit1');
