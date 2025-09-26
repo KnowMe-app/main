@@ -1052,7 +1052,10 @@ const StimulationSchedule = ({
   const [apDerivedDate, setApDerivedDate] = React.useState(null);
   const [editingKey, setEditingKey] = React.useState(null);
   const [pendingDelete, setPendingDelete] = React.useState(null);
+  const [contextMenuState, setContextMenuState] = React.useState(null);
+  const longPressTimeoutRef = React.useRef(null);
   const transferRef = React.useRef(null);
+  const contextMenuRef = React.useRef(null);
   const hasChanges = React.useRef(false);
   const preCycleActive = React.useMemo(
     () =>
@@ -1612,6 +1615,49 @@ const StimulationSchedule = ({
     [adjustItemForDateFn, persistLastCycleDate, resolvedBaseDate, saveSchedule],
   );
 
+  const clearLongPressTimeout = React.useCallback(() => {
+    if (longPressTimeoutRef.current) {
+      clearTimeout(longPressTimeoutRef.current);
+      longPressTimeoutRef.current = null;
+    }
+  }, []);
+
+  const dismissContextMenu = React.useCallback(() => {
+    setContextMenuState(null);
+    clearLongPressTimeout();
+  }, [clearLongPressTimeout]);
+
+  const handlePointerDown = React.useCallback(
+    (event, currentItem) => {
+      if (!currentItem) return;
+      if (event.pointerType === 'mouse' && event.button !== 0) {
+        return;
+      }
+      const target = event.target;
+      if (target && typeof target.closest === 'function') {
+        if (target.closest('button, a, input, textarea, select')) {
+          return;
+        }
+      }
+      dismissContextMenu();
+      const { clientX, clientY } = event;
+      clearLongPressTimeout();
+      longPressTimeoutRef.current = setTimeout(() => {
+        setContextMenuState({
+          item: currentItem,
+          x: clientX,
+          y: clientY,
+        });
+        longPressTimeoutRef.current = null;
+      }, 500);
+    },
+    [clearLongPressTimeout, dismissContextMenu],
+  );
+
+  const cancelLongPress = React.useCallback(() => {
+    clearLongPressTimeout();
+  }, [clearLongPressTimeout]);
+
   const requestDeleteItem = React.useCallback(item => {
     if (!item) return;
     setPendingDelete(item);
@@ -1635,6 +1681,40 @@ const StimulationSchedule = ({
     });
     setPendingDelete(null);
   }, [pendingDelete, saveSchedule]);
+
+  React.useEffect(() => {
+    if (!contextMenuState) {
+      return undefined;
+    }
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+    const handleOutsidePointerDown = event => {
+      if (contextMenuRef.current && contextMenuRef.current.contains(event.target)) {
+        return;
+      }
+      dismissContextMenu();
+    };
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') {
+        dismissContextMenu();
+      }
+    };
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsidePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [contextMenuState, dismissContextMenu]);
+
+  React.useEffect(
+    () => () => {
+      clearLongPressTimeout();
+      setContextMenuState(null);
+    },
+    [clearLongPressTimeout],
+  );
 
   if (
     !['stimulation', 'pregnant'].includes(effectiveStatus) ||
@@ -1819,7 +1899,14 @@ const StimulationSchedule = ({
         };
 
         rendered.push(
-          <div key={item.key} style={rowStyle}>
+          <div
+            key={item.key}
+            style={rowStyle}
+            onPointerDown={event => handlePointerDown(event, item)}
+            onPointerUp={cancelLongPress}
+            onPointerCancel={cancelLongPress}
+            onPointerLeave={cancelLongPress}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
               <div>
                 {dateStr} {weekday}
@@ -1889,7 +1976,14 @@ const StimulationSchedule = ({
         const isPlaceholder = item.key === 'today-placeholder';
         const isEditing = editingKey === item.key;
         rendered.push(
-          <div key={item.key} style={rowStyle}>
+          <div
+            key={item.key}
+            style={rowStyle}
+            onPointerDown={event => handlePointerDown(event, item)}
+            onPointerUp={cancelLongPress}
+            onPointerCancel={cancelLongPress}
+            onPointerLeave={cancelLongPress}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
               <div>
                 {dateStr} {weekday}
@@ -2409,6 +2503,70 @@ const StimulationSchedule = ({
         </OrangeBtn>
       </div>
       {rendered}
+      {contextMenuState && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1200,
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            ref={contextMenuRef}
+            style={{
+              position: 'absolute',
+              top: contextMenuState.y,
+              left: contextMenuState.x,
+              transform: 'translate(-50%, 0)',
+              backgroundColor: '#fff',
+              borderRadius: '6px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+              padding: '8px 0',
+              minWidth: '140px',
+              color: '#000',
+              pointerEvents: 'auto',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                const targetItem = contextMenuState?.item;
+                dismissContextMenu();
+                if (targetItem) {
+                  requestDeleteItem(targetItem);
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '8px 16px',
+                background: 'transparent',
+                border: 'none',
+                textAlign: 'left',
+                cursor: 'pointer',
+                fontSize: '14px',
+              }}
+            >
+              Видалити
+            </button>
+            <button
+              type="button"
+              onClick={dismissContextMenu}
+              style={{
+                width: '100%',
+                padding: '8px 16px',
+                background: 'transparent',
+                border: 'none',
+                textAlign: 'left',
+                cursor: 'pointer',
+                fontSize: '14px',
+              }}
+            >
+              Скасувати
+            </button>
+          </div>
+        </div>
+      )}
       {pendingDelete && (
         <div
           onClick={handleCancelDelete}
