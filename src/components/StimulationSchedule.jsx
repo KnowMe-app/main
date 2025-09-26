@@ -1504,7 +1504,43 @@ const StimulationSchedule = ({
         const shiftCustomItem = scheduleItem => {
           if (!scheduleItem) return scheduleItem;
           if (isCustomKey(scheduleItem.key)) {
-            return scheduleItem;
+            const normalizedItemDate = scheduleItem.date
+              ? normalizeDate(scheduleItem.date)
+              : null;
+            if (!normalizedItemDate) {
+              return scheduleItem;
+            }
+
+            const parsed = computeCustomDateAndLabel(
+              scheduleItem.label,
+              normalizedNewBase,
+              normalizedItemDate,
+              normalizedTransfer,
+            );
+            const description = parsed.description || parsed.raw || scheduleItem.label;
+            const baseForLabel = normalizedNewBase || normalizedTransfer || normalizedItemDate;
+            const updatedLabel = buildCustomEventLabel(
+              normalizedItemDate,
+              baseForLabel,
+              normalizedTransfer,
+              description,
+            );
+
+            if (!updatedLabel || updatedLabel === scheduleItem.label) {
+              if (normalizedItemDate.getTime() === scheduleItem.date.getTime()) {
+                return scheduleItem;
+              }
+              return {
+                ...scheduleItem,
+                date: normalizedItemDate,
+              };
+            }
+
+            return {
+              ...scheduleItem,
+              date: normalizedItemDate,
+              label: updatedLabel,
+            };
           }
           if (!scheduleItem.date) return scheduleItem;
           const normalizedItemDate = normalizeDate(scheduleItem.date);
