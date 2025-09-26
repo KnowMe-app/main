@@ -5,6 +5,18 @@ import { OrangeBtn } from 'components/styles';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 
+const firstDayActionButtonStyle = {
+  minWidth: '88px',
+  height: '24px',
+  borderRadius: '4px',
+  boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+  fontWeight: 'bold',
+  padding: '0 8px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
 const parseDate = str => {
   if (!str) return null;
   const fullPattern = /^\d{2}\.\d{2}\.\d{4}$/;
@@ -1927,27 +1939,13 @@ const StimulationSchedule = ({
                 <React.Fragment>
                   <OrangeBtn
                     onClick={() => handleFirstDayShift(-1)}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '4px',
-                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                      fontSize: '16px',
-                      fontWeight: 'bold',
-                    }}
+                    style={{ ...firstDayActionButtonStyle, fontSize: '16px' }}
                   >
                     -
                   </OrangeBtn>
                   <OrangeBtn
                     onClick={() => handleFirstDayShift(1)}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '4px',
-                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                      fontSize: '16px',
-                      fontWeight: 'bold',
-                    }}
+                    style={{ ...firstDayActionButtonStyle, fontSize: '16px' }}
                   >
                     +
                   </OrangeBtn>
@@ -1956,15 +1954,7 @@ const StimulationSchedule = ({
               {showDipherelinButton ? (
                 <OrangeBtn
                   onClick={handleActivateDipherelin}
-                  style={{
-                    minWidth: '88px',
-                    height: '24px',
-                    borderRadius: '4px',
-                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                    fontSize: '14px',
-                    fontWeight: 'bold',
-                    padding: '0 8px',
-                  }}
+                  style={firstDayActionButtonStyle}
                 >
                   Диферелін
                 </OrangeBtn>
