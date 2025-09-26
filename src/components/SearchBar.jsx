@@ -204,7 +204,7 @@ const normalizeVkValue = rawValue => {
 
   const labelMatch = trimmed.match(/^(?:vk|вк)\s*[:=]?\s*(.+)$/i);
   const hasVkLabel = Boolean(labelMatch);
-  const hasVkDomain = /(?:^|[\s:=\/])vk\.com(?:\/|\b)/i.test(trimmed);
+  const hasVkDomain = /(?:^|[\s:=/])vk\.com(?:\/|\b)/i.test(trimmed);
   const hasExplicitId = /\b(?:id|club|public)\d+\b/i.test(trimmed);
   const isExplicitIdOnly = /^(?:id|club|public)\d+$/i.test(trimmed);
 
