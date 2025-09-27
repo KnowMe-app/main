@@ -23,6 +23,25 @@ describe('adjustItemForDate', () => {
 
     expect(adjusted.label).toBe('20й день (перенос)');
   });
+
+  it('keeps week-day prefix for distant base-relative custom events without transfer', () => {
+    const baseDate = new Date(2024, 0, 1);
+    const distant = new Date(baseDate);
+    distant.setDate(distant.getDate() + 21 * 7 + 5);
+
+    const customItem = {
+      key: 'ap-custom-note',
+      date: new Date(distant),
+      label: '21т6д контроль',
+    };
+
+    const adjusted = adjustItemForDate(customItem, distant, {
+      baseDate,
+      transferDate: null,
+    });
+
+    expect(adjusted.label).toBe('21т6д контроль');
+  });
 });
 
 describe('splitCustomEventEntries', () => {

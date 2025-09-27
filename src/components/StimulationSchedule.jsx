@@ -215,8 +215,9 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   }
 
   let useDayPrefix = true;
-  if (normalizedTransfer) {
-    const cutoff = new Date(normalizedTransfer);
+  const cutoffReference = referenceForDay;
+  if (cutoffReference) {
+    const cutoff = new Date(cutoffReference);
     cutoff.setDate(cutoff.getDate() + DAY_PREFIX_TRANSFER_WINDOW_DAYS);
     if (normalizedDate.getTime() > cutoff.getTime()) {
       useDayPrefix = false;
@@ -231,7 +232,7 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
     }
   }
 
-  const referenceForWeeks = normalizedBase || normalizedTransfer || referenceForDay;
+  const referenceForWeeks = referenceForDay || normalizedBase || normalizedTransfer;
   if (referenceForWeeks) {
     const tokenInfo = getWeeksDaysTokenForDate(normalizedDate, referenceForWeeks);
     if (tokenInfo?.token) {
@@ -422,8 +423,6 @@ const buildPostTransferLabel = (key, labelSource, date, transferReference) => {
   return buildTransferDayLabel(key, dayNumber, suffix, sign);
 };
 
-const STIMULATION_RANGE_EXTENSION_DAYS = DAY_PREFIX_TRANSFER_WINDOW_DAYS;
-
 const isWithinStimulationRange = (date, baseDate, transferDate) => {
   if (!date) return false;
   if (!baseDate && !transferDate) return false;
@@ -432,25 +431,12 @@ const isWithinStimulationRange = (date, baseDate, transferDate) => {
   const normalizedBase = baseDate ? normalizeDate(baseDate) : null;
   const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
 
-  const rangeStart = normalizedBase || normalizedTransfer;
+  const rangeStart = normalizedTransfer || normalizedBase;
   if (!rangeStart) {
     return false;
   }
 
   if (normalizedDate.getTime() < rangeStart.getTime()) {
-    return false;
-  }
-
-  let rangeEnd = null;
-  if (normalizedTransfer) {
-    rangeEnd = new Date(normalizedTransfer);
-    rangeEnd.setDate(rangeEnd.getDate() + STIMULATION_RANGE_EXTENSION_DAYS);
-  } else if (normalizedBase) {
-    rangeEnd = new Date(normalizedBase);
-    rangeEnd.setDate(rangeEnd.getDate() + STIMULATION_RANGE_EXTENSION_DAYS);
-  }
-
-  if (rangeEnd && normalizedDate.getTime() > rangeEnd.getTime()) {
     return false;
   }
 
