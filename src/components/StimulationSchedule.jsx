@@ -266,8 +266,9 @@ const sanitizeDescription = text => {
     }
     const tokenMatch = extractWeeksDaysPrefix(result);
     if (tokenMatch) {
-      result = stripLeadingDelimiters(result.slice(tokenMatch.length));
-      continue;
+      // Залишаємо токен тижнів/днів у підписі, тож припиняємо подальше очищення
+      result = result.trimStart();
+      break;
     }
     break;
   }
