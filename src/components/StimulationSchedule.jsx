@@ -2088,87 +2088,91 @@ const StimulationSchedule = ({
               )}
             </div>
             <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
-              {isPlaceholder ? (
-                <OrangeBtn
-                  onClick={() => {
-                    const tokenInfo = resolvedBaseDate
-                      ? getWeeksDaysTokenForDate(item.date, resolvedBaseDate)
-                      : null;
-                    const resetLabel = tokenInfo ? tokenInfo.token : item.label.split(' ')[0] || '';
-                    setSchedule(prev => {
-                      const copy = [...prev];
-                      const idx = copy.findIndex(v => v.key === item.key);
-                      if (idx === -1) {
-                        copy.push({ ...item, label: resetLabel });
-                      } else {
-                        copy[idx] = { ...copy[idx], label: resetLabel };
-                      }
-                      copy.sort((a, b) => a.date - b.date);
-                      hasChanges.current = true;
-                      saveSchedule(copy);
-                      return copy;
-                    });
-                  }}
-                  style={{
-                    width: '24px',
-                    height: '24px',
-                    borderRadius: '4px',
-                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                    fontSize: '16px',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  ×
-                </OrangeBtn>
-              ) : (
-                <React.Fragment>
-                  <OrangeBtn
-                    onClick={() => {
-                      const idx = schedule.findIndex(v => v.key === item.key);
-                      if (idx !== -1) shiftDate(idx, -1);
-                    }}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '4px',
-                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                      fontSize: '16px',
-                      fontWeight: 'bold',
-                    }}
-                  >
-                    -
-                  </OrangeBtn>
-                  <OrangeBtn
-                    onClick={() => {
-                      const idx = schedule.findIndex(v => v.key === item.key);
-                      if (idx !== -1) shiftDate(idx, 1);
-                    }}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '4px',
-                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                      fontSize: '16px',
-                      fontWeight: 'bold',
-                    }}
-                  >
-                    +
-                  </OrangeBtn>
-                  <OrangeBtn
-                    onClick={() => requestDeleteItem(item)}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '4px',
-                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                      fontSize: '16px',
-                      fontWeight: 'bold',
-                    }}
-                  >
-                    ×
-                  </OrangeBtn>
-                </React.Fragment>
-              )}
+              {isEditing
+                ? null
+                : isPlaceholder
+                ? (
+                    <OrangeBtn
+                      onClick={() => {
+                        const tokenInfo = resolvedBaseDate
+                          ? getWeeksDaysTokenForDate(item.date, resolvedBaseDate)
+                          : null;
+                        const resetLabel = tokenInfo ? tokenInfo.token : item.label.split(' ')[0] || '';
+                        setSchedule(prev => {
+                          const copy = [...prev];
+                          const idx = copy.findIndex(v => v.key === item.key);
+                          if (idx === -1) {
+                            copy.push({ ...item, label: resetLabel });
+                          } else {
+                            copy[idx] = { ...copy[idx], label: resetLabel };
+                          }
+                          copy.sort((a, b) => a.date - b.date);
+                          hasChanges.current = true;
+                          saveSchedule(copy);
+                          return copy;
+                        });
+                      }}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '4px',
+                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                        fontSize: '16px',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      ×
+                    </OrangeBtn>
+                  )
+                : (
+                    <React.Fragment>
+                      <OrangeBtn
+                        onClick={() => {
+                          const idx = schedule.findIndex(v => v.key === item.key);
+                          if (idx !== -1) shiftDate(idx, -1);
+                        }}
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '4px',
+                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                          fontSize: '16px',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        -
+                      </OrangeBtn>
+                      <OrangeBtn
+                        onClick={() => {
+                          const idx = schedule.findIndex(v => v.key === item.key);
+                          if (idx !== -1) shiftDate(idx, 1);
+                        }}
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '4px',
+                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                          fontSize: '16px',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        +
+                      </OrangeBtn>
+                      <OrangeBtn
+                        onClick={() => requestDeleteItem(item)}
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '4px',
+                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+                          fontSize: '16px',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        ×
+                      </OrangeBtn>
+                    </React.Fragment>
+                  )}
             </div>
           </div>,
         );
