@@ -17,6 +17,15 @@ const firstDayActionButtonStyle = {
   justifyContent: 'center',
 };
 
+const actionsColumnStyle = {
+  display: 'flex',
+  gap: '2px',
+  marginLeft: 'auto',
+  minWidth: firstDayActionButtonStyle.minWidth,
+  justifyContent: 'flex-end',
+  flexShrink: 0,
+};
+
 const parseDate = str => {
   if (!str) return null;
   const fullPattern = /^\d{2}\.\d{2}\.\d{4}$/;
@@ -1866,7 +1875,7 @@ const StimulationSchedule = ({
                 {displayLabel}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
+            <div style={actionsColumnStyle}>
               {showAdjustmentButtons ? (
                 <React.Fragment>
                   <OrangeBtn
@@ -2119,7 +2128,7 @@ const StimulationSchedule = ({
                 </div>
               )}
             </div>
-            <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
+            <div style={actionsColumnStyle}>
               {isEditing
                 ? null
                 : isPlaceholder
