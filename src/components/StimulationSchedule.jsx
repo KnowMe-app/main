@@ -198,7 +198,7 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
 
   let referenceForDay = null;
-  if (normalizedTransfer && normalizedDate.getTime() > normalizedTransfer.getTime()) {
+  if (normalizedTransfer && normalizedDate.getTime() >= normalizedTransfer.getTime()) {
     referenceForDay = normalizedTransfer;
   } else if (normalizedBase) {
     referenceForDay = normalizedBase;
@@ -232,7 +232,12 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
     }
   }
 
-  const referenceForWeeks = referenceForDay || normalizedBase || normalizedTransfer;
+  let referenceForWeeks = null;
+  if (useDayPrefix) {
+    referenceForWeeks = referenceForDay || normalizedBase || normalizedTransfer;
+  } else {
+    referenceForWeeks = normalizedBase || normalizedTransfer || referenceForDay;
+  }
   if (referenceForWeeks) {
     const tokenInfo = getWeeksDaysTokenForDate(normalizedDate, referenceForWeeks);
     if (tokenInfo?.token) {
@@ -241,6 +246,33 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   }
 
   return '';
+};
+
+const stripSchedulePrefixTokens = text => {
+  if (!text) return '';
+
+  let working = text.trim();
+  let removed = false;
+  const stripLeadingDelimiters = value => value.replace(/^[\s.,;:!?+\-–—]+/, '');
+
+  while (working) {
+    const dayMatch = extractDayPrefix(working);
+    if (dayMatch && Number.isFinite(dayMatch.length)) {
+      working = stripLeadingDelimiters(working.slice(dayMatch.length));
+      removed = true;
+      continue;
+    }
+
+    const weekMatch = extractWeeksDaysPrefix(working);
+    if (weekMatch && Number.isFinite(weekMatch.length)) {
+      working = stripLeadingDelimiters(working.slice(weekMatch.length));
+      removed = true;
+      continue;
+    }
+    break;
+  }
+
+  return removed ? working.trim() : text.trim();
 };
 
 const sanitizeDescription = text => {
@@ -948,7 +980,7 @@ export const adjustItemForDate = (
 
   if (item.key?.startsWith('week') && baseDateValue) {
     const prefix = getSchedulePrefixForDate(adjustedDate, baseDateValue, normalizedTransfer);
-    let suffix = sanitizeDescription(labelSource);
+    let suffix = stripSchedulePrefixTokens(sanitizeDescription(labelSource));
     if (suffix) {
       suffix = suffix.replace(/\s*[+-]$/, '').trim();
     }
@@ -1000,7 +1032,7 @@ export const adjustItemForDate = (
 
   if (baseDateValue && adj.day !== null) {
     const prefix = getSchedulePrefixForDate(adjustedDate, baseDateValue, normalizedTransfer);
-    let suffix = sanitizeDescription(labelSource);
+    let suffix = stripSchedulePrefixTokens(sanitizeDescription(labelSource));
     if (suffix) {
       suffix = suffix.replace(/\s*[+-]$/, '').trim();
     }
