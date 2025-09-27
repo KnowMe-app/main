@@ -1,7 +1,7 @@
 import React from 'react';
 import { handleChange, handleSubmit } from './smallCard/actions';
 import { formatDateToServer } from 'components/inputValidations';
-import { OrangeBtn, color } from 'components/styles';
+import { OrangeBtn } from 'components/styles';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 
@@ -1050,6 +1050,7 @@ const StimulationSchedule = ({
   const [apDescription, setApDescription] = React.useState('');
   const [apDerivedDate, setApDerivedDate] = React.useState(null);
   const [editingKey, setEditingKey] = React.useState(null);
+  const [pendingDelete, setPendingDelete] = React.useState(null);
   const [contextMenuState, setContextMenuState] = React.useState(null);
   const longPressTimeoutRef = React.useRef(null);
   const transferRef = React.useRef(null);
@@ -1656,22 +1657,29 @@ const StimulationSchedule = ({
     clearLongPressTimeout();
   }, [clearLongPressTimeout]);
 
-  const deleteScheduleItem = React.useCallback(
-    item => {
-      if (!item) return;
+  const requestDeleteItem = React.useCallback(item => {
+    if (!item) return;
+    setPendingDelete(item);
+  }, []);
 
-      setSchedule(prev => {
-        const updated = prev.filter(v => v.key !== item.key);
-        if (updated.length === prev.length) {
-          return prev;
-        }
-        hasChanges.current = true;
-        saveSchedule(updated);
-        return updated;
-      });
-    },
-    [saveSchedule],
-  );
+  const handleCancelDelete = React.useCallback(() => {
+    setPendingDelete(null);
+  }, []);
+
+  const handleConfirmDelete = React.useCallback(() => {
+    if (!pendingDelete) return;
+
+    setSchedule(prev => {
+      const updated = prev.filter(v => v.key !== pendingDelete.key);
+      if (updated.length === prev.length) {
+        return prev;
+      }
+      hasChanges.current = true;
+      saveSchedule(updated);
+      return updated;
+    });
+    setPendingDelete(null);
+  }, [pendingDelete, saveSchedule]);
 
   React.useEffect(() => {
     if (!contextMenuState) {
@@ -2241,7 +2249,7 @@ const StimulationSchedule = ({
                     +
                   </OrangeBtn>
                   <OrangeBtn
-                    onClick={() => deleteScheduleItem(item)}
+                    onClick={() => requestDeleteItem(item)}
                     style={{
                       width: '24px',
                       height: '24px',
@@ -2489,59 +2497,103 @@ const StimulationSchedule = ({
               left: contextMenuState.x,
               transform: 'translate(-50%, 0)',
               backgroundColor: '#fff',
-              borderRadius: '10px',
-              boxShadow: '0 8px 20px rgba(0, 0, 0, 0.25)',
-              padding: '12px',
-              minWidth: '180px',
+              borderRadius: '6px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+              padding: '8px 0',
+              minWidth: '140px',
               color: '#000',
               pointerEvents: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
             }}
           >
-            <OrangeBtn
+            <button
               type="button"
               onClick={() => {
                 const targetItem = contextMenuState?.item;
                 dismissContextMenu();
                 if (targetItem) {
-                  deleteScheduleItem(targetItem);
+                  requestDeleteItem(targetItem);
                 }
               }}
               style={{
                 width: '100%',
-                height: '32px',
-                marginRight: 0,
-                borderRadius: '6px',
-                boxShadow: '0 4px 10px rgba(236, 152, 4, 0.45)',
+                padding: '8px 16px',
+                background: 'transparent',
+                border: 'none',
+                textAlign: 'left',
+                cursor: 'pointer',
                 fontSize: '14px',
-                fontWeight: 'bold',
-                padding: '0 12px',
-                backgroundColor: color.accent5,
               }}
             >
               Видалити
-            </OrangeBtn>
-            <OrangeBtn
+            </button>
+            <button
               type="button"
               onClick={dismissContextMenu}
               style={{
                 width: '100%',
-                height: '32px',
-                marginRight: 0,
-                borderRadius: '6px',
+                padding: '8px 16px',
+                background: 'transparent',
+                border: 'none',
+                textAlign: 'left',
+                cursor: 'pointer',
                 fontSize: '14px',
-                fontWeight: 'bold',
-                padding: '0 12px',
-                backgroundColor: color.white,
-                color: color.accent5,
-                border: `1px solid ${color.accent5}`,
-                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
               }}
             >
               Скасувати
-            </OrangeBtn>
+            </button>
+          </div>
+        </div>
+      )}
+      {pendingDelete && (
+        <div
+          onClick={handleCancelDelete}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={event => event.stopPropagation()}
+            style={{
+              backgroundColor: '#fff',
+              padding: '20px',
+              borderRadius: '8px',
+              maxWidth: '320px',
+              width: '90%',
+              color: '#000',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+            }}
+          >
+            <p style={{ marginBottom: '12px' }}>Видалити подію з графіку стимуляції?</p>
+            {pendingDelete?.label ? (
+              <p style={{ margin: '0 0 16px', fontWeight: 'bold' }}>{pendingDelete.label}</p>
+            ) : (
+              <p style={{ margin: '0 0 16px', fontWeight: 'bold' }}>Подія без назви</p>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                onClick={handleCancelDelete}
+                type="button"
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  border: '1px solid #ccc',
+                  backgroundColor: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                Скасувати
+              </button>
+              <OrangeBtn onClick={handleConfirmDelete}>Видалити</OrangeBtn>
+            </div>
           </div>
         </div>
       )}
