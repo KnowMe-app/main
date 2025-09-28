@@ -1830,22 +1830,16 @@ const StimulationSchedule = ({
         remainderWithoutDay = dayInfo.rest;
       }
       const sanitizedRemainder = sanitizeDescription(remainderWithoutDay);
-      const displayParts = [];
-      if (normalizedToken) {
-        displayParts.push(normalizedToken);
-      }
-      if (normalizedDayPrefix) {
-        displayParts.push(normalizedDayPrefix);
-      }
-      if (sanitizedRemainder) {
-        displayParts.push(sanitizedRemainder);
-      }
-      if (displayParts.length === 0 && hadPrefix) {
-        displayParts.push(weekday);
-      }
-      let displayLabel = displayParts.join(' ').trim();
+      const secondaryLabel = normalizedToken || normalizedDayPrefix || '';
+      let displayLabel = sanitizedRemainder || '';
       if (!displayLabel) {
-        displayLabel = normalizedToken || sanitizedRemainder || remainder || trimmedLabel;
+        displayLabel = remainderWithoutDay || remainderWithoutToken || '';
+      }
+      if (!displayLabel && hadPrefix) {
+        displayLabel = weekday;
+      }
+      if (!displayLabel && !secondaryLabel) {
+        displayLabel = remainder || trimmedLabel;
       }
       const year = item.date.getFullYear();
       const isToday = item.date.getTime() === today;
@@ -1857,7 +1851,7 @@ const StimulationSchedule = ({
           : alternateRowBackgroundColor;
       const rowStyle = {
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'stretch',
         gap: '4px',
         margin: `0 -${scheduleHorizontalPadding}px 2px`,
         padding: '6px 10px',
@@ -1878,8 +1872,7 @@ const StimulationSchedule = ({
         rendered.push(<div key={`year-${year}`}>{year}</div>);
         currentYear = year;
       }
-      const isCustomEvent = (item.key || '').startsWith('ap-');
-      const inputValue = isCustomEvent ? String(displayLabel || '') : labelValue;
+      const inputValue = labelValue;
 
       const isFirstDayRow = item.key === 'visit1' || item.key === 'pre-visit1';
       const showDipherelinButton =
@@ -1900,13 +1893,26 @@ const StimulationSchedule = ({
 
         rendered.push(
           <div key={item.key} style={rowStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
-              <div>
-                {dateStr} {weekday}
+            <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px', flex: 1 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  lineHeight: 1.2,
+                  minHeight: '2.4em',
+                }}
+              >
+                <span>{`${dateStr} ${weekday}`}</span>
+                <span>{secondaryLabel}</span>
               </div>
               <div
                 style={{
                   flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  minHeight: '2.4em',
                   whiteSpace: 'pre-wrap',
                   overflowWrap: 'anywhere',
                   wordBreak: 'break-word',
@@ -1948,9 +1954,18 @@ const StimulationSchedule = ({
         const isEditing = editingKey === item.key;
         rendered.push(
           <div key={item.key} style={rowStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
-              <div>
-                {dateStr} {weekday}
+            <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px', flex: 1 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  lineHeight: 1.2,
+                  minHeight: '2.4em',
+                }}
+              >
+                <span>{`${dateStr} ${weekday}`}</span>
+                <span>{secondaryLabel}</span>
               </div>
               {isEditing ? (
                 <input
@@ -2156,7 +2171,11 @@ const StimulationSchedule = ({
                       e.target.blur();
                     }
                   }}
-                  style={{ flex: 1 }}
+                  style={{
+                    flex: 1,
+                    alignSelf: 'stretch',
+                    minHeight: '2.4em',
+                  }}
                 />
               ) : (
                 <div
@@ -2164,6 +2183,10 @@ const StimulationSchedule = ({
                   style={{
                     cursor: 'pointer',
                     flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    minHeight: '2.4em',
                     whiteSpace: 'pre-wrap',
                     overflowWrap: 'anywhere',
                     wordBreak: 'break-word',
