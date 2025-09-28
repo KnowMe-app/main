@@ -2563,7 +2563,6 @@ const StimulationSchedule = ({
 
 export {
   sanitizeDescription,
-  deriveScheduleDisplayInfo,
   buildCustomEventLabel,
   computeCustomDateAndLabel,
   splitCustomEventEntries,
