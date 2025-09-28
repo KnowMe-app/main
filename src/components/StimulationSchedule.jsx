@@ -316,6 +316,83 @@ const sanitizeDescription = text => {
   return result.trim();
 };
 
+export const deriveScheduleDisplayInfo = ({ date, label }) => {
+  if (!date) {
+    return {
+      dateStr: '',
+      weekday: '',
+      secondaryLabel: '',
+      displayLabel: '',
+      labelValue: label === null || label === undefined ? '' : String(label),
+    };
+  }
+
+  const dateStr = formatDisplay(date);
+  const weekday = weekdayNames[date.getDay()];
+  const prefix = `${dateStr} ${weekday}`;
+  const labelValue = label === null || label === undefined ? '' : String(label);
+  const trimmedLabel = labelValue.trim();
+  const labelLower = trimmedLabel.toLowerCase();
+  const prefixLower = prefix.toLowerCase();
+
+  let remainder = trimmedLabel;
+  let hadPrefix = false;
+  if (labelLower.startsWith(prefixLower)) {
+    hadPrefix = true;
+    remainder = trimmedLabel.slice(prefix.length).trim();
+  }
+
+  const tokenInfo = extractWeeksDaysPrefix(remainder);
+  let normalizedToken = '';
+  let remainderWithoutToken = remainder;
+  if (tokenInfo) {
+    normalizedToken = tokenInfo.normalized;
+    remainderWithoutToken = remainder.slice(tokenInfo.length).trim();
+  }
+
+  const dayInfo = extractDayPrefix(remainderWithoutToken);
+  let normalizedDayPrefix = '';
+  let remainderWithoutDay = remainderWithoutToken;
+  if (dayInfo) {
+    normalizedDayPrefix = dayInfo.raw || `${Math.max(dayInfo.day, 1)}й день`;
+    remainderWithoutDay = dayInfo.rest;
+  }
+
+  const sanitizedRemainder = sanitizeDescription(remainderWithoutDay);
+  const secondaryLabel = normalizedToken || normalizedDayPrefix || '';
+  const normalizedSecondary = secondaryLabel.trim().toLowerCase();
+  const matchesSecondary = candidate =>
+    !!candidate && !!normalizedSecondary && candidate.trim().toLowerCase() === normalizedSecondary;
+
+  let displayLabel = sanitizedRemainder || '';
+  if (!displayLabel) {
+    const candidate = remainderWithoutDay || remainderWithoutToken || '';
+    if (!matchesSecondary(candidate)) {
+      displayLabel = candidate;
+    }
+  }
+
+  if (!displayLabel && hadPrefix && !secondaryLabel) {
+    displayLabel = weekday;
+  }
+
+  if (!displayLabel && !secondaryLabel) {
+    displayLabel = remainder || trimmedLabel;
+  }
+
+  if (matchesSecondary(displayLabel)) {
+    displayLabel = '';
+  }
+
+  return {
+    dateStr,
+    weekday,
+    secondaryLabel,
+    displayLabel,
+    labelValue,
+  };
+};
+
 const splitCustomEventEntries = value => {
   if (typeof value !== 'string') return [];
   const normalized = value.replace(/\r\n/g, '\n').trim();
@@ -1801,46 +1878,11 @@ const StimulationSchedule = ({
   const scheduleHorizontalPadding = 7;
 
   displayItems.forEach((item, index) => {
-      const dateStr = formatDisplay(item.date);
-      const weekday = weekdayNames[item.date.getDay()];
-      const prefix = `${dateStr} ${weekday}`;
-      const labelValue =
-        item.label === null || item.label === undefined ? '' : String(item.label);
-      const trimmedLabel = labelValue.trim();
-      const labelLower = trimmedLabel.toLowerCase();
-      const prefixLower = prefix.toLowerCase();
-      let remainder = trimmedLabel;
-      let hadPrefix = false;
-      if (labelLower.startsWith(prefixLower)) {
-        hadPrefix = true;
-        remainder = trimmedLabel.slice(prefix.length).trim();
-      }
-      const tokenInfo = extractWeeksDaysPrefix(remainder);
-      let normalizedToken = '';
-      let remainderWithoutToken = remainder;
-      if (tokenInfo) {
-        normalizedToken = tokenInfo.normalized;
-        remainderWithoutToken = remainder.slice(tokenInfo.length).trim();
-      }
-      const dayInfo = extractDayPrefix(remainderWithoutToken);
-      let normalizedDayPrefix = '';
-      let remainderWithoutDay = remainderWithoutToken;
-      if (dayInfo) {
-        normalizedDayPrefix = dayInfo.raw || `${Math.max(dayInfo.day, 1)}й день`;
-        remainderWithoutDay = dayInfo.rest;
-      }
-      const sanitizedRemainder = sanitizeDescription(remainderWithoutDay);
-      const secondaryLabel = normalizedToken || normalizedDayPrefix || '';
-      let displayLabel = sanitizedRemainder || '';
-      if (!displayLabel) {
-        displayLabel = remainderWithoutDay || remainderWithoutToken || '';
-      }
-      if (!displayLabel && hadPrefix) {
-        displayLabel = weekday;
-      }
-      if (!displayLabel && !secondaryLabel) {
-        displayLabel = remainder || trimmedLabel;
-      }
+      const { dateStr, weekday, secondaryLabel, displayLabel, labelValue } =
+        deriveScheduleDisplayInfo({
+          date: item.date,
+          label: item.label,
+        });
       const year = item.date.getFullYear();
       const isToday = item.date.getTime() === today;
       const isEvenRow = index % 2 === 0;
@@ -2521,6 +2563,7 @@ const StimulationSchedule = ({
 
 export {
   sanitizeDescription,
+  deriveScheduleDisplayInfo,
   buildCustomEventLabel,
   computeCustomDateAndLabel,
   splitCustomEventEntries,
