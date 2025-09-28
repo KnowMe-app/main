@@ -5,12 +5,8 @@ import { OrangeBtn } from 'components/styles';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 
-const FIRST_DAY_BUTTON_WIDTH = 88;
-const FIRST_DAY_BUTTON_GAP = 2;
-const FIRST_DAY_GROUP_WIDTH = FIRST_DAY_BUTTON_WIDTH * 3 + FIRST_DAY_BUTTON_GAP * 2;
-
 const firstDayActionButtonStyle = {
-  minWidth: `${FIRST_DAY_BUTTON_WIDTH}px`,
+  minWidth: '88px',
   height: '24px',
   borderRadius: '4px',
   boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
@@ -19,14 +15,6 @@ const firstDayActionButtonStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  flex: 1,
-};
-
-const firstDayActionContainerStyle = {
-  display: 'flex',
-  gap: `${FIRST_DAY_BUTTON_GAP}px`,
-  marginLeft: 'auto',
-  width: `${FIRST_DAY_GROUP_WIDTH}px`,
 };
 
 const parseDate = str => {
@@ -1878,7 +1866,7 @@ const StimulationSchedule = ({
                 {displayLabel}
               </div>
             </div>
-            <div style={firstDayActionContainerStyle}>
+            <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
               {showAdjustmentButtons ? (
                 <React.Fragment>
                   <OrangeBtn
