@@ -17,6 +17,15 @@ const firstDayActionButtonStyle = {
   justifyContent: 'center',
 };
 
+const scheduleControlButtonStyle = {
+  width: '24px',
+  height: '24px',
+  borderRadius: '4px',
+  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
+  fontSize: '16px',
+  fontWeight: 'bold',
+};
+
 const parseDate = str => {
   if (!str) return null;
   const fullPattern = /^\d{2}\.\d{2}\.\d{4}$/;
@@ -1871,13 +1880,13 @@ const StimulationSchedule = ({
                 <React.Fragment>
                   <OrangeBtn
                     onClick={() => handleFirstDayShift(-1)}
-                    style={{ ...firstDayActionButtonStyle, fontSize: '16px' }}
+                    style={scheduleControlButtonStyle}
                   >
                     -
                   </OrangeBtn>
                   <OrangeBtn
                     onClick={() => handleFirstDayShift(1)}
-                    style={{ ...firstDayActionButtonStyle, fontSize: '16px' }}
+                    style={scheduleControlButtonStyle}
                   >
                     +
                   </OrangeBtn>
@@ -2144,14 +2153,7 @@ const StimulationSchedule = ({
                           return copy;
                         });
                       }}
-                      style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '4px',
-                        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                        fontSize: '16px',
-                        fontWeight: 'bold',
-                      }}
+                      style={scheduleControlButtonStyle}
                     >
                       ×
                     </OrangeBtn>
@@ -2163,14 +2165,7 @@ const StimulationSchedule = ({
                           const idx = schedule.findIndex(v => v.key === item.key);
                           if (idx !== -1) shiftDate(idx, -1);
                         }}
-                        style={{
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '4px',
-                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                          fontSize: '16px',
-                          fontWeight: 'bold',
-                        }}
+                        style={scheduleControlButtonStyle}
                       >
                         -
                       </OrangeBtn>
@@ -2179,27 +2174,13 @@ const StimulationSchedule = ({
                           const idx = schedule.findIndex(v => v.key === item.key);
                           if (idx !== -1) shiftDate(idx, 1);
                         }}
-                        style={{
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '4px',
-                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                          fontSize: '16px',
-                          fontWeight: 'bold',
-                        }}
+                        style={scheduleControlButtonStyle}
                       >
                         +
                       </OrangeBtn>
                       <OrangeBtn
                         onClick={() => requestDeleteItem(item)}
-                        style={{
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '4px',
-                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-                          fontSize: '16px',
-                          fontWeight: 'bold',
-                        }}
+                        style={scheduleControlButtonStyle}
                       >
                         ×
                       </OrangeBtn>
@@ -2361,14 +2342,7 @@ const StimulationSchedule = ({
             setApDescription('');
             setApDerivedDate(null);
           }}
-          style={{
-            width: '24px',
-            height: '24px',
-            borderRadius: '4px',
-            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-            fontSize: '16px',
-            fontWeight: 'bold',
-          }}
+          style={scheduleControlButtonStyle}
         >
           +
         </OrangeBtn>
@@ -2406,12 +2380,7 @@ const StimulationSchedule = ({
             navigator.clipboard.writeText(text.trim());
           }}
           style={{
-            width: '24px',
-            height: '24px',
-            borderRadius: '4px',
-            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
-            fontSize: '16px',
-            fontWeight: 'bold',
+            ...scheduleControlButtonStyle,
             marginLeft: 'auto',
             display: 'flex',
             alignItems: 'center',
