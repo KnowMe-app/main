@@ -473,16 +473,21 @@ const isWithinStimulationRange = (date, baseDate, transferDate) => {
   const normalizedBase = baseDate ? normalizeDate(baseDate) : null;
   const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
 
-  const rangeStart = normalizedTransfer || normalizedBase;
-  if (!rangeStart) {
-    return false;
+  if (normalizedTransfer) {
+    if (normalizedDate.getTime() < normalizedTransfer.getTime()) {
+      if (!normalizedBase) {
+        return false;
+      }
+      return normalizedDate.getTime() >= normalizedBase.getTime();
+    }
+    return true;
   }
 
-  if (normalizedDate.getTime() < rangeStart.getTime()) {
-    return false;
+  if (normalizedBase) {
+    return normalizedDate.getTime() >= normalizedBase.getTime();
   }
 
-  return true;
+  return false;
 };
 
 const buildCustomEventLabel = (date, baseDate, transferDate, description) => {
@@ -1040,7 +1045,11 @@ export const adjustItemForDate = (
   }
 
   if (baseDateValue && adj.day !== null) {
-    const prefix = getSchedulePrefixForDate(adjustedDate, baseDateValue, normalizedTransfer);
+    let prefix = getSchedulePrefixForDate(adjustedDate, baseDateValue, normalizedTransfer);
+    if (item.key === 'transfer') {
+      const transferDayNumber = diffDays(adjustedDate, baseDateValue);
+      prefix = `${Math.max(transferDayNumber, 1)}й день`;
+    }
     let suffix = stripSchedulePrefixTokens(sanitizeDescription(labelSource));
     if (suffix) {
       suffix = suffix.replace(/\s*[+-]$/, '').trim();

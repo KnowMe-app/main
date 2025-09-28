@@ -1,4 +1,8 @@
-import { adjustItemForDate, splitCustomEventEntries } from 'components/StimulationSchedule';
+import {
+  adjustItemForDate,
+  buildCustomEventLabel,
+  splitCustomEventEntries,
+} from 'components/StimulationSchedule';
 
 jest.mock('components/smallCard/actions', () => ({
   handleChange: jest.fn(),
@@ -41,6 +45,18 @@ describe('adjustItemForDate', () => {
     });
 
     expect(adjusted.label).toBe('21т6д контроль');
+  });
+});
+
+describe('buildCustomEventLabel', () => {
+  it('adds day prefix for custom events between stimulation start and transfer', () => {
+    const baseDate = new Date(2024, 0, 10);
+    const transferDate = new Date(2024, 0, 18);
+    const customDate = new Date(2024, 0, 15);
+
+    const label = buildCustomEventLabel(customDate, baseDate, transferDate, 'контроль');
+
+    expect(label).toBe('6й день контроль');
   });
 });
 
