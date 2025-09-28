@@ -207,7 +207,7 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
 
   let referenceForDay = null;
-  if (normalizedTransfer && normalizedDate.getTime() >= normalizedTransfer.getTime()) {
+  if (normalizedTransfer && normalizedDate.getTime() > normalizedTransfer.getTime()) {
     referenceForDay = normalizedTransfer;
   } else if (normalizedBase) {
     referenceForDay = normalizedBase;
@@ -518,15 +518,22 @@ const isSameDay = (a, b) => {
   return normalizeDate(a).getTime() === normalizeDate(b).getTime();
 };
 
-const computeCustomDateAndLabel = (input, baseDate, referenceDate, transferDate) => {
+const computeCustomDateAndLabel = (
+  input,
+  baseDate,
+  referenceDate,
+  transferDate,
+  preCycleBaseDate = null,
+) => {
   if (!input) return { date: null, label: '', description: '', raw: '' };
   const normalizedInput = input.trim().replace(/\s+/g, ' ');
   if (!normalizedInput) return { date: null, label: '', description: '', raw: '' };
 
   const baseNormalized = baseDate ? normalizeDate(baseDate) : null;
+  const preCycleNormalized = preCycleBaseDate ? normalizeDate(preCycleBaseDate) : null;
   const transferNormalized = transferDate ? normalizeDate(transferDate) : null;
   const referenceNormalized = referenceDate ? normalizeDate(referenceDate) : null;
-  const anchor = baseNormalized || transferNormalized || referenceNormalized;
+  const anchor = baseNormalized || preCycleNormalized || transferNormalized || referenceNormalized;
 
   let workingInput = normalizedInput;
   let date = null;
@@ -544,13 +551,19 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate, transferDate)
   };
 
   const dayInfo = extractDayPrefix(workingInput);
-  if (dayInfo && (baseNormalized || transferNormalized || referenceNormalized)) {
+  if (dayInfo && (baseNormalized || preCycleNormalized || transferNormalized || referenceNormalized)) {
     const normalizedDay = Math.max(Math.trunc(dayInfo.day), 1);
     const offset = normalizedDay - 1;
     const candidates = [];
 
     if (baseNormalized) {
       const candidate = new Date(baseNormalized);
+      candidate.setDate(candidate.getDate() + offset);
+      candidates.push(candidate);
+    }
+
+    if (!baseNormalized && preCycleNormalized) {
+      const candidate = new Date(preCycleNormalized);
       candidate.setDate(candidate.getDate() + offset);
       candidates.push(candidate);
     }
@@ -567,10 +580,17 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate, transferDate)
       candidates.push(candidate);
     }
 
+    if (!candidates.length && preCycleNormalized) {
+      const candidate = new Date(preCycleNormalized);
+      candidate.setDate(candidate.getDate() + offset);
+      candidates.push(candidate);
+    }
+
     if (candidates.length) {
       let chosen = candidates[0];
       if (candidates.length > 1) {
-        const pivot = referenceNormalized || baseNormalized || transferNormalized || candidates[0];
+        const pivot =
+          referenceNormalized || baseNormalized || preCycleNormalized || transferNormalized || candidates[0];
         let bestDiff = Infinity;
         candidates.forEach(candidate => {
           const diff = Math.abs(candidate.getTime() - pivot.getTime());
@@ -645,7 +665,8 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate, transferDate)
 
   const description = sanitizeDescription(descriptionTokens.join(' '));
   if (date) {
-    const label = buildCustomEventLabel(date, baseNormalized || referenceNormalized, transferNormalized, description);
+    const baseForLabel = baseNormalized || preCycleNormalized || referenceNormalized;
+    const label = buildCustomEventLabel(date, baseForLabel, transferNormalized, description);
     return { date, label, description, raw: normalizedInput };
   }
 
@@ -655,7 +676,13 @@ const computeCustomDateAndLabel = (input, baseDate, referenceDate, transferDate)
 
 const prepareCustomEventItem = (
   input,
-  { derivedDate = null, baseDate = null, referenceDate = null, transferDate = null } = {},
+  {
+    derivedDate = null,
+    baseDate = null,
+    referenceDate = null,
+    transferDate = null,
+    preCycleBaseDate = null,
+  } = {},
 ) => {
   if (!input) return null;
   const normalizedInput = input.trim();
@@ -665,8 +692,9 @@ const prepareCustomEventItem = (
   const computed = computeCustomDateAndLabel(
     normalizedInput,
     baseDate,
-    referenceDate || baseDate || derivedDate,
+    referenceDate || baseDate || derivedDate || preCycleBaseDate,
     transferDate,
+    preCycleBaseDate,
   );
 
   let date = derivedDate || computed.date;
@@ -710,7 +738,7 @@ const prepareCustomEventItem = (
     descriptionForLabel = 'AP';
   }
 
-  const baseForLabel = baseDate || transferDate || date;
+  const baseForLabel = baseDate || preCycleBaseDate || transferDate || date;
   const label = buildCustomEventLabel(date, baseForLabel, transferDate, descriptionForLabel);
 
   return {
@@ -1028,9 +1056,10 @@ export const adjustItemForDate = (
       baseDateValue,
       item.date,
       normalizedTransfer,
+      normalizedPreBase,
     );
     const description = parsed.description || parsed.raw || labelSource;
-    const baseForLabel = baseDateValue || effectiveTransfer || adjustedDate;
+    const baseForLabel = baseDateValue || normalizedPreBase || effectiveTransfer || adjustedDate;
     const labelText = buildCustomEventLabel(
       adjustedDate,
       baseForLabel,
@@ -1565,9 +1594,11 @@ const StimulationSchedule = ({
               normalizedNewBase,
               normalizedItemDate,
               normalizedTransfer,
+              preservedPreBase,
             );
             const description = parsed.description || parsed.raw || scheduleItem.label;
-            const baseForLabel = normalizedNewBase || normalizedTransfer || normalizedItemDate;
+            const baseForLabel =
+              normalizedNewBase || preservedPreBase || normalizedTransfer || normalizedItemDate;
             const updatedLabel = buildCustomEventLabel(
               normalizedItemDate,
               baseForLabel,
@@ -2047,11 +2078,16 @@ const StimulationSchedule = ({
                             scheduleBaseDate,
                             updated.date,
                             transferDate,
+                            preBaseForState,
                           );
                           const nextDate = computed.date || updated.date;
                           const description = computed.description || computed.raw || trimmedLabel;
                           const baseForLabel =
-                            scheduleBaseDate || transferDate || nextDate || updated.date;
+                            scheduleBaseDate ||
+                            preBaseForState ||
+                            transferDate ||
+                            nextDate ||
+                            updated.date;
                           const nextLabel = nextDate
                             ? buildCustomEventLabel(nextDate, baseForLabel, transferDate, description)
                             : trimmedLabel;
@@ -2257,6 +2293,7 @@ const StimulationSchedule = ({
                 resolvedBaseDate,
                 apDerivedDate || resolvedBaseDate,
                 transferRef.current,
+                preCycleBaseDate,
               );
               if (result.date) {
                 setApDerivedDate(result.date);
@@ -2264,7 +2301,8 @@ const StimulationSchedule = ({
                   return result.label;
                 }
                 const transferForLabel = transferRef.current;
-                const baseForLabel = resolvedBaseDate || transferForLabel || result.date;
+                const baseForLabel =
+                  resolvedBaseDate || preCycleBaseDate || transferForLabel || result.date;
                 const fallbackDescription =
                   result.description ||
                   sanitizeDescription(result.raw) ||
@@ -2311,6 +2349,7 @@ const StimulationSchedule = ({
                   baseDate: resolvedBaseDate,
                   referenceDate: referenceForCompute,
                   transferDate: transferRef.current,
+                  preCycleBaseDate,
                 });
                 if (!prepared) {
                   return null;
