@@ -380,6 +380,65 @@ export const fetchDislikeUsersData = async ownerId => {
   }
 };
 
+export const fetchCycleUsersData = async (
+  statuses = ['stimulation', 'pregnant'],
+) => {
+  try {
+    const list = Array.isArray(statuses) ? statuses : [statuses];
+    const normalizedStatuses = Array.from(
+      new Set(
+        list
+          .filter(status => typeof status === 'string')
+          .map(status => status.trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (normalizedStatuses.length === 0) {
+      return {};
+    }
+
+    const idSet = new Set();
+
+    await Promise.all(
+      ['newUsers', 'users'].map(path =>
+        Promise.all(
+          normalizedStatuses.map(async status => {
+            const q = query(
+              ref2(database, path),
+              orderByChild('cycleStatus'),
+              equalTo(status),
+            );
+            const snap = await get(q);
+            if (snap.exists()) {
+              Object.keys(snap.val()).forEach(id => idSet.add(id));
+            }
+          }),
+        ),
+      ),
+    );
+
+    if (idSet.size === 0) {
+      return {};
+    }
+
+    const ids = Array.from(idSet);
+    const records = await Promise.all(ids.map(id => fetchUserById(id)));
+
+    const data = {};
+    records.forEach((user, index) => {
+      if (!user) return;
+      const key = user.userId || ids[index];
+      data[key] = user;
+    });
+
+    return data;
+  } catch (error) {
+    console.error('Error fetching cycle users data:', error);
+    return {};
+  }
+};
+
 export const setUserComment = async (cardId, text) => {
   try {
     const user = auth.currentUser;

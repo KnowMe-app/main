@@ -13,6 +13,7 @@ import {
   fetchAllFilteredUsers,
   fetchFavoriteUsers,
   fetchFavoriteUsersData,
+  fetchCycleUsersData,
   removeKeyFromFirebase,
   // fetchListOfUsers,
   makeNewUser,
@@ -1161,17 +1162,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadCycleFavorites = async () => {
-    const result = await fetchAndMergeFavoriteUsers();
-    if (!result) return;
-
-    const { loaded, normalizedFavs, cacheCount, backendCount } = result;
-    const relevantUsers = Object.keys(normalizedFavs)
-      .map(id => loaded[id])
-      .filter(user => {
-        if (!user) return false;
-        const status = getEffectiveCycleStatus(user);
-        return status === 'stimulation' || status === 'pregnant';
-      });
+    const cycleUsers = await fetchCycleUsersData(['stimulation', 'pregnant']);
+    const relevantUsers = Object.values(cycleUsers).filter(user => {
+      if (!user) return false;
+      const status = getEffectiveCycleStatus(user);
+      return status === 'stimulation' || status === 'pregnant';
+    });
 
     const annotated = sortUsersByStimulationSchedule(relevantUsers, {
       fallbackComparator: compareUsersByGetInTouch,
@@ -1183,13 +1179,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return acc;
     }, {});
 
+    cacheFetchedUsers(cycleUsers, cacheLoad2Users, filters);
     setUsers(sorted);
     setHasMore(false);
     setLastKey(null);
     setCurrentPage(1);
     setTotalCount(sortedUsers.length);
-    setCacheCount(cacheCount);
-    setBackendCount(backendCount);
+    setCacheCount(0);
+    setBackendCount(sortedUsers.length);
   };
 
   const [, setDuplicates] = useState('');
