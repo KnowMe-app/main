@@ -1891,13 +1891,29 @@ const StimulationSchedule = ({
 
   const filtered = schedule.filter(item => item.date);
   if (!filtered.some(item => item.date.getTime() === today)) {
-    const baseForDiff = resolvedBaseDate ? new Date(resolvedBaseDate) : null;
+    const baseForDiff = (() => {
+      if (!resolvedBaseDate) return null;
+
+      const resolvedBase = new Date(resolvedBaseDate);
+      if (!preCycleBaseDate) {
+        return resolvedBase;
+      }
+
+      const todayTs = todayDate.getTime();
+      const preCycleBase = new Date(preCycleBaseDate);
+      if (
+        todayTs >= preCycleBase.getTime() &&
+        todayTs < resolvedBase.getTime()
+      ) {
+        return preCycleBase;
+      }
+
+      return resolvedBase;
+    })();
     if (baseForDiff) {
       const msInDay = 1000 * 60 * 60 * 24;
       const diff = Math.round((todayDate.getTime() - baseForDiff.getTime()) / msInDay);
       const totalDays = Math.max(diff, 0);
-      const weeks = Math.floor(totalDays / 7);
-      const days = totalDays % 7;
       const normalizedBaseForPlaceholder = normalizeDate(baseForDiff);
       const transferSource =
         transferRef.current ||
@@ -1911,7 +1927,7 @@ const StimulationSchedule = ({
         normalizedBaseForPlaceholder,
         normalizedTransferForPlaceholder,
       );
-      const comment = computedPrefix || formatWeeksDaysToken(weeks, days);
+      const comment = computedPrefix || `${Math.max(totalDays + 1, 1)}й день`;
       const placeholder = {
         key: 'today-placeholder',
         date: new Date(todayDate),
