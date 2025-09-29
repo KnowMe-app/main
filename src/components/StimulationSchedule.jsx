@@ -1042,7 +1042,7 @@ export const generateSchedule = base => {
   visits.push({
     key: 'transfer',
     date: transfer.date,
-    label: `${transfer.day}й день (перенос)${transfer.sign ? ` ${transfer.sign}` : ''}`,
+    label: `${transfer.day}й день Перенос${transfer.sign ? ` ${transfer.sign}` : ''}`,
   });
 
   // HCG 12 days after transfer
