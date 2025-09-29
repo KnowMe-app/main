@@ -18,7 +18,7 @@ describe('adjustItemForDate', () => {
     const transferItem = {
       key: 'transfer',
       date: new Date(transferDate),
-      label: '20й день (перенос)',
+      label: '20й день Перенос',
     };
 
     const adjusted = adjustItemForDate(transferItem, transferDate, {
@@ -26,7 +26,7 @@ describe('adjustItemForDate', () => {
       transferDate,
     });
 
-    expect(adjusted.label).toBe('20й день (перенос)');
+    expect(adjusted.label).toBe('20й день Перенос');
   });
 
   it('keeps week-day prefix for distant base-relative custom events without transfer', () => {
