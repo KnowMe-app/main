@@ -1374,13 +1374,24 @@ const StimulationSchedule = ({
       const normalizedDate = normalizeDate(newBaseDate);
       const formattedNextCycle = formatDateToServer(formatFullDate(normalizedDate));
       if (!formattedNextCycle) return;
+
+      const predictedDeliveryBase = new Date(normalizedDate);
+      predictedDeliveryBase.setDate(predictedDeliveryBase.getDate() + 7 * 40);
+      const predictedDelivery = normalizeDate(predictedDeliveryBase);
+      const formattedLastDelivery = formatDateToServer(
+        formatFullDate(predictedDelivery),
+      );
+
       const updates = { lastCycle: formattedNextCycle };
+      if (formattedLastDelivery) {
+        updates.lastDelivery = formattedLastDelivery;
+      }
       let stateSynced = false;
       if (context.setUsers && context.setState) {
         handleChange(context.setUsers, context.setState, context.userId, updates);
         stateSynced = true;
       } else if (context.setState) {
-        context.setState(prev => ({ ...prev, lastCycle: formattedNextCycle }));
+        context.setState(prev => ({ ...prev, ...updates }));
         stateSynced = true;
       } else if (context.setUsers) {
         handleChange(context.setUsers, null, context.userId, updates);
@@ -1390,6 +1401,7 @@ const StimulationSchedule = ({
       if (typeof onLastCyclePersisted === 'function') {
         onLastCyclePersisted({
           lastCycle: formattedNextCycle,
+          lastDelivery: formattedLastDelivery,
           date: normalizedDate,
           needsSync: !stateSynced,
         });
