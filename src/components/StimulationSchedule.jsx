@@ -2019,7 +2019,9 @@ const StimulationSchedule = ({
                 {displayLabel}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
+            <div
+              style={{ display: 'flex', gap: '2px', marginLeft: 'auto', alignItems: 'center' }}
+            >
               {showAdjustmentButtons ? (
                 <React.Fragment>
                   <OrangeBtn
@@ -2294,7 +2296,9 @@ const StimulationSchedule = ({
                 </div>
               )}
             </div>
-            <div style={{ display: 'flex', gap: '2px', marginLeft: 'auto' }}>
+            <div
+              style={{ display: 'flex', gap: '2px', marginLeft: 'auto', alignItems: 'center' }}
+            >
               {isEditing
                 ? null
                 : isPlaceholder
