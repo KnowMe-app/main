@@ -45,7 +45,7 @@ const formatFullDate = date => {
   return `${day}.${month}.${year}`;
 };
 
-const stripLeadingToken = text => text.replace(/^[,.;:\-]+/, '').trim();
+const stripLeadingToken = text => text.replace(/^[-,.;:]+/, '').trim();
 
 const stripDayOfWeekToken = text => {
   if (!text) return '';
