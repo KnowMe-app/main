@@ -1071,11 +1071,19 @@ export const generateSchedule = base => {
   weeks.forEach(week => {
     let wd = new Date(base);
     wd.setDate(wd.getDate() + week * 7);
-    const adj = week === 40 ? buildUnadjustedDayInfo(wd, base) : adjustForward(wd, base);
+    const adj =
+      week === 40 || week === 36
+        ? buildUnadjustedDayInfo(wd, base)
+        : adjustForward(wd, base);
     const prefix = getSchedulePrefixForDate(adj.date, base, transferBase);
     let labelText = prefix;
     if (week === 40) {
       labelText = labelText ? `${labelText} пологи` : 'пологи';
+    }
+    if (week === 36) {
+      labelText = labelText
+        ? `${labelText} Переїзд в Київ`
+        : 'Переїзд в Київ';
     }
     if (adj.sign) {
       labelText = labelText ? `${labelText} ${adj.sign}` : adj.sign;
@@ -1085,6 +1093,24 @@ export const generateSchedule = base => {
       date: adj.date,
       label: labelText.trim(),
     });
+
+    if (week === 36) {
+      const nextDay = new Date(base);
+      nextDay.setDate(nextDay.getDate() + week * 7 + 1);
+      const nextAdj = buildUnadjustedDayInfo(nextDay, base);
+      let nextPrefix = getSchedulePrefixForDate(nextAdj.date, base, transferBase);
+      let nextLabel = nextPrefix
+        ? `${nextPrefix} Підписати обмінну карту`
+        : 'Підписати обмінну карту';
+      if (nextAdj.sign) {
+        nextLabel = nextLabel ? `${nextLabel} ${nextAdj.sign}` : nextAdj.sign;
+      }
+      visits.push({
+        key: 'week36-day2',
+        date: nextAdj.date,
+        label: nextLabel.trim(),
+      });
+    }
   });
 
   return visits;
