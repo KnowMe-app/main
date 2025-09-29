@@ -57,12 +57,17 @@ const UserCard = ({
             setUsers={setUsers}
             setState={setState}
             isToastOn={isToastOn}
-            onLastCyclePersisted={({ lastCycle, needsSync }) => {
-              if (!needsSync || !lastCycle) return;
+            onLastCyclePersisted={({ lastCycle, lastDelivery, needsSync }) => {
+              if (!needsSync) return;
+              const updates = {};
+              if (lastCycle) updates.lastCycle = lastCycle;
+              if (lastDelivery) updates.lastDelivery = lastDelivery;
+              if (!Object.keys(updates).length) return;
+
               if (typeof setState === 'function') {
                 setState(prev => {
                   if (!prev || prev.userId !== userData.userId) return prev;
-                  return { ...prev, lastCycle };
+                  return { ...prev, ...updates };
                 });
               }
               if (typeof setUsers === 'function') {
@@ -70,7 +75,7 @@ const UserCard = ({
                   if (!prev) return prev;
                   if (Array.isArray(prev)) {
                     return prev.map(item =>
-                      item?.userId === userData.userId ? { ...item, lastCycle } : item,
+                      item?.userId === userData.userId ? { ...item, ...updates } : item,
                     );
                   }
                   if (typeof prev === 'object') {
@@ -80,7 +85,7 @@ const UserCard = ({
                       ...prev,
                       [userData.userId]: {
                         ...current,
-                        lastCycle,
+                        ...updates,
                       },
                     };
                   }
