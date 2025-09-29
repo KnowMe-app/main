@@ -567,6 +567,37 @@ const isWithinStimulationRange = (date, baseDate, transferDate) => {
   return false;
 };
 
+const resolveCustomLabelBase = (
+  date,
+  { baseDate = null, preCycleBaseDate = null, transferDate = null, fallbackDate = null } = {},
+) => {
+  if (!date && !baseDate && !preCycleBaseDate && !transferDate && !fallbackDate) {
+    return null;
+  }
+
+  const normalizedDate = date ? normalizeDate(date) : null;
+  const normalizedBase = baseDate ? normalizeDate(baseDate) : null;
+  const normalizedPre = preCycleBaseDate ? normalizeDate(preCycleBaseDate) : null;
+  const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
+  const normalizedFallback = fallbackDate ? normalizeDate(fallbackDate) : null;
+
+  if (normalizedDate && normalizedPre) {
+    const eventTime = normalizedDate.getTime();
+    const preTime = normalizedPre.getTime();
+    const baseTime = normalizedBase ? normalizedBase.getTime() : null;
+
+    if (eventTime >= preTime && (!baseTime || eventTime < baseTime)) {
+      return normalizedPre;
+    }
+  }
+
+  if (normalizedBase) return normalizedBase;
+  if (normalizedPre) return normalizedPre;
+  if (normalizedTransfer) return normalizedTransfer;
+  if (normalizedFallback) return normalizedFallback;
+  return normalizedDate;
+};
+
 const buildCustomEventLabel = (date, baseDate, transferDate, description) => {
   const trimmedDescription = sanitizeDescription(description);
   if (!date) return trimmedDescription;
@@ -742,7 +773,12 @@ const computeCustomDateAndLabel = (
 
   const description = sanitizeDescription(descriptionTokens.join(' '));
   if (date) {
-    const baseForLabel = baseNormalized || preCycleNormalized || referenceNormalized;
+    const baseForLabel = resolveCustomLabelBase(date, {
+      baseDate: baseNormalized,
+      preCycleBaseDate: preCycleNormalized,
+      transferDate: transferNormalized,
+      fallbackDate: referenceNormalized,
+    });
     const label = buildCustomEventLabel(date, baseForLabel, transferNormalized, description);
     return { date, label, description, raw: normalizedInput };
   }
@@ -815,11 +851,22 @@ const prepareCustomEventItem = (
     descriptionForLabel = 'AP';
   }
 
-  const baseForLabel = baseDate || preCycleBaseDate || transferDate || date;
-  const label = buildCustomEventLabel(date, baseForLabel, transferDate, descriptionForLabel);
+  const normalizedDate = date ? normalizeDate(date) : null;
+  const baseForLabel = resolveCustomLabelBase(normalizedDate, {
+    baseDate,
+    preCycleBaseDate,
+    transferDate,
+    fallbackDate: normalizedDate,
+  });
+  const label = buildCustomEventLabel(
+    normalizedDate,
+    baseForLabel,
+    transferDate,
+    descriptionForLabel,
+  );
 
   return {
-    date,
+    date: normalizedDate,
     label,
   };
 };
@@ -1136,7 +1183,12 @@ export const adjustItemForDate = (
       normalizedPreBase,
     );
     const description = parsed.description || parsed.raw || labelSource;
-    const baseForLabel = baseDateValue || normalizedPreBase || effectiveTransfer || adjustedDate;
+    const baseForLabel = resolveCustomLabelBase(adjustedDate, {
+      baseDate: baseDateValue,
+      preCycleBaseDate: normalizedPreBase,
+      transferDate: normalizedTransfer,
+      fallbackDate: effectiveTransfer || adjustedDate,
+    });
     const labelText = buildCustomEventLabel(
       adjustedDate,
       baseForLabel,
@@ -1674,8 +1726,12 @@ const StimulationSchedule = ({
               preservedPreBase,
             );
             const description = parsed.description || parsed.raw || scheduleItem.label;
-            const baseForLabel =
-              normalizedNewBase || preservedPreBase || normalizedTransfer || normalizedItemDate;
+            const baseForLabel = resolveCustomLabelBase(normalizedItemDate, {
+              baseDate: normalizedNewBase,
+              preCycleBaseDate: preservedPreBase,
+              transferDate: normalizedTransfer,
+              fallbackDate: normalizedItemDate,
+            });
             const updatedLabel = buildCustomEventLabel(
               normalizedItemDate,
               baseForLabel,
@@ -2139,12 +2195,12 @@ const StimulationSchedule = ({
                           );
                           const nextDate = computed.date || updated.date;
                           const description = computed.description || computed.raw || trimmedLabel;
-                          const baseForLabel =
-                            scheduleBaseDate ||
-                            preBaseForState ||
-                            transferDate ||
-                            nextDate ||
-                            updated.date;
+                          const baseForLabel = resolveCustomLabelBase(nextDate || updated.date, {
+                            baseDate: scheduleBaseDate,
+                            preCycleBaseDate: preBaseForState,
+                            transferDate,
+                            fallbackDate: nextDate || updated.date,
+                          });
                           const nextLabel = nextDate
                             ? buildCustomEventLabel(nextDate, baseForLabel, transferDate, description)
                             : trimmedLabel;
@@ -2366,8 +2422,12 @@ const StimulationSchedule = ({
                   return result.label;
                 }
                 const transferForLabel = transferRef.current;
-                const baseForLabel =
-                  resolvedBaseDate || preCycleBaseDate || transferForLabel || result.date;
+                const baseForLabel = resolveCustomLabelBase(result.date, {
+                  baseDate: resolvedBaseDate,
+                  preCycleBaseDate: preCycleBaseDate,
+                  transferDate: transferForLabel,
+                  fallbackDate: result.date,
+                });
                 const fallbackDescription =
                   result.description ||
                   sanitizeDescription(result.raw) ||

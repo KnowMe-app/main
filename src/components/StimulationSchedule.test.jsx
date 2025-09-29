@@ -1,6 +1,7 @@
 import {
   adjustItemForDate,
   buildCustomEventLabel,
+  computeCustomDateAndLabel,
   splitCustomEventEntries,
 } from 'components/StimulationSchedule';
 
@@ -57,6 +58,23 @@ describe('buildCustomEventLabel', () => {
     const label = buildCustomEventLabel(customDate, baseDate, transferDate, 'контроль');
 
     expect(label).toBe('6й день контроль');
+  });
+});
+
+describe('computeCustomDateAndLabel', () => {
+  it('prefers pre-cycle base for custom events before the main stimulation visit 1', () => {
+    const visitOne = new Date(2025, 0, 16);
+    const preCycleBase = new Date(2024, 11, 24);
+
+    const result = computeCustomDateAndLabel(
+      '28.12.2024 міс',
+      visitOne,
+      visitOne,
+      null,
+      preCycleBase,
+    );
+
+    expect(result.label).toBe('5й день міс');
   });
 });
 
