@@ -1,7 +1,7 @@
 import React from 'react';
 import { handleChange, handleSubmit } from './smallCard/actions';
 import { formatDateToServer } from 'components/inputValidations';
-import { OrangeBtn } from 'components/styles';
+import { OrangeBtn, color } from 'components/styles';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 
@@ -2630,35 +2630,70 @@ const StimulationSchedule = ({
             onClick={event => event.stopPropagation()}
             style={{
               backgroundColor: '#fff',
-              padding: '20px',
+              padding: '24px 20px',
               borderRadius: '8px',
               maxWidth: '320px',
               width: '90%',
               color: '#000',
               boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
             }}
           >
-            <p style={{ marginBottom: '12px' }}>Видалити подію з графіку стимуляції?</p>
+            <p style={{ marginBottom: '12px', fontWeight: '600' }}>
+              Видалити подію з графіку стимуляції?
+            </p>
             {pendingDelete?.label ? (
-              <p style={{ margin: '0 0 16px', fontWeight: 'bold' }}>{pendingDelete.label}</p>
+              <p style={{ margin: '0 0 16px', fontWeight: 'bold', textAlign: 'center' }}>
+                {pendingDelete.label}
+              </p>
             ) : (
-              <p style={{ margin: '0 0 16px', fontWeight: 'bold' }}>Подія без назви</p>
+              <p style={{ margin: '0 0 16px', fontWeight: 'bold', textAlign: 'center' }}>
+                Подія без назви
+              </p>
             )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: '12px',
+                width: '100%',
+              }}
+            >
               <button
                 onClick={handleCancelDelete}
                 type="button"
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: '4px',
+                  minWidth: '120px',
+                  padding: '10px 16px',
+                  borderRadius: '6px',
                   border: '1px solid #ccc',
                   backgroundColor: '#fff',
                   cursor: 'pointer',
+                  fontWeight: 600,
                 }}
               >
                 Скасувати
               </button>
-              <OrangeBtn onClick={handleConfirmDelete}>Видалити</OrangeBtn>
+              <button
+                onClick={handleConfirmDelete}
+                type="button"
+                style={{
+                  minWidth: '120px',
+                  padding: '10px 16px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: color.accent,
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}
+              >
+                Видалити
+              </button>
             </div>
           </div>
         </div>
