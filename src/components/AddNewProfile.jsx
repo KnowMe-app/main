@@ -56,6 +56,7 @@ import {
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
+import { ReactComponent as BabyIcon } from 'assets/icons/baby.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 // import { UploadJson } from './topBtns/uploadNewJSON';
 import { btnExportUsers } from './topBtns/btnExportUsers';
@@ -80,6 +81,7 @@ import {
   formatDateToServer,
 } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
 
 const Container = styled.div`
   display: flex;
@@ -756,6 +758,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
+    if (currentFilter === 'CYCLE_FAVORITE') {
+      loadCycleFavorites().finally(() => setSearchLoading(false));
+      return;
+    }
+
     const queryKey = buildQueryKey(currentFilter, filters, search);
     const ids = getIdsByQuery(queryKey);
     const cards = ids.map(id => getCard(id)).filter(Boolean);
@@ -1087,9 +1094,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     saveToContact(res);
   };
 
-  const loadFavoriteUsers = async () => {
+  const fetchAndMergeFavoriteUsers = async () => {
     const owner = auth.currentUser?.uid;
-    if (!owner) return;
+    if (!owner) return null;
 
     const { cards: cachedArr, fromCache } = await getFavoriteCards(
       id => fetchUserById(id),
@@ -1098,7 +1105,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     let backendCount = fromCache ? 0 : cachedArr.length;
 
     const loaded = cachedArr.reduce((acc, user) => {
-      acc[user.userId] = user;
+      if (user?.userId) {
+        acc[user.userId] = user;
+      }
       return acc;
     }, {});
 
@@ -1107,7 +1116,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const favUsers = await fetchFavoriteUsersData(owner);
     Object.entries(favUsers).forEach(([id, user]) => {
       favIds[id] = true;
-      if (!loaded[id]) {
+      if (id && !loaded[id]) {
         loaded[id] = user;
         backendCount += 1;
       }
@@ -1122,10 +1131,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setFavoriteIds(normalizedFavs);
 
     cacheFetchedUsers(loaded, cacheFavoriteUsers);
-    setIdsForQuery(
-      'favorite',
-      Object.keys(normalizedFavs),
-    );
+    setIdsForQuery('favorite', Object.keys(normalizedFavs));
+
+    return { loaded, normalizedFavs, cacheCount, backendCount };
+  };
+
+  const loadFavoriteUsers = async () => {
+    const result = await fetchAndMergeFavoriteUsers();
+    if (!result) return;
+    const { loaded, normalizedFavs, cacheCount, backendCount } = result;
 
     const sortedUsers = Object.keys(normalizedFavs)
       .map(id => loaded[id])
@@ -1142,6 +1156,38 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLastKey(null);
     setCurrentPage(1);
     setTotalCount(total);
+    setCacheCount(cacheCount);
+    setBackendCount(backendCount);
+  };
+
+  const loadCycleFavorites = async () => {
+    const result = await fetchAndMergeFavoriteUsers();
+    if (!result) return;
+
+    const { loaded, normalizedFavs, cacheCount, backendCount } = result;
+    const relevantUsers = Object.keys(normalizedFavs)
+      .map(id => loaded[id])
+      .filter(user => {
+        if (!user) return false;
+        const status = getEffectiveCycleStatus(user);
+        return status === 'stimulation' || status === 'pregnant';
+      });
+
+    const annotated = sortUsersByStimulationSchedule(relevantUsers, {
+      fallbackComparator: compareUsersByGetInTouch,
+    });
+    const sortedUsers = annotated.map(item => item.user).filter(Boolean);
+
+    const sorted = sortedUsers.reduce((acc, user) => {
+      acc[user.userId] = user;
+      return acc;
+    }, {});
+
+    setUsers(sorted);
+    setHasMore(false);
+    setLastKey(null);
+    setCurrentPage(1);
+    setTotalCount(sortedUsers.length);
     setCacheCount(cacheCount);
     setBackendCount(backendCount);
   };
@@ -1270,11 +1316,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // ];
 
 
-  const shouldPaginate = currentFilter !== 'FAVORITE';
+  const shouldPaginate =
+    currentFilter !== 'FAVORITE' && currentFilter !== 'CYCLE_FAVORITE';
   const totalPages = shouldPaginate ? Math.ceil(totalCount / PAGE_SIZE) || 1 : 1;
   const getSortedIds = () => {
     const ids = Object.keys(users);
-    if (isDuplicateView) {
+    if (isDuplicateView || currentFilter === 'CYCLE_FAVORITE') {
       return ids;
     }
     return ids.sort((a, b) =>
@@ -1473,6 +1520,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 }}
               >
                 ❤
+              </Button>
+              <Button
+                onClick={() => {
+                  setCurrentFilter('CYCLE_FAVORITE');
+                  setDuplicates('');
+                  setIsDuplicateView(false);
+                }}
+                aria-label="Cycle favorites"
+              >
+                <BabyIcon style={{ width: '100%', height: '100%' }} />
               </Button>
               <Button onClick={indexLastLoginHandler}>indexLastLogin</Button>
               <Button onClick={makeIndex}>Index</Button>
