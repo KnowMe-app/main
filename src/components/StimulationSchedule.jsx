@@ -1368,23 +1368,41 @@ const StimulationSchedule = ({
   }, [setUsers, setState, userData.userId, isToastOn]);
 
   const persistLastCycleDate = React.useCallback(
-    newBaseDate => {
+    (newBaseDate, options = {}) => {
       if (!newBaseDate) return;
+      const { updateDelivery = true } = options;
       const context = persistContextRef.current;
       const normalizedDate = normalizeDate(newBaseDate);
       const formattedNextCycle = formatDateToServer(formatFullDate(normalizedDate));
       if (!formattedNextCycle) return;
 
-      const predictedDeliveryBase = new Date(normalizedDate);
-      predictedDeliveryBase.setDate(predictedDeliveryBase.getDate() + 7 * 40);
-      const predictedDelivery = normalizeDate(predictedDeliveryBase);
-      const formattedLastDelivery = formatDateToServer(
-        formatFullDate(predictedDelivery),
-      );
-
+      let formattedLastDelivery = '';
+      let formattedGetInTouch = '';
       const updates = { lastCycle: formattedNextCycle };
-      if (formattedLastDelivery) {
-        updates.lastDelivery = formattedLastDelivery;
+
+      if (updateDelivery) {
+        const predictedDeliveryBase = new Date(normalizedDate);
+        predictedDeliveryBase.setDate(predictedDeliveryBase.getDate() + 7 * 40);
+        const predictedDelivery = normalizeDate(predictedDeliveryBase);
+        formattedLastDelivery = formatDateToServer(
+          formatFullDate(predictedDelivery),
+        );
+
+        if (formattedLastDelivery) {
+          updates.lastDelivery = formattedLastDelivery;
+          const getInTouchDate = new Date(predictedDelivery);
+          getInTouchDate.setMonth(getInTouchDate.getMonth() + 9);
+          const normalizedGetInTouch = normalizeDate(getInTouchDate);
+          formattedGetInTouch = formatDateToServer(
+            formatFullDate(normalizedGetInTouch),
+          );
+          if (formattedGetInTouch) {
+            updates.getInTouch = formattedGetInTouch;
+          }
+        }
+      } else {
+        updates.lastDelivery = '';
+        updates.getInTouch = '';
       }
       let stateSynced = false;
       if (context.setUsers && context.setState) {
@@ -1402,6 +1420,7 @@ const StimulationSchedule = ({
         onLastCyclePersisted({
           lastCycle: formattedNextCycle,
           lastDelivery: formattedLastDelivery,
+          getInTouch: formattedGetInTouch,
           date: normalizedDate,
           needsSync: !stateSynced,
         });
@@ -1411,6 +1430,7 @@ const StimulationSchedule = ({
         { userId: context.userId, ...updates },
         'overwrite',
         context.isToastOn,
+        updateDelivery ? [] : ['lastDelivery', 'getInTouch'],
       );
     },
     [onLastCyclePersisted],
@@ -1489,7 +1509,7 @@ const StimulationSchedule = ({
     hasChanges.current = true;
     saveSchedule(combinedSchedule);
 
-    persistLastCycleDate(normalizedNextCycle);
+    persistLastCycleDate(normalizedNextCycle, { updateDelivery: false });
   }, [
     base,
     preCycleActive,

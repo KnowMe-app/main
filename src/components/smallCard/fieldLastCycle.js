@@ -239,8 +239,46 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         const updates = normalizedStatus
           ? { lastCycle: lastCycleFormatted, cycleStatus: normalizedStatus }
           : { lastCycle: lastCycleFormatted };
+
+        if (normalizedStatus === 'stimulation') {
+          const existingLastDelivery = parseDate(userData.lastDelivery);
+          let hasUpcomingDelivery = false;
+          if (existingLastDelivery) {
+            const normalizedExisting = normalizeDate(existingLastDelivery);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            hasUpcomingDelivery = normalizedExisting.getTime() > today.getTime();
+          }
+
+          if (hasUpcomingDelivery) {
+            const recalculatedDelivery = new Date(date);
+            recalculatedDelivery.setDate(recalculatedDelivery.getDate() + 7 * 40);
+            const recalculatedGetInTouch = new Date(recalculatedDelivery);
+            recalculatedGetInTouch.setMonth(recalculatedGetInTouch.getMonth() + 9);
+            updates.lastDelivery = formatDateToServer(formatDate(recalculatedDelivery));
+            updates.getInTouch = formatDateToServer(formatDate(recalculatedGetInTouch));
+          } else if (userData.lastDelivery) {
+            updates.lastDelivery = '';
+          }
+
+          if (!updates.getInTouch && userData.getInTouch) {
+            updates.getInTouch = '';
+          }
+        }
         handleChange(setUsers, setState, userData.userId, updates);
-        handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
+        const removalKeys = [];
+        if ('lastDelivery' in updates && !updates.lastDelivery) {
+          removalKeys.push('lastDelivery');
+        }
+        if ('getInTouch' in updates && !updates.getInTouch) {
+          removalKeys.push('getInTouch');
+        }
+        handleSubmit(
+          { userId: userData.userId, ...updates },
+          'overwrite',
+          isToastOn,
+          removalKeys,
+        );
         submittedRef.current = true;
       }
     } else {
