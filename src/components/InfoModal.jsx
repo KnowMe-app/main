@@ -76,14 +76,7 @@ const OrangeStrong = styled.strong`
   color: orange;
 `;
 
-const LargeModalContent = styled(ModalContent)`
-  width: min(920px, 95vw);
-  max-height: 90vh;
-  overflow-y: auto;
-  text-align: left;
-`;
-
-export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards, Medications }) => {
+export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards }) => {
 
   const delProfile = (
     <>
@@ -166,8 +159,6 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
     </>
   );
 
-  const medicationContent = Medications ? <Medications /> : null;
-
   let ContentComponent = ModalContent;
   let body = null;
 
@@ -189,10 +180,6 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
       break;
     case 'compareCards':
       body = compareCards;
-      break;
-    case 'medications':
-      ContentComponent = LargeModalContent;
-      body = medicationContent;
       break;
     default:
       body = null;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import {
@@ -49,6 +49,21 @@ const EditProfile = () => {
   const [isToastOn, setIsToastOn] = useState(true);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [dataSource, setDataSource] = useState('');
+
+  const handleOpenMedications = useCallback(
+    user => {
+      if (!user?.userId) return;
+      const labelParts = [user.name, user.surname].filter(Boolean);
+      navigate(`/medications/${user.userId}`, {
+        state: {
+          from: location.pathname,
+          label: labelParts.join(' '),
+          user,
+        },
+      });
+    },
+    [navigate, location.pathname],
+  );
 
   async function remoteUpdate({ updatedState, overwrite, delCondition }) {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
@@ -235,6 +250,7 @@ const EditProfile = () => {
           undefined,
           isToastOn,
           setIsToastOn,
+          handleOpenMedications,
         )}
       </div>
       {shouldShowSchedule && state && (

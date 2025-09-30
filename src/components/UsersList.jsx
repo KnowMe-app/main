@@ -3,7 +3,6 @@ import { coloredCard, FadeContainer } from './styles';
 import { makeNewUser } from './config';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import { btnCompare } from './smallCard/btnCompare';
-import { btnMedications } from './smallCard/btnMedications';
 import { btnEdit } from './smallCard/btnEdit';
 import { renderAllFields } from './ProfileForm';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
@@ -17,6 +16,7 @@ const UserCard = ({
   setShowInfoModal,
   setState,
   setUserIdToDelete,
+  onOpenMedications,
   favoriteUsers,
   setFavoriteUsers,
   dislikeUsers,
@@ -49,6 +49,8 @@ const UserCard = ({
           currentFilter,
           isDateInRange,
           isToastOn,
+          undefined,
+          onOpenMedications,
         )}
       </div>
       {shouldShowSchedule && (
@@ -182,13 +184,13 @@ const UsersList = ({
             <>
               {btnEdit(userData, setSearch, setState)}
               {btnCompare(index, users, setUsers, setShowInfoModal, setCompare, )}
-              {btnMedications(userData, onOpenMedications)}
               <UserCard
                 setShowInfoModal={setShowInfoModal}
                 userData={userData}
                 setUsers={setUsers}
                 setState={setState}
                 setUserIdToDelete={setUserIdToDelete}
+                onOpenMedications={onOpenMedications}
                 favoriteUsers={favoriteUsers}
                 setFavoriteUsers={setFavoriteUsers}
                 dislikeUsers={dislikeUsers}

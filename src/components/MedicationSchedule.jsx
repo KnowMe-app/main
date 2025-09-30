@@ -121,17 +121,35 @@ const Td = styled.td`
 `;
 
 const CellInput = styled.input`
-  width: 100%;
-  padding: 6px 8px;
+  width: 2.5ch;
+  min-width: 32px;
+  padding: 4px 6px;
   border-radius: 6px;
   border: 1px solid #d0d0d0;
   font-size: 13px;
   text-align: center;
   color: black;
+  box-sizing: border-box;
+  display: inline-block;
 `;
 
 const DateInput = styled(CellInput)`
   text-align: left;
+`;
+
+const DayCell = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 500;
+`;
+
+const DayBadge = styled.span`
+  font-size: 11px;
+  color: #555;
+  font-weight: 600;
+  white-space: nowrap;
 `;
 
 const ActionsRow = styled.div`
@@ -631,9 +649,18 @@ const MedicationSchedule = ({ data, onChange, onClose, userLabel, userId }) => {
             </tr>
           </thead>
           <tbody>
-            {schedule.rows.map((row, index) => (
-              <tr key={`${row.date || 'row'}-${index}`}>
-                <Td>{index + 1}</Td>
+            {schedule.rows.map((row, index) => {
+              const dayNumber = index + 1;
+              const showOneTabletLabel = dayNumber >= 8 && (dayNumber - 1) % 7 === 0;
+
+              return (
+                <tr key={`${row.date || 'row'}-${index}`}>
+                  <Td style={{ textAlign: 'center' }}>
+                    <DayCell>
+                      <span>{dayNumber}</span>
+                      {showOneTabletLabel && <DayBadge>1т1д</DayBadge>}
+                    </DayCell>
+                  </Td>
                 <Td>
                   <DateInput
                     value={formatDateForDisplay(row.date)}
@@ -649,8 +676,9 @@ const MedicationSchedule = ({ data, onChange, onClose, userLabel, userId }) => {
                     />
                   </Td>
                 ))}
-              </tr>
-            ))}
+                </tr>
+              );
+            })}
           </tbody>
         </StyledTable>
       </TableWrapper>
