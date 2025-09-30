@@ -28,6 +28,7 @@ import {
   fetchFilteredUsersByPage,
   indexLastLogin,
   // removeSpecificSearchId,
+  saveMedicationSchedule,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -57,6 +58,7 @@ import {
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
+import MedicationSchedule from './MedicationSchedule';
 import { ReactComponent as BabyIcon } from 'assets/icons/baby.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 // import { UploadJson } from './topBtns/uploadNewJSON';
@@ -223,6 +225,10 @@ const ButtonsContainer = styled.div`
   flex-wrap: wrap;
   gap: 10px;
 `;
+
+
+const getMedicationStorageKey = (ownerId, userId) =>
+  ownerId && userId ? `medication-schedule:${ownerId}:${userId}` : null;
 
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
@@ -406,6 +412,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // };
 
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [medicationContext, setMedicationContext] = useState(null);
+  const [medicationData, setMedicationData] = useState(null);
+  const medicationListenerRef = useRef(null);
+  const medicationSaveTimeoutRef = useRef(null);
+  const medicationStorageKeyRef = useRef(null);
+  const ownerId = auth.currentUser?.uid;
 
   useEffect(() => {
     const logged = localStorage.getItem('isLoggedIn');
@@ -420,11 +432,149 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, [isLoggedIn]);
 
+  useEffect(() => () => {
+    if (medicationListenerRef.current) {
+      medicationListenerRef.current();
+      medicationListenerRef.current = null;
+    }
+    if (medicationSaveTimeoutRef.current) {
+      clearTimeout(medicationSaveTimeoutRef.current);
+      medicationSaveTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!medicationContext?.userId || !ownerId) {
+      medicationStorageKeyRef.current = null;
+      if (medicationListenerRef.current) {
+        medicationListenerRef.current();
+        medicationListenerRef.current = null;
+      }
+      return undefined;
+    }
+
+    const storageKey = getMedicationStorageKey(ownerId, medicationContext.userId);
+    medicationStorageKeyRef.current = storageKey;
+
+    let localData = null;
+    if (storageKey) {
+      try {
+        const cached = localStorage.getItem(storageKey);
+        if (cached) {
+          localData = JSON.parse(cached);
+        }
+      } catch (error) {
+        console.error('Failed to read cached medication schedule', error);
+      }
+    }
+
+    setMedicationData(localData || null);
+
+    if (medicationListenerRef.current) {
+      medicationListenerRef.current();
+      medicationListenerRef.current = null;
+    }
+
+    const scheduleRef = ref(database, `multiData/stimulation/${ownerId}/${medicationContext.userId}`);
+    const unsubscribe = onValue(scheduleRef, snapshot => {
+      if (!snapshot.exists()) {
+        return;
+      }
+
+      const remoteData = snapshot.val();
+      setMedicationData(remoteData);
+
+      if (storageKey) {
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(remoteData));
+        } catch (error) {
+          console.error('Failed to cache medication schedule', error);
+        }
+      }
+    });
+
+    medicationListenerRef.current = unsubscribe;
+
+    return () => {
+      if (medicationListenerRef.current) {
+        medicationListenerRef.current();
+        medicationListenerRef.current = null;
+      }
+    };
+  }, [ownerId, medicationContext?.userId]);
+
+  const openMedicationsModal = useCallback(
+    user => {
+      if (!user?.userId) return;
+      if (!ownerId) {
+        toast.error('Увійдіть, щоб працювати з ліками');
+        return;
+      }
+
+      const labelParts = [user.name, user.surname].filter(Boolean);
+      const label = labelParts.join(' ');
+
+      setMedicationData(null);
+      setMedicationContext({
+        userId: user.userId,
+        label,
+      });
+      setShowInfoModal('medications');
+    },
+    [ownerId],
+  );
+
+  const handleMedicationChange = useCallback(
+    updatedSchedule => {
+      if (!ownerId || !medicationContext?.userId) return;
+
+      setMedicationData(updatedSchedule);
+
+      const storageKey =
+        medicationStorageKeyRef.current || getMedicationStorageKey(ownerId, medicationContext.userId);
+
+      if (storageKey) {
+        try {
+          if (updatedSchedule) {
+            localStorage.setItem(storageKey, JSON.stringify(updatedSchedule));
+          } else {
+            localStorage.removeItem(storageKey);
+          }
+        } catch (error) {
+          console.error('Failed to persist medication schedule locally', error);
+        }
+      }
+
+      if (medicationSaveTimeoutRef.current) {
+        clearTimeout(medicationSaveTimeoutRef.current);
+      }
+
+      medicationSaveTimeoutRef.current = setTimeout(() => {
+        saveMedicationSchedule(ownerId, medicationContext.userId, updatedSchedule).catch(error => {
+          console.error('Failed to save medication schedule', error);
+          toast.error('Не вдалося зберегти зміни по ліках');
+        });
+      }, 400);
+    },
+    [ownerId, medicationContext?.userId],
+  );
+
   const handleCloseModal = () => {
     // setIsModalOpen(false);
     setSelectedField(null);
     setShowInfoModal(false);
     setUserIdToDelete(null);
+    setMedicationContext(null);
+    setMedicationData(null);
+    medicationStorageKeyRef.current = null;
+    if (medicationListenerRef.current) {
+      medicationListenerRef.current();
+      medicationListenerRef.current = null;
+    }
+    if (medicationSaveTimeoutRef.current) {
+      clearTimeout(medicationSaveTimeoutRef.current);
+      medicationSaveTimeoutRef.current = null;
+    }
   };
 
   const handleSelectOption = option => {
@@ -702,8 +852,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (av.priority === 2) return (av.value || '').localeCompare(bv.value || '');
     return 0;
   };
-
-  const ownerId = auth.currentUser?.uid;
 
   useEffect(() => {
     setFavoriteIds(initialFav);
@@ -1558,6 +1706,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setCompare={setCompare}
                   setShowInfoModal={setShowInfoModal}
                   users={paginatedUsers}
+                  onOpenMedications={openMedicationsModal}
                   favoriteUsers={favoriteUsersData}
                   setFavoriteUsers={setFavoriteUsersData}
                   dislikeUsers={dislikeUsersData}
@@ -1587,6 +1736,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           Context={dotsMenu}
           DelConfirm={delConfirm}
           CompareCards={compareCards}
+          Medications={
+            showInfoModal === 'medications'
+              ? () => (
+                  <MedicationSchedule
+                    data={medicationData || {}}
+                    onChange={handleMedicationChange}
+                    onClose={handleCloseModal}
+                    userLabel={medicationContext?.label}
+                    userId={medicationContext?.userId}
+                  />
+                )
+              : null
+          }
         />
       )}
     </Container>

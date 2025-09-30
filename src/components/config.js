@@ -353,6 +353,34 @@ export const fetchFavoriteUsersData = async ownerId => {
   }
 };
 
+export const getMedicationScheduleRef = (ownerId, userId) => {
+  if (!ownerId || !userId) return null;
+  return ref2(database, `multiData/stimulation/${ownerId}/${userId}`);
+};
+
+export const fetchMedicationSchedule = async (ownerId, userId) => {
+  try {
+    const scheduleRef = getMedicationScheduleRef(ownerId, userId);
+    if (!scheduleRef) return null;
+    const snapshot = await get(scheduleRef);
+    return snapshot.exists() ? snapshot.val() : null;
+  } catch (error) {
+    console.error('Error fetching medication schedule:', error);
+    return null;
+  }
+};
+
+export const saveMedicationSchedule = async (ownerId, userId, data) => {
+  try {
+    const scheduleRef = getMedicationScheduleRef(ownerId, userId);
+    if (!scheduleRef) return;
+    await set(scheduleRef, data ?? null);
+  } catch (error) {
+    console.error('Error saving medication schedule:', error);
+    throw error;
+  }
+};
+
 export const fetchDislikeUsers = async ownerId => {
   try {
     const refPath = ref2(database, `multiData/dislikes/${ownerId}`);
