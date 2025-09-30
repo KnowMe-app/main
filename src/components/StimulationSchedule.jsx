@@ -1687,44 +1687,44 @@ const StimulationSchedule = ({
   );
 
   const shiftDate = (idx, delta) => {
-    let persistTarget = null;
-    setSchedule(prev => {
-      let next = [...prev];
-      const item = next[idx];
-      if (!item || !item.date) return prev;
+    const source = schedule[idx];
+    if (!source || !source.date) return;
 
-      const newDate = new Date(item.date);
-      newDate.setDate(newDate.getDate() + delta);
+    let next = [...schedule];
+    const item = next[idx];
+    if (!item || !item.date) return;
 
-      const stateBase = next.find(entry => entry.key === 'visit1')?.date || resolvedBaseDate;
-      const currentTransfer =
-        next.find(entry => entry.key === 'transfer')?.date || transferRef.current || null;
-      const stateTransfer =
-        item.key === 'transfer' ? newDate : currentTransfer;
-      const statePreBase = next.find(entry => entry.key === 'pre-visit1')?.date || preCycleBaseDate;
+    const newDate = new Date(item.date);
+    newDate.setDate(newDate.getDate() + delta);
 
-      const adjustedItem = adjustItemForDateFn(item, newDate, {
-        baseDate: stateBase,
-        transferDate: stateTransfer,
-        preCycleBase: statePreBase,
-      });
+    const stateBase = next.find(entry => entry.key === 'visit1')?.date || resolvedBaseDate;
+    const currentTransfer =
+      next.find(entry => entry.key === 'transfer')?.date || transferRef.current || null;
+    const stateTransfer = item.key === 'transfer' ? newDate : currentTransfer;
+    const statePreBase = next.find(entry => entry.key === 'pre-visit1')?.date || preCycleBaseDate;
 
-      next[idx] = adjustedItem;
-
-      if (adjustedItem.key === 'transfer') {
-        transferRef.current = adjustedItem.date;
-        next = applyTransferDateToDependents(next, adjustedItem.date);
-      }
-
-      if (adjustedItem.key === 'pre-visit1') {
-        persistTarget = adjustedItem.date;
-      }
-
-      next.sort((a, b) => a.date - b.date);
-      hasChanges.current = true;
-      saveSchedule(next);
-      return next;
+    const adjustedItem = adjustItemForDateFn(item, newDate, {
+      baseDate: stateBase,
+      transferDate: stateTransfer,
+      preCycleBase: statePreBase,
     });
+
+    next[idx] = adjustedItem;
+
+    if (adjustedItem.key === 'transfer') {
+      transferRef.current = adjustedItem.date;
+      next = applyTransferDateToDependents(next, adjustedItem.date);
+    }
+
+    const persistTarget =
+      adjustedItem.key === 'pre-visit1' && adjustedItem.date
+        ? normalizeDate(adjustedItem.date)
+        : null;
+
+    next.sort((a, b) => a.date - b.date);
+    hasChanges.current = true;
+    setSchedule(next);
+    saveSchedule(next);
 
     if (persistTarget) {
       persistLastCycleDate(persistTarget);
@@ -1734,153 +1734,156 @@ const StimulationSchedule = ({
   const rebaseScheduleFromDayOne = React.useCallback(
     newBaseDate => {
       if (!newBaseDate) return;
+
       const normalizedNewBase = normalizeDate(newBaseDate);
-      let didUpdate = false;
+      const currentBase = resolvedBaseDate ? normalizeDate(resolvedBaseDate) : null;
+      if (!currentBase) return;
+      if (normalizedNewBase.getTime() === currentBase.getTime()) {
+        return;
+      }
 
-      setSchedule(prev => {
-        if (!Array.isArray(prev) || prev.length === 0) return prev;
-        const currentFirst = prev.find(entry => entry.key === 'visit1' && entry.date);
-        const currentBase = currentFirst ? normalizeDate(currentFirst.date) : resolvedBaseDate;
-        if (!currentBase) return prev;
-        if (normalizedNewBase.getTime() === currentBase.getTime()) {
-          return prev;
-        }
+      if (!Array.isArray(schedule) || schedule.length === 0) {
+        return;
+      }
 
-        const MS_PER_DAY = 1000 * 60 * 60 * 24;
-        const deltaDays = Math.round(
-          (normalizedNewBase.getTime() - currentBase.getTime()) / MS_PER_DAY,
-        );
+      const currentFirst = schedule.find(entry => entry.key === 'visit1' && entry.date);
+      const normalizedCurrentBase = currentFirst
+        ? normalizeDate(currentFirst.date)
+        : currentBase;
 
-        const preVisitItem = prev.find(entry => entry.key === 'pre-visit1');
-        const preservedPreBase = preVisitItem?.date ? normalizeDate(preVisitItem.date) : null;
+      const MS_PER_DAY = 1000 * 60 * 60 * 24;
+      const deltaDays = Math.round(
+        (normalizedNewBase.getTime() - normalizedCurrentBase.getTime()) / MS_PER_DAY,
+      );
 
-        const preservedPreCycle = prev.filter(item => isPreCycleKey(item?.key));
-        const itemsToShift = prev.filter(item => !isPreCycleKey(item?.key));
+      const preVisitItem = schedule.find(entry => entry.key === 'pre-visit1');
+      const preservedPreBase = preVisitItem?.date ? normalizeDate(preVisitItem.date) : null;
 
-        const regenerated = generateSchedule(normalizedNewBase).map(item => ({
-          ...item,
-          date: normalizeDate(item.date),
-        }));
-        const regeneratedMap = new Map(regenerated.map(item => [item.key, item]));
-        const regeneratedTransfer = regeneratedMap.get('transfer')?.date || null;
-        const normalizedTransfer = regeneratedTransfer ? normalizeDate(regeneratedTransfer) : null;
-        const normalizedCurrentBase = normalizeDate(currentBase);
+      const preservedPreCycle = schedule.filter(item => isPreCycleKey(item?.key));
+      const itemsToShift = schedule.filter(item => !isPreCycleKey(item?.key));
 
-        const shiftCustomItem = scheduleItem => {
-          if (!scheduleItem) return scheduleItem;
-          if (isCustomKey(scheduleItem.key)) {
-            const normalizedItemDate = scheduleItem.date
-              ? normalizeDate(scheduleItem.date)
-              : null;
-            if (!normalizedItemDate) {
+      const regenerated = generateSchedule(normalizedNewBase).map(item => ({
+        ...item,
+        date: normalizeDate(item.date),
+      }));
+      const regeneratedMap = new Map(regenerated.map(item => [item.key, item]));
+      const regeneratedTransfer = regeneratedMap.get('transfer')?.date || null;
+      const normalizedTransfer = regeneratedTransfer ? normalizeDate(regeneratedTransfer) : null;
+
+      const shiftCustomItem = scheduleItem => {
+        if (!scheduleItem) return scheduleItem;
+        if (isCustomKey(scheduleItem.key)) {
+          const normalizedItemDate = scheduleItem.date ? normalizeDate(scheduleItem.date) : null;
+          if (!normalizedItemDate) {
+            return scheduleItem;
+          }
+
+          const parsed = computeCustomDateAndLabel(
+            scheduleItem.label,
+            normalizedNewBase,
+            normalizedItemDate,
+            normalizedTransfer,
+            preservedPreBase,
+          );
+          const description = parsed.description || parsed.raw || scheduleItem.label;
+          const baseForLabel = resolveCustomLabelBase(normalizedItemDate, {
+            baseDate: normalizedNewBase,
+            preCycleBaseDate: preservedPreBase,
+            transferDate: normalizedTransfer,
+            fallbackDate: normalizedItemDate,
+          });
+          const updatedLabel = buildCustomEventLabel(
+            normalizedItemDate,
+            baseForLabel,
+            normalizedTransfer,
+            description,
+          );
+
+          if (!updatedLabel || updatedLabel === scheduleItem.label) {
+            if (normalizedItemDate.getTime() === scheduleItem.date.getTime()) {
               return scheduleItem;
             }
-
-            const parsed = computeCustomDateAndLabel(
-              scheduleItem.label,
-              normalizedNewBase,
-              normalizedItemDate,
-              normalizedTransfer,
-              preservedPreBase,
-            );
-            const description = parsed.description || parsed.raw || scheduleItem.label;
-            const baseForLabel = resolveCustomLabelBase(normalizedItemDate, {
-              baseDate: normalizedNewBase,
-              preCycleBaseDate: preservedPreBase,
-              transferDate: normalizedTransfer,
-              fallbackDate: normalizedItemDate,
-            });
-            const updatedLabel = buildCustomEventLabel(
-              normalizedItemDate,
-              baseForLabel,
-              normalizedTransfer,
-              description,
-            );
-
-            if (!updatedLabel || updatedLabel === scheduleItem.label) {
-              if (normalizedItemDate.getTime() === scheduleItem.date.getTime()) {
-                return scheduleItem;
-              }
-              return {
-                ...scheduleItem,
-                date: normalizedItemDate,
-              };
-            }
-
             return {
               ...scheduleItem,
               date: normalizedItemDate,
-              label: updatedLabel,
             };
           }
-          if (!scheduleItem.date) return scheduleItem;
-          const normalizedItemDate = normalizeDate(scheduleItem.date);
-          if (normalizedItemDate.getTime() < normalizedCurrentBase.getTime()) {
-            return scheduleItem;
-          }
-          const next = new Date(scheduleItem.date);
-          next.setDate(next.getDate() + deltaDays);
-          return adjustItemForDateFn(scheduleItem, next, {
+
+          return {
+            ...scheduleItem,
+            date: normalizedItemDate,
+            label: updatedLabel,
+          };
+        }
+        if (!scheduleItem.date) return scheduleItem;
+        const normalizedItemDate = normalizeDate(scheduleItem.date);
+        if (normalizedItemDate.getTime() < normalizedCurrentBase.getTime()) {
+          return scheduleItem;
+        }
+        const next = new Date(scheduleItem.date);
+        next.setDate(next.getDate() + deltaDays);
+        return adjustItemForDateFn(scheduleItem, next, {
+          baseDate: normalizedNewBase,
+          transferDate: normalizedTransfer,
+          preCycleBase: preservedPreBase,
+        });
+      };
+
+      const shiftedItems = itemsToShift.map(scheduleItem => {
+        if (!scheduleItem) return scheduleItem;
+        const normalizedItemDate = scheduleItem.date ? normalizeDate(scheduleItem.date) : null;
+
+        if (
+          normalizedItemDate &&
+          normalizedItemDate.getTime() < normalizedCurrentBase.getTime()
+        ) {
+          return scheduleItem;
+        }
+
+        if (scheduleItem.key === 'visit1') {
+          const generatedVisit1 = regeneratedMap.get('visit1');
+          const overrideLabel = generatedVisit1?.label || scheduleItem.label;
+          return adjustItemForDateFn(scheduleItem, normalizedNewBase, {
             baseDate: normalizedNewBase,
             transferDate: normalizedTransfer,
+            overrideLabel,
             preCycleBase: preservedPreBase,
           });
-        };
+        }
 
-        const shiftedItems = itemsToShift.map(scheduleItem => {
-          if (!scheduleItem) return scheduleItem;
-          const normalizedItemDate = scheduleItem.date ? normalizeDate(scheduleItem.date) : null;
+        const generatedMatch = regeneratedMap.get(scheduleItem.key);
+        if (generatedMatch) {
+          return adjustItemForDateFn(scheduleItem, generatedMatch.date, {
+            baseDate: normalizedNewBase,
+            transferDate: normalizedTransfer,
+            overrideLabel: scheduleItem.label,
+            preCycleBase: preservedPreBase,
+          });
+        }
 
-          if (
-            normalizedItemDate &&
-            normalizedItemDate.getTime() < normalizedCurrentBase.getTime()
-          ) {
-            return scheduleItem;
-          }
-
-          if (scheduleItem.key === 'visit1') {
-            const generatedVisit1 = regeneratedMap.get('visit1');
-            const overrideLabel = generatedVisit1?.label || scheduleItem.label;
-            return adjustItemForDateFn(scheduleItem, normalizedNewBase, {
-              baseDate: normalizedNewBase,
-              transferDate: normalizedTransfer,
-              overrideLabel,
-              preCycleBase: preservedPreBase,
-            });
-          }
-
-          const generatedMatch = regeneratedMap.get(scheduleItem.key);
-          if (generatedMatch) {
-            return adjustItemForDateFn(scheduleItem, generatedMatch.date, {
-              baseDate: normalizedNewBase,
-              transferDate: normalizedTransfer,
-              overrideLabel: scheduleItem.label,
-              preCycleBase: preservedPreBase,
-            });
-          }
-
-          return shiftCustomItem(scheduleItem);
-        });
-
-        const combined = [...preservedPreCycle, ...shiftedItems].filter(Boolean);
-        combined.sort((a, b) => {
-          if (!a?.date || !b?.date) return 0;
-          return a.date - b.date;
-        });
-
-        transferRef.current = normalizedTransfer || null;
-
-        hasChanges.current = true;
-        saveSchedule(combined);
-        didUpdate = true;
-        return combined;
+        return shiftCustomItem(scheduleItem);
       });
 
-      if (didUpdate) {
-        persistLastCycleDate(normalizedNewBase);
-      }
+      const combined = [...preservedPreCycle, ...shiftedItems].filter(Boolean);
+      combined.sort((a, b) => {
+        if (!a?.date || !b?.date) return 0;
+        return a.date - b.date;
+      });
+
+      transferRef.current = normalizedTransfer || null;
+
+      hasChanges.current = true;
+      setSchedule(combined);
+      saveSchedule(combined);
+      persistLastCycleDate(normalizedNewBase);
     },
-    [adjustItemForDateFn, persistLastCycleDate, resolvedBaseDate, saveSchedule],
+    [
+      adjustItemForDateFn,
+      persistLastCycleDate,
+      resolvedBaseDate,
+      saveSchedule,
+      schedule,
+    ],
   );
 
   const requestDeleteItem = React.useCallback(item => {
