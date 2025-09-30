@@ -645,6 +645,7 @@ const computeCustomDateAndLabel = (
 
   let workingInput = normalizedInput;
   let date = null;
+  let preserveUserPrefix = false;
 
   const resolveShortDate = (dayValue, monthValue) => {
     const safeDay = Number.isFinite(dayValue) ? Math.max(Math.trunc(dayValue), 1) : null;
@@ -659,6 +660,11 @@ const computeCustomDateAndLabel = (
   };
 
   const dayInfo = extractDayPrefix(workingInput);
+  if (dayInfo && /день/i.test(dayInfo.raw || '')) {
+    if (!transferNormalized) {
+      preserveUserPrefix = true;
+    }
+  }
   if (dayInfo && (baseNormalized || preCycleNormalized || transferNormalized || referenceNormalized)) {
     const normalizedDay = Math.max(Math.trunc(dayInfo.day), 1);
     const offset = normalizedDay - 1;
@@ -779,12 +785,27 @@ const computeCustomDateAndLabel = (
       transferDate: transferNormalized,
       fallbackDate: referenceNormalized,
     });
+    if (preserveUserPrefix) {
+      return {
+        date,
+        label: normalizedInput,
+        description,
+        raw: normalizedInput,
+        preserveUserPrefix: true,
+      };
+    }
     const label = buildCustomEventLabel(date, baseForLabel, transferNormalized, description);
-    return { date, label, description, raw: normalizedInput };
+    return { date, label, description, raw: normalizedInput, preserveUserPrefix: false };
   }
 
   const fallbackDescription = description || normalizedInput;
-  return { date: null, label: '', description: fallbackDescription, raw: normalizedInput };
+  return {
+    date: null,
+    label: '',
+    description: fallbackDescription,
+    raw: normalizedInput,
+    preserveUserPrefix,
+  };
 };
 
 const prepareCustomEventItem = (
@@ -2308,6 +2329,8 @@ const StimulationSchedule = ({
                           );
                           const nextDate = computed.date || updated.date;
                           const description = computed.description || computed.raw || trimmedLabel;
+                          const shouldPreserveCustomPrefix =
+                            computed.preserveUserPrefix && !transferDate;
                           const baseForLabel = resolveCustomLabelBase(nextDate || updated.date, {
                             baseDate: scheduleBaseDate,
                             preCycleBaseDate: preBaseForState,
@@ -2315,7 +2338,14 @@ const StimulationSchedule = ({
                             fallbackDate: nextDate || updated.date,
                           });
                           const nextLabel = nextDate
-                            ? buildCustomEventLabel(nextDate, baseForLabel, transferDate, description)
+                            ? shouldPreserveCustomPrefix
+                              ? computed.raw || trimmedLabel
+                              : buildCustomEventLabel(
+                                  nextDate,
+                                  baseForLabel,
+                                  transferDate,
+                                  description,
+                                )
                             : trimmedLabel;
                           dateChanged = !isSameDay(nextDate, updated.date);
                           updated = {
