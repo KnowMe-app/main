@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 
+import { deriveScheduleDisplayInfo } from './StimulationSchedule';
+
 const MEDICATIONS = [
   { key: 'progynova', label: 'Прогінова', short: 'Пр', defaultDisplayValue: '=21+7+21' },
   { key: 'metypred', label: 'Метипред', short: 'Мт', defaultDisplayValue: '=21+7+21' },
@@ -8,6 +10,8 @@ const MEDICATIONS = [
 ];
 
 const DEFAULT_ROWS = 35;
+const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const TOTAL_COLUMNS = MEDICATIONS.length + 2;
 
 const Container = styled.div`
   display: flex;
@@ -133,10 +137,6 @@ const CellInput = styled.input`
   display: inline-block;
 `;
 
-const DateInput = styled(CellInput)`
-  text-align: left;
-`;
-
 const DayCell = styled.div`
   display: flex;
   align-items: center;
@@ -150,6 +150,67 @@ const DayBadge = styled.span`
   color: #555;
   font-weight: 600;
   white-space: nowrap;
+`;
+
+const DayNumber = styled.span`
+  font-variant-numeric: tabular-nums;
+`;
+
+const DateCellContent = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+`;
+
+const DateText = styled.span`
+  font-variant-numeric: tabular-nums;
+`;
+
+const WeekdayTag = styled.span`
+  font-size: 12px;
+  color: #777;
+  text-transform: lowercase;
+`;
+
+const YearSeparatorRow = styled.tr`
+  background: #f3f3f3;
+`;
+
+const YearSeparatorCell = styled.td`
+  padding: 6px 10px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #444;
+  border-bottom: 1px solid #e0e0e0;
+`;
+
+const HighlightedRow = styled.tr`
+  background: #fff6e5;
+`;
+
+const DescriptionRow = styled.tr`
+  background: #fffaf0;
+`;
+
+const DescriptionCell = styled.td`
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0e0c5;
+  font-size: 13px;
+  color: #6a4b16;
+`;
+
+const DescriptionList = styled.ul`
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`;
+
+const DescriptionItem = styled.li`
+  list-style-type: '•';
+  padding-left: 4px;
 `;
 
 const ActionsRow = styled.div`
@@ -181,7 +242,7 @@ const InfoNote = styled.p`
 
 const isValidDate = date => date instanceof Date && !Number.isNaN(date.getTime());
 
-const parseDateString = value => {
+const parseDateString = (value, baseDate) => {
   if (!value) return null;
   if (value instanceof Date) return isValidDate(value) ? value : null;
   const trimmed = String(value).trim();
@@ -190,20 +251,56 @@ const parseDateString = value => {
   const direct = new Date(trimmed);
   if (isValidDate(direct)) return direct;
 
-  const parts = trimmed.split(/[./-]/);
+  const parts = trimmed.split(/[./-]/).filter(Boolean);
   if (parts.length < 2) return null;
   const [dayPart, monthPart, yearPart] = parts;
   const day = Number(dayPart);
   const month = Number(monthPart);
   if (Number.isNaN(day) || Number.isNaN(month)) return null;
-  const year = yearPart
-    ? Number(yearPart.length === 2 ? `20${yearPart}` : yearPart)
-    : new Date().getFullYear();
-  if (Number.isNaN(year)) return null;
-  const candidate = new Date(year, month - 1, day);
-  if (!isValidDate(candidate)) return null;
-  if (candidate.getDate() !== day || candidate.getMonth() !== month - 1) return null;
-  return candidate;
+
+  const monthIndex = month - 1;
+  if (monthIndex < 0 || monthIndex > 11) return null;
+
+  const hasExplicitYear = yearPart !== undefined && yearPart !== null && yearPart !== '';
+  if (hasExplicitYear) {
+    const normalizedYear = Number(yearPart.length === 2 ? `20${yearPart}` : yearPart);
+    if (Number.isNaN(normalizedYear)) return null;
+    const candidate = new Date(normalizedYear, monthIndex, day);
+    if (!isValidDate(candidate)) return null;
+    if (candidate.getDate() !== day || candidate.getMonth() !== monthIndex) return null;
+    return candidate;
+  }
+
+  const base = baseDate instanceof Date && isValidDate(baseDate) ? baseDate : null;
+  const referenceYear = base ? base.getFullYear() : new Date().getFullYear();
+  const candidateYears = base ? [referenceYear - 1, referenceYear, referenceYear + 1] : [referenceYear];
+  const validCandidates = candidateYears
+    .map(year => {
+      const candidate = new Date(year, monthIndex, day);
+      if (!isValidDate(candidate)) return null;
+      if (candidate.getDate() !== day || candidate.getMonth() !== monthIndex) return null;
+      return candidate;
+    })
+    .filter(Boolean);
+
+  if (validCandidates.length === 0) return null;
+
+  if (!base) {
+    return validCandidates[0];
+  }
+
+  let closest = validCandidates[0];
+  let minDiff = Math.abs(closest.getTime() - base.getTime());
+  for (let index = 1; index < validCandidates.length; index += 1) {
+    const candidate = validCandidates[index];
+    const diff = Math.abs(candidate.getTime() - base.getTime());
+    if (diff < minDiff) {
+      closest = candidate;
+      minDiff = diff;
+    }
+  }
+
+  return closest;
 };
 
 const formatISODate = date => {
@@ -221,9 +318,9 @@ const addDays = (date, days) => {
   return next;
 };
 
-const sanitizeDateInput = value => {
+const sanitizeDateInput = (value, baseDate) => {
   if (!value) return '';
-  const parsed = parseDateString(value);
+  const parsed = parseDateString(value, baseDate);
   return parsed ? formatISODate(parsed) : String(value);
 };
 
@@ -298,45 +395,54 @@ const createRow = (date, baseValues = {}) => {
 };
 
 const ensureRowsLength = (rows, minLength, startDate) => {
-  const nextRows = rows.map(row => ({
-    date: sanitizeDateInput(row.date),
-    values: { ...row.values },
-  }));
+  const baseDate = parseDateString(startDate) || new Date();
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const targetLength = Math.max(minLength || 0, sourceRows.length);
+  const result = [];
 
-  const baseDate = parseDateString(startDate) || parseDateString(rows[0]?.date) || new Date();
-
-  let index = nextRows.length;
-  while (index < minLength) {
-    const prevRow = nextRows[index - 1];
-    const prevDate = parseDateString(prevRow?.date) || addDays(baseDate, index - 1) || new Date();
-    const nextDate = formatISODate(addDays(prevDate, 1));
-    nextRows.push(createRow(nextDate, prevRow?.values));
-    index += 1;
+  for (let index = 0; index < targetLength; index += 1) {
+    const source = sourceRows[index];
+    const baseValues = source && typeof source === 'object' ? (source.values || source) : {};
+    const values = {};
+    MEDICATIONS.forEach(({ key }) => {
+      values[key] = sanitizeCellValue(baseValues[key]);
+    });
+    result.push({
+      date: formatISODate(addDays(baseDate, index)),
+      values,
+    });
   }
 
-  return nextRows;
+  return result;
 };
 
-const applyDefaultDistribution = (rows, medications) => {
+const applyDefaultDistribution = (rows, medications, options = {}) => {
+  const { skipExisting = false, existingLength = 0 } = options;
+
   return rows.map((row, rowIndex) => {
     const nextValues = { ...row.values };
-    MEDICATIONS.forEach(({ key }) => {
-      const issued = medications[key]?.issued ?? 0;
-      if (issued <= 0) {
-        if (nextValues[key] === undefined) {
+    const shouldSkipRow = skipExisting && rowIndex < existingLength;
+
+    if (!shouldSkipRow) {
+      MEDICATIONS.forEach(({ key }) => {
+        const issued = medications[key]?.issued ?? 0;
+        if (issued <= 0) {
+          if (nextValues[key] === undefined) {
+            nextValues[key] = '';
+          }
+          return;
+        }
+        if (rowIndex < issued) {
+          const currentValue = nextValues[key];
+          if (currentValue === '' || currentValue === undefined) {
+            nextValues[key] = 1;
+          }
+        } else if (nextValues[key] === undefined) {
           nextValues[key] = '';
         }
-        return;
-      }
-      if (rowIndex < issued) {
-        const currentValue = nextValues[key];
-        if (currentValue === '' || currentValue === undefined) {
-          nextValues[key] = 1;
-        }
-      } else if (nextValues[key] === undefined) {
-        nextValues[key] = '';
-      }
-    });
+      });
+    }
+
     return {
       ...row,
       values: nextValues,
@@ -345,37 +451,39 @@ const applyDefaultDistribution = (rows, medications) => {
 };
 
 const normalizeRows = (rowsInput, startDate, medications) => {
-  const rowsSource = Array.isArray(rowsInput) && rowsInput.length > 0
-    ? rowsInput
-    : generateDefaultRows(Math.max(DEFAULT_ROWS, ...MEDICATIONS.map(({ key }) => medications[key]?.issued || 0)), startDate);
+  const existingLength = Array.isArray(rowsInput) ? rowsInput.length : 0;
+  const hasExistingRows = existingLength > 0;
+  const minRows = Math.max(
+    DEFAULT_ROWS,
+    existingLength,
+    ...MEDICATIONS.map(({ key }) => medications[key]?.issued || 0),
+  );
 
-  const normalized = rowsSource.map((row, index) => {
-    const baseValues = row && typeof row === 'object' ? (row.values || row) : {};
-    const date = row?.date ? sanitizeDateInput(row.date) : sanitizeDateInput(formatISODate(addDays(parseDateString(startDate) || new Date(), index)));
-    const values = {};
-    MEDICATIONS.forEach(({ key }) => {
-      values[key] = sanitizeCellValue(baseValues[key]);
+  const baseRows = ensureRowsLength(rowsInput, minRows, startDate);
+
+  if (!hasExistingRows) {
+    return applyDefaultDistribution(baseRows, medications);
+  }
+
+  if (existingLength < minRows) {
+    return applyDefaultDistribution(baseRows, medications, {
+      skipExisting: true,
+      existingLength,
     });
-    return {
-      date,
-      values,
-    };
-  });
+  }
 
-  return applyDefaultDistribution(normalized, medications);
+  return baseRows;
 };
 
-const generateDefaultRows = (count, startDate) => {
-  const base = parseDateString(startDate) || new Date();
-  return Array.from({ length: count }).map((_, index) => {
-    const date = formatISODate(addDays(base, index));
-    return createRow(date);
-  });
-};
-
-const normalizeData = data => {
+const normalizeData = (data, options = {}) => {
+  const cycleStart = options.cycleStart;
+  const cycleStartDate = parseDateString(cycleStart);
+  const sanitizedCycleStart = sanitizeDateInput(cycleStart, cycleStartDate);
   const rawStartDate = data?.startDate;
-  const startDate = sanitizeDateInput(rawStartDate) || formatISODate(new Date());
+  const startDate =
+    sanitizedCycleStart ||
+    sanitizeDateInput(rawStartDate, cycleStartDate) ||
+    (cycleStartDate ? formatISODate(cycleStartDate) : formatISODate(new Date()));
 
   const medications = {};
   MEDICATIONS.forEach(({ key, defaultDisplayValue }) => {
@@ -412,20 +520,136 @@ const formatNumber = value => {
   return rounded.toString();
 };
 
-const MedicationSchedule = ({ data, onChange, onClose, userLabel, userId }) => {
-  const [schedule, setSchedule] = useState(() => normalizeData(data));
+const containsYearInfo = value => {
+  if (!value) return false;
+  if (value instanceof Date) return true;
+  const trimmed = String(value).trim();
+  if (!trimmed) return false;
+  return /(\d{4}|\d{2}[./-]\d{2}[./-]\d{2,4})/.test(trimmed);
+};
+
+const parseStimulationEvents = (stimulationSchedule, startDate) => {
+  const events = [];
+  if (!stimulationSchedule) return events;
+
+  const baseDate = parseDateString(startDate);
+
+  const normalizeDate = rawDate => {
+    const parsed = parseDateString(rawDate, baseDate);
+    if (!parsed) return null;
+    const normalized = new Date(parsed);
+    normalized.setHours(0, 0, 0, 0);
+    return normalized;
+  };
+
+  const pushEvent = ({ rawDate, label, key }) => {
+    const date = normalizeDate(rawDate);
+    if (!date) return;
+
+    const info = deriveScheduleDisplayInfo({ date, label });
+    const descriptionParts = [info.secondaryLabel, info.displayLabel].filter(Boolean);
+    const description = descriptionParts.join(' • ') || info.labelValue || '';
+    const iso = formatISODate(date);
+
+    events.push({
+      key: key || `${iso}-${events.length}`,
+      date,
+      iso,
+      dayMonth: formatDateForDisplay(date),
+      secondaryLabel: info.secondaryLabel || '',
+      displayLabel: info.displayLabel || '',
+      labelValue: info.labelValue || '',
+      description,
+      hasExplicitYear: containsYearInfo(rawDate),
+    });
+  };
+
+  if (typeof stimulationSchedule === 'string') {
+    const lines = stimulationSchedule.split('\n').map(line => line.trim()).filter(Boolean);
+    lines.forEach((line, index) => {
+      const parts = line.split('\t');
+      if (!parts.length) return;
+      const datePart = parts[0]?.trim();
+      const keyPart = parts.length > 2 ? parts[1]?.trim() : '';
+      const labelPart = parts
+        .slice(parts.length > 2 ? 2 : 1)
+        .join('\t')
+        .trim();
+      pushEvent({
+        rawDate: datePart,
+        label: labelPart,
+        key: keyPart || `line-${index}`,
+      });
+    });
+  } else if (Array.isArray(stimulationSchedule)) {
+    stimulationSchedule.forEach((item, index) => {
+      if (!item) return;
+      pushEvent({
+        rawDate: item.date || item.day || '',
+        label: item.label || '',
+        key: item.key || `item-${index}`,
+      });
+    });
+  } else if (typeof stimulationSchedule === 'object') {
+    Object.values(stimulationSchedule).forEach((item, index) => {
+      if (!item) return;
+      pushEvent({
+        rawDate: item.date || item.day || '',
+        label: item.label || '',
+        key: item.key || `entry-${index}`,
+      });
+    });
+  }
+
+  return events
+    .filter(event => event.date instanceof Date && !Number.isNaN(event.date.getTime()))
+    .sort((a, b) => a.date - b.date);
+};
+
+const buildStimulationEventLookup = (stimulationSchedule, startDate) => {
+  const events = parseStimulationEvents(stimulationSchedule, startDate);
+  const byIso = new Map();
+  const byDayMonth = new Map();
+
+  events.forEach(event => {
+    if (!byIso.has(event.iso)) {
+      byIso.set(event.iso, []);
+    }
+    byIso.get(event.iso).push(event);
+
+    if (!event.hasExplicitYear) {
+      if (!byDayMonth.has(event.dayMonth)) {
+        byDayMonth.set(event.dayMonth, []);
+      }
+      byDayMonth.get(event.dayMonth).push(event);
+    }
+  });
+
+  return { events, byIso, byDayMonth };
+};
+
+const MedicationSchedule = ({
+  data,
+  onChange,
+  onClose,
+  userLabel,
+  userId,
+  cycleStart,
+  stimulationSchedule,
+}) => {
+  const [schedule, setSchedule] = useState(() => normalizeData(data, { cycleStart }));
   const [focusedMedication, setFocusedMedication] = useState(null);
   const scheduleRef = useRef(schedule);
 
   useEffect(() => {
-    const normalized = normalizeData(data);
+    const normalized = normalizeData(data, { cycleStart });
     setSchedule(normalized);
     scheduleRef.current = normalized;
-  }, [data]);
+  }, [data, cycleStart]);
 
   const updateSchedule = useCallback(updater => {
     setSchedule(prev => {
-      const base = prev || scheduleRef.current || normalizeData({});
+      const base = prev || scheduleRef.current || normalizeData({}, { cycleStart });
       const next = typeof updater === 'function' ? updater(base) : updater;
       const enriched = { ...next, updatedAt: Date.now() };
       scheduleRef.current = enriched;
@@ -434,7 +658,12 @@ const MedicationSchedule = ({ data, onChange, onClose, userLabel, userId }) => {
       }
       return enriched;
     });
-  }, [onChange]);
+  }, [onChange, cycleStart]);
+
+  const stimulationEvents = useMemo(
+    () => buildStimulationEventLookup(stimulationSchedule, schedule?.startDate),
+    [stimulationSchedule, schedule?.startDate],
+  );
 
   const handleIssuedChange = useCallback((key, rawValue) => {
     updateSchedule(prev => {
@@ -512,27 +741,6 @@ const MedicationSchedule = ({ data, onChange, onClose, userLabel, userId }) => {
       return {
         ...prev,
         rows,
-      };
-    });
-  }, [updateSchedule]);
-
-  const handleDateChange = useCallback((rowIndex, value) => {
-    updateSchedule(prev => {
-      const rows = prev.rows.map((row, index) => {
-        if (index !== rowIndex) return row;
-        const nextDate = sanitizeDateInput(value);
-        return {
-          ...row,
-          date: nextDate,
-        };
-      });
-
-      const nextStartDate = rowIndex === 0 ? sanitizeDateInput(value) || prev.startDate : prev.startDate;
-
-      return {
-        ...prev,
-        rows,
-        startDate: nextStartDate,
       };
     });
   }, [updateSchedule]);
@@ -649,36 +857,89 @@ const MedicationSchedule = ({ data, onChange, onClose, userLabel, userId }) => {
             </tr>
           </thead>
           <tbody>
-            {schedule.rows.map((row, index) => {
-              const dayNumber = index + 1;
-              const showOneTabletLabel = dayNumber >= 8 && (dayNumber - 1) % 7 === 0;
+            {(() => {
+              const rows = [];
+              let currentYear = null;
+              const baseDate = parseDateString(schedule.startDate);
 
-              return (
-                <tr key={`${row.date || 'row'}-${index}`}>
-                  <Td style={{ textAlign: 'center' }}>
-                    <DayCell>
-                      <span>{dayNumber}</span>
-                      {showOneTabletLabel && <DayBadge>1т1д</DayBadge>}
-                    </DayCell>
-                  </Td>
-                <Td>
-                  <DateInput
-                    value={formatDateForDisplay(row.date)}
-                    onChange={event => handleDateChange(index, event.target.value)}
-                    placeholder="ДД.ММ"
-                  />
-                </Td>
-                {MEDICATIONS.map(({ key }) => (
-                  <Td key={key}>
-                    <CellInput
-                      value={row.values?.[key] === '' || row.values?.[key] === undefined ? '' : row.values[key]}
-                      onChange={event => handleCellChange(index, key, event.target.value)}
-                    />
-                  </Td>
-                ))}
-                </tr>
-              );
-            })}
+              schedule.rows.forEach((row, index) => {
+                const dayNumber = index + 1;
+                const showOneTabletLabel = dayNumber >= 8 && (dayNumber - 1) % 7 === 0;
+                const parsedDate = parseDateString(row.date, baseDate);
+                const formattedDate = formatDateForDisplay(parsedDate);
+                const weekday = parsedDate ? WEEKDAY_LABELS[parsedDate.getDay()] : '';
+                const year = parsedDate ? parsedDate.getFullYear() : null;
+                const isoDate = row.date;
+                const eventsForRow =
+                  stimulationEvents.byIso.get(isoDate) ||
+                  stimulationEvents.byDayMonth.get(formattedDate) ||
+                  [];
+
+                if (year !== null && year !== currentYear) {
+                  currentYear = year;
+                  rows.push(
+                    <YearSeparatorRow key={`year-${year}-${index}`}>
+                      <YearSeparatorCell colSpan={TOTAL_COLUMNS}>{year}</YearSeparatorCell>
+                    </YearSeparatorRow>,
+                  );
+                }
+
+                const RowComponent = eventsForRow.length ? HighlightedRow : 'tr';
+                const rowKey = `${isoDate || 'row'}-${index}`;
+
+                rows.push(
+                  <RowComponent key={rowKey}>
+                    <Td style={{ textAlign: 'center' }}>
+                      <DayCell>
+                        {!showOneTabletLabel && <DayNumber>{dayNumber}</DayNumber>}
+                        {showOneTabletLabel && <DayBadge>1т1д</DayBadge>}
+                      </DayCell>
+                    </Td>
+                    <Td>
+                      <DateCellContent>
+                        <DateText>{formattedDate}</DateText>
+                        {weekday && <WeekdayTag>{weekday}</WeekdayTag>}
+                      </DateCellContent>
+                    </Td>
+                    {MEDICATIONS.map(({ key }) => (
+                      <Td key={key}>
+                        <CellInput
+                          value={
+                            row.values?.[key] === '' || row.values?.[key] === undefined
+                              ? ''
+                              : row.values[key]
+                          }
+                          onChange={event => handleCellChange(index, key, event.target.value)}
+                        />
+                      </Td>
+                    ))}
+                  </RowComponent>,
+                );
+
+                const descriptionItems = eventsForRow
+                  .map(event => ({
+                    key: event.key,
+                    text: event.description || event.labelValue || '',
+                  }))
+                  .filter(item => item.text);
+
+                if (descriptionItems.length) {
+                  rows.push(
+                    <DescriptionRow key={`${rowKey}-description`}>
+                      <DescriptionCell colSpan={TOTAL_COLUMNS}>
+                        <DescriptionList>
+                          {descriptionItems.map(item => (
+                            <DescriptionItem key={item.key}>{item.text}</DescriptionItem>
+                          ))}
+                        </DescriptionList>
+                      </DescriptionCell>
+                    </DescriptionRow>,
+                  );
+                }
+              });
+
+              return rows;
+            })()}
           </tbody>
         </StyledTable>
       </TableWrapper>
