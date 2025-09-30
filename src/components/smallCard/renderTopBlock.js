@@ -13,6 +13,7 @@ import { fieldBirth } from './fieldBirth';
 import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
+import { btnMedications } from './btnMedications';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
 import { fetchUserById } from '../config';
@@ -54,7 +55,8 @@ export const renderTopBlock = (
   currentFilter,
   isDateInRange,
   isToastOn = false,
-  setIsToastOn = () => {}
+  setIsToastOn = () => {},
+  onOpenMedications,
 ) => {
   if (!userData) return null;
 
@@ -66,6 +68,7 @@ export const renderTopBlock = (
       {btnDel(cardData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
       {!isFromListOfUsers && <BtnToast isToastOn={isToastOn} setIsToastOn={setIsToastOn} />}
       {btnExport(cardData)}
+      {btnMedications(cardData, onOpenMedications)}
       <div>
         {cardData.lastAction &&
           formatDateToDisplay(normalizeLastAction(cardData.lastAction))}
