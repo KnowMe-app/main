@@ -2198,17 +2198,51 @@ const StimulationSchedule = ({
                       let dateChanged = false;
 
                       if (isPlaceholder) {
-                        const tokenInfo = scheduleBaseDate
-                          ? getWeeksDaysTokenForDate(updated.date, scheduleBaseDate)
+                        const normalizedToday = normalizeDate(new Date());
+                        const normalizedScheduleBase = scheduleBaseDate
+                          ? normalizeDate(scheduleBaseDate)
                           : null;
-                        const prefix = extractWeeksDaysPrefix(trimmedLabel);
-                        const rest = prefix
-                          ? trimmedLabel.slice(prefix.length).trim()
-                          : trimmedLabel.trim();
-                        if (tokenInfo) {
+                        const normalizedPreBase = preBaseForState
+                          ? normalizeDate(preBaseForState)
+                          : null;
+                        const normalizedTransfer = transferDate
+                          ? normalizeDate(transferDate)
+                          : null;
+                        let placeholderBase = normalizedScheduleBase;
+                        if (
+                          normalizedScheduleBase &&
+                          normalizedPreBase &&
+                          normalizedToday.getTime() < normalizedScheduleBase.getTime()
+                        ) {
+                          placeholderBase = normalizedPreBase;
+                        } else if (!placeholderBase && normalizedPreBase) {
+                          placeholderBase = normalizedPreBase;
+                        }
+
+                        const weeksPrefix = extractWeeksDaysPrefix(trimmedLabel);
+                        const dayPrefix = weeksPrefix ? null : extractDayPrefix(trimmedLabel);
+                        const rest = weeksPrefix
+                          ? trimmedLabel.slice(weeksPrefix.length).trim()
+                          : dayPrefix
+                            ? dayPrefix.rest || ''
+                            : trimmedLabel.trim();
+
+                        let nextPrefix = placeholderBase
+                          ? getSchedulePrefixForDate(
+                              updated.date,
+                              placeholderBase,
+                              normalizedTransfer,
+                            )
+                          : '';
+                        if (!nextPrefix && placeholderBase) {
+                          const tokenInfo = getWeeksDaysTokenForDate(updated.date, placeholderBase);
+                          nextPrefix = tokenInfo?.token || '';
+                        }
+
+                        if (nextPrefix) {
                           updated = {
                             ...updated,
-                            label: rest ? `${tokenInfo.token} ${rest}` : tokenInfo.token,
+                            label: rest ? `${nextPrefix} ${rest}` : nextPrefix,
                           };
                         }
                       } else {
