@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
+import { FaTrash } from 'react-icons/fa';
 
 import { deriveScheduleDisplayInfo } from './StimulationSchedule';
 
@@ -129,13 +130,17 @@ const AddMedicationInput = styled.input`
 `;
 
 const AddMedicationButton = styled.button`
-  padding: 8px 14px;
+  padding: 6px 10px;
   border-radius: 6px;
   border: none;
   background-color: #2e7d32;
   color: white;
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: background-color 0.2s ease;
 
   &:hover:not(:disabled) {
@@ -151,6 +156,12 @@ const AddMedicationButton = styled.button`
 const AddMedicationHint = styled.span`
   font-size: 12px;
   color: #777;
+`;
+
+const AddMedicationGuide = styled.span`
+  font-size: 12px;
+  color: #555;
+  white-space: nowrap;
 `;
 
 const TableWrapper = styled.div`
@@ -183,8 +194,8 @@ const Td = styled.td`
 `;
 
 const CellInput = styled.input`
-  width: 2.4ch;
-  min-width: 28px;
+  width: 2ch;
+  min-width: 20px;
   padding: 4px;
   border-radius: 6px;
   border: 1px solid #d0d0d0;
@@ -193,6 +204,45 @@ const CellInput = styled.input`
   color: black;
   box-sizing: border-box;
   display: inline-block;
+`;
+
+const MedicationTh = styled(Th)`
+  min-width: 26px;
+  width: 26px;
+  max-width: 26px;
+  text-align: center;
+  padding: 6px;
+  background: ${props => (props.$isHighlighted ? '#ffe8e8' : '#fafafa')};
+  overflow: visible;
+`;
+
+const MedicationHeaderContent = styled.div`
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
+
+const HighlightColumnButton = styled.button`
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #b71c1c;
+  cursor: pointer;
+  padding: 0;
+
+  &:hover {
+    background: rgba(183, 28, 28, 0.12);
+    color: #c62828;
+  }
 `;
 
 const DayCell = styled.div`
@@ -268,6 +318,18 @@ const StatusCell = styled.td`
 
 const StatusValue = styled.span`
   color: ${props => (props.$isNegative ? '#d32f2f' : '#2e7d32')};
+`;
+
+const MedicationTd = styled(Td)`
+  text-align: center;
+  padding: 4px;
+  min-width: 26px;
+  width: 26px;
+  background: ${props => (props.$isHighlighted ? '#fff3f0' : 'transparent')};
+`;
+
+const MedicationStatusCell = styled(StatusCell)`
+  background: ${props => (props.$isHighlighted ? '#fff3f0' : '#fffaf0')};
 `;
 
 const DescriptionList = styled.ul`
@@ -891,6 +953,7 @@ const MedicationSchedule = ({
 }) => {
   const [schedule, setSchedule] = useState(() => normalizeData(data, { cycleStart }));
   const [focusedMedication, setFocusedMedication] = useState(null);
+  const [highlightedMedication, setHighlightedMedication] = useState(null);
   const [newMedicationDraft, setNewMedicationDraft] = useState(() => ({
     label: '',
     short: '',
@@ -996,6 +1059,10 @@ const MedicationSchedule = ({
 
   const handleIssuedBlur = useCallback(() => {
     setFocusedMedication(null);
+  }, []);
+
+  const handleToggleHighlight = useCallback(key => {
+    setHighlightedMedication(prev => (prev === key ? null : key));
   }, []);
 
   const handleNewMedicationDraftChange = useCallback((field, value) => {
@@ -1211,8 +1278,9 @@ const MedicationSchedule = ({
       </IssuedList>
 
       <AddMedicationRow>
-        <AddMedicationLabel>Створити додаткову колонку ліків</AddMedicationLabel>
+        <AddMedicationLabel>Інші ліки</AddMedicationLabel>
         <AddMedicationControls>
+          <AddMedicationGuide>Назва, скорочення, дата, кількість</AddMedicationGuide>
           <AddMedicationInput
             $wide
             placeholder="Назва"
@@ -1238,8 +1306,13 @@ const MedicationSchedule = ({
             value={newMedicationDraft.issued}
             onChange={event => handleNewMedicationDraftChange('issued', event.target.value)}
           />
-          <AddMedicationButton type="button" onClick={handleCreateMedicationColumn} disabled={!canAddMedication}>
-            Додати
+          <AddMedicationButton
+            type="button"
+            onClick={handleCreateMedicationColumn}
+            disabled={!canAddMedication}
+            aria-label="Додати інші ліки"
+          >
+            +
           </AddMedicationButton>
         </AddMedicationControls>
         <AddMedicationHint>
@@ -1253,11 +1326,23 @@ const MedicationSchedule = ({
             <tr>
               <Th style={{ width: '60px' }}>#</Th>
               <Th style={{ minWidth: '96px' }}>Дата</Th>
-              {medicationList.map(({ key, short }) => (
-                <Th key={key} style={{ minWidth: '80px', textAlign: 'center' }}>
-                  {short}
-                </Th>
-              ))}
+              {medicationList.map(({ key, short }) => {
+                const isHighlighted = highlightedMedication === key;
+                return (
+                  <MedicationTh key={key} $isHighlighted={isHighlighted}>
+                    <MedicationHeaderContent>
+                      <span>{short}</span>
+                      <HighlightColumnButton
+                        type="button"
+                        onClick={() => handleToggleHighlight(key)}
+                        aria-label={`Виділити колонку ${short}`}
+                      >
+                        <FaTrash size={12} />
+                      </HighlightColumnButton>
+                    </MedicationHeaderContent>
+                  </MedicationTh>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -1275,7 +1360,8 @@ const MedicationSchedule = ({
 
               schedule.rows.forEach((row, index) => {
                 const dayNumber = index + 1;
-                const showOneTabletLabel = dayNumber >= 8 && (dayNumber - 1) % 7 === 0;
+                const isOneTabletDay = dayNumber > 0 && dayNumber % 8 === 0;
+                const oneTabletIndex = isOneTabletDay ? Math.floor(dayNumber / 8) : null;
                 const parsedDate = parseDateString(row.date, baseDate);
                 const formattedDate = formatDateForDisplay(parsedDate);
                 const weekday = parsedDate ? WEEKDAY_LABELS[parsedDate.getDay()] : '';
@@ -1314,8 +1400,8 @@ const MedicationSchedule = ({
                   <RowComponent key={rowKey}>
                     <Td style={{ textAlign: 'center' }}>
                       <DayCell>
-                        {!showOneTabletLabel && <DayNumber>{dayNumber}</DayNumber>}
-                        {showOneTabletLabel && <DayBadge>1т1д</DayBadge>}
+                        {!isOneTabletDay && <DayNumber>{dayNumber}</DayNumber>}
+                        {isOneTabletDay && <DayBadge>{`${oneTabletIndex}т1д`}</DayBadge>}
                       </DayCell>
                     </Td>
                     <Td>
@@ -1324,18 +1410,21 @@ const MedicationSchedule = ({
                         {weekday && <WeekdayTag>{weekday}</WeekdayTag>}
                       </DateCellContent>
                     </Td>
-                    {medicationList.map(({ key }) => (
-                      <Td key={key}>
-                        <CellInput
-                          value={
-                            row.values?.[key] === '' || row.values?.[key] === undefined
-                              ? ''
-                              : row.values[key]
-                          }
-                          onChange={event => handleCellChange(index, key, event.target.value)}
-                        />
-                      </Td>
-                    ))}
+                      {medicationList.map(({ key }) => {
+                        const isHighlighted = highlightedMedication === key;
+                        return (
+                          <MedicationTd key={key} $isHighlighted={isHighlighted}>
+                            <CellInput
+                              value={
+                                row.values?.[key] === '' || row.values?.[key] === undefined
+                                  ? ''
+                                  : row.values[key]
+                              }
+                              onChange={event => handleCellChange(index, key, event.target.value)}
+                            />
+                          </MedicationTd>
+                        );
+                      })}
                   </RowComponent>,
                 );
 
@@ -1359,9 +1448,9 @@ const MedicationSchedule = ({
                       {medicationList.map(({ key }) => {
                         const balance = rowBalances[key];
                         return (
-                          <StatusCell key={key}>
+                          <MedicationStatusCell key={key} $isHighlighted={highlightedMedication === key}>
                             <StatusValue $isNegative={balance < 0}>{formatNumber(balance)}</StatusValue>
-                          </StatusCell>
+                          </MedicationStatusCell>
                         );
                       })}
                     </DescriptionRow>,
