@@ -229,6 +229,8 @@ const MedicationsPage = () => {
             onClose={handleClose}
             userLabel={userLabel}
             userId={userId}
+            cycleStart={user?.lastCycle}
+            stimulationSchedule={user?.stimulationSchedule}
           />
         </Card>
       )}
