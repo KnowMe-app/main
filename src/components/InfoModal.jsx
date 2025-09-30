@@ -76,7 +76,14 @@ const OrangeStrong = styled.strong`
   color: orange;
 `;
 
-export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards }) => {
+const LargeModalContent = styled(ModalContent)`
+  width: min(920px, 95vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  text-align: left;
+`;
+
+export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards, Medications }) => {
 
   const delProfile = (
     <>
@@ -159,16 +166,41 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
     </>
   );
 
+  const medicationContent = Medications ? <Medications /> : null;
+
+  let ContentComponent = ModalContent;
+  let body = null;
+
+  switch (text) {
+    case 'delProfile':
+      body = delProfile;
+      break;
+    case 'viewProfile':
+      body = viewProfile;
+      break;
+    case 'pickerOptions':
+      body = pickerOptions;
+      break;
+    case 'dotsMenu':
+      body = dotsMenu;
+      break;
+    case 'delConfirm':
+      body = delConfirm;
+      break;
+    case 'compareCards':
+      body = compareCards;
+      break;
+    case 'medications':
+      ContentComponent = LargeModalContent;
+      body = medicationContent;
+      break;
+    default:
+      body = null;
+  }
+
   return (
     <ModalOverlay onClick={onClose}>
-      <ModalContent>
-        {text === 'delProfile' && delProfile}
-        {text === 'viewProfile' && viewProfile}
-        {text === 'pickerOptions' && pickerOptions}
-        {text === 'dotsMenu' && dotsMenu}
-        {text === 'delConfirm' && delConfirm}
-        {text === 'compareCards' && compareCards}
-      </ModalContent>
+      <ContentComponent onClick={event => event.stopPropagation()}>{body}</ContentComponent>
     </ModalOverlay>
   );
 };
