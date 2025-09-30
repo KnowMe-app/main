@@ -31,12 +31,12 @@ export const handleChange = (
     const opts = click || {};
     const toast = options === undefined ? false : isToastOn;
     const formattedEntries = Object.entries(updates).map(([k, v]) => [k, formatValue(k, v)]);
+    const shouldDrop = (key, value) =>
+      (key === 'lastDelivery' || key === 'getInTouch') && !value;
     const formatted = Object.fromEntries(
-      formattedEntries.filter(([k, v]) => !(k === 'lastDelivery' && !v))
+      formattedEntries.filter(([k, v]) => !shouldDrop(k, v))
     );
-    const removeKeys = formattedEntries
-      .filter(([k, v]) => k === 'lastDelivery' && !v)
-      .map(([k]) => k);
+    const removeKeys = formattedEntries.filter(([k, v]) => shouldDrop(k, v)).map(([k]) => k);
 
     if (setState)
       setState(prev => {
@@ -108,7 +108,7 @@ export const handleChange = (
   if (setState)
     setState(prev => {
       const newState = { ...prev };
-      if (key === 'lastDelivery' && !newValue) {
+      if ((key === 'lastDelivery' || key === 'getInTouch') && !newValue) {
         delete newState[key];
       } else {
         newState[key] = newValue;
@@ -128,7 +128,7 @@ export const handleChange = (
 
       if (!isMultiple) {
         const newState = { ...prevState };
-        if (key === 'lastDelivery' && !newValue) {
+        if ((key === 'lastDelivery' || key === 'getInTouch') && !newValue) {
           delete newState[key];
         } else {
           newState[key] = newValue;
@@ -145,7 +145,7 @@ export const handleChange = (
           ...prevState,
           [userId]: {
             ...prevState[userId],
-            ...(key === 'lastDelivery' && !newValue
+            ...((key === 'lastDelivery' || key === 'getInTouch') && !newValue
               ? (() => {
                   const { [key]: _, ...rest } = prevState[userId];
                   return rest;
@@ -164,7 +164,7 @@ export const handleChange = (
         ...prevState,
         [userId]: {
           ...prevState[userId],
-          ...(key === 'lastDelivery' && !newValue
+          ...((key === 'lastDelivery' || key === 'getInTouch') && !newValue
             ? (() => {
                 const { [key]: _, ...rest } = prevState[userId];
                 return rest;
@@ -341,6 +341,12 @@ export const handleSubmit = (userData, condition, isToastOn, removeKeys = []) =>
     uploadedInfo.lastDelivery = formatDateToServer(uploadedInfo.lastDelivery);
   } else {
     delete uploadedInfo.lastDelivery;
+  }
+
+  if (uploadedInfo.getInTouch) {
+    uploadedInfo.getInTouch = formatDateToServer(uploadedInfo.getInTouch);
+  } else {
+    delete uploadedInfo.getInTouch;
   }
 
   // Оновлюємо поле lastAction поточною датою в мілісекундах
