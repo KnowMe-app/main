@@ -585,6 +585,138 @@ const sanitizeCellValue = value => {
   return Number.isNaN(numberValue) ? '' : numberValue;
 };
 
+const doesMedicationMatchDefaultDistribution = (schedule, key) => {
+  if (!schedule || !key) return false;
+
+  const rows = Array.isArray(schedule.rows) ? schedule.rows : [];
+  if (!rows.length) {
+    return true;
+  }
+
+  const medication = schedule?.medications?.[key];
+  if (!medication) {
+    return true;
+  }
+
+  const issued = Number(medication.issued) || 0;
+  if (issued <= 0) {
+    return rows.every(row => sanitizeCellValue(row?.values?.[key]) === '');
+  }
+
+  const comparisonSchedule = {
+    ...schedule,
+    medications: { [key]: medication },
+    medicationOrder: [key],
+  };
+
+  const baseRows = rows.map(row => ({
+    date: row?.date,
+    values: { [key]: '' },
+  }));
+
+  const expectedRows = applyDefaultDistribution(baseRows, comparisonSchedule, { onlyKeys: [key] });
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const actual = sanitizeCellValue(rows[index]?.values?.[key]);
+    if (actual === '') {
+      continue;
+    }
+    const expected = sanitizeCellValue(expectedRows[index]?.values?.[key]);
+    if (actual !== expected) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const sanitizeScheduleForStorage = schedule => {
+  if (!schedule || typeof schedule !== 'object') {
+    return schedule;
+  }
+
+  const medicationOrder = Array.isArray(schedule.medicationOrder)
+    ? schedule.medicationOrder.filter(Boolean)
+    : [];
+  const medications = schedule.medications && typeof schedule.medications === 'object'
+    ? schedule.medications
+    : {};
+
+  const keysToRemove = medicationOrder.filter(key => {
+    const medication = medications[key];
+    if (!medication) {
+      return false;
+    }
+    const plan = medication.plan || key;
+    const issued = Number(medication.issued) || 0;
+    const defaultIssued = getPlanDefaultIssued(plan, medication);
+
+    if (issued !== defaultIssued) {
+      return false;
+    }
+
+    if (medication.displayValue) {
+      return false;
+    }
+
+    return doesMedicationMatchDefaultDistribution(schedule, key);
+  });
+
+  if (!keysToRemove.length) {
+    return {
+      ...schedule,
+    };
+  }
+
+  const removalSet = new Set(keysToRemove);
+
+  const sanitizedMedications = Object.entries(medications).reduce((acc, [key, value]) => {
+    if (!removalSet.has(key)) {
+      acc[key] = value;
+    }
+    return acc;
+  }, {});
+
+  const sanitizedOrder = medicationOrder.filter(key => !removalSet.has(key));
+
+  const rows = Array.isArray(schedule.rows) ? schedule.rows : [];
+  const sanitizedRows = rows.map(row => {
+    const values = row?.values && typeof row.values === 'object' ? { ...row.values } : {};
+    let changed = false;
+
+    removalSet.forEach(key => {
+      if (key in values) {
+        delete values[key];
+        changed = true;
+      }
+    });
+
+    if (!changed) {
+      return row;
+    }
+
+    return {
+      ...row,
+      values,
+    };
+  });
+
+  const hasRowData = sanitizedRows.some(row => {
+    if (!row || typeof row !== 'object') {
+      return false;
+    }
+    const values = row.values && typeof row.values === 'object' ? row.values : {};
+    return Object.values(values).some(value => sanitizeCellValue(value) !== '');
+  });
+
+  return {
+    ...schedule,
+    medications: sanitizedMedications,
+    medicationOrder: sanitizedOrder,
+    rows: hasRowData ? sanitizedRows : [],
+  };
+};
+
 const evaluateIssuedInput = (displayValue, fallbackIssued) => {
   if (displayValue === null || displayValue === undefined || displayValue === '') {
     const fallback = Number(fallbackIssued);
@@ -1004,7 +1136,7 @@ const MedicationSchedule = ({
   useEffect(() => {
     const normalized = normalizeData(data, { cycleStart });
     setSchedule(normalized);
-    scheduleRef.current = normalized;
+    scheduleRef.current = sanitizeScheduleForStorage(normalized);
   }, [data, cycleStart]);
 
   const updateSchedule = useCallback(updater => {
@@ -1012,9 +1144,10 @@ const MedicationSchedule = ({
       const base = prev || scheduleRef.current || normalizeData({}, { cycleStart });
       const next = typeof updater === 'function' ? updater(base) : updater;
       const enriched = { ...next, updatedAt: Date.now() };
-      scheduleRef.current = enriched;
+      const sanitized = sanitizeScheduleForStorage(enriched);
+      scheduleRef.current = sanitized;
       if (typeof onChange === 'function') {
-        onChange(enriched);
+        onChange(sanitized);
       }
       return enriched;
     });
