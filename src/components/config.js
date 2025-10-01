@@ -381,6 +381,20 @@ export const saveMedicationSchedule = async (ownerId, userId, data) => {
   }
 };
 
+export const deleteMedicationSchedule = async (ownerId, userId) => {
+  const scheduleRef = getMedicationScheduleRef(ownerId, userId);
+  if (!scheduleRef) {
+    throw new Error('Missing ownerId or userId for medication schedule deletion');
+  }
+
+  try {
+    await remove(scheduleRef);
+  } catch (error) {
+    console.error('Error deleting medication schedule:', error);
+    throw error;
+  }
+};
+
 export const fetchDislikeUsers = async ownerId => {
   try {
     const refPath = ref2(database, `multiData/dislikes/${ownerId}`);

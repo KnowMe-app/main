@@ -16,6 +16,8 @@ const BASE_MEDICATIONS_MAP = new Map(BASE_MEDICATIONS.map(item => [item.key, ite
 
 const DEFAULT_ROWS = 280;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const DATE_COLUMN_MIN_WIDTH = 58;
+const DATE_COLUMN_STYLE = { minWidth: `${DATE_COLUMN_MIN_WIDTH}px` };
 
 const Container = styled.div`
   display: flex;
@@ -468,6 +470,9 @@ const PROGYNOVA_DOUBLE_DOSE_START_DAY = 3;
 const PROGYNOVA_TEN_WEEKS_DAY = 10 * 7;
 const PROGYNOVA_TAPER_DAYS = 5;
 const DAYS_IN_WEEK = 7;
+const INJESTA_START_DAY = 15;
+const INJESTA_END_DAY = 12 * DAYS_IN_WEEK;
+const INJESTA_DEFAULT_DAILY_DOSE = 2;
 
 const PLAN_HANDLERS = {
   progynova: {
@@ -498,9 +503,13 @@ const PLAN_HANDLERS = {
     getDailyValue: ({ dayNumber }) => (dayNumber >= 1 && dayNumber <= 36 * DAYS_IN_WEEK ? 1 : ''),
   },
   injesta: {
-    defaultIssued: (12 * DAYS_IN_WEEK - 15 + 1) * 2,
-    maxDay: 12 * DAYS_IN_WEEK,
-    getDailyValue: ({ dayNumber }) => (dayNumber >= 15 && dayNumber <= 12 * DAYS_IN_WEEK ? 2 : ''),
+    defaultIssued: (INJESTA_END_DAY - INJESTA_START_DAY + 1) * INJESTA_DEFAULT_DAILY_DOSE,
+    maxDay: INJESTA_END_DAY,
+    getDailyValue: ({ dayNumber }) => {
+      if (!Number.isFinite(dayNumber)) return '';
+      if (dayNumber < INJESTA_START_DAY || dayNumber > INJESTA_END_DAY) return '';
+      return INJESTA_DEFAULT_DAILY_DOSE;
+    },
   },
   luteina: {
     defaultIssued: (16 * DAYS_IN_WEEK - 14 + 1) * 2,
@@ -1325,7 +1334,7 @@ const MedicationSchedule = ({
           <thead>
             <tr>
               <Th style={{ width: '60px' }}>#</Th>
-              <Th style={{ minWidth: '96px' }}>Дата</Th>
+              <Th style={DATE_COLUMN_STYLE}>Дата</Th>
               {medicationList.map(({ key, short }) => {
                 const isHighlighted = highlightedMedication === key;
                 return (
@@ -1404,7 +1413,7 @@ const MedicationSchedule = ({
                         {isOneTabletDay && <DayBadge>{`${oneTabletIndex}т1д`}</DayBadge>}
                       </DayCell>
                     </Td>
-                    <Td>
+                    <Td style={DATE_COLUMN_STYLE}>
                       <DateCellContent>
                         <DateText>{formattedDate}</DateText>
                         {weekday && <WeekdayTag>{weekday}</WeekdayTag>}
