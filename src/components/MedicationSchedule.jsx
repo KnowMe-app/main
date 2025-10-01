@@ -196,7 +196,7 @@ const MedicationTh = styled(Th)`
   max-width: 26px;
   text-align: center;
   padding: 6px;
-  background: ${props => (props.$isHighlighted ? '#ffe8e8' : '#fafafa')};
+  background: #fafafa;
   overflow: visible;
 `;
 
@@ -207,7 +207,7 @@ const MedicationHeaderContent = styled.div`
   justify-content: center;
 `;
 
-const HighlightColumnButton = styled.button`
+const RemoveColumnButton = styled.button`
   position: absolute;
   top: -4px;
   right: -4px;
@@ -309,11 +309,10 @@ const MedicationTd = styled(Td)`
   padding: 4px;
   min-width: 26px;
   width: 26px;
-  background: ${props => (props.$isHighlighted ? '#fff3f0' : 'transparent')};
 `;
 
 const MedicationStatusCell = styled(StatusCell)`
-  background: ${props => (props.$isHighlighted ? '#fff3f0' : '#fffaf0')};
+  background: #fffaf0;
 `;
 
 const DescriptionList = styled.ul`
@@ -1150,7 +1149,6 @@ const MedicationSchedule = ({
 }) => {
   const [schedule, setSchedule] = useState(() => normalizeData(data, { cycleStart }));
   const [focusedMedication, setFocusedMedication] = useState(null);
-  const [highlightedMedication, setHighlightedMedication] = useState(null);
   const [newMedicationDraft, setNewMedicationDraft] = useState(() => ({
     label: '',
     short: '',
@@ -1259,9 +1257,50 @@ const MedicationSchedule = ({
     setFocusedMedication(null);
   }, []);
 
-  const handleToggleHighlight = useCallback(key => {
-    setHighlightedMedication(prev => (prev === key ? null : key));
-  }, []);
+  const handleRemoveMedication = useCallback(
+    key => {
+      updateSchedule(prev => {
+        if (!prev) return prev;
+
+        const prevMedications = prev.medications || {};
+        const { [key]: _, ...restMedications } = prevMedications;
+        const medicationOrder = Array.isArray(prev.medicationOrder)
+          ? prev.medicationOrder.filter(item => item !== key)
+          : Object.keys(restMedications);
+
+        const rows = Array.isArray(prev.rows)
+          ? prev.rows.map(row => {
+              if (!row) return row;
+              const nextValues = { ...(row.values || {}) };
+              if (Object.prototype.hasOwnProperty.call(nextValues, key)) {
+                delete nextValues[key];
+                return {
+                  ...row,
+                  values: nextValues,
+                };
+              }
+              if (!row.values) {
+                return {
+                  ...row,
+                  values: nextValues,
+                };
+              }
+              return row;
+            })
+          : [];
+
+        return {
+          ...prev,
+          medications: restMedications,
+          medicationOrder,
+          rows,
+        };
+      });
+
+      setFocusedMedication(prev => (prev === key ? null : prev));
+    },
+    [updateSchedule],
+  );
 
   const handleNewMedicationDraftChange = useCallback((field, value) => {
     setNewMedicationDraft(prevDraft => ({
@@ -1509,23 +1548,20 @@ const MedicationSchedule = ({
             <tr>
               <Th style={{ width: '60px' }}>#</Th>
               <Th style={DATE_COLUMN_STYLE}>Дата</Th>
-              {medicationList.map(({ key, short }) => {
-                const isHighlighted = highlightedMedication === key;
-                return (
-                  <MedicationTh key={key} $isHighlighted={isHighlighted}>
-                    <MedicationHeaderContent>
-                      <span>{short}</span>
-                      <HighlightColumnButton
-                        type="button"
-                        onClick={() => handleToggleHighlight(key)}
-                        aria-label={`Виділити колонку ${short}`}
-                      >
-                        <FaTrash size={12} />
-                      </HighlightColumnButton>
-                    </MedicationHeaderContent>
-                  </MedicationTh>
-                );
-              })}
+              {medicationList.map(({ key, short }) => (
+                <MedicationTh key={key}>
+                  <MedicationHeaderContent>
+                    <span>{short}</span>
+                    <RemoveColumnButton
+                      type="button"
+                      onClick={() => handleRemoveMedication(key)}
+                      aria-label={`Видалити колонку ${short}`}
+                    >
+                      <FaTrash size={12} />
+                    </RemoveColumnButton>
+                  </MedicationHeaderContent>
+                </MedicationTh>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -1598,21 +1634,18 @@ const MedicationSchedule = ({
                         {weekday && <WeekdayTag>{weekday}</WeekdayTag>}
                       </DateCellContent>
                     </Td>
-                      {medicationList.map(({ key }) => {
-                        const isHighlighted = highlightedMedication === key;
-                        return (
-                          <MedicationTd key={key} $isHighlighted={isHighlighted}>
-                            <CellInput
-                              value={
-                                row.values?.[key] === '' || row.values?.[key] === undefined
-                                  ? ''
-                                  : row.values[key]
-                              }
-                              onChange={event => handleCellChange(index, key, event.target.value)}
-                            />
-                          </MedicationTd>
-                        );
-                      })}
+                      {medicationList.map(({ key }) => (
+                        <MedicationTd key={key}>
+                          <CellInput
+                            value={
+                              row.values?.[key] === '' || row.values?.[key] === undefined
+                                ? ''
+                                : row.values[key]
+                            }
+                            onChange={event => handleCellChange(index, key, event.target.value)}
+                          />
+                        </MedicationTd>
+                      ))}
                   </RowComponent>,
                 );
 
@@ -1636,7 +1669,7 @@ const MedicationSchedule = ({
                       {medicationList.map(({ key }) => {
                         const balance = rowBalances[key];
                         return (
-                          <MedicationStatusCell key={key} $isHighlighted={highlightedMedication === key}>
+                          <MedicationStatusCell key={key}>
                             <StatusValue $isNegative={balance < 0}>{formatNumber(balance)}</StatusValue>
                           </MedicationStatusCell>
                         );
