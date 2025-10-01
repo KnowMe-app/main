@@ -3,9 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { onValue } from 'firebase/database';
-import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
-import MedicationSchedule, { parseDateString } from './MedicationSchedule';
-import { deriveScheduleDisplayInfo } from './StimulationSchedule';
+import MedicationSchedule from './MedicationSchedule';
 import {
   deleteMedicationSchedule,
   fetchUserById,
@@ -50,34 +48,6 @@ const BackButton = styled.button`
 
   &:hover {
     background-color: #ff9a1a;
-  }
-`;
-
-const CopyButton = styled.button`
-  padding: 6px;
-  border-radius: 6px;
-  border: none;
-  background-color: #ffb347;
-  color: white;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.2s ease;
-
-  svg {
-    width: 18px;
-    height: 18px;
-    fill: currentColor;
-  }
-
-  &:hover {
-    background-color: #ff9a1a;
-  }
-
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 `;
 
@@ -136,138 +106,6 @@ const LoadingState = styled.div`
   font-size: 14px;
   color: #666;
 `;
-
-const normalizeClipboardDate = (value, referenceDate) => {
-  if (!value) return null;
-
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const normalized = new Date(value);
-    normalized.setHours(0, 0, 0, 0);
-    return normalized;
-  }
-
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const fromNumber = new Date(value);
-    if (!Number.isNaN(fromNumber.getTime())) {
-      fromNumber.setHours(0, 0, 0, 0);
-      return fromNumber;
-    }
-  }
-
-  const trimmed = String(value).trim();
-  if (!trimmed) return null;
-
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (isoMatch) {
-    const [, yearStr, monthStr, dayStr] = isoMatch;
-    const year = Number(yearStr);
-    const month = Number(monthStr);
-    const day = Number(dayStr);
-    if (Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day)) {
-      const fromIso = new Date(year, month - 1, day);
-      if (!Number.isNaN(fromIso.getTime())) {
-        fromIso.setHours(0, 0, 0, 0);
-        return fromIso;
-      }
-    }
-  }
-
-  const direct = new Date(trimmed);
-  if (!Number.isNaN(direct.getTime())) {
-    direct.setHours(0, 0, 0, 0);
-    return direct;
-  }
-
-  const base = referenceDate instanceof Date && !Number.isNaN(referenceDate.getTime()) ? referenceDate : null;
-  const parsed = parseDateString(trimmed, base);
-  if (!parsed) return null;
-  const normalized = new Date(parsed);
-  normalized.setHours(0, 0, 0, 0);
-  return normalized;
-};
-
-const extractScheduleEntries = (scheduleSource, baseDate) => {
-  const entries = [];
-  let reference = baseDate instanceof Date && !Number.isNaN(baseDate.getTime()) ? baseDate : null;
-
-  const pushEntry = (rawDate, rawLabel) => {
-    const resolvedDate = normalizeClipboardDate(rawDate, reference || baseDate);
-    if (!resolvedDate) return;
-    reference = resolvedDate;
-    entries.push({
-      date: resolvedDate,
-      label: rawLabel === null || rawLabel === undefined ? '' : String(rawLabel),
-    });
-  };
-
-  if (typeof scheduleSource === 'string') {
-    const lines = scheduleSource
-      .split('\n')
-      .map(line => line.trim())
-      .filter(Boolean);
-
-    lines.forEach(line => {
-      const parts = line.split('\t');
-      if (!parts.length) return;
-      const datePart = parts[0];
-      const labelPart = parts.slice(parts.length > 2 ? 2 : 1).join('\t');
-      pushEntry(datePart, labelPart);
-    });
-  } else if (Array.isArray(scheduleSource)) {
-    scheduleSource.forEach(item => {
-      if (!item) return;
-      pushEntry(item.date || item.day || '', item.label || '');
-    });
-  } else if (scheduleSource && typeof scheduleSource === 'object') {
-    Object.values(scheduleSource).forEach(item => {
-      if (!item) return;
-      pushEntry(item.date || item.day || '', item.label || '');
-    });
-  }
-
-  return entries
-    .filter(entry => entry.date instanceof Date && !Number.isNaN(entry.date.getTime()))
-    .sort((a, b) => a.date - b.date);
-};
-
-const buildStimulationClipboardText = (scheduleSource, baseDate) => {
-  const entries = extractScheduleEntries(scheduleSource, baseDate);
-  if (!entries.length) {
-    return '';
-  }
-
-  const lines = [];
-  let currentYear = null;
-
-  entries.forEach(entry => {
-    const year = entry.date.getFullYear();
-    if (year !== currentYear) {
-      lines.push(String(year));
-      currentYear = year;
-    }
-
-    const info = deriveScheduleDisplayInfo({ date: entry.date, label: entry.label });
-    const segments = [];
-    const prefix = `${info.dateStr} ${info.weekday}`.trim();
-    if (prefix) {
-      segments.push(prefix);
-    }
-    if (info.secondaryLabel) {
-      segments.push(info.secondaryLabel);
-    }
-    const detail = info.displayLabel || info.labelValue || '';
-    if (detail) {
-      segments.push(detail);
-    }
-
-    const line = segments.join(' ').replace(/\s+/g, ' ').trim();
-    if (line) {
-      lines.push(line);
-    }
-  });
-
-  return lines.join('\n').trim();
-};
 
 const MedicationsPage = () => {
   const { userId } = useParams();
@@ -395,35 +233,6 @@ const MedicationsPage = () => {
     navigate(-1);
   }, [navigate, location.state]);
 
-  const handleCopyStimulationSchedule = useCallback(async () => {
-    const scheduleSource = user?.stimulationSchedule;
-    if (!scheduleSource) {
-      toast.error('Немає графіку стимуляції для копіювання');
-      return;
-    }
-
-    if (!navigator?.clipboard || typeof navigator.clipboard.writeText !== 'function') {
-      toast.error('Копіювання не підтримується в цьому браузері');
-      return;
-    }
-
-    const baseDate = parseDateString(user?.lastCycle || '');
-    const text = buildStimulationClipboardText(scheduleSource, baseDate);
-
-    if (!text) {
-      toast.error('Не вдалося підготувати графік стимуляції для копіювання');
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success('Графік стимуляції скопійовано');
-    } catch (error) {
-      console.error('Failed to copy stimulation schedule', error);
-      toast.error('Не вдалося скопіювати графік стимуляції');
-    }
-  }, [user?.stimulationSchedule, user?.lastCycle]);
-
   const handleDelete = useCallback(async () => {
     if (!ownerId || !userId) {
       toast.error('Не вдалося визначити користувача для видалення ліків');
@@ -483,15 +292,6 @@ const MedicationsPage = () => {
           <BackButton type="button" onClick={handleClose}>
             Назад
           </BackButton>
-          <CopyButton
-            type="button"
-            onClick={handleCopyStimulationSchedule}
-            disabled={!user?.stimulationSchedule}
-            aria-label="Скопіювати графік стимуляції"
-            title="Скопіювати графік стимуляції"
-          >
-            <ClipboardIcon />
-          </CopyButton>
           <DeleteButton
             type="button"
             onClick={handleDelete}

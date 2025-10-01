@@ -26,7 +26,6 @@ const BASE_MEDICATION_PLACEHOLDERS = {
 const BASE_MEDICATIONS_MAP = new Map(BASE_MEDICATIONS.map(item => [item.key, item]));
 
 const DEFAULT_ROWS = 280;
-const MS_IN_DAY = 1000 * 60 * 60 * 24;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const DATE_COLUMN_MIN_WIDTH = 58;
 const DATE_COLUMN_STYLE = { minWidth: `${DATE_COLUMN_MIN_WIDTH}px` };
@@ -358,7 +357,7 @@ const InfoNote = styled.p`
 
 const isValidDate = date => date instanceof Date && !Number.isNaN(date.getTime());
 
-export const parseDateString = (value, baseDate) => {
+const parseDateString = (value, baseDate) => {
   if (!value) return null;
   if (value instanceof Date) return isValidDate(value) ? value : null;
   const trimmed = String(value).trim();
@@ -426,13 +425,6 @@ const formatISODate = date => {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
-
-const createDefaultNewMedicationDraft = () => ({
-  label: '',
-  short: '',
-  issued: '',
-  startDate: formatISODate(new Date()),
-});
 
 const addDays = (date, days) => {
   if (!(date instanceof Date)) return null;
@@ -554,43 +546,6 @@ const slugifyMedicationKey = value => {
     .slice(0, 50);
 };
 
-const sanitizeMedicationToken = value => {
-  if (!value) return '';
-  return value
-    .toString()
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\u0400-\u04ff]+/g, '');
-};
-
-const BASE_MEDICATION_TOKEN_MAP = (() => {
-  const map = new Map();
-  BASE_MEDICATIONS.forEach(item => {
-    const candidates = new Set([
-      item.key,
-      item.label,
-      item.short,
-      item.plan,
-      slugifyMedicationKey(item.label),
-      slugifyMedicationKey(item.short),
-      slugifyMedicationKey(item.plan),
-    ]);
-
-    candidates.forEach(candidate => {
-      if (!candidate) return;
-      const slug = slugifyMedicationKey(candidate);
-      if (slug) {
-        map.set(slug, item.key);
-      }
-      const token = sanitizeMedicationToken(candidate);
-      if (token) {
-        map.set(token, item.key);
-      }
-    });
-  });
-  return map;
-})();
-
 const deriveShortLabel = label => {
   if (!label) return '';
   const trimmed = label.trim();
@@ -607,135 +562,6 @@ const sanitizeCellValue = value => {
   if (value === '') return '';
   const numberValue = Number(value);
   return Number.isNaN(numberValue) ? '' : numberValue;
-};
-
-const parseDoseSequence = rawValue => {
-  if (!rawValue) return [];
-  const normalized = rawValue.toString().replace(/\s+/g, '');
-  if (!normalized) return [];
-  return normalized.split('+').map(token => {
-    const cleaned = token.replace(/,/g, '.').replace(/[^0-9.+-]/g, '');
-    if (!cleaned) return '';
-    const numberValue = Number(cleaned);
-    if (!Number.isFinite(numberValue) || numberValue <= 0) {
-      return '';
-    }
-    return numberValue;
-  });
-};
-
-const parseMedicationImportLine = (line, index) => {
-  if (!line) return null;
-  const commaIndex = line.indexOf(',');
-  if (commaIndex === -1) return null;
-  const name = line.slice(0, commaIndex).trim();
-  const rest = line.slice(commaIndex + 1).trim();
-  if (!name || !rest) return null;
-
-  const dateRegex = /(\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?)/g;
-  const matches = Array.from(rest.matchAll(dateRegex));
-  if (matches.length < 2) return null;
-
-  const endMatch = matches[0];
-  const startMatch = matches[1];
-  if (endMatch.index === undefined || startMatch.index === undefined) return null;
-
-  const endDateText = endMatch[0];
-  const startDateText = startMatch[0];
-
-  const betweenDates = rest.slice(endMatch.index + endMatch[0].length, startMatch.index).trim();
-  const series = betweenDates.replace(/[,;]/g, ' ').replace(/\s+/g, '');
-  const doses = parseDoseSequence(series);
-  if (!doses.length) return null;
-
-  const afterStart = rest.slice(startMatch.index + startMatch[0].length).trim();
-  const issuedMatch = afterStart.match(/^[=+\d.,\s]+/);
-  const issuedRaw = issuedMatch ? issuedMatch[0].trim() : afterStart.split(/\s+/)[0] || '';
-
-  return {
-    line,
-    lineIndex: index,
-    name,
-    endDateText,
-    startDateText,
-    doses,
-    issuedRaw: issuedRaw || '',
-  };
-};
-
-export const parseMedicationImportLines = input => {
-  if (!input) return [];
-  const normalized = input.replace(/\r\n/g, '\n');
-  if (!normalized.trim()) return [];
-  const lines = normalized.split('\n').map(line => line.trim()).filter(Boolean);
-  return lines
-    .map((line, index) => parseMedicationImportLine(line, index))
-    .filter(Boolean);
-};
-
-export const normalizeImportedMedication = (parsed, options = {}) => {
-  if (!parsed) return null;
-
-  const baseDate = options.referenceDate || options.baseDate || null;
-  const startDateValue = parseDateString(parsed.startDateText, baseDate);
-  if (!startDateValue) return null;
-  const startDate = new Date(startDateValue);
-  if (Number.isNaN(startDate.getTime())) return null;
-  startDate.setHours(0, 0, 0, 0);
-
-  const endReference = options.referenceDate || startDate;
-  const endDateValue = parseDateString(parsed.endDateText, endReference);
-  let endDate = endDateValue ? new Date(endDateValue) : null;
-  if (endDate && !Number.isNaN(endDate.getTime())) {
-    endDate.setHours(0, 0, 0, 0);
-  } else {
-    endDate = null;
-  }
-
-  const sanitizedDoses = parsed.doses.map(value =>
-    typeof value === 'number' && Number.isFinite(value) ? value : '',
-  );
-  const computedEnd = addDays(startDate, Math.max(sanitizedDoses.length - 1, 0));
-  if (!endDate || (computedEnd && endDate < startDate)) {
-    endDate = computedEnd || new Date(startDate);
-  }
-
-  const totalDose = sanitizedDoses.reduce(
-    (acc, value) => (typeof value === 'number' ? acc + value : acc),
-    0,
-  );
-  const issuedInfo = evaluateIssuedInput(parsed.issuedRaw, totalDose);
-  const issuedValue = Number.isFinite(issuedInfo.issued) ? issuedInfo.issued : totalDose;
-
-  const slug = slugifyMedicationKey(parsed.name);
-  const token = sanitizeMedicationToken(parsed.name);
-  const baseKey = slug && BASE_MEDICATION_TOKEN_MAP.get(slug)
-    ? BASE_MEDICATION_TOKEN_MAP.get(slug)
-    : token && BASE_MEDICATION_TOKEN_MAP.get(token)
-      ? BASE_MEDICATION_TOKEN_MAP.get(token)
-      : null;
-  const baseDefinition = baseKey ? BASE_MEDICATIONS_MAP.get(baseKey) : null;
-  const label = parsed.name || baseDefinition?.label || baseKey || '';
-  const short = baseDefinition?.short || deriveShortLabel(label);
-  const plan = baseDefinition?.plan || 'custom';
-  const customKeyBase = slug || token || `custom-${(options.index ?? 0) + 1}`;
-
-  return {
-    line: parsed.line,
-    lineIndex: parsed.lineIndex,
-    label,
-    short,
-    plan,
-    baseKey,
-    customKeyBase,
-    issued: Number.isFinite(issuedValue) ? issuedValue : 0,
-    displayValue: issuedInfo.displayValue || '',
-    startDate,
-    endDate,
-    startIso: formatISODate(startDate),
-    endIso: endDate ? formatISODate(endDate) : '',
-    doses: sanitizedDoses,
-  };
 };
 
 const doesMedicationMatchDefaultDistribution = (schedule, key) => {
@@ -1323,7 +1149,12 @@ const MedicationSchedule = ({
 }) => {
   const [schedule, setSchedule] = useState(() => normalizeData(data, { cycleStart }));
   const [focusedMedication, setFocusedMedication] = useState(null);
-  const [newMedicationDraft, setNewMedicationDraft] = useState(createDefaultNewMedicationDraft);
+  const [newMedicationDraft, setNewMedicationDraft] = useState(() => ({
+    label: '',
+    short: '',
+    issued: '',
+    startDate: formatISODate(new Date()),
+  }));
   const scheduleRef = useRef(schedule);
 
   const medicationOrder = useMemo(
@@ -1484,180 +1315,6 @@ const MedicationSchedule = ({
       return;
     }
 
-    const importCandidates = parseMedicationImportLines(label);
-    if (importCandidates.length > 0) {
-      let importApplied = false;
-      updateSchedule(prev => {
-        const baseSchedule = prev || null;
-        const startCandidate =
-          parseDateString(baseSchedule?.startDate) ||
-          parseDateString(cycleStart) ||
-          new Date();
-        const baseStart = startCandidate instanceof Date ? new Date(startCandidate) : new Date();
-        baseStart.setHours(0, 0, 0, 0);
-
-        let referenceDate = baseStart;
-        const normalizedItems = importCandidates
-          .map((candidate, index) => {
-            const normalized = normalizeImportedMedication(candidate, {
-              baseDate: baseStart,
-              referenceDate,
-              index,
-            });
-            if (!normalized) {
-              return null;
-            }
-            referenceDate = normalized.endDate || normalized.startDate || referenceDate;
-            return normalized;
-          })
-          .filter(Boolean);
-
-        if (!normalizedItems.length) {
-          return prev;
-        }
-
-        const earliestStart = normalizedItems.reduce((min, item) => {
-          if (!item?.startDate) return min;
-          return !min || item.startDate < min ? item.startDate : min;
-        }, null);
-
-        if (!earliestStart) {
-          return prev;
-        }
-
-        const latestEnd = normalizedItems.reduce((max, item) => {
-          const candidate = item?.endDate || item?.startDate;
-          if (!candidate) return max;
-          return !max || candidate > max ? candidate : max;
-        }, null);
-
-        const baseOrder = BASE_MEDICATIONS.map(({ key }) => key);
-        const medications = {};
-        baseOrder.forEach(key => {
-          const baseDefinition = BASE_MEDICATIONS_MAP.get(key);
-          const baseLabel = baseDefinition?.label || key;
-          medications[key] = {
-            issued: 0,
-            displayValue: '',
-            label: baseLabel,
-            short: baseDefinition?.short || deriveShortLabel(baseLabel),
-            plan: baseDefinition?.plan || key,
-            startDate: '',
-          };
-        });
-
-        const medicationOrder = [...baseOrder];
-        const importedLookup = new Map();
-        const usedKeys = new Set(medicationOrder);
-
-        normalizedItems.forEach((item, index) => {
-          const isBase = Boolean(item.baseKey);
-          let key = item.baseKey || '';
-          if (!isBase) {
-            const baseCandidate = item.customKeyBase || `custom-${index + 1}`;
-            const prefixed = baseCandidate.startsWith('custom-') ? baseCandidate : `custom-${baseCandidate}`;
-            let candidateKey = prefixed || `custom-${index + 1}`;
-            let attempt = 1;
-            while (usedKeys.has(candidateKey)) {
-              candidateKey = `${prefixed}-${attempt}`;
-              attempt += 1;
-            }
-            key = candidateKey;
-            medicationOrder.push(key);
-            usedKeys.add(key);
-          } else {
-            usedKeys.add(key);
-          }
-
-          const baseDefinition = BASE_MEDICATIONS_MAP.get(key);
-          const labelValue = item.label || baseDefinition?.label || key;
-          const shortValue = item.short || baseDefinition?.short || deriveShortLabel(labelValue);
-          const planValue = isBase ? baseDefinition?.plan || key : 'custom';
-
-          medications[key] = {
-            issued: Number.isFinite(item.issued) ? item.issued : 0,
-            displayValue: item.displayValue || '',
-            label: labelValue,
-            short: shortValue || labelValue.slice(0, 2).toUpperCase(),
-            plan: planValue,
-            startDate: item.startIso || '',
-          };
-
-          importedLookup.set(key, {
-            ...item,
-            key,
-          });
-        });
-
-        const normalizedStart = new Date(earliestStart);
-        normalizedStart.setHours(0, 0, 0, 0);
-        const normalizedEnd = latestEnd ? new Date(latestEnd) : new Date(earliestStart);
-        normalizedEnd.setHours(0, 0, 0, 0);
-        const diffDays = Math.max(
-          Math.round((normalizedEnd.getTime() - normalizedStart.getTime()) / MS_IN_DAY),
-          0,
-        );
-        const totalDays = diffDays + 1;
-
-        const rows = [];
-        for (let index = 0; index < totalDays; index += 1) {
-          const current = new Date(normalizedStart);
-          current.setDate(normalizedStart.getDate() + index);
-          const iso = formatISODate(current);
-          const values = {};
-
-          medicationOrder.forEach(key => {
-            const imported = importedLookup.get(key);
-            if (!imported || !imported.startDate) {
-              values[key] = '';
-              return;
-            }
-            const offset = Math.round(
-              (current.getTime() - imported.startDate.getTime()) / MS_IN_DAY,
-            );
-            if (offset < 0 || offset >= imported.doses.length) {
-              values[key] = '';
-              return;
-            }
-            const dose = imported.doses[offset];
-            values[key] = dose === '' ? '' : dose;
-          });
-
-          rows.push({
-            date: iso,
-            values,
-          });
-        }
-
-        const startIso = formatISODate(normalizedStart);
-        const medicationsForPadding = {};
-        medicationOrder.forEach(key => {
-          const med = medications[key];
-          const imported = importedLookup.get(key);
-          medicationsForPadding[key] = imported ? med : { ...med, plan: 'custom' };
-        });
-        const requiredLength = calculateRequiredRows(
-          medicationOrder,
-          medicationsForPadding,
-          rows.length,
-        );
-        const paddedRows = ensureRowsLength(rows, requiredLength, startIso, medicationOrder);
-
-        importApplied = true;
-        return {
-          startDate: startIso,
-          medications,
-          medicationOrder,
-          rows: paddedRows,
-        };
-      });
-
-      if (importApplied) {
-        setNewMedicationDraft(createDefaultNewMedicationDraft());
-        return;
-      }
-    }
-
     const shortInput = newMedicationDraft.short?.trim();
     const fallbackShort = deriveShortLabel(label);
     const normalizedShort = (shortInput || fallbackShort || label.slice(0, 2)).toUpperCase();
@@ -1678,7 +1335,7 @@ const MedicationSchedule = ({
       const medicationOrder = Array.isArray(prev.medicationOrder) ? prev.medicationOrder : [];
       const nextOrder = [...medicationOrder, key];
       const referenceDate = parseDateString(prev.startDate) || new Date();
-      const fallbackStartDate = formatISODate(addDays(referenceDate, 1));
+      const fallbackStartDate = formatISODate(new Date());
       const sanitizedStartDate = newMedicationDraft.startDate
         ? sanitizeDateInput(newMedicationDraft.startDate, referenceDate) || fallbackStartDate
         : fallbackStartDate;
@@ -1722,8 +1379,13 @@ const MedicationSchedule = ({
       };
     });
 
-    setNewMedicationDraft(createDefaultNewMedicationDraft());
-  }, [newMedicationDraft, updateSchedule, cycleStart]);
+    setNewMedicationDraft({
+      label: '',
+      short: '',
+      issued: '',
+      startDate: formatISODate(new Date()),
+    });
+  }, [newMedicationDraft, updateSchedule]);
 
   const canAddMedication = newMedicationDraft.label.trim().length > 0;
 
