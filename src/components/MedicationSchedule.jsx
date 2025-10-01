@@ -7,6 +7,7 @@ import { deriveScheduleDisplayInfo } from './StimulationSchedule';
 const BASE_MEDICATIONS = [
   { key: 'progynova', label: 'Прогінова', short: 'Пр', plan: 'progynova' },
   { key: 'metypred', label: 'Метипред', short: 'Мт', plan: 'metypred' },
+  { key: 'folicAcid', label: 'Фолієва кислота', short: 'ФК', plan: 'folicAcid' },
   { key: 'aspirin', label: 'Аспірин кардіо', short: 'АК', plan: 'aspirin' },
   { key: 'injesta', label: 'Інжеста', short: 'Ін', plan: 'injesta' },
   { key: 'luteina', label: 'Лютеіна', short: 'Лт', plan: 'luteina' },
@@ -493,9 +494,9 @@ const PLAN_HANDLERS = {
     },
   },
   metypred: {
-    defaultIssued: 45,
-    maxDay: 45,
-    getDailyValue: ({ dayNumber }) => (dayNumber >= 1 && dayNumber <= 45 ? 1 : ''),
+    defaultIssued: 60,
+    maxDay: 60,
+    getDailyValue: ({ dayNumber }) => (dayNumber >= 1 && dayNumber <= 60 ? 1 : ''),
   },
   aspirin: {
     defaultIssued: 36 * DAYS_IN_WEEK,
@@ -510,6 +511,11 @@ const PLAN_HANDLERS = {
       if (dayNumber < INJESTA_START_DAY || dayNumber > INJESTA_END_DAY) return '';
       return INJESTA_DEFAULT_DAILY_DOSE;
     },
+  },
+  folicAcid: {
+    defaultIssued: 12 * DAYS_IN_WEEK,
+    maxDay: 12 * DAYS_IN_WEEK,
+    getDailyValue: ({ dayNumber }) => (dayNumber >= 1 && dayNumber <= 12 * DAYS_IN_WEEK ? 1 : ''),
   },
   luteina: {
     defaultIssued: (16 * DAYS_IN_WEEK - 14 + 1) * 2,
