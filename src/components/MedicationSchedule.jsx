@@ -27,39 +27,6 @@ const Container = styled.div`
   color: black;
 `;
 
-const Header = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-`;
-
-const Title = styled.h2`
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-`;
-
-const Subtitle = styled.p`
-  margin: 0;
-  font-size: 14px;
-  color: #555;
-`;
-
-const CloseButton = styled.button`
-  padding: 8px 14px;
-  border-radius: 6px;
-  border: none;
-  background-color: #f0f0f0;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background-color 0.2s ease;
-
-  &:hover {
-    background-color: #e0e0e0;
-  }
-`;
-
 const IssuedList = styled.div`
   display: flex;
   flex-direction: column;
@@ -960,9 +927,6 @@ const buildStimulationEventLookup = (stimulationSchedule, startDate) => {
 const MedicationSchedule = ({
   data,
   onChange,
-  onClose,
-  userLabel,
-  userId,
   cycleStart,
   stimulationSchedule,
 }) => {
@@ -1242,22 +1206,6 @@ const MedicationSchedule = ({
 
   return (
     <Container>
-      <Header>
-        <div>
-          <Title>Ліки</Title>
-          {(userLabel || userId) && (
-            <Subtitle>
-              {userLabel && <strong>{userLabel}</strong>}
-              {userLabel && userId ? ' • ' : ''}
-              {userId && <span>ID: {userId}</span>}
-            </Subtitle>
-          )}
-        </div>
-        <CloseButton type="button" onClick={onClose}>
-          Закрити
-        </CloseButton>
-      </Header>
-
       <IssuedList>
         {medicationList.map(({ key, label, data }) => {
           const medication = data || { issued: 0, displayValue: '' };

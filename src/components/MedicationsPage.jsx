@@ -275,17 +275,12 @@ const MedicationsPage = () => {
       {isScheduleLoading && ownerId && <LoadingState>Завантаження розкладу…</LoadingState>}
 
       {isReady && (
-        <Card>
-          <MedicationSchedule
-            data={schedule || {}}
-            onChange={handleScheduleChange}
-            onClose={handleClose}
-            userLabel={userLabel}
-            userId={userId}
-            cycleStart={user?.lastCycle}
-            stimulationSchedule={user?.stimulationSchedule}
-          />
-        </Card>
+        <MedicationSchedule
+          data={schedule || {}}
+          onChange={handleScheduleChange}
+          cycleStart={user?.lastCycle}
+          stimulationSchedule={user?.stimulationSchedule}
+        />
       )}
     </PageContainer>
   );
