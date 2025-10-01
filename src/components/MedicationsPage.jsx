@@ -4,7 +4,12 @@ import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { onValue } from 'firebase/database';
 import MedicationSchedule from './MedicationSchedule';
-import { fetchUserById, getMedicationScheduleRef, saveMedicationSchedule } from './config';
+import {
+  deleteMedicationSchedule,
+  fetchUserById,
+  getMedicationScheduleRef,
+  saveMedicationSchedule,
+} from './config';
 
 const PageContainer = styled.div`
   display: flex;
@@ -54,6 +59,27 @@ const Title = styled.h1`
 const Subtitle = styled.span`
   font-size: 14px;
   color: #555;
+`;
+
+const DeleteButton = styled.button`
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  background-color: #d32f2f;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  margin-left: auto;
+  transition: background-color 0.2s ease;
+
+  &:hover:not(:disabled) {
+    background-color: #b71c1c;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 `;
 
 const Card = styled.div`
@@ -167,6 +193,26 @@ const MedicationsPage = () => {
     navigate(-1);
   }, [navigate, location.state]);
 
+  const handleDelete = useCallback(async () => {
+    if (!ownerId || !userId) {
+      toast.error('Не вдалося визначити користувача для видалення ліків');
+      return;
+    }
+
+    const confirmed = window.confirm('Видалити розклад ліків цього пацієнта?');
+    if (!confirmed) return;
+
+    try {
+      await deleteMedicationSchedule(ownerId, userId);
+      setSchedule(null);
+      toast.success('Розклад ліків видалено');
+      handleClose();
+    } catch (error) {
+      console.error('Failed to delete medication schedule', error);
+      toast.error('Не вдалося видалити розклад ліків');
+    }
+  }, [ownerId, userId, handleClose]);
+
   const handleScheduleChange = useCallback(
     updatedSchedule => {
       setSchedule(updatedSchedule);
@@ -209,6 +255,13 @@ const MedicationsPage = () => {
           <Title>Ліки</Title>
           {userLabel && <Subtitle>{userLabel}</Subtitle>}
         </TitleBlock>
+        <DeleteButton
+          type="button"
+          onClick={handleDelete}
+          disabled={!ownerId || !userId || isScheduleLoading}
+        >
+          Видалити
+        </DeleteButton>
       </Header>
 
       {!ownerId && (
