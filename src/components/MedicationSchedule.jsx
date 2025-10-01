@@ -452,7 +452,7 @@ const PROGYNOVA_DOUBLE_DOSE_START_DAY = 3;
 const PROGYNOVA_TEN_WEEKS_DAY = 10 * 7;
 const PROGYNOVA_TAPER_DAYS = 5;
 const DAYS_IN_WEEK = 7;
-const INJESTA_START_DAY = 15;
+const INJESTA_START_DAY = 14;
 const INJESTA_END_DAY = 12 * DAYS_IN_WEEK;
 const INJESTA_DEFAULT_DAILY_DOSE = 2;
 
@@ -500,7 +500,7 @@ const PLAN_HANDLERS = {
   luteina: {
     defaultIssued: 0,
     maxDay: 16 * DAYS_IN_WEEK,
-    getDailyValue: ({ dayNumber }) => (dayNumber >= 14 && dayNumber <= 16 * DAYS_IN_WEEK ? 2 : ''),
+    getDailyValue: ({ dayNumber }) => (dayNumber >= 13 && dayNumber <= 16 * DAYS_IN_WEEK ? 2 : ''),
   },
   custom: {
     defaultIssued: 0,
@@ -795,6 +795,12 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
     const isFirstRow = rowIndex === 0;
 
     medicationKeys.forEach(key => {
+      const shouldProcessKey = filteredKeys.includes(key);
+
+      if (!shouldProcessKey) {
+        return;
+      }
+
       if (isFirstRow) {
         nextValues[key] = '';
         return;
@@ -812,7 +818,7 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
         return;
       }
 
-      if (issued <= 0 || shouldSkipRow || !filteredKeys.includes(key)) {
+      if (issued <= 0 || shouldSkipRow) {
         nextValues[key] = '';
         return;
       }
@@ -923,6 +929,8 @@ const normalizeData = (data, options = {}) => {
 
   const orderSet = new Set();
   const medicationOrder = [];
+  const baseMedicationKeys = BASE_MEDICATIONS.map(({ key }) => key);
+  const customMedicationKeys = [];
 
   const addToOrder = key => {
     if (!key || orderSet.has(key)) return;
@@ -930,9 +938,18 @@ const normalizeData = (data, options = {}) => {
     medicationOrder.push(key);
   };
 
-  storedOrder.forEach(addToOrder);
-  Object.keys(storedMedications).forEach(addToOrder);
-  BASE_MEDICATIONS.forEach(({ key }) => addToOrder(key));
+  const rememberCustomKey = key => {
+    if (!key) return;
+    if (baseMedicationKeys.includes(key)) return;
+    if (customMedicationKeys.includes(key)) return;
+    customMedicationKeys.push(key);
+  };
+
+  storedOrder.forEach(rememberCustomKey);
+  Object.keys(storedMedications).forEach(rememberCustomKey);
+
+  baseMedicationKeys.forEach(addToOrder);
+  customMedicationKeys.forEach(addToOrder);
 
   const medications = {};
 
@@ -1614,4 +1631,5 @@ const MedicationSchedule = ({
   );
 };
 
+export { applyDefaultDistribution };
 export default MedicationSchedule;
