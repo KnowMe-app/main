@@ -5,10 +5,10 @@ import { FaTrash } from 'react-icons/fa';
 import { deriveScheduleDisplayInfo } from './StimulationSchedule';
 
 const BASE_MEDICATIONS = [
-  { key: 'progynova', label: 'Прогінова', short: 'Пр', plan: 'progynova' },
-  { key: 'metypred', label: 'Метипред', short: 'Мт', plan: 'metypred' },
-  { key: 'folicAcid', label: 'Фолієва кислота', short: 'ФК', plan: 'folicAcid' },
   { key: 'aspirin', label: 'Аспірин кардіо', short: 'АК', plan: 'aspirin' },
+  { key: 'folicAcid', label: 'Фолієва кислота', short: 'ФК', plan: 'folicAcid' },
+  { key: 'metypred', label: 'Метипред', short: 'Мт', plan: 'metypred' },
+  { key: 'progynova', label: 'Прогінова', short: 'Пр', plan: 'progynova' },
   { key: 'injesta', label: 'Інжеста', short: 'Ін', plan: 'injesta' },
   { key: 'luteina', label: 'Лютеіна', short: 'Лт', plan: 'luteina' },
 ];
