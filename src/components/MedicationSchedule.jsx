@@ -889,12 +889,32 @@ const normalizeRows = (rowsInput, startDate, schedule) => {
 const normalizeData = (data, options = {}) => {
   const cycleStart = options.cycleStart;
   const cycleStartDate = parseDateString(cycleStart);
-  const sanitizedCycleStart = sanitizeDateInput(cycleStart, cycleStartDate);
   const rawStartDate = data?.startDate;
-  const startDate =
-    sanitizedCycleStart ||
-    sanitizeDateInput(rawStartDate, cycleStartDate) ||
-    (cycleStartDate ? formatISODate(cycleStartDate) : formatISODate(new Date()));
+
+  const resolveIsoDate = candidate => {
+    if (!candidate) return '';
+    const parsed = parseDateString(candidate, cycleStartDate);
+    return parsed ? formatISODate(parsed) : '';
+  };
+
+  const startDate = (() => {
+    const cycleIso = resolveIsoDate(cycleStart);
+    if (cycleIso) return cycleIso;
+
+    const sanitizedCycleStart = sanitizeDateInput(cycleStart, cycleStartDate);
+    const sanitizedCycleIso = resolveIsoDate(sanitizedCycleStart);
+    if (sanitizedCycleIso) return sanitizedCycleIso;
+
+    if (cycleStartDate) return formatISODate(cycleStartDate);
+
+    const sanitizedStoredIso = resolveIsoDate(sanitizeDateInput(rawStartDate, cycleStartDate));
+    if (sanitizedStoredIso) return sanitizedStoredIso;
+
+    const rawStoredIso = resolveIsoDate(rawStartDate);
+    if (rawStoredIso) return rawStoredIso;
+
+    return formatISODate(new Date());
+  })();
 
   const storedMedications = data?.medications || {};
   const storedOrder = Array.isArray(data?.medicationOrder)
