@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components';
 import { FaTrash } from 'react-icons/fa';
 
-import { deriveScheduleDisplayInfo } from './StimulationSchedule';
+import { deriveScheduleDisplayInfo, formatWeeksDaysToken } from './StimulationSchedule';
 
 const BASE_MEDICATIONS = [
   { key: 'aspirin', label: 'Аспірин кардіо', short: 'АК', plan: 'aspirin' },
@@ -1513,8 +1513,13 @@ const MedicationSchedule = ({
 
               schedule.rows.forEach((row, index) => {
                 const dayNumber = index + 1;
-                const isOneTabletDay = dayNumber > 0 && dayNumber % 8 === 0;
-                const oneTabletIndex = isOneTabletDay ? Math.floor(dayNumber / 8) : null;
+                const hasDayNumber = Number.isFinite(dayNumber) && dayNumber > 0;
+                const diff = hasDayNumber ? dayNumber - 1 : 0;
+                const weeks = Math.floor(diff / 7);
+                const days = diff % 7;
+                const weeksDaysToken = hasDayNumber
+                  ? formatWeeksDaysToken(weeks, days)
+                  : null;
                 const parsedDate = parseDateString(row.date, baseDate);
                 const formattedDate = formatDateForDisplay(parsedDate);
                 const weekday = parsedDate ? WEEKDAY_LABELS[parsedDate.getDay()] : '';
@@ -1553,8 +1558,8 @@ const MedicationSchedule = ({
                   <RowComponent key={rowKey}>
                     <Td style={{ textAlign: 'center' }}>
                       <DayCell>
-                        {!isOneTabletDay && <DayNumber>{dayNumber}</DayNumber>}
-                        {isOneTabletDay && <DayBadge>{`${oneTabletIndex}т1д`}</DayBadge>}
+                        {hasDayNumber && <DayNumber>{dayNumber}</DayNumber>}
+                        {weeksDaysToken && <DayBadge>{weeksDaysToken}</DayBadge>}
                       </DayCell>
                     </Td>
                     <Td style={DATE_COLUMN_STYLE}>

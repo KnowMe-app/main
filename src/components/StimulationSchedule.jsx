@@ -96,7 +96,7 @@ const removeWeekdayFromLineStart = (text, dateStr) => {
   return rest ? `${dateStr} ${rest}` : dateStr;
 };
 
-const formatWeeksDaysToken = (weeks, days = 0) => {
+export const formatWeeksDaysToken = (weeks, days = 0) => {
   let normalizedWeeks = Number.isFinite(weeks) ? Math.trunc(Number(weeks)) : 0;
   let normalizedDays = Number.isFinite(days) ? Math.trunc(Number(days)) : 0;
 
