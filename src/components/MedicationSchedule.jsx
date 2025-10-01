@@ -779,8 +779,14 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
     const rowDate = parseDateString(row.date, baseDate) || addDays(baseDate, rowIndex);
     const nextValues = { ...row.values };
     const shouldSkipRow = skipExisting && rowIndex < existingLength;
+    const isFirstRow = rowIndex === 0;
 
     medicationKeys.forEach(key => {
+      if (isFirstRow) {
+        nextValues[key] = '';
+        return;
+      }
+
       const medication = schedule?.medications?.[key] || {};
       const plan = medication.plan || key;
       const handler = getPlanHandler(plan);
