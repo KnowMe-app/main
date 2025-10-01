@@ -13,6 +13,16 @@ const BASE_MEDICATIONS = [
   { key: 'luteina', label: 'Лютеіна', short: 'Лт', plan: 'luteina' },
 ];
 
+const BASE_MEDICATION_PLACEHOLDERS = {
+  progynova: 'Прогінова 21',
+  aspirin: 'АК 14',
+  folicAcid: 'ФК 25',
+  metypred: 'Метипред 30',
+  // Інжеста та Лютеіна мають нульові дефолтні видачі, але плейсхолдери показують рекомендовані 40.
+  injesta: 'Інжеста 40',
+  luteina: 'Лютеіна 40',
+};
+
 const BASE_MEDICATIONS_MAP = new Map(BASE_MEDICATIONS.map(item => [item.key, item]));
 
 const DEFAULT_ROWS = 280;
@@ -57,6 +67,10 @@ const IssuedInput = styled.input`
   border: 1px solid #d0d0d0;
   font-size: 14px;
   color: black;
+
+  &::placeholder {
+    color: #888;
+  }
 `;
 
 const IssuedStats = styled.span`
@@ -444,8 +458,7 @@ const INJESTA_DEFAULT_DAILY_DOSE = 2;
 
 const PLAN_HANDLERS = {
   progynova: {
-    defaultIssued:
-      2 + (PROGYNOVA_TEN_WEEKS_DAY - 2) * 2 + PROGYNOVA_TAPER_DAYS,
+    defaultIssued: 21,
     maxDay: PROGYNOVA_TEN_WEEKS_DAY + PROGYNOVA_TAPER_DAYS,
     getDailyValue: ({ dayNumber }) => {
       if (!Number.isFinite(dayNumber) || dayNumber <= 0) return '';
@@ -461,17 +474,17 @@ const PLAN_HANDLERS = {
     },
   },
   metypred: {
-    defaultIssued: 60,
+    defaultIssued: 30,
     maxDay: 60,
     getDailyValue: ({ dayNumber }) => (dayNumber >= 1 && dayNumber <= 60 ? 1 : ''),
   },
   aspirin: {
-    defaultIssued: 36 * DAYS_IN_WEEK,
+    defaultIssued: 14,
     maxDay: 36 * DAYS_IN_WEEK,
     getDailyValue: ({ dayNumber }) => (dayNumber >= 1 && dayNumber <= 36 * DAYS_IN_WEEK ? 1 : ''),
   },
   injesta: {
-    defaultIssued: (INJESTA_END_DAY - INJESTA_START_DAY + 1) * INJESTA_DEFAULT_DAILY_DOSE,
+    defaultIssued: 0,
     maxDay: INJESTA_END_DAY,
     getDailyValue: ({ dayNumber }) => {
       if (!Number.isFinite(dayNumber)) return '';
@@ -480,12 +493,12 @@ const PLAN_HANDLERS = {
     },
   },
   folicAcid: {
-    defaultIssued: 12 * DAYS_IN_WEEK,
+    defaultIssued: 25,
     maxDay: 12 * DAYS_IN_WEEK,
     getDailyValue: ({ dayNumber }) => (dayNumber >= 1 && dayNumber <= 12 * DAYS_IN_WEEK ? 1 : ''),
   },
   luteina: {
-    defaultIssued: (16 * DAYS_IN_WEEK - 14 + 1) * 2,
+    defaultIssued: 0,
     maxDay: 16 * DAYS_IN_WEEK,
     getDailyValue: ({ dayNumber }) => (dayNumber >= 14 && dayNumber <= 16 * DAYS_IN_WEEK ? 2 : ''),
   },
@@ -1355,6 +1368,7 @@ const MedicationSchedule = ({
             focusedMedication === key && displayValue
               ? displayValue
               : issued || '';
+          const placeholderText = BASE_MEDICATION_PLACEHOLDERS[key] || 'Видано';
 
           return (
             <IssuedRow key={key}>
@@ -1365,7 +1379,7 @@ const MedicationSchedule = ({
                   onChange={event => handleIssuedChange(key, event.target.value)}
                   onFocus={() => handleIssuedFocus(key)}
                   onBlur={handleIssuedBlur}
-                  placeholder="Видано"
+                  placeholder={placeholderText}
                 />
                 <IssuedStats>
                   Видано: {formatNumber(issued)} • Використано: {formatNumber(stats.used)} • Залишок: {formatNumber(stats.remaining)}
