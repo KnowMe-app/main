@@ -889,6 +889,36 @@ const normalizeRows = (rowsInput, startDate, schedule) => {
     });
   }
 
+  const medicationKeys = Array.isArray(schedule?.medicationOrder)
+    ? schedule.medicationOrder
+    : [];
+
+  const rowsWithValues = Array.isArray(rowsInput) ? rowsInput : [];
+
+  const keysNeedingDefaults = medicationKeys.filter(key => {
+    const medication = schedule?.medications?.[key];
+    const issued = Number(medication?.issued) || 0;
+
+    if (issued <= 0) {
+      return false;
+    }
+
+    return !rowsWithValues.some(row => {
+      if (!row || typeof row !== 'object') {
+        return false;
+      }
+
+      const sourceValues =
+        row.values && typeof row.values === 'object' ? row.values : row;
+
+      return sanitizeCellValue(sourceValues?.[key]) !== '';
+    });
+  });
+
+  if (keysNeedingDefaults.length > 0) {
+    return applyDefaultDistribution(baseRows, schedule, { onlyKeys: keysNeedingDefaults });
+  }
+
   return baseRows;
 };
 
@@ -1636,5 +1666,5 @@ const MedicationSchedule = ({
   );
 };
 
-export { applyDefaultDistribution };
+export { applyDefaultDistribution, normalizeRows };
 export default MedicationSchedule;
