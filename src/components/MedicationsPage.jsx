@@ -24,9 +24,16 @@ const PageContainer = styled.div`
 
 const Header = styled.div`
   display: flex;
+  flex-direction: column;
+  gap: 16px;
+`;
+
+const ButtonRow = styled.div`
+  display: flex;
   align-items: center;
-  gap: 12px;
   flex-wrap: wrap;
+  gap: 12px;
+  width: 100%;
 `;
 
 const BackButton = styled.button`
@@ -186,10 +193,43 @@ const MedicationsPage = () => {
 
   const handleClose = useCallback(() => {
     const from = location.state?.from;
+    const userFromState = location.state?.user;
+
+    const navigateWithUser = target => {
+      if (userFromState) {
+        navigate(target, { state: { user: userFromState } });
+      } else {
+        navigate(target);
+      }
+    };
+
     if (from) {
-      navigate(from);
+      if (typeof from === 'string') {
+        if (from.includes('userId=') || !userFromState?.userId) {
+          navigateWithUser(from);
+        } else {
+          navigateWithUser(`/add?userId=${userFromState.userId}`);
+        }
+        return;
+      }
+
+      const pathname = from.pathname ?? '';
+      const search = from.search ?? '';
+      if (pathname) {
+        if (search.includes('userId=') || !userFromState?.userId) {
+          navigateWithUser({ pathname, search });
+        } else {
+          navigateWithUser({ pathname, search: `?userId=${userFromState.userId}` });
+        }
+        return;
+      }
+    }
+
+    if (userFromState?.userId) {
+      navigateWithUser(`/add?userId=${userFromState.userId}`);
       return;
     }
+
     navigate(-1);
   }, [navigate, location.state]);
 
@@ -248,20 +288,22 @@ const MedicationsPage = () => {
   return (
     <PageContainer>
       <Header>
-        <BackButton type="button" onClick={handleClose}>
-          Назад
-        </BackButton>
+        <ButtonRow>
+          <BackButton type="button" onClick={handleClose}>
+            Назад
+          </BackButton>
+          <DeleteButton
+            type="button"
+            onClick={handleDelete}
+            disabled={!ownerId || !userId || isScheduleLoading}
+          >
+            Видалити
+          </DeleteButton>
+        </ButtonRow>
         <TitleBlock>
           <Title>Ліки</Title>
           {userLabel && <Subtitle>{userLabel}</Subtitle>}
         </TitleBlock>
-        <DeleteButton
-          type="button"
-          onClick={handleDelete}
-          disabled={!ownerId || !userId || isScheduleLoading}
-        >
-          Видалити
-        </DeleteButton>
       </Header>
 
       {!ownerId && (

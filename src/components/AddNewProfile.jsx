@@ -433,15 +433,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const labelParts = [user.name, user.surname].filter(Boolean);
       const label = labelParts.join(' ');
 
+      const params = new URLSearchParams(location.search);
+      params.set('userId', user.userId);
+
       navigate(`/medications/${user.userId}`, {
         state: {
           label,
-          from: location.pathname,
+          from: {
+            pathname: location.pathname,
+            search: `?${params.toString()}`,
+          },
           user,
         },
       });
     },
-    [navigate, ownerId, location.pathname],
+    [navigate, ownerId, location.pathname, location.search],
   );
 
   const handleCloseModal = () => {
