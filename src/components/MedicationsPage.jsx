@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { onValue } from 'firebase/database';
+import { FiCopy } from 'react-icons/fi';
 import MedicationSchedule from './MedicationSchedule';
 import {
   deleteMedicationSchedule,
@@ -10,6 +11,7 @@ import {
   getMedicationScheduleRef,
   saveMedicationSchedule,
 } from './config';
+import { formatMedicationScheduleForClipboard } from '../utils/medicationClipboard';
 
 const PageContainer = styled.div`
   display: flex;
@@ -48,6 +50,30 @@ const BackButton = styled.button`
 
   &:hover {
     background-color: #ff9a1a;
+  }
+`;
+
+const CopyButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  border: none;
+  background-color: #ffb347;
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  padding: 0;
+
+  &:hover:not(:disabled) {
+    background-color: #ff9a1a;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 `;
 
@@ -117,6 +143,18 @@ const MedicationsPage = () => {
   const [isScheduleLoading, setIsScheduleLoading] = useState(true);
   const ownerId = useMemo(() => localStorage.getItem('ownerId'), []);
   const saveTimeoutRef = useRef(null);
+
+  const hasScheduleData = useMemo(
+    () =>
+      Boolean(
+        schedule &&
+          Array.isArray(schedule?.rows) &&
+          schedule.rows.length > 0 &&
+          Array.isArray(schedule?.medicationOrder) &&
+          schedule.medicationOrder.length > 0,
+      ),
+    [schedule],
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -233,6 +271,44 @@ const MedicationsPage = () => {
     navigate(-1);
   }, [navigate, location.state]);
 
+  const handleCopySchedule = useCallback(async () => {
+    if (!hasScheduleData || !schedule) {
+      toast.error('Немає даних для копіювання');
+      return;
+    }
+
+    const clipboardText = formatMedicationScheduleForClipboard(schedule);
+    if (!clipboardText) {
+      toast.error('Немає даних для копіювання');
+      return;
+    }
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(clipboardText);
+      } else if (typeof document !== 'undefined') {
+        const textarea = document.createElement('textarea');
+        textarea.value = clipboardText;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const successful = document.execCommand ? document.execCommand('copy') : false;
+        document.body.removeChild(textarea);
+        if (!successful) {
+          throw new Error('Fallback clipboard copy failed');
+        }
+      } else {
+        throw new Error('Clipboard API is unavailable');
+      }
+      toast.success('Графік ліків скопійовано до буферу обміну');
+    } catch (error) {
+      console.error('Failed to copy medication schedule', error);
+      toast.error('Не вдалося скопіювати графік ліків');
+    }
+  }, [hasScheduleData, schedule]);
+
   const handleDelete = useCallback(async () => {
     if (!ownerId || !userId) {
       toast.error('Не вдалося визначити користувача для видалення ліків');
@@ -285,6 +361,8 @@ const MedicationsPage = () => {
 
   const isReady = !isScheduleLoading && !!ownerId;
 
+  const canCopySchedule = hasScheduleData && !isScheduleLoading;
+
   return (
     <PageContainer>
       <Header>
@@ -292,6 +370,15 @@ const MedicationsPage = () => {
           <BackButton type="button" onClick={handleClose}>
             Назад
           </BackButton>
+          <CopyButton
+            type="button"
+            onClick={handleCopySchedule}
+            disabled={!canCopySchedule}
+            aria-label="Скопіювати графік ліків"
+            title="Скопіювати графік ліків"
+          >
+            <FiCopy size={18} />
+          </CopyButton>
           <DeleteButton
             type="button"
             onClick={handleDelete}
