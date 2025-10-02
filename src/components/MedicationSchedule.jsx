@@ -1565,7 +1565,10 @@ const MedicationSchedule = ({
                 const diff = hasDayNumber ? dayNumber - 1 : 0;
                 const weeks = Math.floor(diff / 7);
                 const days = diff % 7;
-                const weeksDaysToken = hasDayNumber
+                const blockIndex = Math.floor(diff / 7);
+                const showWeeksDaysToken = hasDayNumber && blockIndex % 2 === 1;
+                const showDayNumber = hasDayNumber && !showWeeksDaysToken;
+                const weeksDaysToken = showWeeksDaysToken
                   ? formatWeeksDaysToken(weeks, days)
                   : null;
                 const parsedDate = parseDateString(row.date, baseDate);
@@ -1606,7 +1609,7 @@ const MedicationSchedule = ({
                   <RowComponent key={rowKey}>
                     <Td style={{ textAlign: 'center' }}>
                       <DayCell>
-                        {hasDayNumber && <DayNumber>{dayNumber}</DayNumber>}
+                        {showDayNumber && <DayNumber>{dayNumber}</DayNumber>}
                         {weeksDaysToken && <DayBadge>{weeksDaysToken}</DayBadge>}
                       </DayCell>
                     </Td>
