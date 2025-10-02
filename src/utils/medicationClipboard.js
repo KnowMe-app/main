@@ -6,6 +6,11 @@ import {
 } from './medicationConstants';
 
 const DATE_PATTERN = /(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/g;
+const DATE_SOURCE_PATTERN = '\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}';
+const SINGLE_LINE_ENTRY_BOUNDARY = new RegExp(
+  `(${DATE_SOURCE_PATTERN})\\s+(\\d+(?:[.,]\\d+)?)[ \\t]+(?=[^,]+,\\s*${DATE_SOURCE_PATTERN})`,
+  'g',
+);
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const parseISODate = isoString => {
@@ -291,6 +296,37 @@ const parseClipboardLine = line => {
   };
 };
 
+const splitClipboardLines = value =>
+  value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+const parseClipboardLines = lines => {
+  if (!Array.isArray(lines) || !lines.length) {
+    return null;
+  }
+
+  const parsed = [];
+  for (const line of lines) {
+    const parsedLine = parseClipboardLine(line);
+    if (!parsedLine) {
+      return null;
+    }
+    parsed.push(parsedLine);
+  }
+
+  return parsed;
+};
+
+const insertFallbackEntryDelimiters = text => {
+  if (typeof text !== 'string' || !text.trim() || text.includes('\n')) {
+    return text;
+  }
+
+  return text.replace(SINGLE_LINE_ENTRY_BOUNDARY, '$1 $2\n');
+};
+
 export const formatMedicationScheduleForClipboard = schedule => {
   if (!schedule || typeof schedule !== 'object') {
     return '';
@@ -356,18 +392,17 @@ export const parseMedicationClipboardData = input => {
     return null;
   }
 
-  const lines = trimmed.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  if (!lines.length) {
-    return null;
+  let parsedLines = parseClipboardLines(splitClipboardLines(trimmed));
+
+  if (!parsedLines) {
+    const normalized = insertFallbackEntryDelimiters(trimmed);
+    if (normalized && normalized !== trimmed) {
+      parsedLines = parseClipboardLines(splitClipboardLines(normalized));
+    }
   }
 
-  const parsedLines = [];
-  for (const line of lines) {
-    const parsed = parseClipboardLine(line);
-    if (!parsed) {
-      return null;
-    }
-    parsedLines.push(parsed);
+  if (!parsedLines) {
+    return null;
   }
 
   const startDates = parsedLines
