@@ -2057,15 +2057,16 @@ const StimulationSchedule = ({
     return createAlternateShade(baseRowBackgroundColor, 0.02);
   })();
   const scheduleHorizontalPadding = 7;
+  const dateColumnWidth = '55px';
   const dateColumnStyle = {
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
     alignItems: 'flex-start',
     gap: '2px',
-    flex: '0 0 calc(110px - 1em)',
-    minWidth: 'calc(110px - 1em)',
-    maxWidth: 'calc(110px - 1em)',
+    flex: `0 0 ${dateColumnWidth}`,
+    minWidth: dateColumnWidth,
+    maxWidth: dateColumnWidth,
     lineHeight: 1.2,
   };
   const datePrimaryRowStyle = {
