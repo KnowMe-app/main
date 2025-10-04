@@ -476,9 +476,7 @@ const formatDateForDisplay = value => {
   return `${day}.${month}`;
 };
 
-const PROGYNOVA_DOUBLE_DOSE_START_DAY = 3;
-const PROGYNOVA_TEN_WEEKS_DAY = 10 * 7;
-const PROGYNOVA_TAPER_DAYS = 5;
+const PROGYNOVA_MAX_DAY = 10 * 7 + 5;
 const DAYS_IN_WEEK = 7;
 const INJESTA_START_DAY = 14;
 const INJESTA_END_DAY = 12 * DAYS_IN_WEEK;
@@ -487,18 +485,11 @@ const INJESTA_DEFAULT_DAILY_DOSE = 2;
 const PLAN_HANDLERS = {
   progynova: {
     defaultIssued: 21,
-    maxDay: PROGYNOVA_TEN_WEEKS_DAY + PROGYNOVA_TAPER_DAYS,
+    maxDay: PROGYNOVA_MAX_DAY,
     getDailyValue: ({ dayNumber }) => {
       if (!Number.isFinite(dayNumber) || dayNumber <= 0) return '';
-      if (dayNumber === 1 || dayNumber === 2) return 1;
-      if (dayNumber >= PROGYNOVA_DOUBLE_DOSE_START_DAY && dayNumber <= PROGYNOVA_TEN_WEEKS_DAY) return 2;
-      if (
-        dayNumber > PROGYNOVA_TEN_WEEKS_DAY &&
-        dayNumber <= PROGYNOVA_TEN_WEEKS_DAY + PROGYNOVA_TAPER_DAYS
-      ) {
-        return 1;
-      }
-      return '';
+      if (dayNumber > PROGYNOVA_MAX_DAY) return '';
+      return Math.floor(dayNumber / 2);
     },
   },
   metypred: {
@@ -810,17 +801,11 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
     const rowDate = parseDateString(row.date, baseDate) || addDays(baseDate, rowIndex);
     const nextValues = { ...row.values };
     const shouldSkipRow = skipExisting && rowIndex < existingLength;
-    const isFirstRow = rowIndex === 0;
 
     medicationKeys.forEach(key => {
       const shouldProcessKey = filteredKeys.includes(key);
 
       if (!shouldProcessKey) {
-        return;
-      }
-
-      if (isFirstRow) {
-        nextValues[key] = '';
         return;
       }
 
@@ -855,8 +840,13 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
         used: usageCounters[key],
       });
 
+      if (proposed === '' || proposed === null || proposed === undefined) {
+        nextValues[key] = '';
+        return;
+      }
+
       const numericValue = Number(proposed);
-      if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      if (!Number.isFinite(numericValue) || numericValue < 0) {
         nextValues[key] = '';
         return;
       }
