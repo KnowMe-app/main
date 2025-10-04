@@ -2038,26 +2038,25 @@ const StimulationSchedule = ({
     return createAlternateShade(baseRowBackgroundColor, 0.02);
   })();
   const scheduleHorizontalPadding = 7;
-  const numberingColumnStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: '0 0 calc(40px - 1em)',
-    minWidth: 'calc(40px - 1em)',
-    maxWidth: 'calc(40px - 1em)',
-    fontWeight: 600,
-    lineHeight: 1.2,
-    whiteSpace: 'nowrap',
-    fontVariantNumeric: 'tabular-nums',
-  };
   const dateColumnStyle = {
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
+    alignItems: 'flex-start',
+    gap: '2px',
     flex: '0 0 calc(110px - 1em)',
     minWidth: 'calc(110px - 1em)',
     maxWidth: 'calc(110px - 1em)',
     lineHeight: 1.2,
+  };
+  const weekdayStyle = { opacity: 0.7, fontSize: '0.85em' };
+  const secondaryLabelStyle = {
+    fontSize: '0.75em',
+    fontWeight: 400,
+    lineHeight: 1.2,
+    whiteSpace: 'nowrap',
+    fontVariantNumeric: 'tabular-nums',
+    minHeight: '1em',
   };
   const contentColumnStyle = {
     flex: 1,
@@ -2129,12 +2128,10 @@ const StimulationSchedule = ({
         rendered.push(
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px', flex: 1 }}>
-              <div style={numberingColumnStyle}>
-                <span>{secondaryLabel || ' '}</span>
-              </div>
               <div style={dateColumnStyle}>
                 <span>{dateStr}</span>
-                <span style={{ opacity: 0.7, fontSize: '0.85em' }}>{weekday}</span>
+                <span style={weekdayStyle}>{weekday}</span>
+                <span style={secondaryLabelStyle}>{secondaryLabel || ' '}</span>
               </div>
               <div style={contentColumnStyle}>{displayLabel}</div>
             </div>
@@ -2174,12 +2171,10 @@ const StimulationSchedule = ({
         rendered.push(
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px', flex: 1 }}>
-              <div style={numberingColumnStyle}>
-                <span>{secondaryLabel || ' '}</span>
-              </div>
               <div style={dateColumnStyle}>
                 <span>{dateStr}</span>
-                <span style={{ opacity: 0.7, fontSize: '0.85em' }}>{weekday}</span>
+                <span style={weekdayStyle}>{weekday}</span>
+                <span style={secondaryLabelStyle}>{secondaryLabel || ' '}</span>
               </div>
               {isEditing ? (
                 <input
