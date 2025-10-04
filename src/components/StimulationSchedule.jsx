@@ -2049,6 +2049,12 @@ const StimulationSchedule = ({
     maxWidth: 'calc(110px - 1em)',
     lineHeight: 1.2,
   };
+  const datePrimaryRowStyle = {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: '4px',
+  };
   const weekdayStyle = { opacity: 0.7, fontSize: '0.85em' };
   const secondaryLabelStyle = {
     fontSize: '0.75em',
@@ -2075,6 +2081,10 @@ const StimulationSchedule = ({
           date: item.date,
           label: item.label,
         });
+      const displaySecondaryLabel =
+        secondaryLabel && /^\d+$/.test(secondaryLabel.trim())
+          ? `${secondaryLabel.trim()}й день`
+          : secondaryLabel;
       const year = item.date.getFullYear();
       const isToday = item.date.getTime() === today;
       const isEvenRow = index % 2 === 0;
@@ -2129,9 +2139,11 @@ const StimulationSchedule = ({
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px', flex: 1 }}>
               <div style={dateColumnStyle}>
-                <span>{dateStr}</span>
-                <span style={weekdayStyle}>{weekday}</span>
-                <span style={secondaryLabelStyle}>{secondaryLabel || ' '}</span>
+                <span style={datePrimaryRowStyle}>
+                  <span>{dateStr}</span>
+                  <span style={weekdayStyle}>{weekday}</span>
+                </span>
+                <span style={secondaryLabelStyle}>{displaySecondaryLabel || ' '}</span>
               </div>
               <div style={contentColumnStyle}>{displayLabel}</div>
             </div>
@@ -2172,9 +2184,11 @@ const StimulationSchedule = ({
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px', flex: 1 }}>
               <div style={dateColumnStyle}>
-                <span>{dateStr}</span>
-                <span style={weekdayStyle}>{weekday}</span>
-                <span style={secondaryLabelStyle}>{secondaryLabel || ' '}</span>
+                <span style={datePrimaryRowStyle}>
+                  <span>{dateStr}</span>
+                  <span style={weekdayStyle}>{weekday}</span>
+                </span>
+                <span style={secondaryLabelStyle}>{displaySecondaryLabel || ' '}</span>
               </div>
               {isEditing ? (
                 <input
