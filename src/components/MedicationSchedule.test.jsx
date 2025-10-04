@@ -13,7 +13,10 @@ jest.mock('components/smallCard/actions', () => ({
   handleSubmit: jest.fn(),
 }));
 
-const { mergeScheduleWithClipboardData } = require('components/MedicationSchedule');
+const {
+  mergeScheduleWithClipboardData,
+  parseStimulationEvents,
+} = require('components/MedicationSchedule');
 
 describe('mergeScheduleWithClipboardData', () => {
   it('preserves existing base medication doses when clipboard starts later', () => {
@@ -86,5 +89,23 @@ describe('mergeScheduleWithClipboardData', () => {
       label: 'Custom med',
       issued: 6,
     });
+  });
+});
+
+describe('parseStimulationEvents', () => {
+  it('omits stimulation entries that only include prefixes', () => {
+    const events = parseStimulationEvents(
+      [
+        { date: '2024-05-01', label: '10т2д' },
+        { date: '2024-05-02', label: '19й день' },
+        { date: '2024-05-03', label: '10т2д контроль УЗД' },
+        { date: '2024-05-04', label: 'Контроль крові' },
+      ],
+      '2024-05-01'
+    );
+
+    const descriptions = events.map(event => event.description);
+
+    expect(descriptions).toEqual(['10т2д • контроль УЗД', 'Контроль крові']);
   });
 });

@@ -3,7 +3,11 @@ import styled from 'styled-components';
 import { FaTrash } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 
-import { deriveScheduleDisplayInfo, formatWeeksDaysToken } from './StimulationSchedule';
+import {
+  deriveScheduleDisplayInfo,
+  formatWeeksDaysToken,
+  sanitizeDescription,
+} from './StimulationSchedule';
 import {
   BASE_MEDICATIONS,
   BASE_MEDICATION_PLACEHOLDERS,
@@ -1264,8 +1268,26 @@ const parseStimulationEvents = (stimulationSchedule, startDate) => {
     if (!date) return;
 
     const info = deriveScheduleDisplayInfo({ date, label });
-    const descriptionParts = [info.secondaryLabel, info.displayLabel].filter(Boolean);
-    const description = descriptionParts.join(' • ') || info.labelValue || '';
+    const sanitizedLabel = sanitizeDescription(info.labelValue || '');
+    const displayText = info.displayLabel || sanitizedLabel;
+    if (!displayText) {
+      return;
+    }
+
+    const normalizedDisplay = displayText.trim().toLowerCase();
+    const normalizedSecondary = (info.secondaryLabel || '').trim().toLowerCase();
+    const normalizedSanitized = sanitizedLabel.trim().toLowerCase();
+
+    if (
+      normalizedDisplay &&
+      normalizedDisplay === normalizedSecondary &&
+      (!normalizedSanitized || normalizedSanitized === normalizedSecondary)
+    ) {
+      return;
+    }
+
+    const descriptionParts = [info.secondaryLabel, displayText].filter(Boolean);
+    const description = descriptionParts.join(' • ');
     const iso = formatISODate(date);
 
     events.push({
@@ -1274,7 +1296,7 @@ const parseStimulationEvents = (stimulationSchedule, startDate) => {
       iso,
       dayMonth: formatDateForDisplay(date),
       secondaryLabel: info.secondaryLabel || '',
-      displayLabel: info.displayLabel || '',
+      displayLabel: displayText,
       labelValue: info.labelValue || '',
       description,
       hasExplicitYear: containsYearInfo(rawDate),
@@ -1935,5 +1957,10 @@ const MedicationSchedule = ({
   );
 };
 
-export { applyDefaultDistribution, normalizeRows, mergeScheduleWithClipboardData };
+export {
+  applyDefaultDistribution,
+  normalizeRows,
+  mergeScheduleWithClipboardData,
+  parseStimulationEvents,
+};
 export default MedicationSchedule;
