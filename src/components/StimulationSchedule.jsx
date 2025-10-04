@@ -158,7 +158,7 @@ const extractWeeksDaysPrefix = value => {
 const extractDayPrefix = value => {
   if (!value) return null;
   const trimmed = value.trim();
-  const match = trimmed.match(/^(\d+)\s*й(?:\s+день)?/i);
+  const match = trimmed.match(/^(\d+)(?:\s*[-–—]?\s*(?:й|ий))(?:\s*день)?/i);
   if (!match) return null;
   const rawDay = Number(match[1]);
   if (!Number.isFinite(rawDay)) return null;
@@ -351,15 +351,23 @@ export const deriveScheduleDisplayInfo = ({ date, label }) => {
   }
 
   const dayInfo = extractDayPrefix(remainderWithoutToken);
-  let normalizedDayPrefix = '';
   let remainderWithoutDay = remainderWithoutToken;
+  let formattedDayIndicator = '';
   if (dayInfo) {
-    normalizedDayPrefix = dayInfo.raw || `${Math.max(dayInfo.day, 1)}й день`;
     remainderWithoutDay = dayInfo.rest;
+    const safeDayNumber = Math.max(Math.trunc(dayInfo.day), 1);
+    if (safeDayNumber <= 7) {
+      formattedDayIndicator = String(safeDayNumber);
+    } else if ((safeDayNumber - 1) % 7 === 0) {
+      const completedWeeks = Math.floor((safeDayNumber - 1) / 7);
+      formattedDayIndicator = `${completedWeeks}т1д`;
+    } else {
+      formattedDayIndicator = String(safeDayNumber);
+    }
   }
 
   const sanitizedRemainder = sanitizeDescription(remainderWithoutDay);
-  const secondaryLabel = normalizedToken || normalizedDayPrefix || '';
+  const secondaryLabel = normalizedToken || formattedDayIndicator || '';
   const normalizedSecondary = secondaryLabel.trim().toLowerCase();
   const matchesSecondary = candidate =>
     !!candidate && !!normalizedSecondary && candidate.trim().toLowerCase() === normalizedSecondary;
@@ -2030,6 +2038,40 @@ const StimulationSchedule = ({
     return createAlternateShade(baseRowBackgroundColor, 0.02);
   })();
   const scheduleHorizontalPadding = 7;
+  const numberingColumnStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flex: '0 0 36px',
+    minWidth: '32px',
+    maxWidth: '44px',
+    paddingRight: '4px',
+    fontWeight: 600,
+    lineHeight: 1.2,
+    whiteSpace: 'nowrap',
+    fontVariantNumeric: 'tabular-nums',
+    textAlign: 'right',
+  };
+  const dateColumnStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    flex: '0 0 140px',
+    minWidth: '120px',
+    maxWidth: '160px',
+    lineHeight: 1.2,
+    fontWeight: 500,
+  };
+  const contentColumnStyle = {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    minHeight: '2.4em',
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+  };
 
   displayItems.forEach((item, index) => {
       const { dateStr, weekday, secondaryLabel, displayLabel, labelValue } =
@@ -2090,32 +2132,14 @@ const StimulationSchedule = ({
         rendered.push(
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px', flex: 1 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  lineHeight: 1.2,
-                  minHeight: '2.4em',
-                }}
-              >
-                <span>{`${dateStr} ${weekday}`}</span>
-                <span>{secondaryLabel}</span>
+              <div style={numberingColumnStyle}>
+                <span>{secondaryLabel || ' '}</span>
               </div>
-              <div
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  minHeight: '2.4em',
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'anywhere',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {displayLabel}
+              <div style={dateColumnStyle}>
+                <span>{dateStr}</span>
+                <span style={{ opacity: 0.7, fontSize: '0.85em' }}>{weekday}</span>
               </div>
+              <div style={contentColumnStyle}>{displayLabel}</div>
             </div>
             <div
               style={{ display: 'flex', gap: '2px', marginLeft: 'auto', alignItems: 'center' }}
@@ -2153,17 +2177,12 @@ const StimulationSchedule = ({
         rendered.push(
           <div key={item.key} style={rowStyle}>
             <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px', flex: 1 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  lineHeight: 1.2,
-                  minHeight: '2.4em',
-                }}
-              >
-                <span>{`${dateStr} ${weekday}`}</span>
-                <span>{secondaryLabel}</span>
+              <div style={numberingColumnStyle}>
+                <span>{secondaryLabel || ' '}</span>
+              </div>
+              <div style={dateColumnStyle}>
+                <span>{dateStr}</span>
+                <span style={{ opacity: 0.7, fontSize: '0.85em' }}>{weekday}</span>
               </div>
               {isEditing ? (
                 <input
@@ -2413,24 +2432,16 @@ const StimulationSchedule = ({
                     }
                   }}
                   style={{
-                    flex: 1,
+                    ...contentColumnStyle,
                     alignSelf: 'stretch',
-                    minHeight: '2.4em',
                   }}
                 />
               ) : (
                 <div
                   onClick={() => setEditingKey(item.key)}
                   style={{
+                    ...contentColumnStyle,
                     cursor: 'pointer',
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    minHeight: '2.4em',
-                    whiteSpace: 'pre-wrap',
-                    overflowWrap: 'anywhere',
-                    wordBreak: 'break-word',
                   }}
                 >
                   {displayLabel}
