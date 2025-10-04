@@ -343,6 +343,21 @@ const InfoNote = styled.p`
   color: #777;
 `;
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const differenceInCalendarDays = (target, base) => {
+  if (!(target instanceof Date) || !(base instanceof Date)) return 0;
+
+  const normalizedTarget = new Date(target);
+  normalizedTarget.setHours(0, 0, 0, 0);
+
+  const normalizedBase = new Date(base);
+  normalizedBase.setHours(0, 0, 0, 0);
+
+  const diff = normalizedTarget.getTime() - normalizedBase.getTime();
+  return Math.round(diff / MS_PER_DAY);
+};
+
 const isValidDate = date => date instanceof Date && !Number.isNaN(date.getTime());
 
 const parseDateString = (value, baseDate) => {
@@ -992,6 +1007,191 @@ const normalizeData = (data, options = {}) => {
   };
 };
 
+const mergeScheduleWithClipboardData = (current, parsed) => {
+  if (!parsed || typeof parsed !== 'object') {
+    return current;
+  }
+
+  if (!current || typeof current !== 'object') {
+    return {
+      ...parsed,
+      rows: Array.isArray(parsed.rows)
+        ? parsed.rows.map(row => ({
+            date: row?.date || '',
+            values: Object.entries(row?.values || {}).reduce((acc, [key, value]) => {
+              acc[key] = sanitizeCellValue(value);
+              return acc;
+            }, {}),
+          }))
+        : [],
+    };
+  }
+
+  const previousStartDate = parseDateString(current.startDate);
+  const parsedStartDate = parseDateString(parsed.startDate, previousStartDate || undefined);
+
+  let effectiveStartDate = previousStartDate || parsedStartDate || new Date();
+  if (parsedStartDate && previousStartDate && parsedStartDate < previousStartDate) {
+    effectiveStartDate = parsedStartDate;
+  } else if (!previousStartDate && parsedStartDate) {
+    effectiveStartDate = parsedStartDate;
+  }
+
+  const effectiveStartIso = formatISODate(effectiveStartDate);
+
+  const previousOrder = Array.isArray(current.medicationOrder)
+    ? current.medicationOrder.filter(Boolean)
+    : [];
+  const parsedOrder = Array.isArray(parsed.medicationOrder)
+    ? parsed.medicationOrder.filter(Boolean)
+    : [];
+
+  const orderSet = new Set(previousOrder);
+  const mergedOrder = [...previousOrder];
+  parsedOrder.forEach(key => {
+    if (!orderSet.has(key)) {
+      orderSet.add(key);
+      mergedOrder.push(key);
+    }
+  });
+
+  const mergedMedications = { ...(current.medications || {}) };
+  parsedOrder.forEach(key => {
+    const parsedMedication = parsed.medications?.[key];
+    if (parsedMedication) {
+      mergedMedications[key] = { ...parsedMedication };
+    }
+  });
+
+  const medicationKeys = mergedOrder;
+
+  const buildRowValues = (row, keys) => {
+    const sourceValues = row?.values && typeof row.values === 'object' ? row.values : {};
+    const values = {};
+    keys.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(sourceValues, key)) {
+        values[key] = sanitizeCellValue(sourceValues[key]);
+      } else {
+        values[key] = '';
+      }
+    });
+    return values;
+  };
+
+  const existingRows = Array.isArray(current.rows)
+    ? current.rows.map(row => ({
+        date: row?.date || '',
+        values: buildRowValues(row, medicationKeys),
+      }))
+    : [];
+
+  const needsPrefix =
+    previousStartDate &&
+    effectiveStartDate &&
+    previousStartDate > effectiveStartDate
+      ? differenceInCalendarDays(previousStartDate, effectiveStartDate)
+      : 0;
+
+  const prefixRows = [];
+  for (let index = 0; index < needsPrefix; index += 1) {
+    const iso = formatISODate(addDays(effectiveStartDate, index));
+    const values = {};
+    medicationKeys.forEach(key => {
+      values[key] = '';
+    });
+    prefixRows.push({ date: iso, values });
+  }
+
+  const rowsWithPrefix = [...prefixRows, ...existingRows];
+
+  const parsedRows = Array.isArray(parsed.rows) ? parsed.rows : [];
+  const parsedRowMap = new Map();
+  let parsedMaxDate = null;
+  parsedRows.forEach(row => {
+    if (!row || typeof row !== 'object') {
+      return;
+    }
+    const iso = row.date;
+    if (!iso) {
+      return;
+    }
+    const parsedDate = parseDateString(iso, parsedStartDate || effectiveStartDate);
+    if (parsedDate && (!parsedMaxDate || parsedDate > parsedMaxDate)) {
+      parsedMaxDate = parsedDate;
+    }
+    const values = row.values && typeof row.values === 'object' ? row.values : {};
+    parsedRowMap.set(iso, values);
+  });
+
+  let existingMaxDate = null;
+  rowsWithPrefix.forEach(row => {
+    const rowDate = parseDateString(row.date, effectiveStartDate);
+    if (rowDate && (!existingMaxDate || rowDate > existingMaxDate)) {
+      existingMaxDate = rowDate;
+    }
+  });
+
+  const finalEndDate = (() => {
+    if (parsedMaxDate && existingMaxDate) {
+      return parsedMaxDate > existingMaxDate ? parsedMaxDate : existingMaxDate;
+    }
+    return parsedMaxDate || existingMaxDate || effectiveStartDate;
+  })();
+
+  const totalDays = Math.max(
+    rowsWithPrefix.length,
+    differenceInCalendarDays(finalEndDate, effectiveStartDate) + 1,
+  );
+
+  const baseRows = [];
+  for (let index = 0; index < totalDays; index += 1) {
+    const iso = formatISODate(addDays(effectiveStartDate, index));
+    const sourceRow = rowsWithPrefix[index];
+    const sourceValues =
+      sourceRow?.values && typeof sourceRow.values === 'object' ? sourceRow.values : {};
+    const values = {};
+    medicationKeys.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(sourceValues, key)) {
+        values[key] = sanitizeCellValue(sourceValues[key]);
+      } else {
+        values[key] = '';
+      }
+    });
+    baseRows.push({
+      date: iso,
+      values,
+    });
+  }
+
+  const parsedKeySet = new Set(parsedOrder);
+  const mergedRows = baseRows.map(row => {
+    const parsedValues = parsedRowMap.get(row.date);
+    if (!parsedValues) {
+      return row;
+    }
+
+    const nextValues = { ...row.values };
+    parsedKeySet.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(parsedValues, key)) {
+        nextValues[key] = sanitizeCellValue(parsedValues[key]);
+      }
+    });
+
+    return {
+      ...row,
+      values: nextValues,
+    };
+  });
+
+  return {
+    ...current,
+    startDate: effectiveStartIso || current.startDate || parsed.startDate || '',
+    medicationOrder: medicationKeys,
+    medications: mergedMedications,
+    rows: mergedRows,
+  };
+};
+
 const formatNumber = value => {
   if (value === '' || value === null || value === undefined) return '0';
   if (Number.isInteger(value)) return String(value);
@@ -1280,7 +1480,7 @@ const MedicationSchedule = ({
     if (clipboardSource) {
       const parsedSchedule = parseMedicationClipboardData(clipboardSource);
       if (parsedSchedule) {
-        updateSchedule(() => parsedSchedule);
+        updateSchedule(prev => mergeScheduleWithClipboardData(prev, parsedSchedule));
         setNewMedicationDraft({
           label: '',
           short: '',
@@ -1682,5 +1882,5 @@ const MedicationSchedule = ({
   );
 };
 
-export { applyDefaultDistribution, normalizeRows };
+export { applyDefaultDistribution, normalizeRows, mergeScheduleWithClipboardData };
 export default MedicationSchedule;
