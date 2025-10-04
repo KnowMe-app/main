@@ -1819,7 +1819,7 @@ const MedicationSchedule = ({
         <StyledTable>
           <thead>
             <tr>
-              <Th style={{ width: '60px' }}>#</Th>
+              <Th style={{ width: '30px' }}>#</Th>
               <Th style={DATE_COLUMN_STYLE}>Дата</Th>
               {medicationList.map(({ key, short }) => (
                 <MedicationTh key={key}>
