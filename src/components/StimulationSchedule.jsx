@@ -1373,10 +1373,26 @@ const StimulationSchedule = ({
         }
         return base ? normalizeDate(base) : null;
       })();
-      const defaultString = baseForDefaults
-        ? serializeSchedule(generateSchedule(baseForDefaults))
-        : '';
-      const isDefault = Boolean(baseForDefaults) && scheduleString === defaultString;
+      const generatedDefaults = baseForDefaults ? generateSchedule(baseForDefaults) : null;
+      const defaultMap = generatedDefaults
+        ? generatedDefaults.reduce((map, item) => {
+            if (item?.key) {
+              map.set(item.key, item);
+            }
+            return map;
+          }, new Map())
+        : null;
+      const defaultString = generatedDefaults ? serializeSchedule(generatedDefaults) : '';
+      const hasEditedDefaultLabels = Boolean(defaultMap) && Array.isArray(sched)
+        ? sched.some(entry => {
+            if (!entry?.key) return false;
+            const original = defaultMap.get(entry.key);
+            if (!original) return false;
+            return String(entry.label ?? '') !== String(original.label ?? '');
+          })
+        : false;
+      const isDefault =
+        Boolean(baseForDefaults) && !hasEditedDefaultLabels && scheduleString === defaultString;
       const update = isDefault
         ? { stimulationSchedule: undefined }
         : { stimulationSchedule: scheduleString };
