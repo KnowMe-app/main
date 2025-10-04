@@ -13,7 +13,66 @@ jest.mock('components/smallCard/actions', () => ({
   handleSubmit: jest.fn(),
 }));
 
-const { mergeScheduleWithClipboardData } = require('components/MedicationSchedule');
+const { applyDefaultDistribution, mergeScheduleWithClipboardData } = require('components/MedicationSchedule');
+
+const buildRows = (count, medicationKey) =>
+  Array.from({ length: count }, (_, index) => ({
+    date: `2024-01-${String(index + 1).padStart(2, '0')}`,
+    values: { [medicationKey]: '' },
+  }));
+
+describe('applyDefaultDistribution (progynova)', () => {
+  it('distributes issued tablets using the updated default ramp', () => {
+    const medicationKey = 'progynova';
+    const rows = buildRows(15, medicationKey);
+    const schedule = {
+      startDate: '2024-01-01',
+      medicationOrder: [medicationKey],
+      medications: {
+        [medicationKey]: {
+          issued: 21,
+          plan: 'progynova',
+          startDate: '2024-01-01',
+        },
+      },
+    };
+
+    const distributed = applyDefaultDistribution(rows, schedule);
+    const doses = distributed.map(row => row.values[medicationKey]);
+
+    expect(doses.slice(0, 11)).toEqual(['', 1, 1, 2, 2, 3, 3, 3, 3, 3, '']);
+    expect(doses.slice(11)).toEqual(['', '', '', '']);
+    const totalUsed = doses.reduce((sum, value) => sum + (Number(value) || 0), 0);
+    expect(totalUsed).toBe(21);
+  });
+
+  it('keeps the ten week taper with a gradual decrease to one tablet', () => {
+    const medicationKey = 'progynova';
+    const rows = buildRows(90, medicationKey);
+    const schedule = {
+      startDate: '2024-01-01',
+      medicationOrder: [medicationKey],
+      medications: {
+        [medicationKey]: {
+          issued: 500,
+          plan: 'progynova',
+          startDate: '2024-01-01',
+        },
+      },
+    };
+
+    const distributed = applyDefaultDistribution(rows, schedule);
+    const doseOnDay = dayNumber => distributed[dayNumber - 1].values[medicationKey];
+
+    expect(doseOnDay(70)).toBe(3);
+    expect(doseOnDay(71)).toBe(2);
+    expect(doseOnDay(72)).toBe(2);
+    expect(doseOnDay(75)).toBe(2);
+    expect(doseOnDay(76)).toBe(1);
+    expect(doseOnDay(80)).toBe(1);
+    expect(doseOnDay(81)).toBe('');
+  });
+});
 
 describe('mergeScheduleWithClipboardData', () => {
   it('preserves existing base medication doses when clipboard starts later', () => {
