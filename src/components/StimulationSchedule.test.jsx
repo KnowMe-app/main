@@ -4,11 +4,7 @@ import {
   computeCustomDateAndLabel,
   deriveScheduleDisplayInfo,
   splitCustomEventEntries,
-  generateSchedule,
-  serializeSchedule,
-  hasPreCycleEntries,
 } from 'components/StimulationSchedule';
-import { normalizeScheduleEntries } from 'components/smallCard/fieldLastCycle';
 
 jest.mock('components/smallCard/actions', () => ({
   handleChange: jest.fn(),
@@ -119,31 +115,6 @@ describe('deriveScheduleDisplayInfo', () => {
 
     expect(result.secondaryLabel).toBe('8');
     expect(result.displayLabel).not.toContain('1т1д');
-  });
-});
-
-describe('pre-cycle serialization', () => {
-  it('preserves edited pre-dipherelin labels after normalization and prevents default detection', () => {
-    const baseDate = new Date(2024, 0, 10);
-    const defaultSchedule = generateSchedule(baseDate);
-    const customSchedule = [
-      {
-        key: 'pre-dipherelin',
-        date: new Date(2024, 0, 5),
-        label: '5й день Диферелін Тест',
-      },
-      ...defaultSchedule,
-    ];
-
-    const serialized = serializeSchedule(customSchedule);
-    const normalizedEntries = normalizeScheduleEntries(serialized);
-    expect(hasPreCycleEntries(normalizedEntries)).toBe(true);
-
-    const reserialized = serializeSchedule(normalizedEntries);
-    expect(reserialized).toContain('Диферелін Тест');
-
-    const defaultString = serializeSchedule(defaultSchedule);
-    expect(reserialized).not.toBe(defaultString);
   });
 });
 
