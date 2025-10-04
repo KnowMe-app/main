@@ -2,6 +2,7 @@ import {
   adjustItemForDate,
   buildCustomEventLabel,
   computeCustomDateAndLabel,
+  deriveScheduleDisplayInfo,
   splitCustomEventEntries,
 } from 'components/StimulationSchedule';
 
@@ -96,6 +97,16 @@ describe('splitCustomEventEntries', () => {
       '16.01 міс',
       '22.01 прийом. Анна теж ок.',
     ]);
+  });
+});
+
+describe('deriveScheduleDisplayInfo', () => {
+  it('hides duplicate day-only description when it matches numeric secondary label', () => {
+    const date = new Date(2024, 6, 6);
+    const result = deriveScheduleDisplayInfo({ date, label: '06.07 сб 2й день' });
+
+    expect(result.secondaryLabel).toBe('2');
+    expect(result.displayLabel).toBe('');
   });
 });
 
