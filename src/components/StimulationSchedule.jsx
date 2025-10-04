@@ -2839,7 +2839,6 @@ const StimulationSchedule = ({
 };
 
 export {
-  sanitizeDescription,
   buildCustomEventLabel,
   computeCustomDateAndLabel,
   splitCustomEventEntries,
