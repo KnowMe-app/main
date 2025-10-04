@@ -77,6 +77,27 @@ const CopyButton = styled.button`
   }
 `;
 
+const FillScheduleButton = styled.button`
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  background-color: #ffb347;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  margin-left: auto;
+  transition: background-color 0.2s ease;
+
+  &:hover:not(:disabled) {
+    background-color: #ff9a1a;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+`;
+
 const TitleBlock = styled.div`
   display: flex;
   flex-direction: column;
@@ -102,7 +123,6 @@ const DeleteButton = styled.button`
   color: white;
   cursor: pointer;
   font-size: 14px;
-  margin-left: auto;
   transition: background-color 0.2s ease;
 
   &:hover:not(:disabled) {
@@ -143,6 +163,8 @@ const MedicationsPage = () => {
   const [isScheduleLoading, setIsScheduleLoading] = useState(true);
   const ownerId = useMemo(() => localStorage.getItem('ownerId'), []);
   const saveTimeoutRef = useRef(null);
+  const resetDistributionHandlerRef = useRef(null);
+  const [hasResetDistribution, setHasResetDistribution] = useState(false);
 
   const hasScheduleData = useMemo(
     () =>
@@ -309,6 +331,17 @@ const MedicationsPage = () => {
     }
   }, [hasScheduleData, schedule]);
 
+  const handleResetDistributionHandlerChange = useCallback(handler => {
+    resetDistributionHandlerRef.current = handler;
+    setHasResetDistribution(typeof handler === 'function');
+  }, []);
+
+  const handleResetDistributionClick = useCallback(() => {
+    if (typeof resetDistributionHandlerRef.current === 'function') {
+      resetDistributionHandlerRef.current();
+    }
+  }, []);
+
   const handleDelete = useCallback(async () => {
     if (!ownerId || !userId) {
       toast.error('Не вдалося визначити користувача для видалення ліків');
@@ -379,12 +412,19 @@ const MedicationsPage = () => {
           >
             <FiCopy size={18} />
           </CopyButton>
+          <FillScheduleButton
+            type="button"
+            onClick={handleResetDistributionClick}
+            disabled={!hasResetDistribution || isScheduleLoading}
+          >
+            Заповнити за графіком
+          </FillScheduleButton>
           <DeleteButton
             type="button"
             onClick={handleDelete}
             disabled={!ownerId || !userId || isScheduleLoading}
           >
-            Видалити
+            Видалити весь графік прийому ліків
           </DeleteButton>
         </ButtonRow>
         <TitleBlock>
@@ -409,6 +449,7 @@ const MedicationsPage = () => {
           onChange={handleScheduleChange}
           cycleStart={user?.lastCycle}
           stimulationSchedule={user?.stimulationSchedule}
+          onResetDistributionChange={handleResetDistributionHandlerChange}
         />
       )}
     </PageContainer>

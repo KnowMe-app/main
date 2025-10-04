@@ -348,27 +348,6 @@ const DescriptionItem = styled.li`
   padding-left: 4px;
 `;
 
-const ActionsRow = styled.div`
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-`;
-
-const ActionButton = styled.button`
-  padding: 8px 14px;
-  border-radius: 6px;
-  border: none;
-  background-color: #ffb347;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background-color 0.2s ease;
-
-  &:hover {
-    background-color: #ff9a1a;
-  }
-`;
-
 const ModalOverlay = styled.div`
   position: fixed;
   inset: 0;
@@ -433,12 +412,6 @@ const ModalConfirmButton = styled(ModalButton)`
   &:hover {
     background: #bf360c;
   }
-`;
-
-const InfoNote = styled.p`
-  margin: 0;
-  font-size: 12px;
-  color: #777;
 `;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -854,18 +827,6 @@ const evaluateIssuedInput = (displayValue, fallbackIssued) => {
   return {
     issued: Number.isFinite(fallback) ? fallback : 0,
     displayValue: raw,
-  };
-};
-
-const createRow = (date, medicationKeys = [], baseValues = {}) => {
-  const values = {};
-  medicationKeys.forEach(key => {
-    const base = baseValues[key];
-    values[key] = sanitizeCellValue(base);
-  });
-  return {
-    date,
-    values,
   };
 };
 
@@ -1471,6 +1432,7 @@ const MedicationSchedule = ({
   onChange,
   cycleStart,
   stimulationSchedule,
+  onResetDistributionChange,
 }) => {
   const [schedule, setSchedule] = useState(() => normalizeData(data, { cycleStart }));
   const [focusedMedication, setFocusedMedication] = useState(null);
@@ -1777,20 +1739,6 @@ const MedicationSchedule = ({
     });
   }, [updateSchedule]);
 
-  const handleAddRow = useCallback(() => {
-    updateSchedule(prev => {
-      const lastRow = prev.rows[prev.rows.length - 1];
-      const lastDate = parseDateString(lastRow?.date) || parseDateString(prev.startDate) || new Date();
-      const nextDate = formatISODate(addDays(lastDate, 1));
-      const medicationKeys = Array.isArray(prev.medicationOrder) ? prev.medicationOrder : [];
-      const newRow = createRow(nextDate, medicationKeys, lastRow?.values);
-      return {
-        ...prev,
-        rows: [...prev.rows, newRow],
-      };
-    });
-  }, [updateSchedule]);
-
   const handleResetDistribution = useCallback(() => {
     updateSchedule(prev => {
       if (!prev) return prev;
@@ -1804,6 +1752,14 @@ const MedicationSchedule = ({
       };
     });
   }, [updateSchedule]);
+
+  useEffect(() => {
+    if (typeof onResetDistributionChange === 'function') {
+      onResetDistributionChange(handleResetDistribution);
+      return () => onResetDistributionChange(null);
+    }
+    return undefined;
+  }, [handleResetDistribution, onResetDistributionChange]);
 
   const totals = useMemo(() => {
     const result = {};
@@ -2062,17 +2018,6 @@ const MedicationSchedule = ({
           </tbody>
         </StyledTable>
       </TableWrapper>
-
-      <ActionsRow>
-        <ActionButton type="button" onClick={handleAddRow}>
-          Додати день
-        </ActionButton>
-        <ActionButton type="button" onClick={handleResetDistribution}>
-          Заповнити за графіком
-        </ActionButton>
-      </ActionsRow>
-
-      <InfoNote>Зміни зберігаються автоматично. В клітинках можна задавати дозування вручну, воно буде продовжене вниз до наступної зміни.</InfoNote>
 
       {pendingRemovalMedication && (
         <ModalOverlay onClick={handleCancelRemoveMedication}>
