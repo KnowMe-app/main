@@ -12,9 +12,9 @@ export const BASE_MEDICATION_PLACEHOLDERS = {
   aspirin: 'АК 14',
   folicAcid: 'ФК 25',
   metypred: 'Метипред 30',
-  // Інжеста та Лютеіна мають нульові дефолтні видачі, але плейсхолдери показують рекомендовані 40.
-  injesta: 'Інжеста 40',
-  luteina: 'Лютеіна 40',
+  // Плейсхолдери показують орієнтовні рекомендовані обсяги видачі.
+  injesta: 'Інжеста 142',
+  luteina: 'Лютеіна 200',
 };
 
 export const BASE_MEDICATIONS_MAP = new Map(BASE_MEDICATIONS.map(item => [item.key, item]));
