@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { FaTrash } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 
 import {
@@ -219,31 +218,34 @@ const MedicationTh = styled(Th)`
 `;
 
 const MedicationHeaderContent = styled.div`
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
 `;
 
-const RemoveColumnButton = styled.button`
-  position: absolute;
-  top: -4px;
-  right: -4px;
+const MedicationHeaderButton = styled.button`
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  line-height: 1.1;
+  transition: background-color 0.2s ease, color 0.2s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: #b71c1c;
-  cursor: pointer;
-  padding: 0;
+  width: 100%;
 
   &:hover {
-    background: rgba(183, 28, 28, 0.12);
-    color: #c62828;
+    background: rgba(183, 28, 28, 0.1);
+    color: #b71c1c;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #b71c1c;
+    outline-offset: 2px;
   }
 `;
 
@@ -364,6 +366,72 @@ const ActionButton = styled.button`
 
   &:hover {
     background-color: #ff9a1a;
+  }
+`;
+
+const ModalOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+`;
+
+const ModalContainer = styled.div`
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  width: min(90vw, 360px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+`;
+
+const ModalTitle = styled.h2`
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+`;
+
+const ModalMessage = styled.p`
+  margin: 0;
+  font-size: 14px;
+  color: #444;
+`;
+
+const ModalActions = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+`;
+
+const ModalButton = styled.button`
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+`;
+
+const ModalCancelButton = styled(ModalButton)`
+  background: #e0e0e0;
+  color: #333;
+
+  &:hover {
+    background: #cfcfcf;
+  }
+`;
+
+const ModalConfirmButton = styled(ModalButton)`
+  background: #d84315;
+  color: white;
+
+  &:hover {
+    background: #bf360c;
   }
 `;
 
@@ -1412,6 +1480,7 @@ const MedicationSchedule = ({
     issued: '',
     startDate: formatISODate(new Date()),
   }));
+  const [pendingRemovalKey, setPendingRemovalKey] = useState(null);
   const scheduleRef = useRef(schedule);
 
   const medicationOrder = useMemo(
@@ -1434,6 +1503,16 @@ const MedicationSchedule = ({
         };
       }),
     [medicationOrder, schedule?.medications],
+  );
+
+  const pendingRemovalMedication = useMemo(
+    () => medicationList.find(({ key }) => key === pendingRemovalKey) || null,
+    [medicationList, pendingRemovalKey],
+  );
+
+  const removalModalTitleId = useMemo(
+    () => (pendingRemovalMedication ? `remove-medication-${pendingRemovalMedication.key}` : undefined),
+    [pendingRemovalMedication],
   );
 
   const totalColumns = medicationList.length + 2;
@@ -1558,6 +1637,16 @@ const MedicationSchedule = ({
     },
     [updateSchedule],
   );
+
+  const handleCancelRemoveMedication = useCallback(() => {
+    setPendingRemovalKey(null);
+  }, []);
+
+  const handleConfirmRemoveMedication = useCallback(() => {
+    if (!pendingRemovalKey) return;
+    handleRemoveMedication(pendingRemovalKey);
+    setPendingRemovalKey(null);
+  }, [handleRemoveMedication, pendingRemovalKey]);
 
   const handleNewMedicationDraftChange = useCallback((field, value) => {
     setNewMedicationDraft(prevDraft => ({
@@ -1824,14 +1913,14 @@ const MedicationSchedule = ({
               {medicationList.map(({ key, short }) => (
                 <MedicationTh key={key}>
                   <MedicationHeaderContent>
-                    <span>{short}</span>
-                    <RemoveColumnButton
+                    <MedicationHeaderButton
                       type="button"
-                      onClick={() => handleRemoveMedication(key)}
+                      onClick={() => setPendingRemovalKey(key)}
                       aria-label={`Видалити колонку ${short}`}
+                      title={`Видалити колонку ${short}`}
                     >
-                      <FaTrash size={12} />
-                    </RemoveColumnButton>
+                      {short}
+                    </MedicationHeaderButton>
                   </MedicationHeaderContent>
                 </MedicationTh>
               ))}
@@ -1984,6 +2073,30 @@ const MedicationSchedule = ({
       </ActionsRow>
 
       <InfoNote>Зміни зберігаються автоматично. В клітинках можна задавати дозування вручну, воно буде продовжене вниз до наступної зміни.</InfoNote>
+
+      {pendingRemovalMedication && (
+        <ModalOverlay onClick={handleCancelRemoveMedication}>
+          <ModalContainer
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={removalModalTitleId}
+            onClick={event => event.stopPropagation()}
+          >
+            <ModalTitle id={removalModalTitleId}>Видалити колонку?</ModalTitle>
+            <ModalMessage>
+              Ви впевнені, що хочете видалити колонку «{pendingRemovalMedication.short}»? Цю дію не можна скасувати.
+            </ModalMessage>
+            <ModalActions>
+              <ModalCancelButton type="button" onClick={handleCancelRemoveMedication}>
+                Скасувати
+              </ModalCancelButton>
+              <ModalConfirmButton type="button" onClick={handleConfirmRemoveMedication}>
+                Видалити
+              </ModalConfirmButton>
+            </ModalActions>
+          </ModalContainer>
+        </ModalOverlay>
+      )}
     </Container>
   );
 };
