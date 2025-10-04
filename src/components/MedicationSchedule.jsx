@@ -71,6 +71,11 @@ const FormulaHint = styled.span`
   color: #888;
 `;
 
+const IssuedNote = styled.span`
+  font-size: 12px;
+  color: #666;
+`;
+
 const AddMedicationRow = styled.div`
   display: flex;
   flex-direction: column;
@@ -176,6 +181,17 @@ const CellInput = styled.input`
   color: black;
   box-sizing: border-box;
   display: inline-block;
+  background-color: ${({ $status }) => {
+    if ($status === 'ok') return '#e8f5e9';
+    if ($status === 'low') return '#ffebee';
+    return 'white';
+  }};
+  border-color: ${({ $status }) => {
+    if ($status === 'ok') return '#81c784';
+    if ($status === 'low') return '#e57373';
+    return '#d0d0d0';
+  }};
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 `;
 
 const MedicationTh = styled(Th)`
@@ -191,8 +207,20 @@ const MedicationTh = styled(Th)`
 const MedicationHeaderContent = styled.div`
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
+  min-height: 34px;
+`;
+
+const MedicationHeaderLabel = styled.span`
+  font-weight: 500;
+`;
+
+const MedicationHeaderHint = styled.span`
+  font-size: 10px;
+  color: #666;
 `;
 
 const RemoveColumnButton = styled.button`
@@ -457,6 +485,17 @@ const DAYS_IN_WEEK = 7;
 const INJESTA_START_DAY = 14;
 const INJESTA_END_DAY = 12 * DAYS_IN_WEEK;
 const INJESTA_DEFAULT_DAILY_DOSE = 2;
+const INJESTA_TOTAL_DAYS = INJESTA_END_DAY - INJESTA_START_DAY + 1;
+const INJESTA_DEFAULT_ISSUED = INJESTA_DEFAULT_DAILY_DOSE * INJESTA_TOTAL_DAYS;
+const LUTEINA_START_DAY = 13;
+const LUTEINA_END_DAY = 16 * DAYS_IN_WEEK;
+const LUTEINA_DEFAULT_DAILY_DOSE = 2;
+const LUTEINA_TOTAL_DAYS = LUTEINA_END_DAY - LUTEINA_START_DAY + 1;
+const LUTEINA_DEFAULT_ISSUED = LUTEINA_DEFAULT_DAILY_DOSE * LUTEINA_TOTAL_DAYS;
+const MEDICATION_DURATION_HINTS = {
+  injesta: 'до 12 тижня',
+  luteina: 'до 16 тижня',
+};
 
 const PLAN_HANDLERS = {
   progynova: {
@@ -486,7 +525,7 @@ const PLAN_HANDLERS = {
     getDailyValue: ({ dayNumber }) => (dayNumber >= 1 && dayNumber <= 36 * DAYS_IN_WEEK ? 1 : ''),
   },
   injesta: {
-    defaultIssued: 0,
+    defaultIssued: INJESTA_DEFAULT_ISSUED,
     maxDay: INJESTA_END_DAY,
     getDailyValue: ({ dayNumber }) => {
       if (!Number.isFinite(dayNumber)) return '';
@@ -500,9 +539,12 @@ const PLAN_HANDLERS = {
     getDailyValue: ({ dayNumber }) => (dayNumber >= 1 && dayNumber <= 12 * DAYS_IN_WEEK ? 1 : ''),
   },
   luteina: {
-    defaultIssued: 0,
-    maxDay: 16 * DAYS_IN_WEEK,
-    getDailyValue: ({ dayNumber }) => (dayNumber >= 13 && dayNumber <= 16 * DAYS_IN_WEEK ? 2 : ''),
+    defaultIssued: LUTEINA_DEFAULT_ISSUED,
+    maxDay: LUTEINA_END_DAY,
+    getDailyValue: ({ dayNumber }) =>
+      dayNumber >= LUTEINA_START_DAY && dayNumber <= LUTEINA_END_DAY
+        ? LUTEINA_DEFAULT_DAILY_DOSE
+        : '',
   },
   custom: {
     defaultIssued: 0,
@@ -1335,11 +1377,13 @@ const MedicationSchedule = ({
         const base = BASE_MEDICATIONS_MAP.get(key);
         const label = stored.label || base?.label || key;
         const short = stored.short || base?.short || label.slice(0, 2).toUpperCase();
+        const hint = MEDICATION_DURATION_HINTS[key] || null;
         return {
           key,
           label,
           short,
           data: stored,
+          hint,
         };
       }),
     [medicationOrder, schedule?.medications],
@@ -1647,7 +1691,7 @@ const MedicationSchedule = ({
   return (
     <Container>
       <IssuedList>
-        {medicationList.map(({ key, label, data }) => {
+        {medicationList.map(({ key, label, data, hint }) => {
           const medication = data || { issued: 0, displayValue: '' };
           const { issued = 0, displayValue = '' } = medication;
           const stats = totals[key] || { used: 0, remaining: issued };
@@ -1673,6 +1717,7 @@ const MedicationSchedule = ({
                   Видано: {formatNumber(issued)} • Використано: {formatNumber(stats.used)} • Залишок: {formatNumber(stats.remaining)}
                 </IssuedStats>
               </IssuedRowHeader>
+              {hint && <IssuedNote>Прийом {hint}</IssuedNote>}
               {showFormula && displayValue && (
                 <FormulaHint>Формула: {displayValue}</FormulaHint>
               )}
@@ -1730,10 +1775,11 @@ const MedicationSchedule = ({
             <tr>
               <Th style={{ width: '60px' }}>#</Th>
               <Th style={DATE_COLUMN_STYLE}>Дата</Th>
-              {medicationList.map(({ key, short }) => (
+              {medicationList.map(({ key, short, hint }) => (
                 <MedicationTh key={key}>
                   <MedicationHeaderContent>
-                    <span>{short}</span>
+                    <MedicationHeaderLabel>{short}</MedicationHeaderLabel>
+                    {hint && <MedicationHeaderHint>{hint}</MedicationHeaderHint>}
                     <RemoveColumnButton
                       type="button"
                       onClick={() => handleRemoveMedication(key)}
@@ -1817,18 +1863,32 @@ const MedicationSchedule = ({
                         {weekday && <WeekdayTag>{weekday}</WeekdayTag>}
                       </DateCellContent>
                     </Td>
-                      {medicationList.map(({ key }) => (
-                        <MedicationTd key={key}>
-                          <CellInput
-                            value={
-                              row.values?.[key] === '' || row.values?.[key] === undefined
-                                ? ''
-                                : row.values[key]
-                            }
-                            onChange={event => handleCellChange(index, key, event.target.value)}
-                          />
-                        </MedicationTd>
-                      ))}
+                      {medicationList.map(({ key }) => {
+                        const issued = issuedByMedication[key];
+                        const sanitizedValue = sanitizeCellValue(row.values?.[key]);
+                        const hasPositiveDose = Number.isFinite(sanitizedValue) && sanitizedValue > 0;
+                        let status = null;
+
+                        if (issued > 0) {
+                          status = rowBalances[key] < 0 ? 'low' : 'ok';
+                        } else if (hasPositiveDose) {
+                          status = 'low';
+                        }
+
+                        return (
+                          <MedicationTd key={key}>
+                            <CellInput
+                              $status={status}
+                              value={
+                                row.values?.[key] === '' || row.values?.[key] === undefined
+                                  ? ''
+                                  : row.values[key]
+                              }
+                              onChange={event => handleCellChange(index, key, event.target.value)}
+                            />
+                          </MedicationTd>
+                        );
+                      })}
                   </RowComponent>,
                 );
 
