@@ -108,5 +108,13 @@ describe('deriveScheduleDisplayInfo', () => {
     expect(result.secondaryLabel).toBe('2');
     expect(result.displayLabel).toBe('');
   });
+
+  it('keeps ordinal day indicator after the first week without converting to week tokens', () => {
+    const date = new Date(2024, 9, 29);
+    const result = deriveScheduleDisplayInfo({ date, label: '29.10 вт 8й день' });
+
+    expect(result.secondaryLabel).toBe('8');
+    expect(result.displayLabel).not.toContain('1т1д');
+  });
 });
 

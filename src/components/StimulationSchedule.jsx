@@ -174,13 +174,6 @@ const extractDayPrefix = value => {
 
 const deriveDayIndicatorFromNumber = day => {
   const safeDayNumber = Math.max(Math.trunc(day), 1);
-  if (safeDayNumber <= 7) {
-    return String(safeDayNumber);
-  }
-  if ((safeDayNumber - 1) % 7 === 0) {
-    const completedWeeks = Math.floor((safeDayNumber - 1) / 7);
-    return `${completedWeeks}т1д`;
-  }
   return String(safeDayNumber);
 };
 
