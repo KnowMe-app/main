@@ -170,12 +170,38 @@ const CellInput = styled.input`
   min-width: 20px;
   padding: 4px;
   border-radius: 6px;
-  border: 1px solid #d0d0d0;
+  border: 1px solid
+    ${({ $status }) => {
+      if ($status === 'negative') {
+        return '#ef5350';
+      }
+      if ($status === 'positive') {
+        return '#66bb6a';
+      }
+      return '#d0d0d0';
+    }};
   font-size: 13px;
   text-align: center;
-  color: black;
+  color: ${({ $status }) => {
+    if ($status === 'negative') {
+      return '#b71c1c';
+    }
+    if ($status === 'positive') {
+      return '#1b5e20';
+    }
+    return 'black';
+  }};
   box-sizing: border-box;
   display: inline-block;
+  background-color: ${({ $status }) => {
+    if ($status === 'negative') {
+      return '#ffebee';
+    }
+    if ($status === 'positive') {
+      return '#e8f5e9';
+    }
+    return 'white';
+  }};
 `;
 
 const MedicationTh = styled(Th)`
@@ -1787,15 +1813,26 @@ const MedicationSchedule = ({
                   [];
 
                 const rowBalances = {};
+                const cellStatuses = {};
                 medicationList.forEach(({ key }) => {
                   const sanitizedValue = sanitizeCellValue(row.values?.[key]);
+                  let numericValue = null;
                   if (sanitizedValue !== '') {
-                    const numericValue = Number(sanitizedValue);
-                    if (!Number.isNaN(numericValue)) {
-                      runningUsage[key] += numericValue;
+                    const parsedValue = Number(sanitizedValue);
+                    if (!Number.isNaN(parsedValue)) {
+                      numericValue = parsedValue;
+                      runningUsage[key] += parsedValue;
                     }
                   }
-                  rowBalances[key] = issuedByMedication[key] - runningUsage[key];
+
+                  const balance = issuedByMedication[key] - runningUsage[key];
+                  rowBalances[key] = balance;
+
+                  if (numericValue !== null && numericValue > 0) {
+                    cellStatuses[key] = balance < 0 ? 'negative' : 'positive';
+                  } else {
+                    cellStatuses[key] = null;
+                  }
                 });
 
                 if (year !== null && year !== currentYear) {
@@ -1824,18 +1861,22 @@ const MedicationSchedule = ({
                         {weekday && <WeekdayTag>{weekday}</WeekdayTag>}
                       </DateCellContent>
                     </Td>
-                      {medicationList.map(({ key }) => (
-                        <MedicationTd key={key}>
-                          <CellInput
-                            value={
-                              row.values?.[key] === '' || row.values?.[key] === undefined
-                                ? ''
-                                : row.values[key]
-                            }
-                            onChange={event => handleCellChange(index, key, event.target.value)}
-                          />
-                        </MedicationTd>
-                      ))}
+                      {medicationList.map(({ key }) => {
+                        const cellStatus = cellStatuses[key];
+                        return (
+                          <MedicationTd key={key}>
+                            <CellInput
+                              $status={cellStatus}
+                              value={
+                                row.values?.[key] === '' || row.values?.[key] === undefined
+                                  ? ''
+                                  : row.values[key]
+                              }
+                              onChange={event => handleCellChange(index, key, event.target.value)}
+                            />
+                          </MedicationTd>
+                        );
+                      })}
                   </RowComponent>,
                 );
 
