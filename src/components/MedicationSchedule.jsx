@@ -663,10 +663,17 @@ const sanitizeScheduleForStorage = schedule => {
 };
 
 const evaluateIssuedInput = (displayValue, fallbackIssued) => {
-  if (displayValue === null || displayValue === undefined || displayValue === '') {
+  if (displayValue === null || displayValue === undefined) {
     const fallback = Number(fallbackIssued);
     return {
       issued: Number.isFinite(fallback) ? fallback : 0,
+      displayValue: '',
+    };
+  }
+
+  if (displayValue === '') {
+    return {
+      issued: 0,
       displayValue: '',
     };
   }
