@@ -1,7 +1,7 @@
 import React from 'react';
 import { handleChange, handleSubmit } from './actions';
 import { formatDateToDisplay, formatDateToServer } from 'components/inputValidations';
-import { generateSchedule, serializeSchedule, hasPreCycleEntries } from '../StimulationSchedule';
+import { generateSchedule, serializeSchedule } from '../StimulationSchedule';
 import InfoModal from 'components/InfoModal';
 import { UnderlinedInput, AttentionButton, AttentionDiv, OrangeBtn, color } from 'components/styles';
 
@@ -75,7 +75,7 @@ const isSameDay = (a, b) => {
   return normalizeDate(a).getTime() === normalizeDate(b).getTime();
 };
 
-export const normalizeScheduleEntries = schedule => {
+const normalizeScheduleEntries = schedule => {
   if (!schedule) return [];
   if (Array.isArray(schedule)) {
     const today = normalizeDate(new Date());
@@ -147,11 +147,7 @@ const isDefaultSchedule = (lastCycle, scheduleString) => {
   const baseDate = parseDate(lastCycle);
   if (!baseDate) return false;
   const defaultString = serializeSchedule(generateSchedule(baseDate));
-  const normalizedEntries = normalizeScheduleEntries(scheduleString);
-  if (hasPreCycleEntries(normalizedEntries)) {
-    return false;
-  }
-  const normalized = serializeSchedule(normalizedEntries);
+  const normalized = serializeSchedule(normalizeScheduleEntries(scheduleString));
   return defaultString === normalized;
 };
 

@@ -490,9 +490,6 @@ const transferRelativeConfig = {
 
 const PRE_CYCLE_KEYS = new Set(['pre-visit1', 'pre-uzd', 'pre-dipherelin']);
 
-export const hasPreCycleEntries = entries =>
-  Array.isArray(entries) && entries.some(entry => entry && PRE_CYCLE_KEYS.has(entry.key));
-
 const isPreCycleKey = key => PRE_CYCLE_KEYS.has(key);
 
 const isCustomKey = key => typeof key === 'string' && key.startsWith('ap-');
@@ -1379,9 +1376,7 @@ const StimulationSchedule = ({
       const defaultString = baseForDefaults
         ? serializeSchedule(generateSchedule(baseForDefaults))
         : '';
-      const containsPreCycleEntries = hasPreCycleEntries(Array.isArray(sched) ? sched : []);
-      const isDefault =
-        !containsPreCycleEntries && Boolean(baseForDefaults) && scheduleString === defaultString;
+      const isDefault = Boolean(baseForDefaults) && scheduleString === defaultString;
       const update = isDefault
         ? { stimulationSchedule: undefined }
         : { stimulationSchedule: scheduleString };
