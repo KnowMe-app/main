@@ -158,7 +158,7 @@ const extractWeeksDaysPrefix = value => {
 const extractDayPrefix = value => {
   if (!value) return null;
   const trimmed = value.trim();
-  const match = trimmed.match(/^(\d+)\s*й(?:\s+день)?/i);
+  const match = trimmed.match(/^(\d+)(?:\s*[-–—]?\s*(?:й|ий))(?:\s*день)?/i);
   if (!match) return null;
   const rawDay = Number(match[1]);
   if (!Number.isFinite(rawDay)) return null;
