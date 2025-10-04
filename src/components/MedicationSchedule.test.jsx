@@ -13,7 +13,7 @@ jest.mock('components/smallCard/actions', () => ({
   handleSubmit: jest.fn(),
 }));
 
-const { applyDefaultDistribution, mergeScheduleWithClipboardData } = require('components/MedicationSchedule');
+const { mergeScheduleWithClipboardData } = require('components/MedicationSchedule');
 
 describe('mergeScheduleWithClipboardData', () => {
   it('preserves existing base medication doses when clipboard starts later', () => {
@@ -31,9 +31,9 @@ describe('mergeScheduleWithClipboardData', () => {
         },
       },
       rows: [
-        { date: '2024-01-01', values: { progynova: 0 } },
+        { date: '2024-01-01', values: { progynova: 1 } },
         { date: '2024-01-02', values: { progynova: 1 } },
-        { date: '2024-01-03', values: { progynova: 1 } },
+        { date: '2024-01-03', values: { progynova: 2 } },
       ],
     };
 
@@ -63,7 +63,7 @@ describe('mergeScheduleWithClipboardData', () => {
 
     expect(merged.rows[0]).toMatchObject({
       date: '2024-01-01',
-      values: { progynova: 0, 'custom-med': '' },
+      values: { progynova: 1, 'custom-med': '' },
     });
 
     expect(merged.rows[1]).toMatchObject({
@@ -73,7 +73,7 @@ describe('mergeScheduleWithClipboardData', () => {
 
     expect(merged.rows[2]).toMatchObject({
       date: '2024-01-03',
-      values: { progynova: 1, 'custom-med': 2 },
+      values: { progynova: 2, 'custom-med': 2 },
     });
 
     expect(merged.rows[3]).toMatchObject({
@@ -86,27 +86,5 @@ describe('mergeScheduleWithClipboardData', () => {
       label: 'Custom med',
       issued: 6,
     });
-  });
-});
-
-describe('applyDefaultDistribution', () => {
-  it('generates Progynova defaults starting from zero and escalating every two days', () => {
-    const schedule = {
-      startDate: '2024-01-01',
-      medicationOrder: ['progynova'],
-      medications: {
-        progynova: {
-          issued: 21,
-          plan: 'progynova',
-        },
-      },
-    };
-
-    const rows = Array.from({ length: 6 }, () => ({ values: {} }));
-
-    const distributed = applyDefaultDistribution(rows, schedule);
-    const doses = distributed.slice(0, 6).map(row => row.values.progynova);
-
-    expect(doses).toEqual([0, 1, 1, 2, 2, 3]);
   });
 });
