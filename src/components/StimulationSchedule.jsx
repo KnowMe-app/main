@@ -172,6 +172,18 @@ const extractDayPrefix = value => {
   };
 };
 
+const deriveDayIndicatorFromNumber = day => {
+  const safeDayNumber = Math.max(Math.trunc(day), 1);
+  if (safeDayNumber <= 7) {
+    return String(safeDayNumber);
+  }
+  if ((safeDayNumber - 1) % 7 === 0) {
+    const completedWeeks = Math.floor((safeDayNumber - 1) / 7);
+    return `${completedWeeks}т1д`;
+  }
+  return String(safeDayNumber);
+};
+
 const parseWeeksDaysToken = (token, baseDate) => {
   if (!token || !baseDate) return null;
   const normalized = normalizeWeeksDaysToken(token);
@@ -355,22 +367,36 @@ export const deriveScheduleDisplayInfo = ({ date, label }) => {
   let formattedDayIndicator = '';
   if (dayInfo) {
     remainderWithoutDay = dayInfo.rest;
-    const safeDayNumber = Math.max(Math.trunc(dayInfo.day), 1);
-    if (safeDayNumber <= 7) {
-      formattedDayIndicator = String(safeDayNumber);
-    } else if ((safeDayNumber - 1) % 7 === 0) {
-      const completedWeeks = Math.floor((safeDayNumber - 1) / 7);
-      formattedDayIndicator = `${completedWeeks}т1д`;
-    } else {
-      formattedDayIndicator = String(safeDayNumber);
-    }
+    formattedDayIndicator = deriveDayIndicatorFromNumber(dayInfo.day);
   }
 
   const sanitizedRemainder = sanitizeDescription(remainderWithoutDay);
   const secondaryLabel = normalizedToken || formattedDayIndicator || '';
   const normalizedSecondary = secondaryLabel.trim().toLowerCase();
   const matchesSecondary = candidate =>
-    !!candidate && !!normalizedSecondary && candidate.trim().toLowerCase() === normalizedSecondary;
+    !!candidate &&
+    !!normalizedSecondary &&
+    (() => {
+      const trimmedCandidate = candidate.trim();
+      const normalizedCandidate = trimmedCandidate.toLowerCase();
+      if (normalizedCandidate === normalizedSecondary) {
+        return true;
+      }
+      const candidateDayInfo = extractDayPrefix(trimmedCandidate);
+      if (
+        candidateDayInfo &&
+        !candidateDayInfo.rest &&
+        candidateDayInfo.raw.length === trimmedCandidate.length
+      ) {
+        const derived = deriveDayIndicatorFromNumber(candidateDayInfo.day)
+          .trim()
+          .toLowerCase();
+        if (derived === normalizedSecondary) {
+          return true;
+        }
+      }
+      return false;
+    })();
 
   let displayLabel = sanitizedRemainder || '';
   if (!displayLabel) {
