@@ -589,7 +589,15 @@ const getPlanMaxDay = plan => {
 
 const sanitizeCellValue = value => {
   if (value === null || value === undefined) return '';
-  if (value === '') return '';
+  if (typeof value === 'string') {
+    const normalized = value.trim().replace(/,/g, '.');
+    if (normalized === '') return '';
+    const numberValue = Number(normalized);
+    return Number.isNaN(numberValue) ? '' : numberValue;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : '';
+  }
   const numberValue = Number(value);
   return Number.isNaN(numberValue) ? '' : numberValue;
 };
