@@ -3,7 +3,11 @@ import styled from 'styled-components';
 import { FaTrash } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 
-import { deriveScheduleDisplayInfo, formatWeeksDaysToken } from './StimulationSchedule';
+import {
+  deriveScheduleDisplayInfo,
+  formatWeeksDaysToken,
+  sanitizeDescription,
+} from './StimulationSchedule';
 import {
   BASE_MEDICATIONS,
   BASE_MEDICATION_PLACEHOLDERS,
@@ -1283,6 +1287,28 @@ const parseStimulationEvents = (stimulationSchedule, startDate) => {
     if (!date) return;
 
     const info = deriveScheduleDisplayInfo({ date, label });
+    const sanitizedRawLabel = sanitizeDescription(info.labelValue || '');
+    const trimmedDisplayLabel = (info.displayLabel || '').trim();
+    const trimmedSecondaryLabel = (info.secondaryLabel || '').trim();
+    const trimmedSanitizedLabel = sanitizedRawLabel.trim();
+    let meaningfulRemainder = trimmedSanitizedLabel;
+
+    if (meaningfulRemainder && trimmedSecondaryLabel) {
+      const normalizedRemainder = meaningfulRemainder.toLowerCase();
+      const normalizedSecondary = trimmedSecondaryLabel.toLowerCase();
+      if (normalizedRemainder.startsWith(normalizedSecondary)) {
+        meaningfulRemainder = meaningfulRemainder
+          .slice(trimmedSecondaryLabel.length)
+          .trim()
+          .replace(/^[.,;:!?-]+/, '')
+          .trim();
+      }
+    }
+
+    if (!trimmedDisplayLabel && !meaningfulRemainder) {
+      return;
+    }
+
     const descriptionParts = [info.secondaryLabel, info.displayLabel].filter(Boolean);
     const description = descriptionParts.join(' • ') || info.labelValue || '';
     const iso = formatISODate(date);

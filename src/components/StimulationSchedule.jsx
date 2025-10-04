@@ -289,7 +289,7 @@ const stripSchedulePrefixTokens = text => {
   return removed ? working.trim() : text.trim();
 };
 
-const sanitizeDescription = text => {
+export const sanitizeDescription = text => {
   if (!text) return '';
   let result = text.trim();
   const weekdayRegex = /^(нд|пн|вт|ср|чт|пт|сб)(?=\s|$|[.,!?])/i;
