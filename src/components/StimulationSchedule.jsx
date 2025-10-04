@@ -2041,26 +2041,23 @@ const StimulationSchedule = ({
   const numberingColumnStyle = {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    flex: '0 0 36px',
-    minWidth: '32px',
-    maxWidth: '44px',
-    paddingRight: '4px',
+    justifyContent: 'center',
+    flex: '0 0 calc(40px - 1em)',
+    minWidth: 'calc(40px - 1em)',
+    maxWidth: 'calc(40px - 1em)',
     fontWeight: 600,
     lineHeight: 1.2,
     whiteSpace: 'nowrap',
     fontVariantNumeric: 'tabular-nums',
-    textAlign: 'right',
   };
   const dateColumnStyle = {
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
-    flex: '0 0 140px',
-    minWidth: '120px',
-    maxWidth: '160px',
+    flex: '0 0 calc(110px - 1em)',
+    minWidth: 'calc(110px - 1em)',
+    maxWidth: 'calc(110px - 1em)',
     lineHeight: 1.2,
-    fontWeight: 500,
   };
   const contentColumnStyle = {
     flex: 1,
