@@ -604,10 +604,15 @@ const doesMedicationMatchDefaultDistribution = (schedule, key) => {
 
   for (let index = 0; index < rows.length; index += 1) {
     const actual = sanitizeCellValue(rows[index]?.values?.[key]);
+    const expected = sanitizeCellValue(expectedRows[index]?.values?.[key]);
+
     if (actual === '') {
+      if (expected !== '') {
+        return false;
+      }
       continue;
     }
-    const expected = sanitizeCellValue(expectedRows[index]?.values?.[key]);
+
     if (actual !== expected) {
       return false;
     }
