@@ -69,6 +69,21 @@ const IssuedStats = styled.span`
   color: #666;
 `;
 
+const RemainingValue = styled.span`
+  color: ${props => {
+    if (props.$negative) {
+      return '#d1433f';
+    }
+
+    if (props.$positive) {
+      return '#1a7f37';
+    }
+
+    return 'inherit';
+  }};
+  font-weight: 500;
+`;
+
 const FormulaHint = styled.span`
   font-size: 12px;
   color: #888;
@@ -1806,7 +1821,13 @@ const MedicationSchedule = ({
                   placeholder={placeholderText}
                 />
                 <IssuedStats>
-                  Видано: {formatNumber(issued)} • Використано: {formatNumber(stats.used)} • Залишок: {formatNumber(stats.remaining)}
+                  Видано: {formatNumber(issued)} • Використано: {formatNumber(stats.used)} • Залишок:{' '}
+                  <RemainingValue
+                    $negative={stats.remaining < 0}
+                    $positive={stats.remaining > 0}
+                  >
+                    {formatNumber(stats.remaining)}
+                  </RemainingValue>
                 </IssuedStats>
               </IssuedRowHeader>
               {showFormula && displayValue && (
