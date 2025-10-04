@@ -219,8 +219,10 @@ const MedicationTh = styled(Th)`
 
 const MedicationHeaderContent = styled.div`
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: center;
+  gap: 6px;
 `;
 
 const MedicationHeaderButton = styled.button`
@@ -246,6 +248,24 @@ const MedicationHeaderButton = styled.button`
   &:focus-visible {
     outline: 2px solid #b71c1c;
     outline-offset: 2px;
+  }
+`;
+
+const FillScheduleButton = styled.button`
+  padding: 6px 4px;
+  border-radius: 6px;
+  border: none;
+  background-color: #ffb347;
+  color: white;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.2;
+  width: 100%;
+  white-space: normal;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: #ff9a1a;
   }
 `;
 
@@ -346,27 +366,6 @@ const DescriptionList = styled.ul`
 const DescriptionItem = styled.li`
   list-style-type: '•';
   padding-left: 4px;
-`;
-
-const ActionsRow = styled.div`
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-`;
-
-const ActionButton = styled.button`
-  padding: 8px 14px;
-  border-radius: 6px;
-  border: none;
-  background-color: #ffb347;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background-color 0.2s ease;
-
-  &:hover {
-    background-color: #ff9a1a;
-  }
 `;
 
 const ModalOverlay = styled.div`
@@ -854,18 +853,6 @@ const evaluateIssuedInput = (displayValue, fallbackIssued) => {
   return {
     issued: Number.isFinite(fallback) ? fallback : 0,
     displayValue: raw,
-  };
-};
-
-const createRow = (date, medicationKeys = [], baseValues = {}) => {
-  const values = {};
-  medicationKeys.forEach(key => {
-    const base = baseValues[key];
-    values[key] = sanitizeCellValue(base);
-  });
-  return {
-    date,
-    values,
   };
 };
 
@@ -1777,20 +1764,6 @@ const MedicationSchedule = ({
     });
   }, [updateSchedule]);
 
-  const handleAddRow = useCallback(() => {
-    updateSchedule(prev => {
-      const lastRow = prev.rows[prev.rows.length - 1];
-      const lastDate = parseDateString(lastRow?.date) || parseDateString(prev.startDate) || new Date();
-      const nextDate = formatISODate(addDays(lastDate, 1));
-      const medicationKeys = Array.isArray(prev.medicationOrder) ? prev.medicationOrder : [];
-      const newRow = createRow(nextDate, medicationKeys, lastRow?.values);
-      return {
-        ...prev,
-        rows: [...prev.rows, newRow],
-      };
-    });
-  }, [updateSchedule]);
-
   const handleResetDistribution = useCallback(() => {
     updateSchedule(prev => {
       if (!prev) return prev;
@@ -1910,7 +1883,7 @@ const MedicationSchedule = ({
             <tr>
               <Th style={{ width: '30px' }}>#</Th>
               <Th style={DATE_COLUMN_STYLE}>Дата</Th>
-              {medicationList.map(({ key, short }) => (
+              {medicationList.map(({ key, short }, index) => (
                 <MedicationTh key={key}>
                   <MedicationHeaderContent>
                     <MedicationHeaderButton
@@ -1921,6 +1894,11 @@ const MedicationSchedule = ({
                     >
                       {short}
                     </MedicationHeaderButton>
+                    {index === 0 && medicationList.length > 0 && (
+                      <FillScheduleButton type="button" onClick={handleResetDistribution}>
+                        Заповнити за графіком
+                      </FillScheduleButton>
+                    )}
                   </MedicationHeaderContent>
                 </MedicationTh>
               ))}
@@ -2062,15 +2040,6 @@ const MedicationSchedule = ({
           </tbody>
         </StyledTable>
       </TableWrapper>
-
-      <ActionsRow>
-        <ActionButton type="button" onClick={handleAddRow}>
-          Додати день
-        </ActionButton>
-        <ActionButton type="button" onClick={handleResetDistribution}>
-          Заповнити за графіком
-        </ActionButton>
-      </ActionsRow>
 
       <InfoNote>Зміни зберігаються автоматично. В клітинках можна задавати дозування вручну, воно буде продовжене вниз до наступної зміни.</InfoNote>
 
