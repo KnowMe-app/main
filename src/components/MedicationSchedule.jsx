@@ -1562,14 +1562,12 @@ const MedicationSchedule = ({
               schedule.rows.forEach((row, index) => {
                 const dayNumber = index + 1;
                 const hasDayNumber = Number.isFinite(dayNumber) && dayNumber > 0;
-                const diff = hasDayNumber ? dayNumber - 1 : 0;
-                const weeks = Math.floor(diff / 7);
-                const days = diff % 7;
-                const blockIndex = Math.floor(diff / 7);
-                const showWeeksDaysToken = hasDayNumber && blockIndex % 2 === 1;
+                const dayOffset = hasDayNumber ? dayNumber - 1 : 0;
+                const showWeeksDaysToken =
+                  hasDayNumber && dayNumber > 7 && dayOffset % 7 === 0;
                 const showDayNumber = hasDayNumber && !showWeeksDaysToken;
                 const weeksDaysToken = showWeeksDaysToken
-                  ? formatWeeksDaysToken(weeks, days)
+                  ? formatWeeksDaysToken(Math.floor(dayOffset / 7), 0)
                   : null;
                 const parsedDate = parseDateString(row.date, baseDate);
                 const formattedDate = formatDateForDisplay(parsedDate);
