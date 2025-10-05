@@ -481,6 +481,11 @@ const transferRelativeConfig = {
     defaultSuffix: 'ХГЧ',
     prefix: /^хгч/i,
   },
+  meds: {
+    baseLabel: 'Оновити ліки',
+    defaultSuffix: 'Оновити ліки',
+    prefix: /^оновити ліки/i,
+  },
   us: {
     baseLabel: 'УЗД',
     defaultSuffix: 'УЗД, підтвердження вагітності',
@@ -518,6 +523,8 @@ const buildTransferDayLabel = (key, day, suffix, sign = '') => {
 };
 
 const buildHcgLabel = (day, suffix) => buildTransferDayLabel('hcg', day, suffix);
+
+const buildMedsLabel = (day, suffix) => buildTransferDayLabel('meds', day, suffix);
 
 const buildUsLabel = (day, suffix, sign = '') =>
   buildTransferDayLabel('us', day, suffix, sign);
@@ -1104,6 +1111,16 @@ export const generateSchedule = base => {
     label: buildHcgLabel(hcgDay),
   });
 
+  // Medication update 3 days after HCG
+  const medsDate = new Date(d);
+  medsDate.setDate(medsDate.getDate() + 3);
+  const medsDay = diffDays(medsDate, transferBase);
+  visits.push({
+    key: 'meds',
+    date: medsDate,
+    label: buildMedsLabel(medsDay, 'Оновити ліки'),
+  });
+
   // Ultrasound 28 days after transfer
   d = new Date(transferBase);
   d.setDate(d.getDate() + 27);
@@ -1592,6 +1609,7 @@ const StimulationSchedule = ({
             if (!key) {
               if (/перенос/.test(label)) key = 'transfer';
               else if (/ХГЧ/.test(label)) key = 'hcg';
+              else if (/оновити\s+ліки/i.test(label)) key = 'meds';
               else if (/УЗД|ЗД/.test(label)) key = 'us';
               else if (/(\d+)т/.test(label)) {
                 const week = /(\d+)т/.exec(label)[1];
@@ -1619,6 +1637,7 @@ const StimulationSchedule = ({
             if (!key) {
               if (/перенос/.test(item.label || '')) key = 'transfer';
               else if (/ХГЧ/.test(item.label || '')) key = 'hcg';
+              else if (/оновити\s+ліки/i.test(item.label || '')) key = 'meds';
               else if (/УЗД|ЗД/.test(item.label || '')) key = 'us';
               else if (/(\d+)т/.test(item.label || '')) {
                 const week = /(\d+)т/.exec(item.label || '')[1];
