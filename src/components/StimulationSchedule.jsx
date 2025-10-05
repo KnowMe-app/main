@@ -475,6 +475,8 @@ const normalizeDayNumber = day => {
   return Math.max(Math.trunc(raw), 0);
 };
 
+const VISIT_DEFAULT_SUFFIX = 'Прийом';
+
 const transferRelativeConfig = {
   hcg: {
     baseLabel: 'ХГЧ',
@@ -1041,7 +1043,7 @@ export const generateSchedule = base => {
   visits.push({
     key: 'visit2',
     date: first.date,
-    label: `${first.day}й день`,
+    label: `${first.day}й день ${VISIT_DEFAULT_SUFFIX}`,
   });
 
   // Day 7 (may shift to 8 but never earlier than 6)
@@ -1051,10 +1053,15 @@ export const generateSchedule = base => {
   if (second.day < 6) {
     second = adjustForward(new Date(d), base);
   }
+  const visitThreeParts = [`${second.day}й день`];
+  if (second.sign) {
+    visitThreeParts.push(second.sign);
+  }
+  visitThreeParts.push(VISIT_DEFAULT_SUFFIX);
   visits.push({
     key: 'visit3',
     date: second.date,
-    label: `${second.day}й день${second.sign ? ` ${second.sign}` : ''}`,
+    label: visitThreeParts.join(' '),
   });
 
   // Days 11-13
@@ -1073,10 +1080,15 @@ export const generateSchedule = base => {
     d.setDate(base.getDate() + start + 1);
     third = adjustBackward(d, base);
   }
+  const visitFourParts = [`${third.day}й день`];
+  if (third.sign) {
+    visitFourParts.push(third.sign);
+  }
+  visitFourParts.push(VISIT_DEFAULT_SUFFIX);
   visits.push({
     key: 'visit4',
     date: third.date,
-    label: `${third.day}й день${third.sign ? ` ${third.sign}` : ''}`,
+    label: visitFourParts.join(' '),
   });
 
   // Transfer 19-22
@@ -1302,6 +1314,16 @@ export const adjustItemForDate = (
     let suffix = stripSchedulePrefixTokens(sanitizeDescription(labelSource));
     if (suffix) {
       suffix = suffix.replace(/\s*[+-]$/, '').trim();
+    }
+    if (!suffix) {
+      const visitMatch = item.key?.match(/^visit(\d+)$/);
+      if (visitMatch && Number(visitMatch[1]) > 1) {
+        const occursBeforeTransfer =
+          !normalizedTransfer || adjustedDate < normalizedTransfer;
+        if (occursBeforeTransfer) {
+          suffix = VISIT_DEFAULT_SUFFIX;
+        }
+      }
     }
     let lbl = prefix;
     if (suffix) {
