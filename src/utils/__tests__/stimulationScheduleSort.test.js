@@ -9,7 +9,7 @@ describe('stimulationScheduleSort utilities', () => {
   it('parses string schedules and marks descriptive events', () => {
     const schedule = [
       '2024-07-01\tvisit1\t01.07 пн',
-      '2024-07-10\tvisit2\t10.07 ср 6т2д',
+      '2024-07-10\tvisit2\t10.07 ср 6т2д Прийом',
       '2024-07-15\ttransfer\t15.07 пн перенос',
     ].join('\n');
 
@@ -26,7 +26,7 @@ describe('stimulationScheduleSort utilities', () => {
   it('computes sort info with beacon and next events', () => {
     const schedule = [
       '2024-07-01\tvisit1\t01.07 пн',
-      '2024-07-10\tvisit2\t10.07 ср 6т2д',
+      '2024-07-10\tvisit2\t10.07 ср 6т2д Прийом',
     ].join('\n');
 
     const info = getStimulationScheduleSortInfo(schedule, {
@@ -47,20 +47,20 @@ describe('stimulationScheduleSort utilities', () => {
         userId: 'b',
         stimulationSchedule: [
           '2024-07-06\tvisit1\t06.07 сб',
-          '2024-07-08\tvisit2\t08.07 пн',
+          '2024-07-08\tvisit2\t08.07 пн Прийом',
         ].join('\n'),
       },
       {
         userId: 'a',
         stimulationSchedule: [
           '2024-07-06\tvisit1\t06.07 сб 2й день',
-          '2024-07-12\tvisit2\t12.07 пт',
+          '2024-07-12\tvisit2\t12.07 пт Прийом',
         ].join('\n'),
       },
       {
         userId: 'c',
         stimulationSchedule: [
-          { date: '2024-07-09', label: '09.07 вт 3й день' },
+          { date: '2024-07-09', label: '09.07 вт 3й день Прийом' },
           { date: '2024-07-15', label: '15.07 пн' },
         ],
       },
@@ -73,12 +73,12 @@ describe('stimulationScheduleSort utilities', () => {
     });
 
     const order = annotated.map(item => item.user.userId);
-    expect(order).toEqual(['a', 'c', 'b']);
+    expect(order).toEqual(['a', 'b', 'c']);
 
     const infoA = annotated[0].sortInfo;
-    const infoB = annotated[2].sortInfo;
+    const infoC = annotated[2].sortInfo;
     expect(
-      compareStimulationScheduleSortInfo(infoA, infoB) < 0,
+      compareStimulationScheduleSortInfo(infoA, infoC) < 0,
     ).toBe(true);
   });
 });

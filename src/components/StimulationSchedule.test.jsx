@@ -3,6 +3,7 @@ import {
   buildCustomEventLabel,
   computeCustomDateAndLabel,
   deriveScheduleDisplayInfo,
+  generateSchedule,
   splitCustomEventEntries,
 } from 'components/StimulationSchedule';
 
@@ -47,6 +48,40 @@ describe('adjustItemForDate', () => {
     });
 
     expect(adjusted.label).toBe('21т6д контроль');
+  });
+
+  it('restores default visit description for visits after the first before transfer', () => {
+    const baseDate = new Date(2024, 3, 1);
+    const transferDate = new Date(2024, 3, 20);
+    const visitThree = {
+      key: 'visit3',
+      date: new Date(baseDate),
+      label: '7й день',
+    };
+
+    const targetDate = new Date(baseDate);
+    targetDate.setDate(baseDate.getDate() + 6);
+
+    const adjusted = adjustItemForDate(visitThree, targetDate, {
+      baseDate,
+      transferDate,
+    });
+
+    expect(adjusted.label).toBe('7й день Прийом');
+  });
+});
+
+describe('generateSchedule', () => {
+  it('adds default description to visits after the first', () => {
+    const baseDate = new Date(2024, 4, 10);
+    const schedule = generateSchedule(baseDate);
+    const visit2 = schedule.find(item => item.key === 'visit2');
+    const visit3 = schedule.find(item => item.key === 'visit3');
+    const visit4 = schedule.find(item => item.key === 'visit4');
+
+    expect(visit2.label).toContain('Прийом');
+    expect(visit3.label.endsWith('Прийом')).toBe(true);
+    expect(visit4.label.endsWith('Прийом')).toBe(true);
   });
 });
 
