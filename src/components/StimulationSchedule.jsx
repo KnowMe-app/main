@@ -1332,6 +1332,7 @@ const StimulationSchedule = ({
   const [apDescription, setApDescription] = React.useState('');
   const [apDerivedDate, setApDerivedDate] = React.useState(null);
   const [editingKey, setEditingKey] = React.useState(null);
+  const [editingOriginalLabel, setEditingOriginalLabel] = React.useState(null);
   const [pendingDelete, setPendingDelete] = React.useState(null);
   const transferRef = React.useRef(null);
   const hasChanges = React.useRef(false);
@@ -2250,6 +2251,11 @@ const StimulationSchedule = ({
                         }
                       }
                       const current = next[idx];
+                      const originalForItem =
+                        editingOriginalLabel && editingOriginalLabel.key === item.key
+                          ? editingOriginalLabel.label
+                          : current.label;
+                      const normalizedOriginalLabel = (originalForItem || '').trim();
                       const trimmedLabel = (current.label || '').trim();
                       let updated = { ...current, label: trimmedLabel };
                       const scheduleBaseDate =
@@ -2420,7 +2426,9 @@ const StimulationSchedule = ({
                         }
                       }
 
-                      const labelChanged = updated.label !== current.label;
+                      const labelChangedByUser = trimmedLabel !== normalizedOriginalLabel;
+                      const labelChangedByAdjustment = updated.label !== current.label;
+                      const labelChanged = labelChangedByUser || labelChangedByAdjustment;
                       dateChanged = dateChanged || !isSameDay(updated.date, current.date);
 
                       if (!labelChanged && !dateChanged) {
@@ -2451,6 +2459,7 @@ const StimulationSchedule = ({
                     if (rebaseTarget) {
                       rebaseScheduleFromDayOne(rebaseTarget);
                     }
+                    setEditingOriginalLabel(null);
                   }}
                   onKeyDown={e => {
                     if (e.key === 'Enter') {
@@ -2464,7 +2473,18 @@ const StimulationSchedule = ({
                 />
               ) : (
                 <div
-                  onClick={() => setEditingKey(item.key)}
+                  onClick={() => {
+                    setEditingOriginalLabel({
+                      key: item.key,
+                      label:
+                        typeof item.label === 'string'
+                          ? item.label
+                          : item.label == null
+                          ? ''
+                          : String(item.label),
+                    });
+                    setEditingKey(item.key);
+                  }}
                   style={{
                     ...contentColumnStyle,
                     cursor: 'pointer',
