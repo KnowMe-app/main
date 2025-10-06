@@ -1362,7 +1362,7 @@ const parseStimulationEvents = (stimulationSchedule, startDate) => {
     }
 
     const descriptionParts = [info.secondaryLabel, info.displayLabel].filter(Boolean);
-    const description = descriptionParts.join(' • ') || sanitizedRawLabel || '';
+    const description = descriptionParts.join(' • ') || info.labelValue || '';
     const iso = formatISODate(date);
 
     events.push({
@@ -1372,7 +1372,7 @@ const parseStimulationEvents = (stimulationSchedule, startDate) => {
       dayMonth: formatDateForDisplay(date),
       secondaryLabel: info.secondaryLabel || '',
       displayLabel: info.displayLabel || '',
-      labelValue: sanitizedRawLabel,
+      labelValue: info.labelValue || '',
       description,
       hasExplicitYear: containsYearInfo(rawDate),
     });
