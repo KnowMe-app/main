@@ -169,3 +169,32 @@ describe('buildStimulationEventLookup', () => {
     expect(comment).toBeTruthy();
   });
 });
+
+describe('cleanMedicationEventComment', () => {
+  it('removes numeric day prefixes with "й день" wording', () => {
+    const event = {
+      labelValue: '24й день Прийом',
+      secondaryLabel: '24',
+    };
+
+    expect(cleanMedicationEventComment(event)).toBe('Прийом');
+  });
+
+  it('removes numeric day prefixes with hyphenated wording', () => {
+    const event = {
+      labelValue: '12-й день контроль',
+      secondaryLabel: '12',
+    };
+
+    expect(cleanMedicationEventComment(event)).toBe('контроль');
+  });
+
+  it('keeps existing behaviour for week/day tokens', () => {
+    const event = {
+      labelValue: '8т6д УЗД',
+      secondaryLabel: '8т6д',
+    };
+
+    expect(cleanMedicationEventComment(event)).toBe('УЗД');
+  });
+});
