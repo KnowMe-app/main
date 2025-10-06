@@ -1782,7 +1782,8 @@ const MedicationSchedule = ({
     const fallbackShort = deriveShortLabel(label);
     const normalizedShort = (shortInput || fallbackShort || label.slice(0, 2)).toUpperCase();
     const issuedRaw = Number(newMedicationDraft.issued);
-    const issued = Number.isFinite(issuedRaw) && issuedRaw > 0 ? Math.floor(issuedRaw) : 0;
+    const issued =
+      Number.isFinite(issuedRaw) && issuedRaw > 0 ? Number(issuedRaw.toFixed(2)) : 0;
 
     updateSchedule(prev => {
       if (!prev) return prev;
@@ -1986,7 +1987,7 @@ const MedicationSchedule = ({
           <AddMedicationInput
             type="number"
             min="0"
-            step="1"
+            step="0.01"
             placeholder="Видано"
             value={newMedicationDraft.issued}
             onChange={event => handleNewMedicationDraftChange('issued', event.target.value)}
