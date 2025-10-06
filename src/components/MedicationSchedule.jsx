@@ -1459,6 +1459,68 @@ const buildDatePrefixVariants = date => {
   return Array.from(variants).filter(Boolean);
 };
 
+const buildDayIndicatorVariants = event => {
+  const variants = new Set();
+
+  const addVariant = value => {
+    if (!value) {
+      return;
+    }
+
+    const normalized = String(value).trim();
+    if (normalized) {
+      variants.add(normalized);
+    }
+  };
+
+  const addFromText = text => {
+    if (!text) {
+      return;
+    }
+
+    const trimmed = String(text).trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const match = trimmed.match(/^(\d+)(?:\s*[-–—]?\s*(?:й|ий))(?:\s*день)?/i);
+    if (!match) {
+      return;
+    }
+
+    const rawPrefix = match[0];
+    const dayNumber = match[1];
+    addVariant(rawPrefix);
+
+    if (dayNumber) {
+      const normalizedDay = String(Math.max(Number.parseInt(dayNumber, 10) || 0, 0));
+      if (normalizedDay) {
+        addVariant(`${normalizedDay}й день`);
+        addVariant(`${normalizedDay}-й день`);
+        addVariant(`${normalizedDay} й день`);
+        addVariant(`${normalizedDay}ий день`);
+        addVariant(`${normalizedDay}й`);
+        addVariant(`${normalizedDay}-й`);
+        addVariant(normalizedDay);
+      }
+    }
+  };
+
+  addFromText(event?.labelValue);
+  addFromText(event?.displayLabel);
+  addFromText(event?.description);
+
+  const secondaryLabel = (event?.secondaryLabel || '').trim();
+  if (secondaryLabel && /^\d+$/.test(secondaryLabel)) {
+    addVariant(`${secondaryLabel}й день`);
+    addVariant(`${secondaryLabel}-й день`);
+    addVariant(`${secondaryLabel}й`);
+    addVariant(`${secondaryLabel}-й`);
+  }
+
+  return Array.from(variants);
+};
+
 const buildPrefixCandidates = event => {
   const prefixes = [];
 
@@ -1473,6 +1535,11 @@ const buildPrefixCandidates = event => {
     if (/^\d+$/.test(secondaryLabel)) {
       prefixes.push(secondaryLabel.padStart(2, '0'));
     }
+  }
+
+  const dayVariants = buildDayIndicatorVariants(event);
+  if (dayVariants.length) {
+    prefixes.push(...dayVariants);
   }
 
   return Array.from(new Set(prefixes)).sort((a, b) => b.length - a.length);
