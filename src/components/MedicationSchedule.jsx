@@ -1499,13 +1499,26 @@ const stripPrefixOnce = (text, prefix) => {
     return null;
   }
 
-  const nextChar = normalizedText.slice(normalizedPrefix.length).charAt(0);
-  if (nextChar && !/[\s•.,;:!?()\-–—]/.test(nextChar)) {
+  const remainderSlice = normalizedText.slice(normalizedPrefix.length);
+  const nextChar = remainderSlice.charAt(0);
+  const prefixIsNumeric = /^\d+$/.test(normalizedPrefix);
+
+  if (!prefixIsNumeric && nextChar && !/[\s•.,;:!?()\-–—]/.test(nextChar)) {
     return null;
   }
 
-  const remainder = stripLeadingDelimiters(normalizedText.slice(normalizedPrefix.length));
-  return remainder;
+  let remainder = remainderSlice;
+
+  if (prefixIsNumeric) {
+    const dayPrefixMatch = remainder.match(/^(?:\s*[-–—]?\s*)(?:й|ий)(?:\s*день)?/i);
+    if (dayPrefixMatch) {
+      remainder = remainder.slice(dayPrefixMatch[0].length);
+    } else if (nextChar && !/[\s•.,;:!?()\-–—]/.test(nextChar)) {
+      return null;
+    }
+  }
+
+  return stripLeadingDelimiters(remainder);
 };
 
 const cleanMedicationEventComment = event => {
