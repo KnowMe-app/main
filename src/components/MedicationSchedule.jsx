@@ -1878,17 +1878,17 @@ const MedicationSchedule = ({
 
   const handleCellChange = useCallback((rowIndex, key, rawValue) => {
     updateSchedule(prev => {
-      const sanitized = sanitizeCellValue(rawValue);
       const rows = prev.rows.map((row, index) => {
-        if (index !== rowIndex) {
+        if (index < rowIndex) {
           return row;
         }
-
-        const nextValues = {
-          ...(row.values || {}),
-          [key]: sanitized,
-        };
-
+        const nextValues = { ...row.values };
+        const sanitized = sanitizeCellValue(rawValue);
+        if (index === rowIndex) {
+          nextValues[key] = sanitized;
+        } else {
+          nextValues[key] = sanitized;
+        }
         return {
           ...row,
           values: nextValues,
