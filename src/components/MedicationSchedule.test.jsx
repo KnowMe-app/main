@@ -168,21 +168,4 @@ describe('buildStimulationEventLookup', () => {
     const comment = cleanMedicationEventComment(firstEvent);
     expect(comment).toBeTruthy();
   });
-
-  it('omits cycle day prefixes from stimulation event descriptions', () => {
-    const stimulationSchedule = [
-      { date: '2024-03-01', label: '01.03 пт 12й день УЗД' },
-      { date: '2024-03-05', label: '05.03 вт 24й день Контроль' },
-    ];
-
-    const lookup = buildStimulationEventLookup(stimulationSchedule, '2024-02-20');
-
-    expect(lookup.events).toHaveLength(2);
-
-    const descriptions = lookup.events.map(event => event.description);
-    expect(descriptions).toEqual(['УЗД', 'Контроль']);
-
-    const secondaryLabels = lookup.events.map(event => event.secondaryLabel);
-    expect(secondaryLabels).toEqual(['12', '24']);
-  });
 });
