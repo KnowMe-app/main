@@ -13,7 +13,10 @@ jest.mock('components/smallCard/actions', () => ({
   handleSubmit: jest.fn(),
 }));
 
-const { applyDefaultDistribution, mergeScheduleWithClipboardData } = require('components/MedicationSchedule');
+const {
+  applyDefaultDistribution,
+  mergeScheduleWithClipboardData,
+} = require('components/MedicationSchedule');
 
 const buildRows = (count, medicationKey) =>
   Array.from({ length: count }, (_, index) => ({

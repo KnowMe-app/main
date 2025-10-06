@@ -1420,6 +1420,130 @@ const parseStimulationEvents = (stimulationSchedule, startDate) => {
     .sort((a, b) => a.date - b.date);
 };
 
+const stripLeadingDelimiters = value => value.replace(/^[\s•.,;:!?()\-–—]+/, '');
+
+const buildDatePrefixVariants = date => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return [];
+  }
+
+  const day = date.getDate();
+  const month = date.getMonth() + 1;
+  const year = date.getFullYear();
+  const paddedDay = String(day).padStart(2, '0');
+  const paddedMonth = String(month).padStart(2, '0');
+  const fullYear = String(year);
+  const shortYear = fullYear.slice(-2);
+
+  const variants = new Set([
+    `${paddedDay}.${paddedMonth}.${fullYear}`,
+    `${paddedDay}.${paddedMonth}.${shortYear}`,
+    `${day}.${month}.${fullYear}`,
+    `${day}.${month}.${shortYear}`,
+    `${paddedDay}.${paddedMonth}`,
+    `${day}.${month}`,
+    `${paddedDay}/${paddedMonth}/${fullYear}`,
+    `${paddedDay}/${paddedMonth}/${shortYear}`,
+    `${paddedDay}/${paddedMonth}`,
+    `${day}/${month}`,
+    `${paddedDay}-${paddedMonth}-${fullYear}`,
+    `${paddedDay}-${paddedMonth}`,
+    `${day}-${month}`,
+    `${paddedDay} ${paddedMonth} ${fullYear}`,
+    `${paddedDay} ${paddedMonth}`,
+    `${day} ${month}`,
+    paddedDay,
+    String(day),
+  ]);
+
+  return Array.from(variants).filter(Boolean);
+};
+
+const buildPrefixCandidates = event => {
+  const prefixes = [];
+
+  const datePrefixes = buildDatePrefixVariants(event?.date);
+  if (datePrefixes.length) {
+    prefixes.push(...datePrefixes);
+  }
+
+  const secondaryLabel = (event?.secondaryLabel || '').trim();
+  if (secondaryLabel) {
+    prefixes.push(secondaryLabel);
+    if (/^\d+$/.test(secondaryLabel)) {
+      prefixes.push(secondaryLabel.padStart(2, '0'));
+    }
+  }
+
+  return Array.from(new Set(prefixes)).sort((a, b) => b.length - a.length);
+};
+
+const stripPrefixOnce = (text, prefix) => {
+  const normalizedText = typeof text === 'string' ? text.trim() : '';
+  const normalizedPrefix = typeof prefix === 'string' ? prefix.trim() : '';
+
+  if (!normalizedText || !normalizedPrefix) {
+    return null;
+  }
+
+  const lowerText = normalizedText.toLowerCase();
+  const lowerPrefix = normalizedPrefix.toLowerCase();
+  if (!lowerText.startsWith(lowerPrefix)) {
+    return null;
+  }
+
+  const nextChar = normalizedText.slice(normalizedPrefix.length).charAt(0);
+  if (nextChar && !/[\s•.,;:!?()\-–—]/.test(nextChar)) {
+    return null;
+  }
+
+  const remainder = stripLeadingDelimiters(normalizedText.slice(normalizedPrefix.length));
+  return remainder;
+};
+
+const cleanMedicationEventComment = event => {
+  if (!event) {
+    return '';
+  }
+
+  const candidates = [event.labelValue, event.displayLabel, event.description];
+  let baseText = '';
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    const rawValue = String(candidate).trim();
+    if (rawValue) {
+      baseText = rawValue;
+      break;
+    }
+  }
+
+  if (!baseText) {
+    return '';
+  }
+
+  let working = stripLeadingDelimiters(baseText);
+  const prefixes = buildPrefixCandidates(event);
+
+  for (const prefix of prefixes) {
+    const stripped = stripPrefixOnce(working, prefix);
+    if (stripped === null) {
+      continue;
+    }
+
+    working = stripped;
+    if (!working) {
+      return '';
+    }
+  }
+
+  const collapsedWhitespace = working.replace(/\s+/g, ' ').trim();
+  return collapsedWhitespace;
+};
+
 const buildStimulationEventLookup = (stimulationSchedule, startDate) => {
   const events = parseStimulationEvents(stimulationSchedule, startDate);
   const byIso = new Map();
@@ -2005,10 +2129,13 @@ const MedicationSchedule = ({
                 );
 
                 const descriptionItems = eventsForRow
-                  .map(event => ({
-                    key: event.key,
-                    text: event.description || event.labelValue || '',
-                  }))
+                  .map(event => {
+                    const text = cleanMedicationEventComment(event);
+                    return {
+                      key: event.key,
+                      text,
+                    };
+                  })
                   .filter(item => item.text);
 
                 if (descriptionItems.length) {
@@ -2067,5 +2194,10 @@ const MedicationSchedule = ({
   );
 };
 
-export { applyDefaultDistribution, normalizeRows, mergeScheduleWithClipboardData };
+export {
+  applyDefaultDistribution,
+  normalizeRows,
+  mergeScheduleWithClipboardData,
+  cleanMedicationEventComment,
+};
 export default MedicationSchedule;
