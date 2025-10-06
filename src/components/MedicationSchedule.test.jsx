@@ -16,6 +16,8 @@ jest.mock('components/smallCard/actions', () => ({
 const {
   applyDefaultDistribution,
   mergeScheduleWithClipboardData,
+  buildStimulationEventLookup,
+  cleanMedicationEventComment,
 } = require('components/MedicationSchedule');
 
 const buildRows = (count, medicationKey) =>
@@ -148,5 +150,22 @@ describe('mergeScheduleWithClipboardData', () => {
       label: 'Custom med',
       issued: 6,
     });
+  });
+});
+
+describe('buildStimulationEventLookup', () => {
+  it('uses generated defaults when stimulation schedule is missing', () => {
+    const baseDate = '2024-02-05';
+
+    const lookup = buildStimulationEventLookup(undefined, baseDate, {
+      fallbackBaseDate: baseDate,
+    });
+
+    expect(lookup.events.length).toBeGreaterThan(0);
+
+    const [firstEvent] = lookup.events;
+
+    const comment = cleanMedicationEventComment(firstEvent);
+    expect(comment).toBeTruthy();
   });
 });

@@ -6,6 +6,7 @@ import {
   deriveScheduleDisplayInfo,
   formatWeeksDaysToken,
   sanitizeDescription,
+  generateSchedule,
 } from './StimulationSchedule';
 import {
   BASE_MEDICATIONS,
@@ -1320,11 +1321,17 @@ const containsYearInfo = value => {
   return /(\d{4}|\d{2}[./-]\d{2}[./-]\d{2,4})/.test(trimmed);
 };
 
-const parseStimulationEvents = (stimulationSchedule, startDate) => {
+const parseStimulationEvents = (stimulationSchedule, startDate, options = {}) => {
   const events = [];
-  if (!stimulationSchedule) return events;
+  const baseDate =
+    parseDateString(startDate) || parseDateString(options.fallbackBaseDate);
 
-  const baseDate = parseDateString(startDate);
+  let scheduleSource = stimulationSchedule;
+  if (!scheduleSource && baseDate instanceof Date) {
+    scheduleSource = generateSchedule(baseDate);
+  }
+
+  if (!scheduleSource) return events;
 
   const normalizeDate = rawDate => {
     const parsed = parseDateString(rawDate, baseDate);
@@ -1378,8 +1385,8 @@ const parseStimulationEvents = (stimulationSchedule, startDate) => {
     });
   };
 
-  if (typeof stimulationSchedule === 'string') {
-    const lines = stimulationSchedule.split('\n').map(line => line.trim()).filter(Boolean);
+  if (typeof scheduleSource === 'string') {
+    const lines = scheduleSource.split('\n').map(line => line.trim()).filter(Boolean);
     lines.forEach((line, index) => {
       const parts = line.split('\t');
       if (!parts.length) return;
@@ -1395,8 +1402,8 @@ const parseStimulationEvents = (stimulationSchedule, startDate) => {
         key: keyPart || `line-${index}`,
       });
     });
-  } else if (Array.isArray(stimulationSchedule)) {
-    stimulationSchedule.forEach((item, index) => {
+  } else if (Array.isArray(scheduleSource)) {
+    scheduleSource.forEach((item, index) => {
       if (!item) return;
       pushEvent({
         rawDate: item.date || item.day || '',
@@ -1404,8 +1411,8 @@ const parseStimulationEvents = (stimulationSchedule, startDate) => {
         key: item.key || `item-${index}`,
       });
     });
-  } else if (typeof stimulationSchedule === 'object') {
-    Object.values(stimulationSchedule).forEach((item, index) => {
+  } else if (typeof scheduleSource === 'object') {
+    Object.values(scheduleSource).forEach((item, index) => {
       if (!item) return;
       pushEvent({
         rawDate: item.date || item.day || '',
@@ -1544,8 +1551,8 @@ const cleanMedicationEventComment = event => {
   return collapsedWhitespace;
 };
 
-const buildStimulationEventLookup = (stimulationSchedule, startDate) => {
-  const events = parseStimulationEvents(stimulationSchedule, startDate);
+const buildStimulationEventLookup = (stimulationSchedule, startDate, options = {}) => {
+  const events = parseStimulationEvents(stimulationSchedule, startDate, options);
   const byIso = new Map();
   const byDayMonth = new Map();
 
@@ -1639,8 +1646,11 @@ const MedicationSchedule = ({
   }, [onChange, cycleStart]);
 
   const stimulationEvents = useMemo(
-    () => buildStimulationEventLookup(stimulationSchedule, schedule?.startDate),
-    [stimulationSchedule, schedule?.startDate],
+    () =>
+      buildStimulationEventLookup(stimulationSchedule, schedule?.startDate, {
+        fallbackBaseDate: cycleStart,
+      }),
+    [stimulationSchedule, schedule?.startDate, cycleStart],
   );
 
   const handleIssuedChange = useCallback(
@@ -2200,5 +2210,6 @@ export {
   normalizeRows,
   mergeScheduleWithClipboardData,
   cleanMedicationEventComment,
+  buildStimulationEventLookup,
 };
 export default MedicationSchedule;
