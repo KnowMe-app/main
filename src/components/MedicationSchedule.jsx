@@ -1368,7 +1368,13 @@ const parseStimulationEvents = (stimulationSchedule, startDate, options = {}) =>
       return;
     }
 
-    const descriptionParts = [info.secondaryLabel, info.displayLabel].filter(Boolean);
+    const descriptionParts = [];
+    if (trimmedDisplayLabel) {
+      descriptionParts.push(trimmedDisplayLabel);
+    } else if (meaningfulRemainder) {
+      descriptionParts.push(meaningfulRemainder);
+    }
+
     const description = descriptionParts.join(' • ') || info.labelValue || '';
     const iso = formatISODate(date);
 
