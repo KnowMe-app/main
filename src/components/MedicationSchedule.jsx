@@ -1683,22 +1683,24 @@ const MedicationSchedule = ({
         const medicationOrder = Array.isArray(prev.medicationOrder) ? prev.medicationOrder : [];
         const minRows = calculateRequiredRows(medicationOrder, medications, prev.rows.length);
         const baseRows = ensureRowsLength(prev.rows, minRows, prev.startDate, medicationOrder);
-        const clearedRows = baseRows.map(row => ({
-          ...row,
-          values: {
-            ...row.values,
-            [key]: '',
-          },
-        }));
         const scheduleWithMedication = {
           ...prev,
           medications,
           medicationOrder,
         };
-        const rows =
-          issued > 0
-            ? applyDefaultDistribution(clearedRows, scheduleWithMedication, { onlyKeys: [key] })
-            : clearedRows;
+        let rows;
+
+        if (issued > 0) {
+          rows = applyDefaultDistribution(baseRows, scheduleWithMedication, { onlyKeys: [key] });
+        } else {
+          rows = baseRows.map(row => ({
+            ...row,
+            values: {
+              ...row.values,
+              [key]: '',
+            },
+          }));
+        }
 
         return {
           ...scheduleWithMedication,
