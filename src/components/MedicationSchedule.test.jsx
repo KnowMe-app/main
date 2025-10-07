@@ -77,6 +77,61 @@ describe('applyDefaultDistribution (progynova)', () => {
     expect(doseOnDay(80)).toBe(1);
     expect(doseOnDay(81)).toBe('');
   });
+
+  it('reduces dosage stepwise after pregnancy confirmation', () => {
+    const medicationKey = 'progynova';
+    const rows = buildRows(120, medicationKey);
+    const schedule = {
+      startDate: '2024-01-01',
+      medicationOrder: [medicationKey],
+      medications: {
+        [medicationKey]: {
+          issued: 500,
+          plan: 'progynova',
+          startDate: '2024-01-01',
+        },
+      },
+      pregnancyConfirmationDay: 20,
+    };
+
+    const distributed = applyDefaultDistribution(rows, schedule);
+    const doseOnDay = dayNumber => distributed[dayNumber - 1].values[medicationKey];
+
+    expect(doseOnDay(20)).toBe(3);
+    expect(doseOnDay(21)).toBe(2);
+    expect(doseOnDay(25)).toBe(2);
+    expect(doseOnDay(26)).toBe(1);
+    expect(doseOnDay(30)).toBe(1);
+    expect(doseOnDay(31)).toBe('');
+  });
+});
+
+describe('applyDefaultDistribution (metypred)', () => {
+  it('tapers to half a tablet for five days after pregnancy confirmation', () => {
+    const medicationKey = 'metypred';
+    const rows = buildRows(40, medicationKey);
+    const schedule = {
+      startDate: '2024-01-01',
+      medicationOrder: [medicationKey],
+      medications: {
+        [medicationKey]: {
+          issued: 60,
+          plan: 'metypred',
+          startDate: '2024-01-01',
+        },
+      },
+      pregnancyConfirmationDay: 10,
+    };
+
+    const distributed = applyDefaultDistribution(rows, schedule);
+    const doseOnDay = dayNumber => distributed[dayNumber - 1].values[medicationKey];
+
+    expect(doseOnDay(10)).toBe(1);
+    expect(doseOnDay(11)).toBe(0.5);
+    expect(doseOnDay(15)).toBe(0.5);
+    expect(doseOnDay(16)).toBe('');
+    expect(doseOnDay(25)).toBe('');
+  });
 });
 
 describe('mergeScheduleWithClipboardData', () => {

@@ -543,48 +543,147 @@ const PROGYNOVA_TAPER_PHASE_LENGTH = 5;
 const INJESTA_START_DAY = 14;
 const INJESTA_END_DAY = 12 * DAYS_IN_WEEK;
 const INJESTA_DEFAULT_DAILY_DOSE = 2;
+const PREGNANCY_CONFIRMATION_LABEL = 'УЗД, підтвердження вагітності';
+
+const matchesPregnancyConfirmationEvent = event => {
+  if (!event) {
+    return false;
+  }
+
+  const target = PREGNANCY_CONFIRMATION_LABEL.toLowerCase();
+  const candidates = [event.labelValue, event.displayLabel, event.description];
+
+  return candidates.some(candidate => {
+    if (!candidate) {
+      return false;
+    }
+
+    try {
+      return String(candidate).toLowerCase().includes(target);
+    } catch (error) {
+      return false;
+    }
+  });
+};
+
+const getPregnancyConfirmationDayNumber = ({ baseDate, stimulationEvents }) => {
+  const events = Array.isArray(stimulationEvents?.events) ? stimulationEvents.events : [];
+  if (!(baseDate instanceof Date)) {
+    return null;
+  }
+
+  for (const event of events) {
+    if (!matchesPregnancyConfirmationEvent(event)) {
+      continue;
+    }
+
+    const eventDate =
+      event?.date instanceof Date
+        ? event.date
+        : parseDateString(event?.iso, baseDate) || parseDateString(event?.labelValue, baseDate);
+
+    if (!(eventDate instanceof Date)) {
+      continue;
+    }
+
+    const dayNumber = differenceInCalendarDays(eventDate, baseDate) + 1;
+    if (Number.isFinite(dayNumber) && dayNumber > 0) {
+      return dayNumber;
+    }
+  }
+
+  return null;
+};
+
+const getProgynovaBaseDose = dayNumber => {
+  if (!Number.isFinite(dayNumber) || dayNumber <= 0) {
+    return 0;
+  }
+
+  if (dayNumber <= 3) {
+    return 1;
+  }
+
+  if (dayNumber <= 5) {
+    return 2;
+  }
+
+  if (dayNumber <= TEN_WEEKS_IN_DAYS) {
+    return 3;
+  }
+
+  const daysBeyondTenWeeks = dayNumber - TEN_WEEKS_IN_DAYS;
+
+  if (daysBeyondTenWeeks >= 1 && daysBeyondTenWeeks <= PROGYNOVA_TAPER_PHASE_LENGTH) {
+    return 2;
+  }
+
+  if (
+    daysBeyondTenWeeks > PROGYNOVA_TAPER_PHASE_LENGTH &&
+    daysBeyondTenWeeks <= PROGYNOVA_TAPER_PHASE_LENGTH * 2
+  ) {
+    return 1;
+  }
+
+  return 0;
+};
 
 const PLAN_HANDLERS = {
   progynova: {
     defaultIssued: 21,
     maxDay: TEN_WEEKS_IN_DAYS + PROGYNOVA_TAPER_PHASE_LENGTH * 2,
-    getDailyValue: ({ dayNumber, issued, used }) => {
+    getDailyValue: ({ dayNumber, pregnancyConfirmationDay }) => {
       if (!Number.isFinite(dayNumber) || dayNumber <= 0) return '';
-      if (!Number.isFinite(issued) || issued <= 0) return '';
-      if (!Number.isFinite(used) || used >= issued) return '';
-
-      if (dayNumber <= 3) {
-        return 1;
+      const baseDose = getProgynovaBaseDose(dayNumber);
+      if (baseDose <= 0) {
+        return '';
       }
 
-      if (dayNumber <= 5) {
-        return 2;
+      const pregnancyDay = Number(pregnancyConfirmationDay);
+      if (!Number.isFinite(pregnancyDay) || pregnancyDay <= 0 || dayNumber <= pregnancyDay) {
+        return baseDose;
       }
 
-      if (dayNumber <= TEN_WEEKS_IN_DAYS) {
-        return 3;
+      const daysSinceEvent = dayNumber - pregnancyDay;
+      if (daysSinceEvent < 1) {
+        return baseDose;
       }
 
-      const daysBeyondTenWeeks = dayNumber - TEN_WEEKS_IN_DAYS;
-
-      if (daysBeyondTenWeeks >= 1 && daysBeyondTenWeeks <= PROGYNOVA_TAPER_PHASE_LENGTH) {
-        return 2;
+      const doseAtEventDay = getProgynovaBaseDose(pregnancyDay);
+      const allowedSteps = Math.min(Math.max(doseAtEventDay, 0), 3);
+      if (allowedSteps <= 0) {
+        return baseDose;
       }
 
-      if (
-        daysBeyondTenWeeks > PROGYNOVA_TAPER_PHASE_LENGTH &&
-        daysBeyondTenWeeks <= PROGYNOVA_TAPER_PHASE_LENGTH * 2
-      ) {
-        return 1;
-      }
+      const stepIndex = Math.floor((daysSinceEvent - 1) / PROGYNOVA_TAPER_PHASE_LENGTH) + 1;
+      const effectiveReduction = Math.min(stepIndex, allowedSteps);
+      const adjustedDose = Math.max(baseDose - effectiveReduction, 0);
 
-      return '';
+      return adjustedDose > 0 ? adjustedDose : '';
     },
   },
   metypred: {
     defaultIssued: 30,
     maxDay: 60,
-    getDailyValue: ({ dayNumber }) => (dayNumber >= 1 && dayNumber <= 60 ? 1 : ''),
+    getDailyValue: ({ dayNumber, pregnancyConfirmationDay }) => {
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0 || dayNumber > 60) {
+        return '';
+      }
+
+      const pregnancyDay = Number(pregnancyConfirmationDay);
+      if (Number.isFinite(pregnancyDay) && pregnancyDay > 0) {
+        const daysAfterConfirmation = dayNumber - pregnancyDay;
+        if (daysAfterConfirmation >= 1 && daysAfterConfirmation <= PROGYNOVA_TAPER_PHASE_LENGTH) {
+          return 0.5;
+        }
+
+        if (daysAfterConfirmation > PROGYNOVA_TAPER_PHASE_LENGTH) {
+          return '';
+        }
+      }
+
+      return 1;
+    },
   },
   aspirin: {
     defaultIssued: 14,
@@ -869,7 +968,12 @@ const ensureRowsLength = (rows, minLength, startDate, medicationKeys = []) => {
 };
 
 const applyDefaultDistribution = (rows, schedule, options = {}) => {
-  const { skipExisting = false, existingLength = 0, onlyKeys = null } = options;
+  const {
+    skipExisting = false,
+    existingLength = 0,
+    onlyKeys = null,
+    pregnancyConfirmationDay: pregnancyConfirmationDayOption = null,
+  } = options;
   const medicationKeys = Array.isArray(schedule?.medicationOrder)
     ? schedule.medicationOrder
     : [];
@@ -877,6 +981,14 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
     ? medicationKeys.filter(key => onlyKeys.includes(key))
     : medicationKeys;
   const baseDate = parseDateString(schedule?.startDate) || new Date();
+  const pregnancyConfirmationDay = (() => {
+    if (Number.isFinite(pregnancyConfirmationDayOption) && pregnancyConfirmationDayOption > 0) {
+      return pregnancyConfirmationDayOption;
+    }
+
+    const scheduleValue = Number(schedule?.pregnancyConfirmationDay);
+    return Number.isFinite(scheduleValue) && scheduleValue > 0 ? scheduleValue : null;
+  })();
   const usageCounters = {};
   medicationKeys.forEach(key => {
     usageCounters[key] = 0;
@@ -929,6 +1041,7 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
         schedule,
         issued,
         used: usageCounters[key],
+        pregnancyConfirmationDay,
       });
 
       const numericValue = Number(proposed);
@@ -1106,10 +1219,32 @@ const normalizeData = (data, options = {}) => {
     };
   });
 
+  const pregnancyConfirmationDay = (() => {
+    const storedValue = Number(data?.pregnancyConfirmationDay);
+    if (Number.isFinite(storedValue) && storedValue > 0) {
+      return storedValue;
+    }
+
+    if (typeof options.resolvePregnancyConfirmationDay === 'function') {
+      const resolved = options.resolvePregnancyConfirmationDay({ startDate });
+      if (Number.isFinite(resolved) && resolved > 0) {
+        return resolved;
+      }
+    }
+
+    const optionValue = Number(options?.pregnancyConfirmationDay);
+    if (Number.isFinite(optionValue) && optionValue > 0) {
+      return optionValue;
+    }
+
+    return null;
+  })();
+
   const scheduleBase = {
     startDate,
     medications,
     medicationOrder,
+    pregnancyConfirmationDay,
   };
 
   const rows = normalizeRows(data?.rows, startDate, scheduleBase);
@@ -1593,7 +1728,23 @@ const MedicationSchedule = ({
   stimulationSchedule,
   onResetDistributionChange,
 }) => {
-  const [schedule, setSchedule] = useState(() => normalizeData(data, { cycleStart }));
+  const resolvePregnancyConfirmationDay = useCallback(
+    ({ startDate }) => {
+      const lookup = buildStimulationEventLookup(stimulationSchedule, startDate, {
+        fallbackBaseDate: cycleStart,
+      });
+      const baseDate = parseDateString(startDate) || parseDateString(cycleStart);
+      return getPregnancyConfirmationDayNumber({
+        baseDate,
+        stimulationEvents: lookup,
+      });
+    },
+    [stimulationSchedule, cycleStart],
+  );
+
+  const [schedule, setSchedule] = useState(() =>
+    normalizeData(data, { cycleStart, resolvePregnancyConfirmationDay }),
+  );
   const [focusedMedication, setFocusedMedication] = useState(null);
   const [newMedicationDraft, setNewMedicationDraft] = useState(() => ({
     label: '',
@@ -1639,14 +1790,17 @@ const MedicationSchedule = ({
   const totalColumns = medicationList.length + 2;
 
   useEffect(() => {
-    const normalized = normalizeData(data, { cycleStart });
+    const normalized = normalizeData(data, { cycleStart, resolvePregnancyConfirmationDay });
     setSchedule(normalized);
     scheduleRef.current = sanitizeScheduleForStorage(normalized);
-  }, [data, cycleStart]);
+  }, [data, cycleStart, resolvePregnancyConfirmationDay]);
 
   const updateSchedule = useCallback(updater => {
     setSchedule(prev => {
-      const base = prev || scheduleRef.current || normalizeData({}, { cycleStart });
+      const base =
+        prev ||
+        scheduleRef.current ||
+        normalizeData({}, { cycleStart, resolvePregnancyConfirmationDay });
       const next = typeof updater === 'function' ? updater(base) : updater;
       const enriched = { ...next, updatedAt: Date.now() };
       const sanitized = sanitizeScheduleForStorage(enriched);
@@ -1656,7 +1810,7 @@ const MedicationSchedule = ({
       }
       return enriched;
     });
-  }, [onChange, cycleStart]);
+  }, [onChange, cycleStart, resolvePregnancyConfirmationDay]);
 
   const stimulationEvents = useMemo(
     () =>
