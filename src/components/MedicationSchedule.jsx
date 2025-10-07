@@ -659,6 +659,23 @@ const sanitizeCellValue = value => {
   return Number.isNaN(numberValue) ? '' : numberValue;
 };
 
+const parseDecimalInput = value => {
+  if (value === null || value === undefined) {
+    return Number.NaN;
+  }
+
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  const normalized = String(value).trim().replace(/,/g, '.');
+  if (!normalized) {
+    return Number.NaN;
+  }
+
+  return Number(normalized);
+};
+
 const doesMedicationMatchDefaultDistribution = (schedule, key) => {
   if (!schedule || !key) return false;
 
@@ -1804,7 +1821,7 @@ const MedicationSchedule = ({
     const shortInput = newMedicationDraft.short?.trim();
     const fallbackShort = deriveShortLabel(label);
     const normalizedShort = (shortInput || fallbackShort || label.slice(0, 2)).toUpperCase();
-    const issuedRaw = Number(newMedicationDraft.issued);
+    const issuedRaw = parseDecimalInput(newMedicationDraft.issued);
     const issued =
       Number.isFinite(issuedRaw) && issuedRaw > 0 ? Number(issuedRaw.toFixed(2)) : 0;
 
@@ -2008,9 +2025,8 @@ const MedicationSchedule = ({
             onChange={event => handleNewMedicationDraftChange('startDate', event.target.value)}
           />
           <AddMedicationInput
-            type="number"
-            min="0"
-            step="0.01"
+            type="text"
+            inputMode="decimal"
             placeholder="Видано"
             value={newMedicationDraft.issued}
             onChange={event => handleNewMedicationDraftChange('issued', event.target.value)}
