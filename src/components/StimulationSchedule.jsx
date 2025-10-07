@@ -493,6 +493,11 @@ const transferRelativeConfig = {
     defaultSuffix: 'УЗД, підтвердження вагітності',
     prefix: /^узд/i,
   },
+  'us-followup': {
+    baseLabel: 'УЗД',
+    defaultSuffix: 'УЗД',
+    prefix: /^узд/i,
+  },
 };
 
 const PRE_CYCLE_KEYS = new Set(['pre-visit1', 'pre-uzd', 'pre-dipherelin']);
@@ -1143,6 +1148,21 @@ export const generateSchedule = base => {
     label: buildUsLabel(us.day, 'УЗД, підтвердження вагітності', us.sign),
   });
 
+  // Follow-up ultrasound 14 days after confirmation
+  const followUpCandidate = new Date(us.date);
+  followUpCandidate.setDate(followUpCandidate.getDate() + 14);
+  const followUp = adjustForward(followUpCandidate, transferBase);
+  visits.push({
+    key: 'us-followup',
+    date: followUp.date,
+    label: buildTransferDayLabel(
+      'us-followup',
+      followUp.day,
+      transferRelativeConfig['us-followup'].defaultSuffix,
+      followUp.sign,
+    ),
+  });
+
   // Pregnancy visits at specific weeks
   const weeks = [8, 10, 12, 16, 18, 28, 36, 38, 40];
   weeks.forEach(week => {
@@ -1771,6 +1791,28 @@ const StimulationSchedule = ({
         updateWithTarget(usIndex, usTarget);
       }
 
+      const followUpIndex = next.findIndex(entry => entry.key === 'us-followup');
+      if (followUpIndex !== -1) {
+        const updatedUsDate = next.find(entry => entry.key === 'us')?.date || null;
+        const followUpBase = updatedUsDate ? normalizeDate(updatedUsDate) : null;
+        const followUpCandidate = followUpBase
+          ? (() => {
+              const candidate = new Date(followUpBase);
+              candidate.setDate(candidate.getDate() + 14);
+              return candidate;
+            })()
+          : (() => {
+              const candidate = new Date(normalizedTransfer);
+              candidate.setDate(candidate.getDate() + 41);
+              return candidate;
+            })();
+        const adjustedFollowUp = adjustForward(new Date(followUpCandidate), normalizedTransfer);
+        const followUpTarget = adjustedFollowUp?.date
+          ? normalizeDate(adjustedFollowUp.date)
+          : normalizeDate(followUpCandidate);
+        updateWithTarget(followUpIndex, followUpTarget);
+      }
+
       return didUpdate ? next : items;
     },
     [adjustItemForDateFn, preCycleBaseDate, resolvedBaseDate],
@@ -2014,6 +2056,13 @@ const StimulationSchedule = ({
   const rendered = [];
   let currentYear = null;
 
+  const pregnancyBaseDate = resolvedBaseDate ? normalizeDate(resolvedBaseDate) : null;
+  const transferSource =
+    transferRef.current ||
+    schedule.find(entry => entry.key === 'transfer' && entry.date)?.date ||
+    null;
+  const pregnancyTransferDate = transferSource ? normalizeDate(transferSource) : null;
+
   const filtered = schedule.filter(item => item.date);
   if (!filtered.some(item => item.date.getTime() === today)) {
     const baseForDiff = (() => {
@@ -2143,10 +2192,21 @@ const StimulationSchedule = ({
           date: item.date,
           label: item.label,
         });
-      const displaySecondaryLabel =
+      const pregnancyToken = (() => {
+        if (!pregnancyBaseDate || !pregnancyTransferDate) return '';
+        if (!item.date) return '';
+        const normalizedItemDate = normalizeDate(item.date);
+        if (normalizedItemDate.getTime() < pregnancyTransferDate.getTime()) {
+          return '';
+        }
+        const tokenInfo = getWeeksDaysTokenForDate(normalizedItemDate, pregnancyBaseDate);
+        return tokenInfo?.token || '';
+      })();
+      const baseSecondaryLabel =
         secondaryLabel && /^\d+$/.test(secondaryLabel.trim())
           ? `${secondaryLabel.trim()}й день`
           : secondaryLabel;
+      const displaySecondaryLabel = pregnancyToken || baseSecondaryLabel;
       const year = item.date.getFullYear();
       const isToday = item.date.getTime() === today;
       const isEvenRow = index % 2 === 0;
