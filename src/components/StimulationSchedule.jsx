@@ -493,11 +493,6 @@ const transferRelativeConfig = {
     defaultSuffix: 'УЗД, підтвердження вагітності',
     prefix: /^узд/i,
   },
-  'us-followup': {
-    baseLabel: 'УЗД',
-    defaultSuffix: 'УЗД',
-    prefix: /^узд/i,
-  },
 };
 
 const PRE_CYCLE_KEYS = new Set(['pre-visit1', 'pre-uzd', 'pre-dipherelin']);
@@ -535,9 +530,6 @@ const buildMedsLabel = (day, suffix) => buildTransferDayLabel('meds', day, suffi
 
 const buildUsLabel = (day, suffix, sign = '') =>
   buildTransferDayLabel('us', day, suffix, sign);
-
-const buildUsFollowupLabel = (day, suffix, sign = '') =>
-  buildTransferDayLabel('us-followup', day, suffix, sign);
 
 const getTransferRelativeReference = (transferDate, base) => {
   const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
@@ -1151,16 +1143,6 @@ export const generateSchedule = base => {
     label: buildUsLabel(us.day, 'УЗД, підтвердження вагітності', us.sign),
   });
 
-  // Follow-up ultrasound 2 weeks after the first ultrasound
-  const usFollowupCandidate = new Date(us.date);
-  usFollowupCandidate.setDate(usFollowupCandidate.getDate() + 14);
-  const usFollowup = adjustForward(new Date(usFollowupCandidate), transferBase);
-  visits.push({
-    key: 'us-followup',
-    date: usFollowup.date,
-    label: buildUsFollowupLabel(usFollowup.day, 'УЗД', usFollowup.sign),
-  });
-
   // Pregnancy visits at specific weeks
   const weeks = [8, 10, 12, 16, 18, 28, 36, 38, 40];
   weeks.forEach(week => {
@@ -1651,11 +1633,7 @@ const StimulationSchedule = ({
               if (/перенос/.test(label)) key = 'transfer';
               else if (/ХГЧ/.test(label)) key = 'hcg';
               else if (/оновити\s+ліки/i.test(label)) key = 'meds';
-              else if (/УЗД|ЗД/.test(label)) {
-                key = /підтвердження\s+вагітності/i.test(label)
-                  ? 'us'
-                  : 'us-followup';
-              }
+              else if (/УЗД|ЗД/.test(label)) key = 'us';
               else if (/(\d+)т/.test(label)) {
                 const week = /(\d+)т/.exec(label)[1];
                 key = `week${week}`;
@@ -1683,11 +1661,7 @@ const StimulationSchedule = ({
               if (/перенос/.test(item.label || '')) key = 'transfer';
               else if (/ХГЧ/.test(item.label || '')) key = 'hcg';
               else if (/оновити\s+ліки/i.test(item.label || '')) key = 'meds';
-              else if (/УЗД|ЗД/.test(item.label || '')) {
-                key = /підтвердження\s+вагітності/i.test(item.label || '')
-                  ? 'us'
-                  : 'us-followup';
-              }
+              else if (/УЗД|ЗД/.test(item.label || '')) key = 'us';
               else if (/(\d+)т/.test(item.label || '')) {
                 const week = /(\d+)т/.exec(item.label || '')[1];
                 key = `week${week}`;
@@ -1787,7 +1761,6 @@ const StimulationSchedule = ({
       }
 
       const usIndex = next.findIndex(entry => entry.key === 'us');
-      let resolvedUsDate = null;
       if (usIndex !== -1) {
         const usCandidate = new Date(normalizedTransfer);
         usCandidate.setDate(usCandidate.getDate() + 27);
@@ -1796,32 +1769,6 @@ const StimulationSchedule = ({
           ? normalizeDate(adjustedUs.date)
           : normalizeDate(usCandidate);
         updateWithTarget(usIndex, usTarget);
-        resolvedUsDate = next[usIndex]?.date || usTarget;
-      }
-
-      const followupIndex = next.findIndex(entry => entry.key === 'us-followup');
-      if (followupIndex !== -1) {
-        let baseForFollowup = resolvedUsDate;
-        if (!baseForFollowup && usIndex !== -1) {
-          baseForFollowup = next[usIndex]?.date || null;
-        }
-        if (!baseForFollowup) {
-          const fallback = new Date(normalizedTransfer);
-          fallback.setDate(fallback.getDate() + 27);
-          const adjustedFallback = adjustForward(new Date(fallback), normalizedTransfer);
-          baseForFollowup = adjustedFallback?.date
-            ? normalizeDate(adjustedFallback.date)
-            : normalizeDate(fallback);
-        }
-        if (baseForFollowup) {
-          const followupCandidate = new Date(baseForFollowup);
-          followupCandidate.setDate(followupCandidate.getDate() + 14);
-          const adjustedFollowup = adjustForward(new Date(followupCandidate), normalizedTransfer);
-          const followupTarget = adjustedFollowup?.date
-            ? normalizeDate(adjustedFollowup.date)
-            : normalizeDate(followupCandidate);
-          updateWithTarget(followupIndex, followupTarget);
-        }
       }
 
       return didUpdate ? next : items;
