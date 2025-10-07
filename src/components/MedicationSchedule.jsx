@@ -1876,31 +1876,44 @@ const MedicationSchedule = ({
 
   const canAddMedication = newMedicationDraft.label.trim().length > 0;
 
-  const handleCellChange = useCallback((rowIndex, key, rawValue) => {
-    updateSchedule(prev => {
-      const rows = prev.rows.map((row, index) => {
-        if (index < rowIndex) {
-          return row;
+  const handleCellChange = useCallback(
+    (rowIndex, key, rawValue) => {
+      updateSchedule(prev => {
+        if (!prev || !Array.isArray(prev.rows)) {
+          return prev;
         }
-        const nextValues = { ...row.values };
+
         const sanitized = sanitizeCellValue(rawValue);
-        if (index === rowIndex) {
-          nextValues[key] = sanitized;
-        } else {
-          nextValues[key] = sanitized;
-        }
+        const rows = prev.rows.map((row, index) => {
+          if (index !== rowIndex || !row) {
+            return row;
+          }
+
+          const previousValues = row.values && typeof row.values === 'object' ? row.values : {};
+          const nextValues = { ...previousValues };
+
+          if (sanitized === '') {
+            if (Object.prototype.hasOwnProperty.call(nextValues, key)) {
+              delete nextValues[key];
+            }
+          } else {
+            nextValues[key] = sanitized;
+          }
+
+          return {
+            ...row,
+            values: nextValues,
+          };
+        });
+
         return {
-          ...row,
-          values: nextValues,
+          ...prev,
+          rows,
         };
       });
-
-      return {
-        ...prev,
-        rows,
-      };
-    });
-  }, [updateSchedule]);
+    },
+    [updateSchedule],
+  );
 
   const handleResetDistribution = useCallback(() => {
     updateSchedule(prev => {
