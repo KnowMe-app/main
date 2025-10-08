@@ -4,6 +4,7 @@ import {
   computeCustomDateAndLabel,
   deriveScheduleDisplayInfo,
   generateSchedule,
+  shouldUsePregnancyToken,
   splitCustomEventEntries,
 } from 'components/StimulationSchedule';
 
@@ -150,6 +151,24 @@ describe('deriveScheduleDisplayInfo', () => {
 
     expect(result.secondaryLabel).toBe('8');
     expect(result.displayLabel).not.toContain('1т1д');
+  });
+});
+
+describe('shouldUsePregnancyToken', () => {
+  it('returns false for events within thirty days after transfer', () => {
+    const transfer = new Date(2024, 0, 10);
+    const hcg = new Date(transfer);
+    hcg.setDate(hcg.getDate() + 12);
+
+    expect(shouldUsePregnancyToken(hcg, transfer)).toBe(false);
+  });
+
+  it('returns true once more than thirty days have passed after transfer', () => {
+    const transfer = new Date(2024, 0, 10);
+    const followUp = new Date(transfer);
+    followUp.setDate(followUp.getDate() + 31);
+
+    expect(shouldUsePregnancyToken(followUp, transfer)).toBe(true);
   });
 });
 

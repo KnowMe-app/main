@@ -204,6 +204,22 @@ const getWeeksDaysTokenForDate = (date, reference) => {
 
 const DAY_PREFIX_TRANSFER_WINDOW_DAYS = 30;
 
+export const shouldUsePregnancyToken = (itemDate, transferDate) => {
+  if (!itemDate || !transferDate) return false;
+
+  const normalizedItem = normalizeDate(itemDate);
+  const normalizedTransfer = normalizeDate(transferDate);
+
+  if (normalizedItem.getTime() < normalizedTransfer.getTime()) {
+    return false;
+  }
+
+  const diffMs = normalizedItem.getTime() - normalizedTransfer.getTime();
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+  return diffDays > DAY_PREFIX_TRANSFER_WINDOW_DAYS;
+};
+
 const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   if (!date) return '';
 
@@ -2198,12 +2214,15 @@ const StimulationSchedule = ({
           label: item.label,
         });
       const pregnancyToken = (() => {
-        if (!pregnancyBaseDate || !pregnancyTransferDate) return '';
-        if (!item.date) return '';
-        const normalizedItemDate = normalizeDate(item.date);
-        if (normalizedItemDate.getTime() < pregnancyTransferDate.getTime()) {
+        if (
+          !pregnancyBaseDate ||
+          !pregnancyTransferDate ||
+          !item.date ||
+          !shouldUsePregnancyToken(item.date, pregnancyTransferDate)
+        ) {
           return '';
         }
+        const normalizedItemDate = normalizeDate(item.date);
         const tokenInfo = getWeeksDaysTokenForDate(normalizedItemDate, pregnancyBaseDate);
         return tokenInfo?.token || '';
       })();
