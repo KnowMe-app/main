@@ -2063,7 +2063,12 @@ const StimulationSchedule = ({
     null;
   const pregnancyTransferDate = transferSource ? normalizeDate(transferSource) : null;
 
-  const filtered = schedule.filter(item => item.date);
+  const filtered = schedule
+    .filter(item => item.date)
+    .sort((a, b) => {
+      if (!a?.date || !b?.date) return 0;
+      return a.date - b.date;
+    });
   if (!filtered.some(item => item.date.getTime() === today)) {
     const baseForDiff = (() => {
       if (!resolvedBaseDate) return null;
