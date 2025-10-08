@@ -8,9 +8,10 @@ import {
 const DATE_PATTERN = /(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/g;
 const DATE_SOURCE_PATTERN = '\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}';
 const SINGLE_LINE_ENTRY_BOUNDARY = new RegExp(
-  `(${DATE_SOURCE_PATTERN})\\s+(\\d+(?:[.,]\\d+)?)[ \\t]+(?=[^,]+,\\s*${DATE_SOURCE_PATTERN})`,
+  `(${DATE_SOURCE_PATTERN})\\s+(\\d+(?:[.,]\\d+)?)[ \\t]+(?=\\s*[^\\d,][^,]*,\\s*${DATE_SOURCE_PATTERN})`,
   'g',
 );
+const TRAILING_DATE_PATTERN = new RegExp(DATE_SOURCE_PATTERN);
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const parseISODate = isoString => {
@@ -261,6 +262,13 @@ const parseClipboardLine = line => {
   const issued = Number(issuedMatch[0].replace(',', '.'));
   if (!Number.isFinite(issued)) {
     return null;
+  }
+
+  const trailing = afterStart.slice(issuedMatch[0].length).trim();
+  if (trailing) {
+    if (TRAILING_DATE_PATTERN.test(trailing) || trailing.includes(',')) {
+      return null;
+    }
   }
 
   const doseTokens = dosesPart.split('+').map(token => token.trim()).filter(Boolean);
