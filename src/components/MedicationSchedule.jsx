@@ -743,18 +743,32 @@ const getPlanMaxDay = plan => {
   return Number.isFinite(value) && value > 0 ? value : 0;
 };
 
+const isPartialDecimal = value => /^-?\d*(?:[.,]\d*)?$/.test(value);
+
 const sanitizeCellValue = value => {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'string') {
-    const normalized = value.trim().replace(/,/g, '.');
-    if (normalized === '') return '';
-    const numberValue = Number(normalized);
-    return Number.isNaN(numberValue) ? '' : numberValue;
-  }
+
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : '';
   }
-  const numberValue = Number(value);
+
+  const stringValue = String(value).trim();
+  if (!stringValue) {
+    return '';
+  }
+
+  const normalized = stringValue.replace(/,/g, '.');
+
+  if (isPartialDecimal(normalized)) {
+    if (normalized.endsWith('.') || ['-', '.', '-.'].includes(normalized)) {
+      return normalized;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isNaN(parsed) ? '' : parsed;
+  }
+
+  const numberValue = Number(normalized);
   return Number.isNaN(numberValue) ? '' : numberValue;
 };
 
