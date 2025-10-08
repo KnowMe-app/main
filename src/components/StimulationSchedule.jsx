@@ -204,14 +204,6 @@ const getWeeksDaysTokenForDate = (date, reference) => {
 
 const DAY_PREFIX_TRANSFER_WINDOW_DAYS = 30;
 
-const TRANSFER_DAY_KEYWORDS = [
-  'перенос',
-  'хгч',
-  'оновити ліки',
-  'узд',
-  'підтвердження вагітності',
-];
-
 const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   if (!date) return '';
 
@@ -358,26 +350,14 @@ export const deriveScheduleDisplayInfo = ({ date, label }) => {
   const tokenInfo = extractWeeksDaysPrefix(remainder);
   let normalizedToken = '';
   let remainderWithoutToken = remainder;
-  let tokenDerivedDayIndicator = '';
   if (tokenInfo) {
     normalizedToken = tokenInfo.normalized;
     remainderWithoutToken = remainder.slice(tokenInfo.length).trim();
-
-    const tokenDayNumber = tokenInfo.weeks * 7 + tokenInfo.days + 1;
-    const remainderLower = remainderWithoutToken.toLowerCase();
-    const matchesTransferKeyword = TRANSFER_DAY_KEYWORDS.some(keyword =>
-      remainderLower.includes(keyword),
-    );
-
-    if (matchesTransferKeyword && tokenDayNumber <= DAY_PREFIX_TRANSFER_WINDOW_DAYS) {
-      tokenDerivedDayIndicator = deriveDayIndicatorFromNumber(tokenDayNumber);
-      normalizedToken = '';
-    }
   }
 
   const dayInfo = extractDayPrefix(remainderWithoutToken);
   let remainderWithoutDay = remainderWithoutToken;
-  let formattedDayIndicator = tokenDerivedDayIndicator;
+  let formattedDayIndicator = '';
   if (dayInfo) {
     remainderWithoutDay = dayInfo.rest;
     formattedDayIndicator = deriveDayIndicatorFromNumber(dayInfo.day);
