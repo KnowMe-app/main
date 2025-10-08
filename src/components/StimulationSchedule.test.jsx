@@ -151,5 +151,21 @@ describe('deriveScheduleDisplayInfo', () => {
     expect(result.secondaryLabel).toBe('8');
     expect(result.displayLabel).not.toContain('1т1д');
   });
+
+  it('converts early transfer-related week tokens into day indicators for display', () => {
+    const date = new Date(2024, 0, 20);
+    const result = deriveScheduleDisplayInfo({ date, label: '2т3д Перенос' });
+
+    expect(result.secondaryLabel).toBe('17');
+    expect(result.displayLabel).toBe('Перенос');
+  });
+
+  it('preserves transfer-related week tokens once they exceed the day-prefix window', () => {
+    const date = new Date(2024, 1, 25);
+    const result = deriveScheduleDisplayInfo({ date, label: '5т6д Перенос' });
+
+    expect(result.secondaryLabel).toBe('5т6д');
+    expect(result.displayLabel).toBe('Перенос');
+  });
 });
 
