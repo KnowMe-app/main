@@ -1791,9 +1791,18 @@ const StimulationSchedule = ({
 
       const hcgIndex = next.findIndex(entry => entry.key === 'hcg');
       if (hcgIndex !== -1) {
-        const hcgTarget = new Date(normalizedTransfer);
-        hcgTarget.setDate(hcgTarget.getDate() + 11);
-        updateWithTarget(hcgIndex, hcgTarget);
+        const hcgTarget = computeDateFromTransferDay(12, normalizedTransfer, baseForState);
+        if (hcgTarget) {
+          updateWithTarget(hcgIndex, hcgTarget);
+        }
+      }
+
+      const medsIndex = next.findIndex(entry => entry.key === 'meds');
+      if (medsIndex !== -1) {
+        const medsTarget = computeDateFromTransferDay(15, normalizedTransfer, baseForState);
+        if (medsTarget) {
+          updateWithTarget(medsIndex, medsTarget);
+        }
       }
 
       const usIndex = next.findIndex(entry => entry.key === 'us');
