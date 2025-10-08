@@ -1759,6 +1759,52 @@ const StimulationSchedule = ({
     [postTransferKeys, preCycleBaseDate, resolvedBaseDate],
   );
 
+  const applyHcgDateToDependents = React.useCallback(
+    (items, hcgDate) => {
+      if (!hcgDate || !Array.isArray(items) || items.length === 0) {
+        return items;
+      }
+
+      const normalizedHcg = normalizeDate(hcgDate);
+      const baseForState =
+        items.find(entry => entry.key === 'visit1')?.date || resolvedBaseDate || null;
+      const preBaseForState =
+        items.find(entry => entry.key === 'pre-visit1')?.date || preCycleBaseDate || null;
+      const transferForState =
+        items.find(entry => entry.key === 'transfer')?.date || transferRef.current || null;
+      const normalizedTransfer = transferForState ? normalizeDate(transferForState) : null;
+
+      let didUpdate = false;
+      let next = [...items];
+
+      const updateWithTarget = (index, targetDate) => {
+        if (index === -1 || !targetDate) return;
+        const current = next[index];
+        if (!current) return;
+        const adjusted = adjustItemForDateFn(current, targetDate, {
+          baseDate: baseForState,
+          transferDate: normalizedTransfer,
+          preCycleBase: preBaseForState,
+        });
+        if (adjusted && adjusted !== current) {
+          next[index] = adjusted;
+          didUpdate = true;
+        }
+      };
+
+      const medsIndex = next.findIndex(entry => entry.key === 'meds');
+      if (medsIndex !== -1) {
+        const medsCandidate = new Date(normalizedHcg);
+        medsCandidate.setDate(medsCandidate.getDate() + 3);
+        const medsTarget = normalizeDate(medsCandidate);
+        updateWithTarget(medsIndex, medsTarget);
+      }
+
+      return didUpdate ? next : items;
+    },
+    [adjustItemForDateFn, preCycleBaseDate, resolvedBaseDate],
+  );
+
   const applyTransferDateToDependents = React.useCallback(
     (items, transferDate) => {
       if (!transferDate || !Array.isArray(items) || items.length === 0) {
@@ -1772,7 +1818,7 @@ const StimulationSchedule = ({
         items.find(entry => entry.key === 'pre-visit1')?.date || preCycleBaseDate || null;
 
       let didUpdate = false;
-      const next = [...items];
+      let next = [...items];
 
       const updateWithTarget = (index, targetDate) => {
         if (index === -1 || !targetDate) return;
@@ -1795,13 +1841,28 @@ const StimulationSchedule = ({
         if (hcgTarget) {
           updateWithTarget(hcgIndex, hcgTarget);
         }
+        const updatedHcgDate = next[hcgIndex]?.date
+          ? normalizeDate(next[hcgIndex].date)
+          : hcgTarget
+          ? normalizeDate(hcgTarget)
+          : null;
+        if (updatedHcgDate) {
+          const updatedItems = applyHcgDateToDependents(next, updatedHcgDate);
+          if (updatedItems !== next) {
+            next = updatedItems;
+            didUpdate = true;
+          }
+        }
       }
 
-      const medsIndex = next.findIndex(entry => entry.key === 'meds');
-      if (medsIndex !== -1) {
-        const medsTarget = computeDateFromTransferDay(15, normalizedTransfer, baseForState);
-        if (medsTarget) {
-          updateWithTarget(medsIndex, medsTarget);
+      const hasHcgWithDate = next.some(entry => entry.key === 'hcg' && entry.date);
+      if (!hasHcgWithDate) {
+        const medsIndex = next.findIndex(entry => entry.key === 'meds');
+        if (medsIndex !== -1) {
+          const medsTarget = computeDateFromTransferDay(15, normalizedTransfer, baseForState);
+          if (medsTarget) {
+            updateWithTarget(medsIndex, medsTarget);
+          }
         }
       }
 
@@ -1840,7 +1901,12 @@ const StimulationSchedule = ({
 
       return didUpdate ? next : items;
     },
-    [adjustItemForDateFn, preCycleBaseDate, resolvedBaseDate],
+    [
+      adjustItemForDateFn,
+      applyHcgDateToDependents,
+      preCycleBaseDate,
+      resolvedBaseDate,
+    ],
   );
 
   const shiftDate = (idx, delta) => {
@@ -1871,6 +1937,11 @@ const StimulationSchedule = ({
     if (adjustedItem.key === 'transfer') {
       transferRef.current = adjustedItem.date;
       next = applyTransferDateToDependents(next, adjustedItem.date);
+    } else if (adjustedItem.key === 'hcg') {
+      const updated = applyHcgDateToDependents(next, adjustedItem.date);
+      if (updated !== next) {
+        next = updated;
+      }
     }
 
     const persistTarget =
@@ -2580,6 +2651,13 @@ const StimulationSchedule = ({
                         transferRef.current = updated.date;
                         if (dateChanged) {
                           next = applyTransferDateToDependents(next, updated.date);
+                        }
+                      } else if (updated.key === 'hcg') {
+                        if (dateChanged) {
+                          const adjustedNext = applyHcgDateToDependents(next, updated.date);
+                          if (adjustedNext !== next) {
+                            next = adjustedNext;
+                          }
                         }
                       }
 
