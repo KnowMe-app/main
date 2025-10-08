@@ -518,6 +518,32 @@ const transferRelativeConfig = {
 
 const PRE_CYCLE_KEYS = new Set(['pre-visit1', 'pre-uzd', 'pre-dipherelin']);
 
+const inferUltrasoundKeyFromLabel = label => {
+  const normalizedLabel = typeof label === 'string' ? label.trim() : '';
+  if (!normalizedLabel) {
+    return 'us';
+  }
+
+  if (/підтвердження\s+вагітності/i.test(normalizedLabel)) {
+    return 'us';
+  }
+
+  const dayMatch = normalizedLabel.match(/(\d+)\s*й\s+день/i);
+  if (dayMatch) {
+    const parsedDay = Number(dayMatch[1]);
+    if (Number.isFinite(parsedDay)) {
+      if (parsedDay <= 10) {
+        return 'pre-uzd';
+      }
+      if (parsedDay >= 35) {
+        return 'us-followup';
+      }
+    }
+  }
+
+  return 'us';
+};
+
 const isPreCycleKey = key => PRE_CYCLE_KEYS.has(key);
 
 const isCustomKey = key => typeof key === 'string' && key.startsWith('ap-');
@@ -1669,7 +1695,7 @@ const StimulationSchedule = ({
               if (/перенос/.test(label)) key = 'transfer';
               else if (/ХГЧ/.test(label)) key = 'hcg';
               else if (/оновити\s+ліки/i.test(label)) key = 'meds';
-              else if (/УЗД|ЗД/.test(label)) key = 'us';
+              else if (/УЗД|ЗД/.test(label)) key = inferUltrasoundKeyFromLabel(label);
               else if (/(\d+)т/.test(label)) {
                 const week = /(\d+)т/.exec(label)[1];
                 key = `week${week}`;
@@ -1697,7 +1723,9 @@ const StimulationSchedule = ({
               if (/перенос/.test(item.label || '')) key = 'transfer';
               else if (/ХГЧ/.test(item.label || '')) key = 'hcg';
               else if (/оновити\s+ліки/i.test(item.label || '')) key = 'meds';
-              else if (/УЗД|ЗД/.test(item.label || '')) key = 'us';
+              else if (/УЗД|ЗД/.test(item.label || '')) {
+                key = inferUltrasoundKeyFromLabel(item.label || '');
+              }
               else if (/(\d+)т/.test(item.label || '')) {
                 const week = /(\d+)т/.exec(item.label || '')[1];
                 key = `week${week}`;
