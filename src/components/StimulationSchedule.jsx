@@ -622,6 +622,15 @@ const buildPostTransferLabel = (key, labelSource, date, transferReference) => {
   const sign = diff < 0 ? '-' : '';
   const dayNumber = Math.abs(diff) + 1;
 
+  if (key === 'us' || key === 'us-followup') {
+    const tokenInfo = getWeeksDaysTokenForDate(normalizedDate, normalizedReference);
+    if (diff >= 0 && tokenInfo?.token) {
+      const normalizedSuffix = normalizeTransferSuffix(key, suffix);
+      const label = `${tokenInfo.token} ${normalizedSuffix}`.trim();
+      return sign ? `${label} ${sign}`.trim() : label;
+    }
+  }
+
   return buildTransferDayLabel(key, dayNumber, suffix, sign);
 };
 

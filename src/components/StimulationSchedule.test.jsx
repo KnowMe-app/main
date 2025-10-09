@@ -3,6 +3,7 @@ import {
   buildCustomEventLabel,
   computeCustomDateAndLabel,
   deriveScheduleDisplayInfo,
+  formatWeeksDaysToken,
   generateSchedule,
   shouldUsePregnancyToken,
   splitCustomEventEntries,
@@ -69,6 +70,46 @@ describe('adjustItemForDate', () => {
     });
 
     expect(adjusted.label).toBe('7й день Прийом');
+  });
+
+  it('uses pregnancy weeks token for ultrasound events soon after transfer', () => {
+    const baseDate = new Date(2024, 0, 1);
+    const transferDate = new Date(2024, 0, 20);
+    const ultrasoundDate = new Date(transferDate);
+    ultrasoundDate.setDate(ultrasoundDate.getDate() + 27);
+
+    const ultrasoundItem = {
+      key: 'us',
+      date: new Date(ultrasoundDate),
+      label: '28й день УЗД, підтвердження вагітності',
+    };
+
+    const adjusted = adjustItemForDate(ultrasoundItem, ultrasoundDate, {
+      baseDate,
+      transferDate,
+    });
+
+    expect(adjusted.label).toBe('3т7д УЗД, підтвердження вагітності');
+  });
+
+  it('uses pregnancy weeks token for follow-up ultrasound events', () => {
+    const baseDate = new Date(2024, 0, 1);
+    const transferDate = new Date(2024, 0, 20);
+    const followUpDate = new Date(transferDate);
+    followUpDate.setDate(followUpDate.getDate() + 41);
+
+    const followUpItem = {
+      key: 'us-followup',
+      date: new Date(followUpDate),
+      label: '42й день УЗД',
+    };
+
+    const adjusted = adjustItemForDate(followUpItem, followUpDate, {
+      baseDate,
+      transferDate,
+    });
+
+    expect(adjusted.label).toBe(`${formatWeeksDaysToken(5, 6)} УЗД`);
   });
 });
 
