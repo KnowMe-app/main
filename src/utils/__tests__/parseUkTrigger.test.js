@@ -11,7 +11,7 @@ describe('parseUkTriggerQuery', () => {
     const result = parseUkTriggerQuery('УК СМ Анна Марія');
     expect(result).toEqual({
       contactType: 'telegram',
-      contactValues: ['УК СМ Анна Марія'],
+      contactValues: 'УК СМ Анна Марія',
       name: 'Анна',
       surname: 'Марія',
       handle: null,
@@ -59,7 +59,7 @@ describe('parseUkTriggerQuery', () => {
     const result = parseUkTriggerQuery('УК Агент Надія Сидоренко');
     expect(result).toEqual({
       contactType: 'telegram',
-      contactValues: ['УК АГЕНТ Надія Сидоренко'],
+      contactValues: 'УК АГЕНТ Надія Сидоренко',
       name: 'Надія',
       surname: 'Сидоренко',
       handle: null,
