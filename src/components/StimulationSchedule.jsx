@@ -518,6 +518,8 @@ const transferRelativeConfig = {
 
 const PRE_CYCLE_KEYS = new Set(['pre-visit1', 'pre-uzd', 'pre-dipherelin']);
 
+const PREGNANCY_TOKEN_FORCE_KEYS = new Set(['us', 'us-followup']);
+
 const isPreCycleKey = key => PRE_CYCLE_KEYS.has(key);
 
 const isCustomKey = key => typeof key === 'string' && key.startsWith('ap-');
@@ -2294,10 +2296,14 @@ const StimulationSchedule = ({
           label: item.label,
         });
       const pregnancyToken = (() => {
+        if (!pregnancyBaseDate || !pregnancyTransferDate || !item.date) {
+          return '';
+        }
+
+        const shouldForceToken = PREGNANCY_TOKEN_FORCE_KEYS.has(item.key);
+
         if (
-          !pregnancyBaseDate ||
-          !pregnancyTransferDate ||
-          !item.date ||
+          !shouldForceToken &&
           !shouldUsePregnancyToken(item.date, pregnancyTransferDate)
         ) {
           return '';
