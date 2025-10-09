@@ -595,8 +595,14 @@ const computeDateFromTransferDay = (day, transferDate, base) => {
 
 const getTransferSuffixFromLabel = (key, label) => {
   const trimmed = (label || '').trim();
-  const dayInfo = extractDayPrefix(trimmed);
-  const suffix = dayInfo ? dayInfo.rest : trimmed;
+  if (!trimmed) {
+    return transferRelativeConfig[key]?.defaultSuffix || '';
+  }
+
+  const weeksInfo = extractWeeksDaysPrefix(trimmed);
+  const withoutWeeksToken = weeksInfo ? trimmed.slice(weeksInfo.length).trim() : trimmed;
+  const dayInfo = extractDayPrefix(withoutWeeksToken);
+  const suffix = dayInfo ? dayInfo.rest : withoutWeeksToken;
   if (suffix) return suffix;
   return transferRelativeConfig[key]?.defaultSuffix || '';
 };
