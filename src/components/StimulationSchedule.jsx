@@ -1833,6 +1833,89 @@ const StimulationSchedule = ({
     [adjustItemForDateFn, preCycleBaseDate, resolvedBaseDate],
   );
 
+  const applyUsDateToDependents = React.useCallback(
+    (items, usDate, transferDate) => {
+      if (!Array.isArray(items) || items.length === 0) {
+        return items;
+      }
+
+      const followUpIndex = items.findIndex(entry => entry.key === 'us-followup');
+      if (followUpIndex === -1) {
+        return items;
+      }
+
+      const normalizedUs = usDate ? normalizeDate(usDate) : null;
+      const providedTransfer = transferDate || null;
+      const transferFromItems = items.find(entry => entry.key === 'transfer')?.date || null;
+      const transferSource = providedTransfer || transferFromItems || transferRef.current || null;
+      const normalizedTransfer = transferSource ? normalizeDate(transferSource) : null;
+
+      const baseForState =
+        items.find(entry => entry.key === 'visit1')?.date || resolvedBaseDate || null;
+      const preBaseForState =
+        items.find(entry => entry.key === 'pre-visit1')?.date || preCycleBaseDate || null;
+
+      let didUpdate = false;
+      let next = [...items];
+
+      const updateWithTarget = (index, targetDate) => {
+        if (index === -1 || !targetDate) return;
+        const current = next[index];
+        if (!current) return;
+        const adjusted = adjustItemForDateFn(current, targetDate, {
+          baseDate: baseForState,
+          transferDate: normalizedTransfer,
+          preCycleBase: preBaseForState,
+        });
+        if (adjusted && adjusted !== current) {
+          next[index] = adjusted;
+          didUpdate = true;
+        }
+      };
+
+      let followUpTarget = null;
+
+      if (normalizedUs) {
+        const followUpCandidate = new Date(normalizedUs);
+        followUpCandidate.setDate(followUpCandidate.getDate() + 14);
+        if (normalizedTransfer) {
+          const adjustedFollowUp = adjustForward(
+            new Date(followUpCandidate),
+            normalizedTransfer,
+          );
+          followUpTarget = adjustedFollowUp?.date
+            ? normalizeDate(adjustedFollowUp.date)
+            : normalizeDate(followUpCandidate);
+        } else {
+          const adjustedFollowUp = adjustToNextWorkingDay(
+            followUpCandidate,
+            normalizedUs,
+          );
+          followUpTarget = adjustedFollowUp?.date
+            ? normalizeDate(adjustedFollowUp.date)
+            : normalizeDate(followUpCandidate);
+        }
+      } else if (normalizedTransfer) {
+        const followUpCandidate = new Date(normalizedTransfer);
+        followUpCandidate.setDate(followUpCandidate.getDate() + 41);
+        const adjustedFollowUp = adjustForward(
+          new Date(followUpCandidate),
+          normalizedTransfer,
+        );
+        followUpTarget = adjustedFollowUp?.date
+          ? normalizeDate(adjustedFollowUp.date)
+          : normalizeDate(followUpCandidate);
+      }
+
+      if (followUpTarget) {
+        updateWithTarget(followUpIndex, followUpTarget);
+      }
+
+      return didUpdate ? next : items;
+    },
+    [adjustItemForDateFn, preCycleBaseDate, resolvedBaseDate],
+  );
+
   const applyTransferDateToDependents = React.useCallback(
     (items, transferDate) => {
       if (!transferDate || !Array.isArray(items) || items.length === 0) {
@@ -1905,26 +1988,11 @@ const StimulationSchedule = ({
         updateWithTarget(usIndex, usTarget);
       }
 
-      const followUpIndex = next.findIndex(entry => entry.key === 'us-followup');
-      if (followUpIndex !== -1) {
-        const updatedUsDate = next.find(entry => entry.key === 'us')?.date || null;
-        const followUpBase = updatedUsDate ? normalizeDate(updatedUsDate) : null;
-        const followUpCandidate = followUpBase
-          ? (() => {
-              const candidate = new Date(followUpBase);
-              candidate.setDate(candidate.getDate() + 14);
-              return candidate;
-            })()
-          : (() => {
-              const candidate = new Date(normalizedTransfer);
-              candidate.setDate(candidate.getDate() + 41);
-              return candidate;
-            })();
-        const adjustedFollowUp = adjustForward(new Date(followUpCandidate), normalizedTransfer);
-        const followUpTarget = adjustedFollowUp?.date
-          ? normalizeDate(adjustedFollowUp.date)
-          : normalizeDate(followUpCandidate);
-        updateWithTarget(followUpIndex, followUpTarget);
+      const usDate = next.find(entry => entry.key === 'us')?.date || null;
+      const updatedWithFollowUp = applyUsDateToDependents(next, usDate, normalizedTransfer);
+      if (updatedWithFollowUp !== next) {
+        next = updatedWithFollowUp;
+        didUpdate = true;
       }
 
       return didUpdate ? next : items;
@@ -1932,6 +2000,7 @@ const StimulationSchedule = ({
     [
       adjustItemForDateFn,
       applyHcgDateToDependents,
+      applyUsDateToDependents,
       preCycleBaseDate,
       resolvedBaseDate,
     ],
@@ -1967,6 +2036,11 @@ const StimulationSchedule = ({
       next = applyTransferDateToDependents(next, adjustedItem.date);
     } else if (adjustedItem.key === 'hcg') {
       const updated = applyHcgDateToDependents(next, adjustedItem.date);
+      if (updated !== next) {
+        next = updated;
+      }
+    } else if (adjustedItem.key === 'us') {
+      const updated = applyUsDateToDependents(next, adjustedItem.date, stateTransfer);
       if (updated !== next) {
         next = updated;
       }
