@@ -1193,7 +1193,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const relevantUsers = Object.values(cycleUsers).filter(user => {
       if (!user) return false;
       const status = getEffectiveCycleStatus(user);
-      return status === 'stimulation' || status === 'pregnant';
+      const hasStimulationSchedule = user.stimulationSchedule !== undefined;
+      return hasStimulationSchedule && (status === 'stimulation' || status === 'pregnant');
     });
 
     const annotated = sortUsersByStimulationSchedule(relevantUsers, {
