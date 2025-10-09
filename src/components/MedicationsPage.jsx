@@ -3,7 +3,8 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { onValue } from 'firebase/database';
-import { FiCopy } from 'react-icons/fi';
+import { FiCopy, FiImage, FiDownload, FiX } from 'react-icons/fi';
+import PhotoViewer from './PhotoViewer';
 import MedicationSchedule from './MedicationSchedule';
 import {
   deleteMedicationSchedule,
@@ -53,7 +54,7 @@ const BackButton = styled.button`
   }
 `;
 
-const CopyButton = styled.button`
+const IconSquareButton = styled.button`
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -76,6 +77,10 @@ const CopyButton = styled.button`
     cursor: not-allowed;
   }
 `;
+
+const CopyButton = styled(IconSquareButton)``;
+
+const PhotosButton = styled(IconSquareButton)``;
 
 const TitleBlock = styled.div`
   display: flex;
@@ -133,6 +138,118 @@ const LoadingState = styled.div`
   color: #666;
 `;
 
+const PhotosModalOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  box-sizing: border-box;
+  z-index: 950;
+`;
+
+const PhotosModal = styled.div`
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  width: min(700px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+`;
+
+const PhotosModalHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+`;
+
+const PhotosModalTitle = styled.h2`
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+`;
+
+const CloseModalButton = styled.button`
+  border: none;
+  background: transparent;
+  color: #333;
+  cursor: pointer;
+  padding: 4px;
+
+  &:hover {
+    color: #000;
+  }
+`;
+
+const PhotosContent = styled.div`
+  padding: 16px 20px 20px;
+  overflow-y: auto;
+`;
+
+const PhotosGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
+`;
+
+const PhotoCard = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const PhotoThumbnailButton = styled.button`
+  border: none;
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #f2f2f2;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover img {
+    transform: scale(1.05);
+  }
+`;
+
+const PhotoThumbnailImage = styled.img`
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.2s ease;
+`;
+
+const DownloadButton = styled.a`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background-color: #ffb347;
+  color: white;
+  text-decoration: none;
+  font-size: 13px;
+  justify-content: center;
+
+  &:hover {
+    background-color: #ff9a1a;
+  }
+`;
+
 const MedicationsPage = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
@@ -143,6 +260,8 @@ const MedicationsPage = () => {
   const [isScheduleLoading, setIsScheduleLoading] = useState(true);
   const ownerId = useMemo(() => localStorage.getItem('ownerId'), []);
   const saveTimeoutRef = useRef(null);
+  const [isPhotosModalOpen, setIsPhotosModalOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(null);
 
   const hasScheduleData = useMemo(
     () =>
@@ -362,6 +481,38 @@ const MedicationsPage = () => {
   const isReady = !isScheduleLoading && !!ownerId;
 
   const canCopySchedule = hasScheduleData && !isScheduleLoading;
+  const photos = useMemo(() => {
+    const rawPhotos = user?.photos;
+    if (Array.isArray(rawPhotos)) {
+      return rawPhotos.filter(Boolean);
+    }
+    if (rawPhotos && typeof rawPhotos === 'object') {
+      return Object.values(rawPhotos).filter(Boolean);
+    }
+    return [];
+  }, [user]);
+  const canShowPhotos = photos.length > 0;
+
+  const handleOpenPhotos = useCallback(() => {
+    if (canShowPhotos) {
+      setIsPhotosModalOpen(true);
+    } else {
+      toast.error('Немає фотографій для перегляду');
+    }
+  }, [canShowPhotos]);
+
+  const handleClosePhotos = useCallback(() => {
+    setIsPhotosModalOpen(false);
+    setViewerIndex(null);
+  }, []);
+
+  const handleOpenViewer = useCallback(index => {
+    setViewerIndex(index);
+  }, []);
+
+  const handleCloseViewer = useCallback(() => {
+    setViewerIndex(null);
+  }, []);
 
   return (
     <PageContainer>
@@ -379,6 +530,15 @@ const MedicationsPage = () => {
           >
             <FiCopy size={18} />
           </CopyButton>
+          <PhotosButton
+            type="button"
+            onClick={handleOpenPhotos}
+            disabled={!canShowPhotos}
+            aria-label="Переглянути та завантажити фотографії"
+            title={canShowPhotos ? 'Переглянути та завантажити фотографії' : 'Немає фотографій'}
+          >
+            <FiImage size={18} />
+          </PhotosButton>
           <DeleteButton
             type="button"
             onClick={handleDelete}
@@ -410,6 +570,51 @@ const MedicationsPage = () => {
           cycleStart={user?.lastCycle}
           stimulationSchedule={user?.stimulationSchedule}
         />
+      )}
+
+      {isPhotosModalOpen && (
+        <PhotosModalOverlay onClick={handleClosePhotos}>
+          <PhotosModal onClick={event => event.stopPropagation()} role="dialog" aria-modal="true">
+            <PhotosModalHeader>
+              <PhotosModalTitle>Фотографії</PhotosModalTitle>
+              <CloseModalButton onClick={handleClosePhotos} aria-label="Закрити">
+                <FiX size={20} />
+              </CloseModalButton>
+            </PhotosModalHeader>
+            <PhotosContent>
+              {photos.length === 0 ? (
+                <Message>Фотографії відсутні.</Message>
+              ) : (
+                <PhotosGrid>
+                  {photos.map((photoUrl, index) => (
+                    <PhotoCard key={`${photoUrl}-${index}`}>
+                      <PhotoThumbnailButton
+                        type="button"
+                        onClick={() => handleOpenViewer(index)}
+                        aria-label={`Переглянути фото ${index + 1}`}
+                      >
+                        <PhotoThumbnailImage src={photoUrl} alt={`Фото ${index + 1}`} />
+                      </PhotoThumbnailButton>
+                      <DownloadButton
+                        href={photoUrl}
+                        download={`photo-${index + 1}.jpg`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <FiDownload size={14} />
+                        Завантажити
+                      </DownloadButton>
+                    </PhotoCard>
+                  ))}
+                </PhotosGrid>
+              )}
+            </PhotosContent>
+          </PhotosModal>
+        </PhotosModalOverlay>
+      )}
+
+      {viewerIndex !== null && (
+        <PhotoViewer photos={photos} index={viewerIndex} onClose={handleCloseViewer} />
       )}
     </PageContainer>
   );
