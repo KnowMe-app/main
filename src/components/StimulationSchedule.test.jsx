@@ -84,7 +84,6 @@ describe('generateSchedule', () => {
     expect(visit3.label.endsWith('Прийом')).toBe(true);
     expect(visit4.label.endsWith('Прийом')).toBe(true);
   });
-
 });
 
 describe('buildCustomEventLabel', () => {
@@ -170,31 +169,6 @@ describe('shouldUsePregnancyToken', () => {
     followUp.setDate(followUp.getDate() + 31);
 
     expect(shouldUsePregnancyToken(followUp, transfer)).toBe(true);
-  });
-
-  it('falls back to base date when transfer interval is still within the day window', () => {
-    const baseDate = new Date(2024, 0, 25);
-    const transfer = new Date(2024, 0, 30);
-    const ultrasound = new Date(transfer);
-    ultrasound.setDate(ultrasound.getDate() + 10);
-
-    expect(shouldUsePregnancyToken(ultrasound, transfer, baseDate)).toBe(false);
-
-    expect(
-      shouldUsePregnancyToken(ultrasound, transfer, new Date(2023, 10, 15)),
-    ).toBe(true);
-  });
-
-  it('enables pregnancy token for the default ultrasound using the stimulation base', () => {
-    const baseDate = new Date(2024, 0, 10);
-    const schedule = generateSchedule(baseDate);
-    const transfer = schedule.find(item => item.key === 'transfer');
-    const ultrasound = schedule.find(item => item.key === 'us');
-
-    expect(shouldUsePregnancyToken(ultrasound.date, transfer.date)).toBe(false);
-    expect(
-      shouldUsePregnancyToken(ultrasound.date, transfer.date, baseDate),
-    ).toBe(true);
   });
 });
 
