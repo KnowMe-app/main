@@ -203,48 +203,21 @@ const getWeeksDaysTokenForDate = (date, reference) => {
 };
 
 const DAY_PREFIX_TRANSFER_WINDOW_DAYS = 30;
-const MS_IN_DAY = 1000 * 60 * 60 * 24;
-
-const getPregnancyDayInfo = (eventDate, transferDate) => {
-  if (!eventDate || !transferDate) return null;
-
-  const normalizedEvent = normalizeDate(eventDate);
-  const normalizedTransfer = normalizeDate(transferDate);
-
-  const diffMs = normalizedEvent.getTime() - normalizedTransfer.getTime();
-  if (diffMs < 0) {
-    return null;
-  }
-
-  const diffDays = Math.round(diffMs / MS_IN_DAY);
-  const dayNumber = diffDays + 1;
-  const tokenInfo = getWeeksDaysTokenForDate(normalizedEvent, normalizedTransfer);
-
-  return {
-    normalizedEvent,
-    normalizedTransfer,
-    diffDays,
-    dayNumber,
-    tokenInfo,
-  };
-};
-
-const getPregnancyDisplayPrefix = (eventDate, transferDate) => {
-  const info = getPregnancyDayInfo(eventDate, transferDate);
-  if (!info) return '';
-
-  if (info.dayNumber <= DAY_PREFIX_TRANSFER_WINDOW_DAYS) {
-    return `${Math.max(info.dayNumber, 1)}й день`;
-  }
-
-  return info.tokenInfo?.token || '';
-};
 
 export const shouldUsePregnancyToken = (itemDate, transferDate) => {
-  const info = getPregnancyDayInfo(itemDate, transferDate);
-  if (!info) return false;
+  if (!itemDate || !transferDate) return false;
 
-  return info.dayNumber > DAY_PREFIX_TRANSFER_WINDOW_DAYS;
+  const normalizedItem = normalizeDate(itemDate);
+  const normalizedTransfer = normalizeDate(transferDate);
+
+  if (normalizedItem.getTime() < normalizedTransfer.getTime()) {
+    return false;
+  }
+
+  const diffMs = normalizedItem.getTime() - normalizedTransfer.getTime();
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+  return diffDays > DAY_PREFIX_TRANSFER_WINDOW_DAYS;
 };
 
 const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
@@ -254,15 +227,8 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   const normalizedBase = baseDate ? normalizeDate(baseDate) : null;
   const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
 
-  if (normalizedTransfer) {
-    const pregnancyPrefix = getPregnancyDisplayPrefix(normalizedDate, normalizedTransfer);
-    if (pregnancyPrefix) {
-      return pregnancyPrefix;
-    }
-  }
-
   let referenceForDay = null;
-  if (normalizedTransfer && normalizedDate.getTime() >= normalizedTransfer.getTime()) {
+  if (normalizedTransfer && normalizedDate.getTime() > normalizedTransfer.getTime()) {
     referenceForDay = normalizedTransfer;
   } else if (normalizedBase) {
     referenceForDay = normalizedBase;
@@ -2288,6 +2254,7 @@ const StimulationSchedule = ({
   const rendered = [];
   let currentYear = null;
 
+  const pregnancyBaseDate = resolvedBaseDate ? normalizeDate(resolvedBaseDate) : null;
   const transferSource =
     transferRef.current ||
     schedule.find(entry => entry.key === 'transfer' && entry.date)?.date ||
@@ -2428,17 +2395,24 @@ const StimulationSchedule = ({
           date: item.date,
           label: item.label,
         });
-      const pregnancyDisplayPrefix = (() => {
-        if (!pregnancyTransferDate || !item.date) {
+      const pregnancyToken = (() => {
+        if (
+          !pregnancyBaseDate ||
+          !pregnancyTransferDate ||
+          !item.date ||
+          !shouldUsePregnancyToken(item.date, pregnancyTransferDate)
+        ) {
           return '';
         }
-        return getPregnancyDisplayPrefix(item.date, pregnancyTransferDate);
+        const normalizedItemDate = normalizeDate(item.date);
+        const tokenInfo = getWeeksDaysTokenForDate(normalizedItemDate, pregnancyBaseDate);
+        return tokenInfo?.token || '';
       })();
       const baseSecondaryLabel =
         secondaryLabel && /^\d+$/.test(secondaryLabel.trim())
           ? `${secondaryLabel.trim()}й день`
           : secondaryLabel;
-      const displaySecondaryLabel = pregnancyDisplayPrefix || baseSecondaryLabel;
+      const displaySecondaryLabel = pregnancyToken || baseSecondaryLabel;
       const year = item.date.getFullYear();
       const isToday = item.date.getTime() === today;
       const isEvenRow = index % 2 === 0;
