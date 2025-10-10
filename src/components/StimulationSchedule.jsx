@@ -2111,7 +2111,6 @@ const StimulationSchedule = ({
       adjustItemForDateFn,
       applyHcgDateToDependents,
       applyUsDateToDependents,
-      updateCustomEventsForTransfer,
       preCycleBaseDate,
       resolvedBaseDate,
     ],
