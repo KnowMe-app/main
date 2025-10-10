@@ -55,8 +55,10 @@ export { PAGE_SIZE, BATCH_SIZE } from './constants';
 const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
 
 export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
-  const compressedPhoto = await compressPhoto(photo, 50); // Стиснення фото до 50 кБ
-  const file = await getFileBlob(compressedPhoto); // Перетворюємо стиснене фото на об'єкт Blob
+  const { disableCompression = false, maxSizeKB = 50 } = options;
+  const file = disableCompression
+    ? photo
+    : await getFileBlob(await compressPhoto(photo, maxSizeKB));
 
   const uniqueId = Date.now().toString(); // генеруємо унікальне ім"я для фото
   const fileName = `${uniqueId}.jpg`; // Використовуємо унікальне ім'я для файлу

@@ -574,7 +574,12 @@ const MedicationsPage = () => {
       setIsUploadingPhotos(true);
       try {
         const newUrls = await Promise.all(
-          files.map(file => getUrlofUploadedAvatar(file, user.userId, { subfolder: 'medication' })),
+          files.map(file =>
+            getUrlofUploadedAvatar(file, user.userId, {
+              subfolder: 'medication',
+              disableCompression: true,
+            }),
+          ),
         );
 
         const existingPhotos = (() => {
