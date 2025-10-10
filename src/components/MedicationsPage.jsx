@@ -19,6 +19,56 @@ import {
 } from './config';
 import { formatMedicationScheduleForClipboard } from '../utils/medicationClipboard';
 
+const normalizePhotosArray = rawPhotos => {
+  if (Array.isArray(rawPhotos)) {
+    return rawPhotos.filter(Boolean);
+  }
+  if (rawPhotos && typeof rawPhotos === 'object') {
+    return Object.values(rawPhotos).filter(Boolean);
+  }
+  return [];
+};
+
+const isMedicationPhotoUrl = (photoUrl, userId) => {
+  if (!photoUrl) {
+    return false;
+  }
+
+  try {
+    const afterObjectSegment = photoUrl.split('/o/')[1];
+    if (!afterObjectSegment) {
+      return false;
+    }
+    const [encodedPath] = afterObjectSegment.split('?');
+    if (!encodedPath) {
+      return false;
+    }
+    const decodedPath = decodeURIComponent(encodedPath);
+    if (userId) {
+      return decodedPath.startsWith(`avatar/${userId}/medication/`);
+    }
+    return decodedPath.includes('/medication/');
+  } catch (error) {
+    console.error('Failed to parse photo url', error);
+    return false;
+  }
+};
+
+const splitPhotosByMedicationFolder = (rawPhotos, userId) => {
+  const normalizedPhotos = normalizePhotosArray(rawPhotos);
+  return normalizedPhotos.reduce(
+    (acc, url) => {
+      if (isMedicationPhotoUrl(url, userId)) {
+        acc.medication.push(url);
+      } else {
+        acc.others.push(url);
+      }
+      return acc;
+    },
+    { medication: [], others: [] },
+  );
+};
+
 const PageContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -515,16 +565,10 @@ const MedicationsPage = () => {
   const isReady = !isScheduleLoading && !!ownerId;
 
   const canCopySchedule = hasScheduleData && !isScheduleLoading;
-  const photos = useMemo(() => {
-    const rawPhotos = user?.photos;
-    if (Array.isArray(rawPhotos)) {
-      return rawPhotos.filter(Boolean);
-    }
-    if (rawPhotos && typeof rawPhotos === 'object') {
-      return Object.values(rawPhotos).filter(Boolean);
-    }
-    return [];
-  }, [user]);
+  const { medication: photos } = useMemo(
+    () => splitPhotosByMedicationFolder(user?.photos, user?.userId),
+    [user?.photos, user?.userId],
+  );
   const canShowPhotos = photos.length > 0;
 
   const handleOpenPhotos = useCallback(() => {
@@ -545,16 +589,18 @@ const MedicationsPage = () => {
   }, []);
 
   const persistPhotoList = useCallback(
-    async updatedPhotos => {
+    async (medicationPhotos, preservedPhotos = []) => {
       if (!user?.userId) return;
+
+      const mergedPhotos = [...preservedPhotos, ...medicationPhotos];
       const results = await Promise.allSettled([
-        updateDataInNewUsersRTDB(user.userId, { photos: updatedPhotos }, 'update'),
-        updateDataInRealtimeDB(user.userId, { photos: updatedPhotos }, 'update'),
-        updateDataInFiresoreDB(user.userId, { photos: updatedPhotos }, 'update'),
+        updateDataInNewUsersRTDB(user.userId, { photos: mergedPhotos }, 'update'),
+        updateDataInRealtimeDB(user.userId, { photos: mergedPhotos }, 'update'),
+        updateDataInFiresoreDB(user.userId, { photos: mergedPhotos }, 'update'),
       ]);
       results.forEach(result => {
         if (result.status === 'rejected') {
-          console.error('Failed to persist photo list', result.reason);
+          console.error('Failed to persist medication photo list', result.reason);
         }
       });
     },
@@ -582,20 +628,12 @@ const MedicationsPage = () => {
           ),
         );
 
-        const existingPhotos = (() => {
-          const rawPhotos = user?.photos;
-          if (Array.isArray(rawPhotos)) {
-            return rawPhotos.filter(Boolean);
-          }
-          if (rawPhotos && typeof rawPhotos === 'object') {
-            return Object.values(rawPhotos).filter(Boolean);
-          }
-          return [];
-        })();
+        const { others: preservedPhotos } = splitPhotosByMedicationFolder(user?.photos, user?.userId);
+        const updatedMedicationPhotos = [...photos, ...newUrls];
+        const mergedPhotos = [...preservedPhotos, ...updatedMedicationPhotos];
 
-        const updatedPhotos = [...existingPhotos, ...newUrls];
-        setUser(prev => (prev ? { ...prev, photos: updatedPhotos } : prev));
-        await persistPhotoList(updatedPhotos);
+        setUser(prev => (prev ? { ...prev, photos: mergedPhotos } : prev));
+        await persistPhotoList(updatedMedicationPhotos, preservedPhotos);
         toast.success('Фотографії успішно завантажено');
       } catch (error) {
         console.error('Failed to upload stimulation photos', error);
@@ -604,7 +642,7 @@ const MedicationsPage = () => {
         setIsUploadingPhotos(false);
       }
     },
-    [persistPhotoList, user],
+    [persistPhotoList, photos, user],
   );
 
   const handleDeletePhoto = useCallback(
@@ -617,20 +655,24 @@ const MedicationsPage = () => {
       }
 
       setPhotoBeingDeleted(photoUrl);
-      const updatedPhotos = currentPhotos.filter((_, i) => i !== index);
-      setUser(prev => (prev ? { ...prev, photos: updatedPhotos } : prev));
+      const { others: preservedPhotos } = splitPhotosByMedicationFolder(user?.photos, user?.userId);
+      const updatedMedicationPhotos = currentPhotos.filter((_, i) => i !== index);
+      const previousMergedPhotos = [...preservedPhotos, ...currentPhotos];
+      const mergedPhotos = [...preservedPhotos, ...updatedMedicationPhotos];
+
+      setUser(prev => (prev ? { ...prev, photos: mergedPhotos } : prev));
 
       try {
         await deletePhotos(user.userId, [photoUrl]);
-        await persistPhotoList(updatedPhotos);
+        await persistPhotoList(updatedMedicationPhotos, preservedPhotos);
         toast.success('Фото видалено');
         setViewerIndex(prev => {
           if (prev === null) return prev;
           if (prev === index) {
-            if (updatedPhotos.length === 0) {
+            if (updatedMedicationPhotos.length === 0) {
               return null;
             }
-            return Math.min(prev, updatedPhotos.length - 1);
+            return Math.min(prev, updatedMedicationPhotos.length - 1);
           }
           if (prev > index) {
             return prev - 1;
@@ -640,12 +682,12 @@ const MedicationsPage = () => {
       } catch (error) {
         console.error('Failed to delete medication photo', error);
         toast.error('Не вдалося видалити фото');
-        setUser(prev => (prev ? { ...prev, photos: currentPhotos } : prev));
+        setUser(prev => (prev ? { ...prev, photos: previousMergedPhotos } : prev));
       } finally {
         setPhotoBeingDeleted(null);
       }
     },
-    [persistPhotoList, photoBeingDeleted, photos, user?.userId],
+    [persistPhotoList, photoBeingDeleted, photos, user?.photos, user?.userId],
   );
 
   const handleDelete = useCallback(async () => {
@@ -658,15 +700,17 @@ const MedicationsPage = () => {
     if (!confirmed) return;
 
     try {
+      const { others: preservedPhotos } = splitPhotosByMedicationFolder(user?.photos, user?.userId);
       if (photos.length > 0 && user?.userId) {
         try {
           await deletePhotos(user.userId, photos);
         } catch (photoError) {
           console.error('Failed to delete medication photos when removing schedule', photoError);
         }
-        await persistPhotoList([]);
-        setUser(prev => (prev ? { ...prev, photos: [] } : prev));
       }
+
+      await persistPhotoList([], preservedPhotos);
+      setUser(prev => (prev ? { ...prev, photos: preservedPhotos } : prev));
 
       await deleteMedicationSchedule(ownerId, userId);
       setSchedule(null);
@@ -676,7 +720,7 @@ const MedicationsPage = () => {
       console.error('Failed to delete medication schedule', error);
       toast.error('Не вдалося видалити розклад ліків');
     }
-  }, [handleClose, ownerId, persistPhotoList, photos, user?.userId, userId]);
+  }, [handleClose, ownerId, persistPhotoList, photos, user?.photos, user?.userId, userId]);
 
   return (
     <PageContainer>
