@@ -6,6 +6,7 @@ import {
   generateSchedule,
   shouldUsePregnancyToken,
   splitCustomEventEntries,
+  updateCustomEventsForTransfer,
 } from 'components/StimulationSchedule';
 
 jest.mock('components/smallCard/actions', () => ({
@@ -95,6 +96,38 @@ describe('buildCustomEventLabel', () => {
     const label = buildCustomEventLabel(customDate, baseDate, transferDate, 'контроль');
 
     expect(label).toBe('6й день контроль');
+  });
+});
+
+describe('updateCustomEventsForTransfer', () => {
+  it('recalculates custom event prefix once transfer date is set', () => {
+    const baseDate = new Date(2024, 7, 18);
+    const transferDate = new Date(baseDate);
+    transferDate.setDate(transferDate.getDate() + 5);
+    const customDate = new Date(baseDate);
+    customDate.setDate(customDate.getDate() + 32);
+
+    const initialLabel = buildCustomEventLabel(customDate, baseDate, null, 'контроль');
+    const schedule = [
+      { key: 'visit1', date: new Date(baseDate), label: 'Візит 1' },
+      {
+        key: 'ap-1',
+        date: new Date(customDate),
+        label: initialLabel,
+        description: 'контроль',
+      },
+    ];
+
+    const updated = updateCustomEventsForTransfer(schedule, {
+      baseDate,
+      transferDate,
+    });
+
+    const expectedLabel = buildCustomEventLabel(customDate, baseDate, transferDate, 'контроль');
+
+    expect(schedule[1].label).toBe(initialLabel);
+    expect(updated).not.toBe(schedule);
+    expect(updated[1].label).toBe(expectedLabel);
   });
 });
 

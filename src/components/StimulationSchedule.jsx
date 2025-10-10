@@ -754,6 +754,56 @@ const buildCustomEventLabel = (date, baseDate, transferDate, description) => {
   return parts.join(' ').trim();
 };
 
+const updateCustomEventsForTransfer = (
+  items,
+  { baseDate = null, transferDate = null, preCycleBaseDate = null } = {},
+) => {
+  if (!transferDate || !Array.isArray(items) || items.length === 0) {
+    return items;
+  }
+
+  const normalizedTransfer = normalizeDate(transferDate);
+  const next = [];
+  let didUpdate = false;
+
+  for (const item of items) {
+    if (!item || !isCustomKey(item.key) || !item.date || item.preserveUserPrefix) {
+      next.push(item);
+      continue;
+    }
+
+    const baseForLabel = resolveCustomLabelBase(item.date, {
+      baseDate,
+      preCycleBaseDate,
+      transferDate: normalizedTransfer,
+      fallbackDate: item.date,
+    });
+
+    const descriptionSource =
+      item.description || sanitizeDescription(item.raw) || sanitizeDescription(item.label);
+
+    const rebuiltLabel = buildCustomEventLabel(
+      item.date,
+      baseForLabel,
+      normalizedTransfer,
+      descriptionSource,
+    );
+
+    if (rebuiltLabel && rebuiltLabel !== item.label) {
+      next.push({
+        ...item,
+        label: rebuiltLabel,
+      });
+      didUpdate = true;
+      continue;
+    }
+
+    next.push(item);
+  }
+
+  return didUpdate ? next : items;
+};
+
 const isSameDay = (a, b) => {
   if (!a || !b) return false;
   return normalizeDate(a).getTime() === normalizeDate(b).getTime();
@@ -2045,12 +2095,23 @@ const StimulationSchedule = ({
         didUpdate = true;
       }
 
+      const updatedCustomEvents = updateCustomEventsForTransfer(next, {
+        baseDate: baseForState,
+        transferDate: normalizedTransfer,
+        preCycleBaseDate: preBaseForState,
+      });
+      if (updatedCustomEvents !== next) {
+        next = updatedCustomEvents;
+        didUpdate = true;
+      }
+
       return didUpdate ? next : items;
     },
     [
       adjustItemForDateFn,
       applyHcgDateToDependents,
       applyUsDateToDependents,
+      updateCustomEventsForTransfer,
       preCycleBaseDate,
       resolvedBaseDate,
     ],
@@ -3222,6 +3283,7 @@ export {
   buildCustomEventLabel,
   computeCustomDateAndLabel,
   splitCustomEventEntries,
+  updateCustomEventsForTransfer,
 };
 
 export default StimulationSchedule;
