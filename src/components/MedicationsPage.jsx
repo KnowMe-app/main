@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { onValue } from 'firebase/database';
-import { FiCopy, FiImage, FiDownload, FiX } from 'react-icons/fi';
+import { FiCopy, FiImage, FiUpload, FiX } from 'react-icons/fi';
 import PhotoViewer from './PhotoViewer';
 import MedicationSchedule from './MedicationSchedule';
 import {
@@ -11,6 +11,10 @@ import {
   fetchUserById,
   getMedicationScheduleRef,
   saveMedicationSchedule,
+  getUrlofUploadedAvatar,
+  updateDataInRealtimeDB,
+  updateDataInFiresoreDB,
+  updateDataInNewUsersRTDB,
 } from './config';
 import { formatMedicationScheduleForClipboard } from '../utils/medicationClipboard';
 
@@ -233,21 +237,39 @@ const PhotoThumbnailImage = styled.img`
   transition: transform 0.2s ease;
 `;
 
-const DownloadButton = styled.a`
+const UploadSection = styled.div`
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+`;
+
+const UploadLabel = styled.label`
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 8px;
+  padding: 8px 16px;
   border-radius: 6px;
   background-color: #ffb347;
-  color: white;
-  text-decoration: none;
-  font-size: 13px;
-  justify-content: center;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
 
-  &:hover {
-    background-color: #ff9a1a;
-  }
+  ${({ $disabled }) =>
+    $disabled
+      ? `
+    opacity: 0.7;
+    cursor: not-allowed;
+    pointer-events: none;
+  `
+      : `
+    &:hover {
+      background-color: #ff9a1a;
+    }
+  `}
+`;
+
+const HiddenFileInput = styled.input`
+  display: none;
 `;
 
 const MedicationsPage = () => {
@@ -262,6 +284,7 @@ const MedicationsPage = () => {
   const saveTimeoutRef = useRef(null);
   const [isPhotosModalOpen, setIsPhotosModalOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(null);
+  const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
 
   const hasScheduleData = useMemo(
     () =>
@@ -494,12 +517,8 @@ const MedicationsPage = () => {
   const canShowPhotos = photos.length > 0;
 
   const handleOpenPhotos = useCallback(() => {
-    if (canShowPhotos) {
-      setIsPhotosModalOpen(true);
-    } else {
-      toast.error('Немає фотографій для перегляду');
-    }
-  }, [canShowPhotos]);
+    setIsPhotosModalOpen(true);
+  }, []);
 
   const handleClosePhotos = useCallback(() => {
     setIsPhotosModalOpen(false);
@@ -513,6 +532,64 @@ const MedicationsPage = () => {
   const handleCloseViewer = useCallback(() => {
     setViewerIndex(null);
   }, []);
+
+  const persistPhotoList = useCallback(
+    async updatedPhotos => {
+      if (!user?.userId) return;
+      const results = await Promise.allSettled([
+        updateDataInNewUsersRTDB(user.userId, { photos: updatedPhotos }, 'update'),
+        updateDataInRealtimeDB(user.userId, { photos: updatedPhotos }, 'update'),
+        updateDataInFiresoreDB(user.userId, { photos: updatedPhotos }, 'update'),
+      ]);
+      results.forEach(result => {
+        if (result.status === 'rejected') {
+          console.error('Failed to persist photo list', result.reason);
+        }
+      });
+    },
+    [user?.userId],
+  );
+
+  const handleUploadPhotos = useCallback(
+    async event => {
+      if (!user?.userId) return;
+
+      const files = Array.from(event.target.files || []).filter(Boolean);
+      event.target.value = '';
+      if (files.length === 0) {
+        return;
+      }
+
+      setIsUploadingPhotos(true);
+      try {
+        const newUrls = await Promise.all(
+          files.map(file => getUrlofUploadedAvatar(file, user.userId)),
+        );
+
+        const existingPhotos = (() => {
+          const rawPhotos = user?.photos;
+          if (Array.isArray(rawPhotos)) {
+            return rawPhotos.filter(Boolean);
+          }
+          if (rawPhotos && typeof rawPhotos === 'object') {
+            return Object.values(rawPhotos).filter(Boolean);
+          }
+          return [];
+        })();
+
+        const updatedPhotos = [...existingPhotos, ...newUrls];
+        setUser(prev => (prev ? { ...prev, photos: updatedPhotos } : prev));
+        await persistPhotoList(updatedPhotos);
+        toast.success('Фотографії успішно завантажено');
+      } catch (error) {
+        console.error('Failed to upload stimulation photos', error);
+        toast.error('Не вдалося завантажити фото');
+      } finally {
+        setIsUploadingPhotos(false);
+      }
+    },
+    [persistPhotoList, user],
+  );
 
   return (
     <PageContainer>
@@ -533,9 +610,16 @@ const MedicationsPage = () => {
           <PhotosButton
             type="button"
             onClick={handleOpenPhotos}
-            disabled={!canShowPhotos}
-            aria-label="Переглянути та завантажити фотографії"
-            title={canShowPhotos ? 'Переглянути та завантажити фотографії' : 'Немає фотографій'}
+            aria-label={
+              canShowPhotos
+                ? 'Переглянути або додати фотографії'
+                : 'Додати фотографії'
+            }
+            title={
+              canShowPhotos
+                ? 'Переглянути або додати фотографії'
+                : 'Додати фотографії'
+            }
           >
             <FiImage size={18} />
           </PhotosButton>
@@ -595,19 +679,24 @@ const MedicationsPage = () => {
                       >
                         <PhotoThumbnailImage src={photoUrl} alt={`Фото ${index + 1}`} />
                       </PhotoThumbnailButton>
-                      <DownloadButton
-                        href={photoUrl}
-                        download={`photo-${index + 1}.jpg`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <FiDownload size={14} />
-                        Завантажити
-                      </DownloadButton>
                     </PhotoCard>
                   ))}
                 </PhotosGrid>
               )}
+              <UploadSection>
+                <UploadLabel htmlFor="medications-photos-upload" $disabled={isUploadingPhotos}>
+                  <FiUpload size={16} />
+                  {isUploadingPhotos ? 'Завантаження…' : 'Завантажити фото'}
+                </UploadLabel>
+                <HiddenFileInput
+                  id="medications-photos-upload"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleUploadPhotos}
+                  disabled={isUploadingPhotos}
+                />
+              </UploadSection>
             </PhotosContent>
           </PhotosModal>
         </PhotosModalOverlay>
