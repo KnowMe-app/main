@@ -96,6 +96,28 @@ describe('buildCustomEventLabel', () => {
 
     expect(label).toBe('6й день контроль');
   });
+
+  it('uses day prefix for pregnancy events within thirty days after transfer', () => {
+    const baseDate = new Date(2024, 0, 5);
+    const transferDate = new Date(2024, 0, 12);
+    const pregnancyCheck = new Date(transferDate);
+    pregnancyCheck.setDate(pregnancyCheck.getDate() + 14);
+
+    const label = buildCustomEventLabel(pregnancyCheck, baseDate, transferDate, 'контроль');
+
+    expect(label).toBe('15й день контроль');
+  });
+
+  it('switches to week token for pregnancy events after thirty days post transfer', () => {
+    const baseDate = new Date(2024, 0, 5);
+    const transferDate = new Date(2024, 0, 12);
+    const lateCheck = new Date(transferDate);
+    lateCheck.setDate(lateCheck.getDate() + 31);
+
+    const label = buildCustomEventLabel(lateCheck, baseDate, transferDate, 'контроль');
+
+    expect(label).toBe('4т4д контроль');
+  });
 });
 
 describe('computeCustomDateAndLabel', () => {
@@ -157,16 +179,16 @@ describe('deriveScheduleDisplayInfo', () => {
 describe('shouldUsePregnancyToken', () => {
   it('returns false for events within thirty days after transfer', () => {
     const transfer = new Date(2024, 0, 10);
-    const hcg = new Date(transfer);
-    hcg.setDate(hcg.getDate() + 12);
+    const dayThirty = new Date(transfer);
+    dayThirty.setDate(dayThirty.getDate() + 29);
 
-    expect(shouldUsePregnancyToken(hcg, transfer)).toBe(false);
+    expect(shouldUsePregnancyToken(dayThirty, transfer)).toBe(false);
   });
 
   it('returns true once more than thirty days have passed after transfer', () => {
     const transfer = new Date(2024, 0, 10);
     const followUp = new Date(transfer);
-    followUp.setDate(followUp.getDate() + 31);
+    followUp.setDate(followUp.getDate() + 30);
 
     expect(shouldUsePregnancyToken(followUp, transfer)).toBe(true);
   });
