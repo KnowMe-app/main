@@ -54,13 +54,19 @@ export { PAGE_SIZE, BATCH_SIZE } from './constants';
 
 const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
 
-export const getUrlofUploadedAvatar = async (photo, userId) => {
+export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
   const compressedPhoto = await compressPhoto(photo, 50); // Стиснення фото до 50 кБ
   const file = await getFileBlob(compressedPhoto); // Перетворюємо стиснене фото на об'єкт Blob
 
   const uniqueId = Date.now().toString(); // генеруємо унікальне ім"я для фото
   const fileName = `${uniqueId}.jpg`; // Використовуємо унікальне ім'я для файлу
-  const linkToFile = ref(storage, `avatar/${userId}/${fileName}`); // створюємо посилання на місце збереження фото в Firebase
+  const pathSegments = ['avatar', userId];
+  if (options?.subfolder) {
+    pathSegments.push(options.subfolder);
+  }
+  pathSegments.push(fileName);
+  const filePath = pathSegments.join('/');
+  const linkToFile = ref(storage, filePath); // створюємо посилання на місце збереження фото в Firebase
   await uploadBytes(linkToFile, file); // завантажуємо фото
   const url = await getDownloadURL(linkToFile); // отримуємо URL-адресу завантаженого фото
   return url;
@@ -1408,10 +1414,15 @@ export const deletePhotos = async (userId, photoUrls = []) => {
   await Promise.all(
     validUrls.map(async photoUrl => {
       try {
-        const urlParts = photoUrl.split('%2F');
-        const fileNameWithExtension = urlParts[urlParts.length - 1];
-        const [fileName] = fileNameWithExtension.split('?');
-        const filePath = `avatar/${userId}/${fileName}`;
+        const afterObjectSegment = photoUrl.split('/o/')[1];
+        if (!afterObjectSegment) {
+          return;
+        }
+        const [encodedPath] = afterObjectSegment.split('?');
+        const filePath = decodeURIComponent(encodedPath);
+        if (!filePath.startsWith(`avatar/${userId}`)) {
+          return;
+        }
         const fileRef = ref(storage, filePath);
         await deleteObject(fileRef);
       } catch (error) {

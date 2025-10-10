@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { onValue } from 'firebase/database';
-import { FiCopy, FiImage, FiUpload, FiX } from 'react-icons/fi';
+import { FiCopy, FiImage, FiTrash2, FiUpload, FiX } from 'react-icons/fi';
 import PhotoViewer from './PhotoViewer';
 import MedicationSchedule from './MedicationSchedule';
 import {
@@ -15,6 +15,7 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
   updateDataInNewUsersRTDB,
+  deletePhotos,
 } from './config';
 import { formatMedicationScheduleForClipboard } from '../utils/medicationClipboard';
 
@@ -237,6 +238,35 @@ const PhotoThumbnailImage = styled.img`
   transition: transform 0.2s ease;
 `;
 
+const PhotoActions = styled.div`
+  display: flex;
+  justify-content: flex-end;
+`;
+
+const PhotoDeleteButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 6px;
+  background-color: #d32f2f;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-size: 12px;
+
+  &:hover:not(:disabled) {
+    background-color: #b71c1c;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+`;
+
 const UploadSection = styled.div`
   margin-top: 20px;
   display: flex;
@@ -285,6 +315,7 @@ const MedicationsPage = () => {
   const [isPhotosModalOpen, setIsPhotosModalOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(null);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+  const [photoBeingDeleted, setPhotoBeingDeleted] = useState(null);
 
   const hasScheduleData = useMemo(
     () =>
@@ -451,26 +482,6 @@ const MedicationsPage = () => {
     }
   }, [hasScheduleData, schedule]);
 
-  const handleDelete = useCallback(async () => {
-    if (!ownerId || !userId) {
-      toast.error('Не вдалося визначити користувача для видалення ліків');
-      return;
-    }
-
-    const confirmed = window.confirm('Видалити розклад ліків цього пацієнта?');
-    if (!confirmed) return;
-
-    try {
-      await deleteMedicationSchedule(ownerId, userId);
-      setSchedule(null);
-      toast.success('Розклад ліків видалено');
-      handleClose();
-    } catch (error) {
-      console.error('Failed to delete medication schedule', error);
-      toast.error('Не вдалося видалити розклад ліків');
-    }
-  }, [ownerId, userId, handleClose]);
-
   const handleScheduleChange = useCallback(
     updatedSchedule => {
       setSchedule(updatedSchedule);
@@ -563,7 +574,7 @@ const MedicationsPage = () => {
       setIsUploadingPhotos(true);
       try {
         const newUrls = await Promise.all(
-          files.map(file => getUrlofUploadedAvatar(file, user.userId)),
+          files.map(file => getUrlofUploadedAvatar(file, user.userId, { subfolder: 'medication' })),
         );
 
         const existingPhotos = (() => {
@@ -590,6 +601,77 @@ const MedicationsPage = () => {
     },
     [persistPhotoList, user],
   );
+
+  const handleDeletePhoto = useCallback(
+    async index => {
+      if (!user?.userId || photoBeingDeleted) return;
+      const currentPhotos = [...photos];
+      const photoUrl = currentPhotos[index];
+      if (!photoUrl) {
+        return;
+      }
+
+      setPhotoBeingDeleted(photoUrl);
+      const updatedPhotos = currentPhotos.filter((_, i) => i !== index);
+      setUser(prev => (prev ? { ...prev, photos: updatedPhotos } : prev));
+
+      try {
+        await deletePhotos(user.userId, [photoUrl]);
+        await persistPhotoList(updatedPhotos);
+        toast.success('Фото видалено');
+        setViewerIndex(prev => {
+          if (prev === null) return prev;
+          if (prev === index) {
+            if (updatedPhotos.length === 0) {
+              return null;
+            }
+            return Math.min(prev, updatedPhotos.length - 1);
+          }
+          if (prev > index) {
+            return prev - 1;
+          }
+          return prev;
+        });
+      } catch (error) {
+        console.error('Failed to delete medication photo', error);
+        toast.error('Не вдалося видалити фото');
+        setUser(prev => (prev ? { ...prev, photos: currentPhotos } : prev));
+      } finally {
+        setPhotoBeingDeleted(null);
+      }
+    },
+    [persistPhotoList, photoBeingDeleted, photos, user?.userId],
+  );
+
+  const handleDelete = useCallback(async () => {
+    if (!ownerId || !userId) {
+      toast.error('Не вдалося визначити користувача для видалення ліків');
+      return;
+    }
+
+    const confirmed = window.confirm('Видалити розклад ліків цього пацієнта?');
+    if (!confirmed) return;
+
+    try {
+      if (photos.length > 0 && user?.userId) {
+        try {
+          await deletePhotos(user.userId, photos);
+        } catch (photoError) {
+          console.error('Failed to delete medication photos when removing schedule', photoError);
+        }
+        await persistPhotoList([]);
+        setUser(prev => (prev ? { ...prev, photos: [] } : prev));
+      }
+
+      await deleteMedicationSchedule(ownerId, userId);
+      setSchedule(null);
+      toast.success('Розклад ліків видалено');
+      handleClose();
+    } catch (error) {
+      console.error('Failed to delete medication schedule', error);
+      toast.error('Не вдалося видалити розклад ліків');
+    }
+  }, [handleClose, ownerId, persistPhotoList, photos, user?.userId, userId]);
 
   return (
     <PageContainer>
@@ -679,6 +761,16 @@ const MedicationsPage = () => {
                       >
                         <PhotoThumbnailImage src={photoUrl} alt={`Фото ${index + 1}`} />
                       </PhotoThumbnailButton>
+                      <PhotoActions>
+                        <PhotoDeleteButton
+                          type="button"
+                          onClick={() => handleDeletePhoto(index)}
+                          aria-label={`Видалити фото ${index + 1}`}
+                          disabled={photoBeingDeleted === photoUrl}
+                        >
+                          <FiTrash2 size={14} />
+                        </PhotoDeleteButton>
+                      </PhotoActions>
                     </PhotoCard>
                   ))}
                 </PhotosGrid>
@@ -703,7 +795,12 @@ const MedicationsPage = () => {
       )}
 
       {viewerIndex !== null && (
-        <PhotoViewer photos={photos} index={viewerIndex} onClose={handleCloseViewer} />
+        <PhotoViewer
+          photos={photos}
+          index={viewerIndex}
+          onClose={handleCloseViewer}
+          onDelete={handleDeletePhoto}
+        />
       )}
     </PageContainer>
   );
