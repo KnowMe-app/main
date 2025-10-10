@@ -305,9 +305,19 @@ export const buildTodayPlaceholderComment = (
   if (comment) {
     const tokenInfo = normalizeWeeksDaysToken(comment);
     if (tokenInfo && !shouldShowPregnancyToken) {
-      const reference = normalizedTransfer || normalizedBase;
-      const dayInfo = reference
-        ? getWeeksDaysTokenForDate(normalizedToday, reference)
+      const candidateReferences = [normalizedBase, normalizedTransfer].filter(
+        Boolean,
+      );
+      const matchingReference = candidateReferences.find(candidate => {
+        const info = getWeeksDaysTokenForDate(normalizedToday, candidate);
+        return info?.token && info.token === tokenInfo.normalized;
+      });
+
+      const fallbackReference = normalizedTransfer || normalizedBase;
+      const effectiveReference = matchingReference || fallbackReference;
+
+      const dayInfo = effectiveReference
+        ? getWeeksDaysTokenForDate(normalizedToday, effectiveReference)
         : null;
       if (dayInfo) {
         const dayNumber = dayInfo.weeks * 7 + dayInfo.days + 1;
