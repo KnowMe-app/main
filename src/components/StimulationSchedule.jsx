@@ -220,7 +220,7 @@ export const shouldUsePregnancyToken = (itemDate, transferDate) => {
   return diffDays > DAY_PREFIX_TRANSFER_WINDOW_DAYS;
 };
 
-const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
+export const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   if (!date) return '';
 
   const normalizedDate = normalizeDate(date);
@@ -276,6 +276,56 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   }
 
   return '';
+};
+
+export const buildTodayPlaceholderComment = (
+  todayDate,
+  baseDate,
+  transferDate = null,
+) => {
+  if (!todayDate || !baseDate) {
+    return '';
+  }
+
+  const normalizedToday = normalizeDate(todayDate);
+  const normalizedBase = normalizeDate(baseDate);
+  const normalizedTransfer = transferDate ? normalizeDate(transferDate) : null;
+
+  let comment = getSchedulePrefixForDate(
+    normalizedToday,
+    normalizedBase,
+    normalizedTransfer,
+  );
+
+  const shouldShowPregnancyToken = shouldUsePregnancyToken(
+    normalizedToday,
+    normalizedTransfer,
+  );
+
+  if (comment) {
+    const tokenInfo = normalizeWeeksDaysToken(comment);
+    if (tokenInfo && !shouldShowPregnancyToken) {
+      const reference = normalizedTransfer || normalizedBase;
+      const dayInfo = reference
+        ? getWeeksDaysTokenForDate(normalizedToday, reference)
+        : null;
+      if (dayInfo) {
+        const dayNumber = dayInfo.weeks * 7 + dayInfo.days + 1;
+        comment = `${Math.max(dayNumber, 1)}й день`;
+      }
+    }
+  }
+
+  if (!comment) {
+    const msInDay = 1000 * 60 * 60 * 24;
+    const diff = Math.round(
+      (normalizedToday.getTime() - normalizedBase.getTime()) / msInDay,
+    );
+    const totalDays = Math.max(diff, 0);
+    comment = `${Math.max(totalDays + 1, 1)}й день`;
+  }
+
+  return comment;
 };
 
 const stripSchedulePrefixTokens = text => {
@@ -2288,9 +2338,6 @@ const StimulationSchedule = ({
       return resolvedBase;
     })();
     if (baseForDiff) {
-      const msInDay = 1000 * 60 * 60 * 24;
-      const diff = Math.round((todayDate.getTime() - baseForDiff.getTime()) / msInDay);
-      const totalDays = Math.max(diff, 0);
       const normalizedBaseForPlaceholder = normalizeDate(baseForDiff);
       const transferSource =
         transferRef.current ||
@@ -2299,12 +2346,11 @@ const StimulationSchedule = ({
       const normalizedTransferForPlaceholder = transferSource
         ? normalizeDate(transferSource)
         : null;
-      const computedPrefix = getSchedulePrefixForDate(
+      const comment = buildTodayPlaceholderComment(
         todayDate,
         normalizedBaseForPlaceholder,
         normalizedTransferForPlaceholder,
       );
-      const comment = computedPrefix || `${Math.max(totalDays + 1, 1)}й день`;
       const placeholder = {
         key: 'today-placeholder',
         date: new Date(todayDate),
