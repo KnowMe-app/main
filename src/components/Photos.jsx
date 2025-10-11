@@ -139,6 +139,8 @@ export const Photos = ({ state, setState, collection }) => {
       const prevUserId = prevState?.userId;
       const prevPhotosArrayRaw = normalizePhotosArray(prevState.photos);
       const prevPhotosArray = filterOutMedicationPhotos(prevPhotosArrayRaw, prevUserId);
+      const prevPhotosWereSanitized =
+        Array.isArray(prevState.photos) && arraysEqual(prevState.photos, prevPhotosArray);
       const nextRaw =
         typeof updater === 'function'
           ? updater(prevPhotosArray)
@@ -157,7 +159,7 @@ export const Photos = ({ state, setState, collection }) => {
         return rest;
       }
 
-      if (arraysEqual(nextPhotosArray, prevPhotosArray) && prevHasPhotos && Array.isArray(prevState.photos)) {
+      if (arraysEqual(nextPhotosArray, prevPhotosArray) && prevHasPhotos && prevPhotosWereSanitized) {
         return prevState;
       }
 
