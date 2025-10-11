@@ -1448,6 +1448,24 @@ export const getAllUserPhotos = async userId => {
   }
 };
 
+export const getMedicationPhotos = async userId => {
+  if (!userId) {
+    return [];
+  }
+
+  try {
+    const folderRef = ref(storage, `avatar/${userId}/medication`);
+    const list = await listAll(folderRef);
+    const urls = await Promise.all(list.items.map(item => getDownloadURL(item)));
+    return urls;
+  } catch (error) {
+    if (error?.code !== 'storage/object-not-found') {
+      console.error('Error listing medication photos:', error);
+    }
+    return [];
+  }
+};
+
 const encodeKey = key => {
   return key
     .replace(/\s/g, '_space_')

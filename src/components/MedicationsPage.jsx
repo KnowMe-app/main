@@ -12,6 +12,7 @@ import {
   getMedicationScheduleRef,
   saveMedicationSchedule,
   getUrlofUploadedAvatar,
+  getMedicationPhotos,
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
   updateDataInNewUsersRTDB,
@@ -67,6 +68,14 @@ const splitPhotosByMedicationFolder = (rawPhotos, userId) => {
     },
     { medication: [], others: [] },
   );
+};
+
+const arePhotoListsEqual = (first = [], second = []) => {
+  if (first.length !== second.length) {
+    return false;
+  }
+
+  return first.every((item, index) => item === second[index]);
 };
 
 const PageContainer = styled.div`
@@ -360,6 +369,16 @@ const MedicationsPage = () => {
   const [isUserLoading, setIsUserLoading] = useState(!user);
   const [schedule, setSchedule] = useState(null);
   const [isScheduleLoading, setIsScheduleLoading] = useState(true);
+  const [medicationPhotos, setMedicationPhotos] = useState(() => {
+    const initialUser = location.state?.user;
+    if (!initialUser) {
+      return [];
+    }
+    const { medication } = splitPhotosByMedicationFolder(initialUser.photos, initialUser.userId);
+    return medication;
+  });
+  const [isMedicationPhotosLoading, setIsMedicationPhotosLoading] = useState(false);
+  const [photosReloadKey, setPhotosReloadKey] = useState(0);
   const ownerId = useMemo(() => localStorage.getItem('ownerId'), []);
   const saveTimeoutRef = useRef(null);
   const [isPhotosModalOpen, setIsPhotosModalOpen] = useState(false);
@@ -565,13 +584,70 @@ const MedicationsPage = () => {
   const isReady = !isScheduleLoading && !!ownerId;
 
   const canCopySchedule = hasScheduleData && !isScheduleLoading;
-  const { medication: photos } = useMemo(
-    () => splitPhotosByMedicationFolder(user?.photos, user?.userId),
-    [user?.photos, user?.userId],
-  );
-  const canShowPhotos = photos.length > 0;
+  const canShowPhotos = medicationPhotos.length > 0;
+
+  const resolvedUserId = user?.userId || userId;
+
+  useEffect(() => {
+    if (!user?.userId) {
+      return;
+    }
+
+    setUser(prev => {
+      if (!prev || !prev.userId) {
+        return prev;
+      }
+      const split = splitPhotosByMedicationFolder(prev.photos, prev.userId);
+      if (arePhotoListsEqual(split.medication, medicationPhotos)) {
+        return prev;
+      }
+      return { ...prev, photos: [...split.others, ...medicationPhotos] };
+    });
+  }, [medicationPhotos, user?.userId]);
+
+  useEffect(() => {
+    if (!resolvedUserId) {
+      setMedicationPhotos([]);
+      setIsMedicationPhotosLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    const fetchMedicationPhotos = async () => {
+      setIsMedicationPhotosLoading(true);
+      try {
+        const urls = await getMedicationPhotos(resolvedUserId);
+        if (!isActive) return;
+
+        setMedicationPhotos(prev => (arePhotoListsEqual(prev, urls) ? prev : urls));
+        setUser(prev => {
+          if (!prev || !prev.userId) {
+            return prev;
+          }
+          const split = splitPhotosByMedicationFolder(prev.photos, prev.userId);
+          if (arePhotoListsEqual(split.medication, urls)) {
+            return prev;
+          }
+          return { ...prev, photos: [...split.others, ...urls] };
+        });
+      } catch (error) {
+        console.error('Failed to load medication photos', error);
+      } finally {
+        if (isActive) {
+          setIsMedicationPhotosLoading(false);
+        }
+      }
+    };
+
+    fetchMedicationPhotos();
+
+    return () => {
+      isActive = false;
+    };
+  }, [photosReloadKey, resolvedUserId]);
 
   const handleOpenPhotos = useCallback(() => {
+    setPhotosReloadKey(prev => prev + 1);
     setIsPhotosModalOpen(true);
   }, []);
 
@@ -629,9 +705,10 @@ const MedicationsPage = () => {
         );
 
         const { others: preservedPhotos } = splitPhotosByMedicationFolder(user?.photos, user?.userId);
-        const updatedMedicationPhotos = [...photos, ...newUrls];
+        const updatedMedicationPhotos = [...medicationPhotos, ...newUrls];
         const mergedPhotos = [...preservedPhotos, ...updatedMedicationPhotos];
 
+        setMedicationPhotos(updatedMedicationPhotos);
         setUser(prev => (prev ? { ...prev, photos: mergedPhotos } : prev));
         await persistPhotoList(updatedMedicationPhotos, preservedPhotos);
         toast.success('Фотографії успішно завантажено');
@@ -642,13 +719,13 @@ const MedicationsPage = () => {
         setIsUploadingPhotos(false);
       }
     },
-    [persistPhotoList, photos, user],
+    [persistPhotoList, medicationPhotos, user],
   );
 
   const handleDeletePhoto = useCallback(
     async index => {
       if (!user?.userId || photoBeingDeleted) return;
-      const currentPhotos = [...photos];
+      const currentPhotos = [...medicationPhotos];
       const photoUrl = currentPhotos[index];
       if (!photoUrl) {
         return;
@@ -660,6 +737,7 @@ const MedicationsPage = () => {
       const previousMergedPhotos = [...preservedPhotos, ...currentPhotos];
       const mergedPhotos = [...preservedPhotos, ...updatedMedicationPhotos];
 
+      setMedicationPhotos(updatedMedicationPhotos);
       setUser(prev => (prev ? { ...prev, photos: mergedPhotos } : prev));
 
       try {
@@ -687,7 +765,7 @@ const MedicationsPage = () => {
         setPhotoBeingDeleted(null);
       }
     },
-    [persistPhotoList, photoBeingDeleted, photos, user?.photos, user?.userId],
+    [persistPhotoList, medicationPhotos, photoBeingDeleted, user?.photos, user?.userId],
   );
 
   const handleDelete = useCallback(async () => {
@@ -701,15 +779,16 @@ const MedicationsPage = () => {
 
     try {
       const { others: preservedPhotos } = splitPhotosByMedicationFolder(user?.photos, user?.userId);
-      if (photos.length > 0 && user?.userId) {
+      if (medicationPhotos.length > 0 && user?.userId) {
         try {
-          await deletePhotos(user.userId, photos);
+          await deletePhotos(user.userId, medicationPhotos);
         } catch (photoError) {
           console.error('Failed to delete medication photos when removing schedule', photoError);
         }
       }
 
       await persistPhotoList([], preservedPhotos);
+      setMedicationPhotos([]);
       setUser(prev => (prev ? { ...prev, photos: preservedPhotos } : prev));
 
       await deleteMedicationSchedule(ownerId, userId);
@@ -720,7 +799,7 @@ const MedicationsPage = () => {
       console.error('Failed to delete medication schedule', error);
       toast.error('Не вдалося видалити розклад ліків');
     }
-  }, [handleClose, ownerId, persistPhotoList, photos, user?.photos, user?.userId, userId]);
+  }, [handleClose, medicationPhotos, ownerId, persistPhotoList, user?.photos, user?.userId, userId]);
 
   return (
     <PageContainer>
@@ -797,11 +876,13 @@ const MedicationsPage = () => {
               </CloseModalButton>
             </PhotosModalHeader>
             <PhotosContent>
-              {photos.length === 0 ? (
+              {isMedicationPhotosLoading ? (
+                <LoadingState>Завантаження фотографій…</LoadingState>
+              ) : medicationPhotos.length === 0 ? (
                 <Message>Фотографії відсутні.</Message>
               ) : (
                 <PhotosGrid>
-                  {photos.map((photoUrl, index) => (
+                  {medicationPhotos.map((photoUrl, index) => (
                     <PhotoCard key={`${photoUrl}-${index}`}>
                       <PhotoThumbnailButton
                         type="button"
@@ -845,7 +926,7 @@ const MedicationsPage = () => {
 
       {viewerIndex !== null && (
         <PhotoViewer
-          photos={photos}
+          photos={medicationPhotos}
           index={viewerIndex}
           onClose={handleCloseViewer}
           onDelete={handleDeletePhoto}
