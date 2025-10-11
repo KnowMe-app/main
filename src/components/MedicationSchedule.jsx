@@ -937,14 +937,14 @@ const evaluateIssuedInput = (displayValue, fallbackIssued) => {
 
   if (displayValue === '') {
     return {
-      issued: 0,
+      issued: '',
       displayValue: '',
     };
   }
 
   const raw = String(displayValue).trim();
   if (!raw) {
-    return { issued: 0, displayValue: '' };
+    return { issued: '', displayValue: '' };
   }
 
   const cleaned = raw.startsWith('=') ? raw.slice(1) : raw;
@@ -2410,5 +2410,6 @@ export {
   mergeScheduleWithClipboardData,
   cleanMedicationEventComment,
   buildStimulationEventLookup,
+  evaluateIssuedInput,
 };
 export default MedicationSchedule;
