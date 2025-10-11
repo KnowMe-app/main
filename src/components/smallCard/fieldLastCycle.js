@@ -158,7 +158,7 @@ const formatDate = date => {
   return `${day}.${month}.${year}`;
 };
 
-export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
+export const FieldLastCycle = ({ userData, setUsers, setState }) => {
   const [status, setStatus] = React.useState(userData.cycleStatus ?? '');
   const submittedRef = React.useRef(false);
   const [localValue, setLocalValue] = React.useState(formatDateToDisplay(userData.lastCycle) || '');
@@ -233,7 +233,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           cycleStatus: normalizedStatus,
         };
         handleChange(setUsers, setState, userData.userId, updates);
-        handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
+        handleSubmit({ userId: userData.userId, ...updates }, 'overwrite');
         submittedRef.current = true;
       } else {
         const updates = normalizedStatus
@@ -276,7 +276,6 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         handleSubmit(
           { userId: userData.userId, ...updates },
           'overwrite',
-          isToastOn,
           removalKeys,
         );
         submittedRef.current = true;
@@ -287,7 +286,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         ? { lastCycle: serverFormattedDate, cycleStatus: normalizedStatus }
         : { lastCycle: serverFormattedDate };
       handleChange(setUsers, setState, userData.userId, updates);
-      handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
+      handleSubmit({ userId: userData.userId, ...updates }, 'overwrite');
       submittedRef.current = true;
     }
   };
@@ -335,7 +334,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
       }
 
       handleChange(setUsers, setState, userData.userId, updates);
-      handleSubmit({ userId: userData.userId, ...updates }, 'overwrite', isToastOn);
+      handleSubmit({ userId: userData.userId, ...updates }, 'overwrite');
       submittedRef.current = true;
       return newState;
     });
@@ -370,17 +369,15 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           { stimulationSchedule: undefined },
           false,
           {},
-          isToastOn,
         );
         handleSubmit(
           { userId: userData.userId, stimulationSchedule: undefined },
           'overwrite',
-          isToastOn,
         );
       }
     }
     if (!submittedRef.current) {
-      handleSubmit({ userId: userData.userId }, 'overwrite', isToastOn);
+      handleSubmit({ userId: userData.userId }, 'overwrite');
     }
     submittedRef.current = false;
   };
@@ -404,17 +401,15 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
                   { stimulationSchedule: undefined },
                   false,
                   {},
-                  isToastOn,
                 );
                 handleSubmit(
                   { userId: userData.userId, stimulationSchedule: undefined },
                   'overwrite',
-                  isToastOn,
                 );
               }
             }
             if (!submittedRef.current) {
-              handleSubmit({ userId: userData.userId }, 'overwrite', isToastOn);
+              handleSubmit({ userId: userData.userId }, 'overwrite');
             }
             submittedRef.current = false;
           }}
@@ -445,12 +440,10 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         { stimulationSchedule: undefined },
         false,
         {},
-        isToastOn,
       );
       handleSubmit(
         { userId: userData.userId, stimulationSchedule: undefined },
         'overwrite',
-        isToastOn,
       );
     } else {
       handleChange(
@@ -461,15 +454,13 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
         scheduleString,
         false,
         {},
-        isToastOn,
       );
       handleSubmit(
         { userId: userData.userId, stimulationSchedule: scheduleString },
         'overwrite',
-        isToastOn,
       );
     }
-  }, [setUsers, setState, userData, isToastOn]);
+  }, [setUsers, setState, userData]);
 
   const handleSetToday = () => {
     const today = new Date();
@@ -494,17 +485,15 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           { stimulationSchedule: undefined },
           false,
           {},
-          isToastOn,
         );
         handleSubmit(
           { userId: userData.userId, stimulationSchedule: undefined },
           'overwrite',
-          isToastOn,
         );
       }
     }
     if (!submittedRef.current) {
-      handleSubmit({ userId: userData.userId }, 'overwrite', isToastOn);
+      handleSubmit({ userId: userData.userId }, 'overwrite');
     }
     submittedRef.current = false;
   };
@@ -584,7 +573,17 @@ export const FieldLastCycle = ({ userData, setUsers, setState, isToastOn }) => {
           <React.Fragment>
             <span style={{ color: 'white' }}>-</span>
             <AttentionButton
-              onClick={() => handleChange(setUsers, setState, userData.userId, 'getInTouch', nextCycle, true, {}, isToastOn)}
+              onClick={() =>
+                handleChange(
+                  setUsers,
+                  setState,
+                  userData.userId,
+                  'getInTouch',
+                  nextCycle,
+                  true,
+                  {},
+                )
+              }
               style={{ backgroundColor: '#007BFF' }}
             >
               {nextCycle.slice(0, 5)}

@@ -27,7 +27,6 @@ export const fieldGetInTouch = (
   setFavoriteUsers = () => {},
   dislikeUsers = {},
   setDislikeUsers = () => {},
-  isToastOn = false,
 ) => {
   const handleSendToEnd = () => {
     handleChange(
@@ -38,7 +37,6 @@ export const fieldGetInTouch = (
       '2099-99-99',
       true,
       { currentFilter, isDateInRange },
-      isToastOn,
     );
   };
 
@@ -59,7 +57,6 @@ export const fieldGetInTouch = (
       formattedDate,
       true,
       { currentFilter, isDateInRange },
-      isToastOn,
     );
   };
 
@@ -87,7 +84,6 @@ export const fieldGetInTouch = (
           '',
           true,
           { currentFilter, isDateInRange },
-          isToastOn,
         );
       } catch (error) {
         console.error('Failed to remove dislike:', error);
@@ -162,7 +158,6 @@ export const fieldGetInTouch = (
             '',
             true,
             { currentFilter, isDateInRange },
-            isToastOn,
           );
         }
       } catch (error) {
@@ -218,7 +213,6 @@ export const fieldGetInTouch = (
             serverFormattedDate,
             true,
             { currentFilter, isDateInRange },
-            isToastOn,
           );
         }}
         style={{

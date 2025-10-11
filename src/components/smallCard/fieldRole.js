@@ -1,9 +1,9 @@
 import { handleChange } from './actions';
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
 
-export const fieldRole = (userData, setUsers, setState, isToastOn) => {
+export const fieldRole = (userData, setUsers, setState) => {
   const handleSetRole = role => {
-    handleChange(setUsers, setState, userData.userId, 'role', role, true, {}, isToastOn);
+    handleChange(setUsers, setState, userData.userId, 'role', role, true, {});
   };
 
   return (
@@ -21,7 +21,6 @@ export const fieldRole = (userData, setUsers, setState, isToastOn) => {
             e.target.value,
             true,
             {},
-            isToastOn,
           )
         }
         style={{ marginLeft: 0, textAlign: 'left', width: '6ch' }}

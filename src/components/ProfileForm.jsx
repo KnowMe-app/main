@@ -77,7 +77,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
     return null;
   }
 
-  const { userId, setUsers, stateUpdater, isToastOn = false } = options;
+  const { userId, setUsers, stateUpdater } = options;
   const effectiveSetUsers = typeof setUsers === 'function' ? setUsers : stateUpdater;
   const canRemove = typeof effectiveSetUsers === 'function';
 
@@ -86,14 +86,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
       return;
     }
 
-    removeField(
-      userId,
-      keyPath,
-      effectiveSetUsers,
-      stateUpdater,
-      isToastOn,
-      keyPath,
-    );
+    removeField(userId, keyPath, effectiveSetUsers, stateUpdater, keyPath);
   };
 
   const extendedData = { ...data };

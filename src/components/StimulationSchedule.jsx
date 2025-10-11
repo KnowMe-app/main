@@ -1424,7 +1424,6 @@ const StimulationSchedule = ({
   userData,
   setUsers,
   setState,
-  isToastOn = false,
   onLastCyclePersisted,
 }) => {
   const base = React.useMemo(() => parseDate(userData?.lastCycle), [userData?.lastCycle]);
@@ -1495,17 +1494,16 @@ const StimulationSchedule = ({
       } else if (setUsers) {
         handleChange(setUsers, null, userData.userId, update);
       }
-      handleSubmit({ userId: userData.userId, ...update }, 'overwrite', isToastOn);
+      handleSubmit({ userId: userData.userId, ...update }, 'overwrite');
       hasChanges.current = !isDefault;
     },
-    [setUsers, setState, userData.userId, isToastOn, base],
+    [setUsers, setState, userData.userId, base],
   );
 
   const persistContextRef = React.useRef({
     setUsers,
     setState,
     userId: userData.userId,
-    isToastOn,
   });
 
   React.useEffect(() => {
@@ -1513,9 +1511,8 @@ const StimulationSchedule = ({
       setUsers,
       setState,
       userId: userData.userId,
-      isToastOn,
     };
-  }, [setUsers, setState, userData.userId, isToastOn]);
+  }, [setUsers, setState, userData.userId]);
 
   const persistLastCycleDate = React.useCallback(
     (newBaseDate, options = {}) => {
@@ -1579,7 +1576,6 @@ const StimulationSchedule = ({
       handleSubmit(
         { userId: context.userId, ...updates },
         'overwrite',
-        context.isToastOn,
         updateDelivery ? [] : ['lastDelivery', 'getInTouch'],
       );
     },

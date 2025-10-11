@@ -2,7 +2,7 @@ import { handleChange } from './actions';
 import { useRef } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize';
 
-export const FieldComment = ({ userData, setUsers, setState, isToastOn }) => {
+export const FieldComment = ({ userData, setUsers, setState }) => {
   // console.log('userData in RenderCommentInput :>> ', userData);
   const textareaRef = useRef(null);
   const autoResize = useAutoResize(textareaRef, userData.myComment);
@@ -40,7 +40,6 @@ export const FieldComment = ({ userData, setUsers, setState, isToastOn }) => {
             currentComment,
             true,
             {},
-            isToastOn,
           );
         }}
         style={{
