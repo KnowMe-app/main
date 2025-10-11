@@ -7,7 +7,6 @@ import {
 import { updateCachedUser } from "utils/cache";
 import { formatDateAndFormula, formatDateToServer } from "components/inputValidations";
 import { makeUploadedInfo } from "components/makeUploadedInfo";
-import toast from 'react-hot-toast';
 
 export const handleChange = (
   setUsers,
@@ -16,8 +15,7 @@ export const handleChange = (
   key,
   value,
   click,
-  options = {},
-  isToastOn = false
+  options = {}
 ) => {
   const formatValue = (k, v) => {
     if (k === 'getInTouch' || k === 'lastCycle') return formatDateAndFormula(v);
@@ -29,7 +27,6 @@ export const handleChange = (
     const updates = key;
     const clickFlag = value;
     const opts = click || {};
-    const toast = options === undefined ? false : isToastOn;
     const formattedEntries = Object.entries(updates).map(([k, v]) => [k, formatValue(k, v)]);
     const shouldDrop = (key, value) =>
       (key === 'lastDelivery' || key === 'getInTouch') && !value;
@@ -62,7 +59,6 @@ export const handleChange = (
           handleSubmit(
             { ...newState, userId: userId || newState.userId },
             'overwrite',
-            toast,
           );
         return newState;
       } else {
@@ -79,7 +75,7 @@ export const handleChange = (
           }
         });
         clickFlag &&
-          handleSubmit({ ...newState[userId], userId }, 'overwrite', toast);
+          handleSubmit({ ...newState[userId], userId }, 'overwrite');
         return newState;
       }
     };
@@ -137,7 +133,6 @@ export const handleChange = (
           handleSubmit(
             { ...newState, userId: userId || newState.userId },
             'overwrite',
-            isToastOn,
           );
         return newState;
       } else {
@@ -153,8 +148,7 @@ export const handleChange = (
               : { [key]: newValue }),
           },
         };
-        click &&
-          handleSubmit({ ...newState[userId], userId }, 'overwrite', isToastOn);
+        click && handleSubmit({ ...newState[userId], userId }, 'overwrite');
         return newState;
       }
     });
@@ -172,8 +166,7 @@ export const handleChange = (
             : { [key]: newValue }),
         },
       };
-      click &&
-        handleSubmit({ ...newState[userId], userId }, 'overwrite', isToastOn);
+      click && handleSubmit({ ...newState[userId], userId }, 'overwrite');
       return newState;
     });
   }
@@ -199,7 +192,6 @@ export const removeField = (
   nestedKey,
   setUsers,
   setState,
-  isToastOn = false,
   removedKey = nestedKey,
 ) => {
   const keys = nestedKey.split('.');
@@ -296,7 +288,7 @@ export const removeField = (
       }
       const updatedUser = value ?? {};
       const newState = { ...prev, [userId]: updatedUser };
-      handleSubmit({ ...updatedUser, userId }, 'overwrite', isToastOn, removalList);
+          handleSubmit({ ...updatedUser, userId }, 'overwrite', removalList);
       return newState;
     }
 
@@ -309,12 +301,12 @@ export const removeField = (
     if (!resolvedUserId) {
       return updated;
     }
-    handleSubmit({ ...updated, userId: resolvedUserId }, 'overwrite', isToastOn, removalList);
+    handleSubmit({ ...updated, userId: resolvedUserId }, 'overwrite', removalList);
     return updated;
   });
 };
 
-export const handleSubmit = (userData, condition, isToastOn, removeKeys = []) => {
+export const handleSubmit = (userData, condition, removeKeys = []) => {
   const fieldsForNewUsersOnly = [
     'role',
     'getInTouch',
@@ -391,9 +383,6 @@ export const handleSubmit = (userData, condition, isToastOn, removeKeys = []) =>
     payloadForBackend,
     'update',
   );
-  if (isToastOn) {
-    toast.success('Дані збережено', { duration: 2000 });
-  }
 };
 
 export const handleSubmitAll = async (userData, overwrite) => {

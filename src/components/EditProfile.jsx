@@ -46,7 +46,6 @@ const EditProfile = () => {
   const location = useLocation();
   const [state, setState] = useState(() => getCard(userId) || location.state || null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isToastOn, setIsToastOn] = useState(true);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [dataSource, setDataSource] = useState('');
 
@@ -248,8 +247,6 @@ const EditProfile = () => {
           undefined,
           undefined,
           undefined,
-          isToastOn,
-          setIsToastOn,
           handleOpenMedications,
         )}
       </div>
@@ -258,7 +255,6 @@ const EditProfile = () => {
           <StimulationSchedule
             userData={scheduleUserData}
             setState={setState}
-            isToastOn={isToastOn}
             onLastCyclePersisted={({ lastCycle, lastDelivery, needsSync }) => {
               if (!needsSync) return;
               const updates = {};

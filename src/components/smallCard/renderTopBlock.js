@@ -8,7 +8,6 @@ import { fieldGetInTouch } from './fieldGetInTouch';
 import { fieldRole } from './fieldRole';
 import { FieldLastCycle } from './fieldLastCycle';
 import { FieldComment } from './FieldComment';
-import { BtnToast } from './btnToast';
 import { fieldBirth } from './fieldBirth';
 import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
@@ -54,8 +53,6 @@ export const renderTopBlock = (
   setDislikeUsers = () => {},
   currentFilter,
   isDateInRange,
-  isToastOn = false,
-  setIsToastOn = () => {},
   onOpenMedications,
 ) => {
   if (!userData) return null;
@@ -66,7 +63,6 @@ export const renderTopBlock = (
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
       {btnDel(cardData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
-      {!isFromListOfUsers && <BtnToast isToastOn={isToastOn} setIsToastOn={setIsToastOn} />}
       {btnExport(cardData)}
       {btnMedications(cardData, onOpenMedications)}
       <div>
@@ -88,9 +84,8 @@ export const renderTopBlock = (
             setFavoriteUsers,
             dislikeUsers,
             setDislikeUsers,
-            isToastOn
           )}
-        {fieldRole(cardData, setUsers, setState, isToastOn)}
+        {fieldRole(cardData, setUsers, setState)}
         {cardData.userRole !== 'ag' &&
           cardData.userRole !== 'ip' &&
           cardData.role !== 'ag' &&
@@ -99,7 +94,6 @@ export const renderTopBlock = (
               userData={cardData}
               setUsers={setUsers}
               setState={setState}
-              isToastOn={isToastOn}
             />
           )}
         <div>{fieldDeliveryInfo(setUsers, setState, cardData)}</div>
@@ -155,8 +149,8 @@ export const renderTopBlock = (
           {fieldContacts(cardData)}
         </div>
       </div>
-      {fieldWriter(cardData, setUsers, setState, isToastOn)}
-      <FieldComment userData={cardData} setUsers={setUsers} setState={setState} isToastOn={isToastOn} />
+      {fieldWriter(cardData, setUsers, setState)}
+      <FieldComment userData={cardData} setUsers={setUsers} setState={setState} />
 
       <div
         onClick={async e => {
@@ -178,7 +172,7 @@ export const renderTopBlock = (
 
           let fresh = null;
           let toastFn = toast.error;
-          let toastMsg = 'Failed to load data';
+          let toastMsg = 'Не вдалося завантажити дані';
           try {
             fresh = await fetchUserById(cardData.userId);
             if (fresh) {
@@ -202,13 +196,13 @@ export const renderTopBlock = (
               }
 
               toastFn = toast.success;
-              toastMsg = 'Data loaded from backend';
+              toastMsg = 'Дані завантажено з бекенду';
             } else {
-              toastMsg = 'No fresh data available';
+              toastMsg = 'Свіжі дані відсутні';
             }
           } catch (error) {
             console.error(error);
-            toastMsg = error.message;
+            toastMsg = error.message || 'Не вдалося завантажити дані';
           } finally {
             toastFn(toastMsg);
           }

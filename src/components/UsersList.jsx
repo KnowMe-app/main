@@ -23,7 +23,6 @@ const UserCard = ({
   setDislikeUsers,
   currentFilter,
   isDateInRange,
-  isToastOn = false,
 }) => {
   const effectiveStatus = getEffectiveCycleStatus(userData);
   const scheduleUserData = {
@@ -35,23 +34,21 @@ const UserCard = ({
   return (
     <div>
       <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-        {renderTopBlock(
-          userData,
-          setUsers,
-          setShowInfoModal,
-          setState,
-          setUserIdToDelete,
-          true,
-          favoriteUsers,
-          setFavoriteUsers,
-          dislikeUsers,
-          setDislikeUsers,
-          currentFilter,
-          isDateInRange,
-          isToastOn,
-          undefined,
-          onOpenMedications,
-        )}
+          {renderTopBlock(
+            userData,
+            setUsers,
+            setShowInfoModal,
+            setState,
+            setUserIdToDelete,
+            true,
+            favoriteUsers,
+            setFavoriteUsers,
+            dislikeUsers,
+            setDislikeUsers,
+            currentFilter,
+            isDateInRange,
+            onOpenMedications,
+          )}
       </div>
       {shouldShowSchedule && (
         <div style={{ ...coloredCard(), marginBottom: '8px' }}>
@@ -59,7 +56,6 @@ const UserCard = ({
             userData={scheduleUserData}
             setUsers={setUsers}
             setState={setState}
-            isToastOn={isToastOn}
             onLastCyclePersisted={({ lastCycle, lastDelivery, needsSync }) => {
               if (!needsSync) return;
               const updates = {};
@@ -104,7 +100,6 @@ const UserCard = ({
           userId: userData.userId,
           setUsers,
           stateUpdater: setState,
-          isToastOn,
         })}
       </div>
     </div>
@@ -127,7 +122,6 @@ const UsersList = ({
   setDislikeUsers,
   currentFilter,
   isDateInRange,
-  isToastOn = false,
 }) => {
   const entries = Object.entries(users);
 
@@ -197,7 +191,6 @@ const UsersList = ({
                 setDislikeUsers={setDislikeUsers}
                 currentFilter={currentFilter}
                 isDateInRange={isDateInRange}
-                isToastOn={isToastOn}
               />
             </>
           )}

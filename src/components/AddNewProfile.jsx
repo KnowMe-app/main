@@ -573,7 +573,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [favoriteUsersData, setFavoriteUsersData] = useState(initialFav);
   const initialDis = getDislikes();
   const [dislikeUsersData, setDislikeUsersData] = useState(initialDis);
-  const [isToastOn, setIsToastOn] = useState(false);
   const [, setCacheCount] = useState(0);
   const [, setBackendCount] = useState(0);
   const [profileSource, setProfileSource] = useState('');
@@ -1423,19 +1422,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 setDislikeUsersData,
                 currentFilter,
                 isDateInRange,
-                isToastOn,
-                setIsToastOn,
                 openMedicationsModal,
               )}
             </div>
             {shouldShowSchedule && state && (
               <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-                <StimulationSchedule
-                  userData={scheduleUserData}
-                  setUsers={setUsers}
-                  setState={setState}
-                  isToastOn={isToastOn}
-                  onLastCyclePersisted={({ lastCycle, lastDelivery, needsSync }) => {
+              <StimulationSchedule
+                userData={scheduleUserData}
+                setUsers={setUsers}
+                setState={setState}
+                onLastCyclePersisted={({ lastCycle, lastDelivery, needsSync }) => {
                     if (!needsSync) return;
                     const targetUserId = scheduleUserData?.userId;
                     if (!targetUserId) return;
@@ -1595,11 +1591,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   setUsers={setUsers}
                   setSearch={setSearch}
                   setState={setState}
-                  setUserIdToDelete={setUserIdToDelete}
-                  currentFilter={currentFilter}
-                  isDateInRange={isDateInRange}
-                  isToastOn={isToastOn}
-                />
+                setUserIdToDelete={setUserIdToDelete}
+                currentFilter={currentFilter}
+                isDateInRange={isDateInRange}
+              />
                 <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
               </>
             )}
