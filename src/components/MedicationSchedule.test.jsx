@@ -18,6 +18,7 @@ const {
   mergeScheduleWithClipboardData,
   buildStimulationEventLookup,
   cleanMedicationEventComment,
+  evaluateIssuedInput,
 } = require('components/MedicationSchedule');
 
 const buildRows = (count, medicationKey) =>
@@ -251,5 +252,19 @@ describe('cleanMedicationEventComment', () => {
     };
 
     expect(cleanMedicationEventComment(event)).toBe('УЗД');
+  });
+});
+
+describe('evaluateIssuedInput', () => {
+  it('allows clearing the issued value without restoring the previous number', () => {
+    const result = evaluateIssuedInput('', 120);
+
+    expect(result).toEqual({ issued: '', displayValue: '' });
+  });
+
+  it('treats whitespace-only values as empty input', () => {
+    const result = evaluateIssuedInput('   ', 75);
+
+    expect(result).toEqual({ issued: '', displayValue: '' });
   });
 });
