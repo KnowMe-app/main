@@ -11,6 +11,7 @@ import {
 import { color } from './styles';
 import PhotoViewer from './PhotoViewer';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
+import { filterOutMedicationPhotos } from '../utils/photoFilters';
 
 const Container = styled.div`
   padding-bottom: 10px;
@@ -135,12 +136,17 @@ export const Photos = ({ state, setState, collection }) => {
   const commitPhotosUpdate = updater => {
     setState(prevState => {
       const prevHasPhotos = Object.prototype.hasOwnProperty.call(prevState, 'photos');
-      const prevPhotosArray = normalizePhotosArray(prevState.photos);
+      const prevUserId = prevState?.userId;
+      const prevPhotosArrayRaw = normalizePhotosArray(prevState.photos);
+      const prevPhotosArray = filterOutMedicationPhotos(prevPhotosArrayRaw, prevUserId);
       const nextRaw =
         typeof updater === 'function'
           ? updater(prevPhotosArray)
           : updater;
-      const nextPhotosArray = normalizePhotosArray(nextRaw);
+      const nextPhotosArray = filterOutMedicationPhotos(
+        normalizePhotosArray(nextRaw),
+        prevUserId,
+      );
 
       if (nextPhotosArray.length === 0) {
         if (!prevHasPhotos) {
@@ -151,11 +157,7 @@ export const Photos = ({ state, setState, collection }) => {
         return rest;
       }
 
-      if (
-        arraysEqual(nextPhotosArray, prevPhotosArray) &&
-        prevHasPhotos &&
-        Array.isArray(prevState.photos)
-      ) {
+      if (arraysEqual(nextPhotosArray, prevPhotosArray) && prevHasPhotos && Array.isArray(prevState.photos)) {
         return prevState;
       }
 
@@ -175,9 +177,12 @@ export const Photos = ({ state, setState, collection }) => {
           console.log('Fetching photos for user', state.userId);
           const urls = await getAllUserPhotos(state.userId, collection);
           console.log('Fetched URLs', urls);
-          if (urls.length > 0) {
-            if (!arraysEqual(urls, state.photos)) {
-              commitPhotosUpdate(urls);
+          const filteredUrls = filterOutMedicationPhotos(urls, state.userId);
+          if (filteredUrls.length > 0) {
+            const currentPhotos = normalizePhotosArray(state.photos);
+            const sanitizedCurrent = filterOutMedicationPhotos(currentPhotos, state.userId);
+            if (!arraysEqual(filteredUrls, sanitizedCurrent)) {
+              commitPhotosUpdate(filteredUrls);
             }
             return;
           }
@@ -194,13 +199,14 @@ export const Photos = ({ state, setState, collection }) => {
         const converted = existingPhotos
           .map(convertDriveLinkToImage)
           .filter(Boolean);
+        const filteredConverted = filterOutMedicationPhotos(converted, state.userId);
         console.log('Converted photos', converted);
         const changed =
-          converted.length !== existingPhotos.length ||
-          converted.some((url, idx) => url !== existingPhotos[idx]);
+          filteredConverted.length !== existingPhotos.length ||
+          filteredConverted.some((url, idx) => url !== existingPhotos[idx]);
 
         if (changed) {
-          commitPhotosUpdate(converted);
+          commitPhotosUpdate(filteredConverted);
         }
       } else {
         const links = Object.entries(state)
@@ -215,7 +221,7 @@ export const Photos = ({ state, setState, collection }) => {
         console.log('Links from state', links);
 
         if (links.length) {
-          commitPhotosUpdate(links);
+          commitPhotosUpdate(filterOutMedicationPhotos(links, state.userId));
         }
       }
     };
