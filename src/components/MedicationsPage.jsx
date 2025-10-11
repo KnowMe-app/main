@@ -760,6 +760,7 @@ const MedicationsPage = () => {
       } catch (error) {
         console.error('Failed to delete medication photo', error);
         toast.error('Не вдалося видалити фото');
+        setMedicationPhotos(currentPhotos);
         setUser(prev => (prev ? { ...prev, photos: previousMergedPhotos } : prev));
       } finally {
         setPhotoBeingDeleted(null);
