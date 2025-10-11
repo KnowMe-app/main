@@ -22,6 +22,7 @@ import {
   equalTo,
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE } from './constants';
+import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
 import { removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
@@ -1441,7 +1442,7 @@ export const getAllUserPhotos = async userId => {
     const folderRef = ref(storage, `avatar/${userId}`);
     const list = await listAll(folderRef);
     const urls = await Promise.all(list.items.map(item => getDownloadURL(item)));
-    return urls;
+    return filterOutMedicationPhotos(urls, userId);
   } catch (error) {
     console.error('Error listing user photos:', error);
     return [];

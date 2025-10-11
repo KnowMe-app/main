@@ -19,6 +19,7 @@ import {
   deletePhotos,
 } from './config';
 import { formatMedicationScheduleForClipboard } from '../utils/medicationClipboard';
+import { isMedicationPhotoUrl } from '../utils/photoFilters';
 
 const normalizePhotosArray = rawPhotos => {
   if (Array.isArray(rawPhotos)) {
@@ -28,31 +29,6 @@ const normalizePhotosArray = rawPhotos => {
     return Object.values(rawPhotos).filter(Boolean);
   }
   return [];
-};
-
-const isMedicationPhotoUrl = (photoUrl, userId) => {
-  if (!photoUrl) {
-    return false;
-  }
-
-  try {
-    const afterObjectSegment = photoUrl.split('/o/')[1];
-    if (!afterObjectSegment) {
-      return false;
-    }
-    const [encodedPath] = afterObjectSegment.split('?');
-    if (!encodedPath) {
-      return false;
-    }
-    const decodedPath = decodeURIComponent(encodedPath);
-    if (userId) {
-      return decodedPath.startsWith(`avatar/${userId}/medication/`);
-    }
-    return decodedPath.includes('/medication/');
-  } catch (error) {
-    console.error('Failed to parse photo url', error);
-    return false;
-  }
 };
 
 const splitPhotosByMedicationFolder = (rawPhotos, userId) => {
