@@ -27,6 +27,8 @@ import {
   fetchTotalNewUsersCount,
   fetchFilteredUsersByPage,
   indexLastLogin,
+  addStimulationShortcutId,
+  removeStimulationShortcutId,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -52,6 +54,13 @@ import {
   getCard,
   normalizeQueryKey,
 } from 'utils/cardIndex';
+import {
+  getStimulationShortcutCards,
+  getStoredStimulationShortcutIds,
+  setStoredStimulationShortcutIds,
+  addStoredStimulationShortcutId,
+  removeStoredStimulationShortcutId,
+} from 'utils/stimulationShortcutStorage';
 // import ExcelToJson from './ExcelToJson';
 import { saveToContact } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
@@ -73,8 +82,9 @@ import {
   setFavoriteIds,
   clearAllCardsCache,
   updateCachedUser,
+  getCacheKey,
 } from 'utils/cache';
-import { updateCard } from 'utils/cardsStorage';
+import { updateCard, saveCard } from 'utils/cardsStorage';
 import {
   formatDateAndFormula,
   formatDateToDisplay,
@@ -259,10 +269,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [userIdToDelete, setUserIdToDelete] = useState(null);
   const navigate = useNavigate();
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
+  const [stimulationScheduleProfiles, setStimulationScheduleProfiles] = useState([]);
+  const [stimulationShortcutIds, setStimulationShortcutIdsState] = useState(() =>
+    getStoredStimulationShortcutIds(),
+  );
+  const isMountedRef = useRef(true);
+  const scheduleShortcutPresenceRef = useRef({ userId: null, hasSchedule: null });
+  const hasStimulationScheduleKey = state.userId
+    ? Object.prototype.hasOwnProperty.call(state, 'stimulationSchedule')
+    : false;
 
   useEffect(() => {
     filtersRef.current = filters;
   }, [filters]);
+
+  useEffect(() => () => {
+    isMountedRef.current = false;
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -709,7 +732,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return dateStr >= min && dateStr <= max;
   };
 
-  const getInTouchSortValue = d => {
+  const getInTouchSortValue = useCallback(d => {
     const today = new Date().toISOString().split('T')[0];
     if (d === '2099-99-99' || d === '9999-99-99') return { priority: 5 };
     if (d == null) return { priority: 4 };
@@ -720,20 +743,153 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return { priority: 2, value: d };
     }
     return { priority: 2, value: d };
-  };
+  }, []);
 
-  const compareUsersByGetInTouch = (a, b) => {
+  const compareUsersByGetInTouch = useCallback((a, b) => {
     const av = getInTouchSortValue(a.getInTouch);
     const bv = getInTouchSortValue(b.getInTouch);
     if (av.priority !== bv.priority) return av.priority - bv.priority;
     if (av.priority === 1) return bv.value.localeCompare(av.value);
     if (av.priority === 2) return (av.value || '').localeCompare(bv.value || '');
     return 0;
-  };
+  }, [getInTouchSortValue]);
+
+  const refreshStimulationShortcuts = useCallback(async () => {
+    try {
+      const { cards } = await getStimulationShortcutCards(id => fetchUserById(id));
+      const ids = getStoredStimulationShortcutIds();
+      if (!isMountedRef.current) return;
+      setStimulationShortcutIdsState(ids);
+      if (!Array.isArray(cards) || cards.length === 0) {
+        setStimulationScheduleProfiles([]);
+        return;
+      }
+      const annotated = sortUsersByStimulationSchedule(cards, {
+        fallbackComparator: compareUsersByGetInTouch,
+      });
+      const sorted = annotated
+        .map(item => item?.user)
+        .filter(Boolean)
+        .slice(0, 10);
+      if (!isMountedRef.current) return;
+      setStimulationScheduleProfiles(sorted);
+    } catch (error) {
+      console.error('Failed to refresh stimulation shortcuts', error);
+      if (!isMountedRef.current) return;
+      setStimulationScheduleProfiles([]);
+    }
+  }, [compareUsersByGetInTouch, isMountedRef]);
+
+  const updateStimulationShortcutMembership = useCallback(
+    (userId, hasSchedule) => {
+      if (!userId) return;
+      const id = String(userId);
+      const currentIds = new Set(stimulationShortcutIds.map(String));
+
+      if (hasSchedule && currentIds.has(id)) {
+        return;
+      }
+
+      if (!hasSchedule && !currentIds.has(id)) {
+        return;
+      }
+
+      if (hasSchedule) {
+        addStoredStimulationShortcutId(id);
+        if (isMountedRef.current) {
+          currentIds.add(id);
+          setStimulationShortcutIdsState(Array.from(currentIds));
+        }
+        if (ownerId) {
+          Promise.resolve(addStimulationShortcutId(ownerId, id)).catch(() => {});
+        }
+      } else {
+        removeStoredStimulationShortcutId(id);
+        if (isMountedRef.current) {
+          currentIds.delete(id);
+          setStimulationShortcutIdsState(Array.from(currentIds));
+        }
+        if (ownerId) {
+          Promise.resolve(removeStimulationShortcutId(ownerId, id)).catch(() => {});
+        }
+      }
+      refreshStimulationShortcuts();
+    },
+    [ownerId, refreshStimulationShortcuts, isMountedRef, stimulationShortcutIds],
+  );
+
+  const getSurnameLabel = useCallback(user => {
+    const surname = typeof user?.surname === 'string' ? user.surname.trim() : '';
+    if (!surname) return '??';
+    return surname.slice(0, 2).toUpperCase();
+  }, []);
+
+  const handleOpenScheduleProfile = useCallback(
+    async userData => {
+      const id =
+        typeof userData === 'string' || typeof userData === 'number'
+          ? String(userData)
+          : String(userData?.userId || '');
+      if (!id) return;
+
+      setSearch(id);
+      const cacheKey = getCacheKey('search', normalizeQueryKey(`userId=${id}`));
+      setIdsForQuery(cacheKey, [id]);
+
+      try {
+        const fresh = await fetchUserById(id);
+        if (fresh) {
+          updateCard(id, fresh);
+          setState(fresh);
+          return;
+        }
+      } catch (error) {
+        console.error('Failed to fetch profile for stimulation shortcut', error);
+      }
+
+      const fallback =
+        (typeof userData === 'object' && userData?.userId ? userData : null) ||
+        getCard(id) ||
+        { userId: id };
+      saveCard(fallback);
+      setState(fallback);
+    },
+    [setSearch, setState],
+  );
+
+  useEffect(() => {
+    refreshStimulationShortcuts();
+  }, [refreshStimulationShortcuts]);
+
+  useEffect(() => {
+    if (!state.userId) return;
+    const hasSchedule = hasStimulationScheduleKey;
+    const prev = scheduleShortcutPresenceRef.current;
+    if (prev.userId === state.userId && prev.hasSchedule === hasSchedule) {
+      return;
+    }
+    scheduleShortcutPresenceRef.current = { userId: state.userId, hasSchedule };
+    updateStimulationShortcutMembership(state.userId, hasSchedule);
+  }, [state.userId, hasStimulationScheduleKey, updateStimulationShortcutMembership]);
 
   useEffect(() => {
     setFavoriteIds(initialFav);
   }, [initialFav]);
+
+  useEffect(() => {
+    if (!ownerId) return;
+
+    const shortcutsRef = ref(database, `multiData/stimulationShortcuts/${ownerId}`);
+    const unsubscribe = onValue(shortcutsRef, snapshot => {
+      const data = snapshot.exists() ? snapshot.val() : {};
+      const ids = Object.keys(data).filter(Boolean);
+      setStoredStimulationShortcutIds(ids);
+      setStimulationShortcutIdsState(ids);
+      refreshStimulationShortcuts();
+    });
+
+    return () => unsubscribe();
+  }, [ownerId, refreshStimulationShortcuts]);
 
   useEffect(() => {
     if (!ownerId) return;
@@ -1505,6 +1661,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               )}
               <Button onClick={handleInfo}>Info</Button>
               <Button onClick={handleClearCache}>ClearCache</Button>
+              {stimulationScheduleProfiles.map(user => (
+                <Button
+                  key={`schedule-${user.userId}`}
+                  onClick={() => handleOpenScheduleProfile(user)}
+                  title={user?.surname || ''}
+                >
+                  {getSurnameLabel(user)}
+                </Button>
+              ))}
               <Button
                 onClick={async () => {
                   setUsers({});

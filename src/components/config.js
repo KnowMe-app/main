@@ -431,6 +431,45 @@ export const fetchDislikeUsersData = async ownerId => {
   }
 };
 
+const getStimulationShortcutsPath = ownerId =>
+  `multiData/stimulationShortcuts/${ownerId}`;
+
+export const fetchStimulationShortcutIds = async ownerId => {
+  if (!ownerId) return [];
+  try {
+    const shortcutRef = ref2(database, getStimulationShortcutsPath(ownerId));
+    const snapshot = await get(shortcutRef);
+    if (!snapshot.exists()) return [];
+    return Object.keys(snapshot.val()).filter(Boolean);
+  } catch (error) {
+    console.error('Error fetching stimulation shortcuts:', error);
+    return [];
+  }
+};
+
+export const addStimulationShortcutId = async (ownerId, userId) => {
+  if (!ownerId || !userId) return;
+  try {
+    await set(
+      ref2(database, `${getStimulationShortcutsPath(ownerId)}/${userId}`),
+      true,
+    );
+  } catch (error) {
+    console.error('Error adding stimulation shortcut:', error);
+  }
+};
+
+export const removeStimulationShortcutId = async (ownerId, userId) => {
+  if (!ownerId || !userId) return;
+  try {
+    await remove(
+      ref2(database, `${getStimulationShortcutsPath(ownerId)}/${userId}`),
+    );
+  } catch (error) {
+    console.error('Error removing stimulation shortcut:', error);
+  }
+};
+
 export const fetchCycleUsersData = async (
   statuses = ['stimulation', 'pregnant'],
 ) => {
