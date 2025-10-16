@@ -1141,6 +1141,10 @@ const normalizeRows = (rowsInput, startDate, schedule) => {
       return false;
     }
 
+    if (medication?.manualDistribution) {
+      return false;
+    }
+
     return !rowsWithValues.some(row => {
       if (!row || typeof row !== 'object') {
         return false;
@@ -1247,6 +1251,7 @@ const normalizeData = (data, options = {}) => {
       short: source.short || baseDefinition?.short || (source.label || key).slice(0, 2).toUpperCase(),
       plan,
       startDate: source.startDate || '',
+      manualDistribution: Boolean(source.manualDistribution),
     };
   });
 
@@ -1863,6 +1868,7 @@ const MedicationSchedule = ({
             ...prevMed,
             issued,
             displayValue,
+            manualDistribution: issued > 0 ? false : prevMed.manualDistribution,
           },
         };
         const medicationOrder = Array.isArray(prev.medicationOrder) ? prev.medicationOrder : [];
@@ -2023,6 +2029,7 @@ const MedicationSchedule = ({
           short: normalizedShort,
           plan: 'custom',
           startDate: sanitizedStartDate,
+          manualDistribution: false,
         },
       };
 
@@ -2063,31 +2070,64 @@ const MedicationSchedule = ({
 
   const canAddMedication = newMedicationDraft.label.trim().length > 0;
 
-  const handleCellChange = useCallback((rowIndex, key, rawValue) => {
-    updateSchedule(prev => {
-      const rows = prev.rows.map((row, index) => {
-        if (index < rowIndex) {
-          return row;
+  const handleCellChange = useCallback(
+    (rowIndex, key, rawValue) => {
+      updateSchedule(prev => {
+        if (!prev || !Array.isArray(prev.rows) || rowIndex < 0) {
+          return prev;
         }
-        const nextValues = { ...row.values };
+
         const sanitized = sanitizeCellValue(rawValue);
-        if (index === rowIndex) {
-          nextValues[key] = sanitized;
-        } else {
-          nextValues[key] = sanitized;
+        let changed = false;
+
+        const rows = prev.rows.map((row, index) => {
+          if (!row || index < rowIndex) {
+            return row;
+          }
+
+          const currentValue = row.values?.[key];
+          if (sanitizeCellValue(currentValue) === sanitized) {
+            return row;
+          }
+
+          changed = true;
+
+          return {
+            ...row,
+            values: {
+              ...row.values,
+              [key]: sanitized,
+            },
+          };
+        });
+
+        if (!changed) {
+          return prev;
         }
+
+        const prevMedications = prev.medications || {};
+        const prevMedication = prevMedications[key] || {};
+        let medications = prevMedications;
+
+        if (prevMedication.manualDistribution !== true) {
+          medications = {
+            ...prevMedications,
+            [key]: {
+              ...prevMedication,
+              manualDistribution: true,
+            },
+          };
+        }
+
         return {
-          ...row,
-          values: nextValues,
+          ...prev,
+          rows,
+          medications,
         };
       });
-
-      return {
-        ...prev,
-        rows,
-      };
-    });
-  }, [updateSchedule]);
+    },
+    [updateSchedule],
+  );
 
   const handleResetDistribution = useCallback(() => {
     updateSchedule(prev => {
@@ -2095,7 +2135,16 @@ const MedicationSchedule = ({
       const medicationOrder = Array.isArray(prev.medicationOrder) ? prev.medicationOrder : [];
       const minRows = calculateRequiredRows(medicationOrder, prev.medications, prev.rows.length);
       const baseRows = ensureRowsLength(prev.rows, minRows, prev.startDate, medicationOrder);
-      const scheduleBase = { ...prev, medicationOrder };
+      const medications = { ...prev.medications };
+      medicationOrder.forEach(key => {
+        if (medications[key]) {
+          medications[key] = {
+            ...medications[key],
+            manualDistribution: false,
+          };
+        }
+      });
+      const scheduleBase = { ...prev, medicationOrder, medications };
       return {
         ...scheduleBase,
         rows: applyDefaultDistribution(baseRows, scheduleBase),

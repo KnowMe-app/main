@@ -19,6 +19,7 @@ const {
   buildStimulationEventLookup,
   cleanMedicationEventComment,
   evaluateIssuedInput,
+  normalizeRows,
 } = require('components/MedicationSchedule');
 
 const buildRows = (count, medicationKey) =>
@@ -268,3 +269,4 @@ describe('evaluateIssuedInput', () => {
     expect(result).toEqual({ issued: '', displayValue: '' });
   });
 });
+
