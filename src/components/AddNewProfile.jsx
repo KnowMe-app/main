@@ -820,7 +820,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   );
 
   const getSurnameLabel = useCallback(user => {
-    const surname = typeof user?.surname === 'string' ? user.surname.trim() : '';
+    let rawSurname = null;
+    if (Array.isArray(user?.surname)) {
+      const surnames = user.surname;
+      rawSurname = surnames.length ? surnames[surnames.length - 1] : null;
+    } else {
+      rawSurname = user?.surname ?? null;
+    }
+
+    const surname = typeof rawSurname === 'string' ? rawSurname.trim() : '';
     if (!surname) return '??';
     return surname.slice(0, 2).toUpperCase();
   }, []);
