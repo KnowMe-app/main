@@ -275,6 +275,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   );
   const isMountedRef = useRef(true);
   const scheduleShortcutPresenceRef = useRef({ userId: null, hasSchedule: null });
+  const stimulationShortcutsHydratedRef = useRef(false);
   const hasStimulationScheduleKey = state.userId
     ? Object.prototype.hasOwnProperty.call(state, 'stimulationSchedule')
     : false;
@@ -790,7 +791,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return;
       }
 
-      if (!hasSchedule && !currentIds.has(id)) {
+      if (!hasSchedule && !currentIds.has(id) && stimulationShortcutsHydratedRef.current) {
         return;
       }
 
@@ -883,6 +884,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const unsubscribe = onValue(shortcutsRef, snapshot => {
       const data = snapshot.exists() ? snapshot.val() : {};
       const ids = Object.keys(data).filter(Boolean);
+      stimulationShortcutsHydratedRef.current = true;
       setStoredStimulationShortcutIds(ids);
       setStimulationShortcutIdsState(ids);
       refreshStimulationShortcuts();
