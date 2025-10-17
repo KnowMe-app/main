@@ -1415,6 +1415,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     } catch (error) {
       console.error('Failed to index stimulation shortcuts', error);
       toast.error('Failed to create stimulation shortcuts', { id: toastId });
+      const detailedMessage =
+        (error && typeof error === 'object' && 'message' in error && error.message) ||
+        (typeof error === 'string' ? error : null);
+
+      if (error?.code) {
+        toast.error(`Error code: ${error.code}`);
+      }
+
+      if (detailedMessage) {
+        toast.error(`Error details: ${detailedMessage}`);
+      }
     }
   }, [
     ownerId,
