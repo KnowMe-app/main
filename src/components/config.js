@@ -472,7 +472,8 @@ export const removeStimulationShortcutId = async (ownerId, userId) => {
 
 export const replaceStimulationShortcutIds = async (ownerId, ids) => {
   if (!ownerId) return;
-  const shortcutRef = ref2(database, getStimulationShortcutsPath(ownerId));
+  const shortcutPath = getStimulationShortcutsPath(ownerId);
+  const shortcutRef = ref2(database, shortcutPath);
   try {
     const normalizedIds = Array.isArray(ids)
       ? Array.from(new Set(ids.filter(Boolean).map(String)))
@@ -483,12 +484,28 @@ export const replaceStimulationShortcutIds = async (ownerId, ids) => {
       return;
     }
 
-    const payload = normalizedIds.reduce((acc, id) => {
-      acc[id] = true;
-      return acc;
-    }, {});
+    const existingSnapshot = await get(shortcutRef);
+    const existingIds = existingSnapshot.exists() ? existingSnapshot.val() : {};
+    const normalizedSet = new Set(normalizedIds);
 
-    await set(shortcutRef, payload);
+    const updates = {};
+
+    Object.keys(existingIds).forEach(id => {
+      if (!normalizedSet.has(id)) {
+        updates[id] = null;
+      }
+    });
+
+    normalizedIds.forEach(id => {
+      updates[id] = true;
+    });
+
+    if (Object.keys(updates).length === 0) {
+      // No changes required but ensure the structure matches the per-user writes
+      return;
+    }
+
+    await update(ref2(database, shortcutPath), updates);
   } catch (error) {
     console.error('Error replacing stimulation shortcuts:', error);
     throw error;
