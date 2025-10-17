@@ -29,6 +29,7 @@ import {
   indexLastLogin,
   addStimulationShortcutId,
   removeStimulationShortcutId,
+  replaceStimulationShortcutIds,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -1372,6 +1373,56 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setBackendCount(sortedUsers.length);
   };
 
+  const indexStimulationShortcuts = useCallback(async () => {
+    if (!ownerId) {
+      toast.error('Unable to create stimulation shortcuts without owner');
+      return;
+    }
+
+    const toastId = 'index-stimulation-shortcuts';
+    toast.loading('Creating stimulation shortcuts...', { id: toastId });
+
+    try {
+      const cycleUsers = await fetchCycleUsersData(['stimulation', 'pregnant']);
+      const relevantUsers = Object.values(cycleUsers).filter(user => {
+        if (!user) return false;
+        const status = getEffectiveCycleStatus(user);
+        const hasSchedule = user.stimulationSchedule !== undefined;
+        return hasSchedule && (status === 'stimulation' || status === 'pregnant');
+      });
+
+      const annotated = sortUsersByStimulationSchedule(relevantUsers, {
+        fallbackComparator: compareUsersByGetInTouch,
+      });
+
+      const shortcutIds = annotated
+        .map(item => item?.user?.userId)
+        .filter(Boolean)
+        .map(String);
+
+      await replaceStimulationShortcutIds(ownerId, shortcutIds);
+      setStoredStimulationShortcutIds(shortcutIds);
+
+      if (isMountedRef.current) {
+        setStimulationShortcutIdsState(shortcutIds);
+      }
+
+      await refreshStimulationShortcuts();
+
+      toast.success(`Created ${shortcutIds.length} stimulation shortcuts`, {
+        id: toastId,
+      });
+    } catch (error) {
+      console.error('Failed to index stimulation shortcuts', error);
+      toast.error('Failed to create stimulation shortcuts', { id: toastId });
+    }
+  }, [
+    ownerId,
+    compareUsersByGetInTouch,
+    refreshStimulationShortcuts,
+    setStimulationShortcutIdsState,
+  ]);
+
   const [, setDuplicates] = useState('');
   const [isDuplicateView, setIsDuplicateView] = useState(false);
 
@@ -1723,6 +1774,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 <BabyIcon style={{ width: '100%', height: '100%' }} />
               </Button>
               <Button onClick={indexLastLoginHandler}>indexLastLogin</Button>
+              <Button
+                onClick={indexStimulationShortcuts}
+                title="Індексація ярликів стимуляції"
+              >
+                IdxSC
+              </Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {

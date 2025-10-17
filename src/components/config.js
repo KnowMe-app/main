@@ -470,6 +470,31 @@ export const removeStimulationShortcutId = async (ownerId, userId) => {
   }
 };
 
+export const replaceStimulationShortcutIds = async (ownerId, ids) => {
+  if (!ownerId) return;
+  const shortcutRef = ref2(database, getStimulationShortcutsPath(ownerId));
+  try {
+    const normalizedIds = Array.isArray(ids)
+      ? Array.from(new Set(ids.filter(Boolean).map(String)))
+      : [];
+
+    if (normalizedIds.length === 0) {
+      await remove(shortcutRef);
+      return;
+    }
+
+    const payload = normalizedIds.reduce((acc, id) => {
+      acc[id] = true;
+      return acc;
+    }, {});
+
+    await set(shortcutRef, payload);
+  } catch (error) {
+    console.error('Error replacing stimulation shortcuts:', error);
+    throw error;
+  }
+};
+
 export const fetchCycleUsersData = async (
   statuses = ['stimulation', 'pregnant'],
 ) => {
