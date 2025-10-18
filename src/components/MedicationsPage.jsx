@@ -13,9 +13,6 @@ import {
   saveMedicationSchedule,
   getUrlofUploadedAvatar,
   getMedicationPhotos,
-  updateDataInRealtimeDB,
-  updateDataInFiresoreDB,
-  updateDataInNewUsersRTDB,
   deletePhotos,
 } from './config';
 import { formatMedicationScheduleForClipboard } from '../utils/medicationClipboard';
@@ -640,25 +637,6 @@ const MedicationsPage = () => {
     setViewerIndex(null);
   }, []);
 
-  const persistPhotoList = useCallback(
-    async (medicationPhotos, preservedPhotos = []) => {
-      if (!user?.userId) return;
-
-      const mergedPhotos = [...preservedPhotos, ...medicationPhotos];
-      const results = await Promise.allSettled([
-        updateDataInNewUsersRTDB(user.userId, { photos: mergedPhotos }, 'update'),
-        updateDataInRealtimeDB(user.userId, { photos: mergedPhotos }, 'update'),
-        updateDataInFiresoreDB(user.userId, { photos: mergedPhotos }, 'update'),
-      ]);
-      results.forEach(result => {
-        if (result.status === 'rejected') {
-          console.error('Failed to persist medication photo list', result.reason);
-        }
-      });
-    },
-    [user?.userId],
-  );
-
   const handleUploadPhotos = useCallback(
     async event => {
       if (!user?.userId) return;
@@ -671,7 +649,7 @@ const MedicationsPage = () => {
 
       setIsUploadingPhotos(true);
       try {
-        const newUrls = await Promise.all(
+        await Promise.all(
           files.map(file =>
             getUrlofUploadedAvatar(file, user.userId, {
               subfolder: 'medication',
@@ -680,13 +658,16 @@ const MedicationsPage = () => {
           ),
         );
 
-        const { others: preservedPhotos } = splitPhotosByMedicationFolder(user?.photos, user?.userId);
-        const updatedMedicationPhotos = [...medicationPhotos, ...newUrls];
-        const mergedPhotos = [...preservedPhotos, ...updatedMedicationPhotos];
+        const refreshedMedicationPhotos = await getMedicationPhotos(user.userId);
 
-        setMedicationPhotos(updatedMedicationPhotos);
-        setUser(prev => (prev ? { ...prev, photos: mergedPhotos } : prev));
-        await persistPhotoList(updatedMedicationPhotos, preservedPhotos);
+        setMedicationPhotos(refreshedMedicationPhotos);
+        setUser(prev => {
+          if (!prev || !prev.userId) {
+            return prev;
+          }
+          const split = splitPhotosByMedicationFolder(prev.photos, prev.userId);
+          return { ...prev, photos: [...split.others, ...refreshedMedicationPhotos] };
+        });
         toast.success('Фотографії успішно завантажено');
       } catch (error) {
         console.error('Failed to upload stimulation photos', error);
@@ -695,7 +676,7 @@ const MedicationsPage = () => {
         setIsUploadingPhotos(false);
       }
     },
-    [persistPhotoList, medicationPhotos, user],
+    [user?.userId],
   );
 
   const handleDeletePhoto = useCallback(
@@ -711,22 +692,23 @@ const MedicationsPage = () => {
       const { others: preservedPhotos } = splitPhotosByMedicationFolder(user?.photos, user?.userId);
       const updatedMedicationPhotos = currentPhotos.filter((_, i) => i !== index);
       const previousMergedPhotos = [...preservedPhotos, ...currentPhotos];
-      const mergedPhotos = [...preservedPhotos, ...updatedMedicationPhotos];
 
       setMedicationPhotos(updatedMedicationPhotos);
-      setUser(prev => (prev ? { ...prev, photos: mergedPhotos } : prev));
+      setUser(prev => (prev ? { ...prev, photos: [...preservedPhotos, ...updatedMedicationPhotos] } : prev));
 
       try {
         await deletePhotos(user.userId, [photoUrl]);
-        await persistPhotoList(updatedMedicationPhotos, preservedPhotos);
+        const refreshedMedicationPhotos = await getMedicationPhotos(user.userId);
+        setMedicationPhotos(refreshedMedicationPhotos);
+        setUser(prev => (prev ? { ...prev, photos: [...preservedPhotos, ...refreshedMedicationPhotos] } : prev));
         toast.success('Фото видалено');
         setViewerIndex(prev => {
           if (prev === null) return prev;
           if (prev === index) {
-            if (updatedMedicationPhotos.length === 0) {
+            if (refreshedMedicationPhotos.length === 0) {
               return null;
             }
-            return Math.min(prev, updatedMedicationPhotos.length - 1);
+            return Math.min(prev, refreshedMedicationPhotos.length - 1);
           }
           if (prev > index) {
             return prev - 1;
@@ -741,7 +723,7 @@ const MedicationsPage = () => {
         setPhotoBeingDeleted(null);
       }
     },
-    [persistPhotoList, medicationPhotos, photoBeingDeleted, user?.photos, user?.userId],
+    [medicationPhotos, photoBeingDeleted, user?.photos, user?.userId],
   );
 
   const handleDelete = useCallback(async () => {
@@ -763,7 +745,6 @@ const MedicationsPage = () => {
         }
       }
 
-      await persistPhotoList([], preservedPhotos);
       setMedicationPhotos([]);
       setUser(prev => (prev ? { ...prev, photos: preservedPhotos } : prev));
 
@@ -775,7 +756,7 @@ const MedicationsPage = () => {
       console.error('Failed to delete medication schedule', error);
       toast.error('Не вдалося видалити розклад ліків');
     }
-  }, [handleClose, medicationPhotos, ownerId, persistPhotoList, user?.photos, user?.userId, userId]);
+  }, [handleClose, medicationPhotos, ownerId, user?.photos, user?.userId, userId]);
 
   return (
     <PageContainer>
