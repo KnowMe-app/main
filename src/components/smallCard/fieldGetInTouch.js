@@ -186,9 +186,24 @@ export const fieldGetInTouch = (
         type="text"
         value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
         onChange={e => {
+          const rawValue = e?.target?.value ?? '';
+          const trimmedValue = rawValue.trim();
+
+          if (!trimmedValue) {
+            handleChange(
+              setUsers,
+              setState,
+              userData.userId,
+              'getInTouch',
+              '',
+              false,
+            );
+            return;
+          }
+
           // Повертаємо формат YYYY-MM-DD для збереження
           const serverFormattedDate = formatDateToServer(
-            formatDateAndFormula(e.target.value)
+            formatDateAndFormula(trimmedValue)
           );
           handleChange(
             setUsers,
@@ -201,8 +216,23 @@ export const fieldGetInTouch = (
         }}
         onBlur={e => {
           const rawValue = e?.target?.value ?? '';
+          const trimmedValue = rawValue.trim();
+
+          if (!trimmedValue) {
+            handleChange(
+              setUsers,
+              setState,
+              userData.userId,
+              'getInTouch',
+              '',
+              true,
+              { currentFilter, isDateInRange },
+            );
+            return;
+          }
+
           const serverFormattedDate = formatDateToServer(
-            formatDateAndFormula(rawValue)
+            formatDateAndFormula(trimmedValue)
           );
 
           handleChange(
