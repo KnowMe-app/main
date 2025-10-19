@@ -1176,9 +1176,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     let cacheCount = 0;
     let backendCount = 0;
     const today = new Date().toISOString().split('T')[0];
+    const hasSearchQuery = Boolean((search || '').trim());
     const isValid = d => {
       if (!d) return true;
-      if (d === '2099-99-99' || d === '9999-99-99') return false;
+      if (!hasSearchQuery && (d === '2099-99-99' || d === '9999-99-99'))
+        return false; // allow disliked cards during keyword searches
       return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
     };
     const filteredArr = cachedArr.filter(
