@@ -325,13 +325,20 @@ export const removeSpaceAndNewLine = value => {
   };
 
   export const formatDateAndFormula = (input) => {
+    if (Array.isArray(input)) {
+      input = input.join(', ');
+    }
+
+    if (input === undefined || input === null) return '';
+
+    if (typeof input === 'string') {
+      input = input.trim();
+    } else {
+      input = String(input).trim();
+    }
+
     if (!input) return '';
 
-     // Якщо це масив — з'єднуємо елементи в один рядок
-  if (Array.isArray(input)) {
-    input = input.join(', ');
-  }
-  
     const today = new Date();
   
     // Якщо формат дати: DD.MM.YYYY
