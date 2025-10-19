@@ -63,6 +63,51 @@ export const fieldGetInTouch = (
   const isFavorite = !!favoriteUsers[userData.userId];
   const isDisliked = !!dislikeUsers[userData.userId];
 
+  const targetId = userData?.userId;
+
+  const propagateDraft = nextValue => {
+    if (typeof setState === 'function') {
+      setState(prev => {
+        if (!prev || typeof prev !== 'object') {
+          return prev;
+        }
+        if (targetId && prev.userId && prev.userId !== targetId) {
+          return prev;
+        }
+        return { ...prev, getInTouch: nextValue };
+      });
+    }
+
+    if (typeof setUsers === 'function' && targetId) {
+      setUsers(prev => {
+        if (!prev) {
+          return prev;
+        }
+
+        if (Array.isArray(prev)) {
+          return prev.map(item =>
+            item?.userId === targetId
+              ? { ...item, getInTouch: nextValue }
+              : item,
+          );
+        }
+
+        if (typeof prev === 'object') {
+          const current = prev[targetId];
+          if (!current || typeof current !== 'object') {
+            return prev;
+          }
+          return {
+            ...prev,
+            [targetId]: { ...current, getInTouch: nextValue },
+          };
+        }
+
+        return prev;
+      });
+    }
+  };
+
   const handleDislike = async e => {
     e.stopPropagation();
     if (!auth.currentUser) {
@@ -201,18 +246,24 @@ export const fieldGetInTouch = (
             return;
           }
 
-          // Повертаємо формат YYYY-MM-DD для збереження
-          const serverFormattedDate = formatDateToServer(
-            formatDateAndFormula(trimmedValue)
-          );
-          handleChange(
-            setUsers,
-            setState,
-            userData.userId,
-            'getInTouch',
-            serverFormattedDate,
-            false
-          );
+          const normalizedValue = formatDateAndFormula(trimmedValue);
+          const serverFormattedDate = formatDateToServer(normalizedValue);
+          const isCompleteDate =
+            typeof serverFormattedDate === 'string' &&
+            /^\d{4}-\d{2}-\d{2}$/.test(serverFormattedDate);
+
+          if (isCompleteDate) {
+            handleChange(
+              setUsers,
+              setState,
+              userData.userId,
+              'getInTouch',
+              serverFormattedDate,
+              false,
+            );
+          } else {
+            propagateDraft(trimmedValue);
+          }
         }}
         onBlur={e => {
           const rawValue = e?.target?.value ?? '';
@@ -231,9 +282,16 @@ export const fieldGetInTouch = (
             return;
           }
 
-          const serverFormattedDate = formatDateToServer(
-            formatDateAndFormula(trimmedValue)
-          );
+          const normalizedValue = formatDateAndFormula(trimmedValue);
+          const serverFormattedDate = formatDateToServer(normalizedValue);
+          const isCompleteDate =
+            typeof serverFormattedDate === 'string' &&
+            /^\d{4}-\d{2}-\d{2}$/.test(serverFormattedDate);
+
+          if (!isCompleteDate) {
+            propagateDraft(trimmedValue);
+            return;
+          }
 
           handleChange(
             setUsers,

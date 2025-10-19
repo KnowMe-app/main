@@ -23,6 +23,12 @@ export const handleChange = (
     return v;
   };
 
+  const invokeSetUsers = updater => {
+    if (typeof setUsers === 'function') {
+      setUsers(updater);
+    }
+  };
+
   if (typeof key === 'object' && key !== null) {
     const updates = key;
     const clickFlag = value;
@@ -46,9 +52,12 @@ export const handleChange = (
 
     const applyUpdates = prevState => {
       const isMultiple =
+        prevState &&
         typeof prevState === 'object' &&
         !Array.isArray(prevState) &&
-        Object.keys(prevState).every(id => typeof prevState[id] === 'object');
+        Object.keys(prevState).every(
+          id => prevState[id] && typeof prevState[id] === 'object',
+        );
 
       if (!isMultiple) {
         const newState = { ...prevState, ...formatted };
@@ -80,7 +89,7 @@ export const handleChange = (
       }
     };
 
-    setUsers(applyUpdates);
+    invokeSetUsers(applyUpdates);
 
     if (
       formatted.getInTouch &&
@@ -88,7 +97,10 @@ export const handleChange = (
       opts.isDateInRange &&
       !opts.isDateInRange(formatted.getInTouch)
     ) {
-      setUsers(prev => {
+      invokeSetUsers(prev => {
+        if (!prev || typeof prev !== 'object') {
+          return prev;
+        }
         const copy = { ...prev };
         if (copy[userId]) {
           copy[userId]._pendingRemove = true;
@@ -113,14 +125,17 @@ export const handleChange = (
     });
 
   if (setState) {
-    setUsers(prevState => {
+    invokeSetUsers(prevState => {
       // console.log('prevState!!!!!!!!! :>> ', prevState);
       // Зроблено в основному для видалення юзера серед масиву карточок, а не з середини
 
       const isMultiple =
+        prevState &&
         typeof prevState === 'object' &&
         !Array.isArray(prevState) &&
-        Object.keys(prevState).every(id => typeof prevState[id] === 'object');
+        Object.keys(prevState).every(
+          id => prevState[id] && typeof prevState[id] === 'object',
+        );
 
       if (!isMultiple) {
         const newState = { ...prevState };
@@ -136,35 +151,49 @@ export const handleChange = (
           );
         return newState;
       } else {
+        const currentUser = prevState?.[userId];
+        if (!currentUser || typeof currentUser !== 'object') {
+          return prevState;
+        }
+
+        const updatedUser =
+          (key === 'lastDelivery' || key === 'getInTouch') && !newValue
+            ? (() => {
+                const { [key]: _, ...rest } = currentUser;
+                return rest;
+              })()
+            : { ...currentUser, [key]: newValue };
+
         const newState = {
           ...prevState,
-          [userId]: {
-            ...prevState[userId],
-            ...((key === 'lastDelivery' || key === 'getInTouch') && !newValue
-              ? (() => {
-                  const { [key]: _, ...rest } = prevState[userId];
-                  return rest;
-                })()
-              : { [key]: newValue }),
-          },
+          [userId]: updatedUser,
         };
         click && handleSubmit({ ...newState[userId], userId }, 'overwrite');
         return newState;
       }
     });
   } else {
-    setUsers(prevState => {
+    invokeSetUsers(prevState => {
+      if (!prevState || typeof prevState !== 'object') {
+        return prevState;
+      }
+
+      const currentUser = prevState[userId];
+      if (!currentUser || typeof currentUser !== 'object') {
+        return prevState;
+      }
+
+      const updatedUser =
+        (key === 'lastDelivery' || key === 'getInTouch') && !newValue
+          ? (() => {
+              const { [key]: _, ...rest } = currentUser;
+              return rest;
+            })()
+          : { ...currentUser, [key]: newValue };
+
       const newState = {
         ...prevState,
-        [userId]: {
-          ...prevState[userId],
-          ...((key === 'lastDelivery' || key === 'getInTouch') && !newValue
-            ? (() => {
-                const { [key]: _, ...rest } = prevState[userId];
-                return rest;
-              })()
-            : { [key]: newValue }),
-        },
+        [userId]: updatedUser,
       };
       click && handleSubmit({ ...newState[userId], userId }, 'overwrite');
       return newState;
@@ -177,7 +206,10 @@ export const handleChange = (
     options.isDateInRange &&
     !options.isDateInRange(newValue)
   ) {
-    setUsers(prev => {
+    invokeSetUsers(prev => {
+      if (!prev || typeof prev !== 'object') {
+        return prev;
+      }
       const copy = { ...prev };
       if (copy[userId]) {
         copy[userId]._pendingRemove = true;
