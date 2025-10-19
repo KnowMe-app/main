@@ -561,7 +561,13 @@ const SearchBar = ({
           saveQueries(queries);
         }
         const { cacheFilteredUsers } = await import('./config');
-        await cacheFilteredUsers(filterForload, filters, favoriteUsers, cacheKey);
+        await cacheFilteredUsers(
+          filterForload,
+          filters,
+          favoriteUsers,
+          cacheKey,
+          { includeSpecialFutureDates: true },
+        );
         ids = getIdsByQuery(cacheKey);
       }
       const results = searchCachedCards(term, ids);

@@ -1099,6 +1099,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       lastKey,
       currentFilters,
     });
+    const includeSpecialFutureDates = Boolean((search || '').trim());
     if (isEditingRef.current) return { count: 0, hasMore };
     const param = filterForload === 'DATE' ? dateOffset : lastKey;
     let favRaw = getFavorites();
@@ -1108,7 +1109,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setFavoriteUsersData(fav);
       syncFavorites(fav);
     }
-    const res = await fetchPaginatedNewUsers(param, filterForload, currentFilters, fav);
+    const res = await fetchPaginatedNewUsers(
+      param,
+      filterForload,
+      currentFilters,
+      fav,
+      { includeSpecialFutureDates },
+    );
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
