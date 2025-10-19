@@ -211,11 +211,13 @@ export const cacheFilteredUsers = async (
   filterSettings = {},
   favoriteUsers = {},
   cacheKey,
+  options = {},
 ) => {
   const usersObj = await fetchAllFilteredUsers(
     filterForload,
     filterSettings,
     favoriteUsers,
+    options,
   );
   const ids = [];
   Object.entries(usersObj).forEach(([id, data]) => {
@@ -2087,7 +2089,7 @@ const isValidDate = date => {
 };
 
 // Сортування
-const sortUsers = filteredUsers => {
+const sortUsers = (filteredUsers, { includeSpecialFutureDates = false } = {}) => {
   // const today = new Date().toLocaleDateString('uk-UA'); // "дд.мм.рррр"
   // const today = new Date().toISOString().split('T')[0]; // Формат рррр-мм-дд
   const currentDate = new Date(); // Поточна дата
@@ -2096,12 +2098,14 @@ const sortUsers = filteredUsers => {
   const today = tomorrow.toISOString().split('T')[0]; // Формат YYYY-MM-DD
   const getGroup = date => {
     if (!date) return 3; // порожня дата
-    if (date === '2099-99-99' || date === '9999-99-99') return null; // спецдати - не повертаємо
+    if (date === '2099-99-99' || date === '9999-99-99') {
+      return includeSpecialFutureDates ? 4 : null; // спецдати - повертаємо лише для пошуку
+    }
     if (!isValidDate(date)) return 2; // некоректні дати
     if (date === today) return 0; // сьогодні
     if (date < today) return 1; // минулі дати
-    // Будь-які майбутні дати не повертаємо
-    return null;
+    // Будь-які майбутні дати повертаємо лише для пошуку
+    return includeSpecialFutureDates ? 4 : null;
   };
 
   return filteredUsers
@@ -2123,7 +2127,13 @@ const sortUsers = filteredUsers => {
     });
 };
 
-export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSettings = {}, favoriteUsers = {}) => {
+export const fetchPaginatedNewUsers = async (
+  lastKey,
+  filterForload,
+  filterSettings = {},
+  favoriteUsers = {},
+  options = {},
+) => {
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
   const limit = PAGE_SIZE + 1;
@@ -2134,10 +2144,15 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
   if (filterForload === 'DATE') {
     if (!noExplicitFilters) {
       try {
-        const filtered = await fetchAllFilteredUsers(filterForload, filterSettings, favoriteUsers);
+        const filtered = await fetchAllFilteredUsers(
+          filterForload,
+          filterSettings,
+          favoriteUsers,
+          options,
+        );
         const fetchedUsers = Object.entries(filtered);
 
-        const sortedUsers = sortUsers(fetchedUsers);
+        const sortedUsers = sortUsers(fetchedUsers, options);
 
         const offset = lastKey || 0;
         const paginatedSlice = sortedUsers.slice(offset, offset + PAGE_SIZE);
@@ -2176,7 +2191,7 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
 
       const filteredUsers = filterMain(fetchedUsers, filterForload, filterSettings, favoriteUsers);
 
-      const sortedUsers = sortUsers(filteredUsers);
+      const sortedUsers = sortUsers(filteredUsers, options);
 
       const paginatedSlice = sortedUsers.slice(0, PAGE_SIZE);
       const nextOffset = (lastKey || 0) + PAGE_SIZE;
@@ -2235,9 +2250,11 @@ export const fetchPaginatedNewUsers = async (lastKey, filterForload, filterSetti
     const noExplicitFilters =
       (!filterForload || filterForload === 'NewLoad') && (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
 
-    const filteredUsers = noExplicitFilters ? fetchedUsers : filterMain(fetchedUsers, filterForload, filterSettings, favoriteUsers);
+    const filteredUsers = noExplicitFilters
+      ? fetchedUsers
+      : filterMain(fetchedUsers, filterForload, filterSettings, favoriteUsers);
 
-    const sortedUsers = sortUsers(filteredUsers);
+    const sortedUsers = sortUsers(filteredUsers, options);
 
     const paginatedSlice = sortedUsers.slice(0, PAGE_SIZE);
     const nextKey = sortedUsers.length > PAGE_SIZE ? sortedUsers[PAGE_SIZE][0] : null;
@@ -2911,7 +2928,12 @@ const fetchByPathWithFilters = async (path, filters) => {
   return result;
 };
 
-export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}, favoriteUsers = {}) => {
+export const fetchAllFilteredUsers = async (
+  filterForload,
+  filterSettings = {},
+  favoriteUsers = {},
+  options = {},
+) => {
   try {
     const serverFilters = getServerFilters(filterSettings);
 
@@ -2948,7 +2970,7 @@ export const fetchAllFilteredUsers = async (filterForload, filterSettings = {}, 
     });
 
     const filteredUsers = filterMain(allUsersArray, filterForload, filterSettings, favoriteUsers);
-    const sortedUsers = sortUsers(filteredUsers);
+    const sortedUsers = sortUsers(filteredUsers, options);
     return Object.fromEntries(sortedUsers);
   } catch (error) {
     console.error('Error fetching filtered users:', error);
