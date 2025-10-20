@@ -1,5 +1,6 @@
 import React from 'react';
 import { CheckboxGroup } from './CheckboxGroup';
+import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 
 export const SearchFilters = ({ filters, onChange, hideUserId = false, hideCommentLength = false, mode = 'default' }) => {
   let groups = [];
@@ -82,6 +83,14 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
     ];
   } else {
     groups = [
+      {
+        filterName: 'reaction',
+        label: 'Reaction',
+        options: REACTION_FILTER_OPTIONS.map(option => ({
+          val: option.key,
+          label: option.label,
+        })),
+      },
       {
         filterName: 'csection',
         label: 'C-section',

@@ -316,6 +316,7 @@ const SearchBar = ({
   filters = {},
   filterForload,
   favoriteUsers = {},
+  dislikeUsers = {},
 }) => {
   const [internalSearch, setInternalSearch] = useState(
     () => localStorage.getItem(storageKey) || '',
@@ -572,7 +573,10 @@ const SearchBar = ({
           filters,
           favoriteUsers,
           cacheKey,
-          { includeSpecialFutureDates: true },
+          {
+            includeSpecialFutureDates: true,
+            dislikedUsers: dislikeUsers,
+          },
         );
         ids = getIdsByQuery(cacheKey);
       }

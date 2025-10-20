@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { SearchFilters } from './SearchFilters';
+import { REACTION_FILTER_DEFAULTS } from 'utils/reactionCategory';
 
 const defaultsAdd = {
   csection: { cs2plus: true, cs1: true, cs0: true, other: true },
@@ -26,6 +27,7 @@ const defaultsAdd = {
     w200_plus: true,
     other: true,
   },
+  reaction: { ...REACTION_FILTER_DEFAULTS },
 };
 
 const defaultsMatching = {
