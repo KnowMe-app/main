@@ -1142,6 +1142,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       {
         includeSpecialFutureDates,
         dislikedUsers: dislikeUsersData,
+        skipFilterMain: searchBarQueryActive,
       },
     );
     // console.log('res :>> ', res);
