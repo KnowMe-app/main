@@ -544,8 +544,10 @@ const SearchBar = ({
     }
     if (trimmed && trimmed.startsWith('!')) {
       const term = trimmed.slice(1).trim();
+      const skipFilters = true;
+      const effectiveFilters = skipFilters ? {} : filters || {};
       const filtersKey = normalizeQueryKey(
-        `${filterForload || 'all'}:${JSON.stringify(filters || {})}`,
+        `${filterForload || 'all'}:${JSON.stringify(effectiveFilters)}`,
       );
       console.log('[SearchBar] Detected bulk command search', {
         raw: trimmed,
@@ -570,12 +572,13 @@ const SearchBar = ({
         const { cacheFilteredUsers } = await import('./config');
         await cacheFilteredUsers(
           filterForload,
-          filters,
+          effectiveFilters,
           favoriteUsers,
           cacheKey,
           {
             includeSpecialFutureDates: true,
             dislikedUsers: dislikeUsers,
+            skipAllFilters: skipFilters,
           },
         );
         ids = getIdsByQuery(cacheKey);
