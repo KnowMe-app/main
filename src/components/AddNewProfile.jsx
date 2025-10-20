@@ -49,6 +49,7 @@ import {
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
 import { cacheDplUsers, getDplCards } from 'utils/dplStorage';
 import { getDislikes, syncDislikes } from 'utils/dislikesStorage';
+import { passesReactionFilter } from 'utils/reactionCategory';
 import {
   setIdsForQuery,
   getIdsByQuery,
@@ -1138,7 +1139,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       filterForload,
       currentFilters,
       fav,
-      { includeSpecialFutureDates },
+      {
+        includeSpecialFutureDates,
+        dislikedUsers: dislikeUsersData,
+      },
     );
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
@@ -1207,16 +1211,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     let cacheCount = 0;
     let backendCount = 0;
     const today = new Date().toISOString().split('T')[0];
-    const hasSearchQuery = searchBarQueryActive;
     const isValid = d => {
       if (!d) return true;
       if (d === '2099-99-99' || d === '9999-99-99') {
-        return hasSearchQuery; // allow disliked cards during keyword searches only
+        return true;
       }
       return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
     };
     const filteredArr = cachedArr.filter(
-      u => isValid(u.getInTouch) && (!currentFilters.favorite?.favOnly || fav[u.userId]),
+      u =>
+        isValid(u.getInTouch) &&
+        (!currentFilters.favorite?.favOnly || fav[u.userId]) &&
+        passesReactionFilter(u, currentFilters?.reaction, fav, dislikeUsersData),
     );
 
     let offset = dateOffset2;
@@ -1245,16 +1251,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         undefined,
         currentFilters,
         fav,
+        dislikeUsersData,
         undefined,
         partial => {
           const filteredPartial = currentFilters.favorite?.favOnly
             ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
-          : partial;
-        cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
-        if (!isEditingRef.current) {
-          setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
-        }
-        backendCount += Object.keys(filteredPartial).length;
+            : partial;
+          cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
+          if (!isEditingRef.current) {
+            setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
+          }
+          backendCount += Object.keys(filteredPartial).length;
         },
       );
       if (res && Object.keys(res.users).length > 0) {
@@ -1310,7 +1317,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setFavoriteUsersData(fav);
     }
 
-    const allUsers = noFilters ? await fetchAllUsersFromRTDB() : await fetchAllFilteredUsers(undefined, filters, fav);
+    const allUsers = noFilters
+      ? await fetchAllUsersFromRTDB()
+      : await fetchAllFilteredUsers(undefined, filters, fav, {
+          includeSpecialFutureDates: true,
+          dislikedUsers: dislikeUsersData,
+        });
 
     saveToContact(allUsers);
   };
@@ -1668,6 +1680,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           filters={filters}
           filterForload={currentFilter}
           favoriteUsers={favoriteUsersData}
+          dislikeUsers={dislikeUsersData}
         />
         {state.userId ? (
           <>

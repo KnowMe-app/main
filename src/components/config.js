@@ -29,6 +29,7 @@ import { removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardInde
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { updateCard } from '../utils/cardsStorage';
 import { getCacheKey } from '../utils/cache';
+import { getReactionCategory } from 'utils/reactionCategory';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -1978,7 +1979,13 @@ const filterByAge = (value, ageLimit = 30) => {
 };
 
 // Основна функція фільтрації
-export const filterMain = (usersData, filterForload, filterSettings = {}, favoriteUsers = {}) => {
+export const filterMain = (
+  usersData,
+  filterForload,
+  filterSettings = {},
+  favoriteUsers = {},
+  dislikedUsers = {},
+) => {
   console.log('filterMain called with', {
     filterForload,
     filterSettings,
@@ -2067,6 +2074,11 @@ export const filterMain = (usersData, filterForload, filterSettings = {}, favori
       filters.favorite = isFavoriteUser(userId, favoriteUsers);
     }
 
+    if (filterSettings.reaction && Object.values(filterSettings.reaction).some(v => !v)) {
+      const reactionCategory = getReactionCategory(value, favoriteUsers, dislikedUsers);
+      filters.reaction = !!filterSettings.reaction[reactionCategory];
+    }
+
     const failedFilters = Object.entries(filters).filter(([, result]) => !result);
 
     if (failedFilters.length > 0) {
@@ -2099,7 +2111,7 @@ const sortUsers = (filteredUsers, { includeSpecialFutureDates = false } = {}) =>
   const getGroup = date => {
     if (!date) return 3; // порожня дата
     if (date === '2099-99-99' || date === '9999-99-99') {
-      return includeSpecialFutureDates ? 4 : null; // спецдати - повертаємо лише для пошуку
+      return 4; // спеціальні дати завжди відображаємо
     }
     if (!isValidDate(date)) return 2; // некоректні дати
     if (date === today) return 0; // сьогодні
@@ -2137,6 +2149,8 @@ export const fetchPaginatedNewUsers = async (
   const db = getDatabase();
   const usersRef = ref2(db, 'newUsers');
   const limit = PAGE_SIZE + 1;
+
+  const { dislikedUsers = {} } = options || {};
 
   const noExplicitFilters =
     (!filterForload || filterForload === 'NewLoad') && (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
@@ -2189,7 +2203,13 @@ export const fetchPaginatedNewUsers = async (
       const { data } = await fetchSortedUsersByDate(limit, lastKey || 0);
       let fetchedUsers = Object.entries(data);
 
-      const filteredUsers = filterMain(fetchedUsers, filterForload, filterSettings, favoriteUsers);
+      const filteredUsers = filterMain(
+        fetchedUsers,
+        filterForload,
+        filterSettings,
+        favoriteUsers,
+        dislikedUsers,
+      );
 
       const sortedUsers = sortUsers(filteredUsers, options);
 
@@ -2218,7 +2238,12 @@ export const fetchPaginatedNewUsers = async (
 
       let totalCount;
       if (!lastKey) {
-        totalCount = await fetchTotalFilteredUsersCount(filterForload, filterSettings, favoriteUsers);
+        totalCount = await fetchTotalFilteredUsersCount(
+          filterForload,
+          filterSettings,
+          favoriteUsers,
+          options,
+        );
       }
 
       return {
@@ -2252,7 +2277,13 @@ export const fetchPaginatedNewUsers = async (
 
     const filteredUsers = noExplicitFilters
       ? fetchedUsers
-      : filterMain(fetchedUsers, filterForload, filterSettings, favoriteUsers);
+      : filterMain(
+          fetchedUsers,
+          filterForload,
+          filterSettings,
+          favoriteUsers,
+          dislikedUsers,
+        );
 
     const sortedUsers = sortUsers(filteredUsers, options);
 
@@ -2280,7 +2311,12 @@ export const fetchPaginatedNewUsers = async (
 
     let totalCount;
     if (!lastKey) {
-      totalCount = await fetchTotalFilteredUsersCount(filterForload, filterSettings, favoriteUsers);
+      totalCount = await fetchTotalFilteredUsersCount(
+        filterForload,
+        filterSettings,
+        favoriteUsers,
+        options,
+      );
     }
 
     return {
@@ -2935,6 +2971,7 @@ export const fetchAllFilteredUsers = async (
   options = {},
 ) => {
   try {
+    const { dislikedUsers = {} } = options || {};
     const serverFilters = getServerFilters(filterSettings);
 
     let newUsersData = {};
@@ -2969,7 +3006,13 @@ export const fetchAllFilteredUsers = async (
       ];
     });
 
-    const filteredUsers = filterMain(allUsersArray, filterForload, filterSettings, favoriteUsers);
+    const filteredUsers = filterMain(
+      allUsersArray,
+      filterForload,
+      filterSettings,
+      favoriteUsers,
+      dislikedUsers,
+    );
     const sortedUsers = sortUsers(filteredUsers, options);
     return Object.fromEntries(sortedUsers);
   } catch (error) {
@@ -2978,8 +3021,18 @@ export const fetchAllFilteredUsers = async (
   }
 };
 
-export const fetchTotalFilteredUsersCount = async (filterForload, filterSettings = {}, favoriteUsers = {}) => {
-  const allUsers = await fetchAllFilteredUsers(filterForload, filterSettings, favoriteUsers);
+export const fetchTotalFilteredUsersCount = async (
+  filterForload,
+  filterSettings = {},
+  favoriteUsers = {},
+  options = {},
+) => {
+  const allUsers = await fetchAllFilteredUsers(
+    filterForload,
+    filterSettings,
+    favoriteUsers,
+    options,
+  );
   return Object.keys(allUsers).length;
 };
 

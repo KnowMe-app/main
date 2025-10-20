@@ -32,6 +32,7 @@ export async function fetchFilteredUsersByPage(
   fetchUserByIdFn,
   filterSettings = {},
   favoriteUsers = {},
+  dislikedUsers = {},
   filterMainFnParam,
   onProgress
 ) {
@@ -83,7 +84,8 @@ export async function fetchFilteredUsersByPage(
           combined,
           'DATE2',
           filterSettings,
-          favoriteUsers
+          favoriteUsers,
+          dislikedUsers
         );
         if (onProgress) {
           const partial = filtered.slice(
@@ -104,7 +106,13 @@ export async function fetchFilteredUsersByPage(
         const extra = extras[i];
         combined.push([id, extra ? { ...data, ...extra } : data]);
       });
-      filtered = filterMainFn(combined, 'DATE2', filterSettings, favoriteUsers);
+      filtered = filterMainFn(
+        combined,
+        'DATE2',
+        filterSettings,
+        favoriteUsers,
+        dislikedUsers
+      );
       if (onProgress) {
         const partial = filtered.slice(
           startOffset,
