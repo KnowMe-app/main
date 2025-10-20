@@ -6,7 +6,10 @@ import { useAutoResize } from '../hooks/useAutoResize';
 import { color, OrangeBtn } from './styles';
 import { pickerFieldsExtended as pickerFields } from './formFields';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
-import { formatDateToDisplay } from 'components/inputValidations';
+import {
+  formatDateToDisplay,
+  formatDateAndFormula,
+} from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
@@ -280,6 +283,34 @@ export const ProfileForm = ({
     );
   }, [dataSource]);
 
+  const normalizeGetInTouchForSubmit = draftState => {
+    if (!draftState || typeof draftState !== 'object') {
+      return draftState;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(draftState, 'getInTouch')) {
+      return draftState;
+    }
+
+    const rawValue = draftState.getInTouch;
+    const normalized = formatDateAndFormula(rawValue);
+
+    if (!normalized) {
+      const { getInTouch: _omit, ...rest } = draftState;
+      return rest;
+    }
+
+    return { ...draftState, getInTouch: normalized };
+  };
+
+  const submitWithNormalization = (nextState, overwrite, delCondition) => {
+    const payload =
+      nextState && typeof nextState === 'object'
+        ? normalizeGetInTouchForSubmit(nextState)
+        : nextState;
+    handleSubmit(payload, overwrite, delCondition);
+  };
+
   const handleAddCustomField = () => {
     if (!customField.key) return;
     if (!state.myComment?.trim()) {
@@ -287,7 +318,7 @@ export const ProfileForm = ({
     }
     setState(prevState => {
       const newState = { ...prevState, [customField.key]: customField.value };
-      handleSubmit(newState, 'overwrite');
+      submitWithNormalization(newState, 'overwrite');
       return newState;
     });
     setCustomField({ key: '', value: '' });
@@ -338,13 +369,15 @@ export const ProfileForm = ({
         </div>
       )}
       {sortedFieldsToRender
-        .filter(field => !['myComment', 'getInTouch', 'writer'].includes(field.name))
+        .filter(field => !['myComment', 'writer'].includes(field.name))
         .map((field, index) => {
           const displayValue =
             field.name === 'lastAction'
               ? formatDateToDisplay(normalizeLastAction(state.lastAction))
               : field.name === 'lastDelivery'
               ? formatDateToDisplay(state.lastDelivery)
+              : field.name === 'getInTouch'
+              ? formatDateToDisplay(state.getInTouch)
               : state[field.name] || '';
           return (
             <PickerContainer key={index}>
@@ -432,9 +465,20 @@ export const ProfileForm = ({
                           onBlur: () => {
                             if (field.name === 'myComment' && !state.myComment?.trim()) {
                               handleDelKeyValue('myComment');
-                            } else {
-                              handleSubmit(state, 'overwrite');
+                              return;
                             }
+
+                            if (field.name === 'getInTouch') {
+                              const raw = state.getInTouch;
+                              const trimmed = typeof raw === 'string' ? raw.trim() : raw;
+
+                              if (!trimmed) {
+                                handleDelKeyValue('getInTouch');
+                                return;
+                              }
+                            }
+
+                            submitWithNormalization(state, 'overwrite');
                           },
                         })}
                   />
@@ -488,7 +532,7 @@ export const ProfileForm = ({
                           ? [...prevState[field.name], '']
                           : [prevState[field.name], ''];
                       const newState = { ...prevState, [field.name]: updatedField };
-                      handleSubmit(newState, 'overwrite');
+                      submitWithNormalization(newState, 'overwrite');
                       return newState;
                     });
                   }}
@@ -510,7 +554,7 @@ export const ProfileForm = ({
                           ...prevState,
                           [field.name]: 'Yes',
                         };
-                        handleSubmit(newState, 'overwrite');
+                        submitWithNormalization(newState, 'overwrite');
                         return newState;
                       });
                     }}
@@ -527,7 +571,7 @@ export const ProfileForm = ({
                           ...prevState,
                           [field.name]: 'No',
                         };
-                        handleSubmit(newState, 'overwrite');
+                        submitWithNormalization(newState, 'overwrite');
                         return newState;
                       });
                     }}
@@ -544,7 +588,7 @@ export const ProfileForm = ({
                           ...prevState,
                           [field.name]: 'Other',
                         };
-                        handleSubmit(newState, 'overwrite');
+                        submitWithNormalization(newState, 'overwrite');
                         handleBlur(field.name);
                         return newState;
                       });
@@ -565,7 +609,7 @@ export const ProfileForm = ({
                           ...prevState,
                           [field.name]: '-',
                         };
-                        handleSubmit(newState, 'overwrite');
+                        submitWithNormalization(newState, 'overwrite');
                         return newState;
                       });
                     }}
@@ -582,7 +626,7 @@ export const ProfileForm = ({
                           ...prevState,
                           [field.name]: '1',
                         };
-                        handleSubmit(newState, 'overwrite');
+                        submitWithNormalization(newState, 'overwrite');
                         return newState;
                       });
                     }}
@@ -599,7 +643,7 @@ export const ProfileForm = ({
                           ...prevState,
                           [field.name]: '2',
                         };
-                        handleSubmit(newState, 'overwrite');
+                        submitWithNormalization(newState, 'overwrite');
                         return newState;
                       });
                     }}
