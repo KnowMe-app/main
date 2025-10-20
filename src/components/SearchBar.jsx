@@ -309,6 +309,7 @@ const SearchBar = ({
   search: externalSearch,
   setSearch: externalSetSearch,
   onClear,
+  onSearchExecuted,
   wrapperStyle = {},
   leftIcon = SearchIcon,
   storageKey = 'searchQuery',
@@ -527,10 +528,15 @@ const SearchBar = ({
 
   const writeData = async (query = search) => {
     setUserNotFound && setUserNotFound(false);
-    const trimmed = query?.trim();
+    const rawQuery = typeof query === 'string' ? query : '';
+    const trimmed = rawQuery.trim();
+
+    if (onSearchExecuted) {
+      onSearchExecuted(trimmed);
+    }
 
     if (typeof query === 'string') {
-      console.log('[SearchBar] Incoming query', { raw: query, trimmed });
+      console.log('[SearchBar] Incoming query', { raw: rawQuery, trimmed });
     }
     if (trimmed && !trimmed.startsWith('!')) {
       addToHistory(trimmed);
@@ -624,7 +630,7 @@ const SearchBar = ({
       }
     }
 
-    const ukTrigger = parseUkTriggerQuery(query);
+    const ukTrigger = parseUkTriggerQuery(rawQuery);
     if (ukTrigger?.searchPair?.telegram) {
       const normalizedTelegram = ukTrigger.searchPair.telegram;
       const searchCandidates = [normalizedTelegram];
@@ -663,19 +669,19 @@ const SearchBar = ({
       }
     }
 
-    if (await processUserSearch('userId', parseUserId, query)) return;
-    if (await processUserSearch('facebook', parseFacebookId, query)) return;
-    if (await processUserSearch('instagram', parseInstagramId, query)) return;
-    if (await processUserSearch('telegram', parseTelegramId, query)) return;
-    if (await processUserSearch('email', parseEmail, query)) return;
-    if (await processUserSearch('tiktok', parseTikTokLink, query)) return;
-    if (await processUserSearch('phone', parsePhoneNumber, query)) return;
-    if (await processUserSearch('vk', parseVk, query)) return;
-    if (await processUserSearch('other', parseOtherContact, query)) return;
+    if (await processUserSearch('userId', parseUserId, rawQuery)) return;
+    if (await processUserSearch('facebook', parseFacebookId, rawQuery)) return;
+    if (await processUserSearch('instagram', parseInstagramId, rawQuery)) return;
+    if (await processUserSearch('telegram', parseTelegramId, rawQuery)) return;
+    if (await processUserSearch('email', parseEmail, rawQuery)) return;
+    if (await processUserSearch('tiktok', parseTikTokLink, rawQuery)) return;
+    if (await processUserSearch('phone', parsePhoneNumber, rawQuery)) return;
+    if (await processUserSearch('vk', parseVk, rawQuery)) return;
+    if (await processUserSearch('other', parseOtherContact, rawQuery)) return;
 
-    const nameTrim = query.trim();
+    const nameTrim = rawQuery.trim();
     console.log('[SearchBar] Defaulting to name search', {
-      raw: query,
+      raw: rawQuery,
       cleaned: nameTrim,
     });
     const hasCache = loadCachedResult('name', nameTrim);
@@ -688,10 +694,10 @@ const SearchBar = ({
     }
     let res = await cachedSearch({ name: nameTrim });
     if (!res || Object.keys(res).length === 0) {
-      const cleanedQuery = query.replace(/^ук\s*см\s*/i, '').trim();
+      const cleanedQuery = rawQuery.replace(/^ук\s*см\s*/i, '').trim();
       if (cleanedQuery && cleanedQuery !== nameTrim) {
         console.log('[SearchBar] Retrying name search without prefix', {
-          raw: query,
+          raw: rawQuery,
           cleaned: cleanedQuery,
         });
           res = await cachedSearch({ name: cleanedQuery });
@@ -699,10 +705,10 @@ const SearchBar = ({
       }
     }
     if (!res || Object.keys(res).length === 0) {
-      const withPrefix = /^ук\s*см/i.test(query) ? null : `УК СМ ${query.trim()}`;
+      const withPrefix = /^ук\s*см/i.test(rawQuery) ? null : `УК СМ ${rawQuery.trim()}`;
       if (withPrefix) {
         console.log('[SearchBar] Retrying name search with enforced prefix', {
-          raw: query,
+          raw: rawQuery,
           cleaned: withPrefix,
         });
           res = await cachedSearch({ name: withPrefix });
