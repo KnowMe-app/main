@@ -254,6 +254,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (urlUserId) return urlUserId;
     return localStorage.getItem(SEARCH_KEY) || '';
   });
+  const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
+  const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
 
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
@@ -623,6 +625,28 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       lastUrlUserIdRef.current = null;
     }
   }, [location.search, setSearch, setState]);
+
+  useEffect(() => {
+    const normalized = (search || '').trim();
+    if (!normalized) {
+      if (lastSearchBarQuery !== '') {
+        setLastSearchBarQuery('');
+      }
+      if (searchBarQueryActive) {
+        setSearchBarQueryActive(false);
+      }
+      return;
+    }
+    if (normalized !== lastSearchBarQuery && searchBarQueryActive) {
+      setSearchBarQueryActive(false);
+    }
+  }, [search, lastSearchBarQuery, searchBarQueryActive]);
+
+  const handleSearchExecuted = useCallback(value => {
+    const normalized = (value || '').trim();
+    setSearchBarQueryActive(Boolean(normalized));
+    setLastSearchBarQuery(normalized);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -1099,7 +1123,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       lastKey,
       currentFilters,
     });
-    const includeSpecialFutureDates = Boolean((search || '').trim());
+    const includeSpecialFutureDates = searchBarQueryActive;
     if (isEditingRef.current) return { count: 0, hasMore };
     const param = filterForload === 'DATE' ? dateOffset : lastKey;
     let favRaw = getFavorites();
@@ -1183,11 +1207,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     let cacheCount = 0;
     let backendCount = 0;
     const today = new Date().toISOString().split('T')[0];
-    const hasSearchQuery = Boolean((search || '').trim());
+    const hasSearchQuery = searchBarQueryActive;
     const isValid = d => {
       if (!d) return true;
-      if (!hasSearchQuery && (d === '2099-99-99' || d === '9999-99-99'))
-        return false; // allow disliked cards during keyword searches
+      if (d === '2099-99-99' || d === '9999-99-99') {
+        return hasSearchQuery; // allow disliked cards during keyword searches only
+      }
       return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
     };
     const filteredArr = cachedArr.filter(
@@ -1626,6 +1651,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           setState={setState}
           setUserNotFound={setUserNotFound}
           onSearchKey={setSearchKeyValuePair}
+          onSearchExecuted={handleSearchExecuted}
           onClear={() => {
             localStorage.removeItem(SEARCH_KEY);
             setState({});
@@ -1635,6 +1661,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               setUsers({});
             }
             setUserNotFound(false);
+            setSearchBarQueryActive(false);
+            setLastSearchBarQuery('');
           }}
           storageKey={SEARCH_KEY}
           filters={filters}
