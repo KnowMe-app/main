@@ -29,6 +29,21 @@ export const handleChange = (
     }
   };
 
+  const submitWithoutUsers = (data, removalList, wasClicked) => {
+    if (!wasClicked || typeof setUsers === 'function') {
+      return;
+    }
+
+    const payload = typeof data === 'object' && data !== null ? { ...data } : {};
+    const resolvedId = userId || payload.userId;
+
+    if (!resolvedId) {
+      return;
+    }
+
+    handleSubmit({ ...payload, userId: resolvedId }, 'overwrite', removalList);
+  };
+
   if (typeof key === 'object' && key !== null) {
     const updates = key;
     const clickFlag = value;
@@ -47,8 +62,12 @@ export const handleChange = (
         removeKeys.forEach(key => {
           delete newState[key];
         });
+        submitWithoutUsers(newState, removeKeys, clickFlag);
         return newState;
       });
+    else {
+      submitWithoutUsers(formatted, removeKeys, clickFlag);
+    }
 
     const applyUpdates = prevState => {
       const isMultiple =
@@ -124,8 +143,16 @@ export const handleChange = (
       } else {
         newState[key] = newValue;
       }
+      submitWithoutUsers(newState, removalKeys, click);
       return newState;
     });
+  else {
+    const payload =
+      (key === 'lastDelivery' || key === 'getInTouch') && !newValue
+        ? {}
+        : { [key]: newValue };
+    submitWithoutUsers(payload, removalKeys, click);
+  }
 
   if (setState) {
     invokeSetUsers(prevState => {
