@@ -68,6 +68,7 @@ export const handleChange = (
           handleSubmit(
             { ...newState, userId: userId || newState.userId },
             'overwrite',
+            removeKeys,
           );
         return newState;
       } else {
@@ -84,7 +85,7 @@ export const handleChange = (
           }
         });
         clickFlag &&
-          handleSubmit({ ...newState[userId], userId }, 'overwrite');
+          handleSubmit({ ...newState[userId], userId }, 'overwrite', removeKeys);
         return newState;
       }
     };
@@ -112,6 +113,8 @@ export const handleChange = (
   }
 
   const newValue = formatValue(key, value);
+  const removalKeys =
+    (key === 'lastDelivery' || key === 'getInTouch') && !newValue ? [key] : [];
 
   if (setState)
     setState(prev => {
@@ -148,6 +151,7 @@ export const handleChange = (
           handleSubmit(
             { ...newState, userId: userId || newState.userId },
             'overwrite',
+            removalKeys,
           );
         return newState;
       } else {
@@ -168,7 +172,12 @@ export const handleChange = (
           ...prevState,
           [userId]: updatedUser,
         };
-        click && handleSubmit({ ...newState[userId], userId }, 'overwrite');
+        click &&
+          handleSubmit(
+            { ...newState[userId], userId },
+            'overwrite',
+            removalKeys,
+          );
         return newState;
       }
     });
@@ -195,7 +204,12 @@ export const handleChange = (
         ...prevState,
         [userId]: updatedUser,
       };
-      click && handleSubmit({ ...newState[userId], userId }, 'overwrite');
+      click &&
+        handleSubmit(
+          { ...newState[userId], userId },
+          'overwrite',
+          removalKeys,
+        );
       return newState;
     });
   }
