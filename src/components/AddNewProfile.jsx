@@ -1236,9 +1236,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
       return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
     };
+    const skipDateValidityCheck = searchBarQueryActive;
+
     const filteredArr = cachedArr.filter(
       u =>
-        isValid(u.getInTouch) &&
+        (skipDateValidityCheck || isValid(u.getInTouch)) &&
         (!currentFilters.favorite?.favOnly || fav[u.userId]) &&
         passesReactionFilter(u, currentFilters?.reaction, fav, dislikeUsersData),
     );
