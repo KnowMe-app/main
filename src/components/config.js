@@ -2104,12 +2104,20 @@ const isValidDate = date => {
 
 // Сортування
 const sortUsers = (filteredUsers, { includeSpecialFutureDates = false } = {}) => {
-  // const today = new Date().toLocaleDateString('uk-UA'); // "дд.мм.рррр"
-  // const today = new Date().toISOString().split('T')[0]; // Формат рррр-мм-дд
   const currentDate = new Date(); // Поточна дата
   const tomorrow = new Date(currentDate); // Копія поточної дати
   tomorrow.setDate(currentDate.getDate() + 1); // Збільшуємо дату на 1 день
   const today = tomorrow.toISOString().split('T')[0]; // Формат YYYY-MM-DD
+
+  const priorityRoles = new Set(['ag', 'ip', 'cl']);
+  const shouldSkipGetInTouchRules = user => {
+    if (!user) return false;
+    const rolesToCheck = [user.role, user.userRole];
+    return rolesToCheck.some(role =>
+      typeof role === 'string' && priorityRoles.has(role.toLowerCase()),
+    );
+  };
+
   const getGroup = date => {
     if (!date) return 3; // порожня дата
     if (date === '2099-99-99' || date === '9999-99-99') {
@@ -2122,23 +2130,48 @@ const sortUsers = (filteredUsers, { includeSpecialFutureDates = false } = {}) =>
     return includeSpecialFutureDates ? 4 : null;
   };
 
-  return filteredUsers
-    .filter(([, u]) => getGroup(u.getInTouch) !== null)
-    .sort(([, a], [, b]) => {
-      const groupA = getGroup(a.getInTouch);
-      const groupB = getGroup(b.getInTouch);
+  const annotated = filteredUsers.map(entry => {
+    const [, user] = entry;
+    return {
+      entry,
+      user,
+      skipGetInTouchRules: shouldSkipGetInTouchRules(user),
+    };
+  });
+
+  const filteredAnnotated = annotated.filter(item => {
+    if (item.skipGetInTouchRules) return true;
+    return getGroup(item.user.getInTouch) !== null;
+  });
+
+  const sortedNonSkipped = filteredAnnotated
+    .filter(item => !item.skipGetInTouchRules)
+    .sort((a, b) => {
+      const groupA = getGroup(a.user.getInTouch);
+      const groupB = getGroup(b.user.getInTouch);
 
       if (groupA !== groupB) return groupA - groupB;
 
       // Сортуємо минулі дати у зворотному порядку (від сьогодні назад)
       if (groupA === 1) {
-        const aDate = a.getInTouch || '';
-        const bDate = b.getInTouch || '';
+        const aDate = a.user.getInTouch || '';
+        const bDate = b.user.getInTouch || '';
         return bDate.localeCompare(aDate);
       }
 
       return 0;
     });
+
+  let sortedNonSkippedIndex = 0;
+
+  return filteredAnnotated.map(item => {
+    if (item.skipGetInTouchRules) {
+      return item.entry;
+    }
+
+    const nextItem = sortedNonSkipped[sortedNonSkippedIndex++];
+    return nextItem ? nextItem.entry : item.entry;
+  });
 };
 
 export const fetchPaginatedNewUsers = async (
