@@ -214,11 +214,9 @@ export const cacheFilteredUsers = async (
   cacheKey,
   options = {},
 ) => {
-  const effectiveFilterSettings =
-    options?.skipAllFilters ? {} : filterSettings;
   const usersObj = await fetchAllFilteredUsers(
     filterForload,
-    effectiveFilterSettings,
+    filterSettings,
     favoriteUsers,
     options,
   );
@@ -2982,11 +2980,8 @@ export const fetchAllFilteredUsers = async (
   options = {},
 ) => {
   try {
-    const { dislikedUsers = {}, skipAllFilters = false } = options || {};
-    const effectiveFilterSettings = skipAllFilters ? {} : filterSettings;
-    const serverFilters = skipAllFilters
-      ? {}
-      : getServerFilters(effectiveFilterSettings);
+    const { dislikedUsers = {} } = options || {};
+    const serverFilters = getServerFilters(filterSettings);
 
     let newUsersData = {};
     let usersData = {};
@@ -3020,15 +3015,10 @@ export const fetchAllFilteredUsers = async (
       ];
     });
 
-    if (skipAllFilters) {
-      const sortedWithoutFilters = sortUsers(allUsersArray, options);
-      return Object.fromEntries(sortedWithoutFilters);
-    }
-
     const filteredUsers = filterMain(
       allUsersArray,
       filterForload,
-      effectiveFilterSettings,
+      filterSettings,
       favoriteUsers,
       dislikedUsers,
     );
