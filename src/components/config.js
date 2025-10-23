@@ -2150,15 +2150,13 @@ export const fetchPaginatedNewUsers = async (
   const usersRef = ref2(db, 'newUsers');
   const limit = PAGE_SIZE + 1;
 
-  const { dislikedUsers = {}, skipFilterMain = false } = options || {};
+  const { dislikedUsers = {} } = options || {};
 
   const noExplicitFilters =
-    (!filterForload || filterForload === 'NewLoad') &&
-    (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
-  const shouldApplyFilterMain = !skipFilterMain && !noExplicitFilters;
+    (!filterForload || filterForload === 'NewLoad') && (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
 
   if (filterForload === 'DATE') {
-    if (shouldApplyFilterMain) {
+    if (!noExplicitFilters) {
       try {
         const filtered = await fetchAllFilteredUsers(
           filterForload,
@@ -2205,15 +2203,13 @@ export const fetchPaginatedNewUsers = async (
       const { data } = await fetchSortedUsersByDate(limit, lastKey || 0);
       let fetchedUsers = Object.entries(data);
 
-      const filteredUsers = shouldApplyFilterMain
-        ? filterMain(
-            fetchedUsers,
-            filterForload,
-            filterSettings,
-            favoriteUsers,
-            dislikedUsers,
-          )
-        : fetchedUsers;
+      const filteredUsers = filterMain(
+        fetchedUsers,
+        filterForload,
+        filterSettings,
+        favoriteUsers,
+        dislikedUsers,
+      );
 
       const sortedUsers = sortUsers(filteredUsers, options);
 
@@ -2242,16 +2238,12 @@ export const fetchPaginatedNewUsers = async (
 
       let totalCount;
       if (!lastKey) {
-        if (shouldApplyFilterMain) {
-          totalCount = await fetchTotalFilteredUsersCount(
-            filterForload,
-            filterSettings,
-            favoriteUsers,
-            options,
-          );
-        } else {
-          totalCount = sortedUsers.length;
-        }
+        totalCount = await fetchTotalFilteredUsersCount(
+          filterForload,
+          filterSettings,
+          favoriteUsers,
+          options,
+        );
       }
 
       return {
@@ -2280,15 +2272,18 @@ export const fetchPaginatedNewUsers = async (
 
     let fetchedUsers = Object.entries(snapshot.val());
 
-    const filteredUsers = shouldApplyFilterMain
-      ? filterMain(
+    const noExplicitFilters =
+      (!filterForload || filterForload === 'NewLoad') && (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
+
+    const filteredUsers = noExplicitFilters
+      ? fetchedUsers
+      : filterMain(
           fetchedUsers,
           filterForload,
           filterSettings,
           favoriteUsers,
           dislikedUsers,
-        )
-      : fetchedUsers;
+        );
 
     const sortedUsers = sortUsers(filteredUsers, options);
 
@@ -2316,16 +2311,12 @@ export const fetchPaginatedNewUsers = async (
 
     let totalCount;
     if (!lastKey) {
-      if (shouldApplyFilterMain) {
-        totalCount = await fetchTotalFilteredUsersCount(
-          filterForload,
-          filterSettings,
-          favoriteUsers,
-          options,
-        );
-      } else {
-        totalCount = sortedUsers.length;
-      }
+      totalCount = await fetchTotalFilteredUsersCount(
+        filterForload,
+        filterSettings,
+        favoriteUsers,
+        options,
+      );
     }
 
     return {
