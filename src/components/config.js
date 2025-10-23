@@ -2980,16 +2980,22 @@ const fetchByPathWithFilters = async (path, filters) => {
 
   for (const [key, values] of Object.entries(filters)) {
     const ids = new Set();
+    const dbKeys = key === 'role' ? ['role', 'userRole'] : [key];
+
     await Promise.all(
-      values.map(async value => {
-        const q = query(ref2(database, path), orderByChild(key), equalTo(value));
-        const snap = await get(q);
-        if (snap.exists()) {
-          Object.entries(snap.val()).forEach(([id, data]) => {
-            ids.add(id);
-            dataById[id] = { ...(dataById[id] || {}), ...data };
-          });
-        }
+      dbKeys.map(async dbKey => {
+        await Promise.all(
+          values.map(async value => {
+            const q = query(ref2(database, path), orderByChild(dbKey), equalTo(value));
+            const snap = await get(q);
+            if (snap.exists()) {
+              Object.entries(snap.val()).forEach(([id, data]) => {
+                ids.add(id);
+                dataById[id] = { ...(dataById[id] || {}), ...data };
+              });
+            }
+          }),
+        );
       }),
     );
     sets.push(ids);
