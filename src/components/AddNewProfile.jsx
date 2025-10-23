@@ -268,7 +268,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   const [filters, setFilters] = useState({});
   const filtersRef = useRef(filters);
-  const lastNonEmptyFilterRef = useRef('');
   const hasInitializedFiltersRef = useRef(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState(null);
@@ -673,12 +672,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, [state.userId, location.pathname, location.search, navigate]);
 
-  useEffect(() => {
-    if (currentFilter) {
-      lastNonEmptyFilterRef.current = currentFilter;
-    }
-  }, [currentFilter]);
-
   const handleFilterChange = useCallback(nextFilters => {
     const nextValue = nextFilters ?? {};
     const prevValue = filtersRef.current ?? {};
@@ -699,25 +692,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     filtersRef.current = nextValue;
-    if (!currentFilter && !searchBarQueryActive && !searchKeyValuePair) {
-      const fallbackFilter = lastNonEmptyFilterRef.current || 'DATE';
-      lastNonEmptyFilterRef.current = fallbackFilter;
-      setCurrentFilter(fallbackFilter);
-    }
     setSearchLoading(true);
     setHasSearched(true);
     setTotalCount(0);
     setFilters(nextValue);
-  }, [
-    currentFilter,
-    searchBarQueryActive,
-    searchKeyValuePair,
-    setCurrentFilter,
-    setFilters,
-    setHasSearched,
-    setSearchLoading,
-    setTotalCount,
-  ]);
+  }, [setFilters, setHasSearched, setSearchLoading, setTotalCount]);
 
   useEffect(() => {
     if (!state.userId) return;
