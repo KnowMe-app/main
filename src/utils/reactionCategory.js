@@ -121,18 +121,10 @@ export const passesReactionFilter = (
     return true;
   }
 
-  const normalizedGetInTouch = normalizeGetInTouch(user?.getInTouch);
-  if (
-    reactionFilters[REACTION_FILTER_KEYS.NONE] === false &&
-    isOrdinaryDateValue(normalizedGetInTouch)
-  ) {
-    return false;
-  }
-
   const category = getReactionCategory(user, favorites, dislikes);
   if (
     category === REACTION_FILTER_KEYS.NONE &&
-    isOrdinaryDateValue(normalizedGetInTouch)
+    isOrdinaryDateValue(normalizeGetInTouch(user?.getInTouch))
   ) {
     return false;
   }
