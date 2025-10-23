@@ -35,39 +35,12 @@ const normalizeGetInTouch = value => {
   return String(value).trim();
 };
 
-const isNormalizedSpecialGetInTouchValue = normalized => {
+const isSpecialGetInTouchValue = value => {
+  const normalized = normalizeGetInTouch(value);
   if (!normalized) return false;
   if (SPECIAL_GET_IN_TOUCH_VALUES.has(normalized)) return true;
   const isoCandidate = normalized.replace(/\./g, '-');
   return SPECIAL_GET_IN_TOUCH_VALUES.has(isoCandidate);
-};
-
-const isValidMonthDay = (month, day) => {
-  const monthNumber = Number(month);
-  const dayNumber = Number(day);
-  if (Number.isNaN(monthNumber) || Number.isNaN(dayNumber)) return false;
-  if (monthNumber < 1 || monthNumber > 12) return false;
-  if (dayNumber < 1 || dayNumber > 31) return false;
-  return true;
-};
-
-const REGULAR_DATE_PATTERNS = [
-  { regex: /^(\d{4})-(\d{2})-(\d{2})$/, monthIndex: 2, dayIndex: 3 },
-  { regex: /^(\d{4})\/(\d{2})\/(\d{2})$/, monthIndex: 2, dayIndex: 3 },
-  { regex: /^(\d{2})\.(\d{2})\.(\d{4})$/, monthIndex: 2, dayIndex: 1 },
-  { regex: /^(\d{2})-(\d{2})-(\d{4})$/, monthIndex: 2, dayIndex: 1 },
-  { regex: /^(\d{2})\/(\d{2})\/(\d{4})$/, monthIndex: 2, dayIndex: 1 },
-];
-
-const isOrdinaryDateValue = normalized => {
-  if (!normalized) return false;
-  if (isNormalizedSpecialGetInTouchValue(normalized)) return false;
-
-  return REGULAR_DATE_PATTERNS.some(({ regex, monthIndex, dayIndex }) => {
-    const match = normalized.match(regex);
-    if (!match) return false;
-    return isValidMonthDay(match[monthIndex], match[dayIndex]);
-  });
 };
 
 const isTruthyMapValue = (collection, key) => {
@@ -83,7 +56,7 @@ export const getReactionCategory = (user, favorites = {}, dislikes = {}) => {
   }
 
   const getInTouch = normalizeGetInTouch(user.getInTouch);
-  if (isNormalizedSpecialGetInTouchValue(getInTouch)) {
+  if (isSpecialGetInTouchValue(getInTouch)) {
     return REACTION_FILTER_KEYS.SPECIAL_99;
   }
 
@@ -122,13 +95,6 @@ export const passesReactionFilter = (
   }
 
   const category = getReactionCategory(user, favorites, dislikes);
-  if (
-    category === REACTION_FILTER_KEYS.NONE &&
-    isOrdinaryDateValue(normalizeGetInTouch(user?.getInTouch))
-  ) {
-    return false;
-  }
-
   return Boolean(reactionFilters[category]);
 };
 

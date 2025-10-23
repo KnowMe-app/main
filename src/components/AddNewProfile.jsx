@@ -928,23 +928,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     if (!ownerId) return;
 
-    const favRef = ref(database, `multiData/favorites/${ownerId}`);
-    const unsubscribe = onValue(favRef, snap => {
-      const data = snap.exists() ? snap.val() : {};
-      const normalized = Object.fromEntries(
-        Object.entries(data).filter(([, value]) => Boolean(value)),
-      );
-      setFavoriteUsersData(normalized);
-      setFavoriteIds(normalized);
-      syncFavorites(normalized);
-    });
-
-    return () => unsubscribe();
-  }, [ownerId]);
-
-  useEffect(() => {
-    if (!ownerId) return;
-
     const disRef = ref(database, `multiData/dislikes/${ownerId}`);
     const unsubscribe = onValue(disRef, snap => {
       const data = snap.exists() ? snap.val() : {};
