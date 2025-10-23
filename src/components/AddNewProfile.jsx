@@ -1339,6 +1339,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         fav,
         {
           includeSpecialFutureDates,
+          skipGetInTouchFilter: true,
           dislikedUsers: dislikeUsersData,
         },
       );

@@ -2101,13 +2101,17 @@ const isValidDate = date => {
 };
 
 // Сортування
-const sortUsers = (filteredUsers, { includeSpecialFutureDates = false } = {}) => {
+const sortUsers = (
+  filteredUsers,
+  { includeSpecialFutureDates = false, skipGetInTouchFilter = false } = {},
+) => {
   // const today = new Date().toLocaleDateString('uk-UA'); // "дд.мм.рррр"
   // const today = new Date().toISOString().split('T')[0]; // Формат рррр-мм-дд
   const currentDate = new Date(); // Поточна дата
   const tomorrow = new Date(currentDate); // Копія поточної дати
   tomorrow.setDate(currentDate.getDate() + 1); // Збільшуємо дату на 1 день
   const today = tomorrow.toISOString().split('T')[0]; // Формат YYYY-MM-DD
+  const allowFutureDates = includeSpecialFutureDates || skipGetInTouchFilter;
   const getGroup = date => {
     if (!date) return 3; // порожня дата
     if (date === '2099-99-99' || date === '9999-99-99') {
@@ -2117,11 +2121,14 @@ const sortUsers = (filteredUsers, { includeSpecialFutureDates = false } = {}) =>
     if (date === today) return 0; // сьогодні
     if (date < today) return 1; // минулі дати
     // Будь-які майбутні дати повертаємо лише для пошуку
-    return includeSpecialFutureDates ? 4 : null;
+    return allowFutureDates ? 4 : null;
   };
 
-  return filteredUsers
-    .filter(([, u]) => getGroup(u.getInTouch) !== null)
+  const usersToSort = skipGetInTouchFilter
+    ? Array.from(filteredUsers)
+    : filteredUsers.filter(([, u]) => getGroup(u.getInTouch) !== null);
+
+  return usersToSort
     .sort(([, a], [, b]) => {
       const groupA = getGroup(a.getInTouch);
       const groupB = getGroup(b.getInTouch);
