@@ -1002,7 +1002,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         .finally(() => setSearchLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, currentFilter, search, dislikeUsersData]);
+  }, [filters, currentFilter, search]);
 
 
   const [adding, setAdding] = useState(false);
