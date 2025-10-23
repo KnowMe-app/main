@@ -100,6 +100,10 @@ export const getReactionCategory = (user, favorites = {}, dislikes = {}) => {
   }
 
   if (getInTouch) {
+    if (isOrdinaryDateValue(getInTouch)) {
+      return REACTION_FILTER_KEYS.NONE;
+    }
+
     return REACTION_FILTER_KEYS.QUESTION;
   }
 
