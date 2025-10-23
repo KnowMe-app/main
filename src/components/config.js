@@ -2271,6 +2271,7 @@ export const fetchPaginatedNewUsers = async (
     }
 
     let fetchedUsers = Object.entries(snapshot.val());
+    const rawNextKey = fetchedUsers.length > PAGE_SIZE ? fetchedUsers[PAGE_SIZE][0] : null;
 
     const noExplicitFilters =
       (!filterForload || filterForload === 'NewLoad') && (!filterSettings || Object.values(filterSettings).every(value => value === 'off'));
@@ -2288,7 +2289,12 @@ export const fetchPaginatedNewUsers = async (
     const sortedUsers = sortUsers(filteredUsers, options);
 
     const paginatedSlice = sortedUsers.slice(0, PAGE_SIZE);
-    const nextKey = sortedUsers.length > PAGE_SIZE ? sortedUsers[PAGE_SIZE][0] : null;
+    const nextKey =
+      filterForload === 'DATE3'
+        ? rawNextKey
+        : sortedUsers.length > PAGE_SIZE
+        ? sortedUsers[PAGE_SIZE][0]
+        : null;
 
     const paginatedUsers = paginatedSlice.reduce((acc, [userId, userData]) => {
       acc[userId] = userData;

@@ -589,6 +589,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [users, setUsers] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
+  const [lastKey3, setLastKey3] = useState(null);
   const [totalCount, setTotalCount] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -945,6 +946,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     setUsers({});
     setLastKey(null);
+    setLastKey3(null);
     setHasMore(true);
     setTotalCount(0);
     setCurrentPage(1);
@@ -967,6 +969,31 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           setBackendCount(backendCount);
         })
         .finally(() => setSearchLoading(false));
+      return;
+    }
+
+    if (currentFilter === 'DATE3') {
+      const queryKey = buildQueryKey('DATE3', filters, search);
+      const ids = getIdsByQuery(queryKey);
+      const cards = ids.map(id => getCard(id)).filter(Boolean);
+      if (cards.length > 0) {
+        const cachedUsers = cards.reduce((acc, u) => {
+          acc[u.userId] = u;
+          return acc;
+        }, {});
+        setUsers(cachedUsers);
+        setTotalCount(ids.length);
+        setCacheCount(cards.length);
+        setBackendCount(0);
+        setSearchLoading(false);
+      } else {
+        loadMoreUsers3()
+          .then(({ cacheCount, backendCount }) => {
+            setCacheCount(cacheCount);
+            setBackendCount(backendCount);
+          })
+          .finally(() => setSearchLoading(false));
+      }
       return;
     }
 
@@ -1285,6 +1312,101 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return { cacheCount, backendCount, hasMore: more };
   };
 
+  const loadMoreUsers3 = async (currentFilters = filters) => {
+    let favRaw = getFavorites();
+    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
+    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
+      syncFavorites(fav);
+    }
+
+    if (isEditingRef.current)
+      return { cacheCount: 0, backendCount: 0, hasMore };
+
+    const includeSpecialFutureDates = searchBarQueryActive;
+    let backendCount = 0;
+    const aggregatedUsers = {};
+    let nextKey = lastKey3;
+    let more = true;
+    let totalWasSet = false;
+
+    while (backendCount < PAGE_SIZE && more) {
+      const res = await fetchPaginatedNewUsers(
+        nextKey,
+        'DATE3',
+        currentFilters,
+        fav,
+        {
+          includeSpecialFutureDates,
+          dislikedUsers: dislikeUsersData,
+        },
+      );
+
+      if (!res || !res.users) {
+        more = false;
+        nextKey = res?.lastKey ?? null;
+        break;
+      }
+
+      if (!totalWasSet && res.totalCount !== undefined) {
+        setTotalCount(res.totalCount);
+        totalWasSet = true;
+      }
+
+      const entries = Object.entries(res.users);
+
+      if (entries.length === 0) {
+        nextKey = res.lastKey ?? null;
+        more = !!res.hasMore && nextKey !== null;
+        if (!more) break;
+        // продовжуємо завантаження, бо фільтри відсікли весь блок
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      const normalized = entries.reduce((acc, [userId, user]) => {
+        const targetId = user.userId || userId;
+        if (!aggregatedUsers[targetId]) {
+          acc[targetId] = { ...user, userId: targetId };
+        }
+        return acc;
+      }, {});
+
+      const chunkKeys = Object.keys(normalized);
+      chunkKeys.forEach(id => {
+        if (!aggregatedUsers[id]) {
+          aggregatedUsers[id] = normalized[id];
+        }
+      });
+      backendCount += chunkKeys.length;
+
+      nextKey = res.lastKey ?? null;
+      more = !!res.hasMore && nextKey !== null;
+
+      if (!more) break;
+    }
+
+    if (backendCount > 0) {
+      cacheFetchedUsers(aggregatedUsers, cacheLoad2Users, currentFilters);
+      if (!isEditingRef.current) {
+        setUsers(prev => mergeWithoutOverwrite(prev, aggregatedUsers));
+      }
+      const queryKey = buildQueryKey('DATE3', currentFilters, search);
+      const existingIds = getIdsByQuery(queryKey);
+      setIdsForQuery(queryKey, [
+        ...new Set([...existingIds, ...Object.keys(aggregatedUsers)]),
+      ]);
+    } else if (!more) {
+      setTotalCount(prev => prev || 0);
+    }
+
+    setLastKey3(nextKey);
+    setHasMore(more);
+
+    return { cacheCount: 0, backendCount, hasMore: more };
+  };
+
 
   const handlePageChange = async page => {
     const needed = page * PAGE_SIZE;
@@ -1297,6 +1419,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const { cacheCount, backendCount, hasMore: nextMore } =
         currentFilter === 'DATE2'
           ? await loadMoreUsers2()
+          : currentFilter === 'DATE3'
+          ? await loadMoreUsers3()
           : await loadMoreUsers(currentFilter);
       cacheLoaded += cacheCount;
       backendLoaded += backendCount;
@@ -1822,6 +1946,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 }}
               >
                 Load2
+              </Button>
+              <Button
+                onClick={async () => {
+                  setUsers({});
+                  setHasMore(true);
+                  setCurrentPage(1);
+                  setCurrentFilter('DATE3');
+                  setLastKey3(null);
+                  setDuplicates('');
+                  setIsDuplicateView(false);
+                  const { cacheCount, backendCount } = await loadMoreUsers3();
+                  setCacheCount(cacheCount);
+                  setBackendCount(backendCount);
+                }}
+              >
+                Load3
               </Button>
               <Button
                 onClick={() => {
