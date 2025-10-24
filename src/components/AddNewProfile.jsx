@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
@@ -13,6 +13,7 @@ import {
   fetchAllFilteredUsers,
   fetchFavoriteUsers,
   fetchFavoriteUsersData,
+  fetchDislikeUsersData,
   fetchCycleUsersData,
   removeKeyFromFirebase,
   // fetchListOfUsers,
@@ -48,8 +49,13 @@ import {
 } from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
 import { cacheDplUsers, getDplCards } from 'utils/dplStorage';
-import { getDislikes, syncDislikes } from 'utils/dislikesStorage';
-import { passesReactionFilter } from 'utils/reactionCategory';
+import {
+  cacheDislikedUsers,
+  getDislikedCards,
+  getDislikes,
+  syncDislikes,
+} from 'utils/dislikesStorage';
+import { passesReactionFilter, REACTION_FILTER_KEYS } from 'utils/reactionCategory';
 import {
   setIdsForQuery,
   getIdsByQuery,
@@ -267,6 +273,28 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   const [filters, setFilters] = useState({});
+  const likeOnlyReactionFilter = useMemo(() => {
+    const reaction = filters?.reaction;
+    if (!reaction) return false;
+
+    const activeKeys = Object.entries(reaction).filter(([, value]) => value);
+    if (activeKeys.length === 0) return false;
+
+    return (
+      activeKeys.length === 1 && Boolean(reaction[REACTION_FILTER_KEYS.LIKE])
+    );
+  }, [filters]);
+  const dislikeOnlyReactionFilter = useMemo(() => {
+    const reaction = filters?.reaction;
+    if (!reaction) return false;
+
+    const activeKeys = Object.entries(reaction).filter(([, value]) => value);
+    if (activeKeys.length === 0) return false;
+
+    return (
+      activeKeys.length === 1 && Boolean(reaction[REACTION_FILTER_KEYS.DISLIKE])
+    );
+  }, [filters]);
   const filtersRef = useRef(filters);
   const hasInitializedFiltersRef = useRef(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -986,6 +1014,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setCacheCount(cards.length);
         setBackendCount(0);
         setSearchLoading(false);
+      } else if (likeOnlyReactionFilter) {
+        (async () => {
+          try {
+            const { ids } = await showFavoriteCards();
+            setIdsForQuery(queryKey, ids);
+          } finally {
+            setSearchLoading(false);
+          }
+        })();
+      } else if (dislikeOnlyReactionFilter) {
+        (async () => {
+          try {
+            const { ids } = await showDislikedCards();
+            setIdsForQuery(queryKey, ids);
+          } finally {
+            setSearchLoading(false);
+          }
+        })();
       } else {
         loadMoreUsers3()
           .then(({ cacheCount, backendCount }) => {
@@ -1457,7 +1503,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     saveToContact(res);
   };
 
-  const fetchAndMergeFavoriteUsers = async () => {
+  const fetchAndMergeFavoriteUsers = useCallback(async () => {
     const owner = auth.currentUser?.uid;
     if (!owner) return null;
 
@@ -1497,11 +1543,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setIdsForQuery('favorite', Object.keys(normalizedFavs));
 
     return { loaded, normalizedFavs, cacheCount, backendCount };
-  };
+  }, [cacheFetchedUsers, setFavoriteUsersData]);
 
-  const loadFavoriteUsers = async () => {
+  const showFavoriteCards = useCallback(async () => {
     const result = await fetchAndMergeFavoriteUsers();
-    if (!result) return;
+    if (!result) {
+      setUsers({});
+      setHasMore(false);
+      setLastKey(null);
+      setLastKey3(null);
+      setCurrentPage(1);
+      setTotalCount(0);
+      setCacheCount(0);
+      setBackendCount(0);
+      return { users: {}, ids: [], cacheCount: 0, backendCount: 0 };
+    }
+
     const { loaded, normalizedFavs, cacheCount, backendCount } = result;
 
     const sortedUsers = Object.keys(normalizedFavs)
@@ -1513,15 +1570,123 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       acc[user.userId] = user;
       return acc;
     }, {});
-    const total = sortedUsers.length;
+
+    const ids = sortedUsers.map(user => user.userId);
     setUsers(sorted);
     setHasMore(false);
     setLastKey(null);
+    setLastKey3(null);
     setCurrentPage(1);
-    setTotalCount(total);
+    setTotalCount(ids.length);
     setCacheCount(cacheCount);
     setBackendCount(backendCount);
-  };
+
+    return { users: sorted, ids, cacheCount, backendCount };
+  }, [
+    compareUsersByGetInTouch,
+    fetchAndMergeFavoriteUsers,
+    setBackendCount,
+    setCacheCount,
+    setCurrentPage,
+    setHasMore,
+    setLastKey,
+    setLastKey3,
+    setTotalCount,
+    setUsers,
+  ]);
+
+  const loadFavoriteUsers = async () => showFavoriteCards();
+
+  const fetchAndMergeDislikedUsers = useCallback(async () => {
+    const owner = auth.currentUser?.uid;
+    if (!owner) return null;
+
+    const { cards: cachedArr, fromCache } = await getDislikedCards(
+      id => fetchUserById(id),
+    );
+    let cacheCount = fromCache ? cachedArr.length : 0;
+    let backendCount = fromCache ? 0 : cachedArr.length;
+
+    const loaded = cachedArr.reduce((acc, user) => {
+      if (user?.userId) {
+        acc[user.userId] = user;
+      }
+      return acc;
+    }, {});
+
+    const dislikeIds = getDislikes();
+
+    const remoteDislikes = await fetchDislikeUsersData(owner);
+    Object.entries(remoteDislikes).forEach(([id, user]) => {
+      dislikeIds[id] = true;
+      if (id && user && !loaded[id]) {
+        loaded[id] = user;
+        backendCount += 1;
+      }
+    });
+
+    const normalizedDislikes = Object.fromEntries(
+      Object.entries(dislikeIds).filter(([, value]) => value),
+    );
+
+    syncDislikes(normalizedDislikes);
+    setDislikeUsersData(normalizedDislikes);
+
+    cacheFetchedUsers(loaded, cacheDislikedUsers);
+    setIdsForQuery('dislike', Object.keys(normalizedDislikes));
+
+    return { loaded, normalizedDislikes, cacheCount, backendCount };
+  }, [cacheFetchedUsers, setDislikeUsersData]);
+
+  const showDislikedCards = useCallback(async () => {
+    const result = await fetchAndMergeDislikedUsers();
+    if (!result) {
+      setUsers({});
+      setHasMore(false);
+      setLastKey(null);
+      setLastKey3(null);
+      setCurrentPage(1);
+      setTotalCount(0);
+      setCacheCount(0);
+      setBackendCount(0);
+      return { users: {}, ids: [], cacheCount: 0, backendCount: 0 };
+    }
+
+    const { loaded, normalizedDislikes, cacheCount, backendCount } = result;
+
+    const sortedUsers = Object.keys(normalizedDislikes)
+      .map(id => loaded[id])
+      .filter(Boolean)
+      .sort((a, b) => compareUsersByGetInTouch(a, b));
+
+    const sorted = sortedUsers.reduce((acc, user) => {
+      acc[user.userId] = user;
+      return acc;
+    }, {});
+
+    const ids = sortedUsers.map(user => user.userId);
+    setUsers(sorted);
+    setHasMore(false);
+    setLastKey(null);
+    setLastKey3(null);
+    setCurrentPage(1);
+    setTotalCount(ids.length);
+    setCacheCount(cacheCount);
+    setBackendCount(backendCount);
+
+    return { users: sorted, ids, cacheCount, backendCount };
+  }, [
+    compareUsersByGetInTouch,
+    fetchAndMergeDislikedUsers,
+    setBackendCount,
+    setCacheCount,
+    setCurrentPage,
+    setHasMore,
+    setLastKey,
+    setLastKey3,
+    setTotalCount,
+    setUsers,
+  ]);
 
   const loadCycleFavorites = async () => {
     const cycleUsers = await fetchCycleUsersData(['stimulation', 'pregnant']);
