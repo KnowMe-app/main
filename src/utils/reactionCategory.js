@@ -43,33 +43,6 @@ const isSpecialGetInTouchValue = value => {
   return SPECIAL_GET_IN_TOUCH_VALUES.has(isoCandidate);
 };
 
-const isValidDate = value => {
-  const normalized = normalizeGetInTouch(value);
-  if (!normalized) return false;
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    const [year, month, day] = normalized.split('-').map(Number);
-    const candidate = new Date(Date.UTC(year, month - 1, day));
-    return (
-      candidate.getUTCFullYear() === year &&
-      candidate.getUTCMonth() === month - 1 &&
-      candidate.getUTCDate() === day
-    );
-  }
-
-  if (/^\d{2}\.\d{2}\.\d{4}$/.test(normalized)) {
-    const [day, month, year] = normalized.split('.').map(Number);
-    const candidate = new Date(Date.UTC(year, month - 1, day));
-    return (
-      candidate.getUTCFullYear() === year &&
-      candidate.getUTCMonth() === month - 1 &&
-      candidate.getUTCDate() === day
-    );
-  }
-
-  return false;
-};
-
 const isTruthyMapValue = (collection, key) => {
   if (!collection || typeof collection !== 'object') return false;
   const value = collection[key];
@@ -99,7 +72,7 @@ export const getReactionCategory = (user, favorites = {}, dislikes = {}) => {
     return REACTION_FILTER_KEYS.LIKE;
   }
 
-  if (getInTouch && !isValidDate(getInTouch)) {
+  if (getInTouch) {
     return REACTION_FILTER_KEYS.QUESTION;
   }
 
