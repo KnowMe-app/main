@@ -771,103 +771,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     [filters]
   );
 
-  const ensureFavoritesSynced = useCallback(
-    async (currentFilters = filters) => {
-      const reactionFilters = currentFilters?.reaction;
-      const hasExplicitSelection =
-        reactionFilters &&
-        typeof reactionFilters === 'object' &&
-        Object.values(reactionFilters).some(value => value === false);
-
-      if (!hasExplicitSelection) {
-        return favoriteUsersData;
-      }
-
-      if (favoriteUsersData && Object.keys(favoriteUsersData).length > 0) {
-        return favoriteUsersData;
-      }
-
-      const ownerId = auth.currentUser?.uid;
-      if (!ownerId) {
-        return favoriteUsersData;
-      }
-
-      try {
-        const remoteFavorites = await fetchFavoriteUsers(ownerId);
-        if (!remoteFavorites || Object.keys(remoteFavorites).length === 0) {
-          return favoriteUsersData;
-        }
-
-        const normalizedFavorites = Object.fromEntries(
-          Object.entries(remoteFavorites).filter(([, value]) => Boolean(value)),
-        );
-
-        if (Object.keys(normalizedFavorites).length === 0) {
-          return favoriteUsersData;
-        }
-
-        syncFavorites(normalizedFavorites);
-        setFavoriteUsersData(normalizedFavorites);
-        setFavoriteIds(normalizedFavorites);
-
-        return normalizedFavorites;
-      } catch (error) {
-        console.error('Failed to sync favorite users', error);
-        return favoriteUsersData;
-      }
-    },
-    [favoriteUsersData, filters, setFavoriteUsersData],
-  );
-
-  const ensureDislikesSynced = useCallback(
-    async (currentFilters = filters) => {
-      const reactionFilters = currentFilters?.reaction;
-      const hasExplicitSelection =
-        reactionFilters &&
-        typeof reactionFilters === 'object' &&
-        Object.values(reactionFilters).some(value => value === false);
-
-      if (!hasExplicitSelection) {
-        return dislikeUsersData;
-      }
-
-      if (dislikeUsersData && Object.keys(dislikeUsersData).length > 0) {
-        return dislikeUsersData;
-      }
-
-      const ownerId = auth.currentUser?.uid;
-      if (!ownerId) {
-        return dislikeUsersData;
-      }
-
-      try {
-        const remoteDislikes = await fetchDislikeUsersData(ownerId);
-        if (!remoteDislikes || Object.keys(remoteDislikes).length === 0) {
-          return dislikeUsersData;
-        }
-
-        cacheFetchedUsers(remoteDislikes, cacheDislikedUsers);
-
-        const mergedDislikes = { ...getDislikes() };
-        Object.keys(remoteDislikes).forEach(id => {
-          if (id) {
-            mergedDislikes[id] = true;
-          }
-        });
-
-        syncDislikes(mergedDislikes);
-        setDislikeUsersData(mergedDislikes);
-        setIdsForQuery('dislike', Object.keys(mergedDislikes));
-
-        return mergedDislikes;
-      } catch (error) {
-        console.error('Failed to sync disliked users', error);
-        return dislikeUsersData;
-      }
-    },
-    [cacheFetchedUsers, dislikeUsersData, filters, setDislikeUsersData]
-  );
-
   const buildQueryKey = (mode, currentFilters = {}, term = '') =>
     normalizeQueryKey(
       `${mode || 'all'}:${term || ''}:${JSON.stringify(currentFilters)}`,
@@ -1298,27 +1201,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const includeSpecialFutureDates = searchBarQueryActive;
     if (isEditingRef.current) return { count: 0, hasMore };
     const param = filterForload === 'DATE' ? dateOffset : lastKey;
-    const syncedFavorites = await ensureFavoritesSynced(currentFilters);
-    let favSource = syncedFavorites || getFavorites();
-    let fav = Object.fromEntries(
-      Object.entries(favSource).filter(([, value]) => value),
-    );
-    if (
-      currentFilters.favorite?.favOnly &&
-      Object.keys(favSource).length === 0 &&
-      auth.currentUser?.uid
-    ) {
-      const remoteFav = await fetchFavoriteUsers(auth.currentUser.uid);
-      const normalizedFav = Object.fromEntries(
-        Object.entries(remoteFav || {}).filter(([, value]) => Boolean(value)),
-      );
-      favSource = normalizedFav;
-      fav = normalizedFav;
-      setFavoriteUsersData(normalizedFav);
-      syncFavorites(normalizedFav);
-      setFavoriteIds(normalizedFav);
+    let favRaw = getFavorites();
+    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
+    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
+      syncFavorites(fav);
     }
-    const syncedDislikes = await ensureDislikesSynced(currentFilters);
     const res = await fetchPaginatedNewUsers(
       param,
       filterForload,
@@ -1326,7 +1215,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       fav,
       {
         includeSpecialFutureDates,
-        dislikedUsers: syncedDislikes || dislikeUsersData,
+        dislikedUsers: dislikeUsersData,
       },
     );
     // console.log('res :>> ', res);
@@ -1378,28 +1267,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsers2 = async (currentFilters = filters) => {
-    const syncedFavorites = await ensureFavoritesSynced(currentFilters);
-    let favSource = syncedFavorites || getFavorites();
-    let fav = Object.fromEntries(
-      Object.entries(favSource).filter(([, value]) => value),
-    );
-    if (
-      currentFilters.favorite?.favOnly &&
-      Object.keys(favSource).length === 0 &&
-      auth.currentUser?.uid
-    ) {
-      const remoteFav = await fetchFavoriteUsers(auth.currentUser.uid);
-      const normalizedFav = Object.fromEntries(
-        Object.entries(remoteFav || {}).filter(([, value]) => Boolean(value)),
-      );
-      favSource = normalizedFav;
-      fav = normalizedFav;
-      setFavoriteUsersData(normalizedFav);
-      syncFavorites(normalizedFav);
-      setFavoriteIds(normalizedFav);
+    let favRaw = getFavorites();
+    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
+    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
+      syncFavorites(fav);
     }
-
-    const syncedDislikes = await ensureDislikesSynced(currentFilters);
 
     if (isEditingRef.current)
       return { cacheCount: 0, backendCount: 0, hasMore };
@@ -1418,13 +1292,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
       return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
     };
-    const dislikedMap = syncedDislikes || dislikeUsersData;
-
     const filteredArr = cachedArr.filter(
       u =>
         isValid(u.getInTouch) &&
         (!currentFilters.favorite?.favOnly || fav[u.userId]) &&
-        passesReactionFilter(u, currentFilters?.reaction, fav, dislikedMap),
+        passesReactionFilter(u, currentFilters?.reaction, fav, dislikeUsersData),
     );
 
     let offset = dateOffset2;
@@ -1453,7 +1325,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         undefined,
         currentFilters,
         fav,
-        dislikedMap,
+        dislikeUsersData,
         undefined,
         partial => {
           const filteredPartial = currentFilters.favorite?.favOnly
@@ -1468,9 +1340,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       );
       if (res && Object.keys(res.users).length > 0) {
         const filteredUsers = currentFilters.favorite?.favOnly
-          ? Object.fromEntries(
-              Object.entries(res.users).filter(([id]) => fav[id]),
-            )
+          ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
           : res.users;
         cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
         if (!isEditingRef.current) {
@@ -1490,28 +1360,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsers3 = async (currentFilters = filters) => {
-    const syncedFavorites = await ensureFavoritesSynced(currentFilters);
-    let favSource = syncedFavorites || getFavorites();
-    let fav = Object.fromEntries(
-      Object.entries(favSource).filter(([, value]) => value),
-    );
-    if (
-      currentFilters.favorite?.favOnly &&
-      Object.keys(favSource).length === 0 &&
-      auth.currentUser?.uid
-    ) {
-      const remoteFav = await fetchFavoriteUsers(auth.currentUser.uid);
-      const normalizedFav = Object.fromEntries(
-        Object.entries(remoteFav || {}).filter(([, value]) => Boolean(value)),
-      );
-      favSource = normalizedFav;
-      fav = normalizedFav;
-      setFavoriteUsersData(normalizedFav);
-      syncFavorites(normalizedFav);
-      setFavoriteIds(normalizedFav);
+    let favRaw = getFavorites();
+    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
+    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
+      syncFavorites(fav);
     }
-
-    const syncedDislikes = await ensureDislikesSynced(currentFilters);
 
     if (isEditingRef.current)
       return { cacheCount: 0, backendCount: 0, hasMore };
@@ -1532,7 +1387,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         {
           includeSpecialFutureDates,
           skipGetInTouchFilter: true,
-          dislikedUsers: syncedDislikes || dislikeUsersData,
+          dislikedUsers: dislikeUsersData,
         },
       );
 
