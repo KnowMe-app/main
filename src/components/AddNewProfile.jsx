@@ -31,6 +31,7 @@ import {
   addStimulationShortcutId,
   removeStimulationShortcutId,
   replaceStimulationShortcutIds,
+  filterMain,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -1566,12 +1567,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       .filter(Boolean)
       .sort((a, b) => compareUsersByGetInTouch(a, b));
 
-    const sorted = sortedUsers.reduce((acc, user) => {
+    const favoritesMap = { ...favoriteUsersData, ...normalizedFavs };
+    const dislikedMap = { ...dislikeUsersData };
+    const filterMode = currentFilter || 'DATE3';
+    const filteredUsers = filterMain(
+      sortedUsers.map(user => [user.userId, user]),
+      filterMode,
+      filters,
+      favoritesMap,
+      dislikedMap,
+    ).map(([, user]) => user);
+
+    const sorted = filteredUsers.reduce((acc, user) => {
       acc[user.userId] = user;
       return acc;
     }, {});
 
-    const ids = sortedUsers.map(user => user.userId);
+    const ids = filteredUsers.map(user => user.userId);
     setUsers(sorted);
     setHasMore(false);
     setLastKey(null);
@@ -1585,6 +1597,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [
     compareUsersByGetInTouch,
     fetchAndMergeFavoriteUsers,
+    favoriteUsersData,
+    dislikeUsersData,
+    filters,
+    currentFilter,
     setBackendCount,
     setCacheCount,
     setCurrentPage,
@@ -1659,12 +1675,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       .filter(Boolean)
       .sort((a, b) => compareUsersByGetInTouch(a, b));
 
-    const sorted = sortedUsers.reduce((acc, user) => {
+    const favoritesMap = { ...favoriteUsersData };
+    const dislikedMap = { ...dislikeUsersData, ...normalizedDislikes };
+    const filterMode = currentFilter || 'DATE3';
+    const filteredUsers = filterMain(
+      sortedUsers.map(user => [user.userId, user]),
+      filterMode,
+      filters,
+      favoritesMap,
+      dislikedMap,
+    ).map(([, user]) => user);
+
+    const sorted = filteredUsers.reduce((acc, user) => {
       acc[user.userId] = user;
       return acc;
     }, {});
 
-    const ids = sortedUsers.map(user => user.userId);
+    const ids = filteredUsers.map(user => user.userId);
     setUsers(sorted);
     setHasMore(false);
     setLastKey(null);
@@ -1678,6 +1705,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [
     compareUsersByGetInTouch,
     fetchAndMergeDislikedUsers,
+    favoriteUsersData,
+    dislikeUsersData,
+    filters,
+    currentFilter,
     setBackendCount,
     setCacheCount,
     setCurrentPage,
