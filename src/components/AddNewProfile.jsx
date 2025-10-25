@@ -1627,7 +1627,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }, [
       compareUsersByGetInTouch,
       currentFilter,
-      filterMain,
       filters,
       setBackendCount,
       setCacheCount,
