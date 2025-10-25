@@ -5,6 +5,7 @@ describe('cardIndex queries', () => {
     normalizeQueryKey,
     getCard,
     removeCard,
+    serializeQueryFilters,
   } = require('../cardIndex');
   const { updateCard } = require('../cardsStorage');
 
@@ -37,6 +38,13 @@ describe('cardIndex queries', () => {
     removeCard('userId01');
     expect(getCard('userId01')).toBeNull();
     expect(getIdsByQuery('test')).toEqual([]);
+  });
+
+  it('serializes filters with stable ordering', () => {
+    const first = serializeQueryFilters({ reaction: { dislike: true, like: true } });
+    const second = serializeQueryFilters({ reaction: { like: true, dislike: true } });
+
+    expect(first).toBe(second);
   });
 
   it('migrates legacy timestamps to cachedAt fields', () => {

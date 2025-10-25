@@ -42,6 +42,43 @@ export const saveCards = cards => saveJson(CARDS_KEY, cards);
 export const loadQueries = () => loadJson(QUERIES_KEY);
 export const saveQueries = queries => saveJson(QUERIES_KEY, queries);
 
+const canonicalizeQueryValue = value => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(item => canonicalizeQueryValue(item));
+  }
+
+  return Object.keys(value)
+    .sort()
+    .reduce((acc, key) => {
+      const canonical = canonicalizeQueryValue(value[key]);
+      if (canonical !== undefined) {
+        acc[key] = canonical;
+      }
+      return acc;
+    }, {});
+};
+
+export const serializeQueryFilters = filters => {
+  if (filters === undefined) {
+    return 'undefined';
+  }
+
+  if (filters === null || typeof filters !== 'object') {
+    return JSON.stringify(filters);
+  }
+
+  const canonical = canonicalizeQueryValue(filters);
+  return JSON.stringify(canonical || {});
+};
+
 export const normalizeQueryKey = raw => {
   if (Array.isArray(raw)) {
     return raw.map(s => s.toLowerCase().trim()).sort().join(',');

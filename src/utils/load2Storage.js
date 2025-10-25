@@ -1,8 +1,8 @@
 import { addCardToList, updateCard, getCardsByList } from './cardsStorage';
-import { normalizeQueryKey, loadCards } from './cardIndex';
+import { normalizeQueryKey, loadCards, serializeQueryFilters } from './cardIndex';
 
 export const buildLoad2Key = (filters = {}) =>
-  normalizeQueryKey(`load2:${JSON.stringify(filters || {})}`);
+  normalizeQueryKey(`load2:${serializeQueryFilters(filters)}`);
 
 export const cacheLoad2Users = (usersObj, filters = {}) => {
   const listKey = buildLoad2Key(filters);
