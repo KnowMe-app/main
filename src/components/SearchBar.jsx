@@ -11,6 +11,7 @@ import {
   loadQueries,
   saveQueries,
   TTL_MS,
+  serializeQueryFilters,
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
@@ -545,7 +546,7 @@ const SearchBar = ({
     if (trimmed && trimmed.startsWith('!')) {
       const term = trimmed.slice(1).trim();
       const filtersKey = normalizeQueryKey(
-        `${filterForload || 'all'}:${JSON.stringify(filters || {})}`,
+        `${filterForload || 'all'}:${serializeQueryFilters(filters)}`,
       );
       console.log('[SearchBar] Detected bulk command search', {
         raw: trimmed,
