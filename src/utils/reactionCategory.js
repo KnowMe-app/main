@@ -7,6 +7,7 @@ const SPECIAL_GET_IN_TOUCH_VALUES = new Set([
 
 export const REACTION_FILTER_KEYS = {
   SPECIAL_99: 'special99',
+  VALID_DATE: 'validDate',
   DISLIKE: 'dislike',
   LIKE: 'like',
   QUESTION: 'question',
@@ -15,6 +16,7 @@ export const REACTION_FILTER_KEYS = {
 
 export const REACTION_FILTER_DEFAULTS = {
   [REACTION_FILTER_KEYS.SPECIAL_99]: true,
+  [REACTION_FILTER_KEYS.VALID_DATE]: true,
   [REACTION_FILTER_KEYS.DISLIKE]: true,
   [REACTION_FILTER_KEYS.LIKE]: true,
   [REACTION_FILTER_KEYS.QUESTION]: true,
@@ -23,6 +25,7 @@ export const REACTION_FILTER_DEFAULTS = {
 
 export const REACTION_FILTER_OPTIONS = [
   { key: REACTION_FILTER_KEYS.SPECIAL_99, label: '99' },
+  { key: REACTION_FILTER_KEYS.VALID_DATE, label: '01' },
   { key: REACTION_FILTER_KEYS.DISLIKE, label: '✖' },
   { key: REACTION_FILTER_KEYS.LIKE, label: '❤️' },
   { key: REACTION_FILTER_KEYS.QUESTION, label: '?' },
@@ -50,6 +53,34 @@ const isTruthyMapValue = (collection, key) => {
   return Boolean(value);
 };
 
+const DATE_ISO_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_DOTTED_REGEX = /^\d{2}\.\d{2}\.\d{4}$/;
+
+const isValidCalendarDate = (year, month, day) => {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+};
+
+const isValidGetInTouchDate = value => {
+  if (!value) return false;
+
+  if (DATE_ISO_REGEX.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return isValidCalendarDate(year, month, day);
+  }
+
+  if (DATE_DOTTED_REGEX.test(value)) {
+    const [day, month, year] = value.split('.').map(Number);
+    return isValidCalendarDate(year, month, day);
+  }
+
+  return false;
+};
+
 export const getReactionCategory = (user, favorites = {}, dislikes = {}) => {
   if (!user || typeof user !== 'object') {
     return REACTION_FILTER_KEYS.NONE;
@@ -73,6 +104,9 @@ export const getReactionCategory = (user, favorites = {}, dislikes = {}) => {
   }
 
   if (getInTouch) {
+    if (isValidGetInTouchDate(getInTouch)) {
+      return REACTION_FILTER_KEYS.VALID_DATE;
+    }
     return REACTION_FILTER_KEYS.QUESTION;
   }
 
