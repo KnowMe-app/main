@@ -463,25 +463,22 @@ export const ProfileForm = ({
                             }));
                           },
                           onBlur: () => {
-                            setState(prevState => {
-                              if (field.name === 'myComment' && !prevState.myComment?.trim()) {
-                                handleDelKeyValue('myComment');
-                                return prevState;
+                            if (field.name === 'myComment' && !state.myComment?.trim()) {
+                              handleDelKeyValue('myComment');
+                              return;
+                            }
+
+                            if (field.name === 'getInTouch') {
+                              const raw = state.getInTouch;
+                              const trimmed = typeof raw === 'string' ? raw.trim() : raw;
+
+                              if (!trimmed) {
+                                handleDelKeyValue('getInTouch');
+                                return;
                               }
+                            }
 
-                              if (field.name === 'getInTouch') {
-                                const raw = prevState.getInTouch;
-                                const trimmed = typeof raw === 'string' ? raw.trim() : raw;
-
-                                if (!trimmed) {
-                                  handleDelKeyValue('getInTouch');
-                                  return prevState;
-                                }
-                              }
-
-                              submitWithNormalization(prevState, 'overwrite');
-                              return prevState;
-                            });
+                            submitWithNormalization(state, 'overwrite');
                           },
                         })}
                   />
