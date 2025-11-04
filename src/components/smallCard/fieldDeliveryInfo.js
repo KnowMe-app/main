@@ -39,6 +39,13 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
   }
 
   const monthsAgo = effectiveLastDelivery ? utilCalculateMonthsAgo(effectiveLastDelivery) : null;
+  const daysUntilDelivery = (() => {
+    if (!deliveryDate) return null;
+    const now = new Date();
+    if (deliveryDate <= now) return null;
+    const diffMs = deliveryDate.getTime() - now.getTime();
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  })();
 
   const monthsToAdd = (() => {
     const val = (csection || '').toLowerCase().replace(/\s/g, '');
@@ -72,6 +79,12 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
       parts.push(`${years}рт, `);
     } else {
       parts.push(`${monthsAgo}м, `);
+      if (daysUntilDelivery !== null) {
+        parts[parts.length - 1] = parts[parts.length - 1].replace(
+          /, $/,
+          `/${daysUntilDelivery}д, `,
+        );
+      }
     }
   }
 
