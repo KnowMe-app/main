@@ -462,17 +462,9 @@ export const ProfileForm = ({
                                 : value,
                             }));
                           },
-                          onBlur: e => {
-                            const currentValue = e.target?.value;
-
-                            if (field.name === 'myComment') {
-                              if (!currentValue?.trim()) {
-                                handleDelKeyValue('myComment');
-                                return;
-                              }
-
-                              const nextState = { ...state, myComment: currentValue };
-                              submitWithNormalization(nextState, 'overwrite');
+                          onBlur: () => {
+                            if (field.name === 'myComment' && !state.myComment?.trim()) {
+                              handleDelKeyValue('myComment');
                               return;
                             }
 
