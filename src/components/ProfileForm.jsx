@@ -462,8 +462,10 @@ export const ProfileForm = ({
                                 : value,
                             }));
                           },
-                          onBlur: () => {
-                            if (field.name === 'myComment' && !state.myComment?.trim()) {
+                          onBlur: e => {
+                            const currentValue = e.target?.value;
+
+                            if (field.name === 'myComment' && !currentValue?.trim()) {
                               handleDelKeyValue('myComment');
                               return;
                             }
