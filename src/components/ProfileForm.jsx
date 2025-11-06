@@ -313,9 +313,6 @@ export const ProfileForm = ({
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
-    if (!state.myComment?.trim()) {
-      handleDelKeyValue('myComment');
-    }
     setState(prevState => {
       const newState = { ...prevState, [customField.key]: customField.value };
       submitWithNormalization(newState, 'overwrite');
@@ -369,7 +366,7 @@ export const ProfileForm = ({
         </div>
       )}
       {sortedFieldsToRender
-        .filter(field => !['myComment', 'writer'].includes(field.name))
+        .filter(field => field.name !== 'writer')
         .map((field, index) => {
           const displayValue =
             field.name === 'lastAction'
@@ -463,9 +460,15 @@ export const ProfileForm = ({
                             }));
                           },
                           onBlur: () => {
-                            if (field.name === 'myComment' && !state.myComment?.trim()) {
-                              handleDelKeyValue('myComment');
-                              return;
+                            if (field.name === 'myComment') {
+                              const rawComment = state.myComment;
+                              const normalizedComment =
+                                typeof rawComment === 'string' ? rawComment.trim() : rawComment;
+
+                              if (!normalizedComment) {
+                                handleDelKeyValue('myComment');
+                                return;
+                              }
                             }
 
                             if (field.name === 'getInTouch') {
@@ -523,9 +526,6 @@ export const ProfileForm = ({
                     marginLeft: '10px',
                   }}
                   onClick={() => {
-                    if (!state.myComment?.trim()) {
-                      handleDelKeyValue('myComment');
-                    }
                     setState(prevState => {
                       const updatedField =
                         Array.isArray(prevState[field.name]) && prevState[field.name].length > 0
@@ -546,9 +546,6 @@ export const ProfileForm = ({
                 <ButtonGroup>
                   <Button
                     onClick={() => {
-                      if (!state.myComment?.trim()) {
-                        handleDelKeyValue('myComment');
-                      }
                       setState(prevState => {
                         const newState = {
                           ...prevState,
@@ -563,9 +560,6 @@ export const ProfileForm = ({
                   </Button>
                   <Button
                     onClick={() => {
-                      if (!state.myComment?.trim()) {
-                        handleDelKeyValue('myComment');
-                      }
                       setState(prevState => {
                         const newState = {
                           ...prevState,
@@ -580,9 +574,6 @@ export const ProfileForm = ({
                   </Button>
                   <Button
                     onClick={() => {
-                      if (!state.myComment?.trim()) {
-                        handleDelKeyValue('myComment');
-                      }
                       setState(prevState => {
                         const newState = {
                           ...prevState,
@@ -601,9 +592,6 @@ export const ProfileForm = ({
                 <ButtonGroup>
                   <Button
                     onClick={() => {
-                      if (!state.myComment?.trim()) {
-                        handleDelKeyValue('myComment');
-                      }
                       setState(prevState => {
                         const newState = {
                           ...prevState,
@@ -618,9 +606,6 @@ export const ProfileForm = ({
                   </Button>
                   <Button
                     onClick={() => {
-                      if (!state.myComment?.trim()) {
-                        handleDelKeyValue('myComment');
-                      }
                       setState(prevState => {
                         const newState = {
                           ...prevState,
@@ -635,9 +620,6 @@ export const ProfileForm = ({
                   </Button>
                   <Button
                     onClick={() => {
-                      if (!state.myComment?.trim()) {
-                        handleDelKeyValue('myComment');
-                      }
                       setState(prevState => {
                         const newState = {
                           ...prevState,
