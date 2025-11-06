@@ -70,13 +70,13 @@ export const handleChange = (
     }
 
     const applyUpdates = prevState => {
+      const keys = prevState && typeof prevState === 'object' && !Array.isArray(prevState)
+        ? Object.keys(prevState)
+        : [];
+
       const isMultiple =
-        prevState &&
-        typeof prevState === 'object' &&
-        !Array.isArray(prevState) &&
-        Object.keys(prevState).every(
-          id => prevState[id] && typeof prevState[id] === 'object',
-        );
+        keys.length > 0 &&
+        keys.every(id => prevState[id] && typeof prevState[id] === 'object');
 
       if (!isMultiple) {
         const newState = { ...prevState, ...formatted };
@@ -159,13 +159,13 @@ export const handleChange = (
       // console.log('prevState!!!!!!!!! :>> ', prevState);
       // Зроблено в основному для видалення юзера серед масиву карточок, а не з середини
 
+      const keys = prevState && typeof prevState === 'object' && !Array.isArray(prevState)
+        ? Object.keys(prevState)
+        : [];
+
       const isMultiple =
-        prevState &&
-        typeof prevState === 'object' &&
-        !Array.isArray(prevState) &&
-        Object.keys(prevState).every(
-          id => prevState[id] && typeof prevState[id] === 'object',
-        );
+        keys.length > 0 &&
+        keys.every(id => prevState[id] && typeof prevState[id] === 'object');
 
       if (!isMultiple) {
         const newState = { ...prevState };
