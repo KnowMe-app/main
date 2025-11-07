@@ -19,7 +19,7 @@ import { parseMedicationClipboardData } from '../utils/medicationClipboard';
 
 const DEFAULT_ROWS = 280;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-const DATE_COLUMN_MIN_WIDTH = 44;
+const DATE_COLUMN_MIN_WIDTH = 35;
 const DATE_COLUMN_STYLE = { minWidth: `${DATE_COLUMN_MIN_WIDTH}px` };
 
 const Container = styled.div`
