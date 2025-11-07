@@ -156,6 +156,7 @@ const AddMedicationGuide = styled.span`
 `;
 
 const TableWrapper = styled.div`
+  position: relative;
   max-height: 60vh;
   overflow: auto;
   border: 1px solid #e0e0e0;
@@ -168,6 +169,16 @@ const StyledTable = styled.table`
   color: black;
 `;
 
+const TableHead = styled.thead`
+  position: sticky;
+  top: 0;
+  z-index: 5;
+`;
+
+const TableHeaderRow = styled.tr`
+  background: #fafafa;
+`;
+
 const Th = styled.th`
   position: sticky;
   top: 0;
@@ -176,6 +187,7 @@ const Th = styled.th`
   border-bottom: 1px solid #d9d9d9;
   font-weight: 500;
   text-align: left;
+  z-index: 5;
 `;
 
 const Td = styled.td`
@@ -2266,8 +2278,8 @@ const MedicationSchedule = ({
 
       <TableWrapper>
         <StyledTable>
-          <thead>
-            <tr>
+          <TableHead>
+            <TableHeaderRow>
               <Th style={{ width: '30px' }}>#</Th>
               <Th style={DATE_COLUMN_STYLE}>Дата</Th>
               {medicationList.map(({ key, short }) => (
@@ -2284,8 +2296,8 @@ const MedicationSchedule = ({
                   </MedicationHeaderContent>
                 </MedicationTh>
               ))}
-            </tr>
-          </thead>
+            </TableHeaderRow>
+          </TableHead>
           <tbody>
             {(() => {
               const rows = [];
