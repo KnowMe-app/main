@@ -11,3 +11,6 @@ export const INVALID_DATE_TOKENS = [''];
 // Prevents infinite loops if the database contains sparse or malformed dates.
 // Historical constant kept for reference; not used in matching logic
 export const MAX_LOOKBACK_DAYS = 365;
+
+// Day limit after which medication schedule entries are purged.
+export const MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT = 120;

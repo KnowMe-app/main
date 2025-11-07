@@ -18,6 +18,7 @@ import {
 } from './config';
 import { formatMedicationScheduleForClipboard } from '../utils/medicationClipboard';
 import { isMedicationPhotoUrl } from '../utils/photoFilters';
+import { MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 
 const normalizePhotosArray = rawPhotos => {
   if (Array.isArray(rawPhotos)) {
@@ -786,27 +787,36 @@ const MedicationsPage = () => {
         ? Object.values(schedule.rows)
         : [];
 
-    if (rows.length <= 365) {
-      toast('Графік не містить днів після 365-го');
+    if (rows.length <= MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT) {
+      toast(`Графік не містить днів після ${MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT}-го`);
       return;
     }
 
     const confirmed = window.confirm(
-      'Очистити графік ліків після 365-го дня? Дані буде видалено безповоротно.',
+      `Очистити графік ліків після ${MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT}-го дня? Дані буде видалено безповоротно.`,
     );
     if (!confirmed) return;
 
     setIsClearingSchedule(true);
     try {
-      const changed = await clearMedicationScheduleAfterDay(ownerId, userId, 365);
+      const changed = await clearMedicationScheduleAfterDay(
+        ownerId,
+        userId,
+        MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT,
+      );
       if (changed) {
-        toast.success('Дані після 365-го дня очищено');
+        toast.success(`Дані після ${MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT}-го дня очищено`);
       } else {
-        toast('Графік не містить днів після 365-го');
+        toast(`Графік не містить днів після ${MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT}-го`);
       }
     } catch (error) {
-      console.error('Failed to clear medication schedule after day 365', error);
-      toast.error('Не вдалося очистити графік після 365-го дня');
+      console.error(
+        `Failed to clear medication schedule after day ${MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT}`,
+        error,
+      );
+      toast.error(
+        `Не вдалося очистити графік після ${MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT}-го дня`,
+      );
     } finally {
       setIsClearingSchedule(false);
     }
@@ -857,7 +867,7 @@ const MedicationsPage = () => {
               onClick={handleClearSchedule}
               disabled={!ownerId || !userId || isScheduleLoading || isClearingSchedule}
             >
-              Очистити після 365-го дня
+              {`Очистити після ${MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT}-го дня`}
             </ClearScheduleButton>
           </DeleteButtonsWrapper>
         </ButtonRow>
