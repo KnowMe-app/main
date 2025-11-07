@@ -850,6 +850,9 @@ const sanitizeScheduleForStorage = schedule => {
   const medications = schedule.medications && typeof schedule.medications === 'object'
     ? schedule.medications
     : {};
+  const removedBaseMedications = Array.isArray(schedule.removedBaseMedications)
+    ? schedule.removedBaseMedications.filter(key => BASE_MEDICATIONS_MAP.has(key))
+    : [];
 
   const keysToRemove = medicationOrder.filter(key => {
     const medication = medications[key];
@@ -874,6 +877,7 @@ const sanitizeScheduleForStorage = schedule => {
   if (!keysToRemove.length) {
     return {
       ...schedule,
+      removedBaseMedications,
     };
   }
 
@@ -923,6 +927,7 @@ const sanitizeScheduleForStorage = schedule => {
     medications: sanitizedMedications,
     medicationOrder: sanitizedOrder,
     rows: hasRowData ? sanitizedRows : [],
+    removedBaseMedications,
   };
 };
 
@@ -1198,11 +1203,25 @@ const normalizeData = (data, options = {}) => {
   const storedOrder = Array.isArray(data?.medicationOrder)
     ? data.medicationOrder.filter(Boolean)
     : [];
+  const storedRemovedBaseMedications = Array.isArray(data?.removedBaseMedications)
+    ? data.removedBaseMedications.filter(key => BASE_MEDICATIONS_MAP.has(key))
+    : [];
+
+  const removedBaseMedications = storedRemovedBaseMedications.filter(key => {
+    if (storedOrder.includes(key)) {
+      return false;
+    }
+    if (storedMedications[key]) {
+      return false;
+    }
+    return true;
+  });
 
   const orderSet = new Set();
   const medicationOrder = [];
   const baseMedicationKeys = BASE_MEDICATIONS.map(({ key }) => key);
   const customMedicationKeys = [];
+  const removedBaseMedicationSet = new Set(removedBaseMedications);
 
   const addToOrder = key => {
     if (!key || orderSet.has(key)) return;
@@ -1220,7 +1239,12 @@ const normalizeData = (data, options = {}) => {
   storedOrder.forEach(rememberCustomKey);
   Object.keys(storedMedications).forEach(rememberCustomKey);
 
-  baseMedicationKeys.forEach(addToOrder);
+  baseMedicationKeys.forEach(key => {
+    if (removedBaseMedicationSet.has(key)) {
+      return;
+    }
+    addToOrder(key);
+  });
   customMedicationKeys.forEach(addToOrder);
 
   const medications = {};
@@ -1281,6 +1305,7 @@ const normalizeData = (data, options = {}) => {
     medications,
     medicationOrder,
     pregnancyConfirmationDay,
+    removedBaseMedications,
   };
 
   const rows = normalizeRows(data?.rows, startDate, scheduleBase);
@@ -1340,6 +1365,17 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
     }
   });
 
+  const previousRemovedBaseMedications = Array.isArray(current.removedBaseMedications)
+    ? current.removedBaseMedications.filter(key => BASE_MEDICATIONS_MAP.has(key))
+    : [];
+  const parsedRemovedBaseMedications = Array.isArray(parsed.removedBaseMedications)
+    ? parsed.removedBaseMedications.filter(key => BASE_MEDICATIONS_MAP.has(key))
+    : [];
+  const removedBaseMedicationSet = new Set([
+    ...previousRemovedBaseMedications,
+    ...parsedRemovedBaseMedications,
+  ]);
+
   const mergedMedications = { ...(current.medications || {}) };
   parsedOrder.forEach(key => {
     const parsedMedication = parsed.medications?.[key];
@@ -1349,6 +1385,12 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
   });
 
   const medicationKeys = mergedOrder;
+
+  medicationKeys.forEach(key => {
+    if (BASE_MEDICATIONS_MAP.has(key)) {
+      removedBaseMedicationSet.delete(key);
+    }
+  });
 
   const buildRowValues = (row, keys) => {
     const sourceValues = row?.values && typeof row.values === 'object' ? row.values : {};
@@ -1473,6 +1515,7 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
     startDate: effectiveStartIso || current.startDate || parsed.startDate || '',
     medicationOrder: medicationKeys,
     medications: mergedMedications,
+    removedBaseMedications: Array.from(removedBaseMedicationSet),
     rows: mergedRows,
   };
 };
@@ -1921,6 +1964,14 @@ const MedicationSchedule = ({
           ? prev.medicationOrder.filter(item => item !== key)
           : Object.keys(restMedications);
 
+        const previousRemovedBaseMedications = Array.isArray(prev.removedBaseMedications)
+          ? prev.removedBaseMedications.filter(baseKey => BASE_MEDICATIONS_MAP.has(baseKey))
+          : [];
+        const removedBaseMedicationSet = new Set(previousRemovedBaseMedications);
+        if (BASE_MEDICATIONS_MAP.has(key)) {
+          removedBaseMedicationSet.add(key);
+        }
+
         const rows = Array.isArray(prev.rows)
           ? prev.rows.map(row => {
               if (!row) return row;
@@ -1947,6 +1998,7 @@ const MedicationSchedule = ({
           medications: restMedications,
           medicationOrder,
           rows,
+          removedBaseMedications: Array.from(removedBaseMedicationSet),
         };
       });
 
@@ -2043,10 +2095,19 @@ const MedicationSchedule = ({
         },
       }));
 
+      const previousRemovedBaseMedications = Array.isArray(prev.removedBaseMedications)
+        ? prev.removedBaseMedications.filter(baseKey => BASE_MEDICATIONS_MAP.has(baseKey))
+        : [];
+      const removedBaseMedicationSet = new Set(previousRemovedBaseMedications);
+      if (BASE_MEDICATIONS_MAP.has(key)) {
+        removedBaseMedicationSet.delete(key);
+      }
+
       const scheduleWithNewMedication = {
         ...prev,
         medications,
         medicationOrder: nextOrder,
+        removedBaseMedications: Array.from(removedBaseMedicationSet),
       };
 
       const rows =
