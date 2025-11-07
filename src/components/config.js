@@ -21,7 +21,7 @@ import {
   endBefore,
   equalTo,
 } from 'firebase/database';
-import { PAGE_SIZE, BATCH_SIZE } from './constants';
+import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
@@ -52,7 +52,7 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const database = getDatabase(app);
 
-export { PAGE_SIZE, BATCH_SIZE } from './constants';
+export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 
 const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
 
@@ -407,7 +407,11 @@ export const deleteMedicationSchedule = async (ownerId, userId) => {
   }
 };
 
-export const clearMedicationScheduleAfterDay = async (ownerId, userId, dayLimit = 365) => {
+export const clearMedicationScheduleAfterDay = async (
+  ownerId,
+  userId,
+  dayLimit = MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT,
+) => {
   const scheduleRef = getMedicationScheduleRef(ownerId, userId);
   if (!scheduleRef) {
     throw new Error('Missing ownerId or userId for medication schedule clearing');
