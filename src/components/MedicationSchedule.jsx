@@ -65,6 +65,18 @@ const IssuedInput = styled.input`
   }
 `;
 
+const MedicationEndDateWrapper = styled.label`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #444;
+`;
+
+const MedicationEndDateInput = styled(IssuedInput)`
+  width: 150px;
+`;
+
 const IssuedStats = styled.span`
   font-size: 13px;
   color: #666;
@@ -998,6 +1010,42 @@ const ensureRowsLength = (rows, minLength, startDate, medicationKeys = []) => {
   return result;
 };
 
+const truncateMedicationRows = (rows, key, endDate, baseDate) => {
+  if (!Array.isArray(rows) || !isValidDate(endDate)) {
+    return rows;
+  }
+
+  let changed = false;
+
+  const truncated = rows.map((row, index) => {
+    if (!row || typeof row !== 'object') {
+      return row;
+    }
+
+    const rowDate = parseDateString(row.date, baseDate) || addDays(baseDate, index);
+    if (!isValidDate(rowDate) || rowDate <= endDate) {
+      return row;
+    }
+
+    const values = row.values && typeof row.values === 'object' ? row.values : {};
+
+    if (!Object.prototype.hasOwnProperty.call(values, key)) {
+      return row;
+    }
+
+    const nextValues = { ...values };
+    delete nextValues[key];
+    changed = true;
+
+    return {
+      ...row,
+      values: nextValues,
+    };
+  });
+
+  return changed ? truncated : rows;
+};
+
 const applyDefaultDistribution = (rows, schedule, options = {}) => {
   const {
     skipExisting = false,
@@ -1027,7 +1075,7 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
 
   return rows.map((row, rowIndex) => {
     const rowDate = parseDateString(row.date, baseDate) || addDays(baseDate, rowIndex);
-    const nextValues = { ...row.values };
+    let nextValues = { ...row.values };
     const shouldSkipRow = skipExisting && rowIndex < existingLength;
     const isFirstRow = rowIndex === 0;
 
@@ -1047,6 +1095,19 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
       const plan = medication.plan || key;
       const handler = getPlanHandler(plan);
       const issued = Number(medication.issued) || 0;
+      const endDateValue = medication.endDate;
+      const medicationEndDate = endDateValue
+        ? parseDateString(endDateValue, baseDate)
+        : null;
+
+      if (medicationEndDate && rowDate > medicationEndDate) {
+        if (Object.prototype.hasOwnProperty.call(nextValues, key)) {
+          const { [key]: _removed, ...rest } = nextValues;
+          nextValues = rest;
+        }
+        return;
+      }
+
       const currentValue = sanitizeCellValue(nextValues[key]);
 
       if (currentValue !== '') {
@@ -1204,6 +1265,8 @@ const normalizeData = (data, options = {}) => {
   const baseMedicationKeys = BASE_MEDICATIONS.map(({ key }) => key);
   const customMedicationKeys = [];
 
+  const normalizedStartDate = parseDateString(startDate);
+
   const addToOrder = key => {
     if (!key || orderSet.has(key)) return;
     orderSet.add(key);
@@ -1243,6 +1306,8 @@ const normalizeData = (data, options = {}) => {
       issuedSource !== null && Number.isFinite(issuedSource)
         ? issuedSource
         : computed.issued || defaultIssued;
+    const rawEndDate = source.endDate;
+    const endDate = rawEndDate ? sanitizeDateInput(rawEndDate, normalizedStartDate) : '';
 
     medications[key] = {
       issued: Number.isFinite(issued) ? issued : 0,
@@ -1251,6 +1316,7 @@ const normalizeData = (data, options = {}) => {
       short: source.short || baseDefinition?.short || (source.label || key).slice(0, 2).toUpperCase(),
       plan,
       startDate: source.startDate || '',
+      endDate,
       manualDistribution: Boolean(source.manualDistribution),
     };
   });
@@ -1910,6 +1976,59 @@ const MedicationSchedule = ({
     setFocusedMedication(null);
   }, []);
 
+  const handleMedicationEndDateChange = useCallback(
+    (key, rawValue) => {
+      updateSchedule(prev => {
+        if (!prev) return prev;
+
+        const prevMedications = prev.medications || {};
+        const prevMedication = prevMedications[key] || {};
+        const baseDate = parseDateString(prev.startDate) || new Date();
+        const sanitizedEndDate = rawValue ? sanitizeDateInput(rawValue, baseDate) : '';
+        const endDateInstance = sanitizedEndDate
+          ? parseDateString(sanitizedEndDate, baseDate)
+          : null;
+
+        const medications = {
+          ...prevMedications,
+          [key]: {
+            ...prevMedication,
+            endDate: sanitizedEndDate,
+          },
+        };
+
+        const medicationOrder = Array.isArray(prev.medicationOrder) ? prev.medicationOrder : [];
+        const minRows = calculateRequiredRows(medicationOrder, medications, prev.rows.length);
+        const baseRows = ensureRowsLength(prev.rows, minRows, prev.startDate, medicationOrder);
+
+        const scheduleWithMedication = {
+          ...prev,
+          medications,
+          medicationOrder,
+        };
+
+        const issued = Number(prevMedication.issued) || 0;
+        const isManualDistribution = prevMedication.manualDistribution === true;
+
+        let rows = baseRows;
+
+        if (!isManualDistribution && issued > 0) {
+          rows = applyDefaultDistribution(rows, scheduleWithMedication, { onlyKeys: [key] });
+        }
+
+        if (endDateInstance) {
+          rows = truncateMedicationRows(rows, key, endDateInstance, baseDate);
+        }
+
+        return {
+          ...scheduleWithMedication,
+          rows,
+        };
+      });
+    },
+    [updateSchedule],
+  );
+
   const handleRemoveMedication = useCallback(
     key => {
       updateSchedule(prev => {
@@ -2029,6 +2148,7 @@ const MedicationSchedule = ({
           short: normalizedShort,
           plan: 'custom',
           startDate: sanitizedStartDate,
+          endDate: '',
           manualDistribution: false,
         },
       };
@@ -2184,7 +2304,7 @@ const MedicationSchedule = ({
       <IssuedList>
         {medicationList.map(({ key, label, data }) => {
           const medication = data || { issued: 0, displayValue: '' };
-          const { issued = 0, displayValue = '' } = medication;
+          const { issued = 0, displayValue = '', endDate = '' } = medication;
           const stats = totals[key] || { used: 0, remaining: issued };
           const showFormula = focusedMedication === key && displayValue;
           const inputValue =
@@ -2204,6 +2324,15 @@ const MedicationSchedule = ({
                   onBlur={handleIssuedBlur}
                   placeholder={placeholderText}
                 />
+                <MedicationEndDateWrapper>
+                  <span>До</span>
+                  <MedicationEndDateInput
+                    type="date"
+                    value={endDate || ''}
+                    onChange={event => handleMedicationEndDateChange(key, event.target.value)}
+                    aria-label={`Дата завершення для ${label}`}
+                  />
+                </MedicationEndDateWrapper>
                 <IssuedStats>
                   Видано: {formatNumber(issued)} • Використано: {formatNumber(stats.used)} • Залишок:{' '}
                   <RemainingValue
