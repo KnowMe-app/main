@@ -810,7 +810,7 @@ const MedicationsPage = () => {
     } finally {
       setIsClearingSchedule(false);
     }
-  }, [clearMedicationScheduleAfterDay, ownerId, schedule, userId]);
+  }, [ownerId, schedule, userId]);
 
   return (
     <PageContainer>
