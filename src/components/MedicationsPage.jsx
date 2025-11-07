@@ -14,6 +14,7 @@ import {
   getUrlofUploadedAvatar,
   getMedicationPhotos,
   deletePhotos,
+  clearMedicationScheduleAfterDay,
 } from './config';
 import { formatMedicationScheduleForClipboard } from '../utils/medicationClipboard';
 import { isMedicationPhotoUrl } from '../utils/photoFilters';
@@ -136,6 +137,13 @@ const Subtitle = styled.span`
   color: #555;
 `;
 
+const DeleteButtonsWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: auto;
+`;
+
 const DeleteButton = styled.button`
   padding: 6px 12px;
   border-radius: 6px;
@@ -144,7 +152,6 @@ const DeleteButton = styled.button`
   color: white;
   cursor: pointer;
   font-size: 14px;
-  margin-left: auto;
   transition: background-color 0.2s ease;
 
   &:hover:not(:disabled) {
@@ -154,6 +161,14 @@ const DeleteButton = styled.button`
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+`;
+
+const ClearScheduleButton = styled(DeleteButton)`
+  background-color: #f57c00;
+
+  &:hover:not(:disabled) {
+    background-color: #ef6c00;
   }
 `;
 
@@ -357,6 +372,7 @@ const MedicationsPage = () => {
   const [isPhotosModalOpen, setIsPhotosModalOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(null);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
+  const [isClearingSchedule, setIsClearingSchedule] = useState(false);
   const [photoBeingDeleted, setPhotoBeingDeleted] = useState(null);
 
   const hasScheduleData = useMemo(
@@ -758,6 +774,44 @@ const MedicationsPage = () => {
     }
   }, [handleClose, medicationPhotos, ownerId, user?.photos, user?.userId, userId]);
 
+  const handleClearSchedule = useCallback(async () => {
+    if (!ownerId || !userId) {
+      toast.error('Увійдіть, щоб очистити графік ліків');
+      return;
+    }
+
+    const rows = Array.isArray(schedule?.rows)
+      ? schedule.rows
+      : schedule?.rows && typeof schedule.rows === 'object'
+        ? Object.values(schedule.rows)
+        : [];
+
+    if (rows.length <= 365) {
+      toast('Графік не містить днів після 365-го');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Очистити графік ліків після 365-го дня? Дані буде видалено безповоротно.',
+    );
+    if (!confirmed) return;
+
+    setIsClearingSchedule(true);
+    try {
+      const changed = await clearMedicationScheduleAfterDay(ownerId, userId, 365);
+      if (changed) {
+        toast.success('Дані після 365-го дня очищено');
+      } else {
+        toast('Графік не містить днів після 365-го');
+      }
+    } catch (error) {
+      console.error('Failed to clear medication schedule after day 365', error);
+      toast.error('Не вдалося очистити графік після 365-го дня');
+    } finally {
+      setIsClearingSchedule(false);
+    }
+  }, [clearMedicationScheduleAfterDay, ownerId, schedule, userId]);
+
   return (
     <PageContainer>
       <Header>
@@ -790,13 +844,22 @@ const MedicationsPage = () => {
           >
             <FiImage size={18} />
           </PhotosButton>
-          <DeleteButton
-            type="button"
-            onClick={handleDelete}
-            disabled={!ownerId || !userId || isScheduleLoading}
-          >
-            Видалити
-          </DeleteButton>
+          <DeleteButtonsWrapper>
+            <DeleteButton
+              type="button"
+              onClick={handleDelete}
+              disabled={!ownerId || !userId || isScheduleLoading || isClearingSchedule}
+            >
+              Видалити
+            </DeleteButton>
+            <ClearScheduleButton
+              type="button"
+              onClick={handleClearSchedule}
+              disabled={!ownerId || !userId || isScheduleLoading || isClearingSchedule}
+            >
+              Очистити після 365-го дня
+            </ClearScheduleButton>
+          </DeleteButtonsWrapper>
         </ButtonRow>
         <TitleBlock>
           <Title>Ліки</Title>
