@@ -407,6 +407,95 @@ export const deleteMedicationSchedule = async (ownerId, userId) => {
   }
 };
 
+export const clearMedicationScheduleAfterDay = async (ownerId, userId, dayLimit = 365) => {
+  const scheduleRef = getMedicationScheduleRef(ownerId, userId);
+  if (!scheduleRef) {
+    throw new Error('Missing ownerId or userId for medication schedule clearing');
+  }
+
+  const extractRows = rows => {
+    if (Array.isArray(rows)) {
+      return { list: rows, type: 'array' };
+    }
+
+    if (rows && typeof rows === 'object') {
+      const keys = Object.keys(rows).sort((a, b) => {
+        const numA = Number(a);
+        const numB = Number(b);
+        const hasNumA = Number.isFinite(numA);
+        const hasNumB = Number.isFinite(numB);
+
+        if (hasNumA && hasNumB) {
+          return numA - numB;
+        }
+
+        if (hasNumA) return -1;
+        if (hasNumB) return 1;
+
+        return a.localeCompare(b);
+      });
+
+      return { list: keys.map(key => rows[key]), type: 'object', keys };
+    }
+
+    return { list: [], type: 'array' };
+  };
+
+  const cloneRow = row => {
+    if (!row || typeof row !== 'object') {
+      return row;
+    }
+
+    const base = { ...row };
+    if (row.values && typeof row.values === 'object') {
+      base.values = { ...row.values };
+    }
+    return base;
+  };
+
+  try {
+    const snapshot = await get(scheduleRef);
+    if (!snapshot.exists()) {
+      return false;
+    }
+
+    const schedule = snapshot.val();
+    if (!schedule || typeof schedule !== 'object') {
+      return false;
+    }
+
+    const { list: rowsList, type, keys = [] } = extractRows(schedule.rows);
+    if (rowsList.length <= dayLimit) {
+      return false;
+    }
+
+    const trimmedList = rowsList.slice(0, dayLimit).map(cloneRow);
+
+    let trimmedRows;
+    if (type === 'array') {
+      trimmedRows = trimmedList;
+    } else {
+      trimmedRows = {};
+      trimmedList.forEach((row, index) => {
+        const key = keys[index] ?? String(index);
+        trimmedRows[key] = row;
+      });
+    }
+
+    const updatedSchedule = {
+      ...schedule,
+      rows: trimmedRows,
+      updatedAt: Date.now(),
+    };
+
+    await set(scheduleRef, updatedSchedule);
+    return true;
+  } catch (error) {
+    console.error('Error clearing medication schedule after day limit:', error);
+    throw error;
+  }
+};
+
 export const fetchDislikeUsers = async ownerId => {
   try {
     const refPath = ref2(database, `multiData/dislikes/${ownerId}`);
