@@ -19,8 +19,9 @@ import { parseMedicationClipboardData } from '../utils/medicationClipboard';
 
 const DEFAULT_ROWS = 280;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-const DATE_COLUMN_MIN_WIDTH = 35;
+const DATE_COLUMN_MIN_WIDTH = 32;
 const DATE_COLUMN_STYLE = { minWidth: `${DATE_COLUMN_MIN_WIDTH}px` };
+const MEDICATION_COLUMN_WIDTH = 24;
 
 const Container = styled.div`
   display: flex;
@@ -236,9 +237,9 @@ const CellInput = styled.input`
 `;
 
 const MedicationTh = styled(Th)`
-  min-width: 26px;
-  width: 26px;
-  max-width: 26px;
+  min-width: ${MEDICATION_COLUMN_WIDTH}px;
+  width: ${MEDICATION_COLUMN_WIDTH}px;
+  max-width: ${MEDICATION_COLUMN_WIDTH}px;
   text-align: center;
   padding: 6px;
   background: #fafafa;
@@ -355,8 +356,8 @@ const StatusValue = styled.span`
 const MedicationTd = styled(Td)`
   text-align: center;
   padding: 4px;
-  min-width: 26px;
-  width: 26px;
+  min-width: ${MEDICATION_COLUMN_WIDTH}px;
+  width: ${MEDICATION_COLUMN_WIDTH}px;
 `;
 
 const MedicationStatusCell = styled(StatusCell)`
