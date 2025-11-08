@@ -19,9 +19,9 @@ import { parseMedicationClipboardData } from '../utils/medicationClipboard';
 
 const DEFAULT_ROWS = 280;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-const DATE_COLUMN_MIN_WIDTH = 32;
+const DATE_COLUMN_MIN_WIDTH = 25.6;
 const DATE_COLUMN_STYLE = { minWidth: `${DATE_COLUMN_MIN_WIDTH}px` };
-const MEDICATION_COLUMN_WIDTH = 24;
+const MEDICATION_COLUMN_WIDTH = 19.2;
 
 const Container = styled.div`
   display: flex;
@@ -198,9 +198,10 @@ const Td = styled.td`
 `;
 
 const CellInput = styled.input`
-  width: 2ch;
-  min-width: 20px;
-  padding: 4px;
+  width: 100%;
+  max-width: 2ch;
+  min-width: 0;
+  padding: 3.2px;
   border-radius: 6px;
   border: 1px solid
     ${({ $status }) => {
@@ -241,7 +242,7 @@ const MedicationTh = styled(Th)`
   width: ${MEDICATION_COLUMN_WIDTH}px;
   max-width: ${MEDICATION_COLUMN_WIDTH}px;
   text-align: center;
-  padding: 6px;
+  padding: 4.8px;
   background: #fafafa;
   overflow: visible;
 `;
@@ -355,7 +356,7 @@ const StatusValue = styled.span`
 
 const MedicationTd = styled(Td)`
   text-align: center;
-  padding: 4px;
+  padding: 3.2px;
   min-width: ${MEDICATION_COLUMN_WIDTH}px;
   width: ${MEDICATION_COLUMN_WIDTH}px;
 `;
@@ -2342,7 +2343,7 @@ const MedicationSchedule = ({
         <StyledTable>
           <TableHead>
             <TableHeaderRow>
-              <Th style={{ width: '30px' }}>#</Th>
+              <Th style={{ width: '24px' }}>#</Th>
               <Th style={DATE_COLUMN_STYLE}>Дата</Th>
               {medicationList.map(({ key, short }) => (
                 <MedicationTh key={key}>
