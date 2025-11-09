@@ -19,9 +19,13 @@ import { parseMedicationClipboardData } from '../utils/medicationClipboard';
 
 const DEFAULT_ROWS = 280;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-const DATE_COLUMN_MIN_WIDTH = 25.6;
-const DATE_COLUMN_STYLE = { minWidth: `${DATE_COLUMN_MIN_WIDTH}px` };
-const MEDICATION_COLUMN_WIDTH = 19.2;
+const DATE_COLUMN_WIDTH = 160;
+const DATE_COLUMN_STYLE = {
+  width: `${DATE_COLUMN_WIDTH}px`,
+  minWidth: `${DATE_COLUMN_WIDTH}px`,
+  maxWidth: `${DATE_COLUMN_WIDTH}px`,
+};
+const MEDICATION_COLUMN_MIN_WIDTH = 72;
 
 const Container = styled.div`
   display: flex;
@@ -168,6 +172,7 @@ const StyledTable = styled.table`
   width: 100%;
   border-collapse: collapse;
   color: black;
+  table-layout: fixed;
 `;
 
 const TableHead = styled.thead`
@@ -187,7 +192,7 @@ const Th = styled.th`
   padding: 6px;
   border-bottom: 1px solid #d9d9d9;
   font-weight: 500;
-  text-align: left;
+  text-align: center;
   z-index: 5;
 `;
 
@@ -238,9 +243,7 @@ const CellInput = styled.input`
 `;
 
 const MedicationTh = styled(Th)`
-  min-width: ${MEDICATION_COLUMN_WIDTH}px;
-  width: ${MEDICATION_COLUMN_WIDTH}px;
-  max-width: ${MEDICATION_COLUMN_WIDTH}px;
+  min-width: ${MEDICATION_COLUMN_MIN_WIDTH}px;
   text-align: center;
   padding: 3.2px;
   background: #fafafa;
@@ -357,8 +360,7 @@ const StatusValue = styled.span`
 const MedicationTd = styled(Td)`
   text-align: center;
   padding: 2.4px;
-  min-width: ${MEDICATION_COLUMN_WIDTH}px;
-  width: ${MEDICATION_COLUMN_WIDTH}px;
+  min-width: ${MEDICATION_COLUMN_MIN_WIDTH}px;
 `;
 
 const MedicationStatusCell = styled(StatusCell)`
