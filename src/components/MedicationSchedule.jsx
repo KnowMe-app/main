@@ -184,7 +184,7 @@ const Th = styled.th`
   position: sticky;
   top: 0;
   background: #fafafa;
-  padding: 8px;
+  padding: 6px;
   border-bottom: 1px solid #d9d9d9;
   font-weight: 500;
   text-align: left;
@@ -192,7 +192,7 @@ const Th = styled.th`
 `;
 
 const Td = styled.td`
-  padding: 6px 6px;
+  padding: 4px 4px;
   border-bottom: 1px solid #f0f0f0;
   vertical-align: middle;
 `;
@@ -201,7 +201,7 @@ const CellInput = styled.input`
   width: 100%;
   max-width: 2ch;
   min-width: 0;
-  padding: 3.2px;
+  padding: 2.4px;
   border-radius: 6px;
   border: 1px solid
     ${({ $status }) => {
@@ -242,7 +242,7 @@ const MedicationTh = styled(Th)`
   width: ${MEDICATION_COLUMN_WIDTH}px;
   max-width: ${MEDICATION_COLUMN_WIDTH}px;
   text-align: center;
-  padding: 4.8px;
+  padding: 3.2px;
   background: #fafafa;
   overflow: visible;
 `;
@@ -259,7 +259,7 @@ const MedicationHeaderButton = styled.button`
   color: inherit;
   font: inherit;
   cursor: pointer;
-  padding: 4px 6px;
+  padding: 3px 4px;
   border-radius: 6px;
   line-height: 1.1;
   transition: background-color 0.2s ease, color 0.2s ease;
@@ -283,7 +283,7 @@ const DayCell = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   font-weight: 500;
 `;
 
@@ -301,7 +301,7 @@ const DayNumber = styled.span`
 const DateCellContent = styled.div`
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   font-weight: 500;
 `;
 
@@ -336,14 +336,14 @@ const DescriptionRow = styled.tr`
 `;
 
 const DescriptionCell = styled.td`
-  padding: 8px 12px;
+  padding: 6px 8px;
   border-bottom: 1px solid #f0e0c5;
   font-size: 13px;
   color: #6a4b16;
 `;
 
 const StatusCell = styled.td`
-  padding: 6px 6px;
+  padding: 4px 4px;
   border-bottom: 1px solid #f0e0c5;
   font-size: 13px;
   font-weight: 600;
@@ -356,7 +356,7 @@ const StatusValue = styled.span`
 
 const MedicationTd = styled(Td)`
   text-align: center;
-  padding: 3.2px;
+  padding: 2.4px;
   min-width: ${MEDICATION_COLUMN_WIDTH}px;
   width: ${MEDICATION_COLUMN_WIDTH}px;
 `;
@@ -367,15 +367,15 @@ const MedicationStatusCell = styled(StatusCell)`
 
 const DescriptionList = styled.ul`
   margin: 0;
-  padding-left: 18px;
+  padding-left: 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 `;
 
 const DescriptionItem = styled.li`
   list-style-type: '•';
-  padding-left: 4px;
+  padding-left: 2px;
 `;
 
 const ModalOverlay = styled.div`
