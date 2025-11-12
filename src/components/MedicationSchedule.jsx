@@ -19,9 +19,13 @@ import { parseMedicationClipboardData } from '../utils/medicationClipboard';
 
 const DEFAULT_ROWS = 280;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-const DATE_COLUMN_MIN_WIDTH = 25.6;
-const DATE_COLUMN_STYLE = { minWidth: `${DATE_COLUMN_MIN_WIDTH}px` };
-const MEDICATION_COLUMN_WIDTH = 19.2;
+const INDEX_COLUMN_WIDTH = 48;
+const DATE_COLUMN_MIN_WIDTH = 140;
+const DATE_COLUMN_STYLE = {
+  minWidth: `${DATE_COLUMN_MIN_WIDTH}px`,
+  width: `${DATE_COLUMN_MIN_WIDTH}px`,
+};
+const MIN_MEDICATION_COLUMN_WIDTH = 72;
 
 const Container = styled.div`
   display: flex;
@@ -168,6 +172,7 @@ const StyledTable = styled.table`
   width: 100%;
   border-collapse: collapse;
   color: black;
+  table-layout: fixed;
 `;
 
 const TableHead = styled.thead`
@@ -187,7 +192,7 @@ const Th = styled.th`
   padding: 6px;
   border-bottom: 1px solid #d9d9d9;
   font-weight: 500;
-  text-align: left;
+  text-align: center;
   z-index: 5;
 `;
 
@@ -238,9 +243,6 @@ const CellInput = styled.input`
 `;
 
 const MedicationTh = styled(Th)`
-  min-width: ${MEDICATION_COLUMN_WIDTH}px;
-  width: ${MEDICATION_COLUMN_WIDTH}px;
-  max-width: ${MEDICATION_COLUMN_WIDTH}px;
   text-align: center;
   padding: 3.2px;
   background: #fafafa;
@@ -357,8 +359,6 @@ const StatusValue = styled.span`
 const MedicationTd = styled(Td)`
   text-align: center;
   padding: 2.4px;
-  min-width: ${MEDICATION_COLUMN_WIDTH}px;
-  width: ${MEDICATION_COLUMN_WIDTH}px;
 `;
 
 const MedicationStatusCell = styled(StatusCell)`
@@ -1881,6 +1881,18 @@ const MedicationSchedule = ({
   );
 
   const totalColumns = medicationList.length + 2;
+  const medicationColumnStyle = useMemo(() => {
+    if (!medicationList.length) {
+      return { minWidth: `${MIN_MEDICATION_COLUMN_WIDTH}px` };
+    }
+
+    const widthValue = `calc((100% - ${INDEX_COLUMN_WIDTH}px - ${DATE_COLUMN_MIN_WIDTH}px) / ${medicationList.length})`;
+
+    return {
+      width: widthValue,
+      minWidth: `${MIN_MEDICATION_COLUMN_WIDTH}px`,
+    };
+  }, [medicationList.length]);
 
   useEffect(() => {
     const normalized = normalizeData(data, { cycleStart, resolvePregnancyConfirmationDay });
@@ -2343,10 +2355,10 @@ const MedicationSchedule = ({
         <StyledTable>
           <TableHead>
             <TableHeaderRow>
-              <Th style={{ width: '24px' }}>#</Th>
+              <Th style={{ width: `${INDEX_COLUMN_WIDTH}px` }}>#</Th>
               <Th style={DATE_COLUMN_STYLE}>Дата</Th>
               {medicationList.map(({ key, short }) => (
-                <MedicationTh key={key}>
+                <MedicationTh key={key} style={medicationColumnStyle}>
                   <MedicationHeaderContent>
                     <MedicationHeaderButton
                       type="button"
@@ -2431,7 +2443,7 @@ const MedicationSchedule = ({
 
                 rows.push(
                   <RowComponent key={rowKey}>
-                    <Td style={{ textAlign: 'center' }}>
+                    <Td style={{ textAlign: 'center', width: `${INDEX_COLUMN_WIDTH}px` }}>
                       <DayCell>
                         {showDayNumber && <DayNumber>{dayNumber}</DayNumber>}
                         {weeksDaysToken && <DayBadge>{weeksDaysToken}</DayBadge>}
@@ -2446,7 +2458,7 @@ const MedicationSchedule = ({
                       {medicationList.map(({ key }) => {
                         const cellStatus = cellStatuses[key];
                         return (
-                          <MedicationTd key={key}>
+                          <MedicationTd key={key} style={medicationColumnStyle}>
                             <CellInput
                               $status={cellStatus}
                               value={
@@ -2485,7 +2497,7 @@ const MedicationSchedule = ({
                       {medicationList.map(({ key }) => {
                         const balance = rowBalances[key];
                         return (
-                          <MedicationStatusCell key={key}>
+                          <MedicationStatusCell key={key} style={medicationColumnStyle}>
                             <StatusValue $isNegative={balance < 0}>{formatNumber(balance)}</StatusValue>
                           </MedicationStatusCell>
                         );
