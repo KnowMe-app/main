@@ -245,9 +245,10 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   }
 
   let useDayPrefix = true;
-  const cutoffReference = referenceForDay;
-  if (cutoffReference) {
-    const cutoff = new Date(cutoffReference);
+  const isTransferReference =
+    normalizedTransfer && referenceForDay?.getTime() === normalizedTransfer.getTime();
+  if (isTransferReference) {
+    const cutoff = new Date(referenceForDay);
     cutoff.setDate(cutoff.getDate() + DAY_PREFIX_TRANSFER_WINDOW_DAYS);
     if (normalizedDate.getTime() > cutoff.getTime()) {
       useDayPrefix = false;
