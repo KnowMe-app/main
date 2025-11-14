@@ -203,7 +203,6 @@ const getWeeksDaysTokenForDate = (date, reference) => {
 };
 
 const DAY_PREFIX_TRANSFER_WINDOW_DAYS = 30;
-const DAY_PREFIX_BASE_WINDOW_DAYS = 120;
 
 export const shouldUsePregnancyToken = (itemDate, transferDate) => {
   if (!itemDate || !transferDate) return false;
@@ -246,21 +245,10 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
   }
 
   let useDayPrefix = true;
-  let cutoffReference = null;
-  let cutoffWindow = DAY_PREFIX_TRANSFER_WINDOW_DAYS;
-  if (
-    normalizedTransfer &&
-    normalizedDate.getTime() >= normalizedTransfer.getTime()
-  ) {
-    cutoffReference = normalizedTransfer;
-    cutoffWindow = DAY_PREFIX_TRANSFER_WINDOW_DAYS;
-  } else if (normalizedBase) {
-    cutoffReference = normalizedBase;
-    cutoffWindow = DAY_PREFIX_BASE_WINDOW_DAYS;
-  }
+  const cutoffReference = referenceForDay;
   if (cutoffReference) {
     const cutoff = new Date(cutoffReference);
-    cutoff.setDate(cutoff.getDate() + cutoffWindow);
+    cutoff.setDate(cutoff.getDate() + DAY_PREFIX_TRANSFER_WINDOW_DAYS);
     if (normalizedDate.getTime() > cutoff.getTime()) {
       useDayPrefix = false;
     }
