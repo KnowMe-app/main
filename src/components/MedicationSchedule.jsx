@@ -20,9 +20,11 @@ import { parseMedicationClipboardData } from '../utils/medicationClipboard';
 const DEFAULT_ROWS = 280;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const INDEX_COLUMN_WIDTH = 48;
-const DATE_HEADER_LABEL = 'Дата';
-const DATE_COLUMN_CHARACTER_WIDTH_ESTIMATE = 8;
-const DATE_COLUMN_PADDING_PX = 24;
+const DATE_COLUMN_MIN_WIDTH = 140;
+const DATE_COLUMN_STYLE = {
+  minWidth: `${DATE_COLUMN_MIN_WIDTH}px`,
+  width: `${DATE_COLUMN_MIN_WIDTH}px`,
+};
 const MIN_MEDICATION_COLUMN_WIDTH = 72;
 
 const Container = styled.div`
@@ -1879,53 +1881,18 @@ const MedicationSchedule = ({
   );
 
   const totalColumns = medicationList.length + 2;
-  const dateColumnWidth = useMemo(() => {
-    const rows = Array.isArray(schedule?.rows) ? schedule.rows : [];
-    const baseDate = parseDateString(schedule?.startDate);
-    const headerLength = DATE_HEADER_LABEL.length;
-
-    let maxContentLength = headerLength;
-
-    rows.forEach(row => {
-      const parsedDate = parseDateString(row.date, baseDate);
-      const formattedDate = parsedDate ? formatDateForDisplay(parsedDate) : formatDateForDisplay(row.date);
-      const weekday = parsedDate ? WEEKDAY_LABELS[parsedDate.getDay()] : '';
-      const formattedLength = formattedDate ? formattedDate.length : 0;
-      const weekdayLength = weekday ? weekday.length + 1 : 0;
-      const combinedLength = formattedLength + weekdayLength;
-
-      if (combinedLength > maxContentLength) {
-        maxContentLength = combinedLength;
-      }
-    });
-
-    const estimatedWidth =
-      Math.ceil(maxContentLength * DATE_COLUMN_CHARACTER_WIDTH_ESTIMATE) + DATE_COLUMN_PADDING_PX;
-
-    return Math.max(estimatedWidth, DATE_COLUMN_PADDING_PX);
-  }, [schedule?.rows, schedule?.startDate]);
-
-  const dateColumnStyle = useMemo(
-    () => ({
-      width: `${dateColumnWidth}px`,
-      minWidth: `${dateColumnWidth}px`,
-      whiteSpace: 'nowrap',
-    }),
-    [dateColumnWidth],
-  );
-
   const medicationColumnStyle = useMemo(() => {
     if (!medicationList.length) {
       return { minWidth: `${MIN_MEDICATION_COLUMN_WIDTH}px` };
     }
 
-    const widthValue = `calc((100% - ${INDEX_COLUMN_WIDTH}px - ${dateColumnWidth}px) / ${medicationList.length})`;
+    const widthValue = `calc((100% - ${INDEX_COLUMN_WIDTH}px - ${DATE_COLUMN_MIN_WIDTH}px) / ${medicationList.length})`;
 
     return {
       width: widthValue,
       minWidth: `${MIN_MEDICATION_COLUMN_WIDTH}px`,
     };
-  }, [medicationList.length, dateColumnWidth]);
+  }, [medicationList.length]);
 
   useEffect(() => {
     const normalized = normalizeData(data, { cycleStart, resolvePregnancyConfirmationDay });
@@ -2389,7 +2356,7 @@ const MedicationSchedule = ({
           <TableHead>
             <TableHeaderRow>
               <Th style={{ width: `${INDEX_COLUMN_WIDTH}px` }}>#</Th>
-              <Th style={dateColumnStyle}>{DATE_HEADER_LABEL}</Th>
+              <Th style={DATE_COLUMN_STYLE}>Дата</Th>
               {medicationList.map(({ key, short }) => (
                 <MedicationTh key={key} style={medicationColumnStyle}>
                   <MedicationHeaderContent>
@@ -2482,7 +2449,7 @@ const MedicationSchedule = ({
                         {weeksDaysToken && <DayBadge>{weeksDaysToken}</DayBadge>}
                       </DayCell>
                     </Td>
-                    <Td style={dateColumnStyle}>
+                    <Td style={DATE_COLUMN_STYLE}>
                       <DateCellContent>
                         <DateText>{formattedDate}</DateText>
                         {weekday && <WeekdayTag>{weekday}</WeekdayTag>}
