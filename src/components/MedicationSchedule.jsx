@@ -19,15 +19,14 @@ import { parseMedicationClipboardData } from '../utils/medicationClipboard';
 
 const DEFAULT_ROWS = 280;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-const INDEX_COLUMN_WIDTH = 48;
-const DATE_COLUMN_HEADER_HORIZONTAL_PADDING = 12; // Th padding: 6px on each side
-const DATE_COLUMN_CELL_HORIZONTAL_PADDING = 8; // Td padding: 4px on each side
-const DATE_COLUMN_TEXT_WIDTH = 63; // measured width in pixels of '25.10 пн' in the table font at 14px
-const DATE_COLUMN_WIDTH = Math.max(
-  DATE_COLUMN_TEXT_WIDTH + DATE_COLUMN_HEADER_HORIZONTAL_PADDING,
-  DATE_COLUMN_TEXT_WIDTH + DATE_COLUMN_CELL_HORIZONTAL_PADDING,
-);
-const MIN_MEDICATION_COLUMN_WIDTH = 72;
+const COLUMN_WIDTH_RATIOS = {
+  index: 0.55,
+  date: 0.85,
+  medication: 1,
+};
+const MIN_INDEX_COLUMN_WIDTH = 36;
+const MIN_DATE_COLUMN_WIDTH = 68;
+const MIN_MEDICATION_COLUMN_WIDTH = 64;
 
 const Container = styled.div`
   display: flex;
@@ -1883,25 +1882,37 @@ const MedicationSchedule = ({
   );
 
   const totalColumns = medicationList.length + 2;
+  const totalWidthUnits =
+    COLUMN_WIDTH_RATIOS.index +
+    COLUMN_WIDTH_RATIOS.date +
+    medicationList.length * COLUMN_WIDTH_RATIOS.medication;
+
+  const indexColumnStyle = useMemo(
+    () => ({
+      minWidth: `${MIN_INDEX_COLUMN_WIDTH}px`,
+      width: `${((COLUMN_WIDTH_RATIOS.index / totalWidthUnits) * 100).toFixed(4)}%`,
+    }),
+    [totalWidthUnits],
+  );
+
   const dateColumnStyle = useMemo(
     () => ({
-      minWidth: `${DATE_COLUMN_WIDTH}px`,
-      width: `${DATE_COLUMN_WIDTH}px`,
+      minWidth: `${MIN_DATE_COLUMN_WIDTH}px`,
+      width: `${((COLUMN_WIDTH_RATIOS.date / totalWidthUnits) * 100).toFixed(4)}%`,
     }),
-    [],
+    [totalWidthUnits],
   );
+
   const medicationColumnStyle = useMemo(() => {
     if (!medicationList.length) {
       return { minWidth: `${MIN_MEDICATION_COLUMN_WIDTH}px` };
     }
 
-    const widthValue = `calc((100% - ${INDEX_COLUMN_WIDTH}px - ${DATE_COLUMN_WIDTH}px) / ${medicationList.length})`;
-
     return {
-      width: widthValue,
+      width: `${((COLUMN_WIDTH_RATIOS.medication / totalWidthUnits) * 100).toFixed(4)}%`,
       minWidth: `${MIN_MEDICATION_COLUMN_WIDTH}px`,
     };
-  }, [medicationList.length]);
+  }, [medicationList.length, totalWidthUnits]);
 
   useEffect(() => {
     const normalized = normalizeData(data, { cycleStart, resolvePregnancyConfirmationDay });
@@ -2364,7 +2375,7 @@ const MedicationSchedule = ({
         <StyledTable>
           <TableHead>
             <TableHeaderRow>
-              <Th style={{ width: `${INDEX_COLUMN_WIDTH}px` }}>#</Th>
+              <Th style={indexColumnStyle}>#</Th>
               <Th style={dateColumnStyle}>Дата</Th>
               {medicationList.map(({ key, short }) => (
                 <MedicationTh key={key} style={medicationColumnStyle}>
@@ -2452,7 +2463,7 @@ const MedicationSchedule = ({
 
                 rows.push(
                   <RowComponent key={rowKey}>
-                    <Td style={{ textAlign: 'center', width: `${INDEX_COLUMN_WIDTH}px` }}>
+                    <Td style={{ ...indexColumnStyle, textAlign: 'center' }}>
                       <DayCell>
                         {showDayNumber && <DayNumber>{dayNumber}</DayNumber>}
                         {weeksDaysToken && <DayBadge>{weeksDaysToken}</DayBadge>}
