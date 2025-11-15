@@ -20,9 +20,9 @@ import { parseMedicationClipboardData } from '../utils/medicationClipboard';
 const DEFAULT_ROWS = 280;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const INDEX_COLUMN_WIDTH = 48;
-const DATE_COLUMN_HEADER_HORIZONTAL_PADDING = 12; // Th padding: 6px on each side
-const DATE_COLUMN_CELL_HORIZONTAL_PADDING = 8; // Td padding: 4px on each side
-const DATE_COLUMN_TEXT_WIDTH = 63; // measured width in pixels of '25.10 пн' in the table font at 14px
+const DATE_COLUMN_HEADER_HORIZONTAL_PADDING = 8; // Th padding: 4px on each side
+const DATE_COLUMN_CELL_HORIZONTAL_PADDING = 6; // Td padding: 3px on each side
+const DATE_COLUMN_TEXT_WIDTH = 36; // measured width in pixels of '25.10' in the table font at 14px
 const DATE_COLUMN_WIDTH = Math.max(
   DATE_COLUMN_TEXT_WIDTH + DATE_COLUMN_HEADER_HORIZONTAL_PADDING,
   DATE_COLUMN_TEXT_WIDTH + DATE_COLUMN_CELL_HORIZONTAL_PADDING,
@@ -304,19 +304,24 @@ const DayNumber = styled.span`
 
 const DateCellContent = styled.div`
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
+  gap: 2px;
   font-weight: 500;
+  text-align: center;
 `;
 
 const DateText = styled.span`
   font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 `;
 
 const WeekdayTag = styled.span`
-  font-size: 12px;
+  font-size: 11px;
   color: #777;
   text-transform: lowercase;
+  line-height: 1;
 `;
 
 const YearSeparatorRow = styled.tr`
@@ -1887,6 +1892,7 @@ const MedicationSchedule = ({
     () => ({
       minWidth: `${DATE_COLUMN_WIDTH}px`,
       width: `${DATE_COLUMN_WIDTH}px`,
+      maxWidth: `${DATE_COLUMN_WIDTH}px`,
     }),
     [],
   );
@@ -2365,7 +2371,7 @@ const MedicationSchedule = ({
           <TableHead>
             <TableHeaderRow>
               <Th style={{ width: `${INDEX_COLUMN_WIDTH}px` }}>#</Th>
-              <Th style={dateColumnStyle}>Дата</Th>
+              <Th style={{ ...dateColumnStyle, padding: '6px 4px' }}>Дата</Th>
               {medicationList.map(({ key, short }) => (
                 <MedicationTh key={key} style={medicationColumnStyle}>
                   <MedicationHeaderContent>
@@ -2458,7 +2464,7 @@ const MedicationSchedule = ({
                         {weeksDaysToken && <DayBadge>{weeksDaysToken}</DayBadge>}
                       </DayCell>
                     </Td>
-                    <Td style={dateColumnStyle}>
+                    <Td style={{ ...dateColumnStyle, padding: '4px 3px' }}>
                       <DateCellContent>
                         <DateText>{formattedDate}</DateText>
                         {weekday && <WeekdayTag>{weekday}</WeekdayTag>}
