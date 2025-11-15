@@ -19,6 +19,16 @@ import { parseMedicationClipboardData } from '../utils/medicationClipboard';
 
 const DEFAULT_ROWS = 280;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const INDEX_COLUMN_WIDTH = 48;
+const DATE_COLUMN_HEADER_HORIZONTAL_PADDING = 12; // Th padding: 6px on each side
+const DATE_COLUMN_CELL_HORIZONTAL_PADDING = 8; // Td padding: 4px on each side
+const DATE_COLUMN_TEXT_WIDTH = 63; // measured width in pixels of '25.10 пн' in the table font at 14px
+const DATE_COLUMN_WIDTH = Math.max(
+  DATE_COLUMN_TEXT_WIDTH + DATE_COLUMN_HEADER_HORIZONTAL_PADDING,
+  DATE_COLUMN_TEXT_WIDTH + DATE_COLUMN_CELL_HORIZONTAL_PADDING,
+);
+const MIN_MEDICATION_COLUMN_WIDTH = 72;
+
 const Container = styled.div`
   display: flex;
   flex-direction: column;
@@ -164,6 +174,7 @@ const StyledTable = styled.table`
   width: 100%;
   border-collapse: collapse;
   color: black;
+  table-layout: fixed;
 `;
 
 const TableHead = styled.thead`
@@ -1872,6 +1883,25 @@ const MedicationSchedule = ({
   );
 
   const totalColumns = medicationList.length + 2;
+  const dateColumnStyle = useMemo(
+    () => ({
+      minWidth: `${DATE_COLUMN_WIDTH}px`,
+      width: `${DATE_COLUMN_WIDTH}px`,
+    }),
+    [],
+  );
+  const medicationColumnStyle = useMemo(() => {
+    if (!medicationList.length) {
+      return { minWidth: `${MIN_MEDICATION_COLUMN_WIDTH}px` };
+    }
+
+    const widthValue = `calc((100% - ${INDEX_COLUMN_WIDTH}px - ${DATE_COLUMN_WIDTH}px) / ${medicationList.length})`;
+
+    return {
+      width: widthValue,
+      minWidth: `${MIN_MEDICATION_COLUMN_WIDTH}px`,
+    };
+  }, [medicationList.length]);
 
   useEffect(() => {
     const normalized = normalizeData(data, { cycleStart, resolvePregnancyConfirmationDay });
@@ -2334,10 +2364,10 @@ const MedicationSchedule = ({
         <StyledTable>
           <TableHead>
             <TableHeaderRow>
-              <Th>#</Th>
-              <Th>Дата</Th>
+              <Th style={{ width: `${INDEX_COLUMN_WIDTH}px` }}>#</Th>
+              <Th style={dateColumnStyle}>Дата</Th>
               {medicationList.map(({ key, short }) => (
-                <MedicationTh key={key}>
+                <MedicationTh key={key} style={medicationColumnStyle}>
                   <MedicationHeaderContent>
                     <MedicationHeaderButton
                       type="button"
@@ -2422,34 +2452,34 @@ const MedicationSchedule = ({
 
                 rows.push(
                   <RowComponent key={rowKey}>
-                    <Td style={{ textAlign: 'center' }}>
+                    <Td style={{ textAlign: 'center', width: `${INDEX_COLUMN_WIDTH}px` }}>
                       <DayCell>
                         {showDayNumber && <DayNumber>{dayNumber}</DayNumber>}
                         {weeksDaysToken && <DayBadge>{weeksDaysToken}</DayBadge>}
                       </DayCell>
                     </Td>
-                    <Td>
+                    <Td style={dateColumnStyle}>
                       <DateCellContent>
                         <DateText>{formattedDate}</DateText>
                         {weekday && <WeekdayTag>{weekday}</WeekdayTag>}
                       </DateCellContent>
                     </Td>
-                    {medicationList.map(({ key }) => {
-                      const cellStatus = cellStatuses[key];
-                      return (
-                        <MedicationTd key={key}>
-                          <CellInput
-                            $status={cellStatus}
-                            value={
-                              row.values?.[key] === '' || row.values?.[key] === undefined
-                                ? ''
-                                : row.values[key]
-                            }
-                            onChange={event => handleCellChange(index, key, event.target.value)}
-                          />
-                        </MedicationTd>
-                      );
-                    })}
+                      {medicationList.map(({ key }) => {
+                        const cellStatus = cellStatuses[key];
+                        return (
+                          <MedicationTd key={key} style={medicationColumnStyle}>
+                            <CellInput
+                              $status={cellStatus}
+                              value={
+                                row.values?.[key] === '' || row.values?.[key] === undefined
+                                  ? ''
+                                  : row.values[key]
+                              }
+                              onChange={event => handleCellChange(index, key, event.target.value)}
+                            />
+                          </MedicationTd>
+                        );
+                      })}
                   </RowComponent>,
                 );
 
@@ -2476,7 +2506,7 @@ const MedicationSchedule = ({
                       {medicationList.map(({ key }) => {
                         const balance = rowBalances[key];
                         return (
-                          <MedicationStatusCell key={key}>
+                          <MedicationStatusCell key={key} style={medicationColumnStyle}>
                             <StatusValue $isNegative={balance < 0}>{formatNumber(balance)}</StatusValue>
                           </MedicationStatusCell>
                         );
