@@ -28,10 +28,6 @@ const DATE_COLUMN_WIDTH = Math.max(
   DATE_COLUMN_TEXT_WIDTH + DATE_COLUMN_CELL_HORIZONTAL_PADDING,
 );
 const MIN_MEDICATION_COLUMN_WIDTH = 72;
-const DISTRIBUTION_FALLBACKS = {
-  injesta: 40,
-  luteina: 40,
-};
 
 const Container = styled.div`
   display: flex;
@@ -748,21 +744,6 @@ const PLAN_HANDLERS = {
 
 const getPlanHandler = plan => PLAN_HANDLERS[plan] || PLAN_HANDLERS.custom;
 
-const getDistributionIssued = ({ key, plan, medication }) => {
-  const issued = Number(medication?.issued) || 0;
-  if (issued > 0) {
-    return issued;
-  }
-
-  const fallback =
-    plan && Object.prototype.hasOwnProperty.call(DISTRIBUTION_FALLBACKS, plan)
-      ? DISTRIBUTION_FALLBACKS[plan]
-      : DISTRIBUTION_FALLBACKS[key];
-
-  const fallbackNumber = Number(fallback);
-  return Number.isFinite(fallbackNumber) && fallbackNumber > 0 ? fallbackNumber : 0;
-};
-
 const getPlanDefaultIssued = (plan, medication) => {
   const handler = getPlanHandler(plan);
   if (typeof handler.defaultIssued === 'function') {
@@ -837,8 +818,7 @@ const doesMedicationMatchDefaultDistribution = (schedule, key) => {
     return true;
   }
 
-  const plan = medication.plan || key;
-  const issued = getDistributionIssued({ key, plan, medication });
+  const issued = Number(medication.issued) || 0;
   if (issued <= 0) {
     return rows.every(row => sanitizeCellValue(row?.values?.[key]) === '');
   }
@@ -1087,7 +1067,7 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
       const medication = schedule?.medications?.[key] || {};
       const plan = medication.plan || key;
       const handler = getPlanHandler(plan);
-      const issued = getDistributionIssued({ key, plan, medication });
+      const issued = Number(medication.issued) || 0;
       const currentValue = sanitizeCellValue(nextValues[key]);
 
       if (currentValue !== '') {
