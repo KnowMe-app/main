@@ -203,6 +203,7 @@ const getWeeksDaysTokenForDate = (date, reference) => {
 };
 
 const DAY_PREFIX_TRANSFER_WINDOW_DAYS = 30;
+const DAY_PREFIX_MAX_DAYS = 100;
 
 export const shouldUsePregnancyToken = (itemDate, transferDate) => {
   if (!itemDate || !transferDate) return false;
@@ -259,7 +260,11 @@ const getSchedulePrefixForDate = (date, baseDate, transferDate) => {
     const dayInfo = getWeeksDaysTokenForDate(normalizedDate, referenceForDay);
     if (dayInfo) {
       const dayNumber = dayInfo.weeks * 7 + dayInfo.days + 1;
-      return `${Math.max(dayNumber, 1)}й день`;
+      if (dayNumber > DAY_PREFIX_MAX_DAYS) {
+        useDayPrefix = false;
+      } else {
+        return `${Math.max(dayNumber, 1)}й день`;
+      }
     }
   }
 
