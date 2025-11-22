@@ -77,6 +77,10 @@ const IssuedStats = styled.span`
   color: #666;
 `;
 
+const IssuedStatsPlaceholder = styled.span`
+  color: #b7b7b7;
+`;
+
 const RemainingValue = styled.span`
   color: ${props => {
     if (props.$negative) {
@@ -242,6 +246,10 @@ const CellInput = styled.input`
     }
     return 'white';
   }};
+
+  &::placeholder {
+    color: #c8c8c8;
+  }
 `;
 
 const MedicationTh = styled(Th)`
@@ -2282,6 +2290,7 @@ const MedicationSchedule = ({
           const medication = data || { issued: 0, displayValue: '' };
           const { issued = 0, displayValue = '' } = medication;
           const stats = totals[key] || { used: 0, remaining: issued };
+          const shortage = Math.max(0, -stats.remaining);
           const showFormula = focusedMedication === key && displayValue;
           const inputValue =
             focusedMedication === key && displayValue
@@ -2308,6 +2317,11 @@ const MedicationSchedule = ({
                   >
                     {formatNumber(stats.remaining)}
                   </RemainingValue>
+                  {' '}
+                  • Не вистачає:{' '}
+                  <IssuedStatsPlaceholder>
+                    {formatNumber(shortage)}
+                  </IssuedStatsPlaceholder>
                 </IssuedStats>
               </IssuedRowHeader>
               {showFormula && displayValue && (
@@ -2466,6 +2480,8 @@ const MedicationSchedule = ({
                     </Td>
                       {medicationList.map(({ key }) => {
                         const cellStatus = cellStatuses[key];
+                        const balance = rowBalances[key];
+                        const dosagePlaceholder = Math.max(0, -balance) || 0;
                         return (
                           <MedicationTd key={key} style={medicationColumnStyle}>
                             <CellInput
@@ -2476,6 +2492,7 @@ const MedicationSchedule = ({
                                   : row.values[key]
                               }
                               onChange={event => handleCellChange(index, key, event.target.value)}
+                              placeholder={String(dosagePlaceholder)}
                             />
                           </MedicationTd>
                         );
