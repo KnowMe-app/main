@@ -1940,13 +1940,27 @@ const MedicationSchedule = ({
         if (!prev) return prev;
         const prevMed = prev.medications?.[key] || {};
         const { issued, displayValue } = evaluateIssuedInput(rawValue, prevMed.issued);
+        const isManualDistribution = prevMed.manualDistribution === true;
+        // The manualDistribution flag prevents automatic redistribution of doses
+        // when a user has manually edited per-day values. When it's set, changing
+        // the issued amount simply updates the stored value without regenerating
+        // the default daily plan for that medication.
+        //
+        // UA: прапорець manualDistribution фіксує ваші ручні правки. Якщо ви
+        // змінили кількість виданих доз і прапорець уже ввімкнено, система лише
+        // оновить збережене значення issued і НЕ перераховуватиме стандартний
+        // розподіл по днях для цього препарату.
         const medications = {
           ...prev.medications,
           [key]: {
             ...prevMed,
             issued,
             displayValue,
-            manualDistribution: issued > 0 ? false : prevMed.manualDistribution,
+            manualDistribution: isManualDistribution
+              ? true
+              : issued > 0
+                ? false
+                : prevMed.manualDistribution,
           },
         };
         const medicationOrder = Array.isArray(prev.medicationOrder) ? prev.medicationOrder : [];
@@ -1959,8 +1973,10 @@ const MedicationSchedule = ({
         };
         let rows;
 
-        if (issued > 0) {
+        if (issued > 0 && !isManualDistribution) {
           rows = applyDefaultDistribution(baseRows, scheduleWithMedication, { onlyKeys: [key] });
+        } else if (issued > 0 && isManualDistribution) {
+          rows = baseRows;
         } else {
           rows = baseRows.map(row => ({
             ...row,
