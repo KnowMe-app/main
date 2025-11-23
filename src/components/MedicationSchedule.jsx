@@ -369,7 +369,7 @@ const MedicationTd = styled(Td)`
 `;
 
 const MedicationStatusCell = styled(StatusCell)`
-  background: ${props => (props.$placeholder ? '#f5f5f5' : '#fffaf0')};
+  background: #fffaf0;
 `;
 
 const DescriptionList = styled.ul`
@@ -2492,11 +2492,6 @@ const MedicationSchedule = ({
                       numericValue = parsedValue;
                       runningUsage[key] += parsedValue;
                     }
-                  } else if (placeholderDose !== '') {
-                    const parsedValue = Number(placeholderDose);
-                    if (!Number.isNaN(parsedValue)) {
-                      runningUsage[key] += parsedValue;
-                    }
                   }
 
                   const balance = issuedByMedication[key] - runningUsage[key];
@@ -2580,12 +2575,10 @@ const MedicationSchedule = ({
                       </DescriptionCell>
                       {medicationList.map(({ key }) => {
                         const balance = rowBalances[key];
-                        const placeholder = cellPlaceholders[key];
                         return (
                           <MedicationStatusCell
                             key={key}
                             style={medicationColumnStyle}
-                            $placeholder={Boolean(placeholder)}
                           >
                             <StatusValue $isNegative={balance < 0}>{formatNumber(balance)}</StatusValue>
                           </MedicationStatusCell>
