@@ -28,7 +28,7 @@ const DATE_COLUMN_WIDTH = Math.max(
   DATE_COLUMN_TEXT_WIDTH + DATE_COLUMN_CELL_HORIZONTAL_PADDING,
 );
 const MIN_MEDICATION_COLUMN_WIDTH = 72;
-const EARLY_PLACEHOLDER_MAX_DAY = 14;
+const EARLY_PLACEHOLDER_MAX_DAY = 33;
 const EARLY_PLACEHOLDER_KEYS = new Set(['injesta', 'luteina']);
 
 const Container = styled.div`
