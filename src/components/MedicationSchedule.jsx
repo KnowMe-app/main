@@ -28,6 +28,8 @@ const DATE_COLUMN_WIDTH = Math.max(
   DATE_COLUMN_TEXT_WIDTH + DATE_COLUMN_CELL_HORIZONTAL_PADDING,
 );
 const MIN_MEDICATION_COLUMN_WIDTH = 72;
+const EARLY_PLACEHOLDER_MAX_DAY = 14;
+const EARLY_PLACEHOLDER_KEYS = new Set(['injesta', 'luteina']);
 
 const Container = styled.div`
   display: flex;
@@ -242,6 +244,9 @@ const CellInput = styled.input`
     }
     return 'white';
   }};
+  &::placeholder {
+    color: #b0b0b0;
+  }
 `;
 
 const MedicationTh = styled(Th)`
@@ -364,7 +369,7 @@ const MedicationTd = styled(Td)`
 `;
 
 const MedicationStatusCell = styled(StatusCell)`
-  background: #fffaf0;
+  background: ${props => (props.$placeholder ? '#f5f5f5' : '#fffaf0')};
 `;
 
 const DescriptionList = styled.ul`
@@ -1113,6 +1118,41 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
       values: nextValues,
     };
   });
+};
+
+const deriveEarlyPlaceholderDose = ({
+  medicationKey,
+  dayNumber,
+  rowDate,
+  schedule,
+  used,
+}) => {
+  if (!EARLY_PLACEHOLDER_KEYS.has(medicationKey)) return '';
+  if (!Number.isFinite(dayNumber) || dayNumber > EARLY_PLACEHOLDER_MAX_DAY) return '';
+
+  const medication = schedule?.medications?.[medicationKey] || {};
+  const issued = Number(medication.issued) || 0;
+  if (issued > 0) return '';
+
+  const plan = medication.plan || medicationKey;
+  const handler = getPlanHandler(plan);
+  if (typeof handler.getDailyValue !== 'function') return '';
+
+  const pregnancyConfirmationDay = Number(schedule?.pregnancyConfirmationDay);
+  const value = handler.getDailyValue({
+    dayNumber,
+    rowDate,
+    medication,
+    issued,
+    used: Number(used) || 0,
+    schedule,
+    pregnancyConfirmationDay:
+      Number.isFinite(pregnancyConfirmationDay) && pregnancyConfirmationDay > 0
+        ? pregnancyConfirmationDay
+        : null,
+  });
+
+  return sanitizeCellValue(value);
 };
 
 const calculateRequiredRows = (medicationOrder = [], medications = {}, baseLength = 0) =>
@@ -2433,13 +2473,28 @@ const MedicationSchedule = ({
 
                 const rowBalances = {};
                 const cellStatuses = {};
+                const cellPlaceholders = {};
                 medicationList.forEach(({ key }) => {
+                  const medication = schedule.medications?.[key] || {};
+                  const issued = Number(medication.issued) || 0;
                   const sanitizedValue = sanitizeCellValue(row.values?.[key]);
+                  const placeholderDose = deriveEarlyPlaceholderDose({
+                    medicationKey: key,
+                    dayNumber,
+                    rowDate: parsedDate,
+                    schedule,
+                    used: runningUsage[key],
+                  });
                   let numericValue = null;
                   if (sanitizedValue !== '') {
                     const parsedValue = Number(sanitizedValue);
                     if (!Number.isNaN(parsedValue)) {
                       numericValue = parsedValue;
+                      runningUsage[key] += parsedValue;
+                    }
+                  } else if (placeholderDose !== '') {
+                    const parsedValue = Number(placeholderDose);
+                    if (!Number.isNaN(parsedValue)) {
                       runningUsage[key] += parsedValue;
                     }
                   }
@@ -2452,6 +2507,8 @@ const MedicationSchedule = ({
                   } else {
                     cellStatuses[key] = null;
                   }
+
+                  cellPlaceholders[key] = placeholderDose !== '' && issued <= 0 ? placeholderDose : '';
                 });
 
                 if (year !== null && year !== currentYear) {
@@ -2482,6 +2539,7 @@ const MedicationSchedule = ({
                     </Td>
                       {medicationList.map(({ key }) => {
                         const cellStatus = cellStatuses[key];
+                        const placeholder = cellPlaceholders[key];
                         return (
                           <MedicationTd key={key} style={medicationColumnStyle}>
                             <CellInput
@@ -2491,6 +2549,7 @@ const MedicationSchedule = ({
                                   ? ''
                                   : row.values[key]
                               }
+                              placeholder={placeholder || undefined}
                               onChange={event => handleCellChange(index, key, event.target.value)}
                             />
                           </MedicationTd>
@@ -2521,8 +2580,13 @@ const MedicationSchedule = ({
                       </DescriptionCell>
                       {medicationList.map(({ key }) => {
                         const balance = rowBalances[key];
+                        const placeholder = cellPlaceholders[key];
                         return (
-                          <MedicationStatusCell key={key} style={medicationColumnStyle}>
+                          <MedicationStatusCell
+                            key={key}
+                            style={medicationColumnStyle}
+                            $placeholder={Boolean(placeholder)}
+                          >
                             <StatusValue $isNegative={balance < 0}>{formatNumber(balance)}</StatusValue>
                           </MedicationStatusCell>
                         );
