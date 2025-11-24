@@ -974,10 +974,12 @@ const evaluateIssuedInput = (displayValue, fallbackIssued) => {
   }
 
   const cleaned = raw.startsWith('=') ? raw.slice(1) : raw;
-  const parts = cleaned.split('+').map(part => part.replace(/,/g, '.').trim()).filter(Boolean);
+  const expression = cleaned.replace(/,/g, '.');
+  const expressionParts = expression.match(/[+\-]?\s*\d+(?:\.\d+)?/g);
 
-  if (parts.length > 1) {
-    const numbers = parts.map(Number);
+  if (expressionParts && expressionParts.length > 1) {
+    const numbers = expressionParts.map(part => Number(part.replace(/\s+/g, '')));
+
     if (numbers.every(num => !Number.isNaN(num))) {
       const sum = numbers.reduce((acc, num) => acc + num, 0);
       return {
