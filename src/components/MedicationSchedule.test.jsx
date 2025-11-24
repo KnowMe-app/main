@@ -267,5 +267,17 @@ describe('evaluateIssuedInput', () => {
 
     expect(result).toEqual({ issued: '', displayValue: '' });
   });
+
+  it('supports addition and subtraction formulas', () => {
+    const result = evaluateIssuedInput('=10+5-2', 0);
+
+    expect(result).toEqual({ issued: 13, displayValue: '=10+5-2' });
+  });
+
+  it('normalizes expression display when the user omits the leading equals sign', () => {
+    const result = evaluateIssuedInput('5 + 3 - 1', 0);
+
+    expect(result).toEqual({ issued: 7, displayValue: '=5 + 3 - 1' });
+  });
 });
 
