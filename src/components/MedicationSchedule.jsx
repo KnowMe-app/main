@@ -975,7 +975,7 @@ const evaluateIssuedInput = (displayValue, fallbackIssued) => {
 
   const cleaned = raw.startsWith('=') ? raw.slice(1) : raw;
   const expression = cleaned.replace(/,/g, '.');
-  const expressionParts = expression.match(/[+\-]?\s*\d+(?:\.\d+)?/g);
+  const expressionParts = expression.match(/[+-]?\s*\d+(?:\.\d+)?/g);
 
   if (expressionParts && expressionParts.length > 1) {
     const numbers = expressionParts.map(part => Number(part.replace(/\s+/g, '')));
