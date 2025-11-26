@@ -30,6 +30,9 @@ const DATE_COLUMN_WIDTH = Math.max(
 const MIN_MEDICATION_COLUMN_WIDTH = 72;
 const EARLY_PLACEHOLDER_MAX_DAY = 33;
 const EARLY_PLACEHOLDER_KEYS = new Set(['injesta', 'luteina']);
+const ALTERNATIVE_MEDICATION_NOTES = {
+  injesta: 'Інжеста 2 -> Крінон 2 щоранку',
+};
 
 const Container = styled.div`
   display: flex;
@@ -260,6 +263,7 @@ const MedicationHeaderContent = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 2px;
 `;
 
 const MedicationHeaderButton = styled.button`
@@ -275,6 +279,7 @@ const MedicationHeaderButton = styled.button`
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   width: 100%;
 
   &:hover {
@@ -286,6 +291,14 @@ const MedicationHeaderButton = styled.button`
     outline: 2px solid #b71c1c;
     outline-offset: 2px;
   }
+`;
+
+const MedicationInfoSup = styled.sup`
+  font-size: 10px;
+  color: #b71c1c;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: super;
 `;
 
 const DayCell = styled.div`
@@ -2434,6 +2447,14 @@ const MedicationSchedule = ({
                       title={`Видалити колонку ${short}`}
                     >
                       {short}
+                      {ALTERNATIVE_MEDICATION_NOTES[key] && (
+                        <MedicationInfoSup
+                          aria-label={`Рекомендації: ${ALTERNATIVE_MEDICATION_NOTES[key]}`}
+                          title={ALTERNATIVE_MEDICATION_NOTES[key]}
+                        >
+                          i
+                        </MedicationInfoSup>
+                      )}
                     </MedicationHeaderButton>
                   </MedicationHeaderContent>
                 </MedicationTh>
