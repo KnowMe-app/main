@@ -30,6 +30,9 @@ const DATE_COLUMN_WIDTH = Math.max(
 const MIN_MEDICATION_COLUMN_WIDTH = 72;
 const EARLY_PLACEHOLDER_MAX_DAY = 33;
 const EARLY_PLACEHOLDER_KEYS = new Set(['injesta', 'luteina']);
+const MEDICATION_ALTERNATIVE_INFO = {
+  injesta: 'Інжеста 2 -> Крінон 2 щоранку',
+};
 
 const Container = styled.div`
   display: flex;
@@ -59,6 +62,21 @@ const IssuedRowHeader = styled.div`
 
 const IssuedLabel = styled.span`
   font-weight: 500;
+`;
+
+const InfoSuperscript = styled.sup`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  font-size: 10px;
+  line-height: 1;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #1e88e5;
+  color: white;
+  vertical-align: top;
 `;
 
 const IssuedInput = styled.input`
@@ -2350,7 +2368,18 @@ const MedicationSchedule = ({
           return (
             <IssuedRow key={key}>
               <IssuedRowHeader>
-                <IssuedLabel>{label}</IssuedLabel>
+                <IssuedLabel>
+                  {label}
+                  {MEDICATION_ALTERNATIVE_INFO[key] && (
+                    <InfoSuperscript
+                      role="note"
+                      aria-label={MEDICATION_ALTERNATIVE_INFO[key]}
+                      title={MEDICATION_ALTERNATIVE_INFO[key]}
+                    >
+                      i
+                    </InfoSuperscript>
+                  )}
+                </IssuedLabel>
                 <IssuedInput
                   value={inputValue}
                   onChange={event => handleIssuedChange(key, event.target.value)}
