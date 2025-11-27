@@ -1,19 +1,19 @@
 import { useMemo } from 'react';
 
-const BASE_INDEX_COLUMN_WIDTH = 48;
-const MIN_INDEX_COLUMN_WIDTH = 40;
+const BASE_INDEX_COLUMN_WIDTH = 46;
+const MIN_INDEX_COLUMN_WIDTH = 32;
 const INDEX_COLUMN_HEADER_HORIZONTAL_PADDING = 12; // Th padding: 6px on each side
 const INDEX_COLUMN_CELL_HORIZONTAL_PADDING = 8; // Td padding: 4px on each side
-const INDEX_COLUMN_MIN_HEADER_HORIZONTAL_PADDING = 8;
-const INDEX_COLUMN_MIN_CELL_HORIZONTAL_PADDING = 6;
+const INDEX_COLUMN_MIN_HEADER_HORIZONTAL_PADDING = 6;
+const INDEX_COLUMN_MIN_CELL_HORIZONTAL_PADDING = 4;
 const DATE_COLUMN_HEADER_HORIZONTAL_PADDING = 12; // Th padding: 6px on each side
-const DATE_COLUMN_MIN_HEADER_HORIZONTAL_PADDING = 8;
+const DATE_COLUMN_MIN_HEADER_HORIZONTAL_PADDING = 6;
 const DATE_COLUMN_CELL_HORIZONTAL_PADDING = 8; // Td padding: 4px on each side
-const DATE_COLUMN_MIN_CELL_HORIZONTAL_PADDING = 6;
-const DATE_COLUMN_TEXT_WIDTH = 63; // measured width in pixels of '25.10 пн' in the table font at 14px
-const MIN_MEDICATION_COLUMN_WIDTH = 72;
-const COMPACT_LAYOUT_START_COLUMNS = 6;
-const COMPACT_LAYOUT_FULL_COMPACT_COLUMNS = 12;
+const DATE_COLUMN_MIN_CELL_HORIZONTAL_PADDING = 4;
+const DATE_COLUMN_TEXT_WIDTH = 60; // measured width in pixels of '25.10 пн' in the table font at 14px
+const MIN_MEDICATION_COLUMN_WIDTH = 64;
+const COMPACT_LAYOUT_START_COLUMNS = 5;
+const COMPACT_LAYOUT_FULL_COMPACT_COLUMNS = 10;
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 const interpolate = (start, end, ratio) => start + (end - start) * ratio;
