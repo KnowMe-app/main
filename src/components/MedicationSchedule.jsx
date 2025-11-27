@@ -8,6 +8,7 @@ import {
   sanitizeDescription,
   generateSchedule,
 } from './StimulationSchedule';
+import MedicationTableLayout from './MedicationTableLayout';
 import {
   BASE_MEDICATIONS,
   BASE_MEDICATION_PLACEHOLDERS,
@@ -19,15 +20,6 @@ import { parseMedicationClipboardData } from '../utils/medicationClipboard';
 
 const DEFAULT_ROWS = 280;
 const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-const INDEX_COLUMN_WIDTH = 48;
-const DATE_COLUMN_HEADER_HORIZONTAL_PADDING = 12; // Th padding: 6px on each side
-const DATE_COLUMN_CELL_HORIZONTAL_PADDING = 8; // Td padding: 4px on each side
-const DATE_COLUMN_TEXT_WIDTH = 63; // measured width in pixels of '25.10 пн' in the table font at 14px
-const DATE_COLUMN_WIDTH = Math.max(
-  DATE_COLUMN_TEXT_WIDTH + DATE_COLUMN_HEADER_HORIZONTAL_PADDING,
-  DATE_COLUMN_TEXT_WIDTH + DATE_COLUMN_CELL_HORIZONTAL_PADDING,
-);
-const MIN_MEDICATION_COLUMN_WIDTH = 72;
 const EARLY_PLACEHOLDER_MAX_DAY = 33;
 const EARLY_PLACEHOLDER_KEYS = new Set(['injesta', 'luteina']);
 const MEDICATION_ALTERNATIVE_INFO = {
@@ -1942,26 +1934,6 @@ const MedicationSchedule = ({
     [pendingRemovalMedication],
   );
 
-  const totalColumns = medicationList.length + 2;
-  const dateColumnStyle = useMemo(
-    () => ({
-      minWidth: `${DATE_COLUMN_WIDTH}px`,
-      width: `${DATE_COLUMN_WIDTH}px`,
-    }),
-    [],
-  );
-  const medicationColumnStyle = useMemo(() => {
-    if (!medicationList.length) {
-      return { minWidth: `${MIN_MEDICATION_COLUMN_WIDTH}px` };
-    }
-
-    const widthValue = `calc((100% - ${INDEX_COLUMN_WIDTH}px - ${DATE_COLUMN_WIDTH}px) / ${medicationList.length})`;
-
-    return {
-      width: widthValue,
-      minWidth: `${MIN_MEDICATION_COLUMN_WIDTH}px`,
-    };
-  }, [medicationList.length]);
 
   useEffect(() => {
     const normalized = normalizeData(data, { cycleStart, resolvePregnancyConfirmationDay });
@@ -2447,184 +2419,175 @@ const MedicationSchedule = ({
         </AddMedicationHint>
       </AddMedicationRow>
 
-      <TableWrapper>
-        <StyledTable>
-          <TableHead>
-            <TableHeaderRow>
-              <Th style={{ width: `${INDEX_COLUMN_WIDTH}px` }}>#</Th>
-              <Th style={dateColumnStyle}>Дата</Th>
-              {medicationList.map(({ key, short }) => (
-                <MedicationTh key={key} style={medicationColumnStyle}>
-                  <MedicationHeaderContent>
-                    <MedicationHeaderButton
-                      type="button"
-                      onClick={() => setPendingRemovalKey(key)}
-                      aria-label={`Видалити колонку ${short}`}
-                      title={`Видалити колонку ${short}`}
-                    >
-                      {short}
-                    </MedicationHeaderButton>
-                  </MedicationHeaderContent>
-                </MedicationTh>
-              ))}
-            </TableHeaderRow>
-          </TableHead>
-          <tbody>
-            {(() => {
-              const rows = [];
-              let currentYear = null;
-              const baseDate = parseDateString(schedule.startDate);
-              const issuedByMedication = {};
-              const runningUsage = {};
+      <MedicationTableLayout medicationCount={medicationList.length}>
+        {({ totalColumns, indexHeaderStyle, dateHeaderStyle, indexCellStyle, dateCellStyle, medicationColumnStyle }) => (
+          <TableWrapper>
+            <StyledTable>
+              <TableHead>
+                <TableHeaderRow>
+                  <Th style={indexHeaderStyle}>#</Th>
+                  <Th style={dateHeaderStyle}>Дата</Th>
+                  {medicationList.map(({ key, short }) => (
+                    <MedicationTh key={key} style={medicationColumnStyle}>
+                      <MedicationHeaderContent>
+                        <MedicationHeaderButton
+                          type="button"
+                          onClick={() => setPendingRemovalKey(key)}
+                          aria-label={`Видалити колонку ${short}`}
+                          title={`Видалити колонку ${short}`}
+                        >
+                          {short}
+                        </MedicationHeaderButton>
+                      </MedicationHeaderContent>
+                    </MedicationTh>
+                  ))}
+                </TableHeaderRow>
+              </TableHead>
+              <tbody>
+                {(() => {
+                  const rows = [];
+                  let currentYear = null;
+                  const baseDate = parseDateString(schedule.startDate);
+                  const issuedByMedication = {};
+                  const runningUsage = {};
 
-              medicationList.forEach(({ key }) => {
-                issuedByMedication[key] = Number(schedule.medications?.[key]?.issued) || 0;
-                runningUsage[key] = 0;
-              });
-
-              schedule.rows.forEach((row, index) => {
-                const dayNumber = index + 1;
-                const hasDayNumber = Number.isFinite(dayNumber) && dayNumber > 0;
-                const dayOffset = hasDayNumber ? dayNumber - 1 : 0;
-                const showWeeksDaysToken =
-                  hasDayNumber && dayNumber > 7 && dayOffset % 7 === 0;
-                const showDayNumber = hasDayNumber && !showWeeksDaysToken;
-                const weeksDaysToken = showWeeksDaysToken
-                  ? formatWeeksDaysToken(Math.floor(dayOffset / 7), 0)
-                  : null;
-                const parsedDate = parseDateString(row.date, baseDate);
-                const formattedDate = formatDateForDisplay(parsedDate);
-                const weekday = parsedDate ? WEEKDAY_LABELS[parsedDate.getDay()] : '';
-                const year = parsedDate ? parsedDate.getFullYear() : null;
-                const isoDate = row.date;
-                const eventsForRow =
-                  stimulationEvents.byIso.get(isoDate) ||
-                  stimulationEvents.byDayMonth.get(formattedDate) ||
-                  [];
-
-                const rowBalances = {};
-                const cellStatuses = {};
-                const cellPlaceholders = {};
-                medicationList.forEach(({ key }) => {
-                  const medication = schedule.medications?.[key] || {};
-                  const issued = Number(medication.issued) || 0;
-                  const sanitizedValue = sanitizeCellValue(row.values?.[key]);
-                  const placeholderDose = deriveEarlyPlaceholderDose({
-                    medicationKey: key,
-                    dayNumber,
-                    rowDate: parsedDate,
-                    schedule,
-                    used: runningUsage[key],
+                  medicationList.forEach(({ key }) => {
+                    issuedByMedication[key] = Number(schedule.medications?.[key]?.issued) || 0;
+                    runningUsage[key] = 0;
                   });
-                  let numericValue = null;
-                  if (sanitizedValue !== '') {
-                    const parsedValue = Number(sanitizedValue);
-                    if (!Number.isNaN(parsedValue)) {
-                      numericValue = parsedValue;
-                      runningUsage[key] += parsedValue;
+
+                  schedule.rows.forEach((row, index) => {
+                    const dayNumber = index + 1;
+                    const hasDayNumber = Number.isFinite(dayNumber) && dayNumber > 0;
+                    const dayOffset = hasDayNumber ? dayNumber - 1 : 0;
+                    const showWeeksDaysToken =
+                      hasDayNumber && dayNumber > 7 && dayOffset % 7 === 0;
+                    const showDayNumber = hasDayNumber && !showWeeksDaysToken;
+                    const weeksDaysToken = showWeeksDaysToken
+                      ? formatWeeksDaysToken(Math.floor(dayOffset / 7), 0)
+                      : null;
+                    const parsedDate = parseDateString(row.date, baseDate);
+                    const formattedDate = formatDateForDisplay(parsedDate);
+                    const weekday = parsedDate ? WEEKDAY_LABELS[parsedDate.getDay()] : '';
+                    const year = parsedDate ? parsedDate.getFullYear() : null;
+                    const isoDate = row.date;
+                    const eventsForRow =
+                      stimulationEvents.byIso.get(isoDate) ||
+                      stimulationEvents.byDayMonth.get(formattedDate) ||
+                      [];
+
+                    const cellStatuses = {};
+                    const cellPlaceholders = {};
+                    medicationList.forEach(({ key }) => {
+                      const medication = schedule.medications?.[key] || {};
+                      const issued = Number(medication.issued) || 0;
+                      const sanitizedValue = sanitizeCellValue(row.values?.[key]);
+                      const placeholderDose = deriveEarlyPlaceholderDose({
+                        medicationKey: key,
+                        dayNumber,
+                        rowDate: parsedDate,
+                        schedule,
+                        used: runningUsage[key],
+                      });
+                      let numericValue = null;
+                      if (sanitizedValue !== '') {
+                        const parsedValue = Number(sanitizedValue);
+                        if (!Number.isNaN(parsedValue)) {
+                          numericValue = parsedValue;
+                          runningUsage[key] += parsedValue;
+                        }
+                      }
+
+                      const balance = issuedByMedication[key] - runningUsage[key];
+                      if (numericValue !== null && numericValue > 0) {
+                        cellStatuses[key] = balance < 0 ? 'negative' : 'positive';
+                      } else {
+                        cellStatuses[key] = null;
+                      }
+
+                      cellPlaceholders[key] = placeholderDose !== '' && issued <= 0 ? placeholderDose : '';
+                    });
+
+                    if (year !== null && year !== currentYear) {
+                      currentYear = year;
+                      rows.push(
+                        <YearSeparatorRow key={`year-${year}-${index}`}>
+                          <YearSeparatorCell colSpan={totalColumns}>{year}</YearSeparatorCell>
+                        </YearSeparatorRow>,
+                      );
                     }
-                  }
 
-                  const balance = issuedByMedication[key] - runningUsage[key];
-                  rowBalances[key] = balance;
+                    const RowComponent = eventsForRow.length ? HighlightedRow : 'tr';
+                    const rowKey = `${isoDate || 'row'}-${index}`;
 
-                  if (numericValue !== null && numericValue > 0) {
-                    cellStatuses[key] = balance < 0 ? 'negative' : 'positive';
-                  } else {
-                    cellStatuses[key] = null;
-                  }
+                    rows.push(
+                      <RowComponent key={rowKey}>
+                        <Td style={indexCellStyle}>
+                          <DayCell>
+                            {showDayNumber && <DayNumber>{dayNumber}</DayNumber>}
+                            {weeksDaysToken && <DayBadge>{weeksDaysToken}</DayBadge>}
+                          </DayCell>
+                        </Td>
+                        <Td style={dateCellStyle}>
+                          <DateCellContent>
+                            <DateText>{formattedDate}</DateText>
+                            {weekday && <WeekdayTag>{weekday}</WeekdayTag>}
+                          </DateCellContent>
+                        </Td>
+                        {medicationList.map(({ key }) => {
+                          const cellStatus = cellStatuses[key];
+                          const placeholder = cellPlaceholders[key];
+                          return (
+                            <MedicationTd key={key} style={medicationColumnStyle}>
+                              <CellInput
+                                $status={cellStatus}
+                                value={
+                                  row.values?.[key] === '' || row.values?.[key] === undefined
+                                    ? ''
+                                    : row.values[key]
+                                }
+                                placeholder={placeholder || undefined}
+                                onChange={event => handleCellChange(index, key, event.target.value)}
+                              />
+                            </MedicationTd>
+                          );
+                        })}
+                      </RowComponent>,
+                    );
 
-                  cellPlaceholders[key] = placeholderDose !== '' && issued <= 0 ? placeholderDose : '';
-                });
+                    const descriptionItems = eventsForRow
+                      .map(event => {
+                        const text = cleanMedicationEventComment(event);
+                        return {
+                          key: event.key,
+                          text,
+                        };
+                      })
+                      .filter(Boolean);
 
-                if (year !== null && year !== currentYear) {
-                  currentYear = year;
-                  rows.push(
-                    <YearSeparatorRow key={`year-${year}-${index}`}>
-                      <YearSeparatorCell colSpan={totalColumns}>{year}</YearSeparatorCell>
-                    </YearSeparatorRow>,
-                  );
-                }
+                    if (descriptionItems.length) {
+                      rows.push(
+                        <DescriptionRow key={`desc-${rowKey}`}>
+                          <DescriptionCell colSpan={totalColumns}>
+                            <DescriptionList>
+                              {descriptionItems.map(({ key, text }) => (
+                                <DescriptionItem key={key}>{text}</DescriptionItem>
+                              ))}
+                            </DescriptionList>
+                          </DescriptionCell>
+                        </DescriptionRow>,
+                      );
+                    }
+                  });
 
-                const RowComponent = eventsForRow.length ? HighlightedRow : 'tr';
-                const rowKey = `${isoDate || 'row'}-${index}`;
+                  return rows;
+                })()}
+              </tbody>
+            </StyledTable>
+          </TableWrapper>
+        )}
+      </MedicationTableLayout>
 
-                rows.push(
-                  <RowComponent key={rowKey}>
-                    <Td style={{ textAlign: 'center', width: `${INDEX_COLUMN_WIDTH}px` }}>
-                      <DayCell>
-                        {showDayNumber && <DayNumber>{dayNumber}</DayNumber>}
-                        {weeksDaysToken && <DayBadge>{weeksDaysToken}</DayBadge>}
-                      </DayCell>
-                    </Td>
-                    <Td style={dateColumnStyle}>
-                      <DateCellContent>
-                        <DateText>{formattedDate}</DateText>
-                        {weekday && <WeekdayTag>{weekday}</WeekdayTag>}
-                      </DateCellContent>
-                    </Td>
-                      {medicationList.map(({ key }) => {
-                        const cellStatus = cellStatuses[key];
-                        const placeholder = cellPlaceholders[key];
-                        return (
-                          <MedicationTd key={key} style={medicationColumnStyle}>
-                            <CellInput
-                              $status={cellStatus}
-                              value={
-                                row.values?.[key] === '' || row.values?.[key] === undefined
-                                  ? ''
-                                  : row.values[key]
-                              }
-                              placeholder={placeholder || undefined}
-                              onChange={event => handleCellChange(index, key, event.target.value)}
-                            />
-                          </MedicationTd>
-                        );
-                      })}
-                  </RowComponent>,
-                );
-
-                const descriptionItems = eventsForRow
-                  .map(event => {
-                    const text = cleanMedicationEventComment(event);
-                    return {
-                      key: event.key,
-                      text,
-                    };
-                  })
-                  .filter(item => item.text);
-
-                if (descriptionItems.length) {
-                  rows.push(
-                    <DescriptionRow key={`${rowKey}-description`}>
-                      <DescriptionCell colSpan={2}>
-                        <DescriptionList>
-                          {descriptionItems.map(item => (
-                            <DescriptionItem key={item.key}>{item.text}</DescriptionItem>
-                          ))}
-                        </DescriptionList>
-                      </DescriptionCell>
-                      {medicationList.map(({ key }) => {
-                        const balance = rowBalances[key];
-                        return (
-                          <MedicationStatusCell
-                            key={key}
-                            style={medicationColumnStyle}
-                          >
-                            <StatusValue $isNegative={balance < 0}>{formatNumber(balance)}</StatusValue>
-                          </MedicationStatusCell>
-                        );
-                      })}
-                    </DescriptionRow>,
-                  );
-                }
-              });
-
-              return rows;
-            })()}
-          </tbody>
-        </StyledTable>
-      </TableWrapper>
 
       {pendingRemovalMedication && (
         <ModalOverlay onClick={handleCancelRemoveMedication}>
