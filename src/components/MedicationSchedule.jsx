@@ -56,7 +56,7 @@ const IssuedLabel = styled.span`
   font-weight: 500;
 `;
 
-const InfoSuperscript = styled.sup`
+const InfoSuperscript = styled.button.attrs({ type: 'button' })`
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -69,6 +69,14 @@ const InfoSuperscript = styled.sup`
   background: #1e88e5;
   color: white;
   vertical-align: top;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid #1e88e5;
+    outline-offset: 2px;
+  }
 `;
 
 const IssuedInput = styled.input`
@@ -1900,6 +1908,7 @@ const MedicationSchedule = ({
     startDate: formatISODate(new Date()),
   }));
   const [pendingRemovalKey, setPendingRemovalKey] = useState(null);
+  const [infoMedicationKey, setInfoMedicationKey] = useState(null);
   const scheduleRef = useRef(schedule);
 
   const medicationOrder = useMemo(
@@ -1932,6 +1941,16 @@ const MedicationSchedule = ({
   const removalModalTitleId = useMemo(
     () => (pendingRemovalMedication ? `remove-medication-${pendingRemovalMedication.key}` : undefined),
     [pendingRemovalMedication],
+  );
+
+  const infoModalTitleId = useMemo(
+    () => (infoMedicationKey ? `medication-info-${infoMedicationKey}` : undefined),
+    [infoMedicationKey],
+  );
+
+  const infoModalText = useMemo(
+    () => (infoMedicationKey ? MEDICATION_ALTERNATIVE_INFO[infoMedicationKey] : ''),
+    [infoMedicationKey],
   );
 
 
@@ -2035,6 +2054,23 @@ const MedicationSchedule = ({
   const handleIssuedBlur = useCallback(() => {
     setFocusedMedication(null);
   }, []);
+
+  const handleOpenMedicationInfo = useCallback(key => {
+    if (MEDICATION_ALTERNATIVE_INFO[key]) {
+      setInfoMedicationKey(key);
+    }
+  }, []);
+
+  const handleCloseMedicationInfo = useCallback(() => {
+    setInfoMedicationKey(null);
+  }, []);
+
+  const handleInfoKeyDown = useCallback((event, key) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleOpenMedicationInfo(key);
+    }
+  }, [handleOpenMedicationInfo]);
 
   const handleRemoveMedication = useCallback(
     key => {
@@ -2344,9 +2380,11 @@ const MedicationSchedule = ({
                   {label}
                   {MEDICATION_ALTERNATIVE_INFO[key] && (
                     <InfoSuperscript
-                      role="note"
+                      role="button"
                       aria-label={MEDICATION_ALTERNATIVE_INFO[key]}
                       title={MEDICATION_ALTERNATIVE_INFO[key]}
+                      onClick={() => handleOpenMedicationInfo(key)}
+                      onKeyDown={event => handleInfoKeyDown(event, key)}
                     >
                       i
                     </InfoSuperscript>
@@ -2587,6 +2625,26 @@ const MedicationSchedule = ({
           </TableWrapper>
         )}
       </MedicationTableLayout>
+
+
+      {infoModalText && (
+        <ModalOverlay onClick={handleCloseMedicationInfo}>
+          <ModalContainer
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={infoModalTitleId}
+            onClick={event => event.stopPropagation()}
+          >
+            <ModalTitle id={infoModalTitleId}>Додаткова інформація</ModalTitle>
+            <ModalMessage>{infoModalText}</ModalMessage>
+            <ModalActions>
+              <ModalCancelButton type="button" onClick={handleCloseMedicationInfo}>
+                Зрозуміло
+              </ModalCancelButton>
+            </ModalActions>
+          </ModalContainer>
+        </ModalOverlay>
+      )}
 
 
       {pendingRemovalMedication && (
