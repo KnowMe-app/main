@@ -369,14 +369,6 @@ const DescriptionCell = styled.td`
   color: #6a4b16;
 `;
 
-const StatusCell = styled.td`
-  padding: 4px 4px;
-  border-bottom: 1px solid #f0e0c5;
-  font-size: 13px;
-  font-weight: 600;
-  text-align: center;
-`;
-
 const MedicationTd = styled(Td)`
   text-align: center;
   padding: 2.4px;
