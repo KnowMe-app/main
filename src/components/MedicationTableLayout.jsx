@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 
 const BASE_INDEX_COLUMN_WIDTH = 48;
 const MIN_INDEX_COLUMN_WIDTH = 40;

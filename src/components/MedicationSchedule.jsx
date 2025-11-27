@@ -369,17 +369,9 @@ const StatusCell = styled.td`
   text-align: center;
 `;
 
-const StatusValue = styled.span`
-  color: ${props => (props.$isNegative ? '#d32f2f' : '#2e7d32')};
-`;
-
 const MedicationTd = styled(Td)`
   text-align: center;
   padding: 2.4px;
-`;
-
-const MedicationStatusCell = styled(StatusCell)`
-  background: #fffaf0;
 `;
 
 const DescriptionList = styled.ul`
