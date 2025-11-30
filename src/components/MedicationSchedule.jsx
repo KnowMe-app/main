@@ -23,7 +23,10 @@ const WEEKDAY_LABELS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const EARLY_PLACEHOLDER_MAX_DAY = 33;
 const EARLY_PLACEHOLDER_KEYS = new Set(['injesta', 'luteina']);
 const MEDICATION_ALTERNATIVE_INFO = {
-  injesta: 'Інжеста 2 -> Крінон 2 щоранку',
+  injesta:
+    '• Лютеїна 1-4 (р/о/в2)\n• Дуфастон р/о/в + Лютеїна р/о/в\n• Масляний прогестерон\n• Крінон 2 ніч',
+  luteina: '• Утрожестан\n• Прогінорм ОВО 200\n• Крінон 1-3',
+  aspirin: '• Кардіомагніл',
 };
 
 const Container = styled.div`
@@ -418,6 +421,7 @@ const ModalMessage = styled.p`
   margin: 0;
   font-size: 14px;
   color: #444;
+  white-space: pre-line;
 `;
 
 const ModalActions = styled.div`
