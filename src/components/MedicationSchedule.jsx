@@ -448,6 +448,15 @@ const ModalCancelButton = styled(ModalButton)`
   }
 `;
 
+const ModalSecondaryButton = styled(ModalButton)`
+  background: #1976d2;
+  color: white;
+
+  &:hover {
+    background: #115293;
+  }
+`;
+
 const ModalConfirmButton = styled(ModalButton)`
   background: #d84315;
   color: white;
@@ -455,6 +464,53 @@ const ModalConfirmButton = styled(ModalButton)`
   &:hover {
     background: #bf360c;
   }
+`;
+
+const ModalSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+`;
+
+const ModalSectionTitle = styled.h3`
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #222;
+`;
+
+const ModalHint = styled.p`
+  margin: 0;
+  font-size: 13px;
+  color: #555;
+  white-space: pre-line;
+`;
+
+const HiddenOptionList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const HiddenOptionButton = styled.button`
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #d0d0d0;
+  background: white;
+  cursor: pointer;
+  text-align: left;
+  font-size: 14px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+
+  &:hover {
+    background: #f5f5f5;
+    border-color: #bdbdbd;
+  }
+`;
+
+const HiddenOptionEmpty = styled.span`
+  font-size: 13px;
+  color: #777;
 `;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -880,6 +936,9 @@ const sanitizeScheduleForStorage = schedule => {
   const removedBaseMedications = Array.isArray(schedule.removedBaseMedications)
     ? schedule.removedBaseMedications.filter(key => BASE_MEDICATIONS_MAP.has(key))
     : [];
+  const hiddenMedicationKeys = Array.isArray(schedule.hiddenMedicationKeys)
+    ? schedule.hiddenMedicationKeys.filter(key => medicationOrder.includes(key))
+    : [];
 
   const keysToRemove = medicationOrder.filter(key => {
     const medication = medications[key];
@@ -905,6 +964,7 @@ const sanitizeScheduleForStorage = schedule => {
     return {
       ...schedule,
       removedBaseMedications,
+      hiddenMedicationKeys,
     };
   }
 
@@ -918,6 +978,7 @@ const sanitizeScheduleForStorage = schedule => {
   }, {});
 
   const sanitizedOrder = medicationOrder.filter(key => !removalSet.has(key));
+  const sanitizedHiddenMedicationKeys = hiddenMedicationKeys.filter(key => !removalSet.has(key));
 
   const rows = Array.isArray(schedule.rows) ? schedule.rows : [];
   const sanitizedRows = rows.map(row => {
@@ -955,6 +1016,7 @@ const sanitizeScheduleForStorage = schedule => {
     medicationOrder: sanitizedOrder,
     rows: hasRowData ? sanitizedRows : [],
     removedBaseMedications,
+    hiddenMedicationKeys: sanitizedHiddenMedicationKeys,
   };
 };
 
@@ -1270,6 +1332,9 @@ const normalizeData = (data, options = {}) => {
   const storedRemovedBaseMedications = Array.isArray(data?.removedBaseMedications)
     ? data.removedBaseMedications.filter(key => BASE_MEDICATIONS_MAP.has(key))
     : [];
+  const storedHiddenMedicationKeys = Array.isArray(data?.hiddenMedicationKeys)
+    ? data.hiddenMedicationKeys.filter(Boolean)
+    : [];
 
   const removedBaseMedications = storedRemovedBaseMedications.filter(key => {
     if (storedOrder.includes(key)) {
@@ -1370,6 +1435,7 @@ const normalizeData = (data, options = {}) => {
     medicationOrder,
     pregnancyConfirmationDay,
     removedBaseMedications,
+    hiddenMedicationKeys: storedHiddenMedicationKeys.filter(key => medicationOrder.includes(key)),
   };
 
   const rows = normalizeRows(data?.rows, startDate, scheduleBase);
@@ -1449,6 +1515,18 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
   });
 
   const medicationKeys = mergedOrder;
+
+  const previousHiddenMedicationKeys = Array.isArray(current.hiddenMedicationKeys)
+    ? current.hiddenMedicationKeys.filter(Boolean)
+    : [];
+  const parsedHiddenMedicationKeys = Array.isArray(parsed.hiddenMedicationKeys)
+    ? parsed.hiddenMedicationKeys.filter(Boolean)
+    : [];
+  const hiddenMedicationKeySet = new Set([
+    ...previousHiddenMedicationKeys,
+    ...parsedHiddenMedicationKeys,
+  ]);
+  const hiddenMedicationKeys = medicationKeys.filter(key => hiddenMedicationKeySet.has(key));
 
   medicationKeys.forEach(key => {
     if (BASE_MEDICATIONS_MAP.has(key)) {
@@ -1580,6 +1658,7 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
     medicationOrder: medicationKeys,
     medications: mergedMedications,
     removedBaseMedications: Array.from(removedBaseMedicationSet),
+    hiddenMedicationKeys,
     rows: mergedRows,
   };
 };
@@ -1904,9 +1983,27 @@ const MedicationSchedule = ({
     [schedule?.medicationOrder],
   );
 
+  const hiddenMedicationKeys = useMemo(() => {
+    const hidden = Array.isArray(schedule?.hiddenMedicationKeys)
+      ? schedule.hiddenMedicationKeys.filter(Boolean)
+      : [];
+    const orderSet = new Set(medicationOrder);
+    return hidden.filter(key => orderSet.has(key));
+  }, [medicationOrder, schedule?.hiddenMedicationKeys]);
+
+  const hiddenMedicationSet = useMemo(
+    () => new Set(hiddenMedicationKeys),
+    [hiddenMedicationKeys],
+  );
+
+  const visibleMedicationOrder = useMemo(
+    () => medicationOrder.filter(key => !hiddenMedicationSet.has(key)),
+    [medicationOrder, hiddenMedicationSet],
+  );
+
   const medicationList = useMemo(
     () =>
-      medicationOrder.map(key => {
+      visibleMedicationOrder.map(key => {
         const stored = schedule?.medications?.[key] || {};
         const base = BASE_MEDICATIONS_MAP.get(key);
         const label = stored.label || base?.label || key;
@@ -1918,7 +2015,25 @@ const MedicationSchedule = ({
           data: stored,
         };
       }),
-    [medicationOrder, schedule?.medications],
+    [visibleMedicationOrder, schedule?.medications],
+  );
+
+  const hiddenMedicationList = useMemo(
+    () =>
+      hiddenMedicationKeys
+        .map(key => {
+          const stored = schedule?.medications?.[key] || {};
+          const base = BASE_MEDICATIONS_MAP.get(key);
+          const label = stored.label || base?.label || key;
+          const short = stored.short || base?.short || label.slice(0, 2).toUpperCase();
+          return {
+            key,
+            label,
+            short,
+          };
+        })
+        .filter(Boolean),
+    [hiddenMedicationKeys, schedule?.medications],
   );
 
   const pendingRemovalMedication = useMemo(
@@ -2100,12 +2215,18 @@ const MedicationSchedule = ({
             })
           : [];
 
+        const hiddenMedicationKeys = Array.isArray(prev.hiddenMedicationKeys)
+          ? prev.hiddenMedicationKeys.filter(Boolean)
+          : [];
+        const filteredHiddenMedicationKeys = hiddenMedicationKeys.filter(item => item !== key);
+
         return {
           ...prev,
           medications: restMedications,
           medicationOrder,
           rows,
           removedBaseMedications: Array.from(removedBaseMedicationSet),
+          hiddenMedicationKeys: filteredHiddenMedicationKeys,
         };
       });
 
@@ -2123,6 +2244,60 @@ const MedicationSchedule = ({
     handleRemoveMedication(pendingRemovalKey);
     setPendingRemovalKey(null);
   }, [handleRemoveMedication, pendingRemovalKey]);
+
+  const handleHideMedication = useCallback(
+    key => {
+      updateSchedule(prev => {
+        if (!prev) return prev;
+        const order = Array.isArray(prev.medicationOrder)
+          ? prev.medicationOrder.filter(Boolean)
+          : [];
+        if (!order.includes(key)) {
+          return prev;
+        }
+
+        const hiddenMedicationKeys = Array.isArray(prev.hiddenMedicationKeys)
+          ? prev.hiddenMedicationKeys.filter(Boolean)
+          : [];
+
+        if (hiddenMedicationKeys.includes(key)) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          hiddenMedicationKeys: [...hiddenMedicationKeys, key],
+        };
+      });
+
+      setPendingRemovalKey(null);
+    },
+    [updateSchedule],
+  );
+
+  const handleRestoreHiddenMedication = useCallback(
+    key => {
+      updateSchedule(prev => {
+        if (!prev) return prev;
+
+        const hiddenMedicationKeys = Array.isArray(prev.hiddenMedicationKeys)
+          ? prev.hiddenMedicationKeys.filter(Boolean)
+          : [];
+
+        if (!hiddenMedicationKeys.includes(key)) {
+          return prev;
+        }
+
+        const nextHiddenMedicationKeys = hiddenMedicationKeys.filter(item => item !== key);
+
+        return {
+          ...prev,
+          hiddenMedicationKeys: nextHiddenMedicationKeys,
+        };
+      });
+    },
+    [updateSchedule],
+  );
 
   const handleNewMedicationDraftChange = useCallback((field, value) => {
     setNewMedicationDraft(prevDraft => ({
@@ -2456,14 +2631,18 @@ const MedicationSchedule = ({
                   {medicationList.map(({ key, short }) => (
                     <MedicationTh key={key} style={medicationColumnStyle}>
                       <MedicationHeaderContent>
-                        <MedicationHeaderButton
-                          type="button"
-                          onClick={() => setPendingRemovalKey(key)}
-                          aria-label={`Видалити колонку ${short}`}
-                          title={`Видалити колонку ${short}`}
-                        >
-                          {short}
-                        </MedicationHeaderButton>
+                          <MedicationHeaderButton
+                            type="button"
+                            onClick={() => setPendingRemovalKey(key)}
+                            onContextMenu={event => {
+                              event.preventDefault();
+                              setPendingRemovalKey(key);
+                            }}
+                            aria-label={`Видалити колонку ${short}`}
+                            title={`Видалити колонку ${short}`}
+                          >
+                            {short}
+                          </MedicationHeaderButton>
                       </MedicationHeaderContent>
                     </MedicationTh>
                   ))}
@@ -2643,18 +2822,47 @@ const MedicationSchedule = ({
             aria-labelledby={removalModalTitleId}
             onClick={event => event.stopPropagation()}
           >
-            <ModalTitle id={removalModalTitleId}>Видалити колонку?</ModalTitle>
+            <ModalTitle id={removalModalTitleId}>Управління колонкою</ModalTitle>
             <ModalMessage>
-              Ви впевнені, що хочете видалити колонку «{pendingRemovalMedication.short}»? Цю дію не можна скасувати.
+              Ви впевнені, що хочете видалити колонку «{pendingRemovalMedication.short}»? Цю дію не можна
+              скасувати.
             </ModalMessage>
-            <ModalActions>
-              <ModalCancelButton type="button" onClick={handleCancelRemoveMedication}>
-                Скасувати
-              </ModalCancelButton>
-              <ModalConfirmButton type="button" onClick={handleConfirmRemoveMedication}>
-                Видалити
-              </ModalConfirmButton>
-            </ModalActions>
+            <ModalSection>
+              <ModalSectionTitle>Дії з колонкою</ModalSectionTitle>
+              <ModalHint>
+                Приховайте колонку, щоб тимчасово прибрати її з таблиці без втрати даних. Видалення остаточно
+                прибере колонку та її дані.
+              </ModalHint>
+              <ModalActions>
+                <ModalCancelButton type="button" onClick={handleCancelRemoveMedication}>
+                  Скасувати
+                </ModalCancelButton>
+                <ModalSecondaryButton
+                  type="button"
+                  onClick={() => handleHideMedication(pendingRemovalMedication.key)}
+                >
+                  Приховати
+                </ModalSecondaryButton>
+                <ModalConfirmButton type="button" onClick={handleConfirmRemoveMedication}>
+                  Видалити
+                </ModalConfirmButton>
+              </ModalActions>
+            </ModalSection>
+
+            <ModalSection>
+              <ModalSectionTitle>Повернути приховану колонку</ModalSectionTitle>
+              {hiddenMedicationList.length ? (
+                <HiddenOptionList>
+                  {hiddenMedicationList.map(({ key, label, short }) => (
+                    <HiddenOptionButton type="button" key={key} onClick={() => handleRestoreHiddenMedication(key)}>
+                      {label} ({short})
+                    </HiddenOptionButton>
+                  ))}
+                </HiddenOptionList>
+              ) : (
+                <HiddenOptionEmpty>Наразі немає прихованих колонок.</HiddenOptionEmpty>
+              )}
+            </ModalSection>
           </ModalContainer>
         </ModalOverlay>
       )}
