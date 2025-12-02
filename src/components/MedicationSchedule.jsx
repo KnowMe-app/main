@@ -940,7 +940,13 @@ const sanitizeScheduleForStorage = schedule => {
     ? schedule.hiddenMedicationKeys.filter(key => medicationOrder.includes(key))
     : [];
 
+  const hiddenMedicationSet = new Set(hiddenMedicationKeys);
+
   const keysToRemove = medicationOrder.filter(key => {
+    if (hiddenMedicationSet.has(key)) {
+      return false;
+    }
+
     const medication = medications[key];
     if (!medication) {
       return false;
