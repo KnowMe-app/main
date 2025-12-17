@@ -2169,6 +2169,11 @@ const MedicationSchedule = ({
     [hiddenMedicationKeys, schedule?.medications],
   );
 
+  const pendingRemovalMedication = useMemo(
+    () => medicationList.find(({ key }) => key === pendingRemovalKey) || null,
+    [medicationList, pendingRemovalKey],
+  );
+
   const normalizedPendingShort = useMemo(() => {
     if (!pendingRemovalMedication) return '';
     return resolveNormalizedShort(
@@ -2200,11 +2205,6 @@ const MedicationSchedule = ({
       setColorMenuState(null);
     }
   }, [colorMenuState, medicationList, schedule?.rows]);
-
-  const pendingRemovalMedication = useMemo(
-    () => medicationList.find(({ key }) => key === pendingRemovalKey) || null,
-    [medicationList, pendingRemovalKey],
-  );
 
   const pendingShortInputId = useMemo(
     () => (pendingRemovalMedication ? `medication-short-${pendingRemovalMedication.key}` : undefined),
