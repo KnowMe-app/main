@@ -34,6 +34,33 @@ const MEDICATION_ALTERNATIVE_INFO = {
   luteina: '• Утрожестан\n• Прогінорм ОВО 200\n• Крінон 1-3',
   aspirin: '• Кардіомагніл',
 };
+const MAX_SHORT_LENGTH = 8;
+
+const sanitizeShortValue = value => {
+  if (!value) return '';
+  return value
+    .toString()
+    .trim()
+    .slice(0, MAX_SHORT_LENGTH)
+    .toUpperCase();
+};
+
+const resolveMedicationLabel = (key, medication = {}) => {
+  const base = BASE_MEDICATIONS_MAP.get(key);
+  return medication.label || base?.label || key;
+};
+
+const resolveNormalizedShort = (value, key, medication = {}) => {
+  const base = BASE_MEDICATIONS_MAP.get(key);
+  const label = resolveMedicationLabel(key, medication);
+  const sanitized = sanitizeShortValue(value);
+  if (sanitized) return sanitized;
+  const fallbackShort = medication.short || base?.short;
+  const sanitizedFallback = sanitizeShortValue(fallbackShort);
+  if (sanitizedFallback) return sanitizedFallback;
+  const derived = deriveShortLabel(label) || label;
+  return sanitizeShortValue(derived);
+};
 
 const Container = styled.div`
   display: flex;
@@ -499,6 +526,33 @@ const ModalSectionTitle = styled.h3`
   font-size: 15px;
   font-weight: 600;
   color: #222;
+`;
+
+const ModalInputRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+`;
+
+const ModalInputLabel = styled.label`
+  font-size: 13px;
+  color: #444;
+`;
+
+const ModalTextInput = styled.input`
+  flex: 1;
+  min-width: 140px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #d0d0d0;
+  font-size: 14px;
+  color: black;
+  box-sizing: border-box;
+
+  &::placeholder {
+    color: #888;
+  }
 `;
 
 const ModalHint = styled.p`
@@ -2029,6 +2083,7 @@ const MedicationSchedule = ({
     startDate: formatISODate(new Date()),
   }));
   const [pendingRemovalKey, setPendingRemovalKey] = useState(null);
+  const [pendingShortValue, setPendingShortValue] = useState('');
   const [infoMedicationKey, setInfoMedicationKey] = useState(null);
   const [colorMenuState, setColorMenuState] = useState(null);
   const scheduleRef = useRef(schedule);
@@ -2091,6 +2146,26 @@ const MedicationSchedule = ({
     [hiddenMedicationKeys, schedule?.medications],
   );
 
+  const normalizedPendingShort = useMemo(() => {
+    if (!pendingRemovalMedication) return '';
+    return resolveNormalizedShort(
+      pendingShortValue,
+      pendingRemovalMedication.key,
+      pendingRemovalMedication,
+    );
+  }, [pendingRemovalMedication, pendingShortValue]);
+
+  const currentPendingShort = useMemo(() => {
+    if (!pendingRemovalMedication) return '';
+    return resolveNormalizedShort(
+      pendingRemovalMedication.short,
+      pendingRemovalMedication.key,
+      pendingRemovalMedication,
+    );
+  }, [pendingRemovalMedication]);
+
+  const isPendingShortChanged = normalizedPendingShort !== currentPendingShort;
+
   useEffect(() => {
     if (!colorMenuState) return;
     const rowExists = Array.isArray(schedule?.rows) && schedule.rows[colorMenuState.rowIndex];
@@ -2106,6 +2181,11 @@ const MedicationSchedule = ({
   const pendingRemovalMedication = useMemo(
     () => medicationList.find(({ key }) => key === pendingRemovalKey) || null,
     [medicationList, pendingRemovalKey],
+  );
+
+  const pendingShortInputId = useMemo(
+    () => (pendingRemovalMedication ? `medication-short-${pendingRemovalMedication.key}` : undefined),
+    [pendingRemovalMedication],
   );
 
   const pendingRemovalPosition = useMemo(() => {
@@ -2132,6 +2212,14 @@ const MedicationSchedule = ({
     () => (infoMedicationKey ? MEDICATION_ALTERNATIVE_INFO[infoMedicationKey] : ''),
     [infoMedicationKey],
   );
+
+  useEffect(() => {
+    if (pendingRemovalMedication) {
+      setPendingShortValue(pendingRemovalMedication.short || '');
+    } else {
+      setPendingShortValue('');
+    }
+  }, [pendingRemovalMedication]);
 
 
   useEffect(() => {
@@ -2321,6 +2409,47 @@ const MedicationSchedule = ({
     handleRemoveMedication(pendingRemovalKey);
     setPendingRemovalKey(null);
   }, [handleRemoveMedication, pendingRemovalKey]);
+
+  const handlePendingShortChange = useCallback(value => {
+    setPendingShortValue(value.slice(0, MAX_SHORT_LENGTH).toUpperCase());
+  }, []);
+
+  const handleSaveMedicationShort = useCallback(() => {
+    if (!pendingRemovalMedication) return;
+
+    const { key } = pendingRemovalMedication;
+    const nextShort = resolveNormalizedShort(pendingShortValue, key, pendingRemovalMedication);
+
+    updateSchedule(prev => {
+      if (!prev) return prev;
+
+      const medications = prev.medications || {};
+      const prevMedication = medications[key] || {};
+      const label = resolveMedicationLabel(key, {
+        ...prevMedication,
+        label: prevMedication.label || pendingRemovalMedication.label,
+      });
+
+      if (prevMedication.short === nextShort) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        medications: {
+          ...medications,
+          [key]: {
+            ...prevMedication,
+            label,
+            short: nextShort,
+          },
+        },
+      };
+    });
+
+    setPendingShortValue(nextShort);
+    toast.success('Скорочення оновлено');
+  }, [pendingRemovalMedication, pendingShortValue, updateSchedule]);
 
   const handleHideMedication = useCallback(
     key => {
@@ -3029,6 +3158,27 @@ const MedicationSchedule = ({
               Ви впевнені, що хочете видалити колонку «{pendingRemovalMedication.short}»? Цю дію не можна
               скасувати.
             </ModalMessage>
+            <ModalSection>
+              <ModalSectionTitle>Скорочення</ModalSectionTitle>
+              <ModalHint>Відредагуйте коротку назву, яка показується у заголовку таблиці.</ModalHint>
+              <ModalInputRow>
+                <ModalInputLabel htmlFor={pendingShortInputId}>Нове скорочення</ModalInputLabel>
+                <ModalTextInput
+                  id={pendingShortInputId}
+                  value={pendingShortValue}
+                  onChange={event => handlePendingShortChange(event.target.value)}
+                  maxLength={MAX_SHORT_LENGTH}
+                  placeholder="Напр., ПГ"
+                />
+                <ModalSecondaryButton
+                  type="button"
+                  onClick={handleSaveMedicationShort}
+                  disabled={!isPendingShortChanged}
+                >
+                  Зберегти
+                </ModalSecondaryButton>
+              </ModalInputRow>
+            </ModalSection>
             <ModalSection>
               <ModalSectionTitle>Дії з колонкою</ModalSectionTitle>
               <ModalHint>
