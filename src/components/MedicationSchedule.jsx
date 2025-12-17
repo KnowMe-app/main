@@ -421,8 +421,17 @@ const ModalMessage = styled.p`
 
 const ModalActions = styled.div`
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+`;
+
+const ModalActionsRow = styled.div`
+  display: flex;
   justify-content: flex-end;
   gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
 `;
 
 const ModalButton = styled.button`
@@ -3027,34 +3036,38 @@ const MedicationSchedule = ({
                 прибере колонку та її дані.
               </ModalHint>
               <ModalActions>
-                <ModalDirectionButton
-                  type="button"
-                  onClick={() => handleNudgeMedication('left')}
-                  disabled={!pendingRemovalPosition?.canMoveLeft}
-                  aria-label="Перемістити колонку ліворуч"
-                >
-                  ← Ліворуч
-                </ModalDirectionButton>
-                <ModalDirectionButton
-                  type="button"
-                  onClick={() => handleNudgeMedication('right')}
-                  disabled={!pendingRemovalPosition?.canMoveRight}
-                  aria-label="Перемістити колонку праворуч"
-                >
-                  Праворуч →
-                </ModalDirectionButton>
-                <ModalCancelButton type="button" onClick={handleCancelRemoveMedication}>
-                  Скасувати
-                </ModalCancelButton>
-                <ModalSecondaryButton
-                  type="button"
-                  onClick={() => handleHideMedication(pendingRemovalMedication.key)}
-                >
-                  Приховати
-                </ModalSecondaryButton>
-                <ModalConfirmButton type="button" onClick={handleConfirmRemoveMedication}>
-                  Видалити
-                </ModalConfirmButton>
+                <ModalActionsRow>
+                  <ModalCancelButton type="button" onClick={handleCancelRemoveMedication}>
+                    Скасувати
+                  </ModalCancelButton>
+                  <ModalSecondaryButton
+                    type="button"
+                    onClick={() => handleHideMedication(pendingRemovalMedication.key)}
+                  >
+                    Приховати
+                  </ModalSecondaryButton>
+                  <ModalConfirmButton type="button" onClick={handleConfirmRemoveMedication}>
+                    Видалити
+                  </ModalConfirmButton>
+                </ModalActionsRow>
+                <ModalActionsRow>
+                  <ModalDirectionButton
+                    type="button"
+                    onClick={() => handleNudgeMedication('left')}
+                    disabled={!pendingRemovalPosition?.canMoveLeft}
+                    aria-label="Перемістити колонку ліворуч"
+                  >
+                    ←
+                  </ModalDirectionButton>
+                  <ModalDirectionButton
+                    type="button"
+                    onClick={() => handleNudgeMedication('right')}
+                    disabled={!pendingRemovalPosition?.canMoveRight}
+                    aria-label="Перемістити колонку праворуч"
+                  >
+                    →
+                  </ModalDirectionButton>
+                </ModalActionsRow>
               </ModalActions>
             </ModalSection>
 
