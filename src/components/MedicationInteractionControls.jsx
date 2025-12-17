@@ -90,62 +90,6 @@ const MenuHint = styled.span`
   font-size: 12px;
 `;
 
-const ReorderBar = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  background: #fff8e1;
-  border: 1px solid #ffd54f;
-  border-radius: 10px;
-`;
-
-const ReorderTitle = styled.span`
-  font-weight: 600;
-  color: #8d6e00;
-`;
-
-const ReorderOptions = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-`;
-
-const ReorderOptionButton = styled.button`
-  width: 36px;
-  height: 32px;
-  border-radius: 8px;
-  border: 1px solid #ffb300;
-  background: white;
-  color: #8d6e00;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s ease, transform 0.12s ease;
-
-  &:hover,
-  &:focus-visible {
-    background: #ffecb3;
-    outline: none;
-    transform: translateY(-1px);
-  }
-`;
-
-const CancelReorderButton = styled.button`
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid #cfcfcf;
-  background: white;
-  color: #444;
-  cursor: pointer;
-
-  &:hover,
-  &:focus-visible {
-    background: #f5f5f5;
-    outline: none;
-  }
-`;
-
 const LongPressWrapper = ({ onLongPress, children, threshold = LONG_PRESS_THRESHOLD, captureContext = false }) => {
   const timerRef = useRef(null);
 
@@ -251,31 +195,6 @@ const ColorContextMenu = ({ anchor, onSelect, onClose }) => {
   );
 };
 
-const ReorderPositionBar = ({ activeMedication, totalColumns, onSelectPosition, onCancel }) => {
-  if (!activeMedication) return null;
-  const handleClick = index => {
-    if (typeof onSelectPosition === 'function') {
-      onSelectPosition(index);
-    }
-  };
-
-  return (
-    <ReorderBar>
-      <ReorderTitle>Перемістити «{activeMedication.short}» на позицію:</ReorderTitle>
-      <ReorderOptions>
-        {Array.from({ length: totalColumns }).map((_, index) => (
-          <ReorderOptionButton key={index} type="button" onClick={() => handleClick(index)}>
-            {index + 1}
-          </ReorderOptionButton>
-        ))}
-      </ReorderOptions>
-      <CancelReorderButton type="button" onClick={onCancel}>
-        Скасувати
-      </CancelReorderButton>
-    </ReorderBar>
-  );
-};
-
 const resolveCellVisuals = ({ status, colorKey }) => {
   if (status === 'negative') {
     return { border: '#ef5350', text: '#b71c1c', background: '#ffebee' };
@@ -294,4 +213,4 @@ const resolveCellVisuals = ({ status, colorKey }) => {
   return { border: reset.border, text: reset.text, background: reset.background };
 };
 
-export { LongPressWrapper, ColorContextMenu, ReorderPositionBar, resolveCellVisuals, LONG_PRESS_THRESHOLD };
+export { LongPressWrapper, ColorContextMenu, resolveCellVisuals, LONG_PRESS_THRESHOLD };
