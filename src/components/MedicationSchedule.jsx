@@ -29,14 +29,6 @@ const MEDICATION_ALTERNATIVE_INFO = {
   aspirin: '• Кардіомагніл',
 };
 
-const LONG_PRESS_DELAY = 600;
-
-const TIME_OF_DAY_OPTIONS = {
-  morning: { label: 'Ранок', color: '#fff4e5' },
-  noon: { label: 'Обід', color: '#e5f6ff' },
-  evening: { label: 'Вечір', color: '#f3e5f5' },
-};
-
 const Container = styled.div`
   display: flex;
   flex-direction: column;
@@ -880,15 +872,6 @@ const parseDecimalInput = value => {
   return Number(normalized);
 };
 
-const sanitizeTimeOfDay = value => {
-  if (!value) return '';
-  const normalized = String(value).trim();
-
-  return TIME_OF_DAY_OPTIONS[normalized] ? normalized : '';
-};
-
-const getTimeOfDayColor = value => TIME_OF_DAY_OPTIONS[value]?.color;
-
 const doesMedicationMatchDefaultDistribution = (schedule, key) => {
   if (!schedule || !key) return false;
 
@@ -1006,28 +989,11 @@ const sanitizeScheduleForStorage = schedule => {
   const rows = Array.isArray(schedule.rows) ? schedule.rows : [];
   const sanitizedRows = rows.map(row => {
     const values = row?.values && typeof row.values === 'object' ? { ...row.values } : {};
-    const backgrounds =
-      row?.backgrounds && typeof row.backgrounds === 'object' ? { ...row.backgrounds } : {};
     let changed = false;
-
-    Object.entries(backgrounds).forEach(([backgroundKey, backgroundValue]) => {
-      const sanitized = sanitizeTimeOfDay(backgroundValue);
-      if (sanitized) {
-        backgrounds[backgroundKey] = sanitized;
-      } else {
-        delete backgrounds[backgroundKey];
-        changed = true;
-      }
-    });
 
     removalSet.forEach(key => {
       if (key in values) {
         delete values[key];
-        changed = true;
-      }
-
-      if (key in backgrounds) {
-        delete backgrounds[key];
         changed = true;
       }
     });
@@ -1039,7 +1005,6 @@ const sanitizeScheduleForStorage = schedule => {
     return {
       ...row,
       values,
-      backgrounds,
     };
   });
 
@@ -1048,10 +1013,7 @@ const sanitizeScheduleForStorage = schedule => {
       return false;
     }
     const values = row.values && typeof row.values === 'object' ? row.values : {};
-    const backgrounds = row.backgrounds && typeof row.backgrounds === 'object' ? row.backgrounds : {};
-    const hasValues = Object.values(values).some(value => sanitizeCellValue(value) !== '');
-    const hasBackgrounds = Object.keys(backgrounds).length > 0;
-    return hasValues || hasBackgrounds;
+    return Object.values(values).some(value => sanitizeCellValue(value) !== '');
   });
 
   return {
@@ -1125,22 +1087,13 @@ const ensureRowsLength = (rows, minLength, startDate, medicationKeys = []) => {
   for (let index = 0; index < targetLength; index += 1) {
     const source = sourceRows[index];
     const baseValues = source && typeof source === 'object' ? (source.values || source) : {};
-    const baseBackgrounds =
-      source && typeof source === 'object' ? source.backgrounds || {} : {};
     const values = {};
-    const backgrounds = {};
     medicationKeys.forEach(key => {
       values[key] = sanitizeCellValue(baseValues[key]);
-
-      const timeOfDay = sanitizeTimeOfDay(baseBackgrounds[key]);
-      if (timeOfDay) {
-        backgrounds[key] = timeOfDay;
-      }
     });
     result.push({
       date: formatISODate(addDays(baseDate, index)),
       values,
-      backgrounds,
     });
   }
 
@@ -1600,26 +1553,10 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
     return values;
   };
 
-  const buildRowBackgrounds = (row, keys) => {
-    const sourceBackgrounds =
-      row?.backgrounds && typeof row.backgrounds === 'object' ? row.backgrounds : {};
-    const backgrounds = {};
-
-    keys.forEach(key => {
-      const sanitized = sanitizeTimeOfDay(sourceBackgrounds[key]);
-      if (sanitized) {
-        backgrounds[key] = sanitized;
-      }
-    });
-
-    return backgrounds;
-  };
-
   const existingRows = Array.isArray(current.rows)
     ? current.rows.map(row => ({
         date: row?.date || '',
         values: buildRowValues(row, medicationKeys),
-        backgrounds: buildRowBackgrounds(row, medicationKeys),
       }))
     : [];
 
@@ -1637,7 +1574,7 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
     medicationKeys.forEach(key => {
       values[key] = '';
     });
-    prefixRows.push({ date: iso, values, backgrounds: {} });
+    prefixRows.push({ date: iso, values });
   }
 
   const rowsWithPrefix = [...prefixRows, ...existingRows];
@@ -1658,9 +1595,7 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
       parsedMaxDate = parsedDate;
     }
     const values = row.values && typeof row.values === 'object' ? row.values : {};
-    const backgrounds =
-      row.backgrounds && typeof row.backgrounds === 'object' ? row.backgrounds : {};
-    parsedRowMap.set(iso, { values, backgrounds });
+    parsedRowMap.set(iso, values);
   });
 
   let existingMaxDate = null;
@@ -1689,59 +1624,37 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
     const sourceRow = rowsWithPrefix[index];
     const sourceValues =
       sourceRow?.values && typeof sourceRow.values === 'object' ? sourceRow.values : {};
-    const sourceBackgrounds =
-      sourceRow?.backgrounds && typeof sourceRow.backgrounds === 'object'
-        ? sourceRow.backgrounds
-        : {};
     const values = {};
-    const backgrounds = {};
     medicationKeys.forEach(key => {
       if (Object.prototype.hasOwnProperty.call(sourceValues, key)) {
         values[key] = sanitizeCellValue(sourceValues[key]);
       } else {
         values[key] = '';
       }
-
-      const sanitized = sanitizeTimeOfDay(sourceBackgrounds[key]);
-      if (sanitized) {
-        backgrounds[key] = sanitized;
-      }
     });
     baseRows.push({
       date: iso,
       values,
-      backgrounds,
     });
   }
 
   const parsedKeySet = new Set(parsedOrder);
   const mergedRows = baseRows.map(row => {
-    const parsedRow = parsedRowMap.get(row.date);
-    if (!parsedRow) {
+    const parsedValues = parsedRowMap.get(row.date);
+    if (!parsedValues) {
       return row;
     }
 
     const nextValues = { ...row.values };
-    const nextBackgrounds = { ...row.backgrounds };
     parsedKeySet.forEach(key => {
-      if (Object.prototype.hasOwnProperty.call(parsedRow.values, key)) {
-        nextValues[key] = sanitizeCellValue(parsedRow.values[key]);
-      }
-
-      if (Object.prototype.hasOwnProperty.call(parsedRow.backgrounds, key)) {
-        const sanitized = sanitizeTimeOfDay(parsedRow.backgrounds[key]);
-        if (sanitized) {
-          nextBackgrounds[key] = sanitized;
-        } else if (key in nextBackgrounds) {
-          delete nextBackgrounds[key];
-        }
+      if (Object.prototype.hasOwnProperty.call(parsedValues, key)) {
+        nextValues[key] = sanitizeCellValue(parsedValues[key]);
       }
     });
 
     return {
       ...row,
       values: nextValues,
-      backgrounds: nextBackgrounds,
     };
   });
 
@@ -2070,7 +1983,6 @@ const MedicationSchedule = ({
   const [pendingRemovalKey, setPendingRemovalKey] = useState(null);
   const [infoMedicationKey, setInfoMedicationKey] = useState(null);
   const scheduleRef = useRef(schedule);
-  const longPressTimeoutRef = useRef(null);
 
   const medicationOrder = useMemo(
     () => (Array.isArray(schedule?.medicationOrder) ? schedule.medicationOrder : []),
@@ -2111,39 +2023,6 @@ const MedicationSchedule = ({
       }),
     [visibleMedicationOrder, schedule?.medications],
   );
-
-  const clearLongPress = useCallback(() => {
-    if (longPressTimeoutRef.current) {
-      clearTimeout(longPressTimeoutRef.current);
-      longPressTimeoutRef.current = null;
-    }
-  }, []);
-
-  const startLongPress = useCallback(
-    action => {
-      if (typeof action !== 'function') return;
-      clearLongPress();
-      longPressTimeoutRef.current = window.setTimeout(() => {
-        action();
-        longPressTimeoutRef.current = null;
-      }, LONG_PRESS_DELAY);
-    },
-    [clearLongPress],
-  );
-
-  const buildLongPressHandlers = useCallback(
-    action => ({
-      onMouseDown: () => startLongPress(action),
-      onTouchStart: () => startLongPress(action),
-      onMouseUp: clearLongPress,
-      onMouseLeave: clearLongPress,
-      onTouchEnd: clearLongPress,
-      onTouchCancel: clearLongPress,
-    }),
-    [clearLongPress, startLongPress],
-  );
-
-  useEffect(() => clearLongPress, [clearLongPress]);
 
   const hiddenMedicationList = useMemo(
     () =>
@@ -2265,14 +2144,6 @@ const MedicationSchedule = ({
               ...row.values,
               [key]: '',
             },
-            backgrounds: (() => {
-              const nextBackgrounds =
-                row.backgrounds && typeof row.backgrounds === 'object' ? { ...row.backgrounds } : {};
-              if (key in nextBackgrounds) {
-                delete nextBackgrounds[key];
-              }
-              return nextBackgrounds;
-            })(),
           }));
         }
 
@@ -2333,24 +2204,17 @@ const MedicationSchedule = ({
           ? prev.rows.map(row => {
               if (!row) return row;
               const nextValues = { ...(row.values || {}) };
-              const nextBackgrounds =
-                row.backgrounds && typeof row.backgrounds === 'object' ? { ...row.backgrounds } : {};
               if (Object.prototype.hasOwnProperty.call(nextValues, key)) {
                 delete nextValues[key];
-                if (Object.prototype.hasOwnProperty.call(nextBackgrounds, key)) {
-                  delete nextBackgrounds[key];
-                }
                 return {
                   ...row,
                   values: nextValues,
-                  backgrounds: nextBackgrounds,
                 };
               }
               if (!row.values) {
                 return {
                   ...row,
                   values: nextValues,
-                  backgrounds: nextBackgrounds,
                 };
               }
               return row;
@@ -2416,32 +2280,6 @@ const MedicationSchedule = ({
     },
     [updateSchedule],
   );
-
-  const handleHeaderLongPress = useCallback(() => {
-    if (!medicationList.length) {
-      toast.error('Немає доступних колонок для вибору');
-      return;
-    }
-
-    const input = window.prompt(
-      `Вкажіть номер колонки (1–${medicationList.length}), яку потрібно обрати`,
-    );
-
-    if (input === null) {
-      return;
-    }
-
-    const normalized = Number(String(input).trim());
-    if (!Number.isFinite(normalized) || normalized < 1 || normalized > medicationList.length) {
-      toast.error('Некоректний номер колонки');
-      return;
-    }
-
-    const target = medicationList[normalized - 1];
-    if (target) {
-      setPendingRemovalKey(target.key);
-    }
-  }, [medicationList]);
 
   const handleRestoreHiddenMedication = useCallback(
     key => {
@@ -2543,14 +2381,6 @@ const MedicationSchedule = ({
           ...row.values,
           [key]: '',
         },
-        backgrounds: (() => {
-          const nextBackgrounds =
-            row.backgrounds && typeof row.backgrounds === 'object' ? { ...row.backgrounds } : {};
-          if (key in nextBackgrounds) {
-            delete nextBackgrounds[key];
-          }
-          return nextBackgrounds;
-        })(),
       }));
 
       const previousRemovedBaseMedications = Array.isArray(prev.removedBaseMedications)
@@ -2648,68 +2478,6 @@ const MedicationSchedule = ({
     [updateSchedule],
   );
 
-  const handleCellTimeOfDay = useCallback(
-    (rowIndex, key) => {
-      const choice = window.prompt(
-        'Оберіть час прийому: 1 — ранок, 2 — обід, 3 — вечір, 0 — без кольору',
-      );
-
-      if (choice === null) {
-        return;
-      }
-
-      const normalizedChoice = (() => {
-        const trimmed = String(choice).trim().toLowerCase();
-        if (trimmed === '' || trimmed === '0') return '';
-        if (trimmed === '1' || trimmed === 'ранок') return 'morning';
-        if (trimmed === '2' || trimmed === 'обід' || trimmed === 'obed') return 'noon';
-        if (trimmed === '3' || trimmed === 'вечір' || trimmed === 'vechir') return 'evening';
-        return null;
-      })();
-
-      if (normalizedChoice === null) {
-        toast.error('Некоректний вибір часу прийому');
-        return;
-      }
-
-      const timeOfDay = sanitizeTimeOfDay(normalizedChoice);
-
-      updateSchedule(prev => {
-        if (!prev || !Array.isArray(prev.rows) || rowIndex < 0) {
-          return prev;
-        }
-
-        const rows = prev.rows.map((row, index) => {
-          if (!row || index !== rowIndex) {
-            return row;
-          }
-
-          const backgrounds =
-            row.backgrounds && typeof row.backgrounds === 'object'
-              ? { ...row.backgrounds }
-              : {};
-
-          if (timeOfDay) {
-            backgrounds[key] = timeOfDay;
-          } else if (key in backgrounds) {
-            delete backgrounds[key];
-          }
-
-          return {
-            ...row,
-            backgrounds,
-          };
-        });
-
-        return {
-          ...prev,
-          rows,
-        };
-      });
-    },
-    [updateSchedule],
-  );
-
   const handleResetDistribution = useCallback(() => {
     updateSchedule(prev => {
       if (!prev) return prev;
@@ -2759,11 +2527,6 @@ const MedicationSchedule = ({
     });
     return result;
   }, [schedule, medicationList]);
-
-  const headerLongPressHandlers = useMemo(
-    () => buildLongPressHandlers(handleHeaderLongPress),
-    [buildLongPressHandlers, handleHeaderLongPress],
-  );
 
   return (
     <Container>
@@ -2868,7 +2631,7 @@ const MedicationSchedule = ({
           <TableWrapper>
             <StyledTable>
               <TableHead>
-                <TableHeaderRow {...headerLongPressHandlers}>
+                <TableHeaderRow>
                   <Th style={indexHeaderStyle}>#</Th>
                   <Th style={dateHeaderStyle}>Дата</Th>
                   {medicationList.map(({ key, short }) => (
@@ -2985,16 +2748,8 @@ const MedicationSchedule = ({
                         {medicationList.map(({ key }) => {
                           const cellStatus = cellStatuses[key];
                           const placeholder = cellPlaceholders[key];
-                          const cellBackground = getTimeOfDayColor(row.backgrounds?.[key]);
-                          const cellStyle = cellBackground
-                            ? { ...medicationColumnStyle, backgroundColor: cellBackground }
-                            : medicationColumnStyle;
-                          const cellLongPressHandlers = buildLongPressHandlers(() =>
-                            handleCellTimeOfDay(index, key),
-                          );
-
                           return (
-                            <MedicationTd key={key} style={cellStyle} {...cellLongPressHandlers}>
+                            <MedicationTd key={key} style={medicationColumnStyle}>
                               <CellInput
                                 $status={cellStatus}
                                 value={
