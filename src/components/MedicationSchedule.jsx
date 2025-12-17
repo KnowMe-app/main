@@ -12,7 +12,6 @@ import MedicationTableLayout from './MedicationTableLayout';
 import {
   ColorContextMenu,
   LongPressWrapper,
-  ReorderPositionBar,
   resolveCellVisuals,
   reorderPulse,
 } from './MedicationInteractionControls';
@@ -450,6 +449,24 @@ const ModalSecondaryButton = styled(ModalButton)`
 
   &:hover {
     background: #115293;
+  }
+`;
+
+const ModalDirectionButton = styled(ModalButton)`
+  background: #eeeeee;
+  color: #333;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  &:hover {
+    background: #e0e0e0;
+  }
+
+  &:disabled {
+    background: #f5f5f5;
+    color: #aaaaaa;
+    cursor: not-allowed;
   }
 `;
 
@@ -2004,7 +2021,6 @@ const MedicationSchedule = ({
   }));
   const [pendingRemovalKey, setPendingRemovalKey] = useState(null);
   const [infoMedicationKey, setInfoMedicationKey] = useState(null);
-  const [reorderSelection, setReorderSelection] = useState(null);
   const [colorMenuState, setColorMenuState] = useState(null);
   const scheduleRef = useRef(schedule);
 
@@ -2048,12 +2064,6 @@ const MedicationSchedule = ({
     [visibleMedicationOrder, schedule?.medications],
   );
 
-  useEffect(() => {
-    if (reorderSelection?.key && !medicationList.some(item => item.key === reorderSelection.key)) {
-      setReorderSelection(null);
-    }
-  }, [medicationList, reorderSelection]);
-
   const hiddenMedicationList = useMemo(
     () =>
       hiddenMedicationKeys
@@ -2088,6 +2098,16 @@ const MedicationSchedule = ({
     () => medicationList.find(({ key }) => key === pendingRemovalKey) || null,
     [medicationList, pendingRemovalKey],
   );
+
+  const pendingRemovalPosition = useMemo(() => {
+    if (!pendingRemovalKey) return null;
+    const index = visibleMedicationOrder.indexOf(pendingRemovalKey);
+    return {
+      index,
+      canMoveLeft: index > 0,
+      canMoveRight: index >= 0 && index < visibleMedicationOrder.length - 1,
+    };
+  }, [pendingRemovalKey, visibleMedicationOrder]);
 
   const removalModalTitleId = useMemo(
     () => (pendingRemovalMedication ? `remove-medication-${pendingRemovalMedication.key}` : undefined),
@@ -2354,20 +2374,17 @@ const MedicationSchedule = ({
     }));
   }, []);
 
-  const handleStartReorder = useCallback(key => {
-    setReorderSelection({ key });
-  }, []);
+  const handleNudgeMedication = useCallback(
+    direction => {
+      const key = pendingRemovalKey;
+      if (!key) return;
 
-  const handleSelectReorderPosition = useCallback(
-    position => {
-      if (!reorderSelection?.key) {
-        return;
-      }
+      const delta = direction === 'left' ? -1 : 1;
 
       updateSchedule(prev => {
         if (!prev || !Array.isArray(prev.medicationOrder)) return prev;
         const baseOrder = prev.medicationOrder.filter(Boolean);
-        if (!baseOrder.includes(reorderSelection.key)) return prev;
+        if (!baseOrder.includes(key)) return prev;
 
         const hiddenSet = new Set(
           Array.isArray(prev.hiddenMedicationKeys)
@@ -2375,13 +2392,22 @@ const MedicationSchedule = ({
             : [],
         );
 
-        const visibleOrder = baseOrder.filter(key => !hiddenSet.has(key));
-        const filteredVisible = visibleOrder.filter(key => key !== reorderSelection.key);
-        const clampedIndex = Math.max(0, Math.min(position, filteredVisible.length));
-        filteredVisible.splice(clampedIndex, 0, reorderSelection.key);
+        const visibleOrder = baseOrder.filter(item => !hiddenSet.has(item));
+        const currentIndex = visibleOrder.indexOf(key);
+        if (currentIndex === -1) return prev;
 
-        const rebuiltOrder = baseOrder.map(key =>
-          hiddenSet.has(key) ? key : filteredVisible.shift() || key,
+        const targetIndex = Math.max(
+          0,
+          Math.min(visibleOrder.length - 1, currentIndex + delta),
+        );
+
+        if (targetIndex === currentIndex) return prev;
+
+        const filteredVisible = visibleOrder.filter(item => item !== key);
+        filteredVisible.splice(targetIndex, 0, key);
+
+        const rebuiltOrder = baseOrder.map(item =>
+          hiddenSet.has(item) ? item : filteredVisible.shift() || item,
         );
 
         return {
@@ -2389,15 +2415,9 @@ const MedicationSchedule = ({
           medicationOrder: rebuiltOrder,
         };
       });
-
-      setReorderSelection(null);
     },
-    [reorderSelection, updateSchedule],
+    [pendingRemovalKey, updateSchedule],
   );
-
-  const handleCancelReorder = useCallback(() => {
-    setReorderSelection(null);
-  }, []);
 
   const handleOpenColorMenu = useCallback((event, rowIndex, medicationKey) => {
     event?.preventDefault?.();
@@ -2774,15 +2794,6 @@ const MedicationSchedule = ({
         </AddMedicationHint>
       </AddMedicationRow>
 
-      {reorderSelection?.key && (
-        <ReorderPositionBar
-          activeMedication={medicationList.find(item => item.key === reorderSelection.key)}
-          totalColumns={medicationList.length}
-          onSelectPosition={handleSelectReorderPosition}
-          onCancel={handleCancelReorder}
-        />
-      )}
-
       <MedicationTableLayout medicationCount={medicationList.length}>
         {({ totalColumns, indexHeaderStyle, dateHeaderStyle, indexCellStyle, dateCellStyle, medicationColumnStyle }) => (
           <TableWrapper>
@@ -2791,35 +2802,21 @@ const MedicationSchedule = ({
                 <TableHeaderRow>
                   <Th style={indexHeaderStyle}>#</Th>
                   <Th style={dateHeaderStyle}>Дата</Th>
-                  {medicationList.map(({ key, short }, index) => (
+                  {medicationList.map(({ key, short }) => (
                     <MedicationTh key={key} style={medicationColumnStyle}>
                       <MedicationHeaderContent>
-                        <LongPressWrapper onLongPress={() => handleStartReorder(key)}>
-                          <MedicationHeaderButton
-                            type="button"
-                            onClick={() =>
-                              reorderSelection?.key
-                                ? handleSelectReorderPosition(index)
-                                : setPendingRemovalKey(key)
-                            }
-                            onContextMenu={event => {
-                              event.preventDefault();
-                              if (reorderSelection?.key) {
-                                handleSelectReorderPosition(index);
-                                return;
-                              }
-                              setPendingRemovalKey(key);
-                            }}
-                            aria-label={`Видалити колонку ${short}`}
-                            title={`Видалити колонку ${short}`}
-                            $reordering={reorderSelection?.key === key}
-                            $reorderTarget={Boolean(
-                              reorderSelection?.key && reorderSelection.key !== key,
-                            )}
-                          >
-                            {short}
-                          </MedicationHeaderButton>
-                        </LongPressWrapper>
+                        <MedicationHeaderButton
+                          type="button"
+                          onClick={() => setPendingRemovalKey(key)}
+                          onContextMenu={event => {
+                            event.preventDefault();
+                            setPendingRemovalKey(key);
+                          }}
+                          aria-label={`Видалити колонку ${short}`}
+                          title={`Видалити колонку ${short}`}
+                        >
+                          {short}
+                        </MedicationHeaderButton>
                       </MedicationHeaderContent>
                     </MedicationTh>
                   ))}
@@ -3030,6 +3027,22 @@ const MedicationSchedule = ({
                 прибере колонку та її дані.
               </ModalHint>
               <ModalActions>
+                <ModalDirectionButton
+                  type="button"
+                  onClick={() => handleNudgeMedication('left')}
+                  disabled={!pendingRemovalPosition?.canMoveLeft}
+                  aria-label="Перемістити колонку ліворуч"
+                >
+                  ← Ліворуч
+                </ModalDirectionButton>
+                <ModalDirectionButton
+                  type="button"
+                  onClick={() => handleNudgeMedication('right')}
+                  disabled={!pendingRemovalPosition?.canMoveRight}
+                  aria-label="Перемістити колонку праворуч"
+                >
+                  Праворуч →
+                </ModalDirectionButton>
                 <ModalCancelButton type="button" onClick={handleCancelRemoveMedication}>
                   Скасувати
                 </ModalCancelButton>
