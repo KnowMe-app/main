@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import styled from 'styled-components';
+import styled, { css } from 'styled-components';
 import toast from 'react-hot-toast';
 
 import {
@@ -9,6 +9,13 @@ import {
   generateSchedule,
 } from './StimulationSchedule';
 import MedicationTableLayout from './MedicationTableLayout';
+import {
+  ColorContextMenu,
+  LongPressWrapper,
+  ReorderPositionBar,
+  resolveCellVisuals,
+  reorderPulse,
+} from './MedicationInteractionControls';
 import {
   BASE_MEDICATIONS,
   BASE_MEDICATION_PLACEHOLDERS,
@@ -233,38 +240,14 @@ const CellInput = styled.input`
   min-width: 0;
   padding: 2.4px;
   border-radius: 6px;
-  border: 1px solid
-    ${({ $status }) => {
-      if ($status === 'negative') {
-        return '#ef5350';
-      }
-      if ($status === 'positive') {
-        return '#66bb6a';
-      }
-      return '#d0d0d0';
-    }};
+  border: 1px solid ${({ $visual }) => $visual?.border || '#d0d0d0'};
   font-size: 13px;
   text-align: center;
-  color: ${({ $status }) => {
-    if ($status === 'negative') {
-      return '#b71c1c';
-    }
-    if ($status === 'positive') {
-      return '#1b5e20';
-    }
-    return 'black';
-  }};
+  color: ${({ $visual }) => $visual?.text || 'black'};
   box-sizing: border-box;
   display: inline-block;
-  background-color: ${({ $status }) => {
-    if ($status === 'negative') {
-      return '#ffebee';
-    }
-    if ($status === 'positive') {
-      return '#e8f5e9';
-    }
-    return 'white';
-  }};
+  background-color: ${({ $visual }) => $visual?.background || 'white'};
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
   &::placeholder {
     color: #b0b0b0;
   }
@@ -297,6 +280,19 @@ const MedicationHeaderButton = styled.button`
   align-items: center;
   justify-content: center;
   width: 100%;
+
+  ${({ $reordering }) =>
+    $reordering &&
+    css`
+      animation: ${reorderPulse} 0.9s ease-in-out infinite;
+      background: rgba(255, 183, 77, 0.2);
+    `}
+
+  ${({ $reorderTarget }) =>
+    $reorderTarget &&
+    css`
+      box-shadow: inset 0 0 0 1px #ffb74d;
+    `}
 
   &:hover {
     background: rgba(183, 28, 28, 0.1);
@@ -989,11 +985,16 @@ const sanitizeScheduleForStorage = schedule => {
   const rows = Array.isArray(schedule.rows) ? schedule.rows : [];
   const sanitizedRows = rows.map(row => {
     const values = row?.values && typeof row.values === 'object' ? { ...row.values } : {};
+    const colors = row?.colors && typeof row.colors === 'object' ? { ...row.colors } : {};
     let changed = false;
 
     removalSet.forEach(key => {
       if (key in values) {
         delete values[key];
+        changed = true;
+      }
+      if (key in colors) {
+        delete colors[key];
         changed = true;
       }
     });
@@ -1005,6 +1006,7 @@ const sanitizeScheduleForStorage = schedule => {
     return {
       ...row,
       values,
+      colors,
     };
   });
 
@@ -1087,13 +1089,17 @@ const ensureRowsLength = (rows, minLength, startDate, medicationKeys = []) => {
   for (let index = 0; index < targetLength; index += 1) {
     const source = sourceRows[index];
     const baseValues = source && typeof source === 'object' ? (source.values || source) : {};
+    const baseColors = source && typeof source === 'object' ? source.colors || {} : {};
     const values = {};
+    const colors = {};
     medicationKeys.forEach(key => {
       values[key] = sanitizeCellValue(baseValues[key]);
+      colors[key] = typeof baseColors[key] === 'string' ? baseColors[key] : '';
     });
     result.push({
       date: formatISODate(addDays(baseDate, index)),
       values,
+      colors,
     });
   }
 
@@ -1130,6 +1136,7 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
   return rows.map((row, rowIndex) => {
     const rowDate = parseDateString(row.date, baseDate) || addDays(baseDate, rowIndex);
     const nextValues = { ...row.values };
+    const nextColors = row.colors && typeof row.colors === 'object' ? { ...row.colors } : {};
     const shouldSkipRow = skipExisting && rowIndex < existingLength;
     const isFirstRow = rowIndex === 0;
 
@@ -1192,6 +1199,7 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
     return {
       ...row,
       values: nextValues,
+      colors: nextColors,
     };
   });
 };
@@ -1468,6 +1476,10 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
               acc[key] = sanitizeCellValue(value);
               return acc;
             }, {}),
+            colors: Object.entries(row?.colors || {}).reduce((acc, [key, value]) => {
+              acc[key] = typeof value === 'string' ? value : '';
+              return acc;
+            }, {}),
           }))
         : [],
     };
@@ -1540,23 +1552,31 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
     }
   });
 
-  const buildRowValues = (row, keys) => {
+  const buildRowPayload = (row, keys) => {
     const sourceValues = row?.values && typeof row.values === 'object' ? row.values : {};
+    const sourceColors = row?.colors && typeof row.colors === 'object' ? row.colors : {};
     const values = {};
+    const colors = {};
     keys.forEach(key => {
       if (Object.prototype.hasOwnProperty.call(sourceValues, key)) {
         values[key] = sanitizeCellValue(sourceValues[key]);
       } else {
         values[key] = '';
       }
+
+      if (Object.prototype.hasOwnProperty.call(sourceColors, key)) {
+        colors[key] = typeof sourceColors[key] === 'string' ? sourceColors[key] : '';
+      } else {
+        colors[key] = '';
+      }
     });
-    return values;
+    return { values, colors };
   };
 
   const existingRows = Array.isArray(current.rows)
     ? current.rows.map(row => ({
         date: row?.date || '',
-        values: buildRowValues(row, medicationKeys),
+        ...buildRowPayload(row, medicationKeys),
       }))
     : [];
 
@@ -1571,10 +1591,12 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
   for (let index = 0; index < needsPrefix; index += 1) {
     const iso = formatISODate(addDays(effectiveStartDate, index));
     const values = {};
+    const colors = {};
     medicationKeys.forEach(key => {
       values[key] = '';
+      colors[key] = '';
     });
-    prefixRows.push({ date: iso, values });
+    prefixRows.push({ date: iso, values, colors });
   }
 
   const rowsWithPrefix = [...prefixRows, ...existingRows];
@@ -1595,7 +1617,8 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
       parsedMaxDate = parsedDate;
     }
     const values = row.values && typeof row.values === 'object' ? row.values : {};
-    parsedRowMap.set(iso, values);
+    const colors = row.colors && typeof row.colors === 'object' ? row.colors : {};
+    parsedRowMap.set(iso, { values, colors });
   });
 
   let existingMaxDate = null;
@@ -1622,39 +1645,38 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
   for (let index = 0; index < totalDays; index += 1) {
     const iso = formatISODate(addDays(effectiveStartDate, index));
     const sourceRow = rowsWithPrefix[index];
-    const sourceValues =
-      sourceRow?.values && typeof sourceRow.values === 'object' ? sourceRow.values : {};
-    const values = {};
-    medicationKeys.forEach(key => {
-      if (Object.prototype.hasOwnProperty.call(sourceValues, key)) {
-        values[key] = sanitizeCellValue(sourceValues[key]);
-      } else {
-        values[key] = '';
-      }
-    });
+    const { values, colors } = buildRowPayload(sourceRow, medicationKeys);
     baseRows.push({
       date: iso,
       values,
+      colors,
     });
   }
 
   const parsedKeySet = new Set(parsedOrder);
   const mergedRows = baseRows.map(row => {
-    const parsedValues = parsedRowMap.get(row.date);
-    if (!parsedValues) {
+    const parsedEntry = parsedRowMap.get(row.date);
+    if (!parsedEntry) {
       return row;
     }
 
     const nextValues = { ...row.values };
+    const nextColors = row.colors && typeof row.colors === 'object' ? { ...row.colors } : {};
     parsedKeySet.forEach(key => {
-      if (Object.prototype.hasOwnProperty.call(parsedValues, key)) {
-        nextValues[key] = sanitizeCellValue(parsedValues[key]);
+      if (Object.prototype.hasOwnProperty.call(parsedEntry.values, key)) {
+        nextValues[key] = sanitizeCellValue(parsedEntry.values[key]);
+      }
+      if (Object.prototype.hasOwnProperty.call(parsedEntry.colors, key)) {
+        nextColors[key] = typeof parsedEntry.colors[key] === 'string'
+          ? parsedEntry.colors[key]
+          : '';
       }
     });
 
     return {
       ...row,
       values: nextValues,
+      colors: nextColors,
     };
   });
 
@@ -1982,6 +2004,8 @@ const MedicationSchedule = ({
   }));
   const [pendingRemovalKey, setPendingRemovalKey] = useState(null);
   const [infoMedicationKey, setInfoMedicationKey] = useState(null);
+  const [reorderSelection, setReorderSelection] = useState(null);
+  const [colorMenuState, setColorMenuState] = useState(null);
   const scheduleRef = useRef(schedule);
 
   const medicationOrder = useMemo(
@@ -2024,6 +2048,12 @@ const MedicationSchedule = ({
     [visibleMedicationOrder, schedule?.medications],
   );
 
+  useEffect(() => {
+    if (reorderSelection?.key && !medicationList.some(item => item.key === reorderSelection.key)) {
+      setReorderSelection(null);
+    }
+  }, [medicationList, reorderSelection]);
+
   const hiddenMedicationList = useMemo(
     () =>
       hiddenMedicationKeys
@@ -2041,6 +2071,18 @@ const MedicationSchedule = ({
         .filter(Boolean),
     [hiddenMedicationKeys, schedule?.medications],
   );
+
+  useEffect(() => {
+    if (!colorMenuState) return;
+    const rowExists = Array.isArray(schedule?.rows) && schedule.rows[colorMenuState.rowIndex];
+    const medicationExists = medicationList.some(
+      ({ key }) => key === colorMenuState.medicationKey,
+    );
+
+    if (!rowExists || !medicationExists) {
+      setColorMenuState(null);
+    }
+  }, [colorMenuState, medicationList, schedule?.rows]);
 
   const pendingRemovalMedication = useMemo(
     () => medicationList.find(({ key }) => key === pendingRemovalKey) || null,
@@ -2312,6 +2354,108 @@ const MedicationSchedule = ({
     }));
   }, []);
 
+  const handleStartReorder = useCallback(key => {
+    setReorderSelection({ key });
+  }, []);
+
+  const handleSelectReorderPosition = useCallback(
+    position => {
+      if (!reorderSelection?.key) {
+        return;
+      }
+
+      updateSchedule(prev => {
+        if (!prev || !Array.isArray(prev.medicationOrder)) return prev;
+        const baseOrder = prev.medicationOrder.filter(Boolean);
+        if (!baseOrder.includes(reorderSelection.key)) return prev;
+
+        const hiddenSet = new Set(
+          Array.isArray(prev.hiddenMedicationKeys)
+            ? prev.hiddenMedicationKeys.filter(Boolean)
+            : [],
+        );
+
+        const visibleOrder = baseOrder.filter(key => !hiddenSet.has(key));
+        const filteredVisible = visibleOrder.filter(key => key !== reorderSelection.key);
+        const clampedIndex = Math.max(0, Math.min(position, filteredVisible.length));
+        filteredVisible.splice(clampedIndex, 0, reorderSelection.key);
+
+        const rebuiltOrder = baseOrder.map(key =>
+          hiddenSet.has(key) ? key : filteredVisible.shift() || key,
+        );
+
+        return {
+          ...prev,
+          medicationOrder: rebuiltOrder,
+        };
+      });
+
+      setReorderSelection(null);
+    },
+    [reorderSelection, updateSchedule],
+  );
+
+  const handleCancelReorder = useCallback(() => {
+    setReorderSelection(null);
+  }, []);
+
+  const handleOpenColorMenu = useCallback((event, rowIndex, medicationKey) => {
+    event?.preventDefault?.();
+    const target = event?.currentTarget;
+    const rect = target?.getBoundingClientRect?.();
+    const anchor = rect
+      ? {
+          x: rect.left + rect.width / 2 + window.scrollX,
+          y: rect.bottom + window.scrollY,
+        }
+      : { x: event?.clientX || 0, y: event?.clientY || 0 };
+
+    setColorMenuState({
+      rowIndex,
+      medicationKey,
+      anchor,
+    });
+  }, []);
+
+  const handleSelectCellColor = useCallback(
+    option => {
+      const colorKey = option?.key === 'none' ? '' : option?.key || '';
+      if (!colorMenuState) return;
+
+      updateSchedule(prev => {
+        if (!prev || !Array.isArray(prev.rows)) return prev;
+        if (!prev.rows[colorMenuState.rowIndex]) return prev;
+
+        const rows = prev.rows.map((row, index) => {
+          if (index !== colorMenuState.rowIndex) return row;
+          const colors = row.colors && typeof row.colors === 'object' ? { ...row.colors } : {};
+          if (colors[colorMenuState.medicationKey] === colorKey) {
+            return row;
+          }
+
+          colors[colorMenuState.medicationKey] = colorKey;
+
+          return {
+            ...row,
+            colors,
+          };
+        });
+
+        return {
+          ...prev,
+          rows,
+        };
+      });
+
+      setColorMenuState(null);
+    },
+    [colorMenuState, updateSchedule],
+  );
+
+  const handleCloseColorMenu = useCallback(() => {
+    setColorMenuState(null);
+  }, []);
+
   const handleCreateMedicationColumn = useCallback(() => {
     const clipboardSource = newMedicationDraft.label;
     if (clipboardSource) {
@@ -2380,6 +2524,10 @@ const MedicationSchedule = ({
         values: {
           ...row.values,
           [key]: '',
+        },
+        colors: {
+          ...(row.colors || {}),
+          [key]: row.colors?.[key] || '',
         },
       }));
 
@@ -2626,6 +2774,15 @@ const MedicationSchedule = ({
         </AddMedicationHint>
       </AddMedicationRow>
 
+      {reorderSelection?.key && (
+        <ReorderPositionBar
+          activeMedication={medicationList.find(item => item.key === reorderSelection.key)}
+          totalColumns={medicationList.length}
+          onSelectPosition={handleSelectReorderPosition}
+          onCancel={handleCancelReorder}
+        />
+      )}
+
       <MedicationTableLayout medicationCount={medicationList.length}>
         {({ totalColumns, indexHeaderStyle, dateHeaderStyle, indexCellStyle, dateCellStyle, medicationColumnStyle }) => (
           <TableWrapper>
@@ -2634,21 +2791,35 @@ const MedicationSchedule = ({
                 <TableHeaderRow>
                   <Th style={indexHeaderStyle}>#</Th>
                   <Th style={dateHeaderStyle}>Дата</Th>
-                  {medicationList.map(({ key, short }) => (
+                  {medicationList.map(({ key, short }, index) => (
                     <MedicationTh key={key} style={medicationColumnStyle}>
                       <MedicationHeaderContent>
+                        <LongPressWrapper onLongPress={() => handleStartReorder(key)}>
                           <MedicationHeaderButton
                             type="button"
-                            onClick={() => setPendingRemovalKey(key)}
+                            onClick={() =>
+                              reorderSelection?.key
+                                ? handleSelectReorderPosition(index)
+                                : setPendingRemovalKey(key)
+                            }
                             onContextMenu={event => {
                               event.preventDefault();
+                              if (reorderSelection?.key) {
+                                handleSelectReorderPosition(index);
+                                return;
+                              }
                               setPendingRemovalKey(key);
                             }}
                             aria-label={`Видалити колонку ${short}`}
                             title={`Видалити колонку ${short}`}
+                            $reordering={reorderSelection?.key === key}
+                            $reorderTarget={Boolean(
+                              reorderSelection?.key && reorderSelection.key !== key,
+                            )}
                           >
                             {short}
                           </MedicationHeaderButton>
+                        </LongPressWrapper>
                       </MedicationHeaderContent>
                     </MedicationTh>
                   ))}
@@ -2748,18 +2919,28 @@ const MedicationSchedule = ({
                         {medicationList.map(({ key }) => {
                           const cellStatus = cellStatuses[key];
                           const placeholder = cellPlaceholders[key];
+                          const cellColorKey = row.colors?.[key] || '';
+                          const visual = resolveCellVisuals({
+                            status: cellStatus,
+                            colorKey: cellColorKey,
+                          });
                           return (
                             <MedicationTd key={key} style={medicationColumnStyle}>
-                              <CellInput
-                                $status={cellStatus}
-                                value={
-                                  row.values?.[key] === '' || row.values?.[key] === undefined
-                                    ? ''
-                                    : row.values[key]
-                                }
-                                placeholder={placeholder || undefined}
-                                onChange={event => handleCellChange(index, key, event.target.value)}
-                              />
+                              <LongPressWrapper
+                                onLongPress={event => handleOpenColorMenu(event, index, key)}
+                                captureContext
+                              >
+                                <CellInput
+                                  $visual={visual}
+                                  value={
+                                    row.values?.[key] === '' || row.values?.[key] === undefined
+                                      ? ''
+                                      : row.values[key]
+                                  }
+                                  placeholder={placeholder || undefined}
+                                  onChange={event => handleCellChange(index, key, event.target.value)}
+                                />
+                              </LongPressWrapper>
                             </MedicationTd>
                           );
                         })}
@@ -2798,6 +2979,15 @@ const MedicationSchedule = ({
           </TableWrapper>
         )}
       </MedicationTableLayout>
+
+
+      {colorMenuState && (
+        <ColorContextMenu
+          anchor={colorMenuState.anchor}
+          onSelect={handleSelectCellColor}
+          onClose={handleCloseColorMenu}
+        />
+      )}
 
 
       {infoModalText && (
