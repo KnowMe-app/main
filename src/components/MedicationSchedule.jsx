@@ -62,6 +62,13 @@ const resolveNormalizedShort = (value, key, medication = {}) => {
   return sanitizeShortValue(derived);
 };
 
+const deriveCompactHeaderLabel = label => {
+  const trimmed = (label || '').trim();
+  if (!trimmed) return '';
+  const firstWord = trimmed.split(/\s+/)[0];
+  return firstWord.slice(0, 5).toUpperCase();
+};
+
 const Container = styled.div`
   display: flex;
   flex-direction: column;
@@ -288,8 +295,9 @@ const MedicationTh = styled(Th)`
 
 const MedicationHeaderContent = styled.div`
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
+  height: 52px;
 `;
 
 const MedicationHeaderButton = styled.button`
@@ -298,14 +306,15 @@ const MedicationHeaderButton = styled.button`
   color: inherit;
   font: inherit;
   cursor: pointer;
-  padding: 3px 4px;
+  padding: 6px 4px 4px;
   border-radius: 6px;
-  line-height: 1.1;
+  line-height: 1;
   transition: background-color 0.2s ease, color 0.2s ease;
   display: inline-flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   width: 100%;
+  height: 100%;
 
   ${({ $reordering }) =>
     $reordering &&
@@ -329,6 +338,16 @@ const MedicationHeaderButton = styled.button`
     outline: 2px solid #b71c1c;
     outline-offset: 2px;
   }
+`;
+
+const MedicationHeaderLabel = styled.span`
+  display: inline-block;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  transform: rotate(-55deg) scale(0.8);
+  transform-origin: bottom center;
+  white-space: nowrap;
 `;
 
 const DayCell = styled.div`
@@ -2118,10 +2137,12 @@ const MedicationSchedule = ({
         const base = BASE_MEDICATIONS_MAP.get(key);
         const label = stored.label || base?.label || key;
         const short = stored.short || base?.short || label.slice(0, 2).toUpperCase();
+        const compactLabel = deriveCompactHeaderLabel(label) || deriveCompactHeaderLabel(short);
         return {
           key,
           label,
           short,
+          compactLabel,
           data: stored,
         };
       }),
@@ -2136,10 +2157,12 @@ const MedicationSchedule = ({
           const base = BASE_MEDICATIONS_MAP.get(key);
           const label = stored.label || base?.label || key;
           const short = stored.short || base?.short || label.slice(0, 2).toUpperCase();
+          const compactLabel = deriveCompactHeaderLabel(label) || deriveCompactHeaderLabel(short);
           return {
             key,
             label,
             short,
+            compactLabel,
           };
         })
         .filter(Boolean),
@@ -2940,7 +2963,7 @@ const MedicationSchedule = ({
                 <TableHeaderRow>
                   <Th style={indexHeaderStyle}>#</Th>
                   <Th style={dateHeaderStyle}>Дата</Th>
-                  {medicationList.map(({ key, short }) => (
+                  {medicationList.map(({ key, label, compactLabel }) => (
                     <MedicationTh key={key} style={medicationColumnStyle}>
                       <MedicationHeaderContent>
                         <MedicationHeaderButton
@@ -2950,10 +2973,10 @@ const MedicationSchedule = ({
                             event.preventDefault();
                             setPendingRemovalKey(key);
                           }}
-                          aria-label={`Видалити колонку ${short}`}
-                          title={`Видалити колонку ${short}`}
+                          aria-label={`Видалити колонку ${label}`}
+                          title={`Видалити колонку ${label}`}
                         >
-                          {short}
+                          <MedicationHeaderLabel>{compactLabel}</MedicationHeaderLabel>
                         </MedicationHeaderButton>
                       </MedicationHeaderContent>
                     </MedicationTh>
