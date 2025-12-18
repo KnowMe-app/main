@@ -1,10 +1,10 @@
 export const BASE_MEDICATIONS = [
-  { key: 'aspirin', label: 'Аспірин кардіо', short: 'АК', plan: 'aspirin' },
-  { key: 'folicAcid', label: 'Фолієва кислота', short: 'ФК', plan: 'folicAcid' },
-  { key: 'metypred', label: 'Метипред', short: 'Мт', plan: 'metypred' },
-  { key: 'progynova', label: 'Прогінова', short: 'Пр', plan: 'progynova' },
-  { key: 'injesta', label: 'Інжеста', short: 'Ін', plan: 'injesta' },
-  { key: 'luteina', label: 'Лютеіна', short: 'Лт', plan: 'luteina' },
+  { key: 'aspirin', label: 'Аспірин кардіо', plan: 'aspirin' },
+  { key: 'folicAcid', label: 'Фолієва кислота', plan: 'folicAcid' },
+  { key: 'metypred', label: 'Метипред', plan: 'metypred' },
+  { key: 'progynova', label: 'Прогінова', plan: 'progynova' },
+  { key: 'injesta', label: 'Інжеста', plan: 'injesta' },
+  { key: 'luteina', label: 'Лютеіна', plan: 'luteina' },
 ];
 
 export const BASE_MEDICATION_PLACEHOLDERS = {
@@ -28,15 +28,4 @@ export const slugifyMedicationKey = value => {
     .replace(/[^a-z0-9]+/gi, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 50);
-};
-
-export const deriveShortLabel = label => {
-  if (!label) return '';
-  const trimmed = label.trim();
-  if (!trimmed) return '';
-  const parts = trimmed.split(/\s+/);
-  if (parts.length >= 2) {
-    return (parts[0][0] + (parts[1][0] || '')).toUpperCase();
-  }
-  return trimmed.slice(0, 2).toUpperCase();
 };
