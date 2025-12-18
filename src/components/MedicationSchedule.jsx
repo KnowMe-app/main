@@ -19,7 +19,6 @@ import {
   BASE_MEDICATIONS,
   BASE_MEDICATION_PLACEHOLDERS,
   BASE_MEDICATIONS_MAP,
-  deriveShortLabel,
   slugifyMedicationKey,
 } from '../utils/medicationConstants';
 import { parseMedicationClipboardData } from '../utils/medicationClipboard';
@@ -34,39 +33,12 @@ const MEDICATION_ALTERNATIVE_INFO = {
   luteina: '• Утрожестан\n• Прогінорм ОВО 200\n• Крінон 1-3',
   aspirin: '• Кардіомагніл',
 };
-const MAX_SHORT_LENGTH = 8;
+const HEADER_LABEL_MAX_LENGTH = 10;
 
-const sanitizeShortValue = value => {
-  if (!value) return '';
-  return value
-    .toString()
-    .trim()
-    .slice(0, MAX_SHORT_LENGTH)
-    .toUpperCase();
-};
-
-const resolveMedicationLabel = (key, medication = {}) => {
-  const base = BASE_MEDICATIONS_MAP.get(key);
-  return medication.label || base?.label || key;
-};
-
-const resolveNormalizedShort = (value, key, medication = {}) => {
-  const base = BASE_MEDICATIONS_MAP.get(key);
-  const label = resolveMedicationLabel(key, medication);
-  const sanitized = sanitizeShortValue(value);
-  if (sanitized) return sanitized;
-  const fallbackShort = medication.short || base?.short;
-  const sanitizedFallback = sanitizeShortValue(fallbackShort);
-  if (sanitizedFallback) return sanitizedFallback;
-  const derived = deriveShortLabel(label) || label;
-  return sanitizeShortValue(derived);
-};
-
-const deriveCompactHeaderLabel = label => {
+const deriveHeaderLabel = label => {
   const trimmed = (label || '').trim();
   if (!trimmed) return '';
-  const firstWord = trimmed.split(/\s+/)[0];
-  return firstWord.slice(0, 5).toUpperCase();
+  return trimmed.slice(0, HEADER_LABEL_MAX_LENGTH).toUpperCase();
 };
 
 const Container = styled.div`
@@ -297,7 +269,7 @@ const MedicationHeaderContent = styled.div`
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  height: 52px;
+  height: 70px;
 `;
 
 const MedicationHeaderButton = styled.button`
@@ -345,7 +317,7 @@ const MedicationHeaderLabel = styled.span`
   font-size: 8px;
   font-weight: 600;
   letter-spacing: 0.2px;
-  transform: rotate(-55deg) scale(0.8);
+  transform: rotate(-88deg);
   transform-origin: bottom center;
   white-space: nowrap;
 `;
@@ -1514,7 +1486,6 @@ const normalizeData = (data, options = {}) => {
       issued: Number.isFinite(issued) ? issued : 0,
       displayValue: baseDisplay ? computed.displayValue || baseDisplay : computed.displayValue || '',
       label: source.label || baseDefinition?.label || key,
-      short: source.short || baseDefinition?.short || (source.label || key).slice(0, 2).toUpperCase(),
       plan,
       startDate: source.startDate || '',
       manualDistribution: Boolean(source.manualDistribution),
@@ -1627,7 +1598,8 @@ const mergeScheduleWithClipboardData = (current, parsed) => {
   parsedOrder.forEach(key => {
     const parsedMedication = parsed.medications?.[key];
     if (parsedMedication) {
-      mergedMedications[key] = { ...parsedMedication };
+      const { short: _ignoredShort, ...restMedication } = parsedMedication;
+      mergedMedications[key] = { ...restMedication };
     }
   });
 
@@ -2097,12 +2069,10 @@ const MedicationSchedule = ({
   const [focusedMedication, setFocusedMedication] = useState(null);
   const [newMedicationDraft, setNewMedicationDraft] = useState(() => ({
     label: '',
-    short: '',
     issued: '',
     startDate: formatISODate(new Date()),
   }));
   const [pendingRemovalKey, setPendingRemovalKey] = useState(null);
-  const [pendingShortValue, setPendingShortValue] = useState('');
   const [infoMedicationKey, setInfoMedicationKey] = useState(null);
   const [colorMenuState, setColorMenuState] = useState(null);
   const scheduleRef = useRef(schedule);
@@ -2136,13 +2106,11 @@ const MedicationSchedule = ({
         const stored = schedule?.medications?.[key] || {};
         const base = BASE_MEDICATIONS_MAP.get(key);
         const label = stored.label || base?.label || key;
-        const short = stored.short || base?.short || label.slice(0, 2).toUpperCase();
-        const compactLabel = deriveCompactHeaderLabel(label) || deriveCompactHeaderLabel(short);
+        const headerLabel = deriveHeaderLabel(label);
         return {
           key,
           label,
-          short,
-          compactLabel,
+          headerLabel,
           data: stored,
         };
       }),
@@ -2156,13 +2124,9 @@ const MedicationSchedule = ({
           const stored = schedule?.medications?.[key] || {};
           const base = BASE_MEDICATIONS_MAP.get(key);
           const label = stored.label || base?.label || key;
-          const short = stored.short || base?.short || label.slice(0, 2).toUpperCase();
-          const compactLabel = deriveCompactHeaderLabel(label) || deriveCompactHeaderLabel(short);
           return {
             key,
             label,
-            short,
-            compactLabel,
           };
         })
         .filter(Boolean),
@@ -2173,26 +2137,6 @@ const MedicationSchedule = ({
     () => medicationList.find(({ key }) => key === pendingRemovalKey) || null,
     [medicationList, pendingRemovalKey],
   );
-
-  const normalizedPendingShort = useMemo(() => {
-    if (!pendingRemovalMedication) return '';
-    return resolveNormalizedShort(
-      pendingShortValue,
-      pendingRemovalMedication.key,
-      pendingRemovalMedication,
-    );
-  }, [pendingRemovalMedication, pendingShortValue]);
-
-  const currentPendingShort = useMemo(() => {
-    if (!pendingRemovalMedication) return '';
-    return resolveNormalizedShort(
-      pendingRemovalMedication.short,
-      pendingRemovalMedication.key,
-      pendingRemovalMedication,
-    );
-  }, [pendingRemovalMedication]);
-
-  const isPendingShortChanged = normalizedPendingShort !== currentPendingShort;
 
   useEffect(() => {
     if (!colorMenuState) return;
@@ -2205,11 +2149,6 @@ const MedicationSchedule = ({
       setColorMenuState(null);
     }
   }, [colorMenuState, medicationList, schedule?.rows]);
-
-  const pendingShortInputId = useMemo(
-    () => (pendingRemovalMedication ? `medication-short-${pendingRemovalMedication.key}` : undefined),
-    [pendingRemovalMedication],
-  );
 
   const pendingRemovalPosition = useMemo(() => {
     if (!pendingRemovalKey) return null;
@@ -2235,15 +2174,6 @@ const MedicationSchedule = ({
     () => (infoMedicationKey ? MEDICATION_ALTERNATIVE_INFO[infoMedicationKey] : ''),
     [infoMedicationKey],
   );
-
-  useEffect(() => {
-    if (pendingRemovalMedication) {
-      setPendingShortValue(pendingRemovalMedication.short || '');
-    } else {
-      setPendingShortValue('');
-    }
-  }, [pendingRemovalMedication]);
-
 
   useEffect(() => {
     const normalized = normalizeData(data, { cycleStart, resolvePregnancyConfirmationDay });
@@ -2433,47 +2363,6 @@ const MedicationSchedule = ({
     setPendingRemovalKey(null);
   }, [handleRemoveMedication, pendingRemovalKey]);
 
-  const handlePendingShortChange = useCallback(value => {
-    setPendingShortValue(value.slice(0, MAX_SHORT_LENGTH).toUpperCase());
-  }, []);
-
-  const handleSaveMedicationShort = useCallback(() => {
-    if (!pendingRemovalMedication) return;
-
-    const { key } = pendingRemovalMedication;
-    const nextShort = resolveNormalizedShort(pendingShortValue, key, pendingRemovalMedication);
-
-    updateSchedule(prev => {
-      if (!prev) return prev;
-
-      const medications = prev.medications || {};
-      const prevMedication = medications[key] || {};
-      const label = resolveMedicationLabel(key, {
-        ...prevMedication,
-        label: prevMedication.label || pendingRemovalMedication.label,
-      });
-
-      if (prevMedication.short === nextShort) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        medications: {
-          ...medications,
-          [key]: {
-            ...prevMedication,
-            label,
-            short: nextShort,
-          },
-        },
-      };
-    });
-
-    setPendingShortValue(nextShort);
-    toast.success('Скорочення оновлено');
-  }, [pendingRemovalMedication, pendingShortValue, updateSchedule]);
-
   const handleHideMedication = useCallback(
     key => {
       updateSchedule(prev => {
@@ -2645,7 +2534,6 @@ const MedicationSchedule = ({
         updateSchedule(prev => mergeScheduleWithClipboardData(prev, parsedSchedule));
         setNewMedicationDraft({
           label: '',
-          short: '',
           issued: '',
           startDate: formatISODate(new Date()),
         });
@@ -2659,9 +2547,6 @@ const MedicationSchedule = ({
       return;
     }
 
-    const shortInput = newMedicationDraft.short?.trim();
-    const fallbackShort = deriveShortLabel(label);
-    const normalizedShort = (shortInput || fallbackShort || label.slice(0, 2)).toUpperCase();
     const issuedRaw = parseDecimalInput(newMedicationDraft.issued);
     const issued =
       Number.isFinite(issuedRaw) && issuedRaw > 0 ? Number(issuedRaw.toFixed(2)) : 0;
@@ -2691,7 +2576,6 @@ const MedicationSchedule = ({
           issued,
           displayValue: '',
           label,
-          short: normalizedShort,
           plan: 'custom',
           startDate: sanitizedStartDate,
           manualDistribution: false,
@@ -2740,7 +2624,6 @@ const MedicationSchedule = ({
 
     setNewMedicationDraft({
       label: '',
-      short: '',
       issued: '',
       startDate: formatISODate(new Date()),
     });
@@ -2916,18 +2799,12 @@ const MedicationSchedule = ({
       <AddMedicationRow>
         <AddMedicationLabel>Інші ліки</AddMedicationLabel>
         <AddMedicationControls>
-          <AddMedicationGuide>Назва, скорочення, дата, кількість</AddMedicationGuide>
+          <AddMedicationGuide>Назва, дата, кількість</AddMedicationGuide>
           <AddMedicationInput
             $wide
             placeholder="Назва"
             value={newMedicationDraft.label}
             onChange={event => handleNewMedicationDraftChange('label', event.target.value)}
-          />
-          <AddMedicationInput
-            placeholder="Скорочення"
-            value={newMedicationDraft.short}
-            onChange={event => handleNewMedicationDraftChange('short', event.target.value)}
-            maxLength={8}
           />
           <AddMedicationInput
             type="date"
@@ -2963,7 +2840,7 @@ const MedicationSchedule = ({
                 <TableHeaderRow>
                   <Th style={indexHeaderStyle}>#</Th>
                   <Th style={dateHeaderStyle}>Дата</Th>
-                  {medicationList.map(({ key, label, compactLabel }) => (
+                  {medicationList.map(({ key, label, headerLabel }) => (
                     <MedicationTh key={key} style={medicationColumnStyle}>
                       <MedicationHeaderContent>
                         <MedicationHeaderButton
@@ -2976,7 +2853,7 @@ const MedicationSchedule = ({
                           aria-label={`Видалити колонку ${label}`}
                           title={`Видалити колонку ${label}`}
                         >
-                          <MedicationHeaderLabel>{compactLabel}</MedicationHeaderLabel>
+                          <MedicationHeaderLabel>{headerLabel}</MedicationHeaderLabel>
                         </MedicationHeaderButton>
                       </MedicationHeaderContent>
                     </MedicationTh>
@@ -3178,30 +3055,9 @@ const MedicationSchedule = ({
           >
             <ModalTitle id={removalModalTitleId}>Управління колонкою</ModalTitle>
             <ModalMessage>
-              Ви впевнені, що хочете видалити колонку «{pendingRemovalMedication.short}»? Цю дію не можна
+              Ви впевнені, що хочете видалити колонку «{pendingRemovalMedication.label}»? Цю дію не можна
               скасувати.
             </ModalMessage>
-            <ModalSection>
-              <ModalSectionTitle>Скорочення</ModalSectionTitle>
-              <ModalHint>Відредагуйте коротку назву, яка показується у заголовку таблиці.</ModalHint>
-              <ModalInputRow>
-                <ModalInputLabel htmlFor={pendingShortInputId}>Нове скорочення</ModalInputLabel>
-                <ModalTextInput
-                  id={pendingShortInputId}
-                  value={pendingShortValue}
-                  onChange={event => handlePendingShortChange(event.target.value)}
-                  maxLength={MAX_SHORT_LENGTH}
-                  placeholder="Напр., ПГ"
-                />
-                <ModalSecondaryButton
-                  type="button"
-                  onClick={handleSaveMedicationShort}
-                  disabled={!isPendingShortChanged}
-                >
-                  Зберегти
-                </ModalSecondaryButton>
-              </ModalInputRow>
-            </ModalSection>
             <ModalSection>
               <ModalSectionTitle>Дії з колонкою</ModalSectionTitle>
               <ModalHint>
@@ -3248,9 +3104,9 @@ const MedicationSchedule = ({
               <ModalSectionTitle>Повернути приховану колонку</ModalSectionTitle>
               {hiddenMedicationList.length ? (
                 <HiddenOptionList>
-                  {hiddenMedicationList.map(({ key, label, short }) => (
+                  {hiddenMedicationList.map(({ key, label }) => (
                     <HiddenOptionButton type="button" key={key} onClick={() => handleRestoreHiddenMedication(key)}>
-                      {label} ({short})
+                      {label}
                     </HiddenOptionButton>
                   ))}
                 </HiddenOptionList>

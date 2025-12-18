@@ -1,7 +1,6 @@
 import {
   BASE_MEDICATIONS,
   BASE_MEDICATIONS_MAP,
-  deriveShortLabel,
   slugifyMedicationKey,
 } from './medicationConstants';
 
@@ -188,9 +187,7 @@ const findBaseMedicationMatch = label => {
 
   const normalizedLabel = normalizeLabel(label);
 
-  const direct = BASE_MEDICATIONS.find(
-    item => normalizeLabel(item.label) === normalizedLabel || normalizeLabel(item.short) === normalizedLabel,
-  );
+  const direct = BASE_MEDICATIONS.find(item => normalizeLabel(item.label) === normalizedLabel);
   if (direct) {
     return direct;
   }
@@ -462,20 +459,14 @@ export const parseMedicationClipboardData = input => {
     const baseMatch = findBaseMedicationMatch(label);
     const baseKey = baseMatch?.key;
     const plan = baseMatch?.plan || 'custom';
-    let short = baseMatch?.short || '';
 
     let keyCandidate = baseKey || slugifyMedicationKey(label) || 'custom-medication';
     keyCandidate = ensureUniqueKey(keyCandidate, usedKeys);
-
-    if (!short) {
-      short = deriveShortLabel(label) || keyCandidate.slice(0, 2).toUpperCase();
-    }
 
     const normalizedIssued = Number.isFinite(issued) ? Math.max(0, Math.round(issued)) : 0;
 
     medications[keyCandidate] = {
       label,
-      short,
       issued: normalizedIssued,
       displayValue: '',
       plan,
