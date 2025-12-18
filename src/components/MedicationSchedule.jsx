@@ -519,33 +519,6 @@ const ModalSectionTitle = styled.h3`
   color: #222;
 `;
 
-const ModalInputRow = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-`;
-
-const ModalInputLabel = styled.label`
-  font-size: 13px;
-  color: #444;
-`;
-
-const ModalTextInput = styled.input`
-  flex: 1;
-  min-width: 140px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid #d0d0d0;
-  font-size: 14px;
-  color: black;
-  box-sizing: border-box;
-
-  &::placeholder {
-    color: #888;
-  }
-`;
-
 const ModalHint = styled.p`
   margin: 0;
   font-size: 13px;
