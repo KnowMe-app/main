@@ -226,11 +226,11 @@ const Th = styled.th`
   position: sticky;
   top: 0;
   background: #fafafa;
-  padding: 4px;
+  padding: 2px 4px;
   border-bottom: 1px solid #d9d9d9;
   font-weight: 500;
   text-align: center;
-  vertical-align: bottom;
+  vertical-align: middle;
   z-index: 5;
 `;
 
@@ -268,9 +268,10 @@ const MedicationTh = styled(Th)`
 
 const MedicationHeaderContent = styled.div`
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  height: 48px;
+  min-height: 24px;
+  padding: 2px 0;
 `;
 
 const MedicationHeaderButton = styled.button`
@@ -284,7 +285,7 @@ const MedicationHeaderButton = styled.button`
   line-height: 1;
   transition: background-color 0.2s ease, color 0.2s ease;
   display: inline-flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
@@ -319,8 +320,9 @@ const MedicationHeaderLabel = styled.span`
   font-weight: 600;
   letter-spacing: 0.2px;
   transform: rotate(-88deg);
-  transform-origin: bottom center;
+  transform-origin: center;
   white-space: nowrap;
+  line-height: 1;
 `;
 
 const DayCell = styled.div`
