@@ -226,10 +226,11 @@ const Th = styled.th`
   position: sticky;
   top: 0;
   background: #fafafa;
-  padding: 6px;
+  padding: 4px;
   border-bottom: 1px solid #d9d9d9;
   font-weight: 500;
   text-align: center;
+  vertical-align: bottom;
   z-index: 5;
 `;
 
@@ -260,7 +261,7 @@ const CellInput = styled.input`
 
 const MedicationTh = styled(Th)`
   text-align: center;
-  padding: 3.2px;
+  padding: 2px;
   background: #fafafa;
   overflow: visible;
 `;
@@ -269,7 +270,7 @@ const MedicationHeaderContent = styled.div`
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  height: 70px;
+  height: 48px;
 `;
 
 const MedicationHeaderButton = styled.button`
@@ -278,7 +279,7 @@ const MedicationHeaderButton = styled.button`
   color: inherit;
   font: inherit;
   cursor: pointer;
-  padding: 6px 4px 4px;
+  padding: 2px;
   border-radius: 6px;
   line-height: 1;
   transition: background-color 0.2s ease, color 0.2s ease;
