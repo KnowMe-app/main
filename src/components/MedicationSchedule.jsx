@@ -33,12 +33,12 @@ const MEDICATION_ALTERNATIVE_INFO = {
   luteina: '• Утрожестан\n• Прогінорм ОВО 200\n• Крінон 1-3',
   aspirin: '• Кардіомагніл',
 };
-const HEADER_LABEL_MAX_LENGTH = 10;
+const HEADER_LABEL_MAX_LENGTH = 6;
 
 const deriveHeaderLabel = label => {
   const trimmed = (label || '').trim();
   if (!trimmed) return '';
-  return trimmed.slice(0, HEADER_LABEL_MAX_LENGTH).toUpperCase();
+  return trimmed.slice(0, HEADER_LABEL_MAX_LENGTH).toLowerCase();
 };
 
 const Container = styled.div`
@@ -319,7 +319,7 @@ const MedicationHeaderLabel = styled.span`
   font-size: 8px;
   font-weight: 600;
   letter-spacing: 0.2px;
-  transform: rotate(-88deg);
+  transform: rotate(-45deg);
   transform-origin: center;
   white-space: nowrap;
   line-height: 1;
