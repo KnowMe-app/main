@@ -89,11 +89,6 @@ const HeightInputWrap = styled.div`
   color: #6b6b6b;
 `;
 
-const HoleLine = styled.div`
-  position: absolute;
-  background: rgba(0, 0, 0, 0.2);
-`;
-
 const HoleCircle = styled.div`
   position: absolute;
   border: 2px solid #3a3a3a;
@@ -340,7 +335,7 @@ const Mirror = () => {
   }, []);
 
   const { stageWidth, stageHeight, scale, offsetX, offsetY, isRotated } = useMemo(() => {
-    const padding = 24;
+    const padding = 0;
     const maxWidth = Math.max(windowSize.width - 160, 260);
     const maxHeight = Math.max(windowSize.height - 260, 260);
     const safeMirrorWidth = Math.max(mirrorSize.width, 1);
@@ -541,24 +536,6 @@ const Mirror = () => {
 
               return (
                 <React.Fragment key={hole.id}>
-                  <HoleLine
-                    style={{
-                      left: centerX,
-                      top: 0,
-                      width: 1,
-                      height: scaledMirrorHeight,
-                      borderLeft: '1px dashed rgba(0, 0, 0, 0.35)',
-                    }}
-                  />
-                  <HoleLine
-                    style={{
-                      left: 0,
-                      top: centerY,
-                      width: scaledMirrorWidth,
-                      height: 1,
-                      borderTop: '1px dashed rgba(0, 0, 0, 0.35)',
-                    }}
-                  />
                   <HoleCircle
                     style={{
                       left: centerX - radius,
@@ -583,7 +560,6 @@ const Mirror = () => {
         </MirrorViewport>
         <WidthInputWrap>
           <FormulaInputWrap>
-            <FormulaIndicator>=</FormulaIndicator>
             <DimInput
               type="text"
               inputMode="text"
@@ -597,7 +573,6 @@ const Mirror = () => {
         </WidthInputWrap>
         <HeightInputWrap>
           <FormulaInputWrap>
-            <FormulaIndicator>=</FormulaIndicator>
             <DimInput
               type="text"
               inputMode="text"
