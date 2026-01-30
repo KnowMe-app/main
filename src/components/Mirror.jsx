@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 
 const MirrorLayout = styled.div`
@@ -272,24 +272,50 @@ const parseFormulaValue = rawValue => {
   return Number.isFinite(numericValue) ? numericValue : null;
 };
 
+const STORAGE_KEY = 'mirror-layout-v1';
+const DEFAULT_MIRROR_SIZE = { width: 1280, height: 1784 };
+const DEFAULT_HOLES = [
+  { id: 'hole-1', label: 'Отвір 1', x: 862, y: 128, diameter: 120 },
+  { id: 'hole-2', label: 'Отвір 2', x: 1125, y: 862, diameter: 120 },
+  { id: 'hole-3', label: 'Отвір 3', x: 895, y: 1495, diameter: 76 },
+];
+
+const getInitialMirrorState = () => {
+  if (typeof window === 'undefined') {
+    return { mirrorSize: DEFAULT_MIRROR_SIZE, holes: DEFAULT_HOLES };
+  }
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { mirrorSize: DEFAULT_MIRROR_SIZE, holes: DEFAULT_HOLES };
+    const parsed = JSON.parse(raw);
+    const mirrorSize = parsed?.mirrorSize;
+    const holes = Array.isArray(parsed?.holes) ? parsed.holes : null;
+    if (
+      mirrorSize &&
+      Number.isFinite(mirrorSize.width) &&
+      Number.isFinite(mirrorSize.height) &&
+      holes
+    ) {
+      return { mirrorSize, holes };
+    }
+  } catch (error) {
+    return { mirrorSize: DEFAULT_MIRROR_SIZE, holes: DEFAULT_HOLES };
+  }
+  return { mirrorSize: DEFAULT_MIRROR_SIZE, holes: DEFAULT_HOLES };
+};
+
 const Mirror = () => {
-  const [mirrorSize, setMirrorSize] = useState({ width: 1280, height: 1784 });
+  const initialStateRef = useRef(getInitialMirrorState());
+  const { mirrorSize: initialMirrorSize, holes: initialHoles } = initialStateRef.current;
+  const [mirrorSize, setMirrorSize] = useState(initialMirrorSize);
   const [mirrorInputs, setMirrorInputs] = useState({
-    width: '1280',
-    height: '1784',
+    width: String(initialMirrorSize.width),
+    height: String(initialMirrorSize.height),
   });
-  const [holes, setHoles] = useState([
-    { id: 'hole-1', label: 'Отвір 1', x: 862, y: 128, diameter: 120 },
-    { id: 'hole-2', label: 'Отвір 2', x: 1125, y: 862, diameter: 120 },
-    { id: 'hole-3', label: 'Отвір 3', x: 895, y: 1495, diameter: 76 },
-  ]);
+  const [holes, setHoles] = useState(initialHoles);
   const [holeInputs, setHoleInputs] = useState(() =>
     Object.fromEntries(
-      [
-        { id: 'hole-1', x: 862, y: 128, diameter: 120 },
-        { id: 'hole-2', x: 1125, y: 862, diameter: 120 },
-        { id: 'hole-3', x: 895, y: 1495, diameter: 76 },
-      ].map(hole => [
+      initialHoles.map(hole => [
         hole.id,
         { x: String(hole.x), y: String(hole.y), diameter: String(hole.diameter) },
       ]),
@@ -419,6 +445,12 @@ const Mirror = () => {
       },
     }));
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const payload = { mirrorSize, holes };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  }, [mirrorSize, holes]);
 
   const overlapData = useMemo(() => {
     const overlaps = new Set();
