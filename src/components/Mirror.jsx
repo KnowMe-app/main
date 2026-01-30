@@ -329,7 +329,6 @@ const Mirror = () => {
       ]),
     ),
   );
-  const aspectRatioRef = useRef(mirrorSize.height / mirrorSize.width);
   const nextHoleIndex = useRef(holes.length + 1);
 
   useEffect(() => {
@@ -403,17 +402,10 @@ const Mirror = () => {
     const min = 200;
     const max = 4000;
     const clampedValue = clampValue(parsedValue, min, max);
-    const ratio = aspectRatioRef.current;
-    const nextSize =
-      key === 'width'
-        ? {
-            width: clampedValue,
-            height: clampValue(clampedValue * ratio, min, max),
-          }
-        : {
-            height: clampedValue,
-            width: clampValue(clampedValue / ratio, min, max),
-          };
+    const nextSize = {
+      ...mirrorSize,
+      [key]: clampedValue,
+    };
 
     setMirrorSize(nextSize);
     setMirrorInputs({
@@ -620,7 +612,7 @@ const Mirror = () => {
       </MirrorStage>
       <Caption>
         Змінюйте розміри дзеркала та координати отворів (X — зліва, Y — зверху).
-        Формули вводьте через знак "=" — пропорції дзеркала збережуться.
+        Формули вводьте через знак "=".
       </Caption>
       <AddHoleButton type="button" onClick={handleAddHole}>
         Додати отвір
