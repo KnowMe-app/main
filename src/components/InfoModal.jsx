@@ -72,11 +72,17 @@ const ModalContent = styled.div`
   position: relative;
 `;
 
+const LargeModalContent = styled(ModalContent)`
+  width: min(90vw, 720px);
+  max-height: 90vh;
+  overflow: auto;
+`;
+
 const OrangeStrong = styled.strong`
   color: orange;
 `;
 
-export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards }) => {
+export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards, Mirror }) => {
 
   const delProfile = (
     <>
@@ -111,6 +117,10 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
   const dotsMenu = (
     <>{Context && <Context/>}
     </>
+  );
+
+  const mirror = (
+    <>{Mirror && <Mirror />}</>
   );
 
   //////////////////////////////
@@ -181,8 +191,15 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
     case 'compareCards':
       body = compareCards;
       break;
+    case 'mirror':
+      body = mirror;
+      break;
     default:
       body = null;
+  }
+
+  if (text === 'mirror') {
+    ContentComponent = LargeModalContent;
   }
 
   return (
