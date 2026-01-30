@@ -311,6 +311,10 @@ const Mirror = () => {
     width: String(initialMirrorSize.width),
     height: String(initialMirrorSize.height),
   });
+  const [mirrorDrafts, setMirrorDrafts] = useState({
+    width: String(initialMirrorSize.width),
+    height: String(initialMirrorSize.height),
+  });
   const [holes, setHoles] = useState(initialHoles);
   const [windowSize, setWindowSize] = useState(() => ({
     width: typeof window === 'undefined' ? 1024 : window.innerWidth,
@@ -324,6 +328,15 @@ const Mirror = () => {
       ]),
     ),
   );
+  const [holeDrafts, setHoleDrafts] = useState(() =>
+    Object.fromEntries(
+      initialHoles.map(hole => [
+        hole.id,
+        { x: String(hole.x), y: String(hole.y), diameter: String(hole.diameter) },
+      ]),
+    ),
+  );
+  const [focusedField, setFocusedField] = useState(null);
   const nextHoleIndex = useRef(holes.length + 1);
 
   useEffect(() => {
@@ -380,14 +393,18 @@ const Mirror = () => {
 
   const handleMirrorInputChange = key => event => {
     const value = event.target.value;
-    setMirrorInputs(prev => ({ ...prev, [key]: value }));
+    setMirrorDrafts(prev => ({ ...prev, [key]: value }));
   };
 
   const commitMirrorInput = key => {
-    const rawValue = mirrorInputs[key];
+    const rawValue = mirrorDrafts[key];
     const parsedValue = parseFormulaValue(rawValue);
     if (parsedValue === null) {
       setMirrorInputs(prev => ({
+        ...prev,
+        [key]: String(mirrorSize[key]),
+      }));
+      setMirrorDrafts(prev => ({
         ...prev,
         [key]: String(mirrorSize[key]),
       }));
@@ -411,17 +428,24 @@ const Mirror = () => {
 
   const handleHoleInputChange = (id, key) => event => {
     const value = event.target.value;
-    setHoleInputs(prev => ({
+    setHoleDrafts(prev => ({
       ...prev,
       [id]: { ...prev[id], [key]: value },
     }));
   };
 
   const commitHoleInput = (id, key) => {
-    const rawValue = holeInputs[id]?.[key] ?? '';
+    const rawValue = holeDrafts[id]?.[key] ?? '';
     const parsedValue = parseFormulaValue(rawValue);
     if (parsedValue === null) {
       setHoleInputs(prev => ({
+        ...prev,
+        [id]: {
+          ...prev[id],
+          [key]: String(holes.find(hole => hole.id === id)?.[key] ?? 0),
+        },
+      }));
+      setHoleDrafts(prev => ({
         ...prev,
         [id]: {
           ...prev[id],
@@ -478,6 +502,14 @@ const Mirror = () => {
         diameter: String(newHole.diameter),
       },
     }));
+    setHoleDrafts(prev => ({
+      ...prev,
+      [newId]: {
+        x: String(newHole.x),
+        y: String(newHole.y),
+        diameter: String(newHole.diameter),
+      },
+    }));
   };
 
   useEffect(() => {
@@ -512,6 +544,12 @@ const Mirror = () => {
   const displayMirrorHeight = isRotated ? mirrorSize.width : mirrorSize.height;
   const scaledMirrorWidth = displayMirrorWidth * scale;
   const scaledMirrorHeight = displayMirrorHeight * scale;
+  const getHoleNumber = hole => {
+    const labelMatch = hole.label?.match(/\d+/);
+    if (labelMatch) return labelMatch[0];
+    const idMatch = hole.id?.match(/\d+/);
+    return idMatch ? idMatch[0] : '';
+  };
 
   return (
     <MirrorLayout>
@@ -551,7 +589,7 @@ const Mirror = () => {
                     }}
                   />
                   <HoleLabel style={{ left: centerX, top: centerY + radius + 12 }}>
-                    {`${hole.x}×${hole.y} мм, Ø${hole.diameter}`}
+                    {getHoleNumber(hole)}
                   </HoleLabel>
                 </React.Fragment>
               );
@@ -563,9 +601,17 @@ const Mirror = () => {
             <DimInput
               type="text"
               inputMode="text"
-              value={mirrorInputs.width}
+              value={
+                focusedField?.scope === 'mirror' && focusedField.key === 'width'
+                  ? mirrorDrafts.width
+                  : mirrorInputs.width
+              }
               onChange={handleMirrorInputChange('width')}
-              onBlur={() => commitMirrorInput('width')}
+              onFocus={() => setFocusedField({ scope: 'mirror', key: 'width' })}
+              onBlur={() => {
+                commitMirrorInput('width');
+                setFocusedField(null);
+              }}
               onKeyDown={handleMirrorInputKeyDown('width')}
             />
           </FormulaInputWrap>
@@ -576,9 +622,17 @@ const Mirror = () => {
             <DimInput
               type="text"
               inputMode="text"
-              value={mirrorInputs.height}
+              value={
+                focusedField?.scope === 'mirror' && focusedField.key === 'height'
+                  ? mirrorDrafts.height
+                  : mirrorInputs.height
+              }
               onChange={handleMirrorInputChange('height')}
-              onBlur={() => commitMirrorInput('height')}
+              onFocus={() => setFocusedField({ scope: 'mirror', key: 'height' })}
+              onBlur={() => {
+                commitMirrorInput('height');
+                setFocusedField(null);
+              }}
               onKeyDown={handleMirrorInputKeyDown('height')}
             />
           </FormulaInputWrap>
@@ -603,9 +657,21 @@ const Mirror = () => {
                 <HoleInput
                   type="text"
                   inputMode="text"
-                  value={holeInputs[hole.id]?.x ?? ''}
+                  value={
+                    focusedField?.scope === 'hole' &&
+                    focusedField.id === hole.id &&
+                    focusedField.key === 'x'
+                      ? holeDrafts[hole.id]?.x ?? ''
+                      : holeInputs[hole.id]?.x ?? ''
+                  }
                   onChange={handleHoleInputChange(hole.id, 'x')}
-                  onBlur={() => commitHoleInput(hole.id, 'x')}
+                  onFocus={() =>
+                    setFocusedField({ scope: 'hole', id: hole.id, key: 'x' })
+                  }
+                  onBlur={() => {
+                    commitHoleInput(hole.id, 'x');
+                    setFocusedField(null);
+                  }}
                   onKeyDown={handleHoleInputKeyDown(hole.id, 'x')}
                 />
               </HoleInputWrap>
@@ -617,9 +683,21 @@ const Mirror = () => {
                 <HoleInput
                   type="text"
                   inputMode="text"
-                  value={holeInputs[hole.id]?.y ?? ''}
+                  value={
+                    focusedField?.scope === 'hole' &&
+                    focusedField.id === hole.id &&
+                    focusedField.key === 'y'
+                      ? holeDrafts[hole.id]?.y ?? ''
+                      : holeInputs[hole.id]?.y ?? ''
+                  }
                   onChange={handleHoleInputChange(hole.id, 'y')}
-                  onBlur={() => commitHoleInput(hole.id, 'y')}
+                  onFocus={() =>
+                    setFocusedField({ scope: 'hole', id: hole.id, key: 'y' })
+                  }
+                  onBlur={() => {
+                    commitHoleInput(hole.id, 'y');
+                    setFocusedField(null);
+                  }}
                   onKeyDown={handleHoleInputKeyDown(hole.id, 'y')}
                 />
               </HoleInputWrap>
@@ -631,9 +709,21 @@ const Mirror = () => {
                 <HoleInput
                   type="text"
                   inputMode="text"
-                  value={holeInputs[hole.id]?.diameter ?? ''}
+                  value={
+                    focusedField?.scope === 'hole' &&
+                    focusedField.id === hole.id &&
+                    focusedField.key === 'diameter'
+                      ? holeDrafts[hole.id]?.diameter ?? ''
+                      : holeInputs[hole.id]?.diameter ?? ''
+                  }
                   onChange={handleHoleInputChange(hole.id, 'diameter')}
-                  onBlur={() => commitHoleInput(hole.id, 'diameter')}
+                  onFocus={() =>
+                    setFocusedField({ scope: 'hole', id: hole.id, key: 'diameter' })
+                  }
+                  onBlur={() => {
+                    commitHoleInput(hole.id, 'diameter');
+                    setFocusedField(null);
+                  }}
                   onKeyDown={handleHoleInputKeyDown(hole.id, 'diameter')}
                 />
               </HoleInputWrap>
