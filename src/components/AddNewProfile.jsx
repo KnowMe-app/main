@@ -37,6 +37,7 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import InfoModal from './InfoModal';
+import UtilityPeriodComposer from './UtilityPeriodComposer';
 import Mirror from './Mirror';
 import { VerifyEmail } from './VerifyEmail';
 
@@ -1144,6 +1145,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>
           </>
         )}
+        <SubmitButton onClick={() => setShowInfoModal('utilityComposer')}>Оренда</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('mirror')}>Mirror</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
@@ -2306,6 +2308,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           DelConfirm={delConfirm}
           CompareCards={compareCards}
           Mirror={Mirror}
+          UtilityComposer={UtilityPeriodComposer}
         />
       )}
     </Container>
