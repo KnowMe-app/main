@@ -449,6 +449,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [focused, setFocused] = useState(null);
   const [missing, setMissing] = useState({});
   const [showPassword, setShowPassword] = useState(false);
+  const [hasAgreed, setHasAgreed] = useState(false);
   console.log('focused :>> ', focused);
   const navigate = useNavigate();
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
@@ -469,6 +470,12 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('myProfileDraft');
     }
   }, [state, state.publish]);
+
+  useEffect(() => {
+    if (state.areTermsConfirmed && !hasAgreed) {
+      setHasAgreed(true);
+    }
+  }, [state.areTermsConfirmed, hasAgreed]);
 
   ////////////////////GPS
 
@@ -593,6 +600,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       localStorage.removeItem('myProfileDraft');
 
       setIsLoggedIn(true);
+      setHasAgreed(true);
       setState(prev => ({ ...prev, userId: userCredential.user.uid }));
       if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
         navigate('/my-profile');
@@ -609,10 +617,19 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handlePublic = async () => {
     if (!state.userId) {
       const miss = {};
-      if (!state.email) miss.email = true;
-      if (!state.password) miss.password = true;
+      if (!state.email) {
+        miss.email = true;
+        toast.error('Заповніть емейл');
+      }
+      if (!state.password) {
+        miss.password = true;
+        toast.error('Придумайте пароль');
+      }
+      if (!hasAgreed) {
+        toast.error('Треба погодитись з умовами програми ☝️');
+      }
       setMissing(miss);
-      if (Object.keys(miss).length) return;
+      if (Object.keys(miss).length || !hasAgreed) return;
       try {
         const methods = await fetchSignInMethodsForEmail(auth, state.email);
         let userCredential;
