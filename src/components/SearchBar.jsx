@@ -311,6 +311,8 @@ const SearchBar = ({
   setSearch: externalSetSearch,
   onClear,
   onSearchExecuted,
+  onSearchStart,
+  onSearchEnd,
   wrapperStyle = {},
   leftIcon = SearchIcon,
   storageKey = 'searchQuery',
@@ -529,9 +531,11 @@ const SearchBar = ({
   };
 
   const writeData = async (query = search) => {
-    setUserNotFound && setUserNotFound(false);
     const rawQuery = typeof query === 'string' ? query : '';
     const trimmed = rawQuery.trim();
+
+    onSearchStart && onSearchStart(trimmed);
+    setUserNotFound && setUserNotFound(false);
 
     if (onSearchExecuted) {
       onSearchExecuted(trimmed);
@@ -543,61 +547,62 @@ const SearchBar = ({
     if (trimmed && !trimmed.startsWith('!')) {
       addToHistory(trimmed);
     }
-    if (trimmed && trimmed.startsWith('!')) {
-      const term = trimmed.slice(1).trim();
-      const filtersKey = normalizeQueryKey(
-        `${filterForload || 'all'}:${serializeQueryFilters(filters)}`,
-      );
-      console.log('[SearchBar] Detected bulk command search', {
-        raw: trimmed,
-        command: term,
-        filtersKey,
-      });
-      const cacheKey = `allUsers:${filtersKey}`;
-      const queries = loadQueries();
-      const entry = queries[cacheKey];
-      let ids = [];
-      const timestampSource =
-        typeof entry?.cachedAt === 'number' && Number.isFinite(entry.cachedAt)
-          ? entry.cachedAt
-          : Number(entry?.cachedAt ?? entry?.lastAction ?? 0);
-      if (entry && Number.isFinite(timestampSource) && timestampSource > 0 && Date.now() - timestampSource < TTL_MS) {
-        ids = getIdsByQuery(cacheKey);
-      } else {
-        if (entry) {
-          delete queries[cacheKey];
-          saveQueries(queries);
+    try {
+      if (trimmed && trimmed.startsWith('!')) {
+        const term = trimmed.slice(1).trim();
+        const filtersKey = normalizeQueryKey(
+          `${filterForload || 'all'}:${serializeQueryFilters(filters)}`,
+        );
+        console.log('[SearchBar] Detected bulk command search', {
+          raw: trimmed,
+          command: term,
+          filtersKey,
+        });
+        const cacheKey = `allUsers:${filtersKey}`;
+        const queries = loadQueries();
+        const entry = queries[cacheKey];
+        let ids = [];
+        const timestampSource =
+          typeof entry?.cachedAt === 'number' && Number.isFinite(entry.cachedAt)
+            ? entry.cachedAt
+            : Number(entry?.cachedAt ?? entry?.lastAction ?? 0);
+        if (entry && Number.isFinite(timestampSource) && timestampSource > 0 && Date.now() - timestampSource < TTL_MS) {
+          ids = getIdsByQuery(cacheKey);
+        } else {
+          if (entry) {
+            delete queries[cacheKey];
+            saveQueries(queries);
+          }
+          const { cacheFilteredUsers } = await import('./config');
+          await cacheFilteredUsers(
+            filterForload,
+            filters,
+            favoriteUsers,
+            cacheKey,
+            {
+              includeSpecialFutureDates: true,
+              dislikedUsers: dislikeUsers,
+            },
+          );
+          ids = getIdsByQuery(cacheKey);
         }
-        const { cacheFilteredUsers } = await import('./config');
-        await cacheFilteredUsers(
-          filterForload,
-          filters,
-          favoriteUsers,
-          cacheKey,
-          {
-            includeSpecialFutureDates: true,
-            dislikedUsers: dislikeUsers,
-          },
-        );
-        ids = getIdsByQuery(cacheKey);
+        const results = searchCachedCards(term, ids);
+        if (Object.keys(results).length === 0) {
+          setState && setState({});
+          setUsers && setUsers({});
+          setUserNotFound && setUserNotFound(true);
+        } else {
+          setState && setState({});
+          setUsers && setUsers(results);
+          const searchKey = getCacheKey(
+            'search',
+            normalizeQueryKey(`${term}:${filtersKey}`),
+          );
+          setIdsForQuery(searchKey, Object.keys(results));
+        }
+        return;
       }
-      const results = searchCachedCards(term, ids);
-      if (Object.keys(results).length === 0) {
-        setState && setState({});
-        setUsers && setUsers({});
-        setUserNotFound && setUserNotFound(true);
-      } else {
-        setState && setState({});
-        setUsers && setUsers(results);
-        const searchKey = getCacheKey(
-          'search',
-          normalizeQueryKey(`${term}:${filtersKey}`),
-        );
-        setIdsForQuery(searchKey, Object.keys(results));
-      }
-      return;
-    }
-    if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
       const hasCache = loadCachedResult('name', trimmed);
       const freshCache = hasCache && isCacheFresh('name', trimmed);
       if (freshCache) return;
@@ -635,8 +640,8 @@ const SearchBar = ({
       }
     }
 
-    const ukTrigger = parseUkTriggerQuery(rawQuery);
-    if (ukTrigger?.searchPair?.telegram) {
+      const ukTrigger = parseUkTriggerQuery(rawQuery);
+      if (ukTrigger?.searchPair?.telegram) {
       const normalizedTelegram = ukTrigger.searchPair.telegram;
       const searchCandidates = [normalizedTelegram];
       if (ukTrigger.handle) {
@@ -674,61 +679,64 @@ const SearchBar = ({
       }
     }
 
-    if (await processUserSearch('userId', parseUserId, rawQuery)) return;
-    if (await processUserSearch('facebook', parseFacebookId, rawQuery)) return;
-    if (await processUserSearch('instagram', parseInstagramId, rawQuery)) return;
-    if (await processUserSearch('telegram', parseTelegramId, rawQuery)) return;
-    if (await processUserSearch('email', parseEmail, rawQuery)) return;
-    if (await processUserSearch('tiktok', parseTikTokLink, rawQuery)) return;
-    if (await processUserSearch('phone', parsePhoneNumber, rawQuery)) return;
-    if (await processUserSearch('vk', parseVk, rawQuery)) return;
-    if (await processUserSearch('other', parseOtherContact, rawQuery)) return;
+      if (await processUserSearch('userId', parseUserId, rawQuery)) return;
+      if (await processUserSearch('facebook', parseFacebookId, rawQuery)) return;
+      if (await processUserSearch('instagram', parseInstagramId, rawQuery)) return;
+      if (await processUserSearch('telegram', parseTelegramId, rawQuery)) return;
+      if (await processUserSearch('email', parseEmail, rawQuery)) return;
+      if (await processUserSearch('tiktok', parseTikTokLink, rawQuery)) return;
+      if (await processUserSearch('phone', parsePhoneNumber, rawQuery)) return;
+      if (await processUserSearch('vk', parseVk, rawQuery)) return;
+      if (await processUserSearch('other', parseOtherContact, rawQuery)) return;
 
-    const nameTrim = rawQuery.trim();
-    console.log('[SearchBar] Defaulting to name search', {
-      raw: rawQuery,
-      cleaned: nameTrim,
-    });
-    const hasCache = loadCachedResult('name', nameTrim);
-    const freshCache = hasCache && isCacheFresh('name', nameTrim);
-    emitSearchLabel({ name: nameTrim });
-    if (freshCache) return;
-    if (!hasCache) {
-      setState && setState({});
-      setUsers && setUsers({});
-    }
-    let res = await cachedSearch({ name: nameTrim });
-    if (!res || Object.keys(res).length === 0) {
-      const cleanedQuery = rawQuery.replace(/^ук\s*см\s*/i, '').trim();
-      if (cleanedQuery && cleanedQuery !== nameTrim) {
-        console.log('[SearchBar] Retrying name search without prefix', {
-          raw: rawQuery,
-          cleaned: cleanedQuery,
-        });
-          res = await cachedSearch({ name: cleanedQuery });
-        emitSearchLabel({ name: cleanedQuery });
+      const nameTrim = rawQuery.trim();
+      console.log('[SearchBar] Defaulting to name search', {
+        raw: rawQuery,
+        cleaned: nameTrim,
+      });
+      const hasCache = loadCachedResult('name', nameTrim);
+      const freshCache = hasCache && isCacheFresh('name', nameTrim);
+      emitSearchLabel({ name: nameTrim });
+      if (freshCache) return;
+      if (!hasCache) {
+        setState && setState({});
+        setUsers && setUsers({});
       }
-    }
-    if (!res || Object.keys(res).length === 0) {
-      const withPrefix = /^ук\s*см/i.test(rawQuery) ? null : `УК СМ ${rawQuery.trim()}`;
-      if (withPrefix) {
-        console.log('[SearchBar] Retrying name search with enforced prefix', {
-          raw: rawQuery,
-          cleaned: withPrefix,
-        });
-          res = await cachedSearch({ name: withPrefix });
-        emitSearchLabel({ name: withPrefix });
+      let res = await cachedSearch({ name: nameTrim });
+      if (!res || Object.keys(res).length === 0) {
+        const cleanedQuery = rawQuery.replace(/^ук\s*см\s*/i, '').trim();
+        if (cleanedQuery && cleanedQuery !== nameTrim) {
+          console.log('[SearchBar] Retrying name search without prefix', {
+            raw: rawQuery,
+            cleaned: cleanedQuery,
+          });
+            res = await cachedSearch({ name: cleanedQuery });
+          emitSearchLabel({ name: cleanedQuery });
+        }
       }
-    }
-    if (!res || Object.keys(res).length === 0) {
-      setUserNotFound && setUserNotFound(true);
-    } else {
-      setUserNotFound && setUserNotFound(false);
-      if ('userId' in res) {
-        setState && setState(res);
+      if (!res || Object.keys(res).length === 0) {
+        const withPrefix = /^ук\s*см/i.test(rawQuery) ? null : `УК СМ ${rawQuery.trim()}`;
+        if (withPrefix) {
+          console.log('[SearchBar] Retrying name search with enforced prefix', {
+            raw: rawQuery,
+            cleaned: withPrefix,
+          });
+            res = await cachedSearch({ name: withPrefix });
+          emitSearchLabel({ name: withPrefix });
+        }
+      }
+      if (!res || Object.keys(res).length === 0) {
+        setUserNotFound && setUserNotFound(true);
       } else {
-        setUsers && setUsers(res);
+        setUserNotFound && setUserNotFound(false);
+        if ('userId' in res) {
+          setState && setState(res);
+        } else {
+          setUsers && setUsers(res);
+        }
       }
+    } finally {
+      onSearchEnd && onSearchEnd(trimmed);
     }
   };
 
