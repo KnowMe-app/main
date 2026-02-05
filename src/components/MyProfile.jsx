@@ -546,12 +546,21 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
+  const isValidEmail = email => {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailPattern.test(email);
+  };
+
   const handleAgree = async () => {
     const miss = {};
     if (!state.email) miss.email = true;
     if (!state.password) miss.password = true;
     setMissing(miss);
     if (Object.keys(miss).length) return;
+    if (!isValidEmail(state.email)) {
+      toast.error('Введіть коректний емейл');
+      return;
+    }
     try {
       const { todayDays, todayDash } = getCurrentDate();
       const methods = await fetchSignInMethodsForEmail(auth, state.email);
@@ -620,6 +629,9 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!state.email) {
         miss.email = true;
         toast.error('Заповніть емейл');
+      } else if (!isValidEmail(state.email)) {
+        miss.email = true;
+        toast.error('Введіть коректний емейл');
       }
       if (!state.password) {
         miss.password = true;
