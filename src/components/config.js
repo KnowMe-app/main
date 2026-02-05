@@ -1050,9 +1050,42 @@ const getDateFormats = input => {
   return [`${yyyy}-${mm}-${dd}`, `${dd}.${mm}.${yyyy}`];
 };
 
+const getIsoDateVariants = dateFormats => {
+  const isoRegex = /^\d{4}-\d{2}-\d{2}$/;
+  const dmyRegex = /^\d{2}\.\d{2}\.\d{4}$/;
+
+  return dateFormats
+    .map(dateValue => {
+      if (isoRegex.test(dateValue)) return dateValue;
+      if (dmyRegex.test(dateValue)) {
+        const [dd, mm, yyyy] = dateValue.split('.');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      return null;
+    })
+    .filter(Boolean);
+};
+
+const getDayTimestampRange = isoDate => {
+  const dayStart = new Date(`${isoDate}T00:00:00`);
+  const dayEnd = new Date(`${isoDate}T23:59:59.999`);
+
+  if (Number.isNaN(dayStart.getTime()) || Number.isNaN(dayEnd.getTime())) {
+    return null;
+  }
+
+  return {
+    startMs: dayStart.getTime(),
+    endMs: dayEnd.getTime(),
+    startSec: Math.floor(dayStart.getTime() / 1000),
+    endSec: Math.floor(dayEnd.getTime() / 1000),
+  };
+};
+
 const searchByDate = async (searchValue, uniqueUserIds, users) => {
   if (isDev) console.log('searchByDate → input:', searchValue);
   const dateFormats = getDateFormats(searchValue);
+  const isoDateVariants = getIsoDateVariants(dateFormats);
   if (isDev) console.log('searchByDate → formats:', dateFormats);
   if (dateFormats.length === 0) return false;
 
@@ -1063,21 +1096,33 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
     for (const collection of collections) {
       for (const field of fields) {
         if (isDev) console.log(`searchByDate → querying ${collection}.${field} for`, date);
-        const q = query(ref2(database, collection), orderByChild(field), equalTo(date));
+        const refToCollection = ref2(database, collection);
+        const queries =
+          field === 'lastAction'
+            ? isoDateVariants
+                .map(getDayTimestampRange)
+                .filter(Boolean)
+                .flatMap(({ startMs, endMs, startSec, endSec }) => [
+                  query(refToCollection, orderByChild(field), startAt(startMs), endAt(endMs)),
+                  query(refToCollection, orderByChild(field), startAt(startSec), endAt(endSec)),
+                ])
+            : [query(refToCollection, orderByChild(field), equalTo(date))];
         try {
-          const snapshot = await get(q);
-          if (isDev) console.log('snapshot.exists():', snapshot.exists());
-          if (snapshot.exists()) {
-            const promises = [];
-            snapshot.forEach(userSnapshot => {
-              const userId = userSnapshot.key;
-              if (isDev) console.log(`Found ${userId} in ${collection}.${field}`);
-              if (!uniqueUserIds.has(userId)) {
-                uniqueUserIds.add(userId);
-                promises.push(addUserToResults(userId, users));
-              }
-            });
-            await Promise.all(promises);
+          for (const currentQuery of queries) {
+            const snapshot = await get(currentQuery);
+            if (isDev) console.log('snapshot.exists():', snapshot.exists());
+            if (snapshot.exists()) {
+              const promises = [];
+              snapshot.forEach(userSnapshot => {
+                const userId = userSnapshot.key;
+                if (isDev) console.log(`Found ${userId} in ${collection}.${field}`);
+                if (!uniqueUserIds.has(userId)) {
+                  uniqueUserIds.add(userId);
+                  promises.push(addUserToResults(userId, users));
+                }
+              });
+              await Promise.all(promises);
+            }
           }
         } catch (error) {
           if (isDev) console.error('Error searching by date:', error);
