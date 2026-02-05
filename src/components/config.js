@@ -2487,8 +2487,8 @@ export const fetchUserById = async userId => {
       if (userSnapshotInUsers.exists()) {
         return {
           userId,
-          ...newUserSnapshot.val(),
           ...userSnapshotInUsers.val(),
+          ...newUserSnapshot.val(),
           photos,
         };
       }
