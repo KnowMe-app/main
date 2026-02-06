@@ -18,10 +18,6 @@ const MirrorStage = styled.div`
   border: 1px solid #e1e1e1;
 `;
 
-const MirrorViewport = styled.div`
-  position: relative;
-`;
-
 const MirrorCanvas = styled.div`
   position: relative;
   background: linear-gradient(135deg, #ffffff 0%, #f3f6fb 100%);
@@ -328,38 +324,18 @@ const Mirror = () => {
   const aspectRatioRef = useRef(mirrorSize.height / mirrorSize.width);
   const nextHoleIndex = useRef(holes.length + 1);
 
-  const { stageWidth, stageHeight, scale, offsetX, offsetY } = useMemo(() => {
-    const maxWidth = 300;
-    const maxHeight = 440;
-    const padding = 24;
-    const safeMirrorWidth = Math.max(mirrorSize.width, 1);
-    const safeMirrorHeight = Math.max(mirrorSize.height, 1);
-    let minX = 0;
-    let minY = 0;
-    let maxX = safeMirrorWidth;
-    let maxY = safeMirrorHeight;
-
-    holes.forEach(hole => {
-      const radius = hole.diameter / 2;
-      minX = Math.min(minX, hole.x - radius);
-      minY = Math.min(minY, hole.y - radius);
-      maxX = Math.max(maxX, hole.x + radius);
-      maxY = Math.max(maxY, hole.y + radius);
-    });
-
-    const boundsWidth = Math.max(maxX - minX, 1);
-    const boundsHeight = Math.max(maxY - minY, 1);
-    const usableWidth = Math.max(maxWidth - padding * 2, 1);
-    const usableHeight = Math.max(maxHeight - padding * 2, 1);
-    const nextScale = Math.min(usableWidth / boundsWidth, usableHeight / boundsHeight);
+  const { stageWidth, stageHeight, scale } = useMemo(() => {
+    const maxWidth = 280;
+    const maxHeight = 420;
+    const safeWidth = Math.max(mirrorSize.width, 1);
+    const safeHeight = Math.max(mirrorSize.height, 1);
+    const nextScale = Math.min(maxWidth / safeWidth, maxHeight / safeHeight);
     return {
-      stageWidth: boundsWidth * nextScale + padding * 2,
-      stageHeight: boundsHeight * nextScale + padding * 2,
+      stageWidth: safeWidth * nextScale,
+      stageHeight: safeHeight * nextScale,
       scale: nextScale,
-      offsetX: (0 - minX) * nextScale + padding,
-      offsetY: (0 - minY) * nextScale + padding,
     };
-  }, [mirrorSize.height, mirrorSize.width, holes]);
+  }, [mirrorSize.height, mirrorSize.width]);
 
   const handleMirrorInputChange = key => event => {
     const value = event.target.value;
@@ -498,76 +474,63 @@ const Mirror = () => {
 
   const overlapPalette = ['#d64545', '#2f7df6', '#2e9b5f', '#b56c16', '#7a49c7'];
 
-  const scaledMirrorWidth = mirrorSize.width * scale;
-  const scaledMirrorHeight = mirrorSize.height * scale;
-
   return (
     <MirrorLayout>
       <MirrorStage>
-        <MirrorViewport style={{ width: stageWidth, height: stageHeight }}>
-          <MirrorCanvas
-            style={{
-              width: scaledMirrorWidth,
-              height: scaledMirrorHeight,
-              position: 'absolute',
-              left: offsetX,
-              top: offsetY,
-            }}
-          >
-            {holes.map(hole => {
-              const centerX = hole.x * scale;
-              const centerY = hole.y * scale;
-              const diameter = hole.diameter * scale;
-              const radius = diameter / 2;
+        <MirrorCanvas style={{ width: stageWidth, height: stageHeight }}>
+          {holes.map(hole => {
+            const centerX = hole.x * scale;
+            const centerY = hole.y * scale;
+            const diameter = hole.diameter * scale;
+            const radius = diameter / 2;
 
-              return (
-                <React.Fragment key={hole.id}>
-                  <HoleLine
-                    style={{
-                      left: centerX,
-                      top: 0,
-                      width: 1,
-                      height: scaledMirrorHeight,
-                      borderLeft: '1px dashed rgba(0, 0, 0, 0.35)',
-                    }}
-                  />
-                  <HoleLine
-                    style={{
-                      left: 0,
-                      top: centerY,
-                      width: scaledMirrorWidth,
-                      height: 1,
-                      borderTop: '1px dashed rgba(0, 0, 0, 0.35)',
-                    }}
-                  />
-                  <HoleCircle
-                    style={{
-                      left: centerX - radius,
-                      top: centerY - radius,
-                      width: diameter,
-                      height: diameter,
-                      borderColor: overlapData.overlaps.has(hole.id)
-                        ? overlapPalette[
-                            overlapData.overlapIds.indexOf(hole.id) %
-                              overlapPalette.length
-                          ]
-                        : '#3a3a3a',
-                    }}
-                  />
-                  <HoleLabel style={{ left: centerX, top: centerY + radius + 12 }}>
-                    {`${hole.x}×${hole.y} мм, Ø${hole.diameter}`}
-                  </HoleLabel>
-                </React.Fragment>
-              );
-            })}
-          </MirrorCanvas>
-        </MirrorViewport>
+            return (
+              <React.Fragment key={hole.id}>
+                <HoleLine
+                  style={{
+                    left: centerX,
+                    top: 0,
+                    width: 1,
+                    height: stageHeight,
+                    borderLeft: '1px dashed rgba(0, 0, 0, 0.35)',
+                  }}
+                />
+                <HoleLine
+                  style={{
+                    left: 0,
+                    top: centerY,
+                    width: stageWidth,
+                    height: 1,
+                    borderTop: '1px dashed rgba(0, 0, 0, 0.35)',
+                  }}
+                />
+                <HoleCircle
+                  style={{
+                    left: centerX - radius,
+                    top: centerY - radius,
+                    width: diameter,
+                    height: diameter,
+                    borderColor: overlapData.overlaps.has(hole.id)
+                      ? overlapPalette[
+                          overlapData.overlapIds.indexOf(hole.id) %
+                            overlapPalette.length
+                        ]
+                      : '#3a3a3a',
+                  }}
+                />
+                <HoleLabel style={{ left: centerX, top: centerY + radius + 12 }}>
+                  {`${hole.x}×${hole.y} мм, Ø${hole.diameter}`}
+                </HoleLabel>
+              </React.Fragment>
+            );
+          })}
+        </MirrorCanvas>
         <WidthInputWrap>
           <FormulaInputWrap>
             <FormulaIndicator>=</FormulaIndicator>
             <DimInput
               type="text"
-              inputMode="text"
+              inputMode="decimal"
               value={mirrorInputs.width}
               onChange={handleMirrorInputChange('width')}
               onBlur={() => commitMirrorInput('width')}
@@ -581,7 +544,7 @@ const Mirror = () => {
             <FormulaIndicator>=</FormulaIndicator>
             <DimInput
               type="text"
-              inputMode="text"
+              inputMode="decimal"
               value={mirrorInputs.height}
               onChange={handleMirrorInputChange('height')}
               onBlur={() => commitMirrorInput('height')}
@@ -608,7 +571,7 @@ const Mirror = () => {
                 <FormulaIndicator>=</FormulaIndicator>
                 <HoleInput
                   type="text"
-                  inputMode="text"
+                  inputMode="decimal"
                   value={holeInputs[hole.id]?.x ?? ''}
                   onChange={handleHoleInputChange(hole.id, 'x')}
                   onBlur={() => commitHoleInput(hole.id, 'x')}
@@ -622,7 +585,7 @@ const Mirror = () => {
                 <FormulaIndicator>=</FormulaIndicator>
                 <HoleInput
                   type="text"
-                  inputMode="text"
+                  inputMode="decimal"
                   value={holeInputs[hole.id]?.y ?? ''}
                   onChange={handleHoleInputChange(hole.id, 'y')}
                   onBlur={() => commitHoleInput(hole.id, 'y')}
@@ -636,7 +599,7 @@ const Mirror = () => {
                 <FormulaIndicator>=</FormulaIndicator>
                 <HoleInput
                   type="text"
-                  inputMode="text"
+                  inputMode="decimal"
                   value={holeInputs[hole.id]?.diameter ?? ''}
                   onChange={handleHoleInputChange(hole.id, 'diameter')}
                   onBlur={() => commitHoleInput(hole.id, 'diameter')}
