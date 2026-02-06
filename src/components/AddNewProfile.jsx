@@ -38,7 +38,6 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import InfoModal from './InfoModal';
 import UtilityPeriodComposer from './UtilityPeriodComposer';
-import Mirror from './Mirror';
 import { VerifyEmail } from './VerifyEmail';
 
 import { color, coloredCard } from './styles';
@@ -1146,7 +1145,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </>
         )}
         <SubmitButton onClick={() => setShowInfoModal('utilityComposer')}>Оренда</SubmitButton>
-        <SubmitButton onClick={() => setShowInfoModal('mirror')}>Mirror</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
         {!isEmailVerified && <VerifyEmail />}
@@ -2307,7 +2305,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           Context={dotsMenu}
           DelConfirm={delConfirm}
           CompareCards={compareCards}
-          Mirror={Mirror}
           UtilityComposer={UtilityPeriodComposer}
         />
       )}
