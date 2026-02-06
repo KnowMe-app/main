@@ -2183,7 +2183,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           <div>
             {(searchLoading || hasSearched) && !userNotFound && (
               <p style={{ textAlign: 'center', color: 'black' }}>
-                Знайдено {searchLoading ? <span className="spinner" /> : totalCount} карток.
+                Знайдено{' '}
+                {searchLoading || (searchBarQueryActive && totalCount === 0) ? (
+                  <span className="spinner" />
+                ) : (
+                  totalCount
+                )}{' '}
+                карток.
               </p>
             )}
             {userNotFound && hasSearched && (
