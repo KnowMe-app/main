@@ -54,11 +54,16 @@ export const handleChange = (
     const formatted = Object.fromEntries(
       formattedEntries.filter(([k, v]) => !shouldDrop(k, v))
     );
+    const actionTimestamp = clickFlag ? Date.now() : undefined;
+    const formattedWithAction =
+      actionTimestamp !== undefined
+        ? { ...formatted, lastAction: actionTimestamp }
+        : formatted;
     const removeKeys = formattedEntries.filter(([k, v]) => shouldDrop(k, v)).map(([k]) => k);
 
     if (setState)
       setState(prev => {
-        const newState = { ...prev, ...formatted };
+        const newState = { ...prev, ...formattedWithAction };
         removeKeys.forEach(key => {
           delete newState[key];
         });
@@ -66,7 +71,7 @@ export const handleChange = (
         return newState;
       });
     else {
-      submitWithoutUsers(formatted, removeKeys, clickFlag);
+      submitWithoutUsers(formattedWithAction, removeKeys, clickFlag);
     }
 
     const applyUpdates = prevState => {
@@ -79,7 +84,7 @@ export const handleChange = (
         keys.every(id => prevState[id] && typeof prevState[id] === 'object');
 
       if (!isMultiple) {
-        const newState = { ...prevState, ...formatted };
+        const newState = { ...prevState, ...formattedWithAction };
         removeKeys.forEach(key => {
           delete newState[key];
         });
@@ -95,7 +100,7 @@ export const handleChange = (
           ...prevState,
           [userId]: {
             ...prevState[userId],
-            ...formatted,
+            ...formattedWithAction,
           },
         };
         removeKeys.forEach(key => {
@@ -143,6 +148,9 @@ export const handleChange = (
       } else {
         newState[key] = newValue;
       }
+      if (click) {
+        newState.lastAction = Date.now();
+      }
       submitWithoutUsers(newState, removalKeys, click);
       return newState;
     });
@@ -174,6 +182,9 @@ export const handleChange = (
         } else {
           newState[key] = newValue;
         }
+        if (click) {
+          newState.lastAction = Date.now();
+        }
         click &&
           handleSubmit(
             { ...newState, userId: userId || newState.userId },
@@ -194,6 +205,9 @@ export const handleChange = (
                 return rest;
               })()
             : { ...currentUser, [key]: newValue };
+        if (click) {
+          updatedUser.lastAction = Date.now();
+        }
 
         const newState = {
           ...prevState,
@@ -226,6 +240,9 @@ export const handleChange = (
               return rest;
             })()
           : { ...currentUser, [key]: newValue };
+      if (click) {
+        updatedUser.lastAction = Date.now();
+      }
 
       const newState = {
         ...prevState,
