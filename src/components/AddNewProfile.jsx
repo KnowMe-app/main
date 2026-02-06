@@ -695,6 +695,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const normalized = (value || '').trim();
     setSearchBarQueryActive(Boolean(normalized));
     setLastSearchBarQuery(normalized);
+    setCurrentPage(1);
   }, []);
 
   useEffect(() => {
@@ -2000,9 +2001,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // ];
 
 
-  const shouldPaginate =
+  const resolvedUsersCount = Array.isArray(users)
+    ? users.length
+    : Object.keys(users).length;
+  const effectiveTotalCount = searchBarQueryActive
+    ? resolvedUsersCount
+    : totalCount;
+  const allowPagination =
     currentFilter !== 'FAVORITE' && currentFilter !== 'CYCLE_FAVORITE';
-  const totalPages = shouldPaginate ? Math.ceil(totalCount / PAGE_SIZE) || 1 : 1;
+  const shouldPaginate = allowPagination
+    && (!searchBarQueryActive || effectiveTotalCount > PAGE_SIZE);
+  const totalPages = shouldPaginate
+    ? Math.ceil(effectiveTotalCount / PAGE_SIZE) || 1
+    : 1;
   const getSortedIds = () => {
     const ids = Object.keys(users);
     if (isDuplicateView || currentFilter === 'CYCLE_FAVORITE') {
@@ -2150,7 +2161,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           <div>
             {(searchLoading || hasSearched) && !userNotFound && (
               <p style={{ textAlign: 'center', color: 'black' }}>
-                Знайдено {searchLoading ? <span className="spinner" /> : totalCount} користувачів.
+                Знайдено {effectiveTotalCount} карток {searchLoading && <span className="spinner" />}.
               </p>
             )}
             {userNotFound && hasSearched && (
