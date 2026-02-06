@@ -132,18 +132,6 @@ const HoleRow = styled.label`
   color: #4a4a4a;
 `;
 
-const HoleToggle = styled.label`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #4a4a4a;
-
-  input {
-    margin: 0;
-  }
-`;
-
 const HoleInput = styled.input`
   width: 70px;
   border: 1px solid #d5d5d5;
@@ -286,16 +274,10 @@ const parseFormulaValue = rawValue => {
 const STORAGE_KEY = 'mirror-layout-v1';
 const DEFAULT_MIRROR_SIZE = { width: 1280, height: 1784 };
 const DEFAULT_HOLES = [
-  { id: 'hole-1', label: 'Отвір 1', x: 862, y: 128, diameter: 120, hidden: false },
-  { id: 'hole-2', label: 'Отвір 2', x: 1125, y: 862, diameter: 120, hidden: false },
-  { id: 'hole-3', label: 'Отвір 3', x: 895, y: 1495, diameter: 76, hidden: false },
+  { id: 'hole-1', label: 'Отвір 1', x: 862, y: 128, diameter: 120 },
+  { id: 'hole-2', label: 'Отвір 2', x: 1125, y: 862, diameter: 120 },
+  { id: 'hole-3', label: 'Отвір 3', x: 895, y: 1495, diameter: 76 },
 ];
-
-const normalizeHoles = holes =>
-  holes.map(hole => ({
-    ...hole,
-    hidden: Boolean(hole.hidden),
-  }));
 
 const getInitialMirrorState = () => {
   if (typeof window === 'undefined') {
@@ -313,7 +295,7 @@ const getInitialMirrorState = () => {
       Number.isFinite(mirrorSize.height) &&
       holes
     ) {
-      return { mirrorSize, holes: normalizeHoles(holes) };
+      return { mirrorSize, holes };
     }
   } catch (error) {
     return { mirrorSize: DEFAULT_MIRROR_SIZE, holes: DEFAULT_HOLES };
@@ -356,7 +338,6 @@ const Mirror = () => {
   );
   const [focusedField, setFocusedField] = useState(null);
   const nextHoleIndex = useRef(holes.length + 1);
-  const visibleHoles = useMemo(() => holes.filter(hole => !hole.hidden), [holes]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -386,7 +367,7 @@ const Mirror = () => {
       diameter: hole.diameter,
     });
 
-    visibleHoles.forEach(hole => {
+    holes.forEach(hole => {
       const transformed = transformPoint(hole);
       const radius = transformed.diameter / 2;
       minX = Math.min(minX, transformed.x - radius);
@@ -408,13 +389,7 @@ const Mirror = () => {
       offsetY: (0 - minY) * nextScale + padding,
       isRotated: rotate,
     };
-  }, [
-    mirrorSize.height,
-    mirrorSize.width,
-    visibleHoles,
-    windowSize.height,
-    windowSize.width,
-  ]);
+  }, [mirrorSize.height, mirrorSize.width, holes, windowSize.height, windowSize.width]);
 
   const handleMirrorInputChange = key => event => {
     const value = event.target.value;
@@ -516,7 +491,6 @@ const Mirror = () => {
       x: 200,
       y: 200,
       diameter: 80,
-      hidden: false,
     };
     nextHoleIndex.current += 1;
     setHoles(prev => [...prev, newHole]);
@@ -538,13 +512,6 @@ const Mirror = () => {
     }));
   };
 
-  const handleToggleHoleVisibility = id => event => {
-    const { checked } = event.target;
-    setHoles(prev =>
-      prev.map(hole => (hole.id === id ? { ...hole, hidden: !checked } : hole)),
-    );
-  };
-
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const payload = { mirrorSize, holes };
@@ -553,10 +520,10 @@ const Mirror = () => {
 
   const overlapData = useMemo(() => {
     const overlaps = new Set();
-    for (let i = 0; i < visibleHoles.length; i += 1) {
-      for (let j = i + 1; j < visibleHoles.length; j += 1) {
-        const holeA = visibleHoles[i];
-        const holeB = visibleHoles[j];
+    for (let i = 0; i < holes.length; i += 1) {
+      for (let j = i + 1; j < holes.length; j += 1) {
+        const holeA = holes[i];
+        const holeB = holes[j];
         const dx = holeA.x - holeB.x;
         const dy = holeA.y - holeB.y;
         const distance = Math.hypot(dx, dy);
@@ -567,11 +534,9 @@ const Mirror = () => {
         }
       }
     }
-    const overlapIds = visibleHoles
-      .filter(hole => overlaps.has(hole.id))
-      .map(hole => hole.id);
+    const overlapIds = holes.filter(hole => overlaps.has(hole.id)).map(hole => hole.id);
     return { overlaps, overlapIds };
-  }, [visibleHoles]);
+  }, [holes]);
 
   const overlapPalette = ['#d64545', '#2f7df6', '#2e9b5f', '#b56c16', '#7a49c7'];
 
@@ -599,7 +564,7 @@ const Mirror = () => {
               top: offsetY,
             }}
           >
-            {visibleHoles.map(hole => {
+            {holes.map(hole => {
               const displayX = isRotated ? displayMirrorWidth - hole.y : hole.x;
               const displayY = isRotated ? hole.x : hole.y;
               const centerX = displayX * scale;
@@ -685,14 +650,6 @@ const Mirror = () => {
         {holes.map(hole => (
           <HoleCard key={hole.id}>
             <strong>{hole.label}</strong>
-            <HoleToggle>
-              <input
-                type="checkbox"
-                checked={!hole.hidden}
-                onChange={handleToggleHoleVisibility(hole.id)}
-              />
-              Показувати на дзеркалі
-            </HoleToggle>
             <HoleRow>
               Горизонталь (X)
               <HoleInputWrap>
