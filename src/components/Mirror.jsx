@@ -367,9 +367,9 @@ const Mirror = () => {
   }, []);
 
   const { stageWidth, stageHeight, scale, offsetX, offsetY, isRotated } = useMemo(() => {
-    const padding = 5;
-    const maxWidth = Math.max(windowSize.width - padding * 2, 260);
-    const maxHeight = Math.max(windowSize.height - padding * 2, 260);
+    const padding = 0;
+    const maxWidth = Math.max(windowSize.width - 160, 260);
+    const maxHeight = Math.max(windowSize.height - 260, 260);
     const safeMirrorWidth = Math.max(mirrorSize.width, 1);
     const safeMirrorHeight = Math.max(mirrorSize.height, 1);
     const rotate = safeMirrorHeight > safeMirrorWidth;
