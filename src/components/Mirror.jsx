@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
 
 const MirrorLayout = styled.div`
@@ -45,18 +45,6 @@ const DimInput = styled.input`
   &[type='number'] {
     -moz-appearance: textfield;
   }
-`;
-
-const FormulaInputWrap = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-`;
-
-const FormulaIndicator = styled.span`
-  font-size: 12px;
-  font-weight: 700;
-  color: #9b9b9b;
 `;
 
 const WidthInputWrap = styled.div`
@@ -141,27 +129,6 @@ const HoleInput = styled.input`
   font-size: 12px;
 `;
 
-const HoleInputWrap = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-`;
-
-const AddHoleButton = styled.button`
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: none;
-  background: #2f7df6;
-  color: #ffffff;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 6px 14px rgba(47, 125, 246, 0.25);
-
-  &:hover {
-    background: #1f6ae4;
-  }
-`;
-
 const Caption = styled.p`
   margin: 0;
   font-size: 12px;
@@ -174,273 +141,43 @@ const clampValue = (value, min, max) => {
   return Math.min(Math.max(value, min), max);
 };
 
-const evaluateExpression = expression => {
-  const sanitized = expression.replace(/\s+/g, '');
-  if (!sanitized) return null;
-  const tokens = sanitized.match(/(\d+(\.\d+)?|[()+\-*/])/g);
-  if (!tokens) return null;
-
-  const output = [];
-  const operators = [];
-  const precedence = { '+': 1, '-': 1, '*': 2, '/': 2 };
-
-  const pushOperator = operator => {
-    while (
-      operators.length &&
-      operators[operators.length - 1] !== '(' &&
-      precedence[operators[operators.length - 1]] >= precedence[operator]
-    ) {
-      output.push(operators.pop());
-    }
-    operators.push(operator);
-  };
-
-  tokens.forEach((token, index) => {
-    const prevToken = tokens[index - 1];
-    if (token === '-' && (index === 0 || ['+', '-', '*', '/', '('].includes(prevToken))) {
-      output.push('0');
-      pushOperator(token);
-      return;
-    }
-    if (/^\d/.test(token)) {
-      output.push(token);
-      return;
-    }
-    if (['+', '-', '*', '/'].includes(token)) {
-      pushOperator(token);
-      return;
-    }
-    if (token === '(') {
-      operators.push(token);
-      return;
-    }
-    if (token === ')') {
-      while (operators.length && operators[operators.length - 1] !== '(') {
-        output.push(operators.pop());
-      }
-      if (operators[operators.length - 1] === '(') {
-        operators.pop();
-      }
-    }
-  });
-
-  while (operators.length) {
-    output.push(operators.pop());
-  }
-
-  const stack = [];
-  for (const token of output) {
-    if (/^\d/.test(token)) {
-      stack.push(Number(token));
-      continue;
-    }
-    const right = stack.pop();
-    const left = stack.pop();
-    if (left === undefined || right === undefined) return null;
-    switch (token) {
-      case '+':
-        stack.push(left + right);
-        break;
-      case '-':
-        stack.push(left - right);
-        break;
-      case '*':
-        stack.push(left * right);
-        break;
-      case '/':
-        stack.push(left / right);
-        break;
-      default:
-        return null;
-    }
-  }
-
-  return stack.length === 1 && Number.isFinite(stack[0]) ? stack[0] : null;
-};
-
-const parseFormulaValue = rawValue => {
-  const text = rawValue.trim();
-  if (!text) return null;
-  if (text.startsWith('=')) {
-    const expression = text.slice(1).trim();
-    if (!expression || /[^0-9+\-*/().\s]/.test(expression)) {
-      return null;
-    }
-    return evaluateExpression(expression);
-  }
-  const numericValue = Number(text);
-  return Number.isFinite(numericValue) ? numericValue : null;
-};
-
 const Mirror = () => {
-  const [mirrorSize, setMirrorSize] = useState({ width: 1280, height: 1784 });
-  const [mirrorInputs, setMirrorInputs] = useState({
-    width: '1280',
-    height: '1784',
-  });
+  const [mirrorWidth, setMirrorWidth] = useState(1280);
+  const [mirrorHeight, setMirrorHeight] = useState(1784);
   const [holes, setHoles] = useState([
     { id: 'hole-1', label: 'Отвір 1', x: 862, y: 128, diameter: 120 },
     { id: 'hole-2', label: 'Отвір 2', x: 1125, y: 862, diameter: 120 },
     { id: 'hole-3', label: 'Отвір 3', x: 895, y: 1495, diameter: 76 },
   ]);
-  const [holeInputs, setHoleInputs] = useState(() =>
-    Object.fromEntries(
-      [
-        { id: 'hole-1', x: 862, y: 128, diameter: 120 },
-        { id: 'hole-2', x: 1125, y: 862, diameter: 120 },
-        { id: 'hole-3', x: 895, y: 1495, diameter: 76 },
-      ].map(hole => [
-        hole.id,
-        { x: String(hole.x), y: String(hole.y), diameter: String(hole.diameter) },
-      ]),
-    ),
-  );
-  const aspectRatioRef = useRef(mirrorSize.height / mirrorSize.width);
-  const nextHoleIndex = useRef(holes.length + 1);
 
   const { stageWidth, stageHeight, scale } = useMemo(() => {
     const maxWidth = 280;
     const maxHeight = 420;
-    const safeWidth = Math.max(mirrorSize.width, 1);
-    const safeHeight = Math.max(mirrorSize.height, 1);
+    const safeWidth = Math.max(mirrorWidth, 1);
+    const safeHeight = Math.max(mirrorHeight, 1);
     const nextScale = Math.min(maxWidth / safeWidth, maxHeight / safeHeight);
     return {
       stageWidth: safeWidth * nextScale,
       stageHeight: safeHeight * nextScale,
       scale: nextScale,
     };
-  }, [mirrorSize.height, mirrorSize.width]);
+  }, [mirrorHeight, mirrorWidth]);
 
-  const handleMirrorInputChange = key => event => {
-    const value = event.target.value;
-    setMirrorInputs(prev => ({ ...prev, [key]: value }));
+  const handleDimensionChange = (setter, min, max) => event => {
+    const value = Number(event.target.value);
+    setter(clampValue(value, min, max));
   };
 
-  const commitMirrorInput = key => {
-    const rawValue = mirrorInputs[key];
-    const parsedValue = parseFormulaValue(rawValue);
-    if (parsedValue === null) {
-      setMirrorInputs(prev => ({
-        ...prev,
-        [key]: String(mirrorSize[key]),
-      }));
-      return;
-    }
-
-    const min = 200;
-    const max = 4000;
-    const clampedValue = clampValue(parsedValue, min, max);
-    const ratio = aspectRatioRef.current;
-    const nextSize =
-      key === 'width'
-        ? {
-            width: clampedValue,
-            height: clampValue(clampedValue * ratio, min, max),
-          }
-        : {
-            height: clampedValue,
-            width: clampValue(clampedValue / ratio, min, max),
-          };
-
-    setMirrorSize(nextSize);
-    setMirrorInputs({
-      width: String(Math.round(nextSize.width)),
-      height: String(Math.round(nextSize.height)),
-    });
-  };
-
-  const handleHoleInputChange = (id, key) => event => {
-    const value = event.target.value;
-    setHoleInputs(prev => ({
-      ...prev,
-      [id]: { ...prev[id], [key]: value },
-    }));
-  };
-
-  const commitHoleInput = (id, key) => {
-    const rawValue = holeInputs[id]?.[key] ?? '';
-    const parsedValue = parseFormulaValue(rawValue);
-    if (parsedValue === null) {
-      setHoleInputs(prev => ({
-        ...prev,
-        [id]: {
-          ...prev[id],
-          [key]: String(holes.find(hole => hole.id === id)?.[key] ?? 0),
-        },
-      }));
-      return;
-    }
-    const clampedValue = clampValue(parsedValue, 0, 4000);
+  const handleHoleChange = (id, key) => event => {
+    const value = Number(event.target.value);
     setHoles(prev =>
       prev.map(hole =>
-        hole.id === id ? { ...hole, [key]: clampedValue } : hole,
+        hole.id === id
+          ? { ...hole, [key]: clampValue(value, 0, 4000) }
+          : hole,
       ),
     );
-    setHoleInputs(prev => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        [key]: String(Math.round(clampedValue)),
-      },
-    }));
   };
-
-  const handleHoleInputKeyDown = (id, key) => event => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      commitHoleInput(id, key);
-    }
-  };
-
-  const handleMirrorInputKeyDown = key => event => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      commitMirrorInput(key);
-    }
-  };
-
-  const handleAddHole = () => {
-    const newId = `hole-${nextHoleIndex.current}`;
-    const newHole = {
-      id: newId,
-      label: `Отвір ${nextHoleIndex.current}`,
-      x: 200,
-      y: 200,
-      diameter: 80,
-    };
-    nextHoleIndex.current += 1;
-    setHoles(prev => [...prev, newHole]);
-    setHoleInputs(prev => ({
-      ...prev,
-      [newId]: {
-        x: String(newHole.x),
-        y: String(newHole.y),
-        diameter: String(newHole.diameter),
-      },
-    }));
-  };
-
-  const overlapData = useMemo(() => {
-    const overlaps = new Set();
-    for (let i = 0; i < holes.length; i += 1) {
-      for (let j = i + 1; j < holes.length; j += 1) {
-        const holeA = holes[i];
-        const holeB = holes[j];
-        const dx = holeA.x - holeB.x;
-        const dy = holeA.y - holeB.y;
-        const distance = Math.hypot(dx, dy);
-        const radiusSum = holeA.diameter / 2 + holeB.diameter / 2;
-        if (distance < radiusSum) {
-          overlaps.add(holeA.id);
-          overlaps.add(holeB.id);
-        }
-      }
-    }
-    const overlapIds = holes.filter(hole => overlaps.has(hole.id)).map(hole => hole.id);
-    return { overlaps, overlapIds };
-  }, [holes]);
-
-  const overlapPalette = ['#d64545', '#2f7df6', '#2e9b5f', '#b56c16', '#7a49c7'];
 
   return (
     <MirrorLayout>
@@ -478,12 +215,6 @@ const Mirror = () => {
                     top: centerY - radius,
                     width: diameter,
                     height: diameter,
-                    borderColor: overlapData.overlaps.has(hole.id)
-                      ? overlapPalette[
-                          overlapData.overlapIds.indexOf(hole.id) %
-                            overlapPalette.length
-                        ]
-                      : '#3a3a3a',
                   }}
                 />
                 <HoleLabel style={{ left: centerX, top: centerY + radius + 12 }}>
@@ -494,86 +225,53 @@ const Mirror = () => {
           })}
         </MirrorCanvas>
         <WidthInputWrap>
-          <FormulaInputWrap>
-            <FormulaIndicator>=</FormulaIndicator>
-            <DimInput
-              type="text"
-              inputMode="decimal"
-              value={mirrorInputs.width}
-              onChange={handleMirrorInputChange('width')}
-              onBlur={() => commitMirrorInput('width')}
-              onKeyDown={handleMirrorInputKeyDown('width')}
-            />
-          </FormulaInputWrap>
+          <DimInput
+            type="number"
+            value={mirrorWidth}
+            onChange={handleDimensionChange(setMirrorWidth, 200, 4000)}
+          />
           <span>мм</span>
         </WidthInputWrap>
         <HeightInputWrap>
-          <FormulaInputWrap>
-            <FormulaIndicator>=</FormulaIndicator>
-            <DimInput
-              type="text"
-              inputMode="decimal"
-              value={mirrorInputs.height}
-              onChange={handleMirrorInputChange('height')}
-              onBlur={() => commitMirrorInput('height')}
-              onKeyDown={handleMirrorInputKeyDown('height')}
-            />
-          </FormulaInputWrap>
+          <DimInput
+            type="number"
+            value={mirrorHeight}
+            onChange={handleDimensionChange(setMirrorHeight, 200, 4000)}
+          />
           <span>мм</span>
         </HeightInputWrap>
       </MirrorStage>
       <Caption>
-        Змінюйте розміри дзеркала та координати отворів (X — зліва, Y — зверху).
-        Формули вводьте через знак "=" — пропорції дзеркала збережуться.
+        Змінюйте розміри дзеркала та координати отворів (X — зліва, Y — зверху),
+        щоб швидко перевіряти позиціонування.
       </Caption>
-      <AddHoleButton type="button" onClick={handleAddHole}>
-        Додати отвір
-      </AddHoleButton>
       <InputsGrid>
         {holes.map(hole => (
           <HoleCard key={hole.id}>
             <strong>{hole.label}</strong>
             <HoleRow>
               Горизонталь (X)
-              <HoleInputWrap>
-                <FormulaIndicator>=</FormulaIndicator>
-                <HoleInput
-                  type="text"
-                  inputMode="decimal"
-                  value={holeInputs[hole.id]?.x ?? ''}
-                  onChange={handleHoleInputChange(hole.id, 'x')}
-                  onBlur={() => commitHoleInput(hole.id, 'x')}
-                  onKeyDown={handleHoleInputKeyDown(hole.id, 'x')}
-                />
-              </HoleInputWrap>
+              <HoleInput
+                type="number"
+                value={hole.x}
+                onChange={handleHoleChange(hole.id, 'x')}
+              />
             </HoleRow>
             <HoleRow>
               Вертикаль (Y)
-              <HoleInputWrap>
-                <FormulaIndicator>=</FormulaIndicator>
-                <HoleInput
-                  type="text"
-                  inputMode="decimal"
-                  value={holeInputs[hole.id]?.y ?? ''}
-                  onChange={handleHoleInputChange(hole.id, 'y')}
-                  onBlur={() => commitHoleInput(hole.id, 'y')}
-                  onKeyDown={handleHoleInputKeyDown(hole.id, 'y')}
-                />
-              </HoleInputWrap>
+              <HoleInput
+                type="number"
+                value={hole.y}
+                onChange={handleHoleChange(hole.id, 'y')}
+              />
             </HoleRow>
             <HoleRow>
               Діаметр
-              <HoleInputWrap>
-                <FormulaIndicator>=</FormulaIndicator>
-                <HoleInput
-                  type="text"
-                  inputMode="decimal"
-                  value={holeInputs[hole.id]?.diameter ?? ''}
-                  onChange={handleHoleInputChange(hole.id, 'diameter')}
-                  onBlur={() => commitHoleInput(hole.id, 'diameter')}
-                  onKeyDown={handleHoleInputKeyDown(hole.id, 'diameter')}
-                />
-              </HoleInputWrap>
+              <HoleInput
+                type="number"
+                value={hole.diameter}
+                onChange={handleHoleChange(hole.id, 'diameter')}
+              />
             </HoleRow>
           </HoleCard>
         ))}
