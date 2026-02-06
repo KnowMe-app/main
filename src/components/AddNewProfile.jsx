@@ -692,9 +692,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleSearchExecuted = useCallback(value => {
     const normalized = (value || '').trim();
-    setSearchBarQueryActive(Boolean(normalized));
+    if (!normalized) {
+      setSearchLoading(false);
+      setHasSearched(false);
+      setTotalCount(0);
+      setCurrentPage(1);
+      setSearchBarQueryActive(false);
+      setLastSearchBarQuery('');
+      return;
+    }
+    setSearchLoading(true);
+    setHasSearched(true);
+    setTotalCount(0);
+    setCurrentPage(1);
+    setSearchBarQueryActive(true);
     setLastSearchBarQuery(normalized);
-  }, []);
+  }, [
+    setSearchLoading,
+    setHasSearched,
+    setTotalCount,
+    setCurrentPage,
+    setSearchBarQueryActive,
+    setLastSearchBarQuery,
+  ]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -780,6 +800,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     if (!state.userId) setProfileSource('');
   }, [state.userId]);
+
+  useEffect(() => {
+    if (!searchBarQueryActive) return;
+    const count = userNotFound ? 0 : state.userId ? 1 : Object.keys(users || {}).length;
+    setTotalCount(count);
+    if (searchLoading) {
+      setSearchLoading(false);
+    }
+  }, [
+    searchBarQueryActive,
+    searchLoading,
+    setSearchLoading,
+    setTotalCount,
+    state.userId,
+    userNotFound,
+    users,
+  ]);
 
   const cacheFetchedUsers = useCallback(
     (usersObj, cacheFn, currentFilters = filters) => {
@@ -1998,8 +2035,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // ];
 
 
-  const shouldPaginate =
-    currentFilter !== 'FAVORITE' && currentFilter !== 'CYCLE_FAVORITE';
+  const shouldPaginate = searchBarQueryActive
+    ? totalCount > PAGE_SIZE
+    : currentFilter !== 'FAVORITE' && currentFilter !== 'CYCLE_FAVORITE';
   const totalPages = shouldPaginate ? Math.ceil(totalCount / PAGE_SIZE) || 1 : 1;
   const getSortedIds = () => {
     const ids = Object.keys(users);
@@ -2040,9 +2078,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           searchFunc={fetchNewUsersCollectionInRTDB}
           search={search}
           setSearch={value => {
-            setSearchLoading(true);
-            setHasSearched(true);
-            setTotalCount(0);
             setSearch(value);
           }}
           setUsers={setUsers}
@@ -2148,7 +2183,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           <div>
             {(searchLoading || hasSearched) && !userNotFound && (
               <p style={{ textAlign: 'center', color: 'black' }}>
-                Знайдено {searchLoading ? <span className="spinner" /> : totalCount} користувачів.
+                Знайдено {searchLoading ? <span className="spinner" /> : totalCount} карток.
               </p>
             )}
             {userNotFound && hasSearched && (
