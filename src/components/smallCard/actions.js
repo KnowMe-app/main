@@ -48,6 +48,7 @@ export const handleChange = (
     const updates = key;
     const clickFlag = value;
     const opts = click || {};
+    const localLastAction = clickFlag ? Date.now() : undefined;
     const formattedEntries = Object.entries(updates).map(([k, v]) => [k, formatValue(k, v)]);
     const shouldDrop = (key, value) =>
       (key === 'lastDelivery' || key === 'getInTouch') && !value;
@@ -59,6 +60,9 @@ export const handleChange = (
     if (setState)
       setState(prev => {
         const newState = { ...prev, ...formatted };
+        if (localLastAction !== undefined) {
+          newState.lastAction = localLastAction;
+        }
         removeKeys.forEach(key => {
           delete newState[key];
         });
@@ -80,6 +84,9 @@ export const handleChange = (
 
       if (!isMultiple) {
         const newState = { ...prevState, ...formatted };
+        if (localLastAction !== undefined) {
+          newState.lastAction = localLastAction;
+        }
         removeKeys.forEach(key => {
           delete newState[key];
         });
@@ -96,6 +103,7 @@ export const handleChange = (
           [userId]: {
             ...prevState[userId],
             ...formatted,
+            ...(localLastAction !== undefined ? { lastAction: localLastAction } : {}),
           },
         };
         removeKeys.forEach(key => {
@@ -132,6 +140,7 @@ export const handleChange = (
   }
 
   const newValue = formatValue(key, value);
+  const localLastAction = click ? Date.now() : undefined;
   const removalKeys =
     (key === 'lastDelivery' || key === 'getInTouch') && !newValue ? [key] : [];
 
@@ -142,6 +151,9 @@ export const handleChange = (
         delete newState[key];
       } else {
         newState[key] = newValue;
+      }
+      if (localLastAction !== undefined) {
+        newState.lastAction = localLastAction;
       }
       submitWithoutUsers(newState, removalKeys, click);
       return newState;
@@ -174,6 +186,9 @@ export const handleChange = (
         } else {
           newState[key] = newValue;
         }
+        if (localLastAction !== undefined) {
+          newState.lastAction = localLastAction;
+        }
         click &&
           handleSubmit(
             { ...newState, userId: userId || newState.userId },
@@ -197,7 +212,10 @@ export const handleChange = (
 
         const newState = {
           ...prevState,
-          [userId]: updatedUser,
+          [userId]:
+            localLastAction !== undefined
+              ? { ...updatedUser, lastAction: localLastAction }
+              : updatedUser,
         };
         click &&
           handleSubmit(
@@ -229,7 +247,10 @@ export const handleChange = (
 
       const newState = {
         ...prevState,
-        [userId]: updatedUser,
+        [userId]:
+          localLastAction !== undefined
+            ? { ...updatedUser, lastAction: localLastAction }
+            : updatedUser,
       };
       click &&
         handleSubmit(
