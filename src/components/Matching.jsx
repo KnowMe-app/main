@@ -1066,6 +1066,7 @@ const INITIAL_LOAD = 6;
 const LOAD_MORE = 6;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
+const SEARCH_PAGE_SIZE = 20;
 
 const Matching = () => {
   const navigate = useNavigate();
@@ -1081,6 +1082,9 @@ const Matching = () => {
   const [viewMode, setViewMode] = useState('default');
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchPage, setSearchPage] = useState(1);
   const [filters, setFilters] = useState({});
   const [comments, setComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
@@ -1158,9 +1162,12 @@ const Matching = () => {
   const applySearchResults = async res => {
     const arr = Array.isArray(res) ? res : Object.values(res || {});
     const filtered = arr.filter(u => isValidId(u?.userId));
-    setUsers(filtered);
-    setHasMore(false);
-    await loadCommentsFor(filtered);
+    setSearchResults(filtered);
+    setSearchPage(1);
+    const initial = filtered.slice(0, SEARCH_PAGE_SIZE);
+    setUsers(initial);
+    setHasMore(filtered.length > SEARCH_PAGE_SIZE);
+    await loadCommentsFor(initial);
     setLastKey(null);
     setViewMode('search');
   };
@@ -1197,7 +1204,7 @@ const Matching = () => {
     );
   }, [favoriteUsers, dislikeUsers, viewMode]);
 
-  const loadCommentsFor = async list => {
+  const loadCommentsFor = React.useCallback(async list => {
     const owner = auth.currentUser?.uid;
     if (!owner) return;
     const ids = Array.from(
@@ -1223,7 +1230,7 @@ const Matching = () => {
     });
     saveComments(newStore);
     setComments(commentsMap);
-  };
+  }, []);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
@@ -1401,6 +1408,9 @@ const Matching = () => {
   const reloadDefault = React.useCallback(() => {
     viewModeRef.current = 'default';
     setViewMode('default');
+    setSearchLoading(false);
+    setSearchResults([]);
+    setSearchPage(1);
     loadInitial();
   }, [loadInitial]);
 
@@ -1583,6 +1593,21 @@ const Matching = () => {
     }
   }, [hasMore, lastKey, viewMode, fetchChunk]);
 
+  const loadMoreSearch = React.useCallback(() => {
+    if (viewMode !== 'search') return;
+    const nextPage = searchPage + 1;
+    const startIndex = searchPage * SEARCH_PAGE_SIZE;
+    const endIndex = nextPage * SEARCH_PAGE_SIZE;
+    const nextChunk = searchResults.slice(startIndex, endIndex);
+    const nextSlice = searchResults.slice(0, endIndex);
+    setUsers(nextSlice);
+    setSearchPage(nextPage);
+    if (nextChunk.length > 0) {
+      loadCommentsFor(nextChunk);
+    }
+    setHasMore(nextSlice.length < searchResults.length);
+  }, [searchPage, searchResults, viewMode, loadCommentsFor]);
+
   useEffect(() => {
     console.log('[useEffect] calling loadInitial');
     reloadDefault();
@@ -1604,6 +1629,9 @@ const Matching = () => {
           .filter(u => isValidId(u.userId));
 
   // automatic loading disabled
+  const isSearchView = viewMode === 'search';
+  const displayCount = isSearchView ? searchResults.length : filteredUsers.length;
+  const hasSearchMore = isSearchView && users.length < searchResults.length;
 
   const dotsMenu = () => (
     <>
@@ -1630,13 +1658,23 @@ const Matching = () => {
           leftIcon="🔍"
           storageKey={SEARCH_KEY}
           onClear={reloadDefault}
+          onSearchStart={() => setSearchLoading(true)}
+          onSearchEnd={() => setSearchLoading(false)}
         />
         <FilterPanel mode="matching" hideUserId hideCommentLength onChange={setFilters} />
       </FilterContainer>
       <Container>
         <InnerContainer>
           <HeaderContainer>
-            <CardCount>{filteredUsers.length} карточок</CardCount>
+            <CardCount>
+              {isSearchView ? (
+                <>
+                  Знайдено {searchLoading ? <span className="spinner" /> : displayCount} карточок.
+                </>
+              ) : (
+                `${displayCount} карточок`
+              )}
+            </CardCount>
             <TopActions>
               {viewMode !== 'default' && (
                 <ActionButton onClick={reloadDefault}><FaDownload /></ActionButton>
@@ -1773,8 +1811,13 @@ const Matching = () => {
             Array.from({ length: 4 }).map((_, idx) => (
               <MatchingSkeleton key={`skeleton-${idx}`} />
             ))}
-          {hasMore && !loading && (
+          {viewMode === 'default' && hasMore && !loading && (
             <LoadMoreButton onClick={loadMore}>
+              <FaArrowDown />
+            </LoadMoreButton>
+          )}
+          {hasSearchMore && !searchLoading && (
+            <LoadMoreButton onClick={loadMoreSearch}>
               <FaArrowDown />
             </LoadMoreButton>
           )}
