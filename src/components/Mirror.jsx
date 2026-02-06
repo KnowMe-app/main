@@ -317,10 +317,6 @@ const Mirror = () => {
     height: String(initialMirrorSize.height),
   });
   const [holes, setHoles] = useState(initialHoles);
-  const [windowSize, setWindowSize] = useState(() => ({
-    width: typeof window === 'undefined' ? 1024 : window.innerWidth,
-    height: typeof window === 'undefined' ? 768 : window.innerHeight,
-  }));
   const [holeInputs, setHoleInputs] = useState(() =>
     Object.fromEntries(
       initialHoles.map(hole => [
@@ -332,41 +328,23 @@ const Mirror = () => {
   const aspectRatioRef = useRef(mirrorSize.height / mirrorSize.width);
   const nextHoleIndex = useRef(holes.length + 1);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleResize = () =>
-      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const { stageWidth, stageHeight, scale, offsetX, offsetY, isRotated } = useMemo(() => {
+  const { stageWidth, stageHeight, scale, offsetX, offsetY } = useMemo(() => {
+    const maxWidth = 300;
+    const maxHeight = 440;
     const padding = 24;
-    const maxWidth = Math.max(windowSize.width - 160, 260);
-    const maxHeight = Math.max(windowSize.height - 260, 260);
     const safeMirrorWidth = Math.max(mirrorSize.width, 1);
     const safeMirrorHeight = Math.max(mirrorSize.height, 1);
-    const rotate = safeMirrorHeight > safeMirrorWidth;
-    const displayWidth = rotate ? safeMirrorHeight : safeMirrorWidth;
-    const displayHeight = rotate ? safeMirrorWidth : safeMirrorHeight;
     let minX = 0;
     let minY = 0;
-    let maxX = displayWidth;
-    let maxY = displayHeight;
-
-    const transformPoint = hole => ({
-      x: rotate ? displayWidth - hole.y : hole.x,
-      y: rotate ? hole.x : hole.y,
-      diameter: hole.diameter,
-    });
+    let maxX = safeMirrorWidth;
+    let maxY = safeMirrorHeight;
 
     holes.forEach(hole => {
-      const transformed = transformPoint(hole);
-      const radius = transformed.diameter / 2;
-      minX = Math.min(minX, transformed.x - radius);
-      minY = Math.min(minY, transformed.y - radius);
-      maxX = Math.max(maxX, transformed.x + radius);
-      maxY = Math.max(maxY, transformed.y + radius);
+      const radius = hole.diameter / 2;
+      minX = Math.min(minX, hole.x - radius);
+      minY = Math.min(minY, hole.y - radius);
+      maxX = Math.max(maxX, hole.x + radius);
+      maxY = Math.max(maxY, hole.y + radius);
     });
 
     const boundsWidth = Math.max(maxX - minX, 1);
@@ -380,9 +358,8 @@ const Mirror = () => {
       scale: nextScale,
       offsetX: (0 - minX) * nextScale + padding,
       offsetY: (0 - minY) * nextScale + padding,
-      isRotated: rotate,
     };
-  }, [mirrorSize.height, mirrorSize.width, holes, windowSize.height, windowSize.width]);
+  }, [mirrorSize.height, mirrorSize.width, holes]);
 
   const handleMirrorInputChange = key => event => {
     const value = event.target.value;
@@ -521,10 +498,8 @@ const Mirror = () => {
 
   const overlapPalette = ['#d64545', '#2f7df6', '#2e9b5f', '#b56c16', '#7a49c7'];
 
-  const displayMirrorWidth = isRotated ? mirrorSize.height : mirrorSize.width;
-  const displayMirrorHeight = isRotated ? mirrorSize.width : mirrorSize.height;
-  const scaledMirrorWidth = displayMirrorWidth * scale;
-  const scaledMirrorHeight = displayMirrorHeight * scale;
+  const scaledMirrorWidth = mirrorSize.width * scale;
+  const scaledMirrorHeight = mirrorSize.height * scale;
 
   return (
     <MirrorLayout>
@@ -540,10 +515,8 @@ const Mirror = () => {
             }}
           >
             {holes.map(hole => {
-              const displayX = isRotated ? displayMirrorWidth - hole.y : hole.x;
-              const displayY = isRotated ? hole.x : hole.y;
-              const centerX = displayX * scale;
-              const centerY = displayY * scale;
+              const centerX = hole.x * scale;
+              const centerY = hole.y * scale;
               const diameter = hole.diameter * scale;
               const radius = diameter / 2;
 
