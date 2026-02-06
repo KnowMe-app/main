@@ -12,7 +12,7 @@ const MirrorLayout = styled.div`
 const MirrorStage = styled.div`
   position: relative;
   display: inline-flex;
-  padding: 0;
+  padding: 18px 42px 32px 18px;
   background: #f9f9f9;
   border-radius: 16px;
   border: 1px solid #e1e1e1;
