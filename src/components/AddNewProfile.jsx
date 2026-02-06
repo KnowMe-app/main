@@ -639,7 +639,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [lastKey3, setLastKey3] = useState(null);
   const [totalCount, setTotalCount] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchBarLoading, setSearchBarLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState('');
@@ -696,24 +695,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const normalized = (value || '').trim();
     setSearchBarQueryActive(Boolean(normalized));
     setLastSearchBarQuery(normalized);
-  }, []);
-
-  const handleSearchStart = useCallback(value => {
-    const normalized = (value || '').trim();
-    const hasQuery = Boolean(normalized);
-
-    setSearchBarLoading(hasQuery);
-    setSearchLoading(hasQuery);
-    setHasSearched(hasQuery);
-    if (hasQuery) {
-      setCurrentPage(1);
-      setTotalCount(0);
-    }
-  }, []);
-
-  const handleSearchEnd = useCallback(() => {
-    setSearchBarLoading(false);
-    setSearchLoading(false);
   }, []);
 
   useEffect(() => {
@@ -1020,12 +1001,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setBackendCount(0);
 
     if (!currentFilter) {
-      if (!searchBarLoading) {
-        setSearchLoading(false);
-      }
-      if (!searchBarQueryActive) {
-        setHasSearched(false);
-      }
+      setSearchLoading(false);
+      setHasSearched(false);
       return;
     }
 
@@ -1126,21 +1103,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         .finally(() => setSearchLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    filters,
-    currentFilter,
-    search,
-    searchBarLoading,
-    searchBarQueryActive,
-  ]);
-
-  useEffect(() => {
-    if (currentFilter || !searchBarQueryActive || state.userId) {
-      return;
-    }
-
-    setTotalCount(Object.keys(users).length);
-  }, [users, currentFilter, searchBarQueryActive, state.userId]);
+  }, [filters, currentFilter, search]);
 
 
   const [adding, setAdding] = useState(false);
@@ -2089,8 +2052,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           setUserNotFound={setUserNotFound}
           onSearchKey={setSearchKeyValuePair}
           onSearchExecuted={handleSearchExecuted}
-          onSearchStart={handleSearchStart}
-          onSearchEnd={handleSearchEnd}
           onClear={() => {
             localStorage.removeItem(SEARCH_KEY);
             setState({});
@@ -2102,11 +2063,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             setUserNotFound(false);
             setSearchBarQueryActive(false);
             setLastSearchBarQuery('');
-            setSearchBarLoading(false);
-            setSearchLoading(false);
-            setHasSearched(false);
-            setTotalCount(0);
-            setCurrentPage(1);
           }}
           storageKey={SEARCH_KEY}
           filters={filters}
@@ -2192,9 +2148,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </>
         ) : (
           <div>
-            {(searchLoading || searchBarLoading || hasSearched) && !userNotFound && (
+            {(searchLoading || hasSearched) && !userNotFound && (
               <p style={{ textAlign: 'center', color: 'black' }}>
-                Знайдено {(searchLoading || searchBarLoading) ? <span className="spinner" /> : totalCount} користувачів.
+                Знайдено {searchLoading ? <span className="spinner" /> : totalCount} користувачів.
               </p>
             )}
             {userNotFound && hasSearched && (
