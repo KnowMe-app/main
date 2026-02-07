@@ -2067,6 +2067,20 @@ const getBmiCategory = value => {
   return 'other';
 };
 
+const getImtCategory = value => {
+  const weight = parseFloat(value.weight);
+  const height = parseFloat(value.height);
+  if (weight && height) {
+    const heightInMeters = height / 100;
+    const imt = Math.round(weight / heightInMeters ** 2);
+    if (imt < 31) return 'lt31';
+    if (imt === 31) return 'eq31';
+    if (imt >= 32 && imt <= 35) return '32_35';
+    if (imt >= 36) return '36_plus';
+  }
+  return 'other';
+};
+
 const getCountryCategory = value => {
   const raw = (value.country || '').toString().trim();
   if (!raw) return 'unknown';
@@ -2210,6 +2224,11 @@ export const filterMain = (
     if (filterSettings.bmi && Object.values(filterSettings.bmi).some(v => !v)) {
       const cat = getBmiCategory(value);
       filters.bmi = !!filterSettings.bmi[cat];
+    }
+
+    if (filterSettings.imt && Object.values(filterSettings.imt).some(v => !v)) {
+      const cat = getImtCategory(value);
+      filters.imt = !!filterSettings.imt[cat];
     }
 
     if (filterSettings.country && Object.values(filterSettings.country).some(v => !v)) {
