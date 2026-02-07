@@ -28,6 +28,7 @@ import {
   fetchTotalNewUsersCount,
   fetchFilteredUsersByPage,
   indexLastLogin,
+  fetchUsersByLastActionPaged,
   addStimulationShortcutId,
   removeStimulationShortcutId,
   replaceStimulationShortcutIds,
@@ -643,6 +644,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentFilter, setCurrentFilter] = useState('');
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
+  const [dateOffsetLA, setDateOffsetLA] = useState(0);
   const initialFav = getFavorites();
   const [favoriteUsersData, setFavoriteUsersData] = useState(initialFav);
   const initialDis = getDislikes();
@@ -1107,6 +1109,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
+    if (currentFilter === 'LAST_ACTION') {
+      loadMoreUsersLastAction()
+        .then(({ cacheCount, backendCount }) => {
+          setCacheCount(cacheCount);
+          setBackendCount(backendCount);
+        })
+        .finally(() => setSearchLoading(false));
+      return;
+    }
+
     if (currentFilter === 'FAVORITE') {
       loadFavoriteUsers().finally(() => setSearchLoading(false));
       return;
@@ -1519,6 +1531,46 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return { cacheCount: 0, backendCount, hasMore: more };
   };
 
+  const loadMoreUsersLastAction = async (currentFilters = filters) => {
+    let favRaw = getFavorites();
+    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
+    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
+      syncFavorites(fav);
+    }
+
+    if (isEditingRef.current)
+      return { cacheCount: 0, backendCount: 0, hasMore };
+
+    const res = await fetchUsersByLastActionPaged(
+      dateOffsetLA,
+      PAGE_SIZE,
+      undefined,
+      id => fetchUserById(id),
+      currentFilters,
+      fav,
+      dislikeUsersData,
+      filterMain
+    );
+
+    if (res && Object.keys(res.users).length > 0) {
+      const filteredUsers = currentFilters.favorite?.favOnly
+        ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
+        : res.users;
+      cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
+      if (!isEditingRef.current) {
+        setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
+      }
+      setDateOffsetLA(res.lastKey);
+      setHasMore(res.hasMore);
+      const backendCount = Object.keys(filteredUsers).length;
+      return { cacheCount: 0, backendCount, hasMore: res.hasMore };
+    }
+
+    setHasMore(false);
+    return { cacheCount: 0, backendCount: 0, hasMore: false };
+  };
 
   const handlePageChange = async page => {
     const needed = page * PAGE_SIZE;
@@ -1533,6 +1585,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           ? await loadMoreUsers2()
           : currentFilter === 'DATE3'
           ? await loadMoreUsers3()
+          : currentFilter === 'LAST_ACTION'
+          ? await loadMoreUsersLastAction()
           : await loadMoreUsers(currentFilter);
       cacheLoaded += cacheCount;
       backendLoaded += backendCount;
@@ -2265,6 +2319,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 }}
               >
                 Load3
+              </Button>
+              <Button
+                onClick={async () => {
+                  setUsers({});
+                  setHasMore(true);
+                  setCurrentPage(1);
+                  setCurrentFilter('LAST_ACTION');
+                  setDateOffsetLA(0);
+                  setDuplicates('');
+                  setIsDuplicateView(false);
+                  const { cacheCount, backendCount } = await loadMoreUsersLastAction();
+                  setCacheCount(cacheCount);
+                  setBackendCount(backendCount);
+                }}
+              >
+                LA
               </Button>
               <Button
                 onClick={() => {
