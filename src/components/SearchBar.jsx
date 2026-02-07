@@ -368,6 +368,7 @@ const SearchBar = ({
       if (cards.length > 0) {
         setUserNotFound && setUserNotFound(false);
         if (key === 'name' || key === 'names' || cards.length > 1) {
+          setState && setState({});
           const map = {};
           cards.forEach(c => {
             map[c.userId] = c;
