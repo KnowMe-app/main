@@ -109,9 +109,22 @@ const removeNestedValue = (current, segments, depth = 0) => {
 export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   const cards = loadCards();
   const existing = cards[cardId] || {};
+  const explicitRemovals = data && typeof data === 'object'
+    ? Object.keys(data).filter(key => data[key] === null)
+    : [];
+  const removalPaths = [
+    ...removeKeys,
+    ...explicitRemovals,
+  ]
+    .map(key => String(key).trim())
+    .filter(key => key && key !== 'userId');
+  const sanitizedData =
+    data && typeof data === 'object'
+      ? Object.fromEntries(Object.entries(data).filter(([, value]) => value !== null))
+      : data;
   let updatedCard = {
     ...existing,
-    ...data,
+    ...sanitizedData,
     userId: cardId,
     cachedAt: Date.now(),
   };
@@ -120,22 +133,19 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
     delete updatedCard.duplicate;
   }
 
-  if (data.lastAction !== undefined) {
+  if (data?.lastAction !== undefined) {
     const normalized = normalizeLastAction(data.lastAction);
     updatedCard.lastAction =
       normalized !== undefined ? normalized : data.lastAction;
   }
 
-  removeKeys
-    .map(key => String(key).trim())
-    .filter(key => key && key !== 'userId')
-    .forEach(path => {
-      const segments = path.split('.');
-      const { changed, value } = removeNestedValue(updatedCard, segments);
-      if (changed) {
-        updatedCard = value;
-      }
-    });
+  removalPaths.forEach(path => {
+    const segments = path.split('.');
+    const { changed, value } = removeNestedValue(updatedCard, segments);
+    if (changed) {
+      updatedCard = value;
+    }
+  });
 
   cards[cardId] = updatedCard;
   saveCards(cards);
