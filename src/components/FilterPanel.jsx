@@ -11,11 +11,13 @@ const defaultsAdd = {
   age: {
     le25: true,
     '26_30': true,
-    '31_36': true,
+    '31_33': true,
+    '34_36': true,
     '37_42': true,
     '43_plus': true,
     other: true,
   },
+  contact: { vk: true, instagram: true, facebook: true, phone: true, telegram: true, tiktok: true, email: true },
   userId: { vk: true, aa: true, ab: true, long: true, mid: true, other: true },
   fields: { lt4: true, lt8: true, lt12: true, other: true },
   commentLength: {
@@ -38,7 +40,8 @@ const defaultsMatching = {
   age: {
     le25: true,
     '26_30': true,
-    '31_36': true,
+    '31_33': true,
+    '34_36': true,
     '37_plus': true,
     other: true,
   },

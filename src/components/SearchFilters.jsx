@@ -1,9 +1,13 @@
 import React from 'react';
+import { FaFacebookF, FaInstagram, FaPhoneVolume, FaTelegramPlane, FaVk } from 'react-icons/fa';
+import { MdEmail } from 'react-icons/md';
+import { SiTiktok } from 'react-icons/si';
 import { CheckboxGroup } from './CheckboxGroup';
 import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 
 export const SearchFilters = ({ filters, onChange, hideUserId = false, hideCommentLength = false, mode = 'default' }) => {
   let groups = [];
+  const contactIconStyle = { display: 'inline-flex', alignItems: 'center' };
 
   if (mode === 'matching') {
     groups = [
@@ -54,7 +58,8 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
         options: [
           { val: 'le25', label: '≤25' },
           { val: '26_30', label: '26-30' },
-          { val: '31_36', label: '31-36' },
+          { val: '31_33', label: '31-33' },
+          { val: '34_36', label: '34-36' },
           { val: '37_plus', label: '37+' },
           { val: 'other', label: '?' },
         ],
@@ -148,10 +153,25 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
         options: [
           { val: 'le25', label: '≤25' },
           { val: '26_30', label: '26-30' },
-          { val: '31_36', label: '31-36' },
+          { val: '31_33', label: '31-33' },
+          { val: '34_36', label: '34-36' },
           { val: '37_42', label: '37-42' },
           { val: '43_plus', label: '43+' },
           { val: 'other', label: '?' },
+        ],
+      },
+      {
+        filterName: 'contact',
+        label: 'Контакти',
+        compact: true,
+        options: [
+          { val: 'vk', label: <span style={contactIconStyle} title="VK"><FaVk /></span> },
+          { val: 'instagram', label: <span style={contactIconStyle} title="Instagram"><FaInstagram /></span> },
+          { val: 'facebook', label: <span style={contactIconStyle} title="Facebook"><FaFacebookF /></span> },
+          { val: 'phone', label: <span style={contactIconStyle} title="Телефон"><FaPhoneVolume /></span> },
+          { val: 'telegram', label: <span style={contactIconStyle} title="Telegram"><FaTelegramPlane /></span> },
+          { val: 'tiktok', label: <span style={contactIconStyle} title="TikTok"><SiTiktok /></span> },
+          { val: 'email', label: <span style={contactIconStyle} title="Пошта"><MdEmail /></span> },
         ],
       },
       {

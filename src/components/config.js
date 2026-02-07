@@ -2040,10 +2040,18 @@ const getAgeCategory = value => {
   const age = currentYear - birthYear;
   if (age <= 25) return 'le25';
   if (age >= 26 && age <= 30) return '26_30';
-  if (age >= 31 && age <= 36) return '31_36';
+  if (age >= 31 && age <= 33) return '31_33';
+  if (age >= 34 && age <= 36) return '34_36';
   if (age >= 37 && age <= 42) return '37_42';
   if (age >= 43) return '43_plus';
   return 'other';
+};
+
+const hasContactValue = value => {
+  if (Array.isArray(value)) {
+    return value.some(item => String(item || '').trim());
+  }
+  return String(value || '').trim().length > 0;
 };
 
 const getBmiCategory = value => {
@@ -2181,6 +2189,22 @@ export const filterMain = (
       } else {
         filters.age = !!filterSettings.age[cat];
       }
+    }
+
+    if (filterSettings.contact && Object.values(filterSettings.contact).some(v => !v)) {
+      const contactMap = {
+        vk: hasContactValue(value.vk),
+        instagram: hasContactValue(value.instagram),
+        facebook: hasContactValue(value.facebook),
+        phone: hasContactValue(value.phone),
+        telegram: hasContactValue(value.telegram),
+        tiktok: hasContactValue(value.tiktok),
+        email: hasContactValue(value.email),
+      };
+      const allowedContacts = Object.entries(filterSettings.contact)
+        .filter(([, isAllowed]) => isAllowed)
+        .map(([key]) => key);
+      filters.contact = allowedContacts.some(key => contactMap[key]);
     }
 
     if (filterSettings.bmi && Object.values(filterSettings.bmi).some(v => !v)) {
