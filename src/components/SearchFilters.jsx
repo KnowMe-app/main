@@ -161,6 +161,18 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
         ],
       },
       {
+        filterName: 'imt',
+        label: 'IMT',
+        compact: true,
+        options: [
+          { val: 'lt31', label: '<31' },
+          { val: 'eq31', label: '31' },
+          { val: '32_35', label: '32-35' },
+          { val: '36_plus', label: '36+' },
+          { val: 'other', label: '?' },
+        ],
+      },
+      {
         filterName: 'contact',
         label: 'Контакти',
         compact: true,
