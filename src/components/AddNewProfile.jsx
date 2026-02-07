@@ -1564,11 +1564,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
       setDateOffsetLA(res.lastKey);
       setHasMore(res.hasMore);
+      setTotalCount(prev =>
+        Math.max(prev, res.lastKey + (res.hasMore ? PAGE_SIZE : 0)),
+      );
       const backendCount = Object.keys(filteredUsers).length;
       return { cacheCount: 0, backendCount, hasMore: res.hasMore };
     }
 
     setHasMore(false);
+    setTotalCount(prev => Math.max(prev, dateOffsetLA));
     return { cacheCount: 0, backendCount: 0, hasMore: false };
   };
 
