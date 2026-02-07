@@ -1037,6 +1037,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setCurrentPage(1);
     setCacheCount(0);
     setBackendCount(0);
+    setDateOffsetLA(0);
 
     if (!currentFilter) {
       setSearchLoading(false);
