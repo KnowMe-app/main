@@ -126,11 +126,25 @@ export const makeVCard = user => {
     OtherLink: Array.isArray(user.otherLink) ? user.otherLink : [user.otherLink],
   };
 
+  const normalizeTikTokHandle = value => {
+    if (!value) return '';
+    const trimmed = String(value).trim();
+    if (!trimmed) return '';
+    const match = trimmed.match(/tiktok\.com\/@?([^/?#]+)/i);
+    if (match && match[1]) {
+      return match[1].replace(/^@/, '');
+    }
+    return trimmed.replace(/^@/, '').split(/[?#/]/)[0];
+  };
+
   // Функції генерації посилань для різних соцмереж
   const linkGenerators = {
     telegram: value => `https://t.me/${value}`,
     instagram: value => `https://instagram.com/${value}`,
-    tiktok: value => `https://www.tiktok.com/@${value}`,
+    tiktok: value => {
+      const handle = normalizeTikTokHandle(value);
+      return handle ? `https://www.tiktok.com/%40${handle}` : '';
+    },
     facebook: value => `https://facebook.com/${value}`,
     vk: value => `https://vk.com/${value}`,
     otherlink: value => `${value}`, // Пряме посилання без модифікацій
@@ -145,7 +159,9 @@ export const makeVCard = user => {
         // Якщо є спеціальна функція-генератор, використовуємо її, інакше просто вставляємо лінк
         const url = generateLink ? generateLink(link) : link;
 
-        contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:${url}\r\n`;
+        if (url) {
+          contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:${url}\r\n`;
+        }
       }
     });
   });
