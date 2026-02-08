@@ -182,6 +182,15 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
           { val: 'facebook', label: <span style={contactIconStyle} title="Facebook"><FaFacebookF /></span> },
           { val: 'phone', label: <span style={contactIconStyle} title="Телефон"><FaPhoneVolume /></span> },
           { val: 'telegram', label: <span style={contactIconStyle} title="Telegram"><FaTelegramPlane /></span> },
+          {
+            val: 'telegram2',
+            label: (
+              <span style={contactIconStyle} title="Telegram #2">
+                <FaTelegramPlane />
+                <span style={{ marginLeft: '4px' }}>#2</span>
+              </span>
+            ),
+          },
           { val: 'tiktok', label: <span style={contactIconStyle} title="TikTok"><SiTiktok /></span> },
           { val: 'email', label: <span style={contactIconStyle} title="Пошта"><MdEmail /></span> },
         ],
