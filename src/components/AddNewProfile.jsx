@@ -1647,9 +1647,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     saveToContact(res);
   };
 
-  const saveAllContactsCsv = async () => {
-    const res = await fetchAllUsersFromRTDB();
-    saveToContactCsv(res);
+  const saveFilteredContactsVcf = async () => {
+    const noFilters = !filters || Object.values(filters).every(value => value === 'off');
+
+    let fav = favoriteUsersData;
+    if (filters.favorite?.favOnly && Object.keys(fav).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
+    }
+
+    const allUsers = noFilters
+      ? await fetchAllUsersFromRTDB()
+      : await fetchAllFilteredUsers(undefined, filters, fav, {
+          includeSpecialFutureDates: true,
+          dislikedUsers: dislikeUsersData,
+        });
+
+    saveToContact(allUsers);
   };
 
   const fetchAndMergeFavoriteUsers = useCallback(async () => {
@@ -2406,7 +2420,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               {btnExportUsers(exportFilteredUsers)}
               {btnExportUsersCsv(exportFilteredUsersCsv)}
               <Button onClick={saveAllContacts}> S_All</Button>
-              <Button onClick={saveAllContactsCsv}> saveCSV</Button>
+              <Button onClick={saveFilteredContactsVcf}> saveVCF</Button>
 
               {/* <ExcelToJson/> */}
               {/* <UploadJson/> */}
