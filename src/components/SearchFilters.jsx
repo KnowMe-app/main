@@ -8,6 +8,13 @@ import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 export const SearchFilters = ({ filters, onChange, hideUserId = false, hideCommentLength = false, mode = 'default' }) => {
   let groups = [];
   const contactIconStyle = { display: 'inline-flex', alignItems: 'center' };
+  const contactMode = filters.contactMode || 'some';
+  const handleContactModeChange = modeValue => {
+    onChange({
+      ...filters,
+      contactMode: modeValue,
+    });
+  };
 
   if (mode === 'matching') {
     groups = [
@@ -193,6 +200,7 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
           },
           { val: 'tiktok', label: <span style={contactIconStyle} title="TikTok"><SiTiktok /></span> },
           { val: 'email', label: <span style={contactIconStyle} title="Пошта"><MdEmail /></span> },
+          { val: 'other', label: <span title="Інші контакти">?</span> },
         ],
       },
       {
@@ -243,15 +251,39 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
   return (
     <div style={{ margin: '10px 0', color: 'black' }}>
       {groups.map(group => (
-        <CheckboxGroup
-          key={group.filterName}
-          label={group.label}
-          filterName={group.filterName}
-          options={group.options}
-          filters={filters}
-          onChange={onChange}
-          compact={group.compact}
-        />
+        <React.Fragment key={group.filterName}>
+          {group.filterName === 'contact' && (
+            <div style={{ marginBottom: '4px' }}>
+              <span style={{ marginRight: '8px' }}>Контакти:</span>
+              <label style={{ marginRight: '10px' }}>
+                <input
+                  type="radio"
+                  name="contactMode"
+                  checked={contactMode === 'some'}
+                  onChange={() => handleContactModeChange('some')}
+                />
+                <span style={{ marginLeft: '4px' }}>some</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="contactMode"
+                  checked={contactMode === 'only'}
+                  onChange={() => handleContactModeChange('only')}
+                />
+                <span style={{ marginLeft: '4px' }}>only</span>
+              </label>
+            </div>
+          )}
+          <CheckboxGroup
+            label={group.label}
+            filterName={group.filterName}
+            options={group.options}
+            filters={filters}
+            onChange={onChange}
+            compact={group.compact}
+          />
+        </React.Fragment>
       ))}
     </div>
   );
