@@ -24,7 +24,7 @@ const defaultsAdd = {
     '36_plus': true,
     other: true,
   },
-  contact: { vk: true, instagram: true, facebook: true, phone: true, telegram: true, telegram2: true, tiktok: true, email: true },
+  contact: { vk: true, instagram: true, facebook: true, phone: true, telegram: true, tiktok: true, email: true },
   userId: { vk: true, aa: true, ab: true, long: true, mid: true, other: true },
   fields: { lt4: true, lt8: true, lt12: true, other: true },
   commentLength: {
