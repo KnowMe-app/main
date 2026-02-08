@@ -2215,20 +2215,46 @@ export const filterMain = (
     }
 
     if (filterSettings.contact && Object.values(filterSettings.contact).some(v => !v)) {
+      const isTelegramUk = isTelegramUkOnly(value.telegram);
       const contactMap = {
         vk: hasContactValue(value.vk),
         instagram: hasContactValue(value.instagram),
         facebook: hasContactValue(value.facebook),
         phone: hasContactValue(value.phone),
         telegram: hasContactValue(value.telegram),
-        telegram2: isTelegramUkOnly(value.telegram),
+        telegram2: isTelegramUk,
         tiktok: hasContactValue(value.tiktok),
         email: hasContactValue(value.email),
+        other:
+          hasContactValue(value.otherLink) ||
+          hasContactValue(value.telegramFromPhone) ||
+          hasContactValue(value.viberFromPhone) ||
+          hasContactValue(value.whatsappFromPhone),
       };
       const allowedContacts = Object.entries(filterSettings.contact)
         .filter(([, isAllowed]) => isAllowed)
         .map(([key]) => key);
-      filters.contact = allowedContacts.some(key => contactMap[key]);
+      const contactMode = filterSettings.contactMode || 'some';
+
+      if (contactMode === 'only') {
+        const presentContacts = [];
+
+        if (isTelegramUk) {
+          presentContacts.push('telegram2');
+        } else if (contactMap.telegram) {
+          presentContacts.push('telegram');
+        }
+
+        Object.entries(contactMap).forEach(([key, hasValue]) => {
+          if (key === 'telegram' || key === 'telegram2') return;
+          if (hasValue) presentContacts.push(key);
+        });
+
+        filters.contact =
+          presentContacts.length > 0 && presentContacts.every(key => allowedContacts.includes(key));
+      } else {
+        filters.contact = allowedContacts.some(key => contactMap[key]);
+      }
     }
 
     if (filterSettings.bmi && Object.values(filterSettings.bmi).some(v => !v)) {
