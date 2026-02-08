@@ -2221,7 +2221,7 @@ export const filterMain = (
         instagram: hasContactValue(value.instagram),
         facebook: hasContactValue(value.facebook),
         phone: hasContactValue(value.phone),
-        telegram: hasContactValue(value.telegram) && !isTelegramUk,
+        telegram: hasContactValue(value.telegram),
         telegram2: isTelegramUk,
         tiktok: hasContactValue(value.tiktok),
         email: hasContactValue(value.email),
