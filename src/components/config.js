@@ -2054,15 +2054,6 @@ const hasContactValue = value => {
   return String(value || '').trim().length > 0;
 };
 
-const isTelegramUkOnly = value => {
-  if (Array.isArray(value)) {
-    const nonEmpty = value.map(item => String(item || '').trim()).filter(Boolean);
-    return nonEmpty.length === 1 && nonEmpty[0].startsWith('УК');
-  }
-  const trimmed = String(value || '').trim();
-  return trimmed.length > 0 && trimmed.startsWith('УК');
-};
-
 const getBmiCategory = value => {
   const weight = parseFloat(value.weight);
   const height = parseFloat(value.height);
@@ -2221,7 +2212,6 @@ export const filterMain = (
         facebook: hasContactValue(value.facebook),
         phone: hasContactValue(value.phone),
         telegram: hasContactValue(value.telegram),
-        telegram2: isTelegramUkOnly(value.telegram),
         tiktok: hasContactValue(value.tiktok),
         email: hasContactValue(value.email),
       };
