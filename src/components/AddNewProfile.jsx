@@ -74,13 +74,14 @@ import {
   removeStoredStimulationShortcutId,
 } from 'utils/stimulationShortcutStorage';
 // import ExcelToJson from './ExcelToJson';
-import { saveToContact } from './ExportContact';
+import { saveToContact, saveToContactCSV } from './ExportContact';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
 import { ReactComponent as BabyIcon } from 'assets/icons/baby.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 // import { UploadJson } from './topBtns/uploadNewJSON';
 import { btnExportUsers } from './topBtns/btnExportUsers';
+import { btnExportUsersCsv } from './topBtns/btnExportUsersCsv';
 import { btnMerge } from './smallCard/btnMerge';
 import FilterPanel from './FilterPanel';
 import SearchBar from './SearchBar';
@@ -1622,6 +1623,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     saveToContact(allUsers);
   };
 
+  const exportFilteredUsersCsv = async () => {
+    const noFilters = !filters || Object.values(filters).every(value => value === 'off');
+
+    let fav = favoriteUsersData;
+    if (filters.favorite?.favOnly && Object.keys(fav).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
+    }
+
+    const allUsers = noFilters
+      ? await fetchAllUsersFromRTDB()
+      : await fetchAllFilteredUsers(undefined, filters, fav, {
+          includeSpecialFutureDates: true,
+          dislikedUsers: dislikeUsersData,
+        });
+
+    saveToContactCSV(allUsers);
+  };
+
   const saveAllContacts = async () => {
     const res = await fetchAllUsersFromRTDB();
     saveToContact(res);
@@ -2379,6 +2399,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </Button>
               }
               {btnExportUsers(exportFilteredUsers)}
+              {btnExportUsersCsv(exportFilteredUsersCsv)}
               <Button onClick={saveAllContacts}> S_All</Button>
 
               {/* <ExcelToJson/> */}
