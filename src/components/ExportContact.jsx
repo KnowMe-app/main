@@ -3,17 +3,33 @@ import { makeCardDescription } from './makeCardDescription';
 
 const hasCyrillic = value => /[\u0400-\u04FF]/.test(value);
 const hasEmoji = value => /[\p{Extended_Pictographic}]/u.test(value);
-const hasInvalidAt = value => value.includes('@') && !value.endsWith('@');
+const hasNonAscii = value => /[^\x00-\x7F]/.test(value);
 const hasWhitespace = value => /\s/.test(value);
+
+const normalizeTelegramHandle = value => {
+  if (!value) return '';
+  const trimmed = String(value).trim();
+  if (!trimmed) return '';
+  const stripped = trimmed.replace(/^@@/, '@');
+  const tMeMatch = stripped.match(/t\.me\/([^/?#\s]+)/i);
+  if (tMeMatch && tMeMatch[1]) {
+    return tMeMatch[1].replace(/^@/, '');
+  }
+  const atMatch = stripped.match(/@([a-z0-9_\.]+)/i);
+  if (atMatch && atMatch[1]) {
+    return atMatch[1];
+  }
+  return stripped.replace(/^@/, '').split(/[?#/\s]/)[0];
+};
 
 const isValidUrlValue = value => {
   if (!value) return false;
   const trimmed = String(value).trim();
   if (!trimmed) return false;
   if (hasWhitespace(trimmed)) return false;
+  if (hasNonAscii(trimmed)) return false;
   if (hasCyrillic(trimmed)) return false;
   if (hasEmoji(trimmed)) return false;
-  if (hasInvalidAt(trimmed)) return false;
   return true;
 };
 
@@ -87,15 +103,23 @@ const normalizeTikTokHandle = value => {
   if (!value) return '';
   const trimmed = String(value).trim();
   if (!trimmed) return '';
+  const stripped = trimmed.replace(/^@@/, '@');
+  const atMatch = stripped.match(/@([a-z0-9_\.]+)/i);
+  if (atMatch && atMatch[1]) {
+    return atMatch[1];
+  }
   const match = trimmed.match(/tiktok\.com\/@?([^/?#]+)/i);
   if (match && match[1]) {
     return match[1].replace(/^@/, '');
   }
-  return trimmed.replace(/^@/, '').split(/[?#/]/)[0];
+  return trimmed.replace(/^@/, '').split(/[?#/\s]/)[0];
 };
 
 const linkGenerators = {
-  telegram: value => `https://t.me/${value}`,
+  telegram: value => {
+    const handle = normalizeTelegramHandle(value);
+    return handle ? `https://t.me/${handle}` : '';
+  },
   instagram: value => `https://instagram.com/${value}`,
   tiktok: value => {
     const handle = normalizeTikTokHandle(value);
@@ -119,38 +143,116 @@ const collectSocialLinks = user => {
   return Object.entries(socialLinksData).reduce((acc, [label, links]) => {
     const lowercaseLabel = label.toLowerCase();
     const generateLink = linkGenerators[lowercaseLabel];
+    const invalidLinks = [];
     const normalizedLinks = links
       .filter(Boolean)
       .map(link => {
         const url = generateLink ? generateLink(link) : link;
         const rawValue = String(link).trim();
-        if (!isValidUrlValue(rawValue)) return null;
-        if (!isValidUrlValue(url)) return null;
+        if (!isValidUrlValue(rawValue)) {
+          invalidLinks.push(rawValue);
+          return null;
+        }
+        if (!isValidUrlValue(url)) {
+          invalidLinks.push(rawValue);
+          return null;
+        }
         return url;
       })
       .filter(Boolean);
 
     if (normalizedLinks.length) {
-      acc[label] = normalizedLinks;
+      acc.links[label] = normalizedLinks;
+    }
+    if (invalidLinks.length) {
+      acc.invalidLinks.push(...invalidLinks);
     }
     return acc;
-  }, {});
+  }, { links: {}, invalidLinks: [] });
+};
+
+const sanitizeNoteValue = value =>
+  String(value ?? '')
+    .replace(/\r\n|\r|\n/g, '\\n')
+    .trim();
+
+const escapeTextValue = value =>
+  String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,');
+
+const foldLine = (line, maxLength = 75) => {
+  if (line.length <= maxLength) return [line];
+  const parts = [];
+  let remaining = line;
+  while (remaining.length > maxLength) {
+    parts.push(remaining.slice(0, maxLength));
+    remaining = remaining.slice(maxLength);
+  }
+  if (remaining) {
+    parts.push(remaining);
+  }
+  return parts.reduce((acc, part, index) => {
+    if (index === 0) {
+      acc.push(part);
+    } else {
+      acc.push(` ${part}`);
+    }
+    return acc;
+  }, []);
+};
+
+const validateContentLine = line => {
+  if (!line) return false;
+  if (/^[ \t]/.test(line)) return true;
+  return line.includes(':');
+};
+
+const normalizeVCardLines = lines => {
+  const physicalLines = [];
+  lines.forEach(line => {
+    if (!line) return;
+    const folded = foldLine(line);
+    folded.forEach(physicalLine => {
+      if (validateContentLine(physicalLine)) {
+        physicalLines.push(physicalLine);
+      }
+    });
+  });
+
+  return physicalLines.filter(Boolean);
+};
+
+const safeAddLine = (lines, line) => {
+  if (!line) return;
+  if (!validateContentLine(line)) {
+    if (lines.length && /^[ \t]/.test(line)) {
+      lines[lines.length - 1] += line.trimStart();
+      return;
+    }
+    console.warn('Invalid vCard content line skipped:', line);
+    return;
+  }
+  lines.push(line);
 };
 
 export const makeVCard = user => {
   // Формуємо vCard
-  let contactVCard = `BEGIN:VCARD\r\nVERSION:3.0\r\n`;
+  const lines = [];
+  safeAddLine(lines, 'BEGIN:VCARD');
+  safeAddLine(lines, 'VERSION:3.0');
 
   const finalName = getContactName(user);
   const phones = Array.isArray(user.phone) ? user.phone : [user.phone];
 
-  contactVCard += `FN;CHARSET=UTF-8:${finalName}\r\n`;
-  contactVCard += `N;CHARSET=UTF-8:${finalName};;;;\r\n`;
+  safeAddLine(lines, `FN;CHARSET=UTF-8:${escapeTextValue(finalName)}`);
+  safeAddLine(lines, `N;CHARSET=UTF-8:${escapeTextValue(finalName)};;;;`);
 
   // Обробка телефонів
   phones.forEach(phone => {
     if (phone) {
-      contactVCard += `TEL;TYPE=CELL:+${String(phone).trim()}\r\n`;
+      safeAddLine(lines, `TEL;TYPE=CELL:+${String(phone).trim()}`);
     }
   });
 
@@ -158,7 +260,7 @@ export const makeVCard = user => {
   const emails = Array.isArray(user.email) ? user.email : [user.email];
   emails.forEach(email => {
     if (email) {
-      contactVCard += `EMAIL;CHARSET=UTF-8;TYPE=HOME:${email.trim()}\r\n`;
+      safeAddLine(lines, `EMAIL;CHARSET=UTF-8;TYPE=HOME:${email.trim()}`);
     }
   });
 
@@ -167,7 +269,12 @@ export const makeVCard = user => {
   addresses.forEach(address => {
     if (address) {
       const { street = '', city = '', region = '', country = '' } = address;
-      contactVCard += `ADR;CHARSET=UTF-8;TYPE=HOME:;;${street.trim()};${city.trim()};${region.trim()};${country.trim()}\r\n`;
+      safeAddLine(
+        lines,
+        `ADR;CHARSET=UTF-8;TYPE=HOME:;;${escapeTextValue(street.trim())};${escapeTextValue(
+          city.trim(),
+        )};${escapeTextValue(region.trim())};${escapeTextValue(country.trim())}`,
+      );
     }
   });
 
@@ -175,7 +282,7 @@ export const makeVCard = user => {
   const roles = Array.isArray(user.userRole) ? user.userRole : [user.userRole];
   roles.forEach(role => {
     if (role) {
-      contactVCard += `TITLE;CHARSET=UTF-8:${role.trim()}\r\n`;
+      safeAddLine(lines, `TITLE;CHARSET=UTF-8:${escapeTextValue(role.trim())}`);
     }
   });
 
@@ -189,21 +296,31 @@ export const makeVCard = user => {
   // });
 
   const socialLinks = collectSocialLinks(user);
-  Object.entries(socialLinks).forEach(([label, links]) => {
+  Object.entries(socialLinks.links).forEach(([label, links]) => {
     links.forEach(url => {
-      contactVCard += `URL;CHARSET=UTF-8;TYPE=${label}:${url}\r\n`;
+      safeAddLine(lines, `URL;CHARSET=UTF-8;TYPE=${label}:${url}`);
     });
   });
 
   // Опис карти з використанням makeCardDescription
   const description = makeCardDescription(user);
+  const sanitizedDescription = sanitizeNoteValue(description);
+  const invalidUrlsNote = socialLinks.invalidLinks.length
+    ? `Invalid URLs: ${socialLinks.invalidLinks.join(', ')}`
+    : '';
+  const combinedNote = [sanitizedDescription, invalidUrlsNote]
+    .filter(Boolean)
+    .join('\\n')
+    .trim();
 
-  if (description) {
-    contactVCard += `NOTE;CHARSET=UTF-8:${description}\r\n`;
+  if (combinedNote) {
+    safeAddLine(lines, `NOTE;CHARSET=UTF-8:${escapeTextValue(combinedNote)}`);
   }
 
-  contactVCard += `END:VCARD\r\n`;
-  return contactVCard;
+  safeAddLine(lines, 'END:VCARD');
+
+  const normalizedLines = normalizeVCardLines(lines);
+  return `${normalizedLines.join('\r\n')}\r\n`;
 };
 
 export const saveToContact = data => {
@@ -225,7 +342,12 @@ export const saveToContact = data => {
     let contactVCard = '';
 
     chunk.forEach(user => {
-      contactVCard += makeVCard(user);
+      try {
+        contactVCard += makeVCard(user);
+      } catch (error) {
+        const userId = user?.userId ?? user?.id ?? 'unknown';
+        console.warn('Skipping invalid contact:', userId, error);
+      }
     });
 
     const fileSuffix = usersList.length > CHUNK_SIZE ? `_${Math.floor(i / CHUNK_SIZE) + 1}` : '';
@@ -266,6 +388,7 @@ export const makeCsvRow = user => {
   const roles = Array.isArray(user.userRole) ? user.userRole : [user.userRole];
   const description = makeCardDescription(user);
   const socialLinks = collectSocialLinks(user);
+  const socialLinksMap = socialLinks.links;
 
   const addressValues = addresses
     .filter(Boolean)
@@ -283,12 +406,12 @@ export const makeCsvRow = user => {
     stringifyList(emails),
     stringifyList(addressValues),
     stringifyList(roles),
-    stringifyList(socialLinks.Telegram || []),
-    stringifyList(socialLinks.Instagram || []),
-    stringifyList(socialLinks.TikTok || []),
-    stringifyList(socialLinks.Facebook || []),
-    stringifyList(socialLinks.VK || []),
-    stringifyList(socialLinks.OtherLink || []),
+    stringifyList(socialLinksMap.Telegram || []),
+    stringifyList(socialLinksMap.Instagram || []),
+    stringifyList(socialLinksMap.TikTok || []),
+    stringifyList(socialLinksMap.Facebook || []),
+    stringifyList(socialLinksMap.VK || []),
+    stringifyList(socialLinksMap.OtherLink || []),
     description ? String(description).trim() : '',
   ];
 
