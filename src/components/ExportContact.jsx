@@ -3,7 +3,7 @@ import { makeCardDescription } from './makeCardDescription';
 
 const hasCyrillic = value => /[\u0400-\u04FF]/.test(value);
 const hasEmoji = value => /[\p{Extended_Pictographic}]/u.test(value);
-const hasNonAscii = value => /[^\u0000-\u007F]/.test(value);
+const hasNonAscii = value => /[^\x20-\x7E]/.test(value);
 const hasWhitespace = value => /\s/.test(value);
 
 const normalizeTelegramHandle = value => {
