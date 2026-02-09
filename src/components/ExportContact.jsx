@@ -3,7 +3,7 @@ import { makeCardDescription } from './makeCardDescription';
 
 const hasCyrillic = value => /[\u0400-\u04FF]/.test(value);
 const hasEmoji = value => /[\p{Extended_Pictographic}]/u.test(value);
-const hasNonAscii = value => /[^\x00-\x7F]/.test(value);
+const hasNonAscii = value => /[^\u0000-\u007F]/.test(value);
 const hasWhitespace = value => /\s/.test(value);
 
 const normalizeTelegramHandle = value => {
@@ -15,7 +15,7 @@ const normalizeTelegramHandle = value => {
   if (tMeMatch && tMeMatch[1]) {
     return tMeMatch[1].replace(/^@/, '');
   }
-  const atMatch = stripped.match(/@([a-z0-9_\.]+)/i);
+  const atMatch = stripped.match(/@([a-z0-9_.]+)/i);
   if (atMatch && atMatch[1]) {
     return atMatch[1];
   }
@@ -104,7 +104,7 @@ const normalizeTikTokHandle = value => {
   const trimmed = String(value).trim();
   if (!trimmed) return '';
   const stripped = trimmed.replace(/^@@/, '@');
-  const atMatch = stripped.match(/@([a-z0-9_\.]+)/i);
+  const atMatch = stripped.match(/@([a-z0-9_.]+)/i);
   if (atMatch && atMatch[1]) {
     return atMatch[1];
   }
