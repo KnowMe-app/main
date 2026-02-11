@@ -7,6 +7,17 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
   const { ownKids, lastDelivery, csection } = userData;
   const formattedLastDelivery = formatDateToDisplay(lastDelivery);
 
+  const csectionItems = Array.isArray(csection)
+    ? csection.filter(item => item !== null && item !== undefined)
+    : csection !== null && csection !== undefined
+    ? [csection]
+    : [];
+
+  const csectionText = csectionItems
+    .map(item => item.toString().trim())
+    .filter(Boolean)
+    .join(', ');
+
   // Функція для парсингу дати з формату дд.мм.рррр
   const parseCsectionDate = dateString => {
     // Перевірка формату дд.мм.рррр
@@ -29,7 +40,11 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
   };
 
   // Використовуємо `csection` як дату останніх пологів, якщо `lastDelivery` не задано
-  const effectiveLastDelivery = formattedLastDelivery || (csection && parseCsectionDate(csection));
+  const csectionDate = csectionItems
+    .map(item => item.toString().trim())
+    .find(item => parseCsectionDate(item));
+
+  const effectiveLastDelivery = formattedLastDelivery || csectionDate || null;
 
   // Додаємо перевірку перед викликом `split`
   let deliveryDate = null;
@@ -48,7 +63,9 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
   })();
 
   const monthsToAdd = (() => {
-    const val = (csection || '').toLowerCase().replace(/\s/g, '');
+    const val = csectionItems
+      .map(item => item.toString().toLowerCase().replace(/\s/g, ''))
+      .find(Boolean) || '';
     return ['кс-', '-', 'no', 'ні', '0'].includes(val) ? 9 : 18;
   })();
 
@@ -68,7 +85,7 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
           .replace(/\//g, '.')
       : null;
 
-  if (!ownKids && monthsAgo === null && !csection) return null;
+  if (!ownKids && monthsAgo === null && !csectionText) return null;
 
   const parts = [];
   if (effectiveLastDelivery) parts.push(`${effectiveLastDelivery} пологи`);
@@ -98,7 +115,7 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
           {part}
         </span>
       ))}
-      {csection && (
+      {csectionText && (
         <AttentionButton
           key="csection"
           onClick={() => {
@@ -112,7 +129,7 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
             );
           }}
         >
-          кс {csection}
+          кс {csectionText}
         </AttentionButton>
       )}
     </div>
