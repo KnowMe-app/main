@@ -10,7 +10,7 @@ export const btnDel = (
   <CardMenuBtn
     style={{
       backgroundColor: 'red',
-      top: '42px',
+      position: 'static',
     }}
     onClick={e => {
       e.stopPropagation(); // Запобігаємо активації кліку картки

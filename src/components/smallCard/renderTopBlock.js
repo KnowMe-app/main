@@ -62,9 +62,22 @@ export const renderTopBlock = (
 
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
-      {btnDel(cardData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
-      {btnExport(cardData)}
-      {btnMedications(cardData, onOpenMedications)}
+      <div
+        style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          gap: '6px',
+          zIndex: 999,
+        }}
+      >
+        {btnExport(cardData)}
+        {btnDel(cardData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
+        {btnMedications(cardData, onOpenMedications)}
+      </div>
       <div>
         {cardData.lastAction &&
           formatDateToDisplay(normalizeLastAction(cardData.lastAction))}
