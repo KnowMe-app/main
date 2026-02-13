@@ -9,7 +9,7 @@ export const btnMedications = (userData, onOpenMedications) => {
   };
 
   return (
-    <button style={{ ...styles.button, top: 140 }} onClick={handleClick}>
+    <button style={styles.button} onClick={handleClick}>
       Ліки
     </button>
   );
@@ -23,8 +23,6 @@ const styles = {
     border: 'none',
     borderRadius: '5px',
     cursor: 'pointer',
-    position: 'absolute',
-    right: '10px',
-    zIndex: 999,
+    position: 'static',
   },
 };
