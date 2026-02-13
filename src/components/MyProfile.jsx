@@ -523,10 +523,12 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     handleSubmit();
   };
   const handleSubmit = async (newState) => {
-    const data = newState? newState:state
+    const data = newState ? newState : state;
+    const { password, ...profileData } = data;
     const { existingData } = await fetchUserData(state.userId);
     
-    const uploadedInfo = makeUploadedInfo(existingData, data);
+    const uploadedInfo = makeUploadedInfo(existingData, profileData);
+    delete uploadedInfo.password;
     await updateDataInRealtimeDB(state.userId, uploadedInfo);
     await updateDataInFiresoreDB(state.userId, uploadedInfo, 'check');
   };
@@ -688,6 +690,9 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const existingData = data.existingData || {};
 
       const processedData = Object.keys(existingData).reduce((acc, key) => {
+        if (key === 'password') {
+          return acc;
+        }
         const value = existingData[key];
         if (key === 'photos' && Array.isArray(value)) {
           // Зберегти лише останні 9 значень
