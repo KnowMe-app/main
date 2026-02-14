@@ -176,8 +176,10 @@ const UsersList = ({
             </div>
           ) : (
             <>
-              {btnEdit(userData, setSearch, setState)}
-              {btnCompare(index, users, setUsers, setShowInfoModal, setCompare, )}
+              <div style={styles.listActions}>
+                {btnEdit(userData, setSearch, setState, { backgroundColor: '#FF8C00' })}
+                {btnCompare(index, users, setUsers, setShowInfoModal, setCompare)}
+              </div>
               <UserCard
                 setShowInfoModal={setShowInfoModal}
                 userData={userData}
@@ -205,6 +207,15 @@ const styles = {
   container: {
     display: 'flex',
     flexWrap: 'wrap',
+  },
+  listActions: {
+    position: 'absolute',
+    top: '10px',
+    left: '10px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    zIndex: 999,
   },
 };
 

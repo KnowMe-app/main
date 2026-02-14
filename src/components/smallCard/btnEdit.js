@@ -5,7 +5,7 @@ import { normalizeQueryKey, setIdsForQuery } from '../../utils/cardIndex';
 import { saveCard } from '../../utils/cardsStorage';
 
 // Use already loaded card data instead of re-fetching from the server
-export const btnEdit = (userData, setSearch, setState) => {
+export const btnEdit = (userData, setSearch, setState, style = {}) => {
   const handleCardClick = () => {
     if (userData) {
       setSearch(`${userData.userId}`);
@@ -20,6 +20,10 @@ export const btnEdit = (userData, setSearch, setState) => {
 
   return (
     <CardMenuBtn
+      style={{
+        position: 'static',
+        ...style,
+      }}
       onClick={e => {
         e.stopPropagation(); // Запобігаємо активації кліку картки
         handleCardClick();

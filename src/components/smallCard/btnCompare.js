@@ -1,7 +1,14 @@
 import React from 'react';
 import { handleSubmitAll } from './actions';
 
-export const btnCompare = (index, users, setUsers, setShowInfoModal, setCompare) => {
+export const btnCompare = (
+  index,
+  users,
+  setUsers,
+  setShowInfoModal,
+  setCompare,
+  style = {},
+) => {
   const delKeys = [
     'photos',
     'areTermsConfirmed',
@@ -217,7 +224,7 @@ const handleCompareClick = (e, index, users, delKeys, setShowInfoModal, setCompa
 
   return (
     <button
-      style={{ ...styles.removeButton, top: 105, backgroundColor: 'purple' }}
+      style={{ ...styles.removeButton, ...style }}
       onClick={(e) => handleCompareClick(e, index, users, delKeys, setShowInfoModal, setCompare)}
 >
       comp
@@ -229,14 +236,11 @@ const handleCompareClick = (e, index, users, delKeys, setShowInfoModal, setCompa
 const styles = {
   removeButton: {
     padding: '3px 6px',
-    backgroundColor: 'orange',
+    backgroundColor: 'purple',
     color: 'white',
     border: 'none',
     borderRadius: '5px',
     cursor: 'pointer',
-    position: 'absolute',
-    top: '73px',
-    right: '10px',
-    zIndex: 999,
+    position: 'static',
   },
 };
