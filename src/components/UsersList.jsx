@@ -23,6 +23,7 @@ const UserCard = ({
   setDislikeUsers,
   currentFilter,
   isDateInRange,
+  actions,
 }) => {
   const effectiveStatus = getEffectiveCycleStatus(userData);
   const scheduleUserData = {
@@ -34,21 +35,22 @@ const UserCard = ({
   return (
     <div>
       <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-          {renderTopBlock(
-            userData,
-            setUsers,
-            setShowInfoModal,
-            setState,
-            setUserIdToDelete,
-            true,
-            favoriteUsers,
-            setFavoriteUsers,
-            dislikeUsers,
-            setDislikeUsers,
-            currentFilter,
-            isDateInRange,
-            onOpenMedications,
-          )}
+        {renderTopBlock(
+          userData,
+          setUsers,
+          setShowInfoModal,
+          setState,
+          setUserIdToDelete,
+          true,
+          favoriteUsers,
+          setFavoriteUsers,
+          dislikeUsers,
+          setDislikeUsers,
+          currentFilter,
+          isDateInRange,
+          onOpenMedications,
+          actions
+        )}
       </div>
       {shouldShowSchedule && (
         <div style={{ ...coloredCard(), marginBottom: '8px' }}>
@@ -73,9 +75,7 @@ const UserCard = ({
                 setUsers(prev => {
                   if (!prev) return prev;
                   if (Array.isArray(prev)) {
-                    return prev.map(item =>
-                      item?.userId === userData.userId ? { ...item, ...updates } : item,
-                    );
+                    return prev.map(item => (item?.userId === userData.userId ? { ...item, ...updates } : item));
                   }
                   if (typeof prev === 'object') {
                     const current = prev[userData.userId];
@@ -136,7 +136,6 @@ const UsersList = ({
 
   return (
     <div style={styles.container}>
-
       {entries.map(([userId, userData], index) => (
         <FadeContainer
           key={userId}
@@ -163,38 +162,34 @@ const UsersList = ({
               }}
             >
               <span>{userData.searchVal}</span>
-              <svg
-                onClick={() => handleCreate(userData.searchVal)}
-                width="40"
-                height="40"
-                viewBox="0 0 40 40"
-                style={{ cursor: 'pointer' }}
-              >
+              <svg onClick={() => handleCreate(userData.searchVal)} width="40" height="40" viewBox="0 0 40 40" style={{ cursor: 'pointer' }}>
                 <rect x="18" y="8" width="4" height="24" fill="white" />
                 <rect x="8" y="18" width="24" height="4" fill="white" />
               </svg>
             </div>
           ) : (
-            <>
-              <div style={styles.listActions}>
-                {btnEdit(userData, setSearch, setState, { backgroundColor: '#FF8C00' })}
-                {btnCompare(index, users, setUsers, setShowInfoModal, setCompare)}
-              </div>
-              <UserCard
-                setShowInfoModal={setShowInfoModal}
-                userData={userData}
-                setUsers={setUsers}
-                setState={setState}
-                setUserIdToDelete={setUserIdToDelete}
-                onOpenMedications={onOpenMedications}
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-                dislikeUsers={dislikeUsers}
-                setDislikeUsers={setDislikeUsers}
-                currentFilter={currentFilter}
-                isDateInRange={isDateInRange}
-              />
-            </>
+            <UserCard
+              setShowInfoModal={setShowInfoModal}
+              userData={userData}
+              setUsers={setUsers}
+              setState={setState}
+              setUserIdToDelete={setUserIdToDelete}
+              onOpenMedications={onOpenMedications}
+              favoriteUsers={favoriteUsers}
+              setFavoriteUsers={setFavoriteUsers}
+              dislikeUsers={dislikeUsers}
+              setDislikeUsers={setDislikeUsers}
+              currentFilter={currentFilter}
+              isDateInRange={isDateInRange}
+              actions={
+                <>
+                  {btnEdit(userData, setSearch, setState, {
+                    backgroundColor: '#FF8C00',
+                  })}
+                  {btnCompare(index, users, setUsers, setShowInfoModal, setCompare)}
+                </>
+              }
+            />
           )}
         </FadeContainer>
       ))}
@@ -207,15 +202,6 @@ const styles = {
   container: {
     display: 'flex',
     flexWrap: 'wrap',
-  },
-  listActions: {
-    position: 'absolute',
-    top: '10px',
-    left: '10px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    zIndex: 999,
   },
 };
 

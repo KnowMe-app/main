@@ -54,6 +54,7 @@ export const renderTopBlock = (
   currentFilter,
   isDateInRange,
   onOpenMedications,
+  additionalActions = null
 ) => {
   if (!userData) return null;
 
@@ -77,38 +78,21 @@ export const renderTopBlock = (
         {btnExport(cardData)}
         {btnDel(cardData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
         {btnMedications(cardData, onOpenMedications)}
+        {additionalActions}
       </div>
       <div>
-        {cardData.lastAction &&
-          formatDateToDisplay(normalizeLastAction(cardData.lastAction))}
+        {cardData.lastAction && formatDateToDisplay(normalizeLastAction(cardData.lastAction))}
         {cardData.lastAction && ', '}
         {cardData.userId}
         {cardData.userRole !== 'ag' &&
           cardData.userRole !== 'ip' &&
           cardData.role !== 'ag' &&
           cardData.role !== 'ip' &&
-          fieldGetInTouch(
-            cardData,
-            setUsers,
-            setState,
-            currentFilter,
-            isDateInRange,
-            favoriteUsers,
-            setFavoriteUsers,
-            dislikeUsers,
-            setDislikeUsers,
-          )}
+          fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, favoriteUsers, setFavoriteUsers, dislikeUsers, setDislikeUsers)}
         {fieldRole(cardData, setUsers, setState)}
-        {cardData.userRole !== 'ag' &&
-          cardData.userRole !== 'ip' &&
-          cardData.role !== 'ag' &&
-          cardData.role !== 'ip' && (
-            <FieldLastCycle
-              userData={cardData}
-              setUsers={setUsers}
-              setState={setState}
-            />
-          )}
+        {cardData.userRole !== 'ag' && cardData.userRole !== 'ip' && cardData.role !== 'ag' && cardData.role !== 'ip' && (
+          <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} />
+        )}
         <div>{fieldDeliveryInfo(setUsers, setState, cardData)}</div>
         <div>
           {cardData.birth && `${cardData.birth} - `}
