@@ -2170,7 +2170,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleClearCache = () => {
     clearAllCardsCache();
-    localStorage.removeItem('addFilters');
     toast.success('Cache cleared');
   };
 
