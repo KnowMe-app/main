@@ -7,7 +7,8 @@ const SPECIAL_GET_IN_TOUCH_VALUES = new Set([
 
 export const REACTION_FILTER_KEYS = {
   SPECIAL_99: 'special99',
-  VALID_DATE: 'validDate',
+  PAST_GET_IN_TOUCH: 'pastGetInTouch',
+  FUTURE_GET_IN_TOUCH: 'futureGetInTouch',
   DISLIKE: 'dislike',
   LIKE: 'like',
   QUESTION: 'question',
@@ -16,7 +17,8 @@ export const REACTION_FILTER_KEYS = {
 
 export const REACTION_FILTER_DEFAULTS = {
   [REACTION_FILTER_KEYS.SPECIAL_99]: true,
-  [REACTION_FILTER_KEYS.VALID_DATE]: true,
+  [REACTION_FILTER_KEYS.PAST_GET_IN_TOUCH]: true,
+  [REACTION_FILTER_KEYS.FUTURE_GET_IN_TOUCH]: true,
   [REACTION_FILTER_KEYS.DISLIKE]: true,
   [REACTION_FILTER_KEYS.LIKE]: true,
   [REACTION_FILTER_KEYS.QUESTION]: true,
@@ -25,11 +27,12 @@ export const REACTION_FILTER_DEFAULTS = {
 
 export const REACTION_FILTER_OPTIONS = [
   { key: REACTION_FILTER_KEYS.SPECIAL_99, label: '99' },
-  { key: REACTION_FILTER_KEYS.VALID_DATE, label: '01' },
+  { key: REACTION_FILTER_KEYS.PAST_GET_IN_TOUCH, label: '-' },
+  { key: REACTION_FILTER_KEYS.FUTURE_GET_IN_TOUCH, label: '+' },
   { key: REACTION_FILTER_KEYS.DISLIKE, label: '✖' },
   { key: REACTION_FILTER_KEYS.LIKE, label: '❤️' },
   { key: REACTION_FILTER_KEYS.QUESTION, label: '?' },
-  { key: REACTION_FILTER_KEYS.NONE, label: '-' },
+  { key: REACTION_FILTER_KEYS.NONE, label: '∅' },
 ];
 
 const normalizeGetInTouch = value => {
@@ -81,6 +84,29 @@ const isValidGetInTouchDate = value => {
   return false;
 };
 
+const parseGetInTouchDate = value => {
+  if (!value) return null;
+
+  if (DATE_ISO_REGEX.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    if (!isValidCalendarDate(year, month, day)) return null;
+    return new Date(year, month - 1, day);
+  }
+
+  if (DATE_DOTTED_REGEX.test(value)) {
+    const [day, month, year] = value.split('.').map(Number);
+    if (!isValidCalendarDate(year, month, day)) return null;
+    return new Date(year, month - 1, day);
+  }
+
+  return null;
+};
+
+const getTodayAtMidnight = () => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+};
+
 export const getReactionCategory = (user, favorites = {}, dislikes = {}) => {
   if (!user || typeof user !== 'object') {
     return REACTION_FILTER_KEYS.NONE;
@@ -105,7 +131,12 @@ export const getReactionCategory = (user, favorites = {}, dislikes = {}) => {
 
   if (getInTouch) {
     if (isValidGetInTouchDate(getInTouch)) {
-      return REACTION_FILTER_KEYS.VALID_DATE;
+      const getInTouchDate = parseGetInTouchDate(getInTouch);
+      const today = getTodayAtMidnight();
+      if (getInTouchDate && getInTouchDate < today) {
+        return REACTION_FILTER_KEYS.PAST_GET_IN_TOUCH;
+      }
+      return REACTION_FILTER_KEYS.FUTURE_GET_IN_TOUCH;
     }
     return REACTION_FILTER_KEYS.QUESTION;
   }
@@ -135,4 +166,3 @@ export const passesReactionFilter = (
 export const REACTION_SPECIAL_VALUES = Object.freeze({
   values: Array.from(SPECIAL_GET_IN_TOUCH_VALUES),
 });
-
