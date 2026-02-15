@@ -638,6 +638,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
   const [lastKey3, setLastKey3] = useState(null);
+  const [lastKey21, setLastKey21] = useState(null);
   const [totalCount, setTotalCount] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -645,6 +646,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentFilter, setCurrentFilter] = useState('');
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
+  const [dateOffset21, setDateOffset21] = useState(0);
   const [dateOffsetLA, setDateOffsetLA] = useState(0);
   const initialFav = getFavorites();
   const [favoriteUsersData, setFavoriteUsersData] = useState(initialFav);
@@ -1033,12 +1035,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setUsers({});
     setLastKey(null);
     setLastKey3(null);
+    setLastKey21(null);
     setHasMore(true);
     setTotalCount(0);
     setCurrentPage(1);
     setCacheCount(0);
     setBackendCount(0);
     setDateOffsetLA(0);
+    setDateOffset21(0);
 
     if (!currentFilter) {
       setSearchLoading(false);
@@ -1051,6 +1055,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (currentFilter === 'DATE2') {
       loadMoreUsers2()
+        .then(({ cacheCount, backendCount }) => {
+          setCacheCount(cacheCount);
+          setBackendCount(backendCount);
+        })
+        .finally(() => setSearchLoading(false));
+      return;
+    }
+
+    if (currentFilter === 'DATE2.1') {
+      loadMoreUsers21()
         .then(({ cacheCount, backendCount }) => {
           setCacheCount(cacheCount);
           setBackendCount(backendCount);
@@ -1345,6 +1359,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsers2 = async (currentFilters = filters) => {
+    return loadMoreUsers2Base(currentFilters, {
+      validateGetInTouchDate: true,
+      useDateByDateBackendFetch: true,
+      queryMode: 'DATE2',
+    });
+  };
+
+  const loadMoreUsers21 = async (currentFilters = filters) => {
+    return loadMoreUsers2Base(currentFilters, {
+      validateGetInTouchDate: false,
+      useDateByDateBackendFetch: false,
+      queryMode: 'DATE2.1',
+    });
+  };
+
+  const loadMoreUsers2Base = async (
+    currentFilters = filters,
+    {
+      validateGetInTouchDate = true,
+      useDateByDateBackendFetch = true,
+      queryMode = 'DATE2',
+    } = {},
+  ) => {
     let favRaw = getFavorites();
     let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
     if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
@@ -1362,6 +1399,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
     let cacheCount = 0;
     let backendCount = 0;
+
     const today = new Date().toISOString().split('T')[0];
     const isValid = d => {
       if (!d) return true;
@@ -1372,12 +1410,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     };
     const filteredArr = cachedArr.filter(
       u =>
-        isValid(u.getInTouch) &&
+        (!validateGetInTouchDate || isValid(u.getInTouch)) &&
         (!currentFilters.favorite?.favOnly || fav[u.userId]) &&
         passesReactionFilter(u, currentFilters?.reaction, fav, dislikeUsersData),
     );
 
-    let offset = dateOffset2;
+    let offset = useDateByDateBackendFetch ? dateOffset2 : dateOffset21;
+    const loadedIds = [];
 
     const slice = filteredArr.slice(offset, offset + PAGE_SIZE);
     if (slice.length > 0) {
@@ -1389,6 +1428,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!isEditingRef.current) {
         setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       }
+      loadedIds.push(...Object.keys(cachedUsers));
       offset += slice.length;
       if (fromCache) cacheCount += slice.length;
       else backendCount += slice.length;
@@ -1397,43 +1437,85 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     let more = filteredArr.length > offset;
 
     if (!more && slice.length < PAGE_SIZE) {
-      const res = await fetchFilteredUsersByPage(
-        offset,
-        undefined,
-        undefined,
-        currentFilters,
-        fav,
-        dislikeUsersData,
-        undefined,
-        partial => {
-          const filteredPartial = currentFilters.favorite?.favOnly
-            ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
-            : partial;
-          cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
-          if (!isEditingRef.current) {
-            setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
-          }
-          backendCount += Object.keys(filteredPartial).length;
-        },
-      );
+      const res = useDateByDateBackendFetch
+        ? await fetchFilteredUsersByPage(
+            offset,
+            undefined,
+            undefined,
+            currentFilters,
+            fav,
+            dislikeUsersData,
+            undefined,
+            partial => {
+              const filteredPartial = currentFilters.favorite?.favOnly
+                ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
+                : partial;
+              cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
+              if (!isEditingRef.current) {
+                setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
+              }
+              loadedIds.push(...Object.keys(filteredPartial));
+              backendCount += Object.keys(filteredPartial).length;
+            },
+          )
+        : await fetchPaginatedNewUsers(
+            lastKey21,
+            'DATE3',
+            currentFilters,
+            fav,
+            {
+              skipGetInTouchFilter: true,
+              dislikedUsers: dislikeUsersData,
+            },
+          );
+
       if (res && Object.keys(res.users).length > 0) {
-        const filteredUsers = currentFilters.favorite?.favOnly
-          ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
-          : res.users;
+        const normalizedUsers = Object.entries(res.users).reduce((acc, [userId, user]) => {
+          const targetId = user.userId || userId;
+          acc[targetId] = { ...user, userId: targetId };
+          return acc;
+        }, {});
+
+        const filteredUsers = Object.fromEntries(
+          Object.entries(normalizedUsers).filter(([, user]) => {
+            if (currentFilters.favorite?.favOnly && !fav[user.userId]) return false;
+            if (validateGetInTouchDate && !isValid(user.getInTouch)) return false;
+            return passesReactionFilter(
+              user,
+              currentFilters?.reaction,
+              fav,
+              dislikeUsersData,
+            );
+          }),
+        );
+
         cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
         if (!isEditingRef.current) {
           setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
         }
-        offset = res.lastKey;
-        more = res.hasMore;
+        loadedIds.push(...Object.keys(filteredUsers));
+        if (useDateByDateBackendFetch) {
+          offset = res.lastKey;
+        } else {
+          setLastKey21(res.lastKey ?? null);
+          offset += Object.keys(filteredUsers).length;
+        }
+        more = !!res.hasMore;
         backendCount += Object.keys(filteredUsers).length;
       } else {
         more = false;
       }
     }
 
-    setDateOffset2(offset);
+    if (useDateByDateBackendFetch) {
+      setDateOffset2(offset);
+    } else {
+      setDateOffset21(offset);
+    }
     setHasMore(more);
+    const queryKey = buildQueryKey(queryMode, currentFilters, search);
+    const existingIds = getIdsByQuery(queryKey);
+    setIdsForQuery(queryKey, [...new Set([...existingIds, ...loadedIds])]);
     return { cacheCount, backendCount, hasMore: more };
   };
 
@@ -1589,6 +1671,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const { cacheCount, backendCount, hasMore: nextMore } =
         currentFilter === 'DATE2'
           ? await loadMoreUsers2()
+          : currentFilter === 'DATE2.1'
+          ? await loadMoreUsers21()
           : currentFilter === 'DATE3'
           ? await loadMoreUsers3()
           : currentFilter === 'LAST_ACTION'
@@ -1598,6 +1682,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       backendLoaded += backendCount;
       loaded += cacheCount + backendCount;
       more = nextMore;
+      if (cacheCount + backendCount === 0 && nextMore) {
+        more = false;
+      }
     }
     setCacheCount(cacheLoaded);
     setBackendCount(backendLoaded);
@@ -2347,6 +2434,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 }}
               >
                 Load2
+              </Button>
+              <Button
+                onClick={async () => {
+                  setUsers({});
+                  setHasMore(true);
+                  setCurrentPage(1);
+                  setCurrentFilter('DATE2.1');
+                  setDateOffset21(0);
+                  setLastKey21(null);
+                  setDuplicates('');
+                  setIsDuplicateView(false);
+                  const { cacheCount, backendCount } = await loadMoreUsers21();
+                  setCacheCount(cacheCount);
+                  setBackendCount(backendCount);
+                }}
+              >
+                Load2.1
               </Button>
               <Button
                 onClick={async () => {
