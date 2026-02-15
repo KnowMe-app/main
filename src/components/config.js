@@ -2054,13 +2054,18 @@ const hasContactValue = value => {
   return String(value || '').trim().length > 0;
 };
 
+const getTelegramValues = value => {
+  const values = Array.isArray(value) ? value : [value];
+  return values.map(item => String(item || '').trim()).filter(Boolean);
+};
+const hasTelegramNonUk = value => {
+  const values = getTelegramValues(value);
+  return values.some(item => !item.startsWith('УК'));
+};
+
 const isTelegramUkOnly = value => {
-  if (Array.isArray(value)) {
-    const nonEmpty = value.map(item => String(item || '').trim()).filter(Boolean);
-    return nonEmpty.length === 1 && nonEmpty[0].startsWith('УК');
-  }
-  const trimmed = String(value || '').trim();
-  return trimmed.length > 0 && trimmed.startsWith('УК');
+  const values = getTelegramValues(value);
+  return values.length > 0 && values.every(item => item.startsWith('УК'));
 };
 
 const getBmiCategory = value => {
@@ -2220,7 +2225,7 @@ export const filterMain = (
         instagram: hasContactValue(value.instagram),
         facebook: hasContactValue(value.facebook),
         phone: hasContactValue(value.phone),
-        telegram: hasContactValue(value.telegram),
+        telegram: hasTelegramNonUk(value.telegram),
         telegram2: isTelegramUkOnly(value.telegram),
         tiktok: hasContactValue(value.tiktok),
         email: hasContactValue(value.email),
