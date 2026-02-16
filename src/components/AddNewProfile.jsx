@@ -628,6 +628,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState('');
   const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.GIT);
+  const [filterResetToken, setFilterResetToken] = useState(0);
   const [loadRequestId, setLoadRequestId] = useState(0);
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
@@ -833,6 +834,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return 'DATE2';
     }
   };
+
+  const handleLoadSortModeChange = useCallback(mode => {
+    setLoadSortMode(mode);
+    if (mode === 'LA') {
+      localStorage.removeItem('addFilters');
+      setFilterResetToken(prev => prev + 1);
+    }
+  }, []);
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   const isDateInRange = dateStr => {
@@ -2180,7 +2189,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   name="load-sort-mode"
                   value={LOAD_SORT_MODES.GIT}
                   checked={loadSortMode === LOAD_SORT_MODES.GIT}
-                  onChange={event => setLoadSortMode(event.target.value)}
+                  onChange={event => handleLoadSortModeChange(event.target.value)}
                 />
                 GIT
               </SortModeLabel>
@@ -2190,7 +2199,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   name="load-sort-mode"
                   value={LOAD_SORT_MODES.LAST_ACTION}
                   checked={loadSortMode === LOAD_SORT_MODES.LAST_ACTION}
-                  onChange={event => setLoadSortMode(event.target.value)}
+                  onChange={event => handleLoadSortModeChange(event.target.value)}
                 />
                 LA
               </SortModeLabel>
@@ -2200,7 +2209,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   name="load-sort-mode"
                   value={LOAD_SORT_MODES.NO_GIT}
                   checked={loadSortMode === LOAD_SORT_MODES.NO_GIT}
-                  onChange={event => setLoadSortMode(event.target.value)}
+                  onChange={event => handleLoadSortModeChange(event.target.value)}
                 />
                 NoGIT
               </SortModeLabel>
@@ -2210,12 +2219,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   name="load-sort-mode"
                   value={LOAD_SORT_MODES.NO_CACHE}
                   checked={loadSortMode === LOAD_SORT_MODES.NO_CACHE}
-                  onChange={event => setLoadSortMode(event.target.value)}
+                  onChange={event => handleLoadSortModeChange(event.target.value)}
                 />
                 NoCash
               </SortModeLabel>
             </SortModeContainer>
-            <FilterPanel onChange={handleFilterChange} storageKey="addFilters" />
+            <FilterPanel
+              onChange={handleFilterChange}
+              storageKey="addFilters"
+              resetToken={filterResetToken}
+            />
             <ButtonsContainer>
               {userNotFound && (
                 <Button onClick={handleAddUser} disabled={adding}>

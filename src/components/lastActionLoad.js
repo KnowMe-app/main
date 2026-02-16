@@ -5,10 +5,12 @@ import {
   orderByChild,
   startAt,
   endAt,
-  limitToFirst,
+  limitToLast,
   get,
 } from 'firebase/database';
 import { PAGE_SIZE, MAX_LOOKBACK_DAYS } from './constants';
+
+const LOOKBACK_BATCH_DAYS = 7;
 
 export async function defaultFetchByLastActionRange(startTs, endTs, limit) {
   const db = getDatabase();
@@ -17,7 +19,7 @@ export async function defaultFetchByLastActionRange(startTs, endTs, limit) {
     orderByChild('lastAction'),
     startAt(startTs),
     endAt(endTs),
-    limitToFirst(limit)
+    limitToLast(limit)
   );
   const snap = await get(q);
   return snap.exists() ? Object.entries(snap.val()) : [];
@@ -49,27 +51,50 @@ export async function fetchUsersByLastActionPaged(
   const combined = [];
   let filtered = [];
   let dayOffset = 0;
+  const seenIds = new Set();
 
   while (filtered.length < target && dayOffset < MAX_LOOKBACK_DAYS) {
-    const day = new Date(today);
-    day.setDate(today.getDate() - dayOffset);
-    const startTs = day.getTime();
-    const endTs = startTs + 24 * 60 * 60 * 1000 - 1;
+    const fetchLimit = Math.max(totalLimit - filtered.length, limit + 1);
+    const batchDays = [];
+
+    for (
+      let i = 0;
+      i < LOOKBACK_BATCH_DAYS && dayOffset + i < MAX_LOOKBACK_DAYS;
+      i += 1
+    ) {
+      const day = new Date(today);
+      day.setDate(today.getDate() - (dayOffset + i));
+      const startTs = day.getTime();
+      const endTs = startTs + 24 * 60 * 60 * 1000 - 1;
+      batchDays.push({ startTs, endTs });
+    }
 
     // eslint-disable-next-line no-await-in-loop
-    const chunk = await fetchRangeFn(startTs, endTs, totalLimit - filtered.length);
+    const chunks = await Promise.all(
+      batchDays.map(({ startTs, endTs }) =>
+        fetchRangeFn(startTs, endTs, fetchLimit)
+      )
+    );
 
-    if (chunk.length > 0) {
-      const ids = chunk.map(([id]) => id);
+    const flattened = chunks.flat();
+    const uniqueChunk = flattened.filter(([id]) => {
+      if (seenIds.has(id)) return false;
+      seenIds.add(id);
+      return true;
+    });
+
+    if (uniqueChunk.length > 0) {
+      const ids = uniqueChunk.map(([id]) => id);
       // eslint-disable-next-line no-await-in-loop
       const extras = await Promise.all(ids.map(id => fetchUserByIdFn(id)));
-      const enriched = chunk.map(([id, data], idx) => {
+      const enriched = uniqueChunk.map(([id, data], idx) => {
         const extra = extras[idx];
         const combinedData = extra ? { ...data, ...extra } : data;
         return [id, { ...combinedData, userId: combinedData.userId || id }];
       });
       enriched.sort(([, a], [, b]) => (Number(b.lastAction ?? 0) - Number(a.lastAction ?? 0)));
       combined.push(...enriched);
+      combined.sort(([, a], [, b]) => (Number(b.lastAction ?? 0) - Number(a.lastAction ?? 0)));
     }
 
     filtered = filterMainFn(
@@ -92,7 +117,7 @@ export async function fetchUsersByLastActionPaged(
       onProgress(partUsers);
     }
 
-    dayOffset += 1;
+    dayOffset += batchDays.length;
   }
 
   const slice = filtered.slice(startOffset, startOffset + limit);
