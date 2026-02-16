@@ -9,8 +9,19 @@ import {
   get,
 } from 'firebase/database';
 import { PAGE_SIZE, MAX_LOOKBACK_DAYS } from './constants';
+import normalizeLastAction from '../utils/normalizeLastAction';
 
 const LOOKBACK_BATCH_DAYS = 7;
+
+const toLastActionTimestamp = value => {
+  const normalized = normalizeLastAction(value);
+  if (normalized !== undefined) return normalized;
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const compareByLastActionDesc = ([, a], [, b]) =>
+  toLastActionTimestamp(b?.lastAction) - toLastActionTimestamp(a?.lastAction);
 
 export async function defaultFetchByLastActionRange(startTs, endTs, limit) {
   const db = getDatabase();
@@ -92,9 +103,9 @@ export async function fetchUsersByLastActionPaged(
         const combinedData = extra ? { ...data, ...extra } : data;
         return [id, { ...combinedData, userId: combinedData.userId || id }];
       });
-      enriched.sort(([, a], [, b]) => (Number(b.lastAction ?? 0) - Number(a.lastAction ?? 0)));
+      enriched.sort(compareByLastActionDesc);
       combined.push(...enriched);
-      combined.sort(([, a], [, b]) => (Number(b.lastAction ?? 0) - Number(a.lastAction ?? 0)));
+      combined.sort(compareByLastActionDesc);
     }
 
     filtered = filterMainFn(
