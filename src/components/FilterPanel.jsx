@@ -66,7 +66,14 @@ const normalizeFilterGroup = (value, defaults) => {
   return typeof value === 'object' && value !== null ? { ...defaults, ...value } : { ...defaults };
 };
 
-const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false, mode = 'default', storageKey: customKey }) => {
+const FilterPanel = ({
+  onChange,
+  hideUserId = false,
+  hideCommentLength = false,
+  mode = 'default',
+  storageKey: customKey,
+  resetToken,
+}) => {
   const defaultFilters = useMemo(() => (mode === 'matching' ? defaultsMatching : defaultsAdd), [mode]);
   const storageKey = customKey || (mode === 'matching' ? 'matchingFilters' : 'userFilters');
 
@@ -88,6 +95,7 @@ const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false, 
 
   const [filters, setFilters] = useState(getInitialFilters);
   const onChangeRef = useRef(onChange);
+  const prevResetTokenRef = useRef(resetToken);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -97,6 +105,12 @@ const FilterPanel = ({ onChange, hideUserId = false, hideCommentLength = false, 
     localStorage.setItem(storageKey, JSON.stringify(filters));
     if (onChangeRef.current) onChangeRef.current(filters);
   }, [filters, storageKey]);
+
+  useEffect(() => {
+    if (prevResetTokenRef.current === resetToken) return;
+    prevResetTokenRef.current = resetToken;
+    setFilters({ ...defaultFilters });
+  }, [defaultFilters, resetToken]);
 
   return <SearchFilters filters={filters} onChange={setFilters} hideUserId={hideUserId} hideCommentLength={hideCommentLength} mode={mode} />;
 };
