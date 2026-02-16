@@ -1437,29 +1437,66 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     let more = filteredArr.length > offset;
 
     if (!more && slice.length < PAGE_SIZE) {
-      const res = useDateByDateBackendFetch
-        ? await fetchFilteredUsersByPage(
-            offset,
-            undefined,
-            undefined,
-            currentFilters,
-            fav,
-            dislikeUsersData,
-            undefined,
-            partial => {
-              const filteredPartial = currentFilters.favorite?.favOnly
-                ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
-                : partial;
-              cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
-              if (!isEditingRef.current) {
-                setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
-              }
-              loadedIds.push(...Object.keys(filteredPartial));
-              backendCount += Object.keys(filteredPartial).length;
-            },
-          )
-        : await fetchPaginatedNewUsers(
-            lastKey21,
+      if (useDateByDateBackendFetch) {
+        const res = await fetchFilteredUsersByPage(
+          offset,
+          undefined,
+          undefined,
+          currentFilters,
+          fav,
+          dislikeUsersData,
+          undefined,
+          partial => {
+            const filteredPartial = currentFilters.favorite?.favOnly
+              ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
+              : partial;
+            cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
+            if (!isEditingRef.current) {
+              setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
+            }
+            loadedIds.push(...Object.keys(filteredPartial));
+            backendCount += Object.keys(filteredPartial).length;
+          },
+        );
+
+        if (res && Object.keys(res.users).length > 0) {
+          const normalizedUsers = Object.entries(res.users).reduce((acc, [userId, user]) => {
+            const targetId = user.userId || userId;
+            acc[targetId] = { ...user, userId: targetId };
+            return acc;
+          }, {});
+
+          const filteredUsers = Object.fromEntries(
+            Object.entries(normalizedUsers).filter(([, user]) => {
+              if (currentFilters.favorite?.favOnly && !fav[user.userId]) return false;
+              if (validateGetInTouchDate && !isValid(user.getInTouch)) return false;
+              return passesReactionFilter(
+                user,
+                currentFilters?.reaction,
+                fav,
+                dislikeUsersData,
+              );
+            }),
+          );
+
+          cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
+          if (!isEditingRef.current) {
+            setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
+          }
+          loadedIds.push(...Object.keys(filteredUsers));
+          offset = res.lastKey;
+          more = !!res.hasMore;
+          backendCount += Object.keys(filteredUsers).length;
+        } else {
+          more = false;
+        }
+      } else {
+        let nextKey = lastKey21;
+        let loadedForPage = slice.length;
+
+        while (loadedForPage < PAGE_SIZE && more) {
+          const res = await fetchPaginatedNewUsers(
+            nextKey,
             'DATE3',
             currentFilters,
             fav,
@@ -1469,41 +1506,49 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             },
           );
 
-      if (res && Object.keys(res.users).length > 0) {
-        const normalizedUsers = Object.entries(res.users).reduce((acc, [userId, user]) => {
-          const targetId = user.userId || userId;
-          acc[targetId] = { ...user, userId: targetId };
-          return acc;
-        }, {});
+          if (!res || !res.users) {
+            more = false;
+            nextKey = res?.lastKey ?? null;
+            break;
+          }
 
-        const filteredUsers = Object.fromEntries(
-          Object.entries(normalizedUsers).filter(([, user]) => {
-            if (currentFilters.favorite?.favOnly && !fav[user.userId]) return false;
-            if (validateGetInTouchDate && !isValid(user.getInTouch)) return false;
-            return passesReactionFilter(
-              user,
-              currentFilters?.reaction,
-              fav,
-              dislikeUsersData,
-            );
-          }),
-        );
+          const normalizedUsers = Object.entries(res.users).reduce((acc, [userId, user]) => {
+            const targetId = user.userId || userId;
+            acc[targetId] = { ...user, userId: targetId };
+            return acc;
+          }, {});
 
-        cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
-        if (!isEditingRef.current) {
-          setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
+          const filteredUsers = Object.fromEntries(
+            Object.entries(normalizedUsers).filter(([, user]) => {
+              if (currentFilters.favorite?.favOnly && !fav[user.userId]) return false;
+              if (validateGetInTouchDate && !isValid(user.getInTouch)) return false;
+              return passesReactionFilter(
+                user,
+                currentFilters?.reaction,
+                fav,
+                dislikeUsersData,
+              );
+            }),
+          );
+
+          const filteredIds = Object.keys(filteredUsers);
+
+          if (filteredIds.length > 0) {
+            cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
+            if (!isEditingRef.current) {
+              setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
+            }
+            loadedIds.push(...filteredIds);
+            backendCount += filteredIds.length;
+            loadedForPage += filteredIds.length;
+            offset += filteredIds.length;
+          }
+
+          nextKey = res.lastKey ?? null;
+          more = !!res.hasMore && nextKey !== null;
         }
-        loadedIds.push(...Object.keys(filteredUsers));
-        if (useDateByDateBackendFetch) {
-          offset = res.lastKey;
-        } else {
-          setLastKey21(res.lastKey ?? null);
-          offset += Object.keys(filteredUsers).length;
-        }
-        more = !!res.hasMore;
-        backendCount += Object.keys(filteredUsers).length;
-      } else {
-        more = false;
+
+        setLastKey21(nextKey);
       }
     }
 
