@@ -1493,8 +1493,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       } else {
         let nextKey = lastKey21;
         let loadedForPage = slice.length;
+        let backendHasMore = true;
 
-        while (loadedForPage < PAGE_SIZE && more) {
+        while (loadedForPage < PAGE_SIZE && backendHasMore) {
           const res = await fetchPaginatedNewUsers(
             nextKey,
             'DATE3',
@@ -1507,7 +1508,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           );
 
           if (!res || !res.users) {
-            more = false;
+            backendHasMore = false;
             nextKey = res?.lastKey ?? null;
             break;
           }
@@ -1545,9 +1546,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           }
 
           nextKey = res.lastKey ?? null;
-          more = !!res.hasMore && nextKey !== null;
+          backendHasMore = !!res.hasMore && nextKey !== null;
         }
 
+        more = backendHasMore;
         setLastKey21(nextKey);
       }
     }
