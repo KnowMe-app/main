@@ -270,7 +270,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     GIT: 'GIT',
     LAST_ACTION: 'LA',
     NO_GIT: 'NoGIT',
-    NO_CACHE: 'NoCash',
   };
 
   const location = useLocation();
@@ -630,7 +629,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentFilter, setCurrentFilter] = useState('');
   const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.GIT);
   const [loadRequestId, setLoadRequestId] = useState(0);
-  const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
   const [dateOffset21, setDateOffset21] = useState(0);
   const [dateOffsetLA, setDateOffsetLA] = useState(0);
@@ -827,8 +825,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return 'LAST_ACTION';
       case LOAD_SORT_MODES.NO_GIT:
         return 'DATE2.1';
-      case LOAD_SORT_MODES.NO_CACHE:
-        return 'DATE';
       case LOAD_SORT_MODES.GIT:
       default:
         return 'DATE2';
@@ -1241,7 +1237,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
     const includeSpecialFutureDates = searchBarQueryActive;
     if (isEditingRef.current) return { count: 0, hasMore };
-    const param = filterForload === 'DATE' ? dateOffset : lastKey;
+    const param = lastKey;
     let favRaw = getFavorites();
     let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
     if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
@@ -1290,13 +1286,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setIdsForQuery(queryKey, [
         ...new Set([...existingIds, ...Object.keys(newUsers)]),
       ]);
-      if (filterForload === 'DATE') {
-        setDateOffset(prev => prev + PAGE_SIZE);
-        setHasMore(res.hasMore);
-      } else {
-        setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
-        setHasMore(res.hasMore); // Оновлюємо hasMore
-      }
+      setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
+      setHasMore(res.hasMore); // Оновлюємо hasMore
       const backendCount = Object.keys(newUsers).length;
       console.log('loaded users count', backendCount);
       console.log('next lastKey', res.lastKey);
@@ -2026,7 +2017,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setHasMore(true);
     setCurrentPage(1);
     setLastKey(null);
-    setDateOffset(0);
     setDateOffset2(0);
     setDateOffset21(0);
     setDateOffsetLA(0);
@@ -2207,16 +2197,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   onChange={event => handleLoadSortModeChange(event.target.value)}
                 />
                 NoGIT
-              </SortModeLabel>
-              <SortModeLabel>
-                <input
-                  type="radio"
-                  name="load-sort-mode"
-                  value={LOAD_SORT_MODES.NO_CACHE}
-                  checked={loadSortMode === LOAD_SORT_MODES.NO_CACHE}
-                  onChange={event => handleLoadSortModeChange(event.target.value)}
-                />
-                NoCash
               </SortModeLabel>
             </SortModeContainer>
             <FilterPanel
