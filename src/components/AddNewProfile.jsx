@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
@@ -13,7 +13,6 @@ import {
   fetchAllFilteredUsers,
   fetchFavoriteUsers,
   fetchFavoriteUsersData,
-  fetchDislikeUsersData,
   fetchCycleUsersData,
   removeKeyFromFirebase,
   // fetchListOfUsers,
@@ -53,12 +52,10 @@ import {
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
 import { cacheDplUsers, getDplCards } from 'utils/dplStorage';
 import {
-  cacheDislikedUsers,
-  getDislikedCards,
   getDislikes,
   syncDislikes,
 } from 'utils/dislikesStorage';
-import { passesReactionFilter, REACTION_FILTER_KEYS } from 'utils/reactionCategory';
+import { passesReactionFilter } from 'utils/reactionCategory';
 import {
   setIdsForQuery,
   getIdsByQuery,
@@ -246,10 +243,34 @@ const ButtonsContainer = styled.div`
   gap: 10px;
 `;
 
+const SortModeContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 8px 0;
+`;
+
+const SortModeLabel = styled.label`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #1f1f1f;
+`;
+
 
 
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
+
+  const LOAD_SORT_MODES = {
+    GIT: 'GIT',
+    LAST_ACTION: 'LA',
+    NO_GIT: 'NoGIT',
+    NO_CACHE: 'NoCash',
+  };
 
   const location = useLocation();
   const lastUrlUserIdRef = useRef(new URLSearchParams(location.search).get('userId'));
@@ -278,43 +299,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   const [filters, setFilters] = useState({});
-  const likeOnlyReactionFilter = useMemo(() => {
-    const reaction = filters?.reaction;
-    if (!reaction) return false;
-
-    const activeKeys = Object.entries(reaction).filter(([, value]) => value);
-    if (activeKeys.length === 0) return false;
-
-    return (
-      activeKeys.length === 1 && Boolean(reaction[REACTION_FILTER_KEYS.LIKE])
-    );
-  }, [filters]);
-  const dislikeOnlyReactionFilter = useMemo(() => {
-    const reaction = filters?.reaction;
-    if (!reaction) return false;
-
-    const activeKeys = Object.entries(reaction).filter(([, value]) => value);
-    if (activeKeys.length === 0) return false;
-
-    return (
-      activeKeys.length === 1 && Boolean(reaction[REACTION_FILTER_KEYS.DISLIKE])
-    );
-  }, [filters]);
-  const likeAndDislikeReactionFilter = useMemo(() => {
-    const reaction = filters?.reaction;
-    if (!reaction) return false;
-
-    const activeKeys = Object.entries(reaction)
-      .filter(([, value]) => value)
-      .map(([key]) => key);
-
-    if (activeKeys.length !== 2) return false;
-
-    return (
-      activeKeys.includes(REACTION_FILTER_KEYS.LIKE) &&
-      activeKeys.includes(REACTION_FILTER_KEYS.DISLIKE)
-    );
-  }, [filters]);
   const filtersRef = useRef(filters);
   const hasInitializedFiltersRef = useRef(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -637,13 +621,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [users, setUsers] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
-  const [lastKey3, setLastKey3] = useState(null);
   const [lastKey21, setLastKey21] = useState(null);
   const [totalCount, setTotalCount] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState('');
+  const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.GIT);
+  const [loadRequestId, setLoadRequestId] = useState(0);
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
   const [dateOffset21, setDateOffset21] = useState(0);
@@ -834,6 +819,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     normalizeQueryKey(
       `${mode || 'all'}:${term || ''}:${serializeQueryFilters(currentFilters)}`,
     );
+
+  const resolveFilterByLoadSortMode = mode => {
+    switch (mode) {
+      case LOAD_SORT_MODES.LAST_ACTION:
+        return 'LAST_ACTION';
+      case LOAD_SORT_MODES.NO_GIT:
+        return 'DATE2.1';
+      case LOAD_SORT_MODES.NO_CACHE:
+        return 'DATE';
+      case LOAD_SORT_MODES.GIT:
+      default:
+        return 'DATE2';
+    }
+  };
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   const isDateInRange = dateStr => {
@@ -1034,7 +1033,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     setUsers({});
     setLastKey(null);
-    setLastKey3(null);
     setLastKey21(null);
     setHasMore(true);
     setTotalCount(0);
@@ -1072,59 +1070,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         .finally(() => setSearchLoading(false));
       return;
     }
-
-    if (currentFilter === 'DATE3') {
-      const queryKey = buildQueryKey('DATE3', filters, search);
-      const ids = getIdsByQuery(queryKey);
-      const cards = ids.map(id => getCard(id)).filter(Boolean);
-      if (cards.length > 0) {
-        const cachedUsers = cards.reduce((acc, u) => {
-          acc[u.userId] = u;
-          return acc;
-        }, {});
-        setUsers(cachedUsers);
-        setTotalCount(ids.length);
-        setCacheCount(cards.length);
-        setBackendCount(0);
-        setSearchLoading(false);
-      } else if (likeOnlyReactionFilter) {
-        (async () => {
-          try {
-            const { ids } = await showFavoriteCards();
-            setIdsForQuery(queryKey, ids);
-          } finally {
-            setSearchLoading(false);
-          }
-        })();
-      } else if (dislikeOnlyReactionFilter) {
-        (async () => {
-          try {
-            const { ids } = await showDislikedCards();
-            setIdsForQuery(queryKey, ids);
-          } finally {
-            setSearchLoading(false);
-          }
-        })();
-      } else if (likeAndDislikeReactionFilter) {
-        (async () => {
-          try {
-            const { ids } = await showFavoriteAndDislikedCards();
-            setIdsForQuery(queryKey, ids);
-          } finally {
-            setSearchLoading(false);
-          }
-        })();
-      } else {
-        loadMoreUsers3()
-          .then(({ cacheCount, backendCount }) => {
-            setCacheCount(cacheCount);
-            setBackendCount(backendCount);
-          })
-          .finally(() => setSearchLoading(false));
-      }
-      return;
-    }
-
     if (currentFilter === 'LAST_ACTION') {
       loadMoreUsersLastAction()
         .then(({ cacheCount, backendCount }) => {
@@ -1167,7 +1112,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         .finally(() => setSearchLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, currentFilter, search]);
+  }, [filters, currentFilter, search, loadRequestId]);
 
 
   const [adding, setAdding] = useState(false);
@@ -1565,103 +1510,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setIdsForQuery(queryKey, [...new Set([...existingIds, ...loadedIds])]);
     return { cacheCount, backendCount, hasMore: more };
   };
-
-  const loadMoreUsers3 = async (currentFilters = filters) => {
-    let favRaw = getFavorites();
-    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
-    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
-      fav = await fetchFavoriteUsers(auth.currentUser.uid);
-      setFavoriteUsersData(fav);
-      syncFavorites(fav);
-    }
-
-    if (isEditingRef.current)
-      return { cacheCount: 0, backendCount: 0, hasMore };
-
-    const includeSpecialFutureDates = searchBarQueryActive;
-    let backendCount = 0;
-    const aggregatedUsers = {};
-    let nextKey = lastKey3;
-    let more = true;
-    let totalWasSet = false;
-
-    while (backendCount < PAGE_SIZE && more) {
-      const res = await fetchPaginatedNewUsers(
-        nextKey,
-        'DATE3',
-        currentFilters,
-        fav,
-        {
-          includeSpecialFutureDates,
-          skipGetInTouchFilter: true,
-          dislikedUsers: dislikeUsersData,
-        },
-      );
-
-      if (!res || !res.users) {
-        more = false;
-        nextKey = res?.lastKey ?? null;
-        break;
-      }
-
-      if (!totalWasSet && res.totalCount !== undefined) {
-        setTotalCount(res.totalCount);
-        totalWasSet = true;
-      }
-
-      const entries = Object.entries(res.users);
-
-      if (entries.length === 0) {
-        nextKey = res.lastKey ?? null;
-        more = !!res.hasMore && nextKey !== null;
-        if (!more) break;
-        // продовжуємо завантаження, бо фільтри відсікли весь блок
-        // eslint-disable-next-line no-continue
-        continue;
-      }
-
-      const normalized = entries.reduce((acc, [userId, user]) => {
-        const targetId = user.userId || userId;
-        if (!aggregatedUsers[targetId]) {
-          acc[targetId] = { ...user, userId: targetId };
-        }
-        return acc;
-      }, {});
-
-      const chunkKeys = Object.keys(normalized);
-      chunkKeys.forEach(id => {
-        if (!aggregatedUsers[id]) {
-          aggregatedUsers[id] = normalized[id];
-        }
-      });
-      backendCount += chunkKeys.length;
-
-      nextKey = res.lastKey ?? null;
-      more = !!res.hasMore && nextKey !== null;
-
-      if (!more) break;
-    }
-
-    if (backendCount > 0) {
-      cacheFetchedUsers(aggregatedUsers, cacheLoad2Users, currentFilters);
-      if (!isEditingRef.current) {
-        setUsers(prev => mergeWithoutOverwrite(prev, aggregatedUsers));
-      }
-      const queryKey = buildQueryKey('DATE3', currentFilters, search);
-      const existingIds = getIdsByQuery(queryKey);
-      setIdsForQuery(queryKey, [
-        ...new Set([...existingIds, ...Object.keys(aggregatedUsers)]),
-      ]);
-    } else if (!more) {
-      setTotalCount(prev => prev || 0);
-    }
-
-    setLastKey3(nextKey);
-    setHasMore(more);
-
-    return { cacheCount: 0, backendCount, hasMore: more };
-  };
-
   const loadMoreUsersLastAction = async (currentFilters = filters) => {
     let favRaw = getFavorites();
     let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
@@ -1720,8 +1568,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           ? await loadMoreUsers2()
           : currentFilter === 'DATE2.1'
           ? await loadMoreUsers21()
-          : currentFilter === 'DATE3'
-          ? await loadMoreUsers3()
           : currentFilter === 'LAST_ACTION'
           ? await loadMoreUsersLastAction()
           : await loadMoreUsers(currentFilter);
@@ -1846,7 +1692,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setUsers({});
     setHasMore(false);
     setLastKey(null);
-    setLastKey3(null);
     setCurrentPage(1);
     setTotalCount(0);
     setCacheCount(0);
@@ -1869,7 +1714,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         .filter(Boolean)
         .sort((a, b) => compareUsersByGetInTouch(a, b));
 
-      const filterMode = currentFilter || 'DATE3';
+      const filterMode = currentFilter || 'DATE2';
       const filteredUsers = filterMain(
         sortedUsers.map(user => [user.userId, user]),
         filterMode,
@@ -1888,8 +1733,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setUsers(normalized);
       setHasMore(false);
       setLastKey(null);
-      setLastKey3(null);
-      setCurrentPage(1);
+        setCurrentPage(1);
       setTotalCount(ids.length);
       setCacheCount(cacheCount);
       setBackendCount(backendCount);
@@ -1904,7 +1748,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setCurrentPage,
       setHasMore,
       setLastKey,
-      setLastKey3,
       setTotalCount,
       setUsers,
     ],
@@ -1936,122 +1779,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const loadFavoriteUsers = async () => showFavoriteCards();
 
-  const fetchAndMergeDislikedUsers = useCallback(async () => {
-    const owner = auth.currentUser?.uid;
-    if (!owner) return null;
 
-    const { cards: cachedArr, fromCache } = await getDislikedCards(
-      id => fetchUserById(id),
-    );
-    let cacheCount = fromCache ? cachedArr.length : 0;
-    let backendCount = fromCache ? 0 : cachedArr.length;
-
-    const loaded = cachedArr.reduce((acc, user) => {
-      if (user?.userId) {
-        acc[user.userId] = user;
-      }
-      return acc;
-    }, {});
-
-    const dislikeIds = getDislikes();
-
-    const remoteDislikes = await fetchDislikeUsersData(owner);
-    Object.entries(remoteDislikes).forEach(([id, user]) => {
-      dislikeIds[id] = true;
-      if (id && user && !loaded[id]) {
-        loaded[id] = user;
-        backendCount += 1;
-      }
-    });
-
-    const normalizedDislikes = Object.fromEntries(
-      Object.entries(dislikeIds).filter(([, value]) => value),
-    );
-
-    syncDislikes(normalizedDislikes);
-    setDislikeUsersData(normalizedDislikes);
-
-    cacheFetchedUsers(loaded, cacheDislikedUsers);
-    setIdsForQuery('dislike', Object.keys(normalizedDislikes));
-
-    return { loaded, normalizedDislikes, cacheCount, backendCount };
-  }, [cacheFetchedUsers, setDislikeUsersData]);
-
-  const showDislikedCards = useCallback(async () => {
-    const result = await fetchAndMergeDislikedUsers();
-    if (!result) {
-      return resetReactionUsersState();
-    }
-
-    const { loaded, normalizedDislikes, cacheCount, backendCount } = result;
-
-    return presentReactionUsers({
-      loadedUsers: loaded,
-      reactionIds: normalizedDislikes,
-      favoritesMap: { ...favoriteUsersData },
-      dislikedMap: { ...dislikeUsersData, ...normalizedDislikes },
-      cacheCount,
-      backendCount,
-    });
-  }, [
-    fetchAndMergeDislikedUsers,
-    presentReactionUsers,
-    favoriteUsersData,
-    dislikeUsersData,
-    resetReactionUsersState,
-  ]);
-
-  const showFavoriteAndDislikedCards = useCallback(async () => {
-    const [favoriteResult, dislikedResult] = await Promise.all([
-      fetchAndMergeFavoriteUsers(),
-      fetchAndMergeDislikedUsers(),
-    ]);
-
-    if (!favoriteResult && !dislikedResult) {
-      return resetReactionUsersState();
-    }
-
-    const loadedUsers = {
-      ...(favoriteResult?.loaded || {}),
-      ...(dislikedResult?.loaded || {}),
-    };
-
-    const reactionIds = {
-      ...(favoriteResult?.normalizedFavs || {}),
-      ...(dislikedResult?.normalizedDislikes || {}),
-    };
-
-    if (Object.keys(reactionIds).length === 0) {
-      return resetReactionUsersState();
-    }
-
-    const cacheCount =
-      (favoriteResult?.cacheCount || 0) + (dislikedResult?.cacheCount || 0);
-    const backendCount =
-      (favoriteResult?.backendCount || 0) + (dislikedResult?.backendCount || 0);
-
-    return presentReactionUsers({
-      loadedUsers,
-      reactionIds,
-      favoritesMap: {
-        ...favoriteUsersData,
-        ...(favoriteResult?.normalizedFavs || {}),
-      },
-      dislikedMap: {
-        ...dislikeUsersData,
-        ...(dislikedResult?.normalizedDislikes || {}),
-      },
-      cacheCount,
-      backendCount,
-    });
-  }, [
-    fetchAndMergeDislikedUsers,
-    fetchAndMergeFavoriteUsers,
-    favoriteUsersData,
-    dislikeUsersData,
-    presentReactionUsers,
-    resetReactionUsersState,
-  ]);
 
   const loadCycleFavorites = async () => {
     const cycleUsers = await fetchCycleUsersData(['stimulation', 'pregnant']);
@@ -2289,6 +2017,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return acc;
   }, {});
 
+  const handleLoadUsers = () => {
+    setUsers({});
+    setHasMore(true);
+    setCurrentPage(1);
+    setLastKey(null);
+    setDateOffset(0);
+    setDateOffset2(0);
+    setDateOffset21(0);
+    setDateOffsetLA(0);
+    setLastKey21(null);
+    setDuplicates('');
+    setIsDuplicateView(false);
+
+    const nextFilter = resolveFilterByLoadSortMode(loadSortMode);
+    setCurrentFilter(nextFilter);
+    setLoadRequestId(prev => prev + 1);
+  };
+
   return (
     <Container>
       <InnerContainer>
@@ -2426,6 +2172,49 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             {userNotFound && hasSearched && (
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
             )}
+            <SortModeContainer>
+              <span>Сортування:</span>
+              <SortModeLabel>
+                <input
+                  type="radio"
+                  name="load-sort-mode"
+                  value={LOAD_SORT_MODES.GIT}
+                  checked={loadSortMode === LOAD_SORT_MODES.GIT}
+                  onChange={event => setLoadSortMode(event.target.value)}
+                />
+                GIT
+              </SortModeLabel>
+              <SortModeLabel>
+                <input
+                  type="radio"
+                  name="load-sort-mode"
+                  value={LOAD_SORT_MODES.LAST_ACTION}
+                  checked={loadSortMode === LOAD_SORT_MODES.LAST_ACTION}
+                  onChange={event => setLoadSortMode(event.target.value)}
+                />
+                LA
+              </SortModeLabel>
+              <SortModeLabel>
+                <input
+                  type="radio"
+                  name="load-sort-mode"
+                  value={LOAD_SORT_MODES.NO_GIT}
+                  checked={loadSortMode === LOAD_SORT_MODES.NO_GIT}
+                  onChange={event => setLoadSortMode(event.target.value)}
+                />
+                NoGIT
+              </SortModeLabel>
+              <SortModeLabel>
+                <input
+                  type="radio"
+                  name="load-sort-mode"
+                  value={LOAD_SORT_MODES.NO_CACHE}
+                  checked={loadSortMode === LOAD_SORT_MODES.NO_CACHE}
+                  onChange={event => setLoadSortMode(event.target.value)}
+                />
+                NoCash
+              </SortModeLabel>
+            </SortModeContainer>
             <FilterPanel onChange={handleFilterChange} storageKey="addFilters" />
             <ButtonsContainer>
               {userNotFound && (
@@ -2448,88 +2237,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   {getSurnameLabel(user)}
                 </Button>
               ))}
-              <Button
-                onClick={async () => {
-                  setUsers({});
-                  setLastKey(null);
-                  setHasMore(true);
-                  setCurrentPage(1);
-                  setCurrentFilter('DATE');
-                  setDateOffset(0);
-                  setDuplicates('');
-                  setIsDuplicateView(false);
-                  const { cacheCount, backendCount } = await loadMoreUsers('DATE');
-                  setCacheCount(cacheCount);
-                  setBackendCount(backendCount);
-                }}
-              >
-                Load
-              </Button>
-              <Button
-                onClick={async () => {
-                  setUsers({});
-                  setHasMore(true);
-                  setCurrentPage(1);
-                  setCurrentFilter('DATE2');
-                  setDateOffset2(0);
-                  setDuplicates('');
-                  setIsDuplicateView(false);
-                  const { cacheCount, backendCount } = await loadMoreUsers2();
-                  setCacheCount(cacheCount);
-                  setBackendCount(backendCount);
-                }}
-              >
-                Load2
-              </Button>
-              <Button
-                onClick={async () => {
-                  setUsers({});
-                  setHasMore(true);
-                  setCurrentPage(1);
-                  setCurrentFilter('DATE2.1');
-                  setDateOffset21(0);
-                  setLastKey21(null);
-                  setDuplicates('');
-                  setIsDuplicateView(false);
-                  const { cacheCount, backendCount } = await loadMoreUsers21();
-                  setCacheCount(cacheCount);
-                  setBackendCount(backendCount);
-                }}
-              >
-                Load2.1
-              </Button>
-              <Button
-                onClick={async () => {
-                  setUsers({});
-                  setHasMore(true);
-                  setCurrentPage(1);
-                  setCurrentFilter('DATE3');
-                  setLastKey3(null);
-                  setDuplicates('');
-                  setIsDuplicateView(false);
-                  const { cacheCount, backendCount } = await loadMoreUsers3();
-                  setCacheCount(cacheCount);
-                  setBackendCount(backendCount);
-                }}
-              >
-                Load3
-              </Button>
-              <Button
-                onClick={async () => {
-                  setUsers({});
-                  setHasMore(true);
-                  setCurrentPage(1);
-                  setCurrentFilter('LAST_ACTION');
-                  setDateOffsetLA(0);
-                  setDuplicates('');
-                  setIsDuplicateView(false);
-                  const { cacheCount, backendCount } = await loadMoreUsersLastAction();
-                  setCacheCount(cacheCount);
-                  setBackendCount(backendCount);
-                }}
-              >
-                LA
-              </Button>
+              <Button onClick={handleLoadUsers}>Load</Button>
               <Button
                 onClick={() => {
                   setCurrentFilter('FAVORITE');
