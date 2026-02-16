@@ -30,6 +30,7 @@ import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { updateCard } from '../utils/cardsStorage';
 import { getCacheKey } from '../utils/cache';
 import { getReactionCategory } from 'utils/reactionCategory';
+import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -1689,18 +1690,6 @@ export const getMedicationPhotos = async userId => {
   }
 };
 
-const encodeKey = key => {
-  return key
-    .replace(/\s/g, '_space_')
-    .replace(/@/g, '_at_')
-    .replace(/\./g, '_dot_')
-    .replace(/#/g, '_hash_')
-    .replace(/\$/g, '_dollar_')
-    .replace(/\//g, '_slash_')
-    .replace(/\[/g, '_lbracket_')
-    .replace(/\]/g, '_rbracket_');
-};
-
 // Функція для оновлення або видалення пар у searchId
 export const updateSearchId = async (searchKey, searchValue, userId, action) => {
   if (isDev) {
@@ -3089,9 +3078,13 @@ export const removeCardAndSearchId = async userId => {
       if (!valueToCheck) continue; // Пропускаємо, якщо значення відсутнє
 
       // Якщо значення — рядок
-      if (typeof valueToCheck === 'string') {
+      if (typeof valueToCheck === 'string' || typeof valueToCheck === 'number') {
         console.log(`Видалення рядкового значення: ${key} -> ${valueToCheck}`);
-        await updateSearchId(key, valueToCheck, userId, 'remove');
+        const candidates = buildSearchIndexCandidates(key, valueToCheck);
+        for (const candidate of candidates) {
+          // eslint-disable-next-line no-await-in-loop
+          await updateSearchId(key, candidate, userId, 'remove');
+        }
         deletedFields.push(`${key} -> ${valueToCheck}`);
       }
 
@@ -3100,7 +3093,11 @@ export const removeCardAndSearchId = async userId => {
         console.log(`Видалення масиву значень для ключа: ${key} -> ${valueToCheck}`);
         for (const item of valueToCheck) {
           if (typeof item === 'string' || typeof item === 'number') {
-            await updateSearchId(key, item, userId, 'remove');
+            const candidates = buildSearchIndexCandidates(key, item);
+            for (const candidate of candidates) {
+              // eslint-disable-next-line no-await-in-loop
+              await updateSearchId(key, candidate, userId, 'remove');
+            }
           } else {
             console.warn(`Пропущено непідтримуване значення в масиві для ключа: ${key}`, item);
           }
