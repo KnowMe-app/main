@@ -250,6 +250,7 @@ const SortModeContainer = styled.div`
   justify-content: center;
   gap: 10px;
   margin: 8px 0;
+  color: #1f1f1f;
 `;
 
 const SortModeLabel = styled.label`
@@ -628,7 +629,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState('');
   const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.GIT);
-  const [filterResetToken, setFilterResetToken] = useState(0);
   const [loadRequestId, setLoadRequestId] = useState(0);
   const [dateOffset, setDateOffset] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
@@ -835,12 +835,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
+  const filterStorageKey =
+    loadSortMode === LOAD_SORT_MODES.LAST_ACTION ? 'addFiltersLA' : 'addFilters';
+
   const handleLoadSortModeChange = useCallback(mode => {
     setLoadSortMode(mode);
-    if (mode === 'LA') {
-      localStorage.removeItem('addFilters');
-      setFilterResetToken(prev => prev + 1);
-    }
   }, []);
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -1034,10 +1033,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     return () => unsubscribe();
   }, [ownerId]);
-
-  useEffect(() => {
-    localStorage.setItem('addFilters', JSON.stringify(filters));
-  }, [filters]);
 
   useEffect(() => {
     setUsers({});
@@ -2225,9 +2220,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </SortModeLabel>
             </SortModeContainer>
             <FilterPanel
+              key={filterStorageKey}
               onChange={handleFilterChange}
-              storageKey="addFilters"
-              resetToken={filterResetToken}
+              storageKey={filterStorageKey}
             />
             <ButtonsContainer>
               {userNotFound && (
