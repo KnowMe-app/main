@@ -32,6 +32,10 @@ import {
   removeStimulationShortcutId,
   replaceStimulationShortcutIds,
   filterMain,
+  fetchAllEdits,
+  acceptUserCardEdit,
+  rejectUserCardEdit,
+  fetchEditedFieldsByOtherUsers,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -339,7 +343,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
-    const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
+    const fieldsForNewUsersOnly = ['role', 'accessLevel', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
@@ -466,7 +470,70 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // };
 
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [editsQueue, setEditsQueue] = useState([]);
+  const [isEditsPanelOpen, setIsEditsPanelOpen] = useState(false);
+  const [editedByOthersFields, setEditedByOthersFields] = useState([]);
   const ownerId = auth.currentUser?.uid;
+
+  const loadEditsQueue = useCallback(async () => {
+    try {
+      const edits = await fetchAllEdits();
+      setEditsQueue(edits);
+    } catch (error) {
+      console.error('Failed to load edits queue:', error);
+      toast.error('Не вдалося завантажити правки');
+    }
+  }, []);
+
+  const loadEditedByOthersFields = useCallback(async userId => {
+    if (!isAdmin || !userId) {
+      setEditedByOthersFields([]);
+      return;
+    }
+
+    try {
+      const fields = await fetchEditedFieldsByOtherUsers(userId, ownerId);
+      setEditedByOthersFields(fields);
+    } catch (error) {
+      console.error('Failed to load fields edited by other users:', error);
+      setEditedByOthersFields([]);
+    }
+  }, [isAdmin, ownerId]);
+
+  const handleOpenEditsPanel = useCallback(async () => {
+    await loadEditsQueue();
+    setIsEditsPanelOpen(prev => !prev);
+  }, [loadEditsQueue]);
+
+  const handleAcceptEdit = useCallback(async (editorUserId, cardUserId) => {
+    try {
+      await acceptUserCardEdit(editorUserId, cardUserId);
+      toast.success('Правку прийнято');
+      await loadEditsQueue();
+      await loadEditedByOthersFields(cardUserId);
+    } catch (error) {
+      console.error('Failed to accept edit:', error);
+      toast.error('Не вдалося прийняти правку');
+    }
+  }, [loadEditsQueue, loadEditedByOthersFields]);
+
+  const handleRejectEdit = useCallback(async (editorUserId, cardUserId) => {
+    try {
+      await rejectUserCardEdit(editorUserId, cardUserId);
+      toast.success('Правку видалено');
+      await loadEditsQueue();
+      await loadEditedByOthersFields(cardUserId);
+    } catch (error) {
+      console.error('Failed to reject edit:', error);
+      toast.error('Не вдалося видалити правку');
+    }
+  }, [loadEditsQueue, loadEditedByOthersFields]);
+
+
+
+  useEffect(() => {
+    loadEditedByOthersFields(state?.userId);
+  }, [loadEditedByOthersFields, state?.userId]);
 
   useEffect(() => {
     const logged = localStorage.getItem('isLoggedIn');
@@ -2148,6 +2215,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               handleClear={handleClear}
               handleDelKeyValue={handleDelKeyValue}
               dataSource={profileSource}
+              isAdmin={isAdmin}
+              editedByOthersFields={editedByOthersFields}
             />
           </>
         ) : (
@@ -2215,6 +2284,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </Button>
               )}
               <Button onClick={handleInfo}>Info</Button>
+              <Button onClick={handleOpenEditsPanel} title="Черга правок">Edits{editsQueue.length ? `(${editsQueue.length})` : ''}</Button>
               <Button onClick={handleClearCache}>ClearCache</Button>
               {stimulationScheduleProfiles.map(user => (
                 <Button
@@ -2273,6 +2343,30 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               {/* <JsonToExcelButton/> */}
               {/* {users && <div>Знайдено {Object.keys(users).length}</div>} */}
             </ButtonsContainer>
+            {isEditsPanelOpen && (
+              <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 10, marginBottom: 10, background: '#fff' }}>
+                <strong>Черга правок</strong>
+                {!editsQueue.length && <p style={{ marginTop: 8 }}>Немає активних правок</p>}
+                {editsQueue.map(item => (
+                  <div key={`${item.editorUserId}-${item.cardUserId}`} style={{ borderTop: '1px solid #eee', marginTop: 8, paddingTop: 8 }}>
+                    <div>cardUserId: {item.cardUserId}</div>
+                    <div>editorUserId: {item.editorUserId}</div>
+                    {Object.entries(item.fields || {}).map(([fieldName, change]) => (
+                      <div key={fieldName} style={{ fontSize: 12, marginTop: 4 }}>
+                        <strong>{fieldName}</strong>{' '}
+                        {'to' in change
+                          ? `${change.from} → ${change.to}`
+                          : `${(change.removed || []).join(', ')} → ${(change.added || []).join(', ')}`}
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <Button onClick={() => handleAcceptEdit(item.editorUserId, item.cardUserId)}>Прийняти</Button>
+                      <Button onClick={() => handleRejectEdit(item.editorUserId, item.cardUserId)}>Видалити</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {!userNotFound && (
               <>
                 <UsersList

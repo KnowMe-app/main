@@ -7,6 +7,8 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
   removeKeyFromFirebase,
+  fetchEditedFieldsByOtherUsers,
+  auth,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { ProfileForm } from './ProfileForm';
@@ -48,6 +50,7 @@ const EditProfile = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [dataSource, setDataSource] = useState('');
+  const [editedByOthersFields, setEditedByOthersFields] = useState([]);
 
   const handleOpenMedications = useCallback(
     user => {
@@ -65,7 +68,7 @@ const EditProfile = () => {
   );
 
   async function remoteUpdate({ updatedState, overwrite, delCondition }) {
-    const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
+    const fieldsForNewUsersOnly = ['role', 'accessLevel', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
@@ -106,6 +109,28 @@ const EditProfile = () => {
       return updatedState;
     }
   }
+
+
+  const loadEditedFields = useCallback(async targetUserId => {
+    if (!targetUserId) {
+      setEditedByOthersFields([]);
+      return;
+    }
+
+    try {
+      const currentUserId = auth.currentUser?.uid || localStorage.getItem('ownerId') || null;
+      const fields = await fetchEditedFieldsByOtherUsers(targetUserId, currentUserId);
+      setEditedByOthersFields(fields);
+    } catch (error) {
+      console.error('Failed to load edited fields:', error);
+      setEditedByOthersFields([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEditedFields(state?.userId || userId);
+  }, [loadEditedFields, state?.userId, userId]);
+
 
 
   useEffect(() => {
@@ -274,6 +299,8 @@ const EditProfile = () => {
         handleClear={handleClear}
         handleDelKeyValue={handleDelKeyValue}
         dataSource={dataSource}
+        isAdmin
+        editedByOthersFields={editedByOthersFields}
       />
       {isSyncing && <div>Syncing...</div>}
     </Container>
