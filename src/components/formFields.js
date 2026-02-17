@@ -3,6 +3,14 @@ export const yesNoOptions = [
   { placeholder: 'Yes', ukrainian: 'Так' },
 ];
 
+
+export const accessLevelOptions = [
+  { placeholder: 'matching_view', ukrainian: 'лише метчінг view' },
+  { placeholder: 'matching_view_write', ukrainian: 'лише метчінг view&write' },
+  { placeholder: 'matching_add_profile_view', ukrainian: 'matching and addNewProfile view' },
+  { placeholder: 'matching_add_profile_view_write', ukrainian: 'matching and addNewProfile view&write' },
+];
+
 export const inputFields = [
   
 ];
@@ -281,6 +289,7 @@ export const csectionOptions = [
 export const pickerFieldsExtended = [
   { name: 'userId', placeholder: 'userId', svg: 'user', ukrainianHint: 'Id' },
   { name: 'role', placeholder: 'см/до/смдо/агент', svg: 'user', ukrainianHint: 'СМДО?' },
+  { name: 'accessLevel', placeholder: 'Рівень допуску', svg: 'user', ukrainianHint: 'Рівень допуску', options: accessLevelOptions },
   { name: 'myComment', placeholder: 'коментар', svg: 'user', ukrainianHint: 'Коментра' },
   { name: 'getInTouch', placeholder: '30.01.2025', svg: 'user', ukrainianHint: 'Коли звернутись' },
   { name: 'lastAction', placeholder: '-', svg: 'user', ukrainianHint: 'Останні зміни' },
