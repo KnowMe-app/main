@@ -538,10 +538,17 @@ export const ProfileForm = ({
                   )}
                 </InputFieldContainer>
 
-                <Hint fieldName={field.name} isActive={state[field.name]}>
+                <Hint
+                  fieldName={field.name}
+                  isActive={field.name === 'accessLevel' ? true : state[field.name]}
+                >
                   {field.ukrainian || field.placeholder}
                 </Hint>
-                <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                <Placeholder
+                  isActive={field.name === 'accessLevel' ? true : state[field.name]}
+                >
+                  {field.ukrainianHint}
+                </Placeholder>
               </InputDiv>
             )}
 
