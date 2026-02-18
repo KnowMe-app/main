@@ -59,16 +59,16 @@ export const App = () => {
     const unsubscribe = onAuthStateChanged(auth, user => {
       const resolveAccessLevel = async () => {
         const db = getDatabase();
-        const usersSnapshot = await get(ref(db, `users/${user.uid}/accessLevel`));
-        if (usersSnapshot.exists()) {
-          const accessLevelFromUsers = normalizeAccessLevel(usersSnapshot.val());
-          if (accessLevelFromUsers) {
-            return accessLevelFromUsers;
+        const newUsersSnapshot = await get(ref(db, `newUsers/${user.uid}/accessLevel`));
+        if (newUsersSnapshot.exists()) {
+          const accessLevelFromNewUsers = normalizeAccessLevel(newUsersSnapshot.val());
+          if (accessLevelFromNewUsers) {
+            return accessLevelFromNewUsers;
           }
         }
 
-        const newUsersSnapshot = await get(ref(db, `newUsers/${user.uid}/accessLevel`));
-        return newUsersSnapshot.exists() ? normalizeAccessLevel(newUsersSnapshot.val()) : '';
+        const usersSnapshot = await get(ref(db, `users/${user.uid}/accessLevel`));
+        return usersSnapshot.exists() ? normalizeAccessLevel(usersSnapshot.val()) : '';
       };
 
       if (user) {
