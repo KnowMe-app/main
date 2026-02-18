@@ -444,18 +444,6 @@ const initialProfileState = pickerFields.reduce(
   { password: '', userId: '', publish: false }
 );
 
-const MATCHING_ACCESS_LEVELS = new Set([
-  'matching_view',
-  'matching_view_write',
-  'matching_add_profile_view',
-  'matching_add_profile_view_write',
-]);
-
-const ADD_PROFILE_ACCESS_LEVELS = new Set([
-  'matching_add_profile_view',
-  'matching_add_profile_view_write',
-]);
-
 export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [state, setState] = useState(initialProfileState);
   const [focused, setFocused] = useState(null);
@@ -465,9 +453,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   console.log('focused :>> ', focused);
   const navigate = useNavigate();
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
-  const normalizedAccessLevel = (state.accessLevel || '').toString().trim().toLowerCase();
-  const canAccessMatching = isAdmin || MATCHING_ACCESS_LEVELS.has(normalizedAccessLevel);
-  const canAccessAddProfile = isAdmin || ADD_PROFILE_ACCESS_LEVELS.has(normalizedAccessLevel);
   const moreInfoRef = useRef(null);
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
 
@@ -860,10 +845,10 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const dotsMenu = () => {
     return (
       <>
-        {canAccessMatching && (
+        {isAdmin && (
           <>
             <SubmitButton onClick={() => navigate('/my-profile')}>my-profile</SubmitButton>
-            {canAccessAddProfile && <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>}
+            <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>
             <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>
           </>
         )}
