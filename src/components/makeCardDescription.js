@@ -15,7 +15,7 @@ export const makeCardDescription = user => {
   const normalizeStr = str => str.toString().trim().toLowerCase();
 
   const getMaritalStatus = val => {
-    if (!val) return '?';
+    if (!val) return '';
     const normalized = normalizeStr(val);
     if (['yes', 'так', '+', 'married', 'одружена', 'заміжня'].includes(normalized))
       return 'заміжня';
@@ -23,13 +23,13 @@ export const makeCardDescription = user => {
       ['no', 'ні', '-', 'unmarried', 'single', 'незаміжня'].includes(normalized)
     )
       return 'не заміжня';
-    return '?';
+    return '';
   };
 
   const maritalStatus = getMaritalStatus(user.maritalStatus);
 
   const getCsectionInfo = val => {
-    if (val === undefined || val === null || val === '') return '?';
+    if (val === undefined || val === null || val === '') return '';
     const normalized = normalizeStr(val);
     if (['не було', 'no', 'ні', '-', '0', 'false'].includes(normalized)) return '-';
     return val;
@@ -43,7 +43,7 @@ export const makeCardDescription = user => {
   const heightWeightBlood =
     heightWeightBloodParts.length > 0
       ? heightWeightBloodParts.join('/')
-      : '?';
+      : '';
 
   const phones = (Array.isArray(user.phone) ? user.phone : [user.phone])
     .filter(Boolean)
@@ -67,5 +67,5 @@ export const makeCardDescription = user => {
 
   const enumerated = parts.map((text, index) => `${index + 1}. ${text}`);
 
-  return enumerated.join('\\n');
+  return enumerated.join('\n');
 };
