@@ -18,7 +18,6 @@ import {
   signInWithEmailAndPassword,
   fetchSignInMethodsForEmail,
 } from 'firebase/auth';
-import { getDatabase, get, ref } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
@@ -457,17 +456,8 @@ const ADD_PROFILE_ACCESS_LEVELS = new Set([
   'matching_add_profile_view_write',
 ]);
 
-const normalizeAccessLevel = value => {
-  if (Array.isArray(value)) {
-    return (value[value.length - 1] || '').toString().trim().toLowerCase();
-  }
-
-  return (value || '').toString().trim().toLowerCase();
-};
-
 export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [state, setState] = useState(initialProfileState);
-  const [resolvedAccessLevel, setResolvedAccessLevel] = useState('');
   const [focused, setFocused] = useState(null);
   const [missing, setMissing] = useState({});
   const [showPassword, setShowPassword] = useState(false);
@@ -475,7 +465,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   console.log('focused :>> ', focused);
   const navigate = useNavigate();
   const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
-  const normalizedAccessLevel = normalizeAccessLevel(state.accessLevel) || resolvedAccessLevel;
+  const normalizedAccessLevel = (state.accessLevel || '').toString().trim().toLowerCase();
   const canAccessMatching = isAdmin || MATCHING_ACCESS_LEVELS.has(normalizedAccessLevel);
   const canAccessAddProfile = isAdmin || ADD_PROFILE_ACCESS_LEVELS.has(normalizedAccessLevel);
   const moreInfoRef = useRef(null);
@@ -763,35 +753,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }));
     }
   };
-
-  useEffect(() => {
-    const resolveAccessLevel = async user => {
-      const db = getDatabase();
-      const usersSnapshot = await get(ref(db, `users/${user.uid}/accessLevel`));
-      if (usersSnapshot.exists()) {
-        const accessLevelFromUsers = normalizeAccessLevel(usersSnapshot.val());
-        if (accessLevelFromUsers) {
-          return accessLevelFromUsers;
-        }
-      }
-
-      const newUsersSnapshot = await get(ref(db, `newUsers/${user.uid}/accessLevel`));
-      return newUsersSnapshot.exists() ? normalizeAccessLevel(newUsersSnapshot.val()) : '';
-    };
-
-    const unsubscribe = onAuthStateChanged(auth, user => {
-      if (!user) {
-        setResolvedAccessLevel('');
-        return;
-      }
-
-      resolveAccessLevel(user)
-        .then(level => setResolvedAccessLevel(level))
-        .catch(() => setResolvedAccessLevel(''));
-    });
-
-    return () => unsubscribe();
-  }, []);
 
   // зберігаємо дані при завантаженні сторінки
   useEffect(() => {
