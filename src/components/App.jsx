@@ -61,10 +61,7 @@ export const App = () => {
         const db = getDatabase();
         const newUsersSnapshot = await get(ref(db, `newUsers/${user.uid}/accessLevel`));
         if (newUsersSnapshot.exists()) {
-          const accessLevelFromNewUsers = normalizeAccessLevel(newUsersSnapshot.val());
-          if (accessLevelFromNewUsers) {
-            return accessLevelFromNewUsers;
-          }
+          return normalizeAccessLevel(newUsersSnapshot.val());
         }
 
         const usersSnapshot = await get(ref(db, `users/${user.uid}/accessLevel`));
