@@ -31,7 +31,6 @@ import { updateCard } from '../utils/cardsStorage';
 import { getCacheKey } from '../utils/cache';
 import { getReactionCategory } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
-import { applyEditsOverlayToCard, buildEditsOverlay } from '../utils/multiAccountEdits';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -57,85 +56,6 @@ export const database = getDatabase(app);
 export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 
 const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
-const ADMIN_USER_ID = process.env.REACT_APP_USER1;
-
-const isAdminUser = userId => Boolean(userId && userId === ADMIN_USER_ID);
-
-const getCurrentEditorId = () => auth.currentUser?.uid || localStorage.getItem('ownerId') || null;
-
-const getCanonicalUserPath = userId => (userId?.length > 20 ? 'users' : 'newUsers');
-
-const isValidOverlayFieldChange = change => {
-  if (!change || typeof change !== 'object' || Array.isArray(change)) {
-    return false;
-  }
-
-  const hasStringShape = Object.prototype.hasOwnProperty.call(change, 'from') || Object.prototype.hasOwnProperty.call(change, 'to');
-  if (hasStringShape) {
-    return typeof change.from === 'string' && typeof change.to === 'string' && change.from !== change.to;
-  }
-
-  const hasArrayShape = Object.prototype.hasOwnProperty.call(change, 'added') || Object.prototype.hasOwnProperty.call(change, 'removed');
-  if (hasArrayShape) {
-    const added = Array.isArray(change.added) ? change.added : [];
-    const removed = Array.isArray(change.removed) ? change.removed : [];
-    return added.length > 0 || removed.length > 0;
-  }
-
-  return false;
-};
-
-const sanitizeOverlayFields = fields => {
-  const cleaned = {};
-
-  Object.entries(fields || {}).forEach(([fieldName, change]) => {
-    if (!isValidOverlayFieldChange(change)) {
-      return;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(change, 'to')) {
-      cleaned[fieldName] = {
-        from: change.from,
-        to: change.to,
-      };
-      return;
-    }
-
-    cleaned[fieldName] = {
-      ...(Array.isArray(change.added) && change.added.length ? { added: change.added } : {}),
-      ...(Array.isArray(change.removed) && change.removed.length ? { removed: change.removed } : {}),
-    };
-  });
-
-  return cleaned;
-};
-
-const writeCanonicalCard = async (userId, cardData) => {
-  const fieldsForNewUsersOnly = ['role', 'accessLevel', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
-  const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
-  const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
-
-  if (getCanonicalUserPath(userId) === 'users') {
-    const toUsers = Object.fromEntries(
-      Object.entries(cardData).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
-    );
-
-    const toNewUsers = Object.fromEntries(
-      Object.entries(cardData).filter(([key]) =>
-        [...fieldsForNewUsersOnly, ...contacts, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
-      )
-    );
-
-    await Promise.all([
-      updateDataInRealtimeDB(userId, toUsers, 'set', { forceCanonicalWrite: true }),
-      updateDataInFiresoreDB(userId, toUsers, 'check'),
-      updateDataInNewUsersRTDB(userId, toNewUsers, 'set', true, { forceCanonicalWrite: true }),
-    ]);
-    return;
-  }
-
-  await updateDataInNewUsersRTDB(userId, cardData, 'set', true, { forceCanonicalWrite: true });
-};
 
 export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
   const { disableCompression = false, maxSizeKB = 50 } = options;
@@ -858,138 +778,6 @@ export const fetchUsersByIds = async ids => {
   }
 };
 
-export const fetchCanonicalCard = async userId => {
-  const [newSnap, userSnap] = await Promise.all([
-    get(ref2(database, `newUsers/${userId}`)),
-    get(ref2(database, `users/${userId}`)),
-  ]);
-
-  if (!newSnap.exists() && !userSnap.exists()) {
-    return null;
-  }
-
-  return {
-    userId,
-    ...(newSnap.exists() ? newSnap.val() : {}),
-    ...(userSnap.exists() ? userSnap.val() : {}),
-  };
-};
-
-export const getUserOverlayEdits = async (editorUserId, cardUserId) => {
-  if (!editorUserId || !cardUserId) {
-    return null;
-  }
-
-  const overlaySnap = await get(ref2(database, `multiData/edits/${editorUserId}/${cardUserId}/fields`));
-  if (!overlaySnap.exists()) {
-    return null;
-  }
-
-  const fields = sanitizeOverlayFields(overlaySnap.val());
-  return Object.keys(fields).length ? fields : null;
-};
-
-export const saveUserCardEdit = async (cardUserId, nextCardData, editorUserId = getCurrentEditorId()) => {
-  if (!editorUserId) {
-    throw new Error('Не вдалось визначити editorUserId.');
-  }
-
-  if (!cardUserId) {
-    throw new Error('cardUserId обовʼязковий.');
-  }
-
-  const canonical = (await fetchCanonicalCard(cardUserId)) || { userId: cardUserId };
-  const rawOverlay = buildEditsOverlay(canonical, { ...nextCardData, userId: cardUserId });
-  const overlayFields = sanitizeOverlayFields(rawOverlay);
-  const cardOverlayRef = ref2(database, `multiData/edits/${editorUserId}/${cardUserId}`);
-
-  if (!Object.keys(overlayFields).length) {
-    await remove(cardOverlayRef);
-    return null;
-  }
-
-  await set(ref2(database, `multiData/edits/${editorUserId}/${cardUserId}/fields`), overlayFields);
-  return overlayFields;
-};
-
-export const fetchCardForEditor = async (cardUserId, editorUserId = getCurrentEditorId()) => {
-  const canonical = await fetchCanonicalCard(cardUserId);
-  if (!canonical) {
-    return null;
-  }
-
-  if (!editorUserId) {
-    return canonical;
-  }
-
-  const overlayFields = await getUserOverlayEdits(editorUserId, cardUserId);
-  if (!overlayFields) {
-    return canonical;
-  }
-
-  return applyEditsOverlayToCard(canonical, overlayFields);
-};
-
-export const fetchAllEdits = async () => {
-  const editsSnap = await get(ref2(database, 'multiData/edits'));
-  if (!editsSnap.exists()) {
-    return [];
-  }
-
-  const raw = editsSnap.val();
-  const records = [];
-
-  for (const [editorUserId, cards] of Object.entries(raw || {})) {
-    for (const [cardUserId, payload] of Object.entries(cards || {})) {
-      const fields = sanitizeOverlayFields(payload?.fields || {});
-      if (!Object.keys(fields).length) {
-        continue;
-      }
-      records.push({ editorUserId, cardUserId, fields });
-    }
-  }
-
-  return records;
-};
-
-
-export const fetchEditedFieldsByOtherUsers = async (cardUserId, currentUserId = getCurrentEditorId()) => {
-  if (!cardUserId) return [];
-
-  const edits = await fetchAllEdits();
-  const fieldSet = new Set();
-
-  edits.forEach(edit => {
-    if (edit.cardUserId !== cardUserId) return;
-    if (currentUserId && edit.editorUserId === currentUserId) return;
-    Object.keys(edit.fields || {}).forEach(fieldName => fieldSet.add(fieldName));
-  });
-
-  return [...fieldSet];
-};
-
-export const rejectUserCardEdit = async (editorUserId, cardUserId) => {
-  await remove(ref2(database, `multiData/edits/${editorUserId}/${cardUserId}`));
-};
-
-export const acceptUserCardEdit = async (editorUserId, cardUserId) => {
-  const canonical = await fetchCanonicalCard(cardUserId);
-  if (!canonical) {
-    await rejectUserCardEdit(editorUserId, cardUserId);
-    return null;
-  }
-
-  const overlayFields = await getUserOverlayEdits(editorUserId, cardUserId);
-  if (!overlayFields) {
-    return canonical;
-  }
-
-  const merged = applyEditsOverlayToCard(canonical, overlayFields);
-  await writeCanonicalCard(cardUserId, merged);
-  await rejectUserCardEdit(editorUserId, cardUserId);
-  return merged;
-};
-
 const addUserFromUsers = async (userId, users) => {
   const userSnap = await get(ref2(database, `users/${userId}`));
   const newUserSnap = await get(ref2(database, `newUsers/${userId}`));
@@ -1701,16 +1489,8 @@ const removeUndefined = obj => {
   return obj;
 };
 
-export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition, options = {}) => {
+export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
-    const editorUserId = getCurrentEditorId();
-    const forceCanonicalWrite = options?.forceCanonicalWrite === true;
-
-    if (!forceCanonicalWrite && !isAdminUser(editorUserId)) {
-      await saveUserCardEdit(userId, { userId, ...uploadedInfo }, editorUserId || undefined);
-      return;
-    }
-
     const userRefRTDB = ref2(database, `users/${userId}`);
     const cleanedUploadedInfo = removeUndefined(uploadedInfo);
     if (condition === 'update') {
@@ -1727,16 +1507,8 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition, op
   }
 };
 
-export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, skipIndexing = false, options = {}) => {
+export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, skipIndexing = false) => {
   try {
-    const editorUserId = getCurrentEditorId();
-    const forceCanonicalWrite = options?.forceCanonicalWrite === true;
-
-    if (!forceCanonicalWrite && !isAdminUser(editorUserId)) {
-      await saveUserCardEdit(userId, { userId, ...uploadedInfo }, editorUserId || undefined);
-      return;
-    }
-
     const userRefRTDB = ref2(database, `newUsers/${userId}`);
     const snapshot = await get(userRefRTDB);
     const currentUserData = snapshot.exists() ? snapshot.val() : {};
@@ -2680,36 +2452,50 @@ export const fetchListOfUsers = async () => {
 };
 
 export const fetchUserById = async userId => {
+  const db = getDatabase();
+
+  // console.log('userId в fetchUserById: ', userId);
+
+  // Референси для пошуку в newUsers і users
+  const userRefInNewUsers = ref2(db, `newUsers/${userId}`);
+  const userRefInUsers = ref2(db, `users/${userId}`);
+
   try {
-    const canonicalCard = await fetchCanonicalCard(userId);
-    if (!canonicalCard) {
-      console.log('Користувача не знайдено в жодній колекції.1.');
-      return null;
-    }
-
-    const photos = await getAllUserPhotos(userId);
-    const editorUserId = getCurrentEditorId();
-    const isAdmin = isAdminUser(editorUserId);
-
-    if (!editorUserId || isAdmin) {
+    // Пошук у newUsers
+    const newUserSnapshot = await get(userRefInNewUsers);
+    if (newUserSnapshot.exists()) {
+      const photos = await getAllUserPhotos(userId);
+      const userSnapshotInUsers = await get(ref2(db, `users/${userId}`));
+      if (userSnapshotInUsers.exists()) {
+        return {
+          userId,
+          ...userSnapshotInUsers.val(),
+          ...newUserSnapshot.val(),
+          photos,
+        };
+      }
       return {
-        ...canonicalCard,
+        userId,
+        ...newUserSnapshot.val(),
         photos,
       };
     }
 
-    const overlayFields = await getUserOverlayEdits(editorUserId, userId);
-    if (!overlayFields) {
+    // Пошук у users, якщо не знайдено в newUsers
+    const userSnapshot = await get(userRefInUsers);
+    if (userSnapshot.exists()) {
+      const photos = await getAllUserPhotos(userId);
+      console.log('Знайдено користувача у users: ', userSnapshot.val());
       return {
-        ...canonicalCard,
+        userId,
+        ...userSnapshot.val(),
         photos,
       };
     }
 
-    return {
-      ...applyEditsOverlayToCard(canonicalCard, overlayFields),
-      photos,
-    };
+    // Якщо користувача не знайдено в жодній колекції
+    console.log('Користувача не знайдено в жодній колекції.1.');
+    return null;
   } catch (error) {
     console.error('Помилка під час пошуку користувача: ', error);
     return null;

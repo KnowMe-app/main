@@ -267,8 +267,6 @@ export const ProfileForm = ({
   handleClear,
   handleDelKeyValue,
   dataSource,
-  isAdmin = false,
-  editedByOthersFields = [],
 }) => {
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
@@ -351,18 +349,7 @@ export const ProfileForm = ({
     'role',
   ];
 
-
-
-  const accessLevelChoices = [
-    { value: 'matching_view', label: 'лише метчінг view' },
-    { value: 'matching_view_write', label: 'лише метчінг view&write' },
-    { value: 'matching_add_profile_view', label: 'matching and addNewProfile view' },
-    { value: 'matching_add_profile_view_write', label: 'matching and addNewProfile view&write' },
-  ];
-
   const fieldsToRender = getFieldsToRender(state);
-
-  const editedByOthersSet = new Set(editedByOthersFields || []);
 
   const sortedFieldsToRender = [
     ...priorityOrder
@@ -383,7 +370,6 @@ export const ProfileForm = ({
       )}
       {sortedFieldsToRender
         .filter(field => !['myComment', 'writer'].includes(field.name))
-        .filter(field => isAdmin || field.name !== 'accessLevel')
         .map((field, index) => {
           const displayValue =
             field.name === 'lastAction'
@@ -393,13 +379,12 @@ export const ProfileForm = ({
               : field.name === 'getInTouch'
               ? formatDateToDisplay(state.getInTouch)
               : state[field.name] || '';
-          const isEditedByOthers = editedByOthersSet.has(field.name);
           return (
             <PickerContainer key={index}>
               {Array.isArray(state[field.name]) ? (
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
                 {state[field.name].map((value, idx) => (
-                  <InputDiv key={`${field.name}-${idx}`} $isEditedByOthers={isEditedByOthers}>
+                  <InputDiv key={`${field.name}-${idx}`}>
                     <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
                       <InputField
                         fieldName={`${field.name}-${idx}`}
@@ -445,80 +430,58 @@ export const ProfileForm = ({
                 ))}
               </div>
             ) : (
-              <InputDiv $isEditedByOthers={isEditedByOthers}>
+              <InputDiv>
                 <InputFieldContainer fieldName={field.name} value={state[field.name]}>
-                  {field.name === 'accessLevel' && isAdmin ? (
-                    <AccessLevelSelect
-                      name={field.name}
-                      value={state[field.name] || ''}
-                      onChange={e => {
-                        const value = e?.target?.value;
-                        setState(prevState => ({
-                          ...prevState,
-                          [field.name]: value,
-                        }));
-                      }}
-                      onBlur={() => submitWithNormalization(state, 'overwrite')}
-                    >
-                      <option value="">Оберіть рівень допуску</option>
-                      {accessLevelChoices.map(choice => (
-                        <option key={choice.value} value={choice.value}>
-                          {choice.label}
-                        </option>
-                      ))}
-                    </AccessLevelSelect>
-                  ) : (
-                    <InputField
-                      fieldName={field.name}
-                      as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
-                      ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
-                      inputMode={field.name === 'phone' ? 'numeric' : 'text'}
-                      name={field.name}
-                      value={displayValue}
-                      {...(field.name === 'lastAction'
-                        ? { readOnly: true }
-                        : {
-                            onChange: e => {
-                              if (field.name === 'myComment') {
-                                autoResizeMyComment(e.target);
-                              }
-                              if (field.name === 'moreInfo_main') {
-                                autoResizeMoreInfo(e.target);
-                              }
-                              let value = e?.target?.value;
-                              if (field.name === 'publish') {
-                                value = value.toLowerCase() === 'true';
-                              } else if (field.name === 'telgram') {
-                                value = e?.target?.value;
-                              }
-                              setState(prevState => ({
-                                ...prevState,
-                                [field.name]: Array.isArray(prevState[field.name])
-                                  ? [value, ...(prevState[field.name].slice(1) || [])]
-                                  : value,
-                              }));
-                            },
-                            onBlur: () => {
-                              if (field.name === 'myComment' && !state.myComment?.trim()) {
-                                handleDelKeyValue('myComment');
+                  <InputField
+                    fieldName={field.name}
+                    as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
+                    ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
+                    inputMode={field.name === 'phone' ? 'numeric' : 'text'}
+                    name={field.name}
+                    value={displayValue}
+                    {...(field.name === 'lastAction'
+                      ? { readOnly: true }
+                      : {
+                          onChange: e => {
+                            if (field.name === 'myComment') {
+                              autoResizeMyComment(e.target);
+                            }
+                            if (field.name === 'moreInfo_main') {
+                              autoResizeMoreInfo(e.target);
+                            }
+                            let value = e?.target?.value;
+                            if (field.name === 'publish') {
+                              value = value.toLowerCase() === 'true';
+                            } else if (field.name === 'telgram') {
+                              value = e?.target?.value;
+                            }
+                            setState(prevState => ({
+                              ...prevState,
+                              [field.name]: Array.isArray(prevState[field.name])
+                                ? [value, ...(prevState[field.name].slice(1) || [])]
+                                : value,
+                            }));
+                          },
+                          onBlur: () => {
+                            if (field.name === 'myComment' && !state.myComment?.trim()) {
+                              handleDelKeyValue('myComment');
+                              return;
+                            }
+
+                            if (field.name === 'getInTouch') {
+                              const raw = state.getInTouch;
+                              const trimmed = typeof raw === 'string' ? raw.trim() : raw;
+
+                              if (!trimmed) {
+                                handleDelKeyValue('getInTouch');
                                 return;
                               }
+                            }
 
-                              if (field.name === 'getInTouch') {
-                                const raw = state.getInTouch;
-                                const trimmed = typeof raw === 'string' ? raw.trim() : raw;
-
-                                if (!trimmed) {
-                                  handleDelKeyValue('getInTouch');
-                                  return;
-                                }
-                              }
-
-                              submitWithNormalization(state, 'overwrite');
-                            },
-                          })}
-                    />
-                  )}
+                            submitWithNormalization(state, 'overwrite');
+                          },
+                        })}
+                  />
                   {field.name !== 'lastAction' && state[field.name] && (
                     <ClearButton
                       type="button"
@@ -767,7 +730,7 @@ const InputDiv = styled.div`
   margin: 10px 0;
   padding: 10px;
   background-color: #fff;
-  border: 1px solid ${({ $isEditedByOthers }) => ($isEditedByOthers ? '#2f80ed' : '#ccc')};
+  border: 1px solid #ccc;
   border-radius: 5px;
   box-sizing: border-box;
   flex: 1 1 auto;
@@ -870,16 +833,6 @@ const InputFieldContainer = styled.div`
     font-size: 16px;
     text-align: center;
   }
-`;
-
-
-const AccessLevelSelect = styled.select`
-  border: none;
-  outline: none;
-  background: transparent;
-  flex: 1;
-  padding-left: 10px;
-  height: 100%;
 `;
 
 const ClearButton = styled.button`
