@@ -556,6 +556,12 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return emailPattern.test(email);
   };
 
+  const isPermissionDeniedError = error => {
+    const code = String(error?.code || '').toLowerCase();
+    const message = String(error?.message || '').toLowerCase();
+    return code.includes('permission-denied') || code.includes('permission_denied') || message.includes('permission_denied');
+  };
+
   const handleAgree = async () => {
     const miss = {};
     if (!state.email) miss.email = true;
@@ -581,7 +587,14 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           userId: userCredential.user.uid,
           userRole: 'ed',
         };
-        await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
+        try {
+          await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
+        } catch (error) {
+          if (!isPermissionDeniedError(error)) {
+            throw error;
+          }
+          console.warn('No write access to users/$uid during agree flow, continue with newUsers only.');
+        }
         await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
         await updateDataInNewUsersRTDB(
           userCredential.user.uid,
@@ -600,7 +613,14 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           userId: userCredential.user.uid,
           userRole: 'ed',
         };
-        await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
+        try {
+          await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
+        } catch (error) {
+          if (!isPermissionDeniedError(error)) {
+            throw error;
+          }
+          console.warn('No write access to users/$uid during registration agree flow, continue with newUsers only.');
+        }
         await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
         await updateDataInNewUsersRTDB(
           userCredential.user.uid,
