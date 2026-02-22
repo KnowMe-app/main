@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { resolveAccess } from 'utils/accessLevel';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
@@ -1086,7 +1087,8 @@ const Matching = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ownerId, setOwnerId] = useState(null);
-  const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
+  const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: localStorage.getItem('accessLevel') });
+  const isAdmin = access.isAdmin;
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
   const restoreRef = useRef(false);
@@ -1607,11 +1609,11 @@ const Matching = () => {
 
   const dotsMenu = () => (
     <>
-      {isAdmin && (
+      {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
         <>
           <SubmitButton onClick={() => { saveScrollPosition(); navigate('/my-profile'); }}>my-profile</SubmitButton>
-          <SubmitButton onClick={() => { saveScrollPosition(); navigate('/add'); }}>add</SubmitButton>
-          <SubmitButton onClick={() => { saveScrollPosition(); navigate('/matching'); }}>matching</SubmitButton>
+          {(isAdmin || access.canAccessAdd) && <SubmitButton onClick={() => { saveScrollPosition(); navigate('/add'); }}>add</SubmitButton>}
+          {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => { saveScrollPosition(); navigate('/matching'); }}>matching</SubmitButton>}
         </>
       )}
       <ExitButton onClick={handleExit}>Exit</ExitButton>

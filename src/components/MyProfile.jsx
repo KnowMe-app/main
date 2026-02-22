@@ -29,6 +29,7 @@ import { FaEye, FaEyeSlash } from 'react-icons/fa';
 import { color } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
+import { resolveAccess } from 'utils/accessLevel';
 
 const Container = styled.div`
   display: flex;
@@ -452,7 +453,9 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [hasAgreed, setHasAgreed] = useState(false);
   console.log('focused :>> ', focused);
   const navigate = useNavigate();
-  const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
+  const currentUid = auth.currentUser?.uid;
+  const access = resolveAccess({ uid: currentUid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
+  const isAdmin = access.isAdmin;
   const moreInfoRef = useRef(null);
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
 
@@ -845,11 +848,11 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const dotsMenu = () => {
     return (
       <>
-        {isAdmin && (
+        {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
           <>
             <SubmitButton onClick={() => navigate('/my-profile')}>my-profile</SubmitButton>
-            <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>
-            <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>
+            {(isAdmin || access.canAccessAdd) && <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>}
+            {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>}
           </>
         )}
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
