@@ -781,7 +781,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     // Clean up the subscription on component unmount
     return () => unsubscribe();
-  }, []);
+  }, [setIsLoggedIn]);
 
   // useEffect(() => {
   //   fetchData();
