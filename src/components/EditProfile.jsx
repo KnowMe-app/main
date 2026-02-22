@@ -81,7 +81,25 @@ const EditProfile = () => {
       return;
     }
 
-    const overlays = await getOverlaysForCard(userId);
+    const [overlays, canonical] = await Promise.all([
+      getOverlaysForCard(userId),
+      getCanonicalCard(userId),
+    ]);
+
+    const hasMeaningfulValue = value => {
+      if (value === null || value === undefined) return false;
+      if (typeof value === 'string') return value.trim() !== '';
+      if (Array.isArray(value)) return value.length > 0;
+      return true;
+    };
+
+    const isEmptyValue = value => {
+      if (value === null || value === undefined) return true;
+      if (typeof value === 'string') return value.trim() === '';
+      if (Array.isArray(value)) return value.length === 0;
+      return false;
+    };
+
     setPendingOverlays(overlays);
     setHighlightedFields(getOtherEditorsChangedFields(overlays, currentUid));
 
@@ -89,15 +107,29 @@ const EditProfile = () => {
     Object.entries(overlays || {}).forEach(([editorId, overlay]) => {
       if (editorId === auth.currentUser?.uid) return;
       if (!isAdminUid(editorId)) return;
+
       Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
-        const isStringDelete = (change?.to === '' || change?.to === null || change?.to === undefined) &&
-          (change?.from !== '' && change?.from !== null && change?.from !== undefined);
-        const isArrayDelete = Array.isArray(change?.removed) && change.removed.length > 0 && (!Array.isArray(change?.added) || change.added.length === 0);
-        if (isStringDelete || isArrayDelete) {
+        const canonicalValue = canonical?.[fieldName];
+
+        const hasExplicitStringDelete =
+          Object.prototype.hasOwnProperty.call(change || {}, 'from') &&
+          Object.prototype.hasOwnProperty.call(change || {}, 'to') &&
+          hasMeaningfulValue(change?.from) &&
+          isEmptyValue(change?.to) &&
+          hasMeaningfulValue(canonicalValue);
+
+        const isArrayDelete =
+          Array.isArray(change?.removed) &&
+          change.removed.length > 0 &&
+          (!Array.isArray(change?.added) || change.added.length === 0) &&
+          hasMeaningfulValue(canonicalValue);
+
+        if (hasExplicitStringDelete || isArrayDelete) {
           deletedFields.add(fieldName);
         }
       });
     });
+
     setDeletedOverlayFields(Array.from(deletedFields));
   }, [userId, isAdmin]);
 
