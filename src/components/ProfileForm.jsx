@@ -354,19 +354,19 @@ export const ProfileForm = ({
     'ownKids',
     'lastDelivery',
     'role',
-    'accessLevel',
   ];
-
 
   const accessLevelOptions = [
-    'matching:view',
-    'matching:view&write',
-    'matching+addNewProfile:view',
-    'matching+addNewProfile:view&write',
+    { value: 'matching:view', label: 'matching view' },
+    { value: 'matching:view&write', label: 'matching view and write' },
+    { value: 'add:view', label: 'add view' },
+    { value: 'add:view&write', label: 'add view and write' },
+    { value: 'add+matching:view', label: 'add and matching view' },
+    { value: 'add+matching:view&write', label: 'add and matching view and write' },
   ];
 
-  const privilegedAccessLevel = 'matching+addNewProfile:view&write';
-  const isPrivilegedUser = (state.accessLevel || '') === privilegedAccessLevel;
+  const privilegedAccessLevel = 'add+matching:view&write';
+  const isPrivilegedUser = [privilegedAccessLevel, 'matching+addNewProfile:view&write'].includes(state.accessLevel || '');
 
   const fieldsToRender = getFieldsToRender(state);
 
@@ -383,29 +383,6 @@ export const ProfileForm = ({
 
   return (
     <>
-      {canManageAccessLevel && (
-        <PickerContainer>
-          <InputDiv>
-            <Hint fieldName="privilegedUser" isActive>
-              Привілейований юзер
-            </Hint>
-            <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input
-                id="privileged-user"
-                type="checkbox"
-                checked={isPrivilegedUser}
-                onChange={e => {
-                  const value = e.target.checked ? privilegedAccessLevel : accessLevelOptions[0];
-                  const newState = { ...state, accessLevel: value };
-                  setState(prevState => ({ ...prevState, accessLevel: value }));
-                  submitWithNormalization(newState, 'overwrite');
-                }}
-              />
-              <label htmlFor="privileged-user">Надати права привілейованого юзера</label>
-            </div>
-          </InputDiv>
-        </PickerContainer>
-      )}
       {state.userId && (
         <div
           id={state.userId}
@@ -483,7 +460,7 @@ export const ProfileForm = ({
                   {field.name === 'accessLevel' ? (
                     <AccessLevelSelect
                       name={field.name}
-                      value={state[field.name] || accessLevelOptions[0]}
+                      value={state[field.name] || accessLevelOptions[0].value}
                       onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
                       onChange={e => {
                         const value = e.target.value;
@@ -492,7 +469,7 @@ export const ProfileForm = ({
                       onBlur={() => handleBlur(field.name)}
                     >
                       {accessLevelOptions.map(option => (
-                        <option key={option} value={option}>{option}</option>
+                        <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </AccessLevelSelect>
                   ) : (
@@ -723,6 +700,29 @@ export const ProfileForm = ({
           </PickerContainer>
         );
         })}
+      {canManageAccessLevel && (
+        <PickerContainer>
+          <InputDiv>
+            <Hint fieldName="privilegedUser" isActive>
+              Привілейований юзер
+            </Hint>
+            <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                id="privileged-user"
+                type="checkbox"
+                checked={isPrivilegedUser}
+                onChange={e => {
+                  const value = e.target.checked ? privilegedAccessLevel : accessLevelOptions[0].value;
+                  const newState = { ...state, accessLevel: value };
+                  setState(prevState => ({ ...prevState, accessLevel: value }));
+                  submitWithNormalization(newState, 'overwrite');
+                }}
+              />
+              <label htmlFor="privileged-user">Надати права привілейованого юзера</label>
+            </div>
+          </InputDiv>
+        </PickerContainer>
+      )}
       <KeyValueRow>
         <CustomInput
           placeholder="ключ"

@@ -9,16 +9,26 @@ const normalize = level =>
     .replace(/_/g, '')
     .replace(/&/g, 'and');
 
-export const canAccessMatchingByLevel = accessLevel => {
+const parseAccessLevel = accessLevel => {
   const level = normalize(accessLevel);
-  if (!level) return false;
-  return level.includes('matching:view') || level.includes('matching:viewandwrite') || level.includes('matchingandaddnewprofile:view') || level.includes('matchingandaddnewprofile:viewandwrite') || level.includes('matching+addnewprofile:view') || level.includes('matching+addnewprofile:viewandwrite');
+  if (!level) {
+    return { hasMatching: false, hasAdd: false };
+  }
+
+  const hasMatching = level.includes('matching');
+  const hasAdd = level.includes('add') || level.includes('addnewprofile');
+
+  return { hasMatching, hasAdd };
+};
+
+export const canAccessMatchingByLevel = accessLevel => {
+  const { hasMatching } = parseAccessLevel(accessLevel);
+  return hasMatching;
 };
 
 export const canAccessAddByLevel = accessLevel => {
-  const level = normalize(accessLevel);
-  if (!level) return false;
-  return level.includes('matchingandaddnewprofile:view') || level.includes('matchingandaddnewprofile:viewandwrite') || level.includes('matching+addnewprofile:view') || level.includes('matching+addnewprofile:viewandwrite');
+  const { hasAdd } = parseAccessLevel(accessLevel);
+  return hasAdd;
 };
 
 export const resolveAccess = ({ uid, accessLevel }) => {
