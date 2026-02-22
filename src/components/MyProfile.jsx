@@ -562,6 +562,33 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return code.includes('permission-denied') || code.includes('permission_denied') || message.includes('permission_denied');
   };
 
+  const persistUserWithFallback = async (userId, uploadedInfo, firestoreCondition = 'update') => {
+    let shouldWriteFullProfileToNewUsers = false;
+
+    try {
+      await updateDataInRealtimeDB(userId, uploadedInfo, firestoreCondition === 'set' ? undefined : 'update');
+    } catch (error) {
+      if (!isPermissionDeniedError(error)) {
+        throw error;
+      }
+      shouldWriteFullProfileToNewUsers = true;
+      console.warn('No write access to users/$uid, fallback to newUsers.');
+    }
+
+    try {
+      await updateDataInFiresoreDB(userId, uploadedInfo, firestoreCondition);
+    } catch (error) {
+      shouldWriteFullProfileToNewUsers = true;
+      console.warn('Firestore write failed, fallback to newUsers.', error);
+    }
+
+    await updateDataInNewUsersRTDB(
+      userId,
+      shouldWriteFullProfileToNewUsers ? uploadedInfo : { lastLogin2: uploadedInfo.lastLogin2 },
+      'update'
+    );
+  };
+
   const handleAgree = async () => {
     const miss = {};
     if (!state.email) miss.email = true;
@@ -587,20 +614,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           userId: userCredential.user.uid,
           userRole: 'ed',
         };
-        try {
-          await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
-        } catch (error) {
-          if (!isPermissionDeniedError(error)) {
-            throw error;
-          }
-          console.warn('No write access to users/$uid during agree flow, continue with newUsers only.');
-        }
-        await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
-        await updateDataInNewUsersRTDB(
-          userCredential.user.uid,
-          { lastLogin2: todayDash },
-          'update'
-        );
+        await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'update');
       } else {
         userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
         await sendEmailVerification(userCredential.user);
@@ -613,20 +627,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           userId: userCredential.user.uid,
           userRole: 'ed',
         };
-        try {
-          await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo);
-        } catch (error) {
-          if (!isPermissionDeniedError(error)) {
-            throw error;
-          }
-          console.warn('No write access to users/$uid during registration agree flow, continue with newUsers only.');
-        }
-        await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'set');
-        await updateDataInNewUsersRTDB(
-          userCredential.user.uid,
-          { lastLogin2: todayDash },
-          'update'
-        );
+        await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'set');
       }
 
       localStorage.setItem('isLoggedIn', 'true');
