@@ -768,7 +768,11 @@ const InputDiv = styled.div`
   margin: 10px 0;
   padding: 10px;
   background-color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? '#f7f7f7' : '#fff')};
-  border: 2px solid ${({ $isHighlighted, $isDeletedOverlay }) => ($isDeletedOverlay ? '#c7c7c7' : $isHighlighted ? '#2f6df6' : '#ccc')};
+  border: ${({ $isHighlighted, $isDeletedOverlay }) => {
+    if ($isDeletedOverlay) return '1px dashed #b5b5b5';
+    if ($isHighlighted) return '2px solid #2f6df6';
+    return '1px solid #ccc';
+  }};
   border-radius: 5px;
   box-sizing: border-box;
   flex: 1 1 auto;
@@ -926,7 +930,11 @@ const KeyValueRow = styled.div`
   margin: 10px 0;
   padding: 10px;
   background-color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? '#f7f7f7' : '#fff')};
-  border: 2px solid ${({ $isHighlighted, $isDeletedOverlay }) => ($isDeletedOverlay ? '#c7c7c7' : $isHighlighted ? '#2f6df6' : '#ccc')};
+  border: ${({ $isHighlighted, $isDeletedOverlay }) => {
+    if ($isDeletedOverlay) return '1px dashed #b5b5b5';
+    if ($isHighlighted) return '2px solid #2f6df6';
+    return '1px solid #ccc';
+  }};
   border-radius: 5px;
   box-sizing: border-box;
   width: 100%;
@@ -974,4 +982,3 @@ const Button = styled.button`
     transform: scale(0.98);
   }
 `;
-
