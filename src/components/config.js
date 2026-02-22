@@ -901,6 +901,9 @@ export const searchUsersOnly = async searchedValue => {
     if (shouldSearchByUserId(searchValue)) {
       await searchUserByPartialUserId(searchValue, users);
     }
+    if (Object.keys(users).length === 0) {
+      await searchUserByAllKeys(searchValue, users, uniqueUserIds);
+    }
 
     if (Object.keys(users).length === 1) {
       const id = Object.keys(users)[0];
@@ -1004,6 +1007,67 @@ const shouldSearchByUserId = value => {
 
   // userId зазвичай містить цифри (наприклад AA123, VK456).
   return /\d/.test(trimmed);
+};
+
+const normalizeSearchTerm = value => {
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
+};
+
+const doesFieldMatchUniversalSearch = (fieldKey, fieldValue, normalizedSearchValue) => {
+  if (!normalizedSearchValue || fieldValue === null || fieldValue === undefined) return false;
+
+  if (fieldKey === 'email') {
+    return typeof fieldValue === 'string' && fieldValue.trim().toLowerCase() === normalizedSearchValue;
+  }
+
+  return valueMatchesSearchTerm(fieldValue, normalizedSearchValue);
+};
+
+export const searchUserByAllKeys = async (searchValue, users, uniqueUserIds = null) => {
+  const normalizedSearchValue = normalizeSearchTerm(searchValue);
+  if (!normalizedSearchValue) return null;
+
+  try {
+    const collections = ['users', 'newUsers'];
+
+    for (const collection of collections) {
+      const refToCollection = ref2(database, collection);
+      const snapshot = await get(refToCollection);
+
+      if (!snapshot.exists()) continue;
+
+      const userPromises = [];
+
+      snapshot.forEach(userSnapshot => {
+        const currentUserId = userSnapshot.key;
+        if (uniqueUserIds?.has(currentUserId)) return;
+
+        const userData = userSnapshot.val() || {};
+        const hasMatchByAnyKey = keysToCheck.some(fieldKey =>
+          doesFieldMatchUniversalSearch(fieldKey, userData[fieldKey], normalizedSearchValue)
+        );
+
+        if (!hasMatchByAnyKey) return;
+
+        if (uniqueUserIds) {
+          uniqueUserIds.add(currentUserId);
+        }
+        userPromises.push(addUserToResults(currentUserId, users));
+      });
+
+      await Promise.all(userPromises);
+    }
+
+    if (Object.keys(users).length > 0) {
+      return users;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error fetching data by universal keys search:', error);
+    return null;
+  }
 };
 
 export const searchUserByPartialUserId = async (userId, users) => {
@@ -1489,6 +1553,9 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
         await searchUserByPartialUserId(searchValue, users);
       }
       await searchByIndexOn(searchValue, uniqueUserIds, users);
+      if (Object.keys(users).length === 0) {
+        await searchUserByAllKeys(searchValue, users, uniqueUserIds);
+      }
     }
 
     if (Object.keys(users).length === 1) {
