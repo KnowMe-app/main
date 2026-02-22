@@ -827,22 +827,40 @@ const searchBySearchIdUsers = async (modifiedSearchValue, uniqueUserIds, users) 
 };
 
 const searchByPrefixesUsers = async (searchValue, uniqueUserIds, users) => {
+  const fieldMatchesSearch = (value, normalizedSearch) => {
+    if (typeof value === 'string') {
+      return value.trim().toLowerCase().includes(normalizedSearch);
+    }
+
+    if (typeof value === 'number') {
+      return String(value).toLowerCase().includes(normalizedSearch);
+    }
+
+    if (Array.isArray(value)) {
+      return value.some(item => fieldMatchesSearch(item, normalizedSearch));
+    }
+
+    return false;
+  };
+
   for (const prefix of keysToCheck) {
-    let formatted = searchValue.trim().toLowerCase();
+    let formatted = searchValue.trim();
     if (prefix === 'name' || prefix === 'surname') {
       formatted = searchValue.trim().charAt(0).toUpperCase() + searchValue.trim().slice(1).toLowerCase();
     }
-    const q = query(ref2(database, 'users'), orderByChild(prefix), startAt(formatted), endAt(`${formatted}\uf8ff`));
+    const searchPrefixes = [...new Set([formatted, formatted.toLowerCase()].filter(Boolean))];
     try {
-      const snap = await get(q);
-      if (snap.exists()) {
+      for (const queryPrefix of searchPrefixes) {
+        const snap = await get(
+          query(ref2(database, 'users'), orderByChild(prefix), startAt(queryPrefix), endAt(`${queryPrefix}\uf8ff`))
+        );
+        if (!snap.exists()) continue;
+
         snap.forEach(userSnap => {
           const userId = userSnap.key;
           const userData = userSnap.val();
-          let fieldValue = userData[prefix];
-          if (typeof fieldValue === 'string') fieldValue = fieldValue.trim();
-          else return;
-          if (fieldValue && fieldValue.toLowerCase().includes(formatted.toLowerCase()) && !uniqueUserIds.has(userId)) {
+          const fieldValue = userData[prefix];
+          if (fieldMatchesSearch(fieldValue, formatted.toLowerCase()) && !uniqueUserIds.has(userId)) {
             uniqueUserIds.add(userId);
             users[userId] = { userId, ...userData };
           }
@@ -880,7 +898,9 @@ export const searchUsersOnly = async searchedValue => {
   try {
     await searchBySearchIdUsers(modifiedSearchValue, uniqueUserIds, users);
     await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
-    await searchUserByPartialUserId(searchValue, users);
+    if (shouldSearchByUserId(searchValue)) {
+      await searchUserByPartialUserId(searchValue, users);
+    }
 
     if (Object.keys(users).length === 1) {
       const id = Object.keys(users)[0];
@@ -972,6 +992,18 @@ const makeSearchKeyValue = searchedValue => {
   modifiedSearchValue = encodeKey(searchValue);
   const searchIdKey = `${searchKey}_${modifiedSearchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
   return { searchKey, searchValue, modifiedSearchValue, searchIdKey };
+};
+
+const shouldSearchByUserId = value => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+
+  // Не виконуємо userId-пошук для email/телеграм/текстових запитів.
+  if (/[@.\s]/.test(trimmed)) return false;
+
+  // userId зазвичай містить цифри (наприклад AA123, VK456).
+  return /\d/.test(trimmed);
 };
 
 export const searchUserByPartialUserId = async (userId, users) => {
@@ -1191,12 +1223,28 @@ const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
 };
 
 const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
+  const fieldMatchesSearch = (value, normalizedSearch) => {
+    if (typeof value === 'string') {
+      return value.trim().toLowerCase().includes(normalizedSearch);
+    }
+
+    if (typeof value === 'number') {
+      return String(value).toLowerCase().includes(normalizedSearch);
+    }
+
+    if (Array.isArray(value)) {
+      return value.some(item => fieldMatchesSearch(item, normalizedSearch));
+    }
+
+    return false;
+  };
+
   // console.log('🔍 searchValue :>> ', searchValue);
 
   for (const prefix of keysToCheck) {
     // console.log('🛠 Searching by prefix:', prefix);
 
-    let formattedSearchValue = searchValue.trim().toLowerCase();
+    let formattedSearchValue = searchValue.trim();
 
     // Якщо шукаємо за "surname", робимо пошук з урахуванням першої великої літери
     if (prefix === 'name' || prefix === 'surname') {
@@ -1207,27 +1255,23 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
     //       formattedSearchValue = `telegram_ук_см_${searchValue.trim().toLowerCase()}`;
     // }
 
-    const queryByPrefix = query(ref2(database, 'newUsers'), orderByChild(prefix), startAt(formattedSearchValue), endAt(`${formattedSearchValue}\uf8ff`));
+    const searchPrefixes = [...new Set([formattedSearchValue, formattedSearchValue.toLowerCase()].filter(Boolean))];
 
     try {
-      const snapshotByPrefix = await get(queryByPrefix);
-      // console.log(`📡 Firebase Query Executed for '${prefix}'`);
+      for (const queryPrefix of searchPrefixes) {
+        const snapshotByPrefix = await get(
+          query(ref2(database, 'newUsers'), orderByChild(prefix), startAt(queryPrefix), endAt(`${queryPrefix}\uf8ff`))
+        );
+        // console.log(`📡 Firebase Query Executed for '${prefix}'`);
 
-      if (snapshotByPrefix.exists()) {
+        if (!snapshotByPrefix.exists()) continue;
         // console.log(`✅ Found results for '${prefix}'`);
 
         snapshotByPrefix.forEach(userSnapshot => {
           const userId = userSnapshot.key;
           const userData = userSnapshot.val();
 
-          let fieldValue = userData[prefix];
-
-          // Переконаємося, що значення є рядком і не містить зайвих пробілів
-          if (typeof fieldValue === 'string') {
-            fieldValue = fieldValue.trim();
-          } else {
-            return; // Пропускаємо, якщо поле не є рядком
-          }
+          const fieldValue = userData[prefix];
 
           // console.log('📌 Checking user:', userId);
           // console.log(`🧐 userData['${prefix}']:`, fieldValue);
@@ -1239,9 +1283,7 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
           // console.log('🛑 Already in uniqueUserIds?', uniqueUserIds.has(userId));
 
           if (
-            fieldValue &&
-            typeof fieldValue === 'string' &&
-            fieldValue.toLowerCase().includes(formattedSearchValue.toLowerCase()) &&
+            fieldMatchesSearch(fieldValue, formattedSearchValue.toLowerCase()) &&
             !uniqueUserIds.has(userId)
           ) {
             uniqueUserIds.add(userId);
@@ -1252,8 +1294,6 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
             // console.log(`✅ Added user '${userId}' to results`);
           }
         });
-      } else {
-        // console.log(`🚫 No results found for '${prefix}'`);
       }
     } catch {
       // console.error(`❌ Error fetching data for '${prefix}'`);
@@ -1418,7 +1458,9 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
     if (!isDateSearch) {
       await searchBySearchId(modifiedSearchValue, uniqueUserIds, users);
       await searchByPrefixes(searchValue, uniqueUserIds, users);
-      await searchUserByPartialUserId(searchValue, users);
+      if (shouldSearchByUserId(searchValue)) {
+        await searchUserByPartialUserId(searchValue, users);
+      }
       await searchByIndexOn(searchValue, uniqueUserIds, users);
     }
 
