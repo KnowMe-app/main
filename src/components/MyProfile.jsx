@@ -746,10 +746,14 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
       if (user) {
+        setIsLoggedIn(true);
+        localStorage.setItem('isLoggedIn', 'true');
         localStorage.setItem('ownerId', user.uid);
         console.log('User is logged in: ', user.uid);
         fetchData(user);
       } else {
+        setIsLoggedIn(false);
+        localStorage.removeItem('isLoggedIn');
         localStorage.removeItem('ownerId');
         console.log('No user is logged in.');
       }
@@ -781,6 +785,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const isSessionActive = Boolean(isLoggedIn || auth.currentUser || state.userId);
 
   useEffect(() => {
     const logged = localStorage.getItem('isLoggedIn');
@@ -858,7 +863,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
         {!isEmailVerified && <VerifyEmail />}
-        {isLoggedIn && <ExitButton onClick={handleExit}>Exit</ExitButton>}
+        {isSessionActive && <ExitButton onClick={handleExit}>Exit</ExitButton>}
       </>
     );
   };
@@ -866,7 +871,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   return (
     <Container>
       <InnerContainer>
-        {isLoggedIn && (
+        {isSessionActive && (
           <DotsButton
             onClick={() => {
               setShowInfoModal('dotsMenu');
