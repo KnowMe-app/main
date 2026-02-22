@@ -362,6 +362,9 @@ export const ProfileForm = ({
     'matching+addNewProfile:view&write',
   ];
 
+  const privilegedAccessLevel = 'matching+addNewProfile:view&write';
+  const isPrivilegedUser = (state.accessLevel || '') === privilegedAccessLevel;
+
   const fieldsToRender = getFieldsToRender(state);
 
   const normalizedFieldsToRender = isAdmin && !fieldsToRender.some(field => field.name === 'accessLevel')
@@ -377,6 +380,29 @@ export const ProfileForm = ({
 
   return (
     <>
+      {isAdmin && (
+        <PickerContainer>
+          <InputDiv>
+            <Hint fieldName="privilegedUser" isActive>
+              Привілейований юзер
+            </Hint>
+            <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                id="privileged-user"
+                type="checkbox"
+                checked={isPrivilegedUser}
+                onChange={e => {
+                  const value = e.target.checked ? privilegedAccessLevel : accessLevelOptions[0];
+                  const newState = { ...state, accessLevel: value };
+                  setState(prevState => ({ ...prevState, accessLevel: value }));
+                  submitWithNormalization(newState, 'overwrite');
+                }}
+              />
+              <label htmlFor="privileged-user">Надати права привілейованого юзера</label>
+            </div>
+          </InputDiv>
+        </PickerContainer>
+      )}
       {state.userId && (
         <div
           id={state.userId}
