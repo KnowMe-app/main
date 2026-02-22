@@ -31,15 +31,15 @@ export const makeCardDescription = user => {
   const getCsectionInfo = val => {
     if (val === undefined || val === null || val === '') return '';
     const normalized = normalizeStr(val);
-    if (['не було', 'no', 'ні', '-', '0', 'false'].includes(normalized)) return '-';
-    return val;
+    if (['не було', 'no', 'ні', '-', '0', 'false'].includes(normalized)) return 'КС-';
+    return `КС ${String(val).trim()}`;
   };
 
   const csectionInfo = getCsectionInfo(user.csection);
 
-  const heightWeightBloodParts = [user.height, user.weight, user.blood].filter(
-    Boolean,
-  );
+  const bloodInfo = user.blood ? `РК-${String(user.blood).trim()}` : 'РК-';
+
+  const heightWeightBloodParts = [user.height, user.weight, bloodInfo].filter(Boolean);
   const heightWeightBlood =
     heightWeightBloodParts.length > 0
       ? heightWeightBloodParts.join('/')
@@ -67,5 +67,5 @@ export const makeCardDescription = user => {
 
   const enumerated = parts.map((text, index) => `${index + 1}. ${text}`);
 
-  return enumerated.join('\n');
+  return enumerated.join('; ');
 };
