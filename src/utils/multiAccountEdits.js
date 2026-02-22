@@ -24,6 +24,32 @@ const areArraysEqual = (a, b) => {
 
 const shouldSkipField = key => key === 'userId' || key === 'photos';
 
+const normalizeCardKey = value => String(value || '').trim();
+
+export const resolveOverlayRecordByCardId = (editorCards, cardUserId) => {
+  if (!editorCards || typeof editorCards !== 'object') return null;
+
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return null;
+
+  const direct = editorCards[normalizedCardId];
+  if (direct?.fields) return direct;
+
+  const matchedKey = Object.keys(editorCards).find(key => normalizeCardKey(key) === normalizedCardId);
+  if (matchedKey && editorCards[matchedKey]?.fields) {
+    return editorCards[matchedKey];
+  }
+
+  if (matchedKey && editorCards[matchedKey] && typeof editorCards[matchedKey] === 'object') {
+    const nested = editorCards[matchedKey][normalizedCardId]
+      || editorCards[matchedKey][matchedKey]
+      || null;
+    if (nested?.fields) return nested;
+  }
+
+  return null;
+};
+
 export const getCanonicalCard = async cardUserId => {
   const [newUsersSnapshot, usersSnapshot] = await Promise.all([
     get(ref2(database, `newUsers/${cardUserId}`)),
@@ -114,9 +140,9 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
 
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   if (!editorUserId || !cardUserId) return null;
-  const snapshot = await get(ref2(database, `${EDITS_ROOT}/${editorUserId}/${cardUserId}`));
+  const snapshot = await get(ref2(database, `${EDITS_ROOT}/${editorUserId}`));
   if (!snapshot.exists()) return null;
-  return snapshot.val();
+  return resolveOverlayRecordByCardId(snapshot.val(), cardUserId);
 };
 
 export const getOverlaysForCard = async cardUserId => {
@@ -127,8 +153,9 @@ export const getOverlaysForCard = async cardUserId => {
   const result = {};
   const all = snapshot.val();
   Object.entries(all).forEach(([editorUserId, editorCards]) => {
-    if (editorCards?.[cardUserId]?.fields) {
-      result[editorUserId] = editorCards[cardUserId];
+    const overlay = resolveOverlayRecordByCardId(editorCards, cardUserId);
+    if (overlay?.fields) {
+      result[editorUserId] = overlay;
     }
   });
 
