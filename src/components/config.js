@@ -1222,6 +1222,8 @@ const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
   await Promise.all(searchPromises);
 };
 
+const SEARCH_COLLECTIONS = ['newUsers', 'users'];
+
 const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
   const fieldMatchesSearch = (value, normalizedSearch) => {
     if (typeof value === 'string') {
@@ -1259,41 +1261,43 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
 
     try {
       for (const queryPrefix of searchPrefixes) {
-        const snapshotByPrefix = await get(
-          query(ref2(database, 'newUsers'), orderByChild(prefix), startAt(queryPrefix), endAt(`${queryPrefix}\uf8ff`))
-        );
-        // console.log(`📡 Firebase Query Executed for '${prefix}'`);
+        for (const collection of SEARCH_COLLECTIONS) {
+          const snapshotByPrefix = await get(
+            query(ref2(database, collection), orderByChild(prefix), startAt(queryPrefix), endAt(`${queryPrefix}\uf8ff`))
+          );
+          // console.log(`📡 Firebase Query Executed for '${collection}.${prefix}'`);
 
-        if (!snapshotByPrefix.exists()) continue;
-        // console.log(`✅ Found results for '${prefix}'`);
+          if (!snapshotByPrefix.exists()) continue;
+          // console.log(`✅ Found results for '${collection}.${prefix}'`);
 
-        snapshotByPrefix.forEach(userSnapshot => {
-          const userId = userSnapshot.key;
-          const userData = userSnapshot.val();
+          snapshotByPrefix.forEach(userSnapshot => {
+            const userId = userSnapshot.key;
+            const userData = userSnapshot.val();
 
-          const fieldValue = userData[prefix];
+            const fieldValue = userData[prefix];
 
-          // console.log('📌 Checking user:', userId);
-          // console.log(`🧐 userData['${prefix}']:`, fieldValue);
-          // console.log('📏 Type of fieldValue:', typeof fieldValue);
-          // console.log(
-          //   '🔍 Includes searchValue?',
-          //   fieldValue.toLowerCase().includes(formattedSearchValue.toLowerCase())
-          // );
-          // console.log('🛑 Already in uniqueUserIds?', uniqueUserIds.has(userId));
+            // console.log('📌 Checking user:', userId);
+            // console.log(`🧐 userData['${prefix}']:`, fieldValue);
+            // console.log('📏 Type of fieldValue:', typeof fieldValue);
+            // console.log(
+            //   '🔍 Includes searchValue?',
+            //   fieldValue.toLowerCase().includes(formattedSearchValue.toLowerCase())
+            // );
+            // console.log('🛑 Already in uniqueUserIds?', uniqueUserIds.has(userId));
 
-          if (
-            fieldMatchesSearch(fieldValue, formattedSearchValue.toLowerCase()) &&
-            !uniqueUserIds.has(userId)
-          ) {
-            uniqueUserIds.add(userId);
-            users[userId] = {
-              userId,
-              ...userData,
-            };
-            // console.log(`✅ Added user '${userId}' to results`);
-          }
-        });
+            if (
+              fieldMatchesSearch(fieldValue, formattedSearchValue.toLowerCase()) &&
+              !uniqueUserIds.has(userId)
+            ) {
+              uniqueUserIds.add(userId);
+              users[userId] = {
+                userId,
+                ...userData,
+              };
+              // console.log(`✅ Added user '${userId}' to results`);
+            }
+          });
+        }
       }
     } catch {
       // console.error(`❌ Error fetching data for '${prefix}'`);
@@ -1387,58 +1391,60 @@ const searchByIndexOn = async (searchValue, uniqueUserIds, users) => {
   const trimmedSearch = searchValue.trim();
   if (!trimmedSearch) return;
 
-  let indexedFields = [];
-
-  try {
-    const indexRef = ref2(database, 'indexOn/newUsers');
-    const indexSnapshot = await get(indexRef);
-    if (!indexSnapshot.exists()) return;
-    indexedFields = normalizeIndexOnList(indexSnapshot.val());
-  } catch (error) {
-    if (isDev) console.error('searchByIndexOn → failed to load index metadata:', error);
-    return;
-  }
-
-  if (indexedFields.length === 0) return;
-
   const normalizedTerm = trimmedSearch.toLowerCase();
 
-  const searchPromises = indexedFields.map(async fieldPath => {
-    const formattedSearchValue = formatSearchForIndexedField(fieldPath, trimmedSearch);
-    if (!formattedSearchValue) return;
+  for (const collection of SEARCH_COLLECTIONS) {
+    let indexedFields = [];
 
     try {
-      const snapshot = await get(
-        query(
-          ref2(database, 'newUsers'),
-          orderByChild(fieldPath),
-          startAt(formattedSearchValue),
-          endAt(`${formattedSearchValue}\uf8ff`)
-        )
-      );
-
-      if (!snapshot.exists()) return;
-
-      const promises = [];
-
-      snapshot.forEach(userSnapshot => {
-        const userId = userSnapshot.key;
-        if (uniqueUserIds.has(userId)) return;
-
-        const candidateValue = getValueForPath(userSnapshot.val(), fieldPath);
-        if (!valueMatchesSearchTerm(candidateValue, normalizedTerm)) return;
-
-        uniqueUserIds.add(userId);
-        promises.push(addUserToResults(userId, users));
-      });
-
-      await Promise.all(promises);
+      const indexRef = ref2(database, `indexOn/${collection}`);
+      const indexSnapshot = await get(indexRef);
+      if (!indexSnapshot.exists()) continue;
+      indexedFields = normalizeIndexOnList(indexSnapshot.val());
     } catch (error) {
-      if (isDev) console.error(`searchByIndexOn → error querying ${fieldPath}:`, error);
+      if (isDev) console.error(`searchByIndexOn → failed to load index metadata for ${collection}:`, error);
+      continue;
     }
-  });
 
-  await Promise.all(searchPromises);
+    if (indexedFields.length === 0) continue;
+
+    const searchPromises = indexedFields.map(async fieldPath => {
+      const formattedSearchValue = formatSearchForIndexedField(fieldPath, trimmedSearch);
+      if (!formattedSearchValue) return;
+
+      try {
+        const snapshot = await get(
+          query(
+            ref2(database, collection),
+            orderByChild(fieldPath),
+            startAt(formattedSearchValue),
+            endAt(`${formattedSearchValue}\uf8ff`)
+          )
+        );
+
+        if (!snapshot.exists()) return;
+
+        const promises = [];
+
+        snapshot.forEach(userSnapshot => {
+          const userId = userSnapshot.key;
+          if (uniqueUserIds.has(userId)) return;
+
+          const candidateValue = getValueForPath(userSnapshot.val(), fieldPath);
+          if (!valueMatchesSearchTerm(candidateValue, normalizedTerm)) return;
+
+          uniqueUserIds.add(userId);
+          promises.push(addUserToResults(userId, users));
+        });
+
+        await Promise.all(promises);
+      } catch (error) {
+        if (isDev) console.error(`searchByIndexOn → error querying ${collection}.${fieldPath}:`, error);
+      }
+    });
+
+    await Promise.all(searchPromises);
+  }
 };
 
 export const fetchNewUsersCollectionInRTDB = async searchedValue => {
