@@ -590,24 +590,25 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleAgree = async () => {
+    const normalizedEmail = state.email.trim();
     const miss = {};
-    if (!state.email) miss.email = true;
+    if (!normalizedEmail) miss.email = true;
     if (!state.password) miss.password = true;
     setMissing(miss);
     if (Object.keys(miss).length) return;
-    if (!isValidEmail(state.email)) {
+    if (!isValidEmail(normalizedEmail)) {
       toast.error('Введіть коректний емейл');
       return;
     }
     try {
       const { todayDays, todayDash } = getCurrentDate();
-      const methods = await fetchSignInMethodsForEmail(auth, state.email);
+      const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
       let userCredential;
       let uploadedInfo;
       if (methods.length > 0) {
-        userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
+        userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, state.password);
         uploadedInfo = {
-          email: state.email,
+          email: normalizedEmail,
           areTermsConfirmed: todayDays,
           lastLogin: todayDays,
           lastLogin2: todayDash,
@@ -616,10 +617,10 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         };
         await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'update');
       } else {
-        userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
+        userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, state.password);
         await sendEmailVerification(userCredential.user);
         uploadedInfo = {
-          email: state.email,
+          email: normalizedEmail,
           areTermsConfirmed: todayDays,
           registrationDate: todayDays,
           lastLogin: todayDays,
@@ -631,12 +632,12 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
 
       localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('userEmail', state.email);
+      localStorage.setItem('userEmail', normalizedEmail);
       localStorage.removeItem('myProfileDraft');
 
       setIsLoggedIn(true);
       setHasAgreed(true);
-      setState(prev => ({ ...prev, userId: userCredential.user.uid }));
+      setState(prev => ({ ...prev, email: normalizedEmail, userId: userCredential.user.uid }));
       if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
         navigate('/my-profile');
       }
