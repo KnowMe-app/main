@@ -286,6 +286,10 @@ const EditProfile = () => {
     refreshOverlays();
   }, [userId, refreshOverlays, isAdmin]);
 
+  useEffect(() => {
+    refreshOverlays();
+  }, [refreshOverlays]);
+
   const handleSubmit = async (newState, overwrite, delCondition) => {
     const now = Date.now();
     const baseState = newState ? { ...newState } : { ...state };
