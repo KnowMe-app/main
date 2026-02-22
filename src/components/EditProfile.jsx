@@ -63,6 +63,7 @@ const EditProfile = () => {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [dataSource, setDataSource] = useState('');
   const [isAdmin, setIsAdmin] = useState(auth.currentUser?.uid === process.env.REACT_APP_USER1);
+  const [currentUid, setCurrentUid] = useState(auth.currentUser?.uid || '');
   const [pendingOverlays, setPendingOverlays] = useState({});
   const [highlightedFields, setHighlightedFields] = useState([]);
   const [deletedOverlayFields, setDeletedOverlayFields] = useState([]);
@@ -71,7 +72,6 @@ const EditProfile = () => {
   const refreshOverlays = useCallback(async () => {
     if (!userId) return;
 
-    const currentUid = auth.currentUser?.uid;
     const isOwnProfile = !!currentUid && currentUid === userId;
 
     if (isOwnProfile || !isAdmin) {
@@ -105,7 +105,7 @@ const EditProfile = () => {
 
     const deletedFields = new Set();
     Object.entries(overlays || {}).forEach(([editorId, overlay]) => {
-      if (editorId === auth.currentUser?.uid) return;
+      if (editorId === currentUid) return;
       if (!isAdminUid(editorId)) return;
 
       Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
@@ -131,7 +131,7 @@ const EditProfile = () => {
     });
 
     setDeletedOverlayFields(Array.from(deletedFields));
-  }, [userId, isAdmin]);
+  }, [userId, isAdmin, currentUid]);
 
   const handleOpenMedications = useCallback(
     user => {
@@ -211,6 +211,7 @@ const EditProfile = () => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
+      setCurrentUid(user?.uid || '');
       setIsAdmin(isAdminUid(user?.uid));
     });
 
@@ -251,7 +252,6 @@ const EditProfile = () => {
   useEffect(() => {
     if (!userId) return;
 
-    const currentUid = auth.currentUser?.uid;
     if (!currentUid) return;
 
     const isOwnProfile = currentUid === userId;
@@ -284,7 +284,7 @@ const EditProfile = () => {
 
     loadWithOverlay();
     refreshOverlays();
-  }, [userId, refreshOverlays, isAdmin]);
+  }, [userId, refreshOverlays, isAdmin, currentUid]);
 
   useEffect(() => {
     refreshOverlays();
