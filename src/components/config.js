@@ -1258,10 +1258,31 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
     // }
 
     const searchPrefixes = [...new Set([formattedSearchValue, formattedSearchValue.toLowerCase()].filter(Boolean))];
+    const shouldTryExactMatch = ['email', 'telegram', 'phone', 'instagram', 'facebook', 'tiktok', 'vk'].includes(prefix);
 
     try {
       for (const queryPrefix of searchPrefixes) {
         for (const collection of SEARCH_COLLECTIONS) {
+          if (shouldTryExactMatch) {
+            const exactSnapshot = await get(query(ref2(database, collection), orderByChild(prefix), equalTo(queryPrefix)));
+
+            if (exactSnapshot.exists()) {
+              exactSnapshot.forEach(userSnapshot => {
+                const userId = userSnapshot.key;
+                const userData = userSnapshot.val();
+                const fieldValue = userData[prefix];
+
+                if (fieldMatchesSearch(fieldValue, queryPrefix.toLowerCase()) && !uniqueUserIds.has(userId)) {
+                  uniqueUserIds.add(userId);
+                  users[userId] = {
+                    userId,
+                    ...userData,
+                  };
+                }
+              });
+            }
+          }
+
           const snapshotByPrefix = await get(
             query(ref2(database, collection), orderByChild(prefix), startAt(queryPrefix), endAt(`${queryPrefix}\uf8ff`))
           );
@@ -1299,8 +1320,8 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
           });
         }
       }
-    } catch {
-      // console.error(`❌ Error fetching data for '${prefix}'`);
+    } catch (error) {
+      if (isDev) console.error(`❌ Error fetching data for '${prefix}'`, error);
     }
   }
 };
