@@ -36,6 +36,8 @@ import {
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { resolveAccess } from 'utils/accessLevel';
+import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import InfoModal from './InfoModal';
 import UtilityPeriodComposer from './UtilityPeriodComposer';
 import { VerifyEmail } from './VerifyEmail';
@@ -304,7 +306,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState(null);
   const navigate = useNavigate();
-  const isAdmin = auth.currentUser?.uid === process.env.REACT_APP_USER1;
+  const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
+  const isAdmin = access.isAdmin;
   const [stimulationScheduleProfiles, setStimulationScheduleProfiles] = useState([]);
   const [stimulationShortcutIds, setStimulationShortcutIdsState] = useState(() =>
     getStoredStimulationShortcutIds(),
@@ -357,6 +360,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       syncedState.lastDelivery = formattedLastDelivery;
     } else {
       delete syncedState.lastDelivery;
+    }
+
+    if (!isAdmin) {
+      if (!syncedState?.userId) {
+        toast.error('Немає userId для збереження правки');
+        return;
+      }
+
+      const canonical = await getCanonicalCard(syncedState.userId);
+      const overlayFields = buildOverlayFromDraft(canonical, syncedState);
+      await saveOverlayForUserCard({
+        editorUserId: auth.currentUser?.uid,
+        cardUserId: syncedState.userId,
+        fields: overlayFields,
+      });
+      toast.success('Правку збережено та відправлено на погодження адміну');
+      return;
     }
 
     // Optimistically update local cache and UI state before syncing with server
@@ -541,7 +561,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         if (filteredArray.length === 0 || (filteredArray.length === 1 && filteredArray[0] === '')) {
           const deletedValue = prevState[fieldName];
           delete newState[fieldName];
-          removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
+          if (isAdmin) {
+            removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
+          }
         } else if (filteredArray.length === 1) {
           newState[fieldName] = filteredArray[0];
         } else {
@@ -551,7 +573,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         removedValue = prevState[fieldName];
         const deletedValue = prevState[fieldName];
         delete newState[fieldName];
-        removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
+        if (isAdmin) {
+          removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
+        }
       }
 
       handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
@@ -578,7 +602,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       console.log(`Поле "${fieldName}" позначено для видалення`);
 
       // Видалення ключа з Firebase
-      removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
+      if (isAdmin) {
+        removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
+      }
 
       handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
       return newState; // Повертаємо оновлений стан
@@ -1147,11 +1173,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const dotsMenu = () => {
     return (
       <>
-        {isAdmin && (
+        {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
           <>
             <SubmitButton onClick={() => navigate('/my-profile')}>my-profile</SubmitButton>
-            <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>
-            <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>
+            {(isAdmin || access.canAccessAdd) && <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>}
+            {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>}
           </>
         )}
         <SubmitButton onClick={() => setShowInfoModal('utilityComposer')}>Оренда</SubmitButton>

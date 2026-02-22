@@ -266,7 +266,11 @@ export const ProfileForm = ({
   handleSubmit,
   handleClear,
   handleDelKeyValue,
+  handleFieldFocus,
   dataSource,
+  highlightedFields = [],
+  deletedOverlayFields = [],
+  isAdmin = false,
 }) => {
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
@@ -347,15 +351,28 @@ export const ProfileForm = ({
     'ownKids',
     'lastDelivery',
     'role',
+    'accessLevel',
+  ];
+
+
+  const accessLevelOptions = [
+    'matching:view',
+    'matching:view&write',
+    'matching+addNewProfile:view',
+    'matching+addNewProfile:view&write',
   ];
 
   const fieldsToRender = getFieldsToRender(state);
 
+  const normalizedFieldsToRender = isAdmin && !fieldsToRender.some(field => field.name === 'accessLevel')
+    ? [...fieldsToRender, { name: 'accessLevel', placeholder: 'access level', ukrainianHint: 'рівень доступу' }]
+    : fieldsToRender;
+
   const sortedFieldsToRender = [
     ...priorityOrder
-      .map(key => fieldsToRender.find(field => field.name === key))
+      .map(key => normalizedFieldsToRender.find(field => field.name === key))
       .filter(Boolean),
-    ...fieldsToRender.filter(field => !priorityOrder.includes(field.name)),
+    ...normalizedFieldsToRender.filter(field => !priorityOrder.includes(field.name)),
   ];
 
   return (
@@ -384,7 +401,7 @@ export const ProfileForm = ({
               {Array.isArray(state[field.name]) ? (
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
                 {state[field.name].map((value, idx) => (
-                  <InputDiv key={`${field.name}-${idx}`}>
+                  <InputDiv key={`${field.name}-${idx}`} $isHighlighted={highlightedFields.includes(field.name)} $isDeletedOverlay={deletedOverlayFields.includes(field.name)}>
                     <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
                       <InputField
                         fieldName={`${field.name}-${idx}`}
@@ -393,7 +410,9 @@ export const ProfileForm = ({
                         inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                         name={`${field.name}-${idx}`}
                         value={value || ''}
-                        onChange={e => {
+                        $isDeletedOverlay={deletedOverlayFields.includes(field.name)}
+                        onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                      onChange={e => {
                           if (field.name === 'myComment') {
                             autoResizeMyComment(e.target);
                           }
@@ -430,8 +449,24 @@ export const ProfileForm = ({
                 ))}
               </div>
             ) : (
-              <InputDiv>
+              <InputDiv $isHighlighted={highlightedFields.includes(field.name)} $isDeletedOverlay={deletedOverlayFields.includes(field.name)}>
                 <InputFieldContainer fieldName={field.name} value={state[field.name]}>
+                  {field.name === 'accessLevel' ? (
+                    <AccessLevelSelect
+                      name={field.name}
+                      value={state[field.name] || accessLevelOptions[0]}
+                      onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                      onChange={e => {
+                        const value = e.target.value;
+                        setState(prevState => ({ ...prevState, [field.name]: value }));
+                      }}
+                      onBlur={() => handleBlur(field.name)}
+                    >
+                      {accessLevelOptions.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </AccessLevelSelect>
+                  ) : (
                   <InputField
                     fieldName={field.name}
                     as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
@@ -439,6 +474,8 @@ export const ProfileForm = ({
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={displayValue}
+                    $isDeletedOverlay={deletedOverlayFields.includes(field.name)}
+                    onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
                     {...(field.name === 'lastAction'
                       ? { readOnly: true }
                       : {
@@ -482,6 +519,7 @@ export const ProfileForm = ({
                           },
                         })}
                   />
+                  )}
                   {field.name !== 'lastAction' && state[field.name] && (
                     <ClearButton
                       type="button"
@@ -729,8 +767,8 @@ const InputDiv = styled.div`
   position: relative;
   margin: 10px 0;
   padding: 10px;
-  background-color: #fff;
-  border: 1px solid #ccc;
+  background-color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? '#f7f7f7' : '#fff')};
+  border: 2px solid ${({ $isHighlighted, $isDeletedOverlay }) => ($isDeletedOverlay ? '#c7c7c7' : $isHighlighted ? '#2f6df6' : '#ccc')};
   border-radius: 5px;
   box-sizing: border-box;
   flex: 1 1 auto;
@@ -754,11 +792,21 @@ const InputField = styled.input`
   max-width: 100%;
   min-width: 0;
   pointer-events: auto;
+  color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? '#8f8f8f' : '#000')};
   height: 100%;
   resize: vertical;
   &::placeholder {
     color: transparent;
   }
+`;
+
+const AccessLevelSelect = styled.select`
+  border: none;
+  outline: none;
+  width: 100%;
+  padding-left: 10px;
+  background: transparent;
+  min-height: 30px;
 `;
 
 const Hint = styled.label`
@@ -877,8 +925,8 @@ const KeyValueRow = styled.div`
   position: relative;
   margin: 10px 0;
   padding: 10px;
-  background-color: #fff;
-  border: 1px solid #ccc;
+  background-color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? '#f7f7f7' : '#fff')};
+  border: 2px solid ${({ $isHighlighted, $isDeletedOverlay }) => ($isDeletedOverlay ? '#c7c7c7' : $isHighlighted ? '#2f6df6' : '#ccc')};
   border-radius: 5px;
   box-sizing: border-box;
   width: 100%;

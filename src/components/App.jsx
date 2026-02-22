@@ -8,12 +8,15 @@ import Matching from './Matching';
 import EditProfile from './EditProfile';
 import MedicationsPage from './MedicationsPage';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './config';
+import { auth, fetchUserById } from './config';
+import { resolveAccess } from 'utils/accessLevel';
 
 export const App = () => {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(null);
+  const [canAccessAdd, setCanAccessAdd] = useState(false);
+  const [canAccessMatching, setCanAccessMatching] = useState(false);
   // console.log('isLoggedIn :>> ', isLoggedIn);
 
   const navigate = useNavigate();
@@ -33,30 +36,40 @@ export const App = () => {
 
   // Special page for admin
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
+    const unsubscribe = onAuthStateChanged(auth, async user => {
       if (user) {
         localStorage.setItem('ownerId', user.uid);
-        if (user.uid === process.env.REACT_APP_USER1) {
-          setIsAdmin(true);
-        } else {
-          setIsAdmin(false);
+        let accessLevel = '';
+        try {
+          const profile = await fetchUserById(user.uid);
+          accessLevel = profile?.accessLevel || '';
+        } catch (error) {
+          console.error('Failed to load accessLevel for routes', error);
         }
+
+        const access = resolveAccess({ uid: user.uid, accessLevel });
+        setIsAdmin(access.isAdmin);
+        setCanAccessAdd(access.canAccessAdd);
+        setCanAccessMatching(access.canAccessMatching);
+        localStorage.setItem('accessLevel', accessLevel);
       } else {
         localStorage.removeItem('ownerId');
+        localStorage.removeItem('accessLevel');
         setIsAdmin(false);
+        setCanAccessAdd(false);
+        setCanAccessMatching(false);
       }
     });
-    // Clean up the subscription on component unmount
     return () => unsubscribe();
   }, []);
 
   return (
     <Routes>
-      <Route path="/" element={isAdmin ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />} />
+      <Route path="/" element={canAccessAdd ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />} />
       <Route path="/submit" element={<SubmitForm />} />
       <Route path="/my-profile"  element={<MyProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn}/>} />
-      {isAdmin && <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
-      {isAdmin && <Route path="/matching" element={<Matching />} />}
+      {canAccessAdd && <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
+      {canAccessMatching && <Route path="/matching" element={<Matching />} />}
       {isAdmin && <Route path="/edit/:userId" element={<EditProfile />} />}
       {isAdmin && <Route path="/medications/:userId" element={<MedicationsPage />} />}
       <Route path="/policy" element={<PrivacyPolicy />} />
