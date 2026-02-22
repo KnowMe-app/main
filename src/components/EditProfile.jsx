@@ -70,13 +70,25 @@ const EditProfile = () => {
 
   const refreshOverlays = useCallback(async () => {
     if (!userId) return;
+
+    const currentUid = auth.currentUser?.uid;
+    const isOwnProfile = !!currentUid && currentUid === userId;
+
+    if (isOwnProfile || !isAdmin) {
+      setPendingOverlays({});
+      setHighlightedFields([]);
+      setDeletedOverlayFields([]);
+      return;
+    }
+
     const overlays = await getOverlaysForCard(userId);
     setPendingOverlays(overlays);
-    setHighlightedFields(getOtherEditorsChangedFields(overlays, auth.currentUser?.uid));
+    setHighlightedFields(getOtherEditorsChangedFields(overlays, currentUid));
 
     const deletedFields = new Set();
     Object.entries(overlays || {}).forEach(([editorId, overlay]) => {
       if (editorId === auth.currentUser?.uid) return;
+      if (!isAdminUid(editorId)) return;
       Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
         const isStringDelete = (change?.to === '' || change?.to === null || change?.to === undefined) &&
           (change?.from !== '' && change?.from !== null && change?.from !== undefined);
@@ -87,7 +99,7 @@ const EditProfile = () => {
       });
     });
     setDeletedOverlayFields(Array.from(deletedFields));
-  }, [userId]);
+  }, [userId, isAdmin]);
 
   const handleOpenMedications = useCallback(
     user => {
@@ -206,12 +218,17 @@ const EditProfile = () => {
 
   useEffect(() => {
     if (!userId) return;
-    if (!auth.currentUser?.uid) return;
+
+    const currentUid = auth.currentUser?.uid;
+    if (!currentUid) return;
+
+    const isOwnProfile = currentUid === userId;
+    if (isOwnProfile || isAdmin) return;
 
     const loadWithOverlay = async () => {
       const canonical = await getCanonicalCard(userId);
       const overlay = await getOverlayForUserCard({
-        editorUserId: auth.currentUser?.uid,
+        editorUserId: currentUid,
         cardUserId: userId,
       });
 
@@ -235,7 +252,7 @@ const EditProfile = () => {
 
     loadWithOverlay();
     refreshOverlays();
-  }, [userId, refreshOverlays]);
+  }, [userId, refreshOverlays, isAdmin]);
 
   const handleSubmit = async (newState, overwrite, delCondition) => {
     const now = Date.now();
