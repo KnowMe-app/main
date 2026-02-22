@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Route, Routes, useNavigate  } from 'react-router-dom';
+import { Route, Routes, useLocation, useNavigate  } from 'react-router-dom';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { MyProfile } from './MyProfile';
 import { SubmitForm } from './SubmitForm';
@@ -20,6 +20,7 @@ export const App = () => {
   // console.log('isLoggedIn :>> ', isLoggedIn);
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const stored = localStorage.getItem('isLoggedIn');
@@ -29,10 +30,18 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    if (isLoggedIn && isAdmin === false) {
+    if (!isLoggedIn || isAdmin !== false) {
+      return;
+    }
+
+    const isRootRoute = location.pathname === '/';
+    const isUnauthorizedAddRoute = location.pathname === '/add' && !canAccessAdd;
+    const isUnauthorizedMatchingRoute = location.pathname === '/matching' && !canAccessMatching;
+
+    if (isRootRoute || isUnauthorizedAddRoute || isUnauthorizedMatchingRoute) {
       navigate('/my-profile');
     }
-  }, [isLoggedIn, navigate, isAdmin]);
+  }, [isLoggedIn, navigate, isAdmin, location.pathname, canAccessAdd, canAccessMatching]);
 
   // Special page for admin
   useEffect(() => {
