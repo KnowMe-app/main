@@ -11,9 +11,11 @@ import {
   formatDateAndFormula,
 } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import { isAdminUid } from 'utils/accessLevel';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
 import { FaTimes } from 'react-icons/fa';
+import { auth } from './config';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -272,6 +274,7 @@ export const ProfileForm = ({
   deletedOverlayFields = [],
   isAdmin = false,
 }) => {
+  const canManageAccessLevel = isAdmin || isAdminUid(auth.currentUser?.uid);
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
   const [customField, setCustomField] = useState({ key: '', value: '' });
@@ -367,7 +370,7 @@ export const ProfileForm = ({
 
   const fieldsToRender = getFieldsToRender(state);
 
-  const normalizedFieldsToRender = isAdmin && !fieldsToRender.some(field => field.name === 'accessLevel')
+  const normalizedFieldsToRender = canManageAccessLevel && !fieldsToRender.some(field => field.name === 'accessLevel')
     ? [...fieldsToRender, { name: 'accessLevel', placeholder: 'access level', ukrainianHint: 'рівень доступу' }]
     : fieldsToRender;
 
@@ -380,7 +383,7 @@ export const ProfileForm = ({
 
   return (
     <>
-      {isAdmin && (
+      {canManageAccessLevel && (
         <PickerContainer>
           <InputDiv>
             <Hint fieldName="privilegedUser" isActive>
