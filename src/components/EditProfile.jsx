@@ -70,6 +70,13 @@ const EditProfile = () => {
   const [deletedOverlayFields, setDeletedOverlayFields] = useState([]);
   const [focusedField, setFocusedField] = useState('');
 
+  const allOverlayDebugData = {
+    cardUserId: userId,
+    currentEditorUserId: currentUid,
+    isAdmin,
+    pendingOverlays,
+  };
+
   const refreshOverlays = useCallback(async () => {
     if (!userId) return;
 
@@ -439,6 +446,10 @@ const EditProfile = () => {
     await refreshOverlays();
   };
 
+  const handleOverlayDebugAlert = () => {
+    window.alert(JSON.stringify(allOverlayDebugData, null, 2));
+  };
+
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
   const scheduleUserData = state
     ? { ...state, cycleStatus: effectiveCycleStatus ?? state.cycleStatus }
@@ -541,6 +552,31 @@ const EditProfile = () => {
           ))}
         </div>
       )}
+
+      <div style={{ width: '100%', marginTop: 12, padding: 8, border: '1px dashed #d1d5db', borderRadius: 8 }}>
+        <h4 style={{ marginTop: 0 }}>Overlay debug data</h4>
+        {Object.entries(pendingOverlays).length === 0 ? (
+          <div>No overlays loaded</div>
+        ) : (
+          Object.entries(pendingOverlays).map(([editorUserId, overlay]) => (
+            <div key={`debug-${editorUserId}`} style={{ marginBottom: 8 }}>
+              <div><strong>{editorUserId}</strong></div>
+              {Object.entries(overlay?.fields || {}).map(([fieldName, change]) => (
+                <input
+                  key={`${editorUserId}-${fieldName}`}
+                  readOnly
+                  value={`${fieldName}: ${JSON.stringify(change)}`}
+                  style={{ width: '100%', marginTop: 4 }}
+                />
+              ))}
+            </div>
+          ))
+        )}
+        <button type="button" onClick={handleOverlayDebugAlert} style={{ marginTop: 8 }}>
+          Показати overlay в alert
+        </button>
+      </div>
+
       {isSyncing && <div>Syncing...</div>}
     </Container>
   );
