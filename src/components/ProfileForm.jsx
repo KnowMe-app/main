@@ -11,11 +11,9 @@ import {
   formatDateAndFormula,
 } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
-import { isAdminUid } from 'utils/accessLevel';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
 import { FaTimes } from 'react-icons/fa';
-import { auth } from './config';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -276,7 +274,7 @@ export const ProfileForm = ({
   overlayFieldAdditions = {},
   overlayDebugData = {},
 }) => {
-  const canManageAccessLevel = isAdmin || isAdminUid(auth.currentUser?.uid);
+  const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
   const [customField, setCustomField] = useState({ key: '', value: '' });
@@ -776,7 +774,7 @@ export const ProfileForm = ({
         </CollectionToggle>
         <Photos state={state} setState={setState} collection={collection} />
       </PhotosBlock>
-      {isAdmin && (
+      {canManageAccessLevel && (
         <OverlayDebugButton type="button" onClick={handleOverlayDebugAlert}>
           Оверлей
         </OverlayDebugButton>
