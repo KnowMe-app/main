@@ -25,100 +25,15 @@ const areArraysEqual = (a, b) => {
 const shouldSkipField = key => key === 'userId' || key === 'photos';
 
 const normalizeCardKey = value => String(value || '').trim();
-const normalizeCardKeyForCompare = value => normalizeCardKey(value).toLowerCase();
+const normalizeEditorNode = (overlay, cardUserId, editorUserId) => {
+  if (!isPlainObject(overlay) || !isPlainObject(overlay.fields)) return null;
 
-const looksLikeOverlayRecord = value => isPlainObject(value) && isPlainObject(value.fields);
-
-const flattenOverlayCandidates = node => {
-  if (!isPlainObject(node)) return [];
-
-  return Object.values(node).reduce((acc, value) => {
-    if (!isPlainObject(value)) return acc;
-    if (looksLikeOverlayRecord(value)) return [...acc, value];
-    return [...acc, ...flattenOverlayCandidates(value)];
-  }, []);
-};
-
-const findOverlayCandidatesInEditorTree = (editorCards, cardUserId) => {
-  if (!isPlainObject(editorCards)) return [];
-
-  const normalizedCardId = normalizeCardKeyForCompare(cardUserId);
-  if (!normalizedCardId) return [];
-
-  const queue = [{ node: editorCards, path: [] }];
-  const matches = [];
-
-  while (queue.length) {
-    const { node, path } = queue.shift();
-    if (!isPlainObject(node)) continue;
-
-    if (looksLikeOverlayRecord(node)) {
-      const cardFromRecord = normalizeCardKeyForCompare(node.cardUserId);
-      const cardFromPath = normalizeCardKeyForCompare(path[path.length - 1]);
-      if (cardFromRecord === normalizedCardId || cardFromPath === normalizedCardId) {
-        matches.push(node);
-      }
-    }
-
-    Object.entries(node).forEach(([key, value]) => {
-      if (!isPlainObject(value)) return;
-      queue.push({ node: value, path: [...path, key] });
-    });
-  }
-
-  return matches;
-};
-
-const findMatchingCardKey = (editorCards, cardUserId) => {
-  if (!editorCards || typeof editorCards !== 'object') return null;
-
-  const normalizedCardId = normalizeCardKeyForCompare(cardUserId);
-  if (!normalizedCardId) return null;
-
-  return Object.keys(editorCards).find(key => normalizeCardKeyForCompare(key) === normalizedCardId) || null;
-};
-
-export const resolveOverlayRecordByCardId = (editorCards, cardUserId) => {
-  if (!editorCards || typeof editorCards !== 'object') return null;
-
-  const normalizedCardId = normalizeCardKeyForCompare(cardUserId);
-  if (!normalizedCardId) return null;
-
-  const direct = editorCards[cardUserId] || editorCards[normalizeCardKey(cardUserId)] || editorCards[normalizedCardId];
-  if (direct?.fields) return direct;
-
-  const rootDirect = looksLikeOverlayRecord(editorCards) ? editorCards : null;
-  if (rootDirect) {
-    const overlayCardId = normalizeCardKeyForCompare(rootDirect.cardUserId);
-    if (!overlayCardId || overlayCardId === normalizedCardId) {
-      return rootDirect;
-    }
-  }
-
-  const matchedKey = findMatchingCardKey(editorCards, cardUserId);
-  if (matchedKey && editorCards[matchedKey]?.fields) {
-    return editorCards[matchedKey];
-  }
-
-  if (matchedKey && editorCards[matchedKey] && typeof editorCards[matchedKey] === 'object') {
-    const nested = editorCards[matchedKey][cardUserId]
-      || editorCards[matchedKey][normalizeCardKey(cardUserId)]
-      || editorCards[matchedKey][normalizedCardId]
-      || editorCards[matchedKey][matchedKey]
-      || null;
-    if (nested?.fields) return nested;
-  }
-
-  const candidates = flattenOverlayCandidates(editorCards);
-  const byCardId = candidates.find(candidate => {
-    const candidateCardId = normalizeCardKeyForCompare(candidate?.cardUserId);
-    return candidateCardId && candidateCardId === normalizedCardId;
-  });
-  if (byCardId) return byCardId;
-
-  if (candidates.length === 1) return candidates[0];
-
-  return null;
+  return {
+    fields: overlay.fields,
+    updatedAt: overlay.updatedAt || null,
+    cardUserId: overlay.cardUserId || cardUserId,
+    editorUserId: overlay.editorUserId || editorUserId,
+  };
 };
 
 export const getCanonicalCard = async cardUserId => {
@@ -180,7 +95,7 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return;
 
-  const cardRef = ref2(database, `${EDITS_ROOT}/${editorUserId}/${normalizedCardId}`);
+  const cardRef = ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`);
   const sanitized = Object.entries(fields || {}).reduce((acc, [fieldName, change]) => {
     if (!isPlainObject(change)) return acc;
 
@@ -215,46 +130,26 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   if (!editorUserId || !cardUserId) return null;
 
-  const allSnapshot = await get(ref2(database, EDITS_ROOT));
-  if (!allSnapshot.exists()) return null;
+  const overlaysByEditor = await getOverlaysForCard(cardUserId);
+  if (!Object.keys(overlaysByEditor).length) return null;
 
-  const all = allSnapshot.val();
-  const priorityEditors = uniq([editorUserId, ...Object.keys(all)]);
-
-  for (const candidateEditorId of priorityEditors) {
-    const editorCards = all?.[candidateEditorId];
-    if (!isPlainObject(editorCards)) continue;
-
-    const directOverlay = resolveOverlayRecordByCardId(editorCards, cardUserId);
-    if (directOverlay?.fields) return directOverlay;
-
-    const nestedMatches = findOverlayCandidatesInEditorTree(editorCards, cardUserId);
-    if (nestedMatches.length) return nestedMatches[0];
-  }
-
-  return null;
+  return overlaysByEditor[editorUserId] || Object.values(overlaysByEditor)[0] || null;
 };
 
 export const getOverlaysForCard = async cardUserId => {
   if (!cardUserId) return {};
-  const snapshot = await get(ref2(database, EDITS_ROOT));
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return {};
+
+  const snapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}`));
   if (!snapshot.exists()) return {};
 
   const result = {};
-  const all = snapshot.val();
-  Object.entries(all).forEach(([editorUserId, editorCards]) => {
-    if (!isPlainObject(editorCards)) return;
-
-    const directOverlay = resolveOverlayRecordByCardId(editorCards, cardUserId);
-    if (directOverlay?.fields) {
-      result[editorUserId] = directOverlay;
-      return;
-    }
-
-    const nestedMatches = findOverlayCandidatesInEditorTree(editorCards, cardUserId);
-    if (nestedMatches.length) {
-      result[editorUserId] = nestedMatches[0];
-    }
+  const overlays = snapshot.val();
+  Object.entries(overlays).forEach(([editorUserId, overlay]) => {
+    const normalized = normalizeEditorNode(overlay, normalizedCardId, editorUserId);
+    if (!normalized) return;
+    result[editorUserId] = normalized;
   });
 
   return result;
@@ -298,12 +193,7 @@ export const removeOverlayForUserCard = async ({ editorUserId, cardUserId }) => 
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return;
 
-  const editorSnapshot = await get(ref2(database, `${EDITS_ROOT}/${editorUserId}`));
-  if (!editorSnapshot.exists()) return;
-
-  const editorCards = editorSnapshot.val();
-  const matchedKey = findMatchingCardKey(editorCards, normalizedCardId) || normalizedCardId;
-  await remove(ref2(database, `${EDITS_ROOT}/${editorUserId}/${matchedKey}`));
+  await remove(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`));
 };
 
 export const acceptOverlayForUserCard = async ({
@@ -366,18 +256,13 @@ export const patchOverlayField = async ({ editorUserId, cardUserId, fieldName, c
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return;
 
-  const editorSnapshot = await get(ref2(database, `${EDITS_ROOT}/${editorUserId}`));
-  const matchedKey = editorSnapshot.exists()
-    ? findMatchingCardKey(editorSnapshot.val(), normalizedCardId) || normalizedCardId
-    : normalizedCardId;
-
-  const path = `${EDITS_ROOT}/${editorUserId}/${matchedKey}/fields/${fieldName}`;
+  const path = `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}/fields/${fieldName}`;
   if (!change || (!change.to && !change.from && !change.added && !change.removed)) {
     await remove(ref2(database, path));
     return;
   }
 
-  await update(ref2(database, `${EDITS_ROOT}/${editorUserId}/${matchedKey}/fields`), {
+  await update(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}/fields`), {
     [fieldName]: change,
   });
 };
