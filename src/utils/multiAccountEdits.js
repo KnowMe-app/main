@@ -26,6 +26,19 @@ const shouldSkipField = key => key === 'userId' || key === 'photos';
 
 const normalizeCardKey = value => String(value || '').trim().toLowerCase();
 
+const looksLikeOverlayRecord = value => isPlainObject(value) && isPlainObject(value.fields);
+
+const flattenOverlayCandidates = (node, depth = 0) => {
+  if (!isPlainObject(node) || depth > 4) return [];
+
+  const direct = Object.values(node).filter(looksLikeOverlayRecord);
+  const nested = Object.values(node)
+    .filter(value => isPlainObject(value) && !looksLikeOverlayRecord(value))
+    .flatMap(value => flattenOverlayCandidates(value, depth + 1));
+
+  return [...direct, ...nested];
+};
+
 const findMatchingCardKey = (editorCards, cardUserId) => {
   if (!editorCards || typeof editorCards !== 'object') return null;
 
@@ -44,6 +57,14 @@ export const resolveOverlayRecordByCardId = (editorCards, cardUserId) => {
   const direct = editorCards[normalizedCardId];
   if (direct?.fields) return direct;
 
+  const rootDirect = looksLikeOverlayRecord(editorCards) ? editorCards : null;
+  if (rootDirect) {
+    const overlayCardId = normalizeCardKey(rootDirect.cardUserId);
+    if (!overlayCardId || overlayCardId === normalizedCardId) {
+      return rootDirect;
+    }
+  }
+
   const matchedKey = findMatchingCardKey(editorCards, cardUserId);
   if (matchedKey && editorCards[matchedKey]?.fields) {
     return editorCards[matchedKey];
@@ -55,6 +76,15 @@ export const resolveOverlayRecordByCardId = (editorCards, cardUserId) => {
       || null;
     if (nested?.fields) return nested;
   }
+
+  const candidates = flattenOverlayCandidates(editorCards);
+  const byCardId = candidates.find(candidate => {
+    const candidateCardId = normalizeCardKey(candidate?.cardUserId);
+    return candidateCardId && candidateCardId === normalizedCardId;
+  });
+  if (byCardId) return byCardId;
+
+  if (candidates.length === 1) return candidates[0];
 
   return null;
 };
