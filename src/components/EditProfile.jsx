@@ -72,15 +72,6 @@ const EditProfile = () => {
   const refreshOverlays = useCallback(async () => {
     if (!userId) return;
 
-    const isOwnProfile = !!currentUid && currentUid === userId;
-
-    if (isOwnProfile) {
-      setPendingOverlays({});
-      setHighlightedFields([]);
-      setDeletedOverlayFields([]);
-      return;
-    }
-
     const [overlays, canonical] = await Promise.all([
       getOverlaysForCard(userId),
       getCanonicalCard(userId),
