@@ -24,7 +24,16 @@ const areArraysEqual = (a, b) => {
 
 const shouldSkipField = key => key === 'userId' || key === 'photos';
 
-const normalizeCardKey = value => String(value || '').trim();
+const normalizeCardKey = value => String(value || '').trim().toLowerCase();
+
+const findMatchingCardKey = (editorCards, cardUserId) => {
+  if (!editorCards || typeof editorCards !== 'object') return null;
+
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return null;
+
+  return Object.keys(editorCards).find(key => normalizeCardKey(key) === normalizedCardId) || null;
+};
 
 export const resolveOverlayRecordByCardId = (editorCards, cardUserId) => {
   if (!editorCards || typeof editorCards !== 'object') return null;
@@ -35,7 +44,7 @@ export const resolveOverlayRecordByCardId = (editorCards, cardUserId) => {
   const direct = editorCards[normalizedCardId];
   if (direct?.fields) return direct;
 
-  const matchedKey = Object.keys(editorCards).find(key => normalizeCardKey(key) === normalizedCardId);
+  const matchedKey = findMatchingCardKey(editorCards, cardUserId);
   if (matchedKey && editorCards[matchedKey]?.fields) {
     return editorCards[matchedKey];
   }
@@ -106,7 +115,10 @@ export const buildOverlayFromDraft = (canonical, draft) => {
 export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields }) => {
   if (!editorUserId || !cardUserId) return;
 
-  const cardRef = ref2(database, `${EDITS_ROOT}/${editorUserId}/${cardUserId}`);
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return;
+
+  const cardRef = ref2(database, `${EDITS_ROOT}/${editorUserId}/${normalizedCardId}`);
   const sanitized = Object.entries(fields || {}).reduce((acc, [fieldName, change]) => {
     if (!isPlainObject(change)) return acc;
 
@@ -135,7 +147,7 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
     return;
   }
 
-  await set(cardRef, { fields: sanitized, updatedAt: Date.now(), cardUserId, editorUserId });
+  await set(cardRef, { fields: sanitized, updatedAt: Date.now(), cardUserId: normalizedCardId, editorUserId });
 };
 
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
@@ -196,7 +208,16 @@ export const applyOverlayToCard = (canonical, overlayFields = {}) => {
 
 export const removeOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   if (!editorUserId || !cardUserId) return;
-  await remove(ref2(database, `${EDITS_ROOT}/${editorUserId}/${cardUserId}`));
+
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return;
+
+  const editorSnapshot = await get(ref2(database, `${EDITS_ROOT}/${editorUserId}`));
+  if (!editorSnapshot.exists()) return;
+
+  const editorCards = editorSnapshot.val();
+  const matchedKey = findMatchingCardKey(editorCards, normalizedCardId) || normalizedCardId;
+  await remove(ref2(database, `${EDITS_ROOT}/${editorUserId}/${matchedKey}`));
 };
 
 export const acceptOverlayForUserCard = async ({
@@ -255,13 +276,22 @@ export const formatOverlayPreview = ({ fieldName, change, canonicalValue }) => {
 
 export const patchOverlayField = async ({ editorUserId, cardUserId, fieldName, change }) => {
   if (!editorUserId || !cardUserId || !fieldName) return;
-  const path = `${EDITS_ROOT}/${editorUserId}/${cardUserId}/fields/${fieldName}`;
+
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return;
+
+  const editorSnapshot = await get(ref2(database, `${EDITS_ROOT}/${editorUserId}`));
+  const matchedKey = editorSnapshot.exists()
+    ? findMatchingCardKey(editorSnapshot.val(), normalizedCardId) || normalizedCardId
+    : normalizedCardId;
+
+  const path = `${EDITS_ROOT}/${editorUserId}/${matchedKey}/fields/${fieldName}`;
   if (!change || (!change.to && !change.from && !change.added && !change.removed)) {
     await remove(ref2(database, path));
     return;
   }
 
-  await update(ref2(database, `${EDITS_ROOT}/${editorUserId}/${cardUserId}/fields`), {
+  await update(ref2(database, `${EDITS_ROOT}/${editorUserId}/${matchedKey}/fields`), {
     [fieldName]: change,
   });
 };
