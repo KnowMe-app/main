@@ -28,6 +28,7 @@ import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import {
   acceptOverlayForUserCard,
+  applyOverlayToCard,
   buildOverlayFromDraft,
   formatOverlayPreview,
   getCanonicalCard,
@@ -265,19 +266,7 @@ const EditProfile = () => {
       });
 
       if (overlay?.fields) {
-        const merged = Object.entries(overlay.fields).reduce((acc, [fieldName, change]) => {
-          if (change?.to !== undefined) {
-            acc[fieldName] = change.to;
-            return acc;
-          }
-          if (Array.isArray(canonical[fieldName])) {
-            const base = canonical[fieldName] || [];
-            const removed = change.removed || [];
-            const added = change.added || [];
-            acc[fieldName] = [...base.filter(v => !removed.includes(v)), ...added.filter(v => !base.includes(v))];
-          }
-          return acc;
-        }, { ...canonical });
+        const merged = applyOverlayToCard(canonical, overlay.fields);
         setState(prev => ({ ...(prev || {}), ...merged }));
       }
     };
