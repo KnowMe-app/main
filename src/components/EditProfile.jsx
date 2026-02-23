@@ -74,7 +74,7 @@ const EditProfile = () => {
 
     const isOwnProfile = !!currentUid && currentUid === userId;
 
-    if (isOwnProfile || !isAdmin) {
+    if (isOwnProfile) {
       setPendingOverlays({});
       setHighlightedFields([]);
       setDeletedOverlayFields([]);
@@ -130,7 +130,7 @@ const EditProfile = () => {
     });
 
     setDeletedOverlayFields(Array.from(deletedFields));
-  }, [userId, isAdmin, currentUid]);
+  }, [userId, currentUid]);
 
   const handleOpenMedications = useCallback(
     user => {

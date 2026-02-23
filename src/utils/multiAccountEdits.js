@@ -185,9 +185,27 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
 
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   if (!editorUserId || !cardUserId) return null;
-  const snapshot = await get(ref2(database, `${EDITS_ROOT}/${editorUserId}`));
-  if (!snapshot.exists()) return null;
-  return resolveOverlayRecordByCardId(snapshot.val(), cardUserId);
+
+  const editorSnapshot = await get(ref2(database, `${EDITS_ROOT}/${editorUserId}`));
+  if (editorSnapshot.exists()) {
+    const directOverlay = resolveOverlayRecordByCardId(editorSnapshot.val(), cardUserId);
+    if (directOverlay?.fields) {
+      return directOverlay;
+    }
+  }
+
+  const allSnapshot = await get(ref2(database, EDITS_ROOT));
+  if (!allSnapshot.exists()) return null;
+
+  const all = allSnapshot.val();
+  for (const [, editorCards] of Object.entries(all)) {
+    const overlay = resolveOverlayRecordByCardId(editorCards, cardUserId);
+    if (overlay?.fields) {
+      return overlay;
+    }
+  }
+
+  return null;
 };
 
 export const getOverlaysForCard = async cardUserId => {
