@@ -107,7 +107,6 @@ const EditProfile = () => {
     const deletedFields = new Set();
     Object.entries(overlays || {}).forEach(([editorId, overlay]) => {
       if (editorId === currentUid) return;
-      if (!isAdminUid(editorId)) return;
 
       Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
         const canonicalValue = canonical?.[fieldName];
@@ -255,8 +254,7 @@ const EditProfile = () => {
 
     if (!currentUid) return;
 
-    const isOwnProfile = currentUid === userId;
-    if (isOwnProfile || isAdmin) return;
+    if (isAdmin) return;
 
     const loadWithOverlay = async () => {
       const canonical = await getCanonicalCard(userId);
