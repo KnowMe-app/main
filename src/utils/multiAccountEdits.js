@@ -29,15 +29,44 @@ const normalizeCardKeyForCompare = value => normalizeCardKey(value).toLowerCase(
 
 const looksLikeOverlayRecord = value => isPlainObject(value) && isPlainObject(value.fields);
 
-const flattenOverlayCandidates = (node, depth = 0) => {
-  if (!isPlainObject(node) || depth > 4) return [];
+const flattenOverlayCandidates = node => {
+  if (!isPlainObject(node)) return [];
 
-  const direct = Object.values(node).filter(looksLikeOverlayRecord);
-  const nested = Object.values(node)
-    .filter(value => isPlainObject(value) && !looksLikeOverlayRecord(value))
-    .flatMap(value => flattenOverlayCandidates(value, depth + 1));
+  return Object.values(node).reduce((acc, value) => {
+    if (!isPlainObject(value)) return acc;
+    if (looksLikeOverlayRecord(value)) return [...acc, value];
+    return [...acc, ...flattenOverlayCandidates(value)];
+  }, []);
+};
 
-  return [...direct, ...nested];
+const findOverlayCandidatesInEditorTree = (editorCards, cardUserId) => {
+  if (!isPlainObject(editorCards)) return [];
+
+  const normalizedCardId = normalizeCardKeyForCompare(cardUserId);
+  if (!normalizedCardId) return [];
+
+  const queue = [{ node: editorCards, path: [] }];
+  const matches = [];
+
+  while (queue.length) {
+    const { node, path } = queue.shift();
+    if (!isPlainObject(node)) continue;
+
+    if (looksLikeOverlayRecord(node)) {
+      const cardFromRecord = normalizeCardKeyForCompare(node.cardUserId);
+      const cardFromPath = normalizeCardKeyForCompare(path[path.length - 1]);
+      if (cardFromRecord === normalizedCardId || cardFromPath === normalizedCardId) {
+        matches.push(node);
+      }
+    }
+
+    Object.entries(node).forEach(([key, value]) => {
+      if (!isPlainObject(value)) return;
+      queue.push({ node: value, path: [...path, key] });
+    });
+  }
+
+  return matches;
 };
 
 const findMatchingCardKey = (editorCards, cardUserId) => {
@@ -186,23 +215,21 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   if (!editorUserId || !cardUserId) return null;
 
-  const editorSnapshot = await get(ref2(database, `${EDITS_ROOT}/${editorUserId}`));
-  if (editorSnapshot.exists()) {
-    const directOverlay = resolveOverlayRecordByCardId(editorSnapshot.val(), cardUserId);
-    if (directOverlay?.fields) {
-      return directOverlay;
-    }
-  }
-
   const allSnapshot = await get(ref2(database, EDITS_ROOT));
   if (!allSnapshot.exists()) return null;
 
   const all = allSnapshot.val();
-  for (const [, editorCards] of Object.entries(all)) {
-    const overlay = resolveOverlayRecordByCardId(editorCards, cardUserId);
-    if (overlay?.fields) {
-      return overlay;
-    }
+  const priorityEditors = uniq([editorUserId, ...Object.keys(all)]);
+
+  for (const candidateEditorId of priorityEditors) {
+    const editorCards = all?.[candidateEditorId];
+    if (!isPlainObject(editorCards)) continue;
+
+    const directOverlay = resolveOverlayRecordByCardId(editorCards, cardUserId);
+    if (directOverlay?.fields) return directOverlay;
+
+    const nestedMatches = findOverlayCandidatesInEditorTree(editorCards, cardUserId);
+    if (nestedMatches.length) return nestedMatches[0];
   }
 
   return null;
@@ -216,9 +243,17 @@ export const getOverlaysForCard = async cardUserId => {
   const result = {};
   const all = snapshot.val();
   Object.entries(all).forEach(([editorUserId, editorCards]) => {
-    const overlay = resolveOverlayRecordByCardId(editorCards, cardUserId);
-    if (overlay?.fields) {
-      result[editorUserId] = overlay;
+    if (!isPlainObject(editorCards)) return;
+
+    const directOverlay = resolveOverlayRecordByCardId(editorCards, cardUserId);
+    if (directOverlay?.fields) {
+      result[editorUserId] = directOverlay;
+      return;
+    }
+
+    const nestedMatches = findOverlayCandidatesInEditorTree(editorCards, cardUserId);
+    if (nestedMatches.length) {
+      result[editorUserId] = nestedMatches[0];
     }
   });
 
