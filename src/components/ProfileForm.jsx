@@ -273,6 +273,7 @@ export const ProfileForm = ({
   highlightedFields = [],
   deletedOverlayFields = [],
   isAdmin = false,
+  overlayFieldAdditions = {},
 }) => {
   const canManageAccessLevel = isAdmin || isAdminUid(auth.currentUser?.uid);
   const textareaRef = useRef(null);
@@ -370,6 +371,9 @@ export const ProfileForm = ({
   const normalizedFieldsToRender = canManageAccessLevel && !fieldsToRender.some(field => field.name === 'accessLevel')
     ? [...fieldsToRender, { name: 'accessLevel', placeholder: 'access level', ukrainianHint: 'рівень доступу' }]
     : fieldsToRender;
+
+
+  const getOverlayEntriesForField = fieldName => overlayFieldAdditions[fieldName] || [];
 
   const sortedFieldsToRender = [
     ...priorityOrder
@@ -548,6 +552,24 @@ export const ProfileForm = ({
                 <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
               </InputDiv>
             )}
+
+            {getOverlayEntriesForField(field.name).map((entry, idx) => (
+              <InputDiv
+                key={`overlay-${field.name}-${idx}`}
+                $isOverlaySuggestion
+                title={`Додано користувачем ${entry.editorUserId}`}
+              >
+                <InputFieldContainer fieldName={field.name} value={entry.value}>
+                  <InputField
+                    fieldName={field.name}
+                    name={`overlay-${field.name}-${idx}`}
+                    value={entry.value}
+                    readOnly
+                  />
+                </InputFieldContainer>
+                <OverlayMeta>з overlay: {entry.editorUserId}</OverlayMeta>
+              </InputDiv>
+            ))}
 
             {field.name !== 'lastAction' &&
               state[field.name] &&
@@ -770,8 +792,13 @@ const InputDiv = styled.div`
   position: relative;
   margin: 10px 0;
   padding: 10px;
-  background-color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? '#f7f7f7' : '#fff')};
-  border: ${({ $isHighlighted, $isDeletedOverlay }) => {
+  background-color: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
+    if ($isOverlaySuggestion) return '#f2f7ff';
+    if ($isDeletedOverlay) return '#f7f7f7';
+    return '#fff';
+  }};
+  border: ${({ $isHighlighted, $isDeletedOverlay, $isOverlaySuggestion }) => {
+    if ($isOverlaySuggestion) return '2px solid #2f6df6';
     if ($isDeletedOverlay) return '1px dashed #b5b5b5';
     if ($isHighlighted) return '2px solid #2f6df6';
     return '1px solid #ccc';
@@ -924,6 +951,17 @@ const DelKeyValueBTN = styled.button`
   &:hover {
     color: black;
   }
+`;
+
+const OverlayMeta = styled.span`
+  position: absolute;
+  right: 10px;
+  top: -16px;
+  font-size: 11px;
+  color: #2f6df6;
+  background: #f2f7ff;
+  padding: 1px 6px;
+  border-radius: 10px;
 `;
 
 const KeyValueRow = styled.div`

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import styled from 'styled-components';
@@ -30,7 +30,6 @@ import {
   acceptOverlayForUserCard,
   applyOverlayToCard,
   buildOverlayFromDraft,
-  formatOverlayPreview,
   getCanonicalCard,
   getOtherEditorsChangedFields,
   getOverlayForUserCard,
@@ -70,12 +69,6 @@ const EditProfile = () => {
   const [deletedOverlayFields, setDeletedOverlayFields] = useState([]);
   const [focusedField, setFocusedField] = useState('');
 
-  const allOverlayDebugData = {
-    cardUserId: userId,
-    currentEditorUserId: currentUid,
-    isAdmin,
-    pendingOverlays,
-  };
 
   const refreshOverlays = useCallback(async () => {
     if (!userId) return;
@@ -446,9 +439,6 @@ const EditProfile = () => {
     await refreshOverlays();
   };
 
-  const handleOverlayDebugAlert = () => {
-    window.alert(JSON.stringify(allOverlayDebugData, null, 2));
-  };
 
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
   const scheduleUserData = state
@@ -456,21 +446,41 @@ const EditProfile = () => {
     : state;
   const shouldShowSchedule = ['stimulation', 'pregnant'].includes(effectiveCycleStatus);
 
+  const overlayFieldAdditions = useMemo(() => {
+    const result = {};
 
-  const isDeletedValue = value => {
-    if (value === '' || value === null || value === undefined) return true;
-    if (Array.isArray(value) && value.length === 0) return true;
-    return false;
-  };
+    Object.entries(pendingOverlays || {}).forEach(([editorUserId, overlay]) => {
+      if (editorUserId === currentUid) return;
 
-  const renderPendingValue = value => {
-    const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-    if (isDeletedValue(value)) {
-      return <span style={{ color: '#9ca3af' }}>{serialized || '∅ (видалено)'}</span>;
-    }
+      Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
+        const existing = state?.[fieldName];
+        const normalizedCurrent = Array.isArray(existing) ? existing.filter(Boolean) : [existing].filter(Boolean);
+        const candidates = [];
 
-    return <span>{serialized}</span>;
-  };
+        if (Array.isArray(change?.added)) {
+          candidates.push(...change.added);
+        }
+
+        if (Object.prototype.hasOwnProperty.call(change || {}, 'to')) {
+          candidates.push(change.to);
+        }
+
+        candidates
+          .filter(value => value !== null && value !== undefined && String(value).trim() !== '')
+          .forEach(value => {
+            if (normalizedCurrent.includes(value)) return;
+
+            const fieldEntries = result[fieldName] || [];
+            if (fieldEntries.some(entry => entry.value === value)) return;
+
+            result[fieldName] = [...fieldEntries, { value, editorUserId }];
+          });
+      });
+    });
+
+    return result;
+  }, [pendingOverlays, currentUid, state]);
+
 
   if (!state) return null;
 
@@ -522,28 +532,19 @@ const EditProfile = () => {
         highlightedFields={highlightedFields}
         deletedOverlayFields={deletedOverlayFields}
         isAdmin={isAdmin}
+        overlayFieldAdditions={overlayFieldAdditions}
       />
       {isAdmin && (
         <div style={{ width: '100%', marginTop: 12 }}>
-          <h4>Pending edits</h4>
+          <h4>Pending editors</h4>
           {Object.entries(pendingOverlays).length === 0 && <div>No pending edits</div>}
           {Object.entries(pendingOverlays).map(([editorUserId, overlay]) => (
             <div key={editorUserId} style={{ border: '1px solid #ddd', borderRadius: 8, padding: 8, marginBottom: 8 }}>
               <div><strong>cardUserId:</strong> {userId}</div>
               <div><strong>editorUserId:</strong> {editorUserId}</div>
-              <ul>
-                {Object.entries(overlay?.fields || {}).map(([fieldName, change]) => {
-                  const preview = formatOverlayPreview({ fieldName, change, canonicalValue: state?.[fieldName] });
-                  if (!preview) return null;
-                  const isDeleteAction = isDeletedValue(preview.newValue) && !isDeletedValue(preview.oldValue);
-                  return (
-                    <li key={fieldName} style={isDeleteAction ? { color: '#9ca3af' } : undefined}>
-                      <strong>{fieldName}:</strong> {renderPendingValue(preview.oldValue)} {' → '} {renderPendingValue(preview.newValue)}
-                      {isDeleteAction && <em style={{ marginLeft: 6, color: '#9ca3af' }}>(видалення)</em>}
-                    </li>
-                  );
-                })}
-              </ul>
+              <div style={{ color: '#6b7280', marginTop: 4, marginBottom: 8 }}>
+                {Object.keys(overlay?.fields || {}).length} field(s) changed
+              </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" onClick={() => handleApprove(editorUserId)}>Прийняти</button>
                 <button type="button" onClick={() => handleReject(editorUserId)}>Видалити</button>
@@ -552,30 +553,6 @@ const EditProfile = () => {
           ))}
         </div>
       )}
-
-      <div style={{ width: '100%', marginTop: 12, padding: 8, border: '1px dashed #d1d5db', borderRadius: 8 }}>
-        <h4 style={{ marginTop: 0 }}>Overlay debug data</h4>
-        {Object.entries(pendingOverlays).length === 0 ? (
-          <div>No overlays loaded</div>
-        ) : (
-          Object.entries(pendingOverlays).map(([editorUserId, overlay]) => (
-            <div key={`debug-${editorUserId}`} style={{ marginBottom: 8 }}>
-              <div><strong>{editorUserId}</strong></div>
-              {Object.entries(overlay?.fields || {}).map(([fieldName, change]) => (
-                <input
-                  key={`${editorUserId}-${fieldName}`}
-                  readOnly
-                  value={`${fieldName}: ${JSON.stringify(change)}`}
-                  style={{ width: '100%', marginTop: 4 }}
-                />
-              ))}
-            </div>
-          ))
-        )}
-        <button type="button" onClick={handleOverlayDebugAlert} style={{ marginTop: 8 }}>
-          Показати overlay в alert
-        </button>
-      </div>
 
       {isSyncing && <div>Syncing...</div>}
     </Container>
