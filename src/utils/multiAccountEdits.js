@@ -24,7 +24,8 @@ const areArraysEqual = (a, b) => {
 
 const shouldSkipField = key => key === 'userId' || key === 'photos';
 
-const normalizeCardKey = value => String(value || '').trim().toLowerCase();
+const normalizeCardKey = value => String(value || '').trim();
+const normalizeCardKeyForCompare = value => normalizeCardKey(value).toLowerCase();
 
 const looksLikeOverlayRecord = value => isPlainObject(value) && isPlainObject(value.fields);
 
@@ -42,24 +43,24 @@ const flattenOverlayCandidates = (node, depth = 0) => {
 const findMatchingCardKey = (editorCards, cardUserId) => {
   if (!editorCards || typeof editorCards !== 'object') return null;
 
-  const normalizedCardId = normalizeCardKey(cardUserId);
+  const normalizedCardId = normalizeCardKeyForCompare(cardUserId);
   if (!normalizedCardId) return null;
 
-  return Object.keys(editorCards).find(key => normalizeCardKey(key) === normalizedCardId) || null;
+  return Object.keys(editorCards).find(key => normalizeCardKeyForCompare(key) === normalizedCardId) || null;
 };
 
 export const resolveOverlayRecordByCardId = (editorCards, cardUserId) => {
   if (!editorCards || typeof editorCards !== 'object') return null;
 
-  const normalizedCardId = normalizeCardKey(cardUserId);
+  const normalizedCardId = normalizeCardKeyForCompare(cardUserId);
   if (!normalizedCardId) return null;
 
-  const direct = editorCards[normalizedCardId];
+  const direct = editorCards[cardUserId] || editorCards[normalizeCardKey(cardUserId)] || editorCards[normalizedCardId];
   if (direct?.fields) return direct;
 
   const rootDirect = looksLikeOverlayRecord(editorCards) ? editorCards : null;
   if (rootDirect) {
-    const overlayCardId = normalizeCardKey(rootDirect.cardUserId);
+    const overlayCardId = normalizeCardKeyForCompare(rootDirect.cardUserId);
     if (!overlayCardId || overlayCardId === normalizedCardId) {
       return rootDirect;
     }
@@ -71,7 +72,9 @@ export const resolveOverlayRecordByCardId = (editorCards, cardUserId) => {
   }
 
   if (matchedKey && editorCards[matchedKey] && typeof editorCards[matchedKey] === 'object') {
-    const nested = editorCards[matchedKey][normalizedCardId]
+    const nested = editorCards[matchedKey][cardUserId]
+      || editorCards[matchedKey][normalizeCardKey(cardUserId)]
+      || editorCards[matchedKey][normalizedCardId]
       || editorCards[matchedKey][matchedKey]
       || null;
     if (nested?.fields) return nested;
@@ -79,7 +82,7 @@ export const resolveOverlayRecordByCardId = (editorCards, cardUserId) => {
 
   const candidates = flattenOverlayCandidates(editorCards);
   const byCardId = candidates.find(candidate => {
-    const candidateCardId = normalizeCardKey(candidate?.cardUserId);
+    const candidateCardId = normalizeCardKeyForCompare(candidate?.cardUserId);
     return candidateCardId && candidateCardId === normalizedCardId;
   });
   if (byCardId) return byCardId;
