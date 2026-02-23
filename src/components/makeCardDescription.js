@@ -37,7 +37,7 @@ export const makeCardDescription = user => {
 
   const csectionInfo = getCsectionInfo(user.csection);
 
-  const bloodInfo = user.blood ? `РК-${String(user.blood).trim()}` : 'РК-';
+  const bloodInfo = user.blood ? `РК${String(user.blood).trim()}` : '';
 
   const heightWeightBloodParts = [user.height, user.weight, bloodInfo].filter(Boolean);
   const heightWeightBlood =
