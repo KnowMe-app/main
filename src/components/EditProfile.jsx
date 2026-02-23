@@ -34,7 +34,6 @@ import {
   getOtherEditorsChangedFields,
   getOverlayForUserCard,
   getOverlaysForCard,
-  removeOverlayForUserCard,
   saveOverlayForUserCard,
 } from 'utils/multiAccountEdits';
 
@@ -419,27 +418,6 @@ const EditProfile = () => {
     await updateDataInNewUsersRTDB(mergedCard.userId, mergedCard, 'update');
   };
 
-  const handleApprove = async editorUserId => {
-    if (!isAdmin || !userId) return;
-    await acceptOverlayForUserCard({
-      editorUserId,
-      cardUserId: userId,
-      persistCard: persistCanonicalByRules,
-    });
-    toast.success('Правку погоджено');
-    const fresh = await fetchUserById(userId);
-    setState(fresh);
-    await refreshOverlays();
-  };
-
-  const handleReject = async editorUserId => {
-    if (!isAdmin || !userId) return;
-    await removeOverlayForUserCard({ editorUserId, cardUserId: userId });
-    toast.success('Правку видалено');
-    await refreshOverlays();
-  };
-
-
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
   const scheduleUserData = state
     ? { ...state, cycleStatus: effectiveCycleStatus ?? state.cycleStatus }
@@ -533,26 +511,8 @@ const EditProfile = () => {
         deletedOverlayFields={deletedOverlayFields}
         isAdmin={isAdmin}
         overlayFieldAdditions={overlayFieldAdditions}
+        overlayDebugData={pendingOverlays}
       />
-      {isAdmin && (
-        <div style={{ width: '100%', marginTop: 12 }}>
-          <h4>Pending editors</h4>
-          {Object.entries(pendingOverlays).length === 0 && <div>No pending edits</div>}
-          {Object.entries(pendingOverlays).map(([editorUserId, overlay]) => (
-            <div key={editorUserId} style={{ border: '1px solid #ddd', borderRadius: 8, padding: 8, marginBottom: 8 }}>
-              <div><strong>cardUserId:</strong> {userId}</div>
-              <div><strong>editorUserId:</strong> {editorUserId}</div>
-              <div style={{ color: '#6b7280', marginTop: 4, marginBottom: 8 }}>
-                {Object.keys(overlay?.fields || {}).length} field(s) changed
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => handleApprove(editorUserId)}>Прийняти</button>
-                <button type="button" onClick={() => handleReject(editorUserId)}>Видалити</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {isSyncing && <div>Syncing...</div>}
     </Container>

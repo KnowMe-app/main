@@ -274,6 +274,7 @@ export const ProfileForm = ({
   deletedOverlayFields = [],
   isAdmin = false,
   overlayFieldAdditions = {},
+  overlayDebugData = {},
 }) => {
   const canManageAccessLevel = isAdmin || isAdminUid(auth.currentUser?.uid);
   const textareaRef = useRef(null);
@@ -374,6 +375,23 @@ export const ProfileForm = ({
 
 
   const getOverlayEntriesForField = fieldName => overlayFieldAdditions[fieldName] || [];
+
+  const handleOverlayDebugAlert = () => {
+    const entries = Object.entries(overlayDebugData || {});
+
+    if (!entries.length) {
+      window.alert('Overlay даних не знайдено');
+      return;
+    }
+
+    const printable = entries.map(([editorUserId, overlay]) => ({
+      editorUserId,
+      fields: overlay?.fields || {},
+      updatedAt: overlay?.updatedAt || null,
+    }));
+
+    window.alert(JSON.stringify(printable, null, 2));
+  };
 
   const sortedFieldsToRender = [
     ...priorityOrder
@@ -758,6 +776,11 @@ export const ProfileForm = ({
         </CollectionToggle>
         <Photos state={state} setState={setState} collection={collection} />
       </PhotosBlock>
+      {isAdmin && (
+        <OverlayDebugButton type="button" onClick={handleOverlayDebugAlert}>
+          Оверлей
+        </OverlayDebugButton>
+      )}
     </>
   );
 };
@@ -1022,4 +1045,8 @@ const Button = styled.button`
   &:active {
     transform: scale(0.98);
   }
+`;
+
+const OverlayDebugButton = styled(Button)`
+  margin-top: 12px;
 `;
