@@ -304,6 +304,7 @@ const EditProfile = () => {
       }
     } finally {
       setIsSyncing(false);
+      await refreshOverlays();
     }
   };
 
