@@ -28,11 +28,9 @@ import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import {
   acceptOverlayForUserCard,
-  applyOverlayToCard,
   buildOverlayFromDraft,
   getCanonicalCard,
   getOtherEditorsChangedFields,
-  getOverlayForUserCard,
   getOverlaysForCard,
   saveOverlayForUserCard,
 } from 'utils/multiAccountEdits';
@@ -260,25 +258,11 @@ const EditProfile = () => {
 
   useEffect(() => {
     if (!userId) return;
-
+    if (!isDataLoaded) return;
     if (!currentUid) return;
 
-    const loadWithOverlay = async () => {
-      const canonical = await getCanonicalCard(userId);
-      const overlay = await getOverlayForUserCard({
-        editorUserId: isAdmin ? undefined : currentUid,
-        cardUserId: userId,
-      });
-
-      if (overlay?.fields) {
-        const merged = applyOverlayToCard(canonical, overlay.fields);
-        setState(prev => ({ ...(prev || {}), ...merged }));
-      }
-    };
-
-    loadWithOverlay();
     refreshOverlays();
-  }, [userId, refreshOverlays, isAdmin, currentUid]);
+  }, [userId, refreshOverlays, currentUid, isDataLoaded]);
 
   useEffect(() => {
     refreshOverlays();
@@ -436,8 +420,6 @@ const EditProfile = () => {
     const result = {};
 
     Object.entries(pendingOverlays || {}).forEach(([editorUserId, overlay]) => {
-      if (!isAdmin && editorUserId === currentUid) return;
-
       Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
         const existing = state?.[fieldName];
         const normalizedCurrent = Array.isArray(existing) ? existing.filter(Boolean) : [existing].filter(Boolean);
@@ -465,7 +447,7 @@ const EditProfile = () => {
     });
 
     return result;
-  }, [pendingOverlays, currentUid, state, isAdmin]);
+  }, [pendingOverlays, state, isAdmin]);
 
 
   if (!state) return null;
