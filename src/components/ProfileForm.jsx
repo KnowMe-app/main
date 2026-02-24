@@ -273,6 +273,7 @@ export const ProfileForm = ({
   isAdmin = false,
   overlayFieldAdditions = {},
   overlayDebugData = {},
+  overlayDebugError = '',
 }) => {
   const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
@@ -375,6 +376,11 @@ export const ProfileForm = ({
   const getOverlayEntriesForField = fieldName => overlayFieldAdditions[fieldName] || [];
 
   const handleOverlayDebugAlert = () => {
+    if (overlayDebugError) {
+      window.alert(overlayDebugError);
+      return;
+    }
+
     const entries = Object.entries(overlayDebugData || {});
 
     if (!entries.length) {
