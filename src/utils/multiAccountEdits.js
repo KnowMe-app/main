@@ -2,6 +2,7 @@ import { get, ref as ref2, remove, set, update } from 'firebase/database';
 import { database } from 'components/config';
 
 const EDITS_ROOT = 'multiData/edits';
+const TECHNICAL_FIELD_NAMES = new Set(['lastAction', 'cachedAt']);
 
 const isPlainObject = value => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -25,6 +26,27 @@ const areArraysEqual = (a, b) => {
 const shouldSkipField = key => key === 'userId' || key === 'photos';
 
 const normalizeCardKey = value => String(value || '').trim();
+const shouldDropOverlayByFieldNames = fieldNames => {
+  if (!Array.isArray(fieldNames) || !fieldNames.length) return true;
+  return fieldNames.every(fieldName => TECHNICAL_FIELD_NAMES.has(fieldName));
+};
+
+const cleanupOverlayIfOnlyTechnicalFields = async ({ editorUserId, cardUserId }) => {
+  if (!editorUserId || !cardUserId) return;
+
+  const editorRef = ref2(database, `${EDITS_ROOT}/${cardUserId}/${editorUserId}`);
+  const fieldsSnapshot = await get(ref2(database, `${EDITS_ROOT}/${cardUserId}/${editorUserId}/fields`));
+  if (!fieldsSnapshot?.exists?.()) {
+    await remove(editorRef);
+    return;
+  }
+
+  const fieldNames = Object.keys(fieldsSnapshot.val() || {});
+  if (shouldDropOverlayByFieldNames(fieldNames)) {
+    await remove(editorRef);
+  }
+};
+
 const normalizeEditorNode = (overlay, cardUserId, editorUserId) => {
   if (!isPlainObject(overlay) || !isPlainObject(overlay.fields)) return null;
 
@@ -119,7 +141,7 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
     return acc;
   }, {});
 
-  if (!Object.keys(sanitized).length) {
+  if (shouldDropOverlayByFieldNames(Object.keys(sanitized))) {
     await remove(cardRef);
     return;
   }
@@ -263,10 +285,12 @@ export const patchOverlayField = async ({ editorUserId, cardUserId, fieldName, c
   const path = `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}/fields/${fieldName}`;
   if (!change || (!change.to && !change.from && !change.added && !change.removed)) {
     await remove(ref2(database, path));
+    await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
     return;
   }
 
   await update(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}/fields`), {
     [fieldName]: change,
   });
+  await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
 };
