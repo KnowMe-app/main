@@ -1310,7 +1310,7 @@ const Colon = styled.span`
 const ButtonGroup = styled.div`
   display: flex;
   gap: 8px;
-  margin-left: 8px;
+  margin-left: 0;
   box-sizing: border-box;
 `;
 
