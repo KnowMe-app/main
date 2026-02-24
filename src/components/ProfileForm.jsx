@@ -377,9 +377,12 @@ export const ProfileForm = ({
 
   const buildOverlayDebugFallback = () => {
     const cardUserId = state?.userId || '';
-    const expectedPath = cardUserId
+    const expectedCardPath = cardUserId
       ? `multiData/edits/${cardUserId}`
       : 'multiData/edits/<cardUserId>';
+    const expectedEditorPath = cardUserId
+      ? `multiData/edits/${cardUserId}/<editorUserId>`
+      : 'multiData/edits/<cardUserId>/<editorUserId>';
 
     const rawData = overlayDebugData;
     const overlayEntries = Object.entries(rawData || {});
@@ -399,11 +402,14 @@ export const ProfileForm = ({
         },
       },
       whereStopped: {
-        expectedPath,
+        expectedCardPath,
+        expectedEditorPath,
         hasOverlayDebugError: Boolean(overlayDebugError),
         overlayDebugDataType: rawData === null ? 'null' : typeof rawData,
         overlayEditorNodesFound: overlayEntries.length,
         overlayEditorIds: overlayEntries.map(([editorId]) => editorId),
+        note:
+          'Overlay створюється лише коли НЕ-адмін зберігає зміни. Якщо зміни вносив адмін, вузол overlay може бути порожній.',
       },
       rawOverlayDebugData: rawData || {},
     };

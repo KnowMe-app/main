@@ -110,11 +110,12 @@ const EditProfile = () => {
     };
 
     setPendingOverlays(overlays);
-    setHighlightedFields(getOtherEditorsChangedFields(overlays, currentUid));
+    const editorToIgnore = isAdmin ? undefined : currentUid;
+    setHighlightedFields(getOtherEditorsChangedFields(overlays, editorToIgnore));
 
     const deletedFields = new Set();
     Object.entries(overlays || {}).forEach(([editorId, overlay]) => {
-      if (editorId === currentUid) return;
+      if (!isAdmin && editorId === currentUid) return;
 
       Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
         const canonicalValue = canonical?.[fieldName];
@@ -139,7 +140,7 @@ const EditProfile = () => {
     });
 
     setDeletedOverlayFields(Array.from(deletedFields));
-  }, [userId, currentUid]);
+  }, [userId, currentUid, isAdmin]);
 
   const handleOpenMedications = useCallback(
     user => {
@@ -437,7 +438,7 @@ const EditProfile = () => {
     const result = {};
 
     Object.entries(pendingOverlays || {}).forEach(([editorUserId, overlay]) => {
-      if (editorUserId === currentUid) return;
+      if (!isAdmin && editorUserId === currentUid) return;
 
       Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
         const existing = state?.[fieldName];
@@ -466,7 +467,7 @@ const EditProfile = () => {
     });
 
     return result;
-  }, [pendingOverlays, currentUid, state]);
+  }, [pendingOverlays, currentUid, state, isAdmin]);
 
 
   if (!state) return null;
