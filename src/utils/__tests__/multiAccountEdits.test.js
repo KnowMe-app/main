@@ -113,4 +113,38 @@ describe('multiAccountEdits storage structure', () => {
       { city: { from: 'A', to: 'B' } },
     );
   });
+
+  it('deletes overlay when only technical fields remain', async () => {
+    get.mockResolvedValueOnce({
+      exists: () => true,
+      val: () => ({ lastAction: { from: 1, to: 2 }, cachedAt: { from: 1, to: 2 } }),
+    });
+
+    await patchOverlayField({
+      editorUserId: 'editor-1',
+      cardUserId: 'card-1',
+      fieldName: 'lastAction',
+      change: { from: 1, to: 2 },
+    });
+
+    expect(remove).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/edits/card-1/editor-1' }),
+    );
+  });
+
+  it('does not save overlay with technical-only fields', async () => {
+    await saveOverlayForUserCard({
+      editorUserId: 'editor-1',
+      cardUserId: 'card-1',
+      fields: {
+        lastAction: { from: 1, to: 2 },
+        cachedAt: { from: 1, to: 2 },
+      },
+    });
+
+    expect(remove).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/edits/card-1/editor-1' }),
+    );
+    expect(set).not.toHaveBeenCalled();
+  });
 });
