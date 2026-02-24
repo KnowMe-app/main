@@ -128,12 +128,16 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
 };
 
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
-  if (!editorUserId || !cardUserId) return null;
+  if (!cardUserId) return null;
 
   const overlaysByEditor = await getOverlaysForCard(cardUserId);
   if (!Object.keys(overlaysByEditor).length) return null;
 
-  return overlaysByEditor[editorUserId] || Object.values(overlaysByEditor)[0] || null;
+  if (editorUserId && overlaysByEditor[editorUserId]) {
+    return overlaysByEditor[editorUserId];
+  }
+
+  return Object.values(overlaysByEditor)[0] || null;
 };
 
 export const getOverlaysForCard = async cardUserId => {

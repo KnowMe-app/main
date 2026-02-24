@@ -84,6 +84,17 @@ describe('multiAccountEdits storage structure', () => {
 
     const fallback = await getOverlayForUserCard({ editorUserId: 'missing', cardUserId: 'card-1' });
     expect(fallback.editorUserId).toBe('editorA');
+
+    get.mockResolvedValueOnce({
+      exists: () => true,
+      val: () => ({
+        editorC: { fields: { city: { from: 'C', to: 'D' } } },
+      }),
+    });
+
+    const adminFallback = await getOverlayForUserCard({ cardUserId: 'card-1' });
+    expect(adminFallback.editorUserId).toBe('editorC');
+
   });
 
   it('removes and patches fields in the new path', async () => {
