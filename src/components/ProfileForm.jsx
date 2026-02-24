@@ -852,7 +852,7 @@ ${entries.join('\n')}`;
                     display: Array.isArray(state[field.name]) ? 'block' : 'inline-block',
                     alignSelf: Array.isArray(state[field.name]) ? 'flex-end' : 'auto',
                     marginBottom: Array.isArray(state[field.name]) ? '14px' : '0',
-                    marginLeft: '10px',
+                    marginLeft: 0,
                   }}
                   onClick={() => {
                     if (!state.myComment?.trim()) {
