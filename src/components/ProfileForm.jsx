@@ -375,6 +375,42 @@ export const ProfileForm = ({
 
   const getOverlayEntriesForField = fieldName => overlayFieldAdditions[fieldName] || [];
 
+  const mergeOverlayValueIntoState = (prevState, fieldName, value) => {
+    const normalizedValue = typeof value === 'string' ? value.trim() : value;
+    if (normalizedValue === '' || normalizedValue === null || normalizedValue === undefined) {
+      return prevState;
+    }
+
+    const existing = prevState[fieldName];
+
+    if (Array.isArray(existing)) {
+      if (existing.includes(normalizedValue)) return prevState;
+      return { ...prevState, [fieldName]: [...existing, normalizedValue] };
+    }
+
+    if (existing === undefined || existing === null || existing === '') {
+      return { ...prevState, [fieldName]: normalizedValue };
+    }
+
+    if (existing === normalizedValue) {
+      return prevState;
+    }
+
+    return { ...prevState, [fieldName]: [existing, normalizedValue] };
+  };
+
+  const adoptOverlayValue = (fieldName, value) => {
+    if (!fieldName) return;
+
+    setState(prevState => {
+      const mergedState = mergeOverlayValueIntoState(prevState, fieldName, value);
+      if (mergedState === prevState) return prevState;
+
+      submitWithNormalization(mergedState, 'overwrite');
+      return mergedState;
+    });
+  };
+
   const buildCsectionOverlayPaths = cardUserId => {
     const normalizedCardId = String(cardUserId || '').trim();
     if (!normalizedCardId) return [];
@@ -621,6 +657,8 @@ export const ProfileForm = ({
                     value={entry.value}
                     readOnly
                     $isOverlaySuggestion
+                    onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                    onBlur={() => adoptOverlayValue(field.name, entry.value)}
                   />
                 </InputFieldContainer>
                 <Hint fieldName={field.name} isActive={entry.value}>
