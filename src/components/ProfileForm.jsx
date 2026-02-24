@@ -497,7 +497,7 @@ export const ProfileForm = ({
     });
   };
 
-  const buildCsectionOverlayPaths = cardUserId => {
+  const buildOverlayPaths = cardUserId => {
     const normalizedCardId = String(cardUserId || '').trim();
     if (!normalizedCardId) return [];
 
@@ -505,7 +505,7 @@ export const ProfileForm = ({
   };
 
   const readOverlayFieldAdditions = useCallback(async cardUserId => {
-    const paths = buildCsectionOverlayPaths(cardUserId);
+    const paths = buildOverlayPaths(cardUserId);
     if (!paths.length) return { paths: [], result: {} };
 
     const debugResults = await Promise.all(
@@ -563,7 +563,7 @@ export const ProfileForm = ({
   useEffect(() => {
     let isMounted = true;
 
-    const loadOverlayCsection = async () => {
+    const loadOverlayFieldAdditions = async () => {
       if (!state?.userId) {
         if (isMounted) setAutoOverlayFieldAdditions({});
         return;
@@ -573,7 +573,7 @@ export const ProfileForm = ({
         const { result } = await readOverlayFieldAdditions(state.userId);
         if (!isMounted) return;
 
-        setAutoOverlayFieldAdditions(result.csection ? { csection: result.csection } : {});
+        setAutoOverlayFieldAdditions(result);
       } catch {
         if (isMounted) {
           setAutoOverlayFieldAdditions({});
@@ -581,7 +581,7 @@ export const ProfileForm = ({
       }
     };
 
-    loadOverlayCsection();
+    loadOverlayFieldAdditions();
 
     return () => {
       isMounted = false;
@@ -589,10 +589,10 @@ export const ProfileForm = ({
   }, [readOverlayFieldAdditions, state?.userId]);
 
   const handleOverlayDebugAlert = async () => {
-    const paths = buildCsectionOverlayPaths(state?.userId);
+    const paths = buildOverlayPaths(state?.userId);
 
     if (!paths.length) {
-      window.alert('Немає userId, не можу побудувати маршрут до overlay csection.');
+      window.alert('Немає userId, не можу побудувати маршрут до overlay полів.');
       return;
     }
 
@@ -1105,8 +1105,8 @@ const InputDiv = styled.div`
     return '#fff';
   }};
   border: ${({ $isHighlighted, $isDeletedOverlay, $isOverlaySuggestion }) => {
+    if ($isDeletedOverlay) return '1px solid #e53935';
     if ($isOverlaySuggestion) return '1px solid #2f6df6';
-    if ($isDeletedOverlay) return '1px dashed #b5b5b5';
     if ($isHighlighted) return '2px solid #2f6df6';
     return '1px solid #ccc';
   }};
@@ -1269,7 +1269,7 @@ const KeyValueRow = styled.div`
   padding: 10px;
   background-color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? '#f7f7f7' : '#fff')};
   border: ${({ $isHighlighted, $isDeletedOverlay }) => {
-    if ($isDeletedOverlay) return '1px dashed #b5b5b5';
+    if ($isDeletedOverlay) return '1px solid #e53935';
     if ($isHighlighted) return '2px solid #2f6df6';
     return '1px solid #ccc';
   }};
