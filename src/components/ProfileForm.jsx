@@ -681,6 +681,7 @@ ${entries.join('\n')}`;
               <InputDiv
                 key={`overlay-${field.name}-${idx}`}
                 $isOverlaySuggestion
+                $isDeletedOverlay={entry.isDeleted}
                 title={`Додано користувачем ${entry.editorUserId}`}
               >
                 <InputFieldContainer fieldName={field.name} value={entry.value}>
@@ -690,6 +691,7 @@ ${entries.join('\n')}`;
                     value={entry.value}
                     readOnly
                     $isOverlaySuggestion
+                    $isDeletedOverlay={entry.isDeleted}
                     onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
                     onBlur={() => adoptOverlayValue(field.name, entry.value)}
                   />
