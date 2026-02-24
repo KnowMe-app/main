@@ -275,8 +275,10 @@ export const ProfileForm = ({
   isAdmin = false,
   overlayFieldAdditions = {},
 }) => {
-  const HARDCODED_OVERLAY_CSECTION_PATH =
-    'multiData/edits/AA0104/UsPFb2CJrOfdp96ETskSB15QMxR2/csection';
+  const HARDCODED_OVERLAY_CSECTION_PATHS = [
+    'multiData/edits/AA0104/UsPFb2CJrOfdp96ETskSB15QMxR2/fields/csection',
+    'multiData/edits/AA0104/UsPFb2CJrOfdp96ETskSB15QMxR2/csection',
+  ];
 
   const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
@@ -380,23 +382,27 @@ export const ProfileForm = ({
 
   const handleOverlayDebugAlert = async () => {
     try {
-      const csectionSnapshot = await get(refDb(database, HARDCODED_OVERLAY_CSECTION_PATH));
-      const csectionValue = csectionSnapshot.exists() ? csectionSnapshot.val() : null;
+      const debugResults = await Promise.all(
+        HARDCODED_OVERLAY_CSECTION_PATHS.map(async path => {
+          const snapshot = await get(refDb(database, path));
+          return {
+            path,
+            exists: snapshot.exists(),
+            value: snapshot.exists() ? snapshot.val() : null,
+          };
+        })
+      );
 
       window.alert(
         JSON.stringify(
-          {
-            path: HARDCODED_OVERLAY_CSECTION_PATH,
-            exists: csectionSnapshot.exists(),
-            value: csectionValue,
-          },
+          debugResults,
           null,
           2
         )
       );
     } catch (error) {
       window.alert(
-        `Не вдалося прочитати ${HARDCODED_OVERLAY_CSECTION_PATH}: ${error?.message || error}`
+        `Не вдалося прочитати ${HARDCODED_OVERLAY_CSECTION_PATHS[0]}: ${error?.message || error}`
       );
     }
   };
