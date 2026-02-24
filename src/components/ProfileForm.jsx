@@ -275,11 +275,6 @@ export const ProfileForm = ({
   isAdmin = false,
   overlayFieldAdditions = {},
 }) => {
-  const HARDCODED_OVERLAY_CSECTION_PATHS = [
-    'multiData/edits/AA0104/UsPFb2CJrOfdp96ETskSB15QMxR2/fields/csection',
-    'multiData/edits/AA0104/UsPFb2CJrOfdp96ETskSB15QMxR2/csection',
-  ];
-
   const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
@@ -380,15 +375,43 @@ export const ProfileForm = ({
 
   const getOverlayEntriesForField = fieldName => overlayFieldAdditions[fieldName] || [];
 
+  const buildCsectionOverlayPaths = cardUserId => {
+    const normalizedCardId = String(cardUserId || '').trim();
+    if (!normalizedCardId) return [];
+
+    return [`multiData/edits/${normalizedCardId}`];
+  };
+
   const handleOverlayDebugAlert = async () => {
+    const paths = buildCsectionOverlayPaths(state?.userId);
+
+    if (!paths.length) {
+      window.alert('Немає userId, не можу побудувати маршрут до overlay csection.');
+      return;
+    }
+
     try {
       const debugResults = await Promise.all(
-        HARDCODED_OVERLAY_CSECTION_PATHS.map(async path => {
+        paths.map(async path => {
           const snapshot = await get(refDb(database, path));
+          const rawValue = snapshot.exists() ? snapshot.val() : null;
+
+          const csectionByEditor = Object.entries(rawValue || {}).reduce(
+            (acc, [editorUserId, overlay]) => {
+              const csection = overlay?.fields?.csection;
+              if (csection !== undefined) {
+                acc[editorUserId] = csection;
+              }
+              return acc;
+            },
+            {}
+          );
+
           return {
             path,
             exists: snapshot.exists(),
-            value: snapshot.exists() ? snapshot.val() : null,
+            csectionByEditor,
+            value: rawValue,
           };
         })
       );
@@ -402,7 +425,7 @@ export const ProfileForm = ({
       );
     } catch (error) {
       window.alert(
-        `Не вдалося прочитати ${HARDCODED_OVERLAY_CSECTION_PATHS[0]}: ${error?.message || error}`
+        `Не вдалося прочитати ${paths[0]}: ${error?.message || error}`
       );
     }
   };
