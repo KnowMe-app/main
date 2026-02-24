@@ -375,6 +375,40 @@ export const ProfileForm = ({
 
   const getOverlayEntriesForField = fieldName => overlayFieldAdditions[fieldName] || [];
 
+  const buildOverlayDebugFallback = () => {
+    const cardUserId = state?.userId || '';
+    const expectedPath = cardUserId
+      ? `multiData/edits/${cardUserId}`
+      : 'multiData/edits/<cardUserId>';
+
+    const rawData = overlayDebugData;
+    const overlayEntries = Object.entries(rawData || {});
+
+    return {
+      message: 'Overlay даних не знайдено. Дерево перевірки:',
+      expectedTree: {
+        root: 'multiData',
+        branch: 'edits',
+        card: cardUserId || '<cardUserId>',
+        editor: '<editorUserId>',
+        nodeShape: {
+          fields: '{ поле: { from, to } | { added, removed } }',
+          updatedAt: '<timestamp>',
+          cardUserId: cardUserId || '<cardUserId>',
+          editorUserId: '<editorUserId>',
+        },
+      },
+      whereStopped: {
+        expectedPath,
+        hasOverlayDebugError: Boolean(overlayDebugError),
+        overlayDebugDataType: rawData === null ? 'null' : typeof rawData,
+        overlayEditorNodesFound: overlayEntries.length,
+        overlayEditorIds: overlayEntries.map(([editorId]) => editorId),
+      },
+      rawOverlayDebugData: rawData || {},
+    };
+  };
+
   const handleOverlayDebugAlert = () => {
     if (overlayDebugError) {
       window.alert(overlayDebugError);
@@ -384,7 +418,7 @@ export const ProfileForm = ({
     const entries = Object.entries(overlayDebugData || {});
 
     if (!entries.length) {
-      window.alert('Overlay даних не знайдено');
+      window.alert(JSON.stringify(buildOverlayDebugFallback(), null, 2));
       return;
     }
 
