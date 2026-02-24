@@ -64,6 +64,7 @@ const EditProfile = () => {
   const [isAdmin, setIsAdmin] = useState(auth.currentUser?.uid === process.env.REACT_APP_USER1);
   const [currentUid, setCurrentUid] = useState(auth.currentUser?.uid || '');
   const [pendingOverlays, setPendingOverlays] = useState({});
+  const [overlayReadError, setOverlayReadError] = useState('');
   const [highlightedFields, setHighlightedFields] = useState([]);
   const [deletedOverlayFields, setDeletedOverlayFields] = useState([]);
   const [focusedField, setFocusedField] = useState('');
@@ -72,10 +73,27 @@ const EditProfile = () => {
   const refreshOverlays = useCallback(async () => {
     if (!userId) return;
 
-    const [overlays, canonical] = await Promise.all([
-      getOverlaysForCard(userId),
-      getCanonicalCard(userId),
-    ]);
+    let overlays = {};
+    let canonical = {};
+
+    try {
+      [overlays, canonical] = await Promise.all([
+        getOverlaysForCard(userId),
+        getCanonicalCard(userId),
+      ]);
+      setOverlayReadError('');
+    } catch (error) {
+      const message =
+        error?.code === 'PERMISSION_DENIED' || error?.code === 'permission-denied'
+          ? 'Overlay: немає доступу на читання (RTDB rules).'
+          : `Overlay: помилка завантаження (${error?.code || 'unknown'}).`;
+
+      setOverlayReadError(message);
+      setPendingOverlays({});
+      setHighlightedFields([]);
+      setDeletedOverlayFields([]);
+      return;
+    }
 
     const hasMeaningfulValue = value => {
       if (value === null || value === undefined) return false;
@@ -503,6 +521,7 @@ const EditProfile = () => {
         isAdmin={isAdmin}
         overlayFieldAdditions={overlayFieldAdditions}
         overlayDebugData={pendingOverlays}
+        overlayDebugError={overlayReadError}
       />
 
       {isSyncing && <div>Syncing...</div>}
