@@ -41,6 +41,7 @@ const OptionItem = styled.li`
 
 const CustomInput = styled.input`
   padding: 10px;
+  padding-right: 40px;
   /* padding-bottom: 0; */
   /* margin-top: 10px; */
   width: 100%;
@@ -59,6 +60,60 @@ const CustomInput = styled.input`
   }
   &:hover {
     background-color: #f5f5f5; /* Легкий фон при наведенні */
+  }
+`;
+
+const CustomInputWrapper = styled.div`
+  position: relative;
+`;
+
+const InlineDeleteButton = styled.button`
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: gray;
+  font-size: 18px;
+
+  &:hover {
+    color: black;
+  }
+`;
+
+const ActionRow = styled.div`
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+`;
+
+const OkButton = styled.button`
+  width: 35px;
+  height: 35px;
+  padding: 3px;
+  border: none;
+  background-color: #ff7043;
+  color: white;
+  border-radius: 50px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+
+  &:hover {
+    background-color: #ff5722;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
   }
 `;
 
@@ -136,9 +191,15 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
   };
 
   const handleConfirm = () => {
+    if (!customInput.trim()) return;
     onSelect({ placeholder: customInput }); // Передати введене значення
     setCustomInput(''); // Очистити поле
     setShowCustomInput(false); // Сховати поле вводу
+  };
+
+  const handleCustomInputDelete = () => {
+    setCustomInput('');
+    setShowCustomInput(false);
   };
 
   const handleKeyDown = e => {
@@ -157,15 +218,25 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
         ))}
       </OptionsList>
       {showCustomInput && (
-        // <CustomInputContainer>
-        <CustomInput
-          type="text"
-          value={customInput}
-          onChange={handleCustomInputChange}
-          placeholder="Інший варіант"
-          onBlur={handleConfirm}
-          onKeyDown={handleKeyDown}
-        />)}</>}
+        <>
+          <CustomInputWrapper>
+            <CustomInput
+              type="text"
+              value={customInput}
+              onChange={handleCustomInputChange}
+              placeholder="Інший варіант"
+              onKeyDown={handleKeyDown}
+            />
+            <InlineDeleteButton onClick={handleCustomInputDelete} aria-label="delete custom value">
+              &times;
+            </InlineDeleteButton>
+          </CustomInputWrapper>
+          <ActionRow>
+            <OkButton onClick={handleConfirm} disabled={!customInput.trim()}>
+              ОК
+            </OkButton>
+          </ActionRow>
+        </>)} </>}
     </>
   );
 
