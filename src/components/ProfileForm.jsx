@@ -418,6 +418,16 @@ export const ProfileForm = ({
     return [`multiData/edits/${normalizedCardId}`];
   };
 
+  const sanitizeOverlayValue = value => {
+    if (Array.isArray(value)) {
+      const normalized = value.map(item => sanitizeOverlayValue(item)).filter(item => item !== '');
+      return normalized.join(', ');
+    }
+
+    if (value === null || value === undefined) return '';
+    return String(value).trim();
+  };
+
   const handleOverlayDebugAlert = async () => {
     const paths = buildCsectionOverlayPaths(state?.userId);
 
@@ -432,33 +442,55 @@ export const ProfileForm = ({
           const snapshot = await get(refDb(database, path));
           const rawValue = snapshot.exists() ? snapshot.val() : null;
 
-          const csectionByEditor = Object.entries(rawValue || {}).reduce(
-            (acc, [editorUserId, overlay]) => {
-              const csection = overlay?.fields?.csection;
-              if (csection !== undefined) {
-                acc[editorUserId] = csection;
-              }
-              return acc;
-            },
-            {}
-          );
+          const fieldsByEditor = Object.entries(rawValue || {}).reduce((acc, [editorUserId, overlay]) => {
+            const allFields = overlay?.fields || {};
+            const normalizedFields = Object.entries(allFields).reduce((fieldsAcc, [fieldName, change]) => {
+              if (!change || typeof change !== 'object') return fieldsAcc;
+
+              const sanitizedTo = sanitizeOverlayValue(change.to);
+              if (!sanitizedTo) return fieldsAcc;
+
+              fieldsAcc[fieldName] = sanitizedTo;
+              return fieldsAcc;
+            }, {});
+
+            if (Object.keys(normalizedFields).length) {
+              acc[editorUserId] = normalizedFields;
+            }
+
+            return acc;
+          }, {});
 
           return {
             path,
             exists: snapshot.exists(),
-            csectionByEditor,
-            value: rawValue,
+            fieldsByEditor,
           };
         })
       );
 
-      window.alert(
-        JSON.stringify(
-          debugResults,
-          null,
-          2
-        )
-      );
+      const message = debugResults
+        .map(result => {
+          const editors = Object.entries(result.fieldsByEditor || {});
+          if (!editors.length) {
+            return `${result.path}\n(немає очищених значень)`;
+          }
+
+          const editorsText = editors
+            .map(([editorId, fields]) => {
+              const fieldsText = Object.entries(fields)
+                .map(([fieldName, fieldValue]) => `${fieldName}: ${fieldValue}`)
+                .join('\n');
+
+              return `editor: ${editorId}\n${fieldsText}`;
+            })
+            .join('\n\n');
+
+          return `${result.path}\n${editorsText}`;
+        })
+        .join('\n\n---\n\n');
+
+      window.alert(message);
     } catch (error) {
       window.alert(
         `Не вдалося прочитати ${paths[0]}: ${error?.message || error}`
