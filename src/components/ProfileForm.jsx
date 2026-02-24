@@ -618,6 +618,8 @@ ${entries.join('\n')}`;
       {sortedFieldsToRender
         .filter(field => !['myComment', 'writer'].includes(field.name))
         .map((field, index) => {
+          const overlayEntries = getOverlayEntriesForField(field.name);
+          const hasOverlaySuggestions = overlayEntries.length > 0;
           const displayValue =
             field.name === 'lastAction'
               ? formatDateToDisplay(normalizeLastAction(state.lastAction))
@@ -627,7 +629,10 @@ ${entries.join('\n')}`;
               ? formatDateToDisplay(state.getInTouch)
               : state[field.name] || '';
           return (
-            <PickerContainer key={index}>
+            <PickerContainer
+              key={index}
+              style={hasOverlaySuggestions ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
+            >
               {Array.isArray(state[field.name]) ? (
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
                 {state[field.name].map((value, idx) => (
@@ -776,12 +781,11 @@ ${entries.join('\n')}`;
               </InputDiv>
             )}
 
-            {getOverlayEntriesForField(field.name).map((entry, idx) => (
+            {overlayEntries.map((entry, idx) => (
               <InputDiv
                 key={`overlay-${field.name}-${idx}`}
                 $isOverlaySuggestion
                 $isDeletedOverlay={entry.isDeleted}
-                title={`Додано користувачем ${entry.editorUserId}`}
               >
                 <InputFieldContainer fieldName={field.name} value={entry.value}>
                   <InputField
@@ -799,7 +803,6 @@ ${entries.join('\n')}`;
                   {field.ukrainian || field.placeholder}
                 </Hint>
                 <Placeholder isActive={entry.value}>{field.ukrainianHint}</Placeholder>
-                <OverlayMeta>з overlay: {entry.editorUserId}</OverlayMeta>
               </InputDiv>
             ))}
 
@@ -1030,12 +1033,12 @@ const InputDiv = styled.div`
   margin: 10px 0;
   padding: 10px;
   background-color: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
-    if ($isOverlaySuggestion) return '#f2f7ff';
+    if ($isOverlaySuggestion) return '#fff';
     if ($isDeletedOverlay) return '#f7f7f7';
     return '#fff';
   }};
   border: ${({ $isHighlighted, $isDeletedOverlay, $isOverlaySuggestion }) => {
-    if ($isOverlaySuggestion) return '2px solid #2f6df6';
+    if ($isOverlaySuggestion) return '1px solid #2f6df6';
     if ($isDeletedOverlay) return '1px dashed #b5b5b5';
     if ($isHighlighted) return '2px solid #2f6df6';
     return '1px solid #ccc';
@@ -1049,11 +1052,11 @@ const InputDiv = styled.div`
 `;
 
 const InputField = styled.input`
-  border: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? '1px solid #2f6df6' : 'none')};
+  border: none;
   outline: none;
   flex: 1;
   align-items: center;
-  border-radius: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? '4px' : '0')};
+  border-radius: 0;
   padding-left: ${({ fieldName, value }) => {
     if (fieldName === 'phone') return '20px';
     if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok') return '25px';
@@ -1189,17 +1192,6 @@ const DelKeyValueBTN = styled.button`
   &:hover {
     color: black;
   }
-`;
-
-const OverlayMeta = styled.span`
-  position: absolute;
-  right: 10px;
-  top: -16px;
-  font-size: 11px;
-  color: #2f6df6;
-  background: #f2f7ff;
-  padding: 1px 6px;
-  border-radius: 10px;
 `;
 
 const KeyValueRow = styled.div`
