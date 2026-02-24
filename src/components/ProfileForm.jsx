@@ -1112,8 +1112,8 @@ const InputDiv = styled.div`
   }};
   border-radius: 5px;
   box-sizing: border-box;
-  flex: 1 1 auto;
-  width: 100%;
+  flex: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? '1 1 0' : '1 1 auto')};
+  width: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? 'auto' : '100%')};
   min-width: 0;
   height: auto;
 `;
