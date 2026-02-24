@@ -51,6 +51,19 @@ const BackButton = styled.button`
   margin-bottom: 10px;
 `;
 
+const sanitizeOverlayValue = value => {
+  if (Array.isArray(value)) {
+    const normalized = value.map(item => sanitizeOverlayValue(item)).filter(item => item !== '');
+    return normalized.join(', ');
+  }
+
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+};
+
+const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
+const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction']);
+
 const EditProfile = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
@@ -107,13 +120,15 @@ const EditProfile = () => {
       return false;
     };
 
-    setPendingOverlays(overlays);
-    const editorToIgnore = isAdmin ? undefined : currentUid;
-    setHighlightedFields(getOtherEditorsChangedFields(overlays, editorToIgnore));
+    const visibleOverlays = isAdmin
+      ? overlays
+      : Object.fromEntries(Object.entries(overlays || {}).filter(([editorId]) => editorId === currentUid));
+
+    setPendingOverlays(visibleOverlays);
+    setHighlightedFields(getOtherEditorsChangedFields(visibleOverlays));
 
     const deletedFields = new Set();
-    Object.entries(overlays || {}).forEach(([editorId, overlay]) => {
-      if (!isAdmin && editorId === currentUid) return;
+    Object.entries(visibleOverlays || {}).forEach(([, overlay]) => {
 
       Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
         const canonicalValue = canonical?.[fieldName];
@@ -419,45 +434,35 @@ const EditProfile = () => {
 
   const overlayFieldAdditions = useMemo(() => {
     const result = {};
-    const isEmptyOverlayValue = value => value === null || value === undefined || String(value).trim() === '';
 
     Object.entries(pendingOverlays || {}).forEach(([editorUserId, overlay]) => {
       Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
-        const existing = state?.[fieldName];
-        const normalizedCurrent = Array.isArray(existing) ? existing.filter(Boolean) : [existing].filter(Boolean);
-        const candidates = [];
+        if (technicalOverlayFields.has(fieldName)) return;
+        if (!change || typeof change !== 'object') return;
 
-        if (Array.isArray(change?.added)) {
-          candidates.push(...change.added);
+        const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
+        const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
+        const normalizedTo = sanitizeOverlayValue(change?.to);
+        const normalizedFrom = sanitizeOverlayValue(change?.from);
+        const fieldEntries = result[fieldName] || [];
+
+        if (hasTo && !isEmptyOverlayValue(change?.to)) {
+          if (!fieldEntries.some(entry => entry.value === normalizedTo && entry.editorUserId === editorUserId)) {
+            result[fieldName] = [...fieldEntries, { value: normalizedTo, editorUserId, isDeleted: false }];
+          }
+          return;
         }
 
-        if (Object.prototype.hasOwnProperty.call(change || {}, 'to')) {
-          candidates.push(change.to);
-
-          if (
-            isEmptyOverlayValue(change.to) &&
-            Object.prototype.hasOwnProperty.call(change || {}, 'from') &&
-            !isEmptyOverlayValue(change.from)
-          ) {
-            candidates.push(change.from);
+        if (hasTo && hasFrom && !isEmptyOverlayValue(change?.from)) {
+          if (!fieldEntries.some(entry => entry.value === normalizedFrom && entry.editorUserId === editorUserId)) {
+            result[fieldName] = [...fieldEntries, { value: normalizedFrom, editorUserId, isDeleted: true }];
           }
         }
-
-        candidates
-          .filter(value => value !== null && value !== undefined && String(value).trim() !== '')
-          .forEach(value => {
-            if (!isAdmin && normalizedCurrent.includes(value)) return;
-
-            const fieldEntries = result[fieldName] || [];
-            if (fieldEntries.some(entry => entry.value === value && entry.editorUserId === editorUserId)) return;
-
-            result[fieldName] = [...fieldEntries, { value, editorUserId }];
-          });
       });
     });
 
     return result;
-  }, [pendingOverlays, state, isAdmin]);
+  }, [pendingOverlays]);
 
 
   if (!state) return null;
