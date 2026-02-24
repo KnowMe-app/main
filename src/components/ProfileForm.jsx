@@ -428,6 +428,9 @@ export const ProfileForm = ({
     return String(value).trim();
   };
 
+  const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
+  const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction']);
+
   const handleOverlayDebugAlert = async () => {
     const paths = buildCsectionOverlayPaths(state?.userId);
 
@@ -442,51 +445,49 @@ export const ProfileForm = ({
           const snapshot = await get(refDb(database, path));
           const rawValue = snapshot.exists() ? snapshot.val() : null;
 
-          const fieldsByEditor = Object.entries(rawValue || {}).reduce((acc, [editorUserId, overlay]) => {
+          const fieldEntries = Object.entries(rawValue || {}).reduce((acc, [, overlay]) => {
             const allFields = overlay?.fields || {};
-            const normalizedFields = Object.entries(allFields).reduce((fieldsAcc, [fieldName, change]) => {
-              if (!change || typeof change !== 'object') return fieldsAcc;
 
-              const sanitizedTo = sanitizeOverlayValue(change.to);
-              if (!sanitizedTo) return fieldsAcc;
+            Object.entries(allFields).forEach(([fieldName, change]) => {
+              if (technicalOverlayFields.has(fieldName)) return;
+              if (!change || typeof change !== 'object') return;
 
-              fieldsAcc[fieldName] = sanitizedTo;
-              return fieldsAcc;
-            }, {});
+              const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
+              const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
+              const normalizedTo = sanitizeOverlayValue(change?.to);
+              const normalizedFrom = sanitizeOverlayValue(change?.from);
 
-            if (Object.keys(normalizedFields).length) {
-              acc[editorUserId] = normalizedFields;
-            }
+              if (hasTo && !isEmptyOverlayValue(change?.to)) {
+                acc.push(`${fieldName}:${normalizedTo}`);
+                return;
+              }
+
+              if (hasTo && hasFrom && !isEmptyOverlayValue(change?.from)) {
+                acc.push(`${fieldName}:${normalizedFrom}`);
+              }
+            });
 
             return acc;
-          }, {});
+          }, []);
 
           return {
             path,
             exists: snapshot.exists(),
-            fieldsByEditor,
+            fieldEntries,
           };
         })
       );
 
       const message = debugResults
         .map(result => {
-          const editors = Object.entries(result.fieldsByEditor || {});
-          if (!editors.length) {
-            return `${result.path}\n(немає очищених значень)`;
+          const entries = Array.from(new Set(result.fieldEntries || []));
+          if (!entries.length) {
+            return `${result.path}
+(немає очищених значень)`;
           }
 
-          const editorsText = editors
-            .map(([editorId, fields]) => {
-              const fieldsText = Object.entries(fields)
-                .map(([fieldName, fieldValue]) => `${fieldName}: ${fieldValue}`)
-                .join('\n');
-
-              return `editor: ${editorId}\n${fieldsText}`;
-            })
-            .join('\n\n');
-
-          return `${result.path}\n${editorsText}`;
+          return `${result.path}
+${entries.join('\n')}`;
         })
         .join('\n\n---\n\n');
 
