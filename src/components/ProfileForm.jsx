@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import styled, { css } from 'styled-components';
 import { get, ref as refDb } from 'firebase/database';
 import Photos from './Photos';
@@ -74,6 +74,20 @@ const nestedValueContainerStyle = {
 const nestedIndentStyle = {
   marginLeft: '20px',
 };
+
+
+const sanitizeOverlayValue = value => {
+  if (Array.isArray(value)) {
+    const normalized = value.map(item => sanitizeOverlayValue(item)).filter(item => item !== '');
+    return normalized.join(', ');
+  }
+
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+};
+
+const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
+const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction']);
 
 // Рекурсивне відображення всіх полів користувача, включно з вкладеними об'єктами та масивами
 export const renderAllFields = (data, parentKey = '', options = {}) => {
@@ -280,6 +294,7 @@ export const ProfileForm = ({
   const moreInfoRef = useRef(null);
   const [customField, setCustomField] = useState({ key: '', value: '' });
   const [collection, setCollection] = useState('newUsers');
+  const [autoOverlayFieldAdditions, setAutoOverlayFieldAdditions] = useState({});
 
   useEffect(() => {
     if (!dataSource || dataSource === 'loading') return;
@@ -373,7 +388,20 @@ export const ProfileForm = ({
     : fieldsToRender;
 
 
-  const getOverlayEntriesForField = fieldName => overlayFieldAdditions[fieldName] || [];
+  const getOverlayEntriesForField = fieldName => {
+    const mergedEntries = [
+      ...(overlayFieldAdditions[fieldName] || []),
+      ...(autoOverlayFieldAdditions[fieldName] || []),
+    ];
+
+    return mergedEntries.filter((entry, idx, arr) => {
+      const signature = `${entry?.value || ''}::${entry?.editorUserId || ''}::${entry?.isDeleted ? '1' : '0'}`;
+      return arr.findIndex(candidate => {
+        const candidateSignature = `${candidate?.value || ''}::${candidate?.editorUserId || ''}::${candidate?.isDeleted ? '1' : '0'}`;
+        return candidateSignature === signature;
+      }) === idx;
+    });
+  };
 
   const mergeOverlayValueIntoState = (prevState, fieldName, value) => {
     const normalizedValue = typeof value === 'string' ? value.trim() : value;
@@ -418,18 +446,89 @@ export const ProfileForm = ({
     return [`multiData/edits/${normalizedCardId}`];
   };
 
-  const sanitizeOverlayValue = value => {
-    if (Array.isArray(value)) {
-      const normalized = value.map(item => sanitizeOverlayValue(item)).filter(item => item !== '');
-      return normalized.join(', ');
-    }
+  const readOverlayFieldAdditions = useCallback(async cardUserId => {
+    const paths = buildCsectionOverlayPaths(cardUserId);
+    if (!paths.length) return { paths: [], result: {} };
 
-    if (value === null || value === undefined) return '';
-    return String(value).trim();
-  };
+    const debugResults = await Promise.all(
+      paths.map(async path => {
+        const snapshot = await get(refDb(database, path));
+        const rawValue = snapshot.exists() ? snapshot.val() : null;
+        const fieldMap = {};
 
-  const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
-  const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction']);
+        Object.entries(rawValue || {}).forEach(([editorUserId, overlay]) => {
+          const allFields = overlay?.fields || {};
+
+          Object.entries(allFields).forEach(([fieldName, change]) => {
+            if (technicalOverlayFields.has(fieldName)) return;
+            if (!change || typeof change !== 'object') return;
+
+            const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
+            const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
+            const normalizedTo = sanitizeOverlayValue(change?.to);
+            const normalizedFrom = sanitizeOverlayValue(change?.from);
+            const fieldEntries = fieldMap[fieldName] || [];
+
+            if (hasTo && !isEmptyOverlayValue(change?.to)) {
+              if (!fieldEntries.some(entry => entry.value === normalizedTo && entry.editorUserId === editorUserId)) {
+                fieldMap[fieldName] = [...fieldEntries, { value: normalizedTo, editorUserId, isDeleted: false }];
+              }
+              return;
+            }
+
+            if (hasTo && hasFrom && !isEmptyOverlayValue(change?.from)) {
+              if (!fieldEntries.some(entry => entry.value === normalizedFrom && entry.editorUserId === editorUserId)) {
+                fieldMap[fieldName] = [...fieldEntries, { value: normalizedFrom, editorUserId, isDeleted: true }];
+              }
+            }
+          });
+        });
+
+        return {
+          path,
+          exists: snapshot.exists(),
+          fieldMap,
+        };
+      })
+    );
+
+    const result = {};
+    debugResults.forEach(item => {
+      Object.entries(item.fieldMap || {}).forEach(([fieldName, entries]) => {
+        result[fieldName] = [...(result[fieldName] || []), ...(entries || [])];
+      });
+    });
+
+    return { paths, result };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadOverlayCsection = async () => {
+      if (!state?.userId) {
+        if (isMounted) setAutoOverlayFieldAdditions({});
+        return;
+      }
+
+      try {
+        const { result } = await readOverlayFieldAdditions(state.userId);
+        if (!isMounted) return;
+
+        setAutoOverlayFieldAdditions(result.csection ? { csection: result.csection } : {});
+      } catch {
+        if (isMounted) {
+          setAutoOverlayFieldAdditions({});
+        }
+      }
+    };
+
+    loadOverlayCsection();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [readOverlayFieldAdditions, state?.userId]);
 
   const handleOverlayDebugAlert = async () => {
     const paths = buildCsectionOverlayPaths(state?.userId);
