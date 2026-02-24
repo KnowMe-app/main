@@ -263,12 +263,10 @@ const EditProfile = () => {
 
     if (!currentUid) return;
 
-    if (isAdmin) return;
-
     const loadWithOverlay = async () => {
       const canonical = await getCanonicalCard(userId);
       const overlay = await getOverlayForUserCard({
-        editorUserId: currentUid,
+        editorUserId: isAdmin ? undefined : currentUid,
         cardUserId: userId,
       });
 
