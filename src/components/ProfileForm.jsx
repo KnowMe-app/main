@@ -620,6 +620,7 @@ export const ProfileForm = ({
                     name={`overlay-${field.name}-${idx}`}
                     value={entry.value}
                     readOnly
+                    $isOverlaySuggestion
                   />
                 </InputFieldContainer>
                 <OverlayMeta>з overlay: {entry.editorUserId}</OverlayMeta>
@@ -872,10 +873,11 @@ const InputDiv = styled.div`
 `;
 
 const InputField = styled.input`
-  border: none;
+  border: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? '1px solid #2f6df6' : 'none')};
   outline: none;
   flex: 1;
   align-items: center;
+  border-radius: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? '4px' : '0')};
   padding-left: ${({ fieldName, value }) => {
     if (fieldName === 'phone') return '20px';
     if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok') return '25px';

@@ -454,10 +454,10 @@ const EditProfile = () => {
         candidates
           .filter(value => value !== null && value !== undefined && String(value).trim() !== '')
           .forEach(value => {
-            if (normalizedCurrent.includes(value)) return;
+            if (!isAdmin && normalizedCurrent.includes(value)) return;
 
             const fieldEntries = result[fieldName] || [];
-            if (fieldEntries.some(entry => entry.value === value)) return;
+            if (fieldEntries.some(entry => entry.value === value && entry.editorUserId === editorUserId)) return;
 
             result[fieldName] = [...fieldEntries, { value, editorUserId }];
           });
