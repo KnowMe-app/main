@@ -691,6 +691,7 @@ ${entries.join('\n')}`;
               key={index}
               style={hasOverlaySuggestions ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
             >
+              <FieldMainRow>
               {Array.isArray(state[field.name]) ? (
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
                 {state[field.name].map((value, idx) => (
@@ -984,39 +985,38 @@ ${entries.join('\n')}`;
                 </ButtonGroup>
               ) : null
             ) : null}
+              </FieldMainRow>
 
             {overlayEntries.map((entry, idx) => (
-              <InputDiv
-                key={`overlay-${field.name}-${idx}`}
-                $isOverlaySuggestion
-                $isDeletedOverlay={entry.isDeleted}
-              >
-                <InputFieldContainer fieldName={field.name} value={entry.value}>
-                  <InputField
-                    fieldName={field.name}
-                    name={`overlay-${field.name}-${idx}`}
-                    value={entry.value}
-                    readOnly
-                    $isOverlaySuggestion
-                    $isDeletedOverlay={entry.isDeleted}
-                    onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
-                  />
-                  <ClearButton
-                    type="button"
-                    onMouseDown={e => e.preventDefault()}
-                    onClick={() => handleOverlayDismiss(field.name, entry)}
-                  >
-                    &times;
-                  </ClearButton>
-                </InputFieldContainer>
+              <OverlayEntryRow key={`overlay-${field.name}-${idx}`}>
+                <InputDiv $isOverlaySuggestion $isDeletedOverlay={entry.isDeleted}>
+                  <InputFieldContainer fieldName={field.name} value={entry.value}>
+                    <InputField
+                      fieldName={field.name}
+                      name={`overlay-${field.name}-${idx}`}
+                      value={entry.value}
+                      readOnly
+                      $isOverlaySuggestion
+                      $isDeletedOverlay={entry.isDeleted}
+                      onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                    />
+                    <ClearButton
+                      type="button"
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => handleOverlayDismiss(field.name, entry)}
+                    >
+                      &times;
+                    </ClearButton>
+                  </InputFieldContainer>
+                  <Hint fieldName={field.name} isActive={entry.value}>
+                    {field.ukrainian || field.placeholder}
+                  </Hint>
+                  <Placeholder isActive={entry.value}>{field.ukrainianHint}</Placeholder>
+                </InputDiv>
                 <Button type="button" onClick={() => handleOverlayApply(field.name, entry)}>
                   ОК
                 </Button>
-                <Hint fieldName={field.name} isActive={entry.value}>
-                  {field.ukrainian || field.placeholder}
-                </Hint>
-                <Placeholder isActive={entry.value}>{field.ukrainianHint}</Placeholder>
-              </InputDiv>
+              </OverlayEntryRow>
             ))}
           </PickerContainer>
         );
@@ -1105,7 +1105,7 @@ const InputDiv = styled.div`
     return '#fff';
   }};
   border: ${({ $isHighlighted, $isDeletedOverlay, $isOverlaySuggestion }) => {
-    if ($isDeletedOverlay) return '1px solid #e53935';
+    if ($isDeletedOverlay) return '2px solid #e53935';
     if ($isOverlaySuggestion) return '1px solid #2f6df6';
     if ($isHighlighted) return '2px solid #2f6df6';
     return '1px solid #ccc';
@@ -1116,6 +1116,21 @@ const InputDiv = styled.div`
   width: 100%;
   min-width: 0;
   height: auto;
+`;
+
+const FieldMainRow = styled.div`
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  flex-wrap: nowrap;
+`;
+
+const OverlayEntryRow = styled.div`
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
 `;
 
 const InputField = styled.input`
@@ -1269,7 +1284,7 @@ const KeyValueRow = styled.div`
   padding: 10px;
   background-color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? '#f7f7f7' : '#fff')};
   border: ${({ $isHighlighted, $isDeletedOverlay }) => {
-    if ($isDeletedOverlay) return '1px solid #e53935';
+    if ($isDeletedOverlay) return '2px solid #e53935';
     if ($isHighlighted) return '2px solid #2f6df6';
     return '1px solid #ccc';
   }};
