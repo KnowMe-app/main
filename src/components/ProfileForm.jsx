@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import styled, { css } from 'styled-components';
+import { get, ref as refDb } from 'firebase/database';
 import Photos from './Photos';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -14,6 +15,7 @@ import { normalizeLastAction } from 'utils/normalizeLastAction';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
 import { FaTimes } from 'react-icons/fa';
+import { database } from './config';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -272,9 +274,10 @@ export const ProfileForm = ({
   deletedOverlayFields = [],
   isAdmin = false,
   overlayFieldAdditions = {},
-  overlayDebugData = {},
-  overlayDebugError = '',
 }) => {
+  const HARDCODED_OVERLAY_CSECTION_PATH =
+    'multiData/edits/AA0104/UsPFb2CJrOfdp96ETskSB15QMxR2/csection';
+
   const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
@@ -375,66 +378,27 @@ export const ProfileForm = ({
 
   const getOverlayEntriesForField = fieldName => overlayFieldAdditions[fieldName] || [];
 
-  const buildOverlayDebugFallback = () => {
-    const cardUserId = state?.userId || '';
-    const expectedCardPath = cardUserId
-      ? `multiData/edits/${cardUserId}`
-      : 'multiData/edits/<cardUserId>';
-    const expectedEditorPath = cardUserId
-      ? `multiData/edits/${cardUserId}/<editorUserId>`
-      : 'multiData/edits/<cardUserId>/<editorUserId>';
+  const handleOverlayDebugAlert = async () => {
+    try {
+      const csectionSnapshot = await get(refDb(database, HARDCODED_OVERLAY_CSECTION_PATH));
+      const csectionValue = csectionSnapshot.exists() ? csectionSnapshot.val() : null;
 
-    const rawData = overlayDebugData;
-    const overlayEntries = Object.entries(rawData || {});
-
-    return {
-      message: 'Overlay даних не знайдено. Дерево перевірки:',
-      expectedTree: {
-        root: 'multiData',
-        branch: 'edits',
-        card: cardUserId || '<cardUserId>',
-        editor: '<editorUserId>',
-        nodeShape: {
-          fields: '{ поле: { from, to } | { added, removed } }',
-          updatedAt: '<timestamp>',
-          cardUserId: cardUserId || '<cardUserId>',
-          editorUserId: '<editorUserId>',
-        },
-      },
-      whereStopped: {
-        expectedCardPath,
-        expectedEditorPath,
-        hasOverlayDebugError: Boolean(overlayDebugError),
-        overlayDebugDataType: rawData === null ? 'null' : typeof rawData,
-        overlayEditorNodesFound: overlayEntries.length,
-        overlayEditorIds: overlayEntries.map(([editorId]) => editorId),
-        note:
-          'Overlay створюється лише коли НЕ-адмін зберігає зміни. Якщо зміни вносив адмін, вузол overlay може бути порожній.',
-      },
-      rawOverlayDebugData: rawData || {},
-    };
-  };
-
-  const handleOverlayDebugAlert = () => {
-    if (overlayDebugError) {
-      window.alert(overlayDebugError);
-      return;
+      window.alert(
+        JSON.stringify(
+          {
+            path: HARDCODED_OVERLAY_CSECTION_PATH,
+            exists: csectionSnapshot.exists(),
+            value: csectionValue,
+          },
+          null,
+          2
+        )
+      );
+    } catch (error) {
+      window.alert(
+        `Не вдалося прочитати ${HARDCODED_OVERLAY_CSECTION_PATH}: ${error?.message || error}`
+      );
     }
-
-    const entries = Object.entries(overlayDebugData || {});
-
-    if (!entries.length) {
-      window.alert(JSON.stringify(buildOverlayDebugFallback(), null, 2));
-      return;
-    }
-
-    const printable = entries.map(([editorUserId, overlay]) => ({
-      editorUserId,
-      fields: overlay?.fields || {},
-      updatedAt: overlay?.updatedAt || null,
-    }));
-
-    window.alert(JSON.stringify(printable, null, 2));
   };
 
   const sortedFieldsToRender = [
