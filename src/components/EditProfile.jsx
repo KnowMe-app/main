@@ -419,6 +419,7 @@ const EditProfile = () => {
 
   const overlayFieldAdditions = useMemo(() => {
     const result = {};
+    const isEmptyOverlayValue = value => value === null || value === undefined || String(value).trim() === '';
 
     Object.entries(pendingOverlays || {}).forEach(([editorUserId, overlay]) => {
       Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
@@ -432,6 +433,14 @@ const EditProfile = () => {
 
         if (Object.prototype.hasOwnProperty.call(change || {}, 'to')) {
           candidates.push(change.to);
+
+          if (
+            isEmptyOverlayValue(change.to) &&
+            Object.prototype.hasOwnProperty.call(change || {}, 'from') &&
+            !isEmptyOverlayValue(change.from)
+          ) {
+            candidates.push(change.from);
+          }
         }
 
         candidates
