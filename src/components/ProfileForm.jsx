@@ -12,6 +12,7 @@ import {
   formatDateAndFormula,
 } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import { patchOverlayField } from 'utils/multiAccountEdits';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
 import { FaTimes } from 'react-icons/fa';
@@ -295,6 +296,7 @@ export const ProfileForm = ({
   const [customField, setCustomField] = useState({ key: '', value: '' });
   const [collection, setCollection] = useState('newUsers');
   const [autoOverlayFieldAdditions, setAutoOverlayFieldAdditions] = useState({});
+  const [dismissedOverlayEntries, setDismissedOverlayEntries] = useState({});
 
   useEffect(() => {
     if (!dataSource || dataSource === 'loading') return;
@@ -388,6 +390,11 @@ export const ProfileForm = ({
     : fieldsToRender;
 
 
+  const getOverlayEntrySignature = entry => {
+    const value = sanitizeOverlayValue(entry?.value);
+    return `${value}::${entry?.editorUserId || ''}::${entry?.isDeleted ? '1' : '0'}`;
+  };
+
   const getOverlayEntriesForField = fieldName => {
     const mergedEntries = [
       ...(overlayFieldAdditions[fieldName] || []),
@@ -395,12 +402,63 @@ export const ProfileForm = ({
     ];
 
     return mergedEntries.filter((entry, idx, arr) => {
-      const signature = `${entry?.value || ''}::${entry?.editorUserId || ''}::${entry?.isDeleted ? '1' : '0'}`;
+      const signature = getOverlayEntrySignature(entry);
+      if ((dismissedOverlayEntries[fieldName] || []).includes(signature)) {
+        return false;
+      }
+
       return arr.findIndex(candidate => {
-        const candidateSignature = `${candidate?.value || ''}::${candidate?.editorUserId || ''}::${candidate?.isDeleted ? '1' : '0'}`;
+        const candidateSignature = getOverlayEntrySignature(candidate);
         return candidateSignature === signature;
       }) === idx;
     });
+  };
+
+  const dismissOverlayEntry = useCallback((fieldName, entry) => {
+    const signature = getOverlayEntrySignature(entry);
+
+    setDismissedOverlayEntries(prev => {
+      const fieldEntries = prev[fieldName] || [];
+      if (fieldEntries.includes(signature)) return prev;
+      return { ...prev, [fieldName]: [...fieldEntries, signature] };
+    });
+
+    setAutoOverlayFieldAdditions(prev => {
+      if (!prev[fieldName]) return prev;
+      const nextEntries = prev[fieldName].filter(candidate => getOverlayEntrySignature(candidate) !== signature);
+      if (nextEntries.length === prev[fieldName].length) return prev;
+      if (!nextEntries.length) {
+        const { [fieldName]: _omit, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [fieldName]: nextEntries };
+    });
+  }, []);
+
+  const removeOverlayEntryFromBackend = useCallback(async (fieldName, entry) => {
+    if (!fieldName || !entry?.editorUserId || !state?.userId) return;
+
+    try {
+      await patchOverlayField({
+        editorUserId: entry.editorUserId,
+        cardUserId: state.userId,
+        fieldName,
+        change: null,
+      });
+    } catch {
+      toast.error('Не вдалося видалити оверлей-поле');
+    }
+  }, [state?.userId]);
+
+  const handleOverlayDismiss = async (fieldName, entry) => {
+    dismissOverlayEntry(fieldName, entry);
+    await removeOverlayEntryFromBackend(fieldName, entry);
+  };
+
+  const handleOverlayApply = async (fieldName, entry) => {
+    adoptOverlayValue(fieldName, entry?.value);
+    dismissOverlayEntry(fieldName, entry);
+    await removeOverlayEntryFromBackend(fieldName, entry);
   };
 
   const mergeOverlayValueIntoState = (prevState, fieldName, value) => {
@@ -781,31 +839,6 @@ ${entries.join('\n')}`;
               </InputDiv>
             )}
 
-            {overlayEntries.map((entry, idx) => (
-              <InputDiv
-                key={`overlay-${field.name}-${idx}`}
-                $isOverlaySuggestion
-                $isDeletedOverlay={entry.isDeleted}
-              >
-                <InputFieldContainer fieldName={field.name} value={entry.value}>
-                  <InputField
-                    fieldName={field.name}
-                    name={`overlay-${field.name}-${idx}`}
-                    value={entry.value}
-                    readOnly
-                    $isOverlaySuggestion
-                    $isDeletedOverlay={entry.isDeleted}
-                    onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
-                    onBlur={() => adoptOverlayValue(field.name, entry.value)}
-                  />
-                </InputFieldContainer>
-                <Hint fieldName={field.name} isActive={entry.value}>
-                  {field.ukrainian || field.placeholder}
-                </Hint>
-                <Placeholder isActive={entry.value}>{field.ukrainianHint}</Placeholder>
-              </InputDiv>
-            ))}
-
             {field.name !== 'lastAction' &&
               state[field.name] &&
               (Array.isArray(state[field.name])
@@ -951,6 +984,40 @@ ${entries.join('\n')}`;
                 </ButtonGroup>
               ) : null
             ) : null}
+
+            {overlayEntries.map((entry, idx) => (
+              <InputDiv
+                key={`overlay-${field.name}-${idx}`}
+                $isOverlaySuggestion
+                $isDeletedOverlay={entry.isDeleted}
+              >
+                <InputFieldContainer fieldName={field.name} value={entry.value}>
+                  <InputField
+                    fieldName={field.name}
+                    name={`overlay-${field.name}-${idx}`}
+                    value={entry.value}
+                    readOnly
+                    $isOverlaySuggestion
+                    $isDeletedOverlay={entry.isDeleted}
+                    onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                  />
+                  <ClearButton
+                    type="button"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => handleOverlayDismiss(field.name, entry)}
+                  >
+                    &times;
+                  </ClearButton>
+                </InputFieldContainer>
+                <Button type="button" onClick={() => handleOverlayApply(field.name, entry)}>
+                  ОК
+                </Button>
+                <Hint fieldName={field.name} isActive={entry.value}>
+                  {field.ukrainian || field.placeholder}
+                </Hint>
+                <Placeholder isActive={entry.value}>{field.ukrainianHint}</Placeholder>
+              </InputDiv>
+            ))}
           </PickerContainer>
         );
         })}
