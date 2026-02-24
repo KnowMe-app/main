@@ -623,6 +623,10 @@ export const ProfileForm = ({
                     $isOverlaySuggestion
                   />
                 </InputFieldContainer>
+                <Hint fieldName={field.name} isActive={entry.value}>
+                  {field.ukrainian || field.placeholder}
+                </Hint>
+                <Placeholder isActive={entry.value}>{field.ukrainianHint}</Placeholder>
                 <OverlayMeta>з overlay: {entry.editorUserId}</OverlayMeta>
               </InputDiv>
             ))}
