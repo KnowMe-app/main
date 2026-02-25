@@ -89,6 +89,19 @@ const sanitizeOverlayValue = value => {
 
 const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
 const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction']);
+const resolveOverlayIncomingValue = change => {
+  if (!change || typeof change !== 'object') return undefined;
+
+  if (Object.prototype.hasOwnProperty.call(change, 'to')) {
+    return change.to;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(change, 'add')) {
+    return change.add;
+  }
+
+  return undefined;
+};
 
 // Рекурсивне відображення всіх полів користувача, включно з вкладеними об'єктами та масивами
 export const renderAllFields = (data, parentKey = '', options = {}) => {
@@ -522,19 +535,21 @@ export const ProfileForm = ({
             if (!change || typeof change !== 'object') return;
 
             const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
+            const hasAdd = Object.prototype.hasOwnProperty.call(change, 'add');
             const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
-            const normalizedTo = sanitizeOverlayValue(change?.to);
+            const incomingValue = resolveOverlayIncomingValue(change);
+            const normalizedTo = sanitizeOverlayValue(incomingValue);
             const normalizedFrom = sanitizeOverlayValue(change?.from);
             const fieldEntries = fieldMap[fieldName] || [];
 
-            if (hasTo && !isEmptyOverlayValue(change?.to)) {
+            if ((hasTo || hasAdd) && !isEmptyOverlayValue(incomingValue)) {
               if (!fieldEntries.some(entry => entry.value === normalizedTo && entry.editorUserId === editorUserId)) {
                 fieldMap[fieldName] = [...fieldEntries, { value: normalizedTo, editorUserId, isDeleted: false }];
               }
               return;
             }
 
-            if (hasTo && hasFrom && !isEmptyOverlayValue(change?.from)) {
+            if ((hasTo || hasAdd) && hasFrom && !isEmptyOverlayValue(change?.from)) {
               if (!fieldEntries.some(entry => entry.value === normalizedFrom && entry.editorUserId === editorUserId)) {
                 fieldMap[fieldName] = [...fieldEntries, { value: normalizedFrom, editorUserId, isDeleted: true }];
               }
@@ -610,16 +625,18 @@ export const ProfileForm = ({
               if (!change || typeof change !== 'object') return;
 
               const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
+              const hasAdd = Object.prototype.hasOwnProperty.call(change, 'add');
               const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
-              const normalizedTo = sanitizeOverlayValue(change?.to);
+              const incomingValue = resolveOverlayIncomingValue(change);
+              const normalizedTo = sanitizeOverlayValue(incomingValue);
               const normalizedFrom = sanitizeOverlayValue(change?.from);
 
-              if (hasTo && !isEmptyOverlayValue(change?.to)) {
+              if ((hasTo || hasAdd) && !isEmptyOverlayValue(incomingValue)) {
                 acc.push(`${fieldName}:${normalizedTo}`);
                 return;
               }
 
-              if (hasTo && hasFrom && !isEmptyOverlayValue(change?.from)) {
+              if ((hasTo || hasAdd) && hasFrom && !isEmptyOverlayValue(change?.from)) {
                 acc.push(`${fieldName}:${normalizedFrom}`);
               }
             });
