@@ -16,7 +16,7 @@ import { patchOverlayField } from 'utils/multiAccountEdits';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
 import { FaTimes } from 'react-icons/fa';
-import { database } from './config';
+import { auth, database } from './config';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -105,6 +105,43 @@ const resolveOverlayIncomingValue = change => {
   }
 
   return undefined;
+};
+
+const formatOverlayDebugValue = value => {
+  if (Array.isArray(value)) {
+    const normalizedItems = value
+      .map(item => sanitizeOverlayValue(item))
+      .filter(item => item !== '');
+
+    return normalizedItems.length ? `[${normalizedItems.join(', ')}]` : '—';
+  }
+
+  const normalizedValue = sanitizeOverlayValue(value);
+  return normalizedValue === '' ? '—' : normalizedValue;
+};
+
+const describeOverlayChange = change => {
+  if (!change || typeof change !== 'object') {
+    return null;
+  }
+
+  const fromText = formatOverlayDebugValue(change.from);
+  const toRaw = resolveOverlayIncomingValue(change);
+  const toText = formatOverlayDebugValue(toRaw);
+  const hasIncomingValue =
+    Object.prototype.hasOwnProperty.call(change, 'to') ||
+    Object.prototype.hasOwnProperty.call(change, 'add') ||
+    Object.prototype.hasOwnProperty.call(change, 'added');
+
+  if (hasIncomingValue) {
+    return `${fromText} → ${toText}`;
+  }
+
+  if (Array.isArray(change?.removed) && change.removed.length > 0) {
+    return `${formatOverlayDebugValue(change.removed)} → —`;
+  }
+
+  return null;
 };
 
 // Рекурсивне відображення всіх полів користувача, включно з вкладеними об'єктами та масивами
@@ -622,9 +659,16 @@ export const ProfileForm = ({
 
   const handleOverlayDebugAlert = async () => {
     const paths = buildOverlayPaths(state?.userId);
+    const currentEditorId = auth.currentUser?.uid;
+    const shouldShowOwnEditorOnly = !isAdmin;
 
     if (!paths.length) {
       window.alert('Немає userId, не можу побудувати маршрут до overlay полів.');
+      return;
+    }
+
+    if (shouldShowOwnEditorOnly && !currentEditorId) {
+      window.alert('Не вдалося визначити поточного редактора (uid).');
       return;
     }
 
@@ -634,30 +678,26 @@ export const ProfileForm = ({
           const snapshot = await get(refDb(database, path));
           const rawValue = snapshot.exists() ? snapshot.val() : null;
 
-          const fieldEntries = Object.entries(rawValue || {}).reduce((acc, [, overlay]) => {
+          const fieldEntries = Object.entries(rawValue || {}).reduce((acc, [editorUserId, overlay]) => {
+            if (shouldShowOwnEditorOnly && editorUserId !== currentEditorId) {
+              return acc;
+            }
+
             const allFields = overlay?.fields || {};
 
             Object.entries(allFields).forEach(([fieldName, change]) => {
               if (technicalOverlayFields.has(fieldName)) return;
               if (!change || typeof change !== 'object') return;
 
-              const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
-              const hasAdd = Object.prototype.hasOwnProperty.call(change, 'add');
-              const hasAdded = Object.prototype.hasOwnProperty.call(change, 'added');
-              const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
-              const incomingValue = resolveOverlayIncomingValue(change);
-              const normalizedTo = sanitizeOverlayValue(incomingValue);
-              const normalizedFrom = sanitizeOverlayValue(change?.from);
-              const hasIncomingValue = hasTo || hasAdded || hasAdd;
+              const changeDescription = describeOverlayChange(change);
+              if (!changeDescription) return;
 
-              if (hasIncomingValue && !isEmptyOverlayValue(incomingValue)) {
-                acc.push(`${fieldName}:${normalizedTo}`);
+              if (shouldShowOwnEditorOnly) {
+                acc.push(`${fieldName}: ${changeDescription}`);
                 return;
               }
 
-              if (hasIncomingValue && hasFrom && !isEmptyOverlayValue(change?.from)) {
-                acc.push(`${fieldName}:${normalizedFrom}`);
-              }
+              acc.push(`${fieldName}:${formatOverlayDebugValue(resolveOverlayIncomingValue(change))}`);
             });
 
             return acc;
@@ -675,11 +715,11 @@ export const ProfileForm = ({
         .map(result => {
           const entries = Array.from(new Set(result.fieldEntries || []));
           if (!entries.length) {
-            return `${result.path}
+            return `${result.path}${shouldShowOwnEditorOnly ? `/${currentEditorId}` : ''}
 (немає очищених значень)`;
           }
 
-          return `${result.path}
+          return `${result.path}${shouldShowOwnEditorOnly ? `/${currentEditorId}` : ''}
 ${entries.join('\n')}`;
         })
         .join('\n\n---\n\n');
@@ -1096,7 +1136,7 @@ ${entries.join('\n')}`;
         </CollectionToggle>
         <Photos state={state} setState={setState} collection={collection} />
       </PhotosBlock>
-      {canManageAccessLevel && (
+      {(canManageAccessLevel || !isAdmin) && (
         <OverlayDebugButton type="button" onClick={handleOverlayDebugAlert}>
           Оверлей
         </OverlayDebugButton>
