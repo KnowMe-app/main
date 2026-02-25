@@ -54,12 +54,35 @@ export const renderTopBlock = (
   currentFilter,
   isDateInRange,
   onOpenMedications,
-  additionalActions = null
+  additionalActions = null,
+  overlayFieldAdditions = {}
 ) => {
   if (!userData) return null;
 
   const cardData = { ...userData, cycleStatus: getEffectiveCycleStatus(userData) };
   const region = normalizeRegion(cardData.region);
+
+  const renderOverlayEntries = fieldNames => {
+    const normalizedFieldNames = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
+    const entries = normalizedFieldNames.flatMap(fieldName =>
+      (overlayFieldAdditions?.[fieldName] || []).map(entry => ({ ...entry, fieldName }))
+    );
+
+    if (!entries.length) return null;
+
+    return entries.map((entry, idx) => (
+      <div
+        key={`${entry.fieldName}-${entry.editorUserId || 'unknown'}-${entry.value}-${idx}`}
+        style={{
+          color: entry.isDeleted ? '#e53935' : '#2e7d32',
+          fontSize: '12px',
+          lineHeight: 1.2,
+        }}
+      >
+        {entry.value}
+      </div>
+    ));
+  };
 
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
@@ -94,10 +117,12 @@ export const renderTopBlock = (
           <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} />
         )}
         <div>{fieldDeliveryInfo(setUsers, setState, cardData)}</div>
+        {renderOverlayEntries(['lastDelivery', 'ownKids'])}
         <div>
           {cardData.birth && `${cardData.birth} - `}
           {cardData.birth && fieldBirth(cardData.birth)}
         </div>
+        {renderOverlayEntries('birth')}
       </div>
       {/* <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div> */}
       <div>
@@ -121,6 +146,7 @@ export const renderTopBlock = (
             return nameParts.length > 0 ? `${nameParts.join(' ')}` : '';
           })()}
         </strong>
+        {renderOverlayEntries(['surname', 'name', 'fathersname'])}
         {/* {renderCsection(cardData.csection)}  */}
         <div style={{ whiteSpace: 'pre-wrap', display: 'flex', alignItems: 'center', gap: '2px', flexWrap: 'wrap' }}>
           {(() => {
@@ -134,7 +160,9 @@ export const renderTopBlock = (
             return parts.map((part, index) => <React.Fragment key={index}>{part}</React.Fragment>);
           })()}
         </div>
+        {renderOverlayEntries(['maritalStatus', 'blood', 'height', 'weight'])}
         {region && <div>{region}</div>}
+        {renderOverlayEntries('region')}
         <div
           style={{
             display: 'flex',
@@ -145,6 +173,7 @@ export const renderTopBlock = (
         >
           {fieldContacts(cardData)}
         </div>
+        {renderOverlayEntries(['phone', 'phone2', 'phone3', 'telegram', 'email', 'facebook', 'instagram', 'tiktok', 'vk'])}
       </div>
       {fieldWriter(cardData, setUsers, setState)}
       <FieldComment userData={cardData} setUsers={setUsers} setState={setState} />
