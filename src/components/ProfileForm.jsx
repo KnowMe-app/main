@@ -1345,7 +1345,9 @@ const ButtonGroup = styled.div`
 
 const Button = styled.button`
   width: 35px;
+  min-width: 35px;
   height: 35px;
+  min-height: 35px;
   padding: 3px;
   border: none;
   background-color: ${color.accent5};
@@ -1353,7 +1355,7 @@ const Button = styled.button`
   border-radius: 50px;
   cursor: pointer;
   font-size: 12px;
-  flex: 0 1 auto;
+  flex: 0 0 35px;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
   margin-right: 10px;
   &:hover {
