@@ -312,6 +312,10 @@ export const ProfileForm = ({
   const [dismissedOverlayEntries, setDismissedOverlayEntries] = useState({});
 
   useEffect(() => {
+    setDismissedOverlayEntries({});
+  }, [state?.userId, overlayFieldAdditions]);
+
+  useEffect(() => {
     if (!dataSource || dataSource === 'loading') return;
 
     toast.success(
