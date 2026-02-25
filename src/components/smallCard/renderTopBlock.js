@@ -54,41 +54,12 @@ export const renderTopBlock = (
   currentFilter,
   isDateInRange,
   onOpenMedications,
-  additionalActions = null,
-  overlayFieldAdditions = {}
+  additionalActions = null
 ) => {
   if (!userData) return null;
 
   const cardData = { ...userData, cycleStatus: getEffectiveCycleStatus(userData) };
   const region = normalizeRegion(cardData.region);
-  const topBlockOverlayFields = [
-    'lastAction',
-    'getInTouch',
-    'role',
-    'lastCycle',
-    'lastDelivery',
-    'birth',
-    'surname',
-    'name',
-    'fathersname',
-    'maritalStatus',
-    'blood',
-    'height',
-    'weight',
-    'region',
-    'city',
-    'phone',
-    'facebook',
-    'instagram',
-    'telegram',
-    'tiktok',
-    'email',
-    'writer',
-    'myComment',
-  ];
-  const hasTopBlockOverlayData = topBlockOverlayFields.some(
-    fieldName => Array.isArray(overlayFieldAdditions?.[fieldName]) && overlayFieldAdditions[fieldName].length > 0
-  );
 
   return (
     <div style={{ padding: '7px', position: 'relative' }}>
@@ -177,26 +148,6 @@ export const renderTopBlock = (
       </div>
       {fieldWriter(cardData, setUsers, setState)}
       <FieldComment userData={cardData} setUsers={setUsers} setState={setState} />
-      {hasTopBlockOverlayData && (
-        <div style={{ marginTop: '6px', fontSize: '12px', lineHeight: 1.4 }}>
-          {topBlockOverlayFields.map(fieldName => {
-            const entries = overlayFieldAdditions?.[fieldName] || [];
-            if (!entries.length) return null;
-
-            return (
-              <div key={`overlay-top-${fieldName}`}>
-                <strong>{fieldName}:</strong>{' '}
-                {entries.map((entry, index) => (
-                  <React.Fragment key={`${fieldName}-${entry.editorUserId || 'unknown'}-${entry.value}-${index}`}>
-                    {index > 0 && ', '}
-                    <span style={{ color: entry?.isDeleted ? '#e53935' : undefined }}>{entry?.value}</span>
-                  </React.Fragment>
-                ))}
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       <div
         onClick={async e => {
