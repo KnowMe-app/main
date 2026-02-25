@@ -152,6 +152,17 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   if (!cardUserId) return null;
 
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return null;
+
+  if (editorUserId) {
+    const directSnapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`));
+    if (directSnapshot.exists()) {
+      const normalized = normalizeEditorNode(directSnapshot.val(), normalizedCardId, editorUserId);
+      if (normalized) return normalized;
+    }
+  }
+
   const overlaysByEditor = await getOverlaysForCard(cardUserId);
   if (!Object.keys(overlaysByEditor).length) return null;
 

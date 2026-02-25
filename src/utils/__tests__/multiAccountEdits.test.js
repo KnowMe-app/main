@@ -65,6 +65,11 @@ describe('multiAccountEdits storage structure', () => {
 
   it('prefers selected editor overlay but falls back to first available', async () => {
     get.mockResolvedValueOnce({
+      exists: () => false,
+      val: () => null,
+    });
+
+    get.mockResolvedValueOnce({
       exists: () => true,
       val: () => ({
         editorA: { fields: { phone: { from: '', to: '+380' } } },
@@ -74,6 +79,11 @@ describe('multiAccountEdits storage structure', () => {
 
     const preferred = await getOverlayForUserCard({ editorUserId: 'editorB', cardUserId: 'card-1' });
     expect(preferred.editorUserId).toBe('editorB');
+
+    get.mockResolvedValueOnce({
+      exists: () => false,
+      val: () => null,
+    });
 
     get.mockResolvedValueOnce({
       exists: () => true,
