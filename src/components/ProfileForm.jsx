@@ -417,6 +417,8 @@ export const ProfileForm = ({
   };
 
   const getOverlayEntriesForField = fieldName => {
+    if (!isAdmin) return [];
+
     const mergedEntries = [
       ...(overlayFieldAdditions[fieldName] || []),
       ...(autoOverlayFieldAdditions[fieldName] || []),
@@ -589,6 +591,11 @@ export const ProfileForm = ({
     let isMounted = true;
 
     const loadOverlayFieldAdditions = async () => {
+      if (!isAdmin) {
+        if (isMounted) setAutoOverlayFieldAdditions({});
+        return;
+      }
+
       if (!state?.userId) {
         if (isMounted) setAutoOverlayFieldAdditions({});
         return;
@@ -611,7 +618,7 @@ export const ProfileForm = ({
     return () => {
       isMounted = false;
     };
-  }, [readOverlayFieldAdditions, state?.userId]);
+  }, [isAdmin, readOverlayFieldAdditions, state?.userId]);
 
   const handleOverlayDebugAlert = async () => {
     const paths = buildOverlayPaths(state?.userId);
