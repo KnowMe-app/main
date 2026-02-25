@@ -152,6 +152,13 @@ const EditProfile = () => {
       }
     }
 
+    if (!isAdmin) {
+      setPendingOverlays({});
+      setHighlightedFields([]);
+      setDeletedOverlayFields([]);
+      return;
+    }
+
     setPendingOverlays(visibleOverlays);
     setHighlightedFields(getOtherEditorsChangedFields(visibleOverlays));
 
