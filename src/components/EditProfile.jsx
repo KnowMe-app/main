@@ -88,7 +88,7 @@ const EditProfile = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [dataSource, setDataSource] = useState('');
-  const [isAdmin, setIsAdmin] = useState(auth.currentUser?.uid === process.env.REACT_APP_USER1);
+  const [isAdmin, setIsAdmin] = useState(isAdminUid(auth.currentUser?.uid));
   const [currentUid, setCurrentUid] = useState(auth.currentUser?.uid || '');
   const [pendingOverlays, setPendingOverlays] = useState({});
   const [overlayReadError, setOverlayReadError] = useState('');
@@ -136,21 +136,17 @@ const EditProfile = () => {
       return false;
     };
 
-    const visibleOverlays = isAdmin
-      ? overlays
-      : Object.fromEntries(Object.entries(overlays || {}).filter(([editorId]) => editorId === currentUid));
-
-    if (!isAdmin && currentUid) {
-      const ownOverlay = visibleOverlays[currentUid];
-      if (ownOverlay?.fields) {
-        const mergedForEditor = applyOverlayToCard(canonical, ownOverlay.fields);
-        setState({
-          ...mergedForEditor,
-          lastAction: normalizeLastAction(mergedForEditor.lastAction),
-          lastDelivery: formatDateToDisplay(mergedForEditor.lastDelivery),
-        });
-      }
+    const ownOverlay = currentUid ? overlays?.[currentUid] : null;
+    if (ownOverlay?.fields) {
+      const mergedForEditor = applyOverlayToCard(canonical, ownOverlay.fields);
+      setState({
+        ...mergedForEditor,
+        lastAction: normalizeLastAction(mergedForEditor.lastAction),
+        lastDelivery: formatDateToDisplay(mergedForEditor.lastDelivery),
+      });
     }
+
+    const visibleOverlays = overlays;
 
     if (!isAdmin) {
       setPendingOverlays({});
