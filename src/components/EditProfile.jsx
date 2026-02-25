@@ -28,6 +28,7 @@ import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import {
   acceptOverlayForUserCard,
+  applyOverlayToCard,
   buildOverlayFromDraft,
   getCanonicalCard,
   getOtherEditorsChangedFields,
@@ -138,6 +139,18 @@ const EditProfile = () => {
     const visibleOverlays = isAdmin
       ? overlays
       : Object.fromEntries(Object.entries(overlays || {}).filter(([editorId]) => editorId === currentUid));
+
+    if (!isAdmin && currentUid) {
+      const ownOverlay = visibleOverlays[currentUid];
+      if (ownOverlay?.fields) {
+        const mergedForEditor = applyOverlayToCard(canonical, ownOverlay.fields);
+        setState({
+          ...mergedForEditor,
+          lastAction: normalizeLastAction(mergedForEditor.lastAction),
+          lastDelivery: formatDateToDisplay(mergedForEditor.lastDelivery),
+        });
+      }
+    }
 
     setPendingOverlays(visibleOverlays);
     setHighlightedFields(getOtherEditorsChangedFields(visibleOverlays));
