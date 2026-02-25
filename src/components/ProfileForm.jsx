@@ -144,6 +144,17 @@ const describeOverlayChange = change => {
   return null;
 };
 
+const normalizeOverlayComparableValue = value => sanitizeOverlayValue(value);
+
+const normalizeOverlayReplacementValue = value => {
+  if (Array.isArray(value)) {
+    return value.map(item => (item === null || item === undefined ? '' : String(item).trim())).filter(Boolean);
+  }
+
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+};
+
 // Рекурсивне відображення всіх полів користувача, включно з вкладеними об'єктами та масивами
 export const renderAllFields = (data, parentKey = '', options = {}) => {
   if (!data || typeof data !== 'object') {
@@ -674,6 +685,9 @@ export const ProfileForm = ({
     }
 
     try {
+      let editorOverlayApplied = false;
+      const editorOverlayReplacements = {};
+
       const debugResults = await Promise.all(
         paths.map(async path => {
           const snapshot = await get(refDb(database, path));
@@ -689,6 +703,19 @@ export const ProfileForm = ({
             Object.entries(allFields).forEach(([fieldName, change]) => {
               if (technicalOverlayFields.has(fieldName)) return;
               if (!change || typeof change !== 'object') return;
+
+              if (shouldShowOwnEditorOnly) {
+                const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
+                const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
+
+                if (hasFrom && hasTo) {
+                  const currentStateValue = normalizeOverlayComparableValue(state?.[fieldName]);
+                  const fromValue = normalizeOverlayComparableValue(change.from);
+                  if (currentStateValue === fromValue) {
+                    editorOverlayReplacements[fieldName] = normalizeOverlayReplacementValue(change.to);
+                  }
+                }
+              }
 
               const changeDescription = describeOverlayChange(change);
               if (!changeDescription) return;
@@ -712,6 +739,21 @@ export const ProfileForm = ({
         })
       );
 
+      if (shouldShowOwnEditorOnly && Object.keys(editorOverlayReplacements).length > 0) {
+        setState(prevState => {
+          const nextState = { ...prevState, ...editorOverlayReplacements };
+          const changed = Object.keys(editorOverlayReplacements).some(
+            fieldName => prevState[fieldName] !== nextState[fieldName]
+          );
+
+          if (!changed) return prevState;
+
+          editorOverlayApplied = true;
+          submitWithNormalization(nextState, 'overwrite');
+          return nextState;
+        });
+      }
+
       const message = debugResults
         .map(result => {
           const entries = Array.from(new Set(result.fieldEntries || []));
@@ -724,6 +766,11 @@ export const ProfileForm = ({
 ${entries.join('\n')}`;
         })
         .join('\n\n---\n\n');
+
+      if (editorOverlayApplied) {
+        window.alert(`${message}\n\n✅ Дані оверлею застосовано до інпутів.`);
+        return;
+      }
 
       window.alert(message);
 
