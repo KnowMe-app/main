@@ -73,6 +73,10 @@ const resolveOverlayIncomingValue = change => {
     return change.to;
   }
 
+  if (Object.prototype.hasOwnProperty.call(change, 'added')) {
+    return change.added;
+  }
+
   if (Object.prototype.hasOwnProperty.call(change, 'add')) {
     return change.add;
   }
@@ -477,20 +481,22 @@ const EditProfile = () => {
 
         const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
         const hasAdd = Object.prototype.hasOwnProperty.call(change, 'add');
+        const hasAdded = Object.prototype.hasOwnProperty.call(change, 'added');
         const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
         const incomingValue = resolveOverlayIncomingValue(change);
         const normalizedTo = sanitizeOverlayValue(incomingValue);
         const normalizedFrom = sanitizeOverlayValue(change?.from);
         const fieldEntries = result[fieldName] || [];
+        const hasIncomingValue = hasTo || hasAdded || hasAdd;
 
-        if ((hasTo || hasAdd) && !isEmptyOverlayValue(incomingValue)) {
+        if (hasIncomingValue && !isEmptyOverlayValue(incomingValue)) {
           if (!fieldEntries.some(entry => entry.value === normalizedTo && entry.editorUserId === editorUserId)) {
             result[fieldName] = [...fieldEntries, { value: normalizedTo, editorUserId, isDeleted: false }];
           }
           return;
         }
 
-        if ((hasTo || hasAdd) && hasFrom && !isEmptyOverlayValue(change?.from)) {
+        if (hasIncomingValue && hasFrom && !isEmptyOverlayValue(change?.from)) {
           if (!fieldEntries.some(entry => entry.value === normalizedFrom && entry.editorUserId === editorUserId)) {
             result[fieldName] = [...fieldEntries, { value: normalizedFrom, editorUserId, isDeleted: true }];
           }
