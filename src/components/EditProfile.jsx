@@ -485,8 +485,6 @@ const EditProfile = () => {
           undefined,
           undefined,
           handleOpenMedications,
-          undefined,
-          overlayFieldAdditions,
         )}
       </div>
       {shouldShowSchedule && state && (
