@@ -31,7 +31,6 @@ import {
   applyOverlayToCard,
   buildOverlayFromDraft,
   getCanonicalCard,
-  getOverlayForUserCard,
   getOtherEditorsChangedFields,
   getOverlaysForCard,
   saveOverlayForUserCard,
@@ -85,6 +84,26 @@ const resolveOverlayIncomingValue = change => {
   return undefined;
 };
 
+const normalizeEditorOverlayFields = fields => {
+  if (!fields || typeof fields !== 'object') return {};
+
+  return Object.entries(fields).reduce((acc, [fieldName, change]) => {
+    if (!change || typeof change !== 'object') return acc;
+
+    if (Object.prototype.hasOwnProperty.call(change, 'add') && !Object.prototype.hasOwnProperty.call(change, 'added')) {
+      acc[fieldName] = {
+        ...change,
+        added: change.add,
+      };
+      delete acc[fieldName].add;
+      return acc;
+    }
+
+    acc[fieldName] = change;
+    return acc;
+  }, {});
+};
+
 const EditProfile = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
@@ -114,10 +133,8 @@ const EditProfile = () => {
       if (isAdmin) {
         overlays = await getOverlaysForCard(userId);
       } else if (currentUid) {
-        const ownOverlay = await getOverlayForUserCard({
-          editorUserId: currentUid,
-          cardUserId: userId,
-        });
+        const overlaysByEditors = await getOverlaysForCard(userId);
+        const ownOverlay = overlaysByEditors?.[currentUid] || null;
         overlays = ownOverlay ? { [currentUid]: ownOverlay } : {};
       }
 
@@ -151,7 +168,8 @@ const EditProfile = () => {
 
     const ownOverlay = currentUid ? overlays?.[currentUid] : null;
     if (ownOverlay?.fields) {
-      const mergedForEditor = applyOverlayToCard(canonical, ownOverlay.fields);
+      const normalizedOwnFields = normalizeEditorOverlayFields(ownOverlay.fields);
+      const mergedForEditor = applyOverlayToCard(canonical, normalizedOwnFields);
       setState({
         ...mergedForEditor,
         lastAction: normalizeLastAction(mergedForEditor.lastAction),
