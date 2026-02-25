@@ -220,7 +220,7 @@ const Button = styled.button`
   border-radius: 50px;
   cursor: pointer;
   font-size: 12px;
-  flex: 0 1 auto;
+  flex: 0 0 35px;
   display: flex;
   align-items: center;
   justify-content: center;
