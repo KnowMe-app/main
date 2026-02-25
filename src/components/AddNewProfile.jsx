@@ -375,7 +375,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         cardUserId: syncedState.userId,
         fields: overlayFields,
       });
-      toast.success('Правку збережено та відправлено на погодження адміну');
       return;
     }
 
