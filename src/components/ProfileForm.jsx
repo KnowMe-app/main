@@ -343,6 +343,7 @@ export const ProfileForm = ({
   deletedOverlayFields = [],
   isAdmin = false,
   overlayFieldAdditions = {},
+  refreshOverlayForEditor,
 }) => {
   const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
@@ -725,6 +726,10 @@ ${entries.join('\n')}`;
         .join('\n\n---\n\n');
 
       window.alert(message);
+
+      if (!isAdmin && typeof refreshOverlayForEditor === 'function') {
+        await refreshOverlayForEditor();
+      }
     } catch (error) {
       window.alert(
         `Не вдалося прочитати ${paths[0]}: ${error?.message || error}`

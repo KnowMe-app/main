@@ -584,6 +584,7 @@ const EditProfile = () => {
         deletedOverlayFields={deletedOverlayFields}
         isAdmin={isAdmin}
         overlayFieldAdditions={overlayFieldAdditions}
+        refreshOverlayForEditor={refreshOverlays}
         overlayDebugData={pendingOverlays}
         overlayDebugError={overlayReadError}
       />
