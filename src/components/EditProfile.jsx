@@ -31,6 +31,7 @@ import {
   applyOverlayToCard,
   buildOverlayFromDraft,
   getCanonicalCard,
+  getOverlayForUserCard,
   getOtherEditorsChangedFields,
   getOverlaysForCard,
   saveOverlayForUserCard,
@@ -108,10 +109,18 @@ const EditProfile = () => {
     let canonical = {};
 
     try {
-      [overlays, canonical] = await Promise.all([
-        getOverlaysForCard(userId),
-        getCanonicalCard(userId),
-      ]);
+      canonical = await getCanonicalCard(userId);
+
+      if (isAdmin) {
+        overlays = await getOverlaysForCard(userId);
+      } else if (currentUid) {
+        const ownOverlay = await getOverlayForUserCard({
+          editorUserId: currentUid,
+          cardUserId: userId,
+        });
+        overlays = ownOverlay ? { [currentUid]: ownOverlay } : {};
+      }
+
       setOverlayReadError('');
     } catch (error) {
       const message =
