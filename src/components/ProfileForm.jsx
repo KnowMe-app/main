@@ -155,6 +155,33 @@ const normalizeOverlayReplacementValue = value => {
   return String(value).trim();
 };
 
+const mergeOverlayAddedValues = (currentValue, addedValue) => {
+  const currentItems = Array.isArray(currentValue)
+    ? currentValue
+    : currentValue === undefined || currentValue === null || currentValue === ''
+      ? []
+      : [currentValue];
+
+  const incomingItems = Array.isArray(addedValue) ? addedValue : [addedValue];
+  const normalizedCurrent = currentItems
+    .map(item => (item === null || item === undefined ? '' : String(item).trim()))
+    .filter(Boolean);
+  const normalizedIncoming = incomingItems
+    .map(item => (item === null || item === undefined ? '' : String(item).trim()))
+    .filter(Boolean);
+
+  const merged = [...normalizedCurrent];
+  normalizedIncoming.forEach(item => {
+    if (!merged.includes(item)) {
+      merged.push(item);
+    }
+  });
+
+  if (!merged.length) return '';
+  if (merged.length === 1) return merged[0];
+  return merged;
+};
+
 // Рекурсивне відображення всіх полів користувача, включно з вкладеними об'єктами та масивами
 export const renderAllFields = (data, parentKey = '', options = {}) => {
   if (!data || typeof data !== 'object') {
@@ -603,6 +630,18 @@ export const ProfileForm = ({
 
             const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
             const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
+            const hasAdded = Object.prototype.hasOwnProperty.call(change, 'added');
+
+            if (hasAdded) {
+              const currentValue = Object.prototype.hasOwnProperty.call(replacements, fieldName)
+                ? replacements[fieldName]
+                : state?.[fieldName];
+              const mergedValue = mergeOverlayAddedValues(currentValue, change.added);
+              if (mergedValue !== '') {
+                replacements[fieldName] = mergedValue;
+              }
+              return;
+            }
 
             if (!hasFrom || !hasTo) return;
 
