@@ -363,6 +363,7 @@ export const ProfileForm = ({
   const [collection, setCollection] = useState('newUsers');
   const [autoOverlayFieldAdditions, setAutoOverlayFieldAdditions] = useState({});
   const [dismissedOverlayEntries, setDismissedOverlayEntries] = useState({});
+  const autoAppliedOverlayForUserRef = useRef('');
 
   useEffect(() => {
     setDismissedOverlayEntries({});
@@ -398,13 +399,13 @@ export const ProfileForm = ({
     return { ...draftState, getInTouch: normalized };
   };
 
-  const submitWithNormalization = (nextState, overwrite, delCondition) => {
+  const submitWithNormalization = useCallback((nextState, overwrite, delCondition) => {
     const payload =
       nextState && typeof nextState === 'object'
         ? normalizeGetInTouchForSubmit(nextState)
         : nextState;
     handleSubmit(payload, overwrite, delCondition);
-  };
+  }, [handleSubmit]);
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
@@ -576,6 +577,74 @@ export const ProfileForm = ({
     return [`multiData/edits/${normalizedCardId}`];
   };
 
+  const collectEditorOverlayReplacements = useCallback(async () => {
+    const paths = buildOverlayPaths(state?.userId);
+    const currentEditorId = auth.currentUser?.uid;
+
+    if (!paths.length || !currentEditorId) {
+      return {};
+    }
+
+    const replacements = {};
+
+    await Promise.all(
+      paths.map(async path => {
+        const snapshot = await get(refDb(database, path));
+        const rawValue = snapshot.exists() ? snapshot.val() : null;
+
+        Object.entries(rawValue || {}).forEach(([editorUserId, overlay]) => {
+          if (editorUserId !== currentEditorId) return;
+
+          const allFields = overlay?.fields || {};
+
+          Object.entries(allFields).forEach(([fieldName, change]) => {
+            if (technicalOverlayFields.has(fieldName)) return;
+            if (!change || typeof change !== 'object') return;
+
+            const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
+            const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
+
+            if (!hasFrom || !hasTo) return;
+
+            const currentStateValue = normalizeOverlayComparableValue(state?.[fieldName]);
+            const fromValue = normalizeOverlayComparableValue(change.from);
+            if (currentStateValue !== fromValue) return;
+
+            replacements[fieldName] = normalizeOverlayReplacementValue(change.to);
+          });
+        });
+      })
+    );
+
+    return replacements;
+  }, [state]);
+
+  const applyEditorOverlayReplacements = useCallback(
+    editorOverlayReplacements => {
+      if (!editorOverlayReplacements || Object.keys(editorOverlayReplacements).length === 0) {
+        return false;
+      }
+
+      let applied = false;
+
+      setState(prevState => {
+        const nextState = { ...prevState, ...editorOverlayReplacements };
+        const changed = Object.keys(editorOverlayReplacements).some(
+          fieldName => prevState[fieldName] !== nextState[fieldName]
+        );
+
+        if (!changed) return prevState;
+
+        applied = true;
+        submitWithNormalization(nextState, 'overwrite');
+        return nextState;
+      });
+
+      return applied;
+    },
+    [setState, submitWithNormalization]
+  );
+
   const readOverlayFieldAdditions = useCallback(async cardUserId => {
     const paths = buildOverlayPaths(cardUserId);
     if (!paths.length) return { paths: [], result: {} };
@@ -669,6 +738,34 @@ export const ProfileForm = ({
     };
   }, [isAdmin, readOverlayFieldAdditions, state?.userId]);
 
+  useEffect(() => {
+    if (isAdmin) return;
+    if (!state?.userId) return;
+    if (autoAppliedOverlayForUserRef.current === state.userId) return;
+
+    let cancelled = false;
+
+    const applyOverlayOnMount = async () => {
+      try {
+        const replacements = await collectEditorOverlayReplacements();
+        if (cancelled) return;
+
+        applyEditorOverlayReplacements(replacements);
+        autoAppliedOverlayForUserRef.current = state.userId;
+      } catch {
+        if (!cancelled) {
+          autoAppliedOverlayForUserRef.current = state.userId;
+        }
+      }
+    };
+
+    applyOverlayOnMount();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyEditorOverlayReplacements, collectEditorOverlayReplacements, isAdmin, state?.userId]);
+
   const handleOverlayDebugAlert = async () => {
     const paths = buildOverlayPaths(state?.userId);
     const currentEditorId = auth.currentUser?.uid;
@@ -686,7 +783,7 @@ export const ProfileForm = ({
 
     try {
       let editorOverlayApplied = false;
-      const editorOverlayReplacements = {};
+      const editorOverlayReplacements = await collectEditorOverlayReplacements();
 
       const debugResults = await Promise.all(
         paths.map(async path => {
@@ -703,19 +800,6 @@ export const ProfileForm = ({
             Object.entries(allFields).forEach(([fieldName, change]) => {
               if (technicalOverlayFields.has(fieldName)) return;
               if (!change || typeof change !== 'object') return;
-
-              if (shouldShowOwnEditorOnly) {
-                const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
-                const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
-
-                if (hasFrom && hasTo) {
-                  const currentStateValue = normalizeOverlayComparableValue(state?.[fieldName]);
-                  const fromValue = normalizeOverlayComparableValue(change.from);
-                  if (currentStateValue === fromValue) {
-                    editorOverlayReplacements[fieldName] = normalizeOverlayReplacementValue(change.to);
-                  }
-                }
-              }
 
               const changeDescription = describeOverlayChange(change);
               if (!changeDescription) return;
@@ -739,19 +823,8 @@ export const ProfileForm = ({
         })
       );
 
-      if (shouldShowOwnEditorOnly && Object.keys(editorOverlayReplacements).length > 0) {
-        setState(prevState => {
-          const nextState = { ...prevState, ...editorOverlayReplacements };
-          const changed = Object.keys(editorOverlayReplacements).some(
-            fieldName => prevState[fieldName] !== nextState[fieldName]
-          );
-
-          if (!changed) return prevState;
-
-          editorOverlayApplied = true;
-          submitWithNormalization(nextState, 'overwrite');
-          return nextState;
-        });
+      if (shouldShowOwnEditorOnly) {
+        editorOverlayApplied = applyEditorOverlayReplacements(editorOverlayReplacements);
       }
 
       const message = debugResults
