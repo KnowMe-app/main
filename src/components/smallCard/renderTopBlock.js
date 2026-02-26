@@ -79,7 +79,7 @@ export const renderTopBlock = (
           lineHeight: 1.2,
         }}
       >
-        {entry.value}
+        <strong>{entry.fieldName}:</strong> {entry.value}
       </div>
     ));
   };
