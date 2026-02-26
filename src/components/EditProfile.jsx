@@ -52,6 +52,34 @@ const BackButton = styled.button`
   margin-bottom: 10px;
 `;
 
+const SkeletonCard = styled.div`
+  width: 100%;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 8px;
+  background: #f6f7fb;
+  border: 1px solid #e7e9f5;
+`;
+
+const SkeletonLine = styled.div`
+  height: ${props => props.height || 14}px;
+  width: ${props => props.width || '100%'};
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: linear-gradient(90deg, #eceef7 25%, #f7f8fc 50%, #eceef7 75%);
+  background-size: 200% 100%;
+  animation: skeletonPulse 1.2s ease-in-out infinite;
+
+  @keyframes skeletonPulse {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+`;
+
 const sanitizeOverlayValue = value => {
   if (Array.isArray(value)) {
     const normalized = value.map(item => sanitizeOverlayValue(item)).filter(item => item !== '');
@@ -119,10 +147,15 @@ const EditProfile = () => {
   const [highlightedFields, setHighlightedFields] = useState([]);
   const [deletedOverlayFields, setDeletedOverlayFields] = useState([]);
   const [focusedField, setFocusedField] = useState('');
+  const [isOverlayResolved, setIsOverlayResolved] = useState(isAdminUid(auth.currentUser?.uid));
 
 
   const refreshOverlays = useCallback(async () => {
     if (!userId) return;
+
+    if (!isAdmin && currentUid) {
+      setIsOverlayResolved(false);
+    }
 
     let overlays = {};
     let canonical = {};
@@ -149,6 +182,9 @@ const EditProfile = () => {
       setPendingOverlays({});
       setHighlightedFields([]);
       setDeletedOverlayFields([]);
+      if (!isAdmin) {
+        setIsOverlayResolved(true);
+      }
       return;
     }
 
@@ -183,6 +219,7 @@ const EditProfile = () => {
       setPendingOverlays({});
       setHighlightedFields([]);
       setDeletedOverlayFields([]);
+      setIsOverlayResolved(true);
       return;
     }
 
@@ -215,6 +252,7 @@ const EditProfile = () => {
     });
 
     setDeletedOverlayFields(Array.from(deletedFields));
+    setIsOverlayResolved(true);
   }, [userId, currentUid, isAdmin]);
 
   const handleOpenMedications = useCallback(
@@ -297,6 +335,7 @@ const EditProfile = () => {
     const unsubscribe = onAuthStateChanged(auth, user => {
       setCurrentUid(user?.uid || '');
       setIsAdmin(isAdminUid(user?.uid));
+      setIsOverlayResolved(isAdminUid(user?.uid));
     });
 
     return () => unsubscribe();
@@ -533,6 +572,8 @@ const EditProfile = () => {
 
   if (!state) return null;
 
+  const shouldShowNonAdminSkeleton = !isAdmin && isDataLoaded && currentUid && !isOverlayResolved;
+
   return (
     <Container>
       <BackButton onClick={() => navigate(-1)}>Back</BackButton>
@@ -571,23 +612,33 @@ const EditProfile = () => {
           />
         </div>
       )}
-      <ProfileForm
-        state={state}
-        setState={setState}
-        handleBlur={handleBlur}
-        handleSubmit={handleSubmit}
-        handleClear={handleClear}
-        handleDelKeyValue={handleDelKeyValue}
-        handleFieldFocus={handleFieldFocus}
-        dataSource={dataSource}
-        highlightedFields={highlightedFields}
-        deletedOverlayFields={deletedOverlayFields}
-        isAdmin={isAdmin}
-        overlayFieldAdditions={overlayFieldAdditions}
-        refreshOverlayForEditor={refreshOverlays}
-        overlayDebugData={pendingOverlays}
-        overlayDebugError={overlayReadError}
-      />
+      {shouldShowNonAdminSkeleton ? (
+        <SkeletonCard>
+          <SkeletonLine width="55%" height={18} />
+          <SkeletonLine width="100%" />
+          <SkeletonLine width="92%" />
+          <SkeletonLine width="75%" />
+          <SkeletonLine width="38%" height={34} />
+        </SkeletonCard>
+      ) : (
+        <ProfileForm
+          state={state}
+          setState={setState}
+          handleBlur={handleBlur}
+          handleSubmit={handleSubmit}
+          handleClear={handleClear}
+          handleDelKeyValue={handleDelKeyValue}
+          handleFieldFocus={handleFieldFocus}
+          dataSource={dataSource}
+          highlightedFields={highlightedFields}
+          deletedOverlayFields={deletedOverlayFields}
+          isAdmin={isAdmin}
+          overlayFieldAdditions={overlayFieldAdditions}
+          refreshOverlayForEditor={refreshOverlays}
+          overlayDebugData={pendingOverlays}
+          overlayDebugError={overlayReadError}
+        />
+      )}
 
       {isSyncing && <div>Syncing...</div>}
     </Container>
