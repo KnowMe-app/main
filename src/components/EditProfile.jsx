@@ -385,14 +385,10 @@ const EditProfile = () => {
   useEffect(() => {
     if (!userId) return;
     if (!isDataLoaded) return;
-    if (!currentUid) return;
+    if (!isAdmin && !currentUid) return;
 
     refreshOverlays();
-  }, [userId, refreshOverlays, currentUid, isDataLoaded]);
-
-  useEffect(() => {
-    refreshOverlays();
-  }, [refreshOverlays]);
+  }, [userId, refreshOverlays, currentUid, isDataLoaded, isAdmin]);
 
   const handleSubmit = async (newState, overwrite, delCondition) => {
     const now = Date.now();
@@ -582,7 +578,7 @@ const EditProfile = () => {
 
   if (!state) return null;
 
-  const shouldShowNonAdminSkeleton = !isAdmin && isDataLoaded && currentUid && !isOverlayResolved;
+  const shouldShowNonAdminSkeleton = !isAdmin && isDataLoaded && !isOverlayResolved;
 
   return (
     <Container>
