@@ -80,6 +80,16 @@ const SkeletonLine = styled.div`
   }
 `;
 
+const TopBlockSkeleton = () => (
+  <SkeletonCard>
+    <SkeletonLine width="30%" />
+    <SkeletonLine width="45%" />
+    <SkeletonLine width="82%" />
+    <SkeletonLine width="65%" />
+    <SkeletonLine width="40%" />
+  </SkeletonCard>
+);
+
 const sanitizeOverlayValue = value => {
   if (Array.isArray(value)) {
     const normalized = value.map(item => sanitizeOverlayValue(item)).filter(item => item !== '');
@@ -577,25 +587,29 @@ const EditProfile = () => {
   return (
     <Container>
       <BackButton onClick={() => navigate(-1)}>Back</BackButton>
-      <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-        {renderTopBlock(
-          state,
-          () => {},
-          () => {},
-          setState,
-          () => {},
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          handleOpenMedications,
-          undefined,
-          overlayFieldAdditions,
-        )}
-      </div>
+      {shouldShowNonAdminSkeleton ? (
+        <TopBlockSkeleton />
+      ) : (
+        <div style={{ ...coloredCard(), marginBottom: '8px' }}>
+          {renderTopBlock(
+            state,
+            () => {},
+            () => {},
+            setState,
+            () => {},
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            handleOpenMedications,
+            undefined,
+            overlayFieldAdditions,
+          )}
+        </div>
+      )}
       {shouldShowSchedule && state && (
         <div style={{ ...coloredCard(), marginBottom: '8px' }}>
           <StimulationSchedule
