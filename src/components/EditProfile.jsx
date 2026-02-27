@@ -213,15 +213,19 @@ const EditProfile = () => {
     };
 
     const ownOverlay = currentUid ? overlays?.[currentUid] : null;
-    if (ownOverlay?.fields) {
-      const normalizedOwnFields = normalizeEditorOverlayFields(ownOverlay.fields);
-      const mergedForEditor = applyOverlayToCard(canonical, normalizedOwnFields);
-      setState({
-        ...mergedForEditor,
-        lastAction: normalizeLastAction(mergedForEditor.lastAction),
-        lastDelivery: formatDateToDisplay(mergedForEditor.lastDelivery),
-      });
-    }
+    const normalizedOwnFields = ownOverlay?.fields
+      ? normalizeEditorOverlayFields(ownOverlay.fields)
+      : null;
+    const cardForEditor = normalizedOwnFields
+      ? applyOverlayToCard(canonical, normalizedOwnFields)
+      : canonical;
+
+    setState({
+      ...cardForEditor,
+      userId: cardForEditor?.userId || userId,
+      lastAction: normalizeLastAction(cardForEditor?.lastAction),
+      lastDelivery: formatDateToDisplay(cardForEditor?.lastDelivery),
+    });
 
     const visibleOverlays = overlays;
 
