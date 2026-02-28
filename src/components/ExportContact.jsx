@@ -323,14 +323,26 @@ export const makeVCard = user => {
   return `${normalizedLines.join('\r\n')}\r\n`;
 };
 
+export const isSingleUserPayload = data =>
+  Boolean(
+    data &&
+      typeof data === 'object' &&
+      !Array.isArray(data) &&
+      (
+        Object.prototype.hasOwnProperty.call(data, 'userId') ||
+        Object.prototype.hasOwnProperty.call(data, 'name') ||
+        Object.prototype.hasOwnProperty.call(data, 'phone')
+      ),
+  );
+
 export const saveToContact = data => {
   // Limit each exported file to no more than 8000 contacts
   const CHUNK_SIZE = 8000;
   let usersList = [];
   let baseName = 'contacts';
 
-  if (data.name) {
-    // Один користувач (у нього є поле 'name')
+  if (isSingleUserPayload(data)) {
+    // Один користувач (навіть якщо поле name порожнє)
     usersList = [data];
     baseName = 'contact';
   } else {
@@ -423,7 +435,7 @@ export const saveToContactCsv = data => {
   let usersList = [];
   let baseName = 'contacts';
 
-  if (data.name) {
+  if (isSingleUserPayload(data)) {
     usersList = [data];
     baseName = 'contact';
   } else {
