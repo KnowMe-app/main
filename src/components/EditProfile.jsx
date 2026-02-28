@@ -585,12 +585,12 @@ const EditProfile = () => {
 
   if (!state) return null;
 
-  const shouldShowNonAdminSkeleton = !isAdmin && !isOverlayResolved;
+  const shouldShowEditorSkeleton = !isAdmin && !isOverlayResolved;
 
   return (
     <Container>
       <BackButton onClick={() => navigate(-1)}>Back</BackButton>
-      {shouldShowNonAdminSkeleton ? (
+      {shouldShowEditorSkeleton ? (
         <TopBlockSkeleton />
       ) : (
         <div style={{ ...coloredCard(), marginBottom: '8px' }}>
@@ -629,7 +629,7 @@ const EditProfile = () => {
           />
         </div>
       )}
-      {shouldShowNonAdminSkeleton ? (
+      {shouldShowEditorSkeleton ? (
         <SkeletonCard>
           <SkeletonLine width="55%" height={18} />
           <SkeletonLine width="100%" />
