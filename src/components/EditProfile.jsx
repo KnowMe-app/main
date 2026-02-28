@@ -395,7 +395,7 @@ const EditProfile = () => {
     if (!isAdmin && !currentUid) return;
 
     refreshOverlays();
-  }, [userId, refreshOverlays, currentUid, isAdmin]);
+  }, [userId, refreshOverlays, currentUid, isAdmin, location.key]);
 
   const handleSubmit = async (newState, overwrite, delCondition) => {
     const now = Date.now();
