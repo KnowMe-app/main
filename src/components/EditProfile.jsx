@@ -148,7 +148,6 @@ const EditProfile = () => {
   const location = useLocation();
   const [state, setState] = useState(() => getCard(userId) || location.state || null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [dataSource, setDataSource] = useState('');
   const [isAdmin, setIsAdmin] = useState(isAdminUid(auth.currentUser?.uid));
   const [currentUid, setCurrentUid] = useState(auth.currentUser?.uid || '');
@@ -356,43 +355,47 @@ const EditProfile = () => {
   }, []);
 
   useEffect(() => {
-    if (!isDataLoaded) {
-      if (state) {
-        setDataSource('cache');
-        setIsDataLoaded(true);
-      } else if (userId) {
-        const load = async () => {
-          try {
-            const data = await fetchUserById(userId);
-            const formatted =
-              data
-                ? {
-                    ...data,
-                    lastAction: normalizeLastAction(data.lastAction),
-                    lastDelivery: formatDateToDisplay(data.lastDelivery),
-                  }
-                : { userId };
-            setState(formatted);
-            updateCachedUser(formatted);
-            setDataSource('backend');
-          } catch (error) {
-            toast.error(error.message);
-          } finally {
-            setIsDataLoaded(true);
-          }
-        };
-        load();
-      }
+    const cachedCard = getCard(userId) || location.state || null;
+    setState(cachedCard);
+    setDataSource(cachedCard ? 'cache' : '');
+  }, [userId, location.state]);
+
+  useEffect(() => {
+    if (state) {
+      setDataSource('cache');
+      return;
     }
-  }, [state, userId, isDataLoaded]);
+
+    if (!userId) return;
+
+    const load = async () => {
+      try {
+        const data = await fetchUserById(userId);
+        const formatted =
+          data
+            ? {
+                ...data,
+                lastAction: normalizeLastAction(data.lastAction),
+                lastDelivery: formatDateToDisplay(data.lastDelivery),
+              }
+            : { userId };
+        setState(formatted);
+        updateCachedUser(formatted);
+        setDataSource('backend');
+      } catch (error) {
+        toast.error(error.message);
+      }
+    };
+
+    load();
+  }, [state, userId]);
 
   useEffect(() => {
     if (!userId) return;
-    if (!isDataLoaded) return;
     if (!isAdmin && !currentUid) return;
 
     refreshOverlays();
-  }, [userId, refreshOverlays, currentUid, isDataLoaded, isAdmin]);
+  }, [userId, refreshOverlays, currentUid, isAdmin]);
 
   const handleSubmit = async (newState, overwrite, delCondition) => {
     const now = Date.now();
@@ -582,7 +585,7 @@ const EditProfile = () => {
 
   if (!state) return null;
 
-  const shouldShowNonAdminSkeleton = !isAdmin && isDataLoaded && !isOverlayResolved;
+  const shouldShowNonAdminSkeleton = !isAdmin && !isOverlayResolved;
 
   return (
     <Container>
