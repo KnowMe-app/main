@@ -393,6 +393,11 @@ export const ProfileForm = ({
   const autoAppliedOverlayForUserRef = useRef('');
 
   useEffect(() => {
+    if (state?.userId) return;
+    autoAppliedOverlayForUserRef.current = '';
+  }, [state?.userId]);
+
+  useEffect(() => {
     setDismissedOverlayEntries({});
   }, [state?.userId, overlayFieldAdditions]);
 
