@@ -37,7 +37,13 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { resolveAccess } from 'utils/accessLevel';
-import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
+import {
+  applyOverlayToCard,
+  buildOverlayFromDraft,
+  getCanonicalCard,
+  getOverlayForUserCard,
+  saveOverlayForUserCard,
+} from 'utils/multiAccountEdits';
 import InfoModal from './InfoModal';
 import UtilityPeriodComposer from './UtilityPeriodComposer';
 import { VerifyEmail } from './VerifyEmail';
@@ -104,6 +110,7 @@ import {
 } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
+import { areObjectsEqual } from './areObjectsEqual';
 
 const Container = styled.div`
   display: flex;
@@ -664,6 +671,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [, setCacheCount] = useState(0);
   const [, setBackendCount] = useState(0);
   const [profileSource, setProfileSource] = useState('');
+  const lastOverlaySyncKeyRef = useRef('');
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -814,6 +822,48 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     if (!state.userId) setProfileSource('');
   }, [state.userId]);
+
+  useEffect(() => {
+    if (!state?.userId || Object.keys(state).length <= 1) {
+      return;
+    }
+
+    const syncKey = `${state.userId}:${state.lastAction ?? ''}:${state.cachedAt ?? ''}:${ownerId ?? ''}`;
+    if (lastOverlaySyncKeyRef.current === syncKey) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    (async () => {
+      let overlay = null;
+      try {
+        overlay = await getOverlayForUserCard({
+          editorUserId: ownerId,
+          cardUserId: state.userId,
+        });
+      } catch {
+        overlay = null;
+      }
+
+      if (isCancelled) return;
+
+      if (overlay?.fields) {
+        setState(prev => {
+          if (!prev?.userId || prev.userId !== state.userId) return prev;
+
+          const merged = applyOverlayToCard(prev, overlay.fields);
+          return areObjectsEqual(prev, merged) ? prev : merged;
+        });
+      }
+
+      lastOverlaySyncKeyRef.current = syncKey;
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [state, ownerId]);
 
   useEffect(() => {
     if (!searchBarQueryActive) return;
