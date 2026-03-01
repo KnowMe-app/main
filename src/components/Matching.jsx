@@ -1594,7 +1594,7 @@ const Matching = () => {
 
 
   const filteredUsers =
-    viewMode === 'favorites' || viewMode === 'dislikes' || !filters || Object.keys(filters).length === 0
+    !filters || Object.keys(filters).length === 0
       ? users
       : filterMain(
           users.map(u => [u.userId, u]),
