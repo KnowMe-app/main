@@ -401,6 +401,11 @@ const EditProfile = () => {
     const now = Date.now();
     const baseState = newState ? { ...newState } : { ...state };
     const updatedState = { ...baseState, lastAction: now };
+
+    if (!isAdmin && currentUid) {
+      setIsOverlayResolved(false);
+    }
+
     setState(updatedState);
 
     const removeKeys = delCondition ? Object.keys(delCondition) : [];
