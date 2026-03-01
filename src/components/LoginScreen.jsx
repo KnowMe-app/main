@@ -130,6 +130,30 @@ const CheckboxLabel = styled.label`
   }
 `;
 
+const RoleBlock = styled.div`
+  width: 100%;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const RoleTitle = styled.p`
+  margin: 0;
+  color: #333;
+  font-size: 14px;
+`;
+
+const RoleOption = styled.label`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #333;
+  font-size: 14px;
+`;
+
 const isPermissionDeniedError = error => {
   const code = String(error?.code || '').toLowerCase();
   const message = String(error?.message || '').toLowerCase();
@@ -211,6 +235,7 @@ const WelcomeText = styled.h1`
 
 export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isChecked, setIsChecked] = useState(false);
+  const [selectedRole, setSelectedRole] = useState('');
 
   const handleCheckboxChange = () => {
     setIsChecked(!isChecked);
@@ -274,7 +299,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         lastLogin2: todayDash,
         email: state.email,
         userId: userCredential.user.uid,
-        userRole: 'ed',
+        userRole: selectedRole,
       };
 
       await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'update');
@@ -311,7 +336,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         lastLogin: todayDays,
         lastLogin2: todayDash,
         userId: userCredential.user.uid,
-        userRole: 'ed',
+        userRole: selectedRole,
       };
 
       await sendEmailVerification(userCredential.user);
@@ -345,9 +370,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     const loggedIn = localStorage.getItem('isLoggedIn');
-    if (!isLoggedIn && !loggedIn) {
-      navigate('/my-profile');
-    } else {
+    if (isLoggedIn || loggedIn) {
       setIsLoggedIn(true);
       navigate('/my-profile');
     }
@@ -386,6 +409,18 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
           <Label isActive={focused === 'password' || state.password}>Пароль</Label>
         </InputDiv>
 
+        <RoleBlock>
+          <RoleTitle>Оберіть роль (обов&apos;язково):</RoleTitle>
+          <RoleOption>
+            <input type="radio" name="userRole" value="ed" checked={selectedRole === 'ed'} onChange={e => setSelectedRole(e.target.value)} />
+            Я донор яйцеклітин
+          </RoleOption>
+          <RoleOption>
+            <input type="radio" name="userRole" value="ag" checked={selectedRole === 'ag'} onChange={e => setSelectedRole(e.target.value)} />
+            Ми агентство і шукаємо ДО
+          </RoleOption>
+        </RoleBlock>
+
         {/* Чекбокс з умовою для активації кнопки */}
         <CheckboxContainer style={{ display: 'flex', alignItems: 'center', marginTop: '10px' }}>
           <CustomCheckbox type="checkbox" checked={isChecked} onChange={handleCheckboxChange} style={{ marginRight: '10px' }} />
@@ -397,7 +432,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         </CheckboxContainer>
 
         {/* Кнопка стане активною лише коли галочка натиснута */}
-        <SubmitButton onClick={handleAuth} disabled={!isChecked}>
+        <SubmitButton onClick={handleAuth} disabled={!isChecked || !selectedRole}>
           Вхід / Реєстрація
         </SubmitButton>
 
