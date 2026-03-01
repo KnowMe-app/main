@@ -20,7 +20,6 @@ import {
 } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { getCurrentDate } from './foramtDate';
-import toast from 'react-hot-toast';
 import InfoModal from './InfoModal';
 import Photos from './Photos';
 import { VerifyEmail } from './VerifyEmail';
@@ -30,6 +29,7 @@ import { color } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { resolveAccess } from 'utils/accessLevel';
+import { authNotifications } from './authNotifications';
 
 const Container = styled.div`
   display: flex;
@@ -597,7 +597,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setMissing(miss);
     if (Object.keys(miss).length) return;
     if (!isValidEmail(normalizedEmail)) {
-      toast.error('Введіть коректний емейл');
+      authNotifications.invalidEmail();
       return;
     }
     try {
@@ -643,7 +643,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
     } catch (error) {
       if (error.code === 'auth/wrong-password') {
-        toast.error('Невірний пароль');
+        authNotifications.wrongPassword();
       } else {
         console.error('auth error', error);
       }
@@ -655,17 +655,17 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const miss = {};
       if (!state.email) {
         miss.email = true;
-        toast.error('Заповніть емейл');
+        authNotifications.emailRequired();
       } else if (!isValidEmail(state.email)) {
         miss.email = true;
-        toast.error('Введіть коректний емейл');
+        authNotifications.invalidEmail();
       }
       if (!state.password) {
         miss.password = true;
-        toast.error('Придумайте пароль');
+        authNotifications.passwordRequired();
       }
       if (!hasAgreed) {
-        toast.error('Треба погодитись з умовами програми ☝️');
+        authNotifications.termsRequired();
       }
       setMissing(miss);
       if (Object.keys(miss).length || !hasAgreed) return;
@@ -689,7 +689,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setState(prev => ({ ...prev, userId: userCredential.user.uid }));
       } catch (error) {
         if (error.code === 'auth/wrong-password') {
-          toast.error('Невірний пароль');
+          authNotifications.wrongPassword();
         } else {
           console.error('auth error', error);
         }

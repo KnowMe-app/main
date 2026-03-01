@@ -11,7 +11,7 @@ import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailA
 import { getCurrentDate } from './foramtDate';
 import { useNavigate } from 'react-router-dom';
 import { color } from './styles';
-import toast from 'react-hot-toast';
+import { authNotifications } from './authNotifications';
 
 const Container = styled.div`
   display: flex;
@@ -233,9 +233,36 @@ const WelcomeText = styled.h1`
   /* font-size: 24px; */
 `;
 
+const LoadingOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  background: rgba(240, 240, 240, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  pointer-events: all;
+`;
+
+const Spinner = styled.div`
+  width: 44px;
+  height: 44px;
+  border: 4px solid #d8d8d8;
+  border-top-color: ${color.accent5};
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+`;
+
 export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isChecked, setIsChecked] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleCheckboxChange = () => {
     setIsChecked(!isChecked);
@@ -290,14 +317,14 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     navigate('/policy');
   };
 
-  const handleLogin = async () => {
+  const handleLogin = async email => {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, state.password);
       const uploadedInfo = {
         areTermsConfirmed: todayDays,
         lastLogin: todayDays,
         lastLogin2: todayDash,
-        email: state.email,
+        email,
         userId: userCredential.user.uid,
         userRole: selectedRole,
       };
@@ -305,7 +332,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'update');
 
       localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('userEmail', state.email);
+      localStorage.setItem('userEmail', email);
       localStorage.removeItem('myProfileDraft');
 
       setIsLoggedIn(true);
@@ -315,7 +342,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       console.log('User signed in:', userCredential.user);
     } catch (error) {
       if (error.code === 'auth/wrong-password') {
-        toast.error('Невірний пароль');
+        authNotifications.wrongPassword();
       } else {
         console.error('Error signing in:', error);
       }
@@ -324,13 +351,13 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const { todayDays, todayDash } = getCurrentDate();
 
-  const handleRegistration = async () => {
+  const handleRegistration = async email => {
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, state.password);
       console.log('User registered in:', userCredential.user);
 
       const uploadedInfo = {
-        email: state.email,
+        email,
         areTermsConfirmed: todayDays,
         registrationDate: todayDays,
         lastLogin: todayDays,
@@ -343,7 +370,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'set');
 
       localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('userEmail', state.email);
+      localStorage.setItem('userEmail', email);
       localStorage.removeItem('myProfileDraft');
 
       setIsLoggedIn(true);
@@ -356,15 +383,56 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleAuth = async () => {
+    const hasEmailTrailingSpace = /\s$/.test(state.email);
+    const normalizedEmail = state.email.trim();
+
+    if (!normalizedEmail) {
+      authNotifications.emailRequired();
+      return;
+    }
+
+    if (hasEmailTrailingSpace) {
+      authNotifications.emailTrailingSpace();
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      authNotifications.invalidEmail();
+      return;
+    }
+
+    if (!state.password) {
+      authNotifications.passwordRequired();
+      return;
+    }
+
+    if (!selectedRole) {
+      authNotifications.roleRequired();
+      return;
+    }
+
+    if (!isChecked) {
+      authNotifications.termsRequired();
+      return;
+    }
+
+    setState(prevState => ({
+      ...prevState,
+      email: normalizedEmail,
+    }));
+
+    setIsLoading(true);
     try {
-      const signInMethods = await fetchSignInMethodsForEmail(auth, state.email);
+      const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
       if (signInMethods.length > 0) {
-        await handleLogin();
+        await handleLogin(normalizedEmail);
       } else {
-        await handleRegistration();
+        await handleRegistration(normalizedEmail);
       }
     } catch (error) {
       console.error('Error in authentication process:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -379,6 +447,11 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
 
   return (
     <Container>
+      {isLoading && (
+        <LoadingOverlay>
+          <Spinner />
+        </LoadingOverlay>
+      )}
       <InnerContainer>
         <WelcomeText>KnowMe: Egg Donor</WelcomeText>
         <InputDiv>
@@ -432,7 +505,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         </CheckboxContainer>
 
         {/* Кнопка стане активною лише коли галочка натиснута */}
-        <SubmitButton onClick={handleAuth} disabled={!isChecked || !selectedRole}>
+        <SubmitButton onClick={handleAuth} disabled={isLoading}>
           Вхід / Реєстрація
         </SubmitButton>
 
