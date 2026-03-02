@@ -1609,7 +1609,14 @@ const Matching = () => {
           .map(([id, u]) => u)
           .filter(u => isValidId(u.userId));
 
-  // automatic loading disabled
+  useEffect(() => {
+    if (viewMode !== 'default') return;
+    if (loadingRef.current || loading) return;
+    if (!hasMore) return;
+    if (filteredUsers.length >= INITIAL_LOAD) return;
+
+    loadMore();
+  }, [filteredUsers.length, hasMore, loadMore, loading, viewMode]);
 
   const dotsMenu = () => (
     <>
