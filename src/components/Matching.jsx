@@ -1588,44 +1588,58 @@ const Matching = () => {
     setLoading(true);
     try {
       const loadedBefore = loadedIdsRef.current.size;
-      const exclude = new Set([
+      const baseExclude = new Set([
         ...Object.keys(favoriteUsersRef.current),
         ...Object.keys(dislikeUsersRef.current),
       ]);
-      const res = await fetchChunk(
-        LOAD_MORE,
-        lastKey,
-        exclude,
-        async part => {
-          const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
-          if (unique.length) {
-            unique.forEach(u => loadedIdsRef.current.add(u.userId));
-            setUsers(prev => [...prev, ...unique]);
-            await loadCommentsFor(unique);
-          }
+
+      const collected = [];
+      let cursor = lastKey;
+      let canLoadMore = hasMore;
+
+      while (collected.length < LOAD_MORE && canLoadMore) {
+        const remaining = LOAD_MORE - collected.length;
+        const res = await fetchChunk(remaining, cursor, baseExclude);
+        console.log('[loadMore] batch', {
+          requested: remaining,
+          received: res.users.length,
+          cursor,
+          nextCursor: res.lastKey,
+          hasMore: res.hasMore,
+        });
+
+        const unique = res.users.filter(
+          u => u?.userId && !loadedIdsRef.current.has(u.userId)
+        );
+        if (unique.length) {
+          unique.forEach(u => loadedIdsRef.current.add(u.userId));
+          collected.push(...unique);
         }
-      );
-      console.log('[loadMore] loaded', res.users.length, 'lastKey', lastKey, 'hasMore', res.hasMore);
-      const unique = res.users.filter(u => !loadedIdsRef.current.has(u.userId));
-      unique.forEach(u => loadedIdsRef.current.add(u.userId));
-      res.users.forEach(u => updateCard(u.userId, u));
+
+        const stuck = !res.lastKey || res.lastKey === cursor;
+        cursor = res.lastKey;
+        canLoadMore = res.hasMore && !stuck;
+      }
+
+      collected.forEach(u => updateCard(u.userId, u));
       setUsers(prev => {
         const map = new Map(prev.map(u => [u.userId, u]));
-        unique.forEach(u => map.set(u.userId, u));
+        collected.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
         setIdsForQuery('default', result.map(u => u.userId));
         return result;
       });
-      await loadCommentsFor(unique);
+      await loadCommentsFor(collected);
+
       const loadedNow = loadedIdsRef.current.size;
       const loadedInRequest = Math.max(0, loadedNow - loadedBefore);
       toast(`Завантажено "${loadedInRequest}" з "${loadedNow}"`);
-      if (handleEmptyFetch(res, lastKey, setHasMore)) {
+      if (handleEmptyFetch({ users: collected, lastKey: cursor }, lastKey, setHasMore)) {
         console.log('[loadMore] empty fetch, no more cards');
       } else {
-        setHasMore(res.hasMore);
+        setHasMore(canLoadMore);
       }
-      setLastKey(res.lastKey);
+      setLastKey(cursor);
     } finally {
       loadingRef.current = false;
       setLoading(false);
