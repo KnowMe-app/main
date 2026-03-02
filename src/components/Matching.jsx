@@ -1275,10 +1275,18 @@ const Matching = () => {
       exclude = new Set(),
       onPart
     ) => {
-      const res = await fetchUsersByLastLogin2(
-        limit + exclude.size + 1,
-        lastDate
-      );
+      const collected = [];
+      let cursor = lastDate;
+      let hasMore = false;
+      let excludedCount = 0;
+      let prevCursor;
+
+      while (collected.length < limit) {
+        const remaining = limit - collected.length;
+        const res = await fetchUsersByLastLogin2(
+          remaining + exclude.size + 1,
+          cursor
+        );
 
         const filtered = filterMain(
           res.users.map(u => [u.userId, u]),
@@ -1286,22 +1294,34 @@ const Matching = () => {
           filters,
           favoriteUsersRef.current
         )
-        .map(([id, u]) => u)
-        .filter(u => isValidId(u.userId) && !exclude.has(u.userId));
+          .map(([id, u]) => u)
+          .filter(u => isValidId(u.userId) && !exclude.has(u.userId));
 
-      const excluded = res.users.length - filtered.length;
-      const hasMore = filtered.length > limit || res.hasMore;
-      const slice = filtered.slice(0, limit);
-      const ids = slice.map(user => user.userId);
-      const enrichedMap = await fetchUsersByIds(ids);
-      const validSlice = ids.map(id => enrichedMap[id]).filter(Boolean);
-      if (onPart) onPart(validSlice);
+        excludedCount += res.users.length - filtered.length;
+        const slice = filtered.slice(0, remaining);
+        const ids = slice.map(user => user.userId);
+        const enrichedMap = await fetchUsersByIds(ids);
+        const validSlice = ids.map(id => enrichedMap[id]).filter(Boolean);
+
+        if (validSlice.length) {
+          collected.push(...validSlice);
+          if (onPart) await onPart(validSlice);
+        }
+
+        hasMore = res.hasMore;
+        prevCursor = cursor;
+        cursor = res.lastKey;
+
+        if (!res.hasMore || !res.lastKey || prevCursor === cursor) {
+          break;
+        }
+      }
 
       return {
-        users: validSlice,
-        lastKey: res.lastKey,
+        users: collected,
+        lastKey: cursor,
         hasMore,
-        excludedCount: excluded,
+        excludedCount,
       };
     },
     [filters]
