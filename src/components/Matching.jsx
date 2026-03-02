@@ -1593,11 +1593,15 @@ const Matching = () => {
   const gridRef = useRef(null);
 
 
+  const visibleUsers = isAdmin
+    ? users
+    : users.filter(user => user.publish === true);
+
   const filteredUsers =
     !filters || Object.keys(filters).length === 0
-      ? users
+      ? visibleUsers
       : filterMain(
-          users.map(u => [u.userId, u]),
+          visibleUsers.map(u => [u.userId, u]),
           null,
           filters,
           favoriteUsers
