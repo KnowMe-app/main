@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
@@ -1564,6 +1565,7 @@ const Matching = () => {
     loadingRef.current = true;
     setLoading(true);
     try {
+      const loadedBefore = loadedIdsRef.current.size;
       const exclude = new Set([
         ...Object.keys(favoriteUsersRef.current),
         ...Object.keys(dislikeUsersRef.current),
@@ -1593,6 +1595,9 @@ const Matching = () => {
         return result;
       });
       await loadCommentsFor(unique);
+      const loadedNow = loadedIdsRef.current.size;
+      const loadedInRequest = Math.max(0, loadedNow - loadedBefore);
+      toast(`Завантажено "${loadedInRequest}" з "${loadedNow}"`);
       if (handleEmptyFetch(res, lastKey, setHasMore)) {
         console.log('[loadMore] empty fetch, no more cards');
       } else {
