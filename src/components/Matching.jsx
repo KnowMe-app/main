@@ -425,6 +425,18 @@ const FilterContainer = styled.div`
   overflow-y: auto;
 `;
 
+const FilterResetButton = styled.button`
+  width: 100%;
+  padding: 10px;
+  margin: 0 0 10px;
+  border: 1px solid ${color.gray3};
+  border-radius: 8px;
+  background: ${color.accent5};
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+`;
+
 // Components below were previously defined for a modal that is no longer
 // rendered. They were causing "assigned a value but never used" warnings
 // during builds, so the unused definitions have been removed.
@@ -1084,6 +1096,7 @@ const Matching = () => {
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({});
+  const [filterResetToken, setFilterResetToken] = useState(0);
   const [comments, setComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -1427,6 +1440,15 @@ const Matching = () => {
     loadInitial();
   }, [loadInitial]);
 
+  const resetFiltersAndCache = React.useCallback(() => {
+    localStorage.removeItem('matchingFilters');
+    localStorage.removeItem(SEARCH_KEY);
+    clearAllCardsCache();
+    setFilterResetToken(prev => prev + 1);
+    reloadDefault();
+    toast.success('Фільтри та кеш скинуто');
+  }, [reloadDefault]);
+
   const loadFavoriteCards = async () => {
     setViewMode('favorites');
     setLoading(true);
@@ -1669,7 +1691,16 @@ const Matching = () => {
           storageKey={SEARCH_KEY}
           onClear={reloadDefault}
         />
-        <FilterPanel mode="matching" hideUserId hideCommentLength onChange={setFilters} />
+        <FilterResetButton onClick={resetFiltersAndCache}>
+          Скинути фільтри та кеш
+        </FilterResetButton>
+        <FilterPanel
+          mode="matching"
+          hideUserId
+          hideCommentLength
+          onChange={setFilters}
+          resetToken={filterResetToken}
+        />
       </FilterContainer>
       <Container>
         <InnerContainer>
