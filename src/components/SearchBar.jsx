@@ -276,6 +276,20 @@ const parseTelegramId = input => {
 
 const parseOtherContact = input => input;
 
+const OTHER_SEARCH_FALLBACK_KEYS = [
+  'userId',
+  'facebook',
+  'instagram',
+  'telegram',
+  'email',
+  'tiktok',
+  'phone',
+  'vk',
+  'name',
+  'surname',
+  'other',
+];
+
 export const detectSearchParams = query => {
   const parsedUkTrigger = parseUkTriggerQuery(query);
   if (parsedUkTrigger?.searchPair?.telegram) {
@@ -515,6 +529,25 @@ const SearchBar = ({
       }
       const res = await cachedSearch(result);
       if (!res || Object.keys(res).length === 0) {
+        if (platform === 'other') {
+          for (const fallbackKey of OTHER_SEARCH_FALLBACK_KEYS) {
+            if (fallbackKey === 'other') continue;
+            const fallbackParams = { [fallbackKey]: id };
+            emitSearchLabel(fallbackParams);
+            const fallbackRes = await cachedSearch(fallbackParams);
+            if (!fallbackRes || Object.keys(fallbackRes).length === 0) {
+              continue;
+            }
+
+            setUserNotFound && setUserNotFound(false);
+            if ('userId' in fallbackRes) {
+              setState && setState(fallbackRes);
+            } else {
+              setUsers && setUsers(fallbackRes);
+            }
+            return true;
+          }
+        }
         setUserNotFound && setUserNotFound(true);
       } else {
         setUserNotFound && setUserNotFound(false);
