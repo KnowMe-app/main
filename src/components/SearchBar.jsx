@@ -274,7 +274,19 @@ const parseTelegramId = input => {
   return null;
 };
 
-const parseOtherContact = input => input;
+const parseOtherContact = input => {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  // "other" має спрацьовувати лише на явну мітку, а не на будь-який текст.
+  const labeledValue = trimmed.match(
+    /(?:^|\b)(?:other|інше|додатковий\s*контакт|other\s*contact)\s*[:=]\s*(.+)$/i,
+  );
+
+  if (!labeledValue?.[1]) return null;
+  return labeledValue[1].trim() || null;
+};
 
 const OTHER_SEARCH_FALLBACK_KEYS = [
   'userId',
