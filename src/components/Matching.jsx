@@ -1599,7 +1599,12 @@ const Matching = () => {
 
       while (collected.length < LOAD_MORE && canLoadMore) {
         const remaining = LOAD_MORE - collected.length;
-        const res = await fetchChunk(remaining, cursor, baseExclude);
+        const dynamicExclude = new Set([
+          ...baseExclude,
+          ...loadedIdsRef.current,
+          ...collected.map(u => u.userId).filter(Boolean),
+        ]);
+        const res = await fetchChunk(remaining, cursor, dynamicExclude);
         console.log('[loadMore] batch', {
           requested: remaining,
           received: res.users.length,
