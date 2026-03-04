@@ -1325,14 +1325,16 @@ const Matching = () => {
           cursor
         );
 
-        const filtered = filterMain(
-          res.users.map(u => [u.userId, u]),
-          null,
-          filters,
-          favoriteUsersRef.current
-        )
-          .map(([id, u]) => u)
-          .filter(u => isValidId(u.userId) && !exclude.has(u.userId));
+        const filtered = isAdmin
+          ? filterMain(
+              res.users.map(u => [u.userId, u]),
+              null,
+              filters,
+              favoriteUsersRef.current
+            )
+              .map(([, u]) => u)
+              .filter(u => isValidId(u.userId) && !exclude.has(u.userId))
+          : res.users.filter(u => isValidId(u.userId) && !exclude.has(u.userId));
 
         excludedCount += res.users.length - filtered.length;
         const slice = filtered.slice(0, remaining);
@@ -1361,7 +1363,7 @@ const Matching = () => {
         excludedCount,
       };
     },
-    [filters]
+    [filters, isAdmin]
   );
 
   const loadInitial = React.useCallback(async () => {
@@ -1683,17 +1685,16 @@ const Matching = () => {
     ? users
     : users.filter(user => user.publish === true);
 
-  const filteredUsers =
-    !filters || Object.keys(filters).length === 0
-      ? visibleUsers
-      : filterMain(
-          visibleUsers.map(u => [u.userId, u]),
-          null,
-          filters,
-          favoriteUsers
-        )
-          .map(([id, u]) => u)
-          .filter(u => isValidId(u.userId));
+  const filteredUsers = isAdmin
+    ? filterMain(
+        visibleUsers.map(u => [u.userId, u]),
+        null,
+        filters,
+        favoriteUsers
+      )
+        .map(([, u]) => u)
+        .filter(u => isValidId(u.userId))
+    : visibleUsers.filter(u => isValidId(u.userId));
 
   useEffect(() => {
     if (viewMode !== 'default') return;
@@ -1759,6 +1760,7 @@ const Matching = () => {
           hideCommentLength
           onChange={setFilters}
           resetToken={filterResetToken}
+          nonAdminAllActive={!isAdmin}
         />
       </FilterContainer>
       <Container>
