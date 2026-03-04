@@ -779,7 +779,7 @@ const SwipeableCard = ({
     .join(' ');
   const isEggDonor = (role || '').includes('ed');
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
-  const selectedFields = renderSelectedFields(user).filter(Boolean);
+  const selectedFields = renderSelectedFields(user, { isAdmin }).filter(Boolean);
   const regionInfo = normalizeRegion(getCurrentValue(user.region));
   const cityInfo = getCurrentValue(user.city);
   const locationInfo = isEggDonor
@@ -927,8 +927,10 @@ const SwipeableCard = ({
   );
 };
 
-const renderSelectedFields = user => {
+const renderSelectedFields = (user, { isAdmin } = {}) => {
   return FIELDS.map(field => {
+    if (field.key === 'reward' && !isAdmin) return null;
+
     let value = user[field.key];
     if (field.key === 'bmi') {
       const { weight, height } = user;
@@ -998,7 +1000,7 @@ const getRoleTitle = user => {
   return '';
 };
 
-const InfoCardContent = ({ user, variant }) => {
+const InfoCardContent = ({ user, variant, isAdmin }) => {
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
   const education = getCurrentValue(user.education);
@@ -1016,7 +1018,7 @@ const InfoCardContent = ({ user, variant }) => {
     .toLowerCase();
   const isEggDonor = role.includes('ed');
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
-  const selectedFields = renderSelectedFields(user).filter(Boolean);
+  const selectedFields = renderSelectedFields(user, { isAdmin }).filter(Boolean);
   const regionInfo = normalizeRegion(getCurrentValue(user.region));
   const cityInfo = getCurrentValue(user.city);
   const locationInfo = isEggDonor
@@ -1842,13 +1844,13 @@ const Matching = () => {
                 >
                   {thirdVariant && (
                     <ThirdInfoCard>
-                      <InfoCardContent user={user} variant={thirdVariant} />
+                      <InfoCardContent user={user} variant={thirdVariant} isAdmin={isAdmin} />
                     </ThirdInfoCard>
                   )}
                     {thirdPhoto && <ThirdPhoto src={thirdPhoto} alt="third" />}
                     {nextVariant && (
                       <NextInfoCard>
-                        <InfoCardContent user={user} variant={nextVariant} />
+                        <InfoCardContent user={user} variant={nextVariant} isAdmin={isAdmin} />
                       </NextInfoCard>
                     )}
                     {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
