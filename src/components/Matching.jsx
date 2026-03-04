@@ -37,7 +37,7 @@ import { normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard } from '../ut
 import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
-import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaArrowDown, FaDownload } from 'react-icons/fa';
+import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaDownload } from 'react-icons/fa';
 import { handleEmptyFetch } from './loadMoreUtils';
 import {
   normalizeCountry,
@@ -365,8 +365,22 @@ const CardCount = styled.p`
   color: black;
 `;
 
-const LoadMoreButton = styled(ActionButton)`
-  margin: 10px auto;
+const LoadMoreButton = styled.button`
+  margin: 10px auto 20px;
+  border: none;
+  border-radius: 8px;
+  background-color: ${color.accent5};
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 16px;
+
+  &:disabled {
+    background-color: ${color.gray3};
+    color: ${color.gray4};
+    cursor: default;
+  }
 `;
 
 const SubmitButton = styled.button`
@@ -1587,7 +1601,6 @@ const Matching = () => {
     loadingRef.current = true;
     setLoading(true);
     try {
-      const loadedBefore = loadedIdsRef.current.size;
       const baseExclude = new Set([
         ...Object.keys(favoriteUsersRef.current),
         ...Object.keys(dislikeUsersRef.current),
@@ -1636,9 +1649,6 @@ const Matching = () => {
       });
       await loadCommentsFor(collected);
 
-      const loadedNow = loadedIdsRef.current.size;
-      const loadedInRequest = Math.max(0, loadedNow - loadedBefore);
-      toast(`Завантажено "${loadedInRequest}" з "${loadedNow}"`);
       if (handleEmptyFetch({ users: collected, lastKey: cursor }, lastKey, setHasMore)) {
         console.log('[loadMore] empty fetch, no more cards');
       } else {
@@ -1885,9 +1895,9 @@ const Matching = () => {
             Array.from({ length: 4 }).map((_, idx) => (
               <MatchingSkeleton key={`skeleton-${idx}`} />
             ))}
-          {hasMore && !loading && (
+          {viewMode === 'default' && hasMore && !loading && (
             <LoadMoreButton onClick={loadMore}>
-              <FaArrowDown />
+              Дозавантажити карточки
             </LoadMoreButton>
           )}
           </Grid>
