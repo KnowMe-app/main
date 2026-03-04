@@ -1053,6 +1053,64 @@ const addUserToResults = async (userId, users) => {
   };
 };
 
+const collectUserIdsFromSearchIdValue = value => {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+  return value ? [value] : [];
+};
+
+export const searchUkTelegramFast = async telegramValue => {
+  const trimmed = String(telegramValue || '').trim();
+  if (!trimmed) return {};
+
+  const users = {};
+  const uniqueUserIds = new Set();
+
+  const telegramVariants = [...new Set([trimmed, trimmed.toLowerCase()])];
+  const searchIdCandidates = buildSearchIndexCandidates('telegram', trimmed)
+    .map(candidate => `telegram_${candidate}`);
+
+  for (const searchIdKey of searchIdCandidates) {
+    const searchIdSnapshot = await get(ref2(database, `searchId/${searchIdKey}`));
+    if (!searchIdSnapshot.exists()) continue;
+
+    const ids = collectUserIdsFromSearchIdValue(searchIdSnapshot.val());
+    for (const userId of ids) {
+      if (uniqueUserIds.has(userId)) continue;
+      uniqueUserIds.add(userId);
+      await addUserToResults(userId, users);
+    }
+  }
+
+  for (const collectionName of SEARCH_COLLECTIONS) {
+    for (const telegramVariant of telegramVariants) {
+      const directTelegramQuery = query(
+        ref2(database, collectionName),
+        orderByChild('telegram'),
+        equalTo(telegramVariant),
+      );
+      const directTelegramSnapshot = await get(directTelegramQuery);
+      if (!directTelegramSnapshot.exists()) continue;
+
+      const promises = [];
+      directTelegramSnapshot.forEach(userSnapshot => {
+        const userId = userSnapshot.key;
+        if (!userId || uniqueUserIds.has(userId)) return;
+        uniqueUserIds.add(userId);
+        promises.push(addUserToResults(userId, users));
+      });
+      await Promise.all(promises);
+    }
+  }
+
+  if (Object.keys(users).length === 1) {
+    return users[Object.keys(users)[0]];
+  }
+
+  return users;
+};
+
 const getDateFormats = input => {
   const trimmed = (input || '').trim();
   const isoMatch = /^(\d{4})[-./\\](\d{2})[-./\\](\d{2})$/;
