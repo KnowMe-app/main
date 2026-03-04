@@ -692,11 +692,12 @@ const SearchBar = ({
       }
     }
 
+    const startsWithUk = /^ук\b/i.test(trimmed);
     const ukTrigger = parseUkTriggerQuery(rawQuery);
-    if (ukTrigger?.searchPair?.telegram) {
-      const normalizedTelegram = ukTrigger.searchPair.telegram;
+    if (startsWithUk) {
+      const normalizedTelegram = ukTrigger?.searchPair?.telegram || trimmed;
       const searchCandidates = [normalizedTelegram];
-      if (ukTrigger.handle) {
+      if (ukTrigger?.handle) {
         searchCandidates.push(ukTrigger.handle);
       }
 
@@ -729,6 +730,9 @@ const SearchBar = ({
           return;
         }
       }
+
+      setUserNotFound && setUserNotFound(true);
+      return;
     }
 
     if (await processUserSearch('userId', parseUserId, rawQuery)) return;

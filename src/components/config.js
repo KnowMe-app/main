@@ -794,10 +794,10 @@ const addUserFromUsers = async (userId, users) => {
   }
 };
 
-const searchBySearchIdUsers = async (modifiedSearchValue, uniqueUserIds, users) => {
+const searchBySearchIdUsers = async (modifiedSearchValue, uniqueUserIds, users, prefixes = keysToCheck) => {
   const ukSmPrefix = encodeKey('УК СМ ');
   const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(ukSmPrefix.toLowerCase());
-  const searchPromises = keysToCheck.flatMap(prefix => {
+  const searchPromises = prefixes.flatMap(prefix => {
     const baseKey = `${prefix}_${modifiedSearchValue.toLowerCase()}`;
     const searchKeys = [baseKey];
     if (hasUkSm) {
@@ -826,7 +826,7 @@ const searchBySearchIdUsers = async (modifiedSearchValue, uniqueUserIds, users) 
   await Promise.all(searchPromises);
 };
 
-const searchByPrefixesUsers = async (searchValue, uniqueUserIds, users) => {
+const searchByPrefixesUsers = async (searchValue, uniqueUserIds, users, prefixes = keysToCheck) => {
   const fieldMatchesSearch = (value, normalizedSearch) => {
     if (typeof value === 'string') {
       return value.trim().toLowerCase().includes(normalizedSearch);
@@ -843,7 +843,7 @@ const searchByPrefixesUsers = async (searchValue, uniqueUserIds, users) => {
     return false;
   };
 
-  for (const prefix of keysToCheck) {
+  for (const prefix of prefixes) {
     let formatted = searchValue.trim();
     if (prefix === 'name' || prefix === 'surname') {
       formatted = searchValue.trim().charAt(0).toUpperCase() + searchValue.trim().slice(1).toLowerCase();
@@ -892,13 +892,19 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
 };
 
 export const searchUsersOnly = async searchedValue => {
-  const { searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
+  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const users = {};
   const uniqueUserIds = new Set();
   try {
-    await searchBySearchIdUsers(modifiedSearchValue, uniqueUserIds, users);
-    await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
-    await searchUserByPartialUserId(searchValue, users);
+    const shouldUseUkTelegramOnly = isUkLeadingTelegramQuery({ searchKey, searchValue });
+    const searchPrefixes = shouldUseUkTelegramOnly ? ['telegram'] : keysToCheck;
+
+    await searchBySearchIdUsers(modifiedSearchValue, uniqueUserIds, users, searchPrefixes);
+    await searchByPrefixesUsers(searchValue, uniqueUserIds, users, searchPrefixes);
+
+    if (!shouldUseUkTelegramOnly) {
+      await searchUserByPartialUserId(searchValue, users);
+    }
 
     if (Object.keys(users).length === 1) {
       const id = Object.keys(users)[0];
@@ -990,6 +996,12 @@ const makeSearchKeyValue = searchedValue => {
   modifiedSearchValue = encodeKey(searchValue);
   const searchIdKey = `${searchKey}_${modifiedSearchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
   return { searchKey, searchValue, modifiedSearchValue, searchIdKey };
+};
+
+const isUkLeadingTelegramQuery = ({ searchKey, searchValue }) => {
+  if (searchKey !== 'telegram') return false;
+  if (typeof searchValue !== 'string') return false;
+  return /^ук\b/i.test(searchValue.trim());
 };
 
 
@@ -1154,11 +1166,11 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
   return true;
 };
 
-const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
+const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users, prefixes = keysToCheck) => {
   const ukSmPrefix = encodeKey('УК СМ ');
   const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(ukSmPrefix.toLowerCase());
 
-  const searchPromises = keysToCheck.flatMap(prefix => {
+  const searchPromises = prefixes.flatMap(prefix => {
     const baseKey = `${prefix}_${modifiedSearchValue.toLowerCase()}`;
     const searchKeys = [baseKey];
 
@@ -1211,7 +1223,7 @@ const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
 
 const SEARCH_COLLECTIONS = ['newUsers', 'users'];
 
-const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
+const searchByPrefixes = async (searchValue, uniqueUserIds, users, prefixes = keysToCheck) => {
   const fieldMatchesSearch = (value, normalizedSearch) => {
     if (typeof value === 'string') {
       return value.trim().toLowerCase().includes(normalizedSearch);
@@ -1230,7 +1242,7 @@ const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
 
   // console.log('🔍 searchValue :>> ', searchValue);
 
-  for (const prefix of keysToCheck) {
+  for (const prefix of prefixes) {
     // console.log('🛠 Searching by prefix:', prefix);
 
     let formattedSearchValue = searchValue.trim();
@@ -1457,7 +1469,7 @@ const searchByIndexOn = async (searchValue, uniqueUserIds, users) => {
 
 export const fetchNewUsersCollectionInRTDB = async searchedValue => {
   if (isDev) console.log('fetchNewUsersCollectionInRTDB → searchedValue:', searchedValue);
-  const { searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
+  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   if (isDev)
     console.log('fetchNewUsersCollectionInRTDB → params:', {
       searchValue,
@@ -1470,10 +1482,16 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
     const isDateSearch = await searchByDate(searchValue, uniqueUserIds, users);
     if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
-      await searchBySearchId(modifiedSearchValue, uniqueUserIds, users);
-      await searchByPrefixes(searchValue, uniqueUserIds, users);
-      await searchUserByPartialUserId(searchValue, users);
-      await searchByIndexOn(searchValue, uniqueUserIds, users);
+      const shouldUseUkTelegramOnly = isUkLeadingTelegramQuery({ searchKey, searchValue });
+      const searchPrefixes = shouldUseUkTelegramOnly ? ['telegram'] : keysToCheck;
+
+      await searchBySearchId(modifiedSearchValue, uniqueUserIds, users, searchPrefixes);
+      await searchByPrefixes(searchValue, uniqueUserIds, users, searchPrefixes);
+
+      if (!shouldUseUkTelegramOnly) {
+        await searchUserByPartialUserId(searchValue, users);
+        await searchByIndexOn(searchValue, uniqueUserIds, users);
+      }
     }
 
     if (Object.keys(users).length === 1) {
