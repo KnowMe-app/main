@@ -264,13 +264,24 @@ export const fetchLatestUsers = async (limit = 9, lastKey) => {
   };
 };
 
-export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
+export const fetchUsersByLastLogin2 = async (limit = 9, cursor) => {
   const usersRef = ref2(database, 'users');
   const realLimit = limit + 1;
+  const normalizedCursor =
+    typeof cursor === 'string'
+      ? { date: cursor }
+      : cursor && typeof cursor === 'object'
+        ? cursor
+        : null;
   const { todayDash } = getCurrentDate();
   const q =
-    lastDate !== undefined
-      ? query(usersRef, orderByChild('lastLogin2'), endBefore(lastDate), limitToLast(realLimit))
+    normalizedCursor?.date
+      ? query(
+        usersRef,
+        orderByChild('lastLogin2'),
+        endAt(normalizedCursor.date, normalizedCursor.userId || '\uf8ff'),
+        limitToLast(realLimit)
+      )
       : query(usersRef, orderByChild('lastLogin2'), endAt(todayDash), limitToLast(realLimit));
 
   const snapshot = await get(q);
@@ -281,8 +292,16 @@ export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
   let entries = Object.entries(snapshot.val()).sort((a, b) => {
     const bDate = b[1].lastLogin2 || '';
     const aDate = a[1].lastLogin2 || '';
-    return bDate.localeCompare(aDate);
+    const byDate = bDate.localeCompare(aDate);
+    if (byDate !== 0) return byDate;
+    return b[0].localeCompare(a[0]);
   });
+
+  if (normalizedCursor?.date && normalizedCursor?.userId) {
+    entries = entries.filter(
+      ([id, data]) => !(id === normalizedCursor.userId && (data?.lastLogin2 || '') === normalizedCursor.date)
+    );
+  }
 
   const hasMore = entries.length > limit;
   if (hasMore) entries = entries.slice(0, limit);
@@ -290,7 +309,9 @@ export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
 
   return {
     users: entries.map(([id, data]) => ({ userId: id, ...data })),
-    lastKey: lastEntry ? lastEntry[1].lastLogin2 : null,
+    lastKey: lastEntry
+      ? { date: lastEntry[1].lastLogin2 || '', userId: lastEntry[0] }
+      : null,
     hasMore,
   };
 };
