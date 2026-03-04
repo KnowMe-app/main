@@ -1730,15 +1730,17 @@ const Matching = () => {
     <>
       {showFilters && <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />}
       <FilterContainer show={showFilters} onClick={e => e.stopPropagation()}>
-        <SearchBar
-          searchFunc={searchUsers}
-          setUsers={applySearchResults}
-          setUserNotFound={() => {}}
-          wrapperStyle={{ width: '100%', marginBottom: '10px' }}
-          leftIcon="🔍"
-          storageKey={SEARCH_KEY}
-          onClear={reloadDefault}
-        />
+        {isAdmin && (
+          <SearchBar
+            searchFunc={searchUsers}
+            setUsers={applySearchResults}
+            setUserNotFound={() => {}}
+            wrapperStyle={{ width: '100%', marginBottom: '10px' }}
+            leftIcon="🔍"
+            storageKey={SEARCH_KEY}
+            onClear={reloadDefault}
+          />
+        )}
         <FilterResetButton onClick={resetFiltersAndCache}>
           Скинути фільтри та кеш
         </FilterResetButton>
