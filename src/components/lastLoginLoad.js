@@ -24,25 +24,12 @@ export async function defaultFetchByLastLogin(dateStr, limit) {
   return snap.exists() ? Object.entries(snap.val()) : [];
 }
 
-export async function defaultFetchUsersWithoutLastLogin(limit, token = '') {
-  const db = getDatabase();
-  const q = query(
-    ref2(db, 'users'),
-    orderByChild('lastLogin'),
-    equalTo(token),
-    limitToFirst(limit)
-  );
-  const snap = await get(q);
-  return snap.exists() ? Object.entries(snap.val()) : [];
-}
-
 // onProgress(partialUsers, dateStr) is called after each date is processed.
 // partialUsers contains users found so far starting from startOffset.
 export async function fetchUsersByLastLoginPaged(
   startOffset = 0,
   limit = PAGE_SIZE,
   fetchDateFn = defaultFetchByLastLogin,
-  fetchWithoutLastLoginFn = defaultFetchUsersWithoutLastLogin,
   onProgress
 ) {
   const today = new Date();
@@ -52,7 +39,6 @@ export async function fetchUsersByLastLoginPaged(
   console.log('[fetchUsersByLastLoginPaged] startOffset', startOffset, 'limit', limit);
 
   const combined = [];
-  const seen = new Set();
   const MAX_LOAD_DAYS = MAX_LOOKBACK_DAYS; // safety cap
   let dayOffset = 0;
 
@@ -77,11 +63,7 @@ export async function fetchUsersByLastLoginPaged(
         const aDate = a[1].lastLogin ? parse(a[1].lastLogin) : '';
         return bDate.localeCompare(aDate);
       });
-      chunk.forEach(([id, user]) => {
-        if (seen.has(id)) return;
-        seen.add(id);
-        combined.push([id, user]);
-      });
+      combined.push(...chunk);
     }
 
     if (onProgress) {
@@ -96,36 +78,10 @@ export async function fetchUsersByLastLoginPaged(
     dayOffset += 1;
   }
 
-  if (combined.length < target) {
-    const fallbackTokens = ['', null];
-    for (const token of fallbackTokens) {
-      // eslint-disable-next-line no-await-in-loop
-      const chunk = await fetchWithoutLastLoginFn(totalLimit - combined.length, token);
-      chunk.forEach(([id, user]) => {
-        if (seen.has(id)) return;
-        seen.add(id);
-        combined.push([id, user]);
-      });
-
-      if (onProgress) {
-        const partial = combined.slice(startOffset, Math.min(combined.length, startOffset + limit));
-        const partUsers = {};
-        partial.forEach(([pid, pdata]) => {
-          partUsers[pid] = pdata;
-        });
-        onProgress(partUsers, token === '' ? 'empty-lastLogin' : 'missing-lastLogin');
-      }
-
-      if (combined.length >= target) break;
-    }
-  }
-
   const slice = combined.slice(startOffset, startOffset + limit);
   const users = slice.map(([id, data]) => ({ userId: id, ...data }));
   const nextOffset = startOffset + slice.length;
-  const hasMore =
-    combined.length > startOffset + limit ||
-    (combined.length >= target && dayOffset < MAX_LOAD_DAYS);
+  const hasMore = combined.length > startOffset + limit;
 
   return { users, lastKey: nextOffset, hasMore };
 }
