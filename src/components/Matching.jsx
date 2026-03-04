@@ -6,7 +6,7 @@ import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import styled, { keyframes } from 'styled-components';
 import { color } from './styles';
 import {
-  fetchUsersByLastLoginPaged,
+  fetchUsersByLastLogin2,
   fetchUserById,
   fetchFavoriteUsersData,
   fetchDislikeUsersData,
@@ -1110,7 +1110,7 @@ const Matching = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const usersRef = useRef(users);
-  const [lastKey, setLastKey] = useState(0);
+  const [lastKey, setLastKey] = useState(undefined);
   const [hasMore, setHasMore] = useState(true);
   // removed selected user modal logic
   const [favoriteUsers, setFavoriteUsers] = useState({});
@@ -1322,9 +1322,9 @@ const Matching = () => {
 
       while (collected.length < limit) {
         const remaining = limit - collected.length;
-        const res = await fetchUsersByLastLoginPaged(
-          cursor || 0,
-          remaining + exclude.size + 1
+        const res = await fetchUsersByLastLogin2(
+          remaining + exclude.size + 1,
+          cursor
         );
 
         const filtered = isAdmin
@@ -1351,9 +1351,9 @@ const Matching = () => {
 
         hasMore = res.hasMore;
         prevCursor = cursor;
-        cursor = Number.isFinite(res.lastKey) ? res.lastKey : cursor;
+        cursor = res.lastKey;
 
-        if (!res.hasMore || prevCursor === cursor) {
+        if (!res.hasMore || !res.lastKey || prevCursor === cursor) {
           break;
         }
       }
@@ -1647,9 +1647,8 @@ const Matching = () => {
           collected.push(...unique);
         }
 
-        const nextCursor = Number.isFinite(res.lastKey) ? res.lastKey : cursor;
-        const stuck = nextCursor === cursor;
-        cursor = nextCursor;
+        const stuck = !res.lastKey || res.lastKey === cursor;
+        cursor = res.lastKey;
         canLoadMore = res.hasMore && !stuck;
       }
 
