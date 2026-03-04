@@ -73,11 +73,23 @@ const FilterPanel = ({
   mode = 'default',
   storageKey: customKey,
   resetToken,
+  nonAdminAllActive = false,
 }) => {
-  const defaultFilters = useMemo(() => (mode === 'matching' ? defaultsMatching : defaultsAdd), [mode]);
+  const defaultFilters = useMemo(() => {
+    if (mode !== 'matching') return defaultsAdd;
+    if (!nonAdminAllActive) return defaultsMatching;
+    return {
+      ...defaultsMatching,
+      userRole: { ed: true, ag: true, ip: true, other: true },
+    };
+  }, [mode, nonAdminAllActive]);
   const storageKey = customKey || (mode === 'matching' ? 'matchingFilters' : 'userFilters');
 
   const getInitialFilters = () => {
+    if (mode === 'matching' && nonAdminAllActive) {
+      return { ...defaultFilters };
+    }
+
     const stored = localStorage.getItem(storageKey);
     if (!stored) return { ...defaultFilters };
     try {
