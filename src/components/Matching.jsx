@@ -1897,12 +1897,13 @@ const Matching = () => {
             Array.from({ length: 4 }).map((_, idx) => (
               <MatchingSkeleton key={`skeleton-${idx}`} />
             ))}
-          {viewMode === 'default' && hasMore && !loading && (
-            <LoadMoreButton onClick={loadMore}>
-              Дозавантажити карточки
+          </Grid>
+
+          {viewMode === 'default' && hasMore && (
+            <LoadMoreButton onClick={loadMore} disabled={loading}>
+              {loading ? 'Завантаження...' : 'Дозавантажити карточки'}
             </LoadMoreButton>
           )}
-          </Grid>
 
           {showInfoModal && (
             <InfoModal onClose={() => setShowInfoModal(false)} text="dotsMenu" Context={dotsMenu} />
