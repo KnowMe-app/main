@@ -104,7 +104,16 @@ const Grid = styled.div`
   flex-wrap: wrap;
   gap: 10px;
   padding: 0 10px;
+  margin-bottom: 8px;
   justify-content: center;
+`;
+
+const LoadMoreFooter = styled.div`
+  position: relative;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+  padding: 6px 12px 24px;
 `;
 
 const CardContainer = styled.div`
@@ -366,7 +375,7 @@ const CardCount = styled.p`
 `;
 
 const LoadMoreButton = styled.button`
-  margin: 10px auto 20px;
+  margin: 0;
   border: none;
   border-radius: 8px;
   background-color: ${color.accent5};
@@ -1899,10 +1908,16 @@ const Matching = () => {
             ))}
           </Grid>
 
-          {viewMode === 'default' && hasMore && (
-            <LoadMoreButton onClick={loadMore} disabled={loading}>
-              {loading ? 'Завантаження...' : 'Дозавантажити карточки'}
-            </LoadMoreButton>
+          {viewMode === 'default' && (
+            <LoadMoreFooter>
+              <LoadMoreButton onClick={loadMore} disabled={loading || !hasMore}>
+                {loading
+                  ? 'Завантаження...'
+                  : hasMore
+                    ? 'Дозавантажити карточки'
+                    : 'Більше карточок немає'}
+              </LoadMoreButton>
+            </LoadMoreFooter>
           )}
 
           {showInfoModal && (
