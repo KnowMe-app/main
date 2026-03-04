@@ -799,6 +799,24 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [state.publish, state.photos]);
 
   const [selectedField, setSelectedField] = useState(null);
+  const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
+  const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
+  const visibleNonDonorFields = new Set([
+    'name',
+    'surname',
+    'email',
+    'phone',
+    'telegram',
+    'facebook',
+    'instagram',
+    'tiktok',
+    'vk',
+    'country',
+    'region',
+    'city',
+    'moreInfo_main',
+  ]);
+  const visiblePickerFields = pickerFields.filter(field => isDonorRole || visibleNonDonorFields.has(field.name));
   // const [state, setState] = useState({ eyeColor: '', hairColor: '' });
 
   const handleOpenModal = fieldName => {
@@ -941,7 +959,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         )}
         {state.userId && <Photos state={state} setState={setState} />}
 
-        {pickerFields.map(field => {
+        {visiblePickerFields.map(field => {
           // console.log('field.options:', field.options);
 
           return (
@@ -1026,7 +1044,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       {showInfoModal && (
         <InfoModal
           onClose={handleOverlayClick}
-          options={pickerFields.find(field => field.name === selectedField)?.options}
+          options={visiblePickerFields.find(field => field.name === selectedField)?.options}
           onSelect={handleSelectOption}
           text={showInfoModal}
           Context={dotsMenu}
