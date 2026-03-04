@@ -718,8 +718,7 @@ const SearchBar = ({
           setUsers && setUsers({});
         }
 
-        const { searchUkTelegramFast } = await import('./config');
-        const res = await searchUkTelegramFast(telegramValue);
+        const res = await cachedSearch({ telegram: telegramValue });
         if (res && Object.keys(res).length > 0) {
           setUserNotFound && setUserNotFound(false);
           if ('userId' in res) {
