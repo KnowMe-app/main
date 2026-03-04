@@ -1657,6 +1657,7 @@ const Matching = () => {
   }, [reloadDefault]);
 
   const gridRef = useRef(null);
+  const [preLastCardNode, setPreLastCardNode] = useState(null);
 
 
   const visibleUsers = isAdmin
@@ -1683,6 +1684,24 @@ const Matching = () => {
 
     loadMore();
   }, [filteredUsers.length, hasMore, loadMore, loading, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== 'default') return;
+    if (!hasMore || !preLastCardNode) return;
+
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0]?.isIntersecting) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(preLastCardNode);
+
+    return () => observer.disconnect();
+  }, [hasMore, loadMore, preLastCardNode, viewMode]);
 
   const dotsMenu = () => (
     <>
@@ -1752,7 +1771,7 @@ const Matching = () => {
           )}
 
           <Grid ref={gridRef}>
-            {filteredUsers.map(user => {
+            {filteredUsers.map((user, index) => {
               const photos = Array.isArray(user.photos)
                 ? user.photos.filter(Boolean).map(convertDriveLinkToImage)
                 : [getCurrentValue(user.photos)]
@@ -1794,7 +1813,12 @@ const Matching = () => {
                 .map(v => String(v).trim())
                 .join(' ');
               return (
-                <CardContainer key={user.userId}>
+                <CardContainer
+                  key={user.userId}
+                  ref={
+                    index === filteredUsers.length - 2 ? setPreLastCardNode : null
+                  }
+                >
                   {thirdVariant && (
                     <ThirdInfoCard>
                       <InfoCardContent user={user} variant={thirdVariant} />
