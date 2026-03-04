@@ -264,24 +264,13 @@ export const fetchLatestUsers = async (limit = 9, lastKey) => {
   };
 };
 
-export const fetchUsersByLastLogin2 = async (limit = 9, cursor) => {
+export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
   const usersRef = ref2(database, 'users');
   const realLimit = limit + 1;
-  const normalizedCursor =
-    typeof cursor === 'string'
-      ? { date: cursor }
-      : cursor && typeof cursor === 'object'
-        ? cursor
-        : null;
   const { todayDash } = getCurrentDate();
   const q =
-    normalizedCursor?.date
-      ? query(
-        usersRef,
-        orderByChild('lastLogin2'),
-        endAt(normalizedCursor.date, normalizedCursor.userId || '\uf8ff'),
-        limitToLast(realLimit)
-      )
+    lastDate !== undefined
+      ? query(usersRef, orderByChild('lastLogin2'), endBefore(lastDate), limitToLast(realLimit))
       : query(usersRef, orderByChild('lastLogin2'), endAt(todayDash), limitToLast(realLimit));
 
   const snapshot = await get(q);
@@ -295,21 +284,13 @@ export const fetchUsersByLastLogin2 = async (limit = 9, cursor) => {
     return bDate.localeCompare(aDate);
   });
 
-  if (normalizedCursor?.date && normalizedCursor?.userId) {
-    entries = entries.filter(
-      ([id, data]) => !(id === normalizedCursor.userId && (data?.lastLogin2 || '') === normalizedCursor.date)
-    );
-  }
-
   const hasMore = entries.length > limit;
   if (hasMore) entries = entries.slice(0, limit);
   const lastEntry = entries[entries.length - 1];
 
   return {
     users: entries.map(([id, data]) => ({ userId: id, ...data })),
-    lastKey: lastEntry
-      ? { date: lastEntry[1].lastLogin2 || '', userId: lastEntry[0] }
-      : null,
+    lastKey: lastEntry ? lastEntry[1].lastLogin2 : null,
     hasMore,
   };
 };
