@@ -1764,7 +1764,7 @@ const Matching = () => {
       <Container>
         <InnerContainer>
           <HeaderContainer>
-            <CardCount>{filteredUsers.length} карточок</CardCount>
+            {isAdmin && <CardCount>{filteredUsers.length} карточок</CardCount>}
             <TopActions>
               {viewMode !== 'default' && (
                 <ActionButton onClick={reloadDefault}><FaDownload /></ActionButton>
