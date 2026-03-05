@@ -1201,11 +1201,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           delete updatedUsers[id];
           return updatedUsers;
         });
-        const res = await fetchNewUsersCollectionInRTDB({ name: '' });
-        if (res) {
-          cacheFetchedUsers(res, cacheLoad2Users);
-          setUsers(res);
-        }
+        // Не виконуємо повторне завантаження всіх карток після видалення:
+        // пошук з порожнім значенням запускає надто важкий запит і може
+        // залишати користувача на нескінченному спінері на мобільних.
         setSearch('');
         setState({});
         setShowInfoModal(null);
