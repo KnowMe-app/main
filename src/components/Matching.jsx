@@ -70,6 +70,12 @@ const filterLongUsers = list => list.filter(u => isValidId(u?.userId));
 const compareUsersByLastLogin2 = (a = {}, b = {}) =>
   (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
 
+const isSameCursor = (a, b) => {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a.date === b.date && a.userId === b.userId;
+};
+
 const Container = styled.div`
   display: flex;
   flex-direction: column;
@@ -1353,7 +1359,7 @@ const Matching = () => {
         prevCursor = cursor;
         cursor = res.lastKey;
 
-        if (!res.hasMore || !res.lastKey || prevCursor === cursor) {
+        if (!res.hasMore || !res.lastKey || isSameCursor(prevCursor, cursor)) {
           break;
         }
       }
@@ -1647,7 +1653,7 @@ const Matching = () => {
           collected.push(...unique);
         }
 
-        const stuck = !res.lastKey || res.lastKey === cursor;
+        const stuck = !res.lastKey || isSameCursor(res.lastKey, cursor);
         cursor = res.lastKey;
         canLoadMore = res.hasMore && !stuck;
       }

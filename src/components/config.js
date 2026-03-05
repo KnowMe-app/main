@@ -268,21 +268,47 @@ export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
   const usersRef = ref2(database, 'users');
   const realLimit = limit + 1;
   const { todayDash } = getCurrentDate();
-  const q =
-    lastDate !== undefined
-      ? query(usersRef, orderByChild('lastLogin2'), endBefore(lastDate), limitToLast(realLimit))
-      : query(usersRef, orderByChild('lastLogin2'), endAt(todayDash), limitToLast(realLimit));
+  const cursor =
+    typeof lastDate === 'object' && lastDate !== null
+      ? { date: lastDate.date || '', userId: lastDate.userId || '' }
+      : { date: lastDate || '', userId: '' };
 
-  const snapshot = await get(q);
-  if (!snapshot.exists()) {
-    return { users: [], lastKey: null, hasMore: false };
+  let fetchLimit = realLimit;
+  let entries = [];
+  let snapshotSize = 0;
+
+  while (entries.length < realLimit && fetchLimit <= 5000) {
+    const q =
+      cursor.date
+        ? query(usersRef, orderByChild('lastLogin2'), endAt(cursor.date), limitToLast(fetchLimit))
+        : query(usersRef, orderByChild('lastLogin2'), endAt(todayDash), limitToLast(fetchLimit));
+
+    const snapshot = await get(q);
+    if (!snapshot.exists()) {
+      return { users: [], lastKey: null, hasMore: false };
+    }
+
+    entries = Object.entries(snapshot.val()).sort((a, b) => {
+      const bDate = b[1].lastLogin2 || '';
+      const aDate = a[1].lastLogin2 || '';
+      const byDate = bDate.localeCompare(aDate);
+      if (byDate !== 0) return byDate;
+      return b[0].localeCompare(a[0]);
+    });
+
+    if (cursor.date) {
+      entries = entries.filter(([id, data]) => {
+        const date = data.lastLogin2 || '';
+        if (date < cursor.date) return true;
+        if (date > cursor.date) return false;
+        return cursor.userId ? id.localeCompare(cursor.userId) < 0 : false;
+      });
+    }
+
+    snapshotSize = Object.keys(snapshot.val()).length;
+    if (entries.length >= realLimit || snapshotSize < fetchLimit) break;
+    fetchLimit *= 2;
   }
-
-  let entries = Object.entries(snapshot.val()).sort((a, b) => {
-    const bDate = b[1].lastLogin2 || '';
-    const aDate = a[1].lastLogin2 || '';
-    return bDate.localeCompare(aDate);
-  });
 
   const hasMore = entries.length > limit;
   if (hasMore) entries = entries.slice(0, limit);
@@ -290,7 +316,9 @@ export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
 
   return {
     users: entries.map(([id, data]) => ({ userId: id, ...data })),
-    lastKey: lastEntry ? lastEntry[1].lastLogin2 : null,
+    lastKey: lastEntry
+      ? { date: lastEntry[1].lastLogin2 || '', userId: lastEntry[0] }
+      : null,
     hasMore,
   };
 };
