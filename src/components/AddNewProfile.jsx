@@ -266,6 +266,23 @@ const SortModeLabel = styled.label`
 
 
 
+
+const SearchScopeContainer = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: -4px 0 10px;
+  padding: 0 6px;
+`;
+
+const SearchScopeLabel = styled.label`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #1f1f1f;
+`;
+
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const LOAD_SORT_MODES = {
@@ -291,6 +308,35 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   });
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
+
+
+  const SEARCH_SCOPE_OPTIONS = [
+    { key: 'searchId', label: 'searchId' },
+    { key: 'userId', label: 'userId' },
+    { key: 'name', label: 'name' },
+    { key: 'phone', label: 'phone' },
+    { key: 'telegram', label: 'telegram' },
+    { key: 'instagram', label: 'instagram' },
+    { key: 'facebook', label: 'facebook' },
+    { key: 'email', label: 'email' },
+    { key: 'vk', label: 'vk' },
+    { key: 'tiktok', label: 'tiktok' },
+    { key: 'other', label: 'other' },
+  ];
+
+  const [enabledSearchKeys, setEnabledSearchKeys] = useState(() =>
+    SEARCH_SCOPE_OPTIONS.reduce((acc, option) => {
+      acc[option.key] = true;
+      return acc;
+    }, {}),
+  );
+
+  const handleSearchScopeChange = key => {
+    setEnabledSearchKeys(prev => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
@@ -2068,6 +2114,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </TopButtons>
         )}
 
+
+        <SearchScopeContainer>
+          {SEARCH_SCOPE_OPTIONS.map(option => (
+            <SearchScopeLabel key={option.key}>
+              <input
+                type="checkbox"
+                checked={Boolean(enabledSearchKeys[option.key])}
+                onChange={() => handleSearchScopeChange(option.key)}
+              />
+              {option.label}
+            </SearchScopeLabel>
+          ))}
+        </SearchScopeContainer>
+
         <SearchBar
           searchFunc={fetchNewUsersCollectionInRTDB}
           search={search}
@@ -2096,6 +2156,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           filterForload={currentFilter}
           favoriteUsers={favoriteUsersData}
           dislikeUsers={dislikeUsersData}
+          enabledSearchKeys={enabledSearchKeys}
         />
         {state.userId ? (
           <>
