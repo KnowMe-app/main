@@ -344,6 +344,7 @@ const SearchBar = ({
   filterForload,
   favoriteUsers = {},
   dislikeUsers = {},
+  enabledSearchKeys,
 }) => {
   const [internalSearch, setInternalSearch] = useState(
     () => localStorage.getItem(storageKey) || '',
@@ -360,6 +361,11 @@ const SearchBar = ({
     () => loadHistoryCache('queries') || [],
   );
   const [showHistory, setShowHistory] = useState(false);
+
+  const isSearchEnabled = key => {
+    if (!enabledSearchKeys) return true;
+    return Boolean(enabledSearchKeys[key]);
+  };
 
   const loadCachedResult = (key, value) => {
     if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
@@ -518,9 +524,10 @@ const SearchBar = ({
     }, {});
   };
 
-  const processUserSearch = async (platform, parseFunction, inputData) => {
+  const processUserSearch = async (platform, parseFunction, inputData, options = {}) => {
     const trimmedInput = inputData.trim();
     const id = parseFunction(trimmedInput);
+    const { allowFallback = true } = options;
 
     console.log('[SearchBar] Parser evaluation', {
       platform,
@@ -541,7 +548,7 @@ const SearchBar = ({
       }
       const res = await cachedSearch(result);
       if (!res || Object.keys(res).length === 0) {
-        if (platform === 'other') {
+        if (platform === 'other' && allowFallback) {
           for (const fallbackKey of OTHER_SEARCH_FALLBACK_KEYS) {
             if (fallbackKey === 'other') continue;
             const fallbackParams = { [fallbackKey]: id };
@@ -654,7 +661,12 @@ const SearchBar = ({
       }
       return;
     }
-    if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    if (
+      isSearchEnabled('nameGrouped') &&
+      trimmed &&
+      trimmed.startsWith('[') &&
+      trimmed.endsWith(']')
+    ) {
       const hasCache = loadCachedResult('name', trimmed);
       const freshCache = hasCache && isCacheFresh('name', trimmed);
       if (freshCache) return;
@@ -693,7 +705,7 @@ const SearchBar = ({
     }
 
     const ukTrigger = parseUkTriggerQuery(rawQuery);
-    if (ukTrigger?.searchPair?.telegram) {
+    if (isSearchEnabled('telegramUkTrigger') && ukTrigger?.searchPair?.telegram) {
       const normalizedTelegram = ukTrigger.searchPair.telegram;
       const searchCandidates = [normalizedTelegram];
       if (ukTrigger.handle) {
@@ -731,49 +743,99 @@ const SearchBar = ({
       }
     }
 
-    if (await processUserSearch('userId', parseUserId, rawQuery)) return;
-    if (await processUserSearch('facebook', parseFacebookId, rawQuery)) return;
-    if (await processUserSearch('instagram', parseInstagramId, rawQuery)) return;
-    if (await processUserSearch('telegram', parseTelegramId, rawQuery)) return;
-    if (await processUserSearch('email', parseEmail, rawQuery)) return;
-    if (await processUserSearch('tiktok', parseTikTokLink, rawQuery)) return;
-    if (await processUserSearch('phone', parsePhoneNumber, rawQuery)) return;
-    if (await processUserSearch('vk', parseVk, rawQuery)) return;
-    if (await processUserSearch('other', parseOtherContact, rawQuery)) return;
+    if (
+      isSearchEnabled('searchId') &&
+      await processUserSearch('searchId', parseUserId, rawQuery)
+    ) return;
+    if (
+      isSearchEnabled('userId') &&
+      await processUserSearch('userId', parseUserId, rawQuery)
+    ) return;
+    if (
+      isSearchEnabled('facebook') &&
+      await processUserSearch('facebook', parseFacebookId, rawQuery)
+    ) return;
+    if (
+      isSearchEnabled('instagram') &&
+      await processUserSearch('instagram', parseInstagramId, rawQuery)
+    ) return;
+    if (
+      isSearchEnabled('telegram') &&
+      await processUserSearch('telegram', parseTelegramId, rawQuery)
+    ) return;
+    if (
+      isSearchEnabled('email') &&
+      await processUserSearch('email', parseEmail, rawQuery)
+    ) return;
+    if (
+      isSearchEnabled('tiktok') &&
+      await processUserSearch('tiktok', parseTikTokLink, rawQuery)
+    ) return;
+    if (
+      isSearchEnabled('phone') &&
+      await processUserSearch('phone', parsePhoneNumber, rawQuery)
+    ) return;
+    if (
+      isSearchEnabled('vk') &&
+      await processUserSearch('vk', parseVk, rawQuery)
+    ) return;
+    if (
+      isSearchEnabled('other') &&
+      await processUserSearch('other', parseOtherContact, rawQuery, {
+        allowFallback: isSearchEnabled('otherFallback'),
+      })
+    ) return;
+
+    const canSearchName =
+      isSearchEnabled('nameExact') ||
+      isSearchEnabled('nameWithoutPrefix') ||
+      isSearchEnabled('nameWithPrefix');
+
+    if (!canSearchName) {
+      setUserNotFound && setUserNotFound(true);
+      return;
+    }
 
     const nameTrim = rawQuery.trim();
     console.log('[SearchBar] Defaulting to name search', {
       raw: rawQuery,
       cleaned: nameTrim,
     });
-    const hasCache = loadCachedResult('name', nameTrim);
-    const freshCache = hasCache && isCacheFresh('name', nameTrim);
-    emitSearchLabel({ name: nameTrim });
-    if (freshCache) return;
-    if (!hasCache) {
-      setState && setState({});
-      setUsers && setUsers({});
+
+    let res = null;
+
+    if (isSearchEnabled('nameExact')) {
+      const hasCache = loadCachedResult('name', nameTrim);
+      const freshCache = hasCache && isCacheFresh('name', nameTrim);
+      emitSearchLabel({ name: nameTrim });
+      if (freshCache) return;
+      if (!hasCache) {
+        setState && setState({});
+        setUsers && setUsers({});
+      }
+      res = await cachedSearch({ name: nameTrim });
     }
-    let res = await cachedSearch({ name: nameTrim });
-    if (!res || Object.keys(res).length === 0) {
+
+    if (!res && isSearchEnabled('nameWithoutPrefix')) {
       const cleanedQuery = rawQuery.replace(/^ук\s*см\s*/i, '').trim();
       if (cleanedQuery && cleanedQuery !== nameTrim) {
         console.log('[SearchBar] Retrying name search without prefix', {
           raw: rawQuery,
           cleaned: cleanedQuery,
         });
-          res = await cachedSearch({ name: cleanedQuery });
+        res = await cachedSearch({ name: cleanedQuery });
         emitSearchLabel({ name: cleanedQuery });
       }
     }
-    if (!res || Object.keys(res).length === 0) {
+
+    if (!res && isSearchEnabled('nameWithPrefix')) {
       const withPrefix = /^ук\s*см/i.test(rawQuery) ? null : `УК СМ ${rawQuery.trim()}`;
       if (withPrefix) {
         console.log('[SearchBar] Retrying name search with enforced prefix', {
           raw: rawQuery,
           cleaned: withPrefix,
         });
-          res = await cachedSearch({ name: withPrefix });
+        res = await cachedSearch({ name: withPrefix });
         emitSearchLabel({ name: withPrefix });
       }
     }

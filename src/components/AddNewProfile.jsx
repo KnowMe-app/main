@@ -266,6 +266,45 @@ const SortModeLabel = styled.label`
 
 
 
+
+const SearchScopeContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: -4px 0 10px;
+  padding: 0 2px;
+`;
+
+const SearchScopeBlock = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 8px;
+  background: #fff;
+`;
+
+const SearchScopeBlockTitle = styled.div`
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+`;
+
+const SearchScopeItems = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+`;
+
+const SearchScopeLabel = styled.label`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #1f1f1f;
+`;
+
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const LOAD_SORT_MODES = {
@@ -291,6 +330,64 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   });
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
+
+
+  const SEARCH_SCOPE_BLOCKS = [
+    {
+      id: 'id-search',
+      title: 'Пошук по ID',
+      options: [
+        { key: 'searchId', label: 'searchId (точний)' },
+        { key: 'userId', label: 'userId (точний)' },
+      ],
+    },
+    {
+      id: 'contacts-search',
+      title: 'Пошук по контактах',
+      options: [
+        { key: 'phone', label: 'phone' },
+        { key: 'telegram', label: 'telegram' },
+        { key: 'telegramUkTrigger', label: 'telegram (через УК СМ trigger)' },
+        { key: 'instagram', label: 'instagram' },
+        { key: 'facebook', label: 'facebook' },
+        { key: 'email', label: 'email' },
+        { key: 'vk', label: 'vk' },
+        { key: 'tiktok', label: 'tiktok' },
+      ],
+    },
+    {
+      id: 'name-search',
+      title: 'Пошук по імені',
+      options: [
+        { key: 'nameExact', label: 'name (як введено)' },
+        { key: 'nameWithoutPrefix', label: 'name (без префікса УК СМ)' },
+        { key: 'nameWithPrefix', label: 'name (додати префікс УК СМ)' },
+        { key: 'nameGrouped', label: 'name (груповий формат [..])' },
+      ],
+    },
+    {
+      id: 'other-search',
+      title: 'Додатковий пошук',
+      options: [
+        { key: 'other', label: 'other (label-based)' },
+        { key: 'otherFallback', label: 'other fallback по всіх ключах' },
+      ],
+    },
+  ];
+
+  const [enabledSearchKeys, setEnabledSearchKeys] = useState(() =>
+    SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce((acc, option) => {
+      acc[option.key] = true;
+      return acc;
+    }, {}),
+  );
+
+  const handleSearchScopeChange = key => {
+    setEnabledSearchKeys(prev => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
@@ -2068,6 +2165,27 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </TopButtons>
         )}
 
+
+        <SearchScopeContainer>
+          {SEARCH_SCOPE_BLOCKS.map(block => (
+            <SearchScopeBlock key={block.id}>
+              <SearchScopeBlockTitle>{block.title}</SearchScopeBlockTitle>
+              <SearchScopeItems>
+                {block.options.map(option => (
+                  <SearchScopeLabel key={option.key}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(enabledSearchKeys[option.key])}
+                      onChange={() => handleSearchScopeChange(option.key)}
+                    />
+                    {option.label}
+                  </SearchScopeLabel>
+                ))}
+              </SearchScopeItems>
+            </SearchScopeBlock>
+          ))}
+        </SearchScopeContainer>
+
         <SearchBar
           searchFunc={fetchNewUsersCollectionInRTDB}
           search={search}
@@ -2096,6 +2214,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           filterForload={currentFilter}
           favoriteUsers={favoriteUsersData}
           dislikeUsers={dislikeUsersData}
+          enabledSearchKeys={enabledSearchKeys}
         />
         {state.userId ? (
           <>
