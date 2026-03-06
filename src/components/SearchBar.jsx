@@ -502,10 +502,65 @@ const SearchBar = ({
     onSearchKey && onSearchKey(params);
   };
 
-  const notifySearchResult = params => {
-    const [key, value] = Object.entries(params || {})[0] || [];
-    if (!key || value === undefined || value === null) return;
-    toast.success(`Результат знайдено через ${key}: ${value}`);
+  const pickUserFromResult = result => {
+    if (!result || typeof result !== 'object') return null;
+    if (Array.isArray(result)) return result[0] || null;
+    if ('userId' in result) return result;
+    return Object.values(result)[0] || null;
+  };
+
+  const collectFieldValues = fieldValue => {
+    if (fieldValue === undefined || fieldValue === null) return [];
+    if (Array.isArray(fieldValue)) {
+      return fieldValue
+        .map(item => collectFieldValues(item))
+        .flat();
+    }
+    if (typeof fieldValue === 'object') {
+      return Object.values(fieldValue)
+        .map(item => collectFieldValues(item))
+        .flat();
+    }
+    return [String(fieldValue)];
+  };
+
+  const findMatchedKeyValue = (result, fallbackParams, preferredKeys = []) => {
+    const [fallbackKey, fallbackValue] = Object.entries(fallbackParams || {})[0] || [];
+    if (!fallbackKey || fallbackValue === undefined || fallbackValue === null) return null;
+
+    const user = pickUserFromResult(result);
+    const normalizedSearch = String(fallbackValue).trim().toLowerCase();
+
+    if (!user || !normalizedSearch) {
+      return { key: fallbackKey, value: fallbackValue };
+    }
+
+    const candidateKeys = [...new Set([...preferredKeys, fallbackKey])];
+
+    for (const key of candidateKeys) {
+      if (!(key in user)) continue;
+      const values = collectFieldValues(user[key]);
+      const matchedValue = values.find(value =>
+        value.trim().toLowerCase().includes(normalizedSearch)
+      );
+
+      if (matchedValue) {
+        return { key, value: matchedValue };
+      }
+    }
+
+    return { key: fallbackKey, value: fallbackValue };
+  };
+
+  const notifySearchResult = (params, result, options = {}) => {
+    const matched = findMatchedKeyValue(
+      result,
+      params,
+      options.preferredKeys,
+    );
+
+    if (!matched) return;
+    toast.success(`Результат знайдено за ключем ${matched.key}: ${matched.value}`);
   };
 
   const cachedSearch = async params => {
@@ -556,7 +611,7 @@ const SearchBar = ({
       const result = { [platform]: id };
       emitSearchLabel(result);
       if (freshCache) {
-        notifySearchResult(result);
+        notifySearchResult(result, null, { preferredKeys: [platform] });
         return true;
       }
       if (!hasCache) {
@@ -574,7 +629,9 @@ const SearchBar = ({
 
             if (fallbackFreshCache) {
               emitSearchLabel(fallbackParams);
-              notifySearchResult(fallbackParams);
+              notifySearchResult(fallbackParams, null, {
+                preferredKeys: [fallbackKey],
+              });
               return true;
             }
 
@@ -584,7 +641,9 @@ const SearchBar = ({
             }
 
             emitSearchLabel(fallbackParams);
-            notifySearchResult(fallbackParams);
+            notifySearchResult(fallbackParams, fallbackRes, {
+              preferredKeys: [fallbackKey],
+            });
             setUserNotFound && setUserNotFound(false);
             if ('userId' in fallbackRes) {
               setState && setState(fallbackRes);
@@ -600,7 +659,7 @@ const SearchBar = ({
         setUserNotFound && setUserNotFound(true);
       } else {
         setUserNotFound && setUserNotFound(false);
-        notifySearchResult(result);
+        notifySearchResult(result, res, { preferredKeys: [platform] });
         if ('userId' in res) {
           setState && setState(res);
         } else {
@@ -752,7 +811,11 @@ const SearchBar = ({
 
         const res = await cachedSearch({ telegram: telegramValue });
         if (res && Object.keys(res).length > 0) {
-          notifySearchResult({ telegram: telegramValue });
+          notifySearchResult(
+            { telegram: telegramValue },
+            res,
+            { preferredKeys: ['telegram'] },
+          );
           setUserNotFound && setUserNotFound(false);
           if ('userId' in res) {
             setState && setState(res);
@@ -830,7 +893,7 @@ const SearchBar = ({
       const freshCache = hasCache && isCacheFresh('name', nameTrim);
       emitSearchLabel({ name: nameTrim });
       if (freshCache) {
-        notifySearchResult({ name: nameTrim });
+        notifySearchResult({ name: nameTrim }, null, { preferredKeys: ['name'] });
         return;
       }
       if (!hasCache) {
@@ -869,7 +932,11 @@ const SearchBar = ({
       setUserNotFound && setUserNotFound(false);
       const searchValueForNotification =
         (res && typeof res === 'object' && res.name) || nameTrim;
-      notifySearchResult({ name: searchValueForNotification });
+      notifySearchResult(
+        { name: searchValueForNotification },
+        res,
+        { preferredKeys: ['name'] },
+      );
       if ('userId' in res) {
         setState && setState(res);
       } else {
