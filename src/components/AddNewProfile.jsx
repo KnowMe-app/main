@@ -342,6 +342,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       ],
     },
     {
+      id: 'search-id-keys',
+      title: 'searchId: де шукати значення',
+      options: [
+        { key: 'searchIdKeyInstagram', label: 'instagram' },
+        { key: 'searchIdKeyFacebook', label: 'facebook' },
+        { key: 'searchIdKeyEmail', label: 'email' },
+        { key: 'searchIdKeyPhone', label: 'phone' },
+        { key: 'searchIdKeyTelegram', label: 'telegram' },
+        { key: 'searchIdKeyTiktok', label: 'tiktok' },
+        { key: 'searchIdKeyOther', label: 'other' },
+        { key: 'searchIdKeyVk', label: 'vk' },
+        { key: 'searchIdKeyName', label: 'name' },
+        { key: 'searchIdKeySurname', label: 'surname' },
+        { key: 'searchIdKeyLastAction', label: 'lastAction' },
+        { key: 'searchIdKeyGetInTouch', label: 'getInTouch' },
+      ],
+    },
+    {
       id: 'contacts-search',
       title: 'Пошук по контактах',
       options: [
@@ -375,12 +393,31 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     },
   ];
 
+  const SEARCH_ID_PREFIX_OPTIONS = [
+    { key: 'searchIdKeyInstagram', prefix: 'instagram' },
+    { key: 'searchIdKeyFacebook', prefix: 'facebook' },
+    { key: 'searchIdKeyEmail', prefix: 'email' },
+    { key: 'searchIdKeyPhone', prefix: 'phone' },
+    { key: 'searchIdKeyTelegram', prefix: 'telegram' },
+    { key: 'searchIdKeyTiktok', prefix: 'tiktok' },
+    { key: 'searchIdKeyOther', prefix: 'other' },
+    { key: 'searchIdKeyVk', prefix: 'vk' },
+    { key: 'searchIdKeyName', prefix: 'name' },
+    { key: 'searchIdKeySurname', prefix: 'surname' },
+    { key: 'searchIdKeyLastAction', prefix: 'lastAction' },
+    { key: 'searchIdKeyGetInTouch', prefix: 'getInTouch' },
+  ];
+
   const [enabledSearchKeys, setEnabledSearchKeys] = useState(() =>
     SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce((acc, option) => {
       acc[option.key] = true;
       return acc;
     }, {}),
   );
+
+  const selectedSearchIdPrefixes = SEARCH_ID_PREFIX_OPTIONS
+    .filter(option => enabledSearchKeys[option.key])
+    .map(option => option.prefix);
 
   const handleSearchScopeChange = key => {
     setEnabledSearchKeys(prev => ({
@@ -2215,6 +2252,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           favoriteUsers={favoriteUsersData}
           dislikeUsers={dislikeUsersData}
           enabledSearchKeys={enabledSearchKeys}
+          searchOptions={{ searchIdPrefixes: selectedSearchIdPrefixes }}
         />
         {state.userId ? (
           <>

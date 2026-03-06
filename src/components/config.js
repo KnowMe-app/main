@@ -57,6 +57,22 @@ export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './
 
 const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
 
+const getSearchIdPrefixes = searchIdPrefixes => {
+  if (!Array.isArray(searchIdPrefixes) || searchIdPrefixes.length === 0) {
+    return keysToCheck;
+  }
+
+  const normalizedPrefixes = searchIdPrefixes
+    .map(prefix => (typeof prefix === 'string' ? prefix.trim() : ''))
+    .filter(Boolean);
+
+  const allowedPrefixes = keysToCheck.filter(prefix =>
+    normalizedPrefixes.includes(prefix)
+  );
+
+  return allowedPrefixes.length > 0 ? allowedPrefixes : keysToCheck;
+};
+
 export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
   const { disableCompression = false, maxSizeKB = 50 } = options;
   const file = disableCompression
@@ -822,10 +838,17 @@ const addUserFromUsers = async (userId, users) => {
   }
 };
 
-const searchBySearchIdUsers = async (modifiedSearchValue, uniqueUserIds, users) => {
+const searchBySearchIdUsers = async (
+  modifiedSearchValue,
+  uniqueUserIds,
+  users,
+  searchIdPrefixes,
+) => {
   const ukSmPrefix = encodeKey('УК СМ ');
   const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(ukSmPrefix.toLowerCase());
-  const searchPromises = keysToCheck.flatMap(prefix => {
+  const prefixesToCheck = getSearchIdPrefixes(searchIdPrefixes);
+
+  const searchPromises = prefixesToCheck.flatMap(prefix => {
     const baseKey = `${prefix}_${modifiedSearchValue.toLowerCase()}`;
     const searchKeys = [baseKey];
     if (hasUkSm) {
@@ -919,12 +942,18 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
   }
 };
 
-export const searchUsersOnly = async searchedValue => {
+export const searchUsersOnly = async (searchedValue, options = {}) => {
+  const { searchIdPrefixes } = options;
   const { searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const users = {};
   const uniqueUserIds = new Set();
   try {
-    await searchBySearchIdUsers(modifiedSearchValue, uniqueUserIds, users);
+    await searchBySearchIdUsers(
+      modifiedSearchValue,
+      uniqueUserIds,
+      users,
+      searchIdPrefixes,
+    );
     await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
     await searchUserByPartialUserId(searchValue, users);
 
@@ -1182,11 +1211,17 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
   return true;
 };
 
-const searchBySearchId = async (modifiedSearchValue, uniqueUserIds, users) => {
+const searchBySearchId = async (
+  modifiedSearchValue,
+  uniqueUserIds,
+  users,
+  searchIdPrefixes,
+) => {
   const ukSmPrefix = encodeKey('УК СМ ');
   const hasUkSm = modifiedSearchValue.toLowerCase().startsWith(ukSmPrefix.toLowerCase());
+  const prefixesToCheck = getSearchIdPrefixes(searchIdPrefixes);
 
-  const searchPromises = keysToCheck.flatMap(prefix => {
+  const searchPromises = prefixesToCheck.flatMap(prefix => {
     const baseKey = `${prefix}_${modifiedSearchValue.toLowerCase()}`;
     const searchKeys = [baseKey];
 
@@ -1483,7 +1518,8 @@ const searchByIndexOn = async (searchValue, uniqueUserIds, users) => {
   }
 };
 
-export const fetchNewUsersCollectionInRTDB = async searchedValue => {
+export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {}) => {
+  const { searchIdPrefixes } = options;
   if (isDev) console.log('fetchNewUsersCollectionInRTDB → searchedValue:', searchedValue);
   const { searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   if (isDev)
@@ -1498,7 +1534,12 @@ export const fetchNewUsersCollectionInRTDB = async searchedValue => {
     const isDateSearch = await searchByDate(searchValue, uniqueUserIds, users);
     if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
-      await searchBySearchId(modifiedSearchValue, uniqueUserIds, users);
+      await searchBySearchId(
+        modifiedSearchValue,
+        uniqueUserIds,
+        users,
+        searchIdPrefixes,
+      );
       await searchByPrefixes(searchValue, uniqueUserIds, users);
       await searchUserByPartialUserId(searchValue, users);
       await searchByIndexOn(searchValue, uniqueUserIds, users);

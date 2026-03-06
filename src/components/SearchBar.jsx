@@ -352,6 +352,7 @@ const SearchBar = ({
   favoriteUsers = {},
   dislikeUsers = {},
   enabledSearchKeys,
+  searchOptions,
 }) => {
   const [internalSearch, setInternalSearch] = useState(
     () => localStorage.getItem(storageKey) || '',
@@ -508,7 +509,7 @@ const SearchBar = ({
   };
 
   const cachedSearch = async params => {
-    const res = await searchFunc(params);
+    const res = await searchFunc(params, searchOptions || {});
     if (!res || Object.keys(res).length === 0) {
       return res;
     }
