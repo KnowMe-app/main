@@ -344,7 +344,6 @@ const SearchBar = ({
   filterForload,
   favoriteUsers = {},
   dislikeUsers = {},
-  enabledSearchKeys,
 }) => {
   const [internalSearch, setInternalSearch] = useState(
     () => localStorage.getItem(storageKey) || '',
@@ -361,11 +360,6 @@ const SearchBar = ({
     () => loadHistoryCache('queries') || [],
   );
   const [showHistory, setShowHistory] = useState(false);
-
-  const isSearchEnabled = key => {
-    if (!enabledSearchKeys) return true;
-    return Boolean(enabledSearchKeys[key]);
-  };
 
   const loadCachedResult = (key, value) => {
     if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
@@ -737,51 +731,15 @@ const SearchBar = ({
       }
     }
 
-    if (
-      isSearchEnabled('searchId') &&
-      await processUserSearch('searchId', parseUserId, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('userId') &&
-      await processUserSearch('userId', parseUserId, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('facebook') &&
-      await processUserSearch('facebook', parseFacebookId, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('instagram') &&
-      await processUserSearch('instagram', parseInstagramId, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('telegram') &&
-      await processUserSearch('telegram', parseTelegramId, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('email') &&
-      await processUserSearch('email', parseEmail, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('tiktok') &&
-      await processUserSearch('tiktok', parseTikTokLink, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('phone') &&
-      await processUserSearch('phone', parsePhoneNumber, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('vk') &&
-      await processUserSearch('vk', parseVk, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('other') &&
-      await processUserSearch('other', parseOtherContact, rawQuery)
-    ) return;
-
-    if (!isSearchEnabled('name')) {
-      setUserNotFound && setUserNotFound(true);
-      return;
-    }
+    if (await processUserSearch('userId', parseUserId, rawQuery)) return;
+    if (await processUserSearch('facebook', parseFacebookId, rawQuery)) return;
+    if (await processUserSearch('instagram', parseInstagramId, rawQuery)) return;
+    if (await processUserSearch('telegram', parseTelegramId, rawQuery)) return;
+    if (await processUserSearch('email', parseEmail, rawQuery)) return;
+    if (await processUserSearch('tiktok', parseTikTokLink, rawQuery)) return;
+    if (await processUserSearch('phone', parsePhoneNumber, rawQuery)) return;
+    if (await processUserSearch('vk', parseVk, rawQuery)) return;
+    if (await processUserSearch('other', parseOtherContact, rawQuery)) return;
 
     const nameTrim = rawQuery.trim();
     console.log('[SearchBar] Defaulting to name search', {
