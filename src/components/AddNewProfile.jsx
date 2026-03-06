@@ -2252,7 +2252,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           favoriteUsers={favoriteUsersData}
           dislikeUsers={dislikeUsersData}
           enabledSearchKeys={enabledSearchKeys}
-          searchOptions={{ searchIdPrefixes: selectedSearchIdPrefixes }}
+          searchOptions={{
+            searchIdPrefixes: selectedSearchIdPrefixes,
+            enabledSearchKeys,
+          }}
         />
         {state.userId ? (
           <>

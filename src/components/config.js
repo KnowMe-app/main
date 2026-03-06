@@ -124,6 +124,22 @@ const buildSearchIdCandidateKeys = (
   });
 };
 
+
+const shouldSkipBroadFallbackForExactSearchId = (searchKey, options = {}) => {
+  if (searchKey !== 'searchId') return false;
+
+  const { enabledSearchKeys } = options;
+  if (!enabledSearchKeys || typeof enabledSearchKeys !== 'object') {
+    return true;
+  }
+
+  return !Object.entries(enabledSearchKeys).some(([key, isEnabled]) => {
+    if (!isEnabled) return false;
+    if (key === 'searchId') return false;
+    return !key.startsWith('searchIdKey');
+  });
+};
+
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
   const uniqueIds = new Set();
   const { includePrefixMatches = true } = options;
@@ -1030,6 +1046,10 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
 export const searchUsersOnly = async (searchedValue, options = {}) => {
   const { searchIdPrefixes } = options;
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
+  const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
+  const searchIdOptions = shouldSkipBroadFallback
+    ? { includeVariants: false, includePrefixMatches: false }
+    : { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' };
   const users = {};
   const uniqueUserIds = new Set();
   try {
@@ -1038,8 +1058,17 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
       uniqueUserIds,
       users,
       searchIdPrefixes,
-      { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' },
+      searchIdOptions,
     );
+
+    if (shouldSkipBroadFallback && Object.keys(users).length > 0) {
+      if (Object.keys(users).length === 1) {
+        const id = Object.keys(users)[0];
+        return users[id];
+      }
+      return users;
+    }
+
     await searchByPrefixesUsers(searchValue, uniqueUserIds, users);
     await searchUserByPartialUserId(searchValue, users);
 
@@ -1570,6 +1599,10 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
   const { searchIdPrefixes } = options;
   if (isDev) console.log('fetchNewUsersCollectionInRTDB → searchedValue:', searchedValue);
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
+  const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
+  const searchIdOptions = shouldSkipBroadFallback
+    ? { includeVariants: false, includePrefixMatches: false }
+    : { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' };
   if (isDev)
     console.log('fetchNewUsersCollectionInRTDB → params:', {
       searchValue,
@@ -1587,11 +1620,14 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
         uniqueUserIds,
         users,
         searchIdPrefixes,
-        { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' },
+        searchIdOptions,
       );
-      await searchByPrefixes(searchValue, uniqueUserIds, users);
-      await searchUserByPartialUserId(searchValue, users);
-      await searchByIndexOn(searchValue, uniqueUserIds, users);
+
+      if (!shouldSkipBroadFallback || Object.keys(users).length === 0) {
+        await searchByPrefixes(searchValue, uniqueUserIds, users);
+        await searchUserByPartialUserId(searchValue, users);
+        await searchByIndexOn(searchValue, uniqueUserIds, users);
+      }
     }
 
     if (Object.keys(users).length === 1) {
