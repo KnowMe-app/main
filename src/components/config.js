@@ -73,6 +73,21 @@ const getSearchIdPrefixes = searchIdPrefixes => {
   return allowedPrefixes.length > 0 ? allowedPrefixes : keysToCheck;
 };
 
+const normalizeSearchIdInput = (searchKey, rawValue) => {
+  const baseValue = String(rawValue || '').trim();
+  if (!baseValue) return '';
+
+  if (searchKey === 'telegram') {
+    const parsedTrigger = parseUkTriggerQuery(baseValue);
+    if (parsedTrigger?.searchPair?.telegram) {
+      return parsedTrigger.searchPair.telegram;
+    }
+  }
+
+  return baseValue.replace(/\s+/g, ' ');
+};
+
+
 export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
   const { disableCompression = false, maxSizeKB = 50 } = options;
   const file = disableCompression
@@ -1043,10 +1058,10 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
 
 const makeSearchKeyValue = searchedValue => {
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
-  let modifiedSearchValue = searchValue;
-  modifiedSearchValue = encodeKey(searchValue);
+  const normalizedSearchValue = normalizeSearchIdInput(searchKey, searchValue);
+  const modifiedSearchValue = encodeKey(normalizedSearchValue);
   const searchIdKey = `${searchKey}_${modifiedSearchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
-  return { searchKey, searchValue, modifiedSearchValue, searchIdKey };
+  return { searchKey, searchValue: normalizedSearchValue, modifiedSearchValue, searchIdKey };
 };
 
 
