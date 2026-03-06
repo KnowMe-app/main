@@ -1048,7 +1048,7 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
-    ? { includeVariants: false, includePrefixMatches: false }
+    ? { includeVariants: false, includePrefixMatches: true }
     : { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' };
   const users = {};
   const uniqueUserIds = new Set();
@@ -1601,7 +1601,7 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
-    ? { includeVariants: false, includePrefixMatches: false }
+    ? { includeVariants: false, includePrefixMatches: true }
     : { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' };
   if (isDev)
     console.log('fetchNewUsersCollectionInRTDB → params:', {
