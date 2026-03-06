@@ -15,6 +15,7 @@ import {
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
+import toast from 'react-hot-toast';
 
 const SearchIcon = (
   <svg
@@ -261,6 +262,12 @@ const parseUserId = input => {
   return null;
 };
 
+const parseSearchIdExact = input => {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  return trimmed || null;
+};
+
 const parseTelegramId = input => {
   const urlPattern = /t\.me\/([^/?#]+)/;
   const urlMatch = input.match(urlPattern);
@@ -494,6 +501,12 @@ const SearchBar = ({
     onSearchKey && onSearchKey(params);
   };
 
+  const notifySearchResult = params => {
+    const [key, value] = Object.entries(params || {})[0] || [];
+    if (!key || value === undefined || value === null) return;
+    toast.success(`Результат знайдено через ${key}: ${value}`);
+  };
+
   const cachedSearch = async params => {
     const res = await searchFunc(params);
     if (!res || Object.keys(res).length === 0) {
@@ -541,7 +554,10 @@ const SearchBar = ({
       const freshCache = hasCache && isCacheFresh(platform, id);
       const result = { [platform]: id };
       emitSearchLabel(result);
-      if (freshCache) return true;
+      if (freshCache) {
+        notifySearchResult(result);
+        return true;
+      }
       if (!hasCache) {
         setState && setState({});
         setUsers && setUsers({});
@@ -557,6 +573,7 @@ const SearchBar = ({
 
             if (fallbackFreshCache) {
               emitSearchLabel(fallbackParams);
+              notifySearchResult(fallbackParams);
               return true;
             }
 
@@ -566,6 +583,7 @@ const SearchBar = ({
             }
 
             emitSearchLabel(fallbackParams);
+            notifySearchResult(fallbackParams);
             setUserNotFound && setUserNotFound(false);
             if ('userId' in fallbackRes) {
               setState && setState(fallbackRes);
@@ -581,6 +599,7 @@ const SearchBar = ({
         setUserNotFound && setUserNotFound(true);
       } else {
         setUserNotFound && setUserNotFound(false);
+        notifySearchResult(result);
         if ('userId' in res) {
           setState && setState(res);
         } else {
@@ -732,6 +751,7 @@ const SearchBar = ({
 
         const res = await cachedSearch({ telegram: telegramValue });
         if (res && Object.keys(res).length > 0) {
+          notifySearchResult({ telegram: telegramValue });
           setUserNotFound && setUserNotFound(false);
           if ('userId' in res) {
             setState && setState(res);
@@ -745,7 +765,7 @@ const SearchBar = ({
 
     if (
       isSearchEnabled('searchId') &&
-      await processUserSearch('searchId', parseUserId, rawQuery)
+      await processUserSearch('searchId', parseSearchIdExact, rawQuery)
     ) return;
     if (
       isSearchEnabled('userId') &&
@@ -808,7 +828,10 @@ const SearchBar = ({
       const hasCache = loadCachedResult('name', nameTrim);
       const freshCache = hasCache && isCacheFresh('name', nameTrim);
       emitSearchLabel({ name: nameTrim });
-      if (freshCache) return;
+      if (freshCache) {
+        notifySearchResult({ name: nameTrim });
+        return;
+      }
       if (!hasCache) {
         setState && setState({});
         setUsers && setUsers({});
@@ -843,6 +866,9 @@ const SearchBar = ({
       setUserNotFound && setUserNotFound(true);
     } else {
       setUserNotFound && setUserNotFound(false);
+      const searchValueForNotification =
+        (res && typeof res === 'object' && res.name) || nameTrim;
+      notifySearchResult({ name: searchValueForNotification });
       if ('userId' in res) {
         setState && setState(res);
       } else {
