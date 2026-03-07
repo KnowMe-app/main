@@ -305,6 +305,30 @@ const SearchScopeLabel = styled.label`
   color: #1f1f1f;
 `;
 
+const SearchBarRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const SearchSettingsButton = styled.button`
+  width: 38px;
+  height: 38px;
+  border: 1px solid #d5d5d5;
+  border-radius: 8px;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #666;
+
+  &:hover {
+    color: #111;
+    border-color: #a9a9a9;
+  }
+`;
+
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const LOAD_SORT_MODES = {
@@ -319,6 +343,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [userNotFound, setUserNotFound] = useState(false);
 
   const SEARCH_KEY = 'addSearchQuery';
+  const SEARCH_OPTIONS_STORAGE_KEY = 'addSearchOptions';
   const [search, setSearch] = useState(() => {
     const params = new URLSearchParams(location.search);
     if (params.has('search')) {
@@ -408,12 +433,33 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     { key: 'searchIdKeyGetInTouch', prefix: 'getInTouch' },
   ];
 
-  const [enabledSearchKeys, setEnabledSearchKeys] = useState(() =>
-    SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce((acc, option) => {
+  const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
+    (acc, option) => {
       acc[option.key] = true;
       return acc;
-    }, {}),
+    },
+    {},
   );
+
+  const [enabledSearchKeys, setEnabledSearchKeys] = useState(() => {
+    const storedRaw = localStorage.getItem(SEARCH_OPTIONS_STORAGE_KEY);
+    if (!storedRaw) return defaultEnabledSearchKeys;
+
+    try {
+      const parsed = JSON.parse(storedRaw);
+      if (!parsed || typeof parsed !== 'object') return defaultEnabledSearchKeys;
+
+      return Object.keys(defaultEnabledSearchKeys).reduce((acc, key) => {
+        acc[key] = typeof parsed[key] === 'boolean' ? parsed[key] : defaultEnabledSearchKeys[key];
+        return acc;
+      }, {});
+    } catch (error) {
+      console.warn('[AddNewProfile] Failed to parse search options from localStorage', error);
+      return defaultEnabledSearchKeys;
+    }
+  });
+
+  const [showSearchOptions, setShowSearchOptions] = useState(false);
 
   const selectedSearchIdPrefixes = SEARCH_ID_PREFIX_OPTIONS
     .filter(option => enabledSearchKeys[option.key])
@@ -425,6 +471,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       [key]: !prev[key],
     }));
   };
+
+  useEffect(() => {
+    localStorage.setItem(SEARCH_OPTIONS_STORAGE_KEY, JSON.stringify(enabledSearchKeys));
+  }, [enabledSearchKeys]);
 
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
@@ -2202,61 +2252,85 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </TopButtons>
         )}
 
+        <SearchBarRow>
+          <SearchBar
+            searchFunc={fetchNewUsersCollectionInRTDB}
+            search={search}
+            setSearch={value => {
+              setSearch(value);
+            }}
+            setUsers={setUsers}
+            setState={setState}
+            setUserNotFound={setUserNotFound}
+            onSearchKey={setSearchKeyValuePair}
+            onSearchExecuted={handleSearchExecuted}
+            onClear={() => {
+              // Не чистимо localStorage тут: SearchBar сам синхронізує query key,
+              // а налаштування варіантів пошуку (addSearchOptions) мають зберігатися.
+              setState({});
+              setSearchKeyValuePair(null);
+              // У режимі перегляду дублікатів зберігаємо поточний список
+              if (!isDuplicateView) {
+                setUsers({});
+              }
+              setUserNotFound(false);
+              setSearchBarQueryActive(false);
+              setLastSearchBarQuery('');
+            }}
+            storageKey={SEARCH_KEY}
+            filters={filters}
+            filterForload={currentFilter}
+            favoriteUsers={favoriteUsersData}
+            dislikeUsers={dislikeUsersData}
+            enabledSearchKeys={enabledSearchKeys}
+            searchOptions={{
+              searchIdPrefixes: selectedSearchIdPrefixes,
+              enabledSearchKeys,
+            }}
+          />
+          <SearchSettingsButton
+            type="button"
+            aria-label="Налаштування пошуку"
+            title="Показати/сховати варіанти пошуку"
+            onClick={() => setShowSearchOptions(prev => !prev)}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.22.52.73.86 1.3.99H21a2 2 0 1 1 0 4h-.3c-.57.13-1.08.47-1.3 1.01z" />
+            </svg>
+          </SearchSettingsButton>
+        </SearchBarRow>
 
-        <SearchScopeContainer>
-          {SEARCH_SCOPE_BLOCKS.map(block => (
-            <SearchScopeBlock key={block.id}>
-              <SearchScopeBlockTitle>{block.title}</SearchScopeBlockTitle>
-              <SearchScopeItems>
-                {block.options.map(option => (
-                  <SearchScopeLabel key={option.key}>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(enabledSearchKeys[option.key])}
-                      onChange={() => handleSearchScopeChange(option.key)}
-                    />
-                    {option.label}
-                  </SearchScopeLabel>
-                ))}
-              </SearchScopeItems>
-            </SearchScopeBlock>
-          ))}
-        </SearchScopeContainer>
-
-        <SearchBar
-          searchFunc={fetchNewUsersCollectionInRTDB}
-          search={search}
-          setSearch={value => {
-            setSearch(value);
-          }}
-          setUsers={setUsers}
-          setState={setState}
-          setUserNotFound={setUserNotFound}
-          onSearchKey={setSearchKeyValuePair}
-          onSearchExecuted={handleSearchExecuted}
-          onClear={() => {
-            localStorage.removeItem(SEARCH_KEY);
-            setState({});
-            setSearchKeyValuePair(null);
-            // У режимі перегляду дублікатів зберігаємо поточний список
-            if (!isDuplicateView) {
-              setUsers({});
-            }
-            setUserNotFound(false);
-            setSearchBarQueryActive(false);
-            setLastSearchBarQuery('');
-          }}
-          storageKey={SEARCH_KEY}
-          filters={filters}
-          filterForload={currentFilter}
-          favoriteUsers={favoriteUsersData}
-          dislikeUsers={dislikeUsersData}
-          enabledSearchKeys={enabledSearchKeys}
-          searchOptions={{
-            searchIdPrefixes: selectedSearchIdPrefixes,
-            enabledSearchKeys,
-          }}
-        />
+        {showSearchOptions && (
+          <SearchScopeContainer>
+            {SEARCH_SCOPE_BLOCKS.map(block => (
+              <SearchScopeBlock key={block.id}>
+                <SearchScopeBlockTitle>{block.title}</SearchScopeBlockTitle>
+                <SearchScopeItems>
+                  {block.options.map(option => (
+                    <SearchScopeLabel key={option.key}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(enabledSearchKeys[option.key])}
+                        onChange={() => handleSearchScopeChange(option.key)}
+                      />
+                      {option.label}
+                    </SearchScopeLabel>
+                  ))}
+                </SearchScopeItems>
+              </SearchScopeBlock>
+            ))}
+          </SearchScopeContainer>
+        )}
         {state.userId ? (
           <>
             <div style={{ ...coloredCard(), marginBottom: '8px' }}>
