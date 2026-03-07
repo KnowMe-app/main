@@ -1070,7 +1070,7 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
       searchIdOptions,
     );
 
-    if (shouldSkipBroadFallback && Object.keys(users).length > 0) {
+    if (shouldSkipBroadFallback) {
       if (Object.keys(users).length === 1) {
         const id = Object.keys(users)[0];
         return users[id];
