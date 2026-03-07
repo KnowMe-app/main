@@ -164,19 +164,14 @@ const parseInstagramId = input => {
 };
 
 const parsePhoneNumber = phone => {
-  const cleanedPhone = phone.replace(/[\s()\-+]/g, '');
-  const digitCount = (cleanedPhone.match(/\d/g) || []).length;
-  if (digitCount < 10) return;
-  if (cleanedPhone.startsWith('0')) return '380' + cleanedPhone.slice(1);
-  if (cleanedPhone.startsWith('(')) {
-    const numberAfterCleaning = cleanedPhone.slice(1);
-    const cleanedAfterParenthesis = numberAfterCleaning.replace(/[\s()\-+]/g, '');
-    if (/^\d{10}$/.test(cleanedAfterParenthesis)) {
-      return '38' + cleanedAfterParenthesis.slice(1);
-    }
-  }
-  if (cleanedPhone.startsWith('38')) return cleanedPhone;
-  return;
+  const digitsOnly = String(phone || '').replace(/\D/g, '');
+  if (!digitsOnly) return;
+
+  if (digitsOnly.startsWith('380')) return digitsOnly;
+  if (digitsOnly.startsWith('0')) return `38${digitsOnly}`;
+  if (digitsOnly.startsWith('80')) return `3${digitsOnly}`;
+
+  return digitsOnly;
 };
 
 const parseEmail = email => {
