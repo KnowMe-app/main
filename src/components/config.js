@@ -77,6 +77,15 @@ const normalizeSearchIdInput = (searchKey, rawValue) => {
   const baseValue = String(rawValue || '').trim();
   if (!baseValue) return '';
 
+  if (searchKey === 'phone') {
+    const digitsOnly = baseValue.replace(/\D/g, '');
+    if (!digitsOnly) return '';
+    if (digitsOnly.startsWith('380')) return digitsOnly;
+    if (digitsOnly.startsWith('0')) return `38${digitsOnly}`;
+    if (digitsOnly.startsWith('80')) return `3${digitsOnly}`;
+    return digitsOnly;
+  }
+
   if (searchKey === 'telegram') {
     const parsedTrigger = parseUkTriggerQuery(baseValue);
     if (parsedTrigger?.searchPair?.telegram) {
