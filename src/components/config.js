@@ -134,19 +134,14 @@ const buildSearchIdCandidateKeys = (
 };
 
 
-const shouldSkipBroadFallbackForExactSearchId = (searchKey, options = {}) => {
+const shouldSkipBroadFallbackForExactSearchId = searchKey => {
   if (searchKey !== 'searchId') return false;
 
-  const { enabledSearchKeys } = options;
-  if (!enabledSearchKeys || typeof enabledSearchKeys !== 'object') {
-    return true;
-  }
-
-  return !Object.entries(enabledSearchKeys).some(([key, isEnabled]) => {
-    if (!isEnabled) return false;
-    if (key === 'searchId') return false;
-    return !key.startsWith('searchIdKey');
-  });
+  // `searchId` в UI позначений як точний пошук.
+  // Тому додаткові broad-fallback запити (по users/newUsers, partial userId тощо)
+  // не мають виконуватись, інакше можна отримати результати з інших полів
+  // (наприклад, telegram), навіть якщо вибрано тільки instagram-префікс.
+  return true;
 };
 
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
