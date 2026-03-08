@@ -263,6 +263,19 @@ const parseSearchIdExact = input => {
   return trimmed || null;
 };
 
+const parseGroupedSearchValues = input => {
+  if (typeof input !== 'string') return [];
+  const trimmed = input.trim();
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) return [];
+
+  const inside = trimmed.slice(1, -1);
+  const matches = inside.match(/"[^"]+"|[^\s,;]+/g) || [];
+
+  return matches
+    .map(value => value.replace(/^"|"$/g, '').trim())
+    .filter(Boolean);
+};
+
 const parseTelegramId = input => {
   const urlPattern = /t\.me\/([^/?#]+)/;
   const urlMatch = input.match(urlPattern);
@@ -735,30 +748,58 @@ const SearchBar = ({
       }
       return;
     }
-    if (
-      isSearchEnabled('nameGrouped') &&
-      trimmed &&
-      trimmed.startsWith('[') &&
-      trimmed.endsWith(']')
-    ) {
+    if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
       const hasCache = loadCachedResult('name', trimmed);
       const freshCache = hasCache && isCacheFresh('name', trimmed);
       if (freshCache) return;
       setState && setState({});
       setUsers && setUsers({});
-      const inside = trimmed.slice(1, -1);
-      const matches = inside.match(/"[^"]+"|[^\s,;]+/g) || [];
-      const values = matches
-        .map(v => v.replace(/^"|"$/g, '').trim())
-        .filter(Boolean);
+
+      const values = parseGroupedSearchValues(trimmed);
       if (values.length > 0) {
-        console.log('[SearchBar] Processing grouped name search', {
+        console.log('[SearchBar] Processing grouped search', {
           raw: trimmed,
           cleanedValues: values,
         });
+
+        const groupedSearchStrategies = [
+          ['searchId', parseSearchIdExact],
+          ['userId', parseUserId],
+          ['facebook', parseFacebookId],
+          ['instagram', parseInstagramId],
+          ['telegram', parseTelegramId],
+          ['email', parseEmail],
+          ['tiktok', parseTikTokLink],
+          ['phone', parsePhoneNumber],
+          ['vk', parseVk],
+          ['other', parseOtherContact],
+        ].filter(([key]) => isSearchEnabled(key));
+
+        const groupedNameEnabled =
+          isSearchEnabled('nameGrouped') ||
+          isSearchEnabled('nameExact') ||
+          isSearchEnabled('nameWithoutPrefix') ||
+          isSearchEnabled('nameWithPrefix');
+
         const results = {};
         for (const val of values) {
-          const res = await cachedSearch({ name: val });
+          let res = null;
+
+          for (const [key, parser] of groupedSearchStrategies) {
+            const parsedValue = parser(val);
+            if (!parsedValue) continue;
+
+            const groupedResult = await cachedSearch({ [key]: parsedValue });
+            if (groupedResult && Object.keys(groupedResult).length > 0) {
+              res = groupedResult;
+              break;
+            }
+          }
+
+          if (!res && groupedNameEnabled) {
+            res = await cachedSearch({ name: val });
+          }
+
           if (!res || Object.keys(res).length === 0) {
             results[`new_${val}`] = { _notFound: true, searchVal: val };
           } else if ('userId' in res) {
