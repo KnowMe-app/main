@@ -1423,6 +1423,11 @@ const getEqualToCandidates = (searchKey, rawSearchValue) => {
   const trimmed = String(rawSearchValue || '').trim();
   if (!trimmed) return [];
 
+  if (searchKey === 'phone') {
+    const normalizedPhone = normalizePhoneSearchIdValue(trimmed);
+    return normalizedPhone ? [normalizedPhone] : [];
+  }
+
   const candidates = new Set([trimmed]);
   candidates.add(trimmed.toLowerCase());
 
@@ -1431,6 +1436,25 @@ const getEqualToCandidates = (searchKey, rawSearchValue) => {
   }
 
   return [...candidates].filter(Boolean);
+};
+
+const phoneValueStartsWithCandidate = (value, candidate) => {
+  if (value === null || value === undefined) return false;
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    const normalized = normalizePhoneSearchIdValue(String(value));
+    return normalized.startsWith(candidate);
+  }
+
+  if (Array.isArray(value)) {
+    return value.some(item => phoneValueStartsWithCandidate(item, candidate));
+  }
+
+  if (typeof value === 'object') {
+    return Object.values(value).some(item => phoneValueStartsWithCandidate(item, candidate));
+  }
+
+  return false;
 };
 
 const searchByExactEqualToKey = async (searchKeys, rawSearchValue, uniqueUserIds, users) => {
@@ -1443,21 +1467,51 @@ const searchByExactEqualToKey = async (searchKeys, rawSearchValue, uniqueUserIds
 
       for (const candidate of candidates) {
         try {
-          // eslint-disable-next-line no-await-in-loop
-          const snapshot = await get(
-            query(ref2(database, collection), orderByChild(key), equalTo(candidate))
-          );
-
-          if (!snapshot.exists()) continue;
-
           const promises = [];
-          snapshot.forEach(userSnapshot => {
-            const userId = userSnapshot.key;
-            if (uniqueUserIds.has(userId)) return;
+          const isPhoneKey = key === 'phone';
+          const shouldUsePhonePrefixSearch = isPhoneKey && candidate.length < 12;
 
-            uniqueUserIds.add(userId);
-            promises.push(addUserToResults(userId, users));
-          });
+          if (!shouldUsePhonePrefixSearch) {
+            // eslint-disable-next-line no-await-in-loop
+            const snapshot = await get(
+              query(ref2(database, collection), orderByChild(key), equalTo(candidate))
+            );
+
+            if (snapshot.exists()) {
+              snapshot.forEach(userSnapshot => {
+                const userId = userSnapshot.key;
+                if (uniqueUserIds.has(userId)) return;
+
+                uniqueUserIds.add(userId);
+                promises.push(addUserToResults(userId, users));
+              });
+            }
+          }
+
+          if (shouldUsePhonePrefixSearch) {
+            // eslint-disable-next-line no-await-in-loop
+            const phonePrefixSnapshot = await get(
+              query(
+                ref2(database, collection),
+                orderByChild(key),
+                startAt(candidate),
+                endAt(`${candidate}\uf8ff`)
+              )
+            );
+
+            if (phonePrefixSnapshot.exists()) {
+              phonePrefixSnapshot.forEach(userSnapshot => {
+                const userId = userSnapshot.key;
+                if (uniqueUserIds.has(userId)) return;
+
+                const fieldValue = userSnapshot.val()?.[key];
+                if (!phoneValueStartsWithCandidate(fieldValue, candidate)) return;
+
+                uniqueUserIds.add(userId);
+                promises.push(addUserToResults(userId, users));
+              });
+            }
+          }
 
           // eslint-disable-next-line no-await-in-loop
           await Promise.all(promises);
