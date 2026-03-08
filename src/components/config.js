@@ -1379,6 +1379,97 @@ const searchBySearchId = async (
 };
 
 const SEARCH_COLLECTIONS = ['newUsers', 'users'];
+const EQUAL_TO_INDEX_KEYS = [
+  'instagram',
+  'facebook',
+  'email',
+  'phone',
+  'telegram',
+  'tiktok',
+  'vk',
+  'other',
+  'userId',
+  'getInTouch',
+  'myComment',
+  'lastAction',
+  'name',
+  'surname',
+  'lastLogin2',
+  'createdAt',
+  'cycleStatus',
+  'lastCycle',
+  'lastLogin',
+];
+
+const getEqualToKeys = (searchKey, equalToKeys) => {
+  const normalizedSelected = Array.isArray(equalToKeys)
+    ? equalToKeys
+      .map(key => (typeof key === 'string' ? key.trim() : ''))
+      .filter(Boolean)
+    : [];
+
+  const allowedSelected = EQUAL_TO_INDEX_KEYS.filter(key =>
+    normalizedSelected.includes(key)
+  );
+
+  if (allowedSelected.length > 0) {
+    return allowedSelected;
+  }
+
+  return EQUAL_TO_INDEX_KEYS.includes(searchKey) ? [searchKey] : [];
+};
+
+const getEqualToCandidates = (searchKey, rawSearchValue) => {
+  const trimmed = String(rawSearchValue || '').trim();
+  if (!trimmed) return [];
+
+  const candidates = new Set([trimmed]);
+  candidates.add(trimmed.toLowerCase());
+
+  if (searchKey === 'name' || searchKey === 'surname') {
+    candidates.add(trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase());
+  }
+
+  return [...candidates].filter(Boolean);
+};
+
+const searchByExactEqualToKey = async (searchKeys, rawSearchValue, uniqueUserIds, users) => {
+  if (!Array.isArray(searchKeys) || searchKeys.length === 0) return;
+
+  for (const collection of SEARCH_COLLECTIONS) {
+    for (const key of searchKeys) {
+      const candidates = getEqualToCandidates(key, rawSearchValue);
+      if (candidates.length === 0) continue;
+
+      for (const candidate of candidates) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const snapshot = await get(
+            query(ref2(database, collection), orderByChild(key), equalTo(candidate))
+          );
+
+          if (!snapshot.exists()) continue;
+
+          const promises = [];
+          snapshot.forEach(userSnapshot => {
+            const userId = userSnapshot.key;
+            if (uniqueUserIds.has(userId)) return;
+
+            uniqueUserIds.add(userId);
+            promises.push(addUserToResults(userId, users));
+          });
+
+          // eslint-disable-next-line no-await-in-loop
+          await Promise.all(promises);
+        } catch (error) {
+          if (isDev) {
+            console.error(`searchByExactEqualToKey → error querying ${collection}.${key}:`, error);
+          }
+        }
+      }
+    }
+  }
+};
 
 const searchByPrefixes = async (searchValue, uniqueUserIds, users) => {
   const fieldMatchesSearch = (value, normalizedSearch) => {
@@ -1625,7 +1716,7 @@ const searchByIndexOn = async (searchValue, uniqueUserIds, users) => {
 };
 
 export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {}) => {
-  const { searchIdPrefixes } = options;
+  const { searchIdPrefixes, equalToKeys, forceEqualToAllCards = false } = options;
   if (isDev) console.log('fetchNewUsersCollectionInRTDB → searchedValue:', searchedValue);
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
@@ -1644,19 +1735,24 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
     const isDateSearch = await searchByDate(searchValue, uniqueUserIds, users);
     if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
-      await searchBySearchId(
-        modifiedSearchValue,
-        searchValue,
-        uniqueUserIds,
-        users,
-        searchIdPrefixes,
-        searchIdOptions,
-      );
+      if (forceEqualToAllCards) {
+        const selectedEqualToKeys = getEqualToKeys(searchKey, equalToKeys);
+        await searchByExactEqualToKey(selectedEqualToKeys, searchValue, uniqueUserIds, users);
+      } else {
+        await searchBySearchId(
+          modifiedSearchValue,
+          searchValue,
+          uniqueUserIds,
+          users,
+          searchIdPrefixes,
+          searchIdOptions,
+        );
 
-      if (!shouldSkipBroadFallback) {
-        await searchByPrefixes(searchValue, uniqueUserIds, users);
-        await searchUserByPartialUserId(searchValue, users);
-        await searchByIndexOn(searchValue, uniqueUserIds, users);
+        if (!shouldSkipBroadFallback) {
+          await searchByPrefixes(searchValue, uniqueUserIds, users);
+          await searchUserByPartialUserId(searchValue, users);
+          await searchByIndexOn(searchValue, uniqueUserIds, users);
+        }
       }
     }
 

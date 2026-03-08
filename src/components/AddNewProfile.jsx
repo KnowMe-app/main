@@ -434,8 +434,34 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       id: 'other-search',
       title: 'Додатковий пошук',
       options: [
+        { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
         { key: 'other', label: 'other (label-based)' },
         { key: 'otherFallback', label: 'other fallback по всіх ключах' },
+      ],
+    },
+    {
+      id: 'equalto-keys',
+      title: 'equalTo: де шукати значення',
+      options: [
+        { key: 'equalToKeyInstagram', label: 'instagram' },
+        { key: 'equalToKeyFacebook', label: 'facebook' },
+        { key: 'equalToKeyEmail', label: 'email' },
+        { key: 'equalToKeyPhone', label: 'phone' },
+        { key: 'equalToKeyTelegram', label: 'telegram' },
+        { key: 'equalToKeyTiktok', label: 'tiktok' },
+        { key: 'equalToKeyVk', label: 'vk' },
+        { key: 'equalToKeyOther', label: 'other' },
+        { key: 'equalToKeyUserId', label: 'userId' },
+        { key: 'equalToKeyGetInTouch', label: 'getInTouch' },
+        { key: 'equalToKeyMyComment', label: 'myComment' },
+        { key: 'equalToKeyLastAction', label: 'lastAction' },
+        { key: 'equalToKeyName', label: 'name' },
+        { key: 'equalToKeySurname', label: 'surname' },
+        { key: 'equalToKeyLastLogin2', label: 'lastLogin2' },
+        { key: 'equalToKeyCreatedAt', label: 'createdAt' },
+        { key: 'equalToKeyCycleStatus', label: 'cycleStatus' },
+        { key: 'equalToKeyLastCycle', label: 'lastCycle' },
+        { key: 'equalToKeyLastLogin', label: 'lastLogin' },
       ],
     },
   ];
@@ -455,9 +481,31 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     { key: 'searchIdKeyGetInTouch', prefix: 'getInTouch' },
   ];
 
+  const EQUAL_TO_KEY_OPTIONS = [
+    { key: 'equalToKeyInstagram', prefix: 'instagram' },
+    { key: 'equalToKeyFacebook', prefix: 'facebook' },
+    { key: 'equalToKeyEmail', prefix: 'email' },
+    { key: 'equalToKeyPhone', prefix: 'phone' },
+    { key: 'equalToKeyTelegram', prefix: 'telegram' },
+    { key: 'equalToKeyTiktok', prefix: 'tiktok' },
+    { key: 'equalToKeyVk', prefix: 'vk' },
+    { key: 'equalToKeyOther', prefix: 'other' },
+    { key: 'equalToKeyUserId', prefix: 'userId' },
+    { key: 'equalToKeyGetInTouch', prefix: 'getInTouch' },
+    { key: 'equalToKeyMyComment', prefix: 'myComment' },
+    { key: 'equalToKeyLastAction', prefix: 'lastAction' },
+    { key: 'equalToKeyName', prefix: 'name' },
+    { key: 'equalToKeySurname', prefix: 'surname' },
+    { key: 'equalToKeyLastLogin2', prefix: 'lastLogin2' },
+    { key: 'equalToKeyCreatedAt', prefix: 'createdAt' },
+    { key: 'equalToKeyCycleStatus', prefix: 'cycleStatus' },
+    { key: 'equalToKeyLastCycle', prefix: 'lastCycle' },
+    { key: 'equalToKeyLastLogin', prefix: 'lastLogin' },
+  ];
+
   const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
     (acc, option) => {
-      acc[option.key] = !option.key.startsWith('searchIdKey');
+      acc[option.key] = !option.key.startsWith('searchIdKey') && !option.key.startsWith('equalToKey');
       return acc;
     },
     {},
@@ -485,6 +533,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isSearchIdScopeOpen, setIsSearchIdScopeOpen] = useState(false);
 
   const selectedSearchIdPrefixes = SEARCH_ID_PREFIX_OPTIONS
+    .filter(option => enabledSearchKeys[option.key])
+    .map(option => option.prefix);
+
+  const selectedEqualToKeys = EQUAL_TO_KEY_OPTIONS
     .filter(option => enabledSearchKeys[option.key])
     .map(option => option.prefix);
 
@@ -2308,6 +2360,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             enabledSearchKeys={enabledSearchKeys}
             searchOptions={{
               searchIdPrefixes: selectedSearchIdPrefixes,
+              equalToKeys: selectedEqualToKeys,
               enabledSearchKeys,
             }}
           />
