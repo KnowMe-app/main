@@ -572,7 +572,10 @@ const SearchBar = ({
   };
 
   const cachedSearch = async params => {
-    const res = await searchFunc(params, searchOptions || {});
+    const res = await searchFunc(params, {
+      ...(searchOptions || {}),
+      forceEqualToAllCards: isSearchEnabled('equalToAllCards'),
+    });
     if (!res || Object.keys(res).length === 0) {
       return res;
     }
