@@ -96,20 +96,40 @@ const normalizeSearchIdInput = (searchKey, rawValue) => {
   return baseValue.replace(/\s+/g, ' ');
 };
 
+const normalizePhoneSearchIdValue = rawValue => {
+  const digitsOnly = String(rawValue || '').replace(/\D/g, '');
+  if (!digitsOnly) return '';
+  if (digitsOnly.startsWith('380')) return digitsOnly;
+  if (digitsOnly.startsWith('0')) return `38${digitsOnly}`;
+  if (digitsOnly.startsWith('80')) return `3${digitsOnly}`;
+  return digitsOnly;
+};
+
 const buildSearchIdCandidateKeys = (
   modifiedSearchValue,
+  rawSearchValue,
   searchIdPrefixes,
   options = {},
 ) => {
   const normalizedValue = String(modifiedSearchValue || '').toLowerCase();
   if (!normalizedValue) return [];
 
-  const { includeVariants = true } = options;
+  const {
+    includeVariants = true,
+    includeAdaptedPhoneVariant = false,
+  } = options;
   const ukSmPrefix = encodeKey('УК СМ ').toLowerCase();
   const hasUkSm = normalizedValue.startsWith(ukSmPrefix);
   const prefixesToCheck = getSearchIdPrefixes(searchIdPrefixes);
 
   return prefixesToCheck.flatMap(prefix => {
+    if (prefix === 'phone' && includeAdaptedPhoneVariant) {
+      const adaptedPhoneValue = normalizePhoneSearchIdValue(rawSearchValue);
+      const adaptedPhoneKey = encodeKey(adaptedPhoneValue).toLowerCase();
+      const valuesToCheck = [...new Set([adaptedPhoneKey, normalizedValue].filter(Boolean))];
+      return valuesToCheck.map(value => `${prefix}_${value}`);
+    }
+
     const searchKeys = [`${prefix}_${normalizedValue}`];
 
     if (!includeVariants) {
@@ -961,6 +981,7 @@ const addUserFromUsers = async (userId, users) => {
 
 const searchBySearchIdUsers = async (
   modifiedSearchValue,
+  rawSearchValue,
   uniqueUserIds,
   users,
   searchIdPrefixes,
@@ -968,6 +989,7 @@ const searchBySearchIdUsers = async (
 ) => {
   const searchKeys = buildSearchIdCandidateKeys(
     modifiedSearchValue,
+    rawSearchValue,
     searchIdPrefixes,
     options,
   );
@@ -1052,13 +1074,14 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
-    ? { includeVariants: false, includePrefixMatches: true }
+    ? { includeVariants: false, includePrefixMatches: true, includeAdaptedPhoneVariant: true }
     : { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' };
   const users = {};
   const uniqueUserIds = new Set();
   try {
     await searchBySearchIdUsers(
       modifiedSearchValue,
+      searchValue,
       uniqueUserIds,
       users,
       searchIdPrefixes,
@@ -1332,6 +1355,7 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
 
 const searchBySearchId = async (
   modifiedSearchValue,
+  rawSearchValue,
   uniqueUserIds,
   users,
   searchIdPrefixes,
@@ -1339,6 +1363,7 @@ const searchBySearchId = async (
 ) => {
   const searchKeys = buildSearchIdCandidateKeys(
     modifiedSearchValue,
+    rawSearchValue,
     searchIdPrefixes,
     options,
   );
@@ -1605,7 +1630,7 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
-    ? { includeVariants: false, includePrefixMatches: true }
+    ? { includeVariants: false, includePrefixMatches: true, includeAdaptedPhoneVariant: true }
     : { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' };
   if (isDev)
     console.log('fetchNewUsersCollectionInRTDB → params:', {
@@ -1621,6 +1646,7 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
     if (!isDateSearch) {
       await searchBySearchId(
         modifiedSearchValue,
+        searchValue,
         uniqueUserIds,
         users,
         searchIdPrefixes,
