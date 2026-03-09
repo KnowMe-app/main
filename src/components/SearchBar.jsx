@@ -317,6 +317,28 @@ const OTHER_SEARCH_FALLBACK_KEYS = [
   'other',
 ];
 
+const EQUAL_TO_SEARCH_PARSERS = {
+  userId: parseUserId,
+  facebook: parseFacebookId,
+  instagram: parseInstagramId,
+  telegram: parseTelegramId,
+  email: parseEmail,
+  tiktok: parseTikTokLink,
+  phone: parsePhoneNumber,
+  vk: parseVk,
+  other: parseOtherContact,
+  name: value => value?.trim(),
+  surname: value => value?.trim(),
+  getInTouch: value => value?.trim(),
+  myComment: value => value?.trim(),
+  lastAction: value => value?.trim(),
+  lastLogin2: value => value?.trim(),
+  createdAt: value => value?.trim(),
+  cycleStatus: value => value?.trim(),
+  lastCycle: value => value?.trim(),
+  lastLogin: value => value?.trim(),
+};
+
 export const detectSearchParams = query => {
   const parsedUkTrigger = parseUkTriggerQuery(query);
   if (parsedUkTrigger?.searchPair?.telegram) {
@@ -823,6 +845,51 @@ const SearchBar = ({
     }
 
     const ukTrigger = parseUkTriggerQuery(rawQuery);
+    if (isSearchEnabled('equalToAllCards')) {
+      const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
+        ? searchOptions.equalToKeys
+        : [];
+
+      for (const equalToKey of selectedEqualToKeys) {
+        const parser = EQUAL_TO_SEARCH_PARSERS[equalToKey] || (value => value?.trim());
+        const parsedValue = parser(rawQuery);
+
+        if (!parsedValue) continue;
+
+        const queryParams = { [equalToKey]: parsedValue };
+        const hasCache = loadCachedResult(equalToKey, parsedValue);
+        const freshCache = hasCache && isCacheFresh(equalToKey, parsedValue);
+
+        emitSearchLabel(queryParams);
+
+        if (freshCache) {
+          notifySearchResult(queryParams, null, { preferredKeys: [equalToKey] });
+          return;
+        }
+
+        if (!hasCache) {
+          setState && setState({});
+          setUsers && setUsers({});
+        }
+
+        const res = await cachedSearch(queryParams);
+        if (!res || Object.keys(res).length === 0) {
+          continue;
+        }
+
+        setUserNotFound && setUserNotFound(false);
+        notifySearchResult(queryParams, res, { preferredKeys: [equalToKey] });
+
+        if ('userId' in res) {
+          setState && setState(res);
+        } else {
+          setUsers && setUsers(res);
+        }
+
+        return;
+      }
+    }
+
     if (isSearchEnabled('telegramUkTrigger') && ukTrigger?.searchPair?.telegram) {
       const normalizedTelegram = ukTrigger.searchPair.telegram;
       const searchCandidates = [normalizedTelegram];
