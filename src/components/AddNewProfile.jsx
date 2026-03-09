@@ -427,7 +427,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         { key: 'nameExact', label: 'name (як введено)' },
         { key: 'nameWithoutPrefix', label: 'name (без префікса УК СМ)' },
         { key: 'nameWithPrefix', label: 'name (додати префікс УК СМ)' },
-        { key: 'nameGrouped', label: 'name (груповий формат [..])' },
       ],
     },
     {
