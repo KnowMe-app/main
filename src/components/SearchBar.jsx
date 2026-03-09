@@ -800,11 +800,6 @@ const SearchBar = ({
           ['other', parseOtherContact],
         ].filter(([key]) => isSearchEnabled(key));
 
-        const groupedNameEnabled =
-          isSearchEnabled('nameExact') ||
-          isSearchEnabled('nameWithoutPrefix') ||
-          isSearchEnabled('nameWithPrefix');
-
         const results = {};
         for (const val of values) {
           let res = null;
@@ -820,7 +815,7 @@ const SearchBar = ({
             }
           }
 
-          if (!res && groupedNameEnabled) {
+          if (!res) {
             res = await cachedSearch({ name: val });
           }
 
@@ -975,62 +970,25 @@ const SearchBar = ({
       })
     ) return;
 
-    const canSearchName =
-      isSearchEnabled('nameExact') ||
-      isSearchEnabled('nameWithoutPrefix') ||
-      isSearchEnabled('nameWithPrefix');
-
-    if (!canSearchName) {
-      setUserNotFound && setUserNotFound(true);
-      return;
-    }
-
     const nameTrim = rawQuery.trim();
     console.log('[SearchBar] Defaulting to name search', {
       raw: rawQuery,
       cleaned: nameTrim,
     });
 
-    let res = null;
-
-    if (isSearchEnabled('nameExact')) {
-      const hasCache = loadCachedResult('name', nameTrim);
-      const freshCache = hasCache && isCacheFresh('name', nameTrim);
-      emitSearchLabel({ name: nameTrim });
-      if (freshCache) {
-        notifySearchResult({ name: nameTrim }, null, { preferredKeys: ['name'] });
-        return;
-      }
-      if (!hasCache) {
-        setState && setState({});
-        setUsers && setUsers({});
-      }
-      res = await cachedSearch({ name: nameTrim });
+    const hasCache = loadCachedResult('name', nameTrim);
+    const freshCache = hasCache && isCacheFresh('name', nameTrim);
+    emitSearchLabel({ name: nameTrim });
+    if (freshCache) {
+      notifySearchResult({ name: nameTrim }, null, { preferredKeys: ['name'] });
+      return;
+    }
+    if (!hasCache) {
+      setState && setState({});
+      setUsers && setUsers({});
     }
 
-    if (!res && isSearchEnabled('nameWithoutPrefix')) {
-      const cleanedQuery = rawQuery.replace(/^ук\s*см\s*/i, '').trim();
-      if (cleanedQuery && cleanedQuery !== nameTrim) {
-        console.log('[SearchBar] Retrying name search without prefix', {
-          raw: rawQuery,
-          cleaned: cleanedQuery,
-        });
-        res = await cachedSearch({ name: cleanedQuery });
-        emitSearchLabel({ name: cleanedQuery });
-      }
-    }
-
-    if (!res && isSearchEnabled('nameWithPrefix')) {
-      const withPrefix = /^ук\s*см/i.test(rawQuery) ? null : `УК СМ ${rawQuery.trim()}`;
-      if (withPrefix) {
-        console.log('[SearchBar] Retrying name search with enforced prefix', {
-          raw: rawQuery,
-          cleaned: withPrefix,
-        });
-        res = await cachedSearch({ name: withPrefix });
-        emitSearchLabel({ name: withPrefix });
-      }
-    }
+    const res = await cachedSearch({ name: nameTrim });
     if (!res || Object.keys(res).length === 0) {
       setUserNotFound && setUserNotFound(true);
     } else {
