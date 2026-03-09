@@ -801,7 +801,6 @@ const SearchBar = ({
         ].filter(([key]) => isSearchEnabled(key));
 
         const groupedNameEnabled =
-          isSearchEnabled('nameGrouped') ||
           isSearchEnabled('nameExact') ||
           isSearchEnabled('nameWithoutPrefix') ||
           isSearchEnabled('nameWithPrefix');
