@@ -421,15 +421,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       ],
     },
     {
-      id: 'name-search',
-      title: 'Пошук по імені',
-      options: [
-        { key: 'nameExact', label: 'name (як введено)' },
-        { key: 'nameWithoutPrefix', label: 'name (без префікса УК СМ)' },
-        { key: 'nameWithPrefix', label: 'name (додати префікс УК СМ)' },
-      ],
-    },
-    {
       id: 'other-search',
       title: 'Додатковий пошук',
       options: [
