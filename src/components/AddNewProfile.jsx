@@ -440,7 +440,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   ];
 
   const SEARCH_SCOPE_DESCRIPTIONS = {
-    'contacts-search': 'Єдина логіка для контактного й searchId-точного пошуку: контакт парситься/нормалізується і шукається по відповідному префіксу в searchId.',
+    'contacts-search': 'Єдина логіка для контактного й searchId-точного пошуку: контакт парситься/нормалізується і шукається по відповідному префіксу в searchId. Для запитів формату "УК ..." вмикайте telegramUkTrigger: звичайний telegram-парсер не розбирає цей формат і пошук може перейти в ширший searchId fallback.',
   };
 
   const SEARCH_ID_PREFIX_OPTIONS = [
