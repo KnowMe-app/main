@@ -478,6 +478,7 @@ export const ProfileForm = ({
   ];
 
   const accessLevelOptions = [
+    { value: '', label: 'access level' },
     { value: 'matching:view', label: 'matching view' },
     { value: 'matching:view&write', label: 'matching view and write' },
     { value: 'add:view', label: 'add view' },
@@ -980,10 +981,14 @@ ${entries.join('\n')}`;
                       )}
                     </InputFieldContainer>
 
-                    <Hint fieldName={field.name} isActive={value}>
-                      {field.ukrainian || field.placeholder}
-                    </Hint>
-                    <Placeholder isActive={value}>{field.ukrainianHint}</Placeholder>
+                    {field.name !== 'accessLevel' && (
+                      <>
+                        <Hint fieldName={field.name} isActive={value}>
+                          {field.ukrainian || field.placeholder}
+                        </Hint>
+                        <Placeholder isActive={value}>{field.ukrainianHint}</Placeholder>
+                      </>
+                    )}
                   </InputDiv>
                 ))}
               </div>
@@ -993,7 +998,7 @@ ${entries.join('\n')}`;
                   {field.name === 'accessLevel' ? (
                     <AccessLevelSelect
                       name={field.name}
-                      value={state[field.name] || accessLevelOptions[0].value}
+                      value={state[field.name] || ''}
                       onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
                       onChange={e => {
                         const value = e.target.value;
@@ -1002,7 +1007,9 @@ ${entries.join('\n')}`;
                       onBlur={() => handleBlur(field.name)}
                     >
                       {accessLevelOptions.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
+                        <option key={option.value || 'placeholder'} value={option.value} disabled={option.value === ''}>
+                          {option.label}
+                        </option>
                       ))}
                     </AccessLevelSelect>
                   ) : (
@@ -1078,10 +1085,14 @@ ${entries.join('\n')}`;
                   )}
                 </InputFieldContainer>
 
-                <Hint fieldName={field.name} isActive={state[field.name]}>
-                  {field.ukrainian || field.placeholder}
-                </Hint>
-                <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                {field.name !== 'accessLevel' && (
+                  <>
+                    <Hint fieldName={field.name} isActive={state[field.name]}>
+                      {field.ukrainian || field.placeholder}
+                    </Hint>
+                    <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                  </>
+                )}
               </InputDiv>
             )}
 
