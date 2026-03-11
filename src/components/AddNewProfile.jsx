@@ -291,27 +291,17 @@ const SearchScopeBlockTitle = styled.div`
   color: #333;
 `;
 
+const SearchScopeBlockDescription = styled.div`
+  font-size: 11px;
+  color: #666;
+`;
+
 const SearchScopeBlockHeader = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
 `;
 
-const SearchScopeToggleButton = styled.button`
-  border: none;
-  background: transparent;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  cursor: pointer;
-  color: #4b4b4b;
-
-  &:hover {
-    color: #111;
-  }
-`;
 
 const SearchScopeItems = styled.div`
   display: flex;
@@ -321,10 +311,21 @@ const SearchScopeItems = styled.div`
 
 const SearchScopeLabel = styled.label`
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   font-size: 12px;
   color: #1f1f1f;
+`;
+
+const SearchScopeLabelTextGroup = styled.span`
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.2;
+`;
+
+const SearchScopeLabelHint = styled.span`
+  font-size: 10px;
+  color: #6b6b6b;
 `;
 
 const SearchBarRow = styled.div`
@@ -389,35 +390,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       ],
     },
     {
-      id: 'search-id-keys',
-      title: 'searchId: де шукати значення',
-      options: [
-        { key: 'searchIdKeyInstagram', label: 'instagram' },
-        { key: 'searchIdKeyFacebook', label: 'facebook' },
-        { key: 'searchIdKeyEmail', label: 'email' },
-        { key: 'searchIdKeyPhone', label: 'phone' },
-        { key: 'searchIdKeyTelegram', label: 'telegram' },
-        { key: 'searchIdKeyTiktok', label: 'tiktok' },
-        { key: 'searchIdKeyOther', label: 'other' },
-        { key: 'searchIdKeyVk', label: 'vk' },
-        { key: 'searchIdKeyName', label: 'name' },
-        { key: 'searchIdKeySurname', label: 'surname' },
-        { key: 'searchIdKeyLastAction', label: 'lastAction' },
-        { key: 'searchIdKeyGetInTouch', label: 'getInTouch' },
-      ],
-    },
-    {
       id: 'contacts-search',
-      title: 'Пошук по контактах',
+      title: 'Пошук в searchId (контакти + точний)',
       options: [
-        { key: 'phone', label: 'phone' },
-        { key: 'telegram', label: 'telegram' },
-        { key: 'telegramUkTrigger', label: 'telegram (через УК СМ trigger)' },
-        { key: 'instagram', label: 'instagram' },
-        { key: 'facebook', label: 'facebook' },
-        { key: 'email', label: 'email' },
-        { key: 'vk', label: 'vk' },
-        { key: 'tiktok', label: 'tiktok' },
+        { key: 'phone', label: 'phone', hint: 'digits only; 0XXXXXXXXX -> 380..., 80... -> 380...' },
+        { key: 'telegram', label: 'telegram', hint: 't.me/user, @user або telegram: user' },
+        { key: 'telegramUkTrigger', label: 'telegram (через УК СМ trigger)', hint: 'запит УК СМ ... -> витягується telegram з trigger' },
+        { key: 'instagram', label: 'instagram', hint: 'instagram.com/... або inst: username' },
+        { key: 'facebook', label: 'facebook', hint: 'facebook.com/... / id=... / fb: username' },
+        { key: 'email', label: 'email', hint: 'trim + lowerCase, тільки валідний email' },
+        { key: 'vk', label: 'vk', hint: 'потрібен vk-маркер; vk.com/...; число -> id<число>' },
+        { key: 'tiktok', label: 'tiktok', hint: 'tiktok.com/... або tt: username' },
       ],
     },
     {
@@ -456,19 +439,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     },
   ];
 
+  const SEARCH_SCOPE_DESCRIPTIONS = {
+    'contacts-search': 'Єдина логіка для контактного й searchId-точного пошуку: контакт парситься/нормалізується і шукається по відповідному префіксу в searchId.',
+  };
+
   const SEARCH_ID_PREFIX_OPTIONS = [
-    { key: 'searchIdKeyInstagram', prefix: 'instagram' },
-    { key: 'searchIdKeyFacebook', prefix: 'facebook' },
-    { key: 'searchIdKeyEmail', prefix: 'email' },
-    { key: 'searchIdKeyPhone', prefix: 'phone' },
-    { key: 'searchIdKeyTelegram', prefix: 'telegram' },
-    { key: 'searchIdKeyTiktok', prefix: 'tiktok' },
-    { key: 'searchIdKeyOther', prefix: 'other' },
-    { key: 'searchIdKeyVk', prefix: 'vk' },
-    { key: 'searchIdKeyName', prefix: 'name' },
-    { key: 'searchIdKeySurname', prefix: 'surname' },
-    { key: 'searchIdKeyLastAction', prefix: 'lastAction' },
-    { key: 'searchIdKeyGetInTouch', prefix: 'getInTouch' },
+    { key: 'instagram', prefix: 'instagram' },
+    { key: 'facebook', prefix: 'facebook' },
+    { key: 'email', prefix: 'email' },
+    { key: 'phone', prefix: 'phone' },
+    { key: 'telegram', prefix: 'telegram' },
+    { key: 'telegramUkTrigger', prefix: 'telegram' },
+    { key: 'tiktok', prefix: 'tiktok' },
+    { key: 'vk', prefix: 'vk' },
   ];
 
   const EQUAL_TO_KEY_OPTIONS = [
@@ -495,7 +478,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
     (acc, option) => {
-      acc[option.key] = !option.key.startsWith('searchIdKey') && !option.key.startsWith('equalToKey');
+      acc[option.key] = !option.key.startsWith('equalToKey');
       return acc;
     },
     {},
@@ -520,7 +503,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   });
 
   const [showSearchOptions, setShowSearchOptions] = useState(false);
-  const [isSearchIdScopeOpen, setIsSearchIdScopeOpen] = useState(false);
 
   const selectedSearchIdPrefixes = SEARCH_ID_PREFIX_OPTIONS
     .filter(option => enabledSearchKeys[option.key])
@@ -2382,30 +2364,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               <SearchScopeBlock key={block.id}>
                 <SearchScopeBlockHeader>
                   <SearchScopeBlockTitle>{block.title}</SearchScopeBlockTitle>
-                  {block.id === 'id-search' && (
-                    <SearchScopeToggleButton
-                      type="button"
-                      aria-label="Показати або сховати searchId: де шукати значення"
-                      aria-expanded={isSearchIdScopeOpen}
-                      onClick={() => setIsSearchIdScopeOpen(prev => !prev)}
-                    >
-                      <svg
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <polyline points={isSearchIdScopeOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />
-                      </svg>
-                    </SearchScopeToggleButton>
-                  )}
                 </SearchScopeBlockHeader>
-                {!(block.id === 'search-id-keys' && !isSearchIdScopeOpen) && (
-                  <SearchScopeItems>
+                {SEARCH_SCOPE_DESCRIPTIONS[block.id] && (
+                  <SearchScopeBlockDescription>{SEARCH_SCOPE_DESCRIPTIONS[block.id]}</SearchScopeBlockDescription>
+                )}
+                <SearchScopeItems>
                     {block.options.map(option => (
                       <SearchScopeLabel key={option.key}>
                         <input
@@ -2413,11 +2376,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                           checked={Boolean(enabledSearchKeys[option.key])}
                           onChange={() => handleSearchScopeChange(option.key)}
                         />
-                        {option.label}
+                        <SearchScopeLabelTextGroup>
+                          <span>{option.label}</span>
+                          {option.hint && <SearchScopeLabelHint>{option.hint}</SearchScopeLabelHint>}
+                        </SearchScopeLabelTextGroup>
                       </SearchScopeLabel>
                     ))}
                   </SearchScopeItems>
-                )}
               </SearchScopeBlock>
             ))}
           </SearchScopeContainer>
