@@ -593,10 +593,11 @@ const SearchBar = ({
     toast.success(`Результат знайдено за ключем ${matched.key}: ${matched.value}`);
   };
 
-  const cachedSearch = async params => {
+  const cachedSearch = async (params, extraOptions = {}) => {
     const res = await searchFunc(params, {
       ...(searchOptions || {}),
       forceEqualToAllCards: isSearchEnabled('equalToAllCards'),
+      ...extraOptions,
     });
     if (!res || Object.keys(res).length === 0) {
       return res;
@@ -629,7 +630,7 @@ const SearchBar = ({
   const processUserSearch = async (platform, parseFunction, inputData, options = {}) => {
     const trimmedInput = inputData.trim();
     const id = parseFunction(trimmedInput);
-    const { allowFallback = true } = options;
+    const { allowFallback = true, allowUkTrigger = false } = options;
 
     console.log('[SearchBar] Parser evaluation', {
       platform,
@@ -637,6 +638,58 @@ const SearchBar = ({
       trimmed: trimmedInput,
       parsed: id,
     });
+
+    if (!id && platform === 'telegram' && allowUkTrigger) {
+      const ukTrigger = parseUkTriggerQuery(trimmedInput);
+      if (ukTrigger?.searchPair?.telegram) {
+        const normalizedTelegram = ukTrigger.searchPair.telegram;
+        const searchCandidates = [normalizedTelegram];
+        if (ukTrigger.handle) {
+          searchCandidates.push(ukTrigger.handle);
+        }
+
+        for (const [index, candidate] of searchCandidates.entries()) {
+          const telegramValue = candidate?.trim();
+          if (!telegramValue) continue;
+
+          const hasCache = loadCachedResult('telegram', telegramValue);
+          const freshCache = hasCache && isCacheFresh('telegram', telegramValue);
+
+          if (index === 0) {
+            emitSearchLabel({ telegram: telegramValue });
+          }
+
+          if (freshCache) return true;
+
+          if (!hasCache) {
+            setState && setState({});
+            setUsers && setUsers({});
+          }
+
+          const res = await cachedSearch(
+            { telegram: telegramValue },
+            { allowTelegramPrefixMatches: true },
+          );
+          if (res && Object.keys(res).length > 0) {
+            notifySearchResult(
+              { telegram: telegramValue },
+              res,
+              { preferredKeys: ['telegram'] },
+            );
+            setUserNotFound && setUserNotFound(false);
+            if ('userId' in res) {
+              setState && setState(res);
+            } else {
+              setUsers && setUsers(res);
+            }
+            return true;
+          }
+        }
+
+        setUserNotFound && setUserNotFound(true);
+        return true;
+      }
+    }
 
     if (id) {
       const hasCache = loadCachedResult(platform, id);
@@ -838,7 +891,6 @@ const SearchBar = ({
       }
     }
 
-    const ukTrigger = parseUkTriggerQuery(rawQuery);
     if (isSearchEnabled('equalToAllCards')) {
       const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
         ? searchOptions.equalToKeys
@@ -884,48 +936,6 @@ const SearchBar = ({
       }
     }
 
-    if (isSearchEnabled('telegramUkTrigger') && ukTrigger?.searchPair?.telegram) {
-      const normalizedTelegram = ukTrigger.searchPair.telegram;
-      const searchCandidates = [normalizedTelegram];
-      if (ukTrigger.handle) {
-        searchCandidates.push(ukTrigger.handle);
-      }
-
-      for (const [index, candidate] of searchCandidates.entries()) {
-        const telegramValue = candidate?.trim();
-        if (!telegramValue) continue;
-
-        const hasCache = loadCachedResult('telegram', telegramValue);
-        const freshCache = hasCache && isCacheFresh('telegram', telegramValue);
-
-        if (index === 0) {
-          emitSearchLabel({ telegram: telegramValue });
-        }
-
-        if (freshCache) return;
-
-        if (!hasCache) {
-          setState && setState({});
-          setUsers && setUsers({});
-        }
-
-        const res = await cachedSearch({ telegram: telegramValue });
-        if (res && Object.keys(res).length > 0) {
-          notifySearchResult(
-            { telegram: telegramValue },
-            res,
-            { preferredKeys: ['telegram'] },
-          );
-          setUserNotFound && setUserNotFound(false);
-          if ('userId' in res) {
-            setState && setState(res);
-          } else {
-            setUsers && setUsers(res);
-          }
-          return;
-        }
-      }
-    }
 
     if (
       isSearchEnabled('searchId') &&
@@ -945,7 +955,9 @@ const SearchBar = ({
     ) return;
     if (
       isSearchEnabled('telegram') &&
-      await processUserSearch('telegram', parseTelegramId, rawQuery)
+      await processUserSearch('telegram', parseTelegramId, rawQuery, {
+        allowUkTrigger: isSearchEnabled('telegramUkTrigger'),
+      })
     ) return;
     if (
       isSearchEnabled('email') &&

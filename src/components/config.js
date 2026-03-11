@@ -1736,13 +1736,21 @@ const searchByIndexOn = async (searchValue, uniqueUserIds, users) => {
 };
 
 export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {}) => {
-  const { searchIdPrefixes, equalToKeys, forceEqualToAllCards = false } = options;
+  const {
+    searchIdPrefixes,
+    equalToKeys,
+    forceEqualToAllCards = false,
+    allowTelegramPrefixMatches = false,
+  } = options;
   if (isDev) console.log('fetchNewUsersCollectionInRTDB → searchedValue:', searchedValue);
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
     ? { includeVariants: false, includePrefixMatches: true, includeAdaptedPhoneVariant: true }
-    : { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' };
+    : {
+      includeVariants: searchKey !== 'telegram',
+      includePrefixMatches: searchKey !== 'telegram' || allowTelegramPrefixMatches,
+    };
   if (isDev)
     console.log('fetchNewUsersCollectionInRTDB → params:', {
       searchValue,
