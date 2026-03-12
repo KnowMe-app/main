@@ -291,11 +291,6 @@ const SearchScopeBlockTitle = styled.div`
   color: #333;
 `;
 
-const SearchScopeBlockDescription = styled.div`
-  font-size: 11px;
-  color: #666;
-`;
-
 const SearchScopeBlockHeader = styled.div`
   display: flex;
   align-items: center;
@@ -321,11 +316,6 @@ const SearchScopeLabelTextGroup = styled.span`
   display: inline-flex;
   flex-direction: column;
   line-height: 1.2;
-`;
-
-const SearchScopeLabelHint = styled.span`
-  font-size: 10px;
-  color: #6b6b6b;
 `;
 
 const SearchBarRow = styled.div`
@@ -391,50 +381,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       ],
     },
     {
-      id: 'contacts-search',
-      title: 'Пошук в searchId (контакти + точний)',
-      options: [
-        { key: 'phone', label: 'phone', hint: 'digits only; 0XXXXXXXXX -> 380..., 80... -> 380...' },
-        { key: 'telegram', label: 'telegram', hint: 't.me/user, @user або telegram: user' },
-        { key: 'telegramUkTrigger', label: 'telegram (через УК СМ trigger)', hint: 'запит УК СМ ... -> витягується telegram з trigger' },
-        { key: 'instagram', label: 'instagram', hint: 'instagram.com/... або inst: username' },
-        { key: 'facebook', label: 'facebook', hint: 'facebook.com/... / id=... / fb: username' },
-        { key: 'email', label: 'email', hint: 'trim + lowerCase, тільки валідний email' },
-        { key: 'vk', label: 'vk', hint: 'потрібен vk-маркер; vk.com/...; число -> id<число>' },
-        { key: 'tiktok', label: 'tiktok', hint: 'tiktok.com/... або tt: username' },
-        { key: 'other', label: 'other (label-based)', hint: 'працює тільки з міткою other/інше: значення' },
-      ],
-    },
-    {
       id: 'search-keys',
-      title: 'Ключі для searchId / equalTo',
+      title: 'Пошук в searchId / equalTo',
       options: [
-        { key: 'searchKeyInstagram', label: 'instagram', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeyFacebook', label: 'facebook', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeyEmail', label: 'email', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeyPhone', label: 'phone', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeyTelegram', label: 'telegram', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeyTiktok', label: 'tiktok', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeyVk', label: 'vk', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeyOther', label: 'other', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeyUserId', label: 'userId', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'searchKeyGetInTouch', label: 'getInTouch', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeyMyComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'searchKeyLastAction', label: 'lastAction', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeyName', label: 'name', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeySurname', label: 'surname', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'searchKeyLastLogin2', label: 'lastLogin2', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'searchKeyCreatedAt', label: 'createdAt', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'searchKeyCycleStatus', label: 'cycleStatus', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'searchKeyLastCycle', label: 'lastCycle', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'searchKeyLastLogin', label: 'lastLogin', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'phone', label: 'phone', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'telegram', label: 'telegram', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'telegramUkTrigger', label: 'telegramUkTrigger', supportsSearchId: false, supportsEqualTo: false },
+        { key: 'instagram', label: 'instagram', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'facebook', label: 'facebook', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'email', label: 'email', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'vk', label: 'vk', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'tiktok', label: 'tiktok', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'other', label: 'other', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'userId', label: 'userId', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'getInTouch', label: 'getInTouch', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'myComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'lastAction', label: 'lastAction', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'name', label: 'name', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'surname', label: 'surname', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'lastLogin2', label: 'lastLogin2', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'createdAt', label: 'createdAt', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'cycleStatus', label: 'cycleStatus', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'lastCycle', label: 'lastCycle', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'lastLogin', label: 'lastLogin', supportsSearchId: false, supportsEqualTo: true },
       ],
     },
   ];
-
-  const SEARCH_SCOPE_DESCRIPTIONS = {
-    'contacts-search': 'Єдина логіка для контактного й searchId-точного пошуку: контакт парситься/нормалізується і шукається по відповідному префіксу в searchId. Для запитів формату "УК ..." вмикайте telegramUkTrigger: звичайний telegram-парсер не розбирає цей формат і пошук може перейти в ширший searchId fallback.',
-  };
 
   const SEARCH_KEY_OPTIONS = SEARCH_SCOPE_BLOCKS.find(block => block.id === 'search-keys')?.options || [];
   const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'telegramUkTrigger', 'instagram', 'facebook', 'email', 'vk', 'tiktok', 'other'];
@@ -2334,9 +2306,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 <SearchScopeBlockHeader>
                   <SearchScopeBlockTitle>{block.title}</SearchScopeBlockTitle>
                 </SearchScopeBlockHeader>
-                {SEARCH_SCOPE_DESCRIPTIONS[block.id] && (
-                  <SearchScopeBlockDescription>{SEARCH_SCOPE_DESCRIPTIONS[block.id]}</SearchScopeBlockDescription>
-                )}
                 <SearchScopeItems>
                     {block.options.map(option => {
                       const isSearchModeOption = block.id === 'search-keys';
@@ -2357,7 +2326,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                         />
                         <SearchScopeLabelTextGroup>
                           <span>{option.label}</span>
-                          {option.hint && <SearchScopeLabelHint>{option.hint}</SearchScopeLabelHint>}
                         </SearchScopeLabelTextGroup>
                       </SearchScopeLabel>
                       );
