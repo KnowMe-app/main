@@ -311,8 +311,8 @@ const SearchScopeItems = styled.div`
 
 const SearchScopeLabel = styled.label`
   display: inline-flex;
-  align-items: flex-start;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: #1f1f1f;
 `;
@@ -386,6 +386,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       title: 'Пошук по ID',
       options: [
         { key: 'searchId', label: 'searchId (точний)' },
+        { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
         { key: 'userId', label: 'userId (точний)' },
       ],
     },
@@ -401,40 +402,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         { key: 'email', label: 'email', hint: 'trim + lowerCase, тільки валідний email' },
         { key: 'vk', label: 'vk', hint: 'потрібен vk-маркер; vk.com/...; число -> id<число>' },
         { key: 'tiktok', label: 'tiktok', hint: 'tiktok.com/... або tt: username' },
+        { key: 'other', label: 'other (label-based)', hint: 'працює тільки з міткою other/інше: значення' },
       ],
     },
     {
-      id: 'other-search',
-      title: 'Додатковий пошук',
+      id: 'search-keys',
+      title: 'Ключі для searchId / equalTo',
       options: [
-        { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
-        { key: 'other', label: 'other (label-based)' },
-        { key: 'otherFallback', label: 'other fallback по всіх ключах' },
-      ],
-    },
-    {
-      id: 'equalto-keys',
-      title: 'equalTo: де шукати значення',
-      options: [
-        { key: 'equalToKeyInstagram', label: 'instagram' },
-        { key: 'equalToKeyFacebook', label: 'facebook' },
-        { key: 'equalToKeyEmail', label: 'email' },
-        { key: 'equalToKeyPhone', label: 'phone' },
-        { key: 'equalToKeyTelegram', label: 'telegram' },
-        { key: 'equalToKeyTiktok', label: 'tiktok' },
-        { key: 'equalToKeyVk', label: 'vk' },
-        { key: 'equalToKeyOther', label: 'other' },
-        { key: 'equalToKeyUserId', label: 'userId' },
-        { key: 'equalToKeyGetInTouch', label: 'getInTouch' },
-        { key: 'equalToKeyMyComment', label: 'myComment' },
-        { key: 'equalToKeyLastAction', label: 'lastAction' },
-        { key: 'equalToKeyName', label: 'name' },
-        { key: 'equalToKeySurname', label: 'surname' },
-        { key: 'equalToKeyLastLogin2', label: 'lastLogin2' },
-        { key: 'equalToKeyCreatedAt', label: 'createdAt' },
-        { key: 'equalToKeyCycleStatus', label: 'cycleStatus' },
-        { key: 'equalToKeyLastCycle', label: 'lastCycle' },
-        { key: 'equalToKeyLastLogin', label: 'lastLogin' },
+        { key: 'searchKeyInstagram', label: 'instagram', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeyFacebook', label: 'facebook', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeyEmail', label: 'email', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeyPhone', label: 'phone', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeyTelegram', label: 'telegram', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeyTiktok', label: 'tiktok', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeyVk', label: 'vk', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeyOther', label: 'other', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeyUserId', label: 'userId', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'searchKeyGetInTouch', label: 'getInTouch', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeyMyComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'searchKeyLastAction', label: 'lastAction', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeyName', label: 'name', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeySurname', label: 'surname', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'searchKeyLastLogin2', label: 'lastLogin2', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'searchKeyCreatedAt', label: 'createdAt', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'searchKeyCycleStatus', label: 'cycleStatus', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'searchKeyLastCycle', label: 'lastCycle', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'searchKeyLastLogin', label: 'lastLogin', supportsSearchId: false, supportsEqualTo: true },
       ],
     },
   ];
@@ -443,38 +436,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     'contacts-search': 'Єдина логіка для контактного й searchId-точного пошуку: контакт парситься/нормалізується і шукається по відповідному префіксу в searchId. Для запитів формату "УК ..." вмикайте telegramUkTrigger: звичайний telegram-парсер не розбирає цей формат і пошук може перейти в ширший searchId fallback.',
   };
 
-  const SEARCH_ID_PREFIX_OPTIONS = [
-    { key: 'instagram', prefix: 'instagram' },
-    { key: 'facebook', prefix: 'facebook' },
-    { key: 'email', prefix: 'email' },
-    { key: 'phone', prefix: 'phone' },
-    { key: 'telegram', prefix: 'telegram' },
-    { key: 'telegramUkTrigger', prefix: 'telegram' },
-    { key: 'tiktok', prefix: 'tiktok' },
-    { key: 'vk', prefix: 'vk' },
-  ];
-
-  const EQUAL_TO_KEY_OPTIONS = [
-    { key: 'equalToKeyInstagram', prefix: 'instagram' },
-    { key: 'equalToKeyFacebook', prefix: 'facebook' },
-    { key: 'equalToKeyEmail', prefix: 'email' },
-    { key: 'equalToKeyPhone', prefix: 'phone' },
-    { key: 'equalToKeyTelegram', prefix: 'telegram' },
-    { key: 'equalToKeyTiktok', prefix: 'tiktok' },
-    { key: 'equalToKeyVk', prefix: 'vk' },
-    { key: 'equalToKeyOther', prefix: 'other' },
-    { key: 'equalToKeyUserId', prefix: 'userId' },
-    { key: 'equalToKeyGetInTouch', prefix: 'getInTouch' },
-    { key: 'equalToKeyMyComment', prefix: 'myComment' },
-    { key: 'equalToKeyLastAction', prefix: 'lastAction' },
-    { key: 'equalToKeyName', prefix: 'name' },
-    { key: 'equalToKeySurname', prefix: 'surname' },
-    { key: 'equalToKeyLastLogin2', prefix: 'lastLogin2' },
-    { key: 'equalToKeyCreatedAt', prefix: 'createdAt' },
-    { key: 'equalToKeyCycleStatus', prefix: 'cycleStatus' },
-    { key: 'equalToKeyLastCycle', prefix: 'lastCycle' },
-    { key: 'equalToKeyLastLogin', prefix: 'lastLogin' },
-  ];
+  const SEARCH_KEY_OPTIONS = SEARCH_SCOPE_BLOCKS.find(block => block.id === 'search-keys')?.options || [];
+  const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'telegramUkTrigger', 'instagram', 'facebook', 'email', 'vk', 'tiktok', 'other'];
 
   const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
     (acc, option) => {
@@ -493,9 +456,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!parsed || typeof parsed !== 'object') return defaultEnabledSearchKeys;
 
       return Object.keys(defaultEnabledSearchKeys).reduce((acc, key) => {
-        acc[key] = typeof parsed[key] === 'boolean' ? parsed[key] : defaultEnabledSearchKeys[key];
-        return acc;
-      }, {});
+      acc[key] = typeof parsed[key] === 'boolean' ? parsed[key] : defaultEnabledSearchKeys[key];
+      return acc;
+    }, {});
     } catch (error) {
       console.warn('[AddNewProfile] Failed to parse search options from localStorage', error);
       return defaultEnabledSearchKeys;
@@ -504,15 +467,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [showSearchOptions, setShowSearchOptions] = useState(false);
 
-  const selectedSearchIdPrefixes = SEARCH_ID_PREFIX_OPTIONS
-    .filter(option => enabledSearchKeys[option.key])
-    .map(option => option.prefix);
+  const selectedSearchIdPrefixes = SEARCH_KEY_OPTIONS
+    .filter(option => option.supportsSearchId && enabledSearchKeys[option.key])
+    .map(option => option.label);
 
-  const selectedEqualToKeys = EQUAL_TO_KEY_OPTIONS
-    .filter(option => enabledSearchKeys[option.key])
-    .map(option => option.prefix);
+  const selectedEqualToKeys = SEARCH_KEY_OPTIONS
+    .filter(option => option.supportsEqualTo && enabledSearchKeys[option.key])
+    .map(option => option.label);
 
-  const handleSearchScopeChange = key => {
+  const enabledContactSearchCount = CONTACT_SEARCH_KEYS.filter(key => enabledSearchKeys[key]).length;
+  const shouldAutoRunOtherFallback =
+    enabledContactSearchCount === 0 || enabledContactSearchCount === CONTACT_SEARCH_KEYS.length;
+
+  const handleSearchScopeChange = (key, disabled = false) => {
+    if (disabled) return;
     setEnabledSearchKeys(prev => ({
       ...prev,
       [key]: !prev[key],
@@ -2333,6 +2301,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             searchOptions={{
               searchIdPrefixes: selectedSearchIdPrefixes,
               equalToKeys: selectedEqualToKeys,
+              autoOtherFallback: shouldAutoRunOtherFallback,
               enabledSearchKeys,
             }}
           />
@@ -2369,19 +2338,30 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   <SearchScopeBlockDescription>{SEARCH_SCOPE_DESCRIPTIONS[block.id]}</SearchScopeBlockDescription>
                 )}
                 <SearchScopeItems>
-                    {block.options.map(option => (
+                    {block.options.map(option => {
+                      const isSearchModeOption = block.id === 'search-keys';
+                      const searchIdModeOnly = enabledSearchKeys.searchId && !enabledSearchKeys.equalToAllCards;
+                      const equalToModeOnly = enabledSearchKeys.equalToAllCards && !enabledSearchKeys.searchId;
+                      const disabled = isSearchModeOption && (
+                        (searchIdModeOnly && !option.supportsSearchId) ||
+                        (equalToModeOnly && !option.supportsEqualTo)
+                      );
+
+                      return (
                       <SearchScopeLabel key={option.key}>
                         <input
                           type="checkbox"
                           checked={Boolean(enabledSearchKeys[option.key])}
-                          onChange={() => handleSearchScopeChange(option.key)}
+                          disabled={disabled}
+                          onChange={() => handleSearchScopeChange(option.key, disabled)}
                         />
                         <SearchScopeLabelTextGroup>
                           <span>{option.label}</span>
                           {option.hint && <SearchScopeLabelHint>{option.hint}</SearchScopeLabelHint>}
                         </SearchScopeLabelTextGroup>
                       </SearchScopeLabel>
-                    ))}
+                      );
+                    })}
                   </SearchScopeItems>
               </SearchScopeBlock>
             ))}

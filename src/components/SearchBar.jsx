@@ -978,7 +978,7 @@ const SearchBar = ({
     if (
       isSearchEnabled('other') &&
       await processUserSearch('other', parseOtherContact, rawQuery, {
-        allowFallback: isSearchEnabled('otherFallback'),
+        allowFallback: Boolean(searchOptions?.autoOtherFallback),
       })
     ) return;
 
