@@ -895,6 +895,9 @@ const SearchBar = ({
       const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
         ? searchOptions.equalToKeys
         : [];
+      const aggregatedResults = {};
+      let foundEqualToResults = false;
+      let emittedSearchLabel = false;
 
       for (const equalToKey of selectedEqualToKeys) {
         const parser = EQUAL_TO_SEARCH_PARSERS[equalToKey] || (value => value?.trim());
@@ -903,19 +906,9 @@ const SearchBar = ({
         if (!parsedValue) continue;
 
         const queryParams = { [equalToKey]: parsedValue };
-        const hasCache = loadCachedResult(equalToKey, parsedValue);
-        const freshCache = hasCache && isCacheFresh(equalToKey, parsedValue);
-
-        emitSearchLabel(queryParams);
-
-        if (freshCache) {
-          notifySearchResult(queryParams, null, { preferredKeys: [equalToKey] });
-          return;
-        }
-
-        if (!hasCache) {
-          setState && setState({});
-          setUsers && setUsers({});
+        if (!emittedSearchLabel) {
+          emitSearchLabel(queryParams);
+          emittedSearchLabel = true;
         }
 
         const res = await cachedSearch(queryParams);
@@ -923,13 +916,40 @@ const SearchBar = ({
           continue;
         }
 
-        setUserNotFound && setUserNotFound(false);
-        notifySearchResult(queryParams, res, { preferredKeys: [equalToKey] });
+        foundEqualToResults = true;
 
-        if ('userId' in res) {
-          setState && setState(res);
+        if (Array.isArray(res)) {
+          res.forEach(card => {
+            if (card?.userId) {
+              aggregatedResults[card.userId] = card;
+            }
+          });
+        } else if ('userId' in res) {
+          aggregatedResults[res.userId] = res;
         } else {
-          setUsers && setUsers(res);
+          Object.assign(aggregatedResults, res);
+        }
+      }
+
+      if (foundEqualToResults) {
+        setUserNotFound && setUserNotFound(false);
+        setState && setState({});
+        setUsers && setUsers(aggregatedResults);
+
+        const [firstMatchedKey] = Object.keys(aggregatedResults);
+        if (firstMatchedKey) {
+          const sampleCard = aggregatedResults[firstMatchedKey];
+          const sampleParams = selectedEqualToKeys.reduce((acc, key) => {
+            const parser = EQUAL_TO_SEARCH_PARSERS[key] || (value => value?.trim());
+            const parsedValue = parser(rawQuery);
+            if (parsedValue) {
+              acc[key] = parsedValue;
+            }
+            return acc;
+          }, {});
+          notifySearchResult(sampleParams, sampleCard, {
+            preferredKeys: selectedEqualToKeys,
+          });
         }
 
         return;
