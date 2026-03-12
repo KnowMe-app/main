@@ -1000,6 +1000,16 @@ ${entries.join('\n')}`;
                       name={field.name}
                       value={state[field.name] || ''}
                       onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                      onMouseDown={e => {
+                        if (typeof e.currentTarget.showPicker === 'function') {
+                          e.currentTarget.showPicker();
+                        }
+                      }}
+                      onClick={e => {
+                        if (typeof e.currentTarget.showPicker === 'function') {
+                          e.currentTarget.showPicker();
+                        }
+                      }}
                       onChange={e => {
                         const value = e.target.value;
                         setState(prevState => ({ ...prevState, [field.name]: value }));
@@ -1085,14 +1095,12 @@ ${entries.join('\n')}`;
                   )}
                 </InputFieldContainer>
 
-                {field.name !== 'accessLevel' && (
-                  <>
-                    <Hint fieldName={field.name} isActive={state[field.name]}>
-                      {field.ukrainian || field.placeholder}
-                    </Hint>
-                    <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
-                  </>
-                )}
+                <>
+                  <Hint fieldName={field.name} isActive={state[field.name]}>
+                    {field.ukrainian || field.placeholder}
+                  </Hint>
+                  <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                </>
               </InputDiv>
             )}
 
@@ -1416,10 +1424,19 @@ const InputField = styled.input`
 const AccessLevelSelect = styled.select`
   border: none;
   outline: none;
+  flex: 1;
+  max-width: 100%;
+  min-width: 0;
   width: 100%;
   padding-left: 10px;
+  padding-right: 10px;
   background: transparent;
   min-height: 30px;
+  color: #000;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
 `;
 
 const Hint = styled.label`
