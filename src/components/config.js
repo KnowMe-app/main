@@ -1424,28 +1424,8 @@ const getEqualToCandidates = (searchKey, rawSearchValue) => {
   if (!trimmed) return [];
 
   if (searchKey === 'phone') {
-    const digitsOnly = trimmed.replace(/\D/g, '');
-    if (!digitsOnly) return [];
-
-    const normalizedPhone = normalizeSearchIdInput('phone', digitsOnly);
-    const variants = new Set([
-      digitsOnly,
-      normalizedPhone,
-      `+${digitsOnly}`,
-      `+${normalizedPhone}`,
-    ]);
-
-    if (normalizedPhone.startsWith('380')) {
-      variants.add(normalizedPhone.slice(2)); // 0XXXXXXXXX
-      variants.add(`+${normalizedPhone.slice(2)}`);
-    }
-
-    const numericVariant = Number(normalizedPhone);
-    if (!Number.isNaN(numericVariant)) {
-      variants.add(numericVariant);
-    }
-
-    return [...variants].filter(Boolean);
+    const normalizedPhone = normalizeSearchIdInput('phone', trimmed);
+    return [...new Set([normalizedPhone, trimmed].filter(Boolean))];
   }
 
   return [trimmed];
