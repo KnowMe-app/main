@@ -15,7 +15,6 @@ import {
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
-import toast from 'react-hot-toast';
 
 const SearchIcon = (
   <svg
@@ -667,66 +666,7 @@ const SearchBar = ({
     onSearchKey && onSearchKey(params);
   };
 
-  const pickUserFromResult = result => {
-    if (!result || typeof result !== 'object') return null;
-    if (Array.isArray(result)) return result[0] || null;
-    if ('userId' in result) return result;
-    return Object.values(result)[0] || null;
-  };
-
-  const collectFieldValues = fieldValue => {
-    if (fieldValue === undefined || fieldValue === null) return [];
-    if (Array.isArray(fieldValue)) {
-      return fieldValue
-        .map(item => collectFieldValues(item))
-        .flat();
-    }
-    if (typeof fieldValue === 'object') {
-      return Object.values(fieldValue)
-        .map(item => collectFieldValues(item))
-        .flat();
-    }
-    return [String(fieldValue)];
-  };
-
-  const findMatchedKeyValue = (result, fallbackParams, preferredKeys = []) => {
-    const [fallbackKey, fallbackValue] = Object.entries(fallbackParams || {})[0] || [];
-    if (!fallbackKey || fallbackValue === undefined || fallbackValue === null) return null;
-
-    const user = pickUserFromResult(result);
-    const normalizedSearch = String(fallbackValue).trim().toLowerCase();
-
-    if (!user || !normalizedSearch) {
-      return { key: fallbackKey, value: fallbackValue };
-    }
-
-    const candidateKeys = [...new Set([...preferredKeys, fallbackKey])];
-
-    for (const key of candidateKeys) {
-      if (!(key in user)) continue;
-      const values = collectFieldValues(user[key]);
-      const matchedValue = values.find(value =>
-        value.trim().toLowerCase().includes(normalizedSearch)
-      );
-
-      if (matchedValue) {
-        return { key, value: matchedValue };
-      }
-    }
-
-    return { key: fallbackKey, value: fallbackValue };
-  };
-
-  const notifySearchResult = (params, result, options = {}) => {
-    const matched = findMatchedKeyValue(
-      result,
-      params,
-      options.preferredKeys,
-    );
-
-    if (!matched) return;
-    toast.success(`Результат знайдено за ключем ${matched.key}: ${matched.value}`);
-  };
+  const notifySearchResult = () => {};
 
   const cachedSearch = async (params, extraOptions = {}) => {
     const res = await searchFunc(params, {
