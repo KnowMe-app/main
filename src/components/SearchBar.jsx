@@ -291,6 +291,32 @@ const detectHttpSocialSearch = input => {
   return null;
 };
 
+const inferSearchIdPrefix = input => {
+  const socialSearch = detectHttpSocialSearch(input);
+  if (socialSearch?.platform) {
+    return socialSearch.platform;
+  }
+
+  const prefixedParsers = [
+    ['instagram', parseInstagramId],
+    ['facebook', parseFacebookId],
+    ['telegram', parseTelegramId],
+    ['tiktok', parseTikTokLink],
+    ['vk', parseVk],
+    ['email', parseEmail],
+    ['phone', parsePhoneNumber],
+    ['other', parseOtherContact],
+  ];
+
+  for (const [prefix, parser] of prefixedParsers) {
+    if (parser(input)) {
+      return prefix;
+    }
+  }
+
+  return null;
+};
+
 const parseSearchIdExact = input => {
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
@@ -755,7 +781,12 @@ const SearchBar = ({
         setState && setState({});
         setUsers && setUsers({});
       }
-      const res = await cachedSearch(result);
+      const preferredSearchIdPrefix =
+        platform === 'searchId' ? inferSearchIdPrefix(trimmedInput) : null;
+      const res = await cachedSearch(
+        result,
+        preferredSearchIdPrefix ? { searchIdPrefixes: [preferredSearchIdPrefix] } : undefined,
+      );
       if (!res || Object.keys(res).length === 0) {
         if (platform === 'other' && allowFallback) {
           for (const fallbackKey of OTHER_SEARCH_FALLBACK_KEYS) {
