@@ -332,6 +332,21 @@ const SEARCH_ID_PREFIX_KEYS = [
   'getInTouch',
 ];
 
+const SEARCH_ID_SCOPED_PLATFORMS = new Set([
+  'instagram',
+  'facebook',
+  'email',
+  'phone',
+  'telegram',
+  'tiktok',
+  'other',
+  'vk',
+  'name',
+  'surname',
+  'lastAction',
+  'getInTouch',
+]);
+
 const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
   const configuredPrefixes = Array.isArray(searchOptions?.searchIdPrefixes)
     ? [...new Set(
@@ -829,10 +844,14 @@ const SearchBar = ({
           ? resolveSearchIdPrefixStrategy(trimmedInput, searchOptions)
           : null;
       const primarySearchIdPrefixes = searchIdPrefixStrategy?.primaryPrefixes;
-      const res = await cachedSearch(
-        result,
-        primarySearchIdPrefixes ? { searchIdPrefixes: primarySearchIdPrefixes } : undefined,
-      );
+      const scopedSearchIdPrefixes =
+        platform !== 'searchId' && SEARCH_ID_SCOPED_PLATFORMS.has(platform)
+          ? [platform]
+          : undefined;
+      const res = await cachedSearch(result, {
+        ...(primarySearchIdPrefixes ? { searchIdPrefixes: primarySearchIdPrefixes } : {}),
+        ...(scopedSearchIdPrefixes ? { searchIdPrefixes: scopedSearchIdPrefixes } : {}),
+      });
       const shouldRetryWithAllSearchIdPrefixes =
         platform === 'searchId' &&
         searchIdPrefixStrategy?.shouldRetryWithAllPrefixes;
