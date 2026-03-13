@@ -1045,21 +1045,6 @@ const SearchBar = ({
       }
     }
 
-    const httpSocialSearch = detectHttpSocialSearch(trimmed);
-    if (httpSocialSearch && isSearchEnabled(httpSocialSearch.platform)) {
-      const { platform, value } = httpSocialSearch;
-      const handled = await processUserSearch(
-        platform,
-        () => value,
-        rawQuery,
-        {
-          allowFallback: platform === 'other' ? Boolean(searchOptions?.autoOtherFallback) : false,
-          allowUkTrigger: platform === 'telegram' && isSearchEnabled('telegramUkTrigger'),
-        },
-      );
-      if (handled) return;
-    }
-
     if (isSearchEnabled('equalToAllCards')) {
       const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
         ? searchOptions.equalToKeys
