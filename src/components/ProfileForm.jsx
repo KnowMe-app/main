@@ -376,7 +376,6 @@ export const ProfileForm = ({
   handleClear,
   handleDelKeyValue,
   handleFieldFocus,
-  dataSource,
   highlightedFields = [],
   deletedOverlayFields = [],
   isAdmin = false,
@@ -400,16 +399,6 @@ export const ProfileForm = ({
   useEffect(() => {
     setDismissedOverlayEntries({});
   }, [state?.userId, overlayFieldAdditions]);
-
-  useEffect(() => {
-    if (!dataSource || dataSource === 'loading') return;
-
-    toast.success(
-      dataSource === 'backend'
-        ? 'Data loaded from backend'
-        : 'Data loaded from local storage'
-    );
-  }, [dataSource]);
 
   const normalizeGetInTouchForSubmit = draftState => {
     if (!draftState || typeof draftState !== 'object') {
