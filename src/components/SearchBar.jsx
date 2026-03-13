@@ -317,6 +317,49 @@ const inferSearchIdPrefix = input => {
   return null;
 };
 
+const SEARCH_ID_PREFIX_KEYS = [
+  'instagram',
+  'facebook',
+  'email',
+  'phone',
+  'telegram',
+  'tiktok',
+  'other',
+  'vk',
+  'name',
+  'surname',
+  'lastAction',
+  'getInTouch',
+];
+
+const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
+  const configuredPrefixes = Array.isArray(searchOptions?.searchIdPrefixes)
+    ? [...new Set(
+      searchOptions.searchIdPrefixes
+        .map(prefix => (typeof prefix === 'string' ? prefix.trim() : ''))
+        .filter(prefix => SEARCH_ID_PREFIX_KEYS.includes(prefix)),
+    )]
+    : [];
+
+  const hasNoConfiguredPrefixes = configuredPrefixes.length === 0;
+  const hasAllConfiguredPrefixes =
+    configuredPrefixes.length === SEARCH_ID_PREFIX_KEYS.length;
+
+  if (!hasNoConfiguredPrefixes && !hasAllConfiguredPrefixes) {
+    return {
+      primaryPrefixes: configuredPrefixes,
+      shouldRetryWithAllPrefixes: false,
+    };
+  }
+
+  const inferredPrefix = inferSearchIdPrefix(input);
+
+  return {
+    primaryPrefixes: inferredPrefix ? [inferredPrefix] : undefined,
+    shouldRetryWithAllPrefixes: Boolean(inferredPrefix),
+  };
+};
+
 const parseSearchIdExact = input => {
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
@@ -781,13 +824,23 @@ const SearchBar = ({
         setState && setState({});
         setUsers && setUsers({});
       }
-      const preferredSearchIdPrefix =
-        platform === 'searchId' ? inferSearchIdPrefix(trimmedInput) : null;
+      const searchIdPrefixStrategy =
+        platform === 'searchId'
+          ? resolveSearchIdPrefixStrategy(trimmedInput, searchOptions)
+          : null;
+      const primarySearchIdPrefixes = searchIdPrefixStrategy?.primaryPrefixes;
       const res = await cachedSearch(
         result,
-        preferredSearchIdPrefix ? { searchIdPrefixes: [preferredSearchIdPrefix] } : undefined,
+        primarySearchIdPrefixes ? { searchIdPrefixes: primarySearchIdPrefixes } : undefined,
       );
-      if (!res || Object.keys(res).length === 0) {
+      const shouldRetryWithAllSearchIdPrefixes =
+        platform === 'searchId' &&
+        searchIdPrefixStrategy?.shouldRetryWithAllPrefixes;
+      const finalRes =
+        shouldRetryWithAllSearchIdPrefixes && (!res || Object.keys(res).length === 0)
+          ? await cachedSearch(result)
+          : res;
+      if (!finalRes || Object.keys(finalRes).length === 0) {
         if (platform === 'other' && allowFallback) {
           for (const fallbackKey of OTHER_SEARCH_FALLBACK_KEYS) {
             if (fallbackKey === 'other') continue;
@@ -827,11 +880,11 @@ const SearchBar = ({
         setUserNotFound && setUserNotFound(true);
       } else {
         setUserNotFound && setUserNotFound(false);
-        notifySearchResult(result, res, { preferredKeys: [platform] });
-        if ('userId' in res) {
-          setState && setState(res);
+        notifySearchResult(result, finalRes, { preferredKeys: [platform] });
+        if ('userId' in finalRes) {
+          setState && setState(finalRes);
         } else {
-          setUsers && setUsers(res);
+          setUsers && setUsers(finalRes);
         }
       }
       return true;
