@@ -346,6 +346,12 @@ const SEARCH_ID_SCOPED_PLATFORMS = new Set([
   'getInTouch',
 ]);
 
+const prioritizeSearchIdPrefixes = (prefixes, priorityPrefix) => {
+  if (!Array.isArray(prefixes) || prefixes.length === 0) return [];
+  if (!priorityPrefix || !prefixes.includes(priorityPrefix)) return [...prefixes];
+  return [priorityPrefix, ...prefixes.filter(prefix => prefix !== priorityPrefix)];
+};
+
 const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
   const configuredPrefixes = Array.isArray(searchOptions?.searchIdPrefixes)
     ? [...new Set(
@@ -356,21 +362,31 @@ const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
     : [];
 
   const hasNoConfiguredPrefixes = configuredPrefixes.length === 0;
-  const hasAllConfiguredPrefixes =
-    configuredPrefixes.length === SEARCH_ID_PREFIX_KEYS.length;
+  const hasAllConfiguredPrefixes = configuredPrefixes.length === SEARCH_ID_PREFIX_KEYS.length;
+  const fallbackPrefixes = hasNoConfiguredPrefixes ? SEARCH_ID_PREFIX_KEYS : configuredPrefixes;
+  const inferredPrefix = inferSearchIdPrefix(input);
+
+  if (inferredPrefix && fallbackPrefixes.includes(inferredPrefix)) {
+    const prioritizedPrefixes = prioritizeSearchIdPrefixes(fallbackPrefixes, inferredPrefix);
+    return {
+      primaryPrefixes: [inferredPrefix],
+      fallbackPrefixes: prioritizedPrefixes,
+      shouldRetryWithFallbackPrefixes: prioritizedPrefixes.length > 1,
+    };
+  }
 
   if (!hasNoConfiguredPrefixes && !hasAllConfiguredPrefixes) {
     return {
       primaryPrefixes: configuredPrefixes,
-      shouldRetryWithAllPrefixes: false,
+      fallbackPrefixes: configuredPrefixes,
+      shouldRetryWithFallbackPrefixes: false,
     };
   }
 
-  const inferredPrefix = inferSearchIdPrefix(input);
-
   return {
-    primaryPrefixes: inferredPrefix ? [inferredPrefix] : undefined,
-    shouldRetryWithAllPrefixes: Boolean(inferredPrefix),
+    primaryPrefixes: undefined,
+    fallbackPrefixes,
+    shouldRetryWithFallbackPrefixes: false,
   };
 };
 
@@ -814,12 +830,14 @@ const SearchBar = ({
         ...(primarySearchIdPrefixes ? { searchIdPrefixes: primarySearchIdPrefixes } : {}),
         ...(scopedSearchIdPrefixes ? { searchIdPrefixes: scopedSearchIdPrefixes } : {}),
       });
-      const shouldRetryWithAllSearchIdPrefixes =
+      const shouldRetryWithFallbackSearchIdPrefixes =
         platform === 'searchId' &&
-        searchIdPrefixStrategy?.shouldRetryWithAllPrefixes;
+        searchIdPrefixStrategy?.shouldRetryWithFallbackPrefixes;
       const finalRes =
-        shouldRetryWithAllSearchIdPrefixes && (!res || Object.keys(res).length === 0)
-          ? await cachedSearch(result)
+        shouldRetryWithFallbackSearchIdPrefixes && (!res || Object.keys(res).length === 0)
+          ? await cachedSearch(result, {
+            searchIdPrefixes: searchIdPrefixStrategy?.fallbackPrefixes,
+          })
           : res;
       if (!finalRes || Object.keys(finalRes).length === 0) {
         if (platform === 'other' && allowFallback) {
