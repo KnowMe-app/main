@@ -1401,7 +1401,7 @@ const EQUAL_TO_INDEX_KEYS = [
   'lastLogin',
 ];
 
-const getEqualToKeys = (searchKey, equalToKeys) => {
+const getEqualToKeys = equalToKeys => {
   const normalizedSelected = Array.isArray(equalToKeys)
     ? equalToKeys
       .map(key => (typeof key === 'string' ? key.trim() : ''))
@@ -1412,11 +1412,14 @@ const getEqualToKeys = (searchKey, equalToKeys) => {
     normalizedSelected.includes(key)
   );
 
-  if (allowedSelected.length > 0) {
-    return allowedSelected;
+  if (
+    allowedSelected.length === 0 ||
+    allowedSelected.length === EQUAL_TO_INDEX_KEYS.length
+  ) {
+    return [...EQUAL_TO_INDEX_KEYS];
   }
 
-  return EQUAL_TO_INDEX_KEYS.includes(searchKey) ? [searchKey] : [];
+  return allowedSelected;
 };
 
 const getEqualToCandidates = (searchKey, rawSearchValue) => {
@@ -1744,7 +1747,7 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
     if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
       if (forceEqualToAllCards) {
-        const selectedEqualToKeys = getEqualToKeys(searchKey, equalToKeys);
+        const selectedEqualToKeys = getEqualToKeys(equalToKeys);
         await searchByExactEqualToKey(selectedEqualToKeys, searchValue, uniqueUserIds, users);
       } else {
         await searchBySearchId(

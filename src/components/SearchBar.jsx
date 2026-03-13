@@ -1046,14 +1046,21 @@ const SearchBar = ({
     }
 
     if (isSearchEnabled('equalToAllCards')) {
+      const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
       const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
-        ? searchOptions.equalToKeys
+        ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
         : [];
+      const effectiveEqualToKeys = (
+        selectedEqualToKeys.length === 0 ||
+        selectedEqualToKeys.length === allEqualToKeys.length
+      )
+        ? allEqualToKeys
+        : selectedEqualToKeys;
       const aggregatedResults = {};
       let foundEqualToResults = false;
       let emittedSearchLabel = false;
 
-      for (const equalToKey of selectedEqualToKeys) {
+      for (const equalToKey of effectiveEqualToKeys) {
         const parser = EQUAL_TO_SEARCH_PARSERS[equalToKey] || (value => value?.trim());
         const parsedValue = parser(rawQuery);
 
@@ -1093,7 +1100,7 @@ const SearchBar = ({
         const [firstMatchedKey] = Object.keys(aggregatedResults);
         if (firstMatchedKey) {
           const sampleCard = aggregatedResults[firstMatchedKey];
-          const sampleParams = selectedEqualToKeys.reduce((acc, key) => {
+          const sampleParams = effectiveEqualToKeys.reduce((acc, key) => {
             const parser = EQUAL_TO_SEARCH_PARSERS[key] || (value => value?.trim());
             const parsedValue = parser(rawQuery);
             if (parsedValue) {
@@ -1102,7 +1109,7 @@ const SearchBar = ({
             return acc;
           }, {});
           notifySearchResult(sampleParams, sampleCard, {
-            preferredKeys: selectedEqualToKeys,
+            preferredKeys: effectiveEqualToKeys,
           });
         }
 
