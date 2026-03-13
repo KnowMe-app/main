@@ -257,10 +257,61 @@ const parseUserId = input => {
   return null;
 };
 
+const detectHttpSocialSearch = input => {
+  if (typeof input !== 'string') return null;
+
+  const trimmed = input.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return null;
+
+  const socialParsers = [
+    { platform: 'instagram', hostPattern: /(?:^|\.)instagram\.com$/i, parser: parseInstagramId },
+    { platform: 'facebook', hostPattern: /(?:^|\.)facebook\.com$/i, parser: parseFacebookId },
+    { platform: 'telegram', hostPattern: /(?:^|\.)t\.me$/i, parser: parseTelegramId },
+    { platform: 'telegram', hostPattern: /(?:^|\.)telegram\.me$/i, parser: parseTelegramId },
+    { platform: 'tiktok', hostPattern: /(?:^|\.)tiktok\.com$/i, parser: parseTikTokLink },
+    { platform: 'vk', hostPattern: /(?:^|\.)vk\.com$/i, parser: parseVk },
+    { platform: 'vk', hostPattern: /(?:^|\.)vkontakte\.ru$/i, parser: parseVk },
+  ];
+
+  let hostname = '';
+  try {
+    hostname = new URL(trimmed).hostname.toLowerCase();
+  } catch (error) {
+    return null;
+  }
+
+  for (const { platform, hostPattern, parser } of socialParsers) {
+    if (!hostPattern.test(hostname)) continue;
+    const parsedValue = parser(trimmed);
+    if (parsedValue) {
+      return { platform, value: parsedValue };
+    }
+  }
+
+  return null;
+};
+
 const parseSearchIdExact = input => {
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
-  return trimmed || null;
+  if (!trimmed) return null;
+
+  const urlParsers = [
+    parseInstagramId,
+    parseFacebookId,
+    parseTelegramId,
+    parseTikTokLink,
+    parseVk,
+  ];
+
+  for (const parser of urlParsers) {
+    const parsed = parser(trimmed);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return trimmed;
 };
 
 const parseGroupedSearchValues = input => {
@@ -889,6 +940,21 @@ const SearchBar = ({
         );
         return;
       }
+    }
+
+    const httpSocialSearch = detectHttpSocialSearch(trimmed);
+    if (httpSocialSearch && isSearchEnabled(httpSocialSearch.platform)) {
+      const { platform, value } = httpSocialSearch;
+      const handled = await processUserSearch(
+        platform,
+        () => value,
+        rawQuery,
+        {
+          allowFallback: platform === 'other' ? Boolean(searchOptions?.autoOtherFallback) : false,
+          allowUkTrigger: platform === 'telegram' && isSearchEnabled('telegramUkTrigger'),
+        },
+      );
+      if (handled) return;
     }
 
     if (isSearchEnabled('equalToAllCards')) {
