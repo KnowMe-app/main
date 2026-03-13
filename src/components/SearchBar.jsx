@@ -504,10 +504,26 @@ const resolveEqualToExecutionKeys = ({ allKeys, selectedKeys, rawQuery }) => {
   const detectedParams = detectSearchParams(rawQuery);
   const detectedKey = detectedParams?.key;
   if (detectedKey && baseKeys.includes(detectedKey)) {
-    return prioritizeEqualToKeys(baseKeys, detectedKey);
+    const prioritizedKeys = prioritizeEqualToKeys(baseKeys, detectedKey);
+    const shouldRunDetectedOnlyFirst = isAllEnabled || isAllDisabled;
+
+    if (shouldRunDetectedOnlyFirst) {
+      return {
+        primaryKeys: [detectedKey],
+        fallbackKeys: prioritizedKeys.filter(key => key !== detectedKey),
+      };
+    }
+
+    return {
+      primaryKeys: prioritizedKeys,
+      fallbackKeys: [],
+    };
   }
 
-  return [...baseKeys];
+  return {
+    primaryKeys: [...baseKeys],
+    fallbackKeys: [],
+  };
 };
 
 
@@ -1030,17 +1046,19 @@ const SearchBar = ({
       const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
         ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
         : [];
-      const prioritizedEqualToKeys = resolveEqualToExecutionKeys({
+      const equalToExecutionPlan = resolveEqualToExecutionKeys({
         allKeys: allEqualToKeys,
         selectedKeys: selectedEqualToKeys,
         rawQuery,
       });
+      const primaryEqualToKeys = equalToExecutionPlan.primaryKeys || [];
+      const fallbackEqualToKeys = equalToExecutionPlan.fallbackKeys || [];
       const aggregatedResults = {};
       let foundEqualToResults = false;
       let emittedSearchLabel = false;
       let emittedProgressiveResults = false;
 
-      for (const equalToKey of prioritizedEqualToKeys) {
+      for (const equalToKey of primaryEqualToKeys) {
         const parser = EQUAL_TO_SEARCH_PARSERS[equalToKey] || (value => value?.trim());
         const parsedValue = parser(rawQuery);
 
@@ -1081,6 +1099,49 @@ const SearchBar = ({
         }
       }
 
+      if (fallbackEqualToKeys.length > 0) {
+        for (const equalToKey of fallbackEqualToKeys) {
+          const parser = EQUAL_TO_SEARCH_PARSERS[equalToKey] || (value => value?.trim());
+          const parsedValue = parser(rawQuery);
+
+          if (!parsedValue) continue;
+
+          const queryParams = { [equalToKey]: parsedValue };
+          if (!emittedSearchLabel) {
+            emitSearchLabel(queryParams);
+            emittedSearchLabel = true;
+          }
+
+          const res = await cachedSearch(queryParams);
+          if (!res || Object.keys(res).length === 0) {
+            continue;
+          }
+
+          foundEqualToResults = true;
+
+          if (Array.isArray(res)) {
+            res.forEach(card => {
+              if (card?.userId) {
+                aggregatedResults[card.userId] = card;
+              }
+            });
+          } else if ('userId' in res) {
+            aggregatedResults[res.userId] = res;
+          } else {
+            Object.assign(aggregatedResults, res);
+          }
+
+          if (Object.keys(aggregatedResults).length > 0) {
+            setUserNotFound && setUserNotFound(false);
+            if (!emittedProgressiveResults) {
+              setState && setState({});
+              emittedProgressiveResults = true;
+            }
+            setUsers && setUsers({ ...aggregatedResults });
+          }
+        }
+      }
+
       if (foundEqualToResults) {
         setUserNotFound && setUserNotFound(false);
         setState && setState({});
@@ -1089,7 +1150,7 @@ const SearchBar = ({
         const [firstMatchedKey] = Object.keys(aggregatedResults);
         if (firstMatchedKey) {
           const sampleCard = aggregatedResults[firstMatchedKey];
-          const sampleParams = prioritizedEqualToKeys.reduce((acc, key) => {
+          const sampleParams = [...primaryEqualToKeys, ...fallbackEqualToKeys].reduce((acc, key) => {
             const parser = EQUAL_TO_SEARCH_PARSERS[key] || (value => value?.trim());
             const parsedValue = parser(rawQuery);
             if (parsedValue) {
@@ -1098,7 +1159,7 @@ const SearchBar = ({
             return acc;
           }, {});
           notifySearchResult(sampleParams, sampleCard, {
-            preferredKeys: prioritizedEqualToKeys,
+            preferredKeys: [...primaryEqualToKeys, ...fallbackEqualToKeys],
           });
         }
 
