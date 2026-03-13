@@ -473,6 +473,28 @@ const EQUAL_TO_SEARCH_PARSERS = {
   lastLogin: value => value?.trim(),
 };
 
+const prioritizeEqualToKeys = (keys, priorityKey) => {
+  if (!Array.isArray(keys) || keys.length === 0) return [];
+  if (!priorityKey || !keys.includes(priorityKey)) return [...keys];
+  return [priorityKey, ...keys.filter(key => key !== priorityKey)];
+};
+
+const resolveEqualToExecutionKeys = ({ allKeys, selectedKeys, rawQuery }) => {
+  const normalizedSelectedKeys = Array.isArray(selectedKeys) ? selectedKeys : [];
+  const isAllEnabled = normalizedSelectedKeys.length === allKeys.length;
+  const isAllDisabled = normalizedSelectedKeys.length === 0;
+  const baseKeys = isAllEnabled || isAllDisabled ? allKeys : normalizedSelectedKeys;
+
+  const detectedParams = detectSearchParams(rawQuery);
+  const detectedKey = detectedParams?.key;
+  if (detectedKey && baseKeys.includes(detectedKey)) {
+    return prioritizeEqualToKeys(baseKeys, detectedKey);
+  }
+
+  return [...baseKeys];
+};
+
+
 export const detectSearchParams = query => {
   const parsedUkTrigger = parseUkTriggerQuery(query);
   if (parsedUkTrigger?.searchPair?.telegram) {
@@ -990,17 +1012,17 @@ const SearchBar = ({
       const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
         ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
         : [];
-      const effectiveEqualToKeys = (
-        selectedEqualToKeys.length === 0 ||
-        selectedEqualToKeys.length === allEqualToKeys.length
-      )
-        ? allEqualToKeys
-        : selectedEqualToKeys;
+      const prioritizedEqualToKeys = resolveEqualToExecutionKeys({
+        allKeys: allEqualToKeys,
+        selectedKeys: selectedEqualToKeys,
+        rawQuery,
+      });
       const aggregatedResults = {};
       let foundEqualToResults = false;
       let emittedSearchLabel = false;
+      let emittedProgressiveResults = false;
 
-      for (const equalToKey of effectiveEqualToKeys) {
+      for (const equalToKey of prioritizedEqualToKeys) {
         const parser = EQUAL_TO_SEARCH_PARSERS[equalToKey] || (value => value?.trim());
         const parsedValue = parser(rawQuery);
 
@@ -1030,6 +1052,15 @@ const SearchBar = ({
         } else {
           Object.assign(aggregatedResults, res);
         }
+
+        if (Object.keys(aggregatedResults).length > 0) {
+          setUserNotFound && setUserNotFound(false);
+          if (!emittedProgressiveResults) {
+            setState && setState({});
+            emittedProgressiveResults = true;
+          }
+          setUsers && setUsers({ ...aggregatedResults });
+        }
       }
 
       if (foundEqualToResults) {
@@ -1040,7 +1071,7 @@ const SearchBar = ({
         const [firstMatchedKey] = Object.keys(aggregatedResults);
         if (firstMatchedKey) {
           const sampleCard = aggregatedResults[firstMatchedKey];
-          const sampleParams = effectiveEqualToKeys.reduce((acc, key) => {
+          const sampleParams = prioritizedEqualToKeys.reduce((acc, key) => {
             const parser = EQUAL_TO_SEARCH_PARSERS[key] || (value => value?.trim());
             const parsedValue = parser(rawQuery);
             if (parsedValue) {
@@ -1049,7 +1080,7 @@ const SearchBar = ({
             return acc;
           }, {});
           notifySearchResult(sampleParams, sampleCard, {
-            preferredKeys: effectiveEqualToKeys,
+            preferredKeys: prioritizedEqualToKeys,
           });
         }
 
