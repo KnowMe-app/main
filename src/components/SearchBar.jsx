@@ -317,25 +317,6 @@ const inferSearchIdPrefix = input => {
   return null;
 };
 
-const resolvePreferredSearchIdPrefix = (input, searchOptions = {}) => {
-  const inferredPrefix = inferSearchIdPrefix(input);
-  if (inferredPrefix) {
-    return inferredPrefix;
-  }
-
-  const configuredPrefixes = Array.isArray(searchOptions?.searchIdPrefixes)
-    ? searchOptions.searchIdPrefixes
-      .map(prefix => (typeof prefix === 'string' ? prefix.trim() : ''))
-      .filter(Boolean)
-    : [];
-
-  if (configuredPrefixes.length === 1) {
-    return configuredPrefixes[0];
-  }
-
-  return null;
-};
-
 const parseSearchIdExact = input => {
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
@@ -801,9 +782,7 @@ const SearchBar = ({
         setUsers && setUsers({});
       }
       const preferredSearchIdPrefix =
-        platform === 'searchId'
-          ? resolvePreferredSearchIdPrefix(trimmedInput, searchOptions)
-          : null;
+        platform === 'searchId' ? inferSearchIdPrefix(trimmedInput) : null;
       const res = await cachedSearch(
         result,
         preferredSearchIdPrefix ? { searchIdPrefixes: [preferredSearchIdPrefix] } : undefined,
