@@ -622,6 +622,7 @@ const SearchBar = ({
   enabledSearchKeys,
   searchOptions,
 }) => {
+  const activeSearchRequestRef = useRef(0);
   const [internalSearch, setInternalSearch] = useState(
     () => localStorage.getItem(storageKey) || '',
   );
@@ -1011,6 +1012,9 @@ const SearchBar = ({
   };
 
   const writeData = async (query = search) => {
+    const requestId = ++activeSearchRequestRef.current;
+    const isStaleRequest = () => activeSearchRequestRef.current !== requestId;
+
     setUserNotFound && setUserNotFound(false);
     const rawQuery = typeof query === 'string' ? query : '';
     const trimmed = rawQuery.trim();
@@ -1061,6 +1065,7 @@ const SearchBar = ({
             dislikedUsers: dislikeUsers,
           },
         );
+        if (isStaleRequest()) return;
         ids = getIdsByQuery(cacheKey);
       }
       const results = searchCachedCards(term, ids);
@@ -1115,6 +1120,7 @@ const SearchBar = ({
             if (!parsedValue) continue;
 
             const groupedResult = await cachedSearch({ [key]: parsedValue });
+            if (isStaleRequest()) return;
             if (groupedResult && Object.keys(groupedResult).length > 0) {
               res = groupedResult;
               break;
@@ -1123,6 +1129,7 @@ const SearchBar = ({
 
           if (!res) {
             res = await cachedSearch({ name: val });
+            if (isStaleRequest()) return;
           }
 
           if (!res || Object.keys(res).length === 0) {
@@ -1187,6 +1194,7 @@ const SearchBar = ({
           const res = await cachedSearch(queryParams, {
             forceEqualToAllCards: true,
           });
+          if (isStaleRequest()) return;
           if (!res || Object.keys(res).length === 0) {
             continue;
           }
@@ -1238,6 +1246,7 @@ const SearchBar = ({
             const res = await cachedSearch(queryParams, {
               forceEqualToAllCards: true,
             });
+            if (isStaleRequest()) return;
             if (!res || Object.keys(res).length === 0) {
               continue;
             }
@@ -1359,6 +1368,7 @@ const SearchBar = ({
     }
 
     const res = await cachedSearch({ name: nameTrim });
+    if (isStaleRequest()) return;
     if (!res || Object.keys(res).length === 0) {
       setUserNotFound && setUserNotFound(true);
     } else {
