@@ -776,6 +776,56 @@ const SearchBar = ({
 
   const notifySearchResult = () => {};
 
+  const mergeSearchResultMap = (acc, res) => {
+    if (!res || Object.keys(res).length === 0) return;
+    if (Array.isArray(res)) {
+      res.forEach(card => {
+        if (card?.userId) {
+          acc[card.userId] = card;
+        }
+      });
+      return;
+    }
+    if ('userId' in res) {
+      acc[res.userId] = res;
+      return;
+    }
+    Object.assign(acc, res);
+  };
+
+  const runEqualToAllCardsSearch = async (rawQuery, isStaleRequest, resultMap = {}) => {
+    const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
+    const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
+      ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
+      : [];
+    const equalToExecutionPlan = resolveEqualToExecutionKeys({
+      allKeys: allEqualToKeys,
+      selectedKeys: selectedEqualToKeys,
+      rawQuery,
+    });
+    const keysToTry = [
+      ...(equalToExecutionPlan.primaryKeys || []),
+      ...(equalToExecutionPlan.fallbackKeys || []),
+    ];
+
+    let found = false;
+    for (const equalToKey of keysToTry) {
+      const candidates = getParsedCandidatesForKey(equalToKey, rawQuery);
+      for (const parsedValue of candidates) {
+        const res = await cachedSearch(
+          { [equalToKey]: parsedValue },
+          { forceEqualToAllCards: true },
+        );
+        if (isStaleRequest()) return { found, results: resultMap };
+        if (!res || Object.keys(res).length === 0) continue;
+        found = true;
+        mergeSearchResultMap(resultMap, res);
+      }
+    }
+
+    return { found, results: resultMap };
+  };
+
   const cachedSearch = async (params, extraOptions = {}) => {
     const res = await searchFunc(params, {
       ...(searchOptions || {}),
@@ -1149,6 +1199,52 @@ const SearchBar = ({
         );
         return;
       }
+    }
+
+    const isCombinedSearchMode =
+      isSearchEnabled('searchId') && isSearchEnabled('equalToAllCards');
+
+    if (isCombinedSearchMode) {
+      const combinedResults = {};
+      let foundCombinedResults = false;
+      const searchIdInput = parseSearchIdExact(rawQuery);
+
+      if (searchIdInput) {
+        const searchIdPrefixStrategy = resolveSearchIdPrefixStrategy(searchIdInput, searchOptions);
+        const prefixesToIterate =
+          searchIdPrefixStrategy.primaryPrefixes?.length > 0
+            ? searchIdPrefixStrategy.primaryPrefixes
+            : searchIdPrefixStrategy.fallbackPrefixes || [];
+
+        for (const prefix of prefixesToIterate) {
+          const searchIdResult = await cachedSearch(
+            { searchId: searchIdInput },
+            {
+              forceEqualToAllCards: false,
+              searchIdPrefixes: [prefix],
+            },
+          );
+          if (isStaleRequest()) return;
+          if (!searchIdResult || Object.keys(searchIdResult).length === 0) continue;
+          foundCombinedResults = true;
+          mergeSearchResultMap(combinedResults, searchIdResult);
+        }
+      }
+
+      const equalToResult = await runEqualToAllCardsSearch(rawQuery, isStaleRequest, combinedResults);
+      if (isStaleRequest()) return;
+      if (equalToResult.found) {
+        foundCombinedResults = true;
+      }
+
+      if (foundCombinedResults) {
+        setUserNotFound && setUserNotFound(false);
+        setState && setState({});
+        setUsers && setUsers({ ...combinedResults });
+      } else {
+        setUserNotFound && setUserNotFound(true);
+      }
+      return;
     }
 
     if (
