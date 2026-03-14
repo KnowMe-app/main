@@ -126,7 +126,8 @@ const buildSearchIdCandidateKeys = (
     if (prefix === 'phone' && includeAdaptedPhoneVariant) {
       const adaptedPhoneValue = normalizePhoneSearchIdValue(rawSearchValue);
       const adaptedPhoneKey = encodeKey(adaptedPhoneValue).toLowerCase();
-      const valuesToCheck = [...new Set([adaptedPhoneKey, normalizedValue].filter(Boolean))];
+      const rawPhoneKey = encodeKey(String(rawSearchValue || '').trim()).toLowerCase();
+      const valuesToCheck = [...new Set([adaptedPhoneKey, rawPhoneKey].filter(Boolean))];
       return valuesToCheck.map(value => `${prefix}_${value}`);
     }
 
@@ -1353,7 +1354,7 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
   return true;
 };
 
-const searchBySearchId = async (
+const executeSearchBySearchIdIndex = async (
   modifiedSearchValue,
   rawSearchValue,
   uniqueUserIds,
@@ -1401,7 +1402,7 @@ const EQUAL_TO_INDEX_KEYS = [
   'lastLogin',
 ];
 
-const getEqualToKeys = equalToKeys => {
+const resolveEqualToSearchKeys = equalToKeys => {
   const normalizedSelected = Array.isArray(equalToKeys)
     ? equalToKeys
       .map(key => (typeof key === 'string' ? key.trim() : ''))
@@ -1435,7 +1436,7 @@ const getEqualToCandidates = (searchKey, rawSearchValue) => {
 };
 
 
-const searchByExactEqualToKey = async (searchKeys, rawSearchValue, uniqueUserIds, users) => {
+const executeSearchByEqualToFields = async (searchKeys, rawSearchValue, uniqueUserIds, users) => {
   if (!Array.isArray(searchKeys) || searchKeys.length === 0) return;
 
   for (const collection of SEARCH_COLLECTIONS) {
@@ -1466,7 +1467,7 @@ const searchByExactEqualToKey = async (searchKeys, rawSearchValue, uniqueUserIds
           await Promise.all(promises);
         } catch (error) {
           if (isDev) {
-            console.error(`searchByExactEqualToKey → error querying ${collection}.${key}:`, error);
+            console.error(`executeSearchByEqualToFields → error querying ${collection}.${key}:`, error);
           }
         }
       }
@@ -1747,10 +1748,10 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
     if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
       if (forceEqualToAllCards) {
-        const selectedEqualToKeys = getEqualToKeys(equalToKeys);
-        await searchByExactEqualToKey(selectedEqualToKeys, searchValue, uniqueUserIds, users);
+        const selectedEqualToKeys = resolveEqualToSearchKeys(equalToKeys);
+        await executeSearchByEqualToFields(selectedEqualToKeys, searchValue, uniqueUserIds, users);
       } else {
-        await searchBySearchId(
+        await executeSearchBySearchIdIndex(
           modifiedSearchValue,
           searchValue,
           uniqueUserIds,

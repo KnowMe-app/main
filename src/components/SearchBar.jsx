@@ -413,6 +413,24 @@ const parseSearchIdExact = input => {
   return trimmed;
 };
 
+const getParserForSearchKey = key => {
+  if (key === 'searchId') return parseSearchIdExact;
+  return EQUAL_TO_SEARCH_PARSERS[key] || (value => value?.trim());
+};
+
+const getParsedCandidatesForKey = (key, rawQuery) => {
+  const parser = getParserForSearchKey(key);
+  const parsedValue = parser(rawQuery);
+  if (!parsedValue) return [];
+
+  if (key === 'phone') {
+    const normalizedPhone = parsePhoneNumber(rawQuery);
+    return [...new Set([normalizedPhone, parsedValue].filter(Boolean))];
+  }
+
+  return [parsedValue];
+};
+
 const parseGroupedSearchValues = input => {
   if (typeof input !== 'string') return [];
   const trimmed = input.trim();
@@ -489,6 +507,26 @@ const EQUAL_TO_SEARCH_PARSERS = {
   lastLogin: value => value?.trim(),
 };
 
+const DATE_LIKE_EQUAL_TO_KEYS = new Set([
+  'getInTouch',
+  'lastAction',
+  'lastLogin2',
+  'createdAt',
+  'lastCycle',
+  'lastLogin',
+]);
+
+const looksLikeDateQuery = value => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) return false;
+
+  return [
+    /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/,
+    /^\d{4}[./-]\d{1,2}[./-]\d{1,2}$/,
+    /^\d{1,2}\s+[а-яіїєґa-z]+\s+\d{2,4}$/i,
+  ].some(pattern => pattern.test(trimmed));
+};
+
 const prioritizeEqualToKeys = (keys, priorityKey) => {
   if (!Array.isArray(keys) || keys.length === 0) return [];
   if (!priorityKey || !keys.includes(priorityKey)) return [...keys];
@@ -501,10 +539,16 @@ const resolveEqualToExecutionKeys = ({ allKeys, selectedKeys, rawQuery }) => {
   const isAllDisabled = normalizedSelectedKeys.length === 0;
   const baseKeys = isAllEnabled || isAllDisabled ? allKeys : normalizedSelectedKeys;
 
+  const queryLooksLikeDate = looksLikeDateQuery(rawQuery);
+  const dateFilteredBaseKeys = baseKeys.filter(key =>
+    queryLooksLikeDate ? DATE_LIKE_EQUAL_TO_KEYS.has(key) : !DATE_LIKE_EQUAL_TO_KEYS.has(key)
+  );
+  const effectiveBaseKeys = dateFilteredBaseKeys.length > 0 ? dateFilteredBaseKeys : baseKeys;
+
   const detectedParams = detectSearchParams(rawQuery);
   const detectedKey = detectedParams?.key;
-  if (detectedKey && baseKeys.includes(detectedKey)) {
-    const prioritizedKeys = prioritizeEqualToKeys(baseKeys, detectedKey);
+  if (detectedKey && effectiveBaseKeys.includes(detectedKey)) {
+    const prioritizedKeys = prioritizeEqualToKeys(effectiveBaseKeys, detectedKey);
     const shouldRunDetectedOnlyFirst = isAllEnabled || isAllDisabled;
 
     if (shouldRunDetectedOnlyFirst) {
@@ -521,7 +565,7 @@ const resolveEqualToExecutionKeys = ({ allKeys, selectedKeys, rawQuery }) => {
   }
 
   return {
-    primaryKeys: [...baseKeys],
+    primaryKeys: [...effectiveBaseKeys],
     fallbackKeys: [],
   };
 };
@@ -838,23 +882,55 @@ const SearchBar = ({
           ? resolveSearchIdPrefixStrategy(trimmedInput, searchOptions)
           : null;
       const primarySearchIdPrefixes = searchIdPrefixStrategy?.primaryPrefixes;
+      const fallbackSearchIdPrefixes = searchIdPrefixStrategy?.fallbackPrefixes || [];
       const scopedSearchIdPrefixes =
         platform !== 'searchId' && SEARCH_ID_SCOPED_PLATFORMS.has(platform)
           ? [platform]
           : undefined;
-      const res = await cachedSearch(result, {
-        ...(primarySearchIdPrefixes ? { searchIdPrefixes: primarySearchIdPrefixes } : {}),
-        ...(scopedSearchIdPrefixes ? { searchIdPrefixes: scopedSearchIdPrefixes } : {}),
-      });
-      const shouldRetryWithFallbackSearchIdPrefixes =
-        platform === 'searchId' &&
-        searchIdPrefixStrategy?.shouldRetryWithFallbackPrefixes;
-      const finalRes =
-        shouldRetryWithFallbackSearchIdPrefixes && (!res || Object.keys(res).length === 0)
-          ? await cachedSearch(result, {
-            searchIdPrefixes: searchIdPrefixStrategy?.fallbackPrefixes,
-          })
-          : res;
+      const mergeSearchResult = (acc, res) => {
+        if (!res || Object.keys(res).length === 0) return;
+        if (Array.isArray(res)) {
+          res.forEach(card => {
+            if (card?.userId) {
+              acc[card.userId] = card;
+            }
+          });
+          return;
+        }
+        if ('userId' in res) {
+          acc[res.userId] = res;
+          return;
+        }
+        Object.assign(acc, res);
+      };
+
+      let finalRes = null;
+      if (platform === 'searchId') {
+        const prefixesToIterate = primarySearchIdPrefixes || fallbackSearchIdPrefixes;
+        const aggregatedResults = {};
+
+        for (const prefix of prefixesToIterate) {
+          const partialRes = await cachedSearch(result, {
+            forceEqualToAllCards: false,
+            searchIdPrefixes: [prefix],
+          });
+          mergeSearchResult(aggregatedResults, partialRes);
+
+          if (Object.keys(aggregatedResults).length > 0) {
+            setUserNotFound && setUserNotFound(false);
+            setState && setState({});
+            setUsers && setUsers({ ...aggregatedResults });
+          }
+        }
+
+        finalRes = Object.keys(aggregatedResults).length > 0 ? aggregatedResults : null;
+      } else {
+        finalRes = await cachedSearch(result, {
+          ...(scopedSearchIdPrefixes ? { searchIdPrefixes: scopedSearchIdPrefixes } : {}),
+          forceEqualToAllCards: false,
+        });
+      }
+
       if (!finalRes || Object.keys(finalRes).length === 0) {
         if (platform === 'other' && allowFallback) {
           for (const fallbackKey of OTHER_SEARCH_FALLBACK_KEYS) {
@@ -1041,6 +1117,11 @@ const SearchBar = ({
       }
     }
 
+    if (
+      isSearchEnabled('searchId') &&
+      await processUserSearch('searchId', parseSearchIdExact, rawQuery)
+    ) return;
+
     if (isSearchEnabled('equalToAllCards')) {
       const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
       const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
@@ -1055,64 +1136,16 @@ const SearchBar = ({
       const fallbackEqualToKeys = equalToExecutionPlan.fallbackKeys || [];
       const aggregatedResults = {};
       let foundEqualToResults = false;
-      let emittedSearchLabel = false;
       let emittedProgressiveResults = false;
 
       for (const equalToKey of primaryEqualToKeys) {
-        const parser = EQUAL_TO_SEARCH_PARSERS[equalToKey] || (value => value?.trim());
-        const parsedValue = parser(rawQuery);
-
-        if (!parsedValue) continue;
-
-        const queryParams = { [equalToKey]: parsedValue };
-        if (!emittedSearchLabel) {
-          emitSearchLabel(queryParams);
-          emittedSearchLabel = true;
-        }
-
-        const res = await cachedSearch(queryParams);
-        if (!res || Object.keys(res).length === 0) {
-          continue;
-        }
-
-        foundEqualToResults = true;
-
-        if (Array.isArray(res)) {
-          res.forEach(card => {
-            if (card?.userId) {
-              aggregatedResults[card.userId] = card;
-            }
-          });
-        } else if ('userId' in res) {
-          aggregatedResults[res.userId] = res;
-        } else {
-          Object.assign(aggregatedResults, res);
-        }
-
-        if (Object.keys(aggregatedResults).length > 0) {
-          setUserNotFound && setUserNotFound(false);
-          if (!emittedProgressiveResults) {
-            setState && setState({});
-            emittedProgressiveResults = true;
-          }
-          setUsers && setUsers({ ...aggregatedResults });
-        }
-      }
-
-      if (fallbackEqualToKeys.length > 0) {
-        for (const equalToKey of fallbackEqualToKeys) {
-          const parser = EQUAL_TO_SEARCH_PARSERS[equalToKey] || (value => value?.trim());
-          const parsedValue = parser(rawQuery);
-
-          if (!parsedValue) continue;
-
+        const candidates = getParsedCandidatesForKey(equalToKey, rawQuery);
+        for (const parsedValue of candidates) {
           const queryParams = { [equalToKey]: parsedValue };
-          if (!emittedSearchLabel) {
-            emitSearchLabel(queryParams);
-            emittedSearchLabel = true;
-          }
-
-          const res = await cachedSearch(queryParams);
+          emitSearchLabel(queryParams);
+          const res = await cachedSearch(queryParams, {
+            forceEqualToAllCards: false,
+          });
           if (!res || Object.keys(res).length === 0) {
             continue;
           }
@@ -1138,6 +1171,45 @@ const SearchBar = ({
               emittedProgressiveResults = true;
             }
             setUsers && setUsers({ ...aggregatedResults });
+          }
+        }
+      }
+
+      if (fallbackEqualToKeys.length > 0) {
+        for (const equalToKey of fallbackEqualToKeys) {
+          const candidates = getParsedCandidatesForKey(equalToKey, rawQuery);
+          for (const parsedValue of candidates) {
+            const queryParams = { [equalToKey]: parsedValue };
+            emitSearchLabel(queryParams);
+            const res = await cachedSearch(queryParams, {
+              forceEqualToAllCards: false,
+            });
+            if (!res || Object.keys(res).length === 0) {
+              continue;
+            }
+
+            foundEqualToResults = true;
+
+            if (Array.isArray(res)) {
+              res.forEach(card => {
+                if (card?.userId) {
+                  aggregatedResults[card.userId] = card;
+                }
+              });
+            } else if ('userId' in res) {
+              aggregatedResults[res.userId] = res;
+            } else {
+              Object.assign(aggregatedResults, res);
+            }
+
+            if (Object.keys(aggregatedResults).length > 0) {
+              setUserNotFound && setUserNotFound(false);
+              if (!emittedProgressiveResults) {
+                setState && setState({});
+                emittedProgressiveResults = true;
+              }
+              setUsers && setUsers({ ...aggregatedResults });
+            }
           }
         }
       }
@@ -1168,10 +1240,6 @@ const SearchBar = ({
     }
 
 
-    if (
-      isSearchEnabled('searchId') &&
-      await processUserSearch('searchId', parseSearchIdExact, rawQuery)
-    ) return;
     if (
       isSearchEnabled('userId') &&
       await processUserSearch('userId', parseUserId, rawQuery)
