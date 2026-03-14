@@ -16,6 +16,7 @@ import { patchOverlayField } from 'utils/multiAccountEdits';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
 import { FaTimes } from 'react-icons/fa';
+import { InfoModal } from './InfoModal';
 import { auth, database } from './config';
 
 export const getFieldsToRender = state => {
@@ -387,6 +388,8 @@ export const ProfileForm = ({
   const moreInfoRef = useRef(null);
   const [customField, setCustomField] = useState({ key: '', value: '' });
   const [collection, setCollection] = useState('newUsers');
+  const [selectedField, setSelectedField] = useState(null);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const [autoOverlayFieldAdditions, setAutoOverlayFieldAdditions] = useState({});
   const [dismissedOverlayEntries, setDismissedOverlayEntries] = useState({});
   const autoAppliedOverlayForUserRef = useRef('');
@@ -898,6 +901,32 @@ ${entries.join('\n')}`;
     ...normalizedFieldsToRender.filter(field => !priorityOrder.includes(field.name)),
   ];
 
+  const handleOpenModal = fieldName => {
+    setSelectedField(fieldName);
+    setShowInfoModal('pickerOptions');
+  };
+
+  const handleCloseModal = () => {
+    setSelectedField(null);
+    setShowInfoModal(false);
+  };
+
+  const handleSelectOption = option => {
+    if (!selectedField) {
+      handleCloseModal();
+      return;
+    }
+
+    const newValue = option.placeholder === 'Clear' ? '' : option.placeholder;
+    setState(prevState => {
+      const newState = { ...prevState, [selectedField]: newValue };
+      submitWithNormalization(newState, 'overwrite');
+      return newState;
+    });
+
+    handleCloseModal();
+  };
+
   return (
     <>
       {state.userId && (
@@ -1010,7 +1039,19 @@ ${entries.join('\n')}`;
                     name={field.name}
                     value={displayValue}
                     $isDeletedOverlay={deletedOverlayFields.includes(field.name)}
-                    onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                    onFocus={() => {
+                      if (!Array.isArray(field.options)) {
+                        handleFieldFocus && handleFieldFocus(field.name);
+                        return;
+                      }
+
+                      if (state[field.name] !== '' && state[field.name] !== undefined) {
+                        handleFieldFocus && handleFieldFocus(field.name);
+                        return;
+                      }
+
+                      handleOpenModal(field.name);
+                    }}
                     {...(field.name === 'lastAction'
                       ? { readOnly: true }
                       : {
@@ -1074,12 +1115,14 @@ ${entries.join('\n')}`;
                   )}
                 </InputFieldContainer>
 
-                <>
-                  <Hint fieldName={field.name} isActive={state[field.name]}>
-                    {field.ukrainian || field.placeholder}
-                  </Hint>
-                  <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
-                </>
+                {field.name !== 'accessLevel' && (
+                  <>
+                    <Hint fieldName={field.name} isActive={state[field.name]}>
+                      {field.ukrainian || field.placeholder}
+                    </Hint>
+                    <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                  </>
+                )}
               </InputDiv>
             )}
 
@@ -1308,6 +1351,15 @@ ${entries.join('\n')}`;
           Оверлей
         </OverlayDebugButton>
       )}
+
+      {showInfoModal && (
+        <InfoModal
+          onClose={handleCloseModal}
+          options={sortedFieldsToRender.find(field => field.name === selectedField)?.options}
+          onSelect={handleSelectOption}
+          text={showInfoModal}
+        />
+      )}
     </>
   );
 };
@@ -1404,18 +1456,29 @@ const AccessLevelSelect = styled.select`
   border: none;
   outline: none;
   flex: 1;
+  align-items: center;
+  border-radius: 0;
   max-width: 100%;
   min-width: 0;
   width: 100%;
   padding-left: 10px;
-  padding-right: 10px;
+  padding-right: 24px;
   background: transparent;
-  min-height: 30px;
-  color: #000;
+  min-height: 100%;
+  height: 100%;
+  color: ${({ value }) => (value ? '#000' : 'gray')};
   cursor: pointer;
-  appearance: auto;
-  -webkit-appearance: auto;
-  -moz-appearance: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23666' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px 6px;
+
+  option[value=''] {
+    color: gray;
+  }
 `;
 
 const Hint = styled.label`
