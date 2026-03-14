@@ -1134,6 +1134,9 @@ const SearchBar = ({
       }
       return;
     }
+    const isCombinedSearchMode =
+      isSearchEnabled('searchId') && isSearchEnabled('equalToAllCards');
+
     if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
       const hasCache = loadCachedResult('name', trimmed);
       const freshCache = hasCache && isCacheFresh('name', trimmed);
@@ -1164,6 +1167,8 @@ const SearchBar = ({
         const results = {};
         for (const val of values) {
           let res = null;
+          const combinedPerValueResults = {};
+          let foundCombinedPerValue = false;
 
           for (const [key, parser] of groupedSearchStrategies) {
             const parsedValue = parser(val);
@@ -1172,8 +1177,30 @@ const SearchBar = ({
             const groupedResult = await cachedSearch({ [key]: parsedValue });
             if (isStaleRequest()) return;
             if (groupedResult && Object.keys(groupedResult).length > 0) {
+              if (isCombinedSearchMode) {
+                foundCombinedPerValue = true;
+                mergeSearchResultMap(combinedPerValueResults, groupedResult);
+                continue;
+              }
+
               res = groupedResult;
               break;
+            }
+          }
+
+          if (isCombinedSearchMode) {
+            const equalToCombinedResult = await runEqualToAllCardsSearch(
+              val,
+              isStaleRequest,
+              combinedPerValueResults,
+            );
+            if (isStaleRequest()) return;
+            if (equalToCombinedResult.found) {
+              foundCombinedPerValue = true;
+            }
+
+            if (foundCombinedPerValue && Object.keys(combinedPerValueResults).length > 0) {
+              res = combinedPerValueResults;
             }
           }
 
@@ -1200,9 +1227,6 @@ const SearchBar = ({
         return;
       }
     }
-
-    const isCombinedSearchMode =
-      isSearchEnabled('searchId') && isSearchEnabled('equalToAllCards');
 
     if (isCombinedSearchMode) {
       const combinedResults = {};
