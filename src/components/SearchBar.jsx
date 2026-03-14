@@ -346,12 +346,6 @@ const SEARCH_ID_SCOPED_PLATFORMS = new Set([
   'getInTouch',
 ]);
 
-const prioritizeSearchIdPrefixes = (prefixes, priorityPrefix) => {
-  if (!Array.isArray(prefixes) || prefixes.length === 0) return [];
-  if (!priorityPrefix || !prefixes.includes(priorityPrefix)) return [...prefixes];
-  return [priorityPrefix, ...prefixes.filter(prefix => prefix !== priorityPrefix)];
-};
-
 const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
   const configuredPrefixes = Array.isArray(searchOptions?.searchIdPrefixes)
     ? [...new Set(
@@ -361,32 +355,17 @@ const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
     )]
     : [];
 
-  const hasNoConfiguredPrefixes = configuredPrefixes.length === 0;
-  const hasAllConfiguredPrefixes = configuredPrefixes.length === SEARCH_ID_PREFIX_KEYS.length;
-  const fallbackPrefixes = hasNoConfiguredPrefixes ? SEARCH_ID_PREFIX_KEYS : configuredPrefixes;
-  const inferredPrefix = inferSearchIdPrefix(input);
-
-  if (inferredPrefix && fallbackPrefixes.includes(inferredPrefix)) {
-    const prioritizedPrefixes = prioritizeSearchIdPrefixes(fallbackPrefixes, inferredPrefix);
-    return {
-      primaryPrefixes: [inferredPrefix],
-      fallbackPrefixes: prioritizedPrefixes,
-      shouldRetryWithFallbackPrefixes: prioritizedPrefixes.length > 1,
-    };
-  }
-
-  if (!hasNoConfiguredPrefixes && !hasAllConfiguredPrefixes) {
-    return {
-      primaryPrefixes: configuredPrefixes,
-      fallbackPrefixes: configuredPrefixes,
-      shouldRetryWithFallbackPrefixes: false,
-    };
-  }
+  const executionPlan = resolveExecutionPlan({
+    allKeys: SEARCH_ID_PREFIX_KEYS,
+    selectedKeys: configuredPrefixes,
+    detectedKey: inferSearchIdPrefix(input),
+    rawQuery: input,
+  });
 
   return {
-    primaryPrefixes: undefined,
-    fallbackPrefixes,
-    shouldRetryWithFallbackPrefixes: false,
+    primaryPrefixes: executionPlan.primaryKeys,
+    fallbackPrefixes: executionPlan.fallbackKeys,
+    shouldRetryWithFallbackPrefixes: executionPlan.fallbackKeys.length > 0,
   };
 };
 
@@ -414,8 +393,7 @@ const parseSearchIdExact = input => {
 };
 
 const getParserForSearchKey = key => {
-  if (key === 'searchId') return parseSearchIdExact;
-  return EQUAL_TO_SEARCH_PARSERS[key] || (value => value?.trim());
+  return SEARCH_KEY_PARSERS[key] || (value => value?.trim());
 };
 
 const getParsedCandidatesForKey = (key, rawQuery) => {
@@ -507,6 +485,11 @@ const EQUAL_TO_SEARCH_PARSERS = {
   lastLogin: value => value?.trim(),
 };
 
+const SEARCH_KEY_PARSERS = {
+  ...EQUAL_TO_SEARCH_PARSERS,
+  searchId: parseSearchIdExact,
+};
+
 const DATE_LIKE_EQUAL_TO_KEYS = new Set([
   'getInTouch',
   'lastAction',
@@ -533,20 +516,21 @@ const prioritizeEqualToKeys = (keys, priorityKey) => {
   return [priorityKey, ...keys.filter(key => key !== priorityKey)];
 };
 
-const resolveEqualToExecutionKeys = ({ allKeys, selectedKeys, rawQuery }) => {
+const resolveExecutionPlan = ({ allKeys, selectedKeys, detectedKey, rawQuery, dateLikeKeys }) => {
   const normalizedSelectedKeys = Array.isArray(selectedKeys) ? selectedKeys : [];
   const isAllEnabled = normalizedSelectedKeys.length === allKeys.length;
   const isAllDisabled = normalizedSelectedKeys.length === 0;
   const baseKeys = isAllEnabled || isAllDisabled ? allKeys : normalizedSelectedKeys;
 
-  const queryLooksLikeDate = looksLikeDateQuery(rawQuery);
-  const dateFilteredBaseKeys = baseKeys.filter(key =>
-    queryLooksLikeDate ? DATE_LIKE_EQUAL_TO_KEYS.has(key) : !DATE_LIKE_EQUAL_TO_KEYS.has(key)
-  );
-  const effectiveBaseKeys = dateFilteredBaseKeys.length > 0 ? dateFilteredBaseKeys : baseKeys;
+  const hasDateScopedKeys = dateLikeKeys instanceof Set;
+  const queryLooksLikeDate = hasDateScopedKeys ? looksLikeDateQuery(rawQuery) : false;
+  const filteredBaseKeys = hasDateScopedKeys
+    ? baseKeys.filter(key =>
+      queryLooksLikeDate ? dateLikeKeys.has(key) : !dateLikeKeys.has(key)
+    )
+    : baseKeys;
+  const effectiveBaseKeys = filteredBaseKeys.length > 0 ? filteredBaseKeys : baseKeys;
 
-  const detectedParams = detectSearchParams(rawQuery);
-  const detectedKey = detectedParams?.key;
   if (detectedKey && effectiveBaseKeys.includes(detectedKey)) {
     const prioritizedKeys = prioritizeEqualToKeys(effectiveBaseKeys, detectedKey);
     const shouldRunDetectedOnlyFirst = isAllEnabled || isAllDisabled;
@@ -568,6 +552,17 @@ const resolveEqualToExecutionKeys = ({ allKeys, selectedKeys, rawQuery }) => {
     primaryKeys: [...effectiveBaseKeys],
     fallbackKeys: [],
   };
+};
+
+const resolveEqualToExecutionKeys = ({ allKeys, selectedKeys, rawQuery }) => {
+  const detectedParams = detectSearchParams(rawQuery);
+  return resolveExecutionPlan({
+    allKeys,
+    selectedKeys,
+    detectedKey: detectedParams?.key,
+    rawQuery,
+    dateLikeKeys: DATE_LIKE_EQUAL_TO_KEYS,
+  });
 };
 
 
@@ -759,8 +754,11 @@ const SearchBar = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const emitSearchLabel = params => {
-    console.log('[SearchBar] Search label applied', params);
+  const emitSearchLabel = (params, meta = {}) => {
+    console.log('[SearchBar] Search label applied', {
+      ...meta,
+      params,
+    });
     onSearchKey && onSearchKey(params);
   };
 
@@ -829,7 +827,11 @@ const SearchBar = ({
           const freshCache = hasCache && isCacheFresh('telegram', telegramValue);
 
           if (index === 0) {
-            emitSearchLabel({ telegram: telegramValue });
+            emitSearchLabel({ telegram: telegramValue }, {
+              mode: 'telegram',
+              stage: 'uk-trigger',
+              candidateIndex: index,
+            });
           }
 
           if (freshCache) return true;
@@ -868,7 +870,7 @@ const SearchBar = ({
       const hasCache = loadCachedResult(platform, id);
       const freshCache = hasCache && isCacheFresh(platform, id);
       const result = { [platform]: id };
-      emitSearchLabel(result);
+      emitSearchLabel(result, { mode: platform, stage: 'initial' });
       if (freshCache) {
         notifySearchResult(result, null, { preferredKeys: [platform] });
         return true;
@@ -940,7 +942,12 @@ const SearchBar = ({
             const fallbackFreshCache = fallbackHasCache && isCacheFresh(fallbackKey, id);
 
             if (fallbackFreshCache) {
-              emitSearchLabel(fallbackParams);
+              emitSearchLabel(fallbackParams, {
+                mode: platform,
+                stage: 'fallback',
+                fallbackKey,
+                source: 'other-fallback',
+              });
               notifySearchResult(fallbackParams, null, {
                 preferredKeys: [fallbackKey],
               });
@@ -952,7 +959,12 @@ const SearchBar = ({
               continue;
             }
 
-            emitSearchLabel(fallbackParams);
+            emitSearchLabel(fallbackParams, {
+              mode: platform,
+              stage: 'fallback',
+              fallbackKey,
+              source: 'other-fallback',
+            });
             notifySearchResult(fallbackParams, fallbackRes, {
               preferredKeys: [fallbackKey],
             });
@@ -966,7 +978,11 @@ const SearchBar = ({
           }
 
           // Якщо нічого не знайдено — для add профілю лишаємо найпріоритетніший ключ userId.
-          emitSearchLabel({ userId: id });
+          emitSearchLabel({ userId: id }, {
+            mode: platform,
+            stage: 'fallback',
+            source: 'other-fallback-default',
+          });
         }
         setUserNotFound && setUserNotFound(true);
       } else {
@@ -1137,12 +1153,26 @@ const SearchBar = ({
       const aggregatedResults = {};
       let foundEqualToResults = false;
       let emittedProgressiveResults = false;
+      let usedFreshEqualToCache = false;
 
       for (const equalToKey of primaryEqualToKeys) {
         const candidates = getParsedCandidatesForKey(equalToKey, rawQuery);
         for (const parsedValue of candidates) {
           const queryParams = { [equalToKey]: parsedValue };
-          emitSearchLabel(queryParams);
+          emitSearchLabel(queryParams, {
+            mode: 'equalToAllCards',
+            stage: 'primary',
+            key: equalToKey,
+            selectedKeysCount: selectedEqualToKeys.length,
+          });
+          const hasCache = loadCachedResult(equalToKey, parsedValue);
+          const freshCache = hasCache && isCacheFresh(equalToKey, parsedValue);
+          if (freshCache) {
+            usedFreshEqualToCache = true;
+            foundEqualToResults = true;
+            continue;
+          }
+
           const res = await cachedSearch(queryParams, {
             forceEqualToAllCards: false,
           });
@@ -1180,7 +1210,20 @@ const SearchBar = ({
           const candidates = getParsedCandidatesForKey(equalToKey, rawQuery);
           for (const parsedValue of candidates) {
             const queryParams = { [equalToKey]: parsedValue };
-            emitSearchLabel(queryParams);
+            emitSearchLabel(queryParams, {
+              mode: 'equalToAllCards',
+              stage: 'fallback',
+              key: equalToKey,
+              selectedKeysCount: selectedEqualToKeys.length,
+            });
+            const hasCache = loadCachedResult(equalToKey, parsedValue);
+            const freshCache = hasCache && isCacheFresh(equalToKey, parsedValue);
+            if (freshCache) {
+              usedFreshEqualToCache = true;
+              foundEqualToResults = true;
+              continue;
+            }
+
             const res = await cachedSearch(queryParams, {
               forceEqualToAllCards: false,
             });
@@ -1215,6 +1258,11 @@ const SearchBar = ({
       }
 
       if (foundEqualToResults) {
+        if (usedFreshEqualToCache && Object.keys(aggregatedResults).length === 0) {
+          setUserNotFound && setUserNotFound(false);
+          return;
+        }
+
         setUserNotFound && setUserNotFound(false);
         setState && setState({});
         setUsers && setUsers(aggregatedResults);
@@ -1289,7 +1337,7 @@ const SearchBar = ({
 
     const hasCache = loadCachedResult('name', nameTrim);
     const freshCache = hasCache && isCacheFresh('name', nameTrim);
-    emitSearchLabel({ name: nameTrim });
+    emitSearchLabel({ name: nameTrim }, { mode: 'name', stage: 'default' });
     if (freshCache) {
       notifySearchResult({ name: nameTrim }, null, { preferredKeys: ['name'] });
       return;
