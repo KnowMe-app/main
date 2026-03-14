@@ -1174,7 +1174,7 @@ const SearchBar = ({
           }
 
           const res = await cachedSearch(queryParams, {
-            forceEqualToAllCards: false,
+            forceEqualToAllCards: true,
           });
           if (!res || Object.keys(res).length === 0) {
             continue;
@@ -1225,7 +1225,7 @@ const SearchBar = ({
             }
 
             const res = await cachedSearch(queryParams, {
-              forceEqualToAllCards: false,
+              forceEqualToAllCards: true,
             });
             if (!res || Object.keys(res).length === 0) {
               continue;
