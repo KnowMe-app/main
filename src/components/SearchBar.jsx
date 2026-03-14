@@ -1187,7 +1187,7 @@ const SearchBar = ({
     if (
       isSearchEnabled('telegram') &&
       await processUserSearch('telegram', parseTelegramId, rawQuery, {
-        allowUkTrigger: isSearchEnabled('telegramUkTrigger'),
+        allowUkTrigger: true,
       })
     ) return;
     if (
