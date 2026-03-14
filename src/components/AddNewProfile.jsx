@@ -304,6 +304,13 @@ const SearchScopeItems = styled.div`
   gap: 8px 12px;
 `;
 
+const SearchScopeDivider = styled.hr`
+  width: 100%;
+  border: 0;
+  border-top: 1px solid #e3e3e3;
+  margin: 2px 0;
+`;
+
 const SearchScopeLabel = styled.label`
   display: inline-flex;
   align-items: center;
@@ -385,7 +392,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       options: [
         { key: 'phone', label: 'phone', supportsSearchId: true, supportsEqualTo: true },
         { key: 'telegram', label: 'telegram', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'telegramUkTrigger', label: 'telegramUkTrigger', supportsSearchId: false, supportsEqualTo: false },
         { key: 'instagram', label: 'instagram', supportsSearchId: true, supportsEqualTo: true },
         { key: 'facebook', label: 'facebook', supportsSearchId: true, supportsEqualTo: true },
         { key: 'email', label: 'email', supportsSearchId: true, supportsEqualTo: true },
@@ -394,26 +400,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         { key: 'other', label: 'other', supportsSearchId: true, supportsEqualTo: true },
         {
           key: 'userId',
-          label: 'userId (equalTo: точний, searchId: частковий)',
+          label: 'userId',
           supportsSearchId: true,
           supportsEqualTo: true,
         },
-        { key: 'getInTouch', label: 'getInTouch', supportsSearchId: true, supportsEqualTo: true },
         { key: 'myComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'lastAction', label: 'lastAction', supportsSearchId: true, supportsEqualTo: true },
         { key: 'name', label: 'name', supportsSearchId: true, supportsEqualTo: true },
         { key: 'surname', label: 'surname', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'lastLogin2', label: 'lastLogin2', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'createdAt', label: 'createdAt', supportsSearchId: false, supportsEqualTo: true },
         { key: 'cycleStatus', label: 'cycleStatus', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'lastCycle', label: 'lastCycle', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'lastLogin', label: 'lastLogin', supportsSearchId: false, supportsEqualTo: true },
+        { key: 'getInTouch', label: 'getInTouch', supportsSearchId: true, supportsEqualTo: true, isDate: true },
+        { key: 'lastAction', label: 'lastAction', supportsSearchId: true, supportsEqualTo: true, isDate: true },
+        { key: 'lastLogin2', label: 'lastLogin2', supportsSearchId: false, supportsEqualTo: true, isDate: true },
+        { key: 'createdAt', label: 'createdAt', supportsSearchId: false, supportsEqualTo: true, isDate: true },
+        { key: 'lastCycle', label: 'lastCycle', supportsSearchId: false, supportsEqualTo: true, isDate: true },
+        { key: 'lastLogin', label: 'lastLogin', supportsSearchId: false, supportsEqualTo: true, isDate: true },
       ],
     },
   ];
 
   const SEARCH_KEY_OPTIONS = SEARCH_SCOPE_BLOCKS.find(block => block.id === 'search-keys')?.options || [];
-  const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'telegramUkTrigger', 'instagram', 'facebook', 'email', 'vk', 'tiktok', 'other'];
+  const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'instagram', 'facebook', 'email', 'vk', 'tiktok', 'other'];
 
   const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
     (acc, option) => {
@@ -2311,7 +2317,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   <SearchScopeBlockTitle>{block.title}</SearchScopeBlockTitle>
                 </SearchScopeBlockHeader>
                 <SearchScopeItems>
-                    {block.options.map(option => {
+                    {(() => {
+                      const options = block.id === 'search-keys'
+                        ? [...block.options.filter(option => !option.isDate), ...block.options.filter(option => option.isDate)]
+                        : block.options;
+                      const hasDateOptions = block.id === 'search-keys' && options.some(option => option.isDate);
+
+                      return options.map((option, index) => {
                       const isSearchModeOption = block.id === 'search-keys';
                       const searchIdModeOnly = enabledSearchKeys.searchId && !enabledSearchKeys.equalToAllCards;
                       const equalToModeOnly = enabledSearchKeys.equalToAllCards && !enabledSearchKeys.searchId;
@@ -2320,20 +2332,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                         (equalToModeOnly && !option.supportsEqualTo)
                       );
 
+                      const isFirstDateOption = option.isDate && options[index - 1] && !options[index - 1].isDate;
+
                       return (
-                      <SearchScopeLabel key={option.key}>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(enabledSearchKeys[option.key])}
-                          disabled={disabled}
-                          onChange={() => handleSearchScopeChange(option.key, disabled)}
-                        />
-                        <SearchScopeLabelTextGroup>
-                          <span>{option.label}</span>
-                        </SearchScopeLabelTextGroup>
-                      </SearchScopeLabel>
+                      <React.Fragment key={option.key}>
+                        {hasDateOptions && isFirstDateOption && <SearchScopeDivider />}
+                        <SearchScopeLabel>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(enabledSearchKeys[option.key])}
+                            disabled={disabled}
+                            onChange={() => handleSearchScopeChange(option.key, disabled)}
+                          />
+                          <SearchScopeLabelTextGroup>
+                            <span>{option.label}</span>
+                          </SearchScopeLabelTextGroup>
+                        </SearchScopeLabel>
+                      </React.Fragment>
                       );
-                    })}
+                    });
+                  })()}
                   </SearchScopeItems>
               </SearchScopeBlock>
             ))}
