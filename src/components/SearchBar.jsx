@@ -576,6 +576,25 @@ const resolveEqualToExecutionKeys = ({ allKeys, selectedKeys, rawQuery }) => {
   });
 };
 
+const mergeSearchResultToMap = (acc, res) => {
+  if (!acc || !res || Object.keys(res).length === 0) return;
+  if (Array.isArray(res)) {
+    res.forEach(card => {
+      if (card?.userId) {
+        acc[card.userId] = card;
+      }
+    });
+    return;
+  }
+
+  if ('userId' in res) {
+    acc[res.userId] = res;
+    return;
+  }
+
+  Object.assign(acc, res);
+};
+
 
 export const detectSearchParams = query => {
   const parsedUkTrigger = parseUkTriggerQuery(query);
@@ -812,7 +831,13 @@ const SearchBar = ({
   const processUserSearch = async (platform, parseFunction, inputData, options = {}) => {
     const trimmedInput = inputData.trim();
     const id = parseFunction(trimmedInput);
-    const { allowFallback = true, allowUkTrigger = false } = options;
+    const {
+      allowFallback = true,
+      allowUkTrigger = false,
+      returnHandledOnMiss = true,
+      resultAccumulator = null,
+    } = options;
+    const shouldAccumulate = Boolean(resultAccumulator);
 
     console.log('[SearchBar] Parser evaluation', {
       platform,
@@ -873,12 +898,12 @@ const SearchBar = ({
         }
 
         setUserNotFound && setUserNotFound(true);
-        return true;
+        return returnHandledOnMiss;
       }
     }
 
     if (id) {
-      const hasCache = loadCachedResult(platform, id);
+      const hasCache = shouldAccumulate ? false : loadCachedResult(platform, id);
       const freshCache = hasCache && isCacheFresh(platform, id);
       const result = { [platform]: id };
       emitSearchLabel(result, { mode: platform, stage: 'initial' });
@@ -900,23 +925,6 @@ const SearchBar = ({
         platform !== 'searchId' && SEARCH_ID_SCOPED_PLATFORMS.has(platform)
           ? [platform]
           : undefined;
-      const mergeSearchResult = (acc, res) => {
-        if (!res || Object.keys(res).length === 0) return;
-        if (Array.isArray(res)) {
-          res.forEach(card => {
-            if (card?.userId) {
-              acc[card.userId] = card;
-            }
-          });
-          return;
-        }
-        if ('userId' in res) {
-          acc[res.userId] = res;
-          return;
-        }
-        Object.assign(acc, res);
-      };
-
       let finalRes = null;
       if (platform === 'searchId') {
         const prefixesToIterate = primarySearchIdPrefixes || fallbackSearchIdPrefixes;
@@ -927,7 +935,7 @@ const SearchBar = ({
             forceEqualToAllCards: false,
             searchIdPrefixes: [prefix],
           });
-          mergeSearchResult(aggregatedResults, partialRes);
+          mergeSearchResultToMap(aggregatedResults, partialRes);
 
           if (Object.keys(aggregatedResults).length > 0) {
             setUserNotFound && setUserNotFound(false);
@@ -995,11 +1003,18 @@ const SearchBar = ({
             source: 'other-fallback-default',
           });
         }
-        setUserNotFound && setUserNotFound(true);
+        if (!shouldAccumulate) {
+          setUserNotFound && setUserNotFound(true);
+        }
+        return returnHandledOnMiss;
       } else {
         setUserNotFound && setUserNotFound(false);
         notifySearchResult(result, finalRes, { preferredKeys: [platform] });
-        if ('userId' in finalRes) {
+        if (shouldAccumulate) {
+          mergeSearchResultToMap(resultAccumulator, finalRes);
+          setState && setState({});
+          setUsers && setUsers({ ...resultAccumulator });
+        } else if ('userId' in finalRes) {
           setState && setState(finalRes);
         } else {
           setUsers && setUsers(finalRes);
@@ -1108,7 +1123,8 @@ const SearchBar = ({
 
         const results = {};
         for (const val of values) {
-          let res = null;
+          let hasResult = false;
+          const valueResults = {};
 
           for (const [key, parser] of groupedSearchStrategies) {
             const parsedValue = parser(val);
@@ -1116,21 +1132,23 @@ const SearchBar = ({
 
             const groupedResult = await cachedSearch({ [key]: parsedValue });
             if (groupedResult && Object.keys(groupedResult).length > 0) {
-              res = groupedResult;
-              break;
+              hasResult = true;
+              mergeSearchResultToMap(valueResults, groupedResult);
             }
           }
 
-          if (!res) {
-            res = await cachedSearch({ name: val });
+          if (!hasResult) {
+            const nameResult = await cachedSearch({ name: val });
+            if (nameResult && Object.keys(nameResult).length > 0) {
+              hasResult = true;
+              mergeSearchResultToMap(valueResults, nameResult);
+            }
           }
 
-          if (!res || Object.keys(res).length === 0) {
+          if (!hasResult || Object.keys(valueResults).length === 0) {
             results[`new_${val}`] = { _notFound: true, searchVal: val };
-          } else if ('userId' in res) {
-            results[res.userId] = res;
           } else {
-            Object.assign(results, res);
+            Object.assign(results, valueResults);
           }
         }
         setUsers && setUsers(results);
@@ -1144,9 +1162,12 @@ const SearchBar = ({
       }
     }
 
+    const shouldBlockEqualToSearch = !isSearchEnabled('equalToAllCards');
     if (
       isSearchEnabled('searchId') &&
-      await processUserSearch('searchId', parseSearchIdExact, rawQuery)
+      await processUserSearch('searchId', parseSearchIdExact, rawQuery, {
+        returnHandledOnMiss: shouldBlockEqualToSearch,
+      })
     ) return;
 
     if (isSearchEnabled('equalToAllCards')) {
@@ -1299,46 +1320,53 @@ const SearchBar = ({
     }
 
 
-    if (
-      isSearchEnabled('userId') &&
-      await processUserSearch('userId', parseUserId, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('facebook') &&
-      await processUserSearch('facebook', parseFacebookId, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('instagram') &&
-      await processUserSearch('instagram', parseInstagramId, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('telegram') &&
-      await processUserSearch('telegram', parseTelegramId, rawQuery, {
-        allowUkTrigger: true,
-      })
-    ) return;
-    if (
-      isSearchEnabled('email') &&
-      await processUserSearch('email', parseEmail, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('tiktok') &&
-      await processUserSearch('tiktok', parseTikTokLink, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('phone') &&
-      await processUserSearch('phone', parsePhoneNumber, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('vk') &&
-      await processUserSearch('vk', parseVk, rawQuery)
-    ) return;
-    if (
-      isSearchEnabled('other') &&
-      await processUserSearch('other', parseOtherContact, rawQuery, {
-        allowFallback: Boolean(searchOptions?.autoOtherFallback),
-      })
-    ) return;
+    const regularSearchStrategies = [
+      ['userId', parseUserId, {}],
+      ['facebook', parseFacebookId, {}],
+      ['instagram', parseInstagramId, {}],
+      ['telegram', parseTelegramId, { allowUkTrigger: true }],
+      ['email', parseEmail, {}],
+      ['tiktok', parseTikTokLink, {}],
+      ['phone', parsePhoneNumber, {}],
+      ['vk', parseVk, {}],
+      ['other', parseOtherContact, { allowFallback: Boolean(searchOptions?.autoOtherFallback) }],
+    ].filter(([key]) => isSearchEnabled(key));
+
+    const allRegularKeys = regularSearchStrategies.map(([key]) => key);
+    const selectedRegularKeys = Object.entries(enabledSearchKeys || {})
+      .filter(([key, enabled]) => allRegularKeys.includes(key) && enabled)
+      .map(([key]) => key);
+    const shouldRunAllRegularStrategies =
+      !enabledSearchKeys ||
+      selectedRegularKeys.length === 0 ||
+      selectedRegularKeys.length > 1;
+
+    if (shouldRunAllRegularStrategies) {
+      const aggregatedRegularResults = {};
+      let foundRegularResults = false;
+
+      for (const [key, parser, strategyOptions] of regularSearchStrategies) {
+        const handled = await processUserSearch(key, parser, rawQuery, {
+          ...strategyOptions,
+          returnHandledOnMiss: false,
+          resultAccumulator: aggregatedRegularResults,
+        });
+        if (handled) {
+          foundRegularResults = true;
+        }
+      }
+
+      if (foundRegularResults && Object.keys(aggregatedRegularResults).length > 0) {
+        setUserNotFound && setUserNotFound(false);
+        setState && setState({});
+        setUsers && setUsers({ ...aggregatedRegularResults });
+        return;
+      }
+    } else {
+      for (const [key, parser, strategyOptions] of regularSearchStrategies) {
+        if (await processUserSearch(key, parser, rawQuery, strategyOptions)) return;
+      }
+    }
 
     const nameTrim = rawQuery.trim();
     console.log('[SearchBar] Defaulting to name search', {
