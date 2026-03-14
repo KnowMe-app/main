@@ -401,7 +401,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         {
           key: 'userId',
           label: 'userId',
-          supportsSearchId: true,
+          supportsSearchId: false,
           supportsEqualTo: true,
         },
         { key: 'myComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
