@@ -989,16 +989,6 @@ ${entries.join('\n')}`;
                       name={field.name}
                       value={state[field.name] || ''}
                       onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
-                      onMouseDown={e => {
-                        if (typeof e.currentTarget.showPicker === 'function') {
-                          e.currentTarget.showPicker();
-                        }
-                      }}
-                      onClick={e => {
-                        if (typeof e.currentTarget.showPicker === 'function') {
-                          e.currentTarget.showPicker();
-                        }
-                      }}
                       onChange={e => {
                         const value = e.target.value;
                         setState(prevState => ({ ...prevState, [field.name]: value }));
@@ -1423,9 +1413,9 @@ const AccessLevelSelect = styled.select`
   min-height: 30px;
   color: #000;
   cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
+  appearance: auto;
+  -webkit-appearance: auto;
+  -moz-appearance: auto;
 `;
 
 const Hint = styled.label`
