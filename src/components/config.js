@@ -158,7 +158,7 @@ const buildSearchIdCandidateKeys = (
 const shouldSkipBroadFallbackForExactSearchId = searchKey => {
   if (searchKey !== 'searchId') return false;
 
-  // `searchId` в UI позначений як точний пошук.
+  // `searchId` в UI — окремий режим пошуку.
   // Тому додаткові broad-fallback запити (по users/newUsers, partial userId тощо)
   // не мають виконуватись, інакше можна отримати результати з інших полів
   // (наприклад, telegram), навіть якщо вибрано тільки instagram-префікс.
@@ -1075,7 +1075,7 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
-    ? { includeVariants: false, includePrefixMatches: false, includeAdaptedPhoneVariant: true }
+    ? { includeVariants: false, includePrefixMatches: true, includeAdaptedPhoneVariant: true }
     : { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' };
   const users = {};
   const uniqueUserIds = new Set();
@@ -1730,7 +1730,7 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
-    ? { includeVariants: false, includePrefixMatches: false, includeAdaptedPhoneVariant: true }
+    ? { includeVariants: false, includePrefixMatches: true, includeAdaptedPhoneVariant: true }
     : {
       includeVariants: searchKey !== 'telegram',
       includePrefixMatches: searchKey !== 'telegram' || allowTelegramPrefixMatches,
