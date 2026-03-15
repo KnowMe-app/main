@@ -656,8 +656,13 @@ const SearchBar = ({
   const [showHistory, setShowHistory] = useState(false);
 
   const isSearchEnabled = key => {
-    if (!enabledSearchKeys) return true;
-    return Boolean(enabledSearchKeys[key]);
+    const effectiveEnabledSearchKeys =
+      enabledSearchKeys && typeof enabledSearchKeys === 'object'
+        ? enabledSearchKeys
+        : searchOptions?.enabledSearchKeys;
+
+    if (!effectiveEnabledSearchKeys) return true;
+    return Boolean(effectiveEnabledSearchKeys[key]);
   };
 
   const loadCachedResult = (key, value) => {
@@ -879,19 +884,24 @@ const SearchBar = ({
           ? searchIdPrefixStrategy.primaryPrefixes
           : searchIdPrefixStrategy.fallbackPrefixes || [];
 
-      for (const prefix of prefixesToIterate) {
-        const searchIdResult = await cachedSearch(
-          { searchId: searchIdInput },
-          {
-            forceEqualToAllCards: false,
-            searchIdPrefixes: [prefix],
-          },
-        );
-        if (isStaleRequest()) return { found: false, results: resultMap };
-        if (!searchIdResult || Object.keys(searchIdResult).length === 0) continue;
+      const searchIdResults = await Promise.all(
+        prefixesToIterate.map(prefix =>
+          cachedSearch(
+            { searchId: searchIdInput },
+            {
+              forceEqualToAllCards: false,
+              searchIdPrefixes: [prefix],
+            },
+          )
+        )
+      );
+      if (isStaleRequest()) return { found: false, results: resultMap };
+
+      searchIdResults.forEach(searchIdResult => {
+        if (!searchIdResult || Object.keys(searchIdResult).length === 0) return;
         foundCombinedResults = true;
         mergeSearchResultMap(resultMap, searchIdResult);
-      }
+      });
     }
 
     const equalToResult = await runEqualToAllCardsSearch(rawQuery, isStaleRequest, resultMap);
@@ -1050,18 +1060,23 @@ const SearchBar = ({
         const prefixesToIterate = primarySearchIdPrefixes || fallbackSearchIdPrefixes;
         const aggregatedResults = {};
 
-        for (const prefix of prefixesToIterate) {
-          const partialRes = await cachedSearch(result, {
-            forceEqualToAllCards: false,
-            searchIdPrefixes: [prefix],
-          });
-          mergeSearchResult(aggregatedResults, partialRes);
+        const prefixResults = await Promise.all(
+          prefixesToIterate.map(prefix =>
+            cachedSearch(result, {
+              forceEqualToAllCards: false,
+              searchIdPrefixes: [prefix],
+            })
+          )
+        );
 
-          if (Object.keys(aggregatedResults).length > 0) {
-            setUserNotFound && setUserNotFound(false);
-            setState && setState({});
-            setUsers && setUsers({ ...aggregatedResults });
-          }
+        prefixResults.forEach(partialRes => {
+          mergeSearchResult(aggregatedResults, partialRes);
+        });
+
+        if (Object.keys(aggregatedResults).length > 0) {
+          setUserNotFound && setUserNotFound(false);
+          setState && setState({});
+          setUsers && setUsers({ ...aggregatedResults });
         }
 
         finalRes = Object.keys(aggregatedResults).length > 0 ? aggregatedResults : null;

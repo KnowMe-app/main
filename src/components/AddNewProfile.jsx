@@ -418,7 +418,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
     (acc, option) => {
-      acc[option.key] = !option.key.startsWith('equalToKey');
+      // equalTo-пошук має вмикатись тільки явним чекбоксом користувача.
+      // Раніше через дефолт `true` для всіх ключів цей режим запускався неочікувано.
+      acc[option.key] = option.key !== 'equalToAllCards';
       return acc;
     },
     {},
