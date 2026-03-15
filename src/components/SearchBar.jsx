@@ -1276,6 +1276,13 @@ const SearchBar = ({
       await processUserSearch('searchId', parseSearchIdExact, rawQuery)
     ) return;
 
+    if (
+      isSearchEnabled('userId') &&
+      await processUserSearch('userId', parseUserId, rawQuery, {
+        allowFallback: false,
+      })
+    ) return;
+
     if (isSearchEnabled('equalToAllCards')) {
       const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
       const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
@@ -1427,11 +1434,6 @@ const SearchBar = ({
       }
     }
 
-
-    if (
-      isSearchEnabled('userId') &&
-      await processUserSearch('userId', parseUserId, rawQuery)
-    ) return;
     if (
       isSearchEnabled('facebook') &&
       await processUserSearch('facebook', parseFacebookId, rawQuery)
