@@ -1080,6 +1080,13 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
   const users = {};
   const uniqueUserIds = new Set();
   try {
+    if (searchKey === 'userId') {
+      await addUserFromUsers(searchValue, users);
+      if (users[searchValue]) {
+        uniqueUserIds.add(searchValue);
+      }
+    }
+
     await searchBySearchIdUsers(
       modifiedSearchValue,
       searchValue,
@@ -1448,6 +1455,20 @@ const executeSearchByEqualToFields = async (searchKeys, rawSearchValue, uniqueUs
         try {
           const promises = [];
 
+          if (key === 'userId') {
+            const directId = String(candidate || '').trim();
+            if (directId && !uniqueUserIds.has(directId)) {
+              // userId часто є ключем вузла, а не полем усередині картки.
+              // Для таких записів equalTo(orderByChild('userId')) нічого не повертає,
+              // тому перевіряємо direct lookup за ключем.
+              // eslint-disable-next-line no-await-in-loop
+              await addUserToResults(directId, users);
+              if (users[directId]) {
+                uniqueUserIds.add(directId);
+              }
+            }
+          }
+
           // eslint-disable-next-line no-await-in-loop
           const snapshot = await get(
             query(ref2(database, collection), orderByChild(key), equalTo(candidate))
@@ -1745,6 +1766,13 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
   const uniqueUserIds = new Set();
 
   try {
+    if (searchKey === 'userId') {
+      await addUserToResults(searchValue, users);
+      if (users[searchValue]) {
+        uniqueUserIds.add(searchValue);
+      }
+    }
+
     const isDateSearch = await searchByDate(searchValue, uniqueUserIds, users);
     if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
