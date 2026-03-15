@@ -859,6 +859,50 @@ const SearchBar = ({
     return { found: true, results: resultMap };
   };
 
+  const runCombinedSearchForQuery = async (rawQuery, isStaleRequest, resultMap = {}) => {
+    let foundCombinedResults = false;
+
+    if (isSearchEnabled('partialUserId')) {
+      const partialUserIdResult = await runPartialUserIdSearch(rawQuery, isStaleRequest, resultMap);
+      if (isStaleRequest()) return { found: false, results: resultMap };
+      if (partialUserIdResult.found) {
+        foundCombinedResults = true;
+      }
+    }
+
+    const searchIdInput = parseSearchIdExact(rawQuery);
+
+    if (searchIdInput) {
+      const searchIdPrefixStrategy = resolveSearchIdPrefixStrategy(searchIdInput, searchOptions);
+      const prefixesToIterate =
+        searchIdPrefixStrategy.primaryPrefixes?.length > 0
+          ? searchIdPrefixStrategy.primaryPrefixes
+          : searchIdPrefixStrategy.fallbackPrefixes || [];
+
+      for (const prefix of prefixesToIterate) {
+        const searchIdResult = await cachedSearch(
+          { searchId: searchIdInput },
+          {
+            forceEqualToAllCards: false,
+            searchIdPrefixes: [prefix],
+          },
+        );
+        if (isStaleRequest()) return { found: false, results: resultMap };
+        if (!searchIdResult || Object.keys(searchIdResult).length === 0) continue;
+        foundCombinedResults = true;
+        mergeSearchResultMap(resultMap, searchIdResult);
+      }
+    }
+
+    const equalToResult = await runEqualToAllCardsSearch(rawQuery, isStaleRequest, resultMap);
+    if (isStaleRequest()) return { found: false, results: resultMap };
+    if (equalToResult.found) {
+      foundCombinedResults = true;
+    }
+
+    return { found: foundCombinedResults, results: resultMap };
+  };
+
   const cachedSearch = async (params, extraOptions = {}) => {
     const res = await searchFunc(params, {
       ...(searchOptions || {}),
@@ -1184,6 +1228,41 @@ const SearchBar = ({
           cleanedValues: values,
         });
 
+        if (isCombinedSearchMode) {
+          const combinedGroupedResults = {};
+          let foundCombinedGroupedResults = false;
+
+          for (const val of values) {
+            const combinedResult = await runCombinedSearchForQuery(
+              val,
+              isStaleRequest,
+              combinedGroupedResults,
+            );
+            if (isStaleRequest()) return;
+            if (combinedResult.found) {
+              foundCombinedGroupedResults = true;
+            }
+          }
+
+          if (foundCombinedGroupedResults && Object.keys(combinedGroupedResults).length > 0) {
+            setUserNotFound && setUserNotFound(false);
+            setState && setState({});
+            setUsers && setUsers({ ...combinedGroupedResults });
+          } else {
+            setState && setState({});
+            setUsers && setUsers({});
+            setUserNotFound && setUserNotFound(true);
+          }
+
+          const term = values.map(v => v).sort().join(',');
+          const ids = Object.keys(combinedGroupedResults);
+          setIdsForQuery(
+            getCacheKey('search', normalizeQueryKey(`names=${term}`)),
+            ids,
+          );
+          return;
+        }
+
         const groupedSearchStrategies = [
           ['searchId', parseSearchIdExact],
           ['userId', parseUserId],
@@ -1263,47 +1342,10 @@ const SearchBar = ({
 
     if (isCombinedSearchMode) {
       const combinedResults = {};
-      let foundCombinedResults = false;
-
-      if (isSearchEnabled('partialUserId')) {
-        const partialUserIdResult = await runPartialUserIdSearch(rawQuery, isStaleRequest, combinedResults);
-        if (isStaleRequest()) return;
-        if (partialUserIdResult.found) {
-          foundCombinedResults = true;
-        }
-      }
-
-      const searchIdInput = parseSearchIdExact(rawQuery);
-
-      if (searchIdInput) {
-        const searchIdPrefixStrategy = resolveSearchIdPrefixStrategy(searchIdInput, searchOptions);
-        const prefixesToIterate =
-          searchIdPrefixStrategy.primaryPrefixes?.length > 0
-            ? searchIdPrefixStrategy.primaryPrefixes
-            : searchIdPrefixStrategy.fallbackPrefixes || [];
-
-        for (const prefix of prefixesToIterate) {
-          const searchIdResult = await cachedSearch(
-            { searchId: searchIdInput },
-            {
-              forceEqualToAllCards: false,
-              searchIdPrefixes: [prefix],
-            },
-          );
-          if (isStaleRequest()) return;
-          if (!searchIdResult || Object.keys(searchIdResult).length === 0) continue;
-          foundCombinedResults = true;
-          mergeSearchResultMap(combinedResults, searchIdResult);
-        }
-      }
-
-      const equalToResult = await runEqualToAllCardsSearch(rawQuery, isStaleRequest, combinedResults);
+      const combinedResult = await runCombinedSearchForQuery(rawQuery, isStaleRequest, combinedResults);
       if (isStaleRequest()) return;
-      if (equalToResult.found) {
-        foundCombinedResults = true;
-      }
 
-      if (foundCombinedResults) {
+      if (combinedResult.found) {
         setUserNotFound && setUserNotFound(false);
         setState && setState({});
         setUsers && setUsers({ ...combinedResults });
