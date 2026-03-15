@@ -829,7 +829,7 @@ const SearchBar = ({
   const cachedSearch = async (params, extraOptions = {}) => {
     const res = await searchFunc(params, {
       ...(searchOptions || {}),
-      forceEqualToAllCards: isSearchEnabled('equalToAllCards'),
+      forceEqualToAllCards: false,
       ...extraOptions,
     });
     if (!res || Object.keys(res).length === 0) {
