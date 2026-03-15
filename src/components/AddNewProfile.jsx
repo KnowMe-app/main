@@ -384,6 +384,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       options: [
         { key: 'searchId', label: 'searchId (точний)' },
         { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
+        { key: 'partialUserId', label: 'userId (частковий збіг)' },
       ],
     },
     {
@@ -398,12 +399,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         { key: 'vk', label: 'vk', supportsSearchId: true, supportsEqualTo: true },
         { key: 'tiktok', label: 'tiktok', supportsSearchId: true, supportsEqualTo: true },
         { key: 'other', label: 'other', supportsSearchId: true, supportsEqualTo: true },
-        {
-          key: 'userId',
-          label: 'userId',
-          supportsSearchId: false,
-          supportsEqualTo: true,
-        },
         { key: 'myComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
         { key: 'name', label: 'name', supportsSearchId: true, supportsEqualTo: true },
         { key: 'surname', label: 'surname', supportsSearchId: true, supportsEqualTo: true },

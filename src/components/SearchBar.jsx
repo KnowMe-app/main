@@ -163,8 +163,24 @@ const parseInstagramId = input => {
 };
 
 const parsePhoneNumber = phone => {
-  const digitsOnly = String(phone || '').replace(/\D/g, '');
+  const rawInput = String(phone || '');
+  const trimmed = rawInput.trim();
+  if (!trimmed) return;
+
+  const hasPhoneLabel = /(?:^|\b)(?:phone|телефон|тел|номер|моб)\b/i.test(trimmed);
+  const hasLetters = /[A-Za-zА-Яа-яІіЇїЄєҐґ]/.test(trimmed);
+
+  // Якщо в запиті є літери без явної мітки телефону,
+  // не класифікуємо його як телефон (наприклад, "AA614").
+  if (hasLetters && !hasPhoneLabel) return;
+
+  const digitsOnly = trimmed.replace(/\D/g, '');
   if (!digitsOnly) return;
+  if (digitsOnly.length < 3) return;
+
+  // Для коротких фрагментів зберігаємо введене значення,
+  // щоб підтримати пошук за частиною номера.
+  if (digitsOnly.length < 10) return digitsOnly;
 
   if (digitsOnly.startsWith('380')) return digitsOnly;
   if (digitsOnly.startsWith('0')) return `38${digitsOnly}`;
@@ -826,6 +842,23 @@ const SearchBar = ({
     return { found, results: resultMap };
   };
 
+  const runPartialUserIdSearch = async (rawQuery, isStaleRequest, resultMap = {}) => {
+    const parsedUserId = parseUserId(rawQuery);
+    if (!parsedUserId) return { found: false, results: resultMap };
+
+    const partialResult = await cachedSearch(
+      { userId: parsedUserId },
+      { forcePartialUserIdSearch: true },
+    );
+    if (isStaleRequest()) return { found: false, results: resultMap };
+    if (!partialResult || Object.keys(partialResult).length === 0) {
+      return { found: false, results: resultMap };
+    }
+
+    mergeSearchResultMap(resultMap, partialResult);
+    return { found: true, results: resultMap };
+  };
+
   const cachedSearch = async (params, extraOptions = {}) => {
     const res = await searchFunc(params, {
       ...(searchOptions || {}),
@@ -1231,6 +1264,15 @@ const SearchBar = ({
     if (isCombinedSearchMode) {
       const combinedResults = {};
       let foundCombinedResults = false;
+
+      if (isSearchEnabled('partialUserId')) {
+        const partialUserIdResult = await runPartialUserIdSearch(rawQuery, isStaleRequest, combinedResults);
+        if (isStaleRequest()) return;
+        if (partialUserIdResult.found) {
+          foundCombinedResults = true;
+        }
+      }
+
       const searchIdInput = parseSearchIdExact(rawQuery);
 
       if (searchIdInput) {
@@ -1269,6 +1311,17 @@ const SearchBar = ({
         setUserNotFound && setUserNotFound(true);
       }
       return;
+    }
+
+    if (isSearchEnabled('partialUserId')) {
+      const partialUserIdResult = await runPartialUserIdSearch(rawQuery, isStaleRequest);
+      if (isStaleRequest()) return;
+      if (partialUserIdResult.found) {
+        setUserNotFound && setUserNotFound(false);
+        setState && setState({});
+        setUsers && setUsers({ ...partialUserIdResult.results });
+        return;
+      }
     }
 
     if (
