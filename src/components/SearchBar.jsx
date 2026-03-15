@@ -1297,7 +1297,21 @@ const SearchBar = ({
           const combinedPerValueResults = {};
           let foundCombinedPerValue = false;
 
+          if (!isCombinedSearchMode && isSearchEnabled('partialUserId')) {
+            const partialPerValueResult = await runPartialUserIdSearch(
+              val,
+              isStaleRequest,
+            );
+            if (isStaleRequest()) return;
+            if (partialPerValueResult.found) {
+              res = partialPerValueResult.results;
+            }
+          }
+
           for (const [key, parser] of groupedSearchStrategies) {
+            if (res && Object.keys(res).length > 0) {
+              break;
+            }
             const parsedValue = parser(val);
             if (!parsedValue) continue;
 
