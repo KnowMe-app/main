@@ -1724,6 +1724,7 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
     searchIdPrefixes,
     equalToKeys,
     forceEqualToAllCards = false,
+    forcePartialUserIdSearch = false,
     allowTelegramPrefixMatches = false,
   } = options;
   if (isDev) console.log('fetchNewUsersCollectionInRTDB → searchedValue:', searchedValue);
@@ -1747,7 +1748,9 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
     const isDateSearch = await searchByDate(searchValue, uniqueUserIds, users);
     if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
-      if (forceEqualToAllCards) {
+      if (forcePartialUserIdSearch) {
+        await searchUserByPartialUserId(searchValue, users);
+      } else if (forceEqualToAllCards) {
         const selectedEqualToKeys = resolveEqualToSearchKeys(equalToKeys);
         await executeSearchByEqualToFields(selectedEqualToKeys, searchValue, uniqueUserIds, users);
       } else {
@@ -1762,7 +1765,6 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
 
         if (!shouldSkipBroadFallback) {
           await searchByPrefixes(searchValue, uniqueUserIds, users);
-          await searchUserByPartialUserId(searchValue, users);
           await searchByIndexOn(searchValue, uniqueUserIds, users);
         }
       }
