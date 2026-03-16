@@ -83,7 +83,7 @@ import { btnExportUsers } from './topBtns/btnExportUsers';
 import { btnExportUsersCsv } from './topBtns/btnExportUsersCsv';
 import { btnMerge } from './smallCard/btnMerge';
 import FilterPanel from './FilterPanel';
-import SearchBar from './SearchBar';
+import SearchBar, { detectSearchParams } from './SearchBar';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import { PAGE_SIZE, database } from './config';
@@ -1325,13 +1325,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     try {
       const rawSearch = search || '';
       const hasSearchText = rawSearch.trim().length > 0;
+      const detectedSearchParams = hasSearchText
+        ? detectSearchParams(rawSearch)
+        : null;
+
+      const normalizedSearchKeyValuePair =
+        searchKeyValuePair?.searchId && detectedSearchParams?.key && detectedSearchParams?.value
+          ? { [detectedSearchParams.key]: detectedSearchParams.value }
+          : searchKeyValuePair;
 
       if (!hasSearchText && searchKeyValuePair) {
         setSearchKeyValuePair(null);
       }
 
       const newProfile = await makeNewUser(
-        hasSearchText ? searchKeyValuePair : null,
+        hasSearchText ? normalizedSearchKeyValuePair : null,
         rawSearch,
       );
       updateCachedUser(newProfile);
