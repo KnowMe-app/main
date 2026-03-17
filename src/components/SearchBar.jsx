@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useRef } from 'react';
-import toast from 'react-hot-toast';
 import { useAutoResize } from '../hooks/useAutoResize';
 import styled from 'styled-components';
 import { createCache } from '../hooks/cardsCache';
@@ -526,26 +525,6 @@ const SEARCH_KEY_PARSERS = {
   searchId: parseSearchIdExact,
 };
 
-const USER_ID_PARTIAL_HINT_MIN_LENGTH = 4;
-const USER_ID_PARTIAL_HINT_MAX_LENGTH = 27;
-
-const shouldShowPartialUserIdHint = value => {
-  if (typeof value !== 'string') return false;
-
-  const trimmed = value.trim();
-  if (!trimmed) return false;
-  if (trimmed.length < USER_ID_PARTIAL_HINT_MIN_LENGTH) return false;
-  if (trimmed.length > USER_ID_PARTIAL_HINT_MAX_LENGTH) return false;
-
-  return /^[A-Za-z0-9_-]+$/.test(trimmed);
-};
-
-const isLikelyShortUserIdQuery = value => {
-  if (!shouldShowPartialUserIdHint(value)) return false;
-  const trimmed = value.trim();
-  return trimmed.length < 28;
-};
-
 const DATE_LIKE_EQUAL_TO_KEYS = new Set([
   'getInTouch',
   'lastAction',
@@ -692,26 +671,6 @@ const SearchBar = ({
 
     if (!effectiveEnabledSearchKeys) return true;
     return Boolean(effectiveEnabledSearchKeys[key]);
-  };
-
-  const showPartialUserIdTroubleshootingToast = query => {
-    const queryValue = typeof query === 'string' ? query.trim() : '';
-    if (!isLikelyShortUserIdQuery(queryValue)) return;
-
-    const isPartialUserIdEnabled = isSearchEnabled('partialUserId');
-
-    if (!isPartialUserIdEnabled) {
-      toast(
-        'Підказка: увімкни чекбокс "userId (частковий збіг)" у налаштуваннях пошуку. Стан зберігається в localStorage ключі addSearchOptions.',
-        { duration: 8000, id: 'partial-userid-disabled-hint' }
-      );
-      return;
-    }
-
-    toast(
-      'Підказка: short userId шукається як префікс ключа (startAt/endAt), не як contains. Перевір src/components/config.js → searchUserByPartialUserId(). Якщо вчора працювало інакше — перевір addSearchOptions та очисти кеш запитів.',
-      { duration: 9000, id: 'partial-userid-search-hint' }
-    );
   };
 
   const loadCachedResult = (key, value) => {
@@ -896,13 +855,7 @@ const SearchBar = ({
     return { found, results: resultMap };
   };
 
-  const runPartialUserIdSearch = async (
-    rawQuery,
-    isStaleRequest,
-    resultMap = {},
-    options = {},
-  ) => {
-    const { showHintOnEmpty = false } = options;
+  const runPartialUserIdSearch = async (rawQuery, isStaleRequest, resultMap = {}) => {
     const parsedUserId = parseUserId(rawQuery);
     if (!parsedUserId) return { found: false, results: resultMap };
 
@@ -912,9 +865,6 @@ const SearchBar = ({
     );
     if (isStaleRequest()) return { found: false, results: resultMap };
     if (!partialResult || Object.keys(partialResult).length === 0) {
-      if (showHintOnEmpty && shouldShowPartialUserIdHint(parsedUserId)) {
-        showPartialUserIdTroubleshootingToast(parsedUserId);
-      }
       return { found: false, results: resultMap };
     }
 
@@ -931,8 +881,6 @@ const SearchBar = ({
       if (partialUserIdResult.found) {
         foundCombinedResults = true;
       }
-    } else if (isLikelyShortUserIdQuery(rawQuery)) {
-      showPartialUserIdTroubleshootingToast(rawQuery);
     }
 
     const searchIdInput = parseSearchIdExact(rawQuery);
@@ -1445,12 +1393,7 @@ const SearchBar = ({
     }
 
     if (isSearchEnabled('partialUserId')) {
-      const partialUserIdResult = await runPartialUserIdSearch(
-        rawQuery,
-        isStaleRequest,
-        {},
-        { showHintOnEmpty: true },
-      );
+      const partialUserIdResult = await runPartialUserIdSearch(rawQuery, isStaleRequest);
       if (isStaleRequest()) return;
       if (partialUserIdResult.found) {
         setUserNotFound && setUserNotFound(false);
