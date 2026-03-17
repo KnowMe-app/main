@@ -284,8 +284,14 @@ const parseUserId = input => {
   if (patterns.some(p => p.test(candidate))) return candidate;
 
   const genericUserIdPattern = /^[A-Za-z0-9_-]{4,40}$/;
-  if (genericUserIdPattern.test(candidate) && /[A-Za-z]/.test(candidate) && /\d/.test(candidate)) {
-    return candidate;
+  if (genericUserIdPattern.test(candidate)) {
+    const hasLetters = /[A-Za-z]/.test(candidate);
+    const hasDigits = /\d/.test(candidate);
+    const hasMixedCase = /[a-z]/.test(candidate) && /[A-Z]/.test(candidate);
+
+    if (hasLetters && (hasDigits || hasMixedCase)) {
+      return candidate;
+    }
   }
 
   return null;
