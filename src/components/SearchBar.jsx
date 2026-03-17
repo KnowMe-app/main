@@ -255,6 +255,8 @@ const parseVk = value => normalizeVkValue(value);
 const parseUserId = input => {
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes('@')) return null;
   const pattern = /(?:\bId\s*[:\s]+)(\w+)/i;
   const match = trimmed.match(pattern);
   const candidate = (match ? match[1] : trimmed).trim();
@@ -280,6 +282,12 @@ const parseUserId = input => {
 
   const patterns = [...exactIdPatterns, ...partialIdPatterns];
   if (patterns.some(p => p.test(candidate))) return candidate;
+
+  const genericUserIdPattern = /^[A-Za-z0-9_-]{4,40}$/;
+  if (genericUserIdPattern.test(candidate) && /[A-Za-z]/.test(candidate) && /\d/.test(candidate)) {
+    return candidate;
+  }
+
   return null;
 };
 
