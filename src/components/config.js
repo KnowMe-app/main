@@ -1246,6 +1246,9 @@ const addUserToResults = async (userId, users) => {
 
   const userSnapshotInUsers = await get(ref2(database, `users/${userId}`));
   const userFromUsers = userSnapshotInUsers.exists() ? userSnapshotInUsers.val() : {};
+  if (!userSnapshotInNewUsers.exists() && !userSnapshotInUsers.exists()) {
+    return;
+  }
   // users.push({
   //   userId,
   //   ...userFromNewUsers,
