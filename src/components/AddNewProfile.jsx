@@ -319,6 +319,29 @@ const SearchScopeLabel = styled.label`
   color: #1f1f1f;
 `;
 
+const SearchScopeRow = styled.div`
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+`;
+
+const ToggleSearchScopeButton = styled.button`
+  border: 1px solid #c8d0ff;
+  border-radius: 6px;
+  background: #f3f5ff;
+  color: #2f4db9;
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 8px;
+  cursor: pointer;
+
+  &:hover {
+    background: #e9edff;
+  }
+`;
+
 const SearchScopeLabelTextGroup = styled.span`
   display: inline-flex;
   flex-direction: column;
@@ -414,6 +437,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   ];
 
   const SEARCH_KEY_OPTIONS = SEARCH_SCOPE_BLOCKS.find(block => block.id === 'search-keys')?.options || [];
+  const TOGGLEABLE_SEARCH_KEYS = [
+    'searchId',
+    'equalToAllCards',
+    'partialUserId',
+    ...SEARCH_KEY_OPTIONS.map(option => option.key),
+  ];
   const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'instagram', 'facebook', 'email', 'vk', 'tiktok', 'other'];
 
   const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
@@ -464,6 +493,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       ...prev,
       [key]: !prev[key],
     }));
+  };
+
+  const areAllSearchScopesEnabled = TOGGLEABLE_SEARCH_KEYS.every(key => Boolean(enabledSearchKeys[key]));
+
+  const toggleAllSearchScopes = () => {
+    setEnabledSearchKeys(prev => {
+      const shouldEnableAll = TOGGLEABLE_SEARCH_KEYS.some(key => !prev[key]);
+      const next = { ...prev };
+
+      TOGGLEABLE_SEARCH_KEYS.forEach(key => {
+        next[key] = shouldEnableAll;
+      });
+
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -2342,17 +2386,36 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       return (
                       <React.Fragment key={option.key}>
                         {hasDateOptions && isFirstDateOption && <SearchScopeDivider />}
-                        <SearchScopeLabel>
-                          <input
-                            type="checkbox"
-                            checked={Boolean(enabledSearchKeys[option.key])}
-                            disabled={disabled}
-                            onChange={() => handleSearchScopeChange(option.key, disabled)}
-                          />
-                          <SearchScopeLabelTextGroup>
-                            <span>{option.label}</span>
-                          </SearchScopeLabelTextGroup>
-                        </SearchScopeLabel>
+                        {option.key === 'searchId' ? (
+                          <SearchScopeRow>
+                            <SearchScopeLabel>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(enabledSearchKeys[option.key])}
+                                disabled={disabled}
+                                onChange={() => handleSearchScopeChange(option.key, disabled)}
+                              />
+                              <SearchScopeLabelTextGroup>
+                                <span>{option.label}</span>
+                              </SearchScopeLabelTextGroup>
+                            </SearchScopeLabel>
+                            <ToggleSearchScopeButton type="button" onClick={toggleAllSearchScopes}>
+                              {areAllSearchScopesEnabled ? 'Вимкнути всі' : 'Увімкнути всі'}
+                            </ToggleSearchScopeButton>
+                          </SearchScopeRow>
+                        ) : (
+                          <SearchScopeLabel>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(enabledSearchKeys[option.key])}
+                              disabled={disabled}
+                              onChange={() => handleSearchScopeChange(option.key, disabled)}
+                            />
+                            <SearchScopeLabelTextGroup>
+                              <span>{option.label}</span>
+                            </SearchScopeLabelTextGroup>
+                          </SearchScopeLabel>
+                        )}
                       </React.Fragment>
                       );
                     });
