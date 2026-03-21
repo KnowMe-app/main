@@ -37,10 +37,10 @@ export const removeSpaceAndNewLine = value => {
     return processedStr;
   };
   
-  export const formatEmail = email => {
-    email = removeSpaceAndNewLine(email);
-    return email;
-  };
+export const formatEmail = email => {
+  email = removeSpaceAndNewLine(email);
+  return email.toLowerCase();
+};
   
   export const formatInstagram = link => {
     // Шукаємо підстроку "id=" в посиланні
@@ -67,15 +67,15 @@ export const removeSpaceAndNewLine = value => {
         nickName = nickName.replace(/\//g, '');
       }
   
-      return nickName;
+      return nickName.toLowerCase();
     } else if (link.includes('@')) {
       // Якщо в ніку є символ "@", видаляємо його
       link = link.replace(/@/g, '');
-      return link;
+      return removeSpaceAndNewLine(link).toLowerCase();
     } else {
       // Якщо "com/" не знайдено, просто повертаємо весь рядок
       link = removeSpaceAndNewLine(link);
-      return link;
+      return link.toLowerCase();
     }
   };
   
@@ -90,7 +90,7 @@ export const removeSpaceAndNewLine = value => {
       if (firstSpaceIndex !== -1) {
         return id.substring(0, firstSpaceIndex);
       }
-      return id;
+        return removeSpaceAndNewLine(id).toLowerCase();
     } else {
       // Якщо "id=" не знайдено, шукаємо "com/" та витягуємо цифровий ID, який слідує за "com/"
       const comIndex = link.indexOf('com/');
@@ -103,18 +103,18 @@ export const removeSpaceAndNewLine = value => {
           // Видаляємо всі "/" з рядка
           nickName = nickName.replace(/\//g, '');
           nickName = removeSpaceAndNewLine(nickName);
-          return nickName;
+          return nickName.toLowerCase();
         }
         nickName = removeSpaceAndNewLine(nickName);
-        return nickName;
+        return nickName.toLowerCase();
       } else if (link.includes('@')) {
         // Якщо в ніку є символ "@", видаляємо його
         link = link.replace(/@/g, '');
-        return link;
+        return removeSpaceAndNewLine(link).toLowerCase();
       } else {
         // Якщо ні "id=" ні "com/" не знайдено, просто повертаємо весь рядок
         link = removeSpaceAndNewLine(link);
-        return link;
+        return link.toLowerCase();
       }
     }
   };
@@ -157,7 +157,7 @@ export const removeSpaceAndNewLine = value => {
       return `id${normalized}`;
     }
 
-    return normalized;
+    return normalized.toLowerCase();
   };
 
   export const formatTelegram = nick => {
@@ -171,7 +171,17 @@ export const removeSpaceAndNewLine = value => {
     }
     nick = removeSpaceAndNewLine(nick);
   
-    return nick;
+    return nick.toLowerCase();
+  };
+
+  export const formatTikTok = value => {
+    value = removeSpaceAndNewLine(value);
+    return value.replace(/^@/g, '').toLowerCase();
+  };
+
+  export const formatOther = value => {
+    value = removeSpaceAndNewLine(value);
+    return value.toLowerCase();
   };
   
   export const formatNumber = (value, maxValue) => {
