@@ -1,6 +1,9 @@
 import { HiddenInput, StyledLabel } from "components/styles";
 import React, { useState } from "react";
 
+const normalizeExactMatchField = (value) =>
+  typeof value === "string" ? value.trim().toLowerCase() : value;
+
 export const UploadJson = () => {
   const [jsonData, setJsonData] = useState(null);
 
@@ -31,7 +34,32 @@ export const UploadJson = () => {
               }
 
               if (value.instagram && typeof value.instagram === "string") {
-                value.instagram = value.instagram.replace(/@/g, "");
+                value.instagram = normalizeExactMatchField(value.instagram.replace(/@/g, ""));
+              }
+
+              if (value.facebook && typeof value.facebook === "string") {
+                value.facebook = normalizeExactMatchField(value.facebook.replace(/@/g, ""));
+              }
+
+              if (value.email && typeof value.email === "string") {
+                value.email = normalizeExactMatchField(value.email);
+              }
+
+              if (value.telegram && typeof value.telegram === "string") {
+                value.telegram = normalizeExactMatchField(value.telegram.replace(/@/g, ""));
+              }
+
+              if (value.tiktok && typeof value.tiktok === "string") {
+                value.tiktok = normalizeExactMatchField(value.tiktok.replace(/@/g, ""));
+              }
+
+              if (value.other && typeof value.other === "string") {
+                value.other = normalizeExactMatchField(value.other);
+              }
+
+              if (value.vk && typeof value.vk === "string") {
+                const normalizedVk = value.vk.startsWith("id") ? value.vk : `id${value.vk}`;
+                value.vk = normalizeExactMatchField(normalizedVk);
               }
 
               return [key, value];

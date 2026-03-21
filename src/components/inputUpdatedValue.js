@@ -3,7 +3,9 @@ import {
   formatFacebook,
   formatInstagram,
   formatNumber,
+  formatOther,
   formatTelegram,
+  formatTikTok,
   formatVk,
   formatDate,
   removeSpacesLeaveEnter,
@@ -52,6 +54,10 @@ export const inputUpdateValue = (value, field, data) => {
       ? formatInstagram(value)
       : field.name === 'email'
       ? formatEmail(value)
+      : field.name === 'tiktok'
+      ? formatTikTok(value)
+      : field.name === 'other'
+      ? formatOther(value)
       : field.name === 'experience'
       ? formatNumber(value, 16)
       : field.name?.startsWith('more')

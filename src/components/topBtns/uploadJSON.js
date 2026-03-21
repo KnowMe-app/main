@@ -2,6 +2,9 @@
 import { HiddenInput, StyledLabel } from "components/styles";
 import React, { useState } from "react";
 
+const normalizeExactMatchField = value =>
+  typeof value === "string" ? value.trim().toLowerCase() : value;
+
 export const UploadJson = () => {
   const [cleanedJson, setCleanedJson] = useState(null);
 
@@ -335,12 +338,29 @@ export const UploadJson = () => {
       }
       if (processed.facebook && typeof processed.facebook === "string") {
         processed.facebook = processed.facebook.startsWith("@") ? processed.facebook.slice(1) : processed.facebook;
+        processed.facebook = normalizeExactMatchField(processed.facebook);
       }
       if (processed.instagram && typeof processed.instagram === "string") {
         processed.instagram = processed.instagram.startsWith("@") ? processed.instagram.slice(1) : processed.instagram;
+        processed.instagram = normalizeExactMatchField(processed.instagram);
+      }
+      if (processed.email && typeof processed.email === "string") {
+        processed.email = normalizeExactMatchField(processed.email);
+      }
+      if (processed.telegram && typeof processed.telegram === "string") {
+        processed.telegram = processed.telegram.startsWith("@") ? processed.telegram.slice(1) : processed.telegram;
+        processed.telegram = normalizeExactMatchField(processed.telegram);
+      }
+      if (processed.tiktok && typeof processed.tiktok === "string") {
+        processed.tiktok = processed.tiktok.startsWith("@") ? processed.tiktok.slice(1) : processed.tiktok;
+        processed.tiktok = normalizeExactMatchField(processed.tiktok);
+      }
+      if (processed.other && typeof processed.other === "string") {
+        processed.other = normalizeExactMatchField(processed.other);
       }
       if (processed.vk && typeof processed.vk === "string") {
         processed.vk = processed.vk.startsWith("id") ? processed.vk : `id${processed.vk}`;
+        processed.vk = normalizeExactMatchField(processed.vk);
       }
 
       function adaptVkLogic(processed) {
