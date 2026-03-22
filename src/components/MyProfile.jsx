@@ -29,6 +29,7 @@ import { color } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { resolveAccess } from 'utils/accessLevel';
+import { normalizePhoneState } from './inputValidations';
 import { authNotifications } from './authNotifications';
 
 const Container = styled.div`
@@ -523,10 +524,14 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
   const handleBlur = () => {
     setFocused(null);
-    handleSubmit();
+    setState(prevState => {
+      const normalizedState = normalizePhoneState(prevState);
+      handleSubmit(normalizedState);
+      return normalizedState;
+    });
   };
   const handleSubmit = async (newState) => {
-    const data = newState ? newState : state;
+    const data = normalizePhoneState(newState ? newState : state);
     const { password, ...profileData } = data;
     const { existingData } = await fetchUserData(state.userId);
     
