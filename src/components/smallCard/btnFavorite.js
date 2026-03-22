@@ -11,6 +11,27 @@ import { setFavorite } from 'utils/favoritesStorage';
 import { setDislike } from 'utils/dislikesStorage';
 import { FaHeart, FaRegHeart } from 'react-icons/fa';
 
+const getReactionButtonStyle = isActive => ({
+  position: 'absolute',
+  bottom: '10px',
+  width: '35px',
+  height: '35px',
+  borderRadius: '50%',
+  background: isActive ? color.white : color.accent5,
+  border: `2px solid ${isActive ? color.accent5 : 'rgba(255, 255, 255, 0.92)'}`,
+  boxShadow: isActive
+    ? '0 0 0 2px rgba(255, 140, 0, 0.45), 0 8px 18px rgba(0, 0, 0, 0.35)'
+    : '0 4px 12px rgba(0, 0, 0, 0.28)',
+  color: isActive ? color.iconInactive : color.white,
+  zIndex: 1,
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  transform: isActive ? 'scale(1.06)' : 'scale(1)',
+  transition: 'background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease',
+});
+
 export const BtnFavorite = ({
   userId,
   userData = {},
@@ -68,22 +89,8 @@ export const BtnFavorite = ({
   return (
     <button
       style={{
-        position: 'absolute',
-        bottom: '10px',
+        ...getReactionButtonStyle(isFavorite),
         right: '10px',
-        width: '35px',
-        height: '35px',
-        borderRadius: '50%',
-        background: color.accent5,
-        border: `${isFavorite ? 2 : 2}px solid ${
-          isFavorite ? color.iconInactive : color.white
-        }`,
-        color: isFavorite ? color.iconInactive : color.white,
-        zIndex: 1,
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
       }}
       disabled={!auth.currentUser}
       onClick={e => {
