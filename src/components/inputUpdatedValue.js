@@ -10,7 +10,6 @@ import {
   formatDate,
   removeSpacesLeaveEnter,
   removeExtraSpaces,
-  formatPhoneNumberNoSpace,
   formatDateAndFormula,
 } from './inputValidations';
 
@@ -25,9 +24,7 @@ export const inputUpdateValue = (value, field, data) => {
       ? formatDate(value, true)
       : // : field.name === 'experience'
       // ? createOpuData(value)
-      field.name === 'phone'
-      ? formatPhoneNumberNoSpace(value)
-      : field.name === 'reward'
+      field.name === 'reward'
       ? formatNumber(value, 9999)
       : field.name === 'ownKids'
       ? formatNumber(value, 10)

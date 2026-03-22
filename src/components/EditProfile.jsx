@@ -23,6 +23,7 @@ import {
   formatDateToServer,
 } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import { normalizePhoneState } from './inputValidations';
 import toast from 'react-hot-toast';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
@@ -399,7 +400,7 @@ const EditProfile = () => {
 
   const handleSubmit = async (newState, overwrite, delCondition) => {
     const now = Date.now();
-    const baseState = newState ? { ...newState } : { ...state };
+    const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
     const updatedState = { ...baseState, lastAction: now };
 
     if (!isAdmin && currentUid) {
@@ -468,7 +469,11 @@ const EditProfile = () => {
   };
 
   const handleBlur = async fieldName => {
-    await handleSubmit();
+    const normalizedState = normalizePhoneState(state);
+    if (normalizedState !== state) {
+      setState(normalizedState);
+    }
+    await handleSubmit(normalizedState);
     if (!isAdmin || !fieldName) return;
     if (focusedField && focusedField !== fieldName) return;
     await acceptFocusedFieldChanges(fieldName);

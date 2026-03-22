@@ -37,6 +37,7 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { resolveAccess } from 'utils/accessLevel';
+import { normalizePhoneState } from './inputValidations';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import InfoModal from './InfoModal';
 import UtilityPeriodComposer from './UtilityPeriodComposer';
@@ -560,7 +561,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [location.search]);
 
   const handleBlur = () => {
-    handleSubmit();
+    setState(prevState => {
+      const normalizedState = normalizePhoneState(prevState);
+      handleSubmit(normalizedState);
+      return normalizedState;
+    });
   };
 
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
@@ -569,7 +574,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     const now = Date.now();
-    const baseState = newState ? { ...newState } : { ...state };
+    const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
     const updatedState = { ...baseState, lastAction: now };
 
     const formattedLastDelivery = formatDateToServer(

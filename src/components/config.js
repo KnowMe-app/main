@@ -28,6 +28,7 @@ import toast from 'react-hot-toast';
 import { removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { updateCard } from '../utils/cardsStorage';
+import { normalizePhoneValue } from './inputValidations';
 import { getCacheKey } from '../utils/cache';
 import { getReactionCategory } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
@@ -78,12 +79,7 @@ const normalizeSearchIdInput = (searchKey, rawValue) => {
   if (!baseValue) return '';
 
   if (searchKey === 'phone') {
-    const digitsOnly = baseValue.replace(/\D/g, '');
-    if (!digitsOnly) return '';
-    if (digitsOnly.startsWith('380')) return digitsOnly;
-    if (digitsOnly.startsWith('0')) return `38${digitsOnly}`;
-    if (digitsOnly.startsWith('80')) return `3${digitsOnly}`;
-    return digitsOnly;
+    return normalizePhoneValue(baseValue);
   }
 
   if (searchKey === 'telegram') {
@@ -96,14 +92,7 @@ const normalizeSearchIdInput = (searchKey, rawValue) => {
   return baseValue.replace(/\s+/g, ' ');
 };
 
-const normalizePhoneSearchIdValue = rawValue => {
-  const digitsOnly = String(rawValue || '').replace(/\D/g, '');
-  if (!digitsOnly) return '';
-  if (digitsOnly.startsWith('380')) return digitsOnly;
-  if (digitsOnly.startsWith('0')) return `38${digitsOnly}`;
-  if (digitsOnly.startsWith('80')) return `3${digitsOnly}`;
-  return digitsOnly;
-};
+const normalizePhoneSearchIdValue = rawValue => normalizePhoneValue(rawValue);
 
 const buildSearchIdCandidateKeys = (
   modifiedSearchValue,
