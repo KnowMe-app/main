@@ -106,6 +106,7 @@ import {
 } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
+import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 
 const Container = styled.div`
   display: flex;
@@ -159,23 +160,65 @@ const MatchingMiniList = styled.div`
 `;
 
 const MatchingMiniCard = styled.div`
-  transform: scale(0.5);
-  transform-origin: top left;
-  width: 200%;
-  margin-bottom: -50%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e7e7e7;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 `;
 
 const MatchingMiniCardShell = styled.div`
-  border-radius: 10px;
-  overflow: hidden;
-  box-sizing: border-box;
+  position: relative;
+  width: 100%;
+  min-height: 180px;
+  background: #f3f3f3;
+  cursor: pointer;
 `;
 
 const MatchingMiniReactionBadge = styled.div`
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.2;
-  color: #666;
-  margin-bottom: 6px;
+  color: #4a4a4a;
+  padding: 8px 10px 0;
+`;
+
+const MatchingMiniMainPhoto = styled.img`
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  display: block;
+`;
+
+const MatchingMiniFallback = styled.div`
+  width: 100%;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  font-size: 13px;
+`;
+
+const MatchingMiniOverlay = styled.div`
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0.05));
+  color: #fff;
+`;
+
+const MatchingMiniName = styled.div`
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+`;
+
+const MatchingMiniMeta = styled.div`
+  font-size: 12px;
+  opacity: 0.92;
+  margin-top: 2px;
 `;
 
 const InnerContainer = styled.div`
@@ -1622,22 +1665,38 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               moreActionsState.cards.map(card => (
                 <MatchingMiniCard key={card.userId}>
                   <MatchingMiniReactionBadge>Reaction: {card._reactionType}</MatchingMiniReactionBadge>
-                  <MatchingMiniCardShell style={{ ...coloredCard() }}>
-                    {renderTopBlock(
-                      card,
-                      setUsers,
-                      setShowInfoModal,
-                      setState,
-                      setUserIdToDelete,
-                      true,
-                      favoriteUsersData,
-                      setFavoriteUsersData,
-                      dislikeUsersData,
-                      setDislikeUsersData,
-                      currentFilter,
-                      isDateInRange,
-                      openMedicationsModal
-                    )}
+                  <MatchingMiniCardShell
+                    onClick={() => {
+                      setState(card);
+                      setShowInfoModal('details');
+                    }}
+                  >
+                    {(() => {
+                      const photos = (Array.isArray(card.photos) ? card.photos : [card.photos])
+                        .filter(Boolean)
+                        .map(convertDriveLinkToImage);
+                      const fullName = [card.name, card.surname]
+                        .filter(Boolean)
+                        .map(part => String(part).trim())
+                        .join(' ');
+                      const city = String(card.city || '').trim();
+
+                      return (
+                        <>
+                          {photos[0] ? (
+                            <MatchingMiniMainPhoto src={photos[0]} alt={fullName || 'Фото'} loading="lazy" />
+                          ) : (
+                            <MatchingMiniFallback>Без фото</MatchingMiniFallback>
+                          )}
+                          <MatchingMiniOverlay>
+                            <MatchingMiniName>{fullName || card.userId || 'Без імені'}</MatchingMiniName>
+                            <MatchingMiniMeta>
+                              {[city, card.userId].filter(Boolean).join(' · ')}
+                            </MatchingMiniMeta>
+                          </MatchingMiniOverlay>
+                        </>
+                      );
+                    })()}
                   </MatchingMiniCardShell>
                 </MatchingMiniCard>
               ))
