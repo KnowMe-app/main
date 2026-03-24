@@ -137,7 +137,7 @@ const OrangeStrong = styled.strong`
   color: orange;
 `;
 
-export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards, UtilityComposer }) => {
+export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards, MoreActions, UtilityComposer }) => {
 
   const delProfile = (
     <>
@@ -168,6 +168,10 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
     <>{CompareCards && <CompareCards/>}
   </>
 );
+
+  const moreActions = (
+    <>{MoreActions && <MoreActions />}</>
+  );
   
   const dotsMenu = (
     <>{Context && <Context/>}
@@ -262,6 +266,9 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
     case 'compareCards':
       body = compareCards;
       break;
+    case 'moreActions':
+      body = moreActions;
+      break;
     case 'utilityComposer':
       body = utilityComposer;
       break;
@@ -269,7 +276,7 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
       body = null;
   }
 
-  if (text === 'utilityComposer') {
+  if (text === 'utilityComposer' || text === 'moreActions') {
     ContentComponent = LargeModalContent;
   }
 
