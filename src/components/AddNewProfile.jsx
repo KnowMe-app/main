@@ -13,6 +13,7 @@ import {
   fetchAllFilteredUsers,
   fetchFavoriteUsers,
   fetchFavoriteUsersData,
+  fetchDislikeUsersData,
   fetchCycleUsersData,
   removeKeyFromFirebase,
   // fetchListOfUsers,
@@ -122,6 +123,48 @@ const Container = styled.div`
 
   /* maxWidth:  */
   /* height: 100vh; */
+`;
+
+const MoreActionsInfo = styled.p`
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #333;
+`;
+
+const MoreActionsCommandButton = styled.button`
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  background: #f8f8f8;
+  cursor: pointer;
+  font-size: 14px;
+  color: #222;
+
+  &:hover {
+    background: #efefef;
+  }
+`;
+
+const MatchingMiniList = styled.div`
+  max-height: 50vh;
+  overflow: auto;
+  margin-top: 8px;
+  border-top: 1px solid #eee;
+  padding-top: 8px;
+`;
+
+const MatchingMiniCard = styled.div`
+  transform: scale(0.5);
+  transform-origin: top left;
+  width: 200%;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: -45%;
+  background: #fff;
+  box-sizing: border-box;
 `;
 
 const InnerContainer = styled.div`
@@ -1468,12 +1511,117 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const [compare, setCompare] = useState('');
+  const [moreActionsState, setMoreActionsState] = useState({
+    user: null,
+    cards: [],
+    loading: false,
+    showLikeDislikeCards: false,
+  });
   const compareCards = () => {
     return (
       <>
         <p>Порівняти</p>
         {/* <p>{compare}</p> */}
         <div dangerouslySetInnerHTML={{ __html: compare }} />
+      </>
+    );
+  };
+
+  const openMoreActionsModal = async userData => {
+    const user = userData || null;
+    setShowInfoModal('moreActions');
+    setMoreActionsState({
+      user,
+      cards: [],
+      loading: false,
+      showLikeDislikeCards: false,
+    });
+  };
+
+  const toggleLikeDislikeCards = async () => {
+    if (!moreActionsState.user?.userId) return;
+
+    if (moreActionsState.showLikeDislikeCards) {
+      setMoreActionsState(prev => ({ ...prev, showLikeDislikeCards: false }));
+      return;
+    }
+
+    if (moreActionsState.cards.length > 0) {
+      setMoreActionsState(prev => ({ ...prev, showLikeDislikeCards: true }));
+      return;
+    }
+
+    setMoreActionsState(prev => ({ ...prev, loading: true, showLikeDislikeCards: true }));
+
+    try {
+      const ownerId = moreActionsState.user.userId;
+      const [likesMap, dislikesMap] = await Promise.all([
+        fetchFavoriteUsersData(ownerId),
+        fetchDislikeUsersData(ownerId),
+      ]);
+
+      const merged = {};
+      Object.values(likesMap || {}).forEach(item => {
+        if (item?.userId) merged[item.userId] = { ...item, _reactionType: 'Like' };
+      });
+      Object.values(dislikesMap || {}).forEach(item => {
+        if (item?.userId) {
+          const existing = merged[item.userId];
+          merged[item.userId] = {
+            ...item,
+            _reactionType: existing?._reactionType ? `${existing._reactionType}/Dislike` : 'Dislike',
+          };
+        }
+      });
+
+      const sortedCards = Object.values(merged).sort((a, b) => (b.lastLogin2 || '').localeCompare(a.lastLogin2 || ''));
+
+      setMoreActionsState(prev => ({
+        ...prev,
+        cards: sortedCards,
+      }));
+    } catch (error) {
+      console.error('Unable to load Like/Dislike cards for user:', error);
+      toast.error('Не вдалося завантажити Like/Dislike');
+      setMoreActionsState(prev => ({ ...prev, showLikeDislikeCards: false }));
+    } finally {
+      setMoreActionsState(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const moreActions = () => {
+    const user = moreActionsState.user;
+    if (!user) return null;
+
+    return (
+      <>
+        <MoreActionsInfo>
+          Останній логін: <strong>{formatDateToDisplay(user.lastLogin2) || user.lastLogin2 || 'немає даних'}</strong>
+        </MoreActionsInfo>
+
+        <MoreActionsCommandButton onClick={toggleLikeDislikeCards}>Like/Dislike</MoreActionsCommandButton>
+
+        {moreActionsState.loading && <p>Завантаження...</p>}
+
+        {moreActionsState.showLikeDislikeCards && !moreActionsState.loading && (
+          <MatchingMiniList>
+            {moreActionsState.cards.length === 0 ? (
+              <p>Список порожній</p>
+            ) : (
+              moreActionsState.cards.map(card => (
+                <MatchingMiniCard key={card.userId}>
+                  <strong>
+                    {card.name || ''} {card.surname || ''}
+                  </strong>
+                  <div>ID: {card.userId}</div>
+                  <div>Reaction: {card._reactionType}</div>
+                  <div>Last login: {card.lastLogin2 || '—'}</div>
+                  <div>Role: {card.userRole || card.role || '—'}</div>
+                </MatchingMiniCard>
+              ))
+            )}
+          </MatchingMiniList>
+        )}
       </>
     );
   };
@@ -2635,6 +2783,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 <UsersList
                   setCompare={setCompare}
                   setShowInfoModal={setShowInfoModal}
+                  onOpenMoreActions={openMoreActionsModal}
                   users={paginatedUsers}
                   onOpenMedications={openMedicationsModal}
                   favoriteUsers={favoriteUsersData}
@@ -2665,6 +2814,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           Context={dotsMenu}
           DelConfirm={delConfirm}
           CompareCards={compareCards}
+          MoreActions={moreActions}
           UtilityComposer={UtilityPeriodComposer}
         />
       )}

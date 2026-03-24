@@ -4,6 +4,7 @@ import { makeNewUser } from './config';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnEdit } from './smallCard/btnEdit';
+import { btnMore } from './smallCard/btnMore';
 import { renderAllFields } from './ProfileForm';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
 import StimulationSchedule from './StimulationSchedule';
@@ -122,6 +123,7 @@ const UsersList = ({
   setDislikeUsers,
   currentFilter,
   isDateInRange,
+  onOpenMoreActions,
 }) => {
   const entries = Object.entries(users);
 
@@ -187,6 +189,7 @@ const UsersList = ({
                     backgroundColor: '#FF8C00',
                   })}
                   {btnCompare(index, users, setUsers, setShowInfoModal, setCompare)}
+                  {btnMore(userData, onOpenMoreActions)}
                 </>
               }
             />
