@@ -154,9 +154,13 @@ const MatchingMiniList = styled.div`
   margin-top: 8px;
   border-top: 1px solid #eee;
   padding-top: 8px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+
+  > p {
+    grid-column: 1 / -1;
+  }
 `;
 
 const MatchingMiniCard = styled.div`
