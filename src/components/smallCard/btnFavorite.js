@@ -21,6 +21,8 @@ export const BtnFavorite = ({
   setDislikeUsers,
 }) => {
   const isFavorite = !!favoriteUsers[userId];
+  const activeColor = color.reactionLike;
+  const inactiveOpacity = 0.7;
 
   const toggleFavorite = async () => {
     if (!auth.currentUser) {
@@ -74,11 +76,10 @@ export const BtnFavorite = ({
         width: '35px',
         height: '35px',
         borderRadius: '50%',
-        background: color.accent5,
-        border: `${isFavorite ? 2 : 2}px solid ${
-          isFavorite ? color.iconInactive : color.white
-        }`,
-        color: isFavorite ? color.iconInactive : color.white,
+        background: isFavorite ? color.reactionLikeBg : color.accent5,
+        border: `2px solid ${isFavorite ? activeColor : color.reactionIdleBorder}`,
+        color: isFavorite ? activeColor : color.reactionIdleIcon,
+        opacity: isFavorite ? 1 : inactiveOpacity,
         zIndex: 1,
         cursor: 'pointer',
         display: 'flex',
@@ -92,9 +93,9 @@ export const BtnFavorite = ({
       }}
     >
       {isFavorite ? (
-        <FaHeart size={18} color={color.iconInactive} />
+        <FaHeart size={18} color={activeColor} />
       ) : (
-        <FaRegHeart size={18} color={color.white} />
+        <FaRegHeart size={18} color={color.reactionIdleIcon} />
       )}
     </button>
   );

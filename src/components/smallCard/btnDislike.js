@@ -21,6 +21,8 @@ export const BtnDislike = ({
   setFavoriteUsers,
 }) => {
   const isDisliked = !!dislikeUsers[userId];
+  const activeColor = color.reactionDislike;
+  const inactiveOpacity = 0.7;
 
   const toggleDislike = async () => {
     if (!auth.currentUser) {
@@ -75,11 +77,10 @@ export const BtnDislike = ({
         width: '35px',
         height: '35px',
         borderRadius: '50%',
-        background: color.accent5,
-        border: `${isDisliked ? 2 : 2}px solid ${
-          isDisliked ? color.iconActive : color.white
-        }`,
-        color: isDisliked ? color.iconActive : color.white,
+        background: isDisliked ? color.reactionDislikeBg : color.accent5,
+        border: `2px solid ${isDisliked ? activeColor : color.reactionIdleBorder}`,
+        color: isDisliked ? activeColor : color.reactionIdleIcon,
+        opacity: isDisliked ? 1 : inactiveOpacity,
         zIndex: 1,
         cursor: 'pointer',
         display: 'flex',
@@ -92,7 +93,7 @@ export const BtnDislike = ({
         toggleDislike();
       }}
     >
-      <FaTimes size={18} color={isDisliked ? color.iconActive : color.white} />
+      <FaTimes size={18} color={isDisliked ? activeColor : color.reactionIdleIcon} />
     </button>
   );
 };
