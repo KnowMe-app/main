@@ -77,6 +77,12 @@ export const color = {
 
   iconActive: '#212121',
   iconInactive: '#353535',
+  reactionLike: '#FF4D6D',
+  reactionLikeBg: 'rgba(255, 77, 109, 0.2)',
+  reactionDislike: '#FF5A5F',
+  reactionDislikeBg: 'rgba(255, 90, 95, 0.2)',
+  reactionIdleBorder: 'rgba(255, 255, 255, 0.45)',
+  reactionIdleIcon: 'rgba(255, 255, 255, 0.78)',
 
   paleAccent: `#FF6C0055`,
   paleAccent2: '#FFA50030',
