@@ -153,18 +153,29 @@ const MatchingMiniList = styled.div`
   margin-top: 8px;
   border-top: 1px solid #eee;
   padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 `;
 
 const MatchingMiniCard = styled.div`
   transform: scale(0.5);
   transform-origin: top left;
   width: 200%;
-  border: 1px solid #ddd;
+  margin-bottom: -50%;
+`;
+
+const MatchingMiniCardShell = styled.div`
   border-radius: 10px;
-  padding: 10px;
-  margin-bottom: -45%;
-  background: #fff;
+  overflow: hidden;
   box-sizing: border-box;
+`;
+
+const MatchingMiniReactionBadge = styled.div`
+  font-size: 11px;
+  line-height: 1.2;
+  color: #666;
+  margin-bottom: 6px;
 `;
 
 const InnerContainer = styled.div`
@@ -1610,13 +1621,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             ) : (
               moreActionsState.cards.map(card => (
                 <MatchingMiniCard key={card.userId}>
-                  <strong>
-                    {card.name || ''} {card.surname || ''}
-                  </strong>
-                  <div>ID: {card.userId}</div>
-                  <div>Reaction: {card._reactionType}</div>
-                  <div>Last login: {card.lastLogin2 || '—'}</div>
-                  <div>Role: {card.userRole || card.role || '—'}</div>
+                  <MatchingMiniReactionBadge>Reaction: {card._reactionType}</MatchingMiniReactionBadge>
+                  <MatchingMiniCardShell style={{ ...coloredCard() }}>
+                    {renderTopBlock(
+                      card,
+                      setUsers,
+                      setShowInfoModal,
+                      setState,
+                      setUserIdToDelete,
+                      true,
+                      favoriteUsersData,
+                      setFavoriteUsersData,
+                      dislikeUsersData,
+                      setDislikeUsersData,
+                      currentFilter,
+                      isDateInRange,
+                      openMedicationsModal
+                    )}
+                  </MatchingMiniCardShell>
                 </MatchingMiniCard>
               ))
             )}
