@@ -1575,6 +1575,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     loading: false,
     showLikeDislikeCards: false,
   });
+  const moreActionsReturnStateRef = useRef(null);
+  const shouldReturnToMoreActionsRef = useRef(false);
   const compareCards = () => {
     return (
       <>
@@ -1671,8 +1673,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   <MatchingMiniReactionBadge>Reaction: {card._reactionType}</MatchingMiniReactionBadge>
                   <MatchingMiniCardShell
                     onClick={() => {
+                      moreActionsReturnStateRef.current = {
+                        ...moreActionsState,
+                        loading: false,
+                        showLikeDislikeCards: true,
+                      };
+                      shouldReturnToMoreActionsRef.current = true;
+                      window.history.pushState({ moreActionsDetails: true }, '');
                       setState(card);
-                      setShowInfoModal('details');
+                      setShowInfoModal(false);
                     }}
                   >
                     {(() => {
@@ -1718,6 +1727,30 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
     return merged;
   };
+
+  useEffect(() => {
+    const handleMoreActionsBackNavigation = () => {
+      if (!shouldReturnToMoreActionsRef.current) return;
+      if (!state.userId) return;
+
+      const returnState = moreActionsReturnStateRef.current;
+      if (!returnState?.user?.userId) return;
+
+      shouldReturnToMoreActionsRef.current = false;
+      setState({});
+      setMoreActionsState({
+        ...returnState,
+        loading: false,
+        showLikeDislikeCards: true,
+      });
+      setShowInfoModal('moreActions');
+    };
+
+    window.addEventListener('popstate', handleMoreActionsBackNavigation);
+    return () => {
+      window.removeEventListener('popstate', handleMoreActionsBackNavigation);
+    };
+  }, [state.userId, setState]);
 
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
