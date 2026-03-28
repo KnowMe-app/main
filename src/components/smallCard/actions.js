@@ -312,6 +312,9 @@ export const removeField = (
         if (isLast) {
           const newArray = current.slice();
           newArray.splice(index, 1);
+          if (newArray.length === 1) {
+            return { changed: true, value: newArray[0] };
+          }
           return { changed: true, value: newArray };
         }
 
