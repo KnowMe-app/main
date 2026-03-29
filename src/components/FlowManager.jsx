@@ -49,13 +49,19 @@ const ActionBtn = styled.button`
   }
 `;
 
-const Select = styled.select`
-  width: 100%;
-  border: 1px solid #d7d7d7;
-  border-radius: 6px;
-  padding: 8px;
-  font-size: 14px;
-  background: #fff;
+const RadioGroup = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+`;
+
+const RadioLabel = styled.label`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #444;
+  cursor: pointer;
 `;
 
 const Divider = styled.hr`
@@ -323,7 +329,7 @@ export const FlowManager = ({ ownerId }) => {
     setCategoryInput('');
   };
 
-  const handleSave = async () => {
+  const handleSave = async ({ silentValidation = false } = {}) => {
     const normalizedCategory = normalizeCategoryPath(selectedCategory);
     const parsedEntry = parseFlowEntryLine(entryInput, dateYmd);
     const amountClean = parsedEntry?.amount || '';
@@ -331,7 +337,9 @@ export const FlowManager = ({ ownerId }) => {
     const dateToSave = parsedEntry?.date || '';
 
     if (!ownerId || !normalizedCategory || !dateToSave || !amountClean) {
-      toast.error('Заповніть дату, суму та групу');
+      if (!silentValidation) {
+        toast.error('Заповніть дату, суму та групу');
+      }
       return;
     }
 
@@ -533,20 +541,22 @@ export const FlowManager = ({ ownerId }) => {
         <ActionBtn type="button" onClick={addCategory}>+</ActionBtn>
       </Row>
 
-      <Label>
+      <Label as="div">
         Група витрат
-        <Select
-          value={selectedCategory}
-          onChange={e => {
-            setSelectedCategory(normalizeCategoryPath(e.target.value));
-          }}
-        >
+        <RadioGroup>
           {allCategories.map(category => (
-            <option key={category} value={category}>
+            <RadioLabel key={category}>
+              <input
+                type="radio"
+                name="flow-category"
+                value={category}
+                checked={selectedCategory === category}
+                onChange={e => setSelectedCategory(normalizeCategoryPath(e.target.value))}
+              />
               {category}
-            </option>
+            </RadioLabel>
           ))}
-        </Select>
+        </RadioGroup>
       </Label>
 
       <Divider />
@@ -569,6 +579,9 @@ export const FlowManager = ({ ownerId }) => {
                 handleSave();
                 categoryInputRef.current?.focus();
               }
+            }}
+            onBlur={() => {
+              handleSave({ silentValidation: true });
             }}
             placeholder="дд.мм.рррр 100 Кава"
           />
@@ -602,7 +615,6 @@ export const FlowManager = ({ ownerId }) => {
       </Row>
 
       <FooterActions>
-        <ActionBtn type="button" onClick={handleSave}>Зберегти</ActionBtn>
         <ActionBtn type="button" onClick={handleCopyToClipboard}>Копіювати</ActionBtn>
         <ActionBtn type="button" onClick={handleClear}>Очистити Flow</ActionBtn>
       </FooterActions>
