@@ -86,7 +86,8 @@ const MultilineInput = styled.textarea`
 
 const EventsList = styled.ul`
   margin: 8px 0 0;
-  padding-left: 18px;
+  padding: 0;
+  list-style: none;
   font-size: 12px;
   color: #666;
   line-height: 1.4;
@@ -94,6 +95,7 @@ const EventsList = styled.ul`
 
 const EventRow = styled.li`
   margin-bottom: 4px;
+  cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
 `;
 
 const TinyBtn = styled.button`
@@ -629,7 +631,11 @@ export const FlowManager = ({ ownerId }) => {
           const rowKey = getRowKey(row, idx);
           const isEditing = editingKey === rowKey;
           return (
-            <EventRow key={rowKey}>
+            <EventRow
+              key={rowKey}
+              $clickable={!isEditing}
+              onClick={!isEditing ? () => beginEdit(row, idx) : undefined}
+            >
               [{row.group}]
               {isEditing ? (
                 <>
@@ -662,9 +668,6 @@ export const FlowManager = ({ ownerId }) => {
                 <>
                   {' '}
                   {formatDisplayDate(row.date)} {row.amount} {row.description}
-                  <TinyBtn type="button" onClick={() => beginEdit(row, idx)}>
-                    edit
-                  </TinyBtn>
                 </>
               )}
             </EventRow>
