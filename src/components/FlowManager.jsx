@@ -160,6 +160,8 @@ const sanitizeEntryKeyChunk = value =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const DEFAULT_FLOW_CATEGORY = 'general';
+
 const flattenEntries = (node, path = []) => {
   if (!node || typeof node !== 'object') return [];
 
@@ -201,8 +203,8 @@ export const FlowManager = ({ ownerId }) => {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [categoryInput, setCategoryInput] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('Мол');
-  const [localCategories, setLocalCategories] = useState(['Мол']);
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [localCategories, setLocalCategories] = useState([DEFAULT_FLOW_CATEGORY]);
   const [importInput, setImportInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -231,7 +233,12 @@ export const FlowManager = ({ ownerId }) => {
     const merged = [...localCategories, ...categoriesFromDb]
       .map(normalizeCategoryPath)
       .filter(Boolean);
-    return [...new Set(merged)];
+    const unique = [...new Set(merged)];
+    return unique.sort((a, b) => {
+      if (a === DEFAULT_FLOW_CATEGORY) return -1;
+      if (b === DEFAULT_FLOW_CATEGORY) return 1;
+      return a.localeCompare(b);
+    });
   }, [categoriesFromDb, localCategories]);
 
   const flowRows = useMemo(() => flattenEntries(flowData), [flowData]);
@@ -260,7 +267,7 @@ export const FlowManager = ({ ownerId }) => {
   }, [reload]);
 
   useEffect(() => {
-    if (!allCategories.includes(selectedCategory) && allCategories.length > 0) {
+    if (allCategories.length > 0 && (!selectedCategory || !allCategories.includes(selectedCategory))) {
       setSelectedCategory(allCategories[0]);
     }
   }, [allCategories, selectedCategory]);
@@ -476,6 +483,48 @@ export const FlowManager = ({ ownerId }) => {
     <Wrap>
       <Row>
         <Label>
+          Нова група/підгрупа
+          <Input
+            ref={categoryInputRef}
+            value={categoryInput}
+            onChange={e => {
+              setIsDirty(true);
+              setCategoryInput(e.target.value);
+            }}
+            onBlur={tryAutoSaveOnBlur}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addCategory();
+              }
+            }}
+            placeholder="напр. їжа/кава"
+          />
+        </Label>
+        <ActionBtn type="button" onClick={addCategory}>+</ActionBtn>
+      </Row>
+
+      <CategoryList>
+        {allCategories.map(category => (
+          <CategoryRow key={category}>
+            <input
+              type="radio"
+              name="flow-category"
+              checked={selectedCategory === category}
+              onChange={() => {
+                setIsDirty(true);
+                setSelectedCategory(category);
+              }}
+            />
+            {category}
+          </CategoryRow>
+        ))}
+      </CategoryList>
+
+      <Divider />
+
+      <Row>
+        <Label>
           Дата
           <Input
             ref={dateInputRef}
@@ -554,48 +603,6 @@ export const FlowManager = ({ ownerId }) => {
           placeholder="Опис витрати"
         />
       </Label>
-
-      <Divider />
-
-      <Row>
-        <Label>
-          Нова група/підгрупа
-          <Input
-            ref={categoryInputRef}
-            value={categoryInput}
-            onChange={e => {
-              setIsDirty(true);
-              setCategoryInput(e.target.value);
-            }}
-            onBlur={tryAutoSaveOnBlur}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addCategory();
-              }
-            }}
-            placeholder="напр. їжа/кава"
-          />
-        </Label>
-        <ActionBtn type="button" onClick={addCategory}>+</ActionBtn>
-      </Row>
-
-      <CategoryList>
-        {allCategories.map(category => (
-          <CategoryRow key={category}>
-            <input
-              type="radio"
-              name="flow-category"
-              checked={selectedCategory === category}
-              onChange={() => {
-                setIsDirty(true);
-                setSelectedCategory(category);
-              }}
-            />
-            {category}
-          </CategoryRow>
-        ))}
-      </CategoryList>
 
       <FooterActions>
         <ActionBtn type="button" onClick={handleSave}>Зберегти</ActionBtn>
