@@ -136,6 +136,36 @@ const EntryInput = styled.textarea`
   box-sizing: border-box;
 `;
 
+const EntryInputWrap = styled.div`
+  position: relative;
+  width: 100%;
+`;
+
+const ClearEntryBtn = styled.button`
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  border: 1px solid #d7d7d7;
+  border-radius: 999px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 12px;
+  background: #fff;
+  color: #666;
+  cursor: pointer;
+
+  &:hover {
+    background: #f5f5f5;
+    color: #333;
+  }
+`;
+
 const ActionBtn = styled.button`
   border: 1px solid #d7d7d7;
   border-radius: 6px;
@@ -417,6 +447,8 @@ const sanitizeAmountChunk = value =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const normalizeFlowAmount = value => sanitizeAmountChunk(String(value || '').replace(',', '.'));
+
 export const parseFlowEntryLine = (line, fallbackDate = '') => {
   const trimmedLine = String(line || '').trim();
   if (!trimmedLine) return null;
@@ -436,7 +468,7 @@ export const parseFlowEntryLine = (line, fallbackDate = '') => {
 
   const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
   const parsedDate = match[1] ? parseDisplayDate(match[1], fallbackYear) : fallbackDate;
-  const parsedAmount = sanitizeAmountChunk(String(match[2] || '').replace(',', '.'));
+  const parsedAmount = normalizeFlowAmount(match[2] || '');
   const parsedDescription = sanitizeEntryKeyChunk(match[3] || '');
 
   if (!parsedDate || !parsedAmount) return null;
@@ -535,7 +567,7 @@ const flattenEntries = (node, path = []) => {
           entryId,
           group: path.join('/'),
           date,
-          amount,
+          amount: normalizeFlowAmount(amount),
           description: rest.join('_'),
         };
       });
@@ -559,7 +591,7 @@ export const FlowManager = ({ ownerId }) => {
   const navigate = useNavigate();
   const [flowData, setFlowData] = useState({});
   const [dateYmd, setDateYmd] = useState(todayYmd());
-  const [entryInput, setEntryInput] = useState(`${formatDisplayDate(todayYmd())} `);
+  const [entryInput, setEntryInput] = useState('');
   const [categoryInput, setCategoryInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [localCategories, setLocalCategories] = useState([DEFAULT_FLOW_CATEGORY]);
@@ -785,7 +817,7 @@ export const FlowManager = ({ ownerId }) => {
       const lastEntry = parsedEntries[parsedEntries.length - 1];
       setDateYmd(lastEntry.date);
       setSelectedCategory(lastEntry.groupPath || normalizedCategory);
-      setEntryInput(`${formatDisplayDate(lastEntry.date)} `);
+      setEntryInput('');
       toast.success(
         parsedEntries.length === 1
           ? 'Flow збережено'
@@ -906,7 +938,7 @@ export const FlowManager = ({ ownerId }) => {
       return;
     }
     const parsedDate = parseDisplayDate(match[1], new Date().getFullYear());
-    const nextAmount = sanitizeEntryKeyChunk(match[2].replace(',', '.'));
+    const nextAmount = normalizeFlowAmount(match[2] || '');
     const nextDescription = sanitizeEntryKeyChunk(match[3] || '');
     if (!parsedDate || !nextAmount) {
       toast.error('Для редагування потрібні валідні дата і сума');
@@ -1104,33 +1136,49 @@ export const FlowManager = ({ ownerId }) => {
       <Row>
         <Label>
           Дата + сума + опис (підтримка груп і дат у кілька рядків)
-          <EntryInput
-            ref={entryInputRef}
-            rows={1}
-            value={entryInput}
-            onChange={e => {
-              const nextValue = e.target.value;
-              setEntryInput(nextValue);
-              const effectiveFallbackDate = resolveFlowFallbackDate(nextValue, dateYmd);
-              const parsed = parseFlowEntriesByDatesAndGroups({
-                rawText: nextValue,
-                fallbackDate: effectiveFallbackDate,
-                defaultGroup: selectedCategory,
-              })?.[0];
-              if (parsed?.date) setDateYmd(parsed.date);
-            }}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                handleSave();
-                categoryInputRef.current?.focus();
-              }
-            }}
-            onBlur={() => {
-              handleSave({ silentValidation: true });
-            }}
-            placeholder={'[їжа]\n29.03 100 Кава\n240 Обід\n\nтранспорт\n30.03\n340 Таксі'}
-          />
+          <EntryInputWrap>
+            <EntryInput
+              ref={entryInputRef}
+              rows={1}
+              value={entryInput}
+              onChange={e => {
+                const nextValue = e.target.value;
+                setEntryInput(nextValue);
+                const effectiveFallbackDate = resolveFlowFallbackDate(nextValue, dateYmd);
+                const parsed = parseFlowEntriesByDatesAndGroups({
+                  rawText: nextValue,
+                  fallbackDate: effectiveFallbackDate,
+                  defaultGroup: selectedCategory,
+                })?.[0];
+                if (parsed?.date) setDateYmd(parsed.date);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  handleSave();
+                  categoryInputRef.current?.focus();
+                }
+              }}
+              onBlur={() => {
+                handleSave({ silentValidation: true });
+              }}
+              placeholder={'Заголовок\n20.01.2026 100 кава'}
+              style={{ paddingRight: entryInput ? 34 : 8 }}
+            />
+            {entryInput && (
+              <ClearEntryBtn
+                type="button"
+                aria-label="Очистити поле вводу Flow"
+                title="Очистити"
+                onClick={() => {
+                  setEntryInput('');
+                  entryInputRef.current?.focus();
+                }}
+              >
+                ×
+              </ClearEntryBtn>
+            )}
+          </EntryInputWrap>
         </Label>
       </Row>
 
