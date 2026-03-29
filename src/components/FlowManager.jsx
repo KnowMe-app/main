@@ -117,6 +117,7 @@ const Input = styled.input`
   border-radius: 6px;
   padding: 8px;
   font-size: 14px;
+  box-sizing: border-box;
 `;
 
 const EntryInput = styled.textarea`
@@ -127,6 +128,7 @@ const EntryInput = styled.textarea`
   padding: 8px;
   font-size: 14px;
   resize: vertical;
+  box-sizing: border-box;
 `;
 
 const ActionBtn = styled.button`
@@ -134,6 +136,7 @@ const ActionBtn = styled.button`
   border-radius: 6px;
   padding: 8px 10px;
   background: #fafafa;
+  color: #222;
   cursor: pointer;
 
   &:hover {
@@ -269,13 +272,14 @@ const ConfirmCard = styled.div`
   background: #fff;
   border-radius: 8px;
   padding: 14px;
+  color: #222;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 `;
 
 const ConfirmActions = styled.div`
   margin-top: 12px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 8px;
 `;
 
