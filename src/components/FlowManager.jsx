@@ -330,7 +330,7 @@ const todayYmd = () => {
   return `${year}-${month}-${day}`;
 };
 
-const parseFlowEntryLine = (line, fallbackDate = '') => {
+export const parseFlowEntryLine = (line, fallbackDate = '') => {
   const match = String(line || '')
     .trim()
     .match(/^(?:(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+)?([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
@@ -349,18 +349,20 @@ const parseFlowEntryLine = (line, fallbackDate = '') => {
   };
 };
 
-const parseFlowEntriesByDatesAndGroups = ({
+export const parseFlowEntriesByDatesAndGroups = ({
   rawText,
   fallbackDate = '',
   defaultGroup = DEFAULT_FLOW_CATEGORY,
 }) => {
+  const resolvedFallbackDate = fallbackDate || todayYmd();
   const lines = String(rawText || '')
     .split(/\r?\n/)
     .map(line => String(line || '').trim())
     .filter(Boolean);
-  const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
+  const fallbackYear =
+    Number(String(resolvedFallbackDate).split('-')[0]) || new Date().getFullYear();
   let currentGroup = normalizeCategoryPath(defaultGroup) || DEFAULT_FLOW_CATEGORY;
-  let currentDate = fallbackDate;
+  let currentDate = resolvedFallbackDate;
   const entries = [];
 
   lines.forEach(line => {
@@ -370,7 +372,7 @@ const parseFlowEntriesByDatesAndGroups = ({
       return;
     }
 
-    const parsedLine = parseFlowEntryLine(line, currentDate || fallbackDate);
+    const parsedLine = parseFlowEntryLine(line, currentDate || resolvedFallbackDate);
     if (parsedLine) {
       currentDate = parsedLine.date;
       entries.push({
