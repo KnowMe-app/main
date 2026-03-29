@@ -92,6 +92,16 @@ const Input = styled.input`
   font-size: 14px;
 `;
 
+const EntryInput = styled.textarea`
+  width: 100%;
+  min-height: 88px;
+  border: 1px solid #d7d7d7;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 14px;
+  resize: vertical;
+`;
+
 const ActionBtn = styled.button`
   border: 1px solid #d7d7d7;
   border-radius: 6px;
@@ -139,16 +149,6 @@ const FooterActions = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-`;
-
-const MultilineInput = styled.textarea`
-  width: 100%;
-  min-height: 140px;
-  border: 1px solid #d7d7d7;
-  border-radius: 6px;
-  padding: 8px;
-  font-size: 14px;
-  resize: vertical;
 `;
 
 const EventsList = styled.ul`
@@ -310,6 +310,52 @@ const parseFlowEntryLine = (line, fallbackDate = '') => {
   };
 };
 
+const parseFlowEntriesByDatesAndGroups = ({
+  rawText,
+  fallbackDate = '',
+  defaultGroup = DEFAULT_FLOW_CATEGORY,
+}) => {
+  const lines = String(rawText || '')
+    .split(/\r?\n/)
+    .map(line => String(line || '').trim())
+    .filter(Boolean);
+  const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
+  let currentGroup = normalizeCategoryPath(defaultGroup) || DEFAULT_FLOW_CATEGORY;
+  let currentDate = fallbackDate;
+  const entries = [];
+
+  lines.forEach(line => {
+    const groupMatch = line.match(/^\[(.+)]$/);
+    if (groupMatch) {
+      currentGroup = normalizeCategoryPath(groupMatch[1]) || currentGroup || DEFAULT_FLOW_CATEGORY;
+      return;
+    }
+
+    const parsedLine = parseFlowEntryLine(line, currentDate || fallbackDate);
+    if (parsedLine) {
+      currentDate = parsedLine.date;
+      entries.push({
+        groupPath: currentGroup || DEFAULT_FLOW_CATEGORY,
+        ...parsedLine,
+      });
+      return;
+    }
+
+    const parsedDate = parseDisplayDate(line, fallbackYear);
+    if (parsedDate) {
+      currentDate = parsedDate;
+      return;
+    }
+
+    const parsedCategory = normalizeCategoryPath(line);
+    if (parsedCategory) {
+      currentGroup = parsedCategory;
+    }
+  });
+
+  return entries;
+};
+
 const sanitizeEntryKeyChunk = value =>
   String(value || '')
     .trim()
@@ -364,7 +410,6 @@ export const FlowManager = ({ ownerId }) => {
   const [categoryInput, setCategoryInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [localCategories, setLocalCategories] = useState([DEFAULT_FLOW_CATEGORY]);
-  const [importInput, setImportInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState(null);
   const [editingDraft, setEditingDraft] = useState({ line: '' });
@@ -493,30 +538,31 @@ export const FlowManager = ({ ownerId }) => {
   };
 
   const handleSave = async ({ silentValidation = false } = {}) => {
-    const normalizedCategory = normalizeCategoryPath(selectedCategory);
-    const parsedEntry = parseFlowEntryLine(entryInput, dateYmd);
-    const amountClean = parsedEntry?.amount || '';
-    const descriptionClean = parsedEntry?.description || '';
-    const dateToSave = parsedEntry?.date || '';
+    const normalizedCategory = normalizeCategoryPath(selectedCategory) || DEFAULT_FLOW_CATEGORY;
+    const parsedEntries = parseFlowEntriesByDatesAndGroups({
+      rawText: entryInput,
+      fallbackDate: dateYmd,
+      defaultGroup: normalizedCategory,
+    });
 
-    if (!ownerId || !normalizedCategory || !dateToSave || !amountClean) {
+    if (!ownerId || parsedEntries.length === 0) {
       if (!silentValidation) {
-        toast.error('Заповніть дату, суму та групу');
+        toast.error('Заповніть валідні дані: дата + сума + опис (з групами за потреби)');
       }
       return;
     }
 
     try {
-      await saveFlowEntry({
-        ownerId,
-        groupPath: normalizedCategory,
-        date: dateToSave,
-        amount: amountClean,
-        description: descriptionClean,
-      });
-      setDateYmd(dateToSave);
-      setEntryInput(`${formatDisplayDate(dateToSave)} ${amountClean} ${descriptionClean}`.trim());
-      toast.success('Flow збережено');
+      await Promise.all(parsedEntries.map(entry => saveFlowEntry({ ownerId, ...entry })));
+      const lastEntry = parsedEntries[parsedEntries.length - 1];
+      setDateYmd(lastEntry.date);
+      setSelectedCategory(lastEntry.groupPath || normalizedCategory);
+      setEntryInput(`${formatDisplayDate(lastEntry.date)} `);
+      toast.success(
+        parsedEntries.length === 1
+          ? 'Flow збережено'
+          : `Flow збережено: ${parsedEntries.length} записів`
+      );
       await reload();
     } catch (error) {
       console.error('Unable to save flow entry', error);
@@ -600,62 +646,6 @@ export const FlowManager = ({ ownerId }) => {
     if (confirmState.type === 'row' && confirmState.row) {
       await handleDeleteRow(confirmState.row);
       closeConfirm();
-    }
-  };
-
-  const handleImportList = async () => {
-    if (!ownerId) return;
-    const raw = String(importInput || '').trim();
-    if (!raw) {
-      toast.error('Вставте список для імпорту');
-      return;
-    }
-
-    const lines = raw.split(/\r?\n/);
-    let currentGroup = normalizeCategoryPath(selectedCategory) || 'general';
-    const parsedEntries = [];
-
-    lines.forEach(lineRaw => {
-      const line = String(lineRaw || '').trim();
-      if (!line) return;
-
-      const groupMatch = line.match(/^\[(.+)]$/);
-      if (groupMatch) {
-        currentGroup = normalizeCategoryPath(groupMatch[1]) || currentGroup || 'general';
-        return;
-      }
-
-      const match = line.match(/^(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
-      if (!match) {
-        const parsedCategory = normalizeCategoryPath(line);
-        if (parsedCategory) currentGroup = parsedCategory;
-        return;
-      }
-
-      const parsedDate = parseDisplayDate(match[1], new Date().getFullYear());
-      if (!parsedDate) return;
-
-      parsedEntries.push({
-        groupPath: currentGroup || 'general',
-        date: parsedDate,
-        amount: match[2].replace(',', '.'),
-        description: match[3] || '',
-      });
-    });
-
-    if (parsedEntries.length === 0) {
-      toast.error('Не знайдено валідних рядків (формат: дд.мм або дд.мм.рррр 100 опис; категорія — окремий рядок)');
-      return;
-    }
-
-    try {
-      await Promise.all(parsedEntries.map(entry => saveFlowEntry({ ownerId, ...entry })));
-      toast.success(`Імпортовано ${parsedEntries.length} записів`);
-      setImportInput('');
-      await reload();
-    } catch (error) {
-      console.error('Unable to import flow entries', error);
-      toast.error('Не вдалося імпортувати список');
     }
   };
 
@@ -800,18 +790,22 @@ export const FlowManager = ({ ownerId }) => {
 
       <Row>
         <Label>
-          Дата + сума + опис
-          <Input
+          Дата + сума + опис (підтримка груп і дат у кілька рядків)
+          <EntryInput
             ref={entryInputRef}
             value={entryInput}
             onChange={e => {
               const nextValue = e.target.value;
               setEntryInput(nextValue);
-              const parsed = parseFlowEntryLine(nextValue, dateYmd);
+              const parsed = parseFlowEntriesByDatesAndGroups({
+                rawText: nextValue,
+                fallbackDate: dateYmd,
+                defaultGroup: selectedCategory,
+              })?.[0];
               if (parsed?.date) setDateYmd(parsed.date);
             }}
             onKeyDown={e => {
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 handleSave();
                 categoryInputRef.current?.focus();
@@ -820,7 +814,7 @@ export const FlowManager = ({ ownerId }) => {
             onBlur={() => {
               handleSave({ silentValidation: true });
             }}
-            placeholder="дд.мм 100 Кава"
+            placeholder={'[їжа]\n29.03 100 Кава\n240 Обід\n\nтранспорт\n30.03\n340 Таксі'}
           />
         </Label>
       </Row>
@@ -828,16 +822,6 @@ export const FlowManager = ({ ownerId }) => {
       <FooterActions>
         <ActionBtn type="button" onClick={handleCopyToClipboard}>Копіювати</ActionBtn>
       </FooterActions>
-
-      <Label>
-        Імпорт списку (категорія окремим рядком, далі `дд.мм або дд.мм.рррр 100 опис`)
-        <MultilineInput
-          value={importInput}
-          onChange={e => setImportInput(e.target.value)}
-          placeholder={'їжа\n29.03 100 Кава\n29.03 240 Обід\n\nтранспорт таксі\n29.03 340 Таксі'}
-        />
-      </Label>
-      <ActionBtn type="button" onClick={handleImportList}>Імпортувати список</ActionBtn>
 
       <small>Події з бекенду (відсортовано по групі і даті):</small>
       <EventsList>
