@@ -10,6 +10,7 @@ import {
   saveFlowEntry,
   updateFlowEntry,
 } from './config';
+import { useAutoResize } from 'hooks/useAutoResize';
 
 const Wrap = styled.div`
   display: flex;
@@ -122,12 +123,14 @@ const Input = styled.input`
 
 const EntryInput = styled.textarea`
   width: 100%;
-  min-height: 88px;
+  min-height: 38px;
   border: 1px solid #d7d7d7;
   border-radius: 6px;
   padding: 8px;
   font-size: 14px;
-  resize: vertical;
+  line-height: 1.4;
+  resize: none;
+  overflow: hidden;
   box-sizing: border-box;
 `;
 
@@ -512,6 +515,7 @@ export const FlowManager = ({ ownerId }) => {
   const menuRef = useRef(null);
   const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
+  useAutoResize(entryInputRef, entryInput);
 
   const categoriesFromDb = useMemo(() => Object.keys(flowData || {}), [flowData]);
 
@@ -907,6 +911,7 @@ export const FlowManager = ({ ownerId }) => {
           Дата + сума + опис (підтримка груп і дат у кілька рядків)
           <EntryInput
             ref={entryInputRef}
+            rows={1}
             value={entryInput}
             onChange={e => {
               const nextValue = e.target.value;
@@ -934,7 +939,6 @@ export const FlowManager = ({ ownerId }) => {
         </Label>
       </Row>
 
-      <small>Події з бекенду (відсортовано по групі і даті):</small>
       <EventsList>
         {Object.entries(groupedFlowRows).map(([group, entries]) => (
           <GroupBlock key={group}>
