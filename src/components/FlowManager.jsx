@@ -1,0 +1,670 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import styled from 'styled-components';
+import toast from 'react-hot-toast';
+import {
+  clearFlowData,
+  fetchFlowData,
+  saveFlowEntry,
+  updateFlowEntry,
+} from './config';
+
+const Wrap = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+`;
+
+const Row = styled.div`
+  display: flex;
+  gap: 8px;
+  align-items: center;
+`;
+
+const Label = styled.label`
+  font-size: 13px;
+  color: #444;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+`;
+
+const Input = styled.input`
+  width: 100%;
+  border: 1px solid #d7d7d7;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 14px;
+`;
+
+const ActionBtn = styled.button`
+  border: 1px solid #d7d7d7;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #fafafa;
+  cursor: pointer;
+
+  &:hover {
+    background: #f0f0f0;
+  }
+`;
+
+const CategoryList = styled.div`
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+`;
+
+const CategoryRow = styled.label`
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+`;
+
+const Divider = styled.hr`
+  border: none;
+  border-top: 1px solid #ececec;
+  margin: 4px 0;
+`;
+
+const FooterActions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+`;
+
+const MultilineInput = styled.textarea`
+  width: 100%;
+  min-height: 140px;
+  border: 1px solid #d7d7d7;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 14px;
+  resize: vertical;
+`;
+
+const EventsList = styled.ul`
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+`;
+
+const EventRow = styled.li`
+  margin-bottom: 4px;
+`;
+
+const TinyBtn = styled.button`
+  margin-left: 6px;
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid #d7d7d7;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+`;
+
+const normalizeCategoryPath = value =>
+  String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\/+$/g, '')
+    .replace(/^\/+/, '');
+
+const formatDisplayDate = yyyyMmDd => {
+  const [year, month, day] = String(yyyyMmDd || '').split('-');
+  if (!year || !month || !day) return '';
+  return `${day.padStart(2, '0')}.${month.padStart(2, '0')}.${year}`;
+};
+
+const parseDisplayDate = display => {
+  const match = String(display || '').trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!match) return '';
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (day < 1 || day > 31 || month < 1 || month > 12) return '';
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  if (
+    dt.getUTCFullYear() !== year ||
+    dt.getUTCMonth() !== month - 1 ||
+    dt.getUTCDate() !== day
+  ) {
+    return '';
+  }
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
+const todayYmd = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const shiftYmd = (ymd, days) => {
+  const [year, month, day] = String(ymd || '').split('-').map(Number);
+  if (!year || !month || !day) return todayYmd();
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+};
+
+const sanitizeEntryKeyChunk = value =>
+  String(value || '')
+    .trim()
+    .replace(/[.#$[\]/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const flattenEntries = (node, path = []) => {
+  if (!node || typeof node !== 'object') return [];
+
+  const isDateNode = Object.keys(node).some(key => /^\d{4}-\d{2}-\d{2}$/.test(key));
+  if (isDateNode) {
+    return Object.entries(node).flatMap(([date, entries]) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !entries || typeof entries !== 'object') {
+        return [];
+      }
+      return Object.keys(entries).map(key => {
+        const [amount = '', ...rest] = String(key).split('_');
+        return {
+          group: path.join('/'),
+          date,
+          amount,
+          description: rest.join('_'),
+        };
+      });
+    });
+  }
+
+  return Object.entries(node).flatMap(([nextKey, child]) => flattenEntries(child, [...path, nextKey]));
+};
+
+const sortRowsByDate = rows =>
+  [...rows].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+
+const sortRowsByGroupAndDate = rows =>
+  [...rows].sort((a, b) => {
+    const groupCompare = String(a.group || '').localeCompare(String(b.group || ''));
+    if (groupCompare !== 0) return groupCompare;
+    return String(a.date || '').localeCompare(String(b.date || ''));
+  });
+
+export const FlowManager = ({ ownerId }) => {
+  const [flowData, setFlowData] = useState({});
+  const [dateYmd, setDateYmd] = useState(todayYmd());
+  const [dateInput, setDateInput] = useState(formatDisplayDate(todayYmd()));
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [categoryInput, setCategoryInput] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('Мол');
+  const [localCategories, setLocalCategories] = useState(['Мол']);
+  const [importInput, setImportInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [editingKey, setEditingKey] = useState(null);
+  const [editingDraft, setEditingDraft] = useState({ line: '' });
+  const dateInputRef = useRef(null);
+  const amountInputRef = useRef(null);
+  const descriptionInputRef = useRef(null);
+  const categoryInputRef = useRef(null);
+
+  const categoriesFromDb = useMemo(() => {
+    const walk = (node, parent = '') => {
+      if (!node || typeof node !== 'object') return [];
+      return Object.entries(node).flatMap(([key, child]) => {
+        const nextPath = parent ? `${parent}/${key}` : key;
+        const own = [nextPath];
+        const nested = child && typeof child === 'object' ? walk(child, nextPath) : [];
+        return [...own, ...nested];
+      });
+    };
+
+    return walk(flowData);
+  }, [flowData]);
+
+  const allCategories = useMemo(() => {
+    const merged = [...localCategories, ...categoriesFromDb]
+      .map(normalizeCategoryPath)
+      .filter(Boolean);
+    return [...new Set(merged)];
+  }, [categoriesFromDb, localCategories]);
+
+  const flowRows = useMemo(() => flattenEntries(flowData), [flowData]);
+  const sortedFlowRows = useMemo(() => sortRowsByGroupAndDate(flowRows), [flowRows]);
+
+  const reload = useCallback(async () => {
+    if (!ownerId) return;
+    setLoading(true);
+    try {
+      const data = await fetchFlowData(ownerId);
+      setFlowData(data || {});
+    } catch (error) {
+      console.error('Unable to load flow data', error);
+      toast.error('Не вдалося завантажити Flow');
+    } finally {
+      setLoading(false);
+    }
+  }, [ownerId]);
+
+  useEffect(() => {
+    setDateInput(formatDisplayDate(dateYmd));
+  }, [dateYmd]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  useEffect(() => {
+    if (!allCategories.includes(selectedCategory) && allCategories.length > 0) {
+      setSelectedCategory(allCategories[0]);
+    }
+  }, [allCategories, selectedCategory]);
+
+  const handleDateInputChange = value => {
+    setDateInput(value);
+    const parsed = parseDisplayDate(value);
+    if (parsed) setDateYmd(parsed);
+  };
+
+  const addCategory = () => {
+    const normalized = normalizeCategoryPath(categoryInput);
+    if (!normalized) return;
+    setLocalCategories(prev => (prev.includes(normalized) ? prev : [...prev, normalized]));
+    setSelectedCategory(normalized);
+    setCategoryInput('');
+    setIsDirty(true);
+  };
+
+  const handleSave = async () => {
+    const normalizedCategory = normalizeCategoryPath(selectedCategory);
+    const amountClean = sanitizeEntryKeyChunk(amount);
+    const descriptionClean = sanitizeEntryKeyChunk(description);
+
+    if (!ownerId || !normalizedCategory || !dateYmd || !amountClean) {
+      toast.error('Заповніть дату, суму та групу');
+      return;
+    }
+
+    try {
+      await saveFlowEntry({
+        ownerId,
+        groupPath: normalizedCategory,
+        date: dateYmd,
+        amount: amountClean,
+        description: descriptionClean,
+      });
+      toast.success('Flow збережено');
+      setAmount('');
+      setDescription('');
+      setIsDirty(false);
+      await reload();
+    } catch (error) {
+      console.error('Unable to save flow entry', error);
+      toast.error('Не вдалося зберегти Flow');
+    }
+  };
+
+  const tryAutoSaveOnBlur = async () => {
+    if (!isDirty) return;
+    if (!ownerId || !selectedCategory || !dateYmd || !String(amount || '').trim()) return;
+    await handleSave();
+  };
+
+  const handleCopyToClipboard = async () => {
+    if (flowRows.length === 0) {
+      toast.error('Немає даних для копіювання');
+      return;
+    }
+
+    const grouped = flowRows.reduce((acc, row) => {
+      const key = row.group || 'general';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(row);
+      return acc;
+    }, {});
+
+    const tableText = Object.entries(grouped)
+      .map(([group, rows]) => {
+        const lines = sortRowsByDate(rows).map(row => {
+          const displayDate = formatDisplayDate(row.date);
+          return `${displayDate} ${row.amount} ${row.description}`.trim();
+        });
+        return [`[${group}]`, ...lines].join('\n');
+      })
+      .join('\n\n');
+
+    try {
+      await navigator.clipboard.writeText(tableText);
+      toast.success('Скопійовано в буфер обміну');
+    } catch (error) {
+      console.error('Unable to copy flow data to clipboard', error);
+      toast.error('Не вдалося скопіювати дані');
+    }
+  };
+
+  const handleClear = async () => {
+    if (!ownerId) return;
+    try {
+      await clearFlowData(ownerId);
+      setFlowData({});
+      toast.success('Flow очищено');
+    } catch (error) {
+      console.error('Unable to clear flow', error);
+      toast.error('Не вдалося очистити Flow');
+    }
+  };
+
+  const handleImportList = async () => {
+    if (!ownerId) return;
+    const raw = String(importInput || '').trim();
+    if (!raw) {
+      toast.error('Вставте список для імпорту');
+      return;
+    }
+
+    const lines = raw.split(/\r?\n/);
+    let currentGroup = normalizeCategoryPath(selectedCategory) || 'general';
+    const parsedEntries = [];
+
+    lines.forEach(lineRaw => {
+      const line = String(lineRaw || '').trim();
+      if (!line) return;
+
+      const groupMatch = line.match(/^\[(.+)]$/);
+      if (groupMatch) {
+        currentGroup = normalizeCategoryPath(groupMatch[1]) || currentGroup || 'general';
+        return;
+      }
+
+      const match = line.match(/^(\d{1,2}\.\d{1,2}\.\d{4})\s+([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
+      if (!match) return;
+
+      const parsedDate = parseDisplayDate(match[1]);
+      if (!parsedDate) return;
+
+      parsedEntries.push({
+        groupPath: currentGroup || 'general',
+        date: parsedDate,
+        amount: match[2].replace(',', '.'),
+        description: match[3] || '',
+      });
+    });
+
+    if (parsedEntries.length === 0) {
+      toast.error('Не знайдено валідних рядків (формат: дд.мм.рррр 100 опис)');
+      return;
+    }
+
+    try {
+      await Promise.all(parsedEntries.map(entry => saveFlowEntry({ ownerId, ...entry })));
+      toast.success(`Імпортовано ${parsedEntries.length} записів`);
+      setImportInput('');
+      setIsDirty(false);
+      await reload();
+    } catch (error) {
+      console.error('Unable to import flow entries', error);
+      toast.error('Не вдалося імпортувати список');
+    }
+  };
+
+  const getRowKey = (row, idx) =>
+    `${row.group || 'general'}|${row.date}|${row.amount}|${row.description}|${idx}`;
+
+  const beginEdit = (row, idx) => {
+    const key = getRowKey(row, idx);
+    setEditingKey(key);
+    setEditingDraft({
+      line: `${formatDisplayDate(row.date)} ${row.amount} ${row.description}`.trim(),
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingKey(null);
+    setEditingDraft({ line: '' });
+  };
+
+  const saveEditedRow = async (row, idx) => {
+    if (!ownerId) return;
+    const rowKey = getRowKey(row, idx);
+    if (editingKey !== rowKey) return;
+
+    const match = String(editingDraft.line || '')
+      .trim()
+      .match(/^(\d{1,2}\.\d{1,2}\.\d{4})\s+([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
+    if (!match) {
+      toast.error('Формат редагування: дд.мм.рррр 100 опис');
+      return;
+    }
+    const parsedDate = parseDisplayDate(match[1]);
+    const nextAmount = sanitizeEntryKeyChunk(match[2].replace(',', '.'));
+    const nextDescription = sanitizeEntryKeyChunk(match[3] || '');
+    if (!parsedDate || !nextAmount) {
+      toast.error('Для редагування потрібні валідні дата і сума');
+      return;
+    }
+
+    try {
+      await updateFlowEntry({
+        ownerId,
+        groupPath: row.group || 'general',
+        prevEntry: {
+          date: row.date,
+          amount: row.amount,
+          description: row.description,
+        },
+        nextEntry: {
+          date: parsedDate,
+          amount: nextAmount,
+          description: nextDescription,
+        },
+      });
+      toast.success('Запис оновлено');
+      cancelEdit();
+      await reload();
+    } catch (error) {
+      console.error('Unable to update flow row', error);
+      toast.error('Не вдалося оновити запис');
+    }
+  };
+
+  return (
+    <Wrap>
+      <Row>
+        <Label>
+          Дата
+          <Input
+            ref={dateInputRef}
+            value={dateInput}
+            onChange={e => {
+              setIsDirty(true);
+              handleDateInputChange(e.target.value);
+            }}
+            onBlur={tryAutoSaveOnBlur}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                amountInputRef.current?.focus();
+              }
+            }}
+            placeholder="дд.мм.рррр"
+          />
+        </Label>
+        <ActionBtn
+          type="button"
+          onClick={() => {
+            setIsDirty(true);
+            setDateYmd(shiftYmd(dateYmd, -1));
+          }}
+        >
+          -1
+        </ActionBtn>
+        <ActionBtn
+          type="button"
+          onClick={() => {
+            setIsDirty(true);
+            setDateYmd(shiftYmd(dateYmd, 1));
+          }}
+        >
+          +1
+        </ActionBtn>
+      </Row>
+
+      <Label>
+        Сума
+        <Input
+          ref={amountInputRef}
+          type="number"
+          value={amount}
+          onChange={e => {
+            setIsDirty(true);
+            setAmount(e.target.value);
+          }}
+          onBlur={tryAutoSaveOnBlur}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              descriptionInputRef.current?.focus();
+            }
+          }}
+          placeholder="Введіть суму"
+        />
+      </Label>
+
+      <Label>
+        Опис
+        <Input
+          ref={descriptionInputRef}
+          value={description}
+          onChange={e => {
+            setIsDirty(true);
+            setDescription(e.target.value);
+          }}
+          onBlur={tryAutoSaveOnBlur}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              categoryInputRef.current?.focus();
+            }
+          }}
+          placeholder="Опис витрати"
+        />
+      </Label>
+
+      <Divider />
+
+      <Row>
+        <Label>
+          Нова група/підгрупа
+          <Input
+            ref={categoryInputRef}
+            value={categoryInput}
+            onChange={e => {
+              setIsDirty(true);
+              setCategoryInput(e.target.value);
+            }}
+            onBlur={tryAutoSaveOnBlur}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addCategory();
+              }
+            }}
+            placeholder="напр. їжа/кава"
+          />
+        </Label>
+        <ActionBtn type="button" onClick={addCategory}>+</ActionBtn>
+      </Row>
+
+      <CategoryList>
+        {allCategories.map(category => (
+          <CategoryRow key={category}>
+            <input
+              type="radio"
+              name="flow-category"
+              checked={selectedCategory === category}
+              onChange={() => {
+                setIsDirty(true);
+                setSelectedCategory(category);
+              }}
+            />
+            {category}
+          </CategoryRow>
+        ))}
+      </CategoryList>
+
+      <FooterActions>
+        <ActionBtn type="button" onClick={handleSave}>Зберегти</ActionBtn>
+        <ActionBtn type="button" onClick={handleCopyToClipboard}>Копіювати</ActionBtn>
+        <ActionBtn type="button" onClick={handleClear}>Очистити Flow</ActionBtn>
+      </FooterActions>
+
+      <Label>
+        Імпорт списку (формат: [група] і рядки `дд.мм.рррр 100 опис`)
+        <MultilineInput
+          value={importInput}
+          onChange={e => setImportInput(e.target.value)}
+          placeholder={'[їжа]\n29.03.2026 100 Кава\n29.03.2026 240 Обід\n\n[транспорт/таксі]\n29.03.2026 340 Таксі'}
+        />
+      </Label>
+      <ActionBtn type="button" onClick={handleImportList}>Імпортувати список</ActionBtn>
+
+      <small>Події з бекенду (відсортовано по групі і даті):</small>
+      <EventsList>
+        {sortedFlowRows.map((row, idx) => {
+          const rowKey = getRowKey(row, idx);
+          const isEditing = editingKey === rowKey;
+          return (
+            <EventRow key={rowKey}>
+              [{row.group}]
+              {isEditing ? (
+                <>
+                  {' '}
+                  <Input
+                    autoFocus
+                    style={{ width: 320, fontSize: 12, padding: 4, marginLeft: 4 }}
+                    value={editingDraft.line}
+                    onChange={e => setEditingDraft({ line: e.target.value })}
+                    onBlur={() => saveEditedRow(row, idx)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        saveEditedRow(row, idx);
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelEdit();
+                      }
+                    }}
+                  />
+                  <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={() => saveEditedRow(row, idx)}>
+                    save
+                  </TinyBtn>
+                  <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
+                    cancel
+                  </TinyBtn>
+                </>
+              ) : (
+                <>
+                  {' '}
+                  {formatDisplayDate(row.date)} {row.amount} {row.description}
+                  <TinyBtn type="button" onClick={() => beginEdit(row, idx)}>
+                    edit
+                  </TinyBtn>
+                </>
+              )}
+            </EventRow>
+          );
+        })}
+      </EventsList>
+
+      {loading && <small>Завантаження...</small>}
+    </Wrap>
+  );
+};
+
+export default FlowManager;

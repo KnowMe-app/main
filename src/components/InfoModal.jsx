@@ -137,7 +137,7 @@ const OrangeStrong = styled.strong`
   color: orange;
 `;
 
-export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards, MoreActions, UtilityComposer }) => {
+export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards, MoreActions, UtilityComposer, FlowComposer }) => {
 
   const delProfile = (
     <>
@@ -180,6 +180,10 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
 
   const utilityComposer = (
     <>{UtilityComposer && <UtilityComposer />}</>
+  );
+
+  const flowComposer = (
+    <>{FlowComposer && <FlowComposer />}</>
   );
 
   //////////////////////////////
@@ -272,11 +276,14 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
     case 'utilityComposer':
       body = utilityComposer;
       break;
+    case 'flowComposer':
+      body = flowComposer;
+      break;
     default:
       body = null;
   }
 
-  if (text === 'utilityComposer' || text === 'moreActions') {
+  if (text === 'utilityComposer' || text === 'moreActions' || text === 'flowComposer') {
     ContentComponent = LargeModalContent;
   }
 

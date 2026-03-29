@@ -42,6 +42,7 @@ import { normalizePhoneState } from './inputValidations';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import InfoModal from './InfoModal';
 import UtilityPeriodComposer from './UtilityPeriodComposer';
+import FlowManager from './FlowManager';
 import { VerifyEmail } from './VerifyEmail';
 
 import { color, coloredCard } from './styles';
@@ -1516,6 +1517,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </>
         )}
         <SubmitButton onClick={() => setShowInfoModal('utilityComposer')}>Оренда</SubmitButton>
+        {isAdmin && <SubmitButton onClick={() => setShowInfoModal('flowComposer')}>Flow</SubmitButton>}
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
         {!isEmailVerified && <VerifyEmail />}
@@ -2934,6 +2936,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           CompareCards={compareCards}
           MoreActions={moreActions}
           UtilityComposer={UtilityPeriodComposer}
+          FlowComposer={() => <FlowManager ownerId={auth.currentUser?.uid} />}
         />
       )}
     </Container>
