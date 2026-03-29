@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { ReactComponent as ClipboardIcon } from '../assets/icons/clipboard.svg';
 import {
   deleteFlowEntry,
   clearFlowData,
@@ -22,8 +23,9 @@ const Wrap = styled.div`
 
 const TopControls = styled.div`
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
+  gap: 8px;
 `;
 
 const MenuWrap = styled.div`
@@ -35,20 +37,24 @@ const MenuBtn = styled.button`
   border-radius: 6px;
   width: 34px;
   height: 34px;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
-  background: #fff;
+  background: #fafafa;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0a58ca;
 
   &:hover {
-    background: #f5f5f5;
+    background: #eef4ff;
   }
 `;
 
 const MenuPanel = styled.div`
   position: absolute;
   top: calc(100% + 6px);
-  left: 0;
+  right: 0;
   min-width: 180px;
   background: #fff;
   border: 1px solid #e0e0e0;
@@ -129,6 +135,53 @@ const DangerBtn = styled(ActionBtn)`
   }
 `;
 
+const TopActionBtn = styled(ActionBtn)`
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 6px;
+`;
+
+const CopyBtn = styled(TopActionBtn)`
+  color: #0d6efd;
+  border-color: #9ec5fe;
+  background: #eef4ff;
+
+  &:hover {
+    background: #dbe9ff;
+  }
+`;
+
+const DeleteTopBtn = styled(TopActionBtn)`
+  color: #fff;
+  border-color: #dc3545;
+  background: #dc3545;
+
+  &:hover {
+    background: #c82333;
+  }
+`;
+
+const DotsBtn = styled(MenuBtn)`
+  color: #6f42c1;
+  border-color: #d2b6ff;
+  background: #f4edff;
+
+  &:hover {
+    background: #eadcff;
+  }
+`;
+
+const CopySvg = styled(ClipboardIcon)`
+  width: 17px;
+  height: 17px;
+`;
+
 const RadioGroup = styled.div`
   display: flex;
   flex-wrap: wrap;
@@ -148,12 +201,6 @@ const Divider = styled.hr`
   border: none;
   border-top: 1px solid #ececec;
   margin: 4px 0;
-`;
-
-const FooterActions = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 `;
 
 const EventsList = styled.ul`
@@ -739,14 +786,20 @@ export const FlowManager = ({ ownerId }) => {
   return (
     <Wrap>
       <TopControls>
+        <CopyBtn type="button" onClick={handleCopyToClipboard} aria-label="Скопіювати Flow">
+          <CopySvg />
+        </CopyBtn>
+        <DeleteTopBtn type="button" onClick={openClearConfirm} aria-label="Очистити Flow">
+          del
+        </DeleteTopBtn>
         <MenuWrap ref={menuRef}>
-          <MenuBtn
+          <DotsBtn
             type="button"
             aria-label="Відкрити меню навігації"
             onClick={() => setIsMenuOpen(prev => !prev)}
           >
             ⋮
-          </MenuBtn>
+          </DotsBtn>
           {isMenuOpen && (
             <MenuPanel>
               <MenuItem
@@ -770,7 +823,6 @@ export const FlowManager = ({ ownerId }) => {
             </MenuPanel>
           )}
         </MenuWrap>
-        <DangerBtn type="button" onClick={openClearConfirm}>del</DangerBtn>
       </TopControls>
 
       <Row>
@@ -844,10 +896,6 @@ export const FlowManager = ({ ownerId }) => {
           />
         </Label>
       </Row>
-
-      <FooterActions>
-        <ActionBtn type="button" onClick={handleCopyToClipboard}>Копіювати</ActionBtn>
-      </FooterActions>
 
       <small>Події з бекенду (відсортовано по групі і даті):</small>
       <EventsList>
