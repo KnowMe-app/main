@@ -954,6 +954,16 @@ const buildFlowDatePath = ({ groupPath, date }) => {
   return [...sanitizedSegments, date].join('/');
 };
 
+const buildFlowGroupPath = groupPath => {
+  const sanitizedSegments = String(groupPath)
+    .split('/')
+    .map(sanitizeFlowPathPart)
+    .filter(Boolean);
+
+  if (sanitizedSegments.length === 0) return '';
+  return sanitizedSegments.join('/');
+};
+
 const buildFlowEntryValue = ({ amount, description = '' }) => {
   const safeAmount = sanitizeFlowPathPart(amount);
   const safeDescription = sanitizeFlowPathPart(description);
@@ -1014,6 +1024,38 @@ export const updateFlowEntry = async ({ ownerId, groupPath, prevEntry, nextEntry
 export const clearFlowData = async ownerId => {
   if (!ownerId) return;
   await remove(buildFlowRef(ownerId));
+};
+
+export const deleteFlowCategory = async ({ ownerId, groupPath }) => {
+  if (!ownerId || !groupPath) return;
+  const safeGroupPath = buildFlowGroupPath(groupPath);
+  if (!safeGroupPath) return;
+  await remove(ref2(database, `multiData/flow/${ownerId}/${safeGroupPath}`));
+};
+
+export const renameFlowCategory = async ({ ownerId, fromGroupPath, toGroupPath }) => {
+  if (!ownerId || !fromGroupPath || !toGroupPath) return;
+
+  const safeFromGroupPath = buildFlowGroupPath(fromGroupPath);
+  const safeToGroupPath = buildFlowGroupPath(toGroupPath);
+  if (!safeFromGroupPath || !safeToGroupPath || safeFromGroupPath === safeToGroupPath) return;
+
+  const fromRef = ref2(database, `multiData/flow/${ownerId}/${safeFromGroupPath}`);
+  const toRef = ref2(database, `multiData/flow/${ownerId}/${safeToGroupPath}`);
+
+  const fromSnapshot = await get(fromRef);
+  if (!fromSnapshot.exists()) return;
+
+  const toSnapshot = await get(toRef);
+  if (toSnapshot.exists()) {
+    const existing = toSnapshot.val();
+    const next = fromSnapshot.val();
+    await set(toRef, { ...(existing || {}), ...(next || {}) });
+  } else {
+    await set(toRef, fromSnapshot.val());
+  }
+
+  await remove(fromRef);
 };
 
 export const fetchUsersByIds = async ids => {

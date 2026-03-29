@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 import {
   deleteFlowEntry,
+  deleteFlowCategory,
+  renameFlowCategory,
   clearFlowData,
   fetchFlowData,
   saveFlowEntry,
@@ -164,6 +166,19 @@ const RadioGroup = styled.div`
   min-width: 0;
 `;
 
+const CategoryRowHead = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+`;
+
+const CategoryEditBtn = styled(ActionBtn)`
+  padding: 3px 8px;
+  font-size: 13px;
+`;
+
 const RadioLabel = styled.label`
   display: inline-flex;
   align-items: center;
@@ -174,6 +189,47 @@ const RadioLabel = styled.label`
   min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
+`;
+
+const CategoryDeleteBtn = styled.button`
+  border: 1px solid #d7d7d7;
+  border-radius: 999px;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  font-size: 12px;
+  cursor: pointer;
+  color: #a00;
+  background: #fff;
+  padding: 0;
+
+  &:hover {
+    background: #ffecec;
+  }
+`;
+
+const CategoryRenameInput = styled(Input)`
+  min-width: 100px;
+  max-width: 180px;
+  font-size: 12px;
+  padding: 4px 6px;
+`;
+
+const CategorySmallBtn = styled.button`
+  border: 1px solid #d7d7d7;
+  border-radius: 6px;
+  min-width: 20px;
+  height: 20px;
+  line-height: 1;
+  font-size: 11px;
+  cursor: pointer;
+  color: #444;
+  background: #fff;
+  padding: 0 4px;
+
+  &:hover {
+    background: #f4f4f4;
+  }
 `;
 
 const Divider = styled.hr`
@@ -512,6 +568,8 @@ export const FlowManager = ({ ownerId }) => {
   const [editingDraft, setEditingDraft] = useState({ line: '' });
   const [confirmState, setConfirmState] = useState({ type: null, row: null, rowKey: null });
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isCategoryEditMode, setIsCategoryEditMode] = useState(false);
+  const [renamingCategory, setRenamingCategory] = useState({ source: '', draft: '' });
   const menuRef = useRef(null);
   const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
@@ -633,6 +691,77 @@ export const FlowManager = ({ ownerId }) => {
     setLocalCategories(prev => (prev.includes(normalized) ? prev : [...prev, normalized]));
     setSelectedCategory(normalized);
     setCategoryInput('');
+  };
+
+  const handleDeleteCategory = async category => {
+    const normalized = normalizeCategoryPath(category);
+    if (!ownerId || !normalized) return;
+
+    try {
+      if (categoriesFromDb.includes(normalized)) {
+        await deleteFlowCategory({ ownerId, groupPath: normalized });
+      }
+      setLocalCategories(prev => prev.filter(item => item !== normalized));
+      if (selectedCategory === normalized) {
+        setSelectedCategory('');
+      }
+      toast.success(`Групу "${normalized}" видалено`);
+      await reload();
+    } catch (error) {
+      console.error('Unable to delete flow category', error);
+      toast.error('Не вдалося видалити групу');
+    }
+  };
+
+  const startCategoryRename = category => {
+    setRenamingCategory({ source: category, draft: category });
+  };
+
+  const cancelCategoryRename = () => {
+    setRenamingCategory({ source: '', draft: '' });
+  };
+
+  const submitCategoryRename = async category => {
+    const normalizedSource = normalizeCategoryPath(category);
+    const normalizedTarget = normalizeCategoryPath(renamingCategory.draft);
+
+    if (!normalizedSource || !normalizedTarget) {
+      toast.error('Вкажіть валідну назву групи');
+      return;
+    }
+
+    if (normalizedSource === normalizedTarget) {
+      cancelCategoryRename();
+      return;
+    }
+
+    if (allCategories.includes(normalizedTarget)) {
+      toast.error(`Група "${normalizedTarget}" вже існує`);
+      return;
+    }
+
+    try {
+      if (categoriesFromDb.includes(normalizedSource)) {
+        await renameFlowCategory({
+          ownerId,
+          fromGroupPath: normalizedSource,
+          toGroupPath: normalizedTarget,
+        });
+      }
+
+      setLocalCategories(prev =>
+        prev.map(item => (item === normalizedSource ? normalizedTarget : item))
+      );
+      if (selectedCategory === normalizedSource) {
+        setSelectedCategory(normalizedTarget);
+      }
+      cancelCategoryRename();
+      toast.success(`Групу перейменовано на "${normalizedTarget}"`);
+      await reload();
+    } catch (error) {
+      console.error('Unable to rename flow category', error);
+      toast.error('Не вдалося перейменувати групу');
+    }
   };
 
   const handleSave = async ({ silentValidation = false } = {}) => {
@@ -887,7 +1016,20 @@ export const FlowManager = ({ ownerId }) => {
       </Row>
 
       <Label as="div">
-        Група витрат
+        <CategoryRowHead>
+          <span>Група витрат</span>
+          <CategoryEditBtn
+            type="button"
+            onClick={() => {
+              setIsCategoryEditMode(prev => !prev);
+              cancelCategoryRename();
+            }}
+            title={isCategoryEditMode ? 'Сховати видалення груп' : 'Редагувати групи'}
+            aria-label={isCategoryEditMode ? 'Сховати видалення груп' : 'Редагувати групи'}
+          >
+            ✏
+          </CategoryEditBtn>
+        </CategoryRowHead>
         <RadioGroup>
           {allCategories.map(category => (
             <RadioLabel key={category}>
@@ -898,7 +1040,60 @@ export const FlowManager = ({ ownerId }) => {
                 checked={selectedCategory === category}
                 onChange={e => setSelectedCategory(normalizeCategoryPath(e.target.value))}
               />
-              {category}
+              {renamingCategory.source === category ? (
+                <CategoryRenameInput
+                  autoFocus
+                  value={renamingCategory.draft}
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => setRenamingCategory(prev => ({ ...prev, draft: e.target.value }))}
+                  onBlur={() => submitCategoryRename(category)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      submitCategoryRename(category);
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      cancelCategoryRename();
+                    }
+                  }}
+                />
+              ) : (
+                category
+              )}
+              {isCategoryEditMode && (
+                <>
+                  {renamingCategory.source !== category && (
+                    <CategorySmallBtn
+                      type="button"
+                      aria-label={`Перейменувати групу ${category}`}
+                      title={`Перейменувати групу ${category}`}
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        startCategoryRename(category);
+                      }}
+                    >
+                      ✎
+                    </CategorySmallBtn>
+                  )}
+                  <CategoryDeleteBtn
+                    type="button"
+                    aria-label={`Видалити групу ${category}`}
+                    title={`Видалити групу ${category}`}
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={e => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteCategory(category);
+                    }}
+                  >
+                    ×
+                  </CategoryDeleteBtn>
+                </>
+              )}
             </RadioLabel>
           ))}
         </RadioGroup>
