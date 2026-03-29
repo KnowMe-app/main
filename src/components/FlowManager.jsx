@@ -148,6 +148,24 @@ const shiftYmd = (ymd, days) => {
   return dt.toISOString().slice(0, 10);
 };
 
+const parseFlowEntryLine = (line, fallbackDate = '') => {
+  const match = String(line || '')
+    .trim()
+    .match(/^(?:(\d{1,2}\.\d{1,2}\.\d{4})\s+)?([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
+  if (!match) return null;
+
+  const parsedDate = match[1] ? parseDisplayDate(match[1]) : fallbackDate;
+  const parsedAmount = sanitizeEntryKeyChunk(String(match[2] || '').replace(',', '.'));
+  const parsedDescription = sanitizeEntryKeyChunk(match[3] || '');
+
+  if (!parsedDate || !parsedAmount) return null;
+  return {
+    date: parsedDate,
+    amount: parsedAmount,
+    description: parsedDescription,
+  };
+};
+
 const sanitizeEntryKeyChunk = value =>
   String(value || '')
     .trim()
@@ -197,9 +215,7 @@ const sortRowsByGroupAndDate = rows =>
 export const FlowManager = ({ ownerId }) => {
   const [flowData, setFlowData] = useState({});
   const [dateYmd, setDateYmd] = useState(todayYmd());
-  const [dateInput, setDateInput] = useState(formatDisplayDate(todayYmd()));
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
+  const [entryInput, setEntryInput] = useState(`${formatDisplayDate(todayYmd())} `);
   const [categoryInput, setCategoryInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [localCategories, setLocalCategories] = useState([DEFAULT_FLOW_CATEGORY]);
@@ -207,9 +223,7 @@ export const FlowManager = ({ ownerId }) => {
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState(null);
   const [editingDraft, setEditingDraft] = useState({ line: '' });
-  const dateInputRef = useRef(null);
-  const amountInputRef = useRef(null);
-  const descriptionInputRef = useRef(null);
+  const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
 
   const categoriesFromDb = useMemo(() => Object.keys(flowData || {}), [flowData]);
@@ -244,10 +258,6 @@ export const FlowManager = ({ ownerId }) => {
   }, [ownerId]);
 
   useEffect(() => {
-    setDateInput(formatDisplayDate(dateYmd));
-  }, [dateYmd]);
-
-  useEffect(() => {
     reload();
   }, [reload]);
 
@@ -259,8 +269,14 @@ export const FlowManager = ({ ownerId }) => {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
         if (parsed.dateYmd) setDateYmd(parsed.dateYmd);
-        if (typeof parsed.amount === 'string') setAmount(parsed.amount);
-        if (typeof parsed.description === 'string') setDescription(parsed.description);
+        if (typeof parsed.entryInput === 'string') {
+          setEntryInput(parsed.entryInput);
+        } else {
+          const restoredDate = parsed.dateYmd ? formatDisplayDate(parsed.dateYmd) : formatDisplayDate(todayYmd());
+          const restoredAmount = typeof parsed.amount === 'string' ? parsed.amount : '';
+          const restoredDescription = typeof parsed.description === 'string' ? parsed.description : '';
+          setEntryInput(`${restoredDate} ${restoredAmount} ${restoredDescription}`.trim());
+        }
         if (parsed.selectedCategory) setSelectedCategory(normalizeCategoryPath(parsed.selectedCategory));
         if (Array.isArray(parsed.localCategories)) {
           setLocalCategories(prev => {
@@ -281,8 +297,7 @@ export const FlowManager = ({ ownerId }) => {
         flowDraftStorageKey(ownerId),
         JSON.stringify({
           dateYmd,
-          amount,
-          description,
+          entryInput,
           selectedCategory,
           localCategories,
         })
@@ -290,19 +305,13 @@ export const FlowManager = ({ ownerId }) => {
     } catch (error) {
       console.error('Unable to persist flow draft into localStorage', error);
     }
-  }, [amount, dateYmd, description, localCategories, ownerId, selectedCategory]);
+  }, [dateYmd, entryInput, localCategories, ownerId, selectedCategory]);
 
   useEffect(() => {
     if (allCategories.length > 0 && (!selectedCategory || !allCategories.includes(selectedCategory))) {
       setSelectedCategory(allCategories[0]);
     }
   }, [allCategories, selectedCategory]);
-
-  const handleDateInputChange = value => {
-    setDateInput(value);
-    const parsed = parseDisplayDate(value);
-    if (parsed) setDateYmd(parsed);
-  };
 
   const addCategory = () => {
     const normalized = normalizeCategoryPath(categoryInput);
@@ -314,10 +323,12 @@ export const FlowManager = ({ ownerId }) => {
 
   const handleSave = async () => {
     const normalizedCategory = normalizeCategoryPath(selectedCategory);
-    const amountClean = sanitizeEntryKeyChunk(amount);
-    const descriptionClean = sanitizeEntryKeyChunk(description);
+    const parsedEntry = parseFlowEntryLine(entryInput, dateYmd);
+    const amountClean = parsedEntry?.amount || '';
+    const descriptionClean = parsedEntry?.description || '';
+    const dateToSave = parsedEntry?.date || '';
 
-    if (!ownerId || !normalizedCategory || !dateYmd || !amountClean) {
+    if (!ownerId || !normalizedCategory || !dateToSave || !amountClean) {
       toast.error('Заповніть дату, суму та групу');
       return;
     }
@@ -326,10 +337,12 @@ export const FlowManager = ({ ownerId }) => {
       await saveFlowEntry({
         ownerId,
         groupPath: normalizedCategory,
-        date: dateYmd,
+        date: dateToSave,
         amount: amountClean,
         description: descriptionClean,
       });
+      setDateYmd(dateToSave);
+      setEntryInput(`${formatDisplayDate(dateToSave)} ${amountClean} ${descriptionClean}`.trim());
       toast.success('Flow збережено');
       await reload();
     } catch (error) {
@@ -538,26 +551,35 @@ export const FlowManager = ({ ownerId }) => {
 
       <Row>
         <Label>
-          Дата
+          Дата + сума + опис
           <Input
-            ref={dateInputRef}
-            value={dateInput}
+            ref={entryInputRef}
+            value={entryInput}
             onChange={e => {
-              handleDateInputChange(e.target.value);
+              const nextValue = e.target.value;
+              setEntryInput(nextValue);
+              const parsed = parseFlowEntryLine(nextValue, dateYmd);
+              if (parsed?.date) setDateYmd(parsed.date);
             }}
             onKeyDown={e => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                amountInputRef.current?.focus();
+                handleSave();
+                categoryInputRef.current?.focus();
               }
             }}
-            placeholder="дд.мм.рррр"
+            placeholder="дд.мм.рррр 100 Кава"
           />
         </Label>
         <ActionBtn
           type="button"
           onClick={() => {
-            setDateYmd(shiftYmd(dateYmd, -1));
+            const current = parseFlowEntryLine(entryInput, dateYmd);
+            const nextDate = shiftYmd(current?.date || dateYmd, -1);
+            setDateYmd(nextDate);
+            setEntryInput(
+              `${formatDisplayDate(nextDate)} ${current?.amount || ''} ${current?.description || ''}`.trim()
+            );
           }}
         >
           -1
@@ -565,50 +587,17 @@ export const FlowManager = ({ ownerId }) => {
         <ActionBtn
           type="button"
           onClick={() => {
-            setDateYmd(shiftYmd(dateYmd, 1));
+            const current = parseFlowEntryLine(entryInput, dateYmd);
+            const nextDate = shiftYmd(current?.date || dateYmd, 1);
+            setDateYmd(nextDate);
+            setEntryInput(
+              `${formatDisplayDate(nextDate)} ${current?.amount || ''} ${current?.description || ''}`.trim()
+            );
           }}
         >
           +1
         </ActionBtn>
       </Row>
-
-      <Label>
-        Сума
-        <Input
-          ref={amountInputRef}
-          type="number"
-          value={amount}
-          onChange={e => {
-            setAmount(e.target.value);
-          }}
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              descriptionInputRef.current?.focus();
-            }
-          }}
-          placeholder="Введіть суму"
-        />
-      </Label>
-
-      <Label>
-        Опис
-        <Input
-          ref={descriptionInputRef}
-          value={description}
-          onChange={e => {
-            setDescription(e.target.value);
-          }}
-          onBlur={handleSave}
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              categoryInputRef.current?.focus();
-            }
-          }}
-          placeholder="Опис витрати"
-        />
-      </Label>
 
       <FooterActions>
         <ActionBtn type="button" onClick={handleSave}>Зберегти</ActionBtn>
