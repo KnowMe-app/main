@@ -15,6 +15,7 @@ const Wrap = styled.div`
   flex-direction: column;
   gap: 12px;
   padding: 10px;
+  box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
@@ -24,6 +25,8 @@ const TopControls = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
 `;
 
 const MenuWrap = styled.div`
@@ -77,6 +80,7 @@ const Row = styled.div`
   flex-wrap: wrap;
   gap: 8px;
   align-items: flex-end;
+  min-width: 0;
 `;
 
 const Label = styled.label`
@@ -133,6 +137,7 @@ const RadioGroup = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 8px 12px;
+  min-width: 0;
 `;
 
 const RadioLabel = styled.label`
@@ -142,6 +147,9 @@ const RadioLabel = styled.label`
   font-size: 13px;
   color: #444;
   cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 `;
 
 const Divider = styled.hr`
@@ -176,6 +184,8 @@ const GroupTitle = styled.div`
   font-weight: 700;
   color: #333;
   margin-bottom: 4px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 `;
 
 const GroupRows = styled.ul`
@@ -184,6 +194,7 @@ const GroupRows = styled.ul`
   list-style: none;
   border-left: 2px solid #e5e5e5;
   padding-left: 8px;
+  min-width: 0;
 `;
 
 const EventRow = styled.li`
