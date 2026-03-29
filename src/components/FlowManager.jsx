@@ -376,13 +376,17 @@ const parseFlowEntriesByDatesAndGroups = ({
   fallbackDate = '',
   defaultGroup = DEFAULT_FLOW_CATEGORY,
 }) => {
+  const normalizedFallbackDate = /^\d{4}-\d{2}-\d{2}$/.test(String(fallbackDate || ''))
+    ? fallbackDate
+    : todayYmd();
   const lines = String(rawText || '')
     .split(/\r?\n/)
     .map(line => String(line || '').trim())
     .filter(Boolean);
-  const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
+  const fallbackYear =
+    Number(String(normalizedFallbackDate).split('-')[0]) || new Date().getFullYear();
   let currentGroup = normalizeCategoryPath(defaultGroup) || DEFAULT_FLOW_CATEGORY;
-  let currentDate = fallbackDate;
+  let currentDate = normalizedFallbackDate;
   const entries = [];
 
   lines.forEach(line => {
@@ -392,7 +396,7 @@ const parseFlowEntriesByDatesAndGroups = ({
       return;
     }
 
-    const parsedLine = parseFlowEntryLine(line, currentDate || fallbackDate);
+    const parsedLine = parseFlowEntryLine(line, currentDate || normalizedFallbackDate);
     if (parsedLine) {
       currentDate = parsedLine.date;
       entries.push({
