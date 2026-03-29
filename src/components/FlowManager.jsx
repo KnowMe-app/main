@@ -171,9 +171,11 @@ const flattenEntries = (node, path = []) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !entries || typeof entries !== 'object') {
         return [];
       }
-      return Object.keys(entries).map(key => {
-        const [amount = '', ...rest] = String(key).split('_');
+      return Object.entries(entries).map(([entryId, value]) => {
+        const encoded = typeof value === 'string' ? value : entryId;
+        const [amount = '', ...rest] = String(encoded).split('_');
         return {
+          entryId,
           group: path.join('/'),
           date,
           amount,
@@ -420,7 +422,7 @@ export const FlowManager = ({ ownerId }) => {
   };
 
   const getRowKey = (row, idx) =>
-    `${row.group || 'general'}|${row.date}|${row.amount}|${row.description}|${idx}`;
+    `${row.group || 'general'}|${row.date}|${row.entryId || `${row.amount}|${row.description}|${idx}`}`;
 
   const beginEdit = (row, idx) => {
     const key = getRowKey(row, idx);
@@ -460,6 +462,7 @@ export const FlowManager = ({ ownerId }) => {
         ownerId,
         groupPath: row.group || 'general',
         prevEntry: {
+          entryId: row.entryId,
           date: row.date,
           amount: row.amount,
           description: row.description,
