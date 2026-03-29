@@ -791,6 +791,15 @@ export const FlowManager = ({ ownerId }) => {
               >
                 Перейти на Add
               </MenuItem>
+              <MenuItem
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  navigate('/matching');
+                }}
+              >
+                Перейти на Matching
+              </MenuItem>
             </MenuPanel>
           )}
         </MenuWrap>
