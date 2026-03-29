@@ -944,6 +944,24 @@ const buildFlowEntryPath = ({ groupPath, date, amount, description = '' }) => {
   return [...sanitizedSegments, date, entryKey].join('/');
 };
 
+const buildFlowDatePath = ({ groupPath, date }) => {
+  const sanitizedSegments = String(groupPath)
+    .split('/')
+    .map(sanitizeFlowPathPart)
+    .filter(Boolean);
+
+  if (sanitizedSegments.length === 0 || !date) return '';
+  return [...sanitizedSegments, date].join('/');
+};
+
+const buildFlowEntryValue = ({ amount, description = '' }) => {
+  const safeAmount = sanitizeFlowPathPart(amount);
+  const safeDescription = sanitizeFlowPathPart(description);
+  return `${safeAmount}_${safeDescription}`;
+};
+
+const generateFlowEntryId = () => `${Date.now()}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+
 export const fetchFlowData = async ownerId => {
   if (!ownerId) return {};
   const snapshot = await get(buildFlowRef(ownerId));
@@ -952,16 +970,26 @@ export const fetchFlowData = async ownerId => {
 
 export const saveFlowEntry = async ({ ownerId, groupPath, date, amount, description = '' }) => {
   if (!ownerId || !groupPath || !date || !amount) return;
-  const path = buildFlowEntryPath({ groupPath, date, amount, description });
-  if (!path) return;
-  await set(ref2(database, `multiData/flow/${ownerId}/${path}`), true);
+  const datePath = buildFlowDatePath({ groupPath, date });
+  if (!datePath) return;
+  const value = buildFlowEntryValue({ amount, description });
+  const entryId = generateFlowEntryId();
+  await set(ref2(database, `multiData/flow/${ownerId}/${datePath}/${entryId}`), value);
 };
 
-export const deleteFlowEntry = async ({ ownerId, groupPath, date, amount, description = '' }) => {
+export const deleteFlowEntry = async ({ ownerId, groupPath, date, amount, description = '', entryId }) => {
   if (!ownerId || !groupPath || !date || !amount) return;
-  const path = buildFlowEntryPath({ groupPath, date, amount, description });
-  if (!path) return;
-  await remove(ref2(database, `multiData/flow/${ownerId}/${path}`));
+  const datePath = buildFlowDatePath({ groupPath, date });
+  if (!datePath) return;
+
+  if (entryId) {
+    await remove(ref2(database, `multiData/flow/${ownerId}/${datePath}/${entryId}`));
+    return;
+  }
+
+  const legacyPath = buildFlowEntryPath({ groupPath, date, amount, description });
+  if (!legacyPath) return;
+  await remove(ref2(database, `multiData/flow/${ownerId}/${legacyPath}`));
 };
 
 export const updateFlowEntry = async ({ ownerId, groupPath, prevEntry, nextEntry }) => {
@@ -969,6 +997,7 @@ export const updateFlowEntry = async ({ ownerId, groupPath, prevEntry, nextEntry
   await deleteFlowEntry({
     ownerId,
     groupPath,
+    entryId: prevEntry.entryId,
     date: prevEntry.date,
     amount: prevEntry.amount,
     description: prevEntry.description,
