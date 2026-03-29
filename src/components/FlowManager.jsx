@@ -162,13 +162,19 @@ const DeleteRowBtn = styled.button`
 `;
 
 const TinyBtn = styled.button`
-  margin-left: 6px;
   font-size: 11px;
   padding: 1px 6px;
   border: 1px solid #d7d7d7;
   border-radius: 4px;
   background: #fff;
   cursor: pointer;
+`;
+
+const EditInline = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
 `;
 
 const ConfirmBackdrop = styled.div`
@@ -753,7 +759,7 @@ export const FlowManager = ({ ownerId }) => {
                     onClick={!isEditing ? () => beginEdit(row, idx) : undefined}
                   >
                     {isEditing ? (
-                      <>
+                      <EditInline>
                         <Input
                           autoFocus
                           style={{ width: 320, fontSize: 12, padding: 4 }}
@@ -771,13 +777,10 @@ export const FlowManager = ({ ownerId }) => {
                             }
                           }}
                         />
-                        <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={() => saveEditedRow(row, idx)}>
-                          save
-                        </TinyBtn>
                         <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
                           cancel
                         </TinyBtn>
-                      </>
+                      </EditInline>
                     ) : (
                       <>
                         <EventText>{formatDisplayDate(row.date)} {row.amount} {row.description}</EventText>
