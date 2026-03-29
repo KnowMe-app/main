@@ -15,6 +15,9 @@ const Wrap = styled.div`
   flex-direction: column;
   gap: 12px;
   padding: 10px;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 `;
 
 const TopControls = styled.div`
@@ -71,6 +74,7 @@ const MenuItem = styled.button`
 
 const Row = styled.div`
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: flex-end;
 `;
@@ -82,6 +86,7 @@ const Label = styled.label`
   flex-direction: column;
   gap: 4px;
   flex: 1;
+  min-width: 0;
 `;
 
 const Input = styled.input`
@@ -188,10 +193,18 @@ const EventRow = styled.li`
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
+  border: 1px solid ${({ $highlighted }) => ($highlighted ? '#ff6b6b' : 'transparent')};
+  border-radius: 6px;
+  padding: 2px 4px;
+  background: ${({ $highlighted }) => ($highlighted ? '#fff5f5' : 'transparent')};
 `;
 
 const EventText = styled.span`
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 `;
 
 const DeleteRowBtn = styled.button`
@@ -221,9 +234,11 @@ const TinyBtn = styled.button`
 
 const EditInline = styled.div`
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   width: 100%;
+  min-width: 0;
 `;
 
 const ConfirmBackdrop = styled.div`
@@ -249,6 +264,17 @@ const ConfirmActions = styled.div`
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+`;
+
+const ConfirmRowPreview = styled.div`
+  margin-top: 10px;
+  border: 1px solid #ff6b6b;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #fff5f5;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 `;
 
 const normalizeCategoryPath = value =>
@@ -413,7 +439,7 @@ export const FlowManager = ({ ownerId }) => {
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState(null);
   const [editingDraft, setEditingDraft] = useState({ line: '' });
-  const [confirmState, setConfirmState] = useState({ type: null, row: null });
+  const [confirmState, setConfirmState] = useState({ type: null, row: null, rowKey: null });
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const entryInputRef = useRef(null);
@@ -633,9 +659,9 @@ export const FlowManager = ({ ownerId }) => {
     }
   };
 
-  const openClearConfirm = () => setConfirmState({ type: 'clear', row: null });
-  const openDeleteConfirm = row => setConfirmState({ type: 'row', row });
-  const closeConfirm = () => setConfirmState({ type: null, row: null });
+  const openClearConfirm = () => setConfirmState({ type: 'clear', row: null, rowKey: null });
+  const openDeleteConfirm = (row, rowKey) => setConfirmState({ type: 'row', row, rowKey });
+  const closeConfirm = () => setConfirmState({ type: null, row: null, rowKey: null });
 
   const handleConfirm = async () => {
     if (confirmState.type === 'clear') {
@@ -836,13 +862,14 @@ export const FlowManager = ({ ownerId }) => {
                   <EventRow
                     key={rowKey}
                     $clickable={!isEditing}
+                    $highlighted={confirmState.type === 'row' && confirmState.rowKey === rowKey}
                     onClick={!isEditing ? () => beginEdit(row, idx) : undefined}
                   >
                     {isEditing ? (
                       <EditInline>
                         <Input
                           autoFocus
-                          style={{ width: 320, fontSize: 12, padding: 4 }}
+                          style={{ width: '100%', minWidth: 0, fontSize: 12, padding: 4 }}
                           value={editingDraft.line}
                           onChange={e => setEditingDraft({ line: e.target.value })}
                           onBlur={() => saveEditedRow(row, idx)}
@@ -870,7 +897,7 @@ export const FlowManager = ({ ownerId }) => {
                           title="Видалити рядок"
                           onClick={e => {
                             e.stopPropagation();
-                            openDeleteConfirm(row);
+                            openDeleteConfirm(row, rowKey);
                           }}
                         >
                           ×
@@ -895,6 +922,11 @@ export const FlowManager = ({ ownerId }) => {
                 ? 'Підтвердьте очищення всього Flow'
                 : 'Підтвердьте видалення цього рядка'}
             </div>
+            {confirmState.type === 'row' && confirmState.row && (
+              <ConfirmRowPreview>
+                {formatDisplayDate(confirmState.row.date)} {confirmState.row.amount} {confirmState.row.description}
+              </ConfirmRowPreview>
+            )}
             <ConfirmActions>
               <ActionBtn type="button" onClick={closeConfirm}>Скасувати</ActionBtn>
               <DangerBtn type="button" onClick={handleConfirm}>Підтвердити</DangerBtn>
