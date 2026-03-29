@@ -125,10 +125,38 @@ const EntryInput = styled.textarea`
   min-height: 88px;
   border: 1px solid #d7d7d7;
   border-radius: 6px;
-  padding: 8px;
+  padding: 8px 36px 8px 8px;
   font-size: 14px;
   resize: vertical;
   box-sizing: border-box;
+`;
+
+const EntryInputWrap = styled.div`
+  position: relative;
+  width: 100%;
+`;
+
+const ClearEntryBtn = styled.button`
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: #ededed;
+  color: #4a4a4a;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    background: #dbdbdb;
+  }
 `;
 
 const ActionBtn = styled.button`
@@ -358,6 +386,8 @@ const sanitizeAmountChunk = value =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const normalizeFlowAmount = value => sanitizeAmountChunk(String(value || '').replace(',', '.'));
+
 export const parseFlowEntryLine = (line, fallbackDate = '') => {
   const trimmedLine = String(line || '').trim();
   if (!trimmedLine) return null;
@@ -377,7 +407,7 @@ export const parseFlowEntryLine = (line, fallbackDate = '') => {
 
   const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
   const parsedDate = match[1] ? parseDisplayDate(match[1], fallbackYear) : fallbackDate;
-  const parsedAmount = sanitizeAmountChunk(String(match[2] || '').replace(',', '.'));
+  const parsedAmount = normalizeFlowAmount(match[2] || '');
   const parsedDescription = sanitizeEntryKeyChunk(match[3] || '');
 
   if (!parsedDate || !parsedAmount) return null;
@@ -652,7 +682,7 @@ export const FlowManager = ({ ownerId }) => {
       const lastEntry = parsedEntries[parsedEntries.length - 1];
       setDateYmd(lastEntry.date);
       setSelectedCategory(lastEntry.groupPath || normalizedCategory);
-      setEntryInput(`${formatDisplayDate(lastEntry.date)} `);
+      setEntryInput('');
       toast.success(
         parsedEntries.length === 1
           ? 'Flow збережено'
@@ -773,7 +803,7 @@ export const FlowManager = ({ ownerId }) => {
       return;
     }
     const parsedDate = parseDisplayDate(match[1], new Date().getFullYear());
-    const nextAmount = sanitizeEntryKeyChunk(match[2].replace(',', '.'));
+    const nextAmount = normalizeFlowAmount(match[2] || '');
     const nextDescription = sanitizeEntryKeyChunk(match[3] || '');
     if (!parsedDate || !nextAmount) {
       toast.error('Для редагування потрібні валідні дата і сума');
@@ -905,32 +935,47 @@ export const FlowManager = ({ ownerId }) => {
       <Row>
         <Label>
           Дата + сума + опис (підтримка груп і дат у кілька рядків)
-          <EntryInput
-            ref={entryInputRef}
-            value={entryInput}
-            onChange={e => {
-              const nextValue = e.target.value;
-              setEntryInput(nextValue);
-              const effectiveFallbackDate = resolveFlowFallbackDate(nextValue, dateYmd);
-              const parsed = parseFlowEntriesByDatesAndGroups({
-                rawText: nextValue,
-                fallbackDate: effectiveFallbackDate,
-                defaultGroup: selectedCategory,
-              })?.[0];
-              if (parsed?.date) setDateYmd(parsed.date);
-            }}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                handleSave();
-                categoryInputRef.current?.focus();
-              }
-            }}
-            onBlur={() => {
-              handleSave({ silentValidation: true });
-            }}
-            placeholder={'[їжа]\n29.03 100 Кава\n240 Обід\n\nтранспорт\n30.03\n340 Таксі'}
-          />
+          <EntryInputWrap>
+            <EntryInput
+              ref={entryInputRef}
+              value={entryInput}
+              onChange={e => {
+                const nextValue = e.target.value;
+                setEntryInput(nextValue);
+                const effectiveFallbackDate = resolveFlowFallbackDate(nextValue, dateYmd);
+                const parsed = parseFlowEntriesByDatesAndGroups({
+                  rawText: nextValue,
+                  fallbackDate: effectiveFallbackDate,
+                  defaultGroup: selectedCategory,
+                })?.[0];
+                if (parsed?.date) setDateYmd(parsed.date);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  handleSave();
+                  categoryInputRef.current?.focus();
+                }
+              }}
+              onBlur={() => {
+                handleSave({ silentValidation: true });
+              }}
+              placeholder={'Заголовок\n20.01.2026 100 кава'}
+            />
+            {entryInput.trim() && (
+              <ClearEntryBtn
+                type="button"
+                onClick={() => {
+                  setEntryInput('');
+                  entryInputRef.current?.focus();
+                }}
+                aria-label="Очистити поле введення Flow"
+                title="Очистити"
+              >
+                ✕
+              </ClearEntryBtn>
+            )}
+          </EntryInputWrap>
         </Label>
       </Row>
 
