@@ -1002,8 +1002,15 @@ export const deleteFlowEntry = async ({ ownerId, groupPath, date, amount, descri
   await remove(ref2(database, `multiData/flow/${ownerId}/${legacyPath}`));
 };
 
-export const updateFlowEntry = async ({ ownerId, groupPath, prevEntry, nextEntry }) => {
+export const updateFlowEntry = async ({
+  ownerId,
+  groupPath,
+  nextGroupPath,
+  prevEntry,
+  nextEntry,
+}) => {
   if (!ownerId || !groupPath || !prevEntry || !nextEntry) return;
+  const targetGroupPath = nextGroupPath || groupPath;
   await deleteFlowEntry({
     ownerId,
     groupPath,
@@ -1014,7 +1021,7 @@ export const updateFlowEntry = async ({ ownerId, groupPath, prevEntry, nextEntry
   });
   await saveFlowEntry({
     ownerId,
-    groupPath,
+    groupPath: targetGroupPath,
     date: nextEntry.date,
     amount: nextEntry.amount,
     description: nextEntry.description,

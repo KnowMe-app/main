@@ -338,6 +338,14 @@ const DeleteRowBtn = styled.button`
   }
 `;
 
+const ChangeCategoryBtn = styled(DeleteRowBtn)`
+  color: #3155b7;
+
+  &:hover {
+    background: #edf2ff;
+  }
+`;
+
 const TinyBtn = styled.button`
   font-size: 11px;
   padding: 1px 6px;
@@ -970,6 +978,47 @@ export const FlowManager = ({ ownerId }) => {
     }
   };
 
+  const handleChangeRowCategory = async row => {
+    if (!ownerId) return;
+    const nextCategoryRaw = window.prompt(
+      'Вкажіть нову групу для платежу',
+      row.group || DEFAULT_FLOW_CATEGORY,
+    );
+    if (nextCategoryRaw === null) return;
+
+    const nextCategory = normalizeCategoryPath(nextCategoryRaw);
+    if (!nextCategory) {
+      toast.error('Вкажіть валідну назву групи');
+      return;
+    }
+    if (nextCategory === row.group) return;
+
+    try {
+      await updateFlowEntry({
+        ownerId,
+        groupPath: row.group || DEFAULT_FLOW_CATEGORY,
+        nextGroupPath: nextCategory,
+        prevEntry: {
+          entryId: row.entryId,
+          date: row.date,
+          amount: row.amount,
+          description: row.description,
+        },
+        nextEntry: {
+          date: row.date,
+          amount: row.amount,
+          description: row.description,
+        },
+      });
+      setLocalCategories(prev => (prev.includes(nextCategory) ? prev : [...prev, nextCategory]));
+      toast.success(`Платіж перенесено в групу "${nextCategory}"`);
+      await reload();
+    } catch (error) {
+      console.error('Unable to change flow row category', error);
+      toast.error('Не вдалося змінити групу платежу');
+    }
+  };
+
   return (
     <Wrap>
       <TopControls>
@@ -1223,6 +1272,17 @@ export const FlowManager = ({ ownerId }) => {
                     ) : (
                       <>
                         <EventText>{formatDisplayDate(row.date)} {row.amount} {row.description}</EventText>
+                        <ChangeCategoryBtn
+                          type="button"
+                          aria-label="change-row-category"
+                          title="Змінити групу платежу"
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleChangeRowCategory(row);
+                          }}
+                        >
+                          ✏
+                        </ChangeCategoryBtn>
                         <DeleteRowBtn
                           type="button"
                           aria-label="delete-row"
