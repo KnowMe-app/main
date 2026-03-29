@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 import {
   deleteFlowEntry,
   clearFlowData,
@@ -23,7 +24,7 @@ const Wrap = styled.div`
 
 const TopControls = styled.div`
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -33,20 +34,37 @@ const MenuWrap = styled.div`
   position: relative;
 `;
 
-const MenuBtn = styled.button`
+const TopActionBtn = styled.button`
   border: 1px solid #d7d7d7;
   border-radius: 6px;
   width: 34px;
   height: 34px;
-  font-size: 18px;
+  font-size: 16px;
+  font-weight: 700;
   line-height: 1;
-  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: ${({ $bg }) => $bg || '#6c757d'};
+  border-color: ${({ $bg }) => $bg || '#6c757d'};
   cursor: pointer;
 
   &:hover {
-    background: #f5f5f5;
+    filter: brightness(0.92);
   }
 `;
+
+const CopyBtn = styled(TopActionBtn)`
+  svg {
+    width: 17px;
+    height: 17px;
+  }
+`;
+
+const DangerBtn = styled(TopActionBtn)``;
+
+const MenuBtn = styled(TopActionBtn)``;
 
 const MenuPanel = styled.div`
   position: absolute;
@@ -123,16 +141,6 @@ const ActionBtn = styled.button`
   }
 `;
 
-const DangerBtn = styled(ActionBtn)`
-  border-color: #dc3545;
-  color: #fff;
-  background: #dc3545;
-
-  &:hover {
-    background: #c82333;
-  }
-`;
-
 const RadioGroup = styled.div`
   display: flex;
   flex-wrap: wrap;
@@ -156,12 +164,6 @@ const Divider = styled.hr`
   border: none;
   border-top: 1px solid #ececec;
   margin: 4px 0;
-`;
-
-const FooterActions = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 `;
 
 const EventsList = styled.ul`
@@ -750,11 +752,22 @@ export const FlowManager = ({ ownerId }) => {
   return (
     <Wrap>
       <TopControls>
+        <CopyBtn
+          type="button"
+          onClick={handleCopyToClipboard}
+          aria-label="Копіювати Flow у буфер обміну"
+          title="Копіювати Flow у буфер обміну"
+          $bg="#2f7bff"
+        >
+          <ClipboardIcon />
+        </CopyBtn>
+        <DangerBtn type="button" onClick={openClearConfirm} $bg="#dc3545">del</DangerBtn>
         <MenuWrap ref={menuRef}>
           <MenuBtn
             type="button"
             aria-label="Відкрити меню навігації"
             onClick={() => setIsMenuOpen(prev => !prev)}
+            $bg="#6f42c1"
           >
             ⋮
           </MenuBtn>
@@ -781,7 +794,6 @@ export const FlowManager = ({ ownerId }) => {
             </MenuPanel>
           )}
         </MenuWrap>
-        <DangerBtn type="button" onClick={openClearConfirm}>del</DangerBtn>
       </TopControls>
 
       <Row>
@@ -855,10 +867,6 @@ export const FlowManager = ({ ownerId }) => {
           />
         </Label>
       </Row>
-
-      <FooterActions>
-        <ActionBtn type="button" onClick={handleCopyToClipboard}>Копіювати</ActionBtn>
-      </FooterActions>
 
       <small>Події з бекенду (відсортовано по групі і даті):</small>
       <EventsList>
