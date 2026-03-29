@@ -41,7 +41,6 @@ import { resolveAccess } from 'utils/accessLevel';
 import { normalizePhoneState } from './inputValidations';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import InfoModal from './InfoModal';
-import FlowManager from './FlowManager';
 import { VerifyEmail } from './VerifyEmail';
 
 import { color, coloredCard } from './styles';
@@ -1515,7 +1514,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>}
           </>
         )}
-        {isAdmin && <SubmitButton onClick={() => setShowInfoModal('flowComposer')}>Flow</SubmitButton>}
+        {isAdmin && <SubmitButton onClick={() => navigate('/flow')}>Flow</SubmitButton>}
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
         {!isEmailVerified && <VerifyEmail />}
@@ -2933,7 +2932,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           DelConfirm={delConfirm}
           CompareCards={compareCards}
           MoreActions={moreActions}
-          FlowComposer={() => <FlowManager ownerId={auth.currentUser?.uid} />}
         />
       )}
     </Container>

@@ -8,6 +8,7 @@ import { AddNewProfile } from './AddNewProfile';
 import Matching from './Matching';
 import EditProfile from './EditProfile';
 import MedicationsPage from './MedicationsPage';
+import FlowManager from './FlowManager';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, fetchUserById } from './config';
 import { resolveAccess } from 'utils/accessLevel';
@@ -83,6 +84,7 @@ export const App = () => {
       {canAccessMatching && <Route path="/matching" element={<Matching />} />}
       {isAdmin && <Route path="/edit/:userId" element={<EditProfile />} />}
       {isAdmin && <Route path="/medications/:userId" element={<MedicationsPage />} />}
+      {isAdmin && <Route path="/flow" element={<FlowManager ownerId={auth.currentUser?.uid} />} />}
       <Route path="/policy" element={<PrivacyPolicy />} />
     </Routes>
   );
