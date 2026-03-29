@@ -922,6 +922,71 @@ export const fetchUserComments = async (ownerId, cardIds = []) => {
   }
 };
 
+const buildFlowRef = ownerId => ref2(database, `multiData/flow/${ownerId}`);
+const sanitizeFlowPathPart = value =>
+  String(value || '')
+    .trim()
+    .replace(/[.#$[\]/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const buildFlowEntryPath = ({ groupPath, date, amount, description = '' }) => {
+  const sanitizedSegments = String(groupPath)
+    .split('/')
+    .map(sanitizeFlowPathPart)
+    .filter(Boolean);
+
+  if (sanitizedSegments.length === 0) return '';
+
+  const safeAmount = sanitizeFlowPathPart(amount);
+  const safeDescription = sanitizeFlowPathPart(description);
+  const entryKey = `${safeAmount}_${safeDescription}`.trim();
+  return [...sanitizedSegments, date, entryKey].join('/');
+};
+
+export const fetchFlowData = async ownerId => {
+  if (!ownerId) return {};
+  const snapshot = await get(buildFlowRef(ownerId));
+  return snapshot.exists() ? snapshot.val() : {};
+};
+
+export const saveFlowEntry = async ({ ownerId, groupPath, date, amount, description = '' }) => {
+  if (!ownerId || !groupPath || !date || !amount) return;
+  const path = buildFlowEntryPath({ groupPath, date, amount, description });
+  if (!path) return;
+  await set(ref2(database, `multiData/flow/${ownerId}/${path}`), true);
+};
+
+export const deleteFlowEntry = async ({ ownerId, groupPath, date, amount, description = '' }) => {
+  if (!ownerId || !groupPath || !date || !amount) return;
+  const path = buildFlowEntryPath({ groupPath, date, amount, description });
+  if (!path) return;
+  await remove(ref2(database, `multiData/flow/${ownerId}/${path}`));
+};
+
+export const updateFlowEntry = async ({ ownerId, groupPath, prevEntry, nextEntry }) => {
+  if (!ownerId || !groupPath || !prevEntry || !nextEntry) return;
+  await deleteFlowEntry({
+    ownerId,
+    groupPath,
+    date: prevEntry.date,
+    amount: prevEntry.amount,
+    description: prevEntry.description,
+  });
+  await saveFlowEntry({
+    ownerId,
+    groupPath,
+    date: nextEntry.date,
+    amount: nextEntry.amount,
+    description: nextEntry.description,
+  });
+};
+
+export const clearFlowData = async ownerId => {
+  if (!ownerId) return;
+  await remove(buildFlowRef(ownerId));
+};
+
 export const fetchUsersByIds = async ids => {
   try {
     const snaps = await Promise.all(
