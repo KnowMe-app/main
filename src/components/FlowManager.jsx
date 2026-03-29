@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import {
+  deleteFlowEntry,
   clearFlowData,
   fetchFlowData,
   saveFlowEntry,
@@ -12,6 +13,11 @@ const Wrap = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
+`;
+
+const TopControls = styled.div`
+  display: flex;
+  justify-content: flex-end;
 `;
 
 const Row = styled.div`
@@ -46,6 +52,16 @@ const ActionBtn = styled.button`
 
   &:hover {
     background: #f0f0f0;
+  }
+`;
+
+const DangerBtn = styled(ActionBtn)`
+  border-color: #dc3545;
+  color: #fff;
+  background: #dc3545;
+
+  &:hover {
+    background: #c82333;
   }
 `;
 
@@ -93,11 +109,56 @@ const EventsList = styled.ul`
   font-size: 12px;
   color: #666;
   line-height: 1.4;
+  text-align: left;
+`;
+
+const GroupBlock = styled.li`
+  list-style: none;
+  margin-bottom: 10px;
+`;
+
+const GroupTitle = styled.div`
+  font-size: 12px;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 4px;
+`;
+
+const GroupRows = styled.ul`
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 2px solid #e5e5e5;
+  padding-left: 8px;
 `;
 
 const EventRow = styled.li`
-  margin-bottom: 4px;
+  margin-bottom: 5px;
   cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+`;
+
+const EventText = styled.span`
+  flex: 1;
+`;
+
+const DeleteRowBtn = styled.button`
+  border: 1px solid #d7d7d7;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  color: #a00;
+  background: #fff;
+
+  &:hover {
+    background: #ffecec;
+  }
 `;
 
 const TinyBtn = styled.button`
@@ -108,6 +169,31 @@ const TinyBtn = styled.button`
   border-radius: 4px;
   background: #fff;
   cursor: pointer;
+`;
+
+const ConfirmBackdrop = styled.div`
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+`;
+
+const ConfirmCard = styled.div`
+  width: min(360px, calc(100vw - 24px));
+  background: #fff;
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+`;
+
+const ConfirmActions = styled.div`
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 `;
 
 const normalizeCategoryPath = value =>
@@ -226,6 +312,7 @@ export const FlowManager = ({ ownerId }) => {
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState(null);
   const [editingDraft, setEditingDraft] = useState({ line: '' });
+  const [confirmState, setConfirmState] = useState({ type: null, row: null });
   const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
 
@@ -245,6 +332,16 @@ export const FlowManager = ({ ownerId }) => {
 
   const flowRows = useMemo(() => flattenEntries(flowData), [flowData]);
   const sortedFlowRows = useMemo(() => sortRowsByGroupAndDate(flowRows), [flowRows]);
+  const groupedFlowRows = useMemo(
+    () =>
+      sortedFlowRows.reduce((acc, row, idx) => {
+        const group = row.group || 'general';
+        if (!acc[group]) acc[group] = [];
+        acc[group].push({ row, idx });
+        return acc;
+      }, {}),
+    [sortedFlowRows]
+  );
 
   const reload = useCallback(async () => {
     if (!ownerId) return;
@@ -400,6 +497,41 @@ export const FlowManager = ({ ownerId }) => {
     }
   };
 
+  const handleDeleteRow = async row => {
+    if (!ownerId) return;
+    try {
+      await deleteFlowEntry({
+        ownerId,
+        groupPath: row.group || 'general',
+        date: row.date,
+        amount: row.amount,
+        description: row.description,
+        entryId: row.entryId,
+      });
+      toast.success('Запис видалено');
+      await reload();
+    } catch (error) {
+      console.error('Unable to delete flow row', error);
+      toast.error('Не вдалося видалити запис');
+    }
+  };
+
+  const openClearConfirm = () => setConfirmState({ type: 'clear', row: null });
+  const openDeleteConfirm = row => setConfirmState({ type: 'row', row });
+  const closeConfirm = () => setConfirmState({ type: null, row: null });
+
+  const handleConfirm = async () => {
+    if (confirmState.type === 'clear') {
+      await handleClear();
+      closeConfirm();
+      return;
+    }
+    if (confirmState.type === 'row' && confirmState.row) {
+      await handleDeleteRow(confirmState.row);
+      closeConfirm();
+    }
+  };
+
   const handleImportList = async () => {
     if (!ownerId) return;
     const raw = String(importInput || '').trim();
@@ -519,6 +651,10 @@ export const FlowManager = ({ ownerId }) => {
 
   return (
     <Wrap>
+      <TopControls>
+        <DangerBtn type="button" onClick={openClearConfirm}>del</DangerBtn>
+      </TopControls>
+
       <Row>
         <Label>
           Нова група
@@ -589,7 +725,6 @@ export const FlowManager = ({ ownerId }) => {
 
       <FooterActions>
         <ActionBtn type="button" onClick={handleCopyToClipboard}>Копіювати</ActionBtn>
-        <ActionBtn type="button" onClick={handleClear}>Очистити Flow</ActionBtn>
       </FooterActions>
 
       <Label>
@@ -604,55 +739,86 @@ export const FlowManager = ({ ownerId }) => {
 
       <small>Події з бекенду (відсортовано по групі і даті):</small>
       <EventsList>
-        {sortedFlowRows.map((row, idx) => {
-          const rowKey = getRowKey(row, idx);
-          const isEditing = editingKey === rowKey;
-          return (
-            <EventRow
-              key={rowKey}
-              $clickable={!isEditing}
-              onClick={!isEditing ? () => beginEdit(row, idx) : undefined}
-            >
-              [{row.group}]
-              {isEditing ? (
-                <>
-                  {' '}
-                  <Input
-                    autoFocus
-                    style={{ width: 320, fontSize: 12, padding: 4, marginLeft: 4 }}
-                    value={editingDraft.line}
-                    onChange={e => setEditingDraft({ line: e.target.value })}
-                    onBlur={() => saveEditedRow(row, idx)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        saveEditedRow(row, idx);
-                      }
-                      if (e.key === 'Escape') {
-                        e.preventDefault();
-                        cancelEdit();
-                      }
-                    }}
-                  />
-                  <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={() => saveEditedRow(row, idx)}>
-                    save
-                  </TinyBtn>
-                  <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
-                    cancel
-                  </TinyBtn>
-                </>
-              ) : (
-                <>
-                  {' '}
-                  {formatDisplayDate(row.date)} {row.amount} {row.description}
-                </>
-              )}
-            </EventRow>
-          );
-        })}
+        {Object.entries(groupedFlowRows).map(([group, entries]) => (
+          <GroupBlock key={group}>
+            <GroupTitle>[{group}]</GroupTitle>
+            <GroupRows>
+              {entries.map(({ row, idx }) => {
+                const rowKey = getRowKey(row, idx);
+                const isEditing = editingKey === rowKey;
+                return (
+                  <EventRow
+                    key={rowKey}
+                    $clickable={!isEditing}
+                    onClick={!isEditing ? () => beginEdit(row, idx) : undefined}
+                  >
+                    {isEditing ? (
+                      <>
+                        <Input
+                          autoFocus
+                          style={{ width: 320, fontSize: 12, padding: 4 }}
+                          value={editingDraft.line}
+                          onChange={e => setEditingDraft({ line: e.target.value })}
+                          onBlur={() => saveEditedRow(row, idx)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              saveEditedRow(row, idx);
+                            }
+                            if (e.key === 'Escape') {
+                              e.preventDefault();
+                              cancelEdit();
+                            }
+                          }}
+                        />
+                        <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={() => saveEditedRow(row, idx)}>
+                          save
+                        </TinyBtn>
+                        <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
+                          cancel
+                        </TinyBtn>
+                      </>
+                    ) : (
+                      <>
+                        <EventText>{formatDisplayDate(row.date)} {row.amount} {row.description}</EventText>
+                        <DeleteRowBtn
+                          type="button"
+                          aria-label="delete-row"
+                          title="Видалити рядок"
+                          onClick={e => {
+                            e.stopPropagation();
+                            openDeleteConfirm(row);
+                          }}
+                        >
+                          ×
+                        </DeleteRowBtn>
+                      </>
+                    )}
+                  </EventRow>
+                );
+              })}
+            </GroupRows>
+          </GroupBlock>
+        ))}
       </EventsList>
 
       {loading && <small>Завантаження...</small>}
+
+      {confirmState.type && (
+        <ConfirmBackdrop onClick={closeConfirm}>
+          <ConfirmCard onClick={e => e.stopPropagation()}>
+            <div>
+              {confirmState.type === 'clear'
+                ? 'Підтвердьте очищення всього Flow'
+                : 'Підтвердьте видалення цього рядка'}
+            </div>
+            <ConfirmActions>
+              <ActionBtn type="button" onClick={closeConfirm}>Скасувати</ActionBtn>
+              <DangerBtn type="button" onClick={handleConfirm}>Підтвердити</DangerBtn>
+            </ConfirmActions>
+          </ConfirmCard>
+        </ConfirmBackdrop>
+      )}
     </Wrap>
   );
 };
