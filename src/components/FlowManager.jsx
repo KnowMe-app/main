@@ -333,7 +333,7 @@ const todayYmd = () => {
 const sanitizeAmountChunk = value =>
   String(value || '')
     .trim()
-    .replace(/[#$\[\]/]/g, ' ')
+    .replace(/[#$[/\]]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
