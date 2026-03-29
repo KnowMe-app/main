@@ -423,7 +423,11 @@ export const FlowManager = ({ ownerId }) => {
       }
 
       const match = line.match(/^(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
-      if (!match) return;
+      if (!match) {
+        const parsedCategory = normalizeCategoryPath(line);
+        if (parsedCategory) currentGroup = parsedCategory;
+        return;
+      }
 
       const parsedDate = parseDisplayDate(match[1], new Date().getFullYear());
       if (!parsedDate) return;
@@ -437,7 +441,7 @@ export const FlowManager = ({ ownerId }) => {
     });
 
     if (parsedEntries.length === 0) {
-      toast.error('Не знайдено валідних рядків (формат: дд.мм або дд.мм.рррр 100 опис)');
+      toast.error('Не знайдено валідних рядків (формат: дд.мм або дд.мм.рррр 100 опис; категорія — окремий рядок)');
       return;
     }
 
@@ -589,11 +593,11 @@ export const FlowManager = ({ ownerId }) => {
       </FooterActions>
 
       <Label>
-        Імпорт списку (формат: [група] і рядки `дд.мм або дд.мм.рррр 100 опис`)
+        Імпорт списку (категорія окремим рядком, далі `дд.мм або дд.мм.рррр 100 опис`)
         <MultilineInput
           value={importInput}
           onChange={e => setImportInput(e.target.value)}
-          placeholder={'[їжа]\n29.03 100 Кава\n29.03 240 Обід\n\n[транспорт/таксі]\n29.03 340 Таксі'}
+          placeholder={'їжа\n29.03 100 Кава\n29.03 240 Обід\n\nтранспорт таксі\n29.03 340 Таксі'}
         />
       </Label>
       <ActionBtn type="button" onClick={handleImportList}>Імпортувати список</ActionBtn>
