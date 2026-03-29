@@ -964,9 +964,18 @@ const buildFlowGroupPath = groupPath => {
   return sanitizedSegments.join('/');
 };
 
+const sanitizeFlowValuePart = value =>
+  String(value || '')
+    .trim()
+    .replace(/[#$[\]/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const normalizeFlowStoredAmount = value => sanitizeFlowValuePart(String(value || '').replace(/,/g, '.'));
+
 const buildFlowEntryValue = ({ amount, description = '' }) => {
-  const safeAmount = sanitizeFlowPathPart(amount);
-  const safeDescription = sanitizeFlowPathPart(description);
+  const safeAmount = normalizeFlowStoredAmount(amount);
+  const safeDescription = sanitizeFlowValuePart(description);
   return `${safeAmount}_${safeDescription}`;
 };
 
