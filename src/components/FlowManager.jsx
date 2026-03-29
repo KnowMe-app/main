@@ -122,12 +122,14 @@ const formatDisplayDate = yyyyMmDd => {
   return `${day.padStart(2, '0')}.${month.padStart(2, '0')}.${year}`;
 };
 
-const parseDisplayDate = display => {
-  const match = String(display || '').trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+const parseDisplayDate = (display, fallbackYear = new Date().getFullYear()) => {
+  const match = String(display || '')
+    .trim()
+    .match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?$/);
   if (!match) return '';
   const day = Number(match[1]);
   const month = Number(match[2]);
-  const year = Number(match[3]);
+  const year = Number(match[3] || fallbackYear);
   if (day < 1 || day > 31 || month < 1 || month > 12) return '';
   const dt = new Date(Date.UTC(year, month - 1, day));
   if (
@@ -148,21 +150,14 @@ const todayYmd = () => {
   return `${year}-${month}-${day}`;
 };
 
-const shiftYmd = (ymd, days) => {
-  const [year, month, day] = String(ymd || '').split('-').map(Number);
-  if (!year || !month || !day) return todayYmd();
-  const dt = new Date(Date.UTC(year, month - 1, day));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().slice(0, 10);
-};
-
 const parseFlowEntryLine = (line, fallbackDate = '') => {
   const match = String(line || '')
     .trim()
-    .match(/^(?:(\d{1,2}\.\d{1,2}\.\d{4})\s+)?([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
+    .match(/^(?:(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+)?([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
   if (!match) return null;
 
-  const parsedDate = match[1] ? parseDisplayDate(match[1]) : fallbackDate;
+  const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
+  const parsedDate = match[1] ? parseDisplayDate(match[1], fallbackYear) : fallbackDate;
   const parsedAmount = sanitizeEntryKeyChunk(String(match[2] || '').replace(',', '.'));
   const parsedDescription = sanitizeEntryKeyChunk(match[3] || '');
 
@@ -427,10 +422,10 @@ export const FlowManager = ({ ownerId }) => {
         return;
       }
 
-      const match = line.match(/^(\d{1,2}\.\d{1,2}\.\d{4})\s+([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
+      const match = line.match(/^(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
       if (!match) return;
 
-      const parsedDate = parseDisplayDate(match[1]);
+      const parsedDate = parseDisplayDate(match[1], new Date().getFullYear());
       if (!parsedDate) return;
 
       parsedEntries.push({
@@ -442,7 +437,7 @@ export const FlowManager = ({ ownerId }) => {
     });
 
     if (parsedEntries.length === 0) {
-      toast.error('Не знайдено валідних рядків (формат: дд.мм.рррр 100 опис)');
+      toast.error('Не знайдено валідних рядків (формат: дд.мм або дд.мм.рррр 100 опис)');
       return;
     }
 
@@ -480,12 +475,12 @@ export const FlowManager = ({ ownerId }) => {
 
     const match = String(editingDraft.line || '')
       .trim()
-      .match(/^(\d{1,2}\.\d{1,2}\.\d{4})\s+([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
+      .match(/^(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
     if (!match) {
-      toast.error('Формат редагування: дд.мм.рррр 100 опис');
+      toast.error('Формат редагування: дд.мм або дд.мм.рррр 100 опис');
       return;
     }
-    const parsedDate = parseDisplayDate(match[1]);
+    const parsedDate = parseDisplayDate(match[1], new Date().getFullYear());
     const nextAmount = sanitizeEntryKeyChunk(match[2].replace(',', '.'));
     const nextDescription = sanitizeEntryKeyChunk(match[3] || '');
     if (!parsedDate || !nextAmount) {
@@ -583,35 +578,9 @@ export const FlowManager = ({ ownerId }) => {
             onBlur={() => {
               handleSave({ silentValidation: true });
             }}
-            placeholder="дд.мм.рррр 100 Кава"
+            placeholder="дд.мм 100 Кава"
           />
         </Label>
-        <ActionBtn
-          type="button"
-          onClick={() => {
-            const current = parseFlowEntryLine(entryInput, dateYmd);
-            const nextDate = shiftYmd(current?.date || dateYmd, -1);
-            setDateYmd(nextDate);
-            setEntryInput(
-              `${formatDisplayDate(nextDate)} ${current?.amount || ''} ${current?.description || ''}`.trim()
-            );
-          }}
-        >
-          -1
-        </ActionBtn>
-        <ActionBtn
-          type="button"
-          onClick={() => {
-            const current = parseFlowEntryLine(entryInput, dateYmd);
-            const nextDate = shiftYmd(current?.date || dateYmd, 1);
-            setDateYmd(nextDate);
-            setEntryInput(
-              `${formatDisplayDate(nextDate)} ${current?.amount || ''} ${current?.description || ''}`.trim()
-            );
-          }}
-        >
-          +1
-        </ActionBtn>
       </Row>
 
       <FooterActions>
@@ -620,11 +589,11 @@ export const FlowManager = ({ ownerId }) => {
       </FooterActions>
 
       <Label>
-        Імпорт списку (формат: [група] і рядки `дд.мм.рррр 100 опис`)
+        Імпорт списку (формат: [група] і рядки `дд.мм або дд.мм.рррр 100 опис`)
         <MultilineInput
           value={importInput}
           onChange={e => setImportInput(e.target.value)}
-          placeholder={'[їжа]\n29.03.2026 100 Кава\n29.03.2026 240 Обід\n\n[транспорт/таксі]\n29.03.2026 340 Таксі'}
+          placeholder={'[їжа]\n29.03 100 Кава\n29.03 240 Обід\n\n[транспорт/таксі]\n29.03 340 Таксі'}
         />
       </Label>
       <ActionBtn type="button" onClick={handleImportList}>Імпортувати список</ActionBtn>
