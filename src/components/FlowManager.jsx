@@ -144,6 +144,16 @@ const ActionBtn = styled.button`
   }
 `;
 
+const ConfirmDangerBtn = styled(ActionBtn)`
+  border-color: #dc3545;
+  background: #dc3545;
+  color: #fff;
+
+  &:hover {
+    background: #c82333;
+  }
+`;
+
 const RadioGroup = styled.div`
   display: flex;
   flex-wrap: wrap;
@@ -281,6 +291,13 @@ const ConfirmActions = styled.div`
   display: flex;
   justify-content: center;
   gap: 8px;
+
+  button {
+    flex: 1;
+    min-width: 120px;
+    justify-content: center;
+    display: inline-flex;
+  }
 `;
 
 const ConfirmRowPreview = styled.div`
@@ -997,7 +1014,7 @@ export const FlowManager = ({ ownerId }) => {
             )}
             <ConfirmActions>
               <ActionBtn type="button" onClick={closeConfirm}>Скасувати</ActionBtn>
-              <DangerBtn type="button" onClick={handleConfirm}>Підтвердити</DangerBtn>
+              <ConfirmDangerBtn type="button" onClick={handleConfirm}>Підтвердити</ConfirmDangerBtn>
             </ConfirmActions>
           </ConfirmCard>
         </ConfirmBackdrop>
