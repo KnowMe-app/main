@@ -371,6 +371,18 @@ export const parseFlowEntryLine = (line, fallbackDate = '') => {
   };
 };
 
+const FLOW_DATE_TOKEN_PATTERN = /\b\d{1,2}\.\d{1,2}(?:\.\d{4})?\b/;
+
+const resolveFlowFallbackDate = (rawText, fallbackDate = '') => {
+  const normalizedFallbackDate = /^\d{4}-\d{2}-\d{2}$/.test(String(fallbackDate || ''))
+    ? fallbackDate
+    : '';
+  if (FLOW_DATE_TOKEN_PATTERN.test(String(rawText || ''))) {
+    return normalizedFallbackDate || todayYmd();
+  }
+  return todayYmd();
+};
+
 const parseFlowEntriesByDatesAndGroups = ({
   rawText,
   fallbackDate = '',
@@ -604,9 +616,10 @@ export const FlowManager = ({ ownerId }) => {
 
   const handleSave = async ({ silentValidation = false } = {}) => {
     const normalizedCategory = normalizeCategoryPath(selectedCategory) || DEFAULT_FLOW_CATEGORY;
+    const effectiveFallbackDate = resolveFlowFallbackDate(entryInput, dateYmd);
     const parsedEntries = parseFlowEntriesByDatesAndGroups({
       rawText: entryInput,
-      fallbackDate: dateYmd,
+      fallbackDate: effectiveFallbackDate,
       defaultGroup: normalizedCategory,
     });
 
@@ -881,9 +894,10 @@ export const FlowManager = ({ ownerId }) => {
             onChange={e => {
               const nextValue = e.target.value;
               setEntryInput(nextValue);
+              const effectiveFallbackDate = resolveFlowFallbackDate(nextValue, dateYmd);
               const parsed = parseFlowEntriesByDatesAndGroups({
                 rawText: nextValue,
-                fallbackDate: dateYmd,
+                fallbackDate: effectiveFallbackDate,
                 defaultGroup: selectedCategory,
               })?.[0];
               if (parsed?.date) setDateYmd(parsed.date);
