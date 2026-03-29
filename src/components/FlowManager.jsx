@@ -330,15 +330,33 @@ const todayYmd = () => {
   return `${year}-${month}-${day}`;
 };
 
-const parseFlowEntryLine = (line, fallbackDate = '') => {
-  const match = String(line || '')
+const sanitizeAmountChunk = value =>
+  String(value || '')
     .trim()
-    .match(/^(?:(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+)?([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
+    .replace(/[#$\[\]/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+export const parseFlowEntryLine = (line, fallbackDate = '') => {
+  const trimmedLine = String(line || '').trim();
+  if (!trimmedLine) return null;
+
+  const leadingDateOnlyMatch = trimmedLine.match(/^(\d{1,2}\.\d{1,2}\.\d{4})(?:\s+(.*))?$/);
+  if (leadingDateOnlyMatch) {
+    const rest = String(leadingDateOnlyMatch[2] || '').trim();
+    if (rest && !/^[+-]?\d+(?:[.,]\d+)?(?:\s|$)/.test(rest)) {
+      return null;
+    }
+  }
+
+  const match = trimmedLine.match(
+    /^(?:(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+)?([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/,
+  );
   if (!match) return null;
 
   const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
   const parsedDate = match[1] ? parseDisplayDate(match[1], fallbackYear) : fallbackDate;
-  const parsedAmount = sanitizeEntryKeyChunk(String(match[2] || '').replace(',', '.'));
+  const parsedAmount = sanitizeAmountChunk(String(match[2] || '').replace(',', '.'));
   const parsedDescription = sanitizeEntryKeyChunk(match[3] || '');
 
   if (!parsedDate || !parsedAmount) return null;
