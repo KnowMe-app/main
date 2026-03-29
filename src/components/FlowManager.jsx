@@ -615,7 +615,7 @@ export const FlowManager = ({ ownerId }) => {
             >
               [{row.group}]
               {isEditing ? (
-                <>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   {' '}
                   <Input
                     autoFocus
@@ -634,13 +634,10 @@ export const FlowManager = ({ ownerId }) => {
                       }
                     }}
                   />
-                  <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={() => saveEditedRow(row, idx)}>
-                    save
-                  </TinyBtn>
                   <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
                     cancel
                   </TinyBtn>
-                </>
+                </span>
               ) : (
                 <>
                   {' '}
