@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import {
   deleteFlowEntry,
   clearFlowData,
@@ -13,11 +14,59 @@ const Wrap = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 10px;
 `;
 
 const TopControls = styled.div`
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+const MenuWrap = styled.div`
+  position: relative;
+`;
+
+const MenuBtn = styled.button`
+  border: 1px solid #d7d7d7;
+  border-radius: 6px;
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+  line-height: 1;
+  background: #fff;
+  cursor: pointer;
+
+  &:hover {
+    background: #f5f5f5;
+  }
+`;
+
+const MenuPanel = styled.div`
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+  z-index: 2;
+  padding: 6px;
+`;
+
+const MenuItem = styled.button`
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  cursor: pointer;
+
+  &:hover {
+    background: #f4f6ff;
+  }
 `;
 
 const Row = styled.div`
@@ -308,6 +357,7 @@ const sortRowsByGroupAndDate = rows =>
   });
 
 export const FlowManager = ({ ownerId }) => {
+  const navigate = useNavigate();
   const [flowData, setFlowData] = useState({});
   const [dateYmd, setDateYmd] = useState(todayYmd());
   const [entryInput, setEntryInput] = useState(`${formatDisplayDate(todayYmd())} `);
@@ -319,6 +369,8 @@ export const FlowManager = ({ ownerId }) => {
   const [editingKey, setEditingKey] = useState(null);
   const [editingDraft, setEditingDraft] = useState({ line: '' });
   const [confirmState, setConfirmState] = useState({ type: null, row: null });
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef(null);
   const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
 
@@ -412,6 +464,19 @@ export const FlowManager = ({ ownerId }) => {
       console.error('Unable to persist flow draft into localStorage', error);
     }
   }, [dateYmd, entryInput, localCategories, ownerId, selectedCategory]);
+
+  useEffect(() => {
+    if (!isMenuOpen) return undefined;
+    const handleOutsideClick = event => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [isMenuOpen]);
 
   useEffect(() => {
     if (allCategories.length > 0 && (!selectedCategory || !allCategories.includes(selectedCategory))) {
@@ -658,6 +723,37 @@ export const FlowManager = ({ ownerId }) => {
   return (
     <Wrap>
       <TopControls>
+        <MenuWrap ref={menuRef}>
+          <MenuBtn
+            type="button"
+            aria-label="Відкрити меню навігації"
+            onClick={() => setIsMenuOpen(prev => !prev)}
+          >
+            ⋮
+          </MenuBtn>
+          {isMenuOpen && (
+            <MenuPanel>
+              <MenuItem
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  navigate('/my-profile');
+                }}
+              >
+                Перейти в профіль
+              </MenuItem>
+              <MenuItem
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  navigate('/add');
+                }}
+              >
+                Перейти на Add
+              </MenuItem>
+            </MenuPanel>
+          )}
+        </MenuWrap>
         <DangerBtn type="button" onClick={openClearConfirm}>del</DangerBtn>
       </TopControls>
 
