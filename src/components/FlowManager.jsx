@@ -17,7 +17,7 @@ const Wrap = styled.div`
 const Row = styled.div`
   display: flex;
   gap: 8px;
-  align-items: center;
+  align-items: flex-end;
 `;
 
 const Label = styled.label`
@@ -49,17 +49,13 @@ const ActionBtn = styled.button`
   }
 `;
 
-const CategoryList = styled.div`
-  display: grid;
-  gap: 8px;
-  margin-top: 4px;
-`;
-
-const CategoryRow = styled.label`
-  display: flex;
-  gap: 8px;
-  align-items: center;
+const Select = styled.select`
+  width: 100%;
+  border: 1px solid #d7d7d7;
+  border-radius: 6px;
+  padding: 8px;
   font-size: 14px;
+  background: #fff;
 `;
 
 const Divider = styled.hr`
@@ -110,8 +106,7 @@ const normalizeCategoryPath = value =>
   String(value || '')
     .trim()
     .replace(/\s+/g, ' ')
-    .replace(/\/+$/g, '')
-    .replace(/^\/+/, '');
+    .replace(/[\\/]+/g, '');
 
 const formatDisplayDate = yyyyMmDd => {
   const [year, month, day] = String(yyyyMmDd || '').split('-');
@@ -161,6 +156,7 @@ const sanitizeEntryKeyChunk = value =>
     .trim();
 
 const DEFAULT_FLOW_CATEGORY = 'general';
+const flowDraftStorageKey = ownerId => `flow-draft:${ownerId || 'anon'}`;
 
 const flattenEntries = (node, path = []) => {
   if (!node || typeof node !== 'object') return [];
@@ -209,7 +205,6 @@ export const FlowManager = ({ ownerId }) => {
   const [localCategories, setLocalCategories] = useState([DEFAULT_FLOW_CATEGORY]);
   const [importInput, setImportInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
   const [editingKey, setEditingKey] = useState(null);
   const [editingDraft, setEditingDraft] = useState({ line: '' });
   const dateInputRef = useRef(null);
@@ -217,19 +212,7 @@ export const FlowManager = ({ ownerId }) => {
   const descriptionInputRef = useRef(null);
   const categoryInputRef = useRef(null);
 
-  const categoriesFromDb = useMemo(() => {
-    const walk = (node, parent = '') => {
-      if (!node || typeof node !== 'object') return [];
-      return Object.entries(node).flatMap(([key, child]) => {
-        const nextPath = parent ? `${parent}/${key}` : key;
-        const own = [nextPath];
-        const nested = child && typeof child === 'object' ? walk(child, nextPath) : [];
-        return [...own, ...nested];
-      });
-    };
-
-    return walk(flowData);
-  }, [flowData]);
+  const categoriesFromDb = useMemo(() => Object.keys(flowData || {}), [flowData]);
 
   const allCategories = useMemo(() => {
     const merged = [...localCategories, ...categoriesFromDb]
@@ -269,6 +252,47 @@ export const FlowManager = ({ ownerId }) => {
   }, [reload]);
 
   useEffect(() => {
+    if (!ownerId) return;
+    try {
+      const raw = localStorage.getItem(flowDraftStorageKey(ownerId));
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.dateYmd) setDateYmd(parsed.dateYmd);
+        if (typeof parsed.amount === 'string') setAmount(parsed.amount);
+        if (typeof parsed.description === 'string') setDescription(parsed.description);
+        if (parsed.selectedCategory) setSelectedCategory(normalizeCategoryPath(parsed.selectedCategory));
+        if (Array.isArray(parsed.localCategories)) {
+          setLocalCategories(prev => {
+            const merged = [...prev, ...parsed.localCategories.map(normalizeCategoryPath).filter(Boolean)];
+            return [...new Set(merged)];
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Unable to restore flow draft from localStorage', error);
+    }
+  }, [ownerId]);
+
+  useEffect(() => {
+    if (!ownerId) return;
+    try {
+      localStorage.setItem(
+        flowDraftStorageKey(ownerId),
+        JSON.stringify({
+          dateYmd,
+          amount,
+          description,
+          selectedCategory,
+          localCategories,
+        })
+      );
+    } catch (error) {
+      console.error('Unable to persist flow draft into localStorage', error);
+    }
+  }, [amount, dateYmd, description, localCategories, ownerId, selectedCategory]);
+
+  useEffect(() => {
     if (allCategories.length > 0 && (!selectedCategory || !allCategories.includes(selectedCategory))) {
       setSelectedCategory(allCategories[0]);
     }
@@ -286,7 +310,6 @@ export const FlowManager = ({ ownerId }) => {
     setLocalCategories(prev => (prev.includes(normalized) ? prev : [...prev, normalized]));
     setSelectedCategory(normalized);
     setCategoryInput('');
-    setIsDirty(true);
   };
 
   const handleSave = async () => {
@@ -308,20 +331,11 @@ export const FlowManager = ({ ownerId }) => {
         description: descriptionClean,
       });
       toast.success('Flow збережено');
-      setAmount('');
-      setDescription('');
-      setIsDirty(false);
       await reload();
     } catch (error) {
       console.error('Unable to save flow entry', error);
       toast.error('Не вдалося зберегти Flow');
     }
-  };
-
-  const tryAutoSaveOnBlur = async () => {
-    if (!isDirty) return;
-    if (!ownerId || !selectedCategory || !dateYmd || !String(amount || '').trim()) return;
-    await handleSave();
   };
 
   const handleCopyToClipboard = async () => {
@@ -413,7 +427,6 @@ export const FlowManager = ({ ownerId }) => {
       await Promise.all(parsedEntries.map(entry => saveFlowEntry({ ownerId, ...entry })));
       toast.success(`Імпортовано ${parsedEntries.length} записів`);
       setImportInput('');
-      setIsDirty(false);
       await reload();
     } catch (error) {
       console.error('Unable to import flow entries', error);
@@ -486,43 +499,40 @@ export const FlowManager = ({ ownerId }) => {
     <Wrap>
       <Row>
         <Label>
-          Нова група/підгрупа
+          Нова група
           <Input
             ref={categoryInputRef}
             value={categoryInput}
             onChange={e => {
-              setIsDirty(true);
               setCategoryInput(e.target.value);
             }}
-            onBlur={tryAutoSaveOnBlur}
             onKeyDown={e => {
               if (e.key === 'Enter') {
                 e.preventDefault();
                 addCategory();
               }
             }}
-            placeholder="напр. їжа/кава"
+            placeholder="напр. Тест1"
           />
         </Label>
         <ActionBtn type="button" onClick={addCategory}>+</ActionBtn>
       </Row>
 
-      <CategoryList>
-        {allCategories.map(category => (
-          <CategoryRow key={category}>
-            <input
-              type="radio"
-              name="flow-category"
-              checked={selectedCategory === category}
-              onChange={() => {
-                setIsDirty(true);
-                setSelectedCategory(category);
-              }}
-            />
-            {category}
-          </CategoryRow>
-        ))}
-      </CategoryList>
+      <Label>
+        Група витрат
+        <Select
+          value={selectedCategory}
+          onChange={e => {
+            setSelectedCategory(normalizeCategoryPath(e.target.value));
+          }}
+        >
+          {allCategories.map(category => (
+            <option key={category} value={category}>
+              {category}
+            </option>
+          ))}
+        </Select>
+      </Label>
 
       <Divider />
 
@@ -533,10 +543,8 @@ export const FlowManager = ({ ownerId }) => {
             ref={dateInputRef}
             value={dateInput}
             onChange={e => {
-              setIsDirty(true);
               handleDateInputChange(e.target.value);
             }}
-            onBlur={tryAutoSaveOnBlur}
             onKeyDown={e => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -549,7 +557,6 @@ export const FlowManager = ({ ownerId }) => {
         <ActionBtn
           type="button"
           onClick={() => {
-            setIsDirty(true);
             setDateYmd(shiftYmd(dateYmd, -1));
           }}
         >
@@ -558,7 +565,6 @@ export const FlowManager = ({ ownerId }) => {
         <ActionBtn
           type="button"
           onClick={() => {
-            setIsDirty(true);
             setDateYmd(shiftYmd(dateYmd, 1));
           }}
         >
@@ -573,10 +579,8 @@ export const FlowManager = ({ ownerId }) => {
           type="number"
           value={amount}
           onChange={e => {
-            setIsDirty(true);
             setAmount(e.target.value);
           }}
-          onBlur={tryAutoSaveOnBlur}
           onKeyDown={e => {
             if (e.key === 'Enter') {
               e.preventDefault();
@@ -593,10 +597,9 @@ export const FlowManager = ({ ownerId }) => {
           ref={descriptionInputRef}
           value={description}
           onChange={e => {
-            setIsDirty(true);
             setDescription(e.target.value);
           }}
-          onBlur={tryAutoSaveOnBlur}
+          onBlur={handleSave}
           onKeyDown={e => {
             if (e.key === 'Enter') {
               e.preventDefault();
