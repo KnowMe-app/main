@@ -628,6 +628,10 @@ export const FlowManager = ({ ownerId }) => {
       return a.localeCompare(b);
     });
   }, [categoriesFromDb, localCategories]);
+  const renameCategorySuggestions = useMemo(() => {
+    const sourceCategory = normalizeCategoryPath(renamingCategory.source);
+    return allCategories.filter(category => category !== sourceCategory);
+  }, [allCategories, renamingCategory.source]);
 
   const flowRows = useMemo(() => flattenEntries(flowData), [flowData]);
   const sortedFlowRows = useMemo(() => sortRowsByGroupAndDate(flowRows), [flowRows]);
@@ -1136,6 +1140,7 @@ export const FlowManager = ({ ownerId }) => {
                 <CategoryRenameInput
                   autoFocus
                   value={renamingCategory.draft}
+                  list="flow-rename-category-options"
                   onMouseDown={e => e.preventDefault()}
                   onClick={e => e.stopPropagation()}
                   onChange={e => setRenamingCategory(prev => ({ ...prev, draft: e.target.value }))}
@@ -1189,6 +1194,11 @@ export const FlowManager = ({ ownerId }) => {
             </RadioLabel>
           ))}
         </RadioGroup>
+        <datalist id="flow-rename-category-options">
+          {renameCategorySuggestions.map(category => (
+            <option key={category} value={category} />
+          ))}
+        </datalist>
       </Label>
 
       <Divider />
