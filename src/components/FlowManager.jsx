@@ -617,30 +617,32 @@ const DEFAULT_FLOW_CATEGORY = 'general';
 const flowDraftStorageKey = ownerId => `flow-draft:${ownerId || 'anon'}`;
 const flowLastCategoryStorageKey = ownerId => `flow-last-category:${ownerId || 'anon'}`;
 
-const flattenEntries = (node, path = []) => {
-  if (!node || typeof node !== 'object') return [];
+export const flattenFlowEntriesFromBackend = flowNode => {
+  if (!flowNode || typeof flowNode !== 'object') return [];
 
-  const isDateNode = Object.keys(node).some(key => /^\d{4}-\d{2}-\d{2}$/.test(key));
-  if (isDateNode) {
-    return Object.entries(node).flatMap(([date, entries]) => {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !entries || typeof entries !== 'object') {
-        return [];
-      }
-      return Object.entries(entries).map(([entryId, value]) => {
-        const encoded = typeof value === 'string' ? value : entryId;
-        const [amount = '', ...rest] = String(encoded).split('_');
-        return {
-          entryId,
-          group: path.join('/'),
-          date,
-          amount: normalizeFlowAmount(amount),
-          description: rest.join('_'),
-        };
-      });
+  return Object.entries(flowNode).flatMap(([groupPath, dates]) => {
+    if (!dates || typeof dates !== 'object') return [];
+
+    return Object.entries(dates).flatMap(([date, entries]) => {
+      if (!entries || typeof entries !== 'object') return [];
+
+      return Object.entries(entries)
+        .map(([entryId, value]) => {
+          const [amount = '', ...rest] = String(value || '').split('_');
+          const normalizedAmount = normalizeFlowAmount(amount);
+          if (!normalizedAmount) return null;
+
+          return {
+            entryId,
+            group: normalizeCategoryPath(groupPath) || DEFAULT_FLOW_CATEGORY,
+            date,
+            amount: normalizedAmount,
+            description: sanitizeEntryKeyChunk(rest.join('_')),
+          };
+        })
+        .filter(Boolean);
     });
-  }
-
-  return Object.entries(node).flatMap(([nextKey, child]) => flattenEntries(child, [...path, nextKey]));
+  });
 };
 
 const sortRowsByDate = rows =>
@@ -676,7 +678,7 @@ export const FlowManager = ({ ownerId }) => {
   const subCategoryInputRef = useRef(null);
   useAutoResize(entryInputRef, entryInput);
 
-  const flowRows = useMemo(() => flattenEntries(flowData), [flowData]);
+  const flowRows = useMemo(() => flattenFlowEntriesFromBackend(flowData), [flowData]);
   const categoriesFromDb = useMemo(
     () => [...new Set(flowRows.map(row => normalizeCategoryPath(row.group)).filter(Boolean))],
     [flowRows]
