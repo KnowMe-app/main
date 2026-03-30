@@ -427,7 +427,24 @@ const normalizeCategoryPath = value =>
   String(value || '')
     .trim()
     .replace(/\s+/g, ' ')
-    .replace(/[\\/]+/g, '');
+    .replace(/[\\]+/g, '')
+    .replace(/\/+/g, '/')
+    .replace(/^\/+|\/+$/g, '');
+
+const splitCategoryPath = value => {
+  const normalized = normalizeCategoryPath(value);
+  const [group = '', subgroup = ''] = normalized.split('/');
+  return {
+    group: group || 'general',
+    subgroup: subgroup || '',
+  };
+};
+
+const buildCategoryPath = (group, subgroup = '') => {
+  const normalizedGroup = normalizeCategoryPath(group) || 'general';
+  const normalizedSubgroup = normalizeCategoryPath(subgroup);
+  return normalizedSubgroup ? `${normalizedGroup}/${normalizedSubgroup}` : normalizedGroup;
+};
 
 const formatDisplayDate = yyyyMmDd => {
   const [year, month, day] = String(yyyyMmDd || '').split('-');
@@ -490,6 +507,11 @@ const formatCategorySum = value => {
   const rounded = Math.round(value * 100) / 100;
   if (Number.isInteger(rounded)) return String(rounded);
   return rounded.toFixed(2).replace(/\.?0+$/, '');
+};
+
+const formatGroupTitle = groupPath => {
+  const { group, subgroup } = splitCategoryPath(groupPath);
+  return subgroup ? `${group}, ${subgroup}` : group;
 };
 
 export const parseFlowEntryLine = (line, fallbackDate = '') => {
@@ -637,7 +659,9 @@ export const FlowManager = ({ ownerId }) => {
   const [dateYmd, setDateYmd] = useState(todayYmd());
   const [entryInput, setEntryInput] = useState('');
   const [categoryInput, setCategoryInput] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [subCategoryInput, setSubCategoryInput] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState('');
+  const [selectedSubgroup, setSelectedSubgroup] = useState('');
   const [localCategories, setLocalCategories] = useState([DEFAULT_FLOW_CATEGORY]);
   const [loading, setLoading] = useState(false);
   const [editingKey, setEditingKey] = useState(null);
@@ -649,9 +673,14 @@ export const FlowManager = ({ ownerId }) => {
   const menuRef = useRef(null);
   const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
+  const subCategoryInputRef = useRef(null);
   useAutoResize(entryInputRef, entryInput);
 
-  const categoriesFromDb = useMemo(() => Object.keys(flowData || {}), [flowData]);
+  const flowRows = useMemo(() => flattenEntries(flowData), [flowData]);
+  const categoriesFromDb = useMemo(
+    () => [...new Set(flowRows.map(row => normalizeCategoryPath(row.group)).filter(Boolean))],
+    [flowRows]
+  );
 
   const allCategories = useMemo(() => {
     const merged = [...localCategories, ...categoriesFromDb]
@@ -664,12 +693,32 @@ export const FlowManager = ({ ownerId }) => {
       return a.localeCompare(b);
     });
   }, [categoriesFromDb, localCategories]);
+  const groupedCategories = useMemo(
+    () =>
+      allCategories.reduce((acc, categoryPath) => {
+        const { group, subgroup } = splitCategoryPath(categoryPath);
+        if (!acc[group]) acc[group] = [];
+        if (subgroup && !acc[group].includes(subgroup)) {
+          acc[group].push(subgroup);
+        }
+        return acc;
+      }, {}),
+    [allCategories]
+  );
+  const allGroups = useMemo(() => Object.keys(groupedCategories), [groupedCategories]);
+  const subgroupsForSelectedGroup = useMemo(
+    () => groupedCategories[selectedGroup] || [],
+    [groupedCategories, selectedGroup]
+  );
+  const selectedCategoryPath = useMemo(
+    () => buildCategoryPath(selectedGroup, selectedSubgroup),
+    [selectedGroup, selectedSubgroup]
+  );
   const renameCategorySuggestions = useMemo(() => {
     const sourceCategory = normalizeCategoryPath(renamingCategory.source);
-    return allCategories.filter(category => category !== sourceCategory);
-  }, [allCategories, renamingCategory.source]);
+    return allGroups.filter(category => category !== sourceCategory);
+  }, [allGroups, renamingCategory.source]);
 
-  const flowRows = useMemo(() => flattenEntries(flowData), [flowData]);
   const categorySums = useMemo(
     () =>
       flowRows.reduce((acc, row) => {
@@ -715,7 +764,9 @@ export const FlowManager = ({ ownerId }) => {
       const lastCategoryRaw = localStorage.getItem(flowLastCategoryStorageKey(ownerId));
       const lastCategory = normalizeCategoryPath(lastCategoryRaw);
       if (lastCategory) {
-        setSelectedCategory(lastCategory);
+        const { group, subgroup } = splitCategoryPath(lastCategory);
+        setSelectedGroup(group);
+        setSelectedSubgroup(subgroup);
       }
 
       const raw = localStorage.getItem(flowDraftStorageKey(ownerId));
@@ -731,7 +782,11 @@ export const FlowManager = ({ ownerId }) => {
           const restoredDescription = typeof parsed.description === 'string' ? parsed.description : '';
           setEntryInput(`${restoredDate} ${restoredAmount} ${restoredDescription}`.trim());
         }
-        if (parsed.selectedCategory) setSelectedCategory(normalizeCategoryPath(parsed.selectedCategory));
+        if (parsed.selectedCategory) {
+          const parsedPath = splitCategoryPath(parsed.selectedCategory);
+          setSelectedGroup(parsedPath.group);
+          setSelectedSubgroup(parsedPath.subgroup);
+        }
         if (Array.isArray(parsed.localCategories)) {
           setLocalCategories(prev => {
             const merged = [...prev, ...parsed.localCategories.map(normalizeCategoryPath).filter(Boolean)];
@@ -752,25 +807,25 @@ export const FlowManager = ({ ownerId }) => {
         JSON.stringify({
           dateYmd,
           entryInput,
-          selectedCategory,
+          selectedCategory: selectedCategoryPath,
           localCategories,
         })
       );
     } catch (error) {
       console.error('Unable to persist flow draft into localStorage', error);
     }
-  }, [dateYmd, entryInput, localCategories, ownerId, selectedCategory]);
+  }, [dateYmd, entryInput, localCategories, ownerId, selectedCategoryPath]);
 
   useEffect(() => {
     if (!ownerId) return;
-    const normalizedCategory = normalizeCategoryPath(selectedCategory);
+    const normalizedCategory = normalizeCategoryPath(selectedCategoryPath);
     if (!normalizedCategory) return;
     try {
       localStorage.setItem(flowLastCategoryStorageKey(ownerId), normalizedCategory);
     } catch (error) {
       console.error('Unable to persist last flow category into localStorage', error);
     }
-  }, [ownerId, selectedCategory]);
+  }, [ownerId, selectedCategoryPath]);
 
   useEffect(() => {
     if (!isMenuOpen) return undefined;
@@ -786,30 +841,61 @@ export const FlowManager = ({ ownerId }) => {
   }, [isMenuOpen]);
 
   useEffect(() => {
-    if (allCategories.length > 0 && (!selectedCategory || !allCategories.includes(selectedCategory))) {
-      setSelectedCategory(allCategories[0]);
+    if (
+      allCategories.length > 0 &&
+      (!selectedCategoryPath || !allCategories.includes(selectedCategoryPath))
+    ) {
+      const fallbackPath = splitCategoryPath(allCategories[0]);
+      setSelectedGroup(fallbackPath.group);
+      setSelectedSubgroup(fallbackPath.subgroup);
     }
-  }, [allCategories, selectedCategory]);
+  }, [allCategories, selectedCategoryPath]);
+
+  useEffect(() => {
+    if (!selectedGroup) return;
+    if (subgroupsForSelectedGroup.includes(selectedSubgroup)) return;
+    setSelectedSubgroup('');
+  }, [selectedGroup, selectedSubgroup, subgroupsForSelectedGroup]);
 
   const addCategory = () => {
     const normalized = normalizeCategoryPath(categoryInput);
     if (!normalized) return;
     setLocalCategories(prev => (prev.includes(normalized) ? prev : [...prev, normalized]));
-    setSelectedCategory(normalized);
+    setSelectedGroup(normalized);
+    setSelectedSubgroup('');
     setCategoryInput('');
+  };
+
+  const addSubcategory = () => {
+    const normalizedGroup = normalizeCategoryPath(selectedGroup) || DEFAULT_FLOW_CATEGORY;
+    const normalizedSubgroup = normalizeCategoryPath(subCategoryInput);
+    if (!normalizedSubgroup) return;
+    const nextPath = buildCategoryPath(normalizedGroup, normalizedSubgroup);
+    setLocalCategories(prev => (prev.includes(nextPath) ? prev : [...prev, nextPath]));
+    setSelectedGroup(normalizedGroup);
+    setSelectedSubgroup(normalizedSubgroup);
+    setSubCategoryInput('');
   };
 
   const handleDeleteCategory = async category => {
     const normalized = normalizeCategoryPath(category);
     if (!ownerId || !normalized) return;
+    const categoryPrefix = `${normalized}/`;
 
     try {
-      if (categoriesFromDb.includes(normalized)) {
+      if (
+        categoriesFromDb.some(
+          item => item === normalized || item.startsWith(categoryPrefix)
+        )
+      ) {
         await deleteFlowCategory({ ownerId, groupPath: normalized });
       }
-      setLocalCategories(prev => prev.filter(item => item !== normalized));
-      if (selectedCategory === normalized) {
-        setSelectedCategory('');
+      setLocalCategories(prev =>
+        prev.filter(item => item !== normalized && !item.startsWith(categoryPrefix))
+      );
+      if (selectedGroup === normalized) {
+        setSelectedGroup('');
+        setSelectedSubgroup('');
       }
       toast.success(`Групу "${normalized}" видалено`);
       await reload();
@@ -830,6 +916,7 @@ export const FlowManager = ({ ownerId }) => {
   const submitCategoryRename = async category => {
     const normalizedSource = normalizeCategoryPath(category);
     const normalizedTarget = normalizeCategoryPath(renamingCategory.draft);
+    const sourcePrefix = `${normalizedSource}/`;
 
     if (!normalizedSource || !normalizedTarget) {
       toast.error('Вкажіть валідну назву групи');
@@ -841,7 +928,7 @@ export const FlowManager = ({ ownerId }) => {
       return;
     }
 
-    const targetExists = allCategories.includes(normalizedTarget);
+    const targetExists = allGroups.includes(normalizedTarget);
     if (targetExists) {
       const shouldMerge = window.confirm(
         `Група "${normalizedTarget}" вже існує. Об’єднати "${normalizedSource}" в "${normalizedTarget}"?`
@@ -850,7 +937,11 @@ export const FlowManager = ({ ownerId }) => {
     }
 
     try {
-      if (categoriesFromDb.includes(normalizedSource)) {
+      if (
+        categoriesFromDb.some(
+          item => item === normalizedSource || item.startsWith(sourcePrefix)
+        )
+      ) {
         await renameFlowCategory({
           ownerId,
           fromGroupPath: normalizedSource,
@@ -859,14 +950,17 @@ export const FlowManager = ({ ownerId }) => {
       }
 
       setLocalCategories(prev => {
-        const withoutSource = prev.filter(item => item !== normalizedSource);
-        if (withoutSource.includes(normalizedTarget)) {
-          return withoutSource;
-        }
-        return [...withoutSource, normalizedTarget];
+        const renamed = prev.map(item => {
+          if (item === normalizedSource) return normalizedTarget;
+          if (item.startsWith(sourcePrefix)) return `${normalizedTarget}/${item.slice(sourcePrefix.length)}`;
+          return item;
+        });
+        return [...new Set(renamed)];
       });
-      if (selectedCategory === normalizedSource) {
-        setSelectedCategory(normalizedTarget);
+      if (selectedGroup === normalizedSource) {
+        const normalizedTargetPath = splitCategoryPath(buildCategoryPath(normalizedTarget, selectedSubgroup));
+        setSelectedGroup(normalizedTargetPath.group);
+        setSelectedSubgroup(normalizedTargetPath.subgroup);
       }
       cancelCategoryRename();
       toast.success(
@@ -882,7 +976,7 @@ export const FlowManager = ({ ownerId }) => {
   };
 
   const handleSave = async ({ silentValidation = false } = {}) => {
-    const normalizedCategory = normalizeCategoryPath(selectedCategory) || DEFAULT_FLOW_CATEGORY;
+    const normalizedCategory = normalizeCategoryPath(selectedCategoryPath) || DEFAULT_FLOW_CATEGORY;
     const effectiveFallbackDate = resolveFlowFallbackDate(entryInput, dateYmd);
     const parsedEntries = parseFlowEntriesByDatesAndGroups({
       rawText: entryInput,
@@ -901,7 +995,9 @@ export const FlowManager = ({ ownerId }) => {
       await Promise.all(parsedEntries.map(entry => saveFlowEntry({ ownerId, ...entry })));
       const lastEntry = parsedEntries[parsedEntries.length - 1];
       setDateYmd(lastEntry.date);
-      setSelectedCategory(lastEntry.groupPath || normalizedCategory);
+      const selectedPath = splitCategoryPath(lastEntry.groupPath || normalizedCategory);
+      setSelectedGroup(selectedPath.group);
+      setSelectedSubgroup(selectedPath.subgroup);
       setEntryInput('');
       toast.success(
         parsedEntries.length === 1
@@ -929,13 +1025,15 @@ export const FlowManager = ({ ownerId }) => {
     }, {});
 
     const tableText = Object.entries(grouped)
-      .map(([group, rows]) => {
+      .map(([groupPath, rows]) => {
+        const { group, subgroup } = splitCategoryPath(groupPath);
+        const title = subgroup ? `${group}, ${subgroup}` : group;
         const lines = sortRowsByDate(rows).map(row => {
           const displayDate = formatDisplayDate(row.date);
           const formattedAmount = formatFlowAmountForClipboard(row.amount);
           return `${displayDate} ${formattedAmount} ${row.description}`.trim();
         });
-        return [`[${group}]`, ...lines].join('\n');
+        return [title, ...lines].join('\n');
       })
       .join('\n\n');
 
@@ -1174,6 +1272,27 @@ export const FlowManager = ({ ownerId }) => {
         <ActionBtn type="button" onClick={addCategory}>+</ActionBtn>
       </Row>
 
+      <Row>
+        <Label>
+          Нова підгрупа
+          <Input
+            ref={subCategoryInputRef}
+            value={subCategoryInput}
+            onChange={e => {
+              setSubCategoryInput(e.target.value);
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addSubcategory();
+              }
+            }}
+            placeholder="напр. Транспорт"
+          />
+        </Label>
+        <ActionBtn type="button" onClick={addSubcategory}>+</ActionBtn>
+      </Row>
+
       <Label as="div">
         <CategoryRowHead>
           <span>Група витрат</span>
@@ -1190,14 +1309,14 @@ export const FlowManager = ({ ownerId }) => {
           </CategoryEditBtn>
         </CategoryRowHead>
         <RadioGroup>
-          {allCategories.map(category => (
+          {allGroups.map(category => (
             <RadioLabel key={category}>
               <input
                 type="radio"
-                name="flow-category"
+                name="flow-group"
                 value={category}
-                checked={selectedCategory === category}
-                onChange={e => setSelectedCategory(normalizeCategoryPath(e.target.value))}
+                checked={selectedGroup === category}
+                onChange={e => setSelectedGroup(normalizeCategoryPath(e.target.value))}
               />
               {renamingCategory.source === category ? (
                 <CategoryRenameInput
@@ -1262,6 +1381,51 @@ export const FlowManager = ({ ownerId }) => {
         </datalist>
       </Label>
 
+      <Label as="div">
+        <CategoryRowHead>
+          <span>Підгрупа витрат</span>
+        </CategoryRowHead>
+        <RadioGroup>
+          <RadioLabel key={`${selectedGroup}-base`}>
+            <input
+              type="radio"
+              name="flow-subcategory"
+              value=""
+              checked={!selectedSubgroup}
+              onChange={() => setSelectedSubgroup('')}
+            />
+            <CategoryTitle>Без підгрупи</CategoryTitle>
+          </RadioLabel>
+          {subgroupsForSelectedGroup.map(subgroup => (
+            <RadioLabel key={`${selectedGroup}/${subgroup}`}>
+              <input
+                type="radio"
+                name="flow-subcategory"
+                value={subgroup}
+                checked={selectedSubgroup === subgroup}
+                onChange={e => setSelectedSubgroup(normalizeCategoryPath(e.target.value))}
+              />
+              <CategoryTitle>{subgroup}</CategoryTitle>
+              {isCategoryEditMode && (
+                <CategoryDeleteBtn
+                  type="button"
+                  aria-label={`Видалити підгрупу ${subgroup}`}
+                  title={`Видалити підгрупу ${subgroup}`}
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDeleteCategory(buildCategoryPath(selectedGroup, subgroup));
+                  }}
+                >
+                  ×
+                </CategoryDeleteBtn>
+              )}
+            </RadioLabel>
+          ))}
+        </RadioGroup>
+      </Label>
+
       <Divider />
 
       <Row>
@@ -1279,7 +1443,7 @@ export const FlowManager = ({ ownerId }) => {
                 const parsed = parseFlowEntriesByDatesAndGroups({
                   rawText: nextValue,
                   fallbackDate: effectiveFallbackDate,
-                  defaultGroup: selectedCategory,
+                  defaultGroup: selectedCategoryPath,
                 })?.[0];
                 if (parsed?.date) setDateYmd(parsed.date);
               }}
@@ -1317,7 +1481,7 @@ export const FlowManager = ({ ownerId }) => {
         {Object.entries(groupedFlowRows).map(([group, entries]) => (
           <GroupBlock key={group}>
             <GroupTitle>
-              <span>[{group}]</span>
+              <span>{formatGroupTitle(group)}</span>
               <CategorySum>{formatCategorySum(categorySums[group] || 0)}</CategorySum>
             </GroupTitle>
             <GroupRows>
