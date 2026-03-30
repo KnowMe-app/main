@@ -775,9 +775,12 @@ export const FlowManager = ({ ownerId }) => {
       return;
     }
 
-    if (allCategories.includes(normalizedTarget)) {
-      toast.error(`Група "${normalizedTarget}" вже існує`);
-      return;
+    const targetExists = allCategories.includes(normalizedTarget);
+    if (targetExists) {
+      const shouldMerge = window.confirm(
+        `Група "${normalizedTarget}" вже існує. Об’єднати "${normalizedSource}" в "${normalizedTarget}"?`
+      );
+      if (!shouldMerge) return;
     }
 
     try {
@@ -789,14 +792,22 @@ export const FlowManager = ({ ownerId }) => {
         });
       }
 
-      setLocalCategories(prev =>
-        prev.map(item => (item === normalizedSource ? normalizedTarget : item))
-      );
+      setLocalCategories(prev => {
+        const withoutSource = prev.filter(item => item !== normalizedSource);
+        if (withoutSource.includes(normalizedTarget)) {
+          return withoutSource;
+        }
+        return [...withoutSource, normalizedTarget];
+      });
       if (selectedCategory === normalizedSource) {
         setSelectedCategory(normalizedTarget);
       }
       cancelCategoryRename();
-      toast.success(`Групу перейменовано на "${normalizedTarget}"`);
+      toast.success(
+        targetExists
+          ? `Групи об’єднано в "${normalizedTarget}"`
+          : `Групу перейменовано на "${normalizedTarget}"`
+      );
       await reload();
     } catch (error) {
       console.error('Unable to rename flow category', error);
