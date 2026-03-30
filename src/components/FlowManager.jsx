@@ -478,6 +478,13 @@ const toAmountNumber = value => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const formatFlowAmountForClipboard = value => {
+  const normalized = String(value || '').trim().replace(',', '.');
+  const parsed = Number.parseFloat(normalized);
+  if (!Number.isFinite(parsed)) return String(value || '').replace('.', ',');
+  return parsed.toFixed(2).replace('.', ',');
+};
+
 const formatCategorySum = value => {
   if (!Number.isFinite(value)) return '0';
   const rounded = Math.round(value * 100) / 100;
@@ -925,7 +932,8 @@ export const FlowManager = ({ ownerId }) => {
       .map(([group, rows]) => {
         const lines = sortRowsByDate(rows).map(row => {
           const displayDate = formatDisplayDate(row.date);
-          return `${displayDate} ${row.amount} ${row.description}`.trim();
+          const formattedAmount = formatFlowAmountForClipboard(row.amount);
+          return `${displayDate} ${formattedAmount} ${row.description}`.trim();
         });
         return [`[${group}]`, ...lines].join('\n');
       })
