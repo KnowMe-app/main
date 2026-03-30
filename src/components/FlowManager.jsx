@@ -221,6 +221,20 @@ const RadioLabel = styled.label`
   overflow-wrap: anywhere;
 `;
 
+const CategoryTitle = styled.span`
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+`;
+
+const CategorySum = styled.span`
+  color: #6b7280;
+  font-size: 12px;
+  white-space: nowrap;
+`;
+
 const CategoryDeleteBtn = styled.button`
   border: 1px solid #d7d7d7;
   border-radius: 999px;
@@ -457,6 +471,19 @@ const sanitizeAmountChunk = value =>
 
 const normalizeFlowAmount = value => sanitizeAmountChunk(String(value || '').replace(',', '.'));
 
+const toAmountNumber = value => {
+  const normalized = String(value || '').trim().replace(',', '.');
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatCategorySum = value => {
+  if (!Number.isFinite(value)) return '0';
+  const rounded = Math.round(value * 100) / 100;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return rounded.toFixed(2).replace(/\.?0+$/, '');
+};
+
 export const parseFlowEntryLine = (line, fallbackDate = '') => {
   const trimmedLine = String(line || '').trim();
   if (!trimmedLine) return null;
@@ -630,6 +657,15 @@ export const FlowManager = ({ ownerId }) => {
   }, [categoriesFromDb, localCategories]);
 
   const flowRows = useMemo(() => flattenEntries(flowData), [flowData]);
+  const categorySums = useMemo(
+    () =>
+      flowRows.reduce((acc, row) => {
+        const group = normalizeCategoryPath(row.group) || DEFAULT_FLOW_CATEGORY;
+        acc[group] = (acc[group] || 0) + toAmountNumber(row.amount);
+        return acc;
+      }, {}),
+    [flowRows]
+  );
   const sortedFlowRows = useMemo(() => sortRowsByGroupAndDate(flowRows), [flowRows]);
   const groupedFlowRows = useMemo(
     () =>
@@ -1152,7 +1188,10 @@ export const FlowManager = ({ ownerId }) => {
                   }}
                 />
               ) : (
-                category
+                <CategoryTitle>
+                  <span>{category}</span>
+                  <CategorySum>{formatCategorySum(categorySums[category] || 0)}</CategorySum>
+                </CategoryTitle>
               )}
               {isCategoryEditMode && (
                 <>
