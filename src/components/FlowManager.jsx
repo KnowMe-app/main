@@ -222,9 +222,7 @@ const RadioLabel = styled.label`
 `;
 
 const CategoryTitle = styled.span`
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
+  display: inline-block;
   min-width: 0;
   overflow-wrap: anywhere;
 `;
@@ -298,6 +296,9 @@ const GroupBlock = styled.li`
 `;
 
 const GroupTitle = styled.div`
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   font-size: 12px;
   font-weight: 700;
   color: #333;
@@ -585,6 +586,7 @@ const sanitizeEntryKeyChunk = value =>
 
 const DEFAULT_FLOW_CATEGORY = 'general';
 const flowDraftStorageKey = ownerId => `flow-draft:${ownerId || 'anon'}`;
+const flowLastCategoryStorageKey = ownerId => `flow-last-category:${ownerId || 'anon'}`;
 
 const flattenEntries = (node, path = []) => {
   if (!node || typeof node !== 'object') return [];
@@ -703,6 +705,12 @@ export const FlowManager = ({ ownerId }) => {
   useEffect(() => {
     if (!ownerId) return;
     try {
+      const lastCategoryRaw = localStorage.getItem(flowLastCategoryStorageKey(ownerId));
+      const lastCategory = normalizeCategoryPath(lastCategoryRaw);
+      if (lastCategory) {
+        setSelectedCategory(lastCategory);
+      }
+
       const raw = localStorage.getItem(flowDraftStorageKey(ownerId));
       if (!raw) return;
       const parsed = JSON.parse(raw);
@@ -745,6 +753,17 @@ export const FlowManager = ({ ownerId }) => {
       console.error('Unable to persist flow draft into localStorage', error);
     }
   }, [dateYmd, entryInput, localCategories, ownerId, selectedCategory]);
+
+  useEffect(() => {
+    if (!ownerId) return;
+    const normalizedCategory = normalizeCategoryPath(selectedCategory);
+    if (!normalizedCategory) return;
+    try {
+      localStorage.setItem(flowLastCategoryStorageKey(ownerId), normalizedCategory);
+    } catch (error) {
+      console.error('Unable to persist last flow category into localStorage', error);
+    }
+  }, [ownerId, selectedCategory]);
 
   useEffect(() => {
     if (!isMenuOpen) return undefined;
@@ -1192,12 +1211,7 @@ export const FlowManager = ({ ownerId }) => {
                     }
                   }}
                 />
-              ) : (
-                <CategoryTitle>
-                  <span>{category}</span>
-                  <CategorySum>{formatCategorySum(categorySums[category] || 0)}</CategorySum>
-                </CategoryTitle>
-              )}
+              ) : <CategoryTitle>{category}</CategoryTitle>}
               {isCategoryEditMode && (
                 <>
                   {renamingCategory.source !== category && (
@@ -1294,7 +1308,10 @@ export const FlowManager = ({ ownerId }) => {
       <EventsList>
         {Object.entries(groupedFlowRows).map(([group, entries]) => (
           <GroupBlock key={group}>
-            <GroupTitle>[{group}]</GroupTitle>
+            <GroupTitle>
+              <span>[{group}]</span>
+              <CategorySum>{formatCategorySum(categorySums[group] || 0)}</CategorySum>
+            </GroupTitle>
             <GroupRows>
               {entries.map(({ row, idx }) => {
                 const rowKey = getRowKey(row, idx);
