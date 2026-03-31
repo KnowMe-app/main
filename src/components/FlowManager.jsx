@@ -620,28 +620,62 @@ const flowLastCategoryStorageKey = ownerId => `flow-last-category:${ownerId || '
 export const flattenFlowEntriesFromBackend = flowNode => {
   if (!flowNode || typeof flowNode !== 'object') return [];
 
-  return Object.entries(flowNode).flatMap(([groupPath, dates]) => {
-    if (!dates || typeof dates !== 'object') return [];
+  const isDateKey = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 
-    return Object.entries(dates).flatMap(([date, entries]) => {
-      if (!entries || typeof entries !== 'object') return [];
+  const parseEntryValue = value => {
+    if (typeof value === 'string') {
+      const [amount = '', ...rest] = String(value || '').split('_');
+      return {
+        amount,
+        description: rest.join('_'),
+      };
+    }
 
-      return Object.entries(entries)
-        .map(([entryId, value]) => {
-          const [amount = '', ...rest] = String(value || '').split('_');
-          const normalizedAmount = normalizeFlowAmount(amount);
-          if (!normalizedAmount) return null;
+    if (value && typeof value === 'object') {
+      return {
+        amount: value.amount ?? value.sum ?? value.value ?? '',
+        description: value.description ?? value.comment ?? value.note ?? '',
+      };
+    }
 
-          return {
-            entryId,
-            group: normalizeCategoryPath(groupPath) || DEFAULT_FLOW_CATEGORY,
-            date,
-            amount: normalizedAmount,
-            description: sanitizeEntryKeyChunk(rest.join('_')),
-          };
-        })
-        .filter(Boolean);
+    return {
+      amount: '',
+      description: '',
+    };
+  };
+
+  const collectEntries = (node, groupPath = DEFAULT_FLOW_CATEGORY) => {
+    if (!node || typeof node !== 'object') return [];
+
+    return Object.entries(node).flatMap(([key, value]) => {
+      if (!value || typeof value !== 'object') return [];
+
+      if (isDateKey(key)) {
+        return Object.entries(value)
+          .map(([entryId, entryValue]) => {
+            const parsed = parseEntryValue(entryValue);
+            const normalizedAmount = normalizeFlowAmount(parsed.amount);
+            if (!normalizedAmount) return null;
+
+            return {
+              entryId,
+              group: normalizeCategoryPath(groupPath) || DEFAULT_FLOW_CATEGORY,
+              date: key,
+              amount: normalizedAmount,
+              description: sanitizeEntryKeyChunk(parsed.description),
+            };
+          })
+          .filter(Boolean);
+      }
+
+      const nestedGroupPath = buildCategoryPath(groupPath, key);
+      return collectEntries(value, nestedGroupPath);
     });
+  };
+
+  return Object.entries(flowNode).flatMap(([groupPath, groupNode]) => {
+    const normalizedGroupPath = normalizeCategoryPath(groupPath) || DEFAULT_FLOW_CATEGORY;
+    return collectEntries(groupNode, normalizedGroupPath);
   });
 };
 
