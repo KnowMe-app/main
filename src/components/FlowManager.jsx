@@ -72,7 +72,7 @@ const MenuBtn = styled(TopActionBtn)``;
 const MenuPanel = styled.div`
   position: absolute;
   top: calc(100% + 6px);
-  left: 0;
+  right: 0;
   min-width: 180px;
   background: #fff;
   border: 1px solid #e0e0e0;
