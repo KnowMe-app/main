@@ -1296,6 +1296,7 @@ export const FlowManager = ({ ownerId }) => {
             onChange={e => {
               setCategoryInput(e.target.value);
             }}
+            onBlur={addCategory}
             onKeyDown={e => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1305,7 +1306,6 @@ export const FlowManager = ({ ownerId }) => {
             placeholder="напр. Тест1"
           />
         </Label>
-        <ActionBtn type="button" onClick={addCategory}>+</ActionBtn>
       </Row>
 
       <Row>
@@ -1317,6 +1317,7 @@ export const FlowManager = ({ ownerId }) => {
             onChange={e => {
               setSubCategoryInput(e.target.value);
             }}
+            onBlur={addSubcategory}
             onKeyDown={e => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1326,7 +1327,6 @@ export const FlowManager = ({ ownerId }) => {
             placeholder="напр. Транспорт"
           />
         </Label>
-        <ActionBtn type="button" onClick={addSubcategory}>+</ActionBtn>
       </Row>
 
       <Label as="div">
