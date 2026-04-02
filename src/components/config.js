@@ -633,6 +633,29 @@ export const clearMedicationScheduleAfterDay = async (
     return base;
   };
 
+  const parseRowDate = value => {
+    if (typeof value !== 'string' || value.length < 10) {
+      return null;
+    }
+
+    const isoCandidate = value.slice(0, 10);
+    const [year, month, day] = isoCandidate.split('-').map(Number);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+      return null;
+    }
+
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (
+      parsed.getUTCFullYear() !== year ||
+      parsed.getUTCMonth() !== month - 1 ||
+      parsed.getUTCDate() !== day
+    ) {
+      return null;
+    }
+
+    return parsed;
+  };
+
   try {
     const snapshot = await get(scheduleRef);
     if (!snapshot.exists()) {
@@ -649,7 +672,20 @@ export const clearMedicationScheduleAfterDay = async (
       return false;
     }
 
-    const trimmedList = rowsList.slice(0, dayLimit).map(cloneRow);
+    const today = new Date();
+    const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    const lastNonFutureRowIndex = rowsList.reduce((lastIndex, row, index) => {
+      const rowDate = parseRowDate(row?.date);
+      if (!rowDate) return lastIndex;
+      return rowDate <= todayUtc ? index : lastIndex;
+    }, -1);
+
+    const keepCount = Math.max(dayLimit, lastNonFutureRowIndex + 1);
+    if (rowsList.length <= keepCount) {
+      return false;
+    }
+
+    const trimmedList = rowsList.slice(0, keepCount).map(cloneRow);
 
     let trimmedRows;
     if (type === 'array') {
