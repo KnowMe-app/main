@@ -117,7 +117,7 @@ const Container = styled.div`
 
   @media (max-width: 768px) {
     // Медіа-запит для пристроїв з шириною екрану до 768px
-    padding: 0;
+    padding: 10px;
   }
   /* max-width: 450px; */
 
@@ -238,6 +238,7 @@ const InnerContainer = styled.div`
     background-color: #f5f5f5;
     box-shadow: 0 4px 8px #f5f5f5;
     border-radius: 0;
+    padding: 0;
   }
 `;
 
