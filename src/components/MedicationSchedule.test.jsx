@@ -280,4 +280,3 @@ describe('evaluateIssuedInput', () => {
     expect(result).toEqual({ issued: 7, displayValue: '=5 + 3 - 1' });
   });
 });
-

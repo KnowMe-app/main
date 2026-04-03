@@ -1251,6 +1251,34 @@ const applyDefaultDistribution = (rows, schedule, options = {}) => {
   });
 };
 
+const findLastTabletRowIndex = (rows, schedule, medicationKey) => {
+  if (!Array.isArray(rows) || !rows.length) {
+    return -1;
+  }
+
+  const fromActualRows = rows.reduce((lastIndex, row, index) => {
+    const cellValue = sanitizeCellValue(row?.values?.[medicationKey]);
+    return cellValue !== '' ? index : lastIndex;
+  }, -1);
+
+  const projectionSourceRows = rows.map(row => ({
+    ...row,
+    values: {
+      ...(row?.values || {}),
+      [medicationKey]: '',
+    },
+  }));
+  const projectedRows = applyDefaultDistribution(projectionSourceRows, schedule, {
+    onlyKeys: [medicationKey],
+  });
+  const fromProjectedRows = projectedRows.reduce((lastIndex, row, index) => {
+    const cellValue = sanitizeCellValue(row?.values?.[medicationKey]);
+    return cellValue !== '' ? index : lastIndex;
+  }, -1);
+
+  return Math.max(fromActualRows, fromProjectedRows);
+};
+
 const deriveEarlyPlaceholderDose = ({
   medicationKey,
   dayNumber,
@@ -2615,10 +2643,16 @@ const MedicationSchedule = ({
         }
 
         const sanitized = sanitizeCellValue(rawValue);
-        let changed = false;
+        const issued = Number(prev.medications?.[key]?.issued) || 0;
+        const issuedLimitIndex = issued > 0 ? rowIndex + Math.ceil(issued) - 1 : rowIndex;
+        const lastTabletIndex = findLastTabletRowIndex(prev.rows, prev, key);
+        const thirtyDaysAfterLastTabletIndex = lastTabletIndex >= 0 ? lastTabletIndex + 30 : rowIndex;
+        const maxFillIndex = Math.max(issuedLimitIndex, thirtyDaysAfterLastTabletIndex, rowIndex);
+        const boundedEndIndex = Math.min(maxFillIndex, prev.rows.length - 1);
 
+        let changed = false;
         const rows = prev.rows.map((row, index) => {
-          if (!row || index < rowIndex) {
+          if (!row || index < rowIndex || index > boundedEndIndex) {
             return row;
           }
 
@@ -2748,6 +2782,7 @@ const MedicationSchedule = ({
                   )}
                 </IssuedLabel>
                 <IssuedInput
+                  autoComplete="off"
                   value={inputValue}
                   onChange={event => handleIssuedChange(key, event.target.value)}
                   onFocus={() => handleIssuedFocus(key)}
@@ -2778,17 +2813,20 @@ const MedicationSchedule = ({
           <AddMedicationGuide>Назва, дата, кількість</AddMedicationGuide>
           <AddMedicationInput
             $wide
+            autoComplete="off"
             placeholder="Назва"
             value={newMedicationDraft.label}
             onChange={event => handleNewMedicationDraftChange('label', event.target.value)}
           />
           <AddMedicationInput
             type="date"
+            autoComplete="off"
             value={newMedicationDraft.startDate}
             onChange={event => handleNewMedicationDraftChange('startDate', event.target.value)}
           />
           <AddMedicationInput
             type="text"
+            autoComplete="off"
             inputMode="decimal"
             placeholder="Видано"
             value={newMedicationDraft.issued}
@@ -2943,6 +2981,7 @@ const MedicationSchedule = ({
                               >
                                 <CellInput
                                   $visual={visual}
+                                  autoComplete="off"
                                   value={
                                     row.values?.[key] === '' || row.values?.[key] === undefined
                                       ? ''
