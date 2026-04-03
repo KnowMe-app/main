@@ -842,14 +842,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleOpenModal = fieldName => {
     setSelectedField(fieldName);
-    setShowInfoModal('pickerOptions');
-  };
-
-  const handlePickerFieldPointerDown = (event, field) => {
-    if (!Array.isArray(field.options)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    handleOpenModal(field.name);
+    // setIsModalOpen(true);
   };
 
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -1001,8 +994,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={state[field.name]}
-                    readOnly={Array.isArray(field.options)}
-                    onPointerDown={event => handlePickerFieldPointerDown(event, field)}
                     onChange={e => {
                       const value = e?.target?.value;
                       field.name === 'moreInfo_main' && autoResizeMoreInfo(e.target);
@@ -1014,10 +1005,16 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       // }
                     }}
                     onFocus={() => {
-                      if (!Array.isArray(field.options)) {
+                      if (field.options === undefined) {
+                        console.log('field.options === undefined :>> ');
+                        handleFocus(field.name);
+                      } else if (state[field.name] !== '' && state[field.name] !== undefined) {
+                        console.log('state[field.name] :>> ', state[field.name]);
+                        console.log('field.options !== ');
                         handleFocus(field.name);
                       } else {
                         handleOpenModal(field.name);
+                        setShowInfoModal('pickerOptions');
                       }
                     }}
                     // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
