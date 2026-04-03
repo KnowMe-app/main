@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 
 const ModalOverlay = styled.div`
@@ -37,6 +37,10 @@ const OptionItem = styled.li`
   &:hover {
     background-color: #f5f5f5; /* Легкий фон при наведенні */
   }
+`;
+
+const OtherOptionItem = styled(OptionItem)`
+  font-weight: 600;
 `;
 
 const CustomInput = styled.input`
@@ -184,7 +188,14 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
 
   //////////////////////////////
   const [customInput, setCustomInput] = useState(''); // Стан для власного вводу
-  const [showCustomInput, setShowCustomInput] = useState(true); // Стан для показу власного вводу
+  const [showCustomInput, setShowCustomInput] = useState(false); // Стан для показу власного вводу
+  const customInputRef = useRef(null);
+
+  useEffect(() => {
+    if (showCustomInput && customInputRef.current) {
+      customInputRef.current.focus();
+    }
+  }, [showCustomInput]);
 
   const handleSelect = option => {
     onSelect(option); // Вибрати звичайну опцію
@@ -220,11 +231,13 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
             {option.placeholder} / {option.ukrainian}
           </OptionItem>
         ))}
+        <OtherOptionItem onClick={() => setShowCustomInput(true)}>Інший варіант</OtherOptionItem>
       </OptionsList>
       {showCustomInput && (
         <>
           <CustomInputWrapper>
             <CustomInput
+              ref={customInputRef}
               type="text"
               value={customInput}
               onChange={handleCustomInputChange}
