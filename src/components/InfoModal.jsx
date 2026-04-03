@@ -285,6 +285,10 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
     if (Date.now() - openedAtRef.current < 250) {
       return;
     }
+    if (text === 'pickerOptions' && customInput.trim()) {
+      onSelect({ placeholder: customInput.trim() });
+      return;
+    }
     onClose(event);
   };
 
