@@ -1024,10 +1024,12 @@ export const fetchFlowData = async ownerId => {
 };
 
 const MONOBANK_API_URL = 'https://api.monobank.ua/bank/currency';
+const NBU_ARCHIVE_API_URL = 'https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange';
 const UAH_CURRENCY_CODE = 980;
 const USD_CURRENCY_CODE = 840;
 const EUR_CURRENCY_CODE = 978;
 const FLOW_MONOBANK_CACHE_KEY = 'flow:monobank-uah-rates:v1';
+const FLOW_NBU_DAILY_CACHE_PREFIX = 'flow:nbu-uah-rates:';
 const FLOW_MONOBANK_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const getFlowRatesCacheStorage = () => {
@@ -1062,6 +1064,10 @@ const writeFlowRatesCache = payload => {
     console.error('Unable to write Flow Monobank cache', error);
   }
 };
+
+const isValidFlowDateYmd = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+const toNbuDateParam = dateYmd => String(dateYmd || '').replace(/-/g, '');
+const getFlowDailyRatesCacheKey = dateYmd => `${FLOW_NBU_DAILY_CACHE_PREFIX}${dateYmd}`;
 
 const parseMonobankPairRate = pair => {
   if (!pair || typeof pair !== 'object') return null;
@@ -1171,6 +1177,76 @@ export const fetchMonobankUahExchangeRates = async () => {
   return result;
 };
 
+const fetchNbuRateToUahByDate = async (currencyCode, dateYmd) => {
+  if (!currencyCode || !isValidFlowDateYmd(dateYmd)) return null;
+  const dateParam = toNbuDateParam(dateYmd);
+  const url = `${NBU_ARCHIVE_API_URL}?valcode=${encodeURIComponent(currencyCode)}&date=${dateParam}&json`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`NBU currency request failed with status ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const row = Array.isArray(payload) ? payload[0] : null;
+  const rate = Number(row?.rate);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    throw new Error(`NBU response does not contain ${currencyCode}/UAH rate for ${dateYmd}`);
+  }
+
+  return {
+    value: rate,
+    rateDate: row?.exchangedate || dateYmd,
+  };
+};
+
+const fetchNbuUahExchangeRatesByDate = async dateYmd => {
+  if (!isValidFlowDateYmd(dateYmd)) return null;
+  const storage = getFlowRatesCacheStorage();
+  const cacheKey = getFlowDailyRatesCacheKey(dateYmd);
+
+  if (storage) {
+    try {
+      const cachedRaw = storage.getItem(cacheKey);
+      if (cachedRaw) {
+        const cached = JSON.parse(cachedRaw);
+        if (Number.isFinite(cached?.usd) && Number.isFinite(cached?.eur)) {
+          return {
+            ...cached,
+            cache: 'localStorage',
+          };
+        }
+      }
+    } catch (error) {
+      console.error('Unable to read Flow NBU cache', error);
+    }
+  }
+
+  const [usdRate, eurRate] = await Promise.all([
+    fetchNbuRateToUahByDate('USD', dateYmd),
+    fetchNbuRateToUahByDate('EUR', dateYmd),
+  ]);
+
+  const result = {
+    usd: usdRate?.value,
+    eur: eurRate?.value,
+    fetchedAt: new Date().toISOString(),
+    rateDate: dateYmd,
+    provider: 'nbu',
+    rateType: 'official',
+    cache: 'network',
+  };
+
+  if (storage) {
+    try {
+      storage.setItem(cacheKey, JSON.stringify(result));
+    } catch (error) {
+      console.error('Unable to write Flow NBU cache', error);
+    }
+  }
+
+  return result;
+};
+
 const formatFlowStoredCurrencyAmount = value => {
   const normalized = normalizeFlowStoredAmount(value);
   const asNumber = Number(normalized);
@@ -1184,13 +1260,21 @@ export const saveFlowEntry = async ({ ownerId, groupPath, date, amount, descript
   if (!datePath) return;
   const normalizedAmountUah = normalizeFlowStoredAmount(amount);
   const amountUahNumber = Number(normalizedAmountUah);
+  let effectiveRates = exchangeRates;
+  if (Number.isFinite(amountUahNumber) && isValidFlowDateYmd(date)) {
+    try {
+      effectiveRates = (await fetchNbuUahExchangeRatesByDate(date)) || exchangeRates;
+    } catch (error) {
+      console.error(`Unable to load historical FX rates for ${date}`, error);
+    }
+  }
   const amountUsd =
-    Number.isFinite(amountUahNumber) && Number.isFinite(exchangeRates?.usd) && exchangeRates.usd > 0
-      ? formatFlowStoredCurrencyAmount(amountUahNumber / exchangeRates.usd)
+    Number.isFinite(amountUahNumber) && Number.isFinite(effectiveRates?.usd) && effectiveRates.usd > 0
+      ? formatFlowStoredCurrencyAmount(amountUahNumber / effectiveRates.usd)
       : '';
   const amountEur =
-    Number.isFinite(amountUahNumber) && Number.isFinite(exchangeRates?.eur) && exchangeRates.eur > 0
-      ? formatFlowStoredCurrencyAmount(amountUahNumber / exchangeRates.eur)
+    Number.isFinite(amountUahNumber) && Number.isFinite(effectiveRates?.eur) && effectiveRates.eur > 0
+      ? formatFlowStoredCurrencyAmount(amountUahNumber / effectiveRates.eur)
       : '';
   const amountPayload = [normalizedAmountUah, amountUsd, amountEur].join('/');
   const value = buildFlowEntryValue({ amount: amountPayload, description });
