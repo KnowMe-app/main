@@ -281,11 +281,11 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
     ContentComponent = LargeModalContent;
   }
 
-  const handleOverlayClick = () => {
+  const handleOverlayClick = event => {
     if (Date.now() - openedAtRef.current < 250) {
       return;
     }
-    onClose();
+    onClose(event);
   };
 
   return (
