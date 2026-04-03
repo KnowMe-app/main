@@ -9,6 +9,7 @@ import {
   renameFlowCategory,
   clearFlowData,
   fetchFlowData,
+  fetchMonobankUahExchangeRates,
   saveFlowEntry,
   updateFlowEntry,
 } from './config';
@@ -522,6 +523,11 @@ const formatCategorySum = value => {
   return rounded.toFixed(2).replace(/\.?0+$/, '');
 };
 
+const formatCurrencyValue = value => {
+  if (!Number.isFinite(value)) return '0';
+  return value.toFixed(2).replace(/\.?0+$/, '');
+};
+
 const formatGroupTitle = groupPath => {
   const { group, subgroup } = splitCategoryPath(groupPath);
   return subgroup ? `${group}, ${subgroup}` : group;
@@ -719,6 +725,7 @@ export const FlowManager = ({ ownerId }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCategoryEditMode, setIsCategoryEditMode] = useState(false);
   const [renamingCategory, setRenamingCategory] = useState({ source: '', draft: '' });
+  const [exchangeRates, setExchangeRates] = useState(null);
   const menuRef = useRef(null);
   const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
@@ -806,6 +813,27 @@ export const FlowManager = ({ ownerId }) => {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadExchangeRates = async () => {
+      try {
+        const rates = await fetchMonobankUahExchangeRates();
+        if (isMounted) {
+          setExchangeRates(rates);
+        }
+      } catch (error) {
+        console.error('Unable to load Monobank exchange rates', error);
+      }
+    };
+
+    loadExchangeRates();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!ownerId) return;
@@ -1531,7 +1559,17 @@ export const FlowManager = ({ ownerId }) => {
           <GroupBlock key={group}>
             <GroupTitle>
               <span>{formatGroupTitle(group)}</span>
-              <CategorySum>{formatCategorySum(categorySums[group] || 0)}</CategorySum>
+              <CategorySum>
+                {(() => {
+                  const amountUah = categorySums[group] || 0;
+                  const amountUahText = `${formatCategorySum(amountUah)} грн`;
+                  if (!exchangeRates?.usd || !exchangeRates?.eur) return amountUahText;
+
+                  const amountUsd = amountUah / exchangeRates.usd;
+                  const amountEur = amountUah / exchangeRates.eur;
+                  return `${amountUahText} / ${formatCurrencyValue(amountUsd)} $ / ${formatCurrencyValue(amountEur)} €`;
+                })()}
+              </CategorySum>
             </GroupTitle>
             <GroupRows>
               {entries.map(({ row, idx }) => {
