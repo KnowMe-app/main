@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 
 const ModalOverlay = styled.div`
@@ -137,7 +137,18 @@ const OrangeStrong = styled.strong`
   color: orange;
 `;
 
-export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards, MoreActions, FlowComposer }) => {
+export const InfoModal = ({
+  onClose,
+  onSelect,
+  options,
+  text,
+  Context,
+  DelConfirm,
+  CompareCards,
+  MoreActions,
+  FlowComposer,
+  initialCustomInput = '',
+}) => {
   const openedAtRef = useRef(Date.now());
 
   const delProfile = (
@@ -186,6 +197,15 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
   //////////////////////////////
   const [customInput, setCustomInput] = useState(''); // Стан для власного вводу
   const [showCustomInput, setShowCustomInput] = useState(true); // Стан для показу власного вводу
+
+  useEffect(() => {
+    if (text !== 'pickerOptions') {
+      return;
+    }
+    const preparedValue = typeof initialCustomInput === 'string' ? initialCustomInput.trim() : '';
+    setCustomInput(preparedValue);
+    setShowCustomInput(true);
+  }, [initialCustomInput, text]);
 
   const handleSelect = option => {
     onSelect(option); // Вибрати звичайну опцію
