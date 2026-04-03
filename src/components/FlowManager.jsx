@@ -658,9 +658,11 @@ export const flattenFlowEntriesFromBackend = flowNode => {
   const parseEntryValue = value => {
     if (typeof value === 'string') {
       const [amount = '', ...rest] = String(value || '').split('_');
-      const [amountUah = ''] = String(amount || '').split('/');
+      const [amountUah = '', amountUsd = '', amountEur = ''] = String(amount || '').split('/');
       return {
         amount: amountUah,
+        amountUsd,
+        amountEur,
         description: rest.join('_'),
       };
     }
@@ -668,12 +670,16 @@ export const flattenFlowEntriesFromBackend = flowNode => {
     if (value && typeof value === 'object') {
       return {
         amount: value.amount ?? value.sum ?? value.value ?? '',
+        amountUsd: value.amountUsd ?? value.usd ?? '',
+        amountEur: value.amountEur ?? value.eur ?? '',
         description: value.description ?? value.comment ?? value.note ?? '',
       };
     }
 
     return {
       amount: '',
+      amountUsd: '',
+      amountEur: '',
       description: '',
     };
   };
@@ -696,6 +702,8 @@ export const flattenFlowEntriesFromBackend = flowNode => {
               group: normalizeCategoryPath(groupPath) || DEFAULT_FLOW_CATEGORY,
               date: key,
               amount: normalizedAmount,
+              amountUsd: normalizeFlowAmount(parsed.amountUsd),
+              amountEur: normalizeFlowAmount(parsed.amountEur),
               description: sanitizeEntryKeyChunk(parsed.description),
             };
           })
@@ -794,7 +802,12 @@ export const FlowManager = ({ ownerId }) => {
     () =>
       flowRows.reduce((acc, row) => {
         const group = normalizeCategoryPath(row.group) || DEFAULT_FLOW_CATEGORY;
-        acc[group] = (acc[group] || 0) + toAmountNumber(row.amount);
+        if (!acc[group]) {
+          acc[group] = { uah: 0, usd: 0, eur: 0 };
+        }
+        acc[group].uah += toAmountNumber(row.amount);
+        acc[group].usd += toAmountNumber(row.amountUsd);
+        acc[group].eur += toAmountNumber(row.amountEur);
         return acc;
       }, {}),
     [flowRows]
@@ -1583,8 +1596,13 @@ export const FlowManager = ({ ownerId }) => {
               <span>{formatGroupTitle(group)}</span>
               <CategorySum>
                 {(() => {
-                  const amountUah = categorySums[group] || 0;
+                  const categoryTotals = categorySums[group] || { uah: 0, usd: 0, eur: 0 };
+                  const amountUah = categoryTotals.uah || 0;
                   const amountUahText = `${formatCategorySum(amountUah)} грн`;
+                  if (categoryTotals.usd > 0 || categoryTotals.eur > 0) {
+                    return `${amountUahText} / ${formatCurrencyValue(categoryTotals.usd)} $ / ${formatCurrencyValue(categoryTotals.eur)} €`;
+                  }
+
                   if (!exchangeRates?.usd || !exchangeRates?.eur) return amountUahText;
 
                   const amountUsd = amountUah / exchangeRates.usd;
