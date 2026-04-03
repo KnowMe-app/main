@@ -351,6 +351,11 @@ const EventText = styled.span`
   word-break: break-word;
 `;
 
+const InfoText = styled.div`
+  font-size: 11px;
+  color: #666;
+`;
+
 const DeleteRowBtn = styled.button`
   border: 1px solid #d7d7d7;
   border-radius: 4px;
@@ -464,6 +469,15 @@ const formatDisplayDate = yyyyMmDd => {
   const [year, month, day] = String(yyyyMmDd || '').split('-');
   if (!year || !month || !day) return '';
   return `${day.padStart(2, '0')}.${month.padStart(2, '0')}.${year}`;
+};
+
+const formatExchangeRateDate = isoDate => {
+  const dt = new Date(isoDate);
+  if (Number.isNaN(dt.getTime())) return '';
+  const year = dt.getUTCFullYear();
+  const month = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(dt.getUTCDate()).padStart(2, '0');
+  return `${day}.${month}.${year}`;
 };
 
 const parseDisplayDate = (display, fallbackYear = new Date().getFullYear()) => {
@@ -644,8 +658,9 @@ export const flattenFlowEntriesFromBackend = flowNode => {
   const parseEntryValue = value => {
     if (typeof value === 'string') {
       const [amount = '', ...rest] = String(value || '').split('_');
+      const [amountUah = ''] = String(amount || '').split('/');
       return {
-        amount,
+        amount: amountUah,
         description: rest.join('_'),
       };
     }
@@ -1069,7 +1084,9 @@ export const FlowManager = ({ ownerId }) => {
     }
 
     try {
-      await Promise.all(parsedEntries.map(entry => saveFlowEntry({ ownerId, ...entry })));
+      await Promise.all(
+        parsedEntries.map(entry => saveFlowEntry({ ownerId, ...entry, exchangeRates }))
+      );
       const lastEntry = parsedEntries[parsedEntries.length - 1];
       setDateYmd(lastEntry.date);
       const selectedPath = splitCategoryPath(lastEntry.groupPath || normalizedCategory);
@@ -1555,6 +1572,11 @@ export const FlowManager = ({ ownerId }) => {
       </Row>
 
       <EventsList>
+        {exchangeRates?.rateDate && (
+          <InfoText style={{ marginBottom: 6 }}>
+            Курс Monobank ({exchangeRates.rateType || 'mid'}) на {formatExchangeRateDate(exchangeRates.rateDate)}.
+          </InfoText>
+        )}
         {Object.entries(groupedFlowRows).map(([group, entries]) => (
           <GroupBlock key={group}>
             <GroupTitle>

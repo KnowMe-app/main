@@ -1027,21 +1027,62 @@ const MONOBANK_API_URL = 'https://api.monobank.ua/bank/currency';
 const UAH_CURRENCY_CODE = 980;
 const USD_CURRENCY_CODE = 840;
 const EUR_CURRENCY_CODE = 978;
+const FLOW_MONOBANK_CACHE_KEY = 'flow:monobank-uah-rates:v1';
+const FLOW_MONOBANK_CACHE_TTL_MS = 60 * 60 * 1000;
+
+const getFlowRatesCacheStorage = () => {
+  if (typeof window === 'undefined') return null;
+  if (!window.localStorage) return null;
+  return window.localStorage;
+};
+
+const readFlowRatesCache = () => {
+  const storage = getFlowRatesCacheStorage();
+  if (!storage) return null;
+
+  try {
+    const raw = storage.getItem(FLOW_MONOBANK_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch (error) {
+    console.error('Unable to read Flow Monobank cache', error);
+    return null;
+  }
+};
+
+const writeFlowRatesCache = payload => {
+  const storage = getFlowRatesCacheStorage();
+  if (!storage) return;
+
+  try {
+    storage.setItem(FLOW_MONOBANK_CACHE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.error('Unable to write Flow Monobank cache', error);
+  }
+};
 
 const parseMonobankPairRate = pair => {
   if (!pair || typeof pair !== 'object') return null;
   const cross = Number(pair.rateCross);
-  if (Number.isFinite(cross) && cross > 0) return cross;
+  if (Number.isFinite(cross) && cross > 0) return { value: cross, source: 'cross' };
 
   const buy = Number(pair.rateBuy);
   const sell = Number(pair.rateSell);
   if (Number.isFinite(buy) && buy > 0 && Number.isFinite(sell) && sell > 0) {
-    return (buy + sell) / 2;
+    return { value: (buy + sell) / 2, source: 'mid' };
   }
 
-  if (Number.isFinite(sell) && sell > 0) return sell;
-  if (Number.isFinite(buy) && buy > 0) return buy;
+  if (Number.isFinite(sell) && sell > 0) return { value: sell, source: 'sell' };
+  if (Number.isFinite(buy) && buy > 0) return { value: buy, source: 'buy' };
   return null;
+};
+
+const parseMonobankPairDate = pair => {
+  const unixSeconds = Number(pair?.date);
+  if (!Number.isFinite(unixSeconds) || unixSeconds <= 0) return null;
+  return new Date(unixSeconds * 1000).toISOString();
 };
 
 const findMonobankRateToUah = (pairs, sourceCode) => {
@@ -1049,20 +1090,50 @@ const findMonobankRateToUah = (pairs, sourceCode) => {
     pair => Number(pair?.currencyCodeA) === sourceCode && Number(pair?.currencyCodeB) === UAH_CURRENCY_CODE
   );
   const directRate = parseMonobankPairRate(directPair);
-  if (Number.isFinite(directRate) && directRate > 0) return directRate;
+  if (Number.isFinite(directRate?.value) && directRate.value > 0) {
+    return {
+      value: directRate.value,
+      source: directRate.source,
+      pairDate: parseMonobankPairDate(directPair),
+    };
+  }
 
   const reversePair = pairs.find(
     pair => Number(pair?.currencyCodeA) === UAH_CURRENCY_CODE && Number(pair?.currencyCodeB) === sourceCode
   );
   const reverseRate = parseMonobankPairRate(reversePair);
-  if (Number.isFinite(reverseRate) && reverseRate > 0) {
-    return 1 / reverseRate;
+  if (Number.isFinite(reverseRate?.value) && reverseRate.value > 0) {
+    return {
+      value: 1 / reverseRate.value,
+      source: reverseRate.source === 'mid' ? 'mid-inverted' : `${reverseRate.source}-inverted`,
+      pairDate: parseMonobankPairDate(reversePair),
+    };
   }
 
   return null;
 };
 
 export const fetchMonobankUahExchangeRates = async () => {
+  const now = Date.now();
+  const cached = readFlowRatesCache();
+  if (
+    cached &&
+    Number.isFinite(cached?.usd) &&
+    Number.isFinite(cached?.eur) &&
+    Number.isFinite(cached?.cachedAtMs) &&
+    now - cached.cachedAtMs < FLOW_MONOBANK_CACHE_TTL_MS
+  ) {
+    return {
+      usd: cached.usd,
+      eur: cached.eur,
+      fetchedAt: cached.fetchedAt || new Date(cached.cachedAtMs).toISOString(),
+      rateDate: cached.rateDate || cached.fetchedAt || new Date(cached.cachedAtMs).toISOString(),
+      provider: 'monobank',
+      rateType: cached.rateType || 'mid',
+      cache: 'localStorage',
+    };
+  }
+
   const response = await fetch(MONOBANK_API_URL);
   if (!response.ok) {
     throw new Error(`Monobank currency request failed with status ${response.status}`);
@@ -1073,25 +1144,56 @@ export const fetchMonobankUahExchangeRates = async () => {
     throw new Error('Monobank currency response is not an array');
   }
 
-  const usd = findMonobankRateToUah(rates, USD_CURRENCY_CODE);
-  const eur = findMonobankRateToUah(rates, EUR_CURRENCY_CODE);
+  const usdRate = findMonobankRateToUah(rates, USD_CURRENCY_CODE);
+  const eurRate = findMonobankRateToUah(rates, EUR_CURRENCY_CODE);
 
-  if (!Number.isFinite(usd) || !Number.isFinite(eur)) {
+  if (!Number.isFinite(usdRate?.value) || !Number.isFinite(eurRate?.value)) {
     throw new Error('Monobank currency response does not contain USD/UAH or EUR/UAH rates');
   }
 
-  return {
-    usd,
-    eur,
-    fetchedAt: new Date().toISOString(),
+  const fetchedAt = new Date().toISOString();
+  const rateDate = [usdRate.pairDate, eurRate.pairDate].filter(Boolean).sort()[0] || fetchedAt;
+  const result = {
+    usd: usdRate.value,
+    eur: eurRate.value,
+    fetchedAt,
+    rateDate,
+    provider: 'monobank',
+    rateType: `${usdRate.source}/${eurRate.source}`,
+    cache: 'network',
   };
+
+  writeFlowRatesCache({
+    ...result,
+    cachedAtMs: now,
+  });
+
+  return result;
 };
 
-export const saveFlowEntry = async ({ ownerId, groupPath, date, amount, description = '' }) => {
+const formatFlowStoredCurrencyAmount = value => {
+  const normalized = normalizeFlowStoredAmount(value);
+  const asNumber = Number(normalized);
+  if (!Number.isFinite(asNumber)) return normalized;
+  return asNumber.toFixed(2);
+};
+
+export const saveFlowEntry = async ({ ownerId, groupPath, date, amount, description = '', exchangeRates }) => {
   if (!ownerId || !groupPath || !date || !amount) return;
   const datePath = buildFlowDatePath({ groupPath, date });
   if (!datePath) return;
-  const value = buildFlowEntryValue({ amount, description });
+  const normalizedAmountUah = normalizeFlowStoredAmount(amount);
+  const amountUahNumber = Number(normalizedAmountUah);
+  const amountUsd =
+    Number.isFinite(amountUahNumber) && Number.isFinite(exchangeRates?.usd) && exchangeRates.usd > 0
+      ? formatFlowStoredCurrencyAmount(amountUahNumber / exchangeRates.usd)
+      : '';
+  const amountEur =
+    Number.isFinite(amountUahNumber) && Number.isFinite(exchangeRates?.eur) && exchangeRates.eur > 0
+      ? formatFlowStoredCurrencyAmount(amountUahNumber / exchangeRates.eur)
+      : '';
+  const amountPayload = [normalizedAmountUah, amountUsd, amountEur].join('/');
+  const value = buildFlowEntryValue({ amount: amountPayload, description });
   const entryId = generateFlowEntryId();
   await set(ref2(database, `multiData/flow/${ownerId}/${datePath}/${entryId}`), value);
 };
