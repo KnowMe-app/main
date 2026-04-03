@@ -395,16 +395,29 @@ const ClearButton = styled.button`
   position: absolute;
   right: 10px;
   display: flex;
+  justify-content: center;
   align-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -7px;
+  padding: 0;
 
   background: none;
   border: none;
+  border-radius: 50%;
   cursor: pointer;
   color: gray;
   font-size: 18px;
+  touch-action: manipulation;
 
   &:hover {
     color: black;
+    background-color: rgba(0, 0, 0, 0.04);
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${color.accent5};
+    outline-offset: 1px;
   }
 `;
 
