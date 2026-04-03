@@ -870,8 +870,11 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleSelectOption = option => {
     if (selectedField) {
       const newValue = option.placeholder === 'Clear' ? '' : option.placeholder;
-
-      setState(prevState => ({ ...prevState, [selectedField]: newValue }));
+      setState(prevState => {
+        const newState = { ...prevState, [selectedField]: newValue };
+        handleSubmit(newState);
+        return newState;
+      });
     }
     handleCloseModal();
   };
