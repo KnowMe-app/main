@@ -1038,6 +1038,7 @@ ${entries.join('\n')}`;
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={displayValue}
+                    readOnly={field.name === 'lastAction' || Array.isArray(field.options)}
                     $isDeletedOverlay={deletedOverlayFields.includes(field.name)}
                     onFocus={() => {
                       if (!Array.isArray(field.options)) {
@@ -1052,8 +1053,18 @@ ${entries.join('\n')}`;
 
                       handleOpenModal(field.name);
                     }}
+                    onMouseDown={event => {
+                      if (!Array.isArray(field.options)) return;
+                      event.preventDefault();
+                      handleOpenModal(field.name);
+                    }}
+                    onTouchStart={event => {
+                      if (!Array.isArray(field.options)) return;
+                      event.preventDefault();
+                      handleOpenModal(field.name);
+                    }}
                     {...(field.name === 'lastAction'
-                      ? { readOnly: true }
+                      ? {}
                       : {
                           onChange: e => {
                             if (field.name === 'myComment') {
