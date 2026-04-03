@@ -994,7 +994,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={state[field.name]}
-                    readOnly={Array.isArray(field.options)}
                     onChange={e => {
                       const value = e?.target?.value;
                       field.name === 'moreInfo_main' && autoResizeMoreInfo(e.target);
@@ -1017,18 +1016,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                         handleOpenModal(field.name);
                         setShowInfoModal('pickerOptions');
                       }
-                    }}
-                    onMouseDown={event => {
-                      if (!Array.isArray(field.options)) return;
-                      event.preventDefault();
-                      handleOpenModal(field.name);
-                      setShowInfoModal('pickerOptions');
-                    }}
-                    onTouchStart={event => {
-                      if (!Array.isArray(field.options)) return;
-                      event.preventDefault();
-                      handleOpenModal(field.name);
-                      setShowInfoModal('pickerOptions');
                     }}
                     // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
                     onBlur={() => handleBlur(field.name)}
