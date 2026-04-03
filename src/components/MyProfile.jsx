@@ -833,6 +833,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [state.publish, state.photos]);
 
   const [selectedField, setSelectedField] = useState(null);
+  const [modalCustomInput, setModalCustomInput] = useState('');
   const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
   const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
   const visibleNonDonorFields = new Set([
@@ -855,6 +856,19 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleOpenModal = fieldName => {
     setSelectedField(fieldName);
+    const fieldConfig = visiblePickerFields.find(field => field.name === fieldName);
+    const currentValue = typeof state[fieldName] === 'string' ? state[fieldName].trim() : '';
+    const hasPresetOption = Boolean(
+      currentValue &&
+      Array.isArray(fieldConfig?.options) &&
+      fieldConfig.options.some(option => {
+        const placeholder = String(option?.placeholder || '').trim().toLowerCase();
+        const ukrainian = String(option?.ukrainian || '').trim().toLowerCase();
+        const normalizedCurrent = currentValue.toLowerCase();
+        return normalizedCurrent === placeholder || normalizedCurrent === ukrainian;
+      }),
+    );
+    setModalCustomInput(hasPresetOption ? '' : currentValue);
     // setIsModalOpen(true);
   };
 
@@ -877,6 +891,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleCloseModal = () => {
     // setIsModalOpen(false);
     setSelectedField(null);
+    setModalCustomInput('');
     setShowInfoModal(false);
   };
 
@@ -1089,6 +1104,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           onSelect={handleSelectOption}
           text={showInfoModal}
           Context={dotsMenu}
+          initialCustomInput={modalCustomInput}
         />
       )}
     </Container>
