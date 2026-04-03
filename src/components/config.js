@@ -1023,6 +1023,70 @@ export const fetchFlowData = async ownerId => {
   return snapshot.exists() ? snapshot.val() : {};
 };
 
+const MONOBANK_API_URL = 'https://api.monobank.ua/bank/currency';
+const UAH_CURRENCY_CODE = 980;
+const USD_CURRENCY_CODE = 840;
+const EUR_CURRENCY_CODE = 978;
+
+const parseMonobankPairRate = pair => {
+  if (!pair || typeof pair !== 'object') return null;
+  const cross = Number(pair.rateCross);
+  if (Number.isFinite(cross) && cross > 0) return cross;
+
+  const buy = Number(pair.rateBuy);
+  const sell = Number(pair.rateSell);
+  if (Number.isFinite(buy) && buy > 0 && Number.isFinite(sell) && sell > 0) {
+    return (buy + sell) / 2;
+  }
+
+  if (Number.isFinite(sell) && sell > 0) return sell;
+  if (Number.isFinite(buy) && buy > 0) return buy;
+  return null;
+};
+
+const findMonobankRateToUah = (pairs, sourceCode) => {
+  const directPair = pairs.find(
+    pair => Number(pair?.currencyCodeA) === sourceCode && Number(pair?.currencyCodeB) === UAH_CURRENCY_CODE
+  );
+  const directRate = parseMonobankPairRate(directPair);
+  if (Number.isFinite(directRate) && directRate > 0) return directRate;
+
+  const reversePair = pairs.find(
+    pair => Number(pair?.currencyCodeA) === UAH_CURRENCY_CODE && Number(pair?.currencyCodeB) === sourceCode
+  );
+  const reverseRate = parseMonobankPairRate(reversePair);
+  if (Number.isFinite(reverseRate) && reverseRate > 0) {
+    return 1 / reverseRate;
+  }
+
+  return null;
+};
+
+export const fetchMonobankUahExchangeRates = async () => {
+  const response = await fetch(MONOBANK_API_URL);
+  if (!response.ok) {
+    throw new Error(`Monobank currency request failed with status ${response.status}`);
+  }
+
+  const rates = await response.json();
+  if (!Array.isArray(rates)) {
+    throw new Error('Monobank currency response is not an array');
+  }
+
+  const usd = findMonobankRateToUah(rates, USD_CURRENCY_CODE);
+  const eur = findMonobankRateToUah(rates, EUR_CURRENCY_CODE);
+
+  if (!Number.isFinite(usd) || !Number.isFinite(eur)) {
+    throw new Error('Monobank currency response does not contain USD/UAH or EUR/UAH rates');
+  }
+
+  return {
+    usd,
+    eur,
+    fetchedAt: new Date().toISOString(),
+  };
+};
+
 export const saveFlowEntry = async ({ ownerId, groupPath, date, amount, description = '' }) => {
   if (!ownerId || !groupPath || !date || !amount) return;
   const datePath = buildFlowDatePath({ groupPath, date });
