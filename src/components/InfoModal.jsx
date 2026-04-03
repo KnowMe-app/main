@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import styled from 'styled-components';
 
 const ModalOverlay = styled.div`
@@ -138,6 +138,7 @@ const OrangeStrong = styled.strong`
 `;
 
 export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfirm, CompareCards, MoreActions, FlowComposer }) => {
+  const openedAtRef = useRef(Date.now());
 
   const delProfile = (
     <>
@@ -280,8 +281,15 @@ export const InfoModal = ({ onClose, onSelect, options, text, Context, DelConfir
     ContentComponent = LargeModalContent;
   }
 
+  const handleOverlayClick = () => {
+    if (Date.now() - openedAtRef.current < 250) {
+      return;
+    }
+    onClose();
+  };
+
   return (
-    <ModalOverlay onClick={onClose}>
+    <ModalOverlay onClick={handleOverlayClick}>
       <ContentComponent onClick={event => event.stopPropagation()}>{body}</ContentComponent>
     </ModalOverlay>
   );

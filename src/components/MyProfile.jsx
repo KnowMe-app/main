@@ -982,6 +982,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
         {visiblePickerFields.map(field => {
           // console.log('field.options:', field.options);
+          const isPickerField = Array.isArray(field.options);
 
           return (
             <PickerContainer>
@@ -994,6 +995,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={state[field.name]}
+                    readOnly={isPickerField}
                     onChange={e => {
                       const value = e?.target?.value;
                       field.name === 'moreInfo_main' && autoResizeMoreInfo(e.target);
@@ -1004,18 +1006,20 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       // handleChange(field.name, value || '');
                       // }
                     }}
-                    onFocus={() => {
-                      if (field.options === undefined) {
-                        console.log('field.options === undefined :>> ');
-                        handleFocus(field.name);
-                      } else if (state[field.name] !== '' && state[field.name] !== undefined) {
-                        console.log('state[field.name] :>> ', state[field.name]);
-                        console.log('field.options !== ');
-                        handleFocus(field.name);
-                      } else {
-                        handleOpenModal(field.name);
-                        setShowInfoModal('pickerOptions');
+                    onMouseDown={event => {
+                      if (isPickerField) {
+                        event.preventDefault();
                       }
+                    }}
+                    onFocus={() => {
+                      if (!isPickerField) {
+                        handleFocus(field.name);
+                      }
+                    }}
+                    onClick={() => {
+                      if (!isPickerField) return;
+                      handleOpenModal(field.name);
+                      setShowInfoModal('pickerOptions');
                     }}
                     // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
                     onBlur={() => handleBlur(field.name)}
