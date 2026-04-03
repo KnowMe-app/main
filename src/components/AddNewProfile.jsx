@@ -242,55 +242,71 @@ const InnerContainer = styled.div`
 `;
 
 const DotsButton = styled.button`
-  /* position: absolute; */
-  /* top: 8px; */
-  /* right: 8px; */
   margin-top: -10px;
   margin-bottom: 10px;
-
   width: 40px;
   height: 40px;
   background: none;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: 12px;
   font-size: 24px;
+  color: ${color.accent5};
   cursor: pointer;
-  padding-bottom: 20;
+  padding: 0 0 6px 0;
   margin-left: auto;
   align-items: center;
   justify-content: center;
   display: flex;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+
+  &:hover {
+    background-color: ${color.paleAccent2};
+    border-color: ${color.paleAccent5};
+    color: ${color.accent};
+  }
 `;
 
 
 export const SubmitButton = styled.button`
-  /* margin-top: 20px; */
-  padding: 10px 20px;
-  /* background-color: #4caf50; */
-  color: black;
-  border: none;
-  border-radius: 5px;
+  padding: 11px 14px;
+  color: ${color.black};
+  border: 1px solid transparent;
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 500;
   align-self: flex-start;
-  border-bottom: 1px solid #ddd; /* Лінія між елементами */
   width: 100%;
-  transition: background-color 0.3s ease;
+  text-align: left;
+  background: linear-gradient(180deg, ${color.oppositeAccent} 0%, #fffaf2 100%);
+  box-shadow: inset 0 -1px 0 ${color.gray};
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+  margin-bottom: 6px;
 
   &:last-child {
-    border-bottom: none;
+    margin-bottom: 0;
   }
 
   &:hover {
-    background-color: #f5f5f5; /* Легкий фон при наведенні */
+    background: ${color.paleAccent2};
+    border-color: ${color.paleAccent5};
+    transform: translateY(-1px);
   }
 `;
 
 export const ExitButton = styled(SubmitButton)`
-  background: none; /* Прибирає будь-які стилі фону */
-  border-bottom: none; /* Прибирає горизонтальну полосу */
-  transition: background-color 0.3s ease;
+  background: #fff;
+  color: ${color.accent3};
+  border-color: ${color.gray};
+
   &:hover {
-    background-color: #f5f5f5; /* Легкий фон при наведенні */
+    background-color: ${color.paleAccent2};
   }
 `;
 
@@ -1509,16 +1525,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       <>
         {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
           <>
-            <SubmitButton onClick={() => navigate('/my-profile')}>my-profile</SubmitButton>
+            <SubmitButton onClick={() => navigate('/my-profile')}>my profile</SubmitButton>
             {(isAdmin || access.canAccessAdd) && <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>}
             {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>}
           </>
         )}
-        {isAdmin && <SubmitButton onClick={() => navigate('/flow')}>Flow</SubmitButton>}
+        {isAdmin && <SubmitButton onClick={() => navigate('/flow')}>flow</SubmitButton>}
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
         {!isEmailVerified && <VerifyEmail />}
-        {isLoggedIn && <ExitButton onClick={handleExit}>Exit</ExitButton>}
+        {isLoggedIn && <ExitButton onClick={handleExit}>exit</ExitButton>}
       </>
     );
   };

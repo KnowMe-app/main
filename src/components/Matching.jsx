@@ -399,32 +399,42 @@ const LoadMoreButton = styled.button`
 `;
 
 const SubmitButton = styled.button`
-  padding: 10px 20px;
-  color: black;
-  border: none;
-  border-radius: 5px;
+  padding: 11px 14px;
+  color: ${color.black};
+  border: 1px solid transparent;
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 500;
   align-self: flex-start;
-  border-bottom: 1px solid #ddd;
   width: 100%;
-  transition: background-color 0.3s ease;
+  text-align: left;
+  background: linear-gradient(180deg, ${color.oppositeAccent} 0%, #fffaf2 100%);
+  box-shadow: inset 0 -1px 0 ${color.gray};
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+  margin-bottom: 6px;
 
   &:last-child {
-    border-bottom: none;
+    margin-bottom: 0;
   }
 
   &:hover {
-    background-color: #f5f5f5;
+    background: ${color.paleAccent2};
+    border-color: ${color.paleAccent5};
+    transform: translateY(-1px);
   }
 `;
 
 const ExitButton = styled(SubmitButton)`
-  background: none;
-  border-bottom: none;
-  transition: background-color 0.3s ease;
+  background: #fff;
+  color: ${color.accent3};
+  border-color: ${color.gray};
+
   &:hover {
-    background-color: #f5f5f5;
+    background-color: ${color.paleAccent2};
   }
 `;
 
@@ -1735,12 +1745,12 @@ const Matching = () => {
     <>
       {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
         <>
-          <SubmitButton onClick={() => { saveScrollPosition(); navigate('/my-profile'); }}>my-profile</SubmitButton>
+          <SubmitButton onClick={() => { saveScrollPosition(); navigate('/my-profile'); }}>my profile</SubmitButton>
           {(isAdmin || access.canAccessAdd) && <SubmitButton onClick={() => { saveScrollPosition(); navigate('/add'); }}>add</SubmitButton>}
           {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => { saveScrollPosition(); navigate('/matching'); }}>matching</SubmitButton>}
         </>
       )}
-      <ExitButton onClick={handleExit}>Exit</ExitButton>
+      <ExitButton onClick={handleExit}>exit</ExitButton>
     </>
   );
 
