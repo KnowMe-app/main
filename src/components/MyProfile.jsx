@@ -41,7 +41,7 @@ const Container = styled.div`
   background-color: #f5f5f5;
 
   @media (max-width: 768px) { // Медіа-запит для пристроїв з шириною екрану до 768px
-    padding: 0;
+    padding: 10px;
   }
   /* max-width: 450px; */
 
@@ -51,9 +51,9 @@ const Container = styled.div`
 
 const InnerContainer = styled.div`
   max-width: 450px;
-  width: 90%;
+  width: 100%;
   background-color: #f0f0f0;
-  padding: 20px;
+  padding: 10px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
 
