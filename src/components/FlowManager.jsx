@@ -13,6 +13,7 @@ import {
   updateFlowEntry,
 } from './config';
 import { useAutoResize } from 'hooks/useAutoResize';
+import { color } from './styles';
 
 const Wrap = styled.div`
   display: flex;
@@ -74,9 +75,9 @@ const MenuPanel = styled.div`
   top: calc(100% + 6px);
   right: 0;
   min-width: 180px;
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  background: linear-gradient(180deg, ${color.oppositeAccent} 0%, #fffaf2 100%);
+  border: 1px solid ${color.paleAccent5};
+  border-radius: 10px;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
   z-index: 2;
   padding: 6px;
@@ -84,15 +85,27 @@ const MenuPanel = styled.div`
 
 const MenuItem = styled.button`
   width: 100%;
-  border: none;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
   text-align: left;
-  padding: 8px 10px;
+  color: ${color.black};
+  font-size: 15px;
+  font-weight: 500;
+  padding: 10px 12px;
   cursor: pointer;
+  margin-bottom: 4px;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
 
   &:hover {
-    background: #f4f6ff;
+    background: ${color.paleAccent2};
+    border-color: ${color.paleAccent5};
   }
 `;
 
@@ -1271,7 +1284,7 @@ export const FlowManager = ({ ownerId }) => {
                   navigate('/add');
                 }}
               >
-                Перейти на Add
+                перейти на add
               </MenuItem>
               <MenuItem
                 type="button"
@@ -1280,7 +1293,7 @@ export const FlowManager = ({ ownerId }) => {
                   navigate('/matching');
                 }}
               >
-                Перейти на Matching
+                перейти на matching
               </MenuItem>
             </MenuPanel>
           )}
