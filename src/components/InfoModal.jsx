@@ -70,16 +70,31 @@ const CustomInputWrapper = styled.div`
 const InlineDeleteButton = styled.button`
   position: absolute;
   right: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -7px;
+  padding: 0;
   top: 50%;
   transform: translateY(-50%);
   background: none;
   border: none;
+  border-radius: 50%;
   cursor: pointer;
   color: gray;
   font-size: 18px;
+  touch-action: manipulation;
 
   &:hover {
     color: black;
+    background-color: rgba(0, 0, 0, 0.04);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #f57c00;
+    outline-offset: 1px;
   }
 `;
 
@@ -140,6 +155,7 @@ const OrangeStrong = styled.strong`
 export const InfoModal = ({
   onClose,
   onSelect,
+  onCustomInputClear,
   options,
   text,
   Context,
@@ -196,7 +212,6 @@ export const InfoModal = ({
 
   //////////////////////////////
   const [customInput, setCustomInput] = useState(''); // Стан для власного вводу
-  const [showCustomInput, setShowCustomInput] = useState(true); // Стан для показу власного вводу
 
   useEffect(() => {
     if (text !== 'pickerOptions') {
@@ -204,7 +219,6 @@ export const InfoModal = ({
     }
     const preparedValue = typeof initialCustomInput === 'string' ? initialCustomInput.trim() : '';
     setCustomInput(preparedValue);
-    setShowCustomInput(true);
   }, [initialCustomInput, text]);
 
   const handleSelect = option => {
@@ -212,19 +226,22 @@ export const InfoModal = ({
   };
 
   const handleCustomInputChange = e => {
-    setCustomInput(e.target.value); // Оновлення стану з власним ввідом
+    const nextValue = e.target.value;
+    if (customInput.trim() && !nextValue.trim()) {
+      onCustomInputClear?.();
+    }
+    setCustomInput(nextValue); // Оновлення стану з власним ввідом
   };
 
   const handleConfirm = () => {
     if (!customInput.trim()) return;
     onSelect({ placeholder: customInput }); // Передати введене значення
     setCustomInput(''); // Очистити поле
-    setShowCustomInput(false); // Сховати поле вводу
   };
 
   const handleCustomInputDelete = () => {
     setCustomInput('');
-    setShowCustomInput(false);
+    onCustomInputClear?.();
   };
 
   const handleKeyDown = e => {
@@ -242,26 +259,27 @@ export const InfoModal = ({
           </OptionItem>
         ))}
       </OptionsList>
-      {showCustomInput && (
-        <>
-          <CustomInputWrapper>
-            <CustomInput
-              type="text"
-              value={customInput}
-              onChange={handleCustomInputChange}
-              placeholder="Інший варіант"
-              onKeyDown={handleKeyDown}
-            />
+      <>
+        <CustomInputWrapper>
+          <CustomInput
+            type="text"
+            value={customInput}
+            onChange={handleCustomInputChange}
+            placeholder="Інший варіант"
+            onKeyDown={handleKeyDown}
+          />
+          {!!customInput && (
             <InlineDeleteButton onClick={handleCustomInputDelete} aria-label="delete custom value">
               &times;
             </InlineDeleteButton>
-          </CustomInputWrapper>
-          <ActionRow>
-            <OkButton onClick={handleConfirm} disabled={!customInput.trim()}>
-              ОК
-            </OkButton>
-          </ActionRow>
-        </>)} </>}
+          )}
+        </CustomInputWrapper>
+        <ActionRow>
+          <OkButton onClick={handleConfirm} disabled={!customInput.trim()}>
+            ОК
+          </OkButton>
+        </ActionRow>
+      </> </>}
     </>
   );
 

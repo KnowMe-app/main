@@ -925,6 +925,18 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
 };
 
+  const handleModalCustomInputClear = () => {
+    if (!selectedField) return;
+    setState(prevState => {
+      if (!prevState[selectedField]) {
+        return prevState;
+      }
+      const newState = { ...prevState, [selectedField]: '' };
+      handleSubmit(newState);
+      return newState;
+    });
+  };
+
   const [isEmailVerified, setIsEmailVerified] = useState(false);
 
   useEffect(() => {
@@ -1102,6 +1114,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           onClose={handleOverlayClick}
           options={visiblePickerFields.find(field => field.name === selectedField)?.options}
           onSelect={handleSelectOption}
+          onCustomInputClear={handleModalCustomInputClear}
           text={showInfoModal}
           Context={dotsMenu}
           initialCustomInput={modalCustomInput}
