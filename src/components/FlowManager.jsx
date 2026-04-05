@@ -10,6 +10,7 @@ import {
   clearFlowData,
   fetchFlowData,
   fetchMonobankUahExchangeRates,
+  fetchNbuUahExchangeRatesByDate,
   saveFlowEntry,
   updateFlowEntry,
 } from './config';
@@ -516,6 +517,7 @@ const sanitizeAmountChunk = value =>
     .trim();
 
 const normalizeFlowAmount = value => sanitizeAmountChunk(String(value || '').replace(',', '.'));
+const FLOW_DATE_YMD_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 const toAmountNumber = value => {
   const normalized = String(value || '').trim().replace(',', '.');
@@ -749,6 +751,7 @@ export const FlowManager = ({ ownerId }) => {
   const [isCategoryEditMode, setIsCategoryEditMode] = useState(false);
   const [renamingCategory, setRenamingCategory] = useState({ source: '', draft: '' });
   const [exchangeRates, setExchangeRates] = useState(null);
+  const [historicalRatesByDate, setHistoricalRatesByDate] = useState({});
   const menuRef = useRef(null);
   const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
@@ -805,12 +808,29 @@ export const FlowManager = ({ ownerId }) => {
         if (!acc[group]) {
           acc[group] = { uah: 0, usd: 0, eur: 0 };
         }
-        acc[group].uah += toAmountNumber(row.amount);
-        acc[group].usd += toAmountNumber(row.amountUsd);
-        acc[group].eur += toAmountNumber(row.amountEur);
+        const amountUah = toAmountNumber(row.amount);
+        const amountUsdStored = toAmountNumber(row.amountUsd);
+        const amountEurStored = toAmountNumber(row.amountEur);
+        const historicalRates =
+          FLOW_DATE_YMD_REGEX.test(String(row.date || '')) ? historicalRatesByDate[row.date] : null;
+        const amountUsdDerived =
+          amountUsdStored > 0
+            ? amountUsdStored
+            : Number.isFinite(amountUah) && Number.isFinite(historicalRates?.usd) && historicalRates.usd > 0
+              ? amountUah / historicalRates.usd
+              : 0;
+        const amountEurDerived =
+          amountEurStored > 0
+            ? amountEurStored
+            : Number.isFinite(amountUah) && Number.isFinite(historicalRates?.eur) && historicalRates.eur > 0
+              ? amountUah / historicalRates.eur
+              : 0;
+        acc[group].uah += amountUah;
+        acc[group].usd += amountUsdDerived;
+        acc[group].eur += amountEurDerived;
         return acc;
       }, {}),
-    [flowRows]
+    [flowRows, historicalRatesByDate]
   );
   const sortedFlowRows = useMemo(() => sortRowsByGroupAndDate(flowRows), [flowRows]);
   const groupedFlowRows = useMemo(
@@ -903,6 +923,49 @@ export const FlowManager = ({ ownerId }) => {
       console.error('Unable to restore flow draft from localStorage', error);
     }
   }, [ownerId]);
+
+  useEffect(() => {
+    const datesMissingRates = [...new Set(
+      flowRows
+        .filter(row => {
+          const hasStoredFx = toAmountNumber(row.amountUsd) > 0 || toAmountNumber(row.amountEur) > 0;
+          return !hasStoredFx && FLOW_DATE_YMD_REGEX.test(String(row.date || ''));
+        })
+        .map(row => row.date)
+        .filter(date => !historicalRatesByDate[date])
+    )];
+
+    if (datesMissingRates.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const resolvedRates = await Promise.all(
+        datesMissingRates.map(async date => {
+          try {
+            const rates = await fetchNbuUahExchangeRatesByDate(date);
+            return [date, rates];
+          } catch (error) {
+            console.error(`Unable to load fallback historical FX rates for ${date}`, error);
+            return [date, null];
+          }
+        })
+      );
+      if (cancelled) return;
+      setHistoricalRatesByDate(prev => {
+        const next = { ...prev };
+        resolvedRates.forEach(([date, rates]) => {
+          if (rates?.usd || rates?.eur) {
+            next[date] = rates;
+          }
+        });
+        return next;
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [flowRows, historicalRatesByDate]);
 
   useEffect(() => {
     if (!ownerId) return;
@@ -1603,11 +1666,7 @@ export const FlowManager = ({ ownerId }) => {
                     return `${amountUahText} / ${formatCurrencyValue(categoryTotals.usd)} $ / ${formatCurrencyValue(categoryTotals.eur)} €`;
                   }
 
-                  if (!exchangeRates?.usd || !exchangeRates?.eur) return amountUahText;
-
-                  const amountUsd = amountUah / exchangeRates.usd;
-                  const amountEur = amountUah / exchangeRates.eur;
-                  return `${amountUahText} / ${formatCurrencyValue(amountUsd)} $ / ${formatCurrencyValue(amountEur)} €`;
+                  return amountUahText;
                 })()}
               </CategorySum>
             </GroupTitle>
