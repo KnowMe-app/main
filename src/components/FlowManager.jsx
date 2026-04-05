@@ -1201,7 +1201,7 @@ export const FlowManager = ({ ownerId }) => {
         const lines = sortRowsByDate(rows).map(row => {
           const displayDate = formatDisplayDate(row.date);
           const formattedAmount = formatFlowAmountForClipboard(row.amount);
-          return `${displayDate}\t${formattedAmount}\t${row.description || ''}`.trimEnd();
+          return `${displayDate}\t${formattedAmount}\t\t${row.description || ''}`.trimEnd();
         });
         return [title, ...lines].join('\n');
       })
