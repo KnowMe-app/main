@@ -1199,7 +1199,7 @@ const fetchNbuRateToUahByDate = async (currencyCode, dateYmd) => {
   };
 };
 
-const fetchNbuUahExchangeRatesByDate = async dateYmd => {
+export const fetchNbuUahExchangeRatesByDate = async dateYmd => {
   if (!isValidFlowDateYmd(dateYmd)) return null;
   const storage = getFlowRatesCacheStorage();
   const cacheKey = getFlowDailyRatesCacheKey(dateYmd);
