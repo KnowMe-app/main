@@ -642,11 +642,15 @@ export const flattenFlowEntriesFromBackend = flowNode => {
   if (!flowNode || typeof flowNode !== 'object') return [];
 
   const isDateKey = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+  const parseAmountTriplet = rawAmount => {
+    const [amountUah = '', amountUsd = '', amountEur = ''] = String(rawAmount || '').split('/');
+    return { amountUah, amountUsd, amountEur };
+  };
 
   const parseEntryValue = value => {
     if (typeof value === 'string') {
       const [amount = '', ...rest] = String(value || '').split('_');
-      const [amountUah = '', amountUsd = '', amountEur = ''] = String(amount || '').split('/');
+      const { amountUah, amountUsd, amountEur } = parseAmountTriplet(amount);
       return {
         amount: amountUah,
         amountUsd,
@@ -656,10 +660,13 @@ export const flattenFlowEntriesFromBackend = flowNode => {
     }
 
     if (value && typeof value === 'object') {
+      const rawAmount = value.amount ?? value.sum ?? value.value ?? '';
+      const { amountUah, amountUsd: amountUsdFromAmount, amountEur: amountEurFromAmount } =
+        parseAmountTriplet(rawAmount);
       return {
-        amount: value.amount ?? value.sum ?? value.value ?? '',
-        amountUsd: value.amountUsd ?? value.usd ?? '',
-        amountEur: value.amountEur ?? value.eur ?? '',
+        amount: amountUah,
+        amountUsd: value.amountUsd ?? value.usd ?? amountUsdFromAmount,
+        amountEur: value.amountEur ?? value.eur ?? amountEurFromAmount,
         description: value.description ?? value.comment ?? value.note ?? '',
       };
     }
