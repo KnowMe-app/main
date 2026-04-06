@@ -643,8 +643,32 @@ export const flattenFlowEntriesFromBackend = flowNode => {
 
   const isDateKey = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
   const parseAmountTriplet = rawAmount => {
-    const [amountUah = '', amountUsd = '', amountEur = ''] = String(rawAmount || '').split('/');
-    return { amountUah, amountUsd, amountEur };
+    const normalizedRawAmount = String(rawAmount || '').trim();
+    if (!normalizedRawAmount) {
+      return { amountUah: '', amountUsd: '', amountEur: '' };
+    }
+
+    const slashSeparated = normalizedRawAmount
+      .split('/')
+      .map(item => String(item || '').trim())
+      .filter(Boolean);
+
+    if (slashSeparated.length >= 2) {
+      const [amountUah = '', amountUsd = '', amountEur = ''] = slashSeparated;
+      return { amountUah, amountUsd, amountEur };
+    }
+
+    const spaceSeparated = normalizedRawAmount
+      .split(/\s+/)
+      .map(item => String(item || '').trim())
+      .filter(Boolean);
+
+    if (spaceSeparated.length >= 3) {
+      const [amountUah = '', amountUsd = '', amountEur = ''] = spaceSeparated;
+      return { amountUah, amountUsd, amountEur };
+    }
+
+    return { amountUah: normalizedRawAmount, amountUsd: '', amountEur: '' };
   };
 
   const parseEntryValue = value => {
