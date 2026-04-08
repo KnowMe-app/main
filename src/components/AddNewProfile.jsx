@@ -555,6 +555,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const SEARCH_KEY = 'addSearchQuery';
   const SEARCH_OPTIONS_STORAGE_KEY = 'addSearchOptions';
+  const EDIT_PROFILE_USER_ID_KEY = 'addNewProfileEditUserId';
   const [search, setSearch] = useState(() => {
     const params = new URLSearchParams(location.search);
     if (params.has('search')) {
@@ -685,7 +686,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
     const urlUserId = params.get('userId');
-    return urlUserId ? { userId: urlUserId } : {};
+    const restoredUserId = urlUserId || localStorage.getItem(EDIT_PROFILE_USER_ID_KEY) || '';
+
+    if (!restoredUserId) {
+      return {};
+    }
+
+    const cachedCard = getCard(restoredUserId);
+    if (cachedCard) {
+      return cachedCard;
+    }
+
+    return { userId: restoredUserId };
   });
   const [historyVersion, setHistoryVersion] = useState(0);
   const editHistoryRef = useRef({
@@ -1217,6 +1229,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     if (!state.userId) setProfileSource('');
   }, [state.userId]);
+
+  useEffect(() => {
+    if (state?.userId) {
+      localStorage.setItem(EDIT_PROFILE_USER_ID_KEY, state.userId);
+      return;
+    }
+
+    localStorage.removeItem(EDIT_PROFILE_USER_ID_KEY);
+  }, [state?.userId, EDIT_PROFILE_USER_ID_KEY]);
 
   useEffect(() => {
     if (!searchBarQueryActive) return;
