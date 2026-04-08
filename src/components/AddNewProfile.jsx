@@ -315,7 +315,13 @@ export const ExitButton = styled(SubmitButton)`
 const TopButtons = styled.div`
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 10px;
+`;
+
+const HistoryButton = styled(DotsButton)`
+  font-size: 20px;
+  line-height: 1;
 `;
 
 // const iconMap = {
@@ -2576,6 +2582,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       <InnerContainer>
         {isLoggedIn && (
           <TopButtons>
+            <HistoryButton
+              type="button"
+              aria-label="Назад по історії"
+              title="Назад"
+              onClick={() => window.history.back()}
+            >
+              ←
+            </HistoryButton>
+            <HistoryButton
+              type="button"
+              aria-label="Вперед по історії"
+              title="Вперед"
+              onClick={() => window.history.forward()}
+            >
+              →
+            </HistoryButton>
             <DotsButton
               style={{ marginLeft: 0 }}
               onClick={() => {
