@@ -699,7 +699,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     return { userId: restoredUserId };
   });
-  const [historyVersion, setHistoryVersion] = useState(0);
+  const [, setHistoryVersion] = useState(0);
   const editHistoryRef = useRef({
     userId: null,
     current: null,
@@ -2741,20 +2741,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const canUndoChanges = Boolean(state?.userId) && editHistoryRef.current.undoStack.length > 0;
   const canRedoChanges = Boolean(state?.userId) && editHistoryRef.current.redoStack.length > 0;
+  const hasEditHistory =
+    Boolean(state?.userId) &&
+    (editHistoryRef.current.undoStack.length > 0 || editHistoryRef.current.redoStack.length > 0);
 
   return (
     <Container>
       <InnerContainer>
         {isLoggedIn && (
           <TopButtons>
-            {state?.userId && canUndoChanges && (
-                <EditActionButton
-                  key={`undo-${historyVersion}`}
-                  type="button"
-                  onClick={handleUndoProfileChanges}
-                  title="Відмінити останню зміну"
-                  aria-label="Відмінити останню зміну"
-                >
+            {hasEditHistory && (
+              <EditActionButton
+                type="button"
+                onClick={handleUndoProfileChanges}
+                title="Відмінити останню зміну"
+                aria-label="Відмінити останню зміну"
+                disabled={!canUndoChanges}
+              >
                   <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path
                       d="M9 7L5 11L9 15"
@@ -2771,16 +2774,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       strokeLinejoin="round"
                     />
                   </EditActionIcon>
-                </EditActionButton>
+              </EditActionButton>
             )}
-            {state?.userId && canRedoChanges && (
-                <EditActionButton
-                  key={`redo-${historyVersion}`}
-                  type="button"
-                  onClick={handleRedoProfileChanges}
-                  title="Відмінити відміну"
-                  aria-label="Повернути зміну"
-                >
+            {hasEditHistory && (
+              <EditActionButton
+                type="button"
+                onClick={handleRedoProfileChanges}
+                title="Відмінити відміну"
+                aria-label="Повернути зміну"
+                disabled={!canRedoChanges}
+              >
                   <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path
                       d="M15 7L19 11L15 15"
@@ -2797,7 +2800,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       strokeLinejoin="round"
                     />
                   </EditActionIcon>
-                </EditActionButton>
+              </EditActionButton>
             )}
             <DotsButton
               onClick={() => {
