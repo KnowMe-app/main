@@ -33,6 +33,7 @@ import {
   removeStimulationShortcutId,
   replaceStimulationShortcutIds,
   filterMain,
+  syncUserSearchIdIndex,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -731,6 +732,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (syncedState?.userId?.length > 20) {
       const { existingData } = await fetchUserById(syncedState.userId);
+      await syncUserSearchIdIndex(syncedState.userId, existingData, syncedState);
 
       const cleanedState = Object.fromEntries(
         Object.entries(syncedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
