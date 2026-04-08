@@ -764,6 +764,35 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       delete syncedState.lastDelivery;
     }
 
+    if (syncedState?.userId) {
+      const history = editHistoryRef.current;
+
+      if (history.userId !== syncedState.userId) {
+        editHistoryRef.current = {
+          userId: syncedState.userId,
+          current: cloneProfileState(syncedState),
+          undoStack: [],
+          redoStack: [],
+        };
+        historyNavigationRef.current = false;
+        setHistoryVersion(prev => prev + 1);
+      } else if (!history.current) {
+        history.current = cloneProfileState(syncedState);
+        historyNavigationRef.current = false;
+        setHistoryVersion(prev => prev + 1);
+      } else if (!areHistorySnapshotsEqual(history.current, syncedState)) {
+        if (!historyNavigationRef.current) {
+          history.undoStack.push(cloneProfileState(history.current));
+          history.redoStack = [];
+          setHistoryVersion(prev => prev + 1);
+        }
+        history.current = cloneProfileState(syncedState);
+        historyNavigationRef.current = false;
+      } else if (historyNavigationRef.current) {
+        historyNavigationRef.current = false;
+      }
+    }
+
     if (!isAdmin) {
       if (!syncedState?.userId) {
         toast.error('Немає userId для збереження правки');
@@ -2656,22 +2685,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (!history.current) {
       history.current = cloneProfileState(state);
       setHistoryVersion(prev => prev + 1);
-      return;
     }
-
-    if (areHistorySnapshotsEqual(history.current, state)) {
-      return;
-    }
-
-    if (!historyNavigationRef.current) {
-      history.undoStack.push(cloneProfileState(history.current));
-      history.redoStack = [];
-    }
-
-    history.current = cloneProfileState(state);
-    historyNavigationRef.current = false;
-    setHistoryVersion(prev => prev + 1);
-  }, [areHistorySnapshotsEqual, cloneProfileState, state]);
+  }, [cloneProfileState, state]);
 
   const handleUndoProfileChanges = async () => {
     if (!state?.userId) return;
