@@ -315,7 +315,37 @@ export const ExitButton = styled(SubmitButton)`
 const TopButtons = styled.div`
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 10px;
+`;
+
+const EditActionButton = styled.button`
+  min-width: 96px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid ${color.gray};
+  background: ${({ $variant }) => ($variant === 'cancel' ? '#fff' : color.oppositeAccent)};
+  color: ${({ $variant }) => ($variant === 'cancel' ? color.accent3 : color.black)};
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+
+  &:hover {
+    background-color: ${color.paleAccent2};
+    border-color: ${color.paleAccent5};
+    transform: translateY(-1px);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+  }
 `;
 
 // const iconMap = {
@@ -492,6 +522,17 @@ const SearchSettingsButton = styled.button`
 `;
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
+  const cloneProfileState = useCallback(profileState => JSON.parse(JSON.stringify(profileState || {})), []);
+  const toComparableHistoryState = useCallback(profileState => {
+    if (!profileState || typeof profileState !== 'object') return {};
+    const comparable = { ...profileState };
+    delete comparable.lastAction;
+    return comparable;
+  }, []);
+  const areHistorySnapshotsEqual = useCallback(
+    (left, right) => JSON.stringify(toComparableHistoryState(left)) === JSON.stringify(toComparableHistoryState(right)),
+    [toComparableHistoryState],
+  );
 
   const LOAD_SORT_MODES = {
     GIT: 'GIT',
@@ -638,6 +679,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const urlUserId = params.get('userId');
     return urlUserId ? { userId: urlUserId } : {};
   });
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const editHistoryRef = useRef({
+    userId: null,
+    current: null,
+    undoStack: [],
+    redoStack: [],
+  });
+  const historyNavigationRef = useRef(false);
   const isEditingRef = useRef(false);
 
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
@@ -2571,11 +2620,110 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLoadRequestId(prev => prev + 1);
   };
 
+  useEffect(() => {
+    if (!state?.userId) {
+      editHistoryRef.current = {
+        userId: null,
+        current: null,
+        undoStack: [],
+        redoStack: [],
+      };
+      setHistoryVersion(prev => prev + 1);
+      return;
+    }
+
+    const history = editHistoryRef.current;
+
+    if (history.userId !== state.userId) {
+      editHistoryRef.current = {
+        userId: state.userId,
+        current: cloneProfileState(state),
+        undoStack: [],
+        redoStack: [],
+      };
+      setHistoryVersion(prev => prev + 1);
+      return;
+    }
+
+    if (!history.current) {
+      history.current = cloneProfileState(state);
+      setHistoryVersion(prev => prev + 1);
+      return;
+    }
+
+    if (areHistorySnapshotsEqual(history.current, state)) {
+      return;
+    }
+
+    if (!historyNavigationRef.current) {
+      history.undoStack.push(cloneProfileState(history.current));
+      history.redoStack = [];
+    }
+
+    history.current = cloneProfileState(state);
+    historyNavigationRef.current = false;
+    setHistoryVersion(prev => prev + 1);
+  }, [areHistorySnapshotsEqual, cloneProfileState, state]);
+
+  const handleUndoProfileChanges = () => {
+    if (!state?.userId) return;
+    const history = editHistoryRef.current;
+    if (!history.undoStack.length) return;
+
+    const previous = history.undoStack.pop();
+    history.redoStack.push(cloneProfileState(history.current));
+    history.current = cloneProfileState(previous);
+    historyNavigationRef.current = true;
+    setState(previous);
+    setUsers(prev => ({ ...prev, [previous.userId]: previous }));
+    setHistoryVersion(prev => prev + 1);
+  };
+
+  const handleRedoProfileChanges = () => {
+    if (!state?.userId) return;
+    const history = editHistoryRef.current;
+    if (!history.redoStack.length) return;
+
+    const next = history.redoStack.pop();
+    history.undoStack.push(cloneProfileState(history.current));
+    history.current = cloneProfileState(next);
+    historyNavigationRef.current = true;
+    setState(next);
+    setUsers(prev => ({ ...prev, [next.userId]: next }));
+    setHistoryVersion(prev => prev + 1);
+  };
+
+  const canUndoChanges = Boolean(state?.userId) && editHistoryRef.current.undoStack.length > 0;
+  const canRedoChanges = Boolean(state?.userId) && editHistoryRef.current.redoStack.length > 0;
+
   return (
     <Container>
       <InnerContainer>
         {isLoggedIn && (
           <TopButtons>
+            {state?.userId && (
+              <>
+                <EditActionButton
+                  key={`undo-${historyVersion}`}
+                  type="button"
+                  $variant="cancel"
+                  onClick={handleUndoProfileChanges}
+                  disabled={!canUndoChanges}
+                  title="Відмінити останню зміну"
+                >
+                  ↶ Відмінити
+                </EditActionButton>
+                <EditActionButton
+                  key={`redo-${historyVersion}`}
+                  type="button"
+                  onClick={handleRedoProfileChanges}
+                  disabled={!canRedoChanges}
+                  title="Відмінити відміну"
+                >
+                  ↷ Повернути
+                </EditActionButton>
+              </>
+            )}
             <DotsButton
               style={{ marginLeft: 0 }}
               onClick={() => {
