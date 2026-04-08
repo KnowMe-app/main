@@ -2517,12 +2517,6 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
     const normalizedValue = String(searchValue).toLowerCase();
     const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`;
     const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
-    const notifySearchIdUpdate = payload => {
-      const serializedPayload = JSON.stringify(payload);
-      toast(`searchId ${action}: ${searchIdKey} => ${serializedPayload}`, {
-        duration: 6000,
-      });
-    };
     if (isDev) console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
     if (action === 'add') {
@@ -2535,7 +2529,6 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
           if (!existingValue.includes(userId)) {
             const updatedValue = [...existingValue, userId];
             await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-            notifySearchIdUpdate(updatedValue);
             if (isDev) console.log(`Додано userId до масиву: ${searchIdKey}:`, updatedValue);
           } else {
             if (isDev) console.log(`userId вже існує в масиві для ключа: ${searchIdKey}`);
@@ -2543,14 +2536,12 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
         } else if (existingValue !== userId) {
           const updatedValue = [existingValue, userId];
           await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-          notifySearchIdUpdate(updatedValue);
           if (isDev) console.log(`Перетворено значення на масив і додано userId: ${searchIdKey}:`, updatedValue);
         } else {
           if (isDev) console.log(`Ключ вже містить userId: ${searchIdKey}`);
         }
       } else {
         await update(ref2(database, 'searchId'), { [searchIdKey]: userId });
-        notifySearchIdUpdate(userId);
         if (isDev) console.log(`Додано нову пару в searchId: ${searchIdKey}: ${userId}`);
       }
     } else if (action === 'remove') {
@@ -2564,20 +2555,16 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
 
           if (updatedValue.length === 1) {
             await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue[0] });
-            notifySearchIdUpdate(updatedValue[0]);
             if (isDev) console.log(`Оновлено значення ключа до одиничного значення: ${searchIdKey}:`, updatedValue[0]);
           } else if (updatedValue.length === 0) {
             await remove(searchIdRef);
-            notifySearchIdUpdate(null);
             if (isDev) console.log(`Видалено ключ: ${searchIdKey}`);
           } else {
             await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-            notifySearchIdUpdate(updatedValue);
             if (isDev) console.log(`Оновлено масив ключа: ${searchIdKey}:`, updatedValue);
           }
         } else if (existingValue === userId) {
           await remove(searchIdRef);
-          notifySearchIdUpdate(null);
           if (isDev) console.log(`Видалено ключ, що мав одиничне значення: ${searchIdKey}`);
         } else {
           if (isDev) console.log(`userId не знайдено для видалення: ${searchIdKey}`);
