@@ -65,8 +65,8 @@ const InnerContainer = styled.div`
 `;
 
 const DotsButton = styled.button`
-  margin-top: -10px;
-  margin-bottom: 10px;
+  margin-top: 0;
+  margin-bottom: 0;
   width: 40px;
   height: 40px;
   background: none;
@@ -89,6 +89,39 @@ const DotsButton = styled.button`
     background-color: ${color.paleAccent2};
     border-color: ${color.paleAccent5};
     color: ${color.accent};
+  }
+`;
+
+const TopControlsRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+`;
+
+const HistoryButtons = styled.div`
+  display: flex;
+  gap: 8px;
+`;
+
+const HistoryButton = styled.button`
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid ${({ disabled }) => (disabled ? '#ddd' : color.paleAccent5)};
+  background-color: ${({ disabled }) => (disabled ? '#f3f3f3' : '#fff')};
+  color: ${({ disabled }) => (disabled ? '#aaa' : color.accent5)};
+  font-size: 18px;
+  line-height: 1;
+  cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease, color 0.2s ease;
+
+  &:hover {
+    background-color: ${({ disabled }) => (disabled ? '#f3f3f3' : color.paleAccent2)};
+    color: ${({ disabled }) => (disabled ? '#aaa' : color.accent)};
   }
 `;
 
@@ -477,6 +510,8 @@ const initialProfileState = pickerFields.reduce(
 
 export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [state, setState] = useState(initialProfileState);
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
   const [focused, setFocused] = useState(null);
   const [missing, setMissing] = useState({});
   const [showPassword, setShowPassword] = useState(false);
@@ -487,7 +522,20 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const access = resolveAccess({ uid: currentUid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
   const isAdmin = access.isAdmin;
   const moreInfoRef = useRef(null);
+  const isApplyingHistoryRef = useRef(false);
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
+
+  const updateTrackedState = updater => {
+    setState(prevState => {
+      const nextState = typeof updater === 'function' ? updater(prevState) : { ...prevState, ...updater };
+      if (nextState === prevState) return prevState;
+      if (!isApplyingHistoryRef.current) {
+        setUndoStack(prev => [...prev.slice(-49), prevState]);
+        setRedoStack([]);
+      }
+      return nextState;
+    });
+  };
 
   useEffect(() => {
     const savedDraft = localStorage.getItem('myProfileDraft');
@@ -553,7 +601,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
   const handleBlur = () => {
     setFocused(null);
-    setState(prevState => {
+    updateTrackedState(prevState => {
       const normalizedState = normalizePhoneState(prevState);
       handleSubmit(normalizedState);
       return normalizedState;
@@ -898,7 +946,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleSelectOption = option => {
     if (selectedField) {
       const newValue = option.placeholder === 'Clear' ? '' : option.placeholder;
-      setState(prevState => {
+      updateTrackedState(prevState => {
         const newState = { ...prevState, [selectedField]: newValue };
         handleSubmit(newState);
         return newState;
@@ -912,7 +960,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // };
 
   const handleClear = (fieldName) => {
-    setState(prevState => {
+    updateTrackedState(prevState => {
       const newState = { ...prevState };
   
       // Очищення конкретного поля
@@ -927,7 +975,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleModalCustomInputClear = () => {
     if (!selectedField) return;
-    setState(prevState => {
+    updateTrackedState(prevState => {
       if (!prevState[selectedField]) {
         return prevState;
       }
@@ -972,18 +1020,58 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
   };
 
+  const handleUndo = () => {
+    if (!undoStack.length) return;
+    const previousSnapshot = undoStack[undoStack.length - 1];
+    setUndoStack(prev => prev.slice(0, -1));
+    setRedoStack(prev => [...prev.slice(-49), state]);
+    isApplyingHistoryRef.current = true;
+    setState(previousSnapshot);
+    Promise.resolve().then(() => {
+      isApplyingHistoryRef.current = false;
+    });
+    if (previousSnapshot.userId) {
+      handleSubmit(previousSnapshot);
+    }
+  };
+
+  const handleRedo = () => {
+    if (!redoStack.length) return;
+    const nextSnapshot = redoStack[redoStack.length - 1];
+    setRedoStack(prev => prev.slice(0, -1));
+    setUndoStack(prev => [...prev.slice(-49), state]);
+    isApplyingHistoryRef.current = true;
+    setState(nextSnapshot);
+    Promise.resolve().then(() => {
+      isApplyingHistoryRef.current = false;
+    });
+    if (nextSnapshot.userId) {
+      handleSubmit(nextSnapshot);
+    }
+  };
+
   return (
     <Container>
       <InnerContainer>
-        {isSessionActive && (
-          <DotsButton
-            onClick={() => {
-              setShowInfoModal('dotsMenu');
-            }}
-          >
-            ⋮
-          </DotsButton>
-        )}
+        <TopControlsRow>
+          <HistoryButtons>
+            <HistoryButton type="button" onClick={handleUndo} disabled={!undoStack.length} title="Скасувати зміни">
+              ←
+            </HistoryButton>
+            <HistoryButton type="button" onClick={handleRedo} disabled={!redoStack.length} title="Повернути зміни">
+              →
+            </HistoryButton>
+          </HistoryButtons>
+          {isSessionActive && (
+            <DotsButton
+              onClick={() => {
+                setShowInfoModal('dotsMenu');
+              }}
+            >
+              ⋮
+            </DotsButton>
+          )}
+        </TopControlsRow>
         <StatusMessage published={state.publish}>
           {state.publish ? 'Анкета опублікована' : 'Анкета прихована'}
         </StatusMessage>
@@ -1044,7 +1132,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       field.name === 'moreInfo_main' && autoResizeMoreInfo(e.target);
                       const updatedValue = inputUpdateValue(value, field)
                       // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
-                      setState(prevState => ({ ...prevState, [field.name]: updatedValue }));
+                      updateTrackedState(prevState => ({ ...prevState, [field.name]: updatedValue }));
                       // } else {
                       // handleChange(field.name, value || '');
                       // }
@@ -1077,7 +1165,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 <ButtonGroup>
                   <Button
                     onClick={() => {
-                      setState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
+                      updateTrackedState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
                       handleBlur(field.name);
                     }}
                   >
@@ -1085,7 +1173,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   </Button>
                   <Button
                     onClick={() => {
-                      setState(prevState => ({ ...prevState, [field.name]: 'No' }));
+                      updateTrackedState(prevState => ({ ...prevState, [field.name]: 'No' }));
                       handleBlur(field.name);
                     }}
                   >
@@ -1093,7 +1181,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   </Button>
                   <Button
                     onClick={() => {
-                      setState(prevState => ({ ...prevState, [field.name]: 'Other' }));
+                      updateTrackedState(prevState => ({ ...prevState, [field.name]: 'Other' }));
                       handleBlur(field.name);
                     }}
                   >
