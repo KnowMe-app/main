@@ -314,30 +314,33 @@ export const ExitButton = styled(SubmitButton)`
 
 const TopButtons = styled.div`
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
   gap: 10px;
 `;
 
 const EditActionButton = styled.button`
-  min-width: 96px;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 10px;
-  border: 1px solid ${color.gray};
-  background: ${({ $variant }) => ($variant === 'cancel' ? '#fff' : color.oppositeAccent)};
-  color: ${({ $variant }) => ($variant === 'cancel' ? color.accent3 : color.black)};
-  font-size: 13px;
-  font-weight: 600;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: none;
+  color: ${color.accent5};
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   transition:
     background-color 0.2s ease,
     border-color 0.2s ease,
+    color 0.2s ease,
     transform 0.2s ease;
 
   &:hover {
     background-color: ${color.paleAccent2};
     border-color: ${color.paleAccent5};
+    color: ${color.accent};
     transform: translateY(-1px);
   }
 
@@ -346,6 +349,11 @@ const EditActionButton = styled.button`
     cursor: not-allowed;
     transform: none;
   }
+`;
+
+const EditActionIcon = styled.svg`
+  width: 20px;
+  height: 20px;
 `;
 
 // const iconMap = {
@@ -2703,31 +2711,59 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       <InnerContainer>
         {isLoggedIn && (
           <TopButtons>
-            {state?.userId && (
-              <>
+            {state?.userId && canUndoChanges && (
                 <EditActionButton
                   key={`undo-${historyVersion}`}
                   type="button"
-                  $variant="cancel"
                   onClick={handleUndoProfileChanges}
-                  disabled={!canUndoChanges}
                   title="Відмінити останню зміну"
+                  aria-label="Відмінити останню зміну"
                 >
-                  ↶ Відмінити
+                  <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M9 7L5 11L9 15"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M6 11H14C17.314 11 20 13.686 20 17"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </EditActionIcon>
                 </EditActionButton>
+            )}
+            {state?.userId && canRedoChanges && (
                 <EditActionButton
                   key={`redo-${historyVersion}`}
                   type="button"
                   onClick={handleRedoProfileChanges}
-                  disabled={!canRedoChanges}
                   title="Відмінити відміну"
+                  aria-label="Повернути зміну"
                 >
-                  ↷ Повернути
+                  <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M15 7L19 11L15 15"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M18 11H10C6.686 11 4 13.686 4 17"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </EditActionIcon>
                 </EditActionButton>
-              </>
             )}
             <DotsButton
-              style={{ marginLeft: 0 }}
               onClick={() => {
                 setShowInfoModal('dotsMenu');
               }}
