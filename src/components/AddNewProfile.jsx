@@ -244,17 +244,17 @@ const InnerContainer = styled.div`
 `;
 
 const DotsButton = styled.button`
-  margin-top: -10px;
-  margin-bottom: 10px;
+  margin: 0;
   width: 40px;
   height: 40px;
   background: none;
   border: 1px solid transparent;
   border-radius: 12px;
-  font-size: 24px;
+  font-size: 22px;
+  line-height: 1;
   color: ${color.accent5};
   cursor: pointer;
-  padding: 0 0 6px 0;
+  padding: 0;
   margin-left: auto;
   align-items: center;
   justify-content: center;
