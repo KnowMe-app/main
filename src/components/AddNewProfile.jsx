@@ -2665,7 +2665,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setHistoryVersion(prev => prev + 1);
   }, [areHistorySnapshotsEqual, cloneProfileState, state]);
 
-  const handleUndoProfileChanges = () => {
+  const handleUndoProfileChanges = async () => {
     if (!state?.userId) return;
     const history = editHistoryRef.current;
     if (!history.undoStack.length) return;
@@ -2677,9 +2677,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setState(previous);
     setUsers(prev => ({ ...prev, [previous.userId]: previous }));
     setHistoryVersion(prev => prev + 1);
+    await handleSubmit(previous);
   };
 
-  const handleRedoProfileChanges = () => {
+  const handleRedoProfileChanges = async () => {
     if (!state?.userId) return;
     const history = editHistoryRef.current;
     if (!history.redoStack.length) return;
@@ -2691,6 +2692,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setState(next);
     setUsers(prev => ({ ...prev, [next.userId]: next }));
     setHistoryVersion(prev => prev + 1);
+    await handleSubmit(next);
   };
 
   const canUndoChanges = Boolean(state?.userId) && editHistoryRef.current.undoStack.length > 0;
