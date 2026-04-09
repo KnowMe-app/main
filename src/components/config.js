@@ -32,6 +32,7 @@ import { normalizePhoneValue } from './inputValidations';
 import { getCacheKey } from '../utils/cache';
 import { getReactionCategory } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
+import { buildUpdateMap } from '../utils/searchKeyIndex';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -2318,6 +2319,8 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     const userRefRTDB = ref2(database, `newUsers/${userId}`);
     const snapshot = await get(userRefRTDB);
     const currentUserData = snapshot.exists() ? snapshot.val() : {};
+    const preparedUploadedInfo = removeUndefined(uploadedInfo);
+    const nextUserData = condition === 'update' ? { ...currentUserData, ...preparedUploadedInfo } : { ...preparedUploadedInfo };
 
     if (!skipIndexing) {
       // Перебір ключів та їх обробка
@@ -2415,21 +2418,17 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
 
     // Оновлення користувача в базі
 
-    console.log('uploadedInfo :>> ', uploadedInfo);
+    console.log('uploadedInfo :>> ', preparedUploadedInfo);
     console.log('currentUserData :>> ', currentUserData);
 
-    // if (condition === 'update' && !(Object.keys(uploadedInfo).length < Object.keys(currentUserData).length)) {
-    if (condition === 'update') {
-      console.log('update :>> ');
-      await update(userRefRTDB, { ...uploadedInfo });
-    } else {
-      console.log('set :>> ');
-      await set(userRefRTDB, { ...uploadedInfo });
-    }
+    const updates = buildUpdateMap(userId, nextUserData, currentUserData);
+    updates[`newUsers/${userId}`] = nextUserData;
 
-    if (uploadedInfo.lastLogin2 !== undefined) {
+    await update(ref2(database), updates);
+
+    if (preparedUploadedInfo.lastLogin2 !== undefined) {
       try {
-        await update(ref2(database, `users/${userId}`), { lastLogin2: uploadedInfo.lastLogin2 });
+        await update(ref2(database, `users/${userId}`), { lastLogin2: preparedUploadedInfo.lastLogin2 });
       } catch (e) {
         console.error('Error updating lastLogin2 in users:', e);
       }
@@ -2751,6 +2750,51 @@ export const createSearchIdsInCollection = async (collection, onProgress) => {
       await Promise.all(updatePromises);
       const progress = Math.floor(((i + batchIds.length) / totalUsers) * 100);
       if (onProgress && progress % 10 === 0) onProgress(progress);
+    }
+  }
+};
+
+export const rebuildSearchKeyIndexForCollections = async (collections = ['newUsers', 'users'], onProgress) => {
+  const validCollections = (collections || []).filter(Boolean);
+  if (validCollections.length === 0) {
+    return;
+  }
+
+  await update(ref2(database), { searchKey: null });
+
+  let processed = 0;
+  let total = 0;
+  const snapshots = {};
+
+  for (const collection of validCollections) {
+    // eslint-disable-next-line no-await-in-loop
+    const snapshot = await get(ref2(database, collection));
+    const usersData = snapshot.exists() ? snapshot.val() : {};
+    snapshots[collection] = usersData;
+    total += Object.keys(usersData).length;
+  }
+
+  const safeTotal = total || 1;
+
+  for (const collection of validCollections) {
+    const usersData = snapshots[collection];
+    const userIds = Object.keys(usersData);
+
+    for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+      const batchIds = userIds.slice(i, i + BATCH_SIZE);
+      const updates = {};
+
+      batchIds.forEach(userId => {
+        Object.assign(updates, buildUpdateMap(userId, usersData[userId], {}));
+      });
+
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref2(database), updates);
+      processed += batchIds.length;
+
+      if (onProgress) {
+        onProgress(Math.min(Math.floor((processed / safeTotal) * 100), 100));
+      }
     }
   }
 };
@@ -3811,56 +3855,13 @@ export const removeCardAndSearchId = async userId => {
     const userData = userSnapshot.val();
     console.log(`Дані користувача:`, userData);
 
-    // Зберігаємо видалені значення для відображення в toast
-    const deletedFields = [];
-
-    // Перебір ключів для перевірки
-    for (const key of keysToCheck) {
-      const valueToCheck = userData[key];
-
-      if (!valueToCheck) continue; // Пропускаємо, якщо значення відсутнє
-
-      // Якщо значення — рядок
-      if (typeof valueToCheck === 'string' || typeof valueToCheck === 'number') {
-        console.log(`Видалення рядкового значення: ${key} -> ${valueToCheck}`);
-        const candidates = buildSearchIndexCandidates(key, valueToCheck);
-        for (const candidate of candidates) {
-          // eslint-disable-next-line no-await-in-loop
-          await updateSearchId(key, candidate, userId, 'remove');
-        }
-        deletedFields.push(`${key} -> ${valueToCheck}`);
-      }
-
-      // Якщо значення — масив
-      if (Array.isArray(valueToCheck)) {
-        console.log(`Видалення масиву значень для ключа: ${key} -> ${valueToCheck}`);
-        for (const item of valueToCheck) {
-          if (typeof item === 'string' || typeof item === 'number') {
-            const candidates = buildSearchIndexCandidates(key, item);
-            for (const candidate of candidates) {
-              // eslint-disable-next-line no-await-in-loop
-              await updateSearchId(key, candidate, userId, 'remove');
-            }
-          } else {
-            console.warn(`Пропущено непідтримуване значення в масиві для ключа: ${key}`, item);
-          }
-        }
-      }
-    }
-    // console.warn(`Видаляємо картку користувача з newUsers: ${userId}`);
-    // Видаляємо картку користувача з newUsers
-    await remove(ref2(db, `newUsers/${userId}`));
+    const updates = buildUpdateMap(userId, {}, userData);
+    updates[`newUsers/${userId}`] = null;
+    await update(ref2(db), updates);
     console.log(`Картка користувача видалена з newUsers: ${userId}`);
 
     removeCard(userId);
-
-    if (deletedFields.length) {
-      toast.success(`Видалені дані:\n${deletedFields.join('\n')}`, {
-        style: { whiteSpace: 'pre-line' },
-      });
-    } else {
-      toast.success(`Картка користувача видалена з newUsers: ${userId}`);
-    }
+    toast.success(`Картка користувача видалена з newUsers: ${userId}`);
   } catch (error) {
     console.error(`Помилка під час видалення searchId для userId: ${userId}`, error);
   }
