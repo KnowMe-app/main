@@ -2302,6 +2302,20 @@ const removeUndefined = obj => {
   return obj;
 };
 
+const SEARCH_KEY_ADMINS = new Set(['3LiD7JGCJTSJoVMU7fdR1ZrcIZH2', '0ghb1LphfASV0Y3b6J010v4CDyD2']);
+
+let hasShownSearchKeyPermissionToast = false;
+
+const canSyncSearchKey = userId => {
+  const authUid = auth.currentUser?.uid;
+
+  if (!authUid || !userId) {
+    return false;
+  }
+
+  return SEARCH_KEY_ADMINS.has(authUid) || authUid === userId;
+};
+
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
     const userRefRTDB = ref2(database, `users/${userId}`);
@@ -2427,8 +2441,14 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     console.log('uploadedInfo :>> ', preparedUploadedInfo);
     console.log('currentUserData :>> ', currentUserData);
 
-    const updates = buildUpdateMap(userId, nextUserData, currentUserData);
-    updates[`newUsers/${userId}`] = nextUserData;
+    const updates = { [`newUsers/${userId}`]: nextUserData };
+
+    if (canSyncSearchKey(userId)) {
+      Object.assign(updates, buildUpdateMap(userId, nextUserData, currentUserData));
+    } else if (!hasShownSearchKeyPermissionToast) {
+      hasShownSearchKeyPermissionToast = true;
+      toast('Індексація searchKey пропущена: недостатньо прав доступу.');
+    }
 
     await update(ref2(database), updates);
 
