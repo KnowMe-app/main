@@ -155,6 +155,8 @@ const shouldSkipBroadFallbackForExactSearchId = searchKey => {
   return true;
 };
 
+const SEARCH_INDEX_COLLECTIONS = ['searchId', 'searchKey'];
+
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
   const uniqueIds = new Set();
   const { includePrefixMatches = true } = options;
@@ -170,34 +172,38 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
 
   const uniqueSearchKeys = [...new Set(searchKeys)];
 
-  await Promise.all(
-    uniqueSearchKeys.map(async searchKey => {
-      const searchEntrySnapshot = await get(ref2(database, `searchId/${searchKey}`));
-      if (!searchEntrySnapshot.exists()) return;
-
-      addIds(searchEntrySnapshot.val());
-    })
-  );
-
-  if (includePrefixMatches) {
+  await Promise.all(SEARCH_INDEX_COLLECTIONS.map(async collection => {
     await Promise.all(
       uniqueSearchKeys.map(async searchKey => {
-        const prefixMatchesSnapshot = await get(
-          query(
-            ref2(database, 'searchId'),
-            orderByKey(),
-            startAt(searchKey),
-            endAt(`${searchKey}\uf8ff`),
-          )
-        );
+        const searchEntrySnapshot = await get(ref2(database, `${collection}/${searchKey}`));
+        if (!searchEntrySnapshot.exists()) return;
 
-        if (!prefixMatchesSnapshot.exists()) return;
-
-        prefixMatchesSnapshot.forEach(matchSnapshot => {
-          addIds(matchSnapshot.val());
-        });
+        addIds(searchEntrySnapshot.val());
       })
     );
+  }));
+
+  if (includePrefixMatches) {
+    await Promise.all(SEARCH_INDEX_COLLECTIONS.map(async collection => {
+      await Promise.all(
+        uniqueSearchKeys.map(async searchKey => {
+          const prefixMatchesSnapshot = await get(
+            query(
+              ref2(database, collection),
+              orderByKey(),
+              startAt(searchKey),
+              endAt(`${searchKey}\uf8ff`),
+            )
+          );
+
+          if (!prefixMatchesSnapshot.exists()) return;
+
+          prefixMatchesSnapshot.forEach(matchSnapshot => {
+            addIds(matchSnapshot.val());
+          });
+        })
+      );
+    }));
   }
 
   return [...uniqueIds];
@@ -1550,7 +1556,7 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
 export const makeNewUser = async (searchedValue, rawQuery = '') => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
-  const searchIdRef = ref2(db, 'searchId');
+  const searchIdRefs = SEARCH_INDEX_COLLECTIONS.map(collection => ref2(db, collection));
 
   const parsedQuery = parseUkTriggerQuery(rawQuery);
   const trimmedRawQuery = typeof rawQuery === 'string' ? rawQuery.trim() : '';
@@ -1610,7 +1616,7 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
       searchIdUpdates[handleKey] = newUserId;
     }
 
-    await update(searchIdRef, searchIdUpdates);
+    await Promise.all(searchIdRefs.map(searchIdRef => update(searchIdRef, searchIdUpdates)));
   }
 
   return {
@@ -2515,64 +2521,80 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
 
     const normalizedValue = String(searchValue).toLowerCase();
     const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`;
-    const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
     if (isDev) console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
 
-    if (action === 'add') {
-      const searchIdSnapshot = await get(searchIdRef);
+    for (const collection of SEARCH_INDEX_COLLECTIONS) {
+      // eslint-disable-next-line no-await-in-loop
+      const searchIdRef = ref2(database, `${collection}/${searchIdKey}`);
+      // eslint-disable-next-line no-await-in-loop
+      const collectionRef = ref2(database, collection);
 
-      if (searchIdSnapshot.exists()) {
-        const existingValue = searchIdSnapshot.val();
+      if (action === 'add') {
+        // eslint-disable-next-line no-await-in-loop
+        const searchIdSnapshot = await get(searchIdRef);
 
-        if (Array.isArray(existingValue)) {
-          if (!existingValue.includes(userId)) {
-            const updatedValue = [...existingValue, userId];
-            await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-            if (isDev) console.log(`Додано userId до масиву: ${searchIdKey}:`, updatedValue);
+        if (searchIdSnapshot.exists()) {
+          const existingValue = searchIdSnapshot.val();
+
+          if (Array.isArray(existingValue)) {
+            if (!existingValue.includes(userId)) {
+              const updatedValue = [...existingValue, userId];
+              // eslint-disable-next-line no-await-in-loop
+              await update(collectionRef, { [searchIdKey]: updatedValue });
+              if (isDev) console.log(`Додано userId до масиву в ${collection}: ${searchIdKey}:`, updatedValue);
+            } else {
+              if (isDev) console.log(`userId вже існує в масиві для ключа ${collection}/${searchIdKey}`);
+            }
+          } else if (existingValue !== userId) {
+            const updatedValue = [existingValue, userId];
+            // eslint-disable-next-line no-await-in-loop
+            await update(collectionRef, { [searchIdKey]: updatedValue });
+            if (isDev) console.log(`Перетворено значення на масив і додано userId в ${collection}: ${searchIdKey}:`, updatedValue);
           } else {
-            if (isDev) console.log(`userId вже існує в масиві для ключа: ${searchIdKey}`);
+            if (isDev) console.log(`Ключ вже містить userId в ${collection}: ${searchIdKey}`);
           }
-        } else if (existingValue !== userId) {
-          const updatedValue = [existingValue, userId];
-          await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-          if (isDev) console.log(`Перетворено значення на масив і додано userId: ${searchIdKey}:`, updatedValue);
         } else {
-          if (isDev) console.log(`Ключ вже містить userId: ${searchIdKey}`);
+          // eslint-disable-next-line no-await-in-loop
+          await update(collectionRef, { [searchIdKey]: userId });
+          if (isDev) console.log(`Додано нову пару в ${collection}: ${searchIdKey}: ${userId}`);
         }
-      } else {
-        await update(ref2(database, 'searchId'), { [searchIdKey]: userId });
-        if (isDev) console.log(`Додано нову пару в searchId: ${searchIdKey}: ${userId}`);
-      }
-    } else if (action === 'remove') {
-      const searchIdSnapshot = await get(searchIdRef);
+      } else if (action === 'remove') {
+        // eslint-disable-next-line no-await-in-loop
+        const searchIdSnapshot = await get(searchIdRef);
 
-      if (searchIdSnapshot.exists()) {
-        const existingValue = searchIdSnapshot.val();
+        if (searchIdSnapshot.exists()) {
+          const existingValue = searchIdSnapshot.val();
 
-        if (Array.isArray(existingValue)) {
-          const updatedValue = existingValue.filter(id => id !== userId);
+          if (Array.isArray(existingValue)) {
+            const updatedValue = existingValue.filter(id => id !== userId);
 
-          if (updatedValue.length === 1) {
-            await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue[0] });
-            if (isDev) console.log(`Оновлено значення ключа до одиничного значення: ${searchIdKey}:`, updatedValue[0]);
-          } else if (updatedValue.length === 0) {
+            if (updatedValue.length === 1) {
+              // eslint-disable-next-line no-await-in-loop
+              await update(collectionRef, { [searchIdKey]: updatedValue[0] });
+              if (isDev) console.log(`Оновлено значення ключа до одиничного в ${collection}: ${searchIdKey}:`, updatedValue[0]);
+            } else if (updatedValue.length === 0) {
+              // eslint-disable-next-line no-await-in-loop
+              await remove(searchIdRef);
+              if (isDev) console.log(`Видалено ключ в ${collection}: ${searchIdKey}`);
+            } else {
+              // eslint-disable-next-line no-await-in-loop
+              await update(collectionRef, { [searchIdKey]: updatedValue });
+              if (isDev) console.log(`Оновлено масив ключа в ${collection}: ${searchIdKey}:`, updatedValue);
+            }
+          } else if (existingValue === userId) {
+            // eslint-disable-next-line no-await-in-loop
             await remove(searchIdRef);
-            if (isDev) console.log(`Видалено ключ: ${searchIdKey}`);
+            if (isDev) console.log(`Видалено ключ з одиничним значенням в ${collection}: ${searchIdKey}`);
           } else {
-            await update(ref2(database, 'searchId'), { [searchIdKey]: updatedValue });
-            if (isDev) console.log(`Оновлено масив ключа: ${searchIdKey}:`, updatedValue);
+            if (isDev) console.log(`userId не знайдено для видалення в ${collection}: ${searchIdKey}`);
           }
-        } else if (existingValue === userId) {
-          await remove(searchIdRef);
-          if (isDev) console.log(`Видалено ключ, що мав одиничне значення: ${searchIdKey}`);
         } else {
-          if (isDev) console.log(`userId не знайдено для видалення: ${searchIdKey}`);
+          if (isDev) console.log(`Ключ не знайдено для видалення в ${collection}: ${searchIdKey}`);
         }
       } else {
-        if (isDev) console.log(`Ключ не знайдено для видалення: ${searchIdKey}`);
+        console.error('Unknown action provided:', action);
+        break;
       }
-    } else {
-      console.error('Unknown action provided:', action);
     }
   } catch (error) {
     console.error('Error in updateSearchId:', error);
@@ -2803,19 +2825,19 @@ export const rebuildSearchKeyIndexForCollections = async (collections = ['newUse
 export const removeSearchId = async userId => {
   const db = getDatabase();
 
-  // Отримуємо всі пари в searchId
-  const searchIdSnapshot = await get(ref2(db, `searchId`));
+  for (const collection of SEARCH_INDEX_COLLECTIONS) {
+    // eslint-disable-next-line no-await-in-loop
+    const searchIdSnapshot = await get(ref2(db, collection));
 
-  if (searchIdSnapshot.exists()) {
-    const searchIdData = searchIdSnapshot.val();
+    if (searchIdSnapshot.exists()) {
+      const searchIdData = searchIdSnapshot.val();
+      const keysToRemove = Object.keys(searchIdData).filter(key => searchIdData[key] === userId);
 
-    // Перебираємо всі ключі у searchId
-    const keysToRemove = Object.keys(searchIdData).filter(key => searchIdData[key] === userId);
-
-    // Видаляємо пари, що відповідають userId
-    for (const key of keysToRemove) {
-      await remove(ref2(db, `searchId/${key}`));
-      console.log(`Видалено пару в searchId: ${key}`);
+      for (const key of keysToRemove) {
+        // eslint-disable-next-line no-await-in-loop
+        await remove(ref2(db, `${collection}/${key}`));
+        console.log(`Видалено пару в ${collection}: ${key}`);
+      }
     }
   }
 
@@ -2833,20 +2855,17 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
   const normalizedValue = String(searchValue).toLowerCase();
   const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`; // Формуємо ключ для пошуку у searchId
   console.log(`searchIdKey`, searchIdKey);
-  // Отримуємо всі пари в searchId
-  const searchIdSnapshot = await get(ref2(db, `searchId`));
-  console.log(`5555555555`);
-  if (searchIdSnapshot.exists()) {
-    const searchIdData = searchIdSnapshot.val();
-    console.log(`searchIdData`, searchIdData);
-
-    // Перебираємо всі ключі у searchId
-    const keysToRemove = Object.keys(searchIdData).filter(key => key === searchIdKey && searchIdData[key] === userId);
-    console.log(`keysToRemove`, keysToRemove);
-    // Видаляємо пари, що відповідають userId
-    for (const key of keysToRemove) {
-      await remove(ref2(db, `searchId/${key}`));
-      console.log(`Видалено пару в searchId: ${key}`);
+  for (const collection of SEARCH_INDEX_COLLECTIONS) {
+    // eslint-disable-next-line no-await-in-loop
+    const searchIdSnapshot = await get(ref2(db, collection));
+    if (searchIdSnapshot.exists()) {
+      const searchIdData = searchIdSnapshot.val();
+      const keysToRemove = Object.keys(searchIdData).filter(key => key === searchIdKey && searchIdData[key] === userId);
+      for (const key of keysToRemove) {
+        // eslint-disable-next-line no-await-in-loop
+        await remove(ref2(db, `${collection}/${key}`));
+        console.log(`Видалено пару в ${collection}: ${key}`);
+      }
     }
   }
 };
