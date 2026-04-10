@@ -2840,6 +2840,24 @@ const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
   return bloodGroupAllowed && rhAllowed;
 };
 
+const MARITAL_STATUS_SEARCH_KEY_BUCKETS = ['+', '-', '?', 'no'];
+
+const getMaritalStatusFilterKey = bucket => {
+  const normalizedBucket = String(bucket || '').trim().toLowerCase();
+  if (normalizedBucket === '+') return 'married';
+  if (normalizedBucket === '-') return 'unmarried';
+  return 'other';
+};
+
+const isMaritalStatusBucketAllowedByFilters = (bucket, filterSettings = {}) => {
+  const maritalStatusFilters = filterSettings?.maritalStatus;
+  const shouldApplyMaritalStatus = hasExplicitFilterSelection(maritalStatusFilters);
+  if (!shouldApplyMaritalStatus) return true;
+
+  const filterKey = getMaritalStatusFilterKey(bucket);
+  return Boolean(maritalStatusFilters?.[filterKey]);
+};
+
 const updateSearchKeyLeaf = async (indexName, value, userId, action) => {
   if (!indexName || !value || !userId) return;
   const indexRef = ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${indexName}/${value}/${userId}`);
@@ -2949,24 +2967,42 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   limit = PAGE_SIZE,
 } = {}) => {
   const filteredBuckets = BLOOD_SEARCH_KEY_BUCKETS.filter(bucket => isBucketAllowedByFilters(bucket, filterSettings));
-
-  const bucketSnapshots = await Promise.all(
-    filteredBuckets.map(bucket => get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${BLOOD_SEARCH_KEY_INDEX}/${bucket}`)))
+  const filteredMaritalStatusBuckets = MARITAL_STATUS_SEARCH_KEY_BUCKETS.filter(bucket =>
+    isMaritalStatusBucketAllowedByFilters(bucket, filterSettings)
   );
 
-  const orderedIds = [];
-  const seenIds = new Set();
+  const [bucketSnapshots, maritalStatusSnapshots] = await Promise.all([
+    Promise.all(
+    filteredBuckets.map(bucket => get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${BLOOD_SEARCH_KEY_INDEX}/${bucket}`)))
+    ),
+    Promise.all(
+      filteredMaritalStatusBuckets.map(bucket =>
+        get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${bucket}`))
+      )
+    ),
+  ]);
 
-  bucketSnapshots.forEach(snapshot => {
-    if (!snapshot.exists()) return;
-    Object.keys(snapshot.val() || {}).forEach(id => {
-      if (!id || seenIds.has(id)) return;
-      seenIds.add(id);
-      orderedIds.push(id);
+  const collectIdsFromSnapshots = snapshots => {
+    const ids = new Set();
+    snapshots.forEach(snapshot => {
+      if (!snapshot.exists()) return;
+      Object.keys(snapshot.val() || {}).forEach(id => {
+        if (!id) return;
+        ids.add(id);
+      });
     });
-  });
+    return ids;
+  };
 
-  const sortedIds = [...orderedIds].sort((a, b) => a.localeCompare(b));
+  const bloodUserIds = collectIdsFromSnapshots(bucketSnapshots);
+  const maritalStatusUserIds = collectIdsFromSnapshots(maritalStatusSnapshots);
+  const shouldApplyMaritalStatusFilter = hasExplicitFilterSelection(filterSettings?.maritalStatus);
+
+  const finalIds = shouldApplyMaritalStatusFilter
+    ? [...bloodUserIds].filter(id => maritalStatusUserIds.has(id))
+    : [...bloodUserIds];
+
+  const sortedIds = [...finalIds].sort((a, b) => a.localeCompare(b));
   const pageIds = sortedIds.slice(offset, offset + limit);
   const users = await fetchUsersByIds(pageIds);
   const nextOffset = offset + pageIds.length;
