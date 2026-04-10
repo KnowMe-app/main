@@ -57,6 +57,8 @@ export const database = getDatabase(app);
 export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 
 const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
+const SEARCH_KEY_INDEX_ROOT = 'searchKey';
+const BLOOD_SEARCH_KEY_INDEX = 'blood';
 
 const getSearchIdPrefixes = searchIdPrefixes => {
   if (!Array.isArray(searchIdPrefixes) || searchIdPrefixes.length === 0) {
@@ -2627,6 +2629,94 @@ export const syncUserSearchIdIndex = async (userId, prevData = {}, nextData = {}
   }
 };
 
+const normalizeBloodIndexValue = rawValue => {
+  const normalized = String(rawValue || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+
+  if (!normalized) return 'no';
+
+  if (/^[1-4][+-]$/.test(normalized)) {
+    return normalized;
+  }
+
+  if (normalized === '+') {
+    return '+';
+  }
+
+  if (normalized === '-') {
+    return '-';
+  }
+
+  return '?';
+};
+
+const getBloodIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([normalizeBloodIndexValue(data.blood)]);
+};
+
+const updateSearchKeyLeaf = async (indexName, value, userId, action) => {
+  if (!indexName || !value || !userId) return;
+  const indexRef = ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${indexName}/${value}/${userId}`);
+
+  if (action === 'add') {
+    await set(indexRef, true);
+    return;
+  }
+
+  if (action === 'remove') {
+    await remove(indexRef);
+  }
+};
+
+export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {}) => {
+  if (!userId) return;
+
+  const prevValues = getBloodIndexSet(prevData);
+  const nextValues = getBloodIndexSet(nextData);
+
+  for (const value of prevValues) {
+    if (!nextValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'remove');
+    }
+  }
+
+  for (const value of nextValues) {
+    if (!prevValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'add');
+    }
+  }
+};
+
+export const createSearchKeyIndexInCollection = async (collection, onProgress) => {
+  const snapshot = await get(ref2(database, collection));
+  if (!snapshot.exists()) return;
+
+  const usersData = snapshot.val() || {};
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+
+  for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+    const batchIds = userIds.slice(i, i + BATCH_SIZE);
+
+    // eslint-disable-next-line no-await-in-loop
+    await Promise.all(
+      batchIds.map(async userId => {
+        const user = usersData[userId] || {};
+        const bloodValue = normalizeBloodIndexValue(user.blood);
+        await updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, bloodValue, userId, 'add');
+      })
+    );
+
+    const progress = Math.floor(((i + batchIds.length) / totalUsers) * 100);
+    if (onProgress && progress % 10 === 0) onProgress(progress);
+  }
+};
+
 // export const updateSearchId = async (searchKey, searchValue, userId, action) => {
 //   console.log('searchKey!!!!!!!!! :>> ', searchKey);
 //   console.log('searchValue!!!!!!!!! :>> ', searchValue);
@@ -3847,6 +3937,9 @@ export const removeCardAndSearchId = async userId => {
         }
       }
     }
+
+    await syncUserSearchKeyIndex(userId, userData, {});
+
     // console.warn(`Видаляємо картку користувача з newUsers: ${userId}`);
     // Видаляємо картку користувача з newUsers
     await remove(ref2(db, `newUsers/${userId}`));
