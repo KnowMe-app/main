@@ -3326,7 +3326,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onChange={handleFilterChange}
               storageKey={filterStorageKey}
               bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
-              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus'] : undefined}
+              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'csection'] : undefined}
             />
             <ButtonsContainer>
               {userNotFound && (
