@@ -1564,8 +1564,12 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   if (parsedQuery) {
     const { contactType, contactValues, name, surname } = parsedQuery;
     newUser[contactType] = contactValues;
-    newUser.name = name;
-    newUser.surname = surname;
+    if (name !== undefined) {
+      newUser.name = name;
+    }
+    if (surname !== undefined) {
+      newUser.surname = surname;
+    }
   }
 
   if (searchMeta) {
