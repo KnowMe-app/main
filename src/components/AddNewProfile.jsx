@@ -34,6 +34,8 @@ import {
   replaceStimulationShortcutIds,
   filterMain,
   syncUserSearchIdIndex,
+  syncUserSearchKeyIndex,
+  createSearchKeyIndexInCollection,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -828,9 +830,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
     setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
 
+    const existingData = syncedState?.userId ? await fetchUserById(syncedState.userId) : null;
+    if (syncedState?.userId) {
+      await Promise.all([
+        syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState),
+        syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState),
+      ]);
+    }
+
     if (syncedState?.userId?.length > 20) {
-      const { existingData } = await fetchUserById(syncedState.userId);
-      await syncUserSearchIdIndex(syncedState.userId, existingData, syncedState);
 
       const cleanedState = Object.fromEntries(
         Object.entries(syncedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
@@ -2623,6 +2631,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     toast.success('lastLogin2 indexed', { id: 'index-lastlogin-progress' });
   };
 
+  const indexSearchKeyBloodHandler = async () => {
+    toast.loading('Indexing searchKey/blood in newUsers 0%', { id: 'index-searchkey-progress' });
+    await createSearchKeyIndexInCollection('newUsers', progress => {
+      toast.loading(`Indexing searchKey/blood in newUsers ${progress}%`, {
+        id: 'index-searchkey-progress',
+      });
+    });
+    toast.loading('Indexing searchKey/blood in users 0%', { id: 'index-searchkey-progress' });
+    await createSearchKeyIndexInCollection('users', progress => {
+      toast.loading(`Indexing searchKey/blood in users ${progress}%`, {
+        id: 'index-searchkey-progress',
+      });
+    });
+    toast.success('searchKey/blood indexed', { id: 'index-searchkey-progress' });
+  };
+
   const fieldsToRender = getFieldsToRender(state);
 
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
@@ -3117,6 +3141,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 title="Індексація ярликів стимуляції"
               >
                 IdxSC
+              </Button>
+              <Button
+                onClick={indexSearchKeyBloodHandler}
+                title="Індексація searchKey/blood"
+              >
+                IdxBlood
               </Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
