@@ -2796,16 +2796,28 @@ export const createSearchIdsInCollection = async (collection, onProgress) => {
   }
 };
 
-export const rebuildSearchKeyIndexForCollections = async (collections = ['newUsers', 'users'], onProgress) => {
+export const rebuildSearchKeyIndexForCollections = async (
+  collections = ['newUsers', 'users'],
+  onProgress,
+  options = {},
+) => {
+  const chunkSizeRaw = Number(options?.chunkSize);
+  const chunkSize = Number.isFinite(chunkSizeRaw) && chunkSizeRaw > 0 ? Math.floor(chunkSizeRaw) : 20;
   const validCollections = (collections || []).filter(Boolean);
   if (validCollections.length === 0) {
-    return;
+    return {
+      processedUsers: 0,
+      indexedPaths: 0,
+      collections: [],
+      chunkSize,
+    };
   }
 
   await update(ref2(database), { searchKey: null });
 
   let processed = 0;
   let total = 0;
+  let indexedPaths = 0;
   const snapshots = {};
 
   for (const collection of validCollections) {
@@ -2822,13 +2834,14 @@ export const rebuildSearchKeyIndexForCollections = async (collections = ['newUse
     const usersData = snapshots[collection];
     const userIds = Object.keys(usersData);
 
-    for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
-      const batchIds = userIds.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < userIds.length; i += chunkSize) {
+      const batchIds = userIds.slice(i, i + chunkSize);
       const updates = {};
 
       batchIds.forEach(userId => {
         Object.assign(updates, buildUpdateMap(userId, usersData[userId], {}));
       });
+      indexedPaths += Object.values(updates).filter(Boolean).length;
 
       // eslint-disable-next-line no-await-in-loop
       await update(ref2(database), updates);
@@ -2839,6 +2852,13 @@ export const rebuildSearchKeyIndexForCollections = async (collections = ['newUse
       }
     }
   }
+
+  return {
+    processedUsers: processed,
+    indexedPaths,
+    collections: validCollections,
+    chunkSize,
+  };
 };
 
 // Функція для видалення пар у searchId
