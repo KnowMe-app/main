@@ -2675,7 +2675,7 @@ const getBloodBucketMeta = bucket => {
   if (/^[1-4]$/.test(normalizedBucket)) {
     return {
       bloodGroup: normalizedBucket,
-      rh: 'unclear',
+      rh: 'empty',
     };
   }
 
