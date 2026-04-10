@@ -26,12 +26,18 @@ import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
 import { removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
-import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { updateCard } from '../utils/cardsStorage';
-import { normalizePhoneValue } from './inputValidations';
+import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getCacheKey } from '../utils/cache';
 import { getReactionCategory } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
+import {
+  buildSearchIdCandidateKeys,
+  getEqualToCandidates,
+  makeSearchKeyValue,
+  shouldSkipBroadFallbackForExactSearchId,
+} from '../utils/searchKeyUtils';
+import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -127,102 +133,6 @@ const loadCollectionWithIndexCache = async (collection, options = {}) => {
   const data = snapshot.val() || {};
   writeCachedIndexCollection(collection, data);
   return data;
-};
-
-const getSearchIdPrefixes = searchIdPrefixes => {
-  if (!Array.isArray(searchIdPrefixes) || searchIdPrefixes.length === 0) {
-    return keysToCheck;
-  }
-
-  const normalizedPrefixes = searchIdPrefixes
-    .map(prefix => (typeof prefix === 'string' ? prefix.trim() : ''))
-    .filter(Boolean);
-
-  const allowedPrefixes = keysToCheck.filter(prefix =>
-    normalizedPrefixes.includes(prefix)
-  );
-
-  return allowedPrefixes.length > 0 ? allowedPrefixes : keysToCheck;
-};
-
-const normalizeSearchIdInput = (searchKey, rawValue) => {
-  const baseValue = String(rawValue || '').trim();
-  if (!baseValue) return '';
-
-  if (searchKey === 'phone') {
-    return normalizePhoneValue(baseValue);
-  }
-
-  if (searchKey === 'telegram') {
-    const parsedTrigger = parseUkTriggerQuery(baseValue);
-    if (parsedTrigger?.searchPair?.telegram) {
-      return parsedTrigger.searchPair.telegram;
-    }
-  }
-
-  return baseValue.replace(/\s+/g, ' ');
-};
-
-const normalizePhoneSearchIdValue = rawValue => normalizePhoneValue(rawValue);
-
-const buildSearchIdCandidateKeys = (
-  modifiedSearchValue,
-  rawSearchValue,
-  searchIdPrefixes,
-  options = {},
-) => {
-  const normalizedValue = String(modifiedSearchValue || '').toLowerCase();
-  if (!normalizedValue) return [];
-
-  const {
-    includeVariants = true,
-    includeAdaptedPhoneVariant = false,
-  } = options;
-  const ukSmPrefix = encodeKey('УК СМ ').toLowerCase();
-  const hasUkSm = normalizedValue.startsWith(ukSmPrefix);
-  const prefixesToCheck = getSearchIdPrefixes(searchIdPrefixes);
-
-  return prefixesToCheck.flatMap(prefix => {
-    if (prefix === 'phone' && includeAdaptedPhoneVariant) {
-      const adaptedPhoneValue = normalizePhoneSearchIdValue(rawSearchValue);
-      const adaptedPhoneKey = encodeKey(adaptedPhoneValue).toLowerCase();
-      const rawPhoneKey = encodeKey(String(rawSearchValue || '').trim()).toLowerCase();
-      const valuesToCheck = [...new Set([adaptedPhoneKey, rawPhoneKey].filter(Boolean))];
-      return valuesToCheck.map(value => `${prefix}_${value}`);
-    }
-
-    const searchKeys = [`${prefix}_${normalizedValue}`];
-
-    if (!includeVariants) {
-      return searchKeys;
-    }
-
-    if (hasUkSm) {
-      searchKeys.push(`${prefix}_${normalizedValue.slice(ukSmPrefix.length)}`);
-    } else {
-      searchKeys.push(`${prefix}_${ukSmPrefix}${normalizedValue}`);
-    }
-
-    if (normalizedValue.startsWith('0')) {
-      searchKeys.push(`${prefix}_38${normalizedValue}`);
-    }
-    if (normalizedValue.startsWith('+')) {
-      searchKeys.push(`${prefix}_${normalizedValue.slice(1)}`);
-    }
-
-    return searchKeys;
-  });
-};
-
-
-const shouldSkipBroadFallbackForExactSearchId = searchKey => {
-  if (searchKey !== 'searchId') return false;
-
-  // `searchId` в UI — окремий режим пошуку.
-  // Тому додаткові broad-fallback запити (по users/newUsers, partial userId тощо)
-  // не мають виконуватись, інакше можна отримати результати з інших полів
-  // (наприклад, telegram), навіть якщо вибрано тільки instagram-префікс.
-  return true;
 };
 
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
@@ -1689,13 +1599,7 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   };
 };
 
-const makeSearchKeyValue = searchedValue => {
-  const [searchKey, searchValue] = Object.entries(searchedValue)[0];
-  const normalizedSearchValue = normalizeSearchIdInput(searchKey, searchValue);
-  const modifiedSearchValue = encodeKey(normalizedSearchValue);
-  const searchIdKey = `${searchKey}_${modifiedSearchValue.toLowerCase()}`; // Формуємо ключ для пошуку у searchId
-  return { searchKey, searchValue: normalizedSearchValue, modifiedSearchValue, searchIdKey };
-};
+
 
 
 export const searchUserByPartialUserId = async (userId, users) => {
@@ -1888,62 +1792,6 @@ const executeSearchBySearchIdIndex = async (
 };
 
 const SEARCH_COLLECTIONS = ['newUsers', 'users'];
-const EQUAL_TO_INDEX_KEYS = [
-  'instagram',
-  'facebook',
-  'email',
-  'phone',
-  'telegram',
-  'tiktok',
-  'vk',
-  'other',
-  'userId',
-  'getInTouch',
-  'myComment',
-  'lastAction',
-  'name',
-  'surname',
-  'lastLogin2',
-  'createdAt',
-  'cycleStatus',
-  'lastCycle',
-  'lastLogin',
-];
-
-const resolveEqualToSearchKeys = equalToKeys => {
-  const normalizedSelected = Array.isArray(equalToKeys)
-    ? equalToKeys
-      .map(key => (typeof key === 'string' ? key.trim() : ''))
-      .filter(Boolean)
-    : [];
-
-  const allowedSelected = EQUAL_TO_INDEX_KEYS.filter(key =>
-    normalizedSelected.includes(key)
-  );
-
-  if (
-    allowedSelected.length === 0 ||
-    allowedSelected.length === EQUAL_TO_INDEX_KEYS.length
-  ) {
-    return [...EQUAL_TO_INDEX_KEYS];
-  }
-
-  return allowedSelected;
-};
-
-const getEqualToCandidates = (searchKey, rawSearchValue) => {
-  const trimmed = String(rawSearchValue || '').trim();
-  if (!trimmed) return [];
-
-  if (searchKey === 'phone') {
-    const normalizedPhone = normalizeSearchIdInput('phone', trimmed);
-    return [...new Set([normalizedPhone, trimmed].filter(Boolean))];
-  }
-
-  return [trimmed];
-};
-
-
 const executeSearchByEqualToFields = async (searchKeys, rawSearchValue, uniqueUserIds, users) => {
   if (!Array.isArray(searchKeys) || searchKeys.length === 0) return;
 
