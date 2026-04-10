@@ -2682,7 +2682,7 @@ const getBloodBucketMeta = bucket => {
   }
 
   if (normalizedBucket === '?') {
-    return { bloodGroup: 'unclear', rh: 'unclear' };
+    return { bloodGroup: 'other', rh: 'other' };
   }
 
   return { bloodGroup: 'other', rh: 'other' };
