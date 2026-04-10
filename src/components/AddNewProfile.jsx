@@ -36,6 +36,7 @@ import {
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
   createSearchKeyIndexInCollection,
+  createMaritalStatusSearchKeyIndexInCollection,
   fetchUsersBySearchKeyBloodPaged,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -2711,6 +2712,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     toast.success('searchKey/blood indexed', { id: 'index-searchkey-progress' });
   };
 
+  const indexSearchKeyMaritalStatusHandler = async () => {
+    toast.loading('Indexing searchKey/maritalStatus in newUsers 0%', {
+      id: 'index-searchkey-marital-progress',
+    });
+    await createMaritalStatusSearchKeyIndexInCollection('newUsers', progress => {
+      toast.loading(`Indexing searchKey/maritalStatus in newUsers ${progress}%`, {
+        id: 'index-searchkey-marital-progress',
+      });
+    });
+    toast.loading('Indexing searchKey/maritalStatus in users 0%', {
+      id: 'index-searchkey-marital-progress',
+    });
+    await createMaritalStatusSearchKeyIndexInCollection('users', progress => {
+      toast.loading(`Indexing searchKey/maritalStatus in users ${progress}%`, {
+        id: 'index-searchkey-marital-progress',
+      });
+    });
+    toast.success('searchKey/maritalStatus indexed', { id: 'index-searchkey-marital-progress' });
+  };
+
   const fieldsToRender = getFieldsToRender(state);
 
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
@@ -3223,6 +3244,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 title="Індексація searchKey/blood"
               >
                 IdxBlood
+              </Button>
+              <Button
+                onClick={indexSearchKeyMaritalStatusHandler}
+                title="Індексація searchKey/maritalStatus"
+              >
+                IdxMarital
               </Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
