@@ -111,6 +111,7 @@ export const SearchFilters = ({
           { val: 'cs2plus', label: 'cs2+' },
           { val: 'cs1', label: 'cs1' },
           { val: 'cs0', label: 'cs0' },
+          { val: 'no', label: 'no' },
           { val: 'other', label: '?' },
         ],
       },

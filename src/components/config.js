@@ -60,6 +60,7 @@ const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tik
 const SEARCH_KEY_INDEX_ROOT = 'searchKey';
 const BLOOD_SEARCH_KEY_INDEX = 'blood';
 const MARITAL_STATUS_SEARCH_KEY_INDEX = 'maritalStatus';
+const CSECTION_SEARCH_KEY_INDEX = 'csection';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
 const SEARCH_INDEX_COLLECTION_CACHE_PREFIX = 'search-index:collection:v1:';
 const SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 15 * 60 * 1000;
@@ -2785,6 +2786,31 @@ const getMaritalStatusIndexSet = data => {
   return new Set([normalizeMaritalStatusIndexValue(data.maritalStatus)]);
 };
 
+export const normalizeCsectionIndexValue = value => {
+  if (value === null || value === undefined) return 'other';
+
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return 'other';
+
+  const parsedInt = Number.parseInt(normalized, 10);
+  if (!Number.isNaN(parsedInt)) {
+    if (parsedInt >= 2) return 'cs2plus';
+    if (parsedInt === 1) return 'cs1';
+    if (parsedInt === 0) return 'cs0';
+  }
+
+  if (['+', 'plus', 'yes', 'так', 'був', 'була'].includes(normalized)) return 'cs1';
+  if (['-', 'no', 'ні', 'none', 'нема', 'немає'].includes(normalized)) return 'no';
+  if (['?', 'unknown', 'невідомо'].includes(normalized)) return 'other';
+
+  return 'other';
+};
+
+const getCsectionIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([normalizeCsectionIndexValue(data.csection)]);
+};
+
 const BLOOD_SEARCH_KEY_BUCKETS = ['1+', '1-', '1', '2+', '2-', '2', '3+', '3-', '3', '4+', '4-', '4', '+', '-', '?', 'no'];
 
 const getBloodBucketMeta = bucket => {
@@ -2879,6 +2905,8 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   const nextValues = getBloodIndexSet(nextData);
   const prevMaritalStatusValues = getMaritalStatusIndexSet(prevData);
   const nextMaritalStatusValues = getMaritalStatusIndexSet(nextData);
+  const prevCsectionValues = getCsectionIndexSet(prevData);
+  const nextCsectionValues = getCsectionIndexSet(nextData);
 
   for (const value of prevValues) {
     if (!nextValues.has(value)) {
@@ -2905,6 +2933,20 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
     if (!prevMaritalStatusValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
       await updateSearchKeyLeaf(MARITAL_STATUS_SEARCH_KEY_INDEX, value, userId, 'add');
+    }
+  }
+
+  for (const value of prevCsectionValues) {
+    if (!nextCsectionValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(CSECTION_SEARCH_KEY_INDEX, value, userId, 'remove');
+    }
+  }
+
+  for (const value of nextCsectionValues) {
+    if (!prevCsectionValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(CSECTION_SEARCH_KEY_INDEX, value, userId, 'add');
     }
   }
 };
@@ -2945,6 +2987,34 @@ export const createMaritalStatusSearchKeyIndexInCollection = async (collection, 
     const user = usersData[userId] || {};
     const maritalStatusValue = normalizeMaritalStatusIndexValue(user.maritalStatus);
     acc[`${SEARCH_KEY_INDEX_ROOT}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${maritalStatusValue}/${userId}`] = true;
+    return acc;
+  }, {});
+
+  const updateEntries = Object.entries(updates);
+
+  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
+    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
+    const chunkPayload = Object.fromEntries(chunkEntries);
+    // eslint-disable-next-line no-await-in-loop
+    await update(ref2(database), chunkPayload);
+
+    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
+    if (onProgress && progress % 10 === 0) onProgress(progress);
+  }
+};
+
+export const createCsectionSearchKeyIndexInCollection = async (collection, onProgress) => {
+  const usersData = await loadCollectionWithIndexCache(collection);
+  if (!usersData) return;
+
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  const updates = userIds.reduce((acc, userId) => {
+    const user = usersData[userId] || {};
+    const csectionValue = normalizeCsectionIndexValue(user.csection);
+    acc[`${SEARCH_KEY_INDEX_ROOT}/${CSECTION_SEARCH_KEY_INDEX}/${csectionValue}/${userId}`] = true;
     return acc;
   }, {});
 
@@ -3206,18 +3276,7 @@ const filterByUserIdLength = userId => {
   return typeof userId === 'string' && userId.length <= 25;
 };
 
-const categorizeCsection = val => {
-  if (!val) return 'other';
-  const c = val.toString().trim().toLowerCase();
-  if (!isNaN(parseInt(c, 10))) {
-    const num = parseInt(c, 10);
-    if (num >= 2) return 'cs2plus';
-    if (num === 1) return 'cs1';
-    if (num === 0) return 'cs0';
-  }
-  if (['-', 'no', 'ні'].includes(c)) return 'cs0';
-  return 'other';
-};
+const categorizeCsection = val => normalizeCsectionIndexValue(val);
 
 const getRoleCategory = value => {
   const role = (value.role || value.userRole || '').toString().trim().toLowerCase();
