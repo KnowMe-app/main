@@ -20,7 +20,7 @@ import {
   makeNewUser,
   // removeSearchId,
   // createSearchIdsForAllUsers,
-  rebuildSearchKeyIndexForCollections,
+  createSearchIdsInCollection,
   fetchUserById,
   loadDuplicateUsers,
   removeCardAndSearchId,
@@ -2593,11 +2593,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const makeIndex = async () => {
-    toast.loading('Rebuilding searchKey index 0%', { id: 'index-progress' });
-    await rebuildSearchKeyIndexForCollections(['newUsers', 'users'], progress => {
-      toast.loading(`Rebuilding searchKey index ${progress}%`, { id: 'index-progress' });
+    toast.loading('Indexing newUsers 0%', { id: 'index-progress' });
+    await createSearchIdsInCollection('newUsers', progress => {
+      toast.loading(`Indexing newUsers ${progress}%`, { id: 'index-progress' });
     });
-    toast.success('searchKey index rebuilt', { id: 'index-progress' });
+    toast.loading('Indexing users 0%', { id: 'index-progress' });
+    await createSearchIdsInCollection('users', progress => {
+      toast.loading(`Indexing users ${progress}%`, { id: 'index-progress' });
+    });
+    toast.success('Indexing finished', { id: 'index-progress' });
 
     // const res = await fetchListOfUsers();
     // res.forEach(async userId => {
@@ -3114,7 +3118,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               >
                 IdxSC
               </Button>
-              <Button onClick={makeIndex}>IdxSearchKey</Button>
+              <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {
                 <Button
