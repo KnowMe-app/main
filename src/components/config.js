@@ -2745,6 +2745,7 @@ const getMaritalStatusFilterKey = bucket => {
   const normalizedBucket = String(bucket || '').trim().toLowerCase();
   if (normalizedBucket === '+') return 'married';
   if (normalizedBucket === '-') return 'unmarried';
+  if (normalizedBucket === 'no') return 'empty';
   return 'other';
 };
 
