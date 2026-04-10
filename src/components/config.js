@@ -70,6 +70,7 @@ const CSECTION_SEARCH_KEY_INDEX = 'csection';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
 const SEARCH_INDEX_COLLECTION_CACHE_PREFIX = 'search-index:collection:v1:';
 const SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 15 * 60 * 1000;
+const BLOOD_SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const getSearchIndexCacheStorage = () => {
   if (typeof window === 'undefined') return null;
@@ -2800,7 +2801,9 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
 };
 
 export const createSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection);
+  const usersData = await loadCollectionWithIndexCache(collection, {
+    maxAgeMs: BLOOD_SEARCH_INDEX_COLLECTION_CACHE_TTL_MS,
+  });
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
