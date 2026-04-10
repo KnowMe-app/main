@@ -61,6 +61,72 @@ const SEARCH_KEY_INDEX_ROOT = 'searchKey';
 const BLOOD_SEARCH_KEY_INDEX = 'blood';
 const MARITAL_STATUS_SEARCH_KEY_INDEX = 'maritalStatus';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
+const SEARCH_INDEX_COLLECTION_CACHE_PREFIX = 'search-index:collection:v1:';
+const SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 15 * 60 * 1000;
+
+const getSearchIndexCacheStorage = () => {
+  if (typeof window === 'undefined') return null;
+  if (!window.localStorage) return null;
+  return window.localStorage;
+};
+
+const getSearchIndexCollectionCacheKey = collection =>
+  `${SEARCH_INDEX_COLLECTION_CACHE_PREFIX}${String(collection || '').trim()}`;
+
+const readCachedIndexCollection = (collection, maxAgeMs = SEARCH_INDEX_COLLECTION_CACHE_TTL_MS) => {
+  const storage = getSearchIndexCacheStorage();
+  const cacheKey = getSearchIndexCollectionCacheKey(collection);
+  if (!storage || !cacheKey) return null;
+
+  try {
+    const raw = storage.getItem(cacheKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (!Number.isFinite(parsed.cachedAtMs)) return null;
+    if (Date.now() - parsed.cachedAtMs > maxAgeMs) return null;
+    if (!parsed.data || typeof parsed.data !== 'object') return null;
+    return parsed.data;
+  } catch (error) {
+    if (isDev) console.error(`Unable to read cached index collection "${collection}"`, error);
+    return null;
+  }
+};
+
+const writeCachedIndexCollection = (collection, data) => {
+  const storage = getSearchIndexCacheStorage();
+  const cacheKey = getSearchIndexCollectionCacheKey(collection);
+  if (!storage || !cacheKey || !data || typeof data !== 'object') return;
+
+  try {
+    storage.setItem(
+      cacheKey,
+      JSON.stringify({
+        cachedAtMs: Date.now(),
+        data,
+      })
+    );
+  } catch (error) {
+    if (isDev) console.error(`Unable to write cached index collection "${collection}"`, error);
+  }
+};
+
+const loadCollectionWithIndexCache = async (collection, options = {}) => {
+  const { forceRefresh = false, maxAgeMs = SEARCH_INDEX_COLLECTION_CACHE_TTL_MS } = options;
+  if (!collection) return null;
+
+  if (!forceRefresh) {
+    const cached = readCachedIndexCollection(collection, maxAgeMs);
+    if (cached) return cached;
+  }
+
+  const snapshot = await get(ref2(database, collection));
+  if (!snapshot.exists()) return null;
+
+  const data = snapshot.val() || {};
+  writeCachedIndexCollection(collection, data);
+  return data;
+};
 
 const getSearchIdPrefixes = searchIdPrefixes => {
   if (!Array.isArray(searchIdPrefixes) || searchIdPrefixes.length === 0) {
@@ -2826,10 +2892,9 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
 };
 
 export const createSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const snapshot = await get(ref2(database, collection));
-  if (!snapshot.exists()) return;
+  const usersData = await loadCollectionWithIndexCache(collection);
+  if (!usersData) return;
 
-  const usersData = snapshot.val() || {};
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
 
@@ -2851,10 +2916,9 @@ export const createSearchKeyIndexInCollection = async (collection, onProgress) =
 };
 
 export const createMaritalStatusSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const snapshot = await get(ref2(database, collection));
-  if (!snapshot.exists()) return;
+  const usersData = await loadCollectionWithIndexCache(collection);
+  if (!usersData) return;
 
-  const usersData = snapshot.val() || {};
   const userIds = Object.keys(usersData);
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
@@ -2985,63 +3049,59 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
 // };
 
 export const createSearchIdsInCollection = async (collection, onProgress) => {
-  const ref = ref2(database, collection);
+  const usersData = await loadCollectionWithIndexCache(collection);
+  if (!usersData) return;
 
-  const [newUsersSnapshot] = await Promise.all([get(ref)]);
+  const userIds = Object.keys(usersData);
+  if (isDev) console.log('userIds :>> ', userIds);
 
-  if (newUsersSnapshot.exists()) {
-    const usersData = newUsersSnapshot.val();
-    const userIds = Object.keys(usersData);
-    if (isDev) console.log('userIds :>> ', userIds);
+  const totalUsers = userIds.length;
+  for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+    const batchIds = userIds.slice(i, i + BATCH_SIZE);
+    const updatePromises = [];
+    for (const userId of batchIds) {
+      const user = usersData[userId];
+      for (const key of keysToCheck) {
+        if (user.hasOwnProperty(key)) {
+          let value = user[key];
 
-    const totalUsers = userIds.length;
-    for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
-      const batchIds = userIds.slice(i, i + BATCH_SIZE);
-      const updatePromises = [];
-      for (const userId of batchIds) {
-        const user = usersData[userId];
-        for (const key of keysToCheck) {
-          if (user.hasOwnProperty(key)) {
-            let value = user[key];
+          if (Array.isArray(value)) {
+            if (isDev) console.log('Array.isArray(value) :>> ', value);
+            value.forEach(item => {
+              if (item && typeof item === 'string') {
+                let cleanedValue = item.toString().trim();
 
-            if (Array.isArray(value)) {
-              if (isDev) console.log('Array.isArray(value) :>> ', value);
-              value.forEach(item => {
-                if (item && typeof item === 'string') {
-                  let cleanedValue = item.toString().trim();
-
-                  if (key === 'phone' || key === 'name' || key === 'surname') {
-                    cleanedValue = cleanedValue.replace(/\s+/g, '');
-                  }
-
-                  if (key === 'telegram') {
-                    cleanedValue = encodeKey(cleanedValue);
-                  }
-
-                  updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
+                if (key === 'phone' || key === 'name' || key === 'surname') {
+                  cleanedValue = cleanedValue.replace(/\s+/g, '');
                 }
-              });
-            } else if (value && (typeof value === 'string' || typeof value === 'number')) {
-              let cleanedValue = value.toString();
 
-              if (key === 'phone' || key === 'name' || key === 'surname') {
-                cleanedValue = cleanedValue.replace(/\s+/g, '');
-              }
-              if (key === 'telegram') {
-                cleanedValue = encodeKey(value);
-              }
+                if (key === 'telegram') {
+                  cleanedValue = encodeKey(cleanedValue);
+                }
 
-              updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
+                updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
+              }
+            });
+          } else if (value && (typeof value === 'string' || typeof value === 'number')) {
+            let cleanedValue = value.toString();
+
+            if (key === 'phone' || key === 'name' || key === 'surname') {
+              cleanedValue = cleanedValue.replace(/\s+/g, '');
             }
+            if (key === 'telegram') {
+              cleanedValue = encodeKey(value);
+            }
+
+            updatePromises.push(updateSearchId(key, cleanedValue.toLowerCase(), userId, 'add'));
           }
         }
       }
-
-      // eslint-disable-next-line no-await-in-loop
-      await Promise.all(updatePromises);
-      const progress = Math.floor(((i + batchIds.length) / totalUsers) * 100);
-      if (onProgress && progress % 10 === 0) onProgress(progress);
     }
+
+    // eslint-disable-next-line no-await-in-loop
+    await Promise.all(updatePromises);
+    const progress = Math.floor(((i + batchIds.length) / totalUsers) * 100);
+    if (onProgress && progress % 10 === 0) onProgress(progress);
   }
 };
 
@@ -3771,14 +3831,12 @@ export const removeKeyFromFirebase = async (field, value, userId) => {
 // };
 export const loadDuplicateUsers = async () => {
   try {
-    const searchIdSnapshot = await get(ref2(database, 'searchId'));
+    const searchIdData = await loadCollectionWithIndexCache('searchId');
 
-    if (!searchIdSnapshot.exists()) {
+    if (!searchIdData) {
       console.log('No duplicates found in searchId.');
       return {};
     }
-
-    const searchIdData = searchIdSnapshot.val();
 
     const pairs = []; // Масив для зберігання пар (userIdOrArray)
     for (const [searchKey, userIdOrArray] of Object.entries(searchIdData)) {
@@ -3912,14 +3970,12 @@ export const loadDuplicateUsers = async () => {
 
 export const mergeDuplicateUsers = async () => {
   try {
-    const searchIdSnapshot = await get(ref2(database, 'searchId'));
+    const searchIdData = await loadCollectionWithIndexCache('searchId');
 
-    if (!searchIdSnapshot.exists()) {
+    if (!searchIdData) {
       console.log('No duplicates found in searchId.');
       return {};
     }
-
-    const searchIdData = searchIdSnapshot.val();
 
     const pairs = [];
     for (const [searchKey, userIdOrArray] of Object.entries(searchIdData)) {
