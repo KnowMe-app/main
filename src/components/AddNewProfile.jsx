@@ -36,6 +36,7 @@ import {
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
   createSearchKeyIndexInCollection,
+  fetchUsersBySearchKeyBloodPaged,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -548,6 +549,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     GIT: 'GIT',
     LAST_ACTION: 'LA',
     NO_GIT: 'NoGIT',
+    SEARCH_ID_KEY_ONLY: 'SearchIdKeyOnly',
   };
 
   const location = useLocation();
@@ -1310,6 +1312,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       case LOAD_SORT_MODES.LAST_ACTION:
         return 'LAST_ACTION';
       case LOAD_SORT_MODES.NO_GIT:
+      case LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY:
         return 'DATE2.1';
       case LOAD_SORT_MODES.GIT:
       default:
@@ -1319,6 +1322,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const filterStorageKey =
     loadSortMode === LOAD_SORT_MODES.LAST_ACTION ? 'addFiltersLA' : 'addFilters';
+
+  const searchIdAndSearchKeyOnlyMode = loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY;
+
+  const effectiveEnabledSearchKeys = searchIdAndSearchKeyOnlyMode
+    ? {
+        ...enabledSearchKeys,
+        searchId: true,
+        equalToAllCards: true,
+        partialUserId: false,
+      }
+    : enabledSearchKeys;
 
   const handleLoadSortModeChange = useCallback(mode => {
     setLoadSortMode(mode);
@@ -1548,7 +1562,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     if (currentFilter === 'DATE2.1') {
-      loadMoreUsers21()
+      const loadPromise = searchIdAndSearchKeyOnlyMode
+        ? loadMoreUsersSearchKey()
+        : loadMoreUsers21();
+      loadPromise
         .then(({ cacheCount, backendCount }) => {
           setCacheCount(cacheCount);
           setBackendCount(backendCount);
@@ -1598,7 +1615,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         .finally(() => setSearchLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, currentFilter, search, loadRequestId]);
+  }, [filters, currentFilter, search, loadRequestId, searchIdAndSearchKeyOnlyMode]);
 
 
   const [adding, setAdding] = useState(false);
@@ -1971,6 +1988,51 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
   };
 
+  const loadMoreUsersSearchKey = async (currentFilters = filters) => {
+    let favRaw = getFavorites();
+    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
+    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
+      fav = await fetchFavoriteUsers(auth.currentUser.uid);
+      setFavoriteUsersData(fav);
+      syncFavorites(fav);
+    }
+
+    if (isEditingRef.current) {
+      return { cacheCount: 0, backendCount: 0, hasMore };
+    }
+
+    const res = await fetchUsersBySearchKeyBloodPaged({
+      filterSettings: currentFilters,
+      offset: dateOffset21,
+      limit: PAGE_SIZE,
+    });
+
+    const normalizedUsers = Object.entries(res?.users || {}).reduce((acc, [id, user]) => {
+      const targetId = user?.userId || id;
+      if (!targetId || !user) return acc;
+      if (currentFilters.favorite?.favOnly && !fav[targetId]) return acc;
+      if (!passesReactionFilter(user, currentFilters?.reaction, fav, dislikeUsersData)) return acc;
+      acc[targetId] = { ...user, userId: targetId };
+      return acc;
+    }, {});
+
+    cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
+    if (!isEditingRef.current) {
+      setUsers(prev => mergeWithoutOverwrite(prev, normalizedUsers));
+    }
+
+    const queryKey = buildQueryKey('DATE2.1', currentFilters, search);
+    const existingIds = getIdsByQuery(queryKey);
+    setIdsForQuery(queryKey, [...new Set([...existingIds, ...Object.keys(normalizedUsers)])]);
+
+    setDateOffset21(res?.lastKey ?? dateOffset21);
+    setHasMore(Boolean(res?.hasMore));
+    setTotalCount(res?.totalCount || 0);
+
+    const backendCount = Object.keys(normalizedUsers).length;
+    return { cacheCount: 0, backendCount, hasMore: Boolean(res?.hasMore) };
+  };
+
   const loadMoreUsers2Base = async (
     currentFilters = filters,
     {
@@ -2219,7 +2281,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         currentFilter === 'DATE2'
           ? await loadMoreUsers2()
           : currentFilter === 'DATE2.1'
-          ? await loadMoreUsers21()
+          ? searchIdAndSearchKeyOnlyMode
+            ? await loadMoreUsersSearchKey()
+            : await loadMoreUsers21()
           : currentFilter === 'LAST_ACTION'
           ? await loadMoreUsersLastAction()
           : await loadMoreUsers(currentFilter);
@@ -2866,12 +2930,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             filterForload={currentFilter}
             favoriteUsers={favoriteUsersData}
             dislikeUsers={dislikeUsersData}
-            enabledSearchKeys={enabledSearchKeys}
+            enabledSearchKeys={effectiveEnabledSearchKeys}
             searchOptions={{
               searchIdPrefixes: selectedSearchIdPrefixes,
               equalToKeys: selectedEqualToKeys,
               autoOtherFallback: shouldAutoRunOtherFallback,
-              enabledSearchKeys,
+              enabledSearchKeys: effectiveEnabledSearchKeys,
             }}
           />
           <SearchSettingsButton
@@ -3088,11 +3152,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 />
                 NoGIT
               </SortModeLabel>
+              <SortModeLabel>
+                <input
+                  type="radio"
+                  name="load-sort-mode"
+                  value={LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
+                  checked={loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
+                  onChange={event => handleLoadSortModeChange(event.target.value)}
+                />
+                NoGIT+IdKey
+              </SortModeLabel>
             </SortModeContainer>
             <FilterPanel
               key={filterStorageKey}
               onChange={handleFilterChange}
               storageKey={filterStorageKey}
+              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh'] : undefined}
             />
             <ButtonsContainer>
               {userNotFound && (

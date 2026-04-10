@@ -2657,6 +2657,46 @@ const getBloodIndexSet = data => {
   return new Set([normalizeBloodIndexValue(data.blood)]);
 };
 
+const BLOOD_SEARCH_KEY_BUCKETS = ['1+', '1-', '2+', '2-', '3+', '3-', '4+', '4-', '+', '-', '?', 'no'];
+
+const getBloodBucketMeta = bucket => {
+  const normalizedBucket = String(bucket || '').trim().toLowerCase();
+
+  if (/^[1-4][+-]$/.test(normalizedBucket)) {
+    return {
+      bloodGroup: normalizedBucket[0],
+      rh: normalizedBucket[1],
+    };
+  }
+
+  if (normalizedBucket === '+') {
+    return { bloodGroup: 'other', rh: '+' };
+  }
+
+  if (normalizedBucket === '-') {
+    return { bloodGroup: 'other', rh: '-' };
+  }
+
+  return { bloodGroup: 'other', rh: 'other' };
+};
+
+const hasExplicitFilterSelection = filterMap =>
+  Boolean(filterMap && typeof filterMap === 'object' && Object.values(filterMap).some(value => value === false));
+
+const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
+  const { bloodGroup, rh } = getBloodBucketMeta(bucket);
+  const bloodGroupFilters = filterSettings?.bloodGroup;
+  const rhFilters = filterSettings?.rh;
+
+  const shouldApplyBloodGroup = hasExplicitFilterSelection(bloodGroupFilters);
+  const shouldApplyRh = hasExplicitFilterSelection(rhFilters);
+
+  const bloodGroupAllowed = shouldApplyBloodGroup ? Boolean(bloodGroupFilters?.[bloodGroup]) : true;
+  const rhAllowed = shouldApplyRh ? Boolean(rhFilters?.[rh]) : true;
+
+  return bloodGroupAllowed && rhAllowed;
+};
+
 const updateSearchKeyLeaf = async (indexName, value, userId, action) => {
   if (!indexName || !value || !userId) return;
   const indexRef = ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${indexName}/${value}/${userId}`);
@@ -2715,6 +2755,44 @@ export const createSearchKeyIndexInCollection = async (collection, onProgress) =
     const progress = Math.floor(((i + batchIds.length) / totalUsers) * 100);
     if (onProgress && progress % 10 === 0) onProgress(progress);
   }
+};
+
+export const fetchUsersBySearchKeyBloodPaged = async ({
+  filterSettings = {},
+  offset = 0,
+  limit = PAGE_SIZE,
+} = {}) => {
+  const filteredBuckets = BLOOD_SEARCH_KEY_BUCKETS.filter(bucket => isBucketAllowedByFilters(bucket, filterSettings));
+
+  const bucketSnapshots = await Promise.all(
+    filteredBuckets.map(bucket => get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${BLOOD_SEARCH_KEY_INDEX}/${bucket}`)))
+  );
+
+  const orderedIds = [];
+  const seenIds = new Set();
+
+  bucketSnapshots.forEach(snapshot => {
+    if (!snapshot.exists()) return;
+    Object.keys(snapshot.val() || {}).forEach(id => {
+      if (!id || seenIds.has(id)) return;
+      seenIds.add(id);
+      orderedIds.push(id);
+    });
+  });
+
+  const sortedIds = [...orderedIds].sort((a, b) => a.localeCompare(b));
+  const pageIds = sortedIds.slice(offset, offset + limit);
+  const users = await fetchUsersByIds(pageIds);
+  const nextOffset = offset + pageIds.length;
+  const hasMore = nextOffset < sortedIds.length;
+
+  return {
+    users,
+    lastKey: nextOffset,
+    hasMore,
+    totalCount: sortedIds.length,
+    loadedIds: pageIds,
+  };
 };
 
 // export const updateSearchId = async (searchKey, searchValue, userId, action) => {
