@@ -2635,24 +2635,48 @@ const getMaritalStatusIndexSet = data => {
   return new Set([normalizeMaritalStatusIndexValue(data.maritalStatus)]);
 };
 
-export const normalizeCsectionIndexValue = value => {
-  if (value === null || value === undefined) return 'other';
+const CSECTION_DATE_PATTERN = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/;
+const CSECTION_INTEGER_PATTERN = /^[+-]?\d+$/;
+const CSECTION_MINUS_VALUES = new Set(['-', 'no', 'ні', 'minus']);
+
+const normalizeSingleCsectionIndexValue = value => {
+  if (value === null || value === undefined) return 'no';
 
   const normalized = String(value).trim().toLowerCase();
-  if (!normalized) return 'other';
+  if (!normalized) return 'no';
+  const normalizedToken = normalized.replace(/[.,;:!?]+$/g, '');
 
-  const parsedInt = Number.parseInt(normalized, 10);
-  if (!Number.isNaN(parsedInt)) {
-    if (parsedInt >= 2) return 'cs2plus';
+  if (CSECTION_DATE_PATTERN.test(normalizedToken)) return 'cs1';
+
+  if (normalizedToken === '+' || normalizedToken === 'plus') return 'cs1';
+  if (normalizedToken === '++' || normalizedToken === '+++') return 'cs2plus';
+
+  if (CSECTION_INTEGER_PATTERN.test(normalizedToken)) {
+    const parsedInt = Number.parseInt(normalizedToken, 10);
     if (parsedInt === 1) return 'cs1';
-    if (parsedInt === 0) return 'cs0';
+    if (parsedInt === 2 || parsedInt === 3) return 'cs2plus';
   }
 
-  if (['+', 'plus', 'yes', 'так', 'був', 'була'].includes(normalized)) return 'cs1';
-  if (['-', 'no', 'ні', 'none', 'нема', 'немає'].includes(normalized)) return 'no';
-  if (['?', 'unknown', 'невідомо'].includes(normalized)) return 'other';
+  if (CSECTION_MINUS_VALUES.has(normalizedToken)) return 'cs0';
 
   return 'other';
+};
+
+export const normalizeCsectionIndexValue = value => {
+  if (Array.isArray(value)) {
+    const normalizedItems = value
+      .filter(item => item !== null && item !== undefined && String(item).trim() !== '')
+      .map(item => normalizeSingleCsectionIndexValue(item));
+
+    if (normalizedItems.length === 0) return 'no';
+    if (normalizedItems.includes('cs2plus')) return 'cs2plus';
+    if (normalizedItems.includes('cs1')) return 'cs1';
+    if (normalizedItems.includes('cs0')) return 'cs0';
+    if (normalizedItems.includes('no')) return 'no';
+    return 'other';
+  }
+
+  return normalizeSingleCsectionIndexValue(value);
 };
 
 const getCsectionIndexSet = data => {
