@@ -146,8 +146,7 @@ export const SearchFilters = ({
           { val: 'other', label: '?' },
           ...(bloodSearchKeyMode
             ? [
-                { val: 'empty', label: '∅' },
-                { val: 'unclear', label: '??' },
+                { val: 'empty', label: 'no' },
               ]
             : []),
         ],
@@ -161,8 +160,7 @@ export const SearchFilters = ({
           { val: 'other', label: '?' },
           ...(bloodSearchKeyMode
             ? [
-                { val: 'empty', label: '∅' },
-                { val: 'unclear', label: '??' },
+                { val: 'empty', label: 'no' },
               ]
             : []),
         ],

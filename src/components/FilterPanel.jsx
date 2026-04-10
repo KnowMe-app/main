@@ -6,8 +6,8 @@ const defaultsAdd = {
   csection: { cs2plus: true, cs1: true, cs0: true, other: true },
   role: { ed: true, sm: true, ag: true, ip: true, cl: true, other: true },
   maritalStatus: { married: true, unmarried: true, other: true },
-  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: true, unclear: true },
-  rh: { '+': true, '-': true, other: true, empty: true, unclear: true },
+  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: true },
+  rh: { '+': true, '-': true, other: true, empty: true },
   age: {
     le25: true,
     '26_30': true,
@@ -42,8 +42,8 @@ const defaultsAdd = {
 const defaultsMatching = {
   userRole: { ed: true, ag: false, ip: false, other: false },
   maritalStatus: { married: true, unmarried: true, other: true },
-  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: true, unclear: true },
-  rh: { '+': true, '-': true, other: true, empty: true, unclear: true },
+  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: true },
+  rh: { '+': true, '-': true, other: true, empty: true },
   age: {
     le25: true,
     '26_30': true,
