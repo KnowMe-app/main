@@ -6,8 +6,8 @@ const defaultsAdd = {
   csection: { cs2plus: true, cs1: true, cs0: true, other: true },
   role: { ed: true, sm: true, ag: true, ip: true, cl: true, other: true },
   maritalStatus: { married: true, unmarried: true, other: true },
-  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true },
-  rh: { '+': true, '-': true, other: true },
+  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: true, unclear: true },
+  rh: { '+': true, '-': true, other: true, empty: true, unclear: true },
   age: {
     le25: true,
     '26_30': true,
@@ -42,8 +42,8 @@ const defaultsAdd = {
 const defaultsMatching = {
   userRole: { ed: true, ag: false, ip: false, other: false },
   maritalStatus: { married: true, unmarried: true, other: true },
-  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true },
-  rh: { '+': true, '-': true, other: true },
+  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: true, unclear: true },
+  rh: { '+': true, '-': true, other: true, empty: true, unclear: true },
   age: {
     le25: true,
     '26_30': true,
@@ -75,6 +75,7 @@ const FilterPanel = ({
   resetToken,
   nonAdminAllActive = false,
   allowedFilterNames,
+  bloodSearchKeyMode = false,
 }) => {
   const defaultFilters = useMemo(() => {
     if (mode !== 'matching') return defaultsAdd;
@@ -132,6 +133,7 @@ const FilterPanel = ({
       hideUserId={hideUserId}
       hideCommentLength={hideCommentLength}
       mode={mode}
+      bloodSearchKeyMode={bloodSearchKeyMode}
       allowedFilterNames={allowedFilterNames}
     />
   );

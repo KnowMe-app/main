@@ -2677,6 +2677,14 @@ const getBloodBucketMeta = bucket => {
     return { bloodGroup: 'other', rh: '-' };
   }
 
+  if (normalizedBucket === 'no') {
+    return { bloodGroup: 'empty', rh: 'empty' };
+  }
+
+  if (normalizedBucket === '?') {
+    return { bloodGroup: 'unclear', rh: 'unclear' };
+  }
+
   return { bloodGroup: 'other', rh: 'other' };
 };
 

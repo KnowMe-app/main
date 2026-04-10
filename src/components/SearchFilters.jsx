@@ -12,6 +12,7 @@ export const SearchFilters = ({
   hideCommentLength = false,
   mode = 'default',
   allowedFilterNames,
+  bloodSearchKeyMode = false,
 }) => {
   let groups = [];
   const contactIconStyle = { display: 'inline-flex', alignItems: 'center' };
@@ -143,6 +144,12 @@ export const SearchFilters = ({
           { val: '3', label: '3' },
           { val: '4', label: '4' },
           { val: 'other', label: '?' },
+          ...(bloodSearchKeyMode
+            ? [
+                { val: 'empty', label: '∅' },
+                { val: 'unclear', label: '??' },
+              ]
+            : []),
         ],
       },
       {
@@ -152,6 +159,12 @@ export const SearchFilters = ({
           { val: '+', label: '+' },
           { val: '-', label: '-' },
           { val: 'other', label: '?' },
+          ...(bloodSearchKeyMode
+            ? [
+                { val: 'empty', label: '∅' },
+                { val: 'unclear', label: '??' },
+              ]
+            : []),
         ],
       },
       {

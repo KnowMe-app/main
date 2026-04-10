@@ -3167,6 +3167,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               key={filterStorageKey}
               onChange={handleFilterChange}
               storageKey={filterStorageKey}
+              bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
               allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh'] : undefined}
             />
             <ButtonsContainer>
