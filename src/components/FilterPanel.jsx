@@ -74,6 +74,7 @@ const FilterPanel = ({
   storageKey: customKey,
   resetToken,
   nonAdminAllActive = false,
+  allowedFilterNames,
 }) => {
   const defaultFilters = useMemo(() => {
     if (mode !== 'matching') return defaultsAdd;
@@ -124,7 +125,16 @@ const FilterPanel = ({
     setFilters({ ...defaultFilters });
   }, [defaultFilters, resetToken]);
 
-  return <SearchFilters filters={filters} onChange={setFilters} hideUserId={hideUserId} hideCommentLength={hideCommentLength} mode={mode} />;
+  return (
+    <SearchFilters
+      filters={filters}
+      onChange={setFilters}
+      hideUserId={hideUserId}
+      hideCommentLength={hideCommentLength}
+      mode={mode}
+      allowedFilterNames={allowedFilterNames}
+    />
+  );
 };
 
 export default FilterPanel;

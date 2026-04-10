@@ -5,7 +5,14 @@ import { SiTiktok } from 'react-icons/si';
 import { CheckboxGroup } from './CheckboxGroup';
 import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 
-export const SearchFilters = ({ filters, onChange, hideUserId = false, hideCommentLength = false, mode = 'default' }) => {
+export const SearchFilters = ({
+  filters,
+  onChange,
+  hideUserId = false,
+  hideCommentLength = false,
+  mode = 'default',
+  allowedFilterNames,
+}) => {
   let groups = [];
   const contactIconStyle = { display: 'inline-flex', alignItems: 'center' };
 
@@ -238,6 +245,10 @@ export const SearchFilters = ({ filters, onChange, hideUserId = false, hideComme
   }
   if (hideCommentLength) {
     groups = groups.filter(g => g.filterName !== 'commentLength');
+  }
+  if (Array.isArray(allowedFilterNames) && allowedFilterNames.length > 0) {
+    const allowedSet = new Set(allowedFilterNames);
+    groups = groups.filter(group => allowedSet.has(group.filterName));
   }
 
   return (
