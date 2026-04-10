@@ -23,7 +23,7 @@ export const parseUkTriggerQuery = rawQuery => {
     : normalizedTriggerPrefix;
 
 
-  const handleMatch = afterTrigger.match(/@([A-Za-z0-9_.]+)/);
+  const handleMatch = afterTrigger.match(/@([\p{L}\p{N}_.-]+)/u);
   const handle = handleMatch ? handleMatch[1] : null;
 
   const beforeHandle = handleMatch
@@ -36,14 +36,17 @@ export const parseUkTriggerQuery = rawQuery => {
 
   const contactValues = handle ? [normalizedQuery, handle] : normalizedQuery;
 
-  return {
+  const result = {
     contactType: 'telegram',
     contactValues,
-    name,
-    surname,
     handle,
     searchPair: { telegram: normalizedQuery },
   };
+
+  if (name) result.name = name;
+  if (surname) result.surname = surname;
+
+  return result;
 };
 
 export default parseUkTriggerQuery;
