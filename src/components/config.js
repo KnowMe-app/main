@@ -3164,6 +3164,8 @@ const getRhCategory = value => {
   const b = (value.blood || '').toString().trim().toLowerCase().replace(/\s+/g, '');
   if (b.endsWith('+') || b === '+') return '+';
   if (b.endsWith('-') || b === '-') return '-';
+  if (/^[1-4]$/.test(b)) return 'empty';
+  if (!b) return 'empty';
   return 'other';
 };
 
