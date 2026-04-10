@@ -2641,6 +2641,10 @@ const normalizeBloodIndexValue = rawValue => {
     return normalized;
   }
 
+  if (/^[1-4]$/.test(normalized)) {
+    return normalized;
+  }
+
   if (normalized === '+') {
     return '+';
   }
@@ -2657,7 +2661,7 @@ const getBloodIndexSet = data => {
   return new Set([normalizeBloodIndexValue(data.blood)]);
 };
 
-const BLOOD_SEARCH_KEY_BUCKETS = ['1+', '1-', '2+', '2-', '3+', '3-', '4+', '4-', '+', '-', '?', 'no'];
+const BLOOD_SEARCH_KEY_BUCKETS = ['1+', '1-', '1', '2+', '2-', '2', '3+', '3-', '3', '4+', '4-', '4', '+', '-', '?', 'no'];
 
 const getBloodBucketMeta = bucket => {
   const normalizedBucket = String(bucket || '').trim().toLowerCase();
@@ -2666,6 +2670,13 @@ const getBloodBucketMeta = bucket => {
     return {
       bloodGroup: normalizedBucket[0],
       rh: normalizedBucket[1],
+    };
+  }
+
+  if (/^[1-4]$/.test(normalizedBucket)) {
+    return {
+      bloodGroup: normalizedBucket,
+      rh: 'unclear',
     };
   }
 
