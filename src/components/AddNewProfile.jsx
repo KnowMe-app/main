@@ -2594,10 +2594,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const makeIndex = async () => {
     toast.loading('Rebuilding searchKey index 0%', { id: 'index-progress' });
-    await rebuildSearchKeyIndexForCollections(['newUsers', 'users'], progress => {
-      toast.loading(`Rebuilding searchKey index ${progress}%`, { id: 'index-progress' });
-    });
-    toast.success('searchKey index rebuilt', { id: 'index-progress' });
+    const chunkSize = 20;
+    const result = await rebuildSearchKeyIndexForCollections(
+      ['newUsers', 'users'],
+      progress => {
+        toast.loading(`Rebuilding searchKey index ${progress}%`, { id: 'index-progress' });
+      },
+      { chunkSize },
+    );
+    const processedUsers = result?.processedUsers || 0;
+    const indexedPaths = result?.indexedPaths || 0;
+    toast.success(
+      `searchKey index rebuilt: users ${processedUsers}, records ${indexedPaths}, chunk ${chunkSize}`,
+      { id: 'index-progress' },
+    );
+    console.log('[AddNewProfile] searchKey index rebuild result', result);
 
     // const res = await fetchListOfUsers();
     // res.forEach(async userId => {
