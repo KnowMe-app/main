@@ -718,6 +718,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   const [filters, setFilters] = useState({});
   const filtersRef = useRef(filters);
+  const skipNextReloadRef = useRef(false);
+  const searchKeyCoverageRef = useRef({});
   const hasInitializedFiltersRef = useRef(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState(null);
@@ -1228,12 +1230,70 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
+    const isSearchKeyMode = loadSortMode === 'SEARCH_ID_KEY_ONLY';
+    const canInstantlyFilterInSearchKeyMode =
+      isSearchKeyMode && currentFilter === 'DATE2.1' && Object.keys(users || {}).length > 0;
+
+    if (canInstantlyFilterInSearchKeyMode) {
+      const groups = ['bloodGroup', 'rh', 'maritalStatus'];
+      const hasExpandedGroup = groups.some(group => {
+        const prevGroup = prevValue[group] || {};
+        const nextGroup = nextValue[group] || {};
+        const options = new Set([...Object.keys(prevGroup), ...Object.keys(nextGroup)]);
+        return Array.from(options).some(
+          key => prevGroup[key] === false && nextGroup[key] === true,
+        );
+      });
+
+      if (!hasExpandedGroup) {
+        const filteredUsers = filterMain(
+          Object.entries(users || {}),
+          'DATE2.1',
+          nextValue,
+          favoriteUsersData,
+          dislikeUsersData,
+        ).reduce((acc, [, user]) => {
+          if (user?.userId) {
+            acc[user.userId] = user;
+          }
+          return acc;
+        }, {});
+
+        const queryKey = normalizeQueryKey(
+          `date2.1:${search || ''}:${serializeQueryFilters(nextValue)}`,
+        );
+        setIdsForQuery(queryKey, Object.keys(filteredUsers));
+        skipNextReloadRef.current = true;
+        filtersRef.current = nextValue;
+        setFilters(nextValue);
+        setUsers(filteredUsers);
+        setTotalCount(Object.keys(filteredUsers).length);
+        setCurrentPage(1);
+        setSearchLoading(false);
+        setHasSearched(true);
+        return;
+      }
+    }
+
     filtersRef.current = nextValue;
     setSearchLoading(true);
     setHasSearched(true);
     setTotalCount(0);
     setFilters(nextValue);
-  }, [setFilters, setHasSearched, setSearchLoading, setTotalCount]);
+  }, [
+    currentFilter,
+    dislikeUsersData,
+    favoriteUsersData,
+    loadSortMode,
+    search,
+    setCurrentPage,
+    setFilters,
+    setHasSearched,
+    setSearchLoading,
+    setTotalCount,
+    setUsers,
+    users,
+  ]);
 
   useEffect(() => {
     if (!state.userId) return;
@@ -1533,6 +1593,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [ownerId]);
 
   useEffect(() => {
+    if (skipNextReloadRef.current) {
+      skipNextReloadRef.current = false;
+      return;
+    }
+
     setUsers({});
     setLastKey(null);
     setLastKey21(null);
@@ -1564,6 +1629,52 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     if (currentFilter === 'DATE2.1') {
+      const queryKey = buildQueryKey('DATE2.1', filters, search);
+      const ids = getIdsByQuery(queryKey);
+      const cachedCards = ids.map(id => getCard(id)).filter(Boolean);
+      if (cachedCards.length > 0 || (ids.length === 0 && searchKeyCoverageRef.current[serializeQueryFilters(filters)])) {
+        const cachedUsers = cachedCards.reduce((acc, user) => {
+          acc[user.userId] = user;
+          return acc;
+        }, {});
+        setUsers(cachedUsers);
+        setTotalCount(ids.length);
+        setCacheCount(cachedCards.length);
+        setBackendCount(0);
+        setSearchLoading(false);
+        setHasMore(false);
+        return;
+      }
+
+      if (searchIdAndSearchKeyOnlyMode) {
+        const baseFilters = {};
+        const baseKey = buildQueryKey('DATE2.1', baseFilters, search);
+        const baseCovered = Boolean(searchKeyCoverageRef.current[serializeQueryFilters(baseFilters)]);
+        if (baseCovered) {
+          const baseIds = getIdsByQuery(baseKey);
+          const baseCards = baseIds.map(id => getCard(id)).filter(Boolean);
+          const derivedUsers = filterMain(
+            baseCards.map(user => [user.userId, user]),
+            'DATE2.1',
+            filters,
+            favoriteUsersData,
+            dislikeUsersData,
+          ).reduce((acc, [, user]) => {
+            acc[user.userId] = user;
+            return acc;
+          }, {});
+          const derivedIds = Object.keys(derivedUsers);
+          setIdsForQuery(queryKey, derivedIds);
+          setUsers(derivedUsers);
+          setTotalCount(derivedIds.length);
+          setCacheCount(derivedIds.length);
+          setBackendCount(0);
+          setSearchLoading(false);
+          setHasMore(false);
+          return;
+        }
+      }
+
       const loadPromise = searchIdAndSearchKeyOnlyMode
         ? loadMoreUsersSearchKey()
         : loadMoreUsers21();
@@ -2032,6 +2143,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setTotalCount(res?.totalCount || 0);
 
     const backendCount = Object.keys(normalizedUsers).length;
+    const filtersKey = serializeQueryFilters(currentFilters);
+    if (res?.hasMore === false) {
+      searchKeyCoverageRef.current[filtersKey] = true;
+    }
+
     return { cacheCount: 0, backendCount, hasMore: Boolean(res?.hasMore) };
   };
 
