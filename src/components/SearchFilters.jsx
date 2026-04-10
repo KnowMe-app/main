@@ -134,6 +134,11 @@ export const SearchFilters = ({
           { val: 'married', label: 'Married' },
           { val: 'unmarried', label: 'Single' },
           { val: 'other', label: '?' },
+          ...(bloodSearchKeyMode
+            ? [
+                { val: 'empty', label: 'no' },
+              ]
+            : []),
         ],
       },
       {
