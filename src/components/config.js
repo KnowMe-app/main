@@ -59,6 +59,8 @@ export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './
 const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
 const SEARCH_KEY_INDEX_ROOT = 'searchKey';
 const BLOOD_SEARCH_KEY_INDEX = 'blood';
+const MARITAL_STATUS_SEARCH_KEY_INDEX = 'maritalStatus';
+const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
 
 const getSearchIdPrefixes = searchIdPrefixes => {
   if (!Array.isArray(searchIdPrefixes) || searchIdPrefixes.length === 0) {
@@ -2661,6 +2663,62 @@ const getBloodIndexSet = data => {
   return new Set([normalizeBloodIndexValue(data.blood)]);
 };
 
+const normalizeMaritalStatusIndexValue = rawValue => {
+  const normalized = String(rawValue || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+
+  if (!normalized) return 'no';
+
+  const compact = normalized.replace(/[.,;:!]/g, '');
+
+  if (compact === '+' || compact === 'plus') return '+';
+  if (compact === '-' || compact === 'minus') return '-';
+  if (compact === '?') return '?';
+
+  const normalizedNoSpace = compact.replace(/\s+/g, '');
+
+  const positiveValues = new Set([
+    'yes',
+    'так',
+    'заміжня',
+    'замужем',
+    'одружена',
+    'одружений',
+    'married',
+  ]);
+
+  if (positiveValues.has(compact) || positiveValues.has(normalizedNoSpace)) {
+    return '+';
+  }
+
+  const negativeValues = new Set([
+    'незаміжня',
+    'не заміжня',
+    'неодружена',
+    'неодружений',
+    'single',
+    'unmarried',
+  ]);
+
+  if (negativeValues.has(compact) || negativeValues.has(normalizedNoSpace)) {
+    return '-';
+  }
+
+  const noDataValues = new Set(['no', 'none', 'нема', 'немає', 'відсутньо', 'unknown', 'null']);
+  if (noDataValues.has(compact) || noDataValues.has(normalizedNoSpace)) {
+    return 'no';
+  }
+
+  return '?';
+};
+
+const getMaritalStatusIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([normalizeMaritalStatusIndexValue(data.maritalStatus)]);
+};
+
 const BLOOD_SEARCH_KEY_BUCKETS = ['1+', '1-', '1', '2+', '2-', '2', '3+', '3-', '3', '4+', '4-', '4', '+', '-', '?', 'no'];
 
 const getBloodBucketMeta = bucket => {
@@ -2735,6 +2793,8 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
 
   const prevValues = getBloodIndexSet(prevData);
   const nextValues = getBloodIndexSet(nextData);
+  const prevMaritalStatusValues = getMaritalStatusIndexSet(prevData);
+  const nextMaritalStatusValues = getMaritalStatusIndexSet(nextData);
 
   for (const value of prevValues) {
     if (!nextValues.has(value)) {
@@ -2747,6 +2807,20 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
     if (!prevValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
       await updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'add');
+    }
+  }
+
+  for (const value of prevMaritalStatusValues) {
+    if (!nextMaritalStatusValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(MARITAL_STATUS_SEARCH_KEY_INDEX, value, userId, 'remove');
+    }
+  }
+
+  for (const value of nextMaritalStatusValues) {
+    if (!prevMaritalStatusValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(MARITAL_STATUS_SEARCH_KEY_INDEX, value, userId, 'add');
     }
   }
 };
@@ -2772,6 +2846,35 @@ export const createSearchKeyIndexInCollection = async (collection, onProgress) =
     );
 
     const progress = Math.floor(((i + batchIds.length) / totalUsers) * 100);
+    if (onProgress && progress % 10 === 0) onProgress(progress);
+  }
+};
+
+export const createMaritalStatusSearchKeyIndexInCollection = async (collection, onProgress) => {
+  const snapshot = await get(ref2(database, collection));
+  if (!snapshot.exists()) return;
+
+  const usersData = snapshot.val() || {};
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  const updates = userIds.reduce((acc, userId) => {
+    const user = usersData[userId] || {};
+    const maritalStatusValue = normalizeMaritalStatusIndexValue(user.maritalStatus);
+    acc[`${SEARCH_KEY_INDEX_ROOT}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${maritalStatusValue}/${userId}`] = true;
+    return acc;
+  }, {});
+
+  const updateEntries = Object.entries(updates);
+
+  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
+    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
+    const chunkPayload = Object.fromEntries(chunkEntries);
+    // eslint-disable-next-line no-await-in-loop
+    await update(ref2(database), chunkPayload);
+
+    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
     if (onProgress && progress % 10 === 0) onProgress(progress);
   }
 };
