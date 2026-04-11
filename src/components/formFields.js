@@ -288,7 +288,6 @@ export const pickerFieldsExtended = [
   { name: 'publish', placeholder: 'false', svg: 'user', ukrainianHint: 'Анкета опублікована' },
   { name: 'fathersname', placeholder: 'По-батькові', svg: 'user', ukrainianHint: 'По-батькові' },
   { name: 'otherLink', placeholder: 'www', svg: 'user', ukrainianHint: 'Лінк' },
-  { name: 'csection', placeholder: '30.01.2020', hint: 'c-section', svg: 'no', width: '33%', ukrainianHint: 'кесарів розтин', options: csectionOptions,},
 
   // { name: 'name', placeholder: 'Ваше ім’я', svg: 'user', ukrainianHint: 'Ім’я' },
   // { name: 'surname', placeholder: 'Ваше призіище', svg: 'user', ukrainianHint: 'Прізвище'},
