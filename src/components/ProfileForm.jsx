@@ -1045,6 +1045,11 @@ ${entries.join('\n')}`;
                         return;
                       }
 
+                      if (['maritalStatus', 'csection'].includes(field.name)) {
+                        handleFieldFocus && handleFieldFocus(field.name);
+                        return;
+                      }
+
                       if (state[field.name] !== '' && state[field.name] !== undefined) {
                         handleFieldFocus && handleFieldFocus(field.name);
                         return;
@@ -1163,6 +1168,7 @@ ${entries.join('\n')}`;
               field.options.length === 2 ? (
                 <ButtonGroup>
                   <Button
+                    type="button"
                     onClick={() => {
                       if (!state.myComment?.trim()) {
                         handleDelKeyValue('myComment');
@@ -1180,6 +1186,7 @@ ${entries.join('\n')}`;
                     Так
                   </Button>
                   <Button
+                    type="button"
                     onClick={() => {
                       if (!state.myComment?.trim()) {
                         handleDelKeyValue('myComment');
@@ -1197,6 +1204,7 @@ ${entries.join('\n')}`;
                     Ні
                   </Button>
                   <Button
+                    type="button"
                     onClick={() => {
                       if (!state.myComment?.trim()) {
                         handleDelKeyValue('myComment');
@@ -1218,6 +1226,7 @@ ${entries.join('\n')}`;
               ) : field.options.length === 3 ? (
                 <ButtonGroup>
                   <Button
+                    type="button"
                     onClick={() => {
                       if (!state.myComment?.trim()) {
                         handleDelKeyValue('myComment');
@@ -1235,6 +1244,7 @@ ${entries.join('\n')}`;
                     Ні
                   </Button>
                   <Button
+                    type="button"
                     onClick={() => {
                       if (!state.myComment?.trim()) {
                         handleDelKeyValue('myComment');
@@ -1252,6 +1262,7 @@ ${entries.join('\n')}`;
                     1
                   </Button>
                   <Button
+                    type="button"
                     onClick={() => {
                       if (!state.myComment?.trim()) {
                         handleDelKeyValue('myComment');
