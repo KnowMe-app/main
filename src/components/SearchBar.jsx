@@ -1003,7 +1003,7 @@ const SearchBar = ({
 
           const res = await cachedSearch(
             { telegram: telegramValue },
-            { allowTelegramPrefixMatches: true },
+            { allowTelegramPrefixMatches: false },
           );
           if (res && Object.keys(res).length > 0) {
             notifySearchResult(

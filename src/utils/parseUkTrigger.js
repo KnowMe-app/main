@@ -34,7 +34,7 @@ export const parseUkTriggerQuery = rawQuery => {
   const name = nameParts[0] || '';
   const surname = nameParts.slice(1).join(' ') || '';
 
-  const contactValues = handle ? [normalizedQuery, handle] : normalizedQuery;
+  const contactValues = normalizedQuery;
 
   const result = {
     contactType: 'telegram',
