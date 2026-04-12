@@ -15,6 +15,7 @@ import {
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
+import { buildUkTriggerTelegramCandidates } from '../utils/ukTriggerSearchCandidates';
 
 const SearchIcon = (
   <svg
@@ -976,11 +977,7 @@ const SearchBar = ({
     if (!id && platform === 'telegram' && allowUkTrigger) {
       const ukTrigger = parseUkTriggerQuery(trimmedInput);
       if (ukTrigger?.searchPair?.telegram) {
-        const normalizedTelegram = ukTrigger.searchPair.telegram;
-        const searchCandidates = [normalizedTelegram];
-        if (ukTrigger.handle) {
-          searchCandidates.push(ukTrigger.handle);
-        }
+        const searchCandidates = buildUkTriggerTelegramCandidates(ukTrigger);
 
         for (const [index, candidate] of searchCandidates.entries()) {
           const telegramValue = candidate?.trim();
