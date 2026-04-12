@@ -2127,7 +2127,12 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
       }
     }
 
-    const isDateSearch = await searchByDate(searchValue, uniqueUserIds, users);
+    // Для exact-пошуку по searchId не запускаємо date-пошук по полях картки
+    // (getInTouch/lastAction/...): інакше запити на кшталт
+    // "УК СМ Лилит 12.04.2026" можуть некоректно підтягувати date-збіги.
+    const isDateSearch = searchKey === 'searchId'
+      ? false
+      : await searchByDate(searchValue, uniqueUserIds, users);
     if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
       if (forcePartialUserIdSearch) {
