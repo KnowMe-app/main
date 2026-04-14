@@ -125,9 +125,17 @@ export const bodyTypeOptions = [
 ];
 
 export const educationOptions = [
+  { placeholder: 'No', ukrainian: 'Ні' },
+  { placeholder: 'Yes', ukrainian: 'Так' },
+];
+
+export const educationModalOptions = [
   { placeholder: 'Higher', ukrainian: 'Вища освіта' },
   { placeholder: 'Technical', ukrainian: 'Професійно-технічна освіта' },
   { placeholder: 'Secondary', ukrainian: 'Загальна середня освіта' },
+  { placeholder: 'Bachelor', ukrainian: 'Бакалавр' },
+  { placeholder: 'Master', ukrainian: 'Магістр' },
+  { placeholder: 'PhD', ukrainian: 'Доктор філософії (PhD)' },
 ];
 
 export const csectionOptions = [
@@ -251,6 +259,7 @@ export const pickerFields = [
     svg: 'no',
     width: '33%',
     options: educationOptions,
+    modalOptions: educationModalOptions,
     ukrainian: 'Вища освіта',
     ukrainianHint: 'освіта',
   },
