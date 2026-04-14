@@ -2224,6 +2224,30 @@ const removeUndefined = obj => {
   return obj;
 };
 
+const normalizePhoneForStorage = value => {
+  if (value === undefined || value === null) return value;
+
+  if (Array.isArray(value)) {
+    return value
+      .map(item => normalizePhoneForStorage(item))
+      .filter(item => item !== '' && item !== undefined && item !== null);
+  }
+
+  const digitsOnly = String(value).replace(/\D/g, '');
+  return digitsOnly;
+};
+
+const sanitizeUploadedInfoPhones = uploadedInfo => {
+  if (!uploadedInfo || typeof uploadedInfo !== 'object') return uploadedInfo;
+  if (!Object.prototype.hasOwnProperty.call(uploadedInfo, 'phone')) return uploadedInfo;
+
+  const normalizedPhone = normalizePhoneForStorage(uploadedInfo.phone);
+  return {
+    ...uploadedInfo,
+    phone: normalizedPhone,
+  };
+};
+
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
     const userRefRTDB = ref2(database, `users/${userId}`);
@@ -2244,9 +2268,11 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
 
 export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, skipIndexing = false) => {
   try {
+    uploadedInfo = sanitizeUploadedInfoPhones(uploadedInfo);
     const userRefRTDB = ref2(database, `newUsers/${userId}`);
     const snapshot = await get(userRefRTDB);
-    const currentUserData = snapshot.exists() ? snapshot.val() : {};
+    const currentUserDataRaw = snapshot.exists() ? snapshot.val() : {};
+    const currentUserData = sanitizeUploadedInfoPhones(currentUserDataRaw) || {};
 
     if (!skipIndexing) {
       // Перебір ключів та їх обробка
@@ -2292,17 +2318,7 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
 
             // Якщо ключ — це 'phone', прибираємо пробіли у значенні
             if (key === 'phone') {
-              if (typeof value === 'number') {
-                cleanedValue = String(value).replace(/\s+/g, '');
-              } else if (typeof value === 'string') {
-                cleanedValue = value.replace(/\s+/g, '');
-              } else if (Array.isArray(value)) {
-                // Якщо value є масивом телефонів
-                cleanedValue = value.map(v => (typeof v === 'number' ? String(v) : v)).map(v => v.replace(/\s+/g, ''));
-              } else {
-                console.warn(`Неправильний тип даних для ключа 'phone':`, value);
-                cleanedValue = ''; // Запобігаємо помилці та уникаємо некоректного значення
-              }
+              cleanedValue = normalizePhoneForStorage(value);
             }
 
             if (!newValues.includes(cleanedValue)) {
@@ -2316,17 +2332,7 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
 
             // Якщо ключ — це 'phone', прибираємо пробіли у значенні
             if (key === 'phone') {
-              if (typeof value === 'number') {
-                cleanedValue = String(value).replace(/\s+/g, '');
-              } else if (typeof value === 'string') {
-                cleanedValue = value.replace(/\s+/g, '');
-              } else if (Array.isArray(value)) {
-                // Якщо value є масивом телефонів
-                cleanedValue = value.map(v => (typeof v === 'number' ? String(v) : v)).map(v => v.replace(/\s+/g, ''));
-              } else {
-                console.warn(`Неправильний тип даних для ключа 'phone':`, value);
-                cleanedValue = ''; // Запобігаємо помилці та уникаємо некоректного значення
-              }
+              cleanedValue = normalizePhoneForStorage(value);
             }
 
             // console.log('cleanedValue :>> ', cleanedValue);
