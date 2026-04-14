@@ -29,6 +29,7 @@ export const buildSearchIdCandidateKeys = (
   options = {},
 ) => {
   const normalizedValue = String(modifiedSearchValue || '').toLowerCase();
+  const rawValue = String(rawSearchValue || '').trim();
   if (!normalizedValue) return [];
 
   const {
@@ -40,6 +41,17 @@ export const buildSearchIdCandidateKeys = (
   const prefixesToCheck = getSearchIdPrefixes(searchIdPrefixes);
 
   return prefixesToCheck.flatMap(prefix => {
+    if (prefix === 'phone') {
+      const hasPhoneLabel = /(?:^|\b)(?:phone|телефон|тел|номер|моб)\b/i.test(rawValue);
+      const hasLetters = /[A-Za-zА-Яа-яІіЇїЄєҐґ]/.test(rawValue);
+      const digitsOnly = rawValue.replace(/\D/g, '');
+      const isShortNumericFragment = digitsOnly.length > 0 && digitsOnly.length < 4;
+
+      if ((hasLetters && !hasPhoneLabel) || isShortNumericFragment) {
+        return [];
+      }
+    }
+
     if (prefix === 'phone' && includeAdaptedPhoneVariant) {
       const adaptedPhoneValue = normalizePhoneSearchIdValue(rawSearchValue);
       const adaptedPhoneKey = encodeKey(adaptedPhoneValue).toLowerCase();
