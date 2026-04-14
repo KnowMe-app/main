@@ -1050,12 +1050,21 @@ ${entries.join('\n')}`;
                         return;
                       }
 
-                      if (state[field.name] !== '' && state[field.name] !== undefined) {
+                      if (
+                        field.name !== 'education' &&
+                        state[field.name] !== '' &&
+                        state[field.name] !== undefined
+                      ) {
                         handleFieldFocus && handleFieldFocus(field.name);
                         return;
                       }
 
                       handleOpenModal(field.name);
+                    }}
+                    onClick={() => {
+                      if (field.name === 'education') {
+                        handleOpenModal(field.name);
+                      }
                     }}
                     {...(field.name === 'lastAction'
                       ? { readOnly: true }
@@ -1164,7 +1173,7 @@ ${entries.join('\n')}`;
                 </Button>
               )}
 
-            {Array.isArray(field.options) ? (
+            {Array.isArray(field.options) && field.name !== 'education' ? (
               field.options.length === 2 ? (
                 <ButtonGroup>
                   <Button
@@ -1336,7 +1345,10 @@ ${entries.join('\n')}`;
       {showInfoModal && (
         <InfoModal
           onClose={handleCloseModal}
-          options={sortedFieldsToRender.find(field => field.name === selectedField)?.options}
+          options={
+            sortedFieldsToRender.find(field => field.name === selectedField)?.modalOptions ||
+            sortedFieldsToRender.find(field => field.name === selectedField)?.options
+          }
           onSelect={handleSelectOption}
           text={showInfoModal}
         />

@@ -665,7 +665,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
                 <Hint fieldName={field.name} isActive={state[field.name]}>{field.ukrainian || field.placeholder}</Hint>
                 <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
               </InputDiv>
-              {Array.isArray(field.options) && field.options.length === 2 && (
+              {Array.isArray(field.options) && field.name !== 'education' && field.options.length === 2 && (
                 <ButtonGroup>
                   <Button
                     onClick={() => {
@@ -702,7 +702,10 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       {showInfoModal && (
         <InfoModal
           onClose={handleOverlayClick}
-          options={pickerFields.find(field => field.name === selectedField)?.options}
+          options={
+            pickerFields.find(field => field.name === selectedField)?.modalOptions ||
+            pickerFields.find(field => field.name === selectedField)?.options
+          }
           onSelect={handleSelectOption}
           text={showInfoModal}
           Context={dotsMenu}
