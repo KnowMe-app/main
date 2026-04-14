@@ -1026,6 +1026,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         {visiblePickerFields.map(field => {
           // console.log('field.options:', field.options);
           const isPickerField = Array.isArray(field.options);
+          const isCsectionField = field.name === 'csection';
 
           return (
             <PickerContainer>
@@ -1038,7 +1039,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={state[field.name]}
-                    readOnly={isPickerField}
+                    readOnly={isPickerField && !isCsectionField}
                     onChange={e => {
                       const value = e?.target?.value;
                       field.name === 'moreInfo_main' && autoResizeMoreInfo(e.target);
@@ -1050,17 +1051,17 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       // }
                     }}
                     onMouseDown={event => {
-                      if (isPickerField) {
+                      if (isPickerField && !isCsectionField) {
                         event.preventDefault();
                       }
                     }}
                     onFocus={() => {
-                      if (!isPickerField) {
+                      if (!isPickerField || isCsectionField) {
                         handleFocus(field.name);
                       }
                     }}
                     onClick={() => {
-                      if (!isPickerField) return;
+                      if (!isPickerField || isCsectionField) return;
                       handleOpenModal(field.name);
                       setShowInfoModal('pickerOptions');
                     }}
@@ -1099,6 +1100,22 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   >
                     Інше
                   </Button>
+                </ButtonGroup>
+              )}
+              {field.name === 'csection' && (
+                <ButtonGroup>
+                  {field.options.map(option => (
+                    <Button
+                      key={`${field.name}-${option.placeholder}`}
+                      type="button"
+                      onClick={() => {
+                        setState(prevState => ({ ...prevState, [field.name]: option.placeholder }));
+                        handleBlur(field.name);
+                      }}
+                    >
+                      {option.ukrainian || option.placeholder}
+                    </Button>
+                  ))}
                 </ButtonGroup>
               )}
             </PickerContainer>
