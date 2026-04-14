@@ -176,7 +176,7 @@ const parsePhoneNumber = phone => {
 
   const digitsOnly = trimmed.replace(/\D/g, '');
   if (!digitsOnly) return;
-  if (digitsOnly.length < 3) return;
+  if (digitsOnly.length < 4) return;
 
   // Для коротких фрагментів зберігаємо введене значення,
   // щоб підтримати пошук за частиною номера.
