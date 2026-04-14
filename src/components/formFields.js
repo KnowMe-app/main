@@ -130,6 +130,12 @@ export const educationOptions = [
   { placeholder: 'Secondary', ukrainian: 'Загальна середня освіта' },
 ];
 
+export const csectionOptions = [
+  { placeholder: '-', ukrainian: 'Ні' },
+  { placeholder: '1', ukrainian: '1' },
+  { placeholder: '2', ukrainian: '2' },
+];
+
 
 
 
@@ -157,7 +163,15 @@ export const pickerFields = [
   { name: 'ownKids', placeholder: '1', hint: 'own kids', svg: 'no', ukrainianHint: 'кілікість пологів' },
   { name: 'birth', placeholder: '30.01.2001', hint: 'DOB', svg: 'no', width: '33%', ukrainianHint: 'дата народження 30.01.2001' },
   { name: 'lastDelivery', placeholder: '30.01.2021', hint: 'last delivery', svg: 'no', width: '33%', ukrainianHint: 'останні пологи були 30.01.2020' },
-  { name: 'csection', placeholder: '30.01.2020', hint: 'c-section', svg: 'no', width: '33%', ukrainianHint: 'кесарів розтин був 30.01.2020 / не було'},
+  {
+    name: 'csection',
+    placeholder: '30.01.2020',
+    hint: 'c-section',
+    svg: 'no',
+    width: '33%',
+    options: csectionOptions,
+    ukrainianHint: 'кесарів розтин був 30.01.2020 / не було',
+  },
   { name: 'experience', placeholder: '2', hint: 'donatin exp?', svg: 'no', width: '33%', ukrainianHint: 'скільки попередніх донацій було' },
   { name: 'reward', placeholder: '500', hint: '$ reward', svg: 'no', ukrainianHint: 'бажана винагорода в $' },
   {
@@ -270,12 +284,6 @@ export const pickerFields = [
   { name: 'hobbies', placeholder: 'Читання', hint: 'Hobbies', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'хоббі'  },
   { name: 'twinsInFamily', placeholder: '-', hint: 'Twins in the family?', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'чи були двійнята в родині?'  },
 
-];
-
-export const csectionOptions = [
-  { placeholder: '-', ukrainian: 'Ні' },
-  { placeholder: '1', ukrainian: '1' },
-  { placeholder: '2', ukrainian: '2' },
 ];
 
 export const pickerFieldsExtended = [
