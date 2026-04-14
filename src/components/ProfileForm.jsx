@@ -1225,60 +1225,30 @@ ${entries.join('\n')}`;
                 </ButtonGroup>
               ) : field.options.length === 3 ? (
                 <ButtonGroup>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      if (!state.myComment?.trim()) {
-                        handleDelKeyValue('myComment');
-                      }
-                      setState(prevState => {
-                        const newState = {
-                          ...prevState,
-                          [field.name]: '-',
-                        };
-                        submitWithNormalization(newState, 'overwrite');
-                        return newState;
-                      });
-                    }}
-                  >
-                    Ні
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      if (!state.myComment?.trim()) {
-                        handleDelKeyValue('myComment');
-                      }
-                      setState(prevState => {
-                        const newState = {
-                          ...prevState,
-                          [field.name]: '1',
-                        };
-                        submitWithNormalization(newState, 'overwrite');
-                        return newState;
-                      });
-                    }}
-                  >
-                    1
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      if (!state.myComment?.trim()) {
-                        handleDelKeyValue('myComment');
-                      }
-                      setState(prevState => {
-                        const newState = {
-                          ...prevState,
-                          [field.name]: '2',
-                        };
-                        submitWithNormalization(newState, 'overwrite');
-                        return newState;
-                      });
-                    }}
-                  >
-                    2
-                  </Button>
+                  {field.options.map(option => (
+                    <Button
+                      key={`${field.name}-${option.placeholder}`}
+                      type="button"
+                      onClick={() => {
+                        if (!state.myComment?.trim()) {
+                          handleDelKeyValue('myComment');
+                        }
+                        setState(prevState => {
+                          const newState = {
+                            ...prevState,
+                            [field.name]: option.placeholder,
+                          };
+                          submitWithNormalization(newState, 'overwrite');
+                          if (option.placeholder === 'Other') {
+                            handleBlur(field.name);
+                          }
+                          return newState;
+                        });
+                      }}
+                    >
+                      {option.ukrainian || option.placeholder}
+                    </Button>
+                  ))}
                 </ButtonGroup>
               ) : null
             ) : null}
