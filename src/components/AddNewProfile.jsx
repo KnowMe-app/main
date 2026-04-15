@@ -40,6 +40,7 @@ import {
   createCsectionSearchKeyIndexInCollection,
   createRoleSearchKeyIndexInCollection,
   createAgeSearchKeyIndexInCollection,
+  createReactionSearchKeyIndexInCollection,
   fetchUsersBySearchKeyBloodPaged,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -2120,6 +2121,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       filterSettings: currentFilters,
       offset: dateOffset21,
       limit: PAGE_SIZE,
+      favoritesMap: fav,
+      dislikedMap: dislikeUsersData,
     });
 
     const normalizedUsers = Object.entries(res?.users || {}).reduce((acc, [id, user]) => {
@@ -2911,6 +2914,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     toast.success('searchKey/age indexed', { id: 'index-searchkey-age-progress' });
   };
 
+  const indexSearchKeyReactionHandler = async () => {
+    toast.loading('Indexing searchKey/reaction in newUsers 0%', {
+      id: 'index-searchkey-reaction-progress',
+    });
+    await createReactionSearchKeyIndexInCollection('newUsers', progress => {
+      toast.loading(`Indexing searchKey/reaction in newUsers ${progress}%`, {
+        id: 'index-searchkey-reaction-progress',
+      });
+    });
+    toast.loading('Indexing searchKey/reaction in users 0%', {
+      id: 'index-searchkey-reaction-progress',
+    });
+    await createReactionSearchKeyIndexInCollection('users', progress => {
+      toast.loading(`Indexing searchKey/reaction in users ${progress}%`, {
+        id: 'index-searchkey-reaction-progress',
+      });
+    });
+    toast.success('searchKey/reaction indexed', { id: 'index-searchkey-reaction-progress' });
+  };
+
   const fieldsToRender = getFieldsToRender(state);
 
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
@@ -3368,7 +3391,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onChange={handleFilterChange}
               storageKey={filterStorageKey}
               bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
-              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'age', 'role', 'csection'] : undefined}
+              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'age', 'role', 'csection', 'reaction'] : undefined}
             />
             <ButtonsContainer>
               {userNotFound && (
@@ -3447,6 +3470,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 title="Індексація searchKey/age"
               >
                 IdxAge
+              </Button>
+              <Button
+                onClick={indexSearchKeyReactionHandler}
+                title="Індексація searchKey/reaction"
+              >
+                IdxReaction
               </Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}

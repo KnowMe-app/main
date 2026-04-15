@@ -16,6 +16,17 @@ export const SearchFilters = ({
 }) => {
   let groups = [];
   const contactIconStyle = { display: 'inline-flex', alignItems: 'center' };
+  const reactionOptions = bloodSearchKeyMode
+    ? [
+        { key: 'special99', label: '99' },
+        { key: 'pastGetInTouch', label: 'past' },
+        { key: 'futureGetInTouch', label: 'future' },
+        { key: 'dislike', label: '✖' },
+        { key: 'like', label: '❤️' },
+        { key: 'question', label: '?' },
+        { key: 'none', label: 'no' },
+      ]
+    : REACTION_FILTER_OPTIONS;
 
   if (mode === 'matching') {
     groups = [
@@ -99,7 +110,7 @@ export const SearchFilters = ({
       {
         filterName: 'reaction',
         label: 'Reaction',
-        options: REACTION_FILTER_OPTIONS.map(option => ({
+        options: reactionOptions.map(option => ({
           val: option.key,
           label: option.label,
         })),
