@@ -18,11 +18,10 @@ export const SearchFilters = ({
   const contactIconStyle = { display: 'inline-flex', alignItems: 'center' };
   const reactionOptions = bloodSearchKeyMode
     ? [
-        { key: 'special99', label: '99' },
         { key: 'pastGetInTouch', label: 'past' },
         { key: 'futureGetInTouch', label: 'future' },
-        { key: 'dislike', label: '✖' },
         { key: 'like', label: '❤️' },
+        { key: 'special99', label: '✖' },
         { key: 'question', label: '?' },
         { key: 'none', label: 'no' },
       ]
