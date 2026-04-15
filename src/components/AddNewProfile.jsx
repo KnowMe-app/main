@@ -67,6 +67,8 @@ import { cacheDplUsers, getDplCards } from 'utils/dplStorage';
 import {
   getDislikes,
   syncDislikes,
+  cacheDislikedUsers,
+  getDislikedCards,
 } from 'utils/dislikesStorage';
 import { passesReactionFilter } from 'utils/reactionCategory';
 import {
@@ -2169,6 +2171,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       syncFavorites(fav);
     }
 
+    if (isSingleReactionSelection(currentFilters?.reaction, 'dislike')) {
+      return showDislikedCards();
+    }
+
     if (isEditingRef.current) {
       return { cacheCount: 0, backendCount: 0, hasMore };
     }
@@ -2711,6 +2717,78 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   ]);
 
   const loadFavoriteUsers = async () => showFavoriteCards();
+
+  const fetchAndMergeDislikedUsers = useCallback(async () => {
+    const owner = auth.currentUser?.uid;
+    if (!owner) return null;
+
+    const { cards: cachedArr, fromCache } = await getDislikedCards(
+      id => fetchUserById(id),
+    );
+    let cacheCount = fromCache ? cachedArr.length : 0;
+    let backendCount = fromCache ? 0 : cachedArr.length;
+
+    const loaded = cachedArr.reduce((acc, user) => {
+      if (user?.userId) {
+        acc[user.userId] = user;
+      }
+      return acc;
+    }, {});
+
+    const dislikedIds = getDislikes();
+    const dislikedUsers = await fetchDislikeUsersData(owner);
+    Object.entries(dislikedUsers).forEach(([id, user]) => {
+      dislikedIds[id] = true;
+      if (id && !loaded[id]) {
+        loaded[id] = user;
+        backendCount += 1;
+      }
+    });
+
+    const normalizedDislikes = Object.fromEntries(
+      Object.entries(dislikedIds).filter(([, value]) => value),
+    );
+
+    syncDislikes(normalizedDislikes);
+    setDislikeUsersData(normalizedDislikes);
+
+    cacheFetchedUsers(loaded, cacheDislikedUsers);
+    setIdsForQuery('dislike', Object.keys(normalizedDislikes));
+
+    return { loaded, normalizedDislikes, cacheCount, backendCount };
+  }, [cacheFetchedUsers, setDislikeUsersData]);
+
+  const isSingleReactionSelection = useCallback((reactionFilters, targetKey) => {
+    if (!reactionFilters || typeof reactionFilters !== 'object') return false;
+    const selectedKeys = Object.entries(reactionFilters)
+      .filter(([, value]) => value)
+      .map(([key]) => key);
+    return selectedKeys.length === 1 && selectedKeys[0] === targetKey;
+  }, []);
+
+  const showDislikedCards = useCallback(async () => {
+    const result = await fetchAndMergeDislikedUsers();
+    if (!result) {
+      return resetReactionUsersState();
+    }
+
+    const { loaded, normalizedDislikes, cacheCount, backendCount } = result;
+
+    return presentReactionUsers({
+      loadedUsers: loaded,
+      reactionIds: normalizedDislikes,
+      favoritesMap: { ...favoriteUsersData },
+      dislikedMap: { ...dislikeUsersData, ...normalizedDislikes },
+      cacheCount,
+      backendCount,
+    });
+  }, [
+    dislikeUsersData,
+    favoriteUsersData,
+    fetchAndMergeDislikedUsers,
+    presentReactionUsers,
+    resetReactionUsersState,
+  ]);
 
 
 
