@@ -16,6 +16,7 @@ const defaultsAdd = {
     '37_42': true,
     '43_plus': true,
     other: true,
+    empty: true,
   },
   imt: {
     lt31: true,

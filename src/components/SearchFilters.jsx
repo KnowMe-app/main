@@ -187,6 +187,11 @@ export const SearchFilters = ({
           { val: '37_42', label: '37-42' },
           { val: '43_plus', label: '43+' },
           { val: 'other', label: '?' },
+          ...(bloodSearchKeyMode
+            ? [
+                { val: 'empty', label: 'no' },
+              ]
+            : []),
         ],
       },
       {
