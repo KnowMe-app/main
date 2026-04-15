@@ -66,6 +66,7 @@ const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tik
 const SEARCH_KEY_INDEX_ROOT = 'searchKey';
 const BLOOD_SEARCH_KEY_INDEX = 'blood';
 const MARITAL_STATUS_SEARCH_KEY_INDEX = 'maritalStatus';
+const AGE_SEARCH_KEY_INDEX = 'age';
 const CSECTION_SEARCH_KEY_INDEX = 'csection';
 const ROLE_SEARCH_KEY_INDEX = 'role';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
@@ -2651,6 +2652,39 @@ const getMaritalStatusIndexSet = data => {
   return new Set([normalizeMaritalStatusIndexValue(data.maritalStatus)]);
 };
 
+const normalizeAgeBirthDateIndexValue = rawValue => {
+  const normalized = String(rawValue || '').trim();
+  if (!normalized) return 'no';
+
+  const match = normalized.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!match) return '?';
+
+  const day = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const year = Number.parseInt(match[3], 10);
+
+  if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) {
+    return '?';
+  }
+
+  const parsedDate = new Date(year, month - 1, day);
+  if (
+    parsedDate.getFullYear() !== year ||
+    parsedDate.getMonth() !== month - 1 ||
+    parsedDate.getDate() !== day
+  ) {
+    return '?';
+  }
+
+  const isoDate = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  return `d_${isoDate}`;
+};
+
+const getAgeIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([normalizeAgeBirthDateIndexValue(data.birth)]);
+};
+
 export const normalizeRoleSearchKeyIndexValue = (roleValue, userRoleValue) => {
   const normalizeSingleRole = value => {
     const normalized = String(value || '')
@@ -2821,6 +2855,103 @@ const isRoleBucketAllowedByFilters = (bucket, filterSettings = {}) => {
   return Boolean(roleFilters?.[filterKey]);
 };
 
+const AGE_DATE_PREFIX = 'd_';
+
+const toIsoDate = date => {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+const subtractYears = (date, years) => {
+  const shifted = new Date(date);
+  shifted.setFullYear(shifted.getFullYear() - years);
+  return shifted;
+};
+
+const shiftDays = (date, days) => {
+  const shifted = new Date(date);
+  shifted.setDate(shifted.getDate() + days);
+  return shifted;
+};
+
+const getBirthDateRangeByAge = ({ minAge, maxAge, today = new Date() }) => {
+  let startDate = null;
+  let endDate = null;
+
+  if (Number.isFinite(maxAge)) {
+    startDate = shiftDays(subtractYears(today, maxAge + 1), 1);
+  }
+
+  if (Number.isFinite(minAge)) {
+    endDate = subtractYears(today, minAge);
+  }
+
+  if (!startDate) startDate = new Date(1900, 0, 1);
+  if (!endDate) endDate = today;
+  if (startDate > endDate) return null;
+
+  return {
+    startKey: `${AGE_DATE_PREFIX}${toIsoDate(startDate)}`,
+    endKey: `${AGE_DATE_PREFIX}${toIsoDate(endDate)}`,
+  };
+};
+
+const collectIdsFromAgeSnapshot = (snapshot, idSet) => {
+  if (!snapshot.exists()) return;
+  snapshot.forEach(bucketSnapshot => {
+    const usersMap = bucketSnapshot.val() || {};
+    Object.keys(usersMap).forEach(userId => {
+      if (userId) idSet.add(userId);
+    });
+  });
+};
+
+const collectAgeIdsByFilters = async ageFilters => {
+  const shouldApplyAge = hasExplicitFilterSelection(ageFilters);
+  if (!shouldApplyAge) return null;
+
+  const selected = key => Boolean(ageFilters?.[key]);
+  const ageIds = new Set();
+  const requests = [];
+
+  const addRangeRequest = range => {
+    if (!range) return;
+    requests.push(
+      get(
+        query(
+          ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${AGE_SEARCH_KEY_INDEX}`),
+          orderByKey(),
+          startAt(range.startKey),
+          endAt(range.endKey)
+        )
+      )
+    );
+  };
+
+  if (selected('le25')) addRangeRequest(getBirthDateRangeByAge({ maxAge: 25 }));
+  if (selected('26_30')) addRangeRequest(getBirthDateRangeByAge({ minAge: 26, maxAge: 30 }));
+  if (selected('31_33')) addRangeRequest(getBirthDateRangeByAge({ minAge: 31, maxAge: 33 }));
+  if (selected('34_36')) addRangeRequest(getBirthDateRangeByAge({ minAge: 34, maxAge: 36 }));
+  if (selected('37_42')) addRangeRequest(getBirthDateRangeByAge({ minAge: 37, maxAge: 42 }));
+  if (selected('43_plus')) addRangeRequest(getBirthDateRangeByAge({ minAge: 43 }));
+  if (selected('other')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${AGE_SEARCH_KEY_INDEX}/?`)));
+  if (selected('empty')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${AGE_SEARCH_KEY_INDEX}/no`)));
+
+  const snapshots = await Promise.all(requests);
+  snapshots.forEach(snapshot => {
+    if (!snapshot.exists()) return;
+    const isRangeResult = snapshot.key === AGE_SEARCH_KEY_INDEX;
+    if (isRangeResult) {
+      collectIdsFromAgeSnapshot(snapshot, ageIds);
+      return;
+    }
+    Object.keys(snapshot.val() || {}).forEach(userId => {
+      if (userId) ageIds.add(userId);
+    });
+  });
+
+  return ageIds;
+};
+
 const updateSearchKeyLeaf = async (indexName, value, userId, action) => {
   if (!indexName || !value || !userId) return;
   const indexRef = ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${indexName}/${value}/${userId}`);
@@ -2846,6 +2977,8 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   const nextCsectionValues = getCsectionIndexSet(nextData);
   const prevRoleValues = getRoleIndexSet(prevData);
   const nextRoleValues = getRoleIndexSet(nextData);
+  const prevAgeValues = getAgeIndexSet(prevData);
+  const nextAgeValues = getAgeIndexSet(nextData);
 
   for (const value of prevValues) {
     if (!nextValues.has(value)) {
@@ -2900,6 +3033,20 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
     if (!prevRoleValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
       await updateSearchKeyLeaf(ROLE_SEARCH_KEY_INDEX, value, userId, 'add');
+    }
+  }
+
+  for (const value of prevAgeValues) {
+    if (!nextAgeValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(AGE_SEARCH_KEY_INDEX, value, userId, 'remove');
+    }
+  }
+
+  for (const value of nextAgeValues) {
+    if (!prevAgeValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(AGE_SEARCH_KEY_INDEX, value, userId, 'add');
     }
   }
 };
@@ -3014,6 +3161,34 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
   }
 };
 
+export const createAgeSearchKeyIndexInCollection = async (collection, onProgress) => {
+  const usersData = await loadCollectionWithIndexCache(collection);
+  if (!usersData) return;
+
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  const updates = userIds.reduce((acc, userId) => {
+    const user = usersData[userId] || {};
+    const ageValue = normalizeAgeBirthDateIndexValue(user.birth);
+    acc[`${SEARCH_KEY_INDEX_ROOT}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
+    return acc;
+  }, {});
+
+  const updateEntries = Object.entries(updates);
+
+  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
+    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
+    const chunkPayload = Object.fromEntries(chunkEntries);
+    // eslint-disable-next-line no-await-in-loop
+    await update(ref2(database), chunkPayload);
+
+    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
+    if (onProgress && progress % 10 === 0) onProgress(progress);
+  }
+};
+
 export const fetchUsersBySearchKeyBloodPaged = async ({
   filterSettings = {},
   offset = 0,
@@ -3024,6 +3199,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     isMaritalStatusBucketAllowedByFilters(bucket, filterSettings)
   );
   const filteredRoleBuckets = ROLE_SEARCH_KEY_BUCKETS.filter(bucket => isRoleBucketAllowedByFilters(bucket, filterSettings));
+  const ageUserIds = await collectAgeIdsByFilters(filterSettings?.age);
 
   const [bucketSnapshots, maritalStatusSnapshots, roleSnapshots] = await Promise.all([
     Promise.all(
@@ -3058,6 +3234,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   const roleUserIds = collectIdsFromSnapshots(roleSnapshots);
   const shouldApplyMaritalStatusFilter = hasExplicitFilterSelection(filterSettings?.maritalStatus);
   const shouldApplyRoleFilter = hasExplicitFilterSelection(filterSettings?.role);
+  const shouldApplyAgeFilter = ageUserIds instanceof Set;
 
   let finalIds = [...bloodUserIds];
   if (shouldApplyMaritalStatusFilter) {
@@ -3065,6 +3242,9 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   }
   if (shouldApplyRoleFilter) {
     finalIds = finalIds.filter(id => roleUserIds.has(id));
+  }
+  if (shouldApplyAgeFilter) {
+    finalIds = finalIds.filter(id => ageUserIds.has(id));
   }
 
   const sortedIds = [...finalIds].sort((a, b) => a.localeCompare(b));
