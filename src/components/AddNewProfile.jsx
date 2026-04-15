@@ -38,6 +38,7 @@ import {
   createSearchKeyIndexInCollection,
   createMaritalStatusSearchKeyIndexInCollection,
   createCsectionSearchKeyIndexInCollection,
+  createRoleSearchKeyIndexInCollection,
   fetchUsersBySearchKeyBloodPaged,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -2869,6 +2870,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     toast.success('searchKey/csection indexed', { id: 'index-searchkey-csection-progress' });
   };
 
+  const indexSearchKeyRoleHandler = async () => {
+    toast.loading('Indexing searchKey/role in newUsers 0%', {
+      id: 'index-searchkey-role-progress',
+    });
+    await createRoleSearchKeyIndexInCollection('newUsers', progress => {
+      toast.loading(`Indexing searchKey/role in newUsers ${progress}%`, {
+        id: 'index-searchkey-role-progress',
+      });
+    });
+    toast.loading('Indexing searchKey/role in users 0%', {
+      id: 'index-searchkey-role-progress',
+    });
+    await createRoleSearchKeyIndexInCollection('users', progress => {
+      toast.loading(`Indexing searchKey/role in users ${progress}%`, {
+        id: 'index-searchkey-role-progress',
+      });
+    });
+    toast.success('searchKey/role indexed', { id: 'index-searchkey-role-progress' });
+  };
+
   const fieldsToRender = getFieldsToRender(state);
 
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
@@ -3326,7 +3347,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onChange={handleFilterChange}
               storageKey={filterStorageKey}
               bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
-              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'csection'] : undefined}
+              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'role', 'csection'] : undefined}
             />
             <ButtonsContainer>
               {userNotFound && (
@@ -3393,6 +3414,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 title="Індексація searchKey/csection"
               >
                 IdxCsection
+              </Button>
+              <Button
+                onClick={indexSearchKeyRoleHandler}
+                title="Індексація searchKey/role"
+              >
+                IdxRole
               </Button>
               <Button onClick={makeIndex}>Index</Button>
               {<Button onClick={searchDuplicates}>DPL</Button>}

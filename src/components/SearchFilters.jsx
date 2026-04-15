@@ -125,6 +125,11 @@ export const SearchFilters = ({
           { val: 'ip', label: 'ip' },
           { val: 'cl', label: 'cl' },
           { val: 'other', label: '?' },
+          ...(bloodSearchKeyMode
+            ? [
+                { val: 'empty', label: 'no' },
+              ]
+            : []),
         ],
       },
       {
