@@ -67,6 +67,7 @@ const SEARCH_KEY_INDEX_ROOT = 'searchKey';
 const BLOOD_SEARCH_KEY_INDEX = 'blood';
 const MARITAL_STATUS_SEARCH_KEY_INDEX = 'maritalStatus';
 const CSECTION_SEARCH_KEY_INDEX = 'csection';
+const ROLE_SEARCH_KEY_INDEX = 'role';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
 const SEARCH_INDEX_COLLECTION_CACHE_PREFIX = 'search-index:collection:v1:';
 const SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 15 * 60 * 1000;
@@ -2650,6 +2651,36 @@ const getMaritalStatusIndexSet = data => {
   return new Set([normalizeMaritalStatusIndexValue(data.maritalStatus)]);
 };
 
+export const normalizeRoleSearchKeyIndexValue = (roleValue, userRoleValue) => {
+  const normalizeSingleRole = value => {
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase();
+
+    if (!normalized) return '';
+    if (normalized === 'ed') return 'ed';
+    if (normalized === 'sm') return 'sm';
+    if (normalized === 'ag') return 'ag';
+    if (normalized === 'ip') return 'ip';
+    if (normalized === 'cl') return 'cl';
+    return '?';
+  };
+
+  const normalizedRole = normalizeSingleRole(roleValue);
+  if (normalizedRole && normalizedRole !== '?') return normalizedRole;
+
+  const normalizedUserRole = normalizeSingleRole(userRoleValue);
+  if (normalizedUserRole && normalizedUserRole !== '?') return normalizedUserRole;
+
+  if (normalizedRole === '?' || normalizedUserRole === '?') return '?';
+  return 'no';
+};
+
+const getRoleIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([normalizeRoleSearchKeyIndexValue(data.role, data.userRole)]);
+};
+
 const CSECTION_DATE_PATTERN = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/;
 const CSECTION_INTEGER_PATTERN = /^[+-]?\d+$/;
 const CSECTION_MINUS_VALUES = new Set(['-', 'no', 'ні', 'minus']);
@@ -2755,6 +2786,7 @@ const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
 };
 
 const MARITAL_STATUS_SEARCH_KEY_BUCKETS = ['+', '-', '?', 'no'];
+const ROLE_SEARCH_KEY_BUCKETS = ['ed', 'sm', 'ag', 'ip', 'cl', '?', 'no'];
 
 const getMaritalStatusFilterKey = bucket => {
   const normalizedBucket = String(bucket || '').trim().toLowerCase();
@@ -2771,6 +2803,22 @@ const isMaritalStatusBucketAllowedByFilters = (bucket, filterSettings = {}) => {
 
   const filterKey = getMaritalStatusFilterKey(bucket);
   return Boolean(maritalStatusFilters?.[filterKey]);
+};
+
+const getRoleFilterKey = bucket => {
+  const normalizedBucket = String(bucket || '').trim().toLowerCase();
+  if (['ed', 'sm', 'ag', 'ip', 'cl'].includes(normalizedBucket)) return normalizedBucket;
+  if (normalizedBucket === 'no') return 'empty';
+  return 'other';
+};
+
+const isRoleBucketAllowedByFilters = (bucket, filterSettings = {}) => {
+  const roleFilters = filterSettings?.role;
+  const shouldApplyRole = hasExplicitFilterSelection(roleFilters);
+  if (!shouldApplyRole) return true;
+
+  const filterKey = getRoleFilterKey(bucket);
+  return Boolean(roleFilters?.[filterKey]);
 };
 
 const updateSearchKeyLeaf = async (indexName, value, userId, action) => {
@@ -2796,6 +2844,8 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   const nextMaritalStatusValues = getMaritalStatusIndexSet(nextData);
   const prevCsectionValues = getCsectionIndexSet(prevData);
   const nextCsectionValues = getCsectionIndexSet(nextData);
+  const prevRoleValues = getRoleIndexSet(prevData);
+  const nextRoleValues = getRoleIndexSet(nextData);
 
   for (const value of prevValues) {
     if (!nextValues.has(value)) {
@@ -2836,6 +2886,20 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
     if (!prevCsectionValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
       await updateSearchKeyLeaf(CSECTION_SEARCH_KEY_INDEX, value, userId, 'add');
+    }
+  }
+
+  for (const value of prevRoleValues) {
+    if (!nextRoleValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(ROLE_SEARCH_KEY_INDEX, value, userId, 'remove');
+    }
+  }
+
+  for (const value of nextRoleValues) {
+    if (!prevRoleValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(ROLE_SEARCH_KEY_INDEX, value, userId, 'add');
     }
   }
 };
@@ -2922,6 +2986,34 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
   }
 };
 
+export const createRoleSearchKeyIndexInCollection = async (collection, onProgress) => {
+  const usersData = await loadCollectionWithIndexCache(collection);
+  if (!usersData) return;
+
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  const updates = userIds.reduce((acc, userId) => {
+    const user = usersData[userId] || {};
+    const roleValue = normalizeRoleSearchKeyIndexValue(user.role, user.userRole);
+    acc[`${SEARCH_KEY_INDEX_ROOT}/${ROLE_SEARCH_KEY_INDEX}/${roleValue}/${userId}`] = true;
+    return acc;
+  }, {});
+
+  const updateEntries = Object.entries(updates);
+
+  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
+    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
+    const chunkPayload = Object.fromEntries(chunkEntries);
+    // eslint-disable-next-line no-await-in-loop
+    await update(ref2(database), chunkPayload);
+
+    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
+    if (onProgress && progress % 10 === 0) onProgress(progress);
+  }
+};
+
 export const fetchUsersBySearchKeyBloodPaged = async ({
   filterSettings = {},
   offset = 0,
@@ -2931,14 +3023,20 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   const filteredMaritalStatusBuckets = MARITAL_STATUS_SEARCH_KEY_BUCKETS.filter(bucket =>
     isMaritalStatusBucketAllowedByFilters(bucket, filterSettings)
   );
+  const filteredRoleBuckets = ROLE_SEARCH_KEY_BUCKETS.filter(bucket => isRoleBucketAllowedByFilters(bucket, filterSettings));
 
-  const [bucketSnapshots, maritalStatusSnapshots] = await Promise.all([
+  const [bucketSnapshots, maritalStatusSnapshots, roleSnapshots] = await Promise.all([
     Promise.all(
     filteredBuckets.map(bucket => get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${BLOOD_SEARCH_KEY_INDEX}/${bucket}`)))
     ),
     Promise.all(
       filteredMaritalStatusBuckets.map(bucket =>
         get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${bucket}`))
+      )
+    ),
+    Promise.all(
+      filteredRoleBuckets.map(bucket =>
+        get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${ROLE_SEARCH_KEY_INDEX}/${bucket}`))
       )
     ),
   ]);
@@ -2957,11 +3055,17 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
 
   const bloodUserIds = collectIdsFromSnapshots(bucketSnapshots);
   const maritalStatusUserIds = collectIdsFromSnapshots(maritalStatusSnapshots);
+  const roleUserIds = collectIdsFromSnapshots(roleSnapshots);
   const shouldApplyMaritalStatusFilter = hasExplicitFilterSelection(filterSettings?.maritalStatus);
+  const shouldApplyRoleFilter = hasExplicitFilterSelection(filterSettings?.role);
 
-  const finalIds = shouldApplyMaritalStatusFilter
-    ? [...bloodUserIds].filter(id => maritalStatusUserIds.has(id))
-    : [...bloodUserIds];
+  let finalIds = [...bloodUserIds];
+  if (shouldApplyMaritalStatusFilter) {
+    finalIds = finalIds.filter(id => maritalStatusUserIds.has(id));
+  }
+  if (shouldApplyRoleFilter) {
+    finalIds = finalIds.filter(id => roleUserIds.has(id));
+  }
 
   const sortedIds = [...finalIds].sort((a, b) => a.localeCompare(b));
   const pageIds = sortedIds.slice(offset, offset + limit);

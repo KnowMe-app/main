@@ -4,7 +4,7 @@ import { REACTION_FILTER_DEFAULTS } from 'utils/reactionCategory';
 
 const defaultsAdd = {
   csection: { cs2plus: true, cs1: true, cs0: true, no: true, other: true },
-  role: { ed: true, sm: true, ag: true, ip: true, cl: true, other: true },
+  role: { ed: true, sm: true, ag: true, ip: true, cl: true, other: true, empty: true },
   maritalStatus: { married: true, unmarried: true, other: true, empty: true },
   bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: true },
   rh: { '+': true, '-': true, other: true, empty: true },
