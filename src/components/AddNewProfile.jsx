@@ -2105,12 +2105,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsersSearchKey = async (currentFilters = filters) => {
-    let favRaw = getFavorites();
+    let favRaw = {
+      ...getFavorites(),
+      ...favoriteUsersData,
+    };
     let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
-    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0) {
-      fav = await fetchFavoriteUsers(auth.currentUser.uid);
-      setFavoriteUsersData(fav);
-      syncFavorites(fav);
+
+    if (currentFilters.favorite?.favOnly) {
+      const ownerId = auth.currentUser?.uid;
+      if (ownerId) {
+        const remoteFavRaw = await fetchFavoriteUsers(ownerId);
+        const remoteFav = Object.fromEntries(Object.entries(remoteFavRaw || {}).filter(([, v]) => v));
+        fav = remoteFav;
+        setFavoriteUsersData(remoteFav);
+        setFavoriteIds(remoteFav);
+        syncFavorites(remoteFav);
+      }
     }
 
     if (isEditingRef.current) {
