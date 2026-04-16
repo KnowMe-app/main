@@ -45,6 +45,7 @@ import {
   createImtHeightWeightSearchKeyIndexInCollection,
   createReactionSearchKeyIndexInCollection,
   fetchUsersBySearchKeyBloodPaged,
+  removeKeyFromFirebase,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -1046,7 +1047,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         removedValue = prevState[fieldName][idx];
 
         if (filteredArray.length === 0 || (filteredArray.length === 1 && filteredArray[0] === '')) {
+          const deletedValue = prevState[fieldName];
           delete newState[fieldName];
+          if (isAdmin) {
+            removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
+          }
         } else if (filteredArray.length === 1) {
           newState[fieldName] = filteredArray[0];
         } else {
@@ -1054,7 +1059,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
       } else {
         removedValue = prevState[fieldName];
+        const deletedValue = prevState[fieldName];
         delete newState[fieldName];
+        if (isAdmin) {
+          removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
+        }
       }
 
       handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
@@ -1071,6 +1080,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       // Видаляємо ключ з нового стану
       delete newState[fieldName];
+      if (isAdmin) {
+        removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
+      }
 
       // console.log('Видалили ключ з локального стану:', fieldName);
       // console.log('newState:', newState);
