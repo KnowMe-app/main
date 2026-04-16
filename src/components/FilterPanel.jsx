@@ -86,6 +86,7 @@ const FilterPanel = ({
   nonAdminAllActive = false,
   allowedFilterNames,
   bloodSearchKeyMode = false,
+  optionHints,
 }) => {
   const defaultFilters = useMemo(() => {
     if (mode !== 'matching') return defaultsAdd;
@@ -145,6 +146,7 @@ const FilterPanel = ({
       mode={mode}
       bloodSearchKeyMode={bloodSearchKeyMode}
       allowedFilterNames={allowedFilterNames}
+      optionHints={optionHints}
     />
   );
 };

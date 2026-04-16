@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
@@ -508,7 +508,7 @@ const SearchScopeLabel = styled.label`
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #1f1f1f;
+  color: ${({ $muted }) => ($muted ? '#b8b8b8' : '#1f1f1f')};
 `;
 
 const SearchScopeRow = styled.div`
@@ -539,6 +539,79 @@ const SearchScopeLabelTextGroup = styled.span`
   flex-direction: column;
   line-height: 1.2;
 `;
+
+const SearchScopeOptionCount = styled.span`
+  font-size: 0.45em;
+  line-height: 1;
+  color: ${({ $muted }) => ($muted ? '#c8c8c8' : '#7e7e7e')};
+  margin-bottom: 1px;
+  min-height: 1em;
+`;
+
+const DATE_SEARCH_KEYS = new Set(['getInTouch', 'lastAction', 'lastLogin2', 'createdAt', 'lastCycle', 'lastLogin']);
+const CONTACT_OR_TEXT_SEARCH_KEYS = new Set([
+  'phone',
+  'telegram',
+  'instagram',
+  'facebook',
+  'email',
+  'vk',
+  'tiktok',
+  'other',
+  'name',
+  'surname',
+  'userId',
+]);
+
+const looksLikeDateQuery = value => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) return false;
+
+  return [
+    /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/,
+    /^\d{4}[./-]\d{1,2}[./-]\d{1,2}$/,
+    /^\d{1,2}\s+[а-яіїєґa-z]+\s+\d{2,4}$/i,
+  ].some(pattern => pattern.test(trimmed));
+};
+
+const SEARCH_SCOPE_BLOCKS = [
+  {
+    id: 'id-search',
+    title: 'Пошук по ID',
+    options: [
+      { key: 'searchId', label: 'searchId (точний)' },
+      { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
+      { key: 'partialUserId', label: 'userId (частковий збіг)' },
+    ],
+  },
+  {
+    id: 'search-keys',
+    title: 'Пошук в searchId / equalTo',
+    options: [
+      { key: 'phone', label: 'phone', supportsSearchId: true, supportsEqualTo: true },
+      { key: 'telegram', label: 'telegram', supportsSearchId: true, supportsEqualTo: true },
+      { key: 'instagram', label: 'instagram', supportsSearchId: true, supportsEqualTo: true },
+      { key: 'facebook', label: 'facebook', supportsSearchId: true, supportsEqualTo: true },
+      { key: 'email', label: 'email', supportsSearchId: true, supportsEqualTo: true },
+      { key: 'vk', label: 'vk', supportsSearchId: true, supportsEqualTo: true },
+      { key: 'tiktok', label: 'tiktok', supportsSearchId: true, supportsEqualTo: true },
+      { key: 'other', label: 'other', supportsSearchId: true, supportsEqualTo: true },
+      { key: 'myComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
+      { key: 'name', label: 'name', supportsSearchId: true, supportsEqualTo: true },
+      { key: 'surname', label: 'surname', supportsSearchId: true, supportsEqualTo: true },
+      { key: 'cycleStatus', label: 'cycleStatus', supportsSearchId: false, supportsEqualTo: true },
+      { key: 'getInTouch', label: 'getInTouch', supportsSearchId: true, supportsEqualTo: true, isDate: true },
+      { key: 'lastAction', label: 'lastAction', supportsSearchId: true, supportsEqualTo: true, isDate: true },
+      { key: 'lastLogin2', label: 'lastLogin2', supportsSearchId: false, supportsEqualTo: true, isDate: true },
+      { key: 'createdAt', label: 'createdAt', supportsSearchId: false, supportsEqualTo: true, isDate: true },
+      { key: 'lastCycle', label: 'lastCycle', supportsSearchId: false, supportsEqualTo: true, isDate: true },
+      { key: 'lastLogin', label: 'lastLogin', supportsSearchId: false, supportsEqualTo: true, isDate: true },
+    ],
+  },
+];
+
+const SEARCH_KEY_OPTIONS =
+  SEARCH_SCOPE_BLOCKS.find(block => block.id === 'search-keys')?.options || [];
 
 const SearchBarRow = styled.div`
   display: flex;
@@ -604,44 +677,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
 
-
-  const SEARCH_SCOPE_BLOCKS = [
-    {
-      id: 'id-search',
-      title: 'Пошук по ID',
-      options: [
-        { key: 'searchId', label: 'searchId (точний)' },
-        { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
-        { key: 'partialUserId', label: 'userId (частковий збіг)' },
-      ],
-    },
-    {
-      id: 'search-keys',
-      title: 'Пошук в searchId / equalTo',
-      options: [
-        { key: 'phone', label: 'phone', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'telegram', label: 'telegram', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'instagram', label: 'instagram', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'facebook', label: 'facebook', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'email', label: 'email', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'vk', label: 'vk', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'tiktok', label: 'tiktok', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'other', label: 'other', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'myComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'name', label: 'name', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'surname', label: 'surname', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'cycleStatus', label: 'cycleStatus', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'getInTouch', label: 'getInTouch', supportsSearchId: true, supportsEqualTo: true, isDate: true },
-        { key: 'lastAction', label: 'lastAction', supportsSearchId: true, supportsEqualTo: true, isDate: true },
-        { key: 'lastLogin2', label: 'lastLogin2', supportsSearchId: false, supportsEqualTo: true, isDate: true },
-        { key: 'createdAt', label: 'createdAt', supportsSearchId: false, supportsEqualTo: true, isDate: true },
-        { key: 'lastCycle', label: 'lastCycle', supportsSearchId: false, supportsEqualTo: true, isDate: true },
-        { key: 'lastLogin', label: 'lastLogin', supportsSearchId: false, supportsEqualTo: true, isDate: true },
-      ],
-    },
-  ];
-
-  const SEARCH_KEY_OPTIONS = SEARCH_SCOPE_BLOCKS.find(block => block.id === 'search-keys')?.options || [];
   const TOGGLEABLE_SEARCH_KEYS = [
     'searchId',
     'equalToAllCards',
@@ -1133,6 +1168,49 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
   const [lastKey21, setLastKey21] = useState(null);
   const [totalCount, setTotalCount] = useState(0);
+  const searchScopeHints = useMemo(() => {
+    const trimmedSearch = String(search || '').trim();
+    if (!trimmedSearch) return {};
+
+    const detected = detectSearchParams(trimmedSearch);
+    const detectedKey = detected?.key || null;
+    const isDateQuery = looksLikeDateQuery(trimmedSearch);
+    const hints = {};
+
+    SEARCH_KEY_OPTIONS.forEach(option => {
+      const { key } = option;
+      const isDateKey = DATE_SEARCH_KEYS.has(key);
+      const isDetectedScopedKey = detectedKey && CONTACT_OR_TEXT_SEARCH_KEYS.has(detectedKey);
+      const isTargetScopedKey = CONTACT_OR_TEXT_SEARCH_KEYS.has(key);
+
+      const disabledByDateMismatch =
+        (isDateQuery && !isDateKey) || (!isDateQuery && isDateKey);
+
+      const disabledByDetectedKey =
+        isDetectedScopedKey &&
+        isTargetScopedKey &&
+        key !== detectedKey;
+
+      const isImpossible = disabledByDateMismatch || disabledByDetectedKey;
+      const normalizedValue = String(detected?.value || trimmedSearch);
+      const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${normalizedValue}`));
+      const cachedIds = getIdsByQuery(cacheKey);
+      const cachedCount = Array.isArray(cachedIds) ? cachedIds.length : 0;
+
+      const projectedCount = isImpossible
+        ? 0
+        : (enabledSearchKeys[key] && totalCount > 0)
+          ? totalCount
+          : cachedCount;
+
+      hints[key] = {
+        isImpossible,
+        projectedCount,
+      };
+    });
+
+    return hints;
+  }, [enabledSearchKeys, search, totalCount]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1422,6 +1500,51 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         partialUserId: false,
       }
     : enabledSearchKeys;
+
+  const searchKeyOptionHints = useMemo(() => {
+    if (!searchIdAndSearchKeyOnlyMode) return {};
+
+    const usersEntries = Object.entries(users || {}).filter(([, value]) => Boolean(value));
+    if (usersEntries.length === 0 || !filters || typeof filters !== 'object') return {};
+
+    return Object.entries(filters).reduce((acc, [groupName, groupValue]) => {
+      if (!groupValue || typeof groupValue !== 'object' || Array.isArray(groupValue)) return acc;
+
+      const groupHints = Object.keys(groupValue).reduce((groupAcc, optionKey) => {
+        const projectedFilters = {
+          ...filters,
+          [groupName]: {
+            ...groupValue,
+            [optionKey]: true,
+          },
+        };
+
+        const projectedCount = filterMain(
+          usersEntries,
+          currentFilter,
+          projectedFilters,
+          favoriteUsersData,
+          dislikeUsersData,
+        ).length;
+
+        groupAcc[optionKey] = {
+          count: projectedCount,
+          disabled: projectedCount === 0,
+        };
+        return groupAcc;
+      }, {});
+
+      acc[groupName] = groupHints;
+      return acc;
+    }, {});
+  }, [
+    currentFilter,
+    dislikeUsersData,
+    favoriteUsersData,
+    filters,
+    searchIdAndSearchKeyOnlyMode,
+    users,
+  ]);
 
   const handleLoadSortModeChange = useCallback(mode => {
     setLoadSortMode(mode);
@@ -3471,10 +3594,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       const isSearchModeOption = block.id === 'search-keys';
                       const searchIdModeOnly = enabledSearchKeys.searchId && !enabledSearchKeys.equalToAllCards;
                       const equalToModeOnly = enabledSearchKeys.equalToAllCards && !enabledSearchKeys.searchId;
-                      const disabled = isSearchModeOption && (
+                      const isImpossibleByCurrentSearch = isSearchModeOption && searchScopeHints[option.key]?.isImpossible;
+                      const disabled = isImpossibleByCurrentSearch || (isSearchModeOption && (
                         (searchIdModeOnly && !option.supportsSearchId) ||
                         (equalToModeOnly && !option.supportsEqualTo)
-                      );
+                      ));
+                      const projectedCount = isSearchModeOption ? searchScopeHints[option.key]?.projectedCount : null;
+                      const showProjectedCount = isSearchModeOption && Number.isFinite(projectedCount);
 
                       const isFirstDateOption = option.isDate && options[index - 1] && !options[index - 1].isDate;
 
@@ -3483,7 +3609,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                         {hasDateOptions && isFirstDateOption && <SearchScopeDivider />}
                         {option.key === 'searchId' ? (
                           <SearchScopeRow>
-                            <SearchScopeLabel>
+                            <SearchScopeLabel $muted={disabled}>
                               <input
                                 type="checkbox"
                                 checked={Boolean(enabledSearchKeys[option.key])}
@@ -3491,6 +3617,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                                 onChange={() => handleSearchScopeChange(option.key, disabled)}
                               />
                               <SearchScopeLabelTextGroup>
+                                {showProjectedCount && (
+                                  <SearchScopeOptionCount $muted={disabled}>
+                                    {projectedCount}
+                                  </SearchScopeOptionCount>
+                                )}
                                 <span>{option.label}</span>
                               </SearchScopeLabelTextGroup>
                             </SearchScopeLabel>
@@ -3499,7 +3630,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                             </ToggleSearchScopeButton>
                           </SearchScopeRow>
                         ) : (
-                          <SearchScopeLabel>
+                          <SearchScopeLabel $muted={disabled}>
                             <input
                               type="checkbox"
                               checked={Boolean(enabledSearchKeys[option.key])}
@@ -3507,6 +3638,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                               onChange={() => handleSearchScopeChange(option.key, disabled)}
                             />
                             <SearchScopeLabelTextGroup>
+                              {showProjectedCount && (
+                                <SearchScopeOptionCount $muted={disabled}>
+                                  {projectedCount}
+                                </SearchScopeOptionCount>
+                              )}
                               <span>{option.label}</span>
                             </SearchScopeLabelTextGroup>
                           </SearchScopeLabel>
@@ -3661,6 +3797,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onChange={handleFilterChange}
               storageKey={filterStorageKey}
               bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
+              optionHints={searchIdAndSearchKeyOnlyMode ? searchKeyOptionHints : undefined}
               allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'csection', 'reaction'] : undefined}
             />
             <ButtonsContainer>
