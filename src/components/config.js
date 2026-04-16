@@ -66,6 +66,7 @@ const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tik
 const SEARCH_KEY_INDEX_ROOT = 'searchKey';
 const BLOOD_SEARCH_KEY_INDEX = 'blood';
 const MARITAL_STATUS_SEARCH_KEY_INDEX = 'maritalStatus';
+const CONTACT_SEARCH_KEY_INDEX = 'contact';
 const AGE_SEARCH_KEY_INDEX = 'age';
 const IMT_SEARCH_KEY_INDEX = 'imt';
 const HEIGHT_SEARCH_KEY_INDEX = 'height';
@@ -2894,6 +2895,7 @@ const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
 };
 
 const MARITAL_STATUS_SEARCH_KEY_BUCKETS = ['+', '-', '?', 'no'];
+const CONTACT_SEARCH_KEY_BUCKETS = ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'email'];
 const ROLE_SEARCH_KEY_BUCKETS = ['ed', 'sm', 'ag', 'ip', 'cl', '?', 'no'];
 const IMT_SEARCH_KEY_BUCKETS = ['le28', '29_31', '32_35', '36_plus', '?', 'no'];
 
@@ -2912,6 +2914,13 @@ const isMaritalStatusBucketAllowedByFilters = (bucket, filterSettings = {}) => {
 
   const filterKey = getMaritalStatusFilterKey(bucket);
   return Boolean(maritalStatusFilters?.[filterKey]);
+};
+
+const isContactBucketAllowedByFilters = (bucket, filterSettings = {}) => {
+  const contactFilters = filterSettings?.contact;
+  const shouldApplyContact = hasExplicitFilterSelection(contactFilters);
+  if (!shouldApplyContact) return true;
+  return Boolean(contactFilters?.[bucket]);
 };
 
 const getRoleFilterKey = bucket => {
@@ -3202,6 +3211,8 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   const nextMaritalStatusValues = getMaritalStatusIndexSet(nextData);
   const prevCsectionValues = getCsectionIndexSet(prevData);
   const nextCsectionValues = getCsectionIndexSet(nextData);
+  const prevContactValues = getContactIndexSet(prevData);
+  const nextContactValues = getContactIndexSet(nextData);
   const prevRoleValues = getRoleIndexSet(prevData);
   const nextRoleValues = getRoleIndexSet(nextData);
   const prevAgeValues = getAgeIndexSet(prevData);
@@ -3252,6 +3263,20 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
     if (!prevCsectionValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
       await updateSearchKeyLeaf(CSECTION_SEARCH_KEY_INDEX, value, userId, 'add');
+    }
+  }
+
+  for (const value of prevContactValues) {
+    if (!nextContactValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(CONTACT_SEARCH_KEY_INDEX, value, userId, 'remove');
+    }
+  }
+
+  for (const value of nextContactValues) {
+    if (!prevContactValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(CONTACT_SEARCH_KEY_INDEX, value, userId, 'add');
     }
   }
 
@@ -3425,6 +3450,36 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
   }
 };
 
+export const createContactSearchKeyIndexInCollection = async (collection, onProgress) => {
+  const usersData = await loadCollectionWithIndexCache(collection);
+  if (!usersData) return;
+
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  const updates = userIds.reduce((acc, userId) => {
+    const user = usersData[userId] || {};
+    const contactValues = getContactIndexSet(user);
+    contactValues.forEach(contactValue => {
+      acc[`${SEARCH_KEY_INDEX_ROOT}/${CONTACT_SEARCH_KEY_INDEX}/${contactValue}/${userId}`] = true;
+    });
+    return acc;
+  }, {});
+
+  const updateEntries = Object.entries(updates);
+
+  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
+    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
+    const chunkPayload = Object.fromEntries(chunkEntries);
+    // eslint-disable-next-line no-await-in-loop
+    await update(ref2(database), chunkPayload);
+
+    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
+    if (onProgress && progress % 10 === 0) onProgress(progress);
+  }
+};
+
 export const createRoleSearchKeyIndexInCollection = async (collection, onProgress) => {
   const usersData = await loadCollectionWithIndexCache(collection);
   if (!usersData) return;
@@ -3526,6 +3581,9 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   const filteredMaritalStatusBuckets = MARITAL_STATUS_SEARCH_KEY_BUCKETS.filter(bucket =>
     isMaritalStatusBucketAllowedByFilters(bucket, filterSettings)
   );
+  const filteredContactBuckets = CONTACT_SEARCH_KEY_BUCKETS.filter(bucket =>
+    isContactBucketAllowedByFilters(bucket, filterSettings)
+  );
   const filteredRoleBuckets = ROLE_SEARCH_KEY_BUCKETS.filter(bucket => isRoleBucketAllowedByFilters(bucket, filterSettings));
   const filteredImtBuckets = IMT_SEARCH_KEY_BUCKETS.filter(bucket => {
     const imtFilters = filterSettings?.imt;
@@ -3542,13 +3600,18 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     dislikedMap,
   });
 
-  const [bucketSnapshots, maritalStatusSnapshots, roleSnapshots, imtSnapshots] = await Promise.all([
+  const [bucketSnapshots, maritalStatusSnapshots, contactSnapshots, roleSnapshots, imtSnapshots] = await Promise.all([
     Promise.all(
     filteredBuckets.map(bucket => get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${BLOOD_SEARCH_KEY_INDEX}/${bucket}`)))
     ),
     Promise.all(
       filteredMaritalStatusBuckets.map(bucket =>
         get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${bucket}`))
+      )
+    ),
+    Promise.all(
+      filteredContactBuckets.map(bucket =>
+        get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${CONTACT_SEARCH_KEY_INDEX}/${bucket}`))
       )
     ),
     Promise.all(
@@ -3577,9 +3640,11 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
 
   const bloodUserIds = collectIdsFromSnapshots(bucketSnapshots);
   const maritalStatusUserIds = collectIdsFromSnapshots(maritalStatusSnapshots);
+  const contactUserIds = collectIdsFromSnapshots(contactSnapshots);
   const roleUserIds = collectIdsFromSnapshots(roleSnapshots);
   const indexedImtUserIds = collectIdsFromSnapshots(imtSnapshots);
   const shouldApplyMaritalStatusFilter = hasExplicitFilterSelection(filterSettings?.maritalStatus);
+  const shouldApplyContactFilter = hasExplicitFilterSelection(filterSettings?.contact);
   const shouldApplyRoleFilter = hasExplicitFilterSelection(filterSettings?.role);
   const shouldApplyAgeFilter = ageUserIds instanceof Set;
   const shouldApplyImtFilter = imtUserIds instanceof Set;
@@ -3589,6 +3654,9 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   let finalIds = [...bloodUserIds];
   if (shouldApplyMaritalStatusFilter) {
     finalIds = finalIds.filter(id => maritalStatusUserIds.has(id));
+  }
+  if (shouldApplyContactFilter) {
+    finalIds = finalIds.filter(id => contactUserIds.has(id));
   }
   if (shouldApplyRoleFilter) {
     finalIds = finalIds.filter(id => roleUserIds.has(id));
@@ -3885,12 +3953,30 @@ const getTelegramValues = value => {
 };
 const hasTelegramNonUk = value => {
   const values = getTelegramValues(value);
-  return values.some(item => !item.startsWith('УК'));
+  return values.some(item => !item.toLowerCase().startsWith('ук'));
 };
 
 const isTelegramUkOnly = value => {
   const values = getTelegramValues(value);
-  return values.length > 0 && values.every(item => item.startsWith('УК'));
+  return values.length > 0 && values.every(item => item.toLowerCase().startsWith('ук'));
+};
+
+const getContactIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+
+  const contactSet = new Set();
+  if (hasContactValue(data.vk)) contactSet.add('vk');
+  if (hasContactValue(data.instagram)) contactSet.add('instagram');
+  if (hasContactValue(data.facebook)) contactSet.add('facebook');
+  if (hasContactValue(data.phone)) contactSet.add('phone');
+  if (hasTelegramNonUk(data.telegram)) contactSet.add('telegram');
+  if (getTelegramValues(data.telegram).some(item => item.toLowerCase().startsWith('ук'))) {
+    contactSet.add('telegram2');
+  }
+  if (hasContactValue(data.tiktok)) contactSet.add('tiktok');
+  if (hasContactValue(data.email)) contactSet.add('email');
+
+  return contactSet;
 };
 
 const getBmiCategory = value => {
