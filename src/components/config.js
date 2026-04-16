@@ -73,6 +73,7 @@ const HEIGHT_SEARCH_KEY_INDEX = 'height';
 const WEIGHT_SEARCH_KEY_INDEX = 'weight';
 const CSECTION_SEARCH_KEY_INDEX = 'csection';
 const ROLE_SEARCH_KEY_INDEX = 'role';
+const USER_ID_SEARCH_KEY_INDEX = 'userId';
 const REACTION_SEARCH_KEY_INDEX = 'reaction';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
 const SEARCH_INDEX_COLLECTION_CACHE_PREFIX = 'search-index:collection:v1:';
@@ -2790,6 +2791,23 @@ const getRoleIndexSet = data => {
   return new Set([normalizeRoleSearchKeyIndexValue(data.role, data.userRole)]);
 };
 
+const getUserIdIndexSet = userId => {
+  const normalizedId = String(userId || '').trim().toLowerCase();
+  if (!normalizedId) {
+    return new Set(['other']);
+  }
+
+  const userIdVariants = new Set();
+  if (normalizedId.startsWith('vk')) userIdVariants.add('vk');
+  if (normalizedId.startsWith('aa')) userIdVariants.add('aa');
+  if (normalizedId.startsWith('ab')) userIdVariants.add('ab');
+  if (normalizedId.length > 20) userIdVariants.add('long');
+  if (normalizedId.length > 8 && normalizedId.length <= 20) userIdVariants.add('mid');
+  if (userIdVariants.size === 0) userIdVariants.add('other');
+
+  return userIdVariants;
+};
+
 const CSECTION_DATE_PATTERN = /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/;
 const CSECTION_INTEGER_PATTERN = /^[+-]?\d+$/;
 const CSECTION_MINUS_VALUES = new Set(['-', 'no', 'ні', 'minus']);
@@ -2897,6 +2915,7 @@ const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
 const MARITAL_STATUS_SEARCH_KEY_BUCKETS = ['+', '-', '?', 'no'];
 const CONTACT_SEARCH_KEY_BUCKETS = ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'email'];
 const ROLE_SEARCH_KEY_BUCKETS = ['ed', 'sm', 'ag', 'ip', 'cl', '?', 'no'];
+const USER_ID_SEARCH_KEY_BUCKETS = ['vk', 'aa', 'ab', 'long', 'mid', 'other'];
 const IMT_SEARCH_KEY_BUCKETS = ['le28', '29_31', '32_35', '36_plus', '?', 'no'];
 
 const getMaritalStatusFilterKey = bucket => {
@@ -2937,6 +2956,13 @@ const isRoleBucketAllowedByFilters = (bucket, filterSettings = {}) => {
 
   const filterKey = getRoleFilterKey(bucket);
   return Boolean(roleFilters?.[filterKey]);
+};
+
+const isUserIdBucketAllowedByFilters = (bucket, filterSettings = {}) => {
+  const userIdFilters = filterSettings?.userId;
+  const shouldApplyUserId = hasExplicitFilterSelection(userIdFilters);
+  if (!shouldApplyUserId) return true;
+  return Boolean(userIdFilters?.[bucket]);
 };
 
 const AGE_DATE_PREFIX = 'd_';
@@ -3215,6 +3241,8 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   const nextContactValues = getContactIndexSet(nextData);
   const prevRoleValues = getRoleIndexSet(prevData);
   const nextRoleValues = getRoleIndexSet(nextData);
+  const prevUserIdValues = getUserIdIndexSet(userId);
+  const nextUserIdValues = getUserIdIndexSet(nextData?.userId || userId);
   const prevAgeValues = getAgeIndexSet(prevData);
   const nextAgeValues = getAgeIndexSet(nextData);
   const prevImtValues = getImtIndexSet(prevData);
@@ -3291,6 +3319,20 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
     if (!prevRoleValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
       await updateSearchKeyLeaf(ROLE_SEARCH_KEY_INDEX, value, userId, 'add');
+    }
+  }
+
+  for (const value of prevUserIdValues) {
+    if (!nextUserIdValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(USER_ID_SEARCH_KEY_INDEX, value, userId, 'remove');
+    }
+  }
+
+  for (const value of nextUserIdValues) {
+    if (!prevUserIdValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(USER_ID_SEARCH_KEY_INDEX, value, userId, 'add');
     }
   }
 
@@ -3508,6 +3550,36 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
   }
 };
 
+export const createUserIdSearchKeyIndexInCollection = async (collection, onProgress) => {
+  const usersData = await loadCollectionWithIndexCache(collection);
+  if (!usersData) return;
+
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  const updates = userIds.reduce((acc, userId) => {
+    const user = usersData[userId] || {};
+    const userIdValues = getUserIdIndexSet(user.userId || userId);
+    userIdValues.forEach(userIdValue => {
+      acc[`${SEARCH_KEY_INDEX_ROOT}/${USER_ID_SEARCH_KEY_INDEX}/${userIdValue}/${userId}`] = true;
+    });
+    return acc;
+  }, {});
+
+  const updateEntries = Object.entries(updates);
+
+  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
+    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
+    const chunkPayload = Object.fromEntries(chunkEntries);
+    // eslint-disable-next-line no-await-in-loop
+    await update(ref2(database), chunkPayload);
+
+    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
+    if (onProgress && progress % 10 === 0) onProgress(progress);
+  }
+};
+
 export const createAgeSearchKeyIndexInCollection = async (collection, onProgress) => {
   const usersData = await loadCollectionWithIndexCache(collection);
   if (!usersData) return;
@@ -3585,6 +3657,9 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     isContactBucketAllowedByFilters(bucket, filterSettings)
   );
   const filteredRoleBuckets = ROLE_SEARCH_KEY_BUCKETS.filter(bucket => isRoleBucketAllowedByFilters(bucket, filterSettings));
+  const filteredUserIdBuckets = USER_ID_SEARCH_KEY_BUCKETS.filter(bucket =>
+    isUserIdBucketAllowedByFilters(bucket, filterSettings)
+  );
   const filteredImtBuckets = IMT_SEARCH_KEY_BUCKETS.filter(bucket => {
     const imtFilters = filterSettings?.imt;
     const shouldApplyImt = hasExplicitFilterSelection(imtFilters);
@@ -3600,7 +3675,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     dislikedMap,
   });
 
-  const [bucketSnapshots, maritalStatusSnapshots, contactSnapshots, roleSnapshots, imtSnapshots] = await Promise.all([
+  const [bucketSnapshots, maritalStatusSnapshots, contactSnapshots, roleSnapshots, userIdSnapshots, imtSnapshots] = await Promise.all([
     Promise.all(
     filteredBuckets.map(bucket => get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${BLOOD_SEARCH_KEY_INDEX}/${bucket}`)))
     ),
@@ -3617,6 +3692,11 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     Promise.all(
       filteredRoleBuckets.map(bucket =>
         get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${ROLE_SEARCH_KEY_INDEX}/${bucket}`))
+      )
+    ),
+    Promise.all(
+      filteredUserIdBuckets.map(bucket =>
+        get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${USER_ID_SEARCH_KEY_INDEX}/${bucket}`))
       )
     ),
     Promise.all(
@@ -3642,10 +3722,12 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   const maritalStatusUserIds = collectIdsFromSnapshots(maritalStatusSnapshots);
   const contactUserIds = collectIdsFromSnapshots(contactSnapshots);
   const roleUserIds = collectIdsFromSnapshots(roleSnapshots);
+  const userIdUserIds = collectIdsFromSnapshots(userIdSnapshots);
   const indexedImtUserIds = collectIdsFromSnapshots(imtSnapshots);
   const shouldApplyMaritalStatusFilter = hasExplicitFilterSelection(filterSettings?.maritalStatus);
   const shouldApplyContactFilter = hasExplicitFilterSelection(filterSettings?.contact);
   const shouldApplyRoleFilter = hasExplicitFilterSelection(filterSettings?.role);
+  const shouldApplyUserIdFilter = hasExplicitFilterSelection(filterSettings?.userId);
   const shouldApplyAgeFilter = ageUserIds instanceof Set;
   const shouldApplyImtFilter = imtUserIds instanceof Set;
   const shouldApplyHeightFilter = heightUserIds instanceof Set;
@@ -3660,6 +3742,9 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   }
   if (shouldApplyRoleFilter) {
     finalIds = finalIds.filter(id => roleUserIds.has(id));
+  }
+  if (shouldApplyUserIdFilter) {
+    finalIds = finalIds.filter(id => userIdUserIds.has(id));
   }
   if (shouldApplyAgeFilter) {
     finalIds = finalIds.filter(id => ageUserIds.has(id));
