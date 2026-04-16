@@ -1,4 +1,4 @@
-import { handleChange } from './actions';
+import { handleChange, removeField } from './actions';
 import { useRef } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize';
 
@@ -20,6 +20,8 @@ export const FieldComment = ({ userData, setUsers, setState }) => {
         justifyContent: 'center', // Центрування по горизонталі
         alignItems: 'center', // Центрування по вертикалі
         height: '100%', // Висота контейнера
+        width: '100%',
+        position: 'relative',
       }}
     >
       <textarea
@@ -50,8 +52,34 @@ export const FieldComment = ({ userData, setUsers, setState }) => {
           resize: 'none',
           overflow: 'hidden',
           padding: '5px',
+          paddingRight: userData.myComment ? '22px' : '5px',
         }}
       />
+      {userData.myComment && (
+        <button
+          type="button"
+          aria-label="Очистити коментар"
+          onClick={event => {
+            event.stopPropagation();
+            removeField(userData.userId, 'myComment', setUsers, setState);
+          }}
+          style={{
+            position: 'absolute',
+            top: '50%',
+            right: '6px',
+            transform: 'translateY(-50%)',
+            cursor: 'pointer',
+            border: 'none',
+            background: 'transparent',
+            color: 'inherit',
+            fontSize: '18px',
+            lineHeight: 1,
+            padding: 0,
+          }}
+        >
+          &times;
+        </button>
+      )}
     </div>
   );
 };
