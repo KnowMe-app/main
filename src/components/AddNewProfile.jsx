@@ -20,7 +20,6 @@ import {
   makeNewUser,
   // removeSearchId,
   // createSearchIdsForAllUsers,
-  createSearchIdsInCollection,
   fetchUserById,
   loadDuplicateUsers,
   removeCardAndSearchId,
@@ -35,15 +34,7 @@ import {
   filterMain,
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
-  createSearchKeyIndexInCollection,
-  createMaritalStatusSearchKeyIndexInCollection,
-  createCsectionSearchKeyIndexInCollection,
-  createContactSearchKeyIndexInCollection,
-  createRoleSearchKeyIndexInCollection,
-  createUserIdSearchKeyIndexInCollection,
-  createAgeSearchKeyIndexInCollection,
-  createImtHeightWeightSearchKeyIndexInCollection,
-  createReactionSearchKeyIndexInCollection,
+  createSelectedSearchKeyIndexesInCollection,
   fetchUsersBySearchKeyBloodPaged,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -564,6 +555,22 @@ const SearchSettingsButton = styled.button`
   }
 `;
 
+const IndexModal = styled.div`
+  width: 100%;
+  margin: 6px 0 10px;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+`;
+
+const IndexModalList = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+`;
+
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const cloneProfileState = useCallback(profileState => JSON.parse(JSON.stringify(profileState || {})), []);
   const toComparableHistoryState = useCallback(profileState => {
@@ -583,6 +590,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     NO_GIT: 'NoGIT',
     SEARCH_ID_KEY_ONLY: 'SearchIdKeyOnly',
   };
+  const SEARCH_KEY_INDEX_OPTIONS = [
+    { key: 'blood', label: 'blood' },
+    { key: 'maritalStatus', label: 'maritalStatus' },
+    { key: 'csection', label: 'csection' },
+    { key: 'contact', label: 'contact' },
+    { key: 'role', label: 'role' },
+    { key: 'userId', label: 'userId' },
+    { key: 'age', label: 'age' },
+    { key: 'imtHeightWeight', label: 'imt+height+weight' },
+    { key: 'reaction', label: 'reaction' },
+  ];
 
   const location = useLocation();
   const lastUrlUserIdRef = useRef(new URLSearchParams(location.search).get('userId'));
@@ -603,6 +621,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   });
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
+  const [showSearchKeyIndexPanel, setShowSearchKeyIndexPanel] = useState(false);
+  const [selectedSearchKeyIndexes, setSelectedSearchKeyIndexes] = useState(() =>
+    SEARCH_KEY_INDEX_OPTIONS.reduce((acc, option) => {
+      acc[option.key] = true;
+      return acc;
+    }, {}),
+  );
 
 
   const SEARCH_SCOPE_BLOCKS = [
@@ -2997,27 +3022,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     toast.success('Cache cleared');
   };
 
-  const makeIndex = async () => {
-    toast.loading('Indexing newUsers 0%', { id: 'index-progress' });
-    await createSearchIdsInCollection('newUsers', progress => {
-      toast.loading(`Indexing newUsers ${progress}%`, { id: 'index-progress' });
-    });
-    toast.loading('Indexing users 0%', { id: 'index-progress' });
-    await createSearchIdsInCollection('users', progress => {
-      toast.loading(`Indexing users ${progress}%`, { id: 'index-progress' });
-    });
-    toast.success('Indexing finished', { id: 'index-progress' });
-
-    // const res = await fetchListOfUsers();
-    // res.forEach(async userId => {
-    //   const result = { userId: userId };
-    //   const res = await fetchNewUsersCollectionInRTDB(result);
-    //   console.log('res :>> ', res);
-    //   handleSubmit(res, false, false, true);
-    //   // writeData(userId); // Викликаємо writeData() для кожного ID
-    // });
-  };
-
   const indexLastLoginHandler = async () => {
     toast.loading('Indexing lastLogin2 0%', { id: 'index-lastlogin-progress' });
     await indexLastLogin(progress => {
@@ -3028,181 +3032,44 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     toast.success('lastLogin2 indexed', { id: 'index-lastlogin-progress' });
   };
 
-  const indexSearchKeyBloodHandler = async () => {
-    toast.loading('Indexing searchKey/blood in newUsers 0%', { id: 'index-searchkey-progress' });
-    await createSearchKeyIndexInCollection('newUsers', progress => {
-      toast.loading(`Indexing searchKey/blood in newUsers ${progress}%`, {
-        id: 'index-searchkey-progress',
-      });
-    });
-    toast.loading('Indexing searchKey/blood in users 0%', { id: 'index-searchkey-progress' });
-    await createSearchKeyIndexInCollection('users', progress => {
-      toast.loading(`Indexing searchKey/blood in users ${progress}%`, {
-        id: 'index-searchkey-progress',
-      });
-    });
-    toast.success('searchKey/blood indexed', { id: 'index-searchkey-progress' });
+  const toggleSearchKeyIndexSelection = indexKey => {
+    setSelectedSearchKeyIndexes(prev => ({
+      ...prev,
+      [indexKey]: !prev[indexKey],
+    }));
   };
 
-  const indexSearchKeyMaritalStatusHandler = async () => {
-    toast.loading('Indexing searchKey/maritalStatus in newUsers 0%', {
-      id: 'index-searchkey-marital-progress',
+  const runSelectedSearchKeyIndexes = async () => {
+    const selectedIndexTypes = SEARCH_KEY_INDEX_OPTIONS.filter(option => selectedSearchKeyIndexes[option.key]).map(
+      option => option.key,
+    );
+
+    if (!selectedIndexTypes.length) {
+      toast.error('Оберіть хоча б один індекс');
+      return;
+    }
+
+    const toastId = 'index-searchkey-selected-progress';
+    const formatProgressMessage = (collection, progress, meta) => {
+      const indexLabel = meta?.indexType || '';
+      return `Indexing ${collection}/${indexLabel} ${progress}%`;
+    };
+
+    toast.loading('Indexing searchKey indexes...', { id: toastId });
+    await createSelectedSearchKeyIndexesInCollection('newUsers', selectedIndexTypes, (progress, meta) => {
+      toast.loading(formatProgressMessage('newUsers', progress, meta), { id: toastId });
     });
-    await createMaritalStatusSearchKeyIndexInCollection('newUsers', progress => {
-      toast.loading(`Indexing searchKey/maritalStatus in newUsers ${progress}%`, {
-        id: 'index-searchkey-marital-progress',
-      });
+    await createSelectedSearchKeyIndexesInCollection('users', selectedIndexTypes, (progress, meta) => {
+      toast.loading(formatProgressMessage('users', progress, meta), { id: toastId });
     });
-    toast.loading('Indexing searchKey/maritalStatus in users 0%', {
-      id: 'index-searchkey-marital-progress',
-    });
-    await createMaritalStatusSearchKeyIndexInCollection('users', progress => {
-      toast.loading(`Indexing searchKey/maritalStatus in users ${progress}%`, {
-        id: 'index-searchkey-marital-progress',
-      });
-    });
-    toast.success('searchKey/maritalStatus indexed', { id: 'index-searchkey-marital-progress' });
+    toast.success('Обрані searchKey індекси побудовано', { id: toastId });
   };
 
-  const indexSearchKeyCsectionHandler = async () => {
-    toast.loading('Indexing searchKey/csection in newUsers 0%', {
-      id: 'index-searchkey-csection-progress',
-    });
-    await createCsectionSearchKeyIndexInCollection('newUsers', progress => {
-      toast.loading(`Indexing searchKey/csection in newUsers ${progress}%`, {
-        id: 'index-searchkey-csection-progress',
-      });
-    });
-    toast.loading('Indexing searchKey/csection in users 0%', {
-      id: 'index-searchkey-csection-progress',
-    });
-    await createCsectionSearchKeyIndexInCollection('users', progress => {
-      toast.loading(`Indexing searchKey/csection in users ${progress}%`, {
-        id: 'index-searchkey-csection-progress',
-      });
-    });
-    toast.success('searchKey/csection indexed', { id: 'index-searchkey-csection-progress' });
-  };
-
-  const indexSearchKeyContactHandler = async () => {
-    toast.loading('Indexing searchKey/contact in newUsers 0%', {
-      id: 'index-searchkey-contact-progress',
-    });
-    await createContactSearchKeyIndexInCollection('newUsers', progress => {
-      toast.loading(`Indexing searchKey/contact in newUsers ${progress}%`, {
-        id: 'index-searchkey-contact-progress',
-      });
-    });
-    toast.loading('Indexing searchKey/contact in users 0%', {
-      id: 'index-searchkey-contact-progress',
-    });
-    await createContactSearchKeyIndexInCollection('users', progress => {
-      toast.loading(`Indexing searchKey/contact in users ${progress}%`, {
-        id: 'index-searchkey-contact-progress',
-      });
-    });
-    toast.success('searchKey/contact indexed', { id: 'index-searchkey-contact-progress' });
-  };
-
-  const indexSearchKeyRoleHandler = async () => {
-    toast.loading('Indexing searchKey/role in newUsers 0%', {
-      id: 'index-searchkey-role-progress',
-    });
-    await createRoleSearchKeyIndexInCollection('newUsers', progress => {
-      toast.loading(`Indexing searchKey/role in newUsers ${progress}%`, {
-        id: 'index-searchkey-role-progress',
-      });
-    });
-    toast.loading('Indexing searchKey/role in users 0%', {
-      id: 'index-searchkey-role-progress',
-    });
-    await createRoleSearchKeyIndexInCollection('users', progress => {
-      toast.loading(`Indexing searchKey/role in users ${progress}%`, {
-        id: 'index-searchkey-role-progress',
-      });
-    });
-    toast.success('searchKey/role indexed', { id: 'index-searchkey-role-progress' });
-  };
-
-  const indexSearchKeyUserIdHandler = async () => {
-    toast.loading('Indexing searchKey/userId in newUsers 0%', {
-      id: 'index-searchkey-userid-progress',
-    });
-    await createUserIdSearchKeyIndexInCollection('newUsers', progress => {
-      toast.loading(`Indexing searchKey/userId in newUsers ${progress}%`, {
-        id: 'index-searchkey-userid-progress',
-      });
-    });
-    toast.loading('Indexing searchKey/userId in users 0%', {
-      id: 'index-searchkey-userid-progress',
-    });
-    await createUserIdSearchKeyIndexInCollection('users', progress => {
-      toast.loading(`Indexing searchKey/userId in users ${progress}%`, {
-        id: 'index-searchkey-userid-progress',
-      });
-    });
-    toast.success('searchKey/userId indexed', { id: 'index-searchkey-userid-progress' });
-  };
-
-  const indexSearchKeyAgeHandler = async () => {
-    toast.loading('Indexing searchKey/age in newUsers 0%', {
-      id: 'index-searchkey-age-progress',
-    });
-    await createAgeSearchKeyIndexInCollection('newUsers', progress => {
-      toast.loading(`Indexing searchKey/age in newUsers ${progress}%`, {
-        id: 'index-searchkey-age-progress',
-      });
-    });
-    toast.loading('Indexing searchKey/age in users 0%', {
-      id: 'index-searchkey-age-progress',
-    });
-    await createAgeSearchKeyIndexInCollection('users', progress => {
-      toast.loading(`Indexing searchKey/age in users ${progress}%`, {
-        id: 'index-searchkey-age-progress',
-      });
-    });
-    toast.success('searchKey/age indexed', { id: 'index-searchkey-age-progress' });
-  };
-
-  const indexSearchKeyImtHeightWeightHandler = async () => {
-    toast.loading('Indexing searchKey/imt+height+weight in newUsers 0%', {
-      id: 'index-searchkey-imt-height-weight-progress',
-    });
-    await createImtHeightWeightSearchKeyIndexInCollection('newUsers', progress => {
-      toast.loading(`Indexing searchKey/imt+height+weight in newUsers ${progress}%`, {
-        id: 'index-searchkey-imt-height-weight-progress',
-      });
-    });
-    toast.loading('Indexing searchKey/imt+height+weight in users 0%', {
-      id: 'index-searchkey-imt-height-weight-progress',
-    });
-    await createImtHeightWeightSearchKeyIndexInCollection('users', progress => {
-      toast.loading(`Indexing searchKey/imt+height+weight in users ${progress}%`, {
-        id: 'index-searchkey-imt-height-weight-progress',
-      });
-    });
-    toast.success('searchKey/imt+height+weight indexed', { id: 'index-searchkey-imt-height-weight-progress' });
-  };
-
-  const indexSearchKeyReactionHandler = async () => {
-    toast.loading('Indexing searchKey/reaction in newUsers 0%', {
-      id: 'index-searchkey-reaction-progress',
-    });
-    await createReactionSearchKeyIndexInCollection('newUsers', progress => {
-      toast.loading(`Indexing searchKey/reaction in newUsers ${progress}%`, {
-        id: 'index-searchkey-reaction-progress',
-      });
-    });
-    toast.loading('Indexing searchKey/reaction in users 0%', {
-      id: 'index-searchkey-reaction-progress',
-    });
-    await createReactionSearchKeyIndexInCollection('users', progress => {
-      toast.loading(`Indexing searchKey/reaction in users ${progress}%`, {
-        id: 'index-searchkey-reaction-progress',
-      });
-    });
-    toast.success('searchKey/reaction indexed', { id: 'index-searchkey-reaction-progress' });
-  };
+  useEffect(() => {
+    if (!searchIdAndSearchKeyOnlyMode) {
+      setShowSearchKeyIndexPanel(false);
+    }
+  }, [searchIdAndSearchKeyOnlyMode]);
 
   const fieldsToRender = getFieldsToRender(state);
 
@@ -3704,68 +3571,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               >
                 <BabyIcon style={{ width: '100%', height: '100%' }} />
               </Button>
-              <Button onClick={indexLastLoginHandler}>indexLastLogin</Button>
-              <Button
-                onClick={indexStimulationShortcuts}
-                title="Індексація ярликів стимуляції"
-              >
-                IdxSC
-              </Button>
-              <Button
-                onClick={indexSearchKeyBloodHandler}
-                title="Індексація searchKey/blood"
-              >
-                IdxBlood
-              </Button>
-              <Button
-                onClick={indexSearchKeyMaritalStatusHandler}
-                title="Індексація searchKey/maritalStatus"
-              >
-                IdxMarital
-              </Button>
-              <Button
-                onClick={indexSearchKeyCsectionHandler}
-                title="Індексація searchKey/csection"
-              >
-                IdxCsection
-              </Button>
-              <Button
-                onClick={indexSearchKeyContactHandler}
-                title="Індексація searchKey/contact"
-              >
-                IdxContact
-              </Button>
-              <Button
-                onClick={indexSearchKeyRoleHandler}
-                title="Індексація searchKey/role"
-              >
-                IdxRole
-              </Button>
-              <Button
-                onClick={indexSearchKeyUserIdHandler}
-                title="Індексація searchKey/userId"
-              >
-                IdxUserId
-              </Button>
-              <Button
-                onClick={indexSearchKeyAgeHandler}
-                title="Індексація searchKey/age"
-              >
-                IdxAge
-              </Button>
-              <Button
-                onClick={indexSearchKeyImtHeightWeightHandler}
-                title="Індексація searchKey/imt + height + weight"
-              >
-                IdxImt
-              </Button>
-              <Button
-                onClick={indexSearchKeyReactionHandler}
-                title="Індексація searchKey/reaction"
-              >
-                IdxReaction
-              </Button>
-              <Button onClick={makeIndex}>Index</Button>
+              {searchIdAndSearchKeyOnlyMode && (
+                <>
+                  <Button onClick={indexLastLoginHandler}>indexLastLogin</Button>
+                  <Button
+                    onClick={indexStimulationShortcuts}
+                    title="Індексація ярликів стимуляції"
+                  >
+                    IdxSC
+                  </Button>
+                  <Button
+                    onClick={() => setShowSearchKeyIndexPanel(prev => !prev)}
+                    title="Індексація searchKey"
+                  >
+                    Index
+                  </Button>
+                </>
+              )}
               {<Button onClick={searchDuplicates}>DPL</Button>}
               {
                 <Button
@@ -3786,6 +3608,27 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               {/* <JsonToExcelButton/> */}
               {/* {users && <div>Знайдено {Object.keys(users).length}</div>} */}
             </ButtonsContainer>
+            {searchIdAndSearchKeyOnlyMode && showSearchKeyIndexPanel && (
+              <IndexModal>
+                <IndexModalList>
+                  {SEARCH_KEY_INDEX_OPTIONS.map(option => (
+                    <SearchScopeLabel key={option.key}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selectedSearchKeyIndexes[option.key])}
+                        onChange={() => toggleSearchKeyIndexSelection(option.key)}
+                      />
+                      <SearchScopeLabelTextGroup>
+                        <span>{option.label}</span>
+                      </SearchScopeLabelTextGroup>
+                    </SearchScopeLabel>
+                  ))}
+                </IndexModalList>
+                <Button onClick={runSelectedSearchKeyIndexes} title="Запустити індексацію">
+                  Start
+                </Button>
+              </IndexModal>
+            )}
             {!userNotFound && (
               <>
                 <UsersList
