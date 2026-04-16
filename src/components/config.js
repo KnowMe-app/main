@@ -77,8 +77,18 @@ const USER_ID_SEARCH_KEY_INDEX = 'userId';
 const REACTION_SEARCH_KEY_INDEX = 'reaction';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
 const SEARCH_INDEX_COLLECTION_CACHE_PREFIX = 'search-index:collection:v1:';
-const SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 15 * 60 * 1000;
-const BLOOD_SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 60 * 60 * 1000;
+const SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 60 * 60 * 1000;
+const SEARCH_KEY_INDEX_TYPES = {
+  blood: BLOOD_SEARCH_KEY_INDEX,
+  maritalStatus: MARITAL_STATUS_SEARCH_KEY_INDEX,
+  csection: CSECTION_SEARCH_KEY_INDEX,
+  contact: CONTACT_SEARCH_KEY_INDEX,
+  role: ROLE_SEARCH_KEY_INDEX,
+  userId: USER_ID_SEARCH_KEY_INDEX,
+  age: AGE_SEARCH_KEY_INDEX,
+  imtHeightWeight: IMT_SEARCH_KEY_INDEX,
+  reaction: REACTION_SEARCH_KEY_INDEX,
+};
 
 const getSearchIndexCacheStorage = () => {
   if (typeof window === 'undefined') return null;
@@ -3459,10 +3469,8 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   }
 };
 
-export const createSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection, {
-    maxAgeMs: BLOOD_SEARCH_INDEX_COLLECTION_CACHE_TTL_MS,
-  });
+export const createSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -3485,8 +3493,8 @@ export const createSearchKeyIndexInCollection = async (collection, onProgress) =
   }
 };
 
-export const createMaritalStatusSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection);
+export const createMaritalStatusSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -3513,8 +3521,8 @@ export const createMaritalStatusSearchKeyIndexInCollection = async (collection, 
   }
 };
 
-export const createCsectionSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection);
+export const createCsectionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -3541,8 +3549,8 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
   }
 };
 
-export const createContactSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection);
+export const createContactSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -3571,8 +3579,8 @@ export const createContactSearchKeyIndexInCollection = async (collection, onProg
   }
 };
 
-export const createRoleSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection);
+export const createRoleSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -3599,8 +3607,8 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
   }
 };
 
-export const createUserIdSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection);
+export const createUserIdSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -3629,8 +3637,8 @@ export const createUserIdSearchKeyIndexInCollection = async (collection, onProgr
   }
 };
 
-export const createAgeSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection);
+export const createAgeSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -3657,8 +3665,8 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
   }
 };
 
-export const createImtHeightWeightSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection);
+export const createImtHeightWeightSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -3689,8 +3697,8 @@ export const createImtHeightWeightSearchKeyIndexInCollection = async (collection
   }
 };
 
-export const createReactionSearchKeyIndexInCollection = async (collection, onProgress) => {
-  const usersData = await loadCollectionWithIndexCache(collection);
+export const createReactionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
   if (!usersData) return;
 
   const userIds = Object.keys(usersData);
@@ -3714,6 +3722,50 @@ export const createReactionSearchKeyIndexInCollection = async (collection, onPro
 
     const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
     if (onProgress && progress % 10 === 0) onProgress(progress);
+  }
+};
+
+const SEARCH_KEY_INDEX_BUILDERS = {
+  [SEARCH_KEY_INDEX_TYPES.blood]: createSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.maritalStatus]: createMaritalStatusSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.csection]: createCsectionSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.contact]: createContactSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.role]: createRoleSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.userId]: createUserIdSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.age]: createAgeSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.imtHeightWeight]: createImtHeightWeightSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.reaction]: createReactionSearchKeyIndexInCollection,
+};
+
+export const createSelectedSearchKeyIndexesInCollection = async (collection, indexTypes = [], onProgress) => {
+  if (!collection || !Array.isArray(indexTypes) || indexTypes.length === 0) return;
+
+  const uniqueIndexTypes = [...new Set(indexTypes)].filter(indexType => SEARCH_KEY_INDEX_BUILDERS[indexType]);
+  if (!uniqueIndexTypes.length) return;
+
+  const usersData = await loadCollectionWithIndexCache(collection, {
+    maxAgeMs: SEARCH_INDEX_COLLECTION_CACHE_TTL_MS,
+  });
+
+  if (!usersData) return;
+
+  for (let index = 0; index < uniqueIndexTypes.length; index += 1) {
+    const indexType = uniqueIndexTypes[index];
+    const progressReporter =
+      typeof onProgress === 'function'
+        ? progress => {
+            const overallProgress = Math.floor(((index + progress / 100) / uniqueIndexTypes.length) * 100);
+            onProgress(overallProgress, {
+              indexType,
+              indexNumber: index + 1,
+              totalIndexes: uniqueIndexTypes.length,
+              indexProgress: progress,
+            });
+          }
+        : undefined;
+
+    // eslint-disable-next-line no-await-in-loop
+    await SEARCH_KEY_INDEX_BUILDERS[indexType](collection, progressReporter, { usersData });
   }
 };
 
