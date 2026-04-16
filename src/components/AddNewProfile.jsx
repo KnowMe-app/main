@@ -43,6 +43,7 @@ import {
   createRoleSearchKeyIndexInCollection,
   createUserIdSearchKeyIndexInCollection,
   createAgeSearchKeyIndexInCollection,
+  createImtHeightWeightSearchKeyIndexInCollection,
   createReactionSearchKeyIndexInCollection,
   fetchUsersBySearchKeyBloodPaged,
 } from './config';
@@ -3148,23 +3149,43 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const indexSearchKeyAgeHandler = async () => {
-    toast.loading('Indexing searchKey/age+imt+height+weight in newUsers 0%', {
+    toast.loading('Indexing searchKey/age in newUsers 0%', {
       id: 'index-searchkey-age-progress',
     });
     await createAgeSearchKeyIndexInCollection('newUsers', progress => {
-      toast.loading(`Indexing searchKey/age+imt+height+weight in newUsers ${progress}%`, {
+      toast.loading(`Indexing searchKey/age in newUsers ${progress}%`, {
         id: 'index-searchkey-age-progress',
       });
     });
-    toast.loading('Indexing searchKey/age+imt+height+weight in users 0%', {
+    toast.loading('Indexing searchKey/age in users 0%', {
       id: 'index-searchkey-age-progress',
     });
     await createAgeSearchKeyIndexInCollection('users', progress => {
-      toast.loading(`Indexing searchKey/age+imt+height+weight in users ${progress}%`, {
+      toast.loading(`Indexing searchKey/age in users ${progress}%`, {
         id: 'index-searchkey-age-progress',
       });
     });
-    toast.success('searchKey/age+imt+height+weight indexed', { id: 'index-searchkey-age-progress' });
+    toast.success('searchKey/age indexed', { id: 'index-searchkey-age-progress' });
+  };
+
+  const indexSearchKeyImtHeightWeightHandler = async () => {
+    toast.loading('Indexing searchKey/imt+height+weight in newUsers 0%', {
+      id: 'index-searchkey-imt-height-weight-progress',
+    });
+    await createImtHeightWeightSearchKeyIndexInCollection('newUsers', progress => {
+      toast.loading(`Indexing searchKey/imt+height+weight in newUsers ${progress}%`, {
+        id: 'index-searchkey-imt-height-weight-progress',
+      });
+    });
+    toast.loading('Indexing searchKey/imt+height+weight in users 0%', {
+      id: 'index-searchkey-imt-height-weight-progress',
+    });
+    await createImtHeightWeightSearchKeyIndexInCollection('users', progress => {
+      toast.loading(`Indexing searchKey/imt+height+weight in users ${progress}%`, {
+        id: 'index-searchkey-imt-height-weight-progress',
+      });
+    });
+    toast.success('searchKey/imt+height+weight indexed', { id: 'index-searchkey-imt-height-weight-progress' });
   };
 
   const indexSearchKeyReactionHandler = async () => {
@@ -3732,9 +3753,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </Button>
               <Button
                 onClick={indexSearchKeyAgeHandler}
-                title="Індексація searchKey/age + imt + height + weight"
+                title="Індексація searchKey/age"
               >
-                IdxAgeImt
+                IdxAge
+              </Button>
+              <Button
+                onClick={indexSearchKeyImtHeightWeightHandler}
+                title="Індексація searchKey/imt + height + weight"
+              >
+                IdxImt
               </Button>
               <Button
                 onClick={indexSearchKeyReactionHandler}

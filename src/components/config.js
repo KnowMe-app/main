@@ -3631,10 +3631,36 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
   const updates = userIds.reduce((acc, userId) => {
     const user = usersData[userId] || {};
     const ageValue = normalizeAgeBirthDateIndexValue(user.birth);
+    acc[`${SEARCH_KEY_INDEX_ROOT}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
+    return acc;
+  }, {});
+
+  const updateEntries = Object.entries(updates);
+
+  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
+    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
+    const chunkPayload = Object.fromEntries(chunkEntries);
+    // eslint-disable-next-line no-await-in-loop
+    await update(ref2(database), chunkPayload);
+
+    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
+    if (onProgress && progress % 10 === 0) onProgress(progress);
+  }
+};
+
+export const createImtHeightWeightSearchKeyIndexInCollection = async (collection, onProgress) => {
+  const usersData = await loadCollectionWithIndexCache(collection);
+  if (!usersData) return;
+
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  const updates = userIds.reduce((acc, userId) => {
+    const user = usersData[userId] || {};
     const imtValue = normalizeImtSearchKeyIndexValue(user);
     const heightValue = normalizeMetricIndexValue(user.height);
     const weightValue = normalizeMetricIndexValue(user.weight);
-    acc[`${SEARCH_KEY_INDEX_ROOT}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
     acc[`${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
     acc[`${SEARCH_KEY_INDEX_ROOT}/${HEIGHT_SEARCH_KEY_INDEX}/${heightValue}/${userId}`] = true;
     acc[`${SEARCH_KEY_INDEX_ROOT}/${WEIGHT_SEARCH_KEY_INDEX}/${weightValue}/${userId}`] = true;
