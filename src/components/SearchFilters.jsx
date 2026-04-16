@@ -209,11 +209,23 @@ export const SearchFilters = ({
         label: 'IMT',
         compact: true,
         options: [
-          { val: 'lt31', label: '<31' },
-          { val: 'eq31', label: '31' },
+          { val: 'le28', label: '≤28' },
+          { val: '29_31', label: '29-31' },
           { val: '32_35', label: '32-35' },
           { val: '36_plus', label: '36+' },
           { val: 'other', label: '?' },
+          { val: 'no', label: 'no' },
+        ],
+      },
+      {
+        filterName: 'height',
+        label: 'Height',
+        compact: true,
+        options: [
+          { val: 'lt163', label: '<163' },
+          { val: '163_176', label: '163-176' },
+          { val: '177_180', label: '177-180' },
+          { val: '181_plus', label: '181+' },
         ],
       },
       {
