@@ -39,6 +39,7 @@ import {
   createSearchKeyIndexInCollection,
   createMaritalStatusSearchKeyIndexInCollection,
   createCsectionSearchKeyIndexInCollection,
+  createContactSearchKeyIndexInCollection,
   createRoleSearchKeyIndexInCollection,
   createAgeSearchKeyIndexInCollection,
   createReactionSearchKeyIndexInCollection,
@@ -3085,6 +3086,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     toast.success('searchKey/csection indexed', { id: 'index-searchkey-csection-progress' });
   };
 
+  const indexSearchKeyContactHandler = async () => {
+    toast.loading('Indexing searchKey/contact in newUsers 0%', {
+      id: 'index-searchkey-contact-progress',
+    });
+    await createContactSearchKeyIndexInCollection('newUsers', progress => {
+      toast.loading(`Indexing searchKey/contact in newUsers ${progress}%`, {
+        id: 'index-searchkey-contact-progress',
+      });
+    });
+    toast.loading('Indexing searchKey/contact in users 0%', {
+      id: 'index-searchkey-contact-progress',
+    });
+    await createContactSearchKeyIndexInCollection('users', progress => {
+      toast.loading(`Indexing searchKey/contact in users ${progress}%`, {
+        id: 'index-searchkey-contact-progress',
+      });
+    });
+    toast.success('searchKey/contact indexed', { id: 'index-searchkey-contact-progress' });
+  };
+
   const indexSearchKeyRoleHandler = async () => {
     toast.loading('Indexing searchKey/role in newUsers 0%', {
       id: 'index-searchkey-role-progress',
@@ -3602,7 +3623,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onChange={handleFilterChange}
               storageKey={filterStorageKey}
               bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
-              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'age', 'imt', 'height', 'role', 'csection', 'reaction'] : undefined}
+              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'csection', 'reaction'] : undefined}
             />
             <ButtonsContainer>
               {userNotFound && (
@@ -3669,6 +3690,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 title="Індексація searchKey/csection"
               >
                 IdxCsection
+              </Button>
+              <Button
+                onClick={indexSearchKeyContactHandler}
+                title="Індексація searchKey/contact"
+              >
+                IdxContact
               </Button>
               <Button
                 onClick={indexSearchKeyRoleHandler}
