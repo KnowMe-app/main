@@ -2884,7 +2884,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setBackendCount(sortedUsers.length);
   };
 
-  const indexStimulationShortcuts = useCallback(async () => {
+  const runStimulationShortcutIndexing = useCallback(async () => {
     if (!ownerId) {
       toast.error('Unable to create stimulation shortcuts without owner');
       return;
@@ -3022,7 +3022,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     toast.success('Cache cleared');
   };
 
-  const indexLastLoginHandler = async () => {
+  const runLastLoginIndexing = async () => {
     toast.loading('Indexing lastLogin2 0%', { id: 'index-lastlogin-progress' });
     await indexLastLogin(progress => {
       toast.loading(`Indexing lastLogin2 ${progress}%`, {
@@ -3573,18 +3573,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </Button>
               {searchIdAndSearchKeyOnlyMode && (
                 <>
-                  <Button onClick={indexLastLoginHandler}>indexLastLogin</Button>
-                  <Button
-                    onClick={indexStimulationShortcuts}
-                    title="Індексація ярликів стимуляції"
-                  >
-                    IdxSC
-                  </Button>
                   <Button
                     onClick={() => setShowSearchKeyIndexPanel(prev => !prev)}
-                    title="Індексація searchKey"
+                    title="Меню індексації"
                   >
-                    Index
+                    Індекси
                   </Button>
                 </>
               )}
@@ -3611,6 +3604,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             {searchIdAndSearchKeyOnlyMode && showSearchKeyIndexPanel && (
               <IndexModal>
                 <IndexModalList>
+                  <Button onClick={runLastLoginIndexing} title="Побудувати індекс lastLogin">
+                    Індексувати lastLogin
+                  </Button>
+                  <Button
+                    onClick={runStimulationShortcutIndexing}
+                    title="Побудувати індекс ярликів стимуляції"
+                  >
+                    Індексувати ярлики стимуляції
+                  </Button>
                   {SEARCH_KEY_INDEX_OPTIONS.map(option => (
                     <SearchScopeLabel key={option.key}>
                       <input
@@ -3624,8 +3626,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     </SearchScopeLabel>
                   ))}
                 </IndexModalList>
-                <Button onClick={runSelectedSearchKeyIndexes} title="Запустити індексацію">
-                  Start
+                <Button onClick={runSelectedSearchKeyIndexes} title="Запустити індексацію searchKey">
+                  Індексувати searchKey
                 </Button>
               </IndexModal>
             )}
