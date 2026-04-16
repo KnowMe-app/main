@@ -226,6 +226,8 @@ export const SearchFilters = ({
           { val: '163_176', label: '163-176' },
           { val: '177_180', label: '177-180' },
           { val: '181_plus', label: '181+' },
+          { val: 'other', label: '?' },
+          { val: 'no', label: 'no' },
         ],
       },
       {

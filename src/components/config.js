@@ -3085,7 +3085,9 @@ const collectHeightIdsByFilters = async heightFilters => {
 
   Object.entries(snapshot.val() || {}).forEach(([storedHeight, usersMap]) => {
     const parsedHeight = Number.parseFloat(String(storedHeight || '').replace(',', '.'));
-    const bucket = getHeightFilterBucket(parsedHeight);
+    let bucket = getHeightFilterBucket(parsedHeight);
+    if (!bucket && storedHeight === '?') bucket = 'other';
+    if (!bucket && storedHeight === 'no') bucket = 'no';
     if (!bucket || !selectedSet.has(bucket)) return;
     Object.keys(usersMap || {}).forEach(userId => {
       if (userId) heightIds.add(userId);

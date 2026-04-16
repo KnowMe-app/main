@@ -31,6 +31,8 @@ const defaultsAdd = {
     '163_176': true,
     '177_180': true,
     '181_plus': true,
+    other: true,
+    no: true,
   },
   contact: { vk: true, instagram: true, facebook: true, phone: true, telegram: true, telegram2: true, tiktok: true, email: true },
   userId: { vk: true, aa: true, ab: true, long: true, mid: true, other: true },
