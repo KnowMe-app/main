@@ -3133,10 +3133,7 @@ const normalizeReactionSearchKeyIndexValue = rawGetInTouch => {
 
   const parsedDate = parseIsoDate(normalized);
   if (!parsedDate) return '?';
-
-  const today = new Date();
-  const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  return parsedDate < todayAtMidnight ? 'past' : 'future';
+  return `${AGE_DATE_PREFIX}${toIsoDate(parsedDate)}`;
 };
 
 const getReactionIndexSet = data => {
@@ -3155,19 +3152,62 @@ const collectReactionIdsByFilters = async (
   const reactionIds = new Set();
   const requests = [];
 
+  const today = new Date();
+  const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const todayKey = `${AGE_DATE_PREFIX}${toIsoDate(todayAtMidnight)}`;
+
+  const addRangeRequest = ({ startKey, endKey }) => {
+    requests.push(
+      get(
+        query(
+          ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${REACTION_SEARCH_KEY_INDEX}`),
+          orderByKey(),
+          startAt(startKey),
+          endAt(endKey)
+        )
+      )
+    );
+  };
+
   const addBucketRequest = bucket => {
     requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${REACTION_SEARCH_KEY_INDEX}/${bucket}`)));
   };
 
   if (selected('special99')) addBucketRequest('99');
-  if (selected('pastGetInTouch')) addBucketRequest('past');
-  if (selected('futureGetInTouch')) addBucketRequest('future');
+  if (selected('pastGetInTouch')) {
+    addRangeRequest({ startKey: `${AGE_DATE_PREFIX}1900-01-01`, endKey: todayKey });
+  }
+  if (selected('futureGetInTouch')) {
+    addRangeRequest({ startKey: todayKey, endKey: `${AGE_DATE_PREFIX}9999-12-31` });
+  }
   if (selected('question')) addBucketRequest('?');
   if (selected('none')) addBucketRequest('no');
 
   const snapshots = await Promise.all(requests);
   snapshots.forEach(snapshot => {
     if (!snapshot.exists()) return;
+    const isRangeResult = snapshot.key === REACTION_SEARCH_KEY_INDEX;
+
+    if (isRangeResult) {
+      snapshot.forEach(bucketSnapshot => {
+        const bucketKey = String(bucketSnapshot.key || '');
+        if (!bucketKey.startsWith(AGE_DATE_PREFIX)) return;
+
+        if (selected('pastGetInTouch') && bucketKey < todayKey) {
+          Object.keys(bucketSnapshot.val() || {}).forEach(userId => {
+            if (userId) reactionIds.add(userId);
+          });
+        }
+
+        if (selected('futureGetInTouch') && bucketKey >= todayKey) {
+          Object.keys(bucketSnapshot.val() || {}).forEach(userId => {
+            if (userId) reactionIds.add(userId);
+          });
+        }
+      });
+      return;
+    }
+
     Object.keys(snapshot.val() || {}).forEach(userId => {
       if (userId) reactionIds.add(userId);
     });
