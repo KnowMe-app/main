@@ -2197,20 +2197,29 @@ export const getUserCards = async () => {
   return allUserCards;
 };
 
-export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition) => {
+export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition, delCondition) => {
   const cleanedUploadedInfo = removeUndefined(uploadedInfo);
+  const keysToDelete = delCondition ? Object.keys(delCondition) : [];
+  const basePayload = { ...cleanedUploadedInfo };
+  keysToDelete.forEach(key => {
+    delete basePayload[key];
+  });
+  const updatePayload = { ...basePayload };
+  keysToDelete.forEach(key => {
+    updatePayload[key] = deleteField();
+  });
   try {
     const userRef = doc(db, `users/${userId}`);
     if (condition === 'update') {
-      await updateDoc(userRef, cleanedUploadedInfo);
+      await updateDoc(userRef, updatePayload);
     } else if (condition === 'set') {
-      await setDoc(userRef, cleanedUploadedInfo);
+      await setDoc(userRef, basePayload);
     } else if (condition === 'check') {
       const userDoc = await getDoc(userRef);
       if (userDoc.exists()) {
-        await updateDoc(userRef, cleanedUploadedInfo);
+        await updateDoc(userRef, updatePayload);
       } else {
-        await setDoc(userRef, cleanedUploadedInfo);
+        await setDoc(userRef, basePayload);
       }
     }
   } catch (error) {
