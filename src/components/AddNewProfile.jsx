@@ -147,15 +147,37 @@ const MoreActionsCommandButton = styled.button`
   width: 100%;
   padding: 8px 10px;
   margin-bottom: 8px;
-  border: 1px solid #d0d0d0;
-  border-radius: 6px;
-  background: #f8f8f8;
+  border: 2px solid
+    ${({ $tone }) =>
+      $tone === 'like'
+        ? color.reactionLike
+        : $tone === 'dislike'
+          ? color.reactionDislike
+          : color.reactionIdleBorder};
+  border-radius: 999px;
+  background: ${({ $tone }) =>
+    $tone === 'like'
+      ? color.reactionLikeBg
+      : $tone === 'dislike'
+        ? color.reactionDislikeBg
+        : color.accent5};
   cursor: pointer;
   font-size: 14px;
-  color: #222;
+  color: ${({ $tone }) =>
+    $tone === 'like'
+      ? color.reactionLike
+      : $tone === 'dislike'
+        ? color.reactionDislike
+        : color.reactionIdleIcon};
+  font-weight: 600;
+  transition: transform 0.15s ease, filter 0.15s ease;
 
   &:hover {
-    background: #efefef;
+    filter: brightness(0.97);
+  }
+
+  &:active {
+    transform: scale(0.98);
   }
 `;
 
@@ -1938,12 +1960,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const moreActions = () => {
     const user = moreActionsState.user;
     if (!user) return null;
+    const openDeleteConfirm = () => {
+      setUserIdToDelete(user.userId);
+      setShowInfoModal('delConfirm');
+    };
 
     return (
       <>
         <MoreActionsInfo>
           Останній логін: <strong>{formatDateToDisplay(user.lastLogin2) || user.lastLogin2 || 'немає даних'}</strong>
         </MoreActionsInfo>
+
+        <MoreActionsCommandButton
+          $tone="like"
+          onClick={() => {
+            saveToContact(user);
+          }}
+        >
+          save
+        </MoreActionsCommandButton>
+
+        <MoreActionsCommandButton $tone="dislike" onClick={openDeleteConfirm}>
+          del
+        </MoreActionsCommandButton>
 
         <MoreActionsCommandButton onClick={toggleLikeDislikeCards}>Like/Dislike</MoreActionsCommandButton>
 

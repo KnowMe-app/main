@@ -61,6 +61,7 @@ export const renderTopBlock = (
 
   const cardData = { ...userData, cycleStatus: getEffectiveCycleStatus(userData) };
   const region = normalizeRegion(cardData.region);
+  const showSaveDeleteButtons = !additionalActions;
 
   const renderOverlayEntries = fieldNames => {
     const normalizedFieldNames = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
@@ -98,8 +99,8 @@ export const renderTopBlock = (
           zIndex: 999,
         }}
       >
-        {btnExport(cardData)}
-        {btnDel(cardData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
+        {showSaveDeleteButtons && btnExport(cardData)}
+        {showSaveDeleteButtons && btnDel(cardData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
         {btnMedications(cardData, onOpenMedications)}
         {additionalActions}
       </div>
