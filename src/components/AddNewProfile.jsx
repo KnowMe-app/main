@@ -794,7 +794,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
   };
 
-  const handleSubmit = async (newState, overwrite, delCondition, makeIndex, previousDataSnapshot = null) => {
+  const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
@@ -867,8 +867,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
     setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
 
-    const existingData =
-      previousDataSnapshot || (syncedState?.userId ? await fetchUserById(syncedState.userId) : null);
+    const existingData = syncedState?.userId ? await fetchUserById(syncedState.userId) : null;
     if (syncedState?.userId) {
       await Promise.all([
         syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState),
@@ -1067,7 +1066,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
       }
 
-      handleSubmit(newState, 'overwrite', { [fieldName]: removedValue }, undefined, prevState);
+      handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
       return newState;
     });
   };
@@ -1095,7 +1094,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         removeKeyFromFirebase(fieldName, deletedValue, prevState.userId);
       }
 
-      handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue }, undefined, prevState);
+      handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
       return newState; // Повертаємо оновлений стан
     });
   };
