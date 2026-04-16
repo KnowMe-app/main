@@ -13,7 +13,6 @@ export const SearchFilters = ({
   mode = 'default',
   allowedFilterNames,
   bloodSearchKeyMode = false,
-  optionHints,
 }) => {
   let groups = [];
   const contactIconStyle = { display: 'inline-flex', alignItems: 'center' };
@@ -314,7 +313,6 @@ export const SearchFilters = ({
           filters={filters}
           onChange={onChange}
           compact={group.compact}
-          optionHints={optionHints?.[group.filterName]}
         />
       ))}
     </div>
