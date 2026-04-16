@@ -881,6 +881,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       );
 
       const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
+      if (delCondition) {
+        Object.keys(delCondition).forEach(key => {
+          uploadedInfo[key] = null;
+        });
+      }
 
       if (!makeIndex) {
         await Promise.all([
@@ -908,6 +913,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           newStateWithDelivery.lastDelivery = formattedLastDelivery;
         } else {
           delete newStateWithDelivery.lastDelivery;
+        }
+        if (delCondition) {
+          Object.keys(delCondition).forEach(key => {
+            newStateWithDelivery[key] = null;
+          });
         }
         await updateDataInNewUsersRTDB(
           syncedState.userId,
