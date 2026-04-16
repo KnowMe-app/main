@@ -67,6 +67,9 @@ const SEARCH_KEY_INDEX_ROOT = 'searchKey';
 const BLOOD_SEARCH_KEY_INDEX = 'blood';
 const MARITAL_STATUS_SEARCH_KEY_INDEX = 'maritalStatus';
 const AGE_SEARCH_KEY_INDEX = 'age';
+const IMT_SEARCH_KEY_INDEX = 'imt';
+const HEIGHT_SEARCH_KEY_INDEX = 'height';
+const WEIGHT_SEARCH_KEY_INDEX = 'weight';
 const CSECTION_SEARCH_KEY_INDEX = 'csection';
 const ROLE_SEARCH_KEY_INDEX = 'role';
 const REACTION_SEARCH_KEY_INDEX = 'reaction';
@@ -2686,6 +2689,76 @@ const getAgeIndexSet = data => {
   return new Set([normalizeAgeBirthDateIndexValue(data.birth)]);
 };
 
+const normalizeMetricIndexValue = rawValue => {
+  const normalized = String(rawValue ?? '')
+    .trim()
+    .replace(',', '.');
+  if (!normalized) return 'no';
+  const parsedValue = Number.parseFloat(normalized);
+  if (!Number.isFinite(parsedValue) || parsedValue <= 0) return '?';
+  return String(parsedValue);
+};
+
+const parseImtNumber = rawValue => {
+  const normalized = String(rawValue ?? '')
+    .trim()
+    .replace(',', '.');
+  if (!normalized) return null;
+  const parsedValue = Number.parseFloat(normalized);
+  if (!Number.isFinite(parsedValue) || parsedValue <= 0) return null;
+  return parsedValue;
+};
+
+const normalizeImtSearchKeyIndexValue = data => {
+  if (!data || typeof data !== 'object') return 'no';
+
+  const explicitImt = parseImtNumber(data.imt);
+  let imtValue = explicitImt;
+
+  if (!Number.isFinite(imtValue)) {
+    const weight = Number.parseFloat(
+      String(data.weight ?? '')
+        .trim()
+        .replace(',', '.')
+    );
+    const height = Number.parseFloat(
+      String(data.height ?? '')
+        .trim()
+        .replace(',', '.')
+    );
+    if (Number.isFinite(weight) && weight > 0 && Number.isFinite(height) && height > 0) {
+      const heightInMeters = height / 100;
+      imtValue = weight / heightInMeters ** 2;
+    }
+  }
+
+  if (!Number.isFinite(imtValue) || imtValue <= 0) {
+    const hasAnyAnthropometry = String(data.imt ?? '').trim() || String(data.weight ?? '').trim() || String(data.height ?? '').trim();
+    return hasAnyAnthropometry ? '?' : 'no';
+  }
+
+  const roundedImt = Math.round(imtValue);
+  if (roundedImt <= 28) return 'le28';
+  if (roundedImt <= 31) return '29_31';
+  if (roundedImt <= 35) return '32_35';
+  return '36_plus';
+};
+
+const getImtIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([normalizeImtSearchKeyIndexValue(data)]);
+};
+
+const getHeightIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([normalizeMetricIndexValue(data.height)]);
+};
+
+const getWeightIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set();
+  return new Set([normalizeMetricIndexValue(data.weight)]);
+};
+
 export const normalizeRoleSearchKeyIndexValue = (roleValue, userRoleValue) => {
   const normalizeSingleRole = value => {
     const normalized = String(value || '')
@@ -2822,6 +2895,7 @@ const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
 
 const MARITAL_STATUS_SEARCH_KEY_BUCKETS = ['+', '-', '?', 'no'];
 const ROLE_SEARCH_KEY_BUCKETS = ['ed', 'sm', 'ag', 'ip', 'cl', '?', 'no'];
+const IMT_SEARCH_KEY_BUCKETS = ['le28', '29_31', '32_35', '36_plus', '?', 'no'];
 
 const getMaritalStatusFilterKey = bucket => {
   const normalizedBucket = String(bucket || '').trim().toLowerCase();
@@ -2959,6 +3033,68 @@ const collectAgeIdsByFilters = async ageFilters => {
   return ageIds;
 };
 
+const collectImtIdsByFilters = async imtFilters => {
+  const shouldApplyImt = hasExplicitFilterSelection(imtFilters);
+  if (!shouldApplyImt) return null;
+
+  const selected = key => Boolean(imtFilters?.[key]);
+  const imtIds = new Set();
+  const requests = [];
+
+  if (selected('le28')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/le28`)));
+  if (selected('29_31')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/29_31`)));
+  if (selected('32_35')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/32_35`)));
+  if (selected('36_plus')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/36_plus`)));
+  if (selected('other')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/?`)));
+  if (selected('no')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/no`)));
+
+  const snapshots = await Promise.all(requests);
+  snapshots.forEach(snapshot => {
+    if (!snapshot.exists()) return;
+    Object.keys(snapshot.val() || {}).forEach(userId => {
+      if (userId) imtIds.add(userId);
+    });
+  });
+
+  return imtIds;
+};
+
+const getHeightFilterBucket = heightValue => {
+  if (!Number.isFinite(heightValue) || heightValue <= 0) return null;
+  if (heightValue < 163) return 'lt163';
+  if (heightValue <= 176) return '163_176';
+  if (heightValue <= 180) return '177_180';
+  return '181_plus';
+};
+
+const collectHeightIdsByFilters = async heightFilters => {
+  const shouldApplyHeight = hasExplicitFilterSelection(heightFilters);
+  if (!shouldApplyHeight) return null;
+
+  const selectedBuckets = Object.entries(heightFilters || {})
+    .filter(([, enabled]) => enabled)
+    .map(([bucket]) => bucket);
+
+  if (selectedBuckets.length === 0) return new Set();
+
+  const selectedSet = new Set(selectedBuckets);
+  const heightIds = new Set();
+  const snapshot = await get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${HEIGHT_SEARCH_KEY_INDEX}`));
+
+  if (!snapshot.exists()) return heightIds;
+
+  Object.entries(snapshot.val() || {}).forEach(([storedHeight, usersMap]) => {
+    const parsedHeight = Number.parseFloat(String(storedHeight || '').replace(',', '.'));
+    const bucket = getHeightFilterBucket(parsedHeight);
+    if (!bucket || !selectedSet.has(bucket)) return;
+    Object.keys(usersMap || {}).forEach(userId => {
+      if (userId) heightIds.add(userId);
+    });
+  });
+
+  return heightIds;
+};
+
 const parseIsoDate = value => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const [year, month, day] = value.split('-').map(Number);
@@ -3068,6 +3204,12 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   const nextRoleValues = getRoleIndexSet(nextData);
   const prevAgeValues = getAgeIndexSet(prevData);
   const nextAgeValues = getAgeIndexSet(nextData);
+  const prevImtValues = getImtIndexSet(prevData);
+  const nextImtValues = getImtIndexSet(nextData);
+  const prevHeightValues = getHeightIndexSet(prevData);
+  const nextHeightValues = getHeightIndexSet(nextData);
+  const prevWeightValues = getWeightIndexSet(prevData);
+  const nextWeightValues = getWeightIndexSet(nextData);
 
   for (const value of prevValues) {
     if (!nextValues.has(value)) {
@@ -3136,6 +3278,48 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
     if (!prevAgeValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
       await updateSearchKeyLeaf(AGE_SEARCH_KEY_INDEX, value, userId, 'add');
+    }
+  }
+
+  for (const value of prevImtValues) {
+    if (!nextImtValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(IMT_SEARCH_KEY_INDEX, value, userId, 'remove');
+    }
+  }
+
+  for (const value of nextImtValues) {
+    if (!prevImtValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(IMT_SEARCH_KEY_INDEX, value, userId, 'add');
+    }
+  }
+
+  for (const value of prevHeightValues) {
+    if (!nextHeightValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(HEIGHT_SEARCH_KEY_INDEX, value, userId, 'remove');
+    }
+  }
+
+  for (const value of nextHeightValues) {
+    if (!prevHeightValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(HEIGHT_SEARCH_KEY_INDEX, value, userId, 'add');
+    }
+  }
+
+  for (const value of prevWeightValues) {
+    if (!nextWeightValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(WEIGHT_SEARCH_KEY_INDEX, value, userId, 'remove');
+    }
+  }
+
+  for (const value of nextWeightValues) {
+    if (!prevWeightValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(WEIGHT_SEARCH_KEY_INDEX, value, userId, 'add');
     }
   }
 
@@ -3278,7 +3462,13 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
   const updates = userIds.reduce((acc, userId) => {
     const user = usersData[userId] || {};
     const ageValue = normalizeAgeBirthDateIndexValue(user.birth);
+    const imtValue = normalizeImtSearchKeyIndexValue(user);
+    const heightValue = normalizeMetricIndexValue(user.height);
+    const weightValue = normalizeMetricIndexValue(user.weight);
     acc[`${SEARCH_KEY_INDEX_ROOT}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
+    acc[`${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
+    acc[`${SEARCH_KEY_INDEX_ROOT}/${HEIGHT_SEARCH_KEY_INDEX}/${heightValue}/${userId}`] = true;
+    acc[`${SEARCH_KEY_INDEX_ROOT}/${WEIGHT_SEARCH_KEY_INDEX}/${weightValue}/${userId}`] = true;
     return acc;
   }, {});
 
@@ -3335,13 +3525,22 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     isMaritalStatusBucketAllowedByFilters(bucket, filterSettings)
   );
   const filteredRoleBuckets = ROLE_SEARCH_KEY_BUCKETS.filter(bucket => isRoleBucketAllowedByFilters(bucket, filterSettings));
+  const filteredImtBuckets = IMT_SEARCH_KEY_BUCKETS.filter(bucket => {
+    const imtFilters = filterSettings?.imt;
+    const shouldApplyImt = hasExplicitFilterSelection(imtFilters);
+    if (!shouldApplyImt) return true;
+    const filterKey = bucket === '?' ? 'other' : bucket;
+    return Boolean(imtFilters?.[filterKey]);
+  });
   const ageUserIds = await collectAgeIdsByFilters(filterSettings?.age);
+  const imtUserIds = await collectImtIdsByFilters(filterSettings?.imt);
+  const heightUserIds = await collectHeightIdsByFilters(filterSettings?.height);
   const reactionUserIds = await collectReactionIdsByFilters(filterSettings?.reaction, {
     favoritesMap,
     dislikedMap,
   });
 
-  const [bucketSnapshots, maritalStatusSnapshots, roleSnapshots] = await Promise.all([
+  const [bucketSnapshots, maritalStatusSnapshots, roleSnapshots, imtSnapshots] = await Promise.all([
     Promise.all(
     filteredBuckets.map(bucket => get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${BLOOD_SEARCH_KEY_INDEX}/${bucket}`)))
     ),
@@ -3353,6 +3552,11 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     Promise.all(
       filteredRoleBuckets.map(bucket =>
         get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${ROLE_SEARCH_KEY_INDEX}/${bucket}`))
+      )
+    ),
+    Promise.all(
+      filteredImtBuckets.map(bucket =>
+        get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/${bucket}`))
       )
     ),
   ]);
@@ -3372,9 +3576,12 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   const bloodUserIds = collectIdsFromSnapshots(bucketSnapshots);
   const maritalStatusUserIds = collectIdsFromSnapshots(maritalStatusSnapshots);
   const roleUserIds = collectIdsFromSnapshots(roleSnapshots);
+  const indexedImtUserIds = collectIdsFromSnapshots(imtSnapshots);
   const shouldApplyMaritalStatusFilter = hasExplicitFilterSelection(filterSettings?.maritalStatus);
   const shouldApplyRoleFilter = hasExplicitFilterSelection(filterSettings?.role);
   const shouldApplyAgeFilter = ageUserIds instanceof Set;
+  const shouldApplyImtFilter = imtUserIds instanceof Set;
+  const shouldApplyHeightFilter = heightUserIds instanceof Set;
   const shouldApplyReactionFilter = reactionUserIds instanceof Set;
 
   let finalIds = [...bloodUserIds];
@@ -3386,6 +3593,14 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   }
   if (shouldApplyAgeFilter) {
     finalIds = finalIds.filter(id => ageUserIds.has(id));
+  }
+  if (shouldApplyImtFilter) {
+    finalIds = finalIds.filter(id => imtUserIds.has(id));
+  } else if (hasExplicitFilterSelection(filterSettings?.imt)) {
+    finalIds = finalIds.filter(id => indexedImtUserIds.has(id));
+  }
+  if (shouldApplyHeightFilter) {
+    finalIds = finalIds.filter(id => heightUserIds.has(id));
   }
   if (shouldApplyReactionFilter) {
     finalIds = finalIds.filter(id => reactionUserIds.has(id));
@@ -3690,17 +3905,16 @@ const getBmiCategory = value => {
 };
 
 const getImtCategory = value => {
-  const weight = parseFloat(value.weight);
-  const height = parseFloat(value.height);
-  if (weight && height) {
-    const heightInMeters = height / 100;
-    const imt = Math.round(weight / heightInMeters ** 2);
-    if (imt < 31) return 'lt31';
-    if (imt === 31) return 'eq31';
-    if (imt >= 32 && imt <= 35) return '32_35';
-    if (imt >= 36) return '36_plus';
-  }
-  return 'other';
+  return normalizeImtSearchKeyIndexValue(value);
+};
+
+const getHeightCategory = value => {
+  const parsedHeight = Number.parseFloat(
+    String(value?.height ?? '')
+      .trim()
+      .replace(',', '.')
+  );
+  return getHeightFilterBucket(parsedHeight);
 };
 
 const getCountryCategory = value => {
@@ -3852,6 +4066,11 @@ export const filterMain = (
     if (filterSettings.imt && Object.values(filterSettings.imt).some(v => !v)) {
       const cat = getImtCategory(value);
       filters.imt = !!filterSettings.imt[cat];
+    }
+
+    if (filterSettings.height && Object.values(filterSettings.height).some(v => !v)) {
+      const cat = getHeightCategory(value);
+      filters.height = !!filterSettings.height[cat];
     }
 
     if (filterSettings.country && Object.values(filterSettings.country).some(v => !v)) {

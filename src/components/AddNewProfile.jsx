@@ -3106,23 +3106,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const indexSearchKeyAgeHandler = async () => {
-    toast.loading('Indexing searchKey/age in newUsers 0%', {
+    toast.loading('Indexing searchKey/age+imt+height+weight in newUsers 0%', {
       id: 'index-searchkey-age-progress',
     });
     await createAgeSearchKeyIndexInCollection('newUsers', progress => {
-      toast.loading(`Indexing searchKey/age in newUsers ${progress}%`, {
+      toast.loading(`Indexing searchKey/age+imt+height+weight in newUsers ${progress}%`, {
         id: 'index-searchkey-age-progress',
       });
     });
-    toast.loading('Indexing searchKey/age in users 0%', {
+    toast.loading('Indexing searchKey/age+imt+height+weight in users 0%', {
       id: 'index-searchkey-age-progress',
     });
     await createAgeSearchKeyIndexInCollection('users', progress => {
-      toast.loading(`Indexing searchKey/age in users ${progress}%`, {
+      toast.loading(`Indexing searchKey/age+imt+height+weight in users ${progress}%`, {
         id: 'index-searchkey-age-progress',
       });
     });
-    toast.success('searchKey/age indexed', { id: 'index-searchkey-age-progress' });
+    toast.success('searchKey/age+imt+height+weight indexed', { id: 'index-searchkey-age-progress' });
   };
 
   const indexSearchKeyReactionHandler = async () => {
@@ -3602,7 +3602,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onChange={handleFilterChange}
               storageKey={filterStorageKey}
               bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
-              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'age', 'role', 'csection', 'reaction'] : undefined}
+              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'age', 'imt', 'height', 'role', 'csection', 'reaction'] : undefined}
             />
             <ButtonsContainer>
               {userNotFound && (
@@ -3678,9 +3678,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </Button>
               <Button
                 onClick={indexSearchKeyAgeHandler}
-                title="Індексація searchKey/age"
+                title="Індексація searchKey/age + imt + height + weight"
               >
-                IdxAge
+                IdxAgeImt
               </Button>
               <Button
                 onClick={indexSearchKeyReactionHandler}
