@@ -77,6 +77,134 @@ const isSameCursor = (a, b) => {
   return a.date === b.date && a.userId === b.userId;
 };
 
+const MATCHING_SEARCHKEY_FILTER_KEYS = ['userRole', 'maritalStatus', 'bloodGroup', 'rh', 'age'];
+
+const isFilterGroupActive = group =>
+  group && typeof group === 'object' && Object.values(group).some(v => !v);
+
+const toRoleCategory = user => {
+  const normalizeRole = value => {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (['ed', 'ag', 'ip', 'sm', 'cl'].includes(normalized)) return normalized;
+    if (!normalized) return 'no';
+    return '?';
+  };
+
+  const directRole = normalizeRole(user?.role);
+  const fallbackRole = normalizeRole(user?.userRole);
+  const resolved = directRole !== 'no' && directRole !== '?' ? directRole : fallbackRole;
+
+  if (['ed', 'ag', 'ip'].includes(resolved)) return resolved;
+  return 'other';
+};
+
+const toMaritalStatusCategory = user => {
+  const raw = String(user?.maritalStatus || '').trim().toLowerCase();
+  if (!raw) return 'other';
+
+  const compact = raw.replace(/[.,;:!]/g, '').replace(/\s+/g, '');
+  const plusValues = new Set(['+', 'plus', 'yes', 'так', 'заміжня', 'замужем', 'одружена', 'одружений', 'married']);
+  const minusValues = new Set(['-', 'minus', 'no', 'ні', 'незаміжня', 'незамужем', 'неодружена', 'неодружений', 'single', 'unmarried']);
+
+  if (plusValues.has(compact)) return 'married';
+  if (minusValues.has(compact)) return 'unmarried';
+  return 'other';
+};
+
+const toBloodGroupCategory = user => {
+  const normalized = String(user?.blood || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+
+  if (/^[1-4][+-]$/.test(normalized)) return normalized[0];
+  if (/^[1-4]$/.test(normalized)) return normalized;
+  return 'other';
+};
+
+const toRhCategory = user => {
+  const normalized = String(user?.blood || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+
+  if (normalized.endsWith('+') || normalized === '+') return '+';
+  if (normalized.endsWith('-') || normalized === '-') return '-';
+  return 'other';
+};
+
+const toAgeCategory = user => {
+  const birth = String(user?.birth || '').trim();
+  const match = birth.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!match) return 'other';
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const birthDate = new Date(year, month - 1, day);
+  if (
+    Number.isNaN(birthDate.getTime()) ||
+    birthDate.getFullYear() !== year ||
+    birthDate.getMonth() !== month - 1 ||
+    birthDate.getDate() !== day
+  ) {
+    return 'other';
+  }
+
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  const dayDiff = today.getDate() - birthDate.getDate();
+  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) age -= 1;
+
+  if (age <= 25) return 'le25';
+  if (age <= 30) return '26_30';
+  if (age <= 33) return '31_33';
+  if (age <= 36) return '34_36';
+  if (age >= 37) return '37_plus';
+  return 'other';
+};
+
+const getMatchingFiltersWithoutSearchKeyGroups = filters => {
+  const base = { ...(filters || {}) };
+  MATCHING_SEARCHKEY_FILTER_KEYS.forEach(key => {
+    delete base[key];
+  });
+  return base;
+};
+
+const applyMatchingSearchKeyFilters = (users, filters) => {
+  const activeFilters = filters || {};
+  return users.filter(user => {
+    if (isFilterGroupActive(activeFilters.userRole)) {
+      const category = toRoleCategory(user);
+      if (!activeFilters.userRole[category]) return false;
+    }
+
+    if (isFilterGroupActive(activeFilters.maritalStatus)) {
+      const category = toMaritalStatusCategory(user);
+      if (!activeFilters.maritalStatus[category]) return false;
+    }
+
+    if (isFilterGroupActive(activeFilters.bloodGroup)) {
+      const category = toBloodGroupCategory(user);
+      if (!activeFilters.bloodGroup[category]) return false;
+    }
+
+    if (isFilterGroupActive(activeFilters.rh)) {
+      const category = toRhCategory(user);
+      if (!activeFilters.rh[category]) return false;
+    }
+
+    if (isFilterGroupActive(activeFilters.age)) {
+      const category = toAgeCategory(user);
+      if (!activeFilters.age[category]) return false;
+    }
+
+    return true;
+  });
+};
+
 const Container = styled.div`
   display: flex;
   flex-direction: column;
@@ -1419,14 +1547,15 @@ const Matching = () => {
         );
 
         const filtered = isAdmin
-          ? filterMain(
-              res.users.map(u => [u.userId, u]),
-              null,
-              filters,
-              favoriteUsersRef.current
-            )
-              .map(([, u]) => u)
-              .filter(u => isValidId(u.userId) && !exclude.has(u.userId))
+          ? applyMatchingSearchKeyFilters(
+              filterMain(
+                res.users.map(u => [u.userId, u]),
+                null,
+                getMatchingFiltersWithoutSearchKeyGroups(filters),
+                favoriteUsersRef.current
+              ).map(([, u]) => u),
+              filters
+            ).filter(u => isValidId(u.userId) && !exclude.has(u.userId))
           : res.users.filter(u => isValidId(u.userId) && !exclude.has(u.userId));
 
         excludedCount += res.users.length - filtered.length;
@@ -1801,14 +1930,15 @@ const Matching = () => {
   }, [additionalNewUsers, isAdmin, parsedAdditionalAccessRules, users]);
 
   const filteredUsers = isAdmin
-    ? filterMain(
-        visibleUsers.map(u => [u.userId, u]),
-        null,
-        filters,
-        favoriteUsers
-      )
-        .map(([, u]) => u)
-        .filter(u => isValidId(u.userId))
+    ? applyMatchingSearchKeyFilters(
+        filterMain(
+          visibleUsers.map(u => [u.userId, u]),
+          null,
+          getMatchingFiltersWithoutSearchKeyGroups(filters),
+          favoriteUsers
+        ).map(([, u]) => u),
+        filters
+      ).filter(u => isValidId(u.userId))
     : visibleUsers.filter(u => isValidId(u.userId));
 
   useEffect(() => {
