@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
+import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
@@ -23,7 +23,7 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
 } from './config';
-import { onValue, ref as refDb } from 'firebase/database';
+import { get, onValue, ref as refDb } from 'firebase/database';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
@@ -62,6 +62,7 @@ import {
   setLocalComment,
   pruneComments,
 } from '../utils/commentsStorage';
+import { isUserAllowedByAdditionalAccess, parseAdditionalAccessRules } from 'utils/additionalAccessRules';
 
 // Filter out users with invalid identifiers; IDs must be longer than 20 characters
 const isValidId = id => typeof id === 'string' && id.length > 20;
@@ -1142,8 +1143,17 @@ const Matching = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ownerId, setOwnerId] = useState(null);
-  const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: localStorage.getItem('accessLevel') });
+  const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
+  const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
+    () => localStorage.getItem('additionalAccessRules') || ''
+  );
+  const [additionalNewUsers, setAdditionalNewUsers] = useState([]);
+  const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: currentAccessLevel });
   const isAdmin = access.isAdmin;
+  const parsedAdditionalAccessRules = useMemo(
+    () => parseAdditionalAccessRules(currentAdditionalAccessRules),
+    [currentAdditionalAccessRules]
+  );
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
   const restoreRef = useRef(false);
@@ -1287,11 +1297,37 @@ const Matching = () => {
       if (user) {
         localStorage.setItem('ownerId', user.uid);
         setOwnerId(user.uid);
+
+        const syncAccessProfile = async () => {
+          try {
+            const profile = await fetchUserById(user.uid);
+            const accessLevel = profile?.accessLevel || '';
+            const additionalAccessRules = profile?.additionalAccessRules || '';
+
+            setCurrentAccessLevel(accessLevel);
+            setCurrentAdditionalAccessRules(additionalAccessRules);
+            localStorage.setItem('accessLevel', accessLevel);
+            localStorage.setItem('additionalAccessRules', additionalAccessRules);
+          } catch (error) {
+            console.error('Failed to refresh access profile on Matching', error);
+            const cachedAccessLevel = localStorage.getItem('accessLevel') || '';
+            const cachedAdditionalAccessRules = localStorage.getItem('additionalAccessRules') || '';
+            setCurrentAccessLevel(cachedAccessLevel);
+            setCurrentAdditionalAccessRules(cachedAdditionalAccessRules);
+          }
+        };
+
+        syncAccessProfile();
       } else {
         localStorage.removeItem('ownerId');
+        localStorage.removeItem('accessLevel');
+        localStorage.removeItem('additionalAccessRules');
         setOwnerId('');
         setFavoriteUsers({});
         setDislikeUsers({});
+        setCurrentAccessLevel('');
+        setCurrentAdditionalAccessRules('');
+        setAdditionalNewUsers([]);
         return;
       }
 
@@ -1322,6 +1358,45 @@ const Matching = () => {
       unsubscribeAuth();
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAdditionalNewUsers = async () => {
+      if (!parsedAdditionalAccessRules) {
+        setAdditionalNewUsers([]);
+        return;
+      }
+
+      try {
+        const snapshot = await get(refDb(database, 'newUsers'));
+        if (!snapshot.exists()) {
+          if (!cancelled) setAdditionalNewUsers([]);
+          return;
+        }
+
+        const loaded = Object.entries(snapshot.val() || {})
+          .map(([userId, data]) => ({ userId, ...(data || {}) }))
+          .filter(user => isValidId(user.userId))
+          .filter(user => isUserAllowedByAdditionalAccess(user, parsedAdditionalAccessRules));
+
+        if (!cancelled) {
+          setAdditionalNewUsers(loaded);
+        }
+      } catch (error) {
+        console.error('Failed to load additional newUsers for matching', error);
+        if (!cancelled) {
+          setAdditionalNewUsers([]);
+        }
+      }
+    };
+
+    loadAdditionalNewUsers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [parsedAdditionalAccessRules]);
 
   const fetchChunk = React.useCallback(
     async (
@@ -1699,9 +1774,31 @@ const Matching = () => {
   const [preLastCardNode, setPreLastCardNode] = useState(null);
 
 
-  const visibleUsers = isAdmin
-    ? users
-    : users.filter(user => user.publish === true);
+  const visibleUsers = useMemo(() => {
+    const baseUsers = isAdmin
+      ? users
+      : users.filter(user => user.publish === true);
+
+    const shouldInjectAdditionalCards =
+      parsedAdditionalAccessRules &&
+      additionalNewUsers.length > 0;
+
+    if (!shouldInjectAdditionalCards) {
+      return baseUsers;
+    }
+
+    const byId = new Map(baseUsers.map(user => [user.userId, user]));
+    additionalNewUsers.forEach(user => {
+      const existing = byId.get(user.userId);
+      if (existing) {
+        byId.set(user.userId, { ...existing, ...user });
+      } else {
+        byId.set(user.userId, user);
+      }
+    });
+
+    return Array.from(byId.values());
+  }, [additionalNewUsers, isAdmin, parsedAdditionalAccessRules, users]);
 
   const filteredUsers = isAdmin
     ? filterMain(

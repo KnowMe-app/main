@@ -15,9 +15,10 @@ import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { patchOverlayField } from 'utils/multiAccountEdits';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
-import { FaTimes } from 'react-icons/fa';
+import { FaInfoCircle, FaTimes } from 'react-icons/fa';
 import { InfoModal } from './InfoModal';
 import { auth, database } from './config';
+import { ADDITIONAL_ACCESS_TEMPLATE } from 'utils/additionalAccessRules';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -76,6 +77,8 @@ const nestedValueContainerStyle = {
 const nestedIndentStyle = {
   marginLeft: '20px',
 };
+
+const ADDITIONAL_ACCESS_FIELD = 'additionalAccessRules';
 
 
 const sanitizeOverlayValue = value => {
@@ -467,6 +470,8 @@ export const ProfileForm = ({
     'ownKids',
     'lastDelivery',
     'role',
+    'accessLevel',
+    ADDITIONAL_ACCESS_FIELD,
   ];
 
   const accessLevelOptions = [
@@ -481,9 +486,26 @@ export const ProfileForm = ({
 
   const fieldsToRender = getFieldsToRender(state);
 
-  const normalizedFieldsToRender = canManageAccessLevel && !fieldsToRender.some(field => field.name === 'accessLevel')
-    ? [...fieldsToRender, { name: 'accessLevel', placeholder: 'access level', ukrainianHint: 'рівень доступу' }]
-    : fieldsToRender;
+  const normalizedFieldsToRender = (() => {
+    let next = fieldsToRender;
+
+    if (canManageAccessLevel && !next.some(field => field.name === 'accessLevel')) {
+      next = [...next, { name: 'accessLevel', placeholder: 'access level', ukrainianHint: 'рівень доступу' }];
+    }
+
+    if (canManageAccessLevel && !next.some(field => field.name === ADDITIONAL_ACCESS_FIELD)) {
+      next = [
+        ...next,
+        {
+          name: ADDITIONAL_ACCESS_FIELD,
+          placeholder: 'age: 21,22,23',
+          ukrainianHint: 'додаткові правила доступу до newUsers',
+        },
+      ];
+    }
+
+    return next;
+  })();
 
 
   const getOverlayEntrySignature = entry => {
@@ -939,6 +961,7 @@ ${entries.join('\n')}`;
       )}
       {sortedFieldsToRender
         .filter(field => !['myComment', 'writer'].includes(field.name))
+        .filter(field => (isAdmin ? true : field.name !== ADDITIONAL_ACCESS_FIELD))
         .map((field, index) => {
           const overlayEntries = getOverlayEntriesForField(field.name);
           const hasOverlaySuggestions = overlayEntries.length > 0;
@@ -1030,6 +1053,44 @@ ${entries.join('\n')}`;
                         </option>
                       ))}
                     </AccessLevelSelect>
+                  ) : field.name === ADDITIONAL_ACCESS_FIELD ? (
+                    <>
+                      <InputField
+                        fieldName={field.name}
+                        as="textarea"
+                        name={field.name}
+                        value={state[field.name] || ''}
+                        placeholder={ADDITIONAL_ACCESS_TEMPLATE}
+                        onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                        onChange={e => {
+                          const value = e?.target?.value;
+                          setState(prevState => ({
+                            ...prevState,
+                            [field.name]: value,
+                          }));
+                        }}
+                        onBlur={() => submitWithNormalization(state, 'overwrite')}
+                      />
+                      <AccessInfoButton
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={async () => {
+                          try {
+                            if (navigator?.clipboard?.writeText) {
+                              await navigator.clipboard.writeText(ADDITIONAL_ACCESS_TEMPLATE);
+                              toast.success('Шаблон доступу скопійовано');
+                            } else {
+                              window.alert(ADDITIONAL_ACCESS_TEMPLATE);
+                            }
+                          } catch {
+                            window.alert(ADDITIONAL_ACCESS_TEMPLATE);
+                          }
+                        }}
+                        title="Приклад максимального доступу. Натисніть, щоб скопіювати."
+                      >
+                        <FaInfoCircle />
+                      </AccessInfoButton>
+                    </>
                   ) : (
                   <InputField
                     fieldName={field.name}
@@ -1564,6 +1625,19 @@ const ClearButton = styled.button`
   &:hover {
     color: black;
   }
+`;
+
+const AccessInfoButton = styled.button`
+  margin-left: 6px;
+  border: 1px solid #c7c7c7;
+  background: #fff;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 `;
 
 const DelKeyValueBTN = styled.button`
