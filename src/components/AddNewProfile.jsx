@@ -72,7 +72,6 @@ import {
   serializeQueryFilters,
 } from 'utils/cardIndex';
 import {
-  getStimulationShortcutCards,
   getStoredStimulationShortcutIds,
   setStoredStimulationShortcutIds,
   addStoredStimulationShortcutId,
@@ -1538,16 +1537,37 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return 0;
   }, [getInTouchSortValue]);
 
-  const refreshStimulationShortcuts = useCallback(async () => {
+  const refreshStimulationShortcuts = useCallback(async (providedIds = null) => {
     try {
-      const { cards } = await getStimulationShortcutCards(id => fetchUserById(id));
-      const ids = getStoredStimulationShortcutIds();
+      const rawIds = Array.isArray(providedIds) ? providedIds : stimulationShortcutIds;
+      const ids = Array.from(new Set((rawIds || []).filter(Boolean).map(String)));
       if (!isMountedRef.current) return;
       setStimulationShortcutIdsState(ids);
-      if (!Array.isArray(cards) || cards.length === 0) {
+      if (ids.length === 0) {
         setStimulationScheduleProfiles([]);
         return;
       }
+
+      const cards = (
+        await Promise.all(
+          ids.map(async id => {
+            const cached = getCard(id);
+            if (cached) return cached;
+
+            const fresh = await fetchUserById(id);
+            if (!fresh) return null;
+
+            updateCard(id, fresh);
+            return { ...fresh, userId: id };
+          }),
+        )
+      ).filter(Boolean);
+
+      if (cards.length === 0) {
+        setStimulationScheduleProfiles([]);
+        return;
+      }
+
       const annotated = sortUsersByStimulationSchedule(cards, {
         fallbackComparator: compareUsersByGetInTouch,
       });
@@ -1562,7 +1582,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!isMountedRef.current) return;
       setStimulationScheduleProfiles([]);
     }
-  }, [compareUsersByGetInTouch, isMountedRef]);
+  }, [compareUsersByGetInTouch, isMountedRef, stimulationShortcutIds]);
 
   const updateStimulationShortcutMembership = useCallback(
     (userId, hasSchedule) => {
@@ -1597,7 +1617,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           Promise.resolve(removeStimulationShortcutId(ownerId, id)).catch(() => {});
         }
       }
-      refreshStimulationShortcuts();
+      refreshStimulationShortcuts(Array.from(currentIds));
     },
     [ownerId, refreshStimulationShortcuts, isMountedRef, stimulationShortcutIds],
   );
@@ -1677,7 +1697,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const ids = Object.keys(data).filter(Boolean);
       setStoredStimulationShortcutIds(ids);
       setStimulationShortcutIdsState(ids);
-      refreshStimulationShortcuts();
+      refreshStimulationShortcuts(ids);
     });
 
     return () => unsubscribe();
