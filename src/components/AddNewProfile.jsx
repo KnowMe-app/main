@@ -622,6 +622,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
   const [showSearchKeyIndexPanel, setShowSearchKeyIndexPanel] = useState(false);
+  const [selectedIndexJobs, setSelectedIndexJobs] = useState({
+    lastLogin: true,
+    stimulationShortcuts: true,
+  });
   const [selectedSearchKeyIndexes, setSelectedSearchKeyIndexes] = useState(() =>
     SEARCH_KEY_INDEX_OPTIONS.reduce((acc, option) => {
       acc[option.key] = true;
@@ -3039,13 +3043,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }));
   };
 
-  const runSelectedSearchKeyIndexes = async () => {
+  const toggleIndexJobSelection = jobKey => {
+    setSelectedIndexJobs(prev => ({
+      ...prev,
+      [jobKey]: !prev[jobKey],
+    }));
+  };
+
+  const runSelectedIndexes = async () => {
+    if (selectedIndexJobs.lastLogin) {
+      await runLastLoginIndexing();
+    }
+
+    if (selectedIndexJobs.stimulationShortcuts) {
+      await runStimulationShortcutIndexing();
+    }
+
     const selectedIndexTypes = SEARCH_KEY_INDEX_OPTIONS.filter(option => selectedSearchKeyIndexes[option.key]).map(
       option => option.key,
     );
 
+    if (!selectedIndexJobs.lastLogin && !selectedIndexJobs.stimulationShortcuts && !selectedIndexTypes.length) {
+      toast.error('Оберіть хоча б один індекс для запуску');
+      return;
+    }
+
     if (!selectedIndexTypes.length) {
-      toast.error('Оберіть хоча б один індекс');
       return;
     }
 
@@ -3604,15 +3627,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             {searchIdAndSearchKeyOnlyMode && showSearchKeyIndexPanel && (
               <IndexModal>
                 <IndexModalList>
-                  <Button onClick={runLastLoginIndexing} title="Побудувати індекс lastLogin">
-                    Індексувати lastLogin
-                  </Button>
-                  <Button
-                    onClick={runStimulationShortcutIndexing}
-                    title="Побудувати індекс ярликів стимуляції"
-                  >
-                    Індексувати ярлики стимуляції
-                  </Button>
+                  <SearchScopeLabel>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedIndexJobs.lastLogin)}
+                      onChange={() => toggleIndexJobSelection('lastLogin')}
+                    />
+                    <SearchScopeLabelTextGroup>
+                      <span>Індексувати lastLogin</span>
+                    </SearchScopeLabelTextGroup>
+                  </SearchScopeLabel>
+                  <SearchScopeLabel>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedIndexJobs.stimulationShortcuts)}
+                      onChange={() => toggleIndexJobSelection('stimulationShortcuts')}
+                    />
+                    <SearchScopeLabelTextGroup>
+                      <span>Індексувати ярлики стимуляції</span>
+                    </SearchScopeLabelTextGroup>
+                  </SearchScopeLabel>
                   {SEARCH_KEY_INDEX_OPTIONS.map(option => (
                     <SearchScopeLabel key={option.key}>
                       <input
@@ -3626,8 +3660,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     </SearchScopeLabel>
                   ))}
                 </IndexModalList>
-                <Button onClick={runSelectedSearchKeyIndexes} title="Запустити індексацію searchKey">
-                  Індексувати searchKey
+                <Button onClick={runSelectedIndexes} title="Запустити індексацію обраних чекбоксів">
+                  Індексувати обране
                 </Button>
               </IndexModal>
             )}
