@@ -1537,6 +1537,35 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return 0;
   }, [getInTouchSortValue]);
 
+  const getSearchKeyReactionSortDirection = useCallback(reactionFilters => {
+    if (!searchIdAndSearchKeyOnlyMode || !reactionFilters || typeof reactionFilters !== 'object') {
+      return null;
+    }
+
+    const hasExplicitReactionSelection = Object.values(reactionFilters).some(value => value === false);
+    if (!hasExplicitReactionSelection) {
+      return null;
+    }
+
+    const selectedKeys = Object.entries(reactionFilters)
+      .filter(([, enabled]) => Boolean(enabled))
+      .map(([key]) => key);
+
+    if (selectedKeys.length !== 1) {
+      return null;
+    }
+
+    if (selectedKeys[0] === 'pastGetInTouch') {
+      return 'desc';
+    }
+
+    if (selectedKeys[0] === 'futureGetInTouch') {
+      return 'asc';
+    }
+
+    return null;
+  }, [searchIdAndSearchKeyOnlyMode]);
+
   const refreshStimulationShortcuts = useCallback(async (providedIds = null) => {
     try {
       const rawIds = Array.isArray(providedIds) ? providedIds : getStoredStimulationShortcutIds();
@@ -3186,9 +3215,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (isDuplicateView || currentFilter === 'CYCLE_FAVORITE') {
       return ids;
     }
-    return ids.sort((a, b) =>
-      compareUsersByGetInTouch(users[a] || {}, users[b] || {}),
-    );
+
+    const reactionSortDirection = getSearchKeyReactionSortDirection(filters?.reaction);
+    if (reactionSortDirection) {
+      return ids.sort((a, b) => {
+        const left = users[a]?.getInTouch || '';
+        const right = users[b]?.getInTouch || '';
+        return reactionSortDirection === 'desc'
+          ? right.localeCompare(left)
+          : left.localeCompare(right);
+      });
+    }
+
+    return ids.sort((a, b) => compareUsersByGetInTouch(users[a] || {}, users[b] || {}));
   };
 
   const sortedIds = getSortedIds();
