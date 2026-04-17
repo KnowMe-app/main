@@ -609,7 +609,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const SEARCH_KEY = 'addSearchQuery';
   const SEARCH_OPTIONS_STORAGE_KEY = 'addSearchOptions';
+  const INDEX_SELECTION_STORAGE_KEY = 'addIndexSelectionOptions';
   const EDIT_PROFILE_USER_ID_KEY = 'addNewProfileEditUserId';
+  const defaultSelectedIndexJobs = {
+    lastLogin: true,
+    stimulationShortcuts: true,
+  };
+  const defaultSelectedSearchKeyIndexes = SEARCH_KEY_INDEX_OPTIONS.reduce((acc, option) => {
+    acc[option.key] = true;
+    return acc;
+  }, {});
   const [search, setSearch] = useState(() => {
     const params = new URLSearchParams(location.search);
     if (params.has('search')) {
@@ -622,16 +631,45 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
   const [showSearchKeyIndexPanel, setShowSearchKeyIndexPanel] = useState(false);
-  const [selectedIndexJobs, setSelectedIndexJobs] = useState({
-    lastLogin: true,
-    stimulationShortcuts: true,
+  const [selectedIndexJobs, setSelectedIndexJobs] = useState(() => {
+    const storedRaw = localStorage.getItem(INDEX_SELECTION_STORAGE_KEY);
+    if (!storedRaw) return defaultSelectedIndexJobs;
+
+    try {
+      const parsed = JSON.parse(storedRaw);
+      const parsedIndexJobs = parsed?.selectedIndexJobs;
+      if (!parsedIndexJobs || typeof parsedIndexJobs !== 'object') return defaultSelectedIndexJobs;
+
+      return Object.keys(defaultSelectedIndexJobs).reduce((acc, key) => {
+        acc[key] = typeof parsedIndexJobs[key] === 'boolean' ? parsedIndexJobs[key] : defaultSelectedIndexJobs[key];
+        return acc;
+      }, {});
+    } catch (error) {
+      console.warn('[AddNewProfile] Failed to parse index selection options from localStorage', error);
+      return defaultSelectedIndexJobs;
+    }
   });
-  const [selectedSearchKeyIndexes, setSelectedSearchKeyIndexes] = useState(() =>
-    SEARCH_KEY_INDEX_OPTIONS.reduce((acc, option) => {
-      acc[option.key] = true;
-      return acc;
-    }, {}),
-  );
+  const [selectedSearchKeyIndexes, setSelectedSearchKeyIndexes] = useState(() => {
+    const storedRaw = localStorage.getItem(INDEX_SELECTION_STORAGE_KEY);
+    if (!storedRaw) return defaultSelectedSearchKeyIndexes;
+
+    try {
+      const parsed = JSON.parse(storedRaw);
+      const parsedSearchKeyIndexes = parsed?.selectedSearchKeyIndexes;
+      if (!parsedSearchKeyIndexes || typeof parsedSearchKeyIndexes !== 'object') return defaultSelectedSearchKeyIndexes;
+
+      return Object.keys(defaultSelectedSearchKeyIndexes).reduce((acc, key) => {
+        acc[key] =
+          typeof parsedSearchKeyIndexes[key] === 'boolean'
+            ? parsedSearchKeyIndexes[key]
+            : defaultSelectedSearchKeyIndexes[key];
+        return acc;
+      }, {});
+    } catch (error) {
+      console.warn('[AddNewProfile] Failed to parse index selection options from localStorage', error);
+      return defaultSelectedSearchKeyIndexes;
+    }
+  });
 
 
   const SEARCH_SCOPE_BLOCKS = [
@@ -747,6 +785,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     localStorage.setItem(SEARCH_OPTIONS_STORAGE_KEY, JSON.stringify(enabledSearchKeys));
   }, [enabledSearchKeys]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      INDEX_SELECTION_STORAGE_KEY,
+      JSON.stringify({
+        selectedIndexJobs,
+        selectedSearchKeyIndexes,
+      }),
+    );
+  }, [INDEX_SELECTION_STORAGE_KEY, selectedIndexJobs, selectedSearchKeyIndexes]);
 
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
