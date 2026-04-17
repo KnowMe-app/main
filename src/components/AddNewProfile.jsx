@@ -1539,7 +1539,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const refreshStimulationShortcuts = useCallback(async (providedIds = null) => {
     try {
-      const rawIds = Array.isArray(providedIds) ? providedIds : stimulationShortcutIds;
+      const rawIds = Array.isArray(providedIds) ? providedIds : getStoredStimulationShortcutIds();
       const ids = Array.from(new Set((rawIds || []).filter(Boolean).map(String)));
       if (!isMountedRef.current) return;
       setStimulationShortcutIdsState(ids);
@@ -1582,7 +1582,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!isMountedRef.current) return;
       setStimulationScheduleProfiles([]);
     }
-  }, [compareUsersByGetInTouch, isMountedRef, stimulationShortcutIds]);
+  }, [compareUsersByGetInTouch, isMountedRef]);
 
   const updateStimulationShortcutMembership = useCallback(
     (userId, hasSchedule) => {
