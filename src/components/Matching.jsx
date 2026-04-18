@@ -1706,7 +1706,7 @@ const Matching = () => {
     return () => {
       cancelled = true;
     };
-  }, [parsedAdditionalAccessRules]);
+  }, [parsedAdditionalAccessRules, currentAdditionalAccessRules]);
 
   const fetchChunk = React.useCallback(
     async (
