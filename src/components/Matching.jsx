@@ -83,19 +83,6 @@ const SEARCH_KEY_INDEX_NAMES = {
   age: 'age',
 };
 
-const intersectSets = sets => {
-  if (!Array.isArray(sets) || sets.length === 0) return new Set();
-
-  const [head, ...tail] = sets.sort((a, b) => a.size - b.size);
-  const result = new Set(head);
-  tail.forEach(nextSet => {
-    [...result].forEach(id => {
-      if (!nextSet.has(id)) result.delete(id);
-    });
-  });
-  return result;
-};
-
 const readIndexedIds = async (indexName, values = []) => {
   const uniqueValues = [...new Set(values.filter(Boolean))];
   if (!indexName || uniqueValues.length === 0) return null;
@@ -169,11 +156,10 @@ const fetchAdditionalNewUsersBySearchIndex = async parsedRules => {
   );
 
   const normalizedSets = indexedSets.filter(set => set instanceof Set);
-  if (normalizedSets.length === 0 || normalizedSets.some(set => set.size === 0)) {
-    return [];
-  }
+  const nonEmptySets = normalizedSets.filter(set => set.size > 0);
+  if (nonEmptySets.length === 0) return [];
 
-  const matchedIds = [...intersectSets(normalizedSets)];
+  const matchedIds = [...new Set(nonEmptySets.flatMap(set => [...set]))];
   if (matchedIds.length === 0) return [];
 
   const combinedRows = await fetchUsersAndNewUsersByIds(matchedIds);
@@ -181,7 +167,7 @@ const fetchAdditionalNewUsersBySearchIndex = async parsedRules => {
     .filter(row => row.hasNewUser)
     .filter(row => isValidId(row.merged?.userId))
     .filter(row => isUserAllowedByAdditionalAccess({ userId: row.merged.userId, ...(row.newUserData || {}) }, parsedRules))
-    .map(row => row.merged);
+    .map(row => ({ ...row.merged, __sourceCollection: 'newUsers' }));
 };
 
 const isSameCursor = (a, b) => {
@@ -1476,6 +1462,7 @@ const Matching = () => {
   );
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
+  const additionalRulesToastRef = useRef('');
   const restoreRef = useRef(false);
   const scrollPositionRef = useRef(0);
   const saveScrollPosition = () => {
@@ -1688,6 +1675,7 @@ const Matching = () => {
     const loadAdditionalNewUsers = async () => {
       if (!parsedAdditionalAccessRules) {
         setAdditionalNewUsers([]);
+        additionalRulesToastRef.current = '';
         return;
       }
 
@@ -1696,6 +1684,14 @@ const Matching = () => {
 
         if (!cancelled) {
           setAdditionalNewUsers(loaded);
+          const toastSignature = `${currentAdditionalAccessRules}::${loaded.length}`;
+          if (additionalRulesToastRef.current !== toastSignature) {
+            toast(
+              `Додаткові правила доступу (newUsers): доступно ${loaded.length} карточок для matching.`,
+              { icon: 'ℹ️' }
+            );
+            additionalRulesToastRef.current = toastSignature;
+          }
         }
       } catch (error) {
         console.error('Failed to load additional newUsers for matching', error);
@@ -1748,7 +1744,13 @@ const Matching = () => {
         const slice = filtered.slice(0, remaining);
         const ids = slice.map(user => user.userId);
         const enrichedMap = await fetchUsersByIds(ids);
-        const validSlice = ids.map(id => enrichedMap[id]).filter(Boolean);
+        const validSlice = ids
+          .map(id => enrichedMap[id])
+          .filter(Boolean)
+          .map(user => ({
+            ...user,
+            __sourceCollection: collectionSource === 'newUsers' ? 'newUsers' : 'users',
+          }));
 
         if (validSlice.length) {
           collected.push(...validSlice);
@@ -2092,7 +2094,7 @@ const Matching = () => {
   const visibleUsers = useMemo(() => {
     const baseUsers = isAdmin
       ? users
-      : users.filter(user => user.publish === true);
+      : users.filter(user => user.__sourceCollection === 'newUsers' || user.publish === true);
 
     const shouldInjectAdditionalCards =
       parsedAdditionalAccessRules &&
