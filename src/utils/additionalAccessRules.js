@@ -290,7 +290,7 @@ const resolveAgeSearchKeyBuckets = parsedRules => {
   return uniq(
     [...parsedRules.age]
       .filter(age => Number.isFinite(age) && age >= 0)
-      .map(age => String(age))
+      .map(age => ageToBucket(age))
   );
 };
 
