@@ -1,4 +1,5 @@
 import { utilCalculateAge } from 'components/smallCard/utilCalculateAge';
+import { utilCalculateIMT } from 'components/smallCard/utilCalculateIMT';
 
 const GROUP_KEYS = ['1', '2', '3', '4'];
 
@@ -109,6 +110,45 @@ const AGE_BUCKET_KEYS = new Set(['le25', '26_30', '31_33', '34_36', '37_42', '43
 const BLOOD_BUCKET_KEYS = new Set(['1+', '1-', '1', '2+', '2-', '2', '3+', '3-', '3', '4+', '4-', '4', '?', 'no']);
 const CSECTION_BUCKET_KEYS = new Set(['cs2plus', 'cs1', 'cs0', 'other', 'no']);
 
+const ADDITIONAL_ACCESS_KEY_ALIASES = {
+  'вік': 'age',
+  age: 'age',
+  blood: 'blood',
+  кров: 'bloodGroup',
+  bloodgroup: 'bloodGroup',
+  rh: 'rh',
+  'резус': 'rh',
+  maritalstatus: 'maritalStatus',
+  'сімейнийстан': 'maritalStatus',
+  csection: 'csection',
+  'кс': 'csection',
+  imt: 'imt',
+  'імт': 'imt',
+  role: 'role',
+  contact: 'contact',
+  userid: 'userId',
+  reaction: 'reaction',
+  height: 'height',
+  weight: 'weight',
+  agebirthdate: 'ageBirthDate',
+};
+
+export const ADDITIONAL_ACCESS_FILTER_OPTIONS = {
+  age: ['le21', '22_42', '43_plus', '?', 'no'],
+  csection: ['cs2plus', 'cs1', 'cs0', '?', 'no'],
+  bloodGroup: ['1', '2', '3', '4', '?', 'no'],
+  rh: ['+', '-', '?', 'no'],
+  maritalStatus: ['+', '-', '?', 'no'],
+  imt: ['le28', '29_31', '32_35', '36_plus', '?', 'no'],
+  role: ['ed', 'sm', 'ag', 'ip', 'cl', '?', 'no'],
+  contact: ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'email'],
+  userId: ['vk', 'aa', 'ab', 'long', 'mid', 'other'],
+  reaction: ['past', 'future', '99', '?', 'no'],
+  height: ['lt163', '163_176', '177_180', '181_plus', '?', 'no'],
+  weight: ['lt55', '55_69', '70_84', '85_plus', '?', 'no'],
+  ageBirthDate: ['d_2001-01-30', '?', 'no'],
+};
+
 const parseCsectionCount = value => {
   if (Array.isArray(value)) {
     const numericValues = value
@@ -136,6 +176,149 @@ ageBirthDate: d_2001-01-30,?,no
 reaction: d_2026-04-18,99,?,no
 height: 170,165.5,?,no
 weight: 55,60.5,?,no`;
+
+const normalizeRuleKey = key => ADDITIONAL_ACCESS_KEY_ALIASES[key] || key;
+
+const toRoleBucket = user => {
+  const normalize = value => String(value || '').trim().toLowerCase();
+  const rawRole = normalize(user?.role);
+  const rawUserRole = normalize(user?.userRole);
+  const value = rawRole || rawUserRole;
+  if (['ed', 'sm', 'ag', 'ip', 'cl'].includes(value)) return value;
+  if (!value) return 'no';
+  return '?';
+};
+
+const toUserIdBuckets = userId => {
+  const normalized = String(userId || '').trim().toLowerCase();
+  if (!normalized) return ['other'];
+  const buckets = [];
+  if (normalized.startsWith('vk')) buckets.push('vk');
+  if (normalized.startsWith('aa')) buckets.push('aa');
+  if (normalized.startsWith('ab')) buckets.push('ab');
+  if (normalized.length > 20) buckets.push('long');
+  if (normalized.length > 8 && normalized.length <= 20) buckets.push('mid');
+  if (!buckets.length) buckets.push('other');
+  return buckets;
+};
+
+const toImtBucket = user => {
+  const explicitImt = Number.parseFloat(String(user?.imt ?? '').trim().replace(',', '.'));
+  let imtValue = Number.isFinite(explicitImt) && explicitImt > 0 ? explicitImt : null;
+  if (!Number.isFinite(imtValue)) {
+    const calculated = utilCalculateIMT(
+      Number.parseFloat(String(user?.weight ?? '').trim().replace(',', '.')),
+      Number.parseFloat(String(user?.height ?? '').trim().replace(',', '.'))
+    );
+    if (Number.isFinite(calculated) && calculated > 0) {
+      imtValue = calculated;
+    }
+  }
+  if (!Number.isFinite(imtValue) || imtValue <= 0) {
+    const hasAny = String(user?.imt ?? '').trim() || String(user?.weight ?? '').trim() || String(user?.height ?? '').trim();
+    return hasAny ? '?' : 'no';
+  }
+  const rounded = Math.round(imtValue);
+  if (rounded <= 28) return 'le28';
+  if (rounded <= 31) return '29_31';
+  if (rounded <= 35) return '32_35';
+  return '36_plus';
+};
+
+const toMetricBucket = (value, ranges) => {
+  const normalized = String(value ?? '').trim().replace(',', '.');
+  if (!normalized) return 'no';
+  const parsed = Number.parseFloat(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0) return '?';
+  return ranges(parsed);
+};
+
+const toContactBuckets = user => {
+  const keys = ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'email'];
+  return keys.filter(key => String(user?.[key] || '').trim() !== '');
+};
+
+const normalizeBirthToIsoBucket = birth => {
+  const raw = String(birth || '').trim();
+  if (!raw) return 'no';
+  const match = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!match) return '?';
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return '?';
+  }
+  return `d_${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
+const getUserBucketsByRuleKey = (user, key) => {
+  if (key === 'bloodGroup') {
+    const blood = parseBloodFromUser(user?.blood);
+    if (['1', '2', '3', '4'].includes(blood.group)) return [blood.group];
+    if (blood.group === 'empty') return ['no'];
+    return ['?'];
+  }
+  if (key === 'rh') {
+    const blood = parseBloodFromUser(user?.blood);
+    if (blood.rh === '+' || blood.rh === '-') return [blood.rh];
+    if (blood.rh === 'empty') return ['no'];
+    return ['?'];
+  }
+  if (key === 'maritalStatus') {
+    const marital = normalizeMarital(user?.maritalStatus);
+    if (marital === 'married') return ['+'];
+    if (marital === 'unmarried') return ['-'];
+    if (marital === 'empty') return ['no'];
+    return ['?'];
+  }
+  if (key === 'role') {
+    return [toRoleBucket(user)];
+  }
+  if (key === 'contact') {
+    return toContactBuckets(user);
+  }
+  if (key === 'userId') {
+    return toUserIdBuckets(user?.userId);
+  }
+  if (key === 'imt') {
+    return [toImtBucket(user)];
+  }
+  if (key === 'height') {
+    return [
+      toMetricBucket(user?.height, metric => {
+        if (metric < 163) return 'lt163';
+        if (metric <= 176) return '163_176';
+        if (metric <= 180) return '177_180';
+        return '181_plus';
+      }),
+    ];
+  }
+  if (key === 'weight') {
+    return [
+      toMetricBucket(user?.weight, metric => {
+        if (metric < 55) return 'lt55';
+        if (metric <= 69) return '55_69';
+        if (metric <= 84) return '70_84';
+        return '85_plus';
+      }),
+    ];
+  }
+  if (key === 'ageBirthDate') {
+    return [normalizeBirthToIsoBucket(user?.birth)];
+  }
+  if (key === 'reaction') {
+    const reaction = String(user?.reaction || '').trim().toLowerCase();
+    if (!reaction) return ['no'];
+    if (reaction === '99') return ['99'];
+    if (reaction === '?') return ['?'];
+    if (reaction.includes('past')) return ['past'];
+    if (reaction.includes('future')) return ['future'];
+    return [reaction];
+  }
+  return [];
+};
 
 
 const normalizeCsectionRuleBucket = value => {
@@ -168,12 +351,34 @@ export const parseAdditionalAccessRules = raw => {
     const tokens = parseTokens(value);
     if (!tokens.length) return;
 
-    if (key === 'age') {
+    const normalizedKey = normalizeRuleKey(key);
+
+    if (normalizedKey === 'age') {
       const allowedAges = new Set();
       const allowedAgeBuckets = new Set();
 
       tokens.forEach(token => {
         const normalizedToken = String(token || '').trim().toLowerCase();
+        if (normalizedToken === 'le21') {
+          allowedAges.add(21);
+          allowedAgeBuckets.add('le25');
+          return;
+        }
+        if (normalizedToken === '22_42') {
+          allowedAgeBuckets.add('26_30');
+          allowedAgeBuckets.add('31_33');
+          allowedAgeBuckets.add('34_36');
+          allowedAgeBuckets.add('37_42');
+          return;
+        }
+        if (normalizedToken === 'no') {
+          allowedAgeBuckets.add('other');
+          return;
+        }
+        if (normalizedToken === '?') {
+          allowedAgeBuckets.add('other');
+          return;
+        }
         if (AGE_BUCKET_KEYS.has(normalizedToken)) {
           allowedAgeBuckets.add(normalizedToken);
           return;
@@ -195,7 +400,7 @@ export const parseAdditionalAccessRules = raw => {
       return;
     }
 
-    if (key === 'blood') {
+    if (normalizedKey === 'blood') {
       const groups = new Set();
       const rhs = new Set();
       const buckets = new Set();
@@ -221,7 +426,7 @@ export const parseAdditionalAccessRules = raw => {
       return;
     }
 
-    if (key === 'maritalstatus') {
+    if (normalizedKey === 'maritalStatus') {
       const allowed = new Set(tokens.map(token => parseMaritalRuleToken(token)).filter(Boolean));
       if (allowed.size) {
         result.maritalStatus = allowed;
@@ -229,7 +434,7 @@ export const parseAdditionalAccessRules = raw => {
       return;
     }
 
-    if (key === 'csection') {
+    if (normalizedKey === 'csection') {
       const csectionBuckets = new Set(
         tokens
           .map(token => String(token || '').trim().toLowerCase())
@@ -253,10 +458,37 @@ export const parseAdditionalAccessRules = raw => {
         result.csection = { mode: 'exact', value: exact };
       }
     }
+
+    if ([
+      'bloodGroup',
+      'rh',
+      'role',
+      'contact',
+      'userId',
+      'imt',
+      'reaction',
+      'height',
+      'weight',
+      'ageBirthDate',
+    ].includes(normalizedKey)) {
+      const normalizedTokens = new Set(tokens.map(token => String(token || '').trim().toLowerCase()).filter(Boolean));
+      if (normalizedTokens.size > 0) {
+        if (!result.generic) result.generic = {};
+        result.generic[normalizedKey] = normalizedTokens;
+      }
+    }
   });
 
   return Object.keys(result).length ? result : null;
 };
+
+export const parseAdditionalAccessRuleGroups = raw =>
+  String(raw || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => parseAdditionalAccessRules(line))
+    .filter(Boolean);
 
 export const isUserAllowedByAdditionalAccess = (user, parsedRules) => {
   if (!parsedRules) return true;
@@ -317,7 +549,26 @@ export const isUserAllowedByAdditionalAccess = (user, parsedRules) => {
     }
   }
 
+  if (parsedRules.generic && typeof parsedRules.generic === 'object') {
+    const genericKeys = Object.keys(parsedRules.generic);
+    for (const key of genericKeys) {
+      const allowed = parsedRules.generic[key];
+      if (!(allowed instanceof Set) || allowed.size === 0) continue;
+      const userBuckets = getUserBucketsByRuleKey(user, key);
+      if (!Array.isArray(userBuckets) || userBuckets.length === 0) continue;
+      const isMatched = userBuckets.some(bucket => allowed.has(String(bucket || '').trim().toLowerCase()));
+      if (!isMatched) {
+        return false;
+      }
+    }
+  }
+
   return true;
+};
+
+export const isUserAllowedByAnyAdditionalAccessRule = (user, parsedRuleGroups) => {
+  if (!Array.isArray(parsedRuleGroups) || parsedRuleGroups.length === 0) return true;
+  return parsedRuleGroups.some(rule => isUserAllowedByAdditionalAccess(user, rule));
 };
 
 export const filterUsersByAdditionalAccess = (usersMap, parsedRules) => {
@@ -416,6 +667,7 @@ export const resolveAdditionalAccessSearchKeyBuckets = parsedRules => ({
   maritalStatus: resolveMaritalStatusSearchKeyBuckets(parsedRules),
   csection: resolveCsectionSearchKeyBuckets(parsedRules),
   age: resolveAgeSearchKeyBuckets(parsedRules),
+  ...(parsedRules?.generic || {}),
 });
 
 export const createAllFalseFilterGroup = keys =>

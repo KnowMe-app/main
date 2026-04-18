@@ -63,8 +63,8 @@ import {
   pruneComments,
 } from '../utils/commentsStorage';
 import {
-  isUserAllowedByAdditionalAccess,
-  parseAdditionalAccessRules,
+  isUserAllowedByAnyAdditionalAccessRule,
+  parseAdditionalAccessRuleGroups,
   resolveAdditionalAccessSearchKeyBuckets,
 } from 'utils/additionalAccessRules';
 
@@ -140,33 +140,48 @@ const fetchUsersAndNewUsersByIds = async ids => {
   return snapshots.filter(Boolean);
 };
 
-const fetchAdditionalNewUsersBySearchIndex = async parsedRules => {
-  const buckets = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
-  const activeSources = [
-    { indexName: SEARCH_KEY_INDEX_NAMES.blood, values: buckets.blood },
-    { indexName: SEARCH_KEY_INDEX_NAMES.maritalStatus, values: buckets.maritalStatus },
-    { indexName: SEARCH_KEY_INDEX_NAMES.csection, values: buckets.csection },
-    { indexName: SEARCH_KEY_INDEX_NAMES.age, values: buckets.age },
-  ].filter(source => source.values.length > 0);
+const fetchAdditionalNewUsersBySearchIndex = async parsedRuleGroups => {
+  if (!Array.isArray(parsedRuleGroups) || parsedRuleGroups.length === 0) return [];
 
-  if (activeSources.length === 0) return [];
+  const matchedIdsSet = new Set();
 
-  const indexedSets = await Promise.all(
-    activeSources.map(source => readIndexedIds(source.indexName, source.values))
-  );
+  for (const parsedRules of parsedRuleGroups) {
+    const buckets = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
+    const activeSources = Object.entries(buckets || {})
+      .map(([indexName, values]) => ({
+        indexName: SEARCH_KEY_INDEX_NAMES[indexName] || indexName,
+        values: Array.isArray(values) ? values : [...(values || [])],
+      }))
+      .filter(source => source.values.length > 0);
 
-  const normalizedSets = indexedSets.filter(set => set instanceof Set);
-  const nonEmptySets = normalizedSets.filter(set => set.size > 0);
-  if (nonEmptySets.length === 0) return [];
+    if (activeSources.length === 0) continue;
 
-  const matchedIds = [...new Set(nonEmptySets.flatMap(set => [...set]))];
+    const indexedSets = await Promise.all(
+      activeSources.map(source => readIndexedIds(source.indexName, source.values))
+    );
+
+    const normalizedSets = indexedSets.filter(set => set instanceof Set);
+    const nonEmptySets = normalizedSets.filter(set => set.size > 0);
+    if (nonEmptySets.length === 0) continue;
+
+    nonEmptySets.forEach(set => {
+      [...set].forEach(userId => matchedIdsSet.add(userId));
+    });
+  }
+
+  const matchedIds = [...matchedIdsSet];
   if (matchedIds.length === 0) return [];
 
   const combinedRows = await fetchUsersAndNewUsersByIds(matchedIds);
   return combinedRows
     .filter(row => row.hasNewUser)
     .filter(row => isValidId(row.merged?.userId))
-    .filter(row => isUserAllowedByAdditionalAccess({ userId: row.merged.userId, ...(row.newUserData || {}) }, parsedRules))
+    .filter(row =>
+      isUserAllowedByAnyAdditionalAccessRule(
+        { userId: row.merged.userId, ...(row.newUserData || {}) },
+        parsedRuleGroups
+      )
+    )
     .map(row => ({ ...row.merged, __sourceCollection: 'newUsers' }));
 };
 
@@ -1457,7 +1472,7 @@ const Matching = () => {
   const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: currentAccessLevel });
   const isAdmin = access.isAdmin;
   const parsedAdditionalAccessRules = useMemo(
-    () => parseAdditionalAccessRules(currentAdditionalAccessRules),
+    () => parseAdditionalAccessRuleGroups(currentAdditionalAccessRules),
     [currentAdditionalAccessRules]
   );
   const loadingRef = useRef(false);
@@ -1673,7 +1688,7 @@ const Matching = () => {
     let cancelled = false;
 
     const loadAdditionalNewUsers = async () => {
-      if (!parsedAdditionalAccessRules) {
+      if (!parsedAdditionalAccessRules || parsedAdditionalAccessRules.length === 0) {
         setAdditionalNewUsers([]);
         additionalRulesToastRef.current = '';
         return;
@@ -2097,7 +2112,7 @@ const Matching = () => {
       : users.filter(user => user.__sourceCollection === 'newUsers' || user.publish === true);
 
     const shouldInjectAdditionalCards =
-      parsedAdditionalAccessRules &&
+      parsedAdditionalAccessRules.length > 0 &&
       additionalNewUsers.length > 0;
 
     if (!shouldInjectAdditionalCards) {
