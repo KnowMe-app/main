@@ -64,8 +64,8 @@ import {
 } from '../utils/commentsStorage';
 import { isUserAllowedByAdditionalAccess, parseAdditionalAccessRules } from 'utils/additionalAccessRules';
 
-// Filter out users with invalid identifiers; IDs must be longer than 20 characters
-const isValidId = id => typeof id === 'string' && id.length > 20;
+// Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
+const isValidId = id => typeof id === 'string' && id.length >= 20;
 const filterLongUsers = list => list.filter(u => isValidId(u?.userId));
 
 const compareUsersByLastLogin2 = (a = {}, b = {}) =>
@@ -1929,17 +1929,15 @@ const Matching = () => {
     return Array.from(byId.values());
   }, [additionalNewUsers, isAdmin, parsedAdditionalAccessRules, users]);
 
-  const filteredUsers = isAdmin
-    ? applyMatchingSearchKeyFilters(
-        filterMain(
-          visibleUsers.map(u => [u.userId, u]),
-          null,
-          getMatchingFiltersWithoutSearchKeyGroups(filters),
-          favoriteUsers
-        ).map(([, u]) => u),
-        filters
-      ).filter(u => isValidId(u.userId))
-    : visibleUsers.filter(u => isValidId(u.userId));
+  const filteredUsers = applyMatchingSearchKeyFilters(
+    filterMain(
+      visibleUsers.map(u => [u.userId, u]),
+      null,
+      getMatchingFiltersWithoutSearchKeyGroups(filters),
+      favoriteUsers
+    ).map(([, u]) => u),
+    filters
+  ).filter(u => isValidId(u.userId));
 
   useEffect(() => {
     if (viewMode !== 'default') return;
