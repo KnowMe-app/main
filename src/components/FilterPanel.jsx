@@ -98,10 +98,6 @@ const FilterPanel = ({
   const storageKey = customKey || (mode === 'matching' ? 'matchingFilters' : 'userFilters');
 
   const getInitialFilters = () => {
-    if (mode === 'matching' && nonAdminAllActive) {
-      return { ...defaultFilters };
-    }
-
     const stored = localStorage.getItem(storageKey);
     if (!stored) return { ...defaultFilters };
     try {

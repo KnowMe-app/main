@@ -23,7 +23,7 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
 } from './config';
-import { get, onValue, ref as refDb } from 'firebase/database';
+import { get, onValue, ref as refDb, query, orderByChild, endAt, limitToLast } from 'firebase/database';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
@@ -717,6 +717,23 @@ const FilterResetButton = styled.button`
   font-weight: 600;
   cursor: pointer;
 `;
+const CollectionSourceWrap = styled.div`
+  margin: 0 0 10px;
+  border: 1px solid ${color.gray3};
+  border-radius: 8px;
+  padding: 10px;
+`;
+const CollectionSourceTitle = styled.p`
+  margin: 0 0 8px;
+  font-weight: 600;
+`;
+const CollectionSourceLabel = styled.label`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  cursor: pointer;
+`;
 
 // Components below were previously defined for a modal that is no longer
 // rendered. They were causing "assigned a value but never used" warnings
@@ -1363,6 +1380,65 @@ const INITIAL_LOAD = 6;
 const LOAD_MORE = 6;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
+const COLLECTION_SOURCE_KEY = 'matchingCollectionSource';
+
+const fetchUsersByLastLogin2FromCollection = async (collection = 'users', limit = 9, lastDate) => {
+  const usersRef = refDb(database, collection);
+  const realLimit = limit + 1;
+  const { todayDash } = getCurrentDate();
+  const cursor =
+    typeof lastDate === 'object' && lastDate !== null
+      ? { date: lastDate.date || '', userId: lastDate.userId || '' }
+      : { date: lastDate || '', userId: '' };
+
+  let fetchLimit = realLimit;
+  let entries = [];
+  let snapshotSize = 0;
+
+  while (entries.length < realLimit && fetchLimit <= 5000) {
+    const q = cursor.date
+      ? query(usersRef, orderByChild('lastLogin2'), endAt(cursor.date), limitToLast(fetchLimit))
+      : query(usersRef, orderByChild('lastLogin2'), endAt(todayDash), limitToLast(fetchLimit));
+
+    const snapshot = await get(q);
+    if (!snapshot.exists()) {
+      return { users: [], lastKey: null, hasMore: false };
+    }
+
+    entries = Object.entries(snapshot.val()).sort((a, b) => {
+      const bDate = b[1].lastLogin2 || '';
+      const aDate = a[1].lastLogin2 || '';
+      const byDate = bDate.localeCompare(aDate);
+      if (byDate !== 0) return byDate;
+      return b[0].localeCompare(a[0]);
+    });
+
+    if (cursor.date) {
+      entries = entries.filter(([id, data]) => {
+        const date = data.lastLogin2 || '';
+        if (date < cursor.date) return true;
+        if (date > cursor.date) return false;
+        return cursor.userId ? id.localeCompare(cursor.userId) < 0 : false;
+      });
+    }
+
+    snapshotSize = Object.keys(snapshot.val()).length;
+    if (entries.length >= realLimit || snapshotSize < fetchLimit) break;
+    fetchLimit *= 2;
+  }
+
+  const hasMore = entries.length > limit;
+  if (hasMore) entries = entries.slice(0, limit);
+  const lastEntry = entries[entries.length - 1];
+
+  return {
+    users: entries.map(([id, data]) => ({ userId: id, ...data })),
+    lastKey: lastEntry
+      ? { date: lastEntry[1].lastLogin2 || '', userId: lastEntry[0] }
+      : null,
+    hasMore,
+  };
+};
 
 const Matching = () => {
   const navigate = useNavigate();
@@ -1379,6 +1455,9 @@ const Matching = () => {
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({});
+  const [collectionSource, setCollectionSource] = useState(
+    () => localStorage.getItem(COLLECTION_SOURCE_KEY) || 'users'
+  );
   const [filterResetToken, setFilterResetToken] = useState(0);
   const [comments, setComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
@@ -1408,6 +1487,9 @@ const Matching = () => {
   useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
+  useEffect(() => {
+    localStorage.setItem(COLLECTION_SOURCE_KEY, collectionSource);
+  }, [collectionSource]);
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
     const handleScroll = () => {
@@ -1645,24 +1727,24 @@ const Matching = () => {
 
       while (collected.length < limit) {
         const remaining = limit - collected.length;
-        const res = await fetchUsersByLastLogin2(
-          remaining + exclude.size + 1,
-          cursor
-        );
+        const sourceRes =
+          collectionSource === 'newUsers'
+            ? await fetchUsersByLastLogin2FromCollection('newUsers', remaining + exclude.size + 1, cursor)
+            : await fetchUsersByLastLogin2(remaining + exclude.size + 1, cursor);
 
         const filtered = isAdmin
           ? applyMatchingSearchKeyFilters(
               filterMain(
-                res.users.map(u => [u.userId, u]),
+                sourceRes.users.map(u => [u.userId, u]),
                 null,
                 getMatchingFiltersWithoutSearchKeyGroups(filters),
                 favoriteUsersRef.current
               ).map(([, u]) => u),
               filters
             ).filter(u => isValidId(u.userId) && !exclude.has(u.userId))
-          : res.users.filter(u => isValidId(u.userId) && !exclude.has(u.userId));
+          : sourceRes.users.filter(u => isValidId(u.userId) && !exclude.has(u.userId));
 
-        excludedCount += res.users.length - filtered.length;
+        excludedCount += sourceRes.users.length - filtered.length;
         const slice = filtered.slice(0, remaining);
         const ids = slice.map(user => user.userId);
         const enrichedMap = await fetchUsersByIds(ids);
@@ -1673,11 +1755,11 @@ const Matching = () => {
           if (onPart) await onPart(validSlice);
         }
 
-        hasMore = res.hasMore;
+        hasMore = sourceRes.hasMore;
         prevCursor = cursor;
-        cursor = res.lastKey;
+        cursor = sourceRes.lastKey;
 
-        if (!res.hasMore || !res.lastKey || isSameCursor(prevCursor, cursor)) {
+        if (!sourceRes.hasMore || !sourceRes.lastKey || isSameCursor(prevCursor, cursor)) {
           break;
         }
       }
@@ -1689,7 +1771,7 @@ const Matching = () => {
         excludedCount,
       };
     },
-    [filters, isAdmin]
+    [collectionSource, filters, isAdmin]
   );
 
   const loadInitial = React.useCallback(async () => {
@@ -2101,6 +2183,35 @@ const Matching = () => {
         <FilterResetButton onClick={resetFiltersAndCache}>
           Скинути фільтри та кеш
         </FilterResetButton>
+        <CollectionSourceWrap>
+          <CollectionSourceTitle>Колекція профілів:</CollectionSourceTitle>
+          <CollectionSourceLabel>
+            <input
+              type="radio"
+              name="matchingCollectionSource"
+              value="users"
+              checked={collectionSource === 'users'}
+              onChange={e => {
+                setCollectionSource(e.target.value);
+                reloadDefault();
+              }}
+            />
+            Основна (users)
+          </CollectionSourceLabel>
+          <CollectionSourceLabel>
+            <input
+              type="radio"
+              name="matchingCollectionSource"
+              value="newUsers"
+              checked={collectionSource === 'newUsers'}
+              onChange={e => {
+                setCollectionSource(e.target.value);
+                reloadDefault();
+              }}
+            />
+            Додаткова (newUsers)
+          </CollectionSourceLabel>
+        </CollectionSourceWrap>
         <FilterPanel
           mode="matching"
           hideUserId
