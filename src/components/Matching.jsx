@@ -62,7 +62,11 @@ import {
   setLocalComment,
   pruneComments,
 } from '../utils/commentsStorage';
-import { isUserAllowedByAdditionalAccess, parseAdditionalAccessRules } from 'utils/additionalAccessRules';
+import {
+  isUserAllowedByAdditionalAccess,
+  parseAdditionalAccessRules,
+  resolveAdditionalAccessSearchKeyBuckets,
+} from 'utils/additionalAccessRules';
 
 // Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
 const isValidId = id => typeof id === 'string' && id.length >= 20;
@@ -70,6 +74,115 @@ const filterLongUsers = list => list.filter(u => isValidId(u?.userId));
 
 const compareUsersByLastLogin2 = (a = {}, b = {}) =>
   (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
+
+const SEARCH_KEY_ROOT = 'searchKey';
+const SEARCH_KEY_INDEX_NAMES = {
+  blood: 'blood',
+  maritalStatus: 'maritalStatus',
+  csection: 'csection',
+  age: 'age',
+};
+
+const intersectSets = sets => {
+  if (!Array.isArray(sets) || sets.length === 0) return new Set();
+
+  const [head, ...tail] = sets.sort((a, b) => a.size - b.size);
+  const result = new Set(head);
+  tail.forEach(nextSet => {
+    [...result].forEach(id => {
+      if (!nextSet.has(id)) result.delete(id);
+    });
+  });
+  return result;
+};
+
+const readIndexedIds = async (indexName, values = []) => {
+  const uniqueValues = [...new Set(values.filter(Boolean))];
+  if (!indexName || uniqueValues.length === 0) return null;
+
+  const snapshots = await Promise.all(
+    uniqueValues.map(value => get(refDb(database, `${SEARCH_KEY_ROOT}/${indexName}/${value}`)))
+  );
+
+  const ids = new Set();
+  snapshots.forEach(snapshot => {
+    if (!snapshot.exists()) return;
+    Object.keys(snapshot.val() || {}).forEach(userId => {
+      if (userId) ids.add(userId);
+    });
+  });
+  return ids;
+};
+
+const fetchUsersAndNewUsersByIds = async ids => {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  const snapshots = await Promise.all(
+    uniqueIds.map(async userId => {
+      const [newUserResult, userResult] = await Promise.allSettled([
+        get(refDb(database, `newUsers/${userId}`)),
+        get(refDb(database, `users/${userId}`)),
+      ]);
+
+      const merged = { userId };
+      let hasAnyData = false;
+
+      if (newUserResult.status === 'fulfilled' && newUserResult.value.exists()) {
+        Object.assign(merged, newUserResult.value.val() || {});
+        hasAnyData = true;
+      }
+
+      if (userResult.status === 'fulfilled' && userResult.value.exists()) {
+        Object.assign(merged, userResult.value.val() || {});
+        hasAnyData = true;
+      }
+
+      if (!hasAnyData) return null;
+      return {
+        merged,
+        hasNewUser: newUserResult.status === 'fulfilled' && newUserResult.value.exists(),
+        newUserData:
+          newUserResult.status === 'fulfilled' && newUserResult.value.exists()
+            ? newUserResult.value.val() || {}
+            : null,
+      };
+    })
+  );
+
+  return snapshots.filter(Boolean);
+};
+
+const fetchAdditionalNewUsersBySearchIndex = async parsedRules => {
+  const buckets = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
+  const activeSources = [
+    { indexName: SEARCH_KEY_INDEX_NAMES.blood, values: buckets.blood },
+    { indexName: SEARCH_KEY_INDEX_NAMES.maritalStatus, values: buckets.maritalStatus },
+    { indexName: SEARCH_KEY_INDEX_NAMES.csection, values: buckets.csection },
+    { indexName: SEARCH_KEY_INDEX_NAMES.age, values: buckets.age },
+  ].filter(source => source.values.length > 0);
+
+  if (activeSources.length === 0) return [];
+
+  const indexedSets = await Promise.all(
+    activeSources.map(source => readIndexedIds(source.indexName, source.values))
+  );
+
+  const normalizedSets = indexedSets.filter(set => set instanceof Set);
+  if (normalizedSets.length === 0 || normalizedSets.some(set => set.size === 0)) {
+    return [];
+  }
+
+  const matchedIds = [...intersectSets(normalizedSets)];
+  if (matchedIds.length === 0) return [];
+
+  const combinedRows = await fetchUsersAndNewUsersByIds(matchedIds);
+  return combinedRows
+    .filter(row => row.hasNewUser)
+    .filter(row => isValidId(row.merged?.userId))
+    .filter(row => isUserAllowedByAdditionalAccess({ userId: row.merged.userId, ...(row.newUserData || {}) }, parsedRules))
+    .map(row => row.merged);
+};
 
 const isSameCursor = (a, b) => {
   if (!a && !b) return true;
@@ -1497,16 +1610,7 @@ const Matching = () => {
       }
 
       try {
-        const snapshot = await get(refDb(database, 'newUsers'));
-        if (!snapshot.exists()) {
-          if (!cancelled) setAdditionalNewUsers([]);
-          return;
-        }
-
-        const loaded = Object.entries(snapshot.val() || {})
-          .map(([userId, data]) => ({ userId, ...(data || {}) }))
-          .filter(user => isValidId(user.userId))
-          .filter(user => isUserAllowedByAdditionalAccess(user, parsedAdditionalAccessRules));
+        const loaded = await fetchAdditionalNewUsersBySearchIndex(parsedAdditionalAccessRules);
 
         if (!cancelled) {
           setAdditionalNewUsers(loaded);

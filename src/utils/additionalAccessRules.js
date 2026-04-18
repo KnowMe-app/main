@@ -224,6 +224,83 @@ export const filterUsersByAdditionalAccess = (usersMap, parsedRules) => {
   );
 };
 
+const ALL_BLOOD_GROUPS = ['1', '2', '3', '4'];
+
+const uniq = values => [...new Set((values || []).filter(Boolean))];
+
+const resolveBloodSearchKeyBuckets = parsedRules => {
+  if (!parsedRules?.blood) return [];
+
+  const groups = parsedRules.blood.groups?.size
+    ? [...parsedRules.blood.groups]
+    : [...ALL_BLOOD_GROUPS];
+  const rhs = parsedRules.blood.rhs?.size
+    ? [...parsedRules.blood.rhs]
+    : ['+', '-'];
+
+  const buckets = [];
+  groups.forEach(group => {
+    rhs.forEach(rh => {
+      if (/^[1-4]$/.test(String(group)) && ['+', '-'].includes(String(rh))) {
+        buckets.push(`${group}${rh}`);
+      }
+    });
+  });
+
+  return uniq(buckets);
+};
+
+const resolveMaritalStatusSearchKeyBuckets = parsedRules => {
+  if (!parsedRules?.maritalStatus) return [];
+
+  const buckets = [];
+  if (parsedRules.maritalStatus.has('married')) buckets.push('+');
+  if (parsedRules.maritalStatus.has('unmarried')) buckets.push('-');
+  if (parsedRules.maritalStatus.has('other')) {
+    buckets.push('?', 'no');
+  }
+
+  return uniq(buckets);
+};
+
+const resolveCsectionSearchKeyBuckets = parsedRules => {
+  if (!parsedRules?.csection) return [];
+
+  const { mode, value } = parsedRules.csection;
+  if (!Number.isFinite(value)) return [];
+
+  if (mode === 'exact') {
+    if (value <= 0) return ['cs0'];
+    if (value === 1) return ['cs1'];
+    if (value === 2 || value === 3) return ['cs2plus'];
+    return ['cs2plus', 'other'];
+  }
+
+  if (mode === 'atLeast') {
+    if (value <= 0) return ['cs0', 'cs1', 'cs2plus', 'other'];
+    if (value === 1) return ['cs1', 'cs2plus'];
+    return ['cs2plus'];
+  }
+
+  return [];
+};
+
+const resolveAgeSearchKeyBuckets = parsedRules => {
+  if (!parsedRules?.age || parsedRules.age.size === 0) return [];
+  return uniq(
+    [...parsedRules.age]
+      .filter(age => Number.isFinite(age) && age >= 0)
+      .map(age => String(age))
+  );
+};
+
+export const resolveAdditionalAccessSearchKeyBuckets = parsedRules => ({
+  blood: resolveBloodSearchKeyBuckets(parsedRules),
+  maritalStatus: resolveMaritalStatusSearchKeyBuckets(parsedRules),
+  csection: resolveCsectionSearchKeyBuckets(parsedRules),
+  age: resolveAgeSearchKeyBuckets(parsedRules),
+});
+
 export const createAllFalseFilterGroup = keys =>
   keys.reduce((acc, key) => {
     acc[key] = false;
