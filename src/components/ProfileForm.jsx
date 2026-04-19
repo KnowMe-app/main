@@ -15,7 +15,7 @@ import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { patchOverlayField } from 'utils/multiAccountEdits';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
-import { FaPlus, FaTimes } from 'react-icons/fa';
+import { FaTimes } from 'react-icons/fa';
 import { InfoModal } from './InfoModal';
 import { auth, database } from './config';
 import {
@@ -108,6 +108,50 @@ const ADDITIONAL_RULE_OPTION_LABELS = {
   cs2plus: '>=2',
   cs1: '1',
   cs0: '0',
+};
+const ADDITIONAL_RULE_OPTION_DESCRIPTIONS = {
+  age: {
+    le21: 'До 21 року включно',
+    '22_42': 'Від 22 до 42 років',
+    '43_plus': '43 роки і старше',
+    '?': 'Некоректний формат віку',
+    no: 'Вік не вказано',
+  },
+  csection: {
+    cs2plus: '2 і більше КС',
+    cs1: '1 КС',
+    cs0: 'КС не було',
+    '?': 'Невідоме значення',
+    no: 'Поле КС порожнє',
+  },
+  bloodGroup: {
+    '1': 'I група',
+    '2': 'II група',
+    '3': 'III група',
+    '4': 'IV група',
+    '?': 'Некоректне значення',
+    no: 'Група крові не вказана',
+  },
+  rh: {
+    '+': 'Резус позитивний',
+    '-': 'Резус негативний',
+    '?': 'Некоректний резус',
+    no: 'Резус не вказано',
+  },
+  maritalStatus: {
+    '+': 'Заміжня / married',
+    '-': 'Незаміжня / single',
+    '?': 'Інше або некоректне',
+    no: 'Сімейний стан не вказано',
+  },
+  imt: {
+    le28: 'ІМТ до 28',
+    '29_31': 'ІМТ 29-31',
+    '32_35': 'ІМТ 32-35',
+    '36_plus': 'ІМТ 36+',
+    '?': 'ІМТ не вдалося порахувати',
+    no: 'Немає даних для ІМТ',
+  },
 };
 
 const parseAdditionalRulesTextToBuilder = raw => {
@@ -461,10 +505,8 @@ export const ProfileForm = ({
   const [autoOverlayFieldAdditions, setAutoOverlayFieldAdditions] = useState({});
   const [dismissedOverlayEntries, setDismissedOverlayEntries] = useState({});
   const [showAdditionalRulesModal, setShowAdditionalRulesModal] = useState(false);
+  const [activeAdditionalRuleInputIndex, setActiveAdditionalRuleInputIndex] = useState(0);
   const [additionalRuleBuilder, setAdditionalRuleBuilder] = useState([]);
-  const [additionalRulesInputs, setAdditionalRulesInputs] = useState(() =>
-    additionalRulesTextToInputs(state?.[ADDITIONAL_ACCESS_FIELD])
-  );
   const [availableCards, setAvailableCards] = useState([]);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
   const autoAppliedOverlayForUserRef = useRef('');
@@ -480,7 +522,18 @@ export const ProfileForm = ({
     () => buildAdditionalRulesTextFromBuilder(additionalRuleBuilder),
     [additionalRuleBuilder]
   );
-  const additionalRulesRawValue = state?.[ADDITIONAL_ACCESS_FIELD] || '';
+  const additionalRulesInputs = useMemo(() => {
+    const rawValue = state?.[ADDITIONAL_ACCESS_FIELD];
+    if (Array.isArray(rawValue)) {
+      return rawValue.map(item => String(item || ''));
+    }
+    return additionalRulesTextToInputs(rawValue);
+  }, [state?.[ADDITIONAL_ACCESS_FIELD]]);
+  const combinedAdditionalRulesDraftText = useMemo(() => {
+    const nextInputs = [...additionalRulesInputs];
+    nextInputs[activeAdditionalRuleInputIndex] = additionalRulesDraftText;
+    return nextInputs.map(item => String(item || '').trim()).filter(Boolean).join('\n');
+  }, [activeAdditionalRuleInputIndex, additionalRulesDraftText, additionalRulesInputs]);
 
   useEffect(() => {
     if (state?.userId) return;
@@ -488,25 +541,22 @@ export const ProfileForm = ({
   }, [state?.userId]);
 
   useEffect(() => {
-    setAdditionalRulesInputs(additionalRulesTextToInputs(additionalRulesRawValue));
-  }, [additionalRulesRawValue]);
-
-  useEffect(() => {
     if (!showAdditionalRulesModal) return;
-    const parsed = parseAdditionalRulesTextToBuilder(additionalRulesRawValue);
+    const activeInputValue = additionalRulesInputs[activeAdditionalRuleInputIndex] || '';
+    const parsed = parseAdditionalRulesTextToBuilder(activeInputValue);
     if (parsed.length > 0) {
       setAdditionalRuleBuilder(parsed);
       return;
     }
-    setAdditionalRuleBuilder(ADDITIONAL_RULE_ORDER.map(key => ({ key, allowedValues: new Set() })));
-  }, [additionalRulesRawValue, showAdditionalRulesModal]);
+    setAdditionalRuleBuilder([{ key: ADDITIONAL_RULE_ORDER[0], allowedValues: new Set() }]);
+  }, [activeAdditionalRuleInputIndex, additionalRulesInputs, showAdditionalRulesModal]);
 
   useEffect(() => {
     if (!showAdditionalRulesModal) return;
 
     let cancelled = false;
     const loadAvailableCards = async () => {
-      const parsedRuleGroups = parseAdditionalAccessRuleGroups(additionalRulesDraftText);
+      const parsedRuleGroups = parseAdditionalAccessRuleGroups(combinedAdditionalRulesDraftText);
       if (!parsedRuleGroups.length) {
         setAvailableCards([]);
         return;
@@ -580,7 +630,7 @@ export const ProfileForm = ({
     return () => {
       cancelled = true;
     };
-  }, [additionalRulesDraftText, showAdditionalRulesModal]);
+  }, [combinedAdditionalRulesDraftText, showAdditionalRulesModal]);
 
   useEffect(() => {
     setDismissedOverlayEntries({});
@@ -654,26 +704,16 @@ export const ProfileForm = ({
     setAdditionalRuleBuilder(prev => prev.filter((_, ruleIndex) => ruleIndex !== index));
   };
 
-  const syncAdditionalRulesInputs = nextInputs => {
-    setAdditionalRulesInputs(nextInputs);
-    const nextRulesText = nextInputs.map(item => String(item || '').trim()).filter(Boolean).join('\n');
-    setState(prevState => ({
-      ...prevState,
-      [ADDITIONAL_ACCESS_FIELD]: nextRulesText,
-    }));
-  };
-
-  const addAdditionalRulesInput = () => {
-    syncAdditionalRulesInputs([...additionalRulesInputs, '']);
-  };
-
   const applyAdditionalRulesFromBuilder = () => {
     const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
-    setAdditionalRulesInputs(additionalRulesTextToInputs(rulesText));
     setState(prevState => {
+      const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
+      const updatedValue = Array.isArray(currentValue)
+        ? currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? rulesText : item))
+        : rulesText;
       const updated = {
         ...prevState,
-        [ADDITIONAL_ACCESS_FIELD]: rulesText,
+        [ADDITIONAL_ACCESS_FIELD]: updatedValue,
       };
       submitWithNormalization(updated, 'overwrite');
       return updated;
@@ -1227,7 +1267,14 @@ ${entries.join('\n')}`;
                         value={value || ''}
                         $isDeletedOverlay={deletedOverlayFields.includes(field.name)}
                         onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
-                      onChange={e => {
+                        readOnly={field.name === ADDITIONAL_ACCESS_FIELD}
+                        onClick={() => {
+                          if (field.name !== ADDITIONAL_ACCESS_FIELD) return;
+                          setActiveAdditionalRuleInputIndex(idx);
+                          setShowAdditionalRulesModal(true);
+                        }}
+                        onChange={e => {
+                          if (field.name === ADDITIONAL_ACCESS_FIELD) return;
                           if (field.name === 'myComment') {
                             autoResizeMyComment(e.target);
                           }
@@ -1289,28 +1336,18 @@ ${entries.join('\n')}`;
                     </AccessLevelSelect>
                   ) : field.name === ADDITIONAL_ACCESS_FIELD ? (
                     <>
-                      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {additionalRulesInputs.map((value, idx) => (
-                          <InputField
-                            key={`additional-rules-input-${idx}`}
-                            fieldName={field.name}
-                            name={`${field.name}-${idx}`}
-                            value={value}
-                            placeholder={ADDITIONAL_ACCESS_TEMPLATE}
-                            readOnly
-                            onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
-                            onClick={() => setShowAdditionalRulesModal(true)}
-                          />
-                        ))}
-                      </div>
-                      <AccessInfoButton
-                        type="button"
-                        onMouseDown={e => e.preventDefault()}
-                        onClick={addAdditionalRulesInput}
-                        title="Додати ще інпут правил"
-                      >
-                        <FaPlus />
-                      </AccessInfoButton>
+                      <InputField
+                        fieldName={field.name}
+                        name={field.name}
+                        value={displayValue}
+                        placeholder={ADDITIONAL_ACCESS_TEMPLATE}
+                        readOnly
+                        onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                        onClick={() => {
+                          setActiveAdditionalRuleInputIndex(0);
+                          setShowAdditionalRulesModal(true);
+                        }}
+                      />
                     </>
                   ) : (
                   <InputField
@@ -1455,7 +1492,7 @@ ${entries.join('\n')}`;
                 </Button>
               )}
 
-            {Array.isArray(field.options) && field.name !== 'education' ? (
+            {field.name !== ADDITIONAL_ACCESS_FIELD && Array.isArray(field.options) && field.name !== 'education' ? (
               field.options.length === 2 ? (
                 <ButtonGroup>
                   <Button
@@ -1660,7 +1697,13 @@ ${entries.join('\n')}`;
                           checked={rule.allowedValues.has(option)}
                           onChange={() => toggleAdditionalRuleValue(index, option)}
                         />
-                        <span>{ADDITIONAL_RULE_OPTION_LABELS[option] || option}</span>
+                        <AdditionalRuleOptionText>
+                          <span>{ADDITIONAL_RULE_OPTION_LABELS[option] || option}</span>
+                          <small>
+                            {ADDITIONAL_RULE_OPTION_DESCRIPTIONS[rule.key]?.[option] ||
+                              `Токен: ${option}`}
+                          </small>
+                        </AdditionalRuleOptionText>
                       </label>
                     ))}
                   </AdditionalRuleOptions>
@@ -1912,19 +1955,6 @@ const ClearButton = styled.button`
   }
 `;
 
-const AccessInfoButton = styled.button`
-  margin-left: 6px;
-  border: 1px solid #c7c7c7;
-  background: #fff;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-`;
-
 const AdditionalRulesOverlay = styled.div`
   position: fixed;
   inset: 0;
@@ -1937,11 +1967,12 @@ const AdditionalRulesOverlay = styled.div`
 
 const AdditionalRulesModal = styled.div`
   background: #fff;
-  width: min(980px, 100vw);
+  width: min(760px, 100vw);
   height: 100vh;
-  padding: 20px;
+  padding: 16px 14px;
   overflow: auto;
   position: relative;
+  line-height: 1.35;
 `;
 
 const AdditionalRulesClose = styled.button`
@@ -1955,10 +1986,8 @@ const AdditionalRulesClose = styled.button`
 `;
 
 const AdditionalRuleBlock = styled.div`
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 12px;
-  margin-top: 12px;
+  padding: 8px 0;
+  margin-top: 8px;
 `;
 
 const AdditionalRuleHeader = styled.div`
@@ -1974,10 +2003,32 @@ const AdditionalRuleHeader = styled.div`
 `;
 
 const AdditionalRuleOptions = styled.div`
-  margin-top: 10px;
+  margin-top: 8px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px 10px;
+
+  label {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  input {
+    margin-top: 2px;
+  }
+`;
+
+const AdditionalRuleOptionText = styled.span`
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+
+  small {
+    color: #666;
+    font-size: 11px;
+    line-height: 1.25;
+  }
 `;
 
 const AdditionalRuleActions = styled.div`
