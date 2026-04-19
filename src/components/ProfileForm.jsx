@@ -186,10 +186,10 @@ const parseAdditionalRulesTextToBuilder = raw => {
         const numericAges = new Set(
           rawTokens
           .map(token => Number.parseInt(token, 10))
-          .filter(age => Number.isFinite(age) && age >= 21)
+          .filter(age => Number.isFinite(age) && age >= 18)
         );
         const normalizedAgeTokens = new Set();
-        if (numericAges.has(21)) normalizedAgeTokens.add('le21');
+        if ([18, 19, 20, 21].every(age => numericAges.has(age))) normalizedAgeTokens.add('le21');
         if ([22, 23, 24, 25].every(age => numericAges.has(age))) normalizedAgeTokens.add('22_25');
         if ([26, 27, 28, 29, 30].every(age => numericAges.has(age))) normalizedAgeTokens.add('26_30');
         if ([31, 32, 33, 34, 35].every(age => numericAges.has(age))) normalizedAgeTokens.add('31_35');
@@ -215,7 +215,7 @@ const buildAdditionalRulesTextFromBuilder = rules =>
 
       const selected = rule.allowedValues;
       const numericAges = new Set();
-      if (selected.has('le21')) numericAges.add(21);
+      if (selected.has('le21')) [18, 19, 20, 21].forEach(age => numericAges.add(age));
       if (selected.has('22_25')) [22, 23, 24, 25].forEach(age => numericAges.add(age));
       if (selected.has('26_30')) [26, 27, 28, 29, 30].forEach(age => numericAges.add(age));
       if (selected.has('31_35')) [31, 32, 33, 34, 35].forEach(age => numericAges.add(age));
