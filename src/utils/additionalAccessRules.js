@@ -106,7 +106,21 @@ const parseMaritalRuleToken = token => {
   return normalizeMarital(normalized);
 };
 
-const AGE_BUCKET_KEYS = new Set(['le25', '26_30', '31_33', '34_36', '37_42', '43_plus', 'other']);
+const AGE_BUCKET_KEYS = new Set([
+  'le21',
+  '22_25',
+  '26_30',
+  '31_35',
+  '36_38',
+  '39_41',
+  '42_plus',
+  'le25',
+  '31_33',
+  '34_36',
+  '37_42',
+  '43_plus',
+  'other',
+]);
 const BLOOD_BUCKET_KEYS = new Set(['1+', '1-', '1', '2+', '2-', '2', '3+', '3-', '3', '4+', '4-', '4', '?', 'no']);
 const CSECTION_BUCKET_KEYS = new Set(['cs2plus', 'cs1', 'cs0', 'other', 'no']);
 
@@ -134,7 +148,7 @@ const ADDITIONAL_ACCESS_KEY_ALIASES = {
 };
 
 export const ADDITIONAL_ACCESS_FILTER_OPTIONS = {
-  age: ['le21', '22_42', '43_plus', '?', 'no'],
+  age: ['le21', '22_25', '26_30', '31_35', '36_38', '39_41', '42_plus', '?', 'no'],
   csection: ['cs2plus', 'cs1', 'cs0', '?', 'no'],
   bloodGroup: ['1', '2', '3', '4', '?', 'no'],
   rh: ['+', '-', '?', 'no'],
@@ -164,7 +178,7 @@ const parseCsectionCount = value => {
   return null;
 };
 
-export const ADDITIONAL_ACCESS_TEMPLATE = `age: le25,26_30,31_33,34_36,37_42,43_plus,other
+export const ADDITIONAL_ACCESS_TEMPLATE = `age: 21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42_plus,?,no
 blood: 1+,1-,1,2+,2-,2,3+,3-,3,4+,4-,4,?,no
 maritalStatus: +,-,?,no
 csection: cs2plus,cs1,cs0,other,no
@@ -355,38 +369,80 @@ export const parseAdditionalAccessRules = raw => {
 
     if (normalizedKey === 'age') {
       const allowedAges = new Set();
-      const allowedAgeBuckets = new Set();
+      let allow42Plus = false;
+      let allowUnknownAge = false;
+      let allowMissingAge = false;
+
+      const addAgeRange = (from, to) => {
+        for (let age = from; age <= to; age += 1) {
+          allowedAges.add(age);
+        }
+      };
 
       tokens.forEach(token => {
         const normalizedToken = String(token || '').trim().toLowerCase();
         if (normalizedToken === 'le21') {
-          allowedAges.add(21);
-          allowedAgeBuckets.add('le25');
+          addAgeRange(21, 21);
           return;
         }
-        if (normalizedToken === '22_42') {
-          allowedAgeBuckets.add('26_30');
-          allowedAgeBuckets.add('31_33');
-          allowedAgeBuckets.add('34_36');
-          allowedAgeBuckets.add('37_42');
+        if (normalizedToken === '22_25') {
+          addAgeRange(22, 25);
+          return;
+        }
+        if (normalizedToken === '26_30') {
+          addAgeRange(26, 30);
+          return;
+        }
+        if (normalizedToken === '31_35') {
+          addAgeRange(31, 35);
+          return;
+        }
+        if (normalizedToken === '36_38') {
+          addAgeRange(36, 38);
+          return;
+        }
+        if (normalizedToken === '39_41') {
+          addAgeRange(39, 41);
+          return;
+        }
+        if (normalizedToken === '42_plus') {
+          allow42Plus = true;
+          return;
+        }
+        if (normalizedToken === '43_plus') {
+          allow42Plus = true;
+          return;
+        }
+        if (normalizedToken === 'le25') {
+          addAgeRange(21, 25);
+          return;
+        }
+        if (normalizedToken === '31_33') {
+          addAgeRange(21, 33);
+          return;
+        }
+        if (normalizedToken === '34_36') {
+          addAgeRange(21, 36);
+          return;
+        }
+        if (normalizedToken === '37_42') {
+          addAgeRange(21, 42);
           return;
         }
         if (normalizedToken === 'no') {
-          allowedAgeBuckets.add('other');
+          allowMissingAge = true;
           return;
         }
         if (normalizedToken === '?') {
-          allowedAgeBuckets.add('other');
+          allowUnknownAge = true;
           return;
         }
-        if (AGE_BUCKET_KEYS.has(normalizedToken)) {
-          allowedAgeBuckets.add(normalizedToken);
-          return;
-        }
+        if (AGE_BUCKET_KEYS.has(normalizedToken)) return;
 
         const parsedAge = Number.parseInt(normalizedToken, 10);
-        if (Number.isFinite(parsedAge) && parsedAge >= 0) {
+        if (Number.isFinite(parsedAge) && parsedAge >= 21) {
           allowedAges.add(parsedAge);
+          if (parsedAge >= 42) allow42Plus = true;
         }
       });
 
@@ -394,9 +450,9 @@ export const parseAdditionalAccessRules = raw => {
         result.age = allowedAges;
       }
 
-      if (allowedAgeBuckets.size) {
-        result.ageBuckets = allowedAgeBuckets;
-      }
+      if (allow42Plus) result.age42plus = true;
+      if (allowUnknownAge) result.ageUnknown = true;
+      if (allowMissingAge) result.ageNo = true;
       return;
     }
 
@@ -493,19 +549,19 @@ export const parseAdditionalAccessRuleGroups = raw =>
 export const isUserAllowedByAdditionalAccess = (user, parsedRules) => {
   if (!parsedRules) return true;
 
-  if (parsedRules.age || parsedRules.ageBuckets) {
-    const age = utilCalculateAge(user?.birth);
+  if (parsedRules.age || parsedRules.age42plus || parsedRules.ageUnknown || parsedRules.ageNo) {
+    const birthRaw = String(user?.birth || '').trim();
+    const age = utilCalculateAge(birthRaw);
     if (!Number.isFinite(age)) {
-      if (parsedRules.age || (parsedRules.ageBuckets && !parsedRules.ageBuckets.has('other'))) {
+      if (!birthRaw && parsedRules.ageNo) {
+        // allowed by explicit "no"
+      } else if (birthRaw && parsedRules.ageUnknown) {
+        // allowed by explicit "?"
+      } else {
         return false;
       }
-    } else {
-      const byAge = !parsedRules.age || parsedRules.age.has(age);
-      const ageBucket = ageToBucket(age);
-      const byBucket = !parsedRules.ageBuckets || parsedRules.ageBuckets.has(ageBucket);
-      if (!byAge && !byBucket) {
-        return false;
-      }
+    } else if (!parsedRules.age?.has(age) && !(parsedRules.age42plus && age >= 42)) {
+      return false;
     }
   }
 
@@ -652,14 +708,19 @@ const resolveCsectionSearchKeyBuckets = parsedRules => {
 };
 
 const resolveAgeSearchKeyBuckets = parsedRules => {
-  const directBuckets = parsedRules?.ageBuckets ? [...parsedRules.ageBuckets] : [];
   const numericBuckets = parsedRules?.age
     ? [...parsedRules.age]
-      .filter(age => Number.isFinite(age) && age >= 0)
+      .filter(age => Number.isFinite(age) && age >= 21)
       .map(age => ageToBucket(age))
     : [];
-
-  return uniq([...directBuckets, ...numericBuckets]);
+  const extraBuckets = [];
+  if (parsedRules?.age42plus) {
+    extraBuckets.push('37_42', '43_plus');
+  }
+  if (parsedRules?.ageUnknown || parsedRules?.ageNo) {
+    extraBuckets.push('other');
+  }
+  return uniq([...numericBuckets, ...extraBuckets]);
 };
 
 export const resolveAdditionalAccessSearchKeyBuckets = parsedRules => ({

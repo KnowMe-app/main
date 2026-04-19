@@ -104,7 +104,12 @@ const ADDITIONAL_RULE_LABELS = {
 const ADDITIONAL_RULE_ORDER = Object.keys(ADDITIONAL_RULE_LABELS);
 const ADDITIONAL_RULE_OPTION_LABELS = {
   le21: '<=21',
-  '22_42': '22...42',
+  '22_25': '22-25',
+  '26_30': '26-30',
+  '31_35': '31-35',
+  '36_38': '36-38',
+  '39_41': '39-41',
+  '42_plus': '42+',
   cs2plus: '>=2',
   cs1: '1',
   cs0: '0',
@@ -112,8 +117,12 @@ const ADDITIONAL_RULE_OPTION_LABELS = {
 const ADDITIONAL_RULE_OPTION_DESCRIPTIONS = {
   age: {
     le21: 'До 21 року включно',
-    '22_42': 'Від 22 до 42 років',
-    '43_plus': '43 роки і старше',
+    '22_25': '22-25 років',
+    '26_30': '26-30 років',
+    '31_35': '31-35 років',
+    '36_38': '36-38 років',
+    '39_41': '39-41 років',
+    '42_plus': '42 роки і старше',
     '?': 'Некоректний формат віку',
     no: 'Вік не вказано',
   },
@@ -165,13 +174,33 @@ const parseAdditionalRulesTextToBuilder = raw => {
       const [keyRaw, ...rest] = line.split(':');
       if (!keyRaw || rest.length === 0) return null;
       const key = keyRaw.trim();
-      const allowedValues = new Set(
-        rest
-          .join(':')
-          .split(',')
-          .map(token => token.trim())
-          .filter(Boolean)
-      );
+      const rawTokens = rest
+        .join(':')
+        .split(',')
+        .map(token => token.trim())
+        .filter(Boolean);
+
+      const allowedValues = new Set(rawTokens);
+      if (key === 'age') {
+        const numericAges = new Set(
+          rawTokens
+          .map(token => Number.parseInt(token, 10))
+          .filter(age => Number.isFinite(age) && age >= 21)
+        );
+        const normalizedAgeTokens = new Set();
+        if (numericAges.has(21)) normalizedAgeTokens.add('le21');
+        if ([22, 23, 24, 25].every(age => numericAges.has(age))) normalizedAgeTokens.add('22_25');
+        if ([26, 27, 28, 29, 30].every(age => numericAges.has(age))) normalizedAgeTokens.add('26_30');
+        if ([31, 32, 33, 34, 35].every(age => numericAges.has(age))) normalizedAgeTokens.add('31_35');
+        if ([36, 37, 38].every(age => numericAges.has(age))) normalizedAgeTokens.add('36_38');
+        if ([39, 40, 41].every(age => numericAges.has(age))) normalizedAgeTokens.add('39_41');
+        if (rawTokens.includes('42_plus') || rawTokens.includes('43_plus')) {
+          normalizedAgeTokens.add('42_plus');
+        }
+        if (rawTokens.includes('?')) normalizedAgeTokens.add('?');
+        if (rawTokens.includes('no')) normalizedAgeTokens.add('no');
+        return { key, allowedValues: normalizedAgeTokens };
+      }
       return { key, allowedValues };
     })
     .filter(Boolean);
@@ -180,7 +209,24 @@ const parseAdditionalRulesTextToBuilder = raw => {
 const buildAdditionalRulesTextFromBuilder = rules =>
   rules
     .filter(rule => rule?.key && rule.allowedValues instanceof Set && rule.allowedValues.size > 0)
-    .map(rule => `${rule.key}: ${[...rule.allowedValues].join(',')}`)
+    .map(rule => {
+      if (rule.key !== 'age') return `${rule.key}: ${[...rule.allowedValues].join(',')}`;
+
+      const selected = rule.allowedValues;
+      const numericAges = new Set();
+      if (selected.has('le21')) numericAges.add(21);
+      if (selected.has('22_25')) [22, 23, 24, 25].forEach(age => numericAges.add(age));
+      if (selected.has('26_30')) [26, 27, 28, 29, 30].forEach(age => numericAges.add(age));
+      if (selected.has('31_35')) [31, 32, 33, 34, 35].forEach(age => numericAges.add(age));
+      if (selected.has('36_38')) [36, 37, 38].forEach(age => numericAges.add(age));
+      if (selected.has('39_41')) [39, 40, 41].forEach(age => numericAges.add(age));
+
+      const tokens = [...numericAges].sort((a, b) => a - b).map(age => String(age));
+      if (selected.has('42_plus')) tokens.push('42_plus');
+      if (selected.has('?')) tokens.push('?');
+      if (selected.has('no')) tokens.push('no');
+      return `${rule.key}: ${tokens.join(',')}`;
+    })
     .join('\n');
 
 const additionalRulesTextToInputs = raw => {
