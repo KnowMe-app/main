@@ -25,6 +25,7 @@ import {
   parseAdditionalAccessRuleGroups,
   resolveAdditionalAccessSearchKeyBuckets,
 } from 'utils/additionalAccessRules';
+import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -619,11 +620,17 @@ export const ProfileForm = ({
             return new Set();
           }
 
-          const ageSnapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/age`));
-          if (!ageSnapshot.exists()) return new Set();
+          const agePayload = await getCachedSearchKeyPayload(`${SEARCH_KEY_ROOT}/age`, async () => {
+            const ageSnapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/age`));
+            return {
+              exists: ageSnapshot.exists(),
+              value: ageSnapshot.exists() ? ageSnapshot.val() || {} : null,
+            };
+          });
+          if (!agePayload?.exists) return new Set();
 
           const ids = new Set();
-          Object.entries(ageSnapshot.val() || {}).forEach(([bucket, value]) => {
+          Object.entries(agePayload.value || {}).forEach(([bucket, value]) => {
             let isBucketAllowed = false;
 
             if (bucket === 'no') {
@@ -660,15 +667,21 @@ export const ProfileForm = ({
               activeGroups.map(([indexName, values]) =>
                 Promise.all(
                   (Array.isArray(values) ? values : [...values]).map(value =>
-                    get(refDb(database, `${SEARCH_KEY_ROOT}/${indexName}/${value}`))
+                    getCachedSearchKeyPayload(`${SEARCH_KEY_ROOT}/${indexName}/${value}`, async () => {
+                      const snapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/${indexName}/${value}`));
+                      return {
+                        exists: snapshot.exists(),
+                        value: snapshot.exists() ? snapshot.val() || {} : null,
+                      };
+                    })
                   )
                 )
               )
             );
             snapshots.forEach(groupSnapshots => {
-              groupSnapshots.forEach(snap => {
-                if (!snap.exists()) return;
-                Object.keys(snap.val() || {}).forEach(userId => matchedIds.add(userId));
+              groupSnapshots.forEach(payload => {
+                if (!payload?.exists) return;
+                Object.keys(payload.value || {}).forEach(userId => matchedIds.add(userId));
               });
             });
           }
