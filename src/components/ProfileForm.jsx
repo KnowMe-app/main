@@ -522,13 +522,14 @@ export const ProfileForm = ({
     () => buildAdditionalRulesTextFromBuilder(additionalRuleBuilder),
     [additionalRuleBuilder]
   );
+  const additionalAccessFieldValue = state?.[ADDITIONAL_ACCESS_FIELD];
   const additionalRulesInputs = useMemo(() => {
-    const rawValue = state?.[ADDITIONAL_ACCESS_FIELD];
+    const rawValue = additionalAccessFieldValue;
     if (Array.isArray(rawValue)) {
       return rawValue.map(item => String(item || ''));
     }
     return additionalRulesTextToInputs(rawValue);
-  }, [state?.[ADDITIONAL_ACCESS_FIELD]]);
+  }, [additionalAccessFieldValue]);
   const combinedAdditionalRulesDraftText = useMemo(() => {
     const nextInputs = [...additionalRulesInputs];
     nextInputs[activeAdditionalRuleInputIndex] = additionalRulesDraftText;
