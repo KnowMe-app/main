@@ -538,13 +538,22 @@ export const parseAdditionalAccessRules = raw => {
   return Object.keys(result).length ? result : null;
 };
 
-export const parseAdditionalAccessRuleGroups = raw =>
-  String(raw || '')
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean)
-    .map(line => parseAdditionalAccessRules(line))
+export const parseAdditionalAccessRuleGroups = raw => {
+  const groupsFromArray = Array.isArray(raw)
+    ? raw
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+    : String(raw || '')
+      .split(/\r?\n\s*\r?\n+/)
+      .map(group => group.trim())
+      .filter(Boolean);
+
+  if (!groupsFromArray.length) return [];
+
+  return groupsFromArray
+    .map(group => parseAdditionalAccessRules(group))
     .filter(Boolean);
+};
 
 export const isUserAllowedByAdditionalAccess = (user, parsedRules) => {
   if (!parsedRules) return true;

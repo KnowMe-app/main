@@ -161,12 +161,16 @@ const fetchAdditionalNewUsersBySearchIndex = async parsedRuleGroups => {
     );
 
     const normalizedSets = indexedSets.filter(set => set instanceof Set);
-    const nonEmptySets = normalizedSets.filter(set => set.size > 0);
-    if (nonEmptySets.length === 0) continue;
+    if (normalizedSets.length === 0) continue;
+    if (normalizedSets.some(set => set.size === 0)) {
+      continue;
+    }
 
-    nonEmptySets.forEach(set => {
-      [...set].forEach(userId => matchedIdsSet.add(userId));
-    });
+    const [firstSet, ...restSets] = normalizedSets;
+    const matchedByCurrentRule = [...firstSet].filter(userId =>
+      restSets.every(set => set.has(userId))
+    );
+    matchedByCurrentRule.forEach(userId => matchedIdsSet.add(userId));
   }
 
   const matchedIds = [...matchedIdsSet];
