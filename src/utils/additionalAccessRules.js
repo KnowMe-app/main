@@ -178,7 +178,7 @@ const parseCsectionCount = value => {
   return null;
 };
 
-export const ADDITIONAL_ACCESS_TEMPLATE = `age: 21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42_plus,?,no
+export const ADDITIONAL_ACCESS_TEMPLATE = `age: 18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42_plus,?,no
 blood: 1+,1-,1,2+,2-,2,3+,3-,3,4+,4-,4,?,no
 maritalStatus: +,-,?,no
 csection: cs2plus,cs1,cs0,other,no
@@ -382,7 +382,7 @@ export const parseAdditionalAccessRules = raw => {
       tokens.forEach(token => {
         const normalizedToken = String(token || '').trim().toLowerCase();
         if (normalizedToken === 'le21') {
-          addAgeRange(21, 21);
+          addAgeRange(18, 21);
           return;
         }
         if (normalizedToken === '22_25') {
@@ -440,7 +440,7 @@ export const parseAdditionalAccessRules = raw => {
         if (AGE_BUCKET_KEYS.has(normalizedToken)) return;
 
         const parsedAge = Number.parseInt(normalizedToken, 10);
-        if (Number.isFinite(parsedAge) && parsedAge >= 21) {
+        if (Number.isFinite(parsedAge) && parsedAge >= 18) {
           allowedAges.add(parsedAge);
           if (parsedAge >= 42) allow42Plus = true;
         }
