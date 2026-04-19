@@ -67,6 +67,7 @@ import {
   parseAdditionalAccessRuleGroups,
   resolveAdditionalAccessSearchKeyBuckets,
 } from 'utils/additionalAccessRules';
+import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
 
 // Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
 const isValidId = id => typeof id === 'string' && id.length >= 20;
@@ -87,14 +88,22 @@ const readIndexedIds = async (indexName, values = []) => {
   const uniqueValues = [...new Set(values.filter(Boolean))];
   if (!indexName || uniqueValues.length === 0) return null;
 
-  const snapshots = await Promise.all(
-    uniqueValues.map(value => get(refDb(database, `${SEARCH_KEY_ROOT}/${indexName}/${value}`)))
+  const payloads = await Promise.all(
+    uniqueValues.map(value =>
+      getCachedSearchKeyPayload(`${SEARCH_KEY_ROOT}/${indexName}/${value}`, async () => {
+        const snapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/${indexName}/${value}`));
+        return {
+          exists: snapshot.exists(),
+          value: snapshot.exists() ? snapshot.val() || {} : null,
+        };
+      })
+    )
   );
 
   const ids = new Set();
-  snapshots.forEach(snapshot => {
-    if (!snapshot.exists()) return;
-    Object.keys(snapshot.val() || {}).forEach(userId => {
+  payloads.forEach(payload => {
+    if (!payload?.exists) return;
+    Object.keys(payload.value || {}).forEach(userId => {
       if (userId) ids.add(userId);
     });
   });
