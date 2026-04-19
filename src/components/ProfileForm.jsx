@@ -2049,6 +2049,7 @@ const AdditionalRulesOverlay = styled.div`
 
 const AdditionalRulesModal = styled.div`
   background: #fff;
+  color: #1f1f1f;
   width: min(760px, 100vw);
   height: 100vh;
   padding: 16px 14px;
@@ -2122,6 +2123,7 @@ const AdditionalRuleActions = styled.div`
 const AdditionalRulePreview = styled.pre`
   margin-top: 14px;
   background: #fafafa;
+  color: #1f1f1f;
   border: 1px solid #ddd;
   padding: 10px;
   white-space: pre-wrap;
