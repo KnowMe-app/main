@@ -110,43 +110,55 @@ const readIndexedIds = async (indexName, values = []) => {
   return ids;
 };
 
-const fetchUsersAndNewUsersByIds = async ids => {
+const FETCH_USERS_BY_IDS_BATCH_SIZE = 100;
+
+const fetchUsersAndNewUsersByIds = async (ids, batchSize = FETCH_USERS_BY_IDS_BATCH_SIZE) => {
   if (!Array.isArray(ids) || ids.length === 0) return [];
 
   const uniqueIds = [...new Set(ids.filter(Boolean))];
-  const snapshots = await Promise.all(
-    uniqueIds.map(async userId => {
-      const [newUserResult, userResult] = await Promise.allSettled([
-        get(refDb(database, `newUsers/${userId}`)),
-        get(refDb(database, `users/${userId}`)),
-      ]);
+  const safeBatchSize = Math.max(1, Number(batchSize) || FETCH_USERS_BY_IDS_BATCH_SIZE);
+  const result = [];
+  let offset = 0;
 
-      const merged = { userId };
-      let hasAnyData = false;
+  while (offset < uniqueIds.length) {
+    const chunkIds = uniqueIds.slice(offset, offset + safeBatchSize);
+    const chunkSnapshots = await Promise.all(
+      chunkIds.map(async userId => {
+        const [newUserResult, userResult] = await Promise.allSettled([
+          get(refDb(database, `newUsers/${userId}`)),
+          get(refDb(database, `users/${userId}`)),
+        ]);
 
-      if (newUserResult.status === 'fulfilled' && newUserResult.value.exists()) {
-        Object.assign(merged, newUserResult.value.val() || {});
-        hasAnyData = true;
-      }
+        const merged = { userId };
+        let hasAnyData = false;
 
-      if (userResult.status === 'fulfilled' && userResult.value.exists()) {
-        Object.assign(merged, userResult.value.val() || {});
-        hasAnyData = true;
-      }
+        if (newUserResult.status === 'fulfilled' && newUserResult.value.exists()) {
+          Object.assign(merged, newUserResult.value.val() || {});
+          hasAnyData = true;
+        }
 
-      if (!hasAnyData) return null;
-      return {
-        merged,
-        hasNewUser: newUserResult.status === 'fulfilled' && newUserResult.value.exists(),
-        newUserData:
-          newUserResult.status === 'fulfilled' && newUserResult.value.exists()
-            ? newUserResult.value.val() || {}
-            : null,
-      };
-    })
-  );
+        if (userResult.status === 'fulfilled' && userResult.value.exists()) {
+          Object.assign(merged, userResult.value.val() || {});
+          hasAnyData = true;
+        }
 
-  return snapshots.filter(Boolean);
+        if (!hasAnyData) return null;
+        return {
+          merged,
+          hasNewUser: newUserResult.status === 'fulfilled' && newUserResult.value.exists(),
+          newUserData:
+            newUserResult.status === 'fulfilled' && newUserResult.value.exists()
+              ? newUserResult.value.val() || {}
+              : null,
+        };
+      })
+    );
+
+    result.push(...chunkSnapshots.filter(Boolean));
+    offset += safeBatchSize;
+  }
+
+  return result;
 };
 
 const fetchAdditionalNewUsersBySearchIndex = async parsedRuleGroups => {
