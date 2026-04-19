@@ -576,12 +576,6 @@ export const ProfileForm = ({
     }
     return additionalRulesTextToInputs(rawValue);
   }, [additionalAccessFieldValue]);
-  const combinedAdditionalRulesDraftText = useMemo(() => {
-    const nextInputs = [...additionalRulesInputs];
-    nextInputs[activeAdditionalRuleInputIndex] = additionalRulesDraftText;
-    return nextInputs.map(item => String(item || '').trim()).filter(Boolean).join('\n');
-  }, [activeAdditionalRuleInputIndex, additionalRulesDraftText, additionalRulesInputs]);
-
   useEffect(() => {
     if (state?.userId) return;
     autoAppliedOverlayForUserRef.current = '';
@@ -603,7 +597,10 @@ export const ProfileForm = ({
 
     let cancelled = false;
     const loadAvailableCards = async () => {
-      const parsedRuleGroups = parseAdditionalAccessRuleGroups(combinedAdditionalRulesDraftText);
+      const nextInputs = [...additionalRulesInputs];
+      nextInputs[activeAdditionalRuleInputIndex] = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
+      const combinedDraftText = nextInputs.map(item => String(item || '').trim()).filter(Boolean).join('\n');
+      const parsedRuleGroups = parseAdditionalAccessRuleGroups(combinedDraftText);
       if (!parsedRuleGroups.length) {
         setAvailableCardsCount(0);
         return;
@@ -718,7 +715,12 @@ export const ProfileForm = ({
     return () => {
       cancelled = true;
     };
-  }, [combinedAdditionalRulesDraftText, showAdditionalRulesModal]);
+  }, [
+    activeAdditionalRuleInputIndex,
+    additionalRuleBuilder,
+    additionalRulesInputs,
+    showAdditionalRulesModal,
+  ]);
 
   useEffect(() => {
     setDismissedOverlayEntries({});
@@ -806,7 +808,6 @@ export const ProfileForm = ({
       submitWithNormalization(updated, 'overwrite');
       return updated;
     });
-    setShowAdditionalRulesModal(false);
   };
 
   const autoResizeMyComment = useAutoResize(textareaRef, state.myComment);
@@ -1750,7 +1751,7 @@ ${entries.join('\n')}`;
       )}
 
       {showAdditionalRulesModal && (
-        <AdditionalRulesOverlay onClick={() => setShowAdditionalRulesModal(false)}>
+        <AdditionalRulesOverlay>
           <AdditionalRulesModal onClick={e => e.stopPropagation()}>
             <AdditionalRulesClose type="button" onClick={() => setShowAdditionalRulesModal(false)}>
               <FaTimes />
