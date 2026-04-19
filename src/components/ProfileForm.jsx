@@ -230,9 +230,14 @@ const buildAdditionalRulesTextFromBuilder = rules =>
     .join('\n');
 
 const additionalRulesTextToInputs = raw => {
+  if (Array.isArray(raw)) {
+    const items = raw.map(item => String(item || ''));
+    return items.length ? items : [''];
+  }
+
   const text = String(raw || '');
   if (!text.trim()) return [''];
-  return text.split(/\r?\n/);
+  return text.split(/\r?\n\s*\r?\n+/);
 };
 
 
@@ -599,7 +604,7 @@ export const ProfileForm = ({
     const loadAvailableCards = async () => {
       const nextInputs = [...additionalRulesInputs];
       nextInputs[activeAdditionalRuleInputIndex] = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
-      const combinedDraftText = nextInputs.map(item => String(item || '').trim()).filter(Boolean).join('\n');
+      const combinedDraftText = nextInputs.map(item => String(item || '').trim()).filter(Boolean).join('\n\n');
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(combinedDraftText);
       if (!parsedRuleGroups.length) {
         setAvailableCardsCount(0);
