@@ -553,7 +553,7 @@ export const ProfileForm = ({
   const [showAdditionalRulesModal, setShowAdditionalRulesModal] = useState(false);
   const [activeAdditionalRuleInputIndex, setActiveAdditionalRuleInputIndex] = useState(0);
   const [additionalRuleBuilder, setAdditionalRuleBuilder] = useState([]);
-  const [availableCards, setAvailableCards] = useState([]);
+  const [availableCardsCount, setAvailableCardsCount] = useState(0);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
   const autoAppliedOverlayForUserRef = useRef('');
 
@@ -605,66 +605,107 @@ export const ProfileForm = ({
     const loadAvailableCards = async () => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(combinedAdditionalRulesDraftText);
       if (!parsedRuleGroups.length) {
-        setAvailableCards([]);
+        setAvailableCardsCount(0);
         return;
       }
 
       setIsLoadingAvailableCards(true);
       try {
         const matchedIds = new Set();
+        const collectAgeIdsByRule = async parsedRules => {
+          if (!parsedRules?.age && !parsedRules?.age42plus && !parsedRules?.ageUnknown && !parsedRules?.ageNo) {
+            return new Set();
+          }
+
+          const ageSnapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/age`));
+          if (!ageSnapshot.exists()) return new Set();
+
+          const ids = new Set();
+          Object.entries(ageSnapshot.val() || {}).forEach(([bucket, value]) => {
+            let isBucketAllowed = false;
+
+            if (bucket === 'no') {
+              isBucketAllowed = Boolean(parsedRules.ageNo);
+            } else if (bucket === '?') {
+              isBucketAllowed = Boolean(parsedRules.ageUnknown);
+            } else {
+              const match = String(bucket).match(/^d_(\d{4})-(\d{2})-(\d{2})$/);
+              if (match) {
+                const [, year, month, day] = match;
+                const age = utilCalculateAge(`${day}.${month}.${year}`);
+                if (Number.isFinite(age)) {
+                  isBucketAllowed = Boolean(parsedRules.age?.has(age) || (parsedRules.age42plus && age >= 42));
+                }
+              }
+            }
+
+            if (!isBucketAllowed || !value || typeof value !== 'object') return;
+            Object.keys(value).forEach(userId => ids.add(userId));
+          });
+
+          return ids;
+        };
 
         for (const parsedRules of parsedRuleGroups) {
           const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
-          const activeGroups = Object.entries(bucketMap || {}).filter(([, values]) => {
+          const activeGroups = Object.entries(bucketMap || {}).filter(([indexName, values]) => {
+            if (indexName === 'age') return false;
             const asArray = Array.isArray(values) ? values : [...(values || [])];
             return asArray.length > 0;
           });
-
-          if (!activeGroups.length) continue;
-
-          const snapshots = await Promise.all(
-            activeGroups.map(([indexName, values]) =>
-              Promise.all(
-                (Array.isArray(values) ? values : [...values]).map(value =>
-                  get(refDb(database, `${SEARCH_KEY_ROOT}/${indexName}/${value}`))
+          if (activeGroups.length > 0) {
+            const snapshots = await Promise.all(
+              activeGroups.map(([indexName, values]) =>
+                Promise.all(
+                  (Array.isArray(values) ? values : [...values]).map(value =>
+                    get(refDb(database, `${SEARCH_KEY_ROOT}/${indexName}/${value}`))
+                  )
                 )
               )
-            )
-          );
-
-          snapshots.forEach(groupSnapshots => {
-            groupSnapshots.forEach(snap => {
-              if (!snap.exists()) return;
-              Object.keys(snap.val() || {}).forEach(userId => matchedIds.add(userId));
+            );
+            snapshots.forEach(groupSnapshots => {
+              groupSnapshots.forEach(snap => {
+                if (!snap.exists()) return;
+                Object.keys(snap.val() || {}).forEach(userId => matchedIds.add(userId));
+              });
             });
-          });
+          }
+
+          const ageMatchedIds = await collectAgeIdsByRule(parsedRules);
+          ageMatchedIds.forEach(userId => matchedIds.add(userId));
         }
 
-        const previewIds = [...matchedIds].slice(0, 120);
-        const rows = await Promise.all(
-          previewIds.map(async userId => {
-            const [newUserSnap, userSnap] = await Promise.all([
-              get(refDb(database, `newUsers/${userId}`)),
-              get(refDb(database, `users/${userId}`)),
-            ]);
-            if (!newUserSnap.exists() && !userSnap.exists()) return null;
-            const merged = {
-              userId,
-              ...(userSnap.exists() ? userSnap.val() : {}),
-              ...(newUserSnap.exists() ? newUserSnap.val() : {}),
-            };
-            if (!isUserAllowedByAnyAdditionalAccessRule(merged, parsedRuleGroups)) return null;
-            return merged;
-          })
+        const matchedIdList = [...matchedIds];
+        let matchedCount = 0;
+        const BATCH_SIZE = 150;
+
+        for (let index = 0; index < matchedIdList.length; index += BATCH_SIZE) {
+          const batch = matchedIdList.slice(index, index + BATCH_SIZE);
+          const rows = await Promise.all(
+            batch.map(async userId => {
+              const [newUserSnap, userSnap] = await Promise.all([
+                get(refDb(database, `newUsers/${userId}`)),
+                get(refDb(database, `users/${userId}`)),
+              ]);
+              if (!newUserSnap.exists() && !userSnap.exists()) return null;
+              return {
+                userId,
+                ...(userSnap.exists() ? userSnap.val() : {}),
+                ...(newUserSnap.exists() ? newUserSnap.val() : {}),
+              };
+            })
           );
 
+          matchedCount += rows.filter(user => user && isUserAllowedByAnyAdditionalAccessRule(user, parsedRuleGroups)).length;
+        }
+
         if (!cancelled) {
-          setAvailableCards(rows.filter(Boolean));
+          setAvailableCardsCount(matchedCount);
         }
       } catch (error) {
         console.error('Failed to build additional access preview', error);
         if (!cancelled) {
-          setAvailableCards([]);
+          setAvailableCardsCount(0);
         }
       } finally {
         if (!cancelled) {
@@ -1765,15 +1806,8 @@ ${entries.join('\n')}`;
 
             <AdditionalRulePreview>{additionalRulesDraftText || ADDITIONAL_ACCESS_TEMPLATE}</AdditionalRulePreview>
             <AdditionalCardsTitle>
-              Доступні карточки ({availableCards.length}) {isLoadingAvailableCards ? '...завантаження' : ''}
+              Доступні карточки ({availableCardsCount}) {isLoadingAvailableCards ? '...завантаження' : ''}
             </AdditionalCardsTitle>
-            <AdditionalCardsList>
-              {availableCards.map(card => (
-                <li key={card.userId}>
-                  {card.userId} {card.name ? `• ${card.name}` : ''}
-                </li>
-              ))}
-            </AdditionalCardsList>
           </AdditionalRulesModal>
         </AdditionalRulesOverlay>
       )}
@@ -2095,13 +2129,6 @@ const AdditionalRulePreview = styled.pre`
 const AdditionalCardsTitle = styled.h4`
   margin-top: 14px;
   margin-bottom: 8px;
-`;
-
-const AdditionalCardsList = styled.ul`
-  margin: 0;
-  padding-left: 18px;
-  max-height: 220px;
-  overflow: auto;
 `;
 
 const DelKeyValueBTN = styled.button`
