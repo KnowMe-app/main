@@ -1495,6 +1495,7 @@ const Matching = () => {
   const [collectionSource, setCollectionSource] = useState(
     () => localStorage.getItem(COLLECTION_SOURCE_KEY) || 'users'
   );
+  const defaultListKey = `default:${collectionSource}`;
   const [filterResetToken, setFilterResetToken] = useState(0);
   const [comments, setComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
@@ -1867,7 +1868,7 @@ const Matching = () => {
           ]);
         }
 
-      const { cards: cached } = await getCardsByList('default');
+      const { cards: cached } = await getCardsByList(defaultListKey);
       if (cached.length && viewModeRef.current === startMode) {
         console.log('[loadInitial] using cache', cached.length);
         const filteredCached = cached.filter(
@@ -1875,7 +1876,7 @@ const Matching = () => {
         );
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
         setUsers(filteredCached);
-        setIdsForQuery('default', filteredCached.map(u => u.userId));
+        setIdsForQuery(defaultListKey, filteredCached.map(u => u.userId));
         await loadCommentsFor(filteredCached);
         if (viewModeRef.current !== startMode) return;
         setViewMode('default');
@@ -1906,7 +1907,7 @@ const Matching = () => {
         const map = new Map(prev.map(u => [u.userId, u]));
         res.users.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
-        setIdsForQuery('default', result.map(u => u.userId));
+        setIdsForQuery(defaultListKey, result.map(u => u.userId));
         return result;
       });
       await loadCommentsFor(res.users);
@@ -1918,7 +1919,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [fetchChunk]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [defaultListKey, fetchChunk]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     viewModeRef.current = 'default';
@@ -2116,7 +2117,7 @@ const Matching = () => {
         const map = new Map(prev.map(u => [u.userId, u]));
         collected.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
-        setIdsForQuery('default', result.map(u => u.userId));
+        setIdsForQuery(defaultListKey, result.map(u => u.userId));
         return result;
       });
       await loadCommentsFor(collected);
@@ -2131,7 +2132,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [hasMore, lastKey, viewMode, fetchChunk]);
+  }, [defaultListKey, hasMore, lastKey, viewMode, fetchChunk]);
 
   useEffect(() => {
     console.log('[useEffect] calling loadInitial');
