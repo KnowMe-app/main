@@ -467,7 +467,7 @@ const CardWrapper = styled.div`
   position: relative;
   width: 100%;
   border: 1px solid #e2e2e2;
-  border-radius: 8px;
+  border-radius: 0;
   box-sizing: border-box;
   overflow: hidden;
   background: #fff;
@@ -519,13 +519,13 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 const Card = styled.div`
   width: 100%;
   height: auto;
-  aspect-ratio: ${({ $compactWithoutPhoto, $small }) => ($compactWithoutPhoto ? 'auto' : $small ? '4 / 5' : '3 / 4')};
-  min-height: ${({ $small, $compactWithoutPhoto }) => ($compactWithoutPhoto ? '0' : $small ? '280px' : '340px')};
-  padding-bottom: ${({ $compactWithoutPhoto }) => ($compactWithoutPhoto ? '56px' : '0')};
+  aspect-ratio: ${({ $small }) => ($small ? '4 / 5' : '3 / 4')};
+  min-height: ${({ $small }) => ($small ? '280px' : '340px')};
+  padding-bottom: 0;
   background: linear-gradient(180deg, #fffaf2 0%, #f7f7f7 100%);
   background-size: cover;
   background-position: center;
-  border-radius: 20px;
+  border-radius: 0;
   position: relative;
   overflow: hidden;
   box-shadow:
@@ -533,18 +533,7 @@ const Card = styled.div`
     0 0 0 1px rgba(255, 255, 255, 0.75);
   border: 1px solid rgba(255, 255, 255, 0.8);
   isolation: isolate;
-  margin-bottom: 10px;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 4px;
-    background: linear-gradient(90deg, ${color.accent} 0%, ${color.accent2} 50%, ${color.accent} 100%);
-    z-index: 2;
-  }
+  margin-bottom: 0;
 
   &::after {
     content: '';
