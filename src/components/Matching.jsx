@@ -1239,10 +1239,7 @@ const SwipeableCard = ({
           <ProfileSection>
             <Info>
               <Title>{getRoleTitle(user)}</Title>
-          <DonorName>
-            {displayName}
-            {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
-          </DonorName>
+          <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
           <br />
           <LocationLine>
             <span>{locationInfo}</span>
@@ -1260,8 +1257,7 @@ const SwipeableCard = ({
   )}
       {current === 'main' && role !== 'ag' && (
         <BasicInfo>
-          {displayName}
-          {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
+          {formatNameAndAge(user, displayName)}
           <br />
           {locationInfo}
         </BasicInfo>
@@ -1388,6 +1384,17 @@ const getRoleTitle = user => {
   return '';
 };
 
+const formatNameAndAge = (user, displayName) => {
+  const age = user?.birth ? utilCalculateAge(user.birth) : '';
+  const sourceCollection = user?.__sourceCollection || '';
+
+  if (!displayName && age && sourceCollection === 'newUsers') {
+    return `${age} years old`;
+  }
+
+  return `${displayName}${age ? `, ${age}` : ''}`;
+};
+
 const InfoCardContent = ({ user, variant, isAdmin }) => {
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
@@ -1460,10 +1467,7 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
       <ProfileSection>
         <Info>
           <Title $isPotentialED={roleTitle === 'Potential ED'}>{roleTitle}</Title>
-          <DonorName>
-            {displayName}
-            {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
-          </DonorName>
+          <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
           <br />
           <LocationLine>
             <span>{locationInfo}</span>
