@@ -779,10 +779,13 @@ const CollectionSourceWrap = styled.div`
   border: 1px solid ${color.gray3};
   border-radius: 8px;
   padding: 10px;
+  background: #fff;
+  color: #2c2d38;
 `;
 const CollectionSourceTitle = styled.p`
   margin: 0 0 8px;
   font-weight: 600;
+  color: #2c2d38;
 `;
 const CollectionSourceLabel = styled.label`
   display: flex;
@@ -790,6 +793,11 @@ const CollectionSourceLabel = styled.label`
   gap: 8px;
   margin: 0 0 6px;
   cursor: pointer;
+  color: #2c2d38;
+
+  input {
+    accent-color: ${color.accent5};
+  }
 `;
 
 // Components below were previously defined for a modal that is no longer
