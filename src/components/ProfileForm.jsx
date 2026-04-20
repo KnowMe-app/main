@@ -582,6 +582,14 @@ export const ProfileForm = ({
     }
     return additionalRulesTextToInputs(rawValue);
   }, [additionalAccessFieldValue]);
+  const combinedAdditionalRulesDraftText = useMemo(() => {
+    const nextInputs = [...additionalRulesInputs];
+    nextInputs[activeAdditionalRuleInputIndex] = additionalRulesDraftText;
+    return nextInputs
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+      .join('\n\n');
+  }, [activeAdditionalRuleInputIndex, additionalRulesDraftText, additionalRulesInputs]);
   useEffect(() => {
     if (state?.userId) return;
     autoAppliedOverlayForUserRef.current = '';
@@ -822,6 +830,32 @@ export const ProfileForm = ({
       const updated = {
         ...prevState,
         [ADDITIONAL_ACCESS_FIELD]: updatedValue,
+      };
+      submitWithNormalization(updated, 'overwrite');
+      return updated;
+    });
+  };
+
+  const handleCombinedAdditionalRulesChange = event => {
+    const nextRawValue = event?.target?.value || '';
+    const nextInputs = additionalRulesTextToInputs(nextRawValue);
+    const nextIndex = Math.min(
+      activeAdditionalRuleInputIndex,
+      Math.max(nextInputs.length - 1, 0)
+    );
+    const nextBuilder = parseAdditionalRulesTextToBuilder(nextInputs[nextIndex] || '');
+
+    setActiveAdditionalRuleInputIndex(nextIndex);
+    setAdditionalRuleBuilder(
+      nextBuilder.length > 0
+        ? nextBuilder
+        : [{ key: ADDITIONAL_RULE_ORDER[0], allowedValues: new Set() }]
+    );
+
+    setState(prevState => {
+      const updated = {
+        ...prevState,
+        [ADDITIONAL_ACCESS_FIELD]: nextRawValue,
       };
       submitWithNormalization(updated, 'overwrite');
       return updated;
@@ -1823,7 +1857,10 @@ ${entries.join('\n')}`;
               <button type="button" onClick={applyAdditionalRulesFromBuilder}>Застосувати</button>
             </AdditionalRuleActions>
 
-            <AdditionalRulePreview>{additionalRulesDraftText || ADDITIONAL_ACCESS_TEMPLATE}</AdditionalRulePreview>
+            <AdditionalRulePreview
+              value={combinedAdditionalRulesDraftText || ADDITIONAL_ACCESS_TEMPLATE}
+              onChange={handleCombinedAdditionalRulesChange}
+            />
             <AdditionalCardsTitle>
               Доступні карточки ({availableCardsCount}) {isLoadingAvailableCards ? '...завантаження' : ''}
             </AdditionalCardsTitle>
@@ -2138,13 +2175,17 @@ const AdditionalRuleActions = styled.div`
   gap: 8px;
 `;
 
-const AdditionalRulePreview = styled.pre`
+const AdditionalRulePreview = styled.textarea`
   margin-top: 14px;
   background: #fafafa;
   color: #1f1f1f;
   border: 1px solid #ddd;
   padding: 10px;
   white-space: pre-wrap;
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+  font-family: inherit;
 `;
 
 const AdditionalCardsTitle = styled.h4`
