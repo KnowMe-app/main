@@ -802,13 +802,17 @@ const CollectionSourceLabel = styled.label`
 
 const Title = styled.span`
   color: #ffad69;
-  font-weight: 700;
+  font-weight: 800;
   margin-bottom: 4px;
   margin-right: 4px;
   display: inline-block;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
-  font-size: ${({ $isPotentialED }) => ($isPotentialED ? '20px' : '11px')};
+  letter-spacing: 0.6px;
+  font-size: 10px;
+  background: rgba(247, 147, 30, 0.14);
+  border: 1px solid rgba(247, 147, 30, 0.35);
+  border-radius: 7px;
+  padding: 2px 7px;
 `;
 
 const DonorName = styled.strong`
@@ -823,9 +827,9 @@ const DonorName = styled.strong`
 const ProfileSection = styled.div`
   display: flex;
   align-items: center;
-  margin-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding-bottom: 12px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 10px;
 `;
 
 const Info = styled.div`
@@ -870,21 +874,21 @@ const FIELDS = [
 const Table = styled.div`
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  row-gap: 8px;
-  column-gap: 8px;
+  row-gap: 6px;
+  column-gap: 6px;
   font-size: 14px;
   margin-bottom: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 14px;
-  padding: 10px;
+  padding: 8px;
 
   & > div {
     line-height: 1.2;
     display: flex;
     flex-direction: column;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
     border-radius: 10px;
     padding: 8px;
   }
@@ -921,24 +925,31 @@ const Contact = styled.div`
   justify-content: flex-start;
   align-items: center;
   font-size: 14px;
-  border-top: ${props => (props.$withBorder ? `1px solid rgba(255, 255, 255, 0.08)` : 'none')};
+  border-top: ${props => (props.$withBorder ? `1px solid rgba(255, 255, 255, 0.06)` : 'none')};
   padding-top: ${props => (props.$withBorder ? '10px' : '0')};
   margin-top: ${props => (props.$withBorder ? '6px' : '0')};
 `;
 
 const Icons = styled.div`
   display: flex;
-  gap: 8px;
+  gap: 7px;
   font-size: inherit;
   color: #f7931e;
   align-items: center;
 
   & a {
-    width: 36px !important;
-    height: 36px !important;
-    border-radius: 10px;
-    background: rgba(247, 147, 30, 0.12);
-    border: 1px solid rgba(247, 147, 30, 0.28) !important;
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 11px;
+    background: rgba(247, 147, 30, 0.09);
+    border: 1px solid rgba(247, 147, 30, 0.2) !important;
+    transition: all 0.15s ease;
+  }
+
+  & a:hover {
+    background: rgba(247, 147, 30, 0.22);
+    border-color: rgba(247, 147, 30, 0.45) !important;
+    transform: translateY(-1px);
   }
 
   & svg {
@@ -949,7 +960,7 @@ const Icons = styled.div`
 
 const BasicInfo = styled.div`
   position: absolute;
-  bottom: 64px;
+  bottom: 58px;
   left: 16px;
   right: 12px;
   text-align: left;
@@ -963,11 +974,11 @@ const BasicInfo = styled.div`
 
 const CardInfo = styled.div`
   position: absolute;
-  top: 10px;
-  left: 10px;
-  right: 10px;
-  width: calc(100% - 20px);
-  padding: 10px 12px;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  width: calc(100% - 24px);
+  padding: 10px 11px;
   background: rgba(22, 22, 35, 0.82);
   color: #f0f0f5;
   font-size: 13px;
@@ -1019,11 +1030,11 @@ const InfoSlide = styled.div`
   width: 100%;
   height: auto;
   min-height: 100%;
-  background: linear-gradient(145deg, #252538, #1e1e30);
+  background: linear-gradient(160deg, #212133 0%, #191926 100%);
   color: #f0f0f5;
   overflow-y: auto;
   box-sizing: border-box;
-  padding: 14px;
+  padding: 12px;
 `;
 
 const slideLeft = keyframes`
