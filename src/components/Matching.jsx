@@ -467,7 +467,7 @@ const CardWrapper = styled.div`
   position: relative;
   width: 100%;
   border: 1px solid #e2e2e2;
-  border-radius: 0;
+  border-radius: 8px;
   box-sizing: border-box;
   overflow: hidden;
   background: #fff;
@@ -519,13 +519,15 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 const Card = styled.div`
   width: 100%;
   height: auto;
-  aspect-ratio: ${({ $small }) => ($small ? '4 / 5' : '3 / 4')};
-  min-height: ${({ $small }) => ($small ? '280px' : '340px')};
+  aspect-ratio: ${({ $hasPhoto, $small }) =>
+    $hasPhoto ? ($small ? '4 / 5' : '3 / 4') : 'auto'};
+  min-height: ${({ $hasPhoto, $small, $compactWithoutPhoto }) =>
+    !$hasPhoto && $compactWithoutPhoto ? '0' : $small ? '280px' : '340px'};
   padding-bottom: 0;
   background: linear-gradient(180deg, #fffaf2 0%, #f7f7f7 100%);
   background-size: cover;
   background-position: center;
-  border-radius: 0;
+  border-radius: 8px;
   position: relative;
   overflow: hidden;
   box-shadow:
@@ -1027,10 +1029,10 @@ const Id = styled.div`
 const InfoSlide = styled.div`
   width: 100%;
   height: auto;
-  min-height: 100%;
+  min-height: auto;
   background: linear-gradient(180deg, #fffaf2 0%, #f7f7f7 100%);
   color: #2c2d38;
-  overflow-y: auto;
+  overflow-y: visible;
   box-sizing: border-box;
   padding: 12px;
 `;
