@@ -2225,6 +2225,12 @@ const Matching = () => {
       ? users
       : users.filter(user => user.__sourceCollection === 'newUsers' || user.publish === true);
 
+    if (viewMode === 'default') {
+      baseUsers = baseUsers.filter(
+        user => !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
+      );
+    }
+
     const hasAdditionalAccessRules = parsedAdditionalAccessRules.length > 0;
     if (hasAdditionalAccessRules) {
       baseUsers = baseUsers.filter(user => {
@@ -2243,6 +2249,9 @@ const Matching = () => {
 
     const byId = new Map(baseUsers.map(user => [user.userId, user]));
     additionalNewUsers.forEach(user => {
+      if (viewMode === 'default' && (favoriteUsers[user.userId] || dislikeUsers[user.userId])) {
+        return;
+      }
       const existing = byId.get(user.userId);
       if (existing) {
         byId.set(user.userId, { ...existing, ...user });
@@ -2252,7 +2261,15 @@ const Matching = () => {
     });
 
     return Array.from(byId.values());
-  }, [additionalNewUsers, isAdmin, parsedAdditionalAccessRules, users]);
+  }, [
+    additionalNewUsers,
+    dislikeUsers,
+    favoriteUsers,
+    isAdmin,
+    parsedAdditionalAccessRules,
+    users,
+    viewMode,
+  ]);
 
   const filteredUsers = applyMatchingSearchKeyFilters(
     filterMain(
