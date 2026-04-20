@@ -245,6 +245,11 @@ const toRoleCategory = user => {
 
   const directRole = normalizeRole(user?.role);
   const fallbackRole = normalizeRole(user?.userRole);
+
+  if (user?.__sourceCollection === 'newUsers' && fallbackRole === 'no') {
+    return 'ed';
+  }
+
   const resolved = directRole !== 'no' && directRole !== '?' ? directRole : fallbackRole;
 
   if (['ed', 'ag', 'ip'].includes(resolved)) return resolved;
