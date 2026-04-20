@@ -512,9 +512,14 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 
 const Card = styled.div`
   width: 100%;
-  height: ${({ $small }) => {
+  height: ${({ $small, $hasPhoto }) => {
+    if (!$hasPhoto) return 'auto';
     const base = $small ? 30 : 50;
     return `${base}vh`;
+  }};
+  min-height: ${({ $small, $hasPhoto }) => {
+    if ($hasPhoto) return 'unset';
+    return $small ? '220px' : 'unset';
   }};
   background: linear-gradient(135deg, orange, yellow);
   background-size: cover;
@@ -523,6 +528,7 @@ const Card = styled.div`
   position: relative;
   overflow: hidden;
   &::after {
+    display: ${({ $hasPhoto }) => ($hasPhoto ? 'block' : 'none')};
     content: '';
     position: absolute;
     bottom: 0;
@@ -1309,6 +1315,7 @@ const getRoleTitle = user => {
     .trim()
     .toLowerCase();
 
+  if (!role) return 'Potential ED';
   if (role === 'ag') return 'Agency';
   if (role === 'ip') return 'Intended parents';
   if (role === 'ed') return 'Egg donor';
