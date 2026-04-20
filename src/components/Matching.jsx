@@ -71,6 +71,9 @@ import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
 
 // Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
 const isValidId = id => typeof id === 'string' && id.length >= 20;
+const isShortId = id => typeof id === 'string' && id.length > 0 && id.length < 20;
+const isAllowedIdForCollection = (id, collection = 'users') =>
+  collection === 'newUsers' ? isShortId(id) : isValidId(id);
 const filterLongUsers = list => list.filter(u => isValidId(u?.userId));
 
 const compareUsersByLastLogin2 = (a = {}, b = {}) =>
@@ -1789,8 +1792,12 @@ const Matching = () => {
                 favoriteUsersRef.current
               ).map(([, u]) => u),
               filters
-            ).filter(u => isValidId(u.userId) && !exclude.has(u.userId))
-          : sourceRes.users.filter(u => isValidId(u.userId) && !exclude.has(u.userId));
+            ).filter(
+              u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
+            )
+          : sourceRes.users.filter(
+              u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
+            );
 
         excludedCount += sourceRes.users.length - filtered.length;
         const slice = filtered.slice(0, remaining);
@@ -1872,7 +1879,7 @@ const Matching = () => {
       if (cached.length && viewModeRef.current === startMode) {
         console.log('[loadInitial] using cache', cached.length);
         const filteredCached = cached.filter(
-          u => isValidId(u.userId) && !exclude.has(u.userId)
+          u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
         );
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
         setUsers(filteredCached);
@@ -1919,7 +1926,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [defaultListKey, fetchChunk]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [collectionSource, defaultListKey, fetchChunk]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     viewModeRef.current = 'default';
@@ -2177,7 +2184,7 @@ const Matching = () => {
       favoriteUsers
     ).map(([, u]) => u),
     filters
-  ).filter(u => isValidId(u.userId));
+  ).filter(u => isAllowedIdForCollection(u.userId, collectionSource));
 
   useEffect(() => {
     if (viewMode !== 'default') return;
