@@ -513,12 +513,9 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 
 const Card = styled.div`
   width: 100%;
-  height: ${({ $small, $compactWithoutPhoto }) => {
-    if ($compactWithoutPhoto) return 'auto';
-    const base = $small ? 30 : 50;
-    return `${base}vh`;
-  }};
-  min-height: ${({ $compactWithoutPhoto }) => ($compactWithoutPhoto ? '0' : 'unset')};
+  height: auto;
+  aspect-ratio: ${({ $compactWithoutPhoto, $small }) => ($compactWithoutPhoto ? 'auto' : $small ? '4 / 5' : '3 / 4')};
+  min-height: ${({ $small, $compactWithoutPhoto }) => ($compactWithoutPhoto ? '0' : $small ? '280px' : '340px')};
   padding-bottom: ${({ $compactWithoutPhoto }) => ($compactWithoutPhoto ? '56px' : '0')};
   background: linear-gradient(180deg, #fffaf2 0%, #f7f7f7 100%);
   background-size: cover;
@@ -569,7 +566,9 @@ const loadingWave = keyframes`
 const SkeletonCardInner = styled.div`
   position: relative;
   width: 100%;
-  height: ${({ $small }) => ($small ? '30vh' : '50vh')};
+  height: auto;
+  aspect-ratio: ${({ $small }) => ($small ? '4 / 5' : '3 / 4')};
+  min-height: ${({ $small }) => ($small ? '280px' : '340px')};
   overflow: hidden;
   &::after {
     content: '';
