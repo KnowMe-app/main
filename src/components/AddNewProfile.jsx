@@ -802,7 +802,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
-    const urlUserId = initialAccess.isAdmin ? params.get('userId') : null;
+    const urlUserId = initialAccess.canAccessAdd ? params.get('userId') : null;
     const restoredUserId = urlUserId || localStorage.getItem(EDIT_PROFILE_USER_ID_KEY) || '';
 
     if (!restoredUserId) {
@@ -837,6 +837,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const navigate = useNavigate();
   const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
   const isAdmin = access.isAdmin;
+  const canAccessAdd = access.canAccessAdd;
   const [stimulationScheduleProfiles, setStimulationScheduleProfiles] = useState([]);
   const [stimulationShortcutIds, setStimulationShortcutIdsState] = useState(() =>
     getStoredStimulationShortcutIds(),
@@ -1239,12 +1240,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (hasSearchParam) {
       setSearch(prev => (prev === urlSearchValue ? prev : urlSearchValue));
-    } else if (urlUserId && isAdmin) {
+    } else if (urlUserId && canAccessAdd) {
       setSearch(prev => (prev ? prev : urlUserId));
     }
 
     if (urlUserId) {
-      if (!isAdmin) {
+      if (!canAccessAdd) {
         lastUrlUserIdRef.current = null;
         return;
       }
@@ -1256,7 +1257,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     } else {
       lastUrlUserIdRef.current = null;
     }
-  }, [isAdmin, location.search, setSearch, setState]);
+  }, [canAccessAdd, location.search, setSearch, setState]);
 
   useEffect(() => {
     const normalized = (search || '').trim();
@@ -1312,13 +1313,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         if (nextSearchString !== location.search) {
           navigate({ pathname: location.pathname, search: nextSearchString }, { replace: true });
         }
-      }
-    } else if (currentUserId) {
-      params.delete('userId');
-      const nextSearch = params.toString();
-      const nextSearchString = nextSearch ? `?${nextSearch}` : '';
-      if (nextSearchString !== location.search) {
-        navigate({ pathname: location.pathname, search: nextSearchString }, { replace: true });
       }
     }
   }, [state.userId, location.pathname, location.search, navigate]);
