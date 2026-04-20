@@ -461,11 +461,12 @@ const ThirdInfoCard = styled(NextInfoCard)`
 const CardWrapper = styled.div`
   position: relative;
   width: 100%;
-  border: 2px solid ${color.gray3};
+  border: 1px solid #e2e2e2;
   border-radius: 8px;
   box-sizing: border-box;
   overflow: hidden;
   background: #fff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
   z-index: 2;
 `;
 
@@ -519,16 +520,16 @@ const Card = styled.div`
   }};
   min-height: ${({ $compactWithoutPhoto }) => ($compactWithoutPhoto ? '0' : 'unset')};
   padding-bottom: ${({ $compactWithoutPhoto }) => ($compactWithoutPhoto ? '56px' : '0')};
-  background: linear-gradient(145deg, #252538, #1e1e30);
+  background: linear-gradient(180deg, #fffaf2 0%, #f7f7f7 100%);
   background-size: cover;
   background-position: center;
   border-radius: 20px;
   position: relative;
   overflow: hidden;
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+    0 12px 28px rgba(0, 0, 0, 0.14),
+    0 0 0 1px rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.8);
   isolation: isolate;
   margin-bottom: 10px;
 
@@ -539,7 +540,7 @@ const Card = styled.div`
     left: 0;
     width: 100%;
     height: 4px;
-    background: linear-gradient(90deg, #ff6b35, #f7931e, #ff6b35);
+    background: linear-gradient(90deg, ${color.accent} 0%, ${color.accent2} 50%, ${color.accent} 100%);
     z-index: 2;
   }
 
@@ -550,11 +551,7 @@ const Card = styled.div`
     left: 0;
     width: 100%;
     height: 34%;
-    background: linear-gradient(
-      to bottom,
-      rgba(0, 0, 0, 0) 0%,
-      rgba(0, 0, 0, 0.72) 100%
-    );
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 0%, rgba(0, 0, 0, 0.32) 100%);
     pointer-events: none;
     z-index: 1;
   }
@@ -801,7 +798,7 @@ const CollectionSourceLabel = styled.label`
 // during builds, so the unused definitions have been removed.
 
 const Title = styled.span`
-  color: #ffad69;
+  color: ${color.accent3};
   font-weight: 800;
   margin-bottom: 4px;
   margin-right: 4px;
@@ -809,8 +806,8 @@ const Title = styled.span`
   text-transform: uppercase;
   letter-spacing: 0.6px;
   font-size: 10px;
-  background: rgba(247, 147, 30, 0.14);
-  border: 1px solid rgba(247, 147, 30, 0.35);
+  background: ${color.paleAccent2};
+  border: 1px solid ${color.paleAccent5};
   border-radius: 7px;
   padding: 2px 7px;
 `;
@@ -819,7 +816,7 @@ const DonorName = styled.strong`
   display: inline;
   margin-bottom: 2px;
   line-height: 1.2;
-  color: #f0f0f5;
+  color: #1f1f26;
   font-size: 20px;
   font-weight: 700;
 `;
@@ -828,7 +825,7 @@ const ProfileSection = styled.div`
   display: flex;
   align-items: center;
   margin-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   padding-bottom: 10px;
 `;
 
@@ -842,7 +839,7 @@ const LocationLine = styled.div`
   gap: 6px;
   flex-wrap: nowrap;
   justify-content: flex-start;
-  color: #9191b1;
+  color: #5f6173;
   font-size: 12px;
 `;
 
@@ -878,8 +875,8 @@ const Table = styled.div`
   column-gap: 6px;
   font-size: 14px;
   margin-bottom: 10px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 14px;
   padding: 8px;
 
@@ -887,15 +884,15 @@ const Table = styled.div`
     line-height: 1.2;
     display: flex;
     flex-direction: column;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 10px;
     padding: 8px;
   }
 
   & strong {
     font-size: 9px;
-    color: #ffad69;
+    color: ${color.accent3};
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 3px;
@@ -903,21 +900,21 @@ const Table = styled.div`
 
   & > div > span,
   & > div {
-    color: #f0f0f5;
+    color: #2f2f39;
     font-weight: 700;
   }
 `;
 
 const MoreInfo = styled.div`
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-left: 4px solid ${props => (props.$isAdmin ? '#ff6b6b' : '#f7931e')};
   border-radius: 12px;
   padding: 10px 12px;
   margin-bottom: 10px;
   font-size: 14px;
   white-space: pre-line;
-  color: #d3d3e6;
+  color: #3e3f4c;
 `;
 
 const Contact = styled.div`
@@ -925,7 +922,7 @@ const Contact = styled.div`
   justify-content: flex-start;
   align-items: center;
   font-size: 14px;
-  border-top: ${props => (props.$withBorder ? `1px solid rgba(255, 255, 255, 0.06)` : 'none')};
+  border-top: ${props => (props.$withBorder ? `1px solid rgba(0, 0, 0, 0.08)` : 'none')};
   padding-top: ${props => (props.$withBorder ? '10px' : '0')};
   margin-top: ${props => (props.$withBorder ? '6px' : '0')};
 `;
@@ -934,21 +931,21 @@ const Icons = styled.div`
   display: flex;
   gap: 7px;
   font-size: inherit;
-  color: #f7931e;
+  color: ${color.accent5};
   align-items: center;
 
   & a {
     width: 38px !important;
     height: 38px !important;
     border-radius: 11px;
-    background: rgba(247, 147, 30, 0.09);
-    border: 1px solid rgba(247, 147, 30, 0.2) !important;
+    background: ${color.paleAccent2};
+    border: 1px solid ${color.paleAccent5} !important;
     transition: all 0.15s ease;
   }
 
   & a:hover {
-    background: rgba(247, 147, 30, 0.22);
-    border-color: rgba(247, 147, 30, 0.45) !important;
+    background: rgba(255, 108, 0, 0.2);
+    border-color: rgba(255, 108, 0, 0.42) !important;
     transform: translateY(-1px);
   }
 
@@ -964,9 +961,9 @@ const BasicInfo = styled.div`
   left: 16px;
   right: 12px;
   text-align: left;
-  color: #f8f8fc;
+  color: #1f1f26;
   font-weight: 700;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.65);
+  text-shadow: 0 1px 6px rgba(255, 255, 255, 0.7);
   pointer-events: none;
   line-height: 1.2;
   font-size: 18px;
@@ -979,13 +976,13 @@ const CardInfo = styled.div`
   right: 12px;
   width: calc(100% - 24px);
   padding: 10px 11px;
-  background: rgba(22, 22, 35, 0.82);
-  color: #f0f0f5;
+  background: rgba(255, 255, 255, 0.84);
+  color: #2c2d38;
   font-size: 13px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 14px;
   backdrop-filter: blur(8px);
 `;
@@ -1030,8 +1027,8 @@ const InfoSlide = styled.div`
   width: 100%;
   height: auto;
   min-height: 100%;
-  background: linear-gradient(160deg, #212133 0%, #191926 100%);
-  color: #f0f0f5;
+  background: linear-gradient(180deg, #fffaf2 0%, #f7f7f7 100%);
+  color: #2c2d38;
   overflow-y: auto;
   box-sizing: border-box;
   padding: 12px;
