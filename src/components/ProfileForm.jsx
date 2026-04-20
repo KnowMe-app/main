@@ -559,7 +559,6 @@ export const ProfileForm = ({
   const [showAdditionalRulesModal, setShowAdditionalRulesModal] = useState(false);
   const [activeAdditionalRuleInputIndex, setActiveAdditionalRuleInputIndex] = useState(0);
   const [additionalRuleBuilder, setAdditionalRuleBuilder] = useState([]);
-  const [additionalRulesDraftText, setAdditionalRulesDraftText] = useState('');
   const [availableCardsCount, setAvailableCardsCount] = useState(0);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
   const autoAppliedOverlayForUserRef = useRef('');
@@ -571,6 +570,10 @@ export const ProfileForm = ({
     setAdditionalRuleBuilder(prev => [...prev, { key: firstAvailable, allowedValues: new Set() }]);
   }, [additionalRuleBuilder]);
 
+  const additionalRulesDraftText = useMemo(
+    () => buildAdditionalRulesTextFromBuilder(additionalRuleBuilder),
+    [additionalRuleBuilder]
+  );
   const additionalAccessFieldValue = state?.[ADDITIONAL_ACCESS_FIELD];
   const additionalRulesInputs = useMemo(() => {
     const rawValue = additionalAccessFieldValue;
@@ -587,7 +590,6 @@ export const ProfileForm = ({
   useEffect(() => {
     if (!showAdditionalRulesModal) return;
     const activeInputValue = additionalRulesInputs[activeAdditionalRuleInputIndex] || '';
-    setAdditionalRulesDraftText(activeInputValue);
     const parsed = parseAdditionalRulesTextToBuilder(activeInputValue);
     if (parsed.length > 0) {
       setAdditionalRuleBuilder(parsed);
@@ -598,16 +600,11 @@ export const ProfileForm = ({
 
   useEffect(() => {
     if (!showAdditionalRulesModal) return;
-    setAdditionalRulesDraftText(buildAdditionalRulesTextFromBuilder(additionalRuleBuilder));
-  }, [additionalRuleBuilder, showAdditionalRulesModal]);
-
-  useEffect(() => {
-    if (!showAdditionalRulesModal) return;
 
     let cancelled = false;
     const loadAvailableCards = async () => {
       const nextInputs = [...additionalRulesInputs];
-      nextInputs[activeAdditionalRuleInputIndex] = additionalRulesDraftText;
+      nextInputs[activeAdditionalRuleInputIndex] = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
       const combinedDraftText = nextInputs.map(item => String(item || '').trim()).filter(Boolean).join('\n\n');
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(combinedDraftText);
       if (!parsedRuleGroups.length) {
@@ -739,7 +736,6 @@ export const ProfileForm = ({
   }, [
     activeAdditionalRuleInputIndex,
     additionalRuleBuilder,
-    additionalRulesDraftText,
     additionalRulesInputs,
     showAdditionalRulesModal,
   ]);
@@ -817,7 +813,7 @@ export const ProfileForm = ({
   };
 
   const applyAdditionalRulesFromBuilder = () => {
-    const rulesText = additionalRulesDraftText;
+    const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
     setState(prevState => {
       const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
       const updatedValue = Array.isArray(currentValue)
@@ -1378,13 +1374,14 @@ ${entries.join('\n')}`;
                         value={value || ''}
                         $isDeletedOverlay={deletedOverlayFields.includes(field.name)}
                         onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
-                        onClick={event => {
+                        readOnly={field.name === ADDITIONAL_ACCESS_FIELD}
+                        onClick={() => {
                           if (field.name !== ADDITIONAL_ACCESS_FIELD) return;
-                          if (event.detail !== 2) return;
                           setActiveAdditionalRuleInputIndex(idx);
                           setShowAdditionalRulesModal(true);
                         }}
                         onChange={e => {
+                          if (field.name === ADDITIONAL_ACCESS_FIELD) return;
                           if (field.name === 'myComment') {
                             autoResizeMyComment(e.target);
                           }
@@ -1451,17 +1448,12 @@ ${entries.join('\n')}`;
                         name={field.name}
                         value={displayValue}
                         placeholder={ADDITIONAL_ACCESS_TEMPLATE}
+                        readOnly
                         onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
-                        onClick={event => {
-                          if (event.detail !== 2) return;
+                        onClick={() => {
                           setActiveAdditionalRuleInputIndex(0);
                           setShowAdditionalRulesModal(true);
                         }}
-                        onChange={e => {
-                          const value = e.target.value;
-                          setState(prevState => ({ ...prevState, [field.name]: value }));
-                        }}
-                        onBlur={() => handleBlur(field.name)}
                       />
                     </>
                   ) : (
@@ -1831,18 +1823,7 @@ ${entries.join('\n')}`;
               <button type="button" onClick={applyAdditionalRulesFromBuilder}>Застосувати</button>
             </AdditionalRuleActions>
 
-            <AdditionalRulePreview
-              value={additionalRulesDraftText}
-              placeholder={ADDITIONAL_ACCESS_TEMPLATE}
-              onChange={event => {
-                const nextText = event.target.value;
-                setAdditionalRulesDraftText(nextText);
-                const parsed = parseAdditionalRulesTextToBuilder(nextText);
-                if (parsed.length > 0) {
-                  setAdditionalRuleBuilder(parsed);
-                }
-              }}
-            />
+            <AdditionalRulePreview>{additionalRulesDraftText || ADDITIONAL_ACCESS_TEMPLATE}</AdditionalRulePreview>
             <AdditionalCardsTitle>
               Доступні карточки ({availableCardsCount}) {isLoadingAvailableCards ? '...завантаження' : ''}
             </AdditionalCardsTitle>
@@ -2157,16 +2138,13 @@ const AdditionalRuleActions = styled.div`
   gap: 8px;
 `;
 
-const AdditionalRulePreview = styled.textarea`
+const AdditionalRulePreview = styled.pre`
   margin-top: 14px;
   background: #fafafa;
   color: #1f1f1f;
   border: 1px solid #ddd;
   padding: 10px;
   white-space: pre-wrap;
-  width: 100%;
-  min-height: 120px;
-  resize: vertical;
 `;
 
 const AdditionalCardsTitle = styled.h4`
