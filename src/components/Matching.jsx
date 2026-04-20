@@ -890,7 +890,7 @@ const Table = styled.div`
     background: #ffffff;
     border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 10px;
-    padding: 8px;
+    padding: 5.6px 8px;
   }
 
   & strong {
