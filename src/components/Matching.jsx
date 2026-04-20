@@ -195,12 +195,23 @@ const fetchAdditionalNewUsersBySearchIndex = async parsedRuleGroups => {
   }
 
   const matchedIds = [...matchedIdsSet];
-  if (matchedIds.length === 0) return [];
+  if (matchedIds.length === 0) {
+    const newUsersSnapshot = await get(refDb(database, 'newUsers'));
+    if (!newUsersSnapshot.exists()) return [];
+
+    const newUsersMap = newUsersSnapshot.val() || {};
+    return Object.entries(newUsersMap)
+      .map(([userId, userData]) => ({
+        userId,
+        ...(userData && typeof userData === 'object' ? userData : {}),
+      }))
+      .filter(user => isUserAllowedByAnyAdditionalAccessRule(user, parsedRuleGroups))
+      .map(user => ({ ...user, __sourceCollection: 'newUsers' }));
+  }
 
   const combinedRows = await fetchUsersAndNewUsersByIds(matchedIds);
   return combinedRows
     .filter(row => row.hasNewUser)
-    .filter(row => isValidId(row.merged?.userId))
     .filter(row =>
       isUserAllowedByAnyAdditionalAccessRule(
         { userId: row.merged.userId, ...(row.newUserData || {}) },

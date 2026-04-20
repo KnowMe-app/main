@@ -335,7 +335,7 @@ const getUserBucketsByRuleKey = (user, key) => {
 };
 
 
-const normalizeCsectionRuleBucket = value => {
+const normalizeSingleCsectionRuleBucket = value => {
   if (value === null || value === undefined) return 'no';
 
   const normalized = String(value).trim().toLowerCase();
@@ -353,6 +353,23 @@ const normalizeCsectionRuleBucket = value => {
 
   if (['-', 'no', 'ні', 'minus'].includes(token)) return 'cs0';
   return 'other';
+};
+
+const normalizeCsectionRuleBucket = value => {
+  if (Array.isArray(value)) {
+    const normalizedItems = value
+      .filter(item => item !== null && item !== undefined && String(item).trim() !== '')
+      .map(item => normalizeSingleCsectionRuleBucket(item));
+
+    if (normalizedItems.length === 0) return 'no';
+    if (normalizedItems.includes('cs2plus')) return 'cs2plus';
+    if (normalizedItems.includes('cs1')) return 'cs1';
+    if (normalizedItems.includes('cs0')) return 'cs0';
+    if (normalizedItems.includes('no')) return 'no';
+    return 'other';
+  }
+
+  return normalizeSingleCsectionRuleBucket(value);
 };
 
 export const parseAdditionalAccessRules = raw => {
@@ -414,19 +431,19 @@ export const parseAdditionalAccessRules = raw => {
           return;
         }
         if (normalizedToken === 'le25') {
-          addAgeRange(21, 25);
+          addAgeRange(18, 25);
           return;
         }
         if (normalizedToken === '31_33') {
-          addAgeRange(21, 33);
+          addAgeRange(31, 33);
           return;
         }
         if (normalizedToken === '34_36') {
-          addAgeRange(21, 36);
+          addAgeRange(34, 36);
           return;
         }
         if (normalizedToken === '37_42') {
-          addAgeRange(21, 42);
+          addAgeRange(37, 42);
           return;
         }
         if (normalizedToken === 'no') {
@@ -719,7 +736,7 @@ const resolveCsectionSearchKeyBuckets = parsedRules => {
 const resolveAgeSearchKeyBuckets = parsedRules => {
   const numericBuckets = parsedRules?.age
     ? [...parsedRules.age]
-      .filter(age => Number.isFinite(age) && age >= 21)
+      .filter(age => Number.isFinite(age) && age >= 18)
       .map(age => ageToBucket(age))
     : [];
   const extraBuckets = [];
