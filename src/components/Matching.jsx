@@ -2217,12 +2217,20 @@ const Matching = () => {
 
 
   const visibleUsers = useMemo(() => {
-    const baseUsers = isAdmin
+    let baseUsers = isAdmin
       ? users
       : users.filter(user => user.__sourceCollection === 'newUsers' || user.publish === true);
 
+    const hasAdditionalAccessRules = parsedAdditionalAccessRules.length > 0;
+    if (hasAdditionalAccessRules) {
+      baseUsers = baseUsers.filter(user => {
+        if (user?.__sourceCollection !== 'newUsers') return true;
+        return isUserAllowedByAnyAdditionalAccessRule(user, parsedAdditionalAccessRules);
+      });
+    }
+
     const shouldInjectAdditionalCards =
-      parsedAdditionalAccessRules.length > 0 &&
+      hasAdditionalAccessRules &&
       additionalNewUsers.length > 0;
 
     if (!shouldInjectAdditionalCards) {
