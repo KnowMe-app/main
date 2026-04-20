@@ -516,26 +516,44 @@ const Card = styled.div`
     const base = $small ? 30 : 50;
     return `${base}vh`;
   }};
-  background: linear-gradient(135deg, orange, yellow);
+  background: linear-gradient(145deg, #252538, #1e1e30);
   background-size: cover;
   background-position: center;
-  border-radius: 0;
+  border-radius: 20px;
   position: relative;
   overflow: hidden;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  isolation: isolate;
+  margin-bottom: 10px;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: linear-gradient(90deg, #ff6b35, #f7931e, #ff6b35);
+    z-index: 2;
+  }
+
   &::after {
     content: '';
     position: absolute;
     bottom: 0;
     left: 0;
     width: 100%;
-    height: 20%;
+    height: 34%;
     background: linear-gradient(
       to bottom,
       rgba(0, 0, 0, 0) 0%,
-      rgba(0, 0, 0, 0.5) 100%
+      rgba(0, 0, 0, 0.72) 100%
     );
     pointer-events: none;
-    z-index: 0;
+    z-index: 1;
   }
 `;
 
@@ -780,29 +798,45 @@ const CollectionSourceLabel = styled.label`
 // during builds, so the unused definitions have been removed.
 
 const Title = styled.span`
-  color: ${color.accent};
-  font-weight: bold;
+  color: #ffad69;
+  font-weight: 700;
   margin-bottom: 4px;
   margin-right: 4px;
   display: inline-block;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: 11px;
 `;
 
 const DonorName = styled.strong`
   display: inline;
   margin-bottom: 2px;
   line-height: 1.2;
+  color: #f0f0f5;
+  font-size: 20px;
+  font-weight: 700;
 `;
 
 const ProfileSection = styled.div`
   display: flex;
   align-items: center;
-  margin-bottom: 15px;
-  border-bottom: 1px solid ${color.gray4};
-  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 12px;
 `;
 
 const Info = styled.div`
   flex: 1;
+`;
+
+const LocationLine = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  color: #9191b1;
+  font-size: 12px;
 `;
 
 // Fields to display in the details modal
@@ -836,28 +870,47 @@ const Table = styled.div`
   row-gap: 8px;
   column-gap: 8px;
   font-size: 14px;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 10px;
 
   & > div {
     line-height: 1.2;
     display: flex;
     flex-direction: column;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 8px;
   }
 
   & strong {
-    font-size: 12px;
-    color: ${color.gray3};
+    font-size: 9px;
+    color: #ffad69;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+  }
+
+  & > div > span,
+  & > div {
+    color: #f0f0f5;
+    font-weight: 700;
   }
 `;
 
 const MoreInfo = styled.div`
-  background-color: ${color.paleAccent2};
-  padding: 10px;
-  border-left: 4px solid
-    ${props => (props.$isAdmin ? color.red : color.accent)};
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 4px solid ${props => (props.$isAdmin ? '#ff6b6b' : '#f7931e')};
+  border-radius: 12px;
+  padding: 10px 12px;
   margin-bottom: 10px;
   font-size: 14px;
   white-space: pre-line;
+  color: #d3d3e6;
 `;
 
 const Contact = styled.div`
@@ -865,44 +918,62 @@ const Contact = styled.div`
   justify-content: flex-start;
   align-items: center;
   font-size: 14px;
-  border-top: ${props => (props.$withBorder ? `1px solid ${color.gray4}` : 'none')};
+  border-top: ${props => (props.$withBorder ? `1px solid rgba(255, 255, 255, 0.08)` : 'none')};
   padding-top: ${props => (props.$withBorder ? '10px' : '0')};
-  margin-top: ${props => (props.$withBorder ? '10px' : '0')};
+  margin-top: ${props => (props.$withBorder ? '6px' : '0')};
 `;
 
 const Icons = styled.div`
   display: flex;
-  gap: 4px;
+  gap: 8px;
   font-size: inherit;
-  color: ${color.accent};
+  color: #f7931e;
   align-items: center;
+
+  & a {
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 10px;
+    background: rgba(247, 147, 30, 0.12);
+    border: 1px solid rgba(247, 147, 30, 0.28) !important;
+  }
+
+  & svg {
+    width: 15px !important;
+    height: 15px !important;
+  }
 `;
 
 const BasicInfo = styled.div`
   position: absolute;
-  bottom: 55px;
-  left: 10px;
-  right: 0;
+  bottom: 64px;
+  left: 16px;
+  right: 12px;
   text-align: left;
-  color: white;
-  font-weight: bold;
-  text-shadow: 0 0 2px black;
+  color: #f8f8fc;
+  font-weight: 700;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.65);
   pointer-events: none;
   line-height: 1.2;
+  font-size: 18px;
 `;
 
 const CardInfo = styled.div`
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  padding: 5px;
-  background: rgba(255, 255, 255, 0.8);
-  color: ${color.black};
-  font-size: 14px;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  width: calc(100% - 20px);
+  padding: 10px 12px;
+  background: rgba(22, 22, 35, 0.82);
+  color: #f0f0f5;
+  font-size: 13px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
 `;
 
 const RoleHeader = styled(Title)`
@@ -944,11 +1015,11 @@ const Id = styled.div`
 const InfoSlide = styled.div`
   width: 100%;
   height: 100%;
-  background: #f0f0f0;
-  color: ${color.black};
+  background: linear-gradient(145deg, #252538, #1e1e30);
+  color: #f0f0f5;
   overflow-y: auto;
   box-sizing: border-box;
-  padding: 10px;
+  padding: 14px;
 `;
 
 const slideLeft = keyframes`
@@ -1160,18 +1231,10 @@ const SwipeableCard = ({
             {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
           </DonorName>
           <br />
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              flexWrap: 'nowrap',
-              justifyContent: 'flex-start',
-            }}
-          >
+          <LocationLine>
             <span>{locationInfo}</span>
             {isEggDonor && contacts && <Icons>{contacts}</Icons>}
-          </div>
+          </LocationLine>
         </Info>
       </ProfileSection>
       {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
@@ -1223,18 +1286,10 @@ const SwipeableCard = ({
             <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
             {nameParts && <strong>{nameParts}</strong>}
           </HeaderRow>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              flexWrap: 'nowrap',
-              justifyContent: 'flex-start',
-            }}
-          >
+          <LocationLine>
             {locationInfo && <span>{locationInfo}</span>}
             {contacts && <Icons>{contacts}</Icons>}
-          </div>
+          </LocationLine>
         </CardInfo>
       )}
       {(current === 'info' || current === 'main') && null}
@@ -1391,18 +1446,10 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
             {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
           </DonorName>
           <br />
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              flexWrap: 'nowrap',
-              justifyContent: 'flex-start',
-            }}
-          >
+          <LocationLine>
             <span>{locationInfo}</span>
             {isEggDonor && contacts && <Icons>{contacts}</Icons>}
-          </div>
+          </LocationLine>
         </Info>
       </ProfileSection>
       {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
