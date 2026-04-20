@@ -76,6 +76,7 @@ const CSECTION_SEARCH_KEY_INDEX = 'csection';
 const ROLE_SEARCH_KEY_INDEX = 'role';
 const USER_ID_SEARCH_KEY_INDEX = 'userId';
 const REACTION_SEARCH_KEY_INDEX = 'reaction';
+const FIELD_COUNT_SEARCH_KEY_INDEX = 'fields';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
 const SEARCH_INDEX_COLLECTION_CACHE_PREFIX = 'search-index:collection:v1:';
 const SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -89,6 +90,7 @@ const SEARCH_KEY_INDEX_TYPES = {
   age: AGE_SEARCH_KEY_INDEX,
   imtHeightWeight: IMT_SEARCH_KEY_INDEX,
   reaction: REACTION_SEARCH_KEY_INDEX,
+  fieldCount: FIELD_COUNT_SEARCH_KEY_INDEX,
 };
 
 const getSearchIndexCacheStorage = () => {
@@ -2654,6 +2656,15 @@ const getWeightIndexSet = data => {
   return new Set([normalizeMetricIndexValue(data.weight)]);
 };
 
+const normalizeFieldCountSearchKeyIndexValue = data => {
+  if (!data || typeof data !== 'object') return '0';
+  return String(Object.keys(data).length);
+};
+
+const getFieldCountIndexSet = data => {
+  return new Set([normalizeFieldCountSearchKeyIndexValue(data)]);
+};
+
 export const normalizeRoleSearchKeyIndexValue = (roleValue, userRoleValue) => {
   const normalizeSingleRole = value => {
     const normalized = String(value || '')
@@ -2856,6 +2867,40 @@ const isUserIdBucketAllowedByFilters = (bucket, filterSettings = {}) => {
   const shouldApplyUserId = hasExplicitFilterSelection(userIdFilters);
   if (!shouldApplyUserId) return true;
   return Boolean(userIdFilters?.[bucket]);
+};
+
+const collectFieldCountIdsByFilters = async fieldsFilters => {
+  const shouldApplyFields = hasExplicitFilterSelection(fieldsFilters);
+  if (!shouldApplyFields) return null;
+
+  const selected = {
+    le5: Boolean(fieldsFilters?.le5),
+    f6_10: Boolean(fieldsFilters?.f6_10),
+    f11_20: Boolean(fieldsFilters?.f11_20),
+    f20_plus: Boolean(fieldsFilters?.f20_plus),
+  };
+
+  const snapshot = await get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${FIELD_COUNT_SEARCH_KEY_INDEX}`));
+  const fieldIds = new Set();
+  if (!snapshot.exists()) return fieldIds;
+
+  Object.entries(snapshot.val() || {}).forEach(([countKey, usersMap]) => {
+    const parsedCount = Number.parseInt(String(countKey), 10);
+    if (!Number.isInteger(parsedCount) || parsedCount < 0) return;
+
+    const inSelectedRange =
+      (selected.le5 && parsedCount <= 5) ||
+      (selected.f6_10 && parsedCount >= 6 && parsedCount <= 10) ||
+      (selected.f11_20 && parsedCount >= 11 && parsedCount <= 20) ||
+      (selected.f20_plus && parsedCount > 20);
+
+    if (!inSelectedRange) return;
+    Object.keys(usersMap || {}).forEach(userId => {
+      if (userId) fieldIds.add(userId);
+    });
+  });
+
+  return fieldIds;
 };
 
 const AGE_DATE_PREFIX = 'd_';
@@ -3341,6 +3386,23 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
       await updateSearchKeyLeaf(REACTION_SEARCH_KEY_INDEX, value, userId, 'add');
     }
   }
+
+  const prevFieldCountValues = getFieldCountIndexSet(prevData);
+  const nextFieldCountValues = getFieldCountIndexSet(nextData);
+
+  for (const value of prevFieldCountValues) {
+    if (!nextFieldCountValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(FIELD_COUNT_SEARCH_KEY_INDEX, value, userId, 'remove');
+    }
+  }
+
+  for (const value of nextFieldCountValues) {
+    if (!prevFieldCountValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchKeyLeaf(FIELD_COUNT_SEARCH_KEY_INDEX, value, userId, 'add');
+    }
+  }
 };
 
 export const createSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
@@ -3599,6 +3661,34 @@ export const createReactionSearchKeyIndexInCollection = async (collection, onPro
   }
 };
 
+export const createFieldCountSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  if (!usersData) return;
+
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  const updates = userIds.reduce((acc, userId) => {
+    const user = usersData[userId] || {};
+    const fieldCountValue = normalizeFieldCountSearchKeyIndexValue(user);
+    acc[`${SEARCH_KEY_INDEX_ROOT}/${FIELD_COUNT_SEARCH_KEY_INDEX}/${fieldCountValue}/${userId}`] = true;
+    return acc;
+  }, {});
+
+  const updateEntries = Object.entries(updates);
+
+  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
+    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
+    const chunkPayload = Object.fromEntries(chunkEntries);
+    // eslint-disable-next-line no-await-in-loop
+    await update(ref2(database), chunkPayload);
+
+    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
+    if (onProgress && progress % 10 === 0) onProgress(progress);
+  }
+};
+
 const SEARCH_KEY_INDEX_BUILDERS = {
   [SEARCH_KEY_INDEX_TYPES.blood]: createSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.maritalStatus]: createMaritalStatusSearchKeyIndexInCollection,
@@ -3609,6 +3699,7 @@ const SEARCH_KEY_INDEX_BUILDERS = {
   [SEARCH_KEY_INDEX_TYPES.age]: createAgeSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.imtHeightWeight]: createImtHeightWeightSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.reaction]: createReactionSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.fieldCount]: createFieldCountSearchKeyIndexInCollection,
 };
 
 export const createSelectedSearchKeyIndexesInCollection = async (collection, indexTypes = [], onProgress) => {
@@ -3671,6 +3762,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   const ageUserIds = await collectAgeIdsByFilters(filterSettings?.age);
   const imtUserIds = await collectImtIdsByFilters(filterSettings?.imt);
   const heightUserIds = await collectHeightIdsByFilters(filterSettings?.height);
+  const fieldCountUserIds = await collectFieldCountIdsByFilters(filterSettings?.fields);
   const reactionUserIds = await collectReactionIdsByFilters(filterSettings?.reaction, {
     favoritesMap,
     dislikedMap,
@@ -3732,6 +3824,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   const shouldApplyAgeFilter = ageUserIds instanceof Set;
   const shouldApplyImtFilter = imtUserIds instanceof Set;
   const shouldApplyHeightFilter = heightUserIds instanceof Set;
+  const shouldApplyFieldCountFilter = fieldCountUserIds instanceof Set;
   const shouldApplyReactionFilter = reactionUserIds instanceof Set;
 
   let finalIds = [...bloodUserIds];
@@ -3757,6 +3850,9 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   }
   if (shouldApplyHeightFilter) {
     finalIds = finalIds.filter(id => heightUserIds.has(id));
+  }
+  if (shouldApplyFieldCountFilter) {
+    finalIds = finalIds.filter(id => fieldCountUserIds.has(id));
   }
   if (shouldApplyReactionFilter) {
     finalIds = finalIds.filter(id => reactionUserIds.has(id));
@@ -4113,10 +4209,10 @@ const getUserIdCategory = userId => {
 
 const getFieldCountCategory = value => {
   const count = Object.keys(value).length;
-  if (count < 4) return 'lt4';
-  if (count < 8) return 'lt8';
-  if (count < 12) return 'lt12';
-  return 'other';
+  if (count <= 5) return 'le5';
+  if (count <= 10) return 'f6_10';
+  if (count <= 20) return 'f11_20';
+  return 'f20_plus';
 };
 
 const getCommentLengthCategory = comment => {

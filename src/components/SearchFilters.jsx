@@ -269,10 +269,10 @@ export const SearchFilters = ({
         filterName: 'fields',
         label: 'Fields',
         options: [
-          { val: 'lt4', label: '<4' },
-          { val: 'lt8', label: '<8' },
-          { val: 'lt12', label: '<12' },
-          { val: 'other', label: '?' },
+          { val: 'le5', label: '≤5' },
+          { val: 'f6_10', label: '6-10' },
+          { val: 'f11_20', label: '11-20' },
+          { val: 'f20_plus', label: '20+' },
         ],
       },
       {
