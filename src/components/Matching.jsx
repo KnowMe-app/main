@@ -462,7 +462,7 @@ const CardWrapper = styled.div`
   position: relative;
   width: 100%;
   border: 1px solid #e2e2e2;
-  border-radius: 8px;
+  border-radius: 0;
   box-sizing: border-box;
   overflow: hidden;
   background: #fff;
@@ -513,13 +513,12 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 
 const Card = styled.div`
   width: 100%;
-  height: ${({ $small, $compactWithoutPhoto }) => {
-    if ($compactWithoutPhoto) return 'auto';
-    const base = $small ? 30 : 50;
-    return `${base}vh`;
-  }};
-  min-height: ${({ $compactWithoutPhoto }) => ($compactWithoutPhoto ? '0' : 'unset')};
-  padding-bottom: ${({ $compactWithoutPhoto }) => ($compactWithoutPhoto ? '56px' : '0')};
+  height: auto;
+  min-height: ${({ $stackMinHeight }) =>
+    Number.isFinite($stackMinHeight) && $stackMinHeight > 0
+      ? `${$stackMinHeight}px`
+      : 'unset'};
+  padding-bottom: 0;
   background: linear-gradient(180deg, #fffaf2 0%, #f7f7f7 100%);
   background-size: cover;
   background-position: center;
@@ -532,17 +531,6 @@ const Card = styled.div`
   border: 1px solid rgba(255, 255, 255, 0.8);
   isolation: isolate;
   margin-bottom: 10px;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 4px;
-    background: linear-gradient(90deg, ${color.accent} 0%, ${color.accent2} 50%, ${color.accent} 100%);
-    z-index: 2;
-  }
 
   &::after {
     content: '';
@@ -1075,6 +1063,8 @@ const SwipeableCard = ({
   viewMode,
   handleRemove,
   togglePublish,
+  onHeightChange,
+  stackMinHeight,
 }) => {
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
@@ -1101,6 +1091,7 @@ const SwipeableCard = ({
 
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(null);
+  const cardRef = useRef(null);
   const startX = useRef(null);
   const wasSwiped = useRef(false);
 
@@ -1159,6 +1150,12 @@ const SwipeableCard = ({
   };
 
   const current = slides[index];
+  useLayoutEffect(() => {
+    if (!onHeightChange || !cardRef.current) return;
+    const { height } = cardRef.current.getBoundingClientRect();
+    if (height > 0) onHeightChange(height);
+  }, [current, onHeightChange]);
+
   const style =
     current === 'main'
       ? photo
@@ -1193,9 +1190,11 @@ const SwipeableCard = ({
 
   return (
     <AnimatedCard
+      ref={cardRef}
       $dir={dir}
       $small={isAgency}
       $compactWithoutPhoto={!photo}
+      $stackMinHeight={stackMinHeight}
       $hasPhoto={!!photo}
       data-card
       onClick={handleClick}
@@ -2218,6 +2217,15 @@ const Matching = () => {
 
   const gridRef = useRef(null);
   const [preLastCardNode, setPreLastCardNode] = useState(null);
+  const [uniformStackHeight, setUniformStackHeight] = useState(null);
+
+  const handleCardHeightReport = React.useCallback(height => {
+    if (!Number.isFinite(height) || height <= 0) return;
+    setUniformStackHeight(prev => {
+      if (!Number.isFinite(prev) || prev <= 0) return height;
+      return height > prev ? height : prev;
+    });
+  }, []);
 
 
   const visibleUsers = useMemo(() => {
@@ -2263,6 +2271,10 @@ const Matching = () => {
     ).map(([, u]) => u),
     filters
   ).filter(u => isAllowedIdForCollection(u.userId, collectionSource));
+
+  useEffect(() => {
+    setUniformStackHeight(null);
+  }, [viewMode, filteredUsers.length]);
 
   useEffect(() => {
     if (viewMode !== 'default') return;
@@ -2466,6 +2478,8 @@ const Matching = () => {
                         viewMode={viewMode}
                         handleRemove={handleRemove}
                         togglePublish={togglePublish}
+                        onHeightChange={handleCardHeightReport}
+                        stackMinHeight={uniformStackHeight}
                       />
                       <CommentBox>
                         <ResizableCommentInput
