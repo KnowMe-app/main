@@ -599,6 +599,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     { key: 'age', label: 'age' },
     { key: 'imtHeightWeight', label: 'imt+height+weight' },
     { key: 'reaction', label: 'reaction' },
+    { key: 'fieldCount', label: 'fields' },
   ];
 
   const location = useLocation();
@@ -3658,7 +3659,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onChange={handleFilterChange}
               storageKey={filterStorageKey}
               bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
-              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'csection', 'reaction'] : undefined}
+              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction'] : undefined}
             />
             <ButtonsContainer>
               {userNotFound && (
