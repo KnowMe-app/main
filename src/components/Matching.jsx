@@ -808,7 +808,7 @@ const Title = styled.span`
   display: inline-block;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  font-size: 11px;
+  font-size: ${({ $isPotentialED }) => ($isPotentialED ? '20px' : '11px')};
 `;
 
 const DonorName = styled.strong`
@@ -1399,6 +1399,7 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
   const isEggDonor = role.includes('ed');
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
   const selectedFields = renderSelectedFields(user, { isAdmin }).filter(Boolean);
+  const roleTitle = getRoleTitle(user);
   const regionInfo = normalizeRegion(getCurrentValue(user.region));
   const cityInfo = getCurrentValue(user.city);
   const locationInfo = isEggDonor
@@ -1450,7 +1451,7 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
     <InfoSlide>
       <ProfileSection>
         <Info>
-          <Title>{getRoleTitle(user)}</Title>
+          <Title $isPotentialED={roleTitle === 'Potential ED'}>{roleTitle}</Title>
           <DonorName>
             {displayName}
             {user.birth ? `, ${utilCalculateAge(user.birth)}` : ''}
