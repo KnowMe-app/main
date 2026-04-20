@@ -512,10 +512,13 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 
 const Card = styled.div`
   width: 100%;
-  height: ${({ $small }) => {
+  height: ${({ $small, $compactWithoutPhoto }) => {
+    if ($compactWithoutPhoto) return 'auto';
     const base = $small ? 30 : 50;
     return `${base}vh`;
   }};
+  min-height: ${({ $compactWithoutPhoto }) => ($compactWithoutPhoto ? '0' : 'unset')};
+  padding-bottom: ${({ $compactWithoutPhoto }) => ($compactWithoutPhoto ? '56px' : '0')};
   background: linear-gradient(145deg, #252538, #1e1e30);
   background-size: cover;
   background-position: center;
@@ -1014,7 +1017,8 @@ const Id = styled.div`
 
 const InfoSlide = styled.div`
   width: 100%;
-  height: 100%;
+  height: auto;
+  min-height: 100%;
   background: linear-gradient(145deg, #252538, #1e1e30);
   color: #f0f0f5;
   overflow-y: auto;
@@ -1183,6 +1187,7 @@ const SwipeableCard = ({
     <AnimatedCard
       $dir={dir}
       $small={isAgency}
+      $compactWithoutPhoto={!photo}
       $hasPhoto={!!photo}
       data-card
       onClick={handleClick}
@@ -1359,6 +1364,10 @@ const getInfoSlidesCount = user => {
 };
 
 const getRoleTitle = user => {
+  const userRole = (user.userRole || '')
+    .toString()
+    .trim()
+    .toLowerCase();
   const role = (user.userRole || user.role || '')
     .toString()
     .trim()
@@ -1367,6 +1376,7 @@ const getRoleTitle = user => {
   if (role === 'ag') return 'Agency';
   if (role === 'ip') return 'Intended parents';
   if (role === 'ed') return 'Egg donor';
+  if (!userRole) return 'Potential ED';
   return '';
 };
 
