@@ -604,6 +604,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const location = useLocation();
   const lastUrlUserIdRef = useRef(new URLSearchParams(location.search).get('userId'));
+  const initialAccess = resolveAccess({
+    uid: auth.currentUser?.uid,
+    accessLevel: localStorage.getItem('accessLevel'),
+  });
 
   const [userNotFound, setUserNotFound] = useState(false);
 
@@ -798,7 +802,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
-    const urlUserId = params.get('userId');
+    const urlUserId = initialAccess.isAdmin ? params.get('userId') : null;
     const restoredUserId = urlUserId || localStorage.getItem(EDIT_PROFILE_USER_ID_KEY) || '';
 
     if (!restoredUserId) {
@@ -1235,11 +1239,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (hasSearchParam) {
       setSearch(prev => (prev === urlSearchValue ? prev : urlSearchValue));
-    } else if (urlUserId) {
+    } else if (urlUserId && isAdmin) {
       setSearch(prev => (prev ? prev : urlUserId));
     }
 
     if (urlUserId) {
+      if (!isAdmin) {
+        lastUrlUserIdRef.current = null;
+        return;
+      }
       if (lastUrlUserIdRef.current !== urlUserId) {
         lastUrlUserIdRef.current = urlUserId;
         setProfileSource('');
@@ -1248,7 +1256,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     } else {
       lastUrlUserIdRef.current = null;
     }
-  }, [location.search, setSearch, setState]);
+  }, [isAdmin, location.search, setSearch, setState]);
 
   useEffect(() => {
     const normalized = (search || '').trim();
