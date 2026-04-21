@@ -3184,14 +3184,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (selectedIndexJobs.searchKeyUsersAll) {
         const toastId = 'index-searchkey-users-all-progress';
         const allSearchKeyIndexTypes = SEARCH_KEY_INDEX_OPTIONS.map(option => option.key);
-        toast.loading('Indexing searchKey/users all indexes...', { id: toastId });
+        const indexTypesForUsers = selectedIndexTypes.length ? selectedIndexTypes : allSearchKeyIndexTypes;
+        toast.loading(
+          selectedIndexTypes.length
+            ? 'Indexing searchKey/users selected indexes...'
+            : 'Indexing searchKey/users all indexes...',
+          { id: toastId },
+        );
         await createSelectedSearchKeyIndexesInCollection(
           'users',
-          allSearchKeyIndexTypes,
+          indexTypesForUsers,
           (progress, meta) => {
             const indexLabel = meta?.indexType || '';
             const indexNumber = meta?.indexNumber || 1;
-            const totalIndexes = meta?.totalIndexes || allSearchKeyIndexTypes.length;
+            const totalIndexes = meta?.totalIndexes || indexTypesForUsers.length;
             toast.loading(
               `Indexing searchKey/users/${indexLabel} ${progress}% (${indexNumber}/${totalIndexes})`,
               { id: toastId },
@@ -3199,10 +3205,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           },
           { rootPath: 'searchKey/users' },
         );
-        toast.success('Всі searchKey/users індекси для users побудовано', { id: toastId });
+        toast.success(
+          selectedIndexTypes.length
+            ? 'Обрані searchKey/users індекси для users побудовано'
+            : 'Всі searchKey/users індекси для users побудовано',
+          { id: toastId },
+        );
       }
 
       if (!selectedIndexTypes.length) {
+        return;
+      }
+
+      if (selectedIndexJobs.searchKeyUsersAll) {
         return;
       }
 
@@ -3219,18 +3234,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         toast.loading(formatProgressMessage('newUsers', progress, meta), { id: toastId });
       });
 
-      if (!selectedIndexJobs.searchKeyUsersAll) {
-        await createSelectedSearchKeyIndexesInCollection('users', selectedIndexTypes, (progress, meta) => {
-          toast.loading(formatProgressMessage('users', progress, meta), { id: toastId });
-        });
-      }
+      await createSelectedSearchKeyIndexesInCollection('users', selectedIndexTypes, (progress, meta) => {
+        toast.loading(formatProgressMessage('users', progress, meta), { id: toastId });
+      });
 
-      toast.success(
-        selectedIndexJobs.searchKeyUsersAll
-          ? 'Обрані searchKey індекси побудовано (newUsers), users вже покрито через "Всі searchKey/users"'
-          : 'Обрані searchKey індекси побудовано',
-        { id: toastId },
-      );
+      toast.success('Обрані searchKey індекси побудовано', { id: toastId });
     } catch (error) {
       console.error('[AddNewProfile] Indexing failed', error);
       toast.error(`Помилка індексації: ${error?.message || 'невідома помилка'}`);
