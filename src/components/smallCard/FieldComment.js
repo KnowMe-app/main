@@ -52,6 +52,7 @@ export const FieldComment = ({ userData, setUsers, setState }) => {
           resize: 'none',
           overflow: 'hidden',
           padding: '5px',
+          paddingLeft: '8px',
           paddingRight: userData.myComment ? '22px' : '5px',
         }}
       />
