@@ -1322,6 +1322,23 @@ const SwipeableCard = ({
   );
 };
 
+const normalizeOwnKidsValue = value => {
+  const normalized = (value ?? '').toString().trim().toLowerCase();
+
+  if (normalized === '') return value;
+
+  if (['0', '-', 'no', 'ні', 'немає'].includes(normalized)) {
+    return 'No';
+  }
+
+  const numericValue = Number(normalized);
+  if (Number.isFinite(numericValue) && numericValue >= 1) {
+    return 'Yes';
+  }
+
+  return value;
+};
+
 const buildSelectedFields = (user, { isAdmin } = {}) => {
   return FIELDS.map(field => {
     if (field.key === 'reward' && !isAdmin) return null;
@@ -1362,6 +1379,10 @@ const buildSelectedFields = (user, { isAdmin } = {}) => {
           value = 'Single';
         }
       }
+    }
+
+    if (field.key === 'ownKids') {
+      value = normalizeOwnKidsValue(value);
     }
 
     if (value === undefined || value === '' || value === null) return null;
