@@ -2291,6 +2291,7 @@ const Matching = () => {
     }
 
     const shouldInjectAdditionalCards =
+      viewMode === 'default' &&
       hasAdditionalAccessRules &&
       additionalNewUsers.length > 0;
 
@@ -2308,7 +2309,7 @@ const Matching = () => {
 
     const mergedUsers = Array.from(byId.values());
     if (viewMode !== 'default') {
-      return mergedUsers;
+      return baseUsers;
     }
 
     return mergedUsers.filter(
