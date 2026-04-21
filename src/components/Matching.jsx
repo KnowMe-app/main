@@ -877,6 +877,7 @@ const FIELDS = [
   { key: 'reward', label: 'Expected reward $' },
   { key: 'experience', label: 'Donation exp' },
 ];
+const MAIN_INFO_FIELDS_LIMIT = 15;
 
 const Table = styled.div`
   display: grid;
@@ -1090,8 +1091,10 @@ const SwipeableCard = ({
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
   const education = getCurrentValue(user.education);
-
-  const showDescriptionSlide = Boolean(moreInfo || profession || education);
+  const { mainFields, extraFields } = splitSelectedFields(user, { isAdmin });
+  const showDescriptionSlide = Boolean(
+    moreInfo || profession || education || extraFields.length > 0
+  );
 
   const slides = React.useMemo(() => {
     const photosArr = Array.isArray(user.photos)
@@ -1188,7 +1191,7 @@ const SwipeableCard = ({
     .join(' ');
   const isEggDonor = (role || '').includes('ed');
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
-  const selectedFields = renderSelectedFields(user, { isAdmin }).filter(Boolean);
+  const selectedFields = mainFields;
   const regionInfo = normalizeRegion(getCurrentValue(user.region));
   const cityInfo = getCurrentValue(user.city);
   const locationInfo = isEggDonor
@@ -1216,6 +1219,7 @@ const SwipeableCard = ({
     >
       {current === 'description' && (
         <InfoSlide $reserveActionButtons={!photo}>
+          {extraFields.length > 0 && <Table>{extraFields}</Table>}
           {education && (
             <MoreInfo>
               <strong>Education</strong>
@@ -1318,7 +1322,7 @@ const SwipeableCard = ({
   );
 };
 
-const renderSelectedFields = (user, { isAdmin } = {}) => {
+const buildSelectedFields = (user, { isAdmin } = {}) => {
   return FIELDS.map(field => {
     if (field.key === 'reward' && !isAdmin) return null;
 
@@ -1371,11 +1375,22 @@ const renderSelectedFields = (user, { isAdmin } = {}) => {
   });
 };
 
+const splitSelectedFields = (user, { isAdmin } = {}) => {
+  const allFields = buildSelectedFields(user, { isAdmin }).filter(Boolean);
+  return {
+    mainFields: allFields.slice(0, MAIN_INFO_FIELDS_LIMIT),
+    extraFields: allFields.slice(MAIN_INFO_FIELDS_LIMIT),
+  };
+};
+
 const getInfoSlidesCount = user => {
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
   const education = getCurrentValue(user.education);
-  const showDescriptionSlide = Boolean(moreInfo || profession || education);
+  const { extraFields } = splitSelectedFields(user);
+  const showDescriptionSlide = Boolean(
+    moreInfo || profession || education || extraFields.length > 0
+  );
   return 1 + (showDescriptionSlide ? 1 : 0);
 };
 
@@ -1411,6 +1426,7 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
   const education = getCurrentValue(user.education);
+  const { mainFields, extraFields } = splitSelectedFields(user, { isAdmin });
 
   const displayName = [
     getCurrentValue(user.name),
@@ -1425,7 +1441,7 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
     .toLowerCase();
   const isEggDonor = role.includes('ed');
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
-  const selectedFields = renderSelectedFields(user, { isAdmin }).filter(Boolean);
+  const selectedFields = mainFields;
   const roleTitle = getRoleTitle(user);
   const regionInfo = normalizeRegion(getCurrentValue(user.region));
   const cityInfo = getCurrentValue(user.city);
@@ -1443,6 +1459,7 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
   if (variant === 'description') {
     return (
       <InfoSlide>
+        {extraFields.length > 0 && <Table>{extraFields}</Table>}
         {education && (
           <MoreInfo>
             <strong>Education</strong>
@@ -2424,8 +2441,9 @@ const Matching = () => {
                 const moreInfo = getCurrentValue(user.moreInfo_main);
                 const profession = getCurrentValue(user.profession);
                 const education = getCurrentValue(user.education);
+                const { extraFields } = splitSelectedFields(user, { isAdmin });
                 const showDescriptionSlide = Boolean(
-                  moreInfo || profession || education
+                  moreInfo || profession || education || extraFields.length > 0
                 );
                 if (showDescriptionSlide) infoVariants.push('description');
               } else {
