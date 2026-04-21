@@ -522,7 +522,7 @@ const Card = styled.div`
   aspect-ratio: ${({ $hasPhoto, $small }) =>
     $hasPhoto ? ($small ? '4 / 5' : '3 / 4') : 'auto'};
   min-height: ${({ $hasPhoto, $small, $compactWithoutPhoto }) =>
-    !$hasPhoto && $compactWithoutPhoto ? '0' : $small ? '280px' : '340px'};
+    !$hasPhoto && $compactWithoutPhoto ? ($small ? '320px' : '380px') : $small ? '280px' : '340px'};
   padding-bottom: 0;
   background: linear-gradient(180deg, #fffaf2 0%, #f7f7f7 100%);
   background-size: cover;
@@ -1035,6 +1035,7 @@ const InfoSlide = styled.div`
   overflow-y: visible;
   box-sizing: border-box;
   padding: 12px;
+  padding-bottom: ${({ $reserveActionButtons }) => ($reserveActionButtons ? '56px' : '12px')};
 `;
 
 const slideLeft = keyframes`
@@ -1207,7 +1208,7 @@ const SwipeableCard = ({
       style={style}
     >
       {current === 'description' && (
-        <InfoSlide>
+        <InfoSlide $reserveActionButtons={!photo}>
           {education && (
             <MoreInfo>
               <strong>Education</strong>
@@ -1238,7 +1239,7 @@ const SwipeableCard = ({
         </InfoSlide>
       )}
       {current === 'info' && (
-        <InfoSlide>
+        <InfoSlide $reserveActionButtons={!photo}>
           <ProfileSection>
             <Info>
               <Title>{getRoleTitle(user)}</Title>
