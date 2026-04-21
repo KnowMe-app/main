@@ -158,12 +158,21 @@ const formatDate = date => {
   return `${day}.${month}.${year}`;
 };
 
-export const FieldLastCycle = ({ userData, setUsers, setState }) => {
+export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {} }) => {
   const [status, setStatus] = React.useState(userData.cycleStatus ?? '');
   const submittedRef = React.useRef(false);
   const [localValue, setLocalValue] = React.useState(formatDateToDisplay(userData.lastCycle) || '');
   const [showConfirm, setShowConfirm] = React.useState(false);
   const pendingValueRef = React.useRef('');
+  const submitWithHistory = React.useCallback(
+    (payload, removeKeys = []) => {
+      if (typeof submitOptions?.onSubmitHistorySnapshot === 'function') {
+        submitOptions.onSubmitHistorySnapshot(payload);
+      }
+      handleSubmit(payload, 'overwrite', removeKeys);
+    },
+    [submitOptions],
+  );
 
   const nextCycle = React.useMemo(() => calculateNextDate(userData.lastCycle), [userData.lastCycle]);
 
@@ -233,7 +242,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState }) => {
           cycleStatus: normalizedStatus,
         };
         handleChange(setUsers, setState, userData.userId, updates);
-        handleSubmit({ userId: userData.userId, ...updates }, 'overwrite');
+        submitWithHistory({ userId: userData.userId, ...updates });
         submittedRef.current = true;
       } else {
         const updates = normalizedStatus
@@ -273,11 +282,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState }) => {
         if ('getInTouch' in updates && !updates.getInTouch) {
           removalKeys.push('getInTouch');
         }
-        handleSubmit(
-          { userId: userData.userId, ...updates },
-          'overwrite',
-          removalKeys,
-        );
+        submitWithHistory({ userId: userData.userId, ...updates }, removalKeys);
         submittedRef.current = true;
       }
     } else {
@@ -286,7 +291,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState }) => {
         ? { lastCycle: serverFormattedDate, cycleStatus: normalizedStatus }
         : { lastCycle: serverFormattedDate };
       handleChange(setUsers, setState, userData.userId, updates);
-      handleSubmit({ userId: userData.userId, ...updates }, 'overwrite');
+        submitWithHistory({ userId: userData.userId, ...updates });
       submittedRef.current = true;
     }
   };
@@ -334,7 +339,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState }) => {
       }
 
       handleChange(setUsers, setState, userData.userId, updates);
-      handleSubmit({ userId: userData.userId, ...updates }, 'overwrite');
+      submitWithHistory({ userId: userData.userId, ...updates });
       submittedRef.current = true;
       return newState;
     });
@@ -370,14 +375,11 @@ export const FieldLastCycle = ({ userData, setUsers, setState }) => {
           false,
           {},
         );
-        handleSubmit(
-          { userId: userData.userId, stimulationSchedule: undefined },
-          'overwrite',
-        );
+        submitWithHistory({ userId: userData.userId, stimulationSchedule: undefined });
       }
     }
     if (!submittedRef.current) {
-      handleSubmit({ userId: userData.userId }, 'overwrite');
+      submitWithHistory({ userId: userData.userId });
     }
     submittedRef.current = false;
   };
@@ -402,14 +404,11 @@ export const FieldLastCycle = ({ userData, setUsers, setState }) => {
                   false,
                   {},
                 );
-                handleSubmit(
-                  { userId: userData.userId, stimulationSchedule: undefined },
-                  'overwrite',
-                );
+                submitWithHistory({ userId: userData.userId, stimulationSchedule: undefined });
               }
             }
             if (!submittedRef.current) {
-              handleSubmit({ userId: userData.userId }, 'overwrite');
+              submitWithHistory({ userId: userData.userId });
             }
             submittedRef.current = false;
           }}
@@ -441,10 +440,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState }) => {
         false,
         {},
       );
-      handleSubmit(
-        { userId: userData.userId, stimulationSchedule: undefined },
-        'overwrite',
-      );
+      submitWithHistory({ userId: userData.userId, stimulationSchedule: undefined });
     } else {
       handleChange(
         setUsers,
@@ -455,12 +451,9 @@ export const FieldLastCycle = ({ userData, setUsers, setState }) => {
         false,
         {},
       );
-      handleSubmit(
-        { userId: userData.userId, stimulationSchedule: scheduleString },
-        'overwrite',
-      );
+      submitWithHistory({ userId: userData.userId, stimulationSchedule: scheduleString });
     }
-  }, [setUsers, setState, userData]);
+  }, [setUsers, setState, submitWithHistory, userData]);
 
   const handleSetToday = () => {
     const today = new Date();
@@ -486,14 +479,11 @@ export const FieldLastCycle = ({ userData, setUsers, setState }) => {
           false,
           {},
         );
-        handleSubmit(
-          { userId: userData.userId, stimulationSchedule: undefined },
-          'overwrite',
-        );
+        submitWithHistory({ userId: userData.userId, stimulationSchedule: undefined });
       }
     }
     if (!submittedRef.current) {
-      handleSubmit({ userId: userData.userId }, 'overwrite');
+      submitWithHistory({ userId: userData.userId });
     }
     submittedRef.current = false;
   };
@@ -581,7 +571,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState }) => {
                   'getInTouch',
                   nextCycle,
                   true,
-                  {},
+                  submitOptions,
                 )
               }
               style={{ backgroundColor: '#007BFF' }}

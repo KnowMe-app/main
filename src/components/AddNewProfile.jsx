@@ -582,6 +582,39 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     (left, right) => JSON.stringify(toComparableHistoryState(left)) === JSON.stringify(toComparableHistoryState(right)),
     [toComparableHistoryState],
   );
+  const registerHistorySnapshot = useCallback(
+    snapshotState => {
+      if (!snapshotState?.userId) return;
+
+      const history = editHistoryRef.current;
+
+      if (history.userId !== snapshotState.userId) {
+        editHistoryRef.current = {
+          userId: snapshotState.userId,
+          current: cloneProfileState(snapshotState),
+          undoStack: [],
+          redoStack: [],
+        };
+        historyNavigationRef.current = false;
+        setHistoryVersion(prev => prev + 1);
+      } else if (!history.current) {
+        history.current = cloneProfileState(snapshotState);
+        historyNavigationRef.current = false;
+        setHistoryVersion(prev => prev + 1);
+      } else if (!areHistorySnapshotsEqual(history.current, snapshotState)) {
+        if (!historyNavigationRef.current) {
+          history.undoStack.push(cloneProfileState(history.current));
+          history.redoStack = [];
+          setHistoryVersion(prev => prev + 1);
+        }
+        history.current = cloneProfileState(snapshotState);
+        historyNavigationRef.current = false;
+      } else if (historyNavigationRef.current) {
+        historyNavigationRef.current = false;
+      }
+    },
+    [areHistorySnapshotsEqual, cloneProfileState],
+  );
 
   const LOAD_SORT_MODES = {
     GIT: 'GIT',
@@ -896,34 +929,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       delete syncedState.lastDelivery;
     }
 
-    if (syncedState?.userId) {
-      const history = editHistoryRef.current;
-
-      if (history.userId !== syncedState.userId) {
-        editHistoryRef.current = {
-          userId: syncedState.userId,
-          current: cloneProfileState(syncedState),
-          undoStack: [],
-          redoStack: [],
-        };
-        historyNavigationRef.current = false;
-        setHistoryVersion(prev => prev + 1);
-      } else if (!history.current) {
-        history.current = cloneProfileState(syncedState);
-        historyNavigationRef.current = false;
-        setHistoryVersion(prev => prev + 1);
-      } else if (!areHistorySnapshotsEqual(history.current, syncedState)) {
-        if (!historyNavigationRef.current) {
-          history.undoStack.push(cloneProfileState(history.current));
-          history.redoStack = [];
-          setHistoryVersion(prev => prev + 1);
-        }
-        history.current = cloneProfileState(syncedState);
-        historyNavigationRef.current = false;
-      } else if (historyNavigationRef.current) {
-        historyNavigationRef.current = false;
-      }
-    }
+    registerHistorySnapshot(syncedState);
 
     if (!isAdmin) {
       if (!syncedState?.userId) {
@@ -3298,6 +3304,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, [cloneProfileState, state]);
 
+  const handleTopBlockSubmitHistorySnapshot = useCallback(
+    submittedState => {
+      if (!submittedState || typeof submittedState !== 'object') return;
+      registerHistorySnapshot(submittedState);
+    },
+    [registerHistorySnapshot],
+  );
+
   const handleUndoProfileChanges = async () => {
     if (!state?.userId) return;
     const history = editHistoryRef.current;
@@ -3541,6 +3555,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 currentFilter,
                 isDateInRange,
                 openMedicationsModal,
+                null,
+                {},
+                handleTopBlockSubmitHistorySnapshot,
               )}
             </div>
             {shouldShowSchedule && state && (

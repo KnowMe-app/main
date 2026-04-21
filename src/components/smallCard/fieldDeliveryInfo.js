@@ -3,7 +3,7 @@ import { utilCalculateMonthsAgo } from './utilCalculateMonthsAgo';
 import { AttentionButton } from 'components/styles';
 import { formatDateToDisplay } from 'components/inputValidations';
 
-export const fieldDeliveryInfo = (setUsers, setState, userData) => {
+export const fieldDeliveryInfo = (setUsers, setState, userData, submitOptions = {}) => {
   const { ownKids, lastDelivery, csection } = userData;
   const formattedLastDelivery = formatDateToDisplay(lastDelivery);
 
@@ -126,6 +126,7 @@ export const fieldDeliveryInfo = (setUsers, setState, userData) => {
               'getInTouch',
               formatDate(whenGetInTouch),
               true,
+              submitOptions,
             );
           }}
         >

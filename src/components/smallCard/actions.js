@@ -17,6 +17,19 @@ export const handleChange = (
   click,
   options = {}
 ) => {
+  const triggerHistorySnapshot = payload => {
+    if (typeof options?.onSubmitHistorySnapshot !== 'function') {
+      return;
+    }
+    const snapshot = payload && typeof payload === 'object' ? { ...payload } : payload;
+    options.onSubmitHistorySnapshot(snapshot);
+  };
+
+  const submitWithHistory = (payload, removalList = []) => {
+    triggerHistorySnapshot(payload);
+    handleSubmit(payload, 'overwrite', removalList);
+  };
+
   const formatValue = (k, v) => {
     if (k === 'getInTouch' || k === 'lastCycle') return formatDateAndFormula(v);
     if (k === 'lastDelivery') return formatDateToServer(v);
@@ -41,7 +54,7 @@ export const handleChange = (
       return;
     }
 
-    handleSubmit({ ...payload, userId: resolvedId }, 'overwrite', removalList);
+    submitWithHistory({ ...payload, userId: resolvedId }, removalList);
   };
 
   if (typeof key === 'object' && key !== null) {
@@ -89,9 +102,8 @@ export const handleChange = (
           delete newState[key];
         });
         clickFlag &&
-          handleSubmit(
+          submitWithHistory(
             { ...newState, userId: userId || newState.userId },
-            'overwrite',
             removeKeys,
           );
         return newState;
@@ -108,8 +120,7 @@ export const handleChange = (
             delete newState[userId][key];
           }
         });
-        clickFlag &&
-          handleSubmit({ ...newState[userId], userId }, 'overwrite', removeKeys);
+        clickFlag && submitWithHistory({ ...newState[userId], userId }, removeKeys);
         return newState;
       }
     };
@@ -186,9 +197,8 @@ export const handleChange = (
           newState.lastAction = Date.now();
         }
         click &&
-          handleSubmit(
+          submitWithHistory(
             { ...newState, userId: userId || newState.userId },
-            'overwrite',
             removalKeys,
           );
         return newState;
@@ -214,9 +224,8 @@ export const handleChange = (
           [userId]: updatedUser,
         };
         click &&
-          handleSubmit(
+          submitWithHistory(
             { ...newState[userId], userId },
-            'overwrite',
             removalKeys,
           );
         return newState;
@@ -249,9 +258,8 @@ export const handleChange = (
         [userId]: updatedUser,
       };
       click &&
-        handleSubmit(
+        submitWithHistory(
           { ...newState[userId], userId },
-          'overwrite',
           removalKeys,
         );
       return newState;

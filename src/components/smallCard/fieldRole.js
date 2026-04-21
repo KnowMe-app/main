@@ -1,9 +1,9 @@
 import { handleChange } from './actions';
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
 
-export const fieldRole = (userData, setUsers, setState) => {
+export const fieldRole = (userData, setUsers, setState, submitOptions = {}) => {
   const handleSetRole = role => {
-    handleChange(setUsers, setState, userData.userId, 'role', role, true, {});
+    handleChange(setUsers, setState, userData.userId, 'role', role, true, submitOptions);
   };
 
   return (
@@ -20,7 +20,7 @@ export const fieldRole = (userData, setUsers, setState) => {
             'role',
             e.target.value,
             true,
-            {},
+            submitOptions,
           )
         }
         style={{ marginLeft: 0, textAlign: 'left', width: '6ch' }}

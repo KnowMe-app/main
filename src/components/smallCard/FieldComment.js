@@ -2,7 +2,7 @@ import { handleChange, removeField } from './actions';
 import { useRef } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize';
 
-export const FieldComment = ({ userData, setUsers, setState }) => {
+export const FieldComment = ({ userData, setUsers, setState, submitOptions = {} }) => {
   // console.log('userData in RenderCommentInput :>> ', userData);
   const textareaRef = useRef(null);
   const autoResize = useAutoResize(textareaRef, userData.myComment);
@@ -41,7 +41,7 @@ export const FieldComment = ({ userData, setUsers, setState }) => {
             'myComment',
             currentComment,
             true,
-            {},
+            submitOptions,
           );
         }}
         style={{
