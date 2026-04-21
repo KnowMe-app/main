@@ -1281,7 +1281,7 @@ const SwipeableCard = ({
         setFavoriteUsers={setFavoriteUsers}
         dislikeUsers={dislikeUsers}
         setDislikeUsers={setDislikeUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+        onRemove={handleRemove}
       />
       <BtnDislike
         userId={user.userId}
@@ -1290,7 +1290,7 @@ const SwipeableCard = ({
         setDislikeUsers={setDislikeUsers}
         favoriteUsers={favoriteUsers}
         setFavoriteUsers={setFavoriteUsers}
-        onRemove={viewMode !== 'default' ? handleRemove : undefined}
+        onRemove={handleRemove}
       />
       {current === 'main' && isAgency && (
         <CardInfo>
