@@ -3322,67 +3322,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const canUndoChanges = Boolean(state?.userId) && editHistoryRef.current.undoStack.length > 0;
   const canRedoChanges = Boolean(state?.userId) && editHistoryRef.current.redoStack.length > 0;
-  const hasEditHistory =
-    Boolean(state?.userId) &&
-    (editHistoryRef.current.undoStack.length > 0 || editHistoryRef.current.redoStack.length > 0);
-
   return (
     <Container>
       <InnerContainer>
         {isLoggedIn && (
           <TopButtons>
-            {hasEditHistory && (
-              <EditActionButton
-                type="button"
-                onClick={handleUndoProfileChanges}
-                title="Відмінити останню зміну"
-                aria-label="Відмінити останню зміну"
-                disabled={!canUndoChanges}
-              >
-                  <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path
-                      d="M9 7L5 11L9 15"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M6 11H14C17.314 11 20 13.686 20 17"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </EditActionIcon>
-              </EditActionButton>
-            )}
-            {hasEditHistory && (
-              <EditActionButton
-                type="button"
-                onClick={handleRedoProfileChanges}
-                title="Відмінити відміну"
-                aria-label="Повернути зміну"
-                disabled={!canRedoChanges}
-              >
-                  <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path
-                      d="M15 7L19 11L15 15"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M18 11H10C6.686 11 4 13.686 4 17"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </EditActionIcon>
-              </EditActionButton>
-            )}
             <DotsButton
               onClick={() => {
                 setShowInfoModal('dotsMenu');
@@ -3522,6 +3466,56 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         )}
         {state.userId ? (
           <>
+            <TopButtons style={{ marginBottom: '8px' }}>
+              <EditActionButton
+                type="button"
+                onClick={handleUndoProfileChanges}
+                title="Відмінити останню зміну"
+                aria-label="Відмінити останню зміну"
+                disabled={!canUndoChanges}
+              >
+                <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M9 7L5 11L9 15"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M6 11H14C17.314 11 20 13.686 20 17"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </EditActionIcon>
+              </EditActionButton>
+              <EditActionButton
+                type="button"
+                onClick={handleRedoProfileChanges}
+                title="Відмінити відміну"
+                aria-label="Повернути зміну"
+                disabled={!canRedoChanges}
+              >
+                <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M15 7L19 11L15 15"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M18 11H10C6.686 11 4 13.686 4 17"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </EditActionIcon>
+              </EditActionButton>
+            </TopButtons>
             <div style={{ ...coloredCard(), marginBottom: '8px' }}>
               {renderTopBlock(
                 state,
