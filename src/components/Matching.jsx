@@ -485,7 +485,7 @@ const CommentInput = styled.textarea`
   margin: 0;
   display: block;
   box-sizing: border-box;
-  padding: 0 40px 0 8px;
+  padding: 0 40px 0 0;
   resize: none;
   overflow: hidden;
   height: 16px;
