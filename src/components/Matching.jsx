@@ -2294,22 +2294,35 @@ const Matching = () => {
       hasAdditionalAccessRules &&
       additionalNewUsers.length > 0;
 
-    if (!shouldInjectAdditionalCards) {
-      return baseUsers;
+    const byId = new Map(baseUsers.map(user => [user.userId, user]));
+    if (shouldInjectAdditionalCards) {
+      additionalNewUsers.forEach(user => {
+        const existing = byId.get(user.userId);
+        if (existing) {
+          byId.set(user.userId, { ...existing, ...user });
+        } else {
+          byId.set(user.userId, user);
+        }
+      });
     }
 
-    const byId = new Map(baseUsers.map(user => [user.userId, user]));
-    additionalNewUsers.forEach(user => {
-      const existing = byId.get(user.userId);
-      if (existing) {
-        byId.set(user.userId, { ...existing, ...user });
-      } else {
-        byId.set(user.userId, user);
-      }
-    });
+    const mergedUsers = Array.from(byId.values());
+    if (viewMode !== 'default') {
+      return mergedUsers;
+    }
 
-    return Array.from(byId.values());
-  }, [additionalNewUsers, isAdmin, parsedAdditionalAccessRules, users]);
+    return mergedUsers.filter(
+      user => !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
+    );
+  }, [
+    additionalNewUsers,
+    dislikeUsers,
+    favoriteUsers,
+    isAdmin,
+    parsedAdditionalAccessRules,
+    users,
+    viewMode,
+  ]);
 
   const filteredUsers = applyMatchingSearchKeyFilters(
     filterMain(
