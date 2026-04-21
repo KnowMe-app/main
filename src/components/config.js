@@ -2853,14 +2853,8 @@ const getRoleFilterKey = bucket => {
   return 'other';
 };
 
-const resolveRoleFilters = filterSettings => {
-  if (filterSettings?.role && typeof filterSettings.role === 'object') return filterSettings.role;
-  if (filterSettings?.userRole && typeof filterSettings.userRole === 'object') return filterSettings.userRole;
-  return undefined;
-};
-
 const isRoleBucketAllowedByFilters = (bucket, filterSettings = {}) => {
-  const roleFilters = resolveRoleFilters(filterSettings);
+  const roleFilters = filterSettings?.role;
   const shouldApplyRole = hasExplicitFilterSelection(roleFilters);
   if (!shouldApplyRole) return true;
 
@@ -3825,7 +3819,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   const indexedImtUserIds = collectIdsFromSnapshots(imtSnapshots);
   const shouldApplyMaritalStatusFilter = hasExplicitFilterSelection(filterSettings?.maritalStatus);
   const shouldApplyContactFilter = hasExplicitFilterSelection(filterSettings?.contact);
-  const shouldApplyRoleFilter = hasExplicitFilterSelection(resolveRoleFilters(filterSettings));
+  const shouldApplyRoleFilter = hasExplicitFilterSelection(filterSettings?.role);
   const shouldApplyUserIdFilter = hasExplicitFilterSelection(filterSettings?.userId);
   const shouldApplyAgeFilter = ageUserIds instanceof Set;
   const shouldApplyImtFilter = imtUserIds instanceof Set;
