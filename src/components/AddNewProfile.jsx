@@ -3219,6 +3219,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return ids;
     }
 
+    if (currentFilter === 'LAST_ACTION') {
+      return ids.sort((a, b) => {
+        const left = normalizeLastAction(users[a]?.lastAction) || 0;
+        const right = normalizeLastAction(users[b]?.lastAction) || 0;
+        return right - left;
+      });
+    }
+
     const reactionSortDirection = getSearchKeyReactionSortDirection(filters?.reaction);
     if (reactionSortDirection) {
       return ids.sort((a, b) => {
