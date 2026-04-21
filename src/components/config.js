@@ -3430,7 +3430,24 @@ export const createSearchKeyIndexInCollection = async (collection, onProgress, o
     );
 
     const progress = Math.floor(((i + batchIds.length) / totalUsers) * 100);
-    if (onProgress && progress % 10 === 0) onProgress(progress);
+    if (onProgress) onProgress(progress);
+  }
+};
+
+const uploadChunkedSearchKeyIndexUpdates = async (userIds, totalUsers, buildUpdates, onProgress) => {
+  if (!totalUsers) return;
+
+  for (let i = 0; i < userIds.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
+    const batchIds = userIds.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
+    const chunkPayload = buildUpdates(batchIds);
+
+    if (Object.keys(chunkPayload).length > 0) {
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref2(database), chunkPayload);
+    }
+
+    const progress = Math.floor((Math.min(i + batchIds.length, totalUsers) / totalUsers) * 100);
+    if (onProgress) onProgress(progress);
   }
 };
 
@@ -3443,24 +3460,18 @@ export const createMaritalStatusSearchKeyIndexInCollection = async (collection, 
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  const updates = userIds.reduce((acc, userId) => {
-    const user = usersData[userId] || {};
-    const maritalStatusValue = normalizeMaritalStatusIndexValue(user.maritalStatus);
-    acc[`${searchKeyRoot}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${maritalStatusValue}/${userId}`] = true;
-    return acc;
-  }, {});
-
-  const updateEntries = Object.entries(updates);
-
-  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
-    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
-    const chunkPayload = Object.fromEntries(chunkEntries);
-    // eslint-disable-next-line no-await-in-loop
-    await update(ref2(database), chunkPayload);
-
-    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
-    if (onProgress && progress % 10 === 0) onProgress(progress);
-  }
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        const maritalStatusValue = normalizeMaritalStatusIndexValue(user.maritalStatus);
+        acc[`${searchKeyRoot}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${maritalStatusValue}/${userId}`] = true;
+        return acc;
+      }, {}),
+    onProgress
+  );
 };
 
 export const createCsectionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
@@ -3472,24 +3483,18 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  const updates = userIds.reduce((acc, userId) => {
-    const user = usersData[userId] || {};
-    const csectionValue = normalizeCsectionIndexValue(user.csection);
-    acc[`${searchKeyRoot}/${CSECTION_SEARCH_KEY_INDEX}/${csectionValue}/${userId}`] = true;
-    return acc;
-  }, {});
-
-  const updateEntries = Object.entries(updates);
-
-  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
-    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
-    const chunkPayload = Object.fromEntries(chunkEntries);
-    // eslint-disable-next-line no-await-in-loop
-    await update(ref2(database), chunkPayload);
-
-    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
-    if (onProgress && progress % 10 === 0) onProgress(progress);
-  }
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        const csectionValue = normalizeCsectionIndexValue(user.csection);
+        acc[`${searchKeyRoot}/${CSECTION_SEARCH_KEY_INDEX}/${csectionValue}/${userId}`] = true;
+        return acc;
+      }, {}),
+    onProgress
+  );
 };
 
 export const createContactSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
@@ -3501,26 +3506,20 @@ export const createContactSearchKeyIndexInCollection = async (collection, onProg
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  const updates = userIds.reduce((acc, userId) => {
-    const user = usersData[userId] || {};
-    const contactValues = getContactIndexSet(user);
-    contactValues.forEach(contactValue => {
-      acc[`${searchKeyRoot}/${CONTACT_SEARCH_KEY_INDEX}/${contactValue}/${userId}`] = true;
-    });
-    return acc;
-  }, {});
-
-  const updateEntries = Object.entries(updates);
-
-  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
-    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
-    const chunkPayload = Object.fromEntries(chunkEntries);
-    // eslint-disable-next-line no-await-in-loop
-    await update(ref2(database), chunkPayload);
-
-    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
-    if (onProgress && progress % 10 === 0) onProgress(progress);
-  }
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        const contactValues = getContactIndexSet(user);
+        contactValues.forEach(contactValue => {
+          acc[`${searchKeyRoot}/${CONTACT_SEARCH_KEY_INDEX}/${contactValue}/${userId}`] = true;
+        });
+        return acc;
+      }, {}),
+    onProgress
+  );
 };
 
 export const createRoleSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
@@ -3532,24 +3531,18 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  const updates = userIds.reduce((acc, userId) => {
-    const user = usersData[userId] || {};
-    const roleValue = normalizeRoleSearchKeyIndexValue(user.role, user.userRole);
-    acc[`${searchKeyRoot}/${ROLE_SEARCH_KEY_INDEX}/${roleValue}/${userId}`] = true;
-    return acc;
-  }, {});
-
-  const updateEntries = Object.entries(updates);
-
-  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
-    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
-    const chunkPayload = Object.fromEntries(chunkEntries);
-    // eslint-disable-next-line no-await-in-loop
-    await update(ref2(database), chunkPayload);
-
-    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
-    if (onProgress && progress % 10 === 0) onProgress(progress);
-  }
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        const roleValue = normalizeRoleSearchKeyIndexValue(user.role, user.userRole);
+        acc[`${searchKeyRoot}/${ROLE_SEARCH_KEY_INDEX}/${roleValue}/${userId}`] = true;
+        return acc;
+      }, {}),
+    onProgress
+  );
 };
 
 export const createUserIdSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
@@ -3561,26 +3554,20 @@ export const createUserIdSearchKeyIndexInCollection = async (collection, onProgr
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  const updates = userIds.reduce((acc, userId) => {
-    const user = usersData[userId] || {};
-    const userIdValues = getUserIdIndexSet(user.userId || userId);
-    userIdValues.forEach(userIdValue => {
-      acc[`${searchKeyRoot}/${USER_ID_SEARCH_KEY_INDEX}/${userIdValue}/${userId}`] = true;
-    });
-    return acc;
-  }, {});
-
-  const updateEntries = Object.entries(updates);
-
-  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
-    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
-    const chunkPayload = Object.fromEntries(chunkEntries);
-    // eslint-disable-next-line no-await-in-loop
-    await update(ref2(database), chunkPayload);
-
-    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
-    if (onProgress && progress % 10 === 0) onProgress(progress);
-  }
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        const userIdValues = getUserIdIndexSet(user.userId || userId);
+        userIdValues.forEach(userIdValue => {
+          acc[`${searchKeyRoot}/${USER_ID_SEARCH_KEY_INDEX}/${userIdValue}/${userId}`] = true;
+        });
+        return acc;
+      }, {}),
+    onProgress
+  );
 };
 
 export const createAgeSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
@@ -3592,24 +3579,18 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  const updates = userIds.reduce((acc, userId) => {
-    const user = usersData[userId] || {};
-    const ageValue = normalizeAgeBirthDateIndexValue(user.birth);
-    acc[`${searchKeyRoot}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
-    return acc;
-  }, {});
-
-  const updateEntries = Object.entries(updates);
-
-  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
-    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
-    const chunkPayload = Object.fromEntries(chunkEntries);
-    // eslint-disable-next-line no-await-in-loop
-    await update(ref2(database), chunkPayload);
-
-    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
-    if (onProgress && progress % 10 === 0) onProgress(progress);
-  }
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        const ageValue = normalizeAgeBirthDateIndexValue(user.birth);
+        acc[`${searchKeyRoot}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
+        return acc;
+      }, {}),
+    onProgress
+  );
 };
 
 export const createImtHeightWeightSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
@@ -3621,28 +3602,22 @@ export const createImtHeightWeightSearchKeyIndexInCollection = async (collection
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  const updates = userIds.reduce((acc, userId) => {
-    const user = usersData[userId] || {};
-    const imtValue = normalizeImtSearchKeyIndexValue(user);
-    const heightValue = normalizeMetricIndexValue(user.height);
-    const weightValue = normalizeMetricIndexValue(user.weight);
-    acc[`${searchKeyRoot}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
-    acc[`${searchKeyRoot}/${HEIGHT_SEARCH_KEY_INDEX}/${heightValue}/${userId}`] = true;
-    acc[`${searchKeyRoot}/${WEIGHT_SEARCH_KEY_INDEX}/${weightValue}/${userId}`] = true;
-    return acc;
-  }, {});
-
-  const updateEntries = Object.entries(updates);
-
-  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
-    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
-    const chunkPayload = Object.fromEntries(chunkEntries);
-    // eslint-disable-next-line no-await-in-loop
-    await update(ref2(database), chunkPayload);
-
-    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
-    if (onProgress && progress % 10 === 0) onProgress(progress);
-  }
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        const imtValue = normalizeImtSearchKeyIndexValue(user);
+        const heightValue = normalizeMetricIndexValue(user.height);
+        const weightValue = normalizeMetricIndexValue(user.weight);
+        acc[`${searchKeyRoot}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
+        acc[`${searchKeyRoot}/${HEIGHT_SEARCH_KEY_INDEX}/${heightValue}/${userId}`] = true;
+        acc[`${searchKeyRoot}/${WEIGHT_SEARCH_KEY_INDEX}/${weightValue}/${userId}`] = true;
+        return acc;
+      }, {}),
+    onProgress
+  );
 };
 
 export const createReactionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
@@ -3654,24 +3629,18 @@ export const createReactionSearchKeyIndexInCollection = async (collection, onPro
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  const updates = userIds.reduce((acc, userId) => {
-    const user = usersData[userId] || {};
-    const reactionValue = normalizeReactionSearchKeyIndexValue(user.getInTouch);
-    acc[`${searchKeyRoot}/${REACTION_SEARCH_KEY_INDEX}/${reactionValue}/${userId}`] = true;
-    return acc;
-  }, {});
-
-  const updateEntries = Object.entries(updates);
-
-  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
-    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
-    const chunkPayload = Object.fromEntries(chunkEntries);
-    // eslint-disable-next-line no-await-in-loop
-    await update(ref2(database), chunkPayload);
-
-    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
-    if (onProgress && progress % 10 === 0) onProgress(progress);
-  }
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        const reactionValue = normalizeReactionSearchKeyIndexValue(user.getInTouch);
+        acc[`${searchKeyRoot}/${REACTION_SEARCH_KEY_INDEX}/${reactionValue}/${userId}`] = true;
+        return acc;
+      }, {}),
+    onProgress
+  );
 };
 
 export const createFieldCountSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
@@ -3683,24 +3652,18 @@ export const createFieldCountSearchKeyIndexInCollection = async (collection, onP
   const totalUsers = userIds.length;
   if (totalUsers === 0) return;
 
-  const updates = userIds.reduce((acc, userId) => {
-    const user = usersData[userId] || {};
-    const fieldCountValue = normalizeFieldCountSearchKeyIndexValue(user);
-    acc[`${searchKeyRoot}/${FIELD_COUNT_SEARCH_KEY_INDEX}/${fieldCountValue}/${userId}`] = true;
-    return acc;
-  }, {});
-
-  const updateEntries = Object.entries(updates);
-
-  for (let i = 0; i < updateEntries.length; i += SEARCH_KEY_BATCH_UPLOAD_SIZE) {
-    const chunkEntries = updateEntries.slice(i, i + SEARCH_KEY_BATCH_UPLOAD_SIZE);
-    const chunkPayload = Object.fromEntries(chunkEntries);
-    // eslint-disable-next-line no-await-in-loop
-    await update(ref2(database), chunkPayload);
-
-    const progress = Math.floor((Math.min(i + chunkEntries.length, totalUsers) / totalUsers) * 100);
-    if (onProgress && progress % 10 === 0) onProgress(progress);
-  }
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        const fieldCountValue = normalizeFieldCountSearchKeyIndexValue(user);
+        acc[`${searchKeyRoot}/${FIELD_COUNT_SEARCH_KEY_INDEX}/${fieldCountValue}/${userId}`] = true;
+        return acc;
+      }, {}),
+    onProgress
+  );
 };
 
 const SEARCH_KEY_INDEX_BUILDERS = {
