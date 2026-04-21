@@ -232,11 +232,67 @@ const isSameCursor = (a, b) => {
 };
 
 const MATCHING_SEARCHKEY_FILTER_KEYS = ['userRole', 'maritalStatus', 'bloodGroup', 'rh', 'age'];
+const MATCHING_ROLE_SEARCH_KEY_BUCKETS = ['ed', 'ag', 'ip', '?', 'no'];
 
 const isFilterGroupActive = group =>
   group && typeof group === 'object' && Object.values(group).some(v => !v);
 
-const toRoleCategory = user => {
+const resolveRoleCategoryFromSearchKey = (userId, roleIndexSets) => {
+  if (!userId || !roleIndexSets) return null;
+
+  if (roleIndexSets.ag?.has(userId)) return 'ag';
+  if (roleIndexSets.ip?.has(userId)) return 'ip';
+  if (roleIndexSets.ed?.has(userId)) return 'ed';
+  if (roleIndexSets['?']?.has(userId) || roleIndexSets.no?.has(userId)) return 'other';
+
+  return null;
+};
+
+const buildAllowedRoleIdsFromSearchKey = (roleFilters, roleIndexSets) => {
+  if (!roleFilters || !roleIndexSets) return null;
+
+  const allIndexedIds = new Set();
+  const allowedIds = new Set();
+
+  const includeBucket = bucket => {
+    const bucketSet = roleIndexSets?.[bucket];
+    if (!(bucketSet instanceof Set)) return;
+    bucketSet.forEach(id => {
+      allIndexedIds.add(id);
+      allowedIds.add(id);
+    });
+  };
+
+  const trackBucketOnly = bucket => {
+    const bucketSet = roleIndexSets?.[bucket];
+    if (!(bucketSet instanceof Set)) return;
+    bucketSet.forEach(id => allIndexedIds.add(id));
+  };
+
+  if (roleFilters.ag) includeBucket('ag');
+  else trackBucketOnly('ag');
+
+  if (roleFilters.ip) includeBucket('ip');
+  else trackBucketOnly('ip');
+
+  if (roleFilters.ed) includeBucket('ed');
+  else trackBucketOnly('ed');
+
+  if (roleFilters.other) {
+    includeBucket('?');
+    includeBucket('no');
+  } else {
+    trackBucketOnly('?');
+    trackBucketOnly('no');
+  }
+
+  return { allowedIds, allIndexedIds };
+};
+
+const toRoleCategory = (user, roleIndexSets = null) => {
+  const indexedCategory = resolveRoleCategoryFromSearchKey(user?.userId, roleIndexSets);
+  if (indexedCategory) return indexedCategory;
+
   const normalizeRole = value => {
     const normalized = String(value || '').trim().toLowerCase();
     if (['ed', 'ag', 'ip', 'sm', 'cl'].includes(normalized)) return normalized;
@@ -247,7 +303,11 @@ const toRoleCategory = user => {
   const directRole = normalizeRole(user?.role);
   const fallbackRole = normalizeRole(user?.userRole);
 
-  if (user?.__sourceCollection === 'newUsers' && fallbackRole === 'no') {
+  if (
+    user?.__sourceCollection === 'newUsers' &&
+    fallbackRole === 'no' &&
+    (directRole === 'no' || directRole === '?')
+  ) {
     return 'ed';
   }
 
@@ -332,12 +392,20 @@ const getMatchingFiltersWithoutSearchKeyGroups = filters => {
   return base;
 };
 
-const applyMatchingSearchKeyFilters = (users, filters) => {
+const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = null) => {
   const activeFilters = filters || {};
+  const roleIndexFilterMeta = isFilterGroupActive(activeFilters.userRole)
+    ? buildAllowedRoleIdsFromSearchKey(activeFilters.userRole, roleIndexSets)
+    : null;
+
   return users.filter(user => {
     if (isFilterGroupActive(activeFilters.userRole)) {
-      const category = toRoleCategory(user);
+      if (roleIndexFilterMeta && user?.userId && roleIndexFilterMeta.allIndexedIds.has(user.userId)) {
+        if (!roleIndexFilterMeta.allowedIds.has(user.userId)) return false;
+      } else {
+      const category = toRoleCategory(user, roleIndexSets);
       if (!activeFilters.userRole[category]) return false;
+      }
     }
 
     if (isFilterGroupActive(activeFilters.maritalStatus)) {
@@ -1636,6 +1704,7 @@ const Matching = () => {
     () => localStorage.getItem('additionalAccessRules') || ''
   );
   const [additionalNewUsers, setAdditionalNewUsers] = useState([]);
+  const [roleIndexSets, setRoleIndexSets] = useState(null);
   const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: currentAccessLevel });
   const isAdmin = access.isAdmin;
   const parsedAdditionalAccessRules = useMemo(
@@ -1890,6 +1959,48 @@ const Matching = () => {
     };
   }, [parsedAdditionalAccessRules, currentAdditionalAccessRules]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRoleIndexSets = async () => {
+      try {
+        const snapshots = await Promise.all(
+          MATCHING_ROLE_SEARCH_KEY_BUCKETS.map(async bucket => {
+            const payload = await getCachedSearchKeyPayload(
+              `${SEARCH_KEY_ROOT}/role/${bucket}`,
+              async () => {
+                const snapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/role/${bucket}`));
+                return {
+                  exists: snapshot.exists(),
+                  value: snapshot.exists() ? snapshot.val() || {} : null,
+                };
+              }
+            );
+            return [bucket, payload];
+          })
+        );
+
+        if (cancelled) return;
+
+        const nextSets = snapshots.reduce((acc, [bucket, payload]) => {
+          acc[bucket] = new Set(Object.keys(payload?.exists ? payload.value || {} : {}));
+          return acc;
+        }, {});
+
+        setRoleIndexSets(nextSets);
+      } catch (error) {
+        console.error('Failed to load role searchKey index for matching filters', error);
+        if (!cancelled) setRoleIndexSets(null);
+      }
+    };
+
+    loadRoleIndexSets();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const fetchChunk = React.useCallback(
     async (
       limit,
@@ -1918,7 +2029,8 @@ const Matching = () => {
                 getMatchingFiltersWithoutSearchKeyGroups(filters),
                 favoriteUsersRef.current
               ).map(([, u]) => u),
-              filters
+              filters,
+              roleIndexSets
             ).filter(
               u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
             )
@@ -1959,7 +2071,7 @@ const Matching = () => {
         excludedCount,
       };
     },
-    [collectionSource, filters, isAdmin]
+    [collectionSource, filters, isAdmin, roleIndexSets]
   );
 
   const loadInitial = React.useCallback(async () => {
@@ -2332,7 +2444,8 @@ const Matching = () => {
       getMatchingFiltersWithoutSearchKeyGroups(filters),
       favoriteUsers
     ).map(([, u]) => u),
-    filters
+    filters,
+    roleIndexSets
   ).filter(u => isAllowedIdForCollection(u.userId, collectionSource));
 
   useEffect(() => {
