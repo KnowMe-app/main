@@ -414,6 +414,8 @@ const CardContainer = styled.div`
   width: 100%;
 `;
 
+const STACK_CARD_RADIUS = '18px';
+
 const NextPhoto = styled.img`
   position: absolute;
   top: 0;
@@ -423,7 +425,7 @@ const NextPhoto = styled.img`
   object-fit: cover;
   box-sizing: border-box;
   border: 2px solid ${color.gray3};
-  border-radius: 8px;
+  border-radius: ${STACK_CARD_RADIUS};
   transform: translate(4px, -4px);
   z-index: 1;
 `;
@@ -437,7 +439,7 @@ const ThirdPhoto = styled.img`
   object-fit: cover;
   box-sizing: border-box;
   border: 2px solid ${color.gray4};
-  border-radius: 8px;
+  border-radius: ${STACK_CARD_RADIUS};
   transform: translate(8px, -8px);
   z-index: 0;
 `;
@@ -450,7 +452,7 @@ const NextInfoCard = styled.div`
   height: 100%;
   box-sizing: border-box;
   border: 2px solid ${color.gray3};
-  border-radius: 8px;
+  border-radius: ${STACK_CARD_RADIUS};
   transform: translate(4px, -4px);
   z-index: 1;
   background: #fff;
@@ -466,12 +468,14 @@ const ThirdInfoCard = styled(NextInfoCard)`
 const CardWrapper = styled.div`
   position: relative;
   width: 100%;
-  border: 1px solid #e2e2e2;
-  border-radius: 8px;
+  border: 1px solid rgba(214, 193, 163, 0.35);
+  border-radius: ${STACK_CARD_RADIUS};
   box-sizing: border-box;
   overflow: hidden;
-  background: #fff;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  background: #fffdfa;
+  box-shadow:
+    0 14px 32px rgba(33, 26, 17, 0.12),
+    0 2px 8px rgba(33, 26, 17, 0.06);
   z-index: 2;
 `;
 
@@ -524,16 +528,16 @@ const Card = styled.div`
   min-height: ${({ $hasPhoto, $small, $compactWithoutPhoto }) =>
     !$hasPhoto && $compactWithoutPhoto ? ($small ? '320px' : '380px') : $small ? '280px' : '340px'};
   padding-bottom: 0;
-  background: linear-gradient(180deg, #fffaf2 0%, #f7f7f7 100%);
+  background: linear-gradient(180deg, #fffaf2 0%, #f8f5ef 100%);
   background-size: cover;
   background-position: center;
-  border-radius: 8px;
+  border-radius: ${STACK_CARD_RADIUS};
   position: relative;
   overflow: hidden;
   box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.14),
-    0 0 0 1px rgba(255, 255, 255, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.8);
+    0 10px 26px rgba(37, 29, 20, 0.14),
+    0 0 0 1px rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.72);
   isolation: isolate;
   margin-bottom: 0;
 
@@ -543,8 +547,8 @@ const Card = styled.div`
     bottom: 0;
     left: 0;
     width: 100%;
-    height: 34%;
-    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 0%, rgba(0, 0, 0, 0.32) 100%);
+    height: 40%;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 0%, rgba(19, 15, 12, 0.58) 100%);
     pointer-events: none;
     z-index: 1;
   }
@@ -809,10 +813,10 @@ const Title = styled.span`
   text-transform: uppercase;
   letter-spacing: 0.6px;
   font-size: 10px;
-  background: ${color.paleAccent2};
-  border: 1px solid ${color.paleAccent5};
-  border-radius: 7px;
-  padding: 2px 7px;
+  background: rgba(247, 147, 30, 0.12);
+  border: 1px solid rgba(247, 147, 30, 0.3);
+  border-radius: 8px;
+  padding: 3px 8px;
 `;
 
 const HeaderIdentityRow = styled.div`
@@ -827,7 +831,7 @@ const DonorName = styled.strong`
   display: inline-block;
   line-height: 1.2;
   color: #1f1f26;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
 `;
 
@@ -849,7 +853,7 @@ const LocationLine = styled.div`
   gap: 6px;
   flex-wrap: nowrap;
   justify-content: flex-start;
-  color: #5f6173;
+  color: #6f7182;
   font-size: 12px;
 `;
 
@@ -886,8 +890,8 @@ const Table = styled.div`
   column-gap: 6px;
   font-size: 14px;
   margin-bottom: 10px;
-  background: rgba(255, 255, 255, 0.74);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 14px;
   padding: 8px;
 
@@ -895,8 +899,8 @@ const Table = styled.div`
     line-height: 1.2;
     display: flex;
     flex-direction: column;
-    background: #ffffff;
-    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: #fbf9f5;
+    border: 1px solid rgba(0, 0, 0, 0.06);
     border-radius: 10px;
     padding: 5.6px 8px;
   }
@@ -917,8 +921,8 @@ const Table = styled.div`
 `;
 
 const MoreInfo = styled.div`
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-left: 4px solid ${props => (props.$isAdmin ? '#ff6b6b' : '#f7931e')};
   border-radius: 12px;
   padding: 10px 12px;
@@ -940,17 +944,17 @@ const Contact = styled.div`
 
 const Icons = styled.div`
   display: flex;
-  gap: 7px;
+  gap: 6px;
   font-size: inherit;
   color: ${color.accent5};
   align-items: center;
 
   & a {
-    width: 38px !important;
-    height: 38px !important;
-    border-radius: 11px;
-    background: ${color.paleAccent2};
-    border: 1px solid ${color.paleAccent5} !important;
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 10px;
+    background: rgba(247, 147, 30, 0.12);
+    border: 1px solid rgba(247, 147, 30, 0.26) !important;
     transition: all 0.15s ease;
   }
 
@@ -972,12 +976,13 @@ const BasicInfo = styled.div`
   left: 16px;
   right: 12px;
   text-align: left;
-  color: #1f1f26;
+  color: #fff;
   font-weight: 700;
-  text-shadow: 0 1px 6px rgba(255, 255, 255, 0.7);
+  text-shadow: 0 2px 14px rgba(16, 12, 8, 0.9);
   pointer-events: none;
   line-height: 1.2;
-  font-size: 18px;
+  font-size: 20px;
+  z-index: 2;
 `;
 
 const CardInfo = styled.div`
@@ -987,13 +992,13 @@ const CardInfo = styled.div`
   right: 12px;
   width: calc(100% - 24px);
   padding: 10px 11px;
-  background: rgba(255, 255, 255, 0.84);
+  background: rgba(255, 255, 255, 0.88);
   color: #2c2d38;
   font-size: 13px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 14px;
   backdrop-filter: blur(8px);
 `;
@@ -1038,7 +1043,7 @@ const InfoSlide = styled.div`
   width: 100%;
   height: auto;
   min-height: auto;
-  background: linear-gradient(180deg, #fffaf2 0%, #f7f7f7 100%);
+  background: linear-gradient(180deg, #fffdf8 0%, #f6f2eb 100%);
   color: #2c2d38;
   overflow-y: visible;
   box-sizing: border-box;
