@@ -1,7 +1,7 @@
 import { handleChange } from './actions';
 const { OrangeBtn, UnderlinedInput } = require('components/styles');
 
-export const fieldWriter = (userData, setUsers, setState) => {
+export const fieldWriter = (userData, setUsers, setState, submitOptions = {}) => {
   const handleCodeClick = code => {
     let currentWriter = userData.writer || '';
     let updatedCodes = currentWriter?.split(', ').filter(item => item !== code); // Видаляємо, якщо є
@@ -13,7 +13,7 @@ export const fieldWriter = (userData, setUsers, setState) => {
       'writer',
       updatedCodes.join(', '),
       true,
-      {},
+      submitOptions,
     );
   };
   return (
@@ -32,7 +32,7 @@ export const fieldWriter = (userData, setUsers, setState) => {
               'writer',
               e.target.value,
               true,
-              {},
+              submitOptions,
             )
           }
           style={{

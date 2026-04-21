@@ -136,7 +136,8 @@ export const renderTopBlock = (
   isDateInRange,
   onOpenMedications,
   additionalActions = null,
-  overlayFieldAdditions = {}
+  overlayFieldAdditions = {},
+  onSubmitHistorySnapshot = null
 ) => {
   if (!userData) return null;
 
@@ -163,6 +164,8 @@ export const renderTopBlock = (
     ));
   };
 
+  const submitOptions = { onSubmitHistorySnapshot };
+
   return (
     <div style={topBlockContainerStyle}>
       <div style={actionButtonsContainerStyle}>
@@ -176,10 +179,10 @@ export const renderTopBlock = (
         {cardData.lastAction && ', '}
         {cardData.userId}
         {!isAgentOrIP &&
-          fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, favoriteUsers, setFavoriteUsers, dislikeUsers, setDislikeUsers)}
-        {fieldRole(cardData, setUsers, setState)}
-        {!isAgentOrIP && <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} />}
-        <div>{fieldDeliveryInfo(setUsers, setState, cardData)}</div>
+          fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, favoriteUsers, setFavoriteUsers, dislikeUsers, setDislikeUsers, submitOptions)}
+        {fieldRole(cardData, setUsers, setState, submitOptions)}
+        {!isAgentOrIP && <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />}
+        <div>{fieldDeliveryInfo(setUsers, setState, cardData, submitOptions)}</div>
         {renderOverlayEntries(['lastDelivery', 'ownKids'])}
         <div>
           {cardData.birth && `${cardData.birth} - `}
@@ -201,8 +204,8 @@ export const renderTopBlock = (
         </div>
         {renderOverlayEntries(['phone', 'phone2', 'phone3', 'telegram', 'email', 'facebook', 'instagram', 'tiktok', 'vk'])}
       </div>
-      {fieldWriter(cardData, setUsers, setState)}
-      <FieldComment userData={cardData} setUsers={setUsers} setState={setState} />
+      {fieldWriter(cardData, setUsers, setState, submitOptions)}
+      <FieldComment userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />
 
       <div
         onClick={async e => {
