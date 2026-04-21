@@ -21,6 +21,87 @@ import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import toast from 'react-hot-toast';
 
+const topBlockContainerStyle = { padding: '7px', position: 'relative' };
+
+const actionButtonsContainerStyle = {
+  position: 'absolute',
+  top: '10px',
+  right: '10px',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-end',
+  gap: '6px',
+  zIndex: 999,
+};
+
+const addedOverlayEntryStyle = {
+  color: '#2e7d32',
+  fontSize: '12px',
+  lineHeight: 1.2,
+};
+
+const deletedOverlayEntryStyle = {
+  ...addedOverlayEntryStyle,
+  color: '#e53935',
+};
+
+const identityMetaStyle = {
+  whiteSpace: 'pre-wrap',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '2px',
+  flexWrap: 'wrap',
+};
+
+const contactsWrapperStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  gap: '4px',
+};
+
+const detailsToggleStyle = {
+  position: 'absolute',
+  bottom: '10px',
+  right: '10px',
+  cursor: 'pointer',
+  color: '#ebe0c2',
+  fontSize: '18px',
+};
+
+const hasAgentOrIPRole = data =>
+  data.userRole === 'ag' || data.userRole === 'ip' || data.role === 'ag' || data.role === 'ip';
+
+const buildName = data => {
+  const nameParts = [];
+
+  if (Array.isArray(data.surname)) {
+    if (data.surname.length === 2) {
+      nameParts.push(`${data.surname[1]} (${data.surname[0]})`);
+    } else if (data.surname.length > 0) {
+      nameParts.push(data.surname.join(' '));
+    }
+  } else if (data.surname) {
+    nameParts.push(data.surname);
+  }
+
+  if (data.name) nameParts.push(data.name);
+  if (data.fathersname) nameParts.push(data.fathersname);
+
+  return nameParts.length > 0 ? nameParts.join(' ') : '';
+};
+
+const renderIdentityMeta = data => {
+  const parts = [];
+  if (data.maritalStatus) parts.push(fieldMaritalStatus(data.maritalStatus));
+  if (data.blood) parts.push(fieldBlood(data.blood));
+  if (data.height) parts.push(data.height);
+  if (data.height && data.weight) parts.push('/');
+  if (data.weight) parts.push(`${data.weight}-`);
+  if (data.weight && data.height) parts.push(fieldIMT(data.weight, data.height));
+  return parts.map((part, index) => <React.Fragment key={index}>{part}</React.Fragment>);
+};
+
 const getParentBackground = element => {
   let el = element;
   let bg = window.getComputedStyle(el).backgroundColor;
@@ -62,6 +143,7 @@ export const renderTopBlock = (
   const cardData = { ...userData, cycleStatus: getEffectiveCycleStatus(userData) };
   const region = normalizeRegion(cardData.region);
   const showSaveDeleteButtons = !additionalActions;
+  const isAgentOrIP = hasAgentOrIPRole(cardData);
 
   const renderOverlayEntries = fieldNames => {
     const normalizedFieldNames = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
@@ -74,11 +156,7 @@ export const renderTopBlock = (
     return entries.map((entry, idx) => (
       <div
         key={`${entry.fieldName}-${entry.editorUserId || 'unknown'}-${entry.value}-${idx}`}
-        style={{
-          color: entry.isDeleted ? '#e53935' : '#2e7d32',
-          fontSize: '12px',
-          lineHeight: 1.2,
-        }}
+        style={entry.isDeleted ? deletedOverlayEntryStyle : addedOverlayEntryStyle}
       >
         <strong>{entry.fieldName}:</strong> {entry.value}
       </div>
@@ -86,19 +164,8 @@ export const renderTopBlock = (
   };
 
   return (
-    <div style={{ padding: '7px', position: 'relative' }}>
-      <div
-        style={{
-          position: 'absolute',
-          top: '10px',
-          right: '10px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-end',
-          gap: '6px',
-          zIndex: 999,
-        }}
-      >
+    <div style={topBlockContainerStyle}>
+      <div style={actionButtonsContainerStyle}>
         {showSaveDeleteButtons && btnExport(cardData)}
         {showSaveDeleteButtons && btnDel(cardData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
         {btnMedications(cardData, onOpenMedications)}
@@ -108,15 +175,10 @@ export const renderTopBlock = (
         {cardData.lastAction && formatDateToDisplay(normalizeLastAction(cardData.lastAction))}
         {cardData.lastAction && ', '}
         {cardData.userId}
-        {cardData.userRole !== 'ag' &&
-          cardData.userRole !== 'ip' &&
-          cardData.role !== 'ag' &&
-          cardData.role !== 'ip' &&
+        {!isAgentOrIP &&
           fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, favoriteUsers, setFavoriteUsers, dislikeUsers, setDislikeUsers)}
         {fieldRole(cardData, setUsers, setState)}
-        {cardData.userRole !== 'ag' && cardData.userRole !== 'ip' && cardData.role !== 'ag' && cardData.role !== 'ip' && (
-          <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} />
-        )}
+        {!isAgentOrIP && <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} />}
         <div>{fieldDeliveryInfo(setUsers, setState, cardData)}</div>
         {renderOverlayEntries(['lastDelivery', 'ownKids'])}
         <div>
@@ -127,51 +189,14 @@ export const renderTopBlock = (
       </div>
       {/* <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div> */}
       <div>
-        <strong>
-          {(() => {
-            const nameParts = [];
-
-            if (Array.isArray(cardData.surname)) {
-              if (cardData.surname.length === 2) {
-                nameParts.push(`${cardData.surname[1]} (${cardData.surname[0]})`);
-              } else if (cardData.surname.length > 0) {
-                nameParts.push(cardData.surname.join(' '));
-              }
-            } else if (cardData.surname) {
-              nameParts.push(cardData.surname);
-            }
-
-            if (cardData.name) nameParts.push(cardData.name);
-            if (cardData.fathersname) nameParts.push(cardData.fathersname);
-
-            return nameParts.length > 0 ? `${nameParts.join(' ')}` : '';
-          })()}
-        </strong>
+        <strong>{buildName(cardData)}</strong>
         {renderOverlayEntries(['surname', 'name', 'fathersname'])}
         {/* {renderCsection(cardData.csection)}  */}
-        <div style={{ whiteSpace: 'pre-wrap', display: 'flex', alignItems: 'center', gap: '2px', flexWrap: 'wrap' }}>
-          {(() => {
-            const parts = [];
-            if (cardData.maritalStatus) parts.push(fieldMaritalStatus(cardData.maritalStatus));
-            if (cardData.blood) parts.push(fieldBlood(cardData.blood));
-            if (cardData.height) parts.push(cardData.height);
-            if (cardData.height && cardData.weight) parts.push('/');
-            if (cardData.weight) parts.push(`${cardData.weight}-`);
-            if (cardData.weight && cardData.height) parts.push(fieldIMT(cardData.weight, cardData.height));
-            return parts.map((part, index) => <React.Fragment key={index}>{part}</React.Fragment>);
-          })()}
-        </div>
+        <div style={identityMetaStyle}>{renderIdentityMeta(cardData)}</div>
         {renderOverlayEntries(['maritalStatus', 'blood', 'height', 'weight'])}
         {region && <div>{region}</div>}
         {renderOverlayEntries('region')}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            gap: '4px',
-          }}
-        >
+        <div style={contactsWrapperStyle}>
           {fieldContacts(cardData)}
         </div>
         {renderOverlayEntries(['phone', 'phone2', 'phone3', 'telegram', 'email', 'facebook', 'instagram', 'tiktok', 'vk'])}
@@ -234,7 +259,7 @@ export const renderTopBlock = (
             toastFn(toastMsg);
           }
         }}
-        style={{ position: 'absolute', bottom: '10px', right: '10px', cursor: 'pointer', color: '#ebe0c2', fontSize: '18px' }}
+        style={detailsToggleStyle}
       >
         ...
       </div>
