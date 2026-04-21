@@ -72,9 +72,10 @@ import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
 // Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
 const isValidId = id => typeof id === 'string' && id.length >= 20;
 const isShortId = id => typeof id === 'string' && id.length > 0 && id.length < 20;
+const isMatchingCardId = id => isValidId(id) || isShortId(id);
 const isAllowedIdForCollection = (id, collection = 'users') =>
   collection === 'newUsers' ? isShortId(id) : isValidId(id);
-const filterLongUsers = list => list.filter(u => isValidId(u?.userId));
+const filterMatchingUsers = list => list.filter(u => isMatchingCardId(u?.userId));
 
 const compareUsersByLastLogin2 = (a = {}, b = {}) =>
   (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
@@ -2079,14 +2080,14 @@ const Matching = () => {
       return;
     }
 
-    const localIds = getIdsByQuery('favorite').filter(isValidId);
+    const localIds = getIdsByQuery('favorite').filter(isMatchingCardId);
     if (localIds.length > 0) {
       const favMap = getFavorites();
       setFavoriteUsers(favMap);
       setFavoriteIds(favMap);
       syncFavorites(favMap);
       const { cards: favCards } = await getFavoriteCards(id => fetchUserById(id));
-      const list = filterLongUsers(favCards).sort(compareUsersByLastLogin2);
+      const list = filterMatchingUsers(favCards).sort(compareUsersByLastLogin2);
       loadedIdsRef.current = new Set(list.map(u => u.userId));
       setUsers(list);
       await loadCommentsFor(list);
@@ -2104,7 +2105,7 @@ const Matching = () => {
     cacheFavoriteUsers(favUsers);
     setIdsForQuery('favorite', Object.keys(favMap));
     const { cards: favCards } = await getFavoriteCards(id => fetchUserById(id));
-    const list = filterLongUsers(favCards).sort(compareUsersByLastLogin2);
+    const list = filterMatchingUsers(favCards).sort(compareUsersByLastLogin2);
     loadedIdsRef.current = new Set(list.map(u => u.userId));
     setUsers(list);
     await loadCommentsFor(list);
@@ -2123,14 +2124,14 @@ const Matching = () => {
       return;
     }
 
-    const localIds = getIdsByQuery('dislike').filter(isValidId);
+    const localIds = getIdsByQuery('dislike').filter(isMatchingCardId);
     if (localIds.length > 0) {
       const localDis = getDislikes();
       const disMap = Object.fromEntries(Object.keys(localDis).map(id => [id, true]));
       setDislikeUsers(disMap);
       setIdsForQuery('dislike', Object.keys(disMap));
       const { cards: disCards } = await getDislikedCards(id => fetchUserById(id));
-      const list = filterLongUsers(disCards).sort(compareUsersByLastLogin2);
+      const list = filterMatchingUsers(disCards).sort(compareUsersByLastLogin2);
       loadedIdsRef.current = new Set(list.map(u => u.userId));
       setUsers(list);
       await loadCommentsFor(list);
@@ -2147,7 +2148,7 @@ const Matching = () => {
     setDislikeUsers(disMap);
     setIdsForQuery('dislike', Object.keys(disMap));
     const { cards: disCards } = await getDislikedCards(id => fetchUserById(id));
-    const list = filterLongUsers(disCards).sort(compareUsersByLastLogin2);
+    const list = filterMatchingUsers(disCards).sort(compareUsersByLastLogin2);
     loadedIdsRef.current = new Set(list.map(u => u.userId));
     setUsers(list);
     await loadCommentsFor(list);
