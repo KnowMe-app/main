@@ -651,6 +651,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const defaultSelectedIndexJobs = {
     lastLogin: true,
     stimulationShortcuts: true,
+    searchKeyUsersAll: false,
   };
   const defaultSelectedSearchKeyIndexes = SEARCH_KEY_INDEX_OPTIONS.reduce((acc, option) => {
     acc[option.key] = true;
@@ -3165,11 +3166,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       await runStimulationShortcutIndexing();
     }
 
+    if (selectedIndexJobs.searchKeyUsersAll) {
+      const toastId = 'index-searchkey-users-all-progress';
+      const allSearchKeyIndexTypes = SEARCH_KEY_INDEX_OPTIONS.map(option => option.key);
+      toast.loading('Indexing searchKey/users all indexes...', { id: toastId });
+      await createSelectedSearchKeyIndexesInCollection(
+        'users',
+        allSearchKeyIndexTypes,
+        (progress, meta) => {
+          const indexLabel = meta?.indexType || '';
+          toast.loading(`Indexing searchKey/users/${indexLabel} ${progress}%`, { id: toastId });
+        },
+        { rootPath: 'searchKey/users' },
+      );
+      toast.success('Всі searchKey/users індекси для users побудовано', { id: toastId });
+    }
+
     const selectedIndexTypes = SEARCH_KEY_INDEX_OPTIONS.filter(option => selectedSearchKeyIndexes[option.key]).map(
       option => option.key,
     );
 
-    if (!selectedIndexJobs.lastLogin && !selectedIndexJobs.stimulationShortcuts && !selectedIndexTypes.length) {
+    if (
+      !selectedIndexJobs.lastLogin &&
+      !selectedIndexJobs.stimulationShortcuts &&
+      !selectedIndexJobs.searchKeyUsersAll &&
+      !selectedIndexTypes.length
+    ) {
       toast.error('Оберіть хоча б один індекс для запуску');
       return;
     }
@@ -3776,6 +3798,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     />
                     <SearchScopeLabelTextGroup>
                       <span>Індексувати ярлики стимуляції</span>
+                    </SearchScopeLabelTextGroup>
+                  </SearchScopeLabel>
+                  <SearchScopeLabel>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedIndexJobs.searchKeyUsersAll)}
+                      onChange={() => toggleIndexJobSelection('searchKeyUsersAll')}
+                    />
+                    <SearchScopeLabelTextGroup>
+                      <span>Всі searchKey індекси лише для users → searchKey/users</span>
                     </SearchScopeLabelTextGroup>
                   </SearchScopeLabel>
                   {SEARCH_KEY_INDEX_OPTIONS.map(option => (
