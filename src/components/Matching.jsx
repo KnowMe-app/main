@@ -815,9 +815,16 @@ const Title = styled.span`
   padding: 2px 7px;
 `;
 
+const HeaderIdentityRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+`;
+
 const DonorName = styled.strong`
-  display: inline;
-  margin-bottom: 2px;
+  display: inline-block;
   line-height: 1.2;
   color: #1f1f26;
   font-size: 20px;
@@ -1242,23 +1249,24 @@ const SwipeableCard = ({
         <InfoSlide $reserveActionButtons={!photo}>
           <ProfileSection>
             <Info>
-              <Title>{getRoleTitle(user)}</Title>
-          <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
-          <br />
-          <LocationLine>
-            <span>{locationInfo}</span>
-            {isEggDonor && contacts && <Icons>{contacts}</Icons>}
-          </LocationLine>
-        </Info>
-      </ProfileSection>
-      {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
-      {!isEggDonor && contacts && (
-        <Contact $withBorder={selectedFields.length > 0}>
-          <Icons>{contacts}</Icons>
-        </Contact>
+              <HeaderIdentityRow>
+                <Title>{getRoleTitle(user)}</Title>
+                <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
+              </HeaderIdentityRow>
+              <LocationLine>
+                <span>{locationInfo}</span>
+                {isEggDonor && contacts && <Icons>{contacts}</Icons>}
+              </LocationLine>
+            </Info>
+          </ProfileSection>
+          {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
+          {!isEggDonor && contacts && (
+            <Contact $withBorder={selectedFields.length > 0}>
+              <Icons>{contacts}</Icons>
+            </Contact>
+          )}
+        </InfoSlide>
       )}
-    </InfoSlide>
-  )}
       {current === 'main' && role !== 'ag' && (
         <BasicInfo>
           {formatNameAndAge(user, displayName)}
@@ -1470,9 +1478,10 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
     <InfoSlide>
       <ProfileSection>
         <Info>
-          <Title $isPotentialED={roleTitle === 'Potential ED'}>{roleTitle}</Title>
-          <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
-          <br />
+          <HeaderIdentityRow>
+            <Title $isPotentialED={roleTitle === 'Potential ED'}>{roleTitle}</Title>
+            <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
+          </HeaderIdentityRow>
           <LocationLine>
             <span>{locationInfo}</span>
             {isEggDonor && contacts && <Icons>{contacts}</Icons>}
