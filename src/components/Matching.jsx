@@ -414,6 +414,8 @@ const CardContainer = styled.div`
   width: 100%;
 `;
 
+const STACK_CARD_RADIUS = '18px';
+
 const NextPhoto = styled.img`
   position: absolute;
   top: 0;
@@ -423,7 +425,7 @@ const NextPhoto = styled.img`
   object-fit: cover;
   box-sizing: border-box;
   border: 2px solid ${color.gray3};
-  border-radius: 8px;
+  border-radius: ${STACK_CARD_RADIUS};
   transform: translate(4px, -4px);
   z-index: 1;
 `;
@@ -437,7 +439,7 @@ const ThirdPhoto = styled.img`
   object-fit: cover;
   box-sizing: border-box;
   border: 2px solid ${color.gray4};
-  border-radius: 8px;
+  border-radius: ${STACK_CARD_RADIUS};
   transform: translate(8px, -8px);
   z-index: 0;
 `;
@@ -450,7 +452,7 @@ const NextInfoCard = styled.div`
   height: 100%;
   box-sizing: border-box;
   border: 2px solid ${color.gray3};
-  border-radius: 8px;
+  border-radius: ${STACK_CARD_RADIUS};
   transform: translate(4px, -4px);
   z-index: 1;
   background: #fff;
@@ -467,7 +469,7 @@ const CardWrapper = styled.div`
   position: relative;
   width: 100%;
   border: 1px solid rgba(214, 193, 163, 0.35);
-  border-radius: 18px;
+  border-radius: ${STACK_CARD_RADIUS};
   box-sizing: border-box;
   overflow: hidden;
   background: #fffdfa;
@@ -529,7 +531,7 @@ const Card = styled.div`
   background: linear-gradient(180deg, #fffaf2 0%, #f8f5ef 100%);
   background-size: cover;
   background-position: center;
-  border-radius: 18px;
+  border-radius: ${STACK_CARD_RADIUS};
   position: relative;
   overflow: hidden;
   box-shadow:
