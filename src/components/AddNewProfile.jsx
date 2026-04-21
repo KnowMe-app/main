@@ -3158,30 +3158,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const runSelectedIndexes = async () => {
-    if (selectedIndexJobs.lastLogin) {
-      await runLastLoginIndexing();
-    }
-
-    if (selectedIndexJobs.stimulationShortcuts) {
-      await runStimulationShortcutIndexing();
-    }
-
-    if (selectedIndexJobs.searchKeyUsersAll) {
-      const toastId = 'index-searchkey-users-all-progress';
-      const allSearchKeyIndexTypes = SEARCH_KEY_INDEX_OPTIONS.map(option => option.key);
-      toast.loading('Indexing searchKey/users all indexes...', { id: toastId });
-      await createSelectedSearchKeyIndexesInCollection(
-        'users',
-        allSearchKeyIndexTypes,
-        (progress, meta) => {
-          const indexLabel = meta?.indexType || '';
-          toast.loading(`Indexing searchKey/users/${indexLabel} ${progress}%`, { id: toastId });
-        },
-        { rootPath: 'searchKey/users' },
-      );
-      toast.success('Всі searchKey/users індекси для users побудовано', { id: toastId });
-    }
-
     const selectedIndexTypes = SEARCH_KEY_INDEX_OPTIONS.filter(option => selectedSearchKeyIndexes[option.key]).map(
       option => option.key,
     );
@@ -3196,24 +3172,77 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
-    if (!selectedIndexTypes.length) {
-      return;
+    try {
+      if (selectedIndexJobs.lastLogin) {
+        await runLastLoginIndexing();
+      }
+
+      if (selectedIndexJobs.stimulationShortcuts) {
+        await runStimulationShortcutIndexing();
+      }
+
+      if (selectedIndexJobs.searchKeyUsersAll) {
+        const toastId = 'index-searchkey-users-all-progress';
+        const allSearchKeyIndexTypes = SEARCH_KEY_INDEX_OPTIONS.map(option => option.key);
+        const indexTypesForUsers = selectedIndexTypes.length ? selectedIndexTypes : allSearchKeyIndexTypes;
+        toast.loading(
+          selectedIndexTypes.length
+            ? 'Indexing searchKey/users selected indexes...'
+            : 'Indexing searchKey/users all indexes...',
+          { id: toastId },
+        );
+        await createSelectedSearchKeyIndexesInCollection(
+          'users',
+          indexTypesForUsers,
+          (progress, meta) => {
+            const indexLabel = meta?.indexType || '';
+            const indexNumber = meta?.indexNumber || 1;
+            const totalIndexes = meta?.totalIndexes || indexTypesForUsers.length;
+            toast.loading(
+              `Indexing searchKey/users/${indexLabel} ${progress}% (${indexNumber}/${totalIndexes})`,
+              { id: toastId },
+            );
+          },
+          { rootPath: 'searchKey/users' },
+        );
+        toast.success(
+          selectedIndexTypes.length
+            ? 'Обрані searchKey/users індекси для users побудовано'
+            : 'Всі searchKey/users індекси для users побудовано',
+          { id: toastId },
+        );
+      }
+
+      if (!selectedIndexTypes.length) {
+        return;
+      }
+
+      if (selectedIndexJobs.searchKeyUsersAll) {
+        return;
+      }
+
+      const toastId = 'index-searchkey-selected-progress';
+      const formatProgressMessage = (collection, progress, meta) => {
+        const indexLabel = meta?.indexType || '';
+        const indexNumber = meta?.indexNumber || 1;
+        const totalIndexes = meta?.totalIndexes || selectedIndexTypes.length;
+        return `Indexing ${collection}/${indexLabel} ${progress}% (${indexNumber}/${totalIndexes})`;
+      };
+
+      toast.loading('Indexing searchKey indexes...', { id: toastId });
+      await createSelectedSearchKeyIndexesInCollection('newUsers', selectedIndexTypes, (progress, meta) => {
+        toast.loading(formatProgressMessage('newUsers', progress, meta), { id: toastId });
+      });
+
+      await createSelectedSearchKeyIndexesInCollection('users', selectedIndexTypes, (progress, meta) => {
+        toast.loading(formatProgressMessage('users', progress, meta), { id: toastId });
+      });
+
+      toast.success('Обрані searchKey індекси побудовано', { id: toastId });
+    } catch (error) {
+      console.error('[AddNewProfile] Indexing failed', error);
+      toast.error(`Помилка індексації: ${error?.message || 'невідома помилка'}`);
     }
-
-    const toastId = 'index-searchkey-selected-progress';
-    const formatProgressMessage = (collection, progress, meta) => {
-      const indexLabel = meta?.indexType || '';
-      return `Indexing ${collection}/${indexLabel} ${progress}%`;
-    };
-
-    toast.loading('Indexing searchKey indexes...', { id: toastId });
-    await createSelectedSearchKeyIndexesInCollection('newUsers', selectedIndexTypes, (progress, meta) => {
-      toast.loading(formatProgressMessage('newUsers', progress, meta), { id: toastId });
-    });
-    await createSelectedSearchKeyIndexesInCollection('users', selectedIndexTypes, (progress, meta) => {
-      toast.loading(formatProgressMessage('users', progress, meta), { id: toastId });
-    });
-    toast.success('Обрані searchKey індекси побудовано', { id: toastId });
   };
 
   useEffect(() => {
