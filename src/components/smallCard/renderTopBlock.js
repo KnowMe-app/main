@@ -189,6 +189,10 @@ export const renderTopBlock = (
   };
 
   const submitOptions = { onSubmitHistorySnapshot };
+  const commentLinkStyle = {
+    ...commentRtdbLinkStyle,
+    right: cardData.myComment ? '36px' : commentRtdbLinkStyle.right,
+  };
 
   return (
     <div style={topBlockContainerStyle}>
@@ -237,7 +241,7 @@ export const renderTopBlock = (
             rel="noreferrer"
             title="Відкрити профіль в Firebase RTDB"
             onClick={event => event.stopPropagation()}
-            style={commentRtdbLinkStyle}
+            style={commentLinkStyle}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <rect x="3" y="3" width="18" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />

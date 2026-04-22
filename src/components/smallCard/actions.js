@@ -291,6 +291,7 @@ export const removeField = (
   setUsers,
   setState,
   removedKey = nestedKey,
+  options = {},
 ) => {
   const keys = nestedKey.split('.');
 
@@ -373,6 +374,13 @@ export const removeField = (
 
   const removalKey = removedKey ?? nestedKey;
   const removalList = removalKey ? [removalKey] : [];
+  const triggerHistorySnapshot = payload => {
+    if (typeof options?.onSubmitHistorySnapshot !== 'function') {
+      return;
+    }
+    const snapshot = payload && typeof payload === 'object' ? { ...payload } : payload;
+    options.onSubmitHistorySnapshot(snapshot);
+  };
 
   setUsers(prev => {
     const isMultiple =
@@ -389,7 +397,8 @@ export const removeField = (
       }
       const updatedUser = value ?? {};
       const newState = { ...prev, [userId]: updatedUser };
-          handleSubmit({ ...updatedUser, userId }, 'overwrite', removalList);
+      triggerHistorySnapshot({ ...updatedUser, userId });
+      handleSubmit({ ...updatedUser, userId }, 'overwrite', removalList);
       return newState;
     }
 
@@ -402,6 +411,7 @@ export const removeField = (
     if (!resolvedUserId) {
       return updated;
     }
+    triggerHistorySnapshot({ ...updated, userId: resolvedUserId });
     handleSubmit({ ...updated, userId: resolvedUserId }, 'overwrite', removalList);
     return updated;
   });
