@@ -71,9 +71,14 @@ const commentRtdbLinkStyle = {
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  color: 'inherit',
-  opacity: 0.75,
-  zIndex: 2,
+  width: '18px',
+  height: '18px',
+  color: '#fff',
+  backgroundColor: 'rgba(30, 30, 30, 0.7)',
+  borderRadius: '4px',
+  textDecoration: 'none',
+  opacity: 0.95,
+  zIndex: 5,
 };
 
 const detailsToggleStyle = {
