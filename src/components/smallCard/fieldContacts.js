@@ -34,6 +34,20 @@ const phoneBtnStyle = {
   borderRadius: '50%',
 };
 
+const normalizeExternalUrl = value => {
+  const rawValue = String(value ?? '').trim();
+
+  if (!rawValue) {
+    return '';
+  }
+
+  if (/^[a-z][a-z\d+\-.]*:/i.test(rawValue)) {
+    return rawValue;
+  }
+
+  return `https://${rawValue}`;
+};
+
 export const fieldContacts = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderContacts:', data);
@@ -47,7 +61,7 @@ export const fieldContacts = (data, parentKey = '') => {
     phone: value => `tel:${value}`,
     facebook: value => `https://facebook.com/${value}`,
     vk: value => `https://vk.com/${value}`,
-    otherLink: value => `${value}`,
+    otherLink: value => normalizeExternalUrl(value),
     email: value => `mailto:${value}`,
     telegramFromPhone: value => `https://t.me/${value.replace(/\s+/g, '')}`,
     viberFromPhone: value => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`,
@@ -346,7 +360,7 @@ export const fieldContactsIcons = (
     phone: value => `tel:${value}`,
     facebook: value => `https://facebook.com/${value}`,
     vk: value => `https://vk.com/${value}`,
-    otherLink: value => `${value}`,
+    otherLink: value => normalizeExternalUrl(value),
     email: value => `mailto:${value}`,
     telegramFromPhone: value => `https://t.me/${value.replace(/\s+/g, '')}`,
     viberFromPhone: value => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`,
