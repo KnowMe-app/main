@@ -7,6 +7,7 @@ import {
 } from './additionalAccessRules';
 
 const SEARCH_KEY_ROOT = 'searchKey';
+const SET_KEY_MAX_LENGTH = 512;
 
 const toStableRulesText = raw =>
   Array.isArray(raw)
@@ -22,6 +23,16 @@ const sanitizeToken = value =>
     .replace(/[^a-z0-9_+\-?]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^[-_]+|[-_]+$/g, '');
+
+const hashRulesText = value => {
+  const input = String(value || '');
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+};
 
 const buildGroupToken = parsedRules => {
   const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
@@ -51,7 +62,13 @@ export const makeAdditionalRulesSetKey = rawRules => {
     .sort();
 
   if (!groupTokens.length) return '';
-  return `set_${groupTokens.join('__or__')}`;
+
+  const baseKey = `set_${groupTokens.join('__or__')}`;
+  if (baseKey.length <= SET_KEY_MAX_LENGTH) {
+    return baseKey;
+  }
+
+  return `set_h_${hashRulesText(rulesText)}`;
 };
 
 const mapMatchingIdsByRules = (newUsersData, parsedRuleGroups) => {
