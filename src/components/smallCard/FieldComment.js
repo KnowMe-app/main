@@ -71,7 +71,7 @@ export const FieldComment = ({ userData, setUsers, setState, submitOptions = {} 
             cursor: 'pointer',
             border: 'none',
             background: 'transparent',
-            color: 'inherit',
+            color: '#ebe0c2',
             fontSize: '18px',
             lineHeight: 1,
             padding: 0,
