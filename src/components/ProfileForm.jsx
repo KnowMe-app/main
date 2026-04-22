@@ -791,8 +791,14 @@ export const ProfileForm = ({
       }
     } catch (error) {
       console.error('Failed to update additional access newUsers filter-set index', error);
+      const details = error?.message || String(error);
+      toast.error(`Не вдалося зберегти індексацію наборів фільтрів (${details})`);
     }
-    handleSubmit(payload, overwrite, delCondition);
+    Promise.resolve(handleSubmit(payload, overwrite, delCondition)).catch(error => {
+      console.error('Failed to submit profile changes', error);
+      const details = error?.message || String(error);
+      toast.error(`Не вдалося зберегти зміни профілю (${details})`);
+    });
   }, [handleSubmit]);
 
   const handleReindexAdditionalFilterSets = useCallback(async () => {
@@ -804,7 +810,8 @@ export const ProfileForm = ({
       );
     } catch (error) {
       console.error('Failed to rebuild additional access filter-set indexes', error);
-      toast.error('Не вдалося перебудувати індексацію наборів фільтрів');
+      const details = error?.message || String(error);
+      toast.error(`Не вдалося перебудувати індексацію наборів фільтрів (${details})`);
     } finally {
       setIsReindexingFilterSets(false);
     }
@@ -852,6 +859,10 @@ export const ProfileForm = ({
 
   const applyAdditionalRulesFromBuilder = () => {
     const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
+    if (!rulesText.trim()) {
+      toast.error('Оберіть щонайменше один фільтр перед застосуванням');
+      return;
+    }
     setState(prevState => {
       const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
       const updatedValue = Array.isArray(currentValue)
