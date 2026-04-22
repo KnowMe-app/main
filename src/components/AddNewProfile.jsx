@@ -1527,7 +1527,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         ...enabledSearchKeys,
         searchId: true,
         equalToAllCards: true,
-        partialUserId: false,
+        // Не вимикаємо partialUserId примусово: якщо чекбокс увімкнений,
+        // користувач очікує пошук по ключах users/newUsers.
+        partialUserId: enabledSearchKeys.partialUserId,
       }
     : enabledSearchKeys;
 
