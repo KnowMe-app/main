@@ -68,6 +68,10 @@ import {
   resolveAdditionalAccessSearchKeyBuckets,
 } from 'utils/additionalAccessRules';
 import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
+import {
+  buildNewUsersFilterSetIndex,
+  getIndexedNewUsersIdsByRules,
+} from 'utils/newUsersFilterSetsIndex';
 
 // Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
 const isValidId = id => typeof id === 'string' && id.length >= 20;
@@ -81,6 +85,7 @@ const compareUsersByLastLogin2 = (a = {}, b = {}) =>
   (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
 
 const SEARCH_KEY_ROOT = 'searchKey';
+const USERS_SEARCH_KEY_ROOT = `${SEARCH_KEY_ROOT}/users`;
 const SEARCH_KEY_INDEX_NAMES = {
   blood: 'blood',
   maritalStatus: 'maritalStatus',
@@ -88,14 +93,14 @@ const SEARCH_KEY_INDEX_NAMES = {
   age: 'age',
 };
 
-const readIndexedIds = async (indexName, values = []) => {
+const readIndexedIds = async (indexName, values = [], rootPath = SEARCH_KEY_ROOT) => {
   const uniqueValues = [...new Set(values.filter(Boolean))];
   if (!indexName || uniqueValues.length === 0) return null;
 
   const payloads = await Promise.all(
     uniqueValues.map(value =>
-      getCachedSearchKeyPayload(`${SEARCH_KEY_ROOT}/${indexName}/${value}`, async () => {
-        const snapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/${indexName}/${value}`));
+      getCachedSearchKeyPayload(`${rootPath}/${indexName}/${value}`, async () => {
+        const snapshot = await get(refDb(database, `${rootPath}/${indexName}/${value}`));
         return {
           exists: snapshot.exists(),
           value: snapshot.exists() ? snapshot.val() || {} : null,
@@ -165,8 +170,30 @@ const fetchUsersAndNewUsersByIds = async (ids, batchSize = FETCH_USERS_BY_IDS_BA
   return result;
 };
 
-const fetchAdditionalNewUsersBySearchIndex = async parsedRuleGroups => {
+const fetchAdditionalNewUsersBySearchIndex = async ({ parsedRuleGroups, rawRules }) => {
   if (!Array.isArray(parsedRuleGroups) || parsedRuleGroups.length === 0) return [];
+
+  try {
+    let indexed = await getIndexedNewUsersIdsByRules({
+      rawRules,
+    });
+    if (!indexed) {
+      await buildNewUsersFilterSetIndex({
+        rawRules,
+      });
+      indexed = await getIndexedNewUsersIdsByRules({
+        rawRules,
+      });
+    }
+    if (indexed?.userIds) {
+      const indexedRows = await fetchUsersAndNewUsersByIds(indexed.userIds);
+      return indexedRows
+        .filter(row => row.hasNewUser)
+        .map(row => ({ ...row.merged, __sourceCollection: 'newUsers' }));
+    }
+  } catch (error) {
+    console.error('Failed to load preindexed additional access set; fallback to searchKey buckets', error);
+  }
 
   const matchedIdsSet = new Set();
 
@@ -182,7 +209,7 @@ const fetchAdditionalNewUsersBySearchIndex = async parsedRuleGroups => {
     if (activeSources.length === 0) continue;
 
     const indexedSets = await Promise.all(
-      activeSources.map(source => readIndexedIds(source.indexName, source.values))
+      activeSources.map(source => readIndexedIds(source.indexName, source.values, USERS_SEARCH_KEY_ROOT))
     );
 
     const normalizedSets = indexedSets.filter(set => set instanceof Set);
@@ -1924,6 +1951,11 @@ const Matching = () => {
     let cancelled = false;
 
     const loadAdditionalNewUsers = async () => {
+      if (collectionSource !== 'newUsers') {
+        setAdditionalNewUsers([]);
+        return;
+      }
+
       if (!parsedAdditionalAccessRules || parsedAdditionalAccessRules.length === 0) {
         setAdditionalNewUsers([]);
         additionalRulesToastRef.current = '';
@@ -1931,7 +1963,10 @@ const Matching = () => {
       }
 
       try {
-        const loaded = await fetchAdditionalNewUsersBySearchIndex(parsedAdditionalAccessRules);
+        const loaded = await fetchAdditionalNewUsersBySearchIndex({
+          parsedRuleGroups: parsedAdditionalAccessRules,
+          rawRules: currentAdditionalAccessRules,
+        });
 
         if (!cancelled) {
           setAdditionalNewUsers(loaded);
@@ -1957,7 +1992,7 @@ const Matching = () => {
     return () => {
       cancelled = true;
     };
-  }, [parsedAdditionalAccessRules, currentAdditionalAccessRules]);
+  }, [parsedAdditionalAccessRules, currentAdditionalAccessRules, collectionSource]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1967,12 +2002,12 @@ const Matching = () => {
         const snapshots = await Promise.all(
           MATCHING_ROLE_SEARCH_KEY_BUCKETS.map(async bucket => {
             const payload = await getCachedSearchKeyPayload(
-              `${SEARCH_KEY_ROOT}/role/${bucket}`,
+              `${USERS_SEARCH_KEY_ROOT}/role/${bucket}`,
               async () => {
-                const snapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/role/${bucket}`));
+                const usersSnapshot = await get(refDb(database, `${USERS_SEARCH_KEY_ROOT}/role/${bucket}`));
                 return {
-                  exists: snapshot.exists(),
-                  value: snapshot.exists() ? snapshot.val() || {} : null,
+                  exists: usersSnapshot.exists(),
+                  value: usersSnapshot.exists() ? usersSnapshot.val() || {} : null,
                 };
               }
             );
@@ -2396,14 +2431,17 @@ const Matching = () => {
 
     const hasAdditionalAccessRules = parsedAdditionalAccessRules.length > 0;
     if (hasAdditionalAccessRules) {
+      const allowedBySetKey = new Set(additionalNewUsers.map(user => user.userId).filter(Boolean));
       baseUsers = baseUsers.filter(user => {
         if (user?.__sourceCollection !== 'newUsers') return true;
+        if (collectionSource === 'newUsers' && !allowedBySetKey.has(user.userId)) return false;
         return isUserAllowedByAnyAdditionalAccessRule(user, parsedAdditionalAccessRules);
       });
     }
 
     const shouldInjectAdditionalCards =
       viewMode === 'default' &&
+      collectionSource === 'newUsers' &&
       hasAdditionalAccessRules &&
       additionalNewUsers.length > 0;
 
@@ -2435,6 +2473,7 @@ const Matching = () => {
     parsedAdditionalAccessRules,
     users,
     viewMode,
+    collectionSource,
   ]);
 
   const filteredUsers = applyMatchingSearchKeyFilters(

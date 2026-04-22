@@ -25,6 +25,10 @@ import {
   parseAdditionalAccessRuleGroups,
   resolveAdditionalAccessSearchKeyBuckets,
 } from 'utils/additionalAccessRules';
+import {
+  buildNewUsersFilterSetIndex,
+  rebuildAllNewUsersFilterSetIndexes,
+} from 'utils/newUsersFilterSetsIndex';
 import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
 
 export const getFieldsToRender = state => {
@@ -560,6 +564,7 @@ export const ProfileForm = ({
   const [activeAdditionalRuleInputIndex, setActiveAdditionalRuleInputIndex] = useState(0);
   const [additionalRuleBuilder, setAdditionalRuleBuilder] = useState([]);
   const [availableCardsCount, setAvailableCardsCount] = useState(0);
+  const [isReindexingFilterSets, setIsReindexingFilterSets] = useState(false);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
   const autoAppliedOverlayForUserRef = useRef('');
 
@@ -772,13 +777,38 @@ export const ProfileForm = ({
     return { ...draftState, getInTouch: normalized };
   };
 
-  const submitWithNormalization = useCallback((nextState, overwrite, delCondition) => {
+  const submitWithNormalization = useCallback(async (nextState, overwrite, delCondition) => {
     const payload =
       nextState && typeof nextState === 'object'
         ? normalizeGetInTouchForSubmit(nextState)
         : nextState;
+    try {
+      const rawRules = payload?.[ADDITIONAL_ACCESS_FIELD];
+      if (rawRules !== undefined) {
+        await buildNewUsersFilterSetIndex({
+          rawRules,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to update additional access newUsers filter-set index', error);
+    }
     handleSubmit(payload, overwrite, delCondition);
   }, [handleSubmit]);
+
+  const handleReindexAdditionalFilterSets = useCallback(async () => {
+    setIsReindexingFilterSets(true);
+    try {
+      const stats = await rebuildAllNewUsersFilterSetIndexes();
+      toast.success(
+        `Індексацію завершено: ${stats.indexedRuleSets}/${stats.totalRuleSets} наборів збережено.`
+      );
+    } catch (error) {
+      console.error('Failed to rebuild additional access filter-set indexes', error);
+      toast.error('Не вдалося перебудувати індексацію наборів фільтрів');
+    } finally {
+      setIsReindexingFilterSets(false);
+    }
+  }, []);
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
@@ -1855,6 +1885,15 @@ ${entries.join('\n')}`;
             <AdditionalRuleActions>
               <button type="button" onClick={addEmptyAdditionalFilter}>+ Фільтр</button>
               <button type="button" onClick={applyAdditionalRulesFromBuilder}>Застосувати</button>
+              <button
+                type="button"
+                onClick={handleReindexAdditionalFilterSets}
+                disabled={isReindexingFilterSets}
+              >
+                {isReindexingFilterSets
+                  ? 'Індексація наборів фільтрів...'
+                  : 'Індексація наборів фільтрів'}
+              </button>
             </AdditionalRuleActions>
 
             <AdditionalRulePreview
