@@ -61,7 +61,7 @@ export const FieldComment = ({ userData, setUsers, setState, submitOptions = {} 
           aria-label="Очистити коментар"
           onClick={event => {
             event.stopPropagation();
-            removeField(userData.userId, 'myComment', setUsers, setState);
+            removeField(userData.userId, 'myComment', setUsers, setState, 'myComment', submitOptions);
           }}
           style={{
             position: 'absolute',
