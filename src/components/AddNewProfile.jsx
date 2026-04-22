@@ -932,113 +932,135 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     registerHistorySnapshot(syncedState);
 
-    if (!isAdmin) {
-      if (!syncedState?.userId) {
-        toast.error('Немає userId для збереження правки');
+    try {
+      if (!isAdmin) {
+        if (!syncedState?.userId) {
+          toast.error('Немає userId для збереження правки');
+          return;
+        }
+
+        const canonical = await getCanonicalCard(syncedState.userId);
+        const overlayFields = buildOverlayFromDraft(canonical, syncedState);
+        await saveOverlayForUserCard({
+          editorUserId: auth.currentUser?.uid,
+          cardUserId: syncedState.userId,
+          fields: overlayFields,
+        });
         return;
       }
 
-      const canonical = await getCanonicalCard(syncedState.userId);
-      const overlayFields = buildOverlayFromDraft(canonical, syncedState);
-      await saveOverlayForUserCard({
-        editorUserId: auth.currentUser?.uid,
-        cardUserId: syncedState.userId,
-        fields: overlayFields,
-      });
-      return;
-    }
+      // Optimistically update local cache and UI state before syncing with server
+      setState(syncedState);
+      const removeKeys = delCondition ? Object.keys(delCondition) : [];
+      updateCachedUser(syncedState, { removeKeys });
+      cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
+      setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
 
-    // Optimistically update local cache and UI state before syncing with server
-    setState(syncedState);
-    const removeKeys = delCondition ? Object.keys(delCondition) : [];
-    updateCachedUser(syncedState, { removeKeys });
-    cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
-    setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
-
-    const existingData = syncedState?.userId ? await fetchUserById(syncedState.userId) : null;
-    if (syncedState?.userId) {
-      await Promise.all([
-        syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState),
-        syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState),
-      ]);
-    }
-
-    if (syncedState?.userId?.length > 20) {
-
-      const cleanedState = Object.fromEntries(
-        Object.entries(syncedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
-      );
-
-      const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
-      if (delCondition) {
-        Object.keys(delCondition).forEach(key => {
-          uploadedInfo[key] = null;
-        });
-      }
-
-      if (!makeIndex) {
-        await Promise.all([
-          updateDataInRealtimeDB(syncedState.userId, uploadedInfo, 'update'),
-          updateDataInFiresoreDB(syncedState.userId, uploadedInfo, 'check', delCondition),
-        ]);
-      }
-
-      const cleanedStateForNewUsers = Object.fromEntries(
-        Object.entries(syncedState).filter(([key]) =>
-          [...fieldsForNewUsersOnly, ...contacts, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
-        )
-      );
-
-      await updateDataInNewUsersRTDB(
-        syncedState.userId,
-        cleanedStateForNewUsers,
-        'update'
-      );
-    } else {
-      if (newState) {
-        const newStateWithDelivery = { ...newState };
-
-        if (formattedLastDelivery) {
-          newStateWithDelivery.lastDelivery = formattedLastDelivery;
-        } else {
-          delete newStateWithDelivery.lastDelivery;
+      let existingData = null;
+      if (syncedState?.userId) {
+        try {
+          existingData = await fetchUserById(syncedState.userId);
+        } catch (fetchError) {
+          const details = fetchError?.message || String(fetchError);
+          console.error('Submit: failed to fetch existing user before save', fetchError);
+          toast.error(`Збереження: не вдалося прочитати поточні дані (${details})`);
+          existingData = null;
         }
+      }
+
+      if (syncedState?.userId) {
+        try {
+          await Promise.all([
+            syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState),
+            syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState),
+          ]);
+        } catch (indexError) {
+          const details = indexError?.message || String(indexError);
+          console.error('Submit: search index sync failed, continuing with save', indexError);
+          toast.error(`Індексація не виконана (${details}), продовжуємо збереження`);
+        }
+      }
+
+      if (syncedState?.userId?.length > 20) {
+
+        const cleanedState = Object.fromEntries(
+          Object.entries(syncedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
+        );
+
+        const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
         if (delCondition) {
           Object.keys(delCondition).forEach(key => {
-            newStateWithDelivery[key] = null;
+            uploadedInfo[key] = null;
           });
         }
+
+        if (!makeIndex) {
+          await Promise.all([
+            updateDataInRealtimeDB(syncedState.userId, uploadedInfo, 'update'),
+            updateDataInFiresoreDB(syncedState.userId, uploadedInfo, 'check', delCondition),
+          ]);
+        }
+
+        const cleanedStateForNewUsers = Object.fromEntries(
+          Object.entries(syncedState).filter(([key]) =>
+            [...fieldsForNewUsersOnly, ...contacts, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
+          )
+        );
+
         await updateDataInNewUsersRTDB(
           syncedState.userId,
-          newStateWithDelivery,
+          cleanedStateForNewUsers,
           'update'
         );
       } else {
-        await updateDataInNewUsersRTDB(syncedState.userId, syncedState, 'update');
-      }
-    }
+        if (newState) {
+          const newStateWithDelivery = { ...newState };
 
-    try {
-      const serverData = await fetchUserById(syncedState.userId);
-      const serverLast = normalizeLastAction(serverData?.lastAction);
-      if (serverLast && serverLast > syncedState.lastAction) {
-        const formattedServer = {
-          ...serverData,
-          lastAction: serverLast,
-          lastDelivery: formatDateToDisplay(serverData.lastDelivery),
-          cycleStatus: serverData.cycleStatus || 'menstruation',
-        };
-        updateCachedUser(formattedServer);
-        cacheFetchedUsers(
-          { [formattedServer.userId]: formattedServer },
-          cacheLoad2Users,
-          filters,
-        );
-        setUsers(prev => ({ ...prev, [formattedServer.userId]: formattedServer }));
-        setState(formattedServer);
+          if (formattedLastDelivery) {
+            newStateWithDelivery.lastDelivery = formattedLastDelivery;
+          } else {
+            delete newStateWithDelivery.lastDelivery;
+          }
+          if (delCondition) {
+            Object.keys(delCondition).forEach(key => {
+              newStateWithDelivery[key] = null;
+            });
+          }
+          await updateDataInNewUsersRTDB(
+            syncedState.userId,
+            newStateWithDelivery,
+            'update'
+          );
+        } else {
+          await updateDataInNewUsersRTDB(syncedState.userId, syncedState, 'update');
+        }
       }
-    } catch {
-      // ignore fetch errors
+      try {
+        const serverData = await fetchUserById(syncedState.userId);
+        const serverLast = normalizeLastAction(serverData?.lastAction);
+        if (serverLast && serverLast > syncedState.lastAction) {
+          const formattedServer = {
+            ...serverData,
+            lastAction: serverLast,
+            lastDelivery: formatDateToDisplay(serverData.lastDelivery),
+            cycleStatus: serverData.cycleStatus || 'menstruation',
+          };
+          updateCachedUser(formattedServer);
+          cacheFetchedUsers(
+            { [formattedServer.userId]: formattedServer },
+            cacheLoad2Users,
+            filters,
+          );
+          setUsers(prev => ({ ...prev, [formattedServer.userId]: formattedServer }));
+          setState(formattedServer);
+        }
+      } catch {
+        // ignore fetch errors
+      }
+    } catch (submitError) {
+      const details = submitError?.message || String(submitError);
+      console.error('Submit failed', submitError);
+      toast.error(`Збереження не виконано: ${details}`);
     }
   };
 
