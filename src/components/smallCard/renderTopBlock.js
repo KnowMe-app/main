@@ -60,6 +60,22 @@ const contactsWrapperStyle = {
   gap: '4px',
 };
 
+const commentFieldWrapperStyle = {
+  position: 'relative',
+};
+
+const commentRtdbLinkStyle = {
+  position: 'absolute',
+  top: '4px',
+  right: '10px',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  color: 'inherit',
+  opacity: 0.75,
+  zIndex: 2,
+};
+
 const detailsToggleStyle = {
   position: 'absolute',
   bottom: '10px',
@@ -71,6 +87,9 @@ const detailsToggleStyle = {
 
 const hasAgentOrIPRole = data =>
   data.userRole === 'ag' || data.userRole === 'ip' || data.role === 'ag' || data.role === 'ip';
+
+const buildRtdbLink = userId =>
+  `https://console.firebase.google.com/u/0/project/webringitapp/database/webringitapp-default-rtdb/data/~2FnewUsers~2F${encodeURIComponent(userId || '')}`;
 
 const buildName = data => {
   const nameParts = [];
@@ -205,7 +224,28 @@ export const renderTopBlock = (
         {renderOverlayEntries(['phone', 'phone2', 'phone3', 'telegram', 'email', 'facebook', 'instagram', 'tiktok', 'vk'])}
       </div>
       {fieldWriter(cardData, setUsers, setState, submitOptions)}
-      <FieldComment userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />
+      <div style={commentFieldWrapperStyle}>
+        {cardData.userId && (
+          <a
+            href={buildRtdbLink(cardData.userId)}
+            target="_blank"
+            rel="noreferrer"
+            title="Відкрити профіль в Firebase RTDB"
+            onClick={event => event.stopPropagation()}
+            style={commentRtdbLinkStyle}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+              <rect x="3" y="10" width="18" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+              <rect x="3" y="17" width="18" height="4" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
+              <circle cx="7" cy="5.5" r="0.9" fill="currentColor" />
+              <circle cx="7" cy="12.5" r="0.9" fill="currentColor" />
+              <circle cx="7" cy="19" r="0.9" fill="currentColor" />
+            </svg>
+          </a>
+        )}
+        <FieldComment userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />
+      </div>
 
       <div
         onClick={async e => {
