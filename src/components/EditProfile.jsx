@@ -143,6 +143,32 @@ const normalizeEditorOverlayFields = fields => {
   }, {});
 };
 
+const mergeCardStatePreservingKnownFields = (prevState, nextCardState) => {
+  if (!nextCardState || typeof nextCardState !== 'object') {
+    return prevState || nextCardState;
+  }
+
+  if (!prevState || typeof prevState !== 'object') {
+    return nextCardState;
+  }
+
+  return {
+    ...prevState,
+    ...nextCardState,
+  };
+};
+
+const getCanonicalCardFromCache = cardUserId => {
+  if (!cardUserId) return null;
+  const cachedCard = getCard(cardUserId);
+  if (!cachedCard || typeof cachedCard !== 'object') return null;
+
+  return {
+    ...cachedCard,
+    userId: cachedCard.userId || cardUserId,
+  };
+};
+
 const EditProfile = () => {
   const { userId } = useParams();
   const navigate = useNavigate();
@@ -171,7 +197,7 @@ const EditProfile = () => {
     let canonical = {};
 
     try {
-      canonical = await getCanonicalCard(userId);
+      canonical = getCanonicalCardFromCache(userId) || (await getCanonicalCard(userId));
 
       if (isAdmin) {
         overlays = await getOverlaysForCard(userId);
@@ -220,12 +246,14 @@ const EditProfile = () => {
       ? applyOverlayToCard(canonical, normalizedOwnFields)
       : canonical;
 
-    setState({
+    const normalizedIncomingState = {
       ...cardForEditor,
       userId: cardForEditor?.userId || userId,
       lastAction: normalizeLastAction(cardForEditor?.lastAction),
       lastDelivery: formatDateToDisplay(cardForEditor?.lastDelivery),
-    });
+    };
+
+    setState(prevState => mergeCardStatePreservingKnownFields(prevState, normalizedIncomingState));
 
     const visibleOverlays = overlays;
 
@@ -289,7 +317,9 @@ const EditProfile = () => {
     const canWriteMain = isAdminUid(editorUserId);
 
     if (!canWriteMain) {
-      const canonical = await getCanonicalCard(updatedState.userId);
+      const canonical =
+        getCanonicalCardFromCache(updatedState.userId) ||
+        (await getCanonicalCard(updatedState.userId));
       const overlayFields = buildOverlayFromDraft(canonical, updatedState);
       await saveOverlayForUserCard({
         editorUserId,
