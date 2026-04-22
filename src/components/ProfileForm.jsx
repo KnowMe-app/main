@@ -27,6 +27,7 @@ import {
 } from 'utils/additionalAccessRules';
 import {
   buildNewUsersFilterSetIndex,
+  makeAdditionalRulesSetKey,
   rebuildAllNewUsersFilterSetIndexes,
 } from 'utils/newUsersFilterSetsIndex';
 import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
@@ -627,7 +628,55 @@ export const ProfileForm = ({
 
       setIsLoadingAvailableCards(true);
       try {
+        const indexedSetKey = makeAdditionalRulesSetKey(combinedDraftText);
+        if (indexedSetKey) {
+          const indexedPayload = await getCachedSearchKeyPayload(
+            `${SEARCH_KEY_ROOT}/${indexedSetKey}`,
+            async () => {
+              const indexedSnapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/${indexedSetKey}`));
+              return {
+                exists: indexedSnapshot.exists(),
+                value: indexedSnapshot.exists() ? indexedSnapshot.val() || {} : null,
+              };
+            }
+          );
+
+          if (indexedPayload?.exists) {
+            const indexedUserIds = Object.keys(indexedPayload.value?.userIds || {});
+            if (!cancelled) {
+              setAvailableCardsCount(indexedUserIds.length);
+            }
+            return;
+          }
+        }
+
         const matchedIds = new Set();
+        const collectIdsByIndexValues = async (indexName, values) => {
+          const requestedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
+          if (!indexName || requestedValues.length === 0) return new Set();
+
+          const indexPayload = await getCachedSearchKeyPayload(`${SEARCH_KEY_ROOT}/${indexName}`, async () => {
+            const indexSnapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/${indexName}`));
+            return {
+              exists: indexSnapshot.exists(),
+              value: indexSnapshot.exists() ? indexSnapshot.val() || {} : null,
+            };
+          });
+
+          if (!indexPayload?.exists || !indexPayload.value || typeof indexPayload.value !== 'object') {
+            return new Set();
+          }
+
+          const ids = new Set();
+          requestedValues.forEach(value => {
+            const bucketValue = indexPayload.value?.[value];
+            if (!bucketValue || typeof bucketValue !== 'object') return;
+            Object.keys(bucketValue).forEach(userId => ids.add(userId));
+          });
+
+          return ids;
+        };
+
         const collectAgeIdsByRule = async parsedRules => {
           if (!parsedRules?.age && !parsedRules?.age42plus && !parsedRules?.ageUnknown && !parsedRules?.ageNo) {
             return new Set();
@@ -676,26 +725,11 @@ export const ProfileForm = ({
             return asArray.length > 0;
           });
           if (activeGroups.length > 0) {
-            const snapshots = await Promise.all(
-              activeGroups.map(([indexName, values]) =>
-                Promise.all(
-                  (Array.isArray(values) ? values : [...values]).map(value =>
-                    getCachedSearchKeyPayload(`${SEARCH_KEY_ROOT}/${indexName}/${value}`, async () => {
-                      const snapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/${indexName}/${value}`));
-                      return {
-                        exists: snapshot.exists(),
-                        value: snapshot.exists() ? snapshot.val() || {} : null,
-                      };
-                    })
-                  )
-                )
-              )
+            const groupIds = await Promise.all(
+              activeGroups.map(([indexName, values]) => collectIdsByIndexValues(indexName, values))
             );
-            snapshots.forEach(groupSnapshots => {
-              groupSnapshots.forEach(payload => {
-                if (!payload?.exists) return;
-                Object.keys(payload.value || {}).forEach(userId => matchedIds.add(userId));
-              });
+            groupIds.forEach(ids => {
+              ids.forEach(userId => matchedIds.add(userId));
             });
           }
 
