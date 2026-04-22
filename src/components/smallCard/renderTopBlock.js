@@ -73,7 +73,7 @@ const commentRtdbLinkStyle = {
   justifyContent: 'center',
   width: '18px',
   height: '18px',
-  color: '#fff',
+  color: '#ebe0c2',
   backgroundColor: 'rgba(30, 30, 30, 0.7)',
   borderRadius: '4px',
   textDecoration: 'none',
