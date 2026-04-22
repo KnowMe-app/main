@@ -2633,8 +2633,44 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (isEditingRef.current)
       return { cacheCount: 0, backendCount: 0, hasMore };
 
+    const { cards: cachedArr, fromCache } = await getLoad2Cards(
+      currentFilters,
+      id => fetchUserById(id),
+    );
+    const sortedCachedArr = [...cachedArr].sort(
+      (a, b) => normalizeLastAction(b?.lastAction) - normalizeLastAction(a?.lastAction),
+    );
+
+    let cacheCount = 0;
+    let backendCount = 0;
+
+    const slice = sortedCachedArr.slice(dateOffsetLA, dateOffsetLA + PAGE_SIZE);
+    if (slice.length > 0) {
+      const cachedUsers = slice.reduce((acc, user) => {
+        acc[user.userId] = user;
+        return acc;
+      }, {});
+
+      cacheFetchedUsers(cachedUsers, cacheLoad2Users, currentFilters);
+      if (!isEditingRef.current) {
+        setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
+      }
+      if (fromCache) cacheCount += slice.length;
+      else backendCount += slice.length;
+    }
+
+    const hasCachedMore = sortedCachedArr.length > dateOffsetLA + slice.length;
+    if (slice.length === PAGE_SIZE || hasCachedMore) {
+      const nextOffset = dateOffsetLA + slice.length;
+      setDateOffsetLA(nextOffset);
+      setHasMore(hasCachedMore);
+      setTotalCount(prev => Math.max(prev, sortedCachedArr.length));
+      return { cacheCount, backendCount, hasMore: hasCachedMore };
+    }
+
+    const backendOffset = dateOffsetLA + slice.length;
     const res = await fetchUsersByLastActionPaged(
-      dateOffsetLA,
+      backendOffset,
       PAGE_SIZE,
       undefined,
       id => fetchUserById(id),
@@ -2655,15 +2691,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setDateOffsetLA(res.lastKey);
       setHasMore(res.hasMore);
       setTotalCount(prev =>
-        Math.max(prev, res.lastKey + (res.hasMore ? PAGE_SIZE : 0)),
+        Math.max(prev, res.lastKey + (res.hasMore ? PAGE_SIZE : 0), sortedCachedArr.length),
       );
-      const backendCount = Object.keys(filteredUsers).length;
-      return { cacheCount: 0, backendCount, hasMore: res.hasMore };
+      backendCount += Object.keys(filteredUsers).length;
+      return { cacheCount, backendCount, hasMore: res.hasMore };
     }
 
     setHasMore(false);
-    setTotalCount(prev => Math.max(prev, dateOffsetLA));
-    return { cacheCount: 0, backendCount: 0, hasMore: false };
+    setTotalCount(prev => Math.max(prev, dateOffsetLA + slice.length, sortedCachedArr.length));
+    if (slice.length > 0) {
+      setDateOffsetLA(prev => prev + slice.length);
+    }
+    return { cacheCount, backendCount, hasMore: false };
   };
 
   const handlePageChange = async page => {
