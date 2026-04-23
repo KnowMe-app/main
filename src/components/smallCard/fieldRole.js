@@ -25,7 +25,7 @@ export const fieldRole = (userData, setUsers, setState, submitOptions = {}) => {
         }
         style={{ marginLeft: 0, textAlign: 'left', width: '6ch' }}
       />
-      {['ed', 'ip', 'ag'].map(role => (
+      {['ed', 'ip', 'ag', 'pp'].map(role => (
         <OrangeBtn
           key={role}
           onClick={() => handleSetRole(role)}
