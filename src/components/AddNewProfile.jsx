@@ -3683,7 +3683,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 isDateInRange,
                 openMedicationsModal,
                 null,
-                {},
+                null,
                 handleTopBlockSubmitHistorySnapshot,
               )}
             </div>
