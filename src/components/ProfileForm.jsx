@@ -28,7 +28,6 @@ import {
 import {
   buildNewUsersFilterSetIndex,
   makeAdditionalRulesSetKey,
-  rebuildAllNewUsersFilterSetIndexes,
 } from 'utils/newUsersFilterSetsIndex';
 import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
 
@@ -92,7 +91,7 @@ const nestedIndentStyle = {
 
 const ADDITIONAL_ACCESS_FIELD = 'additionalAccessRules';
 const SEARCH_KEY_ROOT = 'searchKey';
-const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
+const SEARCH_KEY_SETS_ROOT = 'searchKeySet';
 const ADDITIONAL_RULE_LABELS = {
   age: 'Вік',
   csection: 'КС',
@@ -566,7 +565,6 @@ export const ProfileForm = ({
   const [activeAdditionalRuleInputIndex, setActiveAdditionalRuleInputIndex] = useState(0);
   const [additionalRuleBuilder, setAdditionalRuleBuilder] = useState([]);
   const [availableCardsCount, setAvailableCardsCount] = useState(0);
-  const [isReindexingFilterSets, setIsReindexingFilterSets] = useState(false);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
   const autoAppliedOverlayForUserRef = useRef('');
 
@@ -618,10 +616,11 @@ export const ProfileForm = ({
 
     let cancelled = false;
     const loadAvailableCards = async () => {
-      const nextInputs = [...additionalRulesInputs];
-      nextInputs[activeAdditionalRuleInputIndex] = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
-      const combinedDraftText = nextInputs.map(item => String(item || '').trim()).filter(Boolean).join('\n\n');
-      const parsedRuleGroups = parseAdditionalAccessRuleGroups(combinedDraftText);
+      const combinedAppliedText = additionalRulesInputs
+        .map(item => String(item || '').trim())
+        .filter(Boolean)
+        .join('\n\n');
+      const parsedRuleGroups = parseAdditionalAccessRuleGroups(combinedAppliedText);
       if (!parsedRuleGroups.length) {
         setAvailableCardsCount(0);
         return;
@@ -629,7 +628,7 @@ export const ProfileForm = ({
 
       setIsLoadingAvailableCards(true);
       try {
-        const indexedSetKey = makeAdditionalRulesSetKey(combinedDraftText);
+        const indexedSetKey = makeAdditionalRulesSetKey(combinedAppliedText);
         if (indexedSetKey) {
           const indexedPayload = await getCachedSearchKeyPayload(
             `${SEARCH_KEY_SETS_ROOT}/${indexedSetKey}`,
@@ -782,8 +781,6 @@ export const ProfileForm = ({
       cancelled = true;
     };
   }, [
-    activeAdditionalRuleInputIndex,
-    additionalRuleBuilder,
     additionalRulesInputs,
     showAdditionalRulesModal,
   ]);
@@ -835,22 +832,6 @@ export const ProfileForm = ({
       toast.error(`Не вдалося зберегти зміни профілю (${details})`);
     });
   }, [handleSubmit]);
-
-  const handleReindexAdditionalFilterSets = useCallback(async () => {
-    setIsReindexingFilterSets(true);
-    try {
-      const stats = await rebuildAllNewUsersFilterSetIndexes();
-      toast.success(
-        `Індексацію завершено: ${stats.indexedRuleSets}/${stats.totalRuleSets} наборів збережено.`
-      );
-    } catch (error) {
-      console.error('Failed to rebuild additional access filter-set indexes', error);
-      const details = error?.message || String(error);
-      toast.error(`Не вдалося перебудувати індексацію наборів фільтрів (${details})`);
-    } finally {
-      setIsReindexingFilterSets(false);
-    }
-  }, []);
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
@@ -1931,15 +1912,6 @@ ${entries.join('\n')}`;
             <AdditionalRuleActions>
               <button type="button" onClick={addEmptyAdditionalFilter}>+ Фільтр</button>
               <button type="button" onClick={applyAdditionalRulesFromBuilder}>Застосувати</button>
-              <button
-                type="button"
-                onClick={handleReindexAdditionalFilterSets}
-                disabled={isReindexingFilterSets}
-              >
-                {isReindexingFilterSets
-                  ? 'Індексація наборів фільтрів...'
-                  : 'Індексація наборів фільтрів'}
-              </button>
             </AdditionalRuleActions>
 
             <AdditionalRulePreview

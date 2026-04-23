@@ -6,8 +6,8 @@ import {
   resolveAdditionalAccessSearchKeyBuckets,
 } from './additionalAccessRules';
 
-const SEARCH_KEY_ROOT = 'searchKey';
-const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
+const SEARCH_KEY_SETS_ROOT = 'searchKeySet';
+const LEGACY_SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_MAX_LENGTH = 512;
 
 const toStableRulesText = raw =>
@@ -107,9 +107,9 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules }) => {
   const setKey = makeAdditionalRulesSetKey(rawRules);
   if (!setKey) return null;
 
-  const [newSetSnap, legacySetSnap] = await Promise.all([
+  const [newSetSnap, legacyDedicatedSetSnap] = await Promise.all([
     get(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`)),
-    get(ref(database, `${SEARCH_KEY_ROOT}/${setKey}`)),
+    get(ref(database, `${LEGACY_SEARCH_KEY_SETS_ROOT}/${setKey}`)),
   ]);
 
   if (newSetSnap.exists()) {
@@ -117,30 +117,33 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules }) => {
     return { setKey, userIds: Object.keys(payload || {}) };
   }
 
-  if (!legacySetSnap.exists()) return null;
-
-  const legacyPayload = legacySetSnap.val() || {};
-  return { setKey, userIds: Object.keys(legacyPayload.userIds || {}) };
+  if (legacyDedicatedSetSnap.exists()) {
+    const payload = legacyDedicatedSetSnap.val() || {};
+    return { setKey, userIds: Object.keys(payload || {}) };
+  }
+  return null;
 };
 
 export const rebuildAllNewUsersFilterSetIndexes = async () => {
-  const [usersSnap, newUsersSnap, searchKeySnap, searchKeySetsSnap] = await Promise.all([
+  const [usersSnap, newUsersSnap, searchKeySetSnap, legacySearchKeySetsSnap] = await Promise.all([
     get(ref(database, 'users')),
     get(ref(database, 'newUsers')),
-    get(ref(database, SEARCH_KEY_ROOT)),
     get(ref(database, SEARCH_KEY_SETS_ROOT)),
+    get(ref(database, LEGACY_SEARCH_KEY_SETS_ROOT)),
   ]);
 
   const usersMap = usersSnap.exists() ? usersSnap.val() || {} : {};
   const newUsersMap = newUsersSnap.exists() ? newUsersSnap.val() || {} : {};
-  const searchKeyMap = searchKeySnap.exists() ? searchKeySnap.val() || {} : {};
-  const searchKeySetsMap = searchKeySetsSnap.exists() ? searchKeySetsSnap.val() || {} : {};
+  const searchKeySetMap = searchKeySetSnap.exists() ? searchKeySetSnap.val() || {} : {};
+  const legacySearchKeySetsMap = legacySearchKeySetsSnap.exists() ? legacySearchKeySetsSnap.val() || {} : {};
 
-  const oldSetKeys = Object.keys(searchKeyMap).filter(key => String(key).startsWith('set_'));
-  const oldSetKeysInDedicatedRoot = Object.keys(searchKeySetsMap).filter(key => String(key).startsWith('set_'));
+  const oldSetKeysInDedicatedRoot = Object.keys(searchKeySetMap).filter(key => String(key).startsWith('set_'));
+  const oldLegacySetKeysInDedicatedRoot = Object.keys(legacySearchKeySetsMap).filter(key =>
+    String(key).startsWith('set_')
+  );
   await Promise.all([
-    ...oldSetKeys.map(key => remove(ref(database, `${SEARCH_KEY_ROOT}/${key}`))),
     ...oldSetKeysInDedicatedRoot.map(key => remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${key}`))),
+    ...oldLegacySetKeysInDedicatedRoot.map(key => remove(ref(database, `${LEGACY_SEARCH_KEY_SETS_ROOT}/${key}`))),
   ]);
 
   const allRules = Object.values(usersMap)

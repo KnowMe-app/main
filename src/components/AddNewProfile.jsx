@@ -110,6 +110,7 @@ import {
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
+import { rebuildAllNewUsersFilterSetIndexes } from 'utils/newUsersFilterSetsIndex';
 
 const Container = styled.div`
   display: flex;
@@ -652,6 +653,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     lastLogin: true,
     stimulationShortcuts: true,
     searchKeyUsersAll: false,
+    searchKeySetReindex: false,
   };
   const defaultSelectedSearchKeyIndexes = SEARCH_KEY_INDEX_OPTIONS.reduce((acc, option) => {
     acc[option.key] = true;
@@ -3229,6 +3231,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       !selectedIndexJobs.lastLogin &&
       !selectedIndexJobs.stimulationShortcuts &&
       !selectedIndexJobs.searchKeyUsersAll &&
+      !selectedIndexJobs.searchKeySetReindex &&
       !selectedIndexTypes.length
     ) {
       toast.error('Оберіть хоча б один індекс для запуску');
@@ -3242,6 +3245,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       if (selectedIndexJobs.stimulationShortcuts) {
         await runStimulationShortcutIndexing();
+      }
+
+      if (selectedIndexJobs.searchKeySetReindex) {
+        const toastId = 'index-searchkey-set-reindex-progress';
+        toast.loading('Перебудова searchKeySet наборів фільтрів...', { id: toastId });
+        const stats = await rebuildAllNewUsersFilterSetIndexes();
+        toast.success(
+          `searchKeySet оновлено: ${stats.indexedRuleSets}/${stats.totalRuleSets} наборів.`,
+          { id: toastId },
+        );
       }
 
       if (selectedIndexJobs.searchKeyUsersAll) {
@@ -3900,6 +3913,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     />
                     <SearchScopeLabelTextGroup>
                       <span>Всі searchKey індекси лише для users → searchKey/users</span>
+                    </SearchScopeLabelTextGroup>
+                  </SearchScopeLabel>
+                  <SearchScopeLabel>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedIndexJobs.searchKeySetReindex)}
+                      onChange={() => toggleIndexJobSelection('searchKeySetReindex')}
+                    />
+                    <SearchScopeLabelTextGroup>
+                      <span>Перебудувати searchKeySet набори фільтрів</span>
                     </SearchScopeLabelTextGroup>
                   </SearchScopeLabel>
                   {SEARCH_KEY_INDEX_OPTIONS.map(option => (
