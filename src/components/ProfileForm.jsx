@@ -92,6 +92,7 @@ const nestedIndentStyle = {
 
 const ADDITIONAL_ACCESS_FIELD = 'additionalAccessRules';
 const SEARCH_KEY_ROOT = 'searchKey';
+const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const ADDITIONAL_RULE_LABELS = {
   age: 'Вік',
   csection: 'КС',
@@ -631,9 +632,9 @@ export const ProfileForm = ({
         const indexedSetKey = makeAdditionalRulesSetKey(combinedDraftText);
         if (indexedSetKey) {
           const indexedPayload = await getCachedSearchKeyPayload(
-            `${SEARCH_KEY_ROOT}/${indexedSetKey}`,
+            `${SEARCH_KEY_SETS_ROOT}/${indexedSetKey}`,
             async () => {
-              const indexedSnapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/${indexedSetKey}`));
+              const indexedSnapshot = await get(refDb(database, `${SEARCH_KEY_SETS_ROOT}/${indexedSetKey}`));
               return {
                 exists: indexedSnapshot.exists(),
                 value: indexedSnapshot.exists() ? indexedSnapshot.val() || {} : null,
@@ -642,7 +643,7 @@ export const ProfileForm = ({
           );
 
           if (indexedPayload?.exists) {
-            const indexedUserIds = Object.keys(indexedPayload.value?.userIds || {});
+            const indexedUserIds = Object.keys(indexedPayload.value || {});
             if (!cancelled) {
               setAvailableCardsCount(indexedUserIds.length);
             }
