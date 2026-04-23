@@ -27,7 +27,7 @@ const topBlockContainerStyle = { padding: '7px', position: 'relative' };
 
 const topButtonsRowStyle = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
   gap: '6px',
   marginBottom: '8px',
 };
@@ -45,7 +45,7 @@ const topButtonsZoneStyle = {
   padding: 0,
 };
 
-const topButtonsZones = ['#e53935', '#fb8c00', '#fbc02d', '#43a047', '#4fc3f7'];
+const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1', '#1565c0', '#6a1b9a'];
 
 const zoneActionButtonStyle = {
   position: 'static',
@@ -212,23 +212,29 @@ export const renderTopBlock = (
     <div style={topBlockContainerStyle}>
       <div style={topButtonsRowStyle}>
         {topButtonsZones.map((zoneColor, idx) => (
-          <div key={`top-zone-${idx}`} aria-label={`top-zone-${idx + 1}`} style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor }}>
+          <div
+            key={`top-zone-${idx}`}
+            aria-label={`top-zone-${idx + 1}`}
+            style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor }}
+          >
             {idx === 0 &&
               btnDel(
                 cardData,
                 setShowInfoModal,
                 setUserIdToDelete,
                 isFromListOfUsers,
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M4 7h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   <path d="M7 7l1 12a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9L17 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   <path d="M10 11v5M14 11v5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>,
-                { ...zoneActionButtonStyle, backgroundColor: '#ef5350', color: '#fff' }
+                { ...zoneActionButtonStyle, backgroundColor: '#d32f2f', color: '#fff' }
               )}
             {idx === 1 && (
-              <BtnDislike
+                <BtnDislike
+                title="Дизлайк"
+                ariaLabel="Дизлайк"
                 userId={cardData.userId}
                 userData={cardData}
                 dislikeUsers={dislikeUsers}
@@ -237,14 +243,16 @@ export const renderTopBlock = (
                 setFavoriteUsers={setFavoriteUsers}
                 customStyle={{
                   ...zoneActionButtonStyle,
-                  backgroundColor: '#fb8c00',
+                  backgroundColor: '#ef6c00',
                   border: 'none',
                 }}
-                iconSize={15}
+                iconSize={18}
               />
             )}
             {idx === 2 && (
               <BtnFavorite
+                title="В обране"
+                ariaLabel="В обране"
                 userId={cardData.userId}
                 userData={cardData}
                 favoriteUsers={favoriteUsers}
@@ -253,15 +261,15 @@ export const renderTopBlock = (
                 setDislikeUsers={setDislikeUsers}
                 customStyle={{
                   ...zoneActionButtonStyle,
-                  backgroundColor: '#fbc02d',
+                  backgroundColor: '#f9a825',
                   border: 'none',
                 }}
-                iconSize={15}
+                iconSize={18}
               />
             )}
             {idx === 3 && (
               <button
-                style={{ ...zoneActionButtonStyle, backgroundColor: '#43a047', color: '#fff' }}
+                style={{ ...zoneActionButtonStyle, backgroundColor: '#2e7d32', color: '#fff' }}
                 onClick={event => {
                   event.stopPropagation();
                   if (typeof onOpenMedications === 'function') {
@@ -270,8 +278,9 @@ export const renderTopBlock = (
                 }}
                 disabled={!cardData?.userId || typeof onOpenMedications !== 'function'}
                 aria-label="Ліки"
+                title="Ліки"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M8.5 8.5l7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   <path d="M6.2 10.8a3.25 3.25 0 0 1 4.6-4.6l6.9 6.9a3.25 3.25 0 1 1-4.6 4.6l-6.9-6.9z" stroke="currentColor" strokeWidth="2" />
                 </svg>
@@ -284,13 +293,16 @@ export const renderTopBlock = (
                 cardData,
                 setSearch,
                 setState,
-                { ...zoneActionButtonStyle, backgroundColor: '#4fc3f7', color: '#fff' },
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                { ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' },
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
                   <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                 </svg>
               )}
             )}
+
+            {idx === 5 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#1565c0', color: '#fff' }} aria-label="Додаткова синя кнопка" title="Додаткова синя кнопка" />}
+            {idx === 6 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#6a1b9a', color: '#fff' }} aria-label="Додаткова фіолетова кнопка" title="Додаткова фіолетова кнопка" />}
           </div>
         ))}
       </div>
