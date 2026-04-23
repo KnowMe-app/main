@@ -1,4 +1,4 @@
-import { get, ref, remove, set } from 'firebase/database';
+import { get, ref, remove, update } from 'firebase/database';
 import { database } from 'components/config';
 import {
   isUserAllowedByAnyAdditionalAccessRule,
@@ -6,8 +6,7 @@ import {
   resolveAdditionalAccessSearchKeyBuckets,
 } from './additionalAccessRules';
 
-const SEARCH_KEY_SETS_ROOT = 'searchKeySet';
-const LEGACY_SEARCH_KEY_SETS_ROOT = 'searchKeySets';
+const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 
 const toStableRulesText = raw =>
   Array.isArray(raw)
@@ -100,7 +99,18 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
 
   const userIds = mapMatchingIdsByRules(sourceNewUsers, parsedRuleGroups);
 
-  await set(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`), userIds);
+  // Під RTDB rules виду:
+  // searchKeySets/$setKey/$userId { ".write": ..., ".validate": "newData.val() === true || newData.val() === null" }
+  // не можна надійно робити set() на рівень /$setKey з об'єктом.
+  // Тому пишемо кожен userId окремим child-update.
+  const writes = Object.keys(userIds).reduce((acc, userId) => {
+    acc[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${userId}`] = true;
+    return acc;
+  }, {});
+
+  if (Object.keys(writes).length > 0) {
+    await update(ref(database), writes);
+  }
 
   return { setKey, userIds: Object.keys(userIds) };
 };
@@ -109,44 +119,28 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules }) => {
   const setKey = makeAdditionalRulesSetKey(rawRules);
   if (!setKey) return null;
 
-  const [newSetSnap, legacyDedicatedSetSnap] = await Promise.all([
-    get(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`)),
-    get(ref(database, `${LEGACY_SEARCH_KEY_SETS_ROOT}/${setKey}`)),
-  ]);
+  const newSetSnap = await get(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`));
 
   if (newSetSnap.exists()) {
     const payload = newSetSnap.val() || {};
-    return { setKey, userIds: Object.keys(payload || {}) };
-  }
-
-  if (legacyDedicatedSetSnap.exists()) {
-    const payload = legacyDedicatedSetSnap.val() || {};
     return { setKey, userIds: Object.keys(payload || {}) };
   }
   return null;
 };
 
 export const rebuildAllNewUsersFilterSetIndexes = async () => {
-  const [usersSnap, newUsersSnap, searchKeySetSnap, legacySearchKeySetsSnap] = await Promise.all([
+  const [usersSnap, newUsersSnap, searchKeySetSnap] = await Promise.all([
     get(ref(database, 'users')),
     get(ref(database, 'newUsers')),
     get(ref(database, SEARCH_KEY_SETS_ROOT)),
-    get(ref(database, LEGACY_SEARCH_KEY_SETS_ROOT)),
   ]);
 
   const usersMap = usersSnap.exists() ? usersSnap.val() || {} : {};
   const newUsersMap = newUsersSnap.exists() ? newUsersSnap.val() || {} : {};
   const searchKeySetMap = searchKeySetSnap.exists() ? searchKeySetSnap.val() || {} : {};
-  const legacySearchKeySetsMap = legacySearchKeySetsSnap.exists() ? legacySearchKeySetsSnap.val() || {} : {};
 
   const oldSetKeysInDedicatedRoot = Object.keys(searchKeySetMap).filter(key => String(key).startsWith('set_'));
-  const oldLegacySetKeysInDedicatedRoot = Object.keys(legacySearchKeySetsMap).filter(key =>
-    String(key).startsWith('set_')
-  );
-  await Promise.all([
-    ...oldSetKeysInDedicatedRoot.map(key => remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${key}`))),
-    ...oldLegacySetKeysInDedicatedRoot.map(key => remove(ref(database, `${LEGACY_SEARCH_KEY_SETS_ROOT}/${key}`))),
-  ]);
+  await Promise.all(oldSetKeysInDedicatedRoot.map(key => remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${key}`))));
 
   const allRules = Object.values(usersMap)
     .map(user => user?.additionalAccessRules)
