@@ -359,11 +359,18 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
     return null;
   }
 
-  const { userId, setUsers, stateUpdater } = options;
+  const { userId, setUsers, stateUpdater, onRemoveKey } = options;
   const effectiveSetUsers = typeof setUsers === 'function' ? setUsers : stateUpdater;
   const canRemove = typeof effectiveSetUsers === 'function';
 
   const handleRemove = keyPath => {
+    if (typeof onRemoveKey === 'function') {
+      const handled = onRemoveKey(keyPath);
+      if (handled) {
+        return;
+      }
+    }
+
     if (!canRemove) {
       return;
     }
@@ -1057,7 +1064,26 @@ export const ProfileForm = ({
     }
   }, [state?.userId]);
 
+  const removeOverlayValueFromState = useCallback((fieldName, entryValue) => {
+    if (!fieldName) return;
+
+    const currentValue = state?.[fieldName];
+
+    if (Array.isArray(currentValue)) {
+      const entryIndex = currentValue.findIndex(value => value === entryValue);
+      if (entryIndex !== -1) {
+        handleClear(fieldName, entryIndex);
+      }
+      return;
+    }
+
+    if (currentValue === entryValue || (typeof currentValue === 'string' && String(currentValue).trim() === String(entryValue).trim())) {
+      handleDelKeyValue(fieldName);
+    }
+  }, [handleClear, handleDelKeyValue, state]);
+
   const handleOverlayDismiss = async (fieldName, entry) => {
+    removeOverlayValueFromState(fieldName, entry?.value);
     dismissOverlayEntry(fieldName, entry);
     await removeOverlayEntryFromBackend(fieldName, entry);
   };
@@ -1436,6 +1462,24 @@ ${entries.join('\n')}`;
     handleCloseModal();
   };
 
+  const handleProfileViewRemove = keyPath => {
+    const normalizedPath = String(keyPath || '').trim();
+    if (!normalizedPath) return false;
+
+    if (!normalizedPath.includes('.')) {
+      handleDelKeyValue(normalizedPath);
+      return true;
+    }
+
+    const [fieldName, nestedIndex] = normalizedPath.split('.');
+    if (/^\d+$/.test(nestedIndex)) {
+      handleClear(fieldName, Number(nestedIndex));
+      return true;
+    }
+
+    return false;
+  };
+
   return (
     <>
       {state.userId && (
@@ -1443,7 +1487,11 @@ ${entries.join('\n')}`;
           id={state.userId}
           style={{ display: 'none', textAlign: 'left', marginBottom: '8px' }}
         >
-          {renderAllFields(state, '', { userId: state?.userId, setUsers: setState })}
+          {renderAllFields(state, '', {
+            userId: state?.userId,
+            setUsers: setState,
+            onRemoveKey: handleProfileViewRemove,
+          })}
         </div>
       )}
       {sortedFieldsToRender
