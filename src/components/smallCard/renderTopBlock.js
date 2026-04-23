@@ -184,8 +184,7 @@ export const renderTopBlock = (
   setSearch = null,
   additionalActions = null,
   overlayFieldAdditions = {},
-  onSubmitHistorySnapshot = null,
-  onBackAction = null
+  onSubmitHistorySnapshot = null
 ) => {
   if (!userData) return null;
 
@@ -292,34 +291,18 @@ export const renderTopBlock = (
               </button>
             )}
             {idx === 4 &&
-              (isFromListOfUsers && typeof setSearch === 'function'
-                ? btnEdit(
-                    cardData,
-                    setSearch,
-                    setState,
-                    { ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' },
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-                      <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                    </svg>
-                  )
-                : typeof onBackAction === 'function' && (
-                    <button
-                      type="button"
-                      style={{ ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' }}
-                      onClick={event => {
-                        event.stopPropagation();
-                        onBackAction();
-                      }}
-                      aria-label="Назад до попереднього списку"
-                      title="Назад до попереднього списку"
-                    >
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M11 7L6 12L11 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                        <path d="M6 12H18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </button>
-                  ))}
+              isFromListOfUsers &&
+              typeof setSearch === 'function' &&
+              btnEdit(
+                cardData,
+                setSearch,
+                setState,
+                { ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' },
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                  <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              )}
             {idx === 5 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#1565c0', color: '#fff' }} aria-label="Додаткова синя кнопка" title="Додаткова синя кнопка" />}
             {idx === 6 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#6a1b9a', color: '#fff' }} aria-label="Додаткова фіолетова кнопка" title="Додаткова фіолетова кнопка" />}
           </div>
