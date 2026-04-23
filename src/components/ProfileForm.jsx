@@ -564,6 +564,7 @@ export const ProfileForm = ({
   const [showAdditionalRulesModal, setShowAdditionalRulesModal] = useState(false);
   const [activeAdditionalRuleInputIndex, setActiveAdditionalRuleInputIndex] = useState(0);
   const [additionalRuleBuilder, setAdditionalRuleBuilder] = useState([]);
+  const [previewAdditionalRulesText, setPreviewAdditionalRulesText] = useState('');
   const [availableCardsCount, setAvailableCardsCount] = useState(0);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
   const autoAppliedOverlayForUserRef = useRef('');
@@ -603,6 +604,11 @@ export const ProfileForm = ({
   useEffect(() => {
     if (!showAdditionalRulesModal) return;
     const activeInputValue = additionalRulesInputs[activeAdditionalRuleInputIndex] || '';
+    const combinedAppliedText = additionalRulesInputs
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+      .join('\n\n');
+    setPreviewAdditionalRulesText(combinedAppliedText);
     const parsed = parseAdditionalRulesTextToBuilder(activeInputValue);
     if (parsed.length > 0) {
       setAdditionalRuleBuilder(parsed);
@@ -616,11 +622,7 @@ export const ProfileForm = ({
 
     let cancelled = false;
     const loadAvailableCards = async () => {
-      const combinedAppliedText = additionalRulesInputs
-        .map(item => String(item || '').trim())
-        .filter(Boolean)
-        .join('\n\n');
-      const parsedRuleGroups = parseAdditionalAccessRuleGroups(combinedAppliedText);
+      const parsedRuleGroups = parseAdditionalAccessRuleGroups(previewAdditionalRulesText);
       if (!parsedRuleGroups.length) {
         setAvailableCardsCount(0);
         return;
@@ -628,7 +630,7 @@ export const ProfileForm = ({
 
       setIsLoadingAvailableCards(true);
       try {
-        const indexedSetKey = makeAdditionalRulesSetKey(combinedAppliedText);
+        const indexedSetKey = makeAdditionalRulesSetKey(previewAdditionalRulesText);
         if (indexedSetKey) {
           const indexedPayload = await getCachedSearchKeyPayload(
             `${SEARCH_KEY_SETS_ROOT}/${indexedSetKey}`,
@@ -781,7 +783,7 @@ export const ProfileForm = ({
       cancelled = true;
     };
   }, [
-    additionalRulesInputs,
+    previewAdditionalRulesText,
     showAdditionalRulesModal,
   ]);
 
@@ -895,6 +897,14 @@ export const ProfileForm = ({
       };
       submitWithNormalization(updated, 'overwrite');
       return updated;
+    });
+    setPreviewAdditionalRulesText(prev => {
+      const nextInputs = additionalRulesTextToInputs(prev);
+      nextInputs[activeAdditionalRuleInputIndex] = rulesText;
+      return nextInputs
+        .map(item => String(item || '').trim())
+        .filter(Boolean)
+        .join('\n\n');
     });
   };
 
