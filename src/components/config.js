@@ -2257,17 +2257,19 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     console.log('currentUserData :>> ', currentUserData);
 
     // if (condition === 'update' && !(Object.keys(uploadedInfo).length < Object.keys(currentUserData).length)) {
+    const cleanedUploadedInfo = removeUndefined(uploadedInfo);
+
     if (condition === 'update') {
       console.log('update :>> ');
-      await update(userRefRTDB, { ...uploadedInfo });
+      await update(userRefRTDB, { ...cleanedUploadedInfo });
     } else {
       console.log('set :>> ');
-      await set(userRefRTDB, { ...uploadedInfo });
+      await set(userRefRTDB, { ...cleanedUploadedInfo });
     }
 
-    if (uploadedInfo.lastLogin2 !== undefined) {
+    if (cleanedUploadedInfo.lastLogin2 !== undefined) {
       try {
-        await update(ref2(database, `users/${userId}`), { lastLogin2: uploadedInfo.lastLogin2 });
+        await update(ref2(database, `users/${userId}`), { lastLogin2: cleanedUploadedInfo.lastLogin2 });
       } catch (e) {
         console.error('Error updating lastLogin2 in users:', e);
       }
