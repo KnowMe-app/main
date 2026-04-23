@@ -21,6 +21,8 @@ export const BtnDislike = ({
   setFavoriteUsers,
   customStyle = {},
   iconSize = 18,
+  title = 'Дизлайк',
+  ariaLabel = 'Дизлайк',
 }) => {
   const isDisliked = !!dislikeUsers[userId];
   const activeColor = color.reactionDislike;
@@ -90,6 +92,8 @@ export const BtnDislike = ({
         justifyContent: 'center',
         ...customStyle,
       }}
+      title={title}
+      aria-label={ariaLabel}
       disabled={!auth.currentUser}
       onClick={e => {
         e.stopPropagation();

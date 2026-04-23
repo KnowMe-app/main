@@ -8,6 +8,8 @@ export const btnDel = (
   isFromListOfUsers = false,
   content = 'del',
   customStyle = {},
+  ariaLabel = 'Видалити',
+  title = 'Видалити',
 ) => (
   <CardMenuBtn
     style={{
@@ -18,6 +20,8 @@ export const btnDel = (
       justifyContent: 'center',
       ...customStyle,
     }}
+    aria-label={ariaLabel}
+    title={title}
     onClick={e => {
       e.stopPropagation(); // Запобігаємо активації кліку картки
       if (isFromListOfUsers) {
