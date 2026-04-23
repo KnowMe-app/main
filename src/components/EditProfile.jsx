@@ -650,6 +650,7 @@ const EditProfile = () => {
             handleOpenMedications,
             undefined,
             null,
+            null,
             overlayFieldAdditions,
           )}
         </div>

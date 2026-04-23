@@ -51,6 +51,7 @@ const UserCard = ({
           isDateInRange,
           onOpenMedications,
           setSearch,
+          null,
           actions
         )}
       </div>

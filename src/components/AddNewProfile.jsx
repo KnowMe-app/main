@@ -3557,29 +3557,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               <>
                 <EditActionButton
                   type="button"
-                  onClick={handleBackToPreviousList}
-                  title="Назад до попереднього списку"
-                  aria-label="Назад до попереднього списку"
-                >
-                  <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path
-                      d="M11 7L6 12L11 17"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M6 12H18"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </EditActionIcon>
-                </EditActionButton>
-                <EditActionButton
-                  type="button"
                   onClick={handleUndoProfileChanges}
                   title="Відмінити останню зміну"
                   aria-label="Відмінити останню зміну"
@@ -3783,6 +3760,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 isDateInRange,
                 openMedicationsModal,
                 null,
+                {
+                  onClick: handleBackToPreviousList,
+                  title: 'Назад до попереднього списку',
+                  ariaLabel: 'Назад до попереднього списку',
+                  icon: (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M11 7L6 12L11 17"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M6 12H18"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ),
+                },
                 null,
                 handleTopBlockSubmitHistorySnapshot,
               )}
