@@ -133,6 +133,7 @@ export const SearchFilters = ({
           { val: 'sm', label: 'sm' },
           { val: 'ag', label: 'ag' },
           { val: 'ip', label: 'ip' },
+          { val: 'pp', label: 'pp' },
           { val: 'cl', label: 'cl' },
           { val: 'other', label: '?' },
           ...(bloodSearchKeyMode
