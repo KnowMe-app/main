@@ -6,11 +6,17 @@ export const btnDel = (
   setShowInfoModal,
   setUserIdToDelete,
   isFromListOfUsers = false,
+  content = 'del',
+  customStyle = {},
 ) => (
   <CardMenuBtn
     style={{
       backgroundColor: 'red',
       position: 'static',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...customStyle,
     }}
     onClick={e => {
       e.stopPropagation(); // Запобігаємо активації кліку картки
@@ -20,6 +26,6 @@ export const btnDel = (
       setShowInfoModal('delConfirm');
     }}
   >
-    del
+    {content}
   </CardMenuBtn>
 );

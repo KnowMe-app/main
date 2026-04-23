@@ -19,6 +19,8 @@ export const BtnFavorite = ({
   onRemove,
   dislikeUsers = {},
   setDislikeUsers,
+  customStyle = {},
+  iconSize = 18,
 }) => {
   const isFavorite = !!favoriteUsers[userId];
   const activeColor = color.reactionLike;
@@ -85,6 +87,7 @@ export const BtnFavorite = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        ...customStyle,
       }}
       disabled={!auth.currentUser}
       onClick={e => {
@@ -93,9 +96,9 @@ export const BtnFavorite = ({
       }}
     >
       {isFavorite ? (
-        <FaHeart size={18} color={activeColor} />
+        <FaHeart size={iconSize} color={activeColor} />
       ) : (
-        <FaRegHeart size={18} color={color.reactionIdleIcon} />
+        <FaRegHeart size={iconSize} color={color.reactionIdleIcon} />
       )}
     </button>
   );
