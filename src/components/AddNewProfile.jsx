@@ -649,6 +649,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const SEARCH_OPTIONS_STORAGE_KEY = 'addSearchOptions';
   const INDEX_SELECTION_STORAGE_KEY = 'addIndexSelectionOptions';
   const EDIT_PROFILE_USER_ID_KEY = 'addNewProfileEditUserId';
+  const PREVIOUS_LIST_STATE_KEY = 'addNewProfilePreviousListState';
   const defaultSelectedIndexJobs = {
     lastLogin: true,
     stimulationShortcuts: true,
@@ -860,6 +861,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   });
   const historyNavigationRef = useRef(false);
   const isEditingRef = useRef(false);
+  const previousListStateRef = useRef(null);
 
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   const [filters, setFilters] = useState({});
@@ -1228,7 +1230,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     isEditingRef.current = !!state.userId;
   }, [state.userId]);
 
-
   const [users, setUsers] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
@@ -1250,6 +1251,52 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [, setCacheCount] = useState(0);
   const [, setBackendCount] = useState(0);
   const [profileSource, setProfileSource] = useState('');
+
+  useEffect(() => {
+    const enteringEditMode = Boolean(state.userId) && !isEditingRef.current;
+    if (!enteringEditMode) {
+      return;
+    }
+
+    const userIds = Object.keys(users || {});
+    if (!userIds.length) {
+      return;
+    }
+
+    const snapshot = {
+      userIds,
+      currentFilter,
+      currentPage,
+      totalCount,
+      hasMore,
+      lastKey: lastKey ?? null,
+      lastKey21: lastKey21 ?? null,
+      dateOffset2,
+      dateOffset21,
+      dateOffsetLA,
+      loadSortMode,
+      search,
+      hasSearched,
+    };
+
+    previousListStateRef.current = snapshot;
+    localStorage.setItem(PREVIOUS_LIST_STATE_KEY, JSON.stringify(snapshot));
+  }, [
+    state.userId,
+    users,
+    currentFilter,
+    currentPage,
+    totalCount,
+    hasMore,
+    lastKey,
+    lastKey21,
+    dateOffset2,
+    dateOffset21,
+    dateOffsetLA,
+    loadSortMode,
+    search,
+    hasSearched,
+  ]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -3380,6 +3427,56 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLoadRequestId(prev => prev + 1);
   };
 
+  const handleBackToPreviousList = useCallback(() => {
+    const persistedRaw = localStorage.getItem(PREVIOUS_LIST_STATE_KEY);
+    const persisted =
+      !previousListStateRef.current && persistedRaw
+        ? (() => {
+            try {
+              return JSON.parse(persistedRaw);
+            } catch (error) {
+              console.warn('[AddNewProfile] Failed to parse previous list snapshot', error);
+              return null;
+            }
+          })()
+        : null;
+    const snapshot = previousListStateRef.current || persisted;
+
+    if (!snapshot) {
+      setState({});
+      return;
+    }
+
+    const restoredUsers = (snapshot.userIds || []).reduce((acc, userId) => {
+      if (!userId) return acc;
+      const cachedUser = getCard(userId);
+      if (cachedUser) {
+        acc[userId] = cachedUser;
+      }
+      return acc;
+    }, {});
+
+    if (Object.keys(restoredUsers).length) {
+      setUsers(restoredUsers);
+      setTotalCount(snapshot.totalCount || Object.keys(restoredUsers).length);
+      setHasSearched(true);
+      setUserNotFound(false);
+    }
+
+    setCurrentFilter(snapshot.currentFilter || '');
+    setCurrentPage(snapshot.currentPage || 1);
+    setHasMore(typeof snapshot.hasMore === 'boolean' ? snapshot.hasMore : true);
+    setLastKey(snapshot.lastKey ?? null);
+    setLastKey21(snapshot.lastKey21 ?? null);
+    setDateOffset2(snapshot.dateOffset2 || 0);
+    setDateOffset21(snapshot.dateOffset21 || 0);
+    setDateOffsetLA(snapshot.dateOffsetLA || 0);
+    setLoadSortMode(snapshot.loadSortMode || 'GIT');
+    setSearch(snapshot.search || '');
+    setHasSearched(Boolean(snapshot.hasSearched) || Object.keys(restoredUsers).length > 0);
+    setState({});
+  }, [setSearch, setState]);
+
   useEffect(() => {
     if (!state?.userId) {
       editHistoryRef.current = {
@@ -3458,6 +3555,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           <TopButtons>
             {state.userId && (
               <>
+                <EditActionButton
+                  type="button"
+                  onClick={handleBackToPreviousList}
+                  title="Назад до попереднього списку"
+                  aria-label="Назад до попереднього списку"
+                >
+                  <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M11 7L6 12L11 17"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M6 12H18"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </EditActionIcon>
+                </EditActionButton>
                 <EditActionButton
                   type="button"
                   onClick={handleUndoProfileChanges}
