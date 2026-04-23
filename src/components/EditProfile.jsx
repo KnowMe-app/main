@@ -48,11 +48,6 @@ const Container = styled.div`
   margin: 0 auto;
 `;
 
-const BackButton = styled.button`
-  align-self: flex-start;
-  margin-bottom: 10px;
-`;
-
 const SkeletonCard = styled.div`
   width: 100%;
   border-radius: 12px;
@@ -629,7 +624,6 @@ const EditProfile = () => {
 
   return (
     <Container>
-      <BackButton onClick={() => navigate(-1)}>Back</BackButton>
       {shouldShowEditorSkeleton ? (
         <TopBlockSkeleton />
       ) : (
@@ -651,6 +645,8 @@ const EditProfile = () => {
             undefined,
             null,
             overlayFieldAdditions,
+            null,
+            () => navigate(-1)
           )}
         </div>
       )}

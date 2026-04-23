@@ -184,7 +184,8 @@ export const renderTopBlock = (
   setSearch = null,
   additionalActions = null,
   overlayFieldAdditions = {},
-  onSubmitHistorySnapshot = null
+  onSubmitHistorySnapshot = null,
+  onBackToList = null
 ) => {
   if (!userData) return null;
 
@@ -291,18 +292,33 @@ export const renderTopBlock = (
               </button>
             )}
             {idx === 4 &&
-              isFromListOfUsers &&
-              typeof setSearch === 'function' &&
-              btnEdit(
-                cardData,
-                setSearch,
-                setState,
-                { ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' },
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-                  <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                </svg>
-              )}
+              (isFromListOfUsers && typeof setSearch === 'function'
+                ? btnEdit(
+                    cardData,
+                    setSearch,
+                    setState,
+                    { ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' },
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                      <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
+                  )
+                : typeof onBackToList === 'function' && (
+                    <button
+                      type="button"
+                      style={{ ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' }}
+                      onClick={event => {
+                        event.stopPropagation();
+                        onBackToList();
+                      }}
+                      aria-label="Назад до списку"
+                      title="Назад до списку"
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  ))}
             {idx === 5 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#1565c0', color: '#fff' }} aria-label="Додаткова синя кнопка" title="Додаткова синя кнопка" />}
             {idx === 6 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#6a1b9a', color: '#fff' }} aria-label="Додаткова фіолетова кнопка" title="Додаткова фіолетова кнопка" />}
           </div>
