@@ -8,7 +8,6 @@ import {
 
 const SEARCH_KEY_SETS_ROOT = 'searchKeySet';
 const LEGACY_SEARCH_KEY_SETS_ROOT = 'searchKeySets';
-const SET_KEY_MAX_LENGTH = 512;
 
 const toStableRulesText = raw =>
   Array.isArray(raw)
@@ -25,14 +24,13 @@ const sanitizeToken = value =>
     .replace(/-+/g, '-')
     .replace(/^[-_]+|[-_]+$/g, '');
 
-const hashRulesText = value => {
-  const input = String(value || '');
-  let hash = 2166136261;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
+const encodeSetKeyPayload = value => encodeURIComponent(String(value || ''));
+const decodeSetKeyPayload = value => {
+  try {
+    return decodeURIComponent(String(value || ''));
+  } catch {
+    return String(value || '');
   }
-  return (hash >>> 0).toString(36);
 };
 
 const buildGroupToken = parsedRules => {
@@ -64,12 +62,16 @@ export const makeAdditionalRulesSetKey = rawRules => {
 
   if (!groupTokens.length) return '';
 
-  const baseKey = `set_${groupTokens.join('__or__')}`;
-  if (baseKey.length <= SET_KEY_MAX_LENGTH) {
-    return baseKey;
-  }
+  const payload = groupTokens.join('__or__');
+  return `set_${encodeSetKeyPayload(payload)}`;
+};
 
-  return `set_h_${hashRulesText(rulesText)}`;
+export const decodeAdditionalRulesSetKey = setKey => {
+  const raw = String(setKey || '');
+  if (raw.startsWith('set_')) {
+    return decodeSetKeyPayload(raw.slice('set_'.length));
+  }
+  return raw;
 };
 
 const mapMatchingIdsByRules = (newUsersData, parsedRuleGroups) => {

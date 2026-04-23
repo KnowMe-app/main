@@ -822,9 +822,14 @@ export const ProfileForm = ({
         });
       }
     } catch (error) {
-      console.error('Failed to update additional access newUsers filter-set index', error);
-      const details = error?.message || String(error);
-      toast.error(`Не вдалося зберегти індексацію наборів фільтрів (${details})`);
+      const code = String(error?.code || '');
+      if (code.includes('PERMISSION_DENIED')) {
+        console.warn('Skipped additional access newUsers filter-set index rebuild due to permissions.', error);
+      } else {
+        console.error('Failed to update additional access newUsers filter-set index', error);
+        const details = error?.message || String(error);
+        toast.error(`Не вдалося зберегти індексацію наборів фільтрів (${details})`);
+      }
     }
     Promise.resolve(handleSubmit(payload, overwrite, delCondition)).catch(error => {
       console.error('Failed to submit profile changes', error);
