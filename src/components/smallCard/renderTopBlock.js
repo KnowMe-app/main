@@ -281,7 +281,7 @@ export const renderTopBlock = (
             rel="noreferrer"
             title="Відкрити профіль в Firebase RTDB"
             onClick={event => event.stopPropagation()}
-            style={{ color: 'inherit', textDecoration: 'underline' }}
+            style={{ color: 'inherit', textDecoration: 'none' }}
           >
             {cardData.userId}
           </a>
