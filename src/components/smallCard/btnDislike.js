@@ -19,6 +19,8 @@ export const BtnDislike = ({
   onRemove,
   favoriteUsers = {},
   setFavoriteUsers,
+  customStyle = {},
+  iconSize = 18,
 }) => {
   const isDisliked = !!dislikeUsers[userId];
   const activeColor = color.reactionDislike;
@@ -86,6 +88,7 @@ export const BtnDislike = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        ...customStyle,
       }}
       disabled={!auth.currentUser}
       onClick={e => {
@@ -93,7 +96,7 @@ export const BtnDislike = ({
         toggleDislike();
       }}
     >
-      <FaTimes size={18} color={isDisliked ? activeColor : color.reactionIdleIcon} />
+      <FaTimes size={iconSize} color={isDisliked ? activeColor : color.reactionIdleIcon} />
     </button>
   );
 };

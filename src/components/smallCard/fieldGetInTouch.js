@@ -4,18 +4,7 @@ import {
   formatDateAndFormula,
   formatDateToServer,
 } from 'components/inputValidations';
-import { OrangeBtn, UnderlinedInput, color } from 'components/styles';
-import {
-  addDislikeUser,
-  removeDislikeUser,
-  addFavoriteUser,
-  removeFavoriteUser,
-  auth,
-} from '../config';
-import { updateCachedUser, setFavoriteIds } from 'utils/cache';
-import { setFavorite } from 'utils/favoritesStorage';
-import { setDislike } from 'utils/dislikesStorage';
-import { FaTimes, FaHeart, FaRegHeart } from 'react-icons/fa';
+import { OrangeBtn, UnderlinedInput } from 'components/styles';
 
 export const fieldGetInTouch = (
   userData,
@@ -23,24 +12,8 @@ export const fieldGetInTouch = (
   setState,
   currentFilter,
   isDateInRange,
-  favoriteUsers = {},
-  setFavoriteUsers = () => {},
-  dislikeUsers = {},
-  setDislikeUsers = () => {},
   submitOptions = {},
 ) => {
-  const handleSendToEnd = () => {
-    handleChange(
-      setUsers,
-      setState,
-      userData.userId,
-      'getInTouch',
-      '2099-99-99',
-      true,
-      { currentFilter, isDateInRange, ...submitOptions },
-    );
-  };
-
   const handleAddDays = days => {
     const currentDate = new Date();
     currentDate.setDate(currentDate.getDate() + days);
@@ -60,9 +33,6 @@ export const fieldGetInTouch = (
       { currentFilter, isDateInRange, ...submitOptions },
     );
   };
-
-  const isFavorite = !!favoriteUsers[userData.userId];
-  const isDisliked = !!dislikeUsers[userData.userId];
 
   const targetId = userData?.userId;
 
@@ -106,109 +76,6 @@ export const fieldGetInTouch = (
 
         return prev;
       });
-    }
-  };
-
-  const handleDislike = async e => {
-    e.stopPropagation();
-    if (!auth.currentUser) {
-      alert('Please sign in to manage dislikes');
-      return;
-    }
-    if (isDisliked) {
-      try {
-        await removeDislikeUser(userData.userId);
-        const updated = { ...dislikeUsers };
-        delete updated[userData.userId];
-        setDislikeUsers(updated);
-        setDislike(userData.userId, false);
-        handleChange(
-          setUsers,
-          setState,
-          userData.userId,
-          'getInTouch',
-          '',
-          true,
-          { currentFilter, isDateInRange, ...submitOptions },
-        );
-      } catch (error) {
-        console.error('Failed to remove dislike:', error);
-      }
-    } else {
-      handleSendToEnd();
-      try {
-        await addDislikeUser(userData.userId);
-        const updated = { ...dislikeUsers, [userData.userId]: true };
-        setDislikeUsers(updated);
-        setDislike(userData.userId, true);
-        if (favoriteUsers[userData.userId]) {
-          try {
-            await removeFavoriteUser(userData.userId);
-          } catch (err) {
-            console.error('Failed to remove favorite when adding dislike:', err);
-          }
-          const upd = { ...favoriteUsers };
-          delete upd[userData.userId];
-          setFavoriteUsers(upd);
-          setFavoriteIds(upd);
-          setFavorite(userData.userId, false);
-          updateCachedUser(userData, { removeFavorite: true });
-        }
-      } catch (error) {
-        console.error('Failed to add dislike:', error);
-      }
-    }
-  };
-
-  const handleLike = async e => {
-    e.stopPropagation();
-    if (!auth.currentUser) {
-      alert('Please sign in to manage favorites');
-      return;
-    }
-    if (isFavorite) {
-      try {
-        await removeFavoriteUser(userData.userId);
-        const updated = { ...favoriteUsers };
-        delete updated[userData.userId];
-        setFavoriteUsers(updated);
-        setFavoriteIds(updated);
-        setFavorite(userData.userId, false);
-        updateCachedUser(userData, { removeFavorite: true });
-      } catch (error) {
-        console.error('Failed to remove favorite:', error);
-      }
-    } else {
-      try {
-        await addFavoriteUser(userData.userId);
-        const updated = { ...favoriteUsers, [userData.userId]: true };
-        setFavoriteUsers(updated);
-        setFavoriteIds(updated);
-        setFavorite(userData.userId, true);
-        updateCachedUser(userData);
-        if (dislikeUsers[userData.userId]) {
-          try {
-            await removeDislikeUser(userData.userId);
-          } catch (err) {
-            console.error('Failed to remove dislike when adding favorite:', err);
-          }
-          const upd = { ...dislikeUsers };
-          delete upd[userData.userId];
-          setDislikeUsers(upd);
-          setDislike(userData.userId, false);
-          handleChange(
-            setUsers,
-            setState,
-            userData.userId,
-            'getInTouch',
-            '',
-            true,
-            { currentFilter, isDateInRange, ...submitOptions },
-          );
-        }
-      } catch (error) {
-        console.error('Failed to add favorite:', error);
-      }
     }
   };
 
@@ -315,40 +182,6 @@ export const fieldGetInTouch = (
       <ActionButton label="3м" days={90} onClick={handleAddDays} />
       <ActionButton label="6м" days={180} onClick={handleAddDays} />
       <ActionButton label="1р" days={365} onClick={handleAddDays} />
-      <OrangeBtn
-        onClick={handleDislike}
-        style={{
-          width: '25px',
-          height: '25px',
-          marginLeft: '5px',
-          marginRight: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: `${isDisliked ? 2 : 0}px solid ${color.iconActive}`,
-        }}
-      >
-        <FaTimes size={18} color={isDisliked ? color.iconActive : color.white} />
-      </OrangeBtn>
-      <OrangeBtn
-        onClick={handleLike}
-        style={{
-          width: '25px',
-          height: '25px',
-          marginLeft: '5px',
-          marginRight: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: `${isFavorite ? 2 : 0}px solid ${color.iconInactive}`,
-        }}
-      >
-        {isFavorite ? (
-          <FaHeart size={18} color={color.iconInactive} />
-        ) : (
-          <FaRegHeart size={18} color={color.white} />
-        )}
-      </OrangeBtn>
     </div>
   );
 };

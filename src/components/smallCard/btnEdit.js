@@ -5,7 +5,7 @@ import { normalizeQueryKey, setIdsForQuery } from '../../utils/cardIndex';
 import { saveCard } from '../../utils/cardsStorage';
 
 // Use already loaded card data instead of re-fetching from the server
-export const btnEdit = (userData, setSearch, setState, style = {}) => {
+export const btnEdit = (userData, setSearch, setState, style = {}, content = 'edit') => {
   const handleCardClick = () => {
     if (userData) {
       setSearch(`${userData.userId}`);
@@ -29,7 +29,7 @@ export const btnEdit = (userData, setSearch, setState, style = {}) => {
         handleCardClick();
       }}
     >
-      edit
+      {content}
     </CardMenuBtn>
   );
 };

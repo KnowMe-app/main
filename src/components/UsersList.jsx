@@ -3,7 +3,6 @@ import { coloredCard, FadeContainer } from './styles';
 import { makeNewUser } from './config';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import { btnCompare } from './smallCard/btnCompare';
-import { btnEdit } from './smallCard/btnEdit';
 import { btnMore } from './smallCard/btnMore';
 import { renderAllFields } from './ProfileForm';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
@@ -15,6 +14,7 @@ const UserCard = ({
   userData,
   setUsers,
   setShowInfoModal,
+  setSearch,
   setState,
   setUserIdToDelete,
   onOpenMedications,
@@ -50,6 +50,7 @@ const UserCard = ({
           currentFilter,
           isDateInRange,
           onOpenMedications,
+          setSearch,
           actions
         )}
       </div>
@@ -174,6 +175,7 @@ const UsersList = ({
               setShowInfoModal={setShowInfoModal}
               userData={userData}
               setUsers={setUsers}
+              setSearch={setSearch}
               setState={setState}
               setUserIdToDelete={setUserIdToDelete}
               onOpenMedications={onOpenMedications}
@@ -185,9 +187,6 @@ const UsersList = ({
               isDateInRange={isDateInRange}
               actions={
                 <>
-                  {btnEdit(userData, setSearch, setState, {
-                    backgroundColor: '#FF8C00',
-                  })}
                   {btnCompare(index, users, setUsers, setShowInfoModal, setCompare)}
                   {btnMore(userData, onOpenMoreActions)}
                 </>

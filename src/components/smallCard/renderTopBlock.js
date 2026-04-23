@@ -1,6 +1,9 @@
 import React from 'react';
 import { btnDel } from './btnDel';
 import { btnExport } from './btnExport';
+import { btnEdit } from './btnEdit';
+import { BtnFavorite } from './btnFavorite';
+import { BtnDislike } from './btnDislike';
 import { fieldDeliveryInfo } from './fieldDeliveryInfo';
 import { fieldWriter } from './fieldWritter';
 import { fieldContacts } from './fieldContacts';
@@ -33,15 +36,29 @@ const topButtonsRowStyle = {
 const topButtonsZoneStyle = {
   border: 'none',
   borderRadius: '6px',
-  minHeight: '24px',
+  minHeight: '32px',
   cursor: 'default',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };
 
 const topButtonsZones = ['#5c6bc0', '#26a69a', '#ffb74d', '#ef5350'];
 
+const zoneActionButtonStyle = {
+  position: 'static',
+  width: '26px',
+  height: '26px',
+  minHeight: '26px',
+  borderRadius: '6px',
+  border: 'none',
+  margin: 0,
+  padding: 0,
+};
+
 const actionButtonsContainerStyle = {
   position: 'absolute',
-  top: '10px',
+  top: '52px',
   right: '10px',
   display: 'flex',
   flexDirection: 'column',
@@ -175,6 +192,7 @@ export const renderTopBlock = (
   currentFilter,
   isDateInRange,
   onOpenMedications,
+  setSearch = null,
   additionalActions = null,
   overlayFieldAdditions = {},
   onSubmitHistorySnapshot = null
@@ -213,13 +231,65 @@ export const renderTopBlock = (
   return (
     <div style={topBlockContainerStyle}>
       <div style={topButtonsRowStyle}>
-        {topButtonsZones.map((color, idx) => (
-          <button key={`top-zone-${idx}`} type="button" aria-label={`top-zone-${idx + 1}`} style={{ ...topButtonsZoneStyle, backgroundColor: color }} />
+        {topButtonsZones.map((zoneColor, idx) => (
+          <div key={`top-zone-${idx}`} aria-label={`top-zone-${idx + 1}`} style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor }}>
+            {idx === 0 &&
+              showSaveDeleteButtons &&
+              btnDel(
+                cardData,
+                setShowInfoModal,
+                setUserIdToDelete,
+                isFromListOfUsers,
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 7h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path d="M7 7l1 12a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9L17 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path d="M10 11v5M14 11v5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>,
+                { ...zoneActionButtonStyle, backgroundColor: '#ef5350', color: '#fff' }
+              )}
+            {idx === 1 && (
+              <BtnFavorite
+                userId={cardData.userId}
+                userData={cardData}
+                favoriteUsers={favoriteUsers}
+                setFavoriteUsers={setFavoriteUsers}
+                dislikeUsers={dislikeUsers}
+                setDislikeUsers={setDislikeUsers}
+                customStyle={zoneActionButtonStyle}
+                iconSize={15}
+              />
+            )}
+            {idx === 2 &&
+              isFromListOfUsers &&
+              typeof setSearch === 'function' &&
+              btnEdit(
+                cardData,
+                setSearch,
+                setState,
+                { ...zoneActionButtonStyle, backgroundColor: '#ff9800', color: '#fff' },
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                  <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              )}
+            {idx === 3 && (
+              <BtnDislike
+                userId={cardData.userId}
+                userData={cardData}
+                dislikeUsers={dislikeUsers}
+                setDislikeUsers={setDislikeUsers}
+                favoriteUsers={favoriteUsers}
+                setFavoriteUsers={setFavoriteUsers}
+                customStyle={zoneActionButtonStyle}
+                iconSize={15}
+              />
+            )}
+          </div>
         ))}
       </div>
       <div style={actionButtonsContainerStyle}>
         {showSaveDeleteButtons && btnExport(cardData)}
-        {showSaveDeleteButtons && btnDel(cardData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
         {btnMedications(cardData, onOpenMedications)}
         {additionalActions}
       </div>
@@ -228,7 +298,7 @@ export const renderTopBlock = (
         {cardData.lastAction && ', '}
         {cardData.userId}
         {!isAgentOrIP &&
-          fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, favoriteUsers, setFavoriteUsers, dislikeUsers, setDislikeUsers, submitOptions)}
+          fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, submitOptions)}
         {fieldRole(cardData, setUsers, setState, submitOptions)}
         {!isAgentOrIP && <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />}
         <div>{fieldDeliveryInfo(setUsers, setState, cardData, submitOptions)}</div>
