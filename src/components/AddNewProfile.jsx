@@ -666,7 +666,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
     const urlUserId = params.get('userId');
     if (urlUserId) return urlUserId;
-    return localStorage.getItem(SEARCH_KEY) || '';
+    return '';
   });
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
@@ -838,8 +838,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
-    const urlUserId = initialAccess.canAccessAdd ? params.get('userId') : null;
-    const restoredUserId = urlUserId || localStorage.getItem(EDIT_PROFILE_USER_ID_KEY) || '';
+    const restoredUserId = initialAccess.canAccessAdd ? params.get('userId') || '' : '';
 
     if (!restoredUserId) {
       return {};
@@ -891,17 +890,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => () => {
     isMountedRef.current = false;
   }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    if (params.has('search') || params.has('userId')) {
-      return;
-    }
-    const storedSearch = localStorage.getItem(SEARCH_KEY);
-    if (storedSearch) {
-      setSearch(storedSearch);
-    }
-  }, [location.search]);
 
   const handleBlur = () => {
     setState(prevState => {
