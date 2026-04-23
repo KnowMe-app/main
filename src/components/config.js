@@ -2492,9 +2492,39 @@ const normalizeBloodIndexValue = rawValue => {
   return '?';
 };
 
+const collectSearchKeyRawValues = rawValue => {
+  if (Array.isArray(rawValue)) {
+    return rawValue.flatMap(item => collectSearchKeyRawValues(item));
+  }
+
+  if (rawValue && typeof rawValue === 'object') {
+    const entries = Object.entries(rawValue);
+    const isIndexedObject = entries.every(([key]) => /^\d+$/.test(key));
+    const values = isIndexedObject
+      ? entries
+          .sort((a, b) => Number.parseInt(a[0], 10) - Number.parseInt(b[0], 10))
+          .map(([, value]) => value)
+      : Object.values(rawValue);
+    return values.flatMap(item => collectSearchKeyRawValues(item));
+  }
+
+  return [rawValue];
+};
+
+const normalizeSearchKeyIndexValues = (rawValue, normalizeSingleValue) => {
+  const rawValues = collectSearchKeyRawValues(rawValue);
+  const nonEmptyValues = rawValues.filter(value => String(value ?? '').trim() !== '');
+
+  if (nonEmptyValues.length === 0) {
+    return new Set([normalizeSingleValue('')]);
+  }
+
+  return new Set(nonEmptyValues.map(value => normalizeSingleValue(value)));
+};
+
 const getBloodIndexSet = data => {
   if (!data || typeof data !== 'object') return new Set();
-  return new Set([normalizeBloodIndexValue(data.blood)]);
+  return normalizeSearchKeyIndexValues(data.blood, normalizeBloodIndexValue);
 };
 
 const normalizeMaritalStatusIndexValue = rawValue => {
@@ -2550,7 +2580,7 @@ const normalizeMaritalStatusIndexValue = rawValue => {
 
 const getMaritalStatusIndexSet = data => {
   if (!data || typeof data !== 'object') return new Set();
-  return new Set([normalizeMaritalStatusIndexValue(data.maritalStatus)]);
+  return normalizeSearchKeyIndexValues(data.maritalStatus, normalizeMaritalStatusIndexValue);
 };
 
 const normalizeAgeBirthDateIndexValue = rawValue => {
@@ -2583,25 +2613,35 @@ const normalizeAgeBirthDateIndexValue = rawValue => {
 
 const getAgeIndexSet = data => {
   if (!data || typeof data !== 'object') return new Set();
-  return new Set([normalizeAgeBirthDateIndexValue(data.birth)]);
+  return normalizeSearchKeyIndexValues(data.birth, normalizeAgeBirthDateIndexValue);
 };
 
-const normalizeMetricIndexValue = rawValue => {
-  const normalized = String(rawValue ?? '')
-    .trim()
-    .replace(',', '.');
-  if (!normalized) return 'no';
-  const parsedValue = Number.parseFloat(normalized);
-  if (!Number.isFinite(parsedValue) || parsedValue <= 0) return '?';
-  return String(parsedValue);
+const normalizeMetricIndexValues = rawValue => {
+  const rawValues = collectSearchKeyRawValues(rawValue);
+  const normalizedValues = new Set();
+  let hasNonEmptyValue = false;
+
+  rawValues.forEach(value => {
+    const normalized = String(value ?? '').trim();
+    if (!normalized) return;
+    hasNonEmptyValue = true;
+    const parsedValue = Number.parseFloat(normalized.replace(',', '.'));
+    if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+      normalizedValues.add('?');
+      return;
+    }
+    normalizedValues.add(String(parsedValue).replace('.', ','));
+  });
+
+  if (normalizedValues.size > 0) return normalizedValues;
+  return new Set([hasNonEmptyValue ? '?' : 'no']);
 };
 
 const parseImtNumber = rawValue => {
-  const normalized = String(rawValue ?? '')
-    .trim()
-    .replace(',', '.');
-  if (!normalized) return null;
-  const parsedValue = Number.parseFloat(normalized);
+  const values = [...normalizeMetricIndexValues(rawValue)];
+  const firstNumericValue = values.find(value => value !== 'no' && value !== '?');
+  if (!firstNumericValue) return null;
+  const parsedValue = Number.parseFloat(String(firstNumericValue).replace(',', '.'));
   if (!Number.isFinite(parsedValue) || parsedValue <= 0) return null;
   return parsedValue;
 };
@@ -2648,12 +2688,12 @@ const getImtIndexSet = data => {
 
 const getHeightIndexSet = data => {
   if (!data || typeof data !== 'object') return new Set();
-  return new Set([normalizeMetricIndexValue(data.height)]);
+  return normalizeMetricIndexValues(data.height);
 };
 
 const getWeightIndexSet = data => {
   if (!data || typeof data !== 'object') return new Set();
-  return new Set([normalizeMetricIndexValue(data.weight)]);
+  return normalizeMetricIndexValues(data.weight);
 };
 
 const normalizeFieldCountSearchKeyIndexValue = data => {
@@ -2693,7 +2733,19 @@ export const normalizeRoleSearchKeyIndexValue = (roleValue, userRoleValue) => {
 
 const getRoleIndexSet = data => {
   if (!data || typeof data !== 'object') return new Set();
-  return new Set([normalizeRoleSearchKeyIndexValue(data.role, data.userRole)]);
+  const roleValues = normalizeSearchKeyIndexValues(data.role, value => normalizeRoleSearchKeyIndexValue(value, null));
+  const normalizedRoleValues = new Set([...roleValues].filter(value => value !== 'no'));
+  if (normalizedRoleValues.size > 0) return normalizedRoleValues;
+
+  const userRoleValues = normalizeSearchKeyIndexValues(
+    data.userRole,
+    value => normalizeRoleSearchKeyIndexValue(null, value)
+  );
+  const normalizedUserRoleValues = new Set([...userRoleValues].filter(value => value !== 'no'));
+  if (normalizedUserRoleValues.size > 0) return normalizedUserRoleValues;
+
+  if (roleValues.has('?') || userRoleValues.has('?')) return new Set(['?']);
+  return new Set(['no']);
 };
 
 const getUserIdIndexSet = userId => {
@@ -2759,7 +2811,7 @@ export const normalizeCsectionIndexValue = value => {
 
 const getCsectionIndexSet = data => {
   if (!data || typeof data !== 'object') return new Set();
-  return new Set([normalizeCsectionIndexValue(data.csection)]);
+  return normalizeSearchKeyIndexValues(data.csection, normalizeSingleCsectionIndexValue);
 };
 
 const BLOOD_SEARCH_KEY_BUCKETS = ['1+', '1-', '1', '2+', '2-', '2', '3+', '3-', '3', '4+', '4-', '4', '+', '-', '?', 'no'];
@@ -3103,7 +3155,7 @@ const normalizeReactionSearchKeyIndexValue = rawGetInTouch => {
 
 const getReactionIndexSet = data => {
   if (!data || typeof data !== 'object') return new Set();
-  return new Set([normalizeReactionSearchKeyIndexValue(data.getInTouch)]);
+  return normalizeSearchKeyIndexValues(data.getInTouch, normalizeReactionSearchKeyIndexValue);
 };
 
 const collectReactionIdsByFilters = async (
@@ -3425,8 +3477,12 @@ export const createSearchKeyIndexInCollection = async (collection, onProgress, o
     await Promise.all(
       batchIds.map(async userId => {
         const user = usersData[userId] || {};
-        const bloodValue = normalizeBloodIndexValue(user.blood);
-        await updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, bloodValue, userId, 'add', options);
+        const bloodValues = getBloodIndexSet(user);
+        await Promise.all(
+          [...bloodValues].map(value =>
+            updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'add', options)
+          )
+        );
       })
     );
 
@@ -3467,8 +3523,10 @@ export const createMaritalStatusSearchKeyIndexInCollection = async (collection, 
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const maritalStatusValue = normalizeMaritalStatusIndexValue(user.maritalStatus);
-        acc[`${searchKeyRoot}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${maritalStatusValue}/${userId}`] = true;
+        const maritalStatusValues = getMaritalStatusIndexSet(user);
+        maritalStatusValues.forEach(maritalStatusValue => {
+          acc[`${searchKeyRoot}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${maritalStatusValue}/${userId}`] = true;
+        });
         return acc;
       }, {}),
     onProgress
@@ -3490,8 +3548,10 @@ export const createCsectionSearchKeyIndexInCollection = async (collection, onPro
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const csectionValue = normalizeCsectionIndexValue(user.csection);
-        acc[`${searchKeyRoot}/${CSECTION_SEARCH_KEY_INDEX}/${csectionValue}/${userId}`] = true;
+        const csectionValues = getCsectionIndexSet(user);
+        csectionValues.forEach(csectionValue => {
+          acc[`${searchKeyRoot}/${CSECTION_SEARCH_KEY_INDEX}/${csectionValue}/${userId}`] = true;
+        });
         return acc;
       }, {}),
     onProgress
@@ -3538,8 +3598,10 @@ export const createRoleSearchKeyIndexInCollection = async (collection, onProgres
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const roleValue = normalizeRoleSearchKeyIndexValue(user.role, user.userRole);
-        acc[`${searchKeyRoot}/${ROLE_SEARCH_KEY_INDEX}/${roleValue}/${userId}`] = true;
+        const roleValues = getRoleIndexSet(user);
+        roleValues.forEach(roleValue => {
+          acc[`${searchKeyRoot}/${ROLE_SEARCH_KEY_INDEX}/${roleValue}/${userId}`] = true;
+        });
         return acc;
       }, {}),
     onProgress
@@ -3586,8 +3648,10 @@ export const createAgeSearchKeyIndexInCollection = async (collection, onProgress
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const ageValue = normalizeAgeBirthDateIndexValue(user.birth);
-        acc[`${searchKeyRoot}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
+        const ageValues = getAgeIndexSet(user);
+        ageValues.forEach(ageValue => {
+          acc[`${searchKeyRoot}/${AGE_SEARCH_KEY_INDEX}/${ageValue}/${userId}`] = true;
+        });
         return acc;
       }, {}),
     onProgress
@@ -3610,11 +3674,15 @@ export const createImtHeightWeightSearchKeyIndexInCollection = async (collection
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
         const imtValue = normalizeImtSearchKeyIndexValue(user);
-        const heightValue = normalizeMetricIndexValue(user.height);
-        const weightValue = normalizeMetricIndexValue(user.weight);
+        const heightValues = normalizeMetricIndexValues(user.height);
+        const weightValues = normalizeMetricIndexValues(user.weight);
         acc[`${searchKeyRoot}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
-        acc[`${searchKeyRoot}/${HEIGHT_SEARCH_KEY_INDEX}/${heightValue}/${userId}`] = true;
-        acc[`${searchKeyRoot}/${WEIGHT_SEARCH_KEY_INDEX}/${weightValue}/${userId}`] = true;
+        heightValues.forEach(heightValue => {
+          acc[`${searchKeyRoot}/${HEIGHT_SEARCH_KEY_INDEX}/${heightValue}/${userId}`] = true;
+        });
+        weightValues.forEach(weightValue => {
+          acc[`${searchKeyRoot}/${WEIGHT_SEARCH_KEY_INDEX}/${weightValue}/${userId}`] = true;
+        });
         return acc;
       }, {}),
     onProgress
@@ -3636,8 +3704,10 @@ export const createReactionSearchKeyIndexInCollection = async (collection, onPro
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const reactionValue = normalizeReactionSearchKeyIndexValue(user.getInTouch);
-        acc[`${searchKeyRoot}/${REACTION_SEARCH_KEY_INDEX}/${reactionValue}/${userId}`] = true;
+        const reactionValues = getReactionIndexSet(user);
+        reactionValues.forEach(reactionValue => {
+          acc[`${searchKeyRoot}/${REACTION_SEARCH_KEY_INDEX}/${reactionValue}/${userId}`] = true;
+        });
         return acc;
       }, {}),
     onProgress
