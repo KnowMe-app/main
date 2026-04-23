@@ -2121,10 +2121,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const moreActions = () => {
     const user = moreActionsState.user;
     if (!user) return null;
-    const openDeleteConfirm = () => {
-      setUserIdToDelete(user.userId);
-      setShowInfoModal('delConfirm');
-    };
 
     return (
       <>
@@ -2139,10 +2135,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           }}
         >
           save
-        </MoreActionsCommandButton>
-
-        <MoreActionsCommandButton $tone="dislike" onClick={openDeleteConfirm}>
-          del
         </MoreActionsCommandButton>
 
         <MoreActionsCommandButton onClick={toggleLikeDislikeCards}>Like/Dislike</MoreActionsCommandButton>

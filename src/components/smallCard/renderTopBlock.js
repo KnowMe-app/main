@@ -15,7 +15,6 @@ import { fieldBirth } from './fieldBirth';
 import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
-import { btnMedications } from './btnMedications';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
 import { fetchUserById } from '../config';
@@ -28,7 +27,7 @@ const topBlockContainerStyle = { padding: '7px', position: 'relative' };
 
 const topButtonsRowStyle = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+  gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
   gap: '6px',
   marginBottom: '8px',
 };
@@ -37,19 +36,22 @@ const topButtonsZoneStyle = {
   border: 'none',
   borderRadius: '6px',
   minHeight: '32px',
-  cursor: 'default',
+  cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
+  width: '100%',
+  height: '100%',
+  padding: 0,
 };
 
-const topButtonsZones = ['#5c6bc0', '#26a69a', '#ffb74d', '#ef5350'];
+const topButtonsZones = ['#e53935', '#fb8c00', '#fbc02d', '#43a047', '#4fc3f7'];
 
 const zoneActionButtonStyle = {
   position: 'static',
-  width: '26px',
-  height: '26px',
-  minHeight: '26px',
+  width: '100%',
+  height: '100%',
+  minHeight: '32px',
   borderRadius: '6px',
   border: 'none',
   margin: 0,
@@ -184,7 +186,7 @@ export const renderTopBlock = (
 
   const cardData = { ...userData, cycleStatus: getEffectiveCycleStatus(userData) };
   const region = normalizeRegion(cardData.region);
-  const showSaveDeleteButtons = !additionalActions;
+  const showSideActions = !additionalActions;
   const isAgentOrIP = hasAgentOrIPRole(cardData);
 
   const renderOverlayEntries = fieldNames => {
@@ -212,7 +214,6 @@ export const renderTopBlock = (
         {topButtonsZones.map((zoneColor, idx) => (
           <div key={`top-zone-${idx}`} aria-label={`top-zone-${idx + 1}`} style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor }}>
             {idx === 0 &&
-              showSaveDeleteButtons &&
               btnDel(
                 cardData,
                 setShowInfoModal,
@@ -227,31 +228,6 @@ export const renderTopBlock = (
                 { ...zoneActionButtonStyle, backgroundColor: '#ef5350', color: '#fff' }
               )}
             {idx === 1 && (
-              <BtnFavorite
-                userId={cardData.userId}
-                userData={cardData}
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-                dislikeUsers={dislikeUsers}
-                setDislikeUsers={setDislikeUsers}
-                customStyle={zoneActionButtonStyle}
-                iconSize={15}
-              />
-            )}
-            {idx === 2 &&
-              isFromListOfUsers &&
-              typeof setSearch === 'function' &&
-              btnEdit(
-                cardData,
-                setSearch,
-                setState,
-                { ...zoneActionButtonStyle, backgroundColor: '#ff9800', color: '#fff' },
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-                  <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                </svg>
-              )}
-            {idx === 3 && (
               <BtnDislike
                 userId={cardData.userId}
                 userData={cardData}
@@ -259,16 +235,67 @@ export const renderTopBlock = (
                 setDislikeUsers={setDislikeUsers}
                 favoriteUsers={favoriteUsers}
                 setFavoriteUsers={setFavoriteUsers}
-                customStyle={zoneActionButtonStyle}
+                customStyle={{
+                  ...zoneActionButtonStyle,
+                  backgroundColor: '#fb8c00',
+                  border: 'none',
+                }}
                 iconSize={15}
               />
+            )}
+            {idx === 2 && (
+              <BtnFavorite
+                userId={cardData.userId}
+                userData={cardData}
+                favoriteUsers={favoriteUsers}
+                setFavoriteUsers={setFavoriteUsers}
+                dislikeUsers={dislikeUsers}
+                setDislikeUsers={setDislikeUsers}
+                customStyle={{
+                  ...zoneActionButtonStyle,
+                  backgroundColor: '#fbc02d',
+                  border: 'none',
+                }}
+                iconSize={15}
+              />
+            )}
+            {idx === 3 && (
+              <button
+                style={{ ...zoneActionButtonStyle, backgroundColor: '#43a047', color: '#fff' }}
+                onClick={event => {
+                  event.stopPropagation();
+                  if (typeof onOpenMedications === 'function') {
+                    onOpenMedications(cardData);
+                  }
+                }}
+                disabled={!cardData?.userId || typeof onOpenMedications !== 'function'}
+                aria-label="Ліки"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M8.5 8.5l7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path d="M6.2 10.8a3.25 3.25 0 0 1 4.6-4.6l6.9 6.9a3.25 3.25 0 1 1-4.6 4.6l-6.9-6.9z" stroke="currentColor" strokeWidth="2" />
+                </svg>
+              </button>
+            )}
+            {idx === 4 &&
+              isFromListOfUsers &&
+              typeof setSearch === 'function' &&
+              btnEdit(
+                cardData,
+                setSearch,
+                setState,
+                { ...zoneActionButtonStyle, backgroundColor: '#4fc3f7', color: '#fff' },
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                  <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              )}
             )}
           </div>
         ))}
       </div>
       <div style={actionButtonsContainerStyle}>
-        {showSaveDeleteButtons && btnExport(cardData)}
-        {btnMedications(cardData, onOpenMedications)}
+        {showSideActions && btnExport(cardData)}
         {additionalActions}
       </div>
       <div>
