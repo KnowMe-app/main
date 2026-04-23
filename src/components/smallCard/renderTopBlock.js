@@ -26,23 +26,26 @@ import toast from 'react-hot-toast';
 const topBlockContainerStyle = { padding: '7px', position: 'relative' };
 
 const topButtonsRowStyle = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-  gap: '6px',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: '8px',
   marginBottom: '8px',
 };
 
 const topButtonsZoneStyle = {
   border: 'none',
-  borderRadius: '6px',
-  minHeight: '32px',
+  borderRadius: '12px',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: '100%',
-  height: '100%',
+  width: '40px',
+  height: '40px',
+  flex: '0 0 40px',
   padding: 0,
+  boxShadow: '0 6px 14px rgba(17, 24, 39, 0.2)',
+  transition: 'transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease',
 };
 
 const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1', '#1565c0', '#6a1b9a'];
@@ -51,11 +54,12 @@ const zoneActionButtonStyle = {
   position: 'static',
   width: '100%',
   height: '100%',
-  minHeight: '32px',
-  borderRadius: '6px',
+  minHeight: '40px',
+  borderRadius: '12px',
   border: 'none',
   margin: 0,
   padding: 0,
+  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.2)',
 };
 
 const actionButtonsContainerStyle = {
@@ -299,8 +303,6 @@ export const renderTopBlock = (
                   <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                 </svg>
               )}
-            )}
-
             {idx === 5 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#1565c0', color: '#fff' }} aria-label="Додаткова синя кнопка" title="Додаткова синя кнопка" />}
             {idx === 6 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#6a1b9a', color: '#fff' }} aria-label="Додаткова фіолетова кнопка" title="Додаткова фіолетова кнопка" />}
           </div>
