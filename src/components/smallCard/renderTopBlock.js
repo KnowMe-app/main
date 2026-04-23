@@ -23,6 +23,22 @@ import toast from 'react-hot-toast';
 
 const topBlockContainerStyle = { padding: '7px', position: 'relative' };
 
+const topButtonsRowStyle = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+  gap: '6px',
+  marginBottom: '8px',
+};
+
+const topButtonsZoneStyle = {
+  border: 'none',
+  borderRadius: '6px',
+  minHeight: '24px',
+  cursor: 'default',
+};
+
+const topButtonsZones = ['#5c6bc0', '#26a69a', '#ffb74d', '#ef5350'];
+
 const actionButtonsContainerStyle = {
   position: 'absolute',
   top: '10px',
@@ -196,6 +212,11 @@ export const renderTopBlock = (
 
   return (
     <div style={topBlockContainerStyle}>
+      <div style={topButtonsRowStyle}>
+        {topButtonsZones.map((color, idx) => (
+          <button key={`top-zone-${idx}`} type="button" aria-label={`top-zone-${idx + 1}`} style={{ ...topButtonsZoneStyle, backgroundColor: color }} />
+        ))}
+      </div>
       <div style={actionButtonsContainerStyle}>
         {showSaveDeleteButtons && btnExport(cardData)}
         {showSaveDeleteButtons && btnDel(cardData, setShowInfoModal, setUserIdToDelete, isFromListOfUsers)}
