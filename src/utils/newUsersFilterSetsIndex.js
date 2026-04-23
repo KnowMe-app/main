@@ -7,6 +7,7 @@ import {
 } from './additionalAccessRules';
 
 const SEARCH_KEY_ROOT = 'searchKey';
+const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_MAX_LENGTH = 512;
 
 const toStableRulesText = raw =>
@@ -97,12 +98,7 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
 
   const userIds = mapMatchingIdsByRules(sourceNewUsers, parsedRuleGroups);
 
-  await set(ref(database, `${SEARCH_KEY_ROOT}/${setKey}`), {
-    setKey,
-    rulesText,
-    updatedAt: new Date().toISOString(),
-    userIds,
-  });
+  await set(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`), userIds);
 
   return { setKey, userIds: Object.keys(userIds) };
 };
@@ -111,27 +107,41 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules }) => {
   const setKey = makeAdditionalRulesSetKey(rawRules);
   if (!setKey) return null;
 
-  const setSnap = await get(ref(database, `${SEARCH_KEY_ROOT}/${setKey}`));
-  if (!setSnap.exists()) return null;
+  const [newSetSnap, legacySetSnap] = await Promise.all([
+    get(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`)),
+    get(ref(database, `${SEARCH_KEY_ROOT}/${setKey}`)),
+  ]);
 
-  const payload = setSnap.val() || {};
-  const userIds = Object.keys(payload.userIds || {});
-  return { setKey, userIds };
+  if (newSetSnap.exists()) {
+    const payload = newSetSnap.val() || {};
+    return { setKey, userIds: Object.keys(payload || {}) };
+  }
+
+  if (!legacySetSnap.exists()) return null;
+
+  const legacyPayload = legacySetSnap.val() || {};
+  return { setKey, userIds: Object.keys(legacyPayload.userIds || {}) };
 };
 
 export const rebuildAllNewUsersFilterSetIndexes = async () => {
-  const [usersSnap, newUsersSnap, searchKeySnap] = await Promise.all([
+  const [usersSnap, newUsersSnap, searchKeySnap, searchKeySetsSnap] = await Promise.all([
     get(ref(database, 'users')),
     get(ref(database, 'newUsers')),
     get(ref(database, SEARCH_KEY_ROOT)),
+    get(ref(database, SEARCH_KEY_SETS_ROOT)),
   ]);
 
   const usersMap = usersSnap.exists() ? usersSnap.val() || {} : {};
   const newUsersMap = newUsersSnap.exists() ? newUsersSnap.val() || {} : {};
   const searchKeyMap = searchKeySnap.exists() ? searchKeySnap.val() || {} : {};
+  const searchKeySetsMap = searchKeySetsSnap.exists() ? searchKeySetsSnap.val() || {} : {};
 
   const oldSetKeys = Object.keys(searchKeyMap).filter(key => String(key).startsWith('set_'));
-  await Promise.all(oldSetKeys.map(key => remove(ref(database, `${SEARCH_KEY_ROOT}/${key}`))));
+  const oldSetKeysInDedicatedRoot = Object.keys(searchKeySetsMap).filter(key => String(key).startsWith('set_'));
+  await Promise.all([
+    ...oldSetKeys.map(key => remove(ref(database, `${SEARCH_KEY_ROOT}/${key}`))),
+    ...oldSetKeysInDedicatedRoot.map(key => remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${key}`))),
+  ]);
 
   const allRules = Object.values(usersMap)
     .map(user => user?.additionalAccessRules)
