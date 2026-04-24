@@ -9,16 +9,6 @@ import {
 export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
 
-const sanitizeToken = value =>
-  String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[.#$[\]/]/g, '-')
-    .replace(/\s+/g, '_')
-    .replace(/[^a-z0-9_+\-?]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^[-_]+|[-_]+$/g, '');
-
 const encodeSetKeyPayload = value => encodeURIComponent(String(value || '')).replace(/_/g, '%5F');
 const decodeSetKeyPayload = value => {
   try {
@@ -26,40 +16,6 @@ const decodeSetKeyPayload = value => {
   } catch {
     return String(value || '');
   }
-};
-
-const FILTER_KEY_SHORT_CODES = {
-  age: 'a',
-  csection: 'c',
-  bloodGroup: 'bg',
-  rh: 'rh',
-  maritalStatus: 'ms',
-  imt: 'i',
-  role: 'r',
-  contact: 'ct',
-  userId: 'u',
-  reaction: 're',
-  height: 'h',
-  weight: 'w',
-  ageBirthDate: 'bd',
-};
-
-const buildGroupToken = parsedRules => {
-  const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
-  const parts = Object.keys(bucketMap || {})
-    .sort()
-    .map(filterKey => {
-      const values = Array.isArray(bucketMap[filterKey])
-        ? bucketMap[filterKey]
-        : [...(bucketMap[filterKey] || [])];
-      const uniqueValues = [...new Set(values.map(sanitizeToken).filter(Boolean))].sort();
-      if (!uniqueValues.length) return '';
-      const shortFilterKey = FILTER_KEY_SHORT_CODES[filterKey] || sanitizeToken(filterKey);
-      return `${shortFilterKey}_${uniqueValues.join('-')}`;
-    })
-    .filter(Boolean);
-
-  return parts.join('__');
 };
 
 const splitRawRulesToSetTexts = rawRules => {
@@ -73,41 +29,24 @@ const splitRawRulesToSetTexts = rawRules => {
     .filter(Boolean);
 };
 
-const makeRulesOnlySetKey = rawRules => {
-  const rulesText = String(rawRules || '').trim();
-  const parsedGroups = parseAdditionalAccessRuleGroups(rulesText);
-  if (!parsedGroups.length) return '';
-
-  const groupTokens = parsedGroups
-    .map(buildGroupToken)
-    .filter(Boolean)
-    .sort();
-
-  if (!groupTokens.length) return '';
-
-  const payload = groupTokens.join('__or__');
-  return `set_${encodeSetKeyPayload(payload)}`;
-};
-
 export const makeAdditionalRulesSetKey = (rawRules, accessUserId = '', setIndex = 1) => {
   const normalizedOwnerId = String(accessUserId || '').trim();
   if (!normalizedOwnerId) return '';
 
   const normalizedSetIndex = Number.isFinite(Number(setIndex)) ? Math.max(1, Number(setIndex)) : 1;
-  const rulesSetKey = makeRulesOnlySetKey(rawRules);
-  if (!rulesSetKey) return '';
-  return `${encodeSetKeyPayload(normalizedOwnerId)}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}${SET_KEY_INDEX_SEPARATOR}${rulesSetKey}`;
+  const rulesText = String(rawRules || '').trim();
+  if (!rulesText) return '';
+  return `${encodeSetKeyPayload(normalizedOwnerId)}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}`;
 };
 
 export const decodeAdditionalRulesSetKey = encodedSetKey => {
   const raw = String(encodedSetKey || '');
-  const [ownerToken = '', setIndexToken = '', ...rest] = raw.split(SET_KEY_INDEX_SEPARATOR);
-  const rulesSetKey = rest.join(SET_KEY_INDEX_SEPARATOR);
-  if (!ownerToken || !rulesSetKey) return '';
+  const [ownerToken = '', setIndexToken = ''] = raw.split(SET_KEY_INDEX_SEPARATOR);
+  if (!ownerToken) return '';
   const decodedOwner = decodeSetKeyPayload(ownerToken);
   const numericIndex = Number.parseInt(setIndexToken, 10);
   const normalizedSetIndex = Number.isFinite(numericIndex) && numericIndex > 0 ? numericIndex : 1;
-  return `${decodedOwner}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}${SET_KEY_INDEX_SEPARATOR}${rulesSetKey}`;
+  return `${decodedOwner}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}`;
 };
 
 const mapMatchingIdsByRules = (newUsersData, parsedRuleGroups) => {
@@ -135,12 +74,20 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
     .map((setText, index) => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
       if (parsedRuleGroups.length === 0) return null;
-      const rulesOnlySetKey = makeRulesOnlySetKey(setText);
-      if (!rulesOnlySetKey) return null;
+
+      const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
+      const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
+        const values = [...new Set((Array.isArray(rawValues) ? rawValues : [...(rawValues || [])]).filter(Boolean))];
+        if (values.length) acc[indexName] = values;
+        return acc;
+      }, {});
+
+      if (Object.keys(indexBuckets).length === 0) return null;
+
       const ownerSetKey = `${encodeSetKeyPayload(normalizedAccessUserId)}${SET_KEY_INDEX_SEPARATOR}${index + 1}`;
       return {
         setKey: ownerSetKey,
-        valueKey: rulesOnlySetKey,
+        indexBuckets,
         userIds: mapMatchingIdsByRules(sourceNewUsers, parsedRuleGroups),
       };
     })
@@ -151,10 +98,9 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
   const ownerPrefix = `${encodeSetKeyPayload(normalizedAccessUserId)}${SET_KEY_INDEX_SEPARATOR}`;
   const existingSetKeys = Object.keys(rootMap).filter(setKey => setKey.startsWith(ownerPrefix));
   const nextSetKeys = new Set(nextSetPayloads.map(item => item.setKey));
-  const nextValueKeysBySetKey = new Map(nextSetPayloads.map(item => [item.setKey, item.valueKey]));
 
   // Ключ набору має формат: $ownerUserId_$inputIndex
-  // searchKeySets/$ownerUserId_$inputIndex/$valueKey/$newUserId = true
+  // searchKeySets/$ownerUserId_$inputIndex/$indexName/$value/$newUserId = true
   const writes = {};
 
   existingSetKeys.forEach(setKey => {
@@ -166,16 +112,30 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
     const setPayload = rootMap?.[setKey];
     if (!setPayload || typeof setPayload !== 'object') return;
 
-    const expectedValueKey = nextValueKeysBySetKey.get(setKey);
-    Object.keys(setPayload).forEach(valueKey => {
-      if (valueKey !== expectedValueKey) {
-        writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${valueKey}`] = null;
+    const expectedIndexes = nextSetPayloads.find(item => item.setKey === setKey)?.indexBuckets || {};
+    Object.keys(setPayload).forEach(indexName => {
+      const expectedValues = new Set(expectedIndexes[indexName] || []);
+      if (!expectedValues.size) {
+        writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}`] = null;
+        return;
       }
+
+      const indexPayload = setPayload[indexName];
+      if (!indexPayload || typeof indexPayload !== 'object') return;
+      Object.keys(indexPayload).forEach(valueKey => {
+        if (!expectedValues.has(valueKey)) {
+          writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${valueKey}`] = null;
+        }
+      });
     });
   });
 
-  nextSetPayloads.forEach(({ setKey, valueKey, userIds }) => {
-    writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${valueKey}`] = userIds;
+  nextSetPayloads.forEach(({ setKey, indexBuckets, userIds }) => {
+    Object.entries(indexBuckets).forEach(([indexName, values]) => {
+      values.forEach(value => {
+        writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${value}`] = userIds;
+      });
+    });
   });
 
   if (Object.keys(writes).length > 0) {
@@ -198,31 +158,47 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
   const ownerPrefix = `${encodeSetKeyPayload(normalizedAccessUserId)}${SET_KEY_INDEX_SEPARATOR}`;
   const setEntries = ruleSetTexts
     .map((setText, index) => {
-      const valueKey = makeRulesOnlySetKey(setText);
-      if (!valueKey) return null;
+      const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
+      if (!parsedRuleGroups.length) return null;
+      const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
+      const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
+        const values = [...new Set((Array.isArray(rawValues) ? rawValues : [...(rawValues || [])]).filter(Boolean))];
+        if (values.length) acc[indexName] = values;
+        return acc;
+      }, {});
+      if (!Object.keys(indexBuckets).length) return null;
+
       const setKey = `${ownerPrefix}${index + 1}`;
-      return { setKey, valueKey, path: `${SEARCH_KEY_SETS_ROOT}/${setKey}/${valueKey}` };
+      const paths = Object.entries(indexBuckets).flatMap(([indexName, values]) =>
+        values.map(value => `${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${value}`)
+      );
+      return { setKey, paths };
     })
     .filter(Boolean);
   if (!setEntries.length) return null;
 
-  const snapshots = await Promise.all(
-    setEntries.map(entry => get(ref(database, entry.path)))
+  const snapshotsBySet = await Promise.all(
+    setEntries.map(async entry => {
+      const snapshots = await Promise.all(entry.paths.map(path => get(ref(database, path))));
+      return { setKey: entry.setKey, paths: entry.paths, snapshots };
+    })
   );
 
-  if (snapshots.some(snapshot => !snapshot.exists())) {
+  if (snapshotsBySet.some(item => item.snapshots.some(snapshot => !snapshot.exists()))) {
     return null;
   }
 
   const userIds = new Set();
-  snapshots.forEach(snapshot => {
-    Object.keys(snapshot.val() || {}).forEach(userId => {
-      if (userId) userIds.add(userId);
+  snapshotsBySet.forEach(item => {
+    item.snapshots.forEach(snapshot => {
+      Object.keys(snapshot.val() || {}).forEach(userId => {
+        if (userId) userIds.add(userId);
+      });
     });
   });
 
   return {
-    setKeys: setEntries.map(entry => `${entry.setKey}/${entry.valueKey}`),
+    setKeys: snapshotsBySet.flatMap(item => item.paths),
     userIds: [...userIds],
     ownerId: normalizedAccessUserId,
   };
