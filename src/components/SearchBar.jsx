@@ -680,6 +680,31 @@ const SearchBar = ({
     return Boolean(effectiveEnabledSearchKeys[key]);
   };
 
+  const resolveGroupedStrictKeySet = () => {
+    const effectiveEnabledSearchKeys =
+      enabledSearchKeys && typeof enabledSearchKeys === 'object'
+        ? enabledSearchKeys
+        : searchOptions?.enabledSearchKeys;
+
+    if (!effectiveEnabledSearchKeys || typeof effectiveEnabledSearchKeys !== 'object') {
+      return null;
+    }
+
+    const strictKeys = [
+      'userId',
+      'facebook',
+      'instagram',
+      'telegram',
+      'email',
+      'tiktok',
+      'phone',
+      'vk',
+      'other',
+    ].filter(key => Boolean(effectiveEnabledSearchKeys[key]));
+
+    return strictKeys.length > 0 ? new Set(strictKeys) : null;
+  };
+
   const loadCachedResult = (key, value) => {
     if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
       const inside = value.slice(1, -1);
@@ -1267,8 +1292,11 @@ const SearchBar = ({
       }
       return;
     }
+    const groupedStrictKeySet = resolveGroupedStrictKeySet();
     const isCombinedSearchMode =
-      isSearchEnabled('searchId') && isSearchEnabled('equalToAllCards');
+      !groupedStrictKeySet &&
+      isSearchEnabled('searchId') &&
+      isSearchEnabled('equalToAllCards');
 
     if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
       const hasCache = loadCachedResult('name', trimmed);
@@ -1330,14 +1358,16 @@ const SearchBar = ({
           ['phone', parsePhoneNumber],
           ['vk', parseVk],
           ['other', parseOtherContact],
-        ].filter(([key]) => isSearchEnabled(key));
+        ].filter(([key]) => {
+          if (groupedStrictKeySet) return groupedStrictKeySet.has(key);
+          return isSearchEnabled(key);
+        });
 
         const results = {};
         for (const val of values) {
           let res = null;
           const combinedPerValueResults = {};
           let foundCombinedPerValue = false;
-
           if (!isCombinedSearchMode && isSearchEnabled('partialUserId')) {
             const partialPerValueResult = await runPartialUserIdSearch(
               val,
