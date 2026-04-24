@@ -1239,7 +1239,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState('');
-  const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.GIT);
+  const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY);
   const [loadRequestId, setLoadRequestId] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
   const [dateOffset21, setDateOffset21] = useState(0);
@@ -3471,7 +3471,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setDateOffset2(snapshot.dateOffset2 || 0);
     setDateOffset21(snapshot.dateOffset21 || 0);
     setDateOffsetLA(snapshot.dateOffsetLA || 0);
-    setLoadSortMode(snapshot.loadSortMode || 'GIT');
+    setLoadSortMode(snapshot.loadSortMode || 'SearchIdKeyOnly');
     setSearch(snapshot.search || '');
     setHasSearched(Boolean(snapshot.hasSearched) || Object.keys(restoredUsers).length > 0);
     setState({});
