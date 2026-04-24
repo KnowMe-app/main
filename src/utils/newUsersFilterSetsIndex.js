@@ -9,15 +9,6 @@ import {
 export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
 
-const encodeSetKeyPayload = value => encodeURIComponent(String(value || '')).replace(/_/g, '%5F');
-const decodeSetKeyPayload = value => {
-  try {
-    return decodeURIComponent(String(value || ''));
-  } catch {
-    return String(value || '');
-  }
-};
-
 const splitRawRulesToSetTexts = rawRules => {
   if (Array.isArray(rawRules)) {
     return rawRules.map(item => String(item || '').trim()).filter(Boolean);
@@ -36,17 +27,23 @@ export const makeAdditionalRulesSetKey = (rawRules, accessUserId = '', setIndex 
   const normalizedSetIndex = Number.isFinite(Number(setIndex)) ? Math.max(1, Number(setIndex)) : 1;
   const rulesText = String(rawRules || '').trim();
   if (!rulesText) return '';
-  return `${encodeSetKeyPayload(normalizedOwnerId)}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}`;
+  return `${normalizedOwnerId}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}`;
 };
 
 export const decodeAdditionalRulesSetKey = encodedSetKey => {
-  const raw = String(encodedSetKey || '');
-  const [ownerToken = '', setIndexToken = ''] = raw.split(SET_KEY_INDEX_SEPARATOR);
-  if (!ownerToken) return '';
-  const decodedOwner = decodeSetKeyPayload(ownerToken);
+  const raw = String(encodedSetKey || '').trim();
+  if (!raw) return '';
+
+  const separatorIndex = raw.lastIndexOf(SET_KEY_INDEX_SEPARATOR);
+  if (separatorIndex <= 0) return '';
+
+  const ownerId = raw.slice(0, separatorIndex);
+  const setIndexToken = raw.slice(separatorIndex + 1);
   const numericIndex = Number.parseInt(setIndexToken, 10);
   const normalizedSetIndex = Number.isFinite(numericIndex) && numericIndex > 0 ? numericIndex : 1;
-  return `${decodedOwner}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}`;
+
+  if (!ownerId) return '';
+  return `${ownerId}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}`;
 };
 
 const mapMatchingIdsByRules = (newUsersData, parsedRuleGroups) => {
@@ -84,7 +81,7 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
 
       if (Object.keys(indexBuckets).length === 0) return null;
 
-      const ownerSetKey = `${encodeSetKeyPayload(normalizedAccessUserId)}${SET_KEY_INDEX_SEPARATOR}${index + 1}`;
+      const ownerSetKey = `${normalizedAccessUserId}${SET_KEY_INDEX_SEPARATOR}${index + 1}`;
       return {
         setKey: ownerSetKey,
         indexBuckets,
@@ -110,7 +107,7 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
 
   const rootSnap = await get(ref(database, SEARCH_KEY_SETS_ROOT));
   const rootMap = rootSnap.exists() ? rootSnap.val() || {} : {};
-  const ownerPrefix = `${encodeSetKeyPayload(normalizedAccessUserId)}${SET_KEY_INDEX_SEPARATOR}`;
+  const ownerPrefix = `${normalizedAccessUserId}${SET_KEY_INDEX_SEPARATOR}`;
   const existingSetKeys = Object.keys(rootMap).filter(setKey => setKey.startsWith(ownerPrefix));
   const nextSetKeys = new Set(nextSetPayloads.map(item => item.setKey));
 
@@ -182,7 +179,7 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
   if (!normalizedAccessUserId) return null;
 
   const ruleSetTexts = splitRawRulesToSetTexts(rawRules);
-  const ownerPrefix = `${encodeSetKeyPayload(normalizedAccessUserId)}${SET_KEY_INDEX_SEPARATOR}`;
+  const ownerPrefix = `${normalizedAccessUserId}${SET_KEY_INDEX_SEPARATOR}`;
   const setEntries = ruleSetTexts
     .map((setText, index) => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
