@@ -7,6 +7,7 @@ import {
 } from './additionalAccessRules';
 
 export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
+const SET_KEY_INDEX_SEPARATOR = '_';
 
 const sanitizeToken = value =>
   String(value || '')
@@ -88,21 +89,25 @@ const makeRulesOnlySetKey = rawRules => {
   return `set_${encodeSetKeyPayload(payload)}`;
 };
 
-export const makeAdditionalRulesSetKey = (rawRules, accessUserId = '') => {
+export const makeAdditionalRulesSetKey = (rawRules, accessUserId = '', setIndex = 1) => {
   const normalizedOwnerId = String(accessUserId || '').trim();
   if (!normalizedOwnerId) return '';
 
+  const normalizedSetIndex = Number.isFinite(Number(setIndex)) ? Math.max(1, Number(setIndex)) : 1;
   const rulesSetKey = makeRulesOnlySetKey(rawRules);
   if (!rulesSetKey) return '';
-  return `${encodeSetKeyPayload(normalizedOwnerId)}_${rulesSetKey}`;
+  return `${encodeSetKeyPayload(normalizedOwnerId)}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}${SET_KEY_INDEX_SEPARATOR}${rulesSetKey}`;
 };
 
 export const decodeAdditionalRulesSetKey = encodedSetKey => {
   const raw = String(encodedSetKey || '');
-  const [ownerToken = '', ...rest] = raw.split('_');
-  const rulesSetKey = rest.join('_');
+  const [ownerToken = '', setIndexToken = '', ...rest] = raw.split(SET_KEY_INDEX_SEPARATOR);
+  const rulesSetKey = rest.join(SET_KEY_INDEX_SEPARATOR);
   if (!ownerToken || !rulesSetKey) return '';
-  return `${decodeSetKeyPayload(ownerToken)}_${rulesSetKey}`;
+  const decodedOwner = decodeSetKeyPayload(ownerToken);
+  const numericIndex = Number.parseInt(setIndexToken, 10);
+  const normalizedSetIndex = Number.isFinite(numericIndex) && numericIndex > 0 ? numericIndex : 1;
+  return `${decodedOwner}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}${SET_KEY_INDEX_SEPARATOR}${rulesSetKey}`;
 };
 
 const mapMatchingIdsByRules = (newUsersData, parsedRuleGroups) => {
@@ -127,13 +132,15 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
 
   const ruleSetTexts = splitRawRulesToSetTexts(rawRules);
   const nextSetPayloads = ruleSetTexts
-    .map(setText => {
+    .map((setText, index) => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
       if (parsedRuleGroups.length === 0) return null;
       const rulesOnlySetKey = makeRulesOnlySetKey(setText);
       if (!rulesOnlySetKey) return null;
+      const ownerSetKey = `${encodeSetKeyPayload(normalizedAccessUserId)}${SET_KEY_INDEX_SEPARATOR}${index + 1}`;
       return {
-        setKey: rulesOnlySetKey,
+        setKey: ownerSetKey,
+        valueKey: rulesOnlySetKey,
         userIds: mapMatchingIdsByRules(sourceNewUsers, parsedRuleGroups),
       };
     })
@@ -141,25 +148,34 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
 
   const rootSnap = await get(ref(database, SEARCH_KEY_SETS_ROOT));
   const rootMap = rootSnap.exists() ? rootSnap.val() || {} : {};
-  const ownerPrefix = `${encodeSetKeyPayload(normalizedAccessUserId)}_`;
+  const ownerPrefix = `${encodeSetKeyPayload(normalizedAccessUserId)}${SET_KEY_INDEX_SEPARATOR}`;
   const existingSetKeys = Object.keys(rootMap).filter(setKey => setKey.startsWith(ownerPrefix));
-  const nextSetKeys = new Set(
-    nextSetPayloads.map(item => `${ownerPrefix}${item.setKey}`)
-  );
+  const nextSetKeys = new Set(nextSetPayloads.map(item => item.setKey));
+  const nextValueKeysBySetKey = new Map(nextSetPayloads.map(item => [item.setKey, item.valueKey]));
 
-  // Ключ набору має формат: $ownerUserId_$setKey
-  // searchKeySets/$ownerUserId_$setKey/$newUserId = true
+  // Ключ набору має формат: $ownerUserId_$inputIndex
+  // searchKeySets/$ownerUserId_$inputIndex/$valueKey/$newUserId = true
   const writes = {};
 
   existingSetKeys.forEach(setKey => {
     if (!nextSetKeys.has(setKey)) {
       writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}`] = null;
+      return;
     }
+
+    const setPayload = rootMap?.[setKey];
+    if (!setPayload || typeof setPayload !== 'object') return;
+
+    const expectedValueKey = nextValueKeysBySetKey.get(setKey);
+    Object.keys(setPayload).forEach(valueKey => {
+      if (valueKey !== expectedValueKey) {
+        writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${valueKey}`] = null;
+      }
+    });
   });
 
-  nextSetPayloads.forEach(({ setKey: rulesSetKey, userIds }) => {
-    const setKey = `${ownerPrefix}${rulesSetKey}`;
-    writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}`] = userIds;
+  nextSetPayloads.forEach(({ setKey, valueKey, userIds }) => {
+    writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${valueKey}`] = userIds;
   });
 
   if (Object.keys(writes).length > 0) {
@@ -179,15 +195,19 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
   if (!normalizedAccessUserId) return null;
 
   const ruleSetTexts = splitRawRulesToSetTexts(rawRules);
-  const ownerPrefix = `${encodeSetKeyPayload(normalizedAccessUserId)}_`;
-  const setKeys = ruleSetTexts
-    .map(makeRulesOnlySetKey)
-    .filter(Boolean)
-    .map(setKey => `${ownerPrefix}${setKey}`);
-  if (!setKeys.length) return null;
+  const ownerPrefix = `${encodeSetKeyPayload(normalizedAccessUserId)}${SET_KEY_INDEX_SEPARATOR}`;
+  const setEntries = ruleSetTexts
+    .map((setText, index) => {
+      const valueKey = makeRulesOnlySetKey(setText);
+      if (!valueKey) return null;
+      const setKey = `${ownerPrefix}${index + 1}`;
+      return { setKey, valueKey, path: `${SEARCH_KEY_SETS_ROOT}/${setKey}/${valueKey}` };
+    })
+    .filter(Boolean);
+  if (!setEntries.length) return null;
 
   const snapshots = await Promise.all(
-    setKeys.map(setKey => get(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`)))
+    setEntries.map(entry => get(ref(database, entry.path)))
   );
 
   if (snapshots.some(snapshot => !snapshot.exists())) {
@@ -201,7 +221,11 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
     });
   });
 
-  return { setKeys, userIds: [...userIds], ownerId: normalizedAccessUserId };
+  return {
+    setKeys: setEntries.map(entry => `${entry.setKey}/${entry.valueKey}`),
+    userIds: [...userIds],
+    ownerId: normalizedAccessUserId,
+  };
 };
 
 export const rebuildAllNewUsersFilterSetIndexes = async () => {
