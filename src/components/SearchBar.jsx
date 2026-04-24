@@ -1416,7 +1416,7 @@ const SearchBar = ({
             }
           }
 
-          if (!res) {
+          if (!res && isSearchEnabled('name')) {
             res = await cachedSearch({ name: val });
             if (isStaleRequest()) return;
           }
@@ -1679,6 +1679,13 @@ const SearchBar = ({
         allowFallback: Boolean(searchOptions?.autoOtherFallback),
       })
     ) return;
+
+    if (!isSearchEnabled('name')) {
+      setUserNotFound && setUserNotFound(true);
+      setState && setState({});
+      setUsers && setUsers({});
+      return;
+    }
 
     const nameTrim = rawQuery.trim();
     console.log('[SearchBar] Defaulting to name search', {
