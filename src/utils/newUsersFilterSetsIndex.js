@@ -1,5 +1,6 @@
 import { get, ref, remove, update } from 'firebase/database';
 import { database } from 'components/config';
+import { encodeKey } from './searchIndexCandidates';
 import {
   isUserAllowedByAnyAdditionalAccessRule,
   parseAdditionalAccessRuleGroups,
@@ -8,6 +9,14 @@ import {
 
 export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
+const FORBIDDEN_RTDB_SEGMENT_CHARS = ['.', '#', '$', '/', '[', ']'];
+
+const normalizePathSegment = value => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const hasForbiddenChars = FORBIDDEN_RTDB_SEGMENT_CHARS.some(char => raw.includes(char));
+  return hasForbiddenChars ? encodeKey(raw) : raw;
+};
 
 const splitRawRulesToSetTexts = rawRules => {
   if (Array.isArray(rawRules)) {
@@ -93,8 +102,17 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
 
       const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
       const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
-        const values = [...new Set((Array.isArray(rawValues) ? rawValues : [...(rawValues || [])]).filter(Boolean))];
-        if (values.length) acc[indexName] = values;
+        const normalizedIndexName = normalizePathSegment(indexName);
+        if (!normalizedIndexName) return acc;
+
+        const values = [
+          ...new Set(
+            (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
+              .map(normalizePathSegment)
+              .filter(Boolean)
+          ),
+        ];
+        if (values.length) acc[normalizedIndexName] = values;
         return acc;
       }, {});
 
@@ -191,6 +209,7 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
     setKeys: [...nextSetKeys],
     userIds: aggregatedUserIds,
     ownerId: normalizedAccessUserId,
+    writesCount: Object.keys(writes).length,
   };
 };
 
@@ -205,8 +224,16 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
       if (!parsedRuleGroups.length) return null;
       const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
       const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
-        const values = [...new Set((Array.isArray(rawValues) ? rawValues : [...(rawValues || [])]).filter(Boolean))];
-        if (values.length) acc[indexName] = values;
+        const normalizedIndexName = normalizePathSegment(indexName);
+        if (!normalizedIndexName) return acc;
+        const values = [
+          ...new Set(
+            (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
+              .map(normalizePathSegment)
+              .filter(Boolean)
+          ),
+        ];
+        if (values.length) acc[normalizedIndexName] = values;
         return acc;
       }, {});
       if (!Object.keys(indexBuckets).length) return null;
