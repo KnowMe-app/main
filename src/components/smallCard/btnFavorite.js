@@ -25,9 +25,19 @@ export const BtnFavorite = ({
   title = 'В обране',
   ariaLabel = 'В обране',
 }) => {
+  const {
+    background: customBackground,
+    backgroundColor: customBackgroundColor,
+    border: customBorder,
+    color: customTextColor,
+    boxShadow: customBoxShadow,
+    ...restCustomStyle
+  } = customStyle;
   const isFavorite = !!favoriteUsers[userId];
   const activeColor = color.reactionLike;
   const inactiveOpacity = 0.7;
+  const activeIconColor = '#fff';
+  const activeBorderColor = '#fff';
 
   const toggleFavorite = async () => {
     if (!auth.currentUser) {
@@ -84,16 +94,23 @@ export const BtnFavorite = ({
         width: '35px',
         height: '35px',
         borderRadius: '50%',
-        background: isFavorite ? color.reactionLikeBg : color.accent5,
-        border: `2px solid ${isFavorite ? activeColor : color.reactionIdleBorder}`,
-        color: isFavorite ? activeColor : color.reactionIdleIcon,
+        ...restCustomStyle,
+        background: isFavorite
+          ? activeColor
+          : customBackground || customBackgroundColor || color.accent5,
+        border: isFavorite
+          ? `4px solid ${activeBorderColor}`
+          : customBorder || `2px solid ${color.reactionIdleBorder}`,
+        color: isFavorite ? activeIconColor : customTextColor || color.reactionIdleIcon,
+        boxShadow: isFavorite
+          ? `0 0 0 2px ${activeColor}`
+          : customBoxShadow || 'none',
         opacity: isFavorite ? 1 : inactiveOpacity,
         zIndex: 1,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        ...customStyle,
       }}
       title={title}
       aria-label={ariaLabel}
@@ -104,7 +121,7 @@ export const BtnFavorite = ({
       }}
     >
       {isFavorite ? (
-        <FaHeart size={iconSize} color={activeColor} />
+        <FaHeart size={iconSize} color={activeIconColor} />
       ) : (
         <FaRegHeart size={iconSize} color={color.reactionIdleIcon} />
       )}
