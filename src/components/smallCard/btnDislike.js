@@ -29,6 +29,7 @@ export const BtnDislike = ({
   const isDisliked = !!dislikeUsers[userId];
   const activeColor = color.reactionDislike;
   const inactiveOpacity = 0.7;
+  const activeIconColor = '#fff';
 
   const toggleDislike = async () => {
     if (!auth.currentUser) {
@@ -89,16 +90,18 @@ export const BtnDislike = ({
         width: '35px',
         height: '35px',
         borderRadius: '50%',
-        background: isDisliked ? color.reactionDislikeBg : color.accent5,
-        border: `2px solid ${isDisliked ? activeColor : color.reactionIdleBorder}`,
-        color: isDisliked ? activeColor : color.reactionIdleIcon,
+        ...customStyle,
+        background: isDisliked ? activeColor : customStyle.background || color.accent5,
+        border: isDisliked
+          ? `4px solid ${activeColor}`
+          : customStyle.border || `2px solid ${color.reactionIdleBorder}`,
+        color: isDisliked ? activeIconColor : customStyle.color || color.reactionIdleIcon,
         opacity: isDisliked ? 1 : inactiveOpacity,
         zIndex: 1,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        ...customStyle,
       }}
       title={title}
       aria-label={ariaLabel}
@@ -108,7 +111,7 @@ export const BtnDislike = ({
         toggleDislike();
       }}
     >
-      <FaTimes size={iconSize} color={isDisliked ? activeColor : color.reactionIdleIcon} />
+      <FaTimes size={iconSize} color={isDisliked ? activeIconColor : color.reactionIdleIcon} />
     </button>
   );
 };
