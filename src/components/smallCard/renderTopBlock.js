@@ -116,6 +116,9 @@ const detailsToggleStyle = {
 const hasAgentOrIPRole = data =>
   data.userRole === 'ag' || data.userRole === 'ip' || data.role === 'ag' || data.role === 'ip';
 
+const hasRoleWithoutCycle = data =>
+  data.userRole === 'pp' || data.role === 'pp' || hasAgentOrIPRole(data);
+
 const buildRtdbLink = userId =>
   `https://console.firebase.google.com/u/0/project/webringitapp/database/webringitapp-default-rtdb/data/~2FnewUsers~2F${encodeURIComponent(userId || '')}`;
 
@@ -193,7 +196,7 @@ export const renderTopBlock = (
   const cardData = { ...userData, cycleStatus: getEffectiveCycleStatus(userData) };
   const region = normalizeRegion(cardData.region);
   const showSideActions = !additionalActions;
-  const isAgentOrIP = hasAgentOrIPRole(cardData);
+  const hasHiddenCycleFieldRole = hasRoleWithoutCycle(cardData);
 
   const renderOverlayEntries = fieldNames => {
     const normalizedFieldNames = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
@@ -381,10 +384,9 @@ export const renderTopBlock = (
             {cardData.userId}
           </a>
         )}
-        {!isAgentOrIP &&
-          fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, submitOptions)}
+        {fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, submitOptions)}
         {fieldRole(cardData, setUsers, setState, submitOptions)}
-        {!isAgentOrIP && <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />}
+        {!hasHiddenCycleFieldRole && <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />}
         <div>{fieldDeliveryInfo(setUsers, setState, cardData, submitOptions)}</div>
         {renderOverlayEntries(['lastDelivery', 'ownKids'])}
         <div>
