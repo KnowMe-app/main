@@ -960,6 +960,175 @@ const SearchBar = ({
     return { found: foundCombinedResults, results: resultMap };
   };
 
+  const runSearchIdSearch = async (rawQuery, isStaleRequest, resultMap = {}) => {
+    const searchIdInput = parseSearchIdExact(rawQuery);
+    if (!searchIdInput) return { found: false, results: resultMap };
+
+    const searchIdPrefixStrategy = resolveSearchIdPrefixStrategy(searchIdInput, searchOptions);
+    const prefixesToIterate =
+      searchIdPrefixStrategy.primaryPrefixes?.length > 0
+        ? searchIdPrefixStrategy.primaryPrefixes
+        : searchIdPrefixStrategy.fallbackPrefixes || [];
+
+    if (prefixesToIterate.length === 0) {
+      return { found: false, results: resultMap };
+    }
+
+    const searchIdResults = await Promise.all(
+      prefixesToIterate.map(prefix =>
+        cachedSearch(
+          { searchId: searchIdInput },
+          {
+            forceEqualToAllCards: false,
+            searchIdPrefixes: [prefix],
+          },
+        )
+      )
+    );
+    if (isStaleRequest()) return { found: false, results: resultMap };
+
+    let found = false;
+    searchIdResults.forEach(searchIdResult => {
+      if (!searchIdResult || Object.keys(searchIdResult).length === 0) return;
+      found = true;
+      mergeSearchResultMap(resultMap, searchIdResult);
+    });
+
+    return { found, results: resultMap };
+  };
+
+  const runPlatformParsedSearch = async (
+    platform,
+    parseFunction,
+    rawQuery,
+    isStaleRequest,
+    resultMap = {},
+    extraOptions = {},
+  ) => {
+    const parsedValue = parseFunction(rawQuery);
+    if (!parsedValue) return { found: false, results: resultMap };
+
+    const scopedSearchIdPrefixes = SEARCH_ID_SCOPED_PLATFORMS.has(platform)
+      ? [platform]
+      : undefined;
+
+    const res = await cachedSearch(
+      { [platform]: parsedValue },
+      {
+        ...(scopedSearchIdPrefixes ? { searchIdPrefixes: scopedSearchIdPrefixes } : {}),
+        forceEqualToAllCards: false,
+        ...extraOptions,
+      },
+    );
+    if (isStaleRequest()) return { found: false, results: resultMap };
+    if (!res || Object.keys(res).length === 0) return { found: false, results: resultMap };
+
+    mergeSearchResultMap(resultMap, res);
+    return { found: true, results: resultMap };
+  };
+
+  const runSingleQueryFlow = async (
+    rawQuery,
+    isStaleRequest,
+    resultMap = {},
+    forcedEqualToKeys = null,
+  ) => {
+    let found = false;
+
+    if (isSearchEnabled('partialUserId')) {
+      const partialPerValueResult = await runPartialUserIdSearch(
+        rawQuery,
+        isStaleRequest,
+        resultMap,
+      );
+      if (isStaleRequest()) return { found: false, results: resultMap };
+      if (partialPerValueResult.found) {
+        found = true;
+      }
+    }
+
+    const looksLikeExactUserId = Boolean(parseUserId(rawQuery));
+    if (looksLikeExactUserId && isSearchEnabled('userId')) {
+      const userIdExactResult = await runPlatformParsedSearch(
+        'userId',
+        parseUserId,
+        rawQuery,
+        isStaleRequest,
+        resultMap,
+      );
+      if (isStaleRequest()) return { found: false, results: resultMap };
+      if (userIdExactResult.found) {
+        found = true;
+      }
+    }
+
+    if (isSearchEnabled('searchId')) {
+      const searchIdResult = await runSearchIdSearch(
+        rawQuery,
+        isStaleRequest,
+        resultMap,
+      );
+      if (isStaleRequest()) return { found: false, results: resultMap };
+      if (searchIdResult.found) {
+        found = true;
+      }
+    }
+
+    if (isSearchEnabled('equalToAllCards')) {
+      const equalToResult = await runEqualToAllCardsSearch(
+        rawQuery,
+        isStaleRequest,
+        resultMap,
+        forcedEqualToKeys,
+      );
+      if (isStaleRequest()) return { found: false, results: resultMap };
+      if (equalToResult.found) {
+        found = true;
+      }
+    }
+
+    const sequentialParsers = [
+      ['userId', parseUserId],
+      ['facebook', parseFacebookId],
+      ['instagram', parseInstagramId],
+      ['telegram', parseTelegramId],
+      ['email', parseEmail],
+      ['tiktok', parseTikTokLink],
+      ['phone', parsePhoneNumber],
+      ['vk', parseVk],
+      ['other', parseOtherContact],
+    ];
+
+    for (const [platform, parser] of sequentialParsers) {
+      if (!isSearchEnabled(platform)) continue;
+      if (platform === 'userId' && looksLikeExactUserId) continue;
+
+      const platformResult = await runPlatformParsedSearch(
+        platform,
+        parser,
+        rawQuery,
+        isStaleRequest,
+        resultMap,
+        platform === 'telegram' ? { allowTelegramPrefixMatches: true } : {},
+      );
+      if (isStaleRequest()) return { found: false, results: resultMap };
+      if (platformResult.found) {
+        found = true;
+      }
+    }
+
+    if (!found && isSearchEnabled('name')) {
+      const nameResult = await cachedSearch({ name: rawQuery });
+      if (isStaleRequest()) return { found: false, results: resultMap };
+      if (nameResult && Object.keys(nameResult).length > 0) {
+        mergeSearchResultMap(resultMap, nameResult);
+        found = true;
+      }
+    }
+
+    return { found, results: resultMap };
+  };
+
   const cachedSearch = async (params, extraOptions = {}) => {
     const res = await searchFunc(params, {
       ...(searchOptions || {}),
@@ -1356,47 +1525,19 @@ const SearchBar = ({
 
         const results = {};
         for (const val of values) {
-          let found = false;
           const perValueResults = {};
+          const forcedEqualToKeys = groupedStrictKeySet
+            ? Array.from(groupedStrictKeySet)
+            : null;
+          const perValueFlowResult = await runSingleQueryFlow(
+            val,
+            isStaleRequest,
+            perValueResults,
+            forcedEqualToKeys,
+          );
+          if (isStaleRequest()) return;
 
-          if (isSearchEnabled('partialUserId')) {
-            const partialPerValueResult = await runPartialUserIdSearch(
-              val,
-              isStaleRequest,
-              perValueResults,
-            );
-            if (isStaleRequest()) return;
-            if (partialPerValueResult.found) {
-              found = true;
-            }
-          }
-
-          if (isSearchEnabled('equalToAllCards')) {
-            const forcedEqualToKeys = groupedStrictKeySet
-              ? Array.from(groupedStrictKeySet)
-              : null;
-            const equalToResult = await runEqualToAllCardsSearch(
-              val,
-              isStaleRequest,
-              perValueResults,
-              forcedEqualToKeys,
-            );
-            if (isStaleRequest()) return;
-            if (equalToResult.found) {
-              found = true;
-            }
-          }
-
-          if (!found && isSearchEnabled('name')) {
-            const nameResult = await cachedSearch({ name: val });
-            if (isStaleRequest()) return;
-            if (nameResult && Object.keys(nameResult).length > 0) {
-              mergeSearchResultMap(perValueResults, nameResult);
-              found = true;
-            }
-          }
-
-          if (!found || Object.keys(perValueResults).length === 0) {
+          if (!perValueFlowResult.found || Object.keys(perValueResults).length === 0) {
             const fallbackSearchVal = isSearchEnabled('phone')
               ? parsePhoneNumber(val) || val
               : val;
