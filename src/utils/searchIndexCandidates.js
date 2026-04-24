@@ -29,6 +29,21 @@ export const buildSearchIndexCandidates = (searchKey, value) => {
     }
   }
 
+  if (searchKey === 'phone') {
+    const digitsOnly = rawValue.replace(/\D/g, '');
+    if (digitsOnly) {
+      candidates.add(digitsOnly);
+
+      if (digitsOnly.startsWith('0')) {
+        candidates.add(`38${digitsOnly}`);
+      }
+
+      if (digitsOnly.startsWith('80')) {
+        candidates.add(`3${digitsOnly}`);
+      }
+    }
+  }
+
   if (searchKey === 'telegram') {
     const baseValues = [...candidates];
     baseValues.forEach(entry => {

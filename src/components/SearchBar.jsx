@@ -1392,7 +1392,11 @@ const SearchBar = ({
           }
 
           if (!res || Object.keys(res).length === 0) {
-            results[`new_${val}`] = { _notFound: true, searchVal: val };
+            const fallbackSearchVal = parsePhoneNumber(val) || val;
+            results[`new_${fallbackSearchVal}`] = {
+              _notFound: true,
+              searchVal: fallbackSearchVal,
+            };
           } else if ('userId' in res) {
             results[res.userId] = res;
           } else {
