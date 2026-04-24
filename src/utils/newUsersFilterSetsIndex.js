@@ -159,10 +159,7 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
 
   nextSetPayloads.forEach(({ setKey: rulesSetKey, userIds }) => {
     const setKey = `${ownerPrefix}${rulesSetKey}`;
-    writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}`] = null;
-    Object.keys(userIds).forEach(userId => {
-      writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${userId}`] = true;
-    });
+    writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}`] = userIds;
   });
 
   if (Object.keys(writes).length > 0) {
