@@ -20,6 +20,25 @@ const splitRawRulesToSetTexts = rawRules => {
     .filter(Boolean);
 };
 
+const parseRawRulesToSetEntries = rawRules => {
+  if (Array.isArray(rawRules)) {
+    return rawRules
+      .map((item, index) => ({
+        text: String(item || '').trim(),
+        inputIndex: index + 1,
+      }))
+      .filter(entry => Boolean(entry.text));
+  }
+
+  return String(rawRules || '')
+    .split(/\r?\n\s*\r?\n+/)
+    .map((item, index) => ({
+      text: item.trim(),
+      inputIndex: index + 1,
+    }))
+    .filter(entry => Boolean(entry.text));
+};
+
 export const makeAdditionalRulesSetKey = (rawRules, accessUserId = '', setIndex = 1) => {
   const normalizedOwnerId = String(accessUserId || '').trim();
   if (!normalizedOwnerId) return '';
@@ -66,9 +85,9 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
       ? newUsersData
       : (await get(ref(database, 'newUsers'))).val() || {};
 
-  const ruleSetTexts = splitRawRulesToSetTexts(rawRules);
-  const nextSetPayloads = ruleSetTexts
-    .map((setText, index) => {
+  const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
+  const nextSetPayloads = ruleSetEntries
+    .map(({ text: setText, inputIndex }) => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
       if (parsedRuleGroups.length === 0) return null;
 
@@ -81,7 +100,8 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
 
       if (Object.keys(indexBuckets).length === 0) return null;
 
-      const ownerSetKey = `${normalizedAccessUserId}${SET_KEY_INDEX_SEPARATOR}${index + 1}`;
+      const ownerSetKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
+      if (!ownerSetKey) return null;
       return {
         setKey: ownerSetKey,
         indexBuckets,
@@ -178,10 +198,9 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
   const normalizedAccessUserId = String(accessUserId || '').trim();
   if (!normalizedAccessUserId) return null;
 
-  const ruleSetTexts = splitRawRulesToSetTexts(rawRules);
-  const ownerPrefix = `${normalizedAccessUserId}${SET_KEY_INDEX_SEPARATOR}`;
-  const setEntries = ruleSetTexts
-    .map((setText, index) => {
+  const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
+  const setEntries = ruleSetEntries
+    .map(({ text: setText, inputIndex }) => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
       if (!parsedRuleGroups.length) return null;
       const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
@@ -192,7 +211,8 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
       }, {});
       if (!Object.keys(indexBuckets).length) return null;
 
-      const setKey = `${ownerPrefix}${index + 1}`;
+      const setKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
+      if (!setKey) return null;
       const paths = Object.entries(indexBuckets).flatMap(([indexName, values]) =>
         values.map(value => `${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${value}`)
       );

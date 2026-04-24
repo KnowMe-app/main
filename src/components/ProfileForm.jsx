@@ -827,16 +827,20 @@ export const ProfileForm = ({
       const code = String(error?.code || '');
       if (code.includes('PERMISSION_DENIED')) {
         console.warn('Skipped additional access newUsers filter-set index rebuild due to permissions.', error);
+        const details = error?.message || String(error);
+        toast.error(
+          `Немає прав на запис у searchKeySets.\nПеревірте Firebase Rules для цього користувача.\n${details}`
+        );
       } else {
         console.error('Failed to update additional access newUsers filter-set index', error);
         const details = error?.message || String(error);
-        toast.error(`Не вдалося зберегти індексацію наборів фільтрів (${details})`);
+        toast.error(`Не вдалося зберегти індексацію наборів фільтрів.\n${details}`);
       }
     }
     Promise.resolve(handleSubmit(payload, overwrite, delCondition)).catch(error => {
       console.error('Failed to submit profile changes', error);
       const details = error?.message || String(error);
-      toast.error(`Не вдалося зберегти зміни профілю (${details})`);
+      toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
     });
   }, [handleSubmit, state?.userId]);
 

@@ -14,7 +14,16 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <PersistGate loading={null} persistor={persistor}>
         <BrowserRouter basename="/main">
           <App />
-          <Toaster />
+          <Toaster
+            toastOptions={{
+              style: {
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
+                maxWidth: 'min(92vw, 520px)',
+              },
+            }}
+          />
         </BrowserRouter>
       </PersistGate>
     </Provider>
