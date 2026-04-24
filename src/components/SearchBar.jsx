@@ -854,11 +854,18 @@ const SearchBar = ({
     Object.assign(acc, res);
   };
 
-  const runEqualToAllCardsSearch = async (rawQuery, isStaleRequest, resultMap = {}) => {
+  const runEqualToAllCardsSearch = async (
+    rawQuery,
+    isStaleRequest,
+    resultMap = {},
+    forcedEqualToKeys = null,
+  ) => {
     const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
-    const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
-      ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
-      : [];
+    const selectedEqualToKeys = Array.isArray(forcedEqualToKeys)
+      ? forcedEqualToKeys.filter(key => allEqualToKeys.includes(key))
+      : Array.isArray(searchOptions?.equalToKeys)
+        ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
+        : [];
     const equalToExecutionPlan = resolveEqualToExecutionKeys({
       allKeys: allEqualToKeys,
       selectedKeys: selectedEqualToKeys,
@@ -1347,81 +1354,49 @@ const SearchBar = ({
           return;
         }
 
-        const groupedSearchStrategies = [
-          ['searchId', parseSearchIdExact],
-          ['userId', parseUserId],
-          ['facebook', parseFacebookId],
-          ['instagram', parseInstagramId],
-          ['telegram', parseTelegramId],
-          ['email', parseEmail],
-          ['tiktok', parseTikTokLink],
-          ['phone', parsePhoneNumber],
-          ['vk', parseVk],
-          ['other', parseOtherContact],
-        ].filter(([key]) => {
-          if (groupedStrictKeySet) return groupedStrictKeySet.has(key);
-          return isSearchEnabled(key);
-        });
-
         const results = {};
         for (const val of values) {
-          let res = null;
-          const combinedPerValueResults = {};
-          let foundCombinedPerValue = false;
-          if (!isCombinedSearchMode && isSearchEnabled('partialUserId')) {
+          let found = false;
+          const perValueResults = {};
+
+          if (isSearchEnabled('partialUserId')) {
             const partialPerValueResult = await runPartialUserIdSearch(
               val,
               isStaleRequest,
+              perValueResults,
             );
             if (isStaleRequest()) return;
             if (partialPerValueResult.found) {
-              res = partialPerValueResult.results;
+              found = true;
             }
           }
 
-          for (const [key, parser] of groupedSearchStrategies) {
-            if (res && Object.keys(res).length > 0) {
-              break;
-            }
-            const parsedValue = parser(val);
-            if (!parsedValue) continue;
-
-            const groupedResult = await cachedSearch({ [key]: parsedValue });
-            if (isStaleRequest()) return;
-            if (groupedResult && Object.keys(groupedResult).length > 0) {
-              if (isCombinedSearchMode) {
-                foundCombinedPerValue = true;
-                mergeSearchResultMap(combinedPerValueResults, groupedResult);
-                continue;
-              }
-
-              res = groupedResult;
-              break;
-            }
-          }
-
-          if (isCombinedSearchMode) {
-            const equalToCombinedResult = await runEqualToAllCardsSearch(
+          if (isSearchEnabled('equalToAllCards')) {
+            const forcedEqualToKeys = groupedStrictKeySet
+              ? Array.from(groupedStrictKeySet)
+              : null;
+            const equalToResult = await runEqualToAllCardsSearch(
               val,
               isStaleRequest,
-              combinedPerValueResults,
+              perValueResults,
+              forcedEqualToKeys,
             );
             if (isStaleRequest()) return;
-            if (equalToCombinedResult.found) {
-              foundCombinedPerValue = true;
-            }
-
-            if (foundCombinedPerValue && Object.keys(combinedPerValueResults).length > 0) {
-              res = combinedPerValueResults;
+            if (equalToResult.found) {
+              found = true;
             }
           }
 
-          if (!res && isSearchEnabled('name')) {
-            res = await cachedSearch({ name: val });
+          if (!found && isSearchEnabled('name')) {
+            const nameResult = await cachedSearch({ name: val });
             if (isStaleRequest()) return;
+            if (nameResult && Object.keys(nameResult).length > 0) {
+              mergeSearchResultMap(perValueResults, nameResult);
+              found = true;
+            }
           }
 
-          if (!res || Object.keys(res).length === 0) {
+          if (!found || Object.keys(perValueResults).length === 0) {
             const fallbackSearchVal = isSearchEnabled('phone')
               ? parsePhoneNumber(val) || val
               : val;
@@ -1429,10 +1404,8 @@ const SearchBar = ({
               _notFound: true,
               searchVal: fallbackSearchVal,
             };
-          } else if ('userId' in res) {
-            results[res.userId] = res;
           } else {
-            Object.assign(results, res);
+            Object.assign(results, perValueResults);
           }
         }
         setUsers && setUsers(results);
