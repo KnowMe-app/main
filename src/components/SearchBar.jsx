@@ -965,7 +965,11 @@ const SearchBar = ({
   const processUserSearch = async (platform, parseFunction, inputData, options = {}) => {
     const trimmedInput = inputData.trim();
     const id = parseFunction(trimmedInput);
-    const { allowFallback = true, allowUkTrigger = false } = options;
+    const {
+      allowFallback = true,
+      allowUkTrigger = false,
+      continueOnMiss = false,
+    } = options;
 
     console.log('[SearchBar] Parser evaluation', {
       platform,
@@ -1175,6 +1179,7 @@ const SearchBar = ({
           });
         }
         setUserNotFound && setUserNotFound(true);
+        return !continueOnMiss;
       } else {
         setUserNotFound && setUserNotFound(false);
         notifySearchResult(result, finalRes, { preferredKeys: [platform] });
@@ -1183,8 +1188,8 @@ const SearchBar = ({
         } else {
           setUsers && setUsers(finalRes);
         }
+        return true;
       }
-      return true;
     }
     return false;
   };
@@ -1435,7 +1440,9 @@ const SearchBar = ({
     if (
       looksLikeExactUserId &&
       isSearchEnabled('userId') &&
-      await processUserSearch('userId', parseUserId, rawQuery)
+      await processUserSearch('userId', parseUserId, rawQuery, {
+        continueOnMiss: true,
+      })
     ) return;
 
     if (
