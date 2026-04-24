@@ -8,6 +8,7 @@ import { fieldDeliveryInfo } from './fieldDeliveryInfo';
 import { fieldWriter } from './fieldWritter';
 import { fieldContacts } from './fieldContacts';
 import { fieldGetInTouch } from './fieldGetInTouch';
+import { handleChange } from './actions';
 import { fieldRole } from './fieldRole';
 import { FieldLastCycle } from './fieldLastCycle';
 import { FieldComment } from './FieldComment';
@@ -237,13 +238,35 @@ export const renderTopBlock = (
                 { ...zoneActionButtonStyle, backgroundColor: '#d32f2f', color: '#fff' }
               )}
             {idx === 1 && (
-                <BtnDislike
+              <BtnDislike
                 title="Дизлайк"
                 ariaLabel="Дизлайк"
                 userId={cardData.userId}
                 userData={cardData}
                 dislikeUsers={dislikeUsers}
                 setDislikeUsers={setDislikeUsers}
+                onDislikeAdded={() =>
+                  handleChange(
+                    setUsers,
+                    setState,
+                    cardData.userId,
+                    'getInTouch',
+                    '2099-99-99',
+                    true,
+                    { currentFilter, isDateInRange, ...submitOptions },
+                  )
+                }
+                onDislikeRemoved={() =>
+                  handleChange(
+                    setUsers,
+                    setState,
+                    cardData.userId,
+                    'getInTouch',
+                    '',
+                    true,
+                    { currentFilter, isDateInRange, ...submitOptions },
+                  )
+                }
                 favoriteUsers={favoriteUsers}
                 setFavoriteUsers={setFavoriteUsers}
                 customStyle={{
@@ -264,6 +287,17 @@ export const renderTopBlock = (
                 setFavoriteUsers={setFavoriteUsers}
                 dislikeUsers={dislikeUsers}
                 setDislikeUsers={setDislikeUsers}
+                onDislikeRemoved={() =>
+                  handleChange(
+                    setUsers,
+                    setState,
+                    cardData.userId,
+                    'getInTouch',
+                    '',
+                    true,
+                    { currentFilter, isDateInRange, ...submitOptions },
+                  )
+                }
                 customStyle={{
                   ...zoneActionButtonStyle,
                   backgroundColor: '#f9a825',

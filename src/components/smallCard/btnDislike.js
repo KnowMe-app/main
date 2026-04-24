@@ -16,6 +16,8 @@ export const BtnDislike = ({
   userData = {},
   dislikeUsers = {},
   setDislikeUsers,
+  onDislikeAdded,
+  onDislikeRemoved,
   onRemove,
   favoriteUsers = {},
   setFavoriteUsers,
@@ -41,6 +43,9 @@ export const BtnDislike = ({
         setDislikeUsers(updated);
         setDislike(userId, false);
         removeCardFromList(userId, 'dislike');
+        if (typeof onDislikeRemoved === 'function') {
+          await onDislikeRemoved(userId);
+        }
         if (onRemove) onRemove(userId);
       } catch (error) {
         console.error('Failed to remove dislike:', error);
@@ -52,6 +57,9 @@ export const BtnDislike = ({
         setDislikeUsers(updated);
         setDislike(userId, true);
         cacheDislikedUsers({ [userId]: userData });
+        if (typeof onDislikeAdded === 'function') {
+          await onDislikeAdded(userId);
+        }
         if (favoriteUsers[userId]) {
           try {
             await removeFavoriteUser(userId);
