@@ -27,7 +27,7 @@ import {
 } from 'utils/additionalAccessRules';
 import {
   buildNewUsersFilterSetIndex,
-  makeAdditionalRulesSetKey,
+  getIndexedNewUsersIdsByRules,
 } from 'utils/newUsersFilterSetsIndex';
 import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
 
@@ -91,7 +91,6 @@ const nestedIndentStyle = {
 
 const ADDITIONAL_ACCESS_FIELD = 'additionalAccessRules';
 const SEARCH_KEY_ROOT = 'searchKey';
-const SEARCH_KEY_SETS_ROOT = 'searchKeySet';
 const ADDITIONAL_RULE_LABELS = {
   age: 'Вік',
   csection: 'КС',
@@ -637,26 +636,17 @@ export const ProfileForm = ({
 
       setIsLoadingAvailableCards(true);
       try {
-        const indexedSetKey = makeAdditionalRulesSetKey(previewAdditionalRulesText);
-        if (indexedSetKey) {
-          const indexedPayload = await getCachedSearchKeyPayload(
-            `${SEARCH_KEY_SETS_ROOT}/${indexedSetKey}`,
-            async () => {
-              const indexedSnapshot = await get(refDb(database, `${SEARCH_KEY_SETS_ROOT}/${indexedSetKey}`));
-              return {
-                exists: indexedSnapshot.exists(),
-                value: indexedSnapshot.exists() ? indexedSnapshot.val() || {} : null,
-              };
-            }
-          );
+        const accessUserId = String(state?.userId || '').trim();
+        const indexed = await getIndexedNewUsersIdsByRules({
+          rawRules: previewAdditionalRulesText,
+          accessUserId,
+        });
 
-          if (indexedPayload?.exists) {
-            const indexedUserIds = Object.keys(indexedPayload.value || {});
-            if (!cancelled) {
-              setAvailableCardsCount(indexedUserIds.length);
-            }
-            return;
+        if (indexed?.userIds) {
+          if (!cancelled) {
+            setAvailableCardsCount(indexed.userIds.length);
           }
+          return;
         }
 
         const matchedIds = new Set();
@@ -792,6 +782,7 @@ export const ProfileForm = ({
   }, [
     previewAdditionalRulesText,
     showAdditionalRulesModal,
+    state?.userId,
   ]);
 
   useEffect(() => {
@@ -826,8 +817,10 @@ export const ProfileForm = ({
     try {
       const rawRules = payload?.[ADDITIONAL_ACCESS_FIELD];
       if (rawRules !== undefined) {
+        const accessUserId = String(payload?.userId || state?.userId || '').trim();
         await buildNewUsersFilterSetIndex({
           rawRules,
+          accessUserId,
         });
       }
     } catch (error) {
@@ -845,7 +838,7 @@ export const ProfileForm = ({
       const details = error?.message || String(error);
       toast.error(`Не вдалося зберегти зміни профілю (${details})`);
     });
-  }, [handleSubmit]);
+  }, [handleSubmit, state?.userId]);
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
