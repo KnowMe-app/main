@@ -38,6 +38,7 @@ export const BtnDislike = ({
   const activeColor = color.reactionDislike;
   const inactiveOpacity = 0.7;
   const activeIconColor = '#fff';
+  const inactiveIconColor = customTextColor || color.reactionIdleIcon;
   const activeBorderColor = '#fff';
 
   const toggleDislike = async () => {
@@ -106,7 +107,7 @@ export const BtnDislike = ({
         border: isDisliked
           ? `4px solid ${activeBorderColor}`
           : customBorder || `2px solid ${color.reactionIdleBorder}`,
-        color: isDisliked ? activeIconColor : customTextColor || color.reactionIdleIcon,
+        color: isDisliked ? activeIconColor : inactiveIconColor,
         boxShadow: isDisliked
           ? `0 0 0 2px ${activeColor}`
           : customBoxShadow || 'none',
@@ -125,7 +126,7 @@ export const BtnDislike = ({
         toggleDislike();
       }}
     >
-      <FaTimes size={iconSize} color={isDisliked ? activeIconColor : color.reactionIdleIcon} />
+      <FaTimes size={iconSize} color={isDisliked ? activeIconColor : inactiveIconColor} />
     </button>
   );
 };

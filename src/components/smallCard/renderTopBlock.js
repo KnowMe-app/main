@@ -273,6 +273,7 @@ export const renderTopBlock = (
                   ...zoneActionButtonStyle,
                   backgroundColor: '#ef6c00',
                   border: 'none',
+                  color: '#fff',
                 }}
                 iconSize={18}
               />
@@ -302,6 +303,7 @@ export const renderTopBlock = (
                   ...zoneActionButtonStyle,
                   backgroundColor: '#f9a825',
                   border: 'none',
+                  color: '#fff',
                 }}
                 iconSize={18}
               />

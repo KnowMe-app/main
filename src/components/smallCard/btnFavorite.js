@@ -37,6 +37,7 @@ export const BtnFavorite = ({
   const activeColor = color.reactionLike;
   const inactiveOpacity = 0.7;
   const activeIconColor = '#fff';
+  const inactiveIconColor = customTextColor || color.reactionIdleIcon;
   const activeBorderColor = '#fff';
 
   const toggleFavorite = async () => {
@@ -101,7 +102,7 @@ export const BtnFavorite = ({
         border: isFavorite
           ? `4px solid ${activeBorderColor}`
           : customBorder || `2px solid ${color.reactionIdleBorder}`,
-        color: isFavorite ? activeIconColor : customTextColor || color.reactionIdleIcon,
+        color: isFavorite ? activeIconColor : inactiveIconColor,
         boxShadow: isFavorite
           ? `0 0 0 2px ${activeColor}`
           : customBoxShadow || 'none',
@@ -123,7 +124,7 @@ export const BtnFavorite = ({
       {isFavorite ? (
         <FaHeart size={iconSize} color={activeIconColor} />
       ) : (
-        <FaRegHeart size={iconSize} color={color.reactionIdleIcon} />
+        <FaRegHeart size={iconSize} color={inactiveIconColor} />
       )}
     </button>
   );
