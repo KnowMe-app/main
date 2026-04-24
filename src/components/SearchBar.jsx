@@ -1031,6 +1031,27 @@ const SearchBar = ({
     }
 
     if (id) {
+      if (platform === 'userId') {
+        const cachedCardByUserId = getCard(id);
+        if (cachedCardByUserId) {
+          const userIdCacheKey = getCacheKey(
+            'search',
+            normalizeQueryKey(`userId=${id}`),
+          );
+          setIdsForQuery(userIdCacheKey, [id]);
+          setUserNotFound && setUserNotFound(false);
+          emitSearchLabel({ userId: id }, {
+            mode: platform,
+            stage: 'local-card-cache',
+          });
+          notifySearchResult({ userId: id }, cachedCardByUserId, {
+            preferredKeys: ['userId'],
+          });
+          setState && setState(cachedCardByUserId);
+          return true;
+        }
+      }
+
       const hasCache = loadCachedResult(platform, id);
       const freshCache = hasCache && isCacheFresh(platform, id);
       const result = { [platform]: id };
