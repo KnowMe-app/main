@@ -1431,6 +1431,13 @@ const SearchBar = ({
       }
     }
 
+    const looksLikeExactUserId = Boolean(parseUserId(rawQuery));
+    if (
+      looksLikeExactUserId &&
+      isSearchEnabled('userId') &&
+      await processUserSearch('userId', parseUserId, rawQuery)
+    ) return;
+
     if (
       isSearchEnabled('searchId') &&
       await processUserSearch('searchId', parseSearchIdExact, rawQuery)
@@ -1589,6 +1596,7 @@ const SearchBar = ({
 
 
     if (
+      !looksLikeExactUserId &&
       isSearchEnabled('userId') &&
       await processUserSearch('userId', parseUserId, rawQuery)
     ) return;
