@@ -93,6 +93,21 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
     })
     .filter(Boolean);
 
+  const expectedBySetIndexValue = nextSetPayloads.reduce((acc, setPayload) => {
+    const setMap = {};
+    Object.entries(setPayload.indexBuckets || {}).forEach(([indexName, values]) => {
+      const valueMap = {};
+      values.forEach(value => {
+        valueMap[value] = new Set(Object.keys(setPayload.userIds || {}));
+      });
+      if (Object.keys(valueMap).length > 0) {
+        setMap[indexName] = valueMap;
+      }
+    });
+    acc[setPayload.setKey] = setMap;
+    return acc;
+  }, {});
+
   const rootSnap = await get(ref(database, SEARCH_KEY_SETS_ROOT));
   const rootMap = rootSnap.exists() ? rootSnap.val() || {} : {};
   const ownerPrefix = `${encodeSetKeyPayload(normalizedAccessUserId)}${SET_KEY_INDEX_SEPARATOR}`;
@@ -112,10 +127,10 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
     const setPayload = rootMap?.[setKey];
     if (!setPayload || typeof setPayload !== 'object') return;
 
-    const expectedIndexes = nextSetPayloads.find(item => item.setKey === setKey)?.indexBuckets || {};
+    const expectedIndexes = expectedBySetIndexValue[setKey] || {};
     Object.keys(setPayload).forEach(indexName => {
-      const expectedValues = new Set(expectedIndexes[indexName] || []);
-      if (!expectedValues.size) {
+      const expectedValues = expectedIndexes[indexName] || {};
+      if (!Object.keys(expectedValues).length) {
         writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}`] = null;
         return;
       }
@@ -123,9 +138,19 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
       const indexPayload = setPayload[indexName];
       if (!indexPayload || typeof indexPayload !== 'object') return;
       Object.keys(indexPayload).forEach(valueKey => {
-        if (!expectedValues.has(valueKey)) {
+        const expectedUserIds = expectedValues[valueKey];
+        if (!expectedUserIds) {
           writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${valueKey}`] = null;
+          return;
         }
+
+        const valuePayload = indexPayload[valueKey];
+        if (!valuePayload || typeof valuePayload !== 'object') return;
+        Object.keys(valuePayload).forEach(userId => {
+          if (!expectedUserIds.has(userId)) {
+            writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${valueKey}/${userId}`] = null;
+          }
+        });
       });
     });
   });
@@ -133,7 +158,9 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
   nextSetPayloads.forEach(({ setKey, indexBuckets, userIds }) => {
     Object.entries(indexBuckets).forEach(([indexName, values]) => {
       values.forEach(value => {
-        writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${value}`] = userIds;
+        Object.keys(userIds || {}).forEach(userId => {
+          writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${value}/${userId}`] = true;
+        });
       });
     });
   });
