@@ -1392,7 +1392,9 @@ const SearchBar = ({
           }
 
           if (!res || Object.keys(res).length === 0) {
-            const fallbackSearchVal = parsePhoneNumber(val) || val;
+            const fallbackSearchVal = isSearchEnabled('phone')
+              ? parsePhoneNumber(val) || val
+              : val;
             results[`new_${fallbackSearchVal}`] = {
               _notFound: true,
               searchVal: fallbackSearchVal,
