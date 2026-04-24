@@ -651,6 +651,7 @@ const SearchBar = ({
   dislikeUsers = {},
   enabledSearchKeys,
   searchOptions,
+  searchHistoryLimit = 5,
 }) => {
   const activeSearchRequestRef = useRef(0);
   const [internalSearch, setInternalSearch] = useState(
@@ -764,7 +765,7 @@ const SearchBar = ({
       const newHistory = [
         trimmedVal,
         ...prev.filter(v => v !== trimmedVal),
-      ].slice(0, 5);
+      ].slice(0, searchHistoryLimit);
       saveHistoryCache('queries', newHistory);
       return newHistory;
     });

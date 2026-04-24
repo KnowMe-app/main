@@ -3652,6 +3652,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               autoOtherFallback: shouldAutoRunOtherFallback,
               enabledSearchKeys: effectiveEnabledSearchKeys,
             }}
+            searchHistoryLimit={15}
           />
           <SearchSettingsButton
             type="button"
