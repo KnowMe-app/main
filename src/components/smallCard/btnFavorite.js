@@ -28,6 +28,7 @@ export const BtnFavorite = ({
   const isFavorite = !!favoriteUsers[userId];
   const activeColor = color.reactionLike;
   const inactiveOpacity = 0.7;
+  const activeIconColor = '#fff';
 
   const toggleFavorite = async () => {
     if (!auth.currentUser) {
@@ -84,16 +85,18 @@ export const BtnFavorite = ({
         width: '35px',
         height: '35px',
         borderRadius: '50%',
-        background: isFavorite ? color.reactionLikeBg : color.accent5,
-        border: `2px solid ${isFavorite ? activeColor : color.reactionIdleBorder}`,
-        color: isFavorite ? activeColor : color.reactionIdleIcon,
+        ...customStyle,
+        background: isFavorite ? activeColor : customStyle.background || color.accent5,
+        border: isFavorite
+          ? `4px solid ${activeColor}`
+          : customStyle.border || `2px solid ${color.reactionIdleBorder}`,
+        color: isFavorite ? activeIconColor : customStyle.color || color.reactionIdleIcon,
         opacity: isFavorite ? 1 : inactiveOpacity,
         zIndex: 1,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        ...customStyle,
       }}
       title={title}
       aria-label={ariaLabel}
@@ -104,7 +107,7 @@ export const BtnFavorite = ({
       }}
     >
       {isFavorite ? (
-        <FaHeart size={iconSize} color={activeColor} />
+        <FaHeart size={iconSize} color={activeIconColor} />
       ) : (
         <FaRegHeart size={iconSize} color={color.reactionIdleIcon} />
       )}
