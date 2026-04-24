@@ -170,19 +170,22 @@ const fetchUsersAndNewUsersByIds = async (ids, batchSize = FETCH_USERS_BY_IDS_BA
   return result;
 };
 
-const fetchAdditionalNewUsersBySearchIndex = async ({ parsedRuleGroups, rawRules }) => {
+const fetchAdditionalNewUsersBySearchIndex = async ({ parsedRuleGroups, rawRules, accessUserId }) => {
   if (!Array.isArray(parsedRuleGroups) || parsedRuleGroups.length === 0) return [];
 
   try {
     let indexed = await getIndexedNewUsersIdsByRules({
       rawRules,
+      accessUserId,
     });
     if (!indexed) {
       await buildNewUsersFilterSetIndex({
         rawRules,
+        accessUserId,
       });
       indexed = await getIndexedNewUsersIdsByRules({
         rawRules,
+        accessUserId,
       });
     }
     if (indexed?.userIds) {
@@ -1966,6 +1969,7 @@ const Matching = () => {
         const loaded = await fetchAdditionalNewUsersBySearchIndex({
           parsedRuleGroups: parsedAdditionalAccessRules,
           rawRules: currentAdditionalAccessRules,
+          accessUserId: ownerId,
         });
 
         if (!cancelled) {
@@ -1992,7 +1996,7 @@ const Matching = () => {
     return () => {
       cancelled = true;
     };
-  }, [parsedAdditionalAccessRules, currentAdditionalAccessRules, collectionSource]);
+  }, [parsedAdditionalAccessRules, currentAdditionalAccessRules, collectionSource, ownerId]);
 
   useEffect(() => {
     let cancelled = false;
