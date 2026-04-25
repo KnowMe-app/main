@@ -574,6 +574,7 @@ export const ProfileForm = ({
   const [previewAdditionalRulesText, setPreviewAdditionalRulesText] = useState('');
   const [availableCardsCount, setAvailableCardsCount] = useState(0);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
+  const [isIndexingAdditionalRules, setIsIndexingAdditionalRules] = useState(false);
   const matchedUserIdsByInputIndexRef = useRef({});
   const matchedRuleTextByInputIndexRef = useRef({});
   const matchedRuleCacheAccessUserIdRef = useRef('');
@@ -960,6 +961,90 @@ export const ProfileForm = ({
     setAdditionalRuleBuilder(prev => prev.filter((_, ruleIndex) => ruleIndex !== index));
   };
 
+  const indexAdditionalRulesForUser = useCallback(async rawRules => {
+    const accessUserId = String(state?.userId || '').trim();
+    if (!accessUserId) {
+      toast.error('Не знайдено userId для індексації');
+      return null;
+    }
+
+    const ruleInputs = Array.isArray(rawRules)
+      ? rawRules.map(item => String(item || '').trim()).filter(Boolean)
+      : String(rawRules || '')
+        .split(/\r?\n\s*\r?\n+/)
+        .map(item => item.trim())
+        .filter(Boolean);
+    if (!ruleInputs.length) {
+      toast.error('Немає правил для індексації');
+      return null;
+    }
+
+    setIsIndexingAdditionalRules(true);
+    const toastId = 'additional-rules-indexing';
+    toast.loading('Індексація searchKeySets...', { id: toastId });
+
+    try {
+      const newUsersSnapshot = await get(refDb(database, 'newUsers'));
+      const newUsersMap = newUsersSnapshot.exists() ? newUsersSnapshot.val() || {} : {};
+      const matchedUserIdsByInputIndex = {};
+
+      ruleInputs.forEach((rulesText, index) => {
+        const inputIndex = index + 1;
+        const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
+        if (!parsedRuleGroups.length) return;
+
+        const matchedUserIds = Object.entries(newUsersMap)
+          .filter(([userId, userData]) =>
+            isUserAllowedByAnyAdditionalAccessRule(
+              { userId, ...(userData && typeof userData === 'object' ? userData : {}) },
+              parsedRuleGroups
+            )
+          )
+          .map(([userId]) => userId);
+
+        matchedUserIdsByInputIndex[inputIndex] = matchedUserIds;
+      });
+
+      const matchedUserIdsBySetKey = buildMatchedUserIdsBySetKey(
+        rawRules,
+        accessUserId,
+        matchedUserIdsByInputIndex
+      );
+      const indexResult = await buildNewUsersFilterSetIndex({
+        rawRules,
+        accessUserId,
+        newUsersData: newUsersMap,
+        matchedUserIdsBySetKey,
+      });
+
+      if (indexResult && Number(indexResult.writesCount || 0) === 0) {
+        toast(
+          'searchKeySets не оновлено: немає збігів newUsers для обраних фільтрів або не знайдено валідних правил.',
+          { id: toastId }
+        );
+      } else {
+        const setsCount = Number(indexResult?.setKeys?.length || 0);
+        toast.success(`Індексацію searchKeySets оновлено (${setsCount} наборів).`, { id: toastId });
+      }
+
+      return indexResult;
+    } catch (error) {
+      const code = String(error?.code || '');
+      const details = error?.message || String(error);
+      if (code.includes('PERMISSION_DENIED')) {
+        toast.error(
+          `Немає прав на запис у searchKeySets.\nПеревірте Firebase Rules для цього користувача.\n${details}`,
+          { id: toastId }
+        );
+      } else {
+        toast.error(`Не вдалося виконати індексацію наборів фільтрів.\n${details}`, { id: toastId });
+      }
+      return null;
+    } finally {
+      setIsIndexingAdditionalRules(false);
+    }
+  }, [buildMatchedUserIdsBySetKey, state?.userId]);
+
   const applyAdditionalRulesFromBuilder = async () => {
     const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
     if (!rulesText.trim()) {
@@ -1008,6 +1093,32 @@ export const ProfileForm = ({
         .filter(Boolean)
         .join('\n\n');
     });
+  };
+
+  const indexAdditionalRulesFromBuilder = async () => {
+    const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
+    if (!rulesText.trim()) {
+      toast.error('Оберіть щонайменше один фільтр перед індексацією');
+      return;
+    }
+
+    const currentValue = state?.[ADDITIONAL_ACCESS_FIELD];
+    const updatedValue = Array.isArray(currentValue)
+      ? currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? rulesText : item))
+      : rulesText;
+
+    setState(prevState => ({
+      ...prevState,
+      [ADDITIONAL_ACCESS_FIELD]: updatedValue,
+    }));
+    setPreviewAdditionalRulesText(
+      (Array.isArray(updatedValue) ? updatedValue : additionalRulesTextToInputs(updatedValue))
+        .map(item => String(item || '').trim())
+        .filter(Boolean)
+        .join('\n\n')
+    );
+
+    await indexAdditionalRulesForUser(updatedValue);
   };
 
   const handleCombinedAdditionalRulesChange = event => {
@@ -2070,6 +2181,13 @@ ${entries.join('\n')}`;
             <AdditionalRuleActions>
               <button type="button" onClick={addEmptyAdditionalFilter}>+ Фільтр</button>
               <button type="button" onClick={applyAdditionalRulesFromBuilder}>Застосувати</button>
+              <button
+                type="button"
+                onClick={indexAdditionalRulesFromBuilder}
+                disabled={isIndexingAdditionalRules}
+              >
+                {isIndexingAdditionalRules ? 'Індексація...' : 'Індексувати'}
+              </button>
             </AdditionalRuleActions>
 
             <AdditionalRulePreview
