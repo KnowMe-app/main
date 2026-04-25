@@ -959,6 +959,48 @@ export const ProfileForm = ({
     setAdditionalRuleBuilder(prev => prev.filter((_, ruleIndex) => ruleIndex !== index));
   };
 
+  const handleRemoveAdditionalAccessRuleInput = useCallback((removeIndex = null, action = 'clear') => {
+    const currentInputs = additionalRulesInputs.map(item => String(item || '').trim()).filter(Boolean);
+    const shouldRemoveByIndex = Number.isInteger(removeIndex);
+    const nextInputs = shouldRemoveByIndex
+      ? currentInputs.filter((_, idx) => idx !== removeIndex)
+      : [];
+    const nextActiveIndex = Math.min(
+      shouldRemoveByIndex ? removeIndex : 0,
+      Math.max(nextInputs.length - 1, 0)
+    );
+
+    setActiveAdditionalRuleInputIndex(nextActiveIndex);
+    setPreviewAdditionalRulesText(nextInputs.join('\n\n'));
+
+    setState(prevState => {
+      const updated = { ...prevState };
+      const previousValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
+      const removedValue = shouldRemoveByIndex
+        ? Array.isArray(previousValue)
+          ? previousValue[removeIndex]
+          : previousValue
+        : previousValue;
+
+      if (nextInputs.length === 0) {
+        delete updated[ADDITIONAL_ACCESS_FIELD];
+      } else if (nextInputs.length === 1) {
+        updated[ADDITIONAL_ACCESS_FIELD] = nextInputs[0];
+      } else {
+        updated[ADDITIONAL_ACCESS_FIELD] = nextInputs;
+      }
+
+      matchedUserIdsByInputIndexRef.current = {};
+      matchedRuleTextByInputIndexRef.current = {};
+      const delCondition =
+        action === 'del' || removedValue !== undefined
+          ? { [ADDITIONAL_ACCESS_FIELD]: removedValue }
+          : undefined;
+      submitWithNormalization(updated, 'overwrite', delCondition);
+      return updated;
+    });
+  }, [additionalRulesInputs, setState, submitWithNormalization]);
+
   const indexAdditionalRulesForUser = useCallback(async rawRules => {
     const accessUserId = String(state?.userId || '').trim();
     if (!accessUserId) {
@@ -1698,12 +1740,20 @@ ${entries.join('\n')}`;
     if (!normalizedPath) return false;
 
     if (!normalizedPath.includes('.')) {
+      if (normalizedPath === ADDITIONAL_ACCESS_FIELD) {
+        handleRemoveAdditionalAccessRuleInput(null, 'del');
+        return true;
+      }
       handleDelKeyValue(normalizedPath);
       return true;
     }
 
     const [fieldName, nestedIndex] = normalizedPath.split('.');
     if (/^\d+$/.test(nestedIndex)) {
+      if (fieldName === ADDITIONAL_ACCESS_FIELD) {
+        handleRemoveAdditionalAccessRuleInput(Number(nestedIndex), 'clear');
+        return true;
+      }
       handleClear(fieldName, Number(nestedIndex));
       return true;
     }
@@ -1788,7 +1838,13 @@ ${entries.join('\n')}`;
                           <ClearButton
                           type="button"
                           onMouseDown={e => e.preventDefault()}
-                          onClick={() => handleClear(field.name, idx)}
+                          onClick={() => {
+                            if (field.name === ADDITIONAL_ACCESS_FIELD) {
+                              handleRemoveAdditionalAccessRuleInput(idx, 'clear');
+                              return;
+                            }
+                            handleClear(field.name, idx);
+                          }}
                         >
                           &times;
                         </ClearButton>
@@ -1925,7 +1981,13 @@ ${entries.join('\n')}`;
                     <ClearButton
                       type="button"
                       onMouseDown={e => e.preventDefault()}
-                      onClick={() => handleClear(field.name)}
+                      onClick={() => {
+                        if (field.name === ADDITIONAL_ACCESS_FIELD) {
+                          handleRemoveAdditionalAccessRuleInput(null, 'clear');
+                          return;
+                        }
+                        handleClear(field.name);
+                      }}
                     >
                       &times;
                     </ClearButton>
@@ -1933,7 +1995,13 @@ ${entries.join('\n')}`;
                   {field.name !== 'lastAction' && state[field.name] && (
                     <DelKeyValueBTN
                       onMouseDown={e => e.preventDefault()}
-                      onClick={() => handleDelKeyValue(field.name)}
+                      onClick={() => {
+                        if (field.name === ADDITIONAL_ACCESS_FIELD) {
+                          handleRemoveAdditionalAccessRuleInput(null, 'del');
+                          return;
+                        }
+                        handleDelKeyValue(field.name);
+                      }}
                     >
                       del
                     </DelKeyValueBTN>
