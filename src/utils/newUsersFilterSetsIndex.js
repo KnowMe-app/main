@@ -60,14 +60,28 @@ const parseRawRulesToSetEntries = rawRules => {
     .filter(entry => Boolean(entry.text));
 };
 
-export const makeAdditionalRulesSetKey = (rawRules, accessUserId = '', setIndex = 1) => {
+const hashRuleText = rulesText => {
+  const source = String(rulesText || '').trim();
+  if (!source) return '';
+
+  let hash = 5381;
+  for (let idx = 0; idx < source.length; idx += 1) {
+    hash = (hash * 33) ^ source.charCodeAt(idx);
+  }
+
+  return Math.abs(hash >>> 0).toString(36);
+};
+
+export const makeAdditionalRulesSetKey = (rawRules, accessUserId = '') => {
   const normalizedOwnerId = String(accessUserId || '').trim();
   if (!normalizedOwnerId) return '';
 
-  const normalizedSetIndex = Number.isFinite(Number(setIndex)) ? Math.max(1, Number(setIndex)) : 1;
   const rulesText = String(rawRules || '').trim();
   if (!rulesText) return '';
-  return `${normalizedOwnerId}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}`;
+  const rulesHash = hashRuleText(rulesText);
+  if (!rulesHash) return '';
+
+  return `${normalizedOwnerId}${SET_KEY_INDEX_SEPARATOR}${rulesHash}`;
 };
 
 export const decodeAdditionalRulesSetKey = encodedSetKey => {
@@ -78,12 +92,8 @@ export const decodeAdditionalRulesSetKey = encodedSetKey => {
   if (separatorIndex <= 0) return '';
 
   const ownerId = raw.slice(0, separatorIndex);
-  const setIndexToken = raw.slice(separatorIndex + 1);
-  const numericIndex = Number.parseInt(setIndexToken, 10);
-  const normalizedSetIndex = Number.isFinite(numericIndex) && numericIndex > 0 ? numericIndex : 1;
-
   if (!ownerId) return '';
-  return `${ownerId}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}`;
+  return raw;
 };
 
 const mapMatchingIdsByRules = (newUsersData, parsedRuleGroups) => {
