@@ -818,15 +818,10 @@ export const ProfileForm = ({
       const rawRules = payload?.[ADDITIONAL_ACCESS_FIELD];
       if (rawRules !== undefined) {
         const accessUserId = String(payload?.userId || state?.userId || '').trim();
-        const indexResult = await buildNewUsersFilterSetIndex({
+        await buildNewUsersFilterSetIndex({
           rawRules,
           accessUserId,
         });
-        if (indexResult && Number(indexResult.writesCount || 0) === 0) {
-          toast(
-            'searchKeySets не оновлено: немає збігів newUsers для обраних фільтрів або не знайдено валідних правил.'
-          );
-        }
       }
     } catch (error) {
       const code = String(error?.code || '');
