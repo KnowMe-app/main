@@ -22,3 +22,42 @@ export const getCachedSearchKeyPayload = async (path, loader) => {
   saveCache(normalizedPath, loaded);
   return loaded;
 };
+
+const normalizeRulesText = rawRules =>
+  String(rawRules || '')
+    .replace(/\r\n/g, '\n')
+    .trim();
+
+export const buildAdditionalRulesCacheKey = ({ rawRules, accessUserId }) => {
+  const normalizedRules = normalizeRulesText(rawRules);
+  const normalizedAccessUserId = String(accessUserId || '').trim() || 'anonymous';
+  if (!normalizedRules) return null;
+  return `additionalRulesPreview:${normalizedAccessUserId}:${encodeURIComponent(normalizedRules)}`;
+};
+
+export const getCachedAdditionalRulesPreview = ({ rawRules, accessUserId }) => {
+  const cacheKey = buildAdditionalRulesCacheKey({ rawRules, accessUserId });
+  if (!cacheKey) return null;
+  const cached = loadCache(cacheKey);
+  if (!cached || typeof cached !== 'object') return null;
+
+  const userIds = Array.isArray(cached.userIds) ? cached.userIds.filter(Boolean) : [];
+  const count = Number.isFinite(cached.count) ? cached.count : userIds.length;
+  return {
+    count,
+    userIds,
+  };
+};
+
+export const saveCachedAdditionalRulesPreview = ({ rawRules, accessUserId, count, userIds }) => {
+  const cacheKey = buildAdditionalRulesCacheKey({ rawRules, accessUserId });
+  if (!cacheKey) return;
+
+  const normalizedIds = Array.isArray(userIds) ? [...new Set(userIds.filter(Boolean))] : [];
+  const normalizedCount = Number.isFinite(count) ? count : normalizedIds.length;
+
+  saveCache(cacheKey, {
+    count: normalizedCount,
+    userIds: normalizedIds,
+  });
+};
