@@ -26,6 +26,7 @@ import {
   resolveAdditionalAccessSearchKeyBuckets,
 } from 'utils/additionalAccessRules';
 import {
+  buildSearchKeySetIndexFromMatchedUsers,
   buildNewUsersFilterSetIndex,
   getIndexedNewUsersIdsByRules,
   makeAdditionalRulesSetKey,
@@ -894,10 +895,8 @@ export const ProfileForm = ({
           accessUserId,
           matchedUserIdsBySetKey,
         });
-        if (indexResult && Number(indexResult.writesCount || 0) === 0) {
-          toast(
-            'searchKeySets не оновлено: немає збігів newUsers для обраних фільтрів або не знайдено валідних правил.'
-          );
+        if (indexResult && Number(indexResult.writesCount || 0) === 0 && Number(indexResult?.setKeys?.length || 0) === 0) {
+          toast('searchKeySets не оновлено: не знайдено валідних правил.');
         }
       }
     } catch (error) {
@@ -990,6 +989,13 @@ export const ProfileForm = ({
 
       ruleInputs.forEach((rulesText, index) => {
         const inputIndex = index + 1;
+        const cachedRuleText = String(matchedRuleTextByInputIndexRef.current?.[inputIndex] || '').trim();
+        const cachedUserIds = matchedUserIdsByInputIndexRef.current?.[inputIndex];
+        if (cachedRuleText && cachedRuleText === rulesText && Array.isArray(cachedUserIds)) {
+          matchedUserIdsByInputIndex[inputIndex] = cachedUserIds;
+          return;
+        }
+
         const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
         if (!parsedRuleGroups.length) return;
 
@@ -1010,21 +1016,28 @@ export const ProfileForm = ({
         accessUserId,
         matchedUserIdsByInputIndex
       );
-      const indexResult = await buildNewUsersFilterSetIndex({
+      matchedRuleTextByInputIndexRef.current = ruleInputs.reduce((acc, rulesText, idx) => {
+        acc[idx + 1] = rulesText;
+        return acc;
+      }, {});
+      matchedRuleCacheAccessUserIdRef.current = accessUserId;
+      matchedUserIdsByInputIndexRef.current = {
+        ...matchedUserIdsByInputIndexRef.current,
+        ...matchedUserIdsByInputIndex,
+      };
+      const indexResult = await buildSearchKeySetIndexFromMatchedUsers({
         rawRules,
         accessUserId,
         newUsersData: newUsersMap,
         matchedUserIdsBySetKey,
       });
 
-      if (indexResult && Number(indexResult.writesCount || 0) === 0) {
-        toast(
-          'searchKeySets не оновлено: немає збігів newUsers для обраних фільтрів або не знайдено валідних правил.',
-          { id: toastId }
-        );
+      const setsCount = Number(indexResult?.setKeys?.length || 0);
+      const matchedCount = Number(indexResult?.userIds?.length || 0);
+      if (setsCount === 0) {
+        toast('searchKeySets не оновлено: не знайдено валідних правил.', { id: toastId });
       } else {
-        const setsCount = Number(indexResult?.setKeys?.length || 0);
-        toast.success(`Індексацію searchKeySets оновлено (${setsCount} наборів).`, { id: toastId });
+        toast.success(`Індексацію searchKeySets оновлено (${setsCount} наборів, ${matchedCount} карток).`, { id: toastId });
       }
 
       return indexResult;

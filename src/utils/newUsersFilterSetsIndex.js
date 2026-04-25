@@ -1,5 +1,17 @@
 import { get, ref, remove, update } from 'firebase/database';
-import { database } from 'components/config';
+import {
+  createAgeSearchKeyIndexInCollection,
+  createContactSearchKeyIndexInCollection,
+  createCsectionSearchKeyIndexInCollection,
+  createFieldCountSearchKeyIndexInCollection,
+  createImtHeightWeightSearchKeyIndexInCollection,
+  createMaritalStatusSearchKeyIndexInCollection,
+  createReactionSearchKeyIndexInCollection,
+  createRoleSearchKeyIndexInCollection,
+  createSearchKeyIndexInCollection,
+  createUserIdSearchKeyIndexInCollection,
+  database,
+} from 'components/config';
 import { encodeKey } from './searchIndexCandidates';
 import {
   isUserAllowedByAnyAdditionalAccessRule,
@@ -92,6 +104,86 @@ const buildUserIdsMapFromList = userIds =>
       acc[userId] = true;
       return acc;
     }, {});
+
+const SEARCH_KEY_SET_BUILDERS = [
+  createSearchKeyIndexInCollection,
+  createMaritalStatusSearchKeyIndexInCollection,
+  createCsectionSearchKeyIndexInCollection,
+  createContactSearchKeyIndexInCollection,
+  createRoleSearchKeyIndexInCollection,
+  createUserIdSearchKeyIndexInCollection,
+  createAgeSearchKeyIndexInCollection,
+  createImtHeightWeightSearchKeyIndexInCollection,
+  createReactionSearchKeyIndexInCollection,
+  createFieldCountSearchKeyIndexInCollection,
+];
+
+const pickUsersByIds = (usersMap, ids = []) =>
+  ids.reduce((acc, userId) => {
+    if (!userId) return acc;
+    acc[userId] = usersMap?.[userId] && typeof usersMap[userId] === 'object' ? usersMap[userId] : {};
+    return acc;
+  }, {});
+
+export const buildSearchKeySetIndexFromMatchedUsers = async ({
+  rawRules,
+  accessUserId,
+  newUsersData = null,
+  matchedUserIdsBySetKey = null,
+}) => {
+  const normalizedAccessUserId = String(accessUserId || '').trim();
+  if (!normalizedAccessUserId) return null;
+
+  const sourceNewUsers =
+    newUsersData && typeof newUsersData === 'object'
+      ? newUsersData
+      : (await get(ref(database, 'newUsers'))).val() || {};
+
+  const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
+  const setPayloads = ruleSetEntries
+    .map(({ text: setText, inputIndex }) => {
+      const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
+      if (parsedRuleGroups.length === 0) return null;
+
+      const setKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
+      if (!setKey) return null;
+
+      const userIds = Array.isArray(matchedUserIdsBySetKey?.[setKey])
+        ? [...new Set(matchedUserIdsBySetKey[setKey].filter(Boolean))]
+        : Object.keys(mapMatchingIdsByRules(sourceNewUsers, parsedRuleGroups));
+
+      return { setKey, userIds };
+    })
+    .filter(Boolean);
+
+  for (const setPayload of setPayloads) {
+    // eslint-disable-next-line no-await-in-loop
+    await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setPayload.setKey}`));
+
+    if (setPayload.userIds.length === 0) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
+    const usersData = pickUsersByIds(sourceNewUsers, setPayload.userIds);
+    const options = {
+      usersData,
+      rootPath: `${SEARCH_KEY_SETS_ROOT}/${setPayload.setKey}`,
+    };
+
+    // eslint-disable-next-line no-await-in-loop
+    for (const builder of SEARCH_KEY_SET_BUILDERS) {
+      // eslint-disable-next-line no-await-in-loop
+      await builder('newUsers', undefined, options);
+    }
+  }
+
+  return {
+    setKeys: setPayloads.map(item => item.setKey),
+    userIds: [...new Set(setPayloads.flatMap(item => item.userIds))],
+    ownerId: normalizedAccessUserId,
+  };
+};
 
 export const buildNewUsersFilterSetIndex = async ({
   rawRules,
