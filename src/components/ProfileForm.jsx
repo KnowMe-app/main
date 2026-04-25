@@ -26,7 +26,6 @@ import {
   resolveAdditionalAccessSearchKeyBuckets,
 } from 'utils/additionalAccessRules';
 import {
-  buildSearchKeySetIndexFromMatchedUsers,
   buildNewUsersFilterSetIndex,
   getIndexedNewUsersIdsByRules,
   makeAdditionalRulesSetKey,
@@ -980,13 +979,19 @@ export const ProfileForm = ({
 
     setIsIndexingAdditionalRules(true);
     const toastId = 'additional-rules-indexing';
-    toast.loading('Індексація searchKeySets...', { id: toastId });
+    let stage = 'start';
+    const stageToast = message => toast.loading(message, { id: toastId });
+    stageToast('1/5 Індексація searchKeySets: старт...');
 
     try {
+      stage = 'load-new-users';
+      stageToast('2/5 Завантаження пулу newUsers...');
       const newUsersSnapshot = await get(refDb(database, 'newUsers'));
       const newUsersMap = newUsersSnapshot.exists() ? newUsersSnapshot.val() || {} : {};
       const matchedUserIdsByInputIndex = {};
 
+      stage = 'compute-matches';
+      stageToast('3/5 Обчислення пулів користувачів по правилах...');
       ruleInputs.forEach((rulesText, index) => {
         const inputIndex = index + 1;
         const cachedRuleText = String(matchedRuleTextByInputIndexRef.current?.[inputIndex] || '').trim();
@@ -1025,7 +1030,10 @@ export const ProfileForm = ({
         ...matchedUserIdsByInputIndexRef.current,
         ...matchedUserIdsByInputIndex,
       };
-      const indexResult = await buildSearchKeySetIndexFromMatchedUsers({
+
+      stage = 'write-index';
+      stageToast('4/5 Запис індексів у searchKeySets...');
+      const indexResult = await buildNewUsersFilterSetIndex({
         rawRules,
         accessUserId,
         newUsersData: newUsersMap,
@@ -1034,10 +1042,14 @@ export const ProfileForm = ({
 
       const setsCount = Number(indexResult?.setKeys?.length || 0);
       const matchedCount = Number(indexResult?.userIds?.length || 0);
-      if (setsCount === 0) {
+      const writesCount = Number(indexResult?.writesCount || 0);
+      if (setsCount === 0 && writesCount === 0) {
         toast('searchKeySets не оновлено: не знайдено валідних правил.', { id: toastId });
       } else {
-        toast.success(`Індексацію searchKeySets оновлено (${setsCount} наборів, ${matchedCount} карток).`, { id: toastId });
+        toast.success(
+          `5/5 Готово: індексацію searchKeySets оновлено (${setsCount} наборів, ${matchedCount} карток, ${writesCount} змін).`,
+          { id: toastId }
+        );
       }
 
       return indexResult;
@@ -1046,11 +1058,11 @@ export const ProfileForm = ({
       const details = error?.message || String(error);
       if (code.includes('PERMISSION_DENIED')) {
         toast.error(
-          `Немає прав на запис у searchKeySets.\nПеревірте Firebase Rules для цього користувача.\n${details}`,
+          `Помилка на етапі "${stage}": немає прав на запис у searchKeySets.\nПеревірте Firebase Rules для цього користувача.\n${details}`,
           { id: toastId }
         );
       } else {
-        toast.error(`Не вдалося виконати індексацію наборів фільтрів.\n${details}`, { id: toastId });
+        toast.error(`Помилка на етапі "${stage}": не вдалося виконати індексацію наборів фільтрів.\n${details}`, { id: toastId });
       }
       return null;
     } finally {

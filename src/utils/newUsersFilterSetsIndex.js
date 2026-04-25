@@ -266,7 +266,17 @@ export const buildNewUsersFilterSetIndex = async ({
 
   existingSetKeys.forEach(setKey => {
     if (!nextSetKeys.has(setKey)) {
-      writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}`] = null;
+      const setPayload = rootMap?.[setKey];
+      if (!setPayload || typeof setPayload !== 'object') return;
+      Object.entries(setPayload).forEach(([indexName, indexPayload]) => {
+        if (!indexPayload || typeof indexPayload !== 'object') return;
+        Object.entries(indexPayload).forEach(([valueKey, valuePayload]) => {
+          if (!valuePayload || typeof valuePayload !== 'object') return;
+          Object.keys(valuePayload).forEach(userId => {
+            writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${valueKey}/${userId}`] = null;
+          });
+        });
+      });
       return;
     }
 
@@ -276,17 +286,16 @@ export const buildNewUsersFilterSetIndex = async ({
     const expectedIndexes = expectedBySetIndexValue[setKey] || {};
     Object.keys(setPayload).forEach(indexName => {
       const expectedValues = expectedIndexes[indexName] || {};
-      if (!Object.keys(expectedValues).length) {
-        writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}`] = null;
-        return;
-      }
-
       const indexPayload = setPayload[indexName];
       if (!indexPayload || typeof indexPayload !== 'object') return;
       Object.keys(indexPayload).forEach(valueKey => {
         const expectedUserIds = expectedValues[valueKey];
         if (!expectedUserIds) {
-          writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${valueKey}`] = null;
+          const valuePayload = indexPayload[valueKey];
+          if (!valuePayload || typeof valuePayload !== 'object') return;
+          Object.keys(valuePayload).forEach(userId => {
+            writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${valueKey}/${userId}`] = null;
+          });
           return;
         }
 
