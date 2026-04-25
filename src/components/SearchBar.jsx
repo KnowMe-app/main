@@ -634,6 +634,16 @@ export const detectSearchParamsByQueryContent = query => {
 
 export const detectSearchParams = query => detectSearchParamsByQueryContent(query);
 
+const isSearchPerfDebugEnabled = () => {
+  if (typeof window === 'undefined') return false;
+
+  try {
+    return window.localStorage.getItem('searchPerfDebug') === '1';
+  } catch (error) {
+    return false;
+  }
+};
+
 const SearchBar = ({
   searchFunc,
   setUsers,
@@ -671,6 +681,11 @@ const SearchBar = ({
     () => loadHistoryCache('queries') || [],
   );
   const [showHistory, setShowHistory] = useState(false);
+  const perfDebugEnabledRef = useRef(isSearchPerfDebugEnabled());
+
+  useEffect(() => {
+    perfDebugEnabledRef.current = isSearchPerfDebugEnabled();
+  }, [searchOptions, enabledSearchKeys]);
 
   const isSearchEnabled = key => {
     const effectiveEnabledSearchKeys =
@@ -999,8 +1014,13 @@ const SearchBar = ({
     }
 
     for (const selectedKey of selectedKeys) {
+      const shouldMeasureSelectedKey = perfDebugEnabledRef.current;
+      const selectedKeyPerfLabel = `[SearchPerf][grouped][${selectedKey}] ${safeQuery}`;
+      if (shouldMeasureSelectedKey) console.time(selectedKeyPerfLabel);
+
       if (selectedKey === 'partialUserId') {
         const partialResult = await runPartialUserIdSearch(safeQuery, isStaleRequest, resultMap);
+        if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
         if (isStaleRequest()) return { found: false, results: resultMap };
         if (partialResult.found) return { found: true, results: resultMap };
         continue;
@@ -1026,6 +1046,7 @@ const SearchBar = ({
             ),
           ),
         );
+        if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
         if (isStaleRequest()) return { found: false, results: resultMap };
 
         searchIdResults.forEach(mergeLocalResult);
@@ -1049,6 +1070,7 @@ const SearchBar = ({
             ),
           ),
         );
+        if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
         if (isStaleRequest()) return { found: false, results: resultMap };
 
         equalToResults.forEach(mergeLocalResult);
@@ -1058,6 +1080,7 @@ const SearchBar = ({
 
       if (selectedKey === 'name') {
         const nameResult = await cachedSearch({ name: safeQuery });
+        if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
         if (isStaleRequest()) return { found: false, results: resultMap };
         mergeLocalResult(nameResult);
         if (Object.keys(resultMap).length > 0) return { found: true, results: resultMap };
@@ -1065,7 +1088,10 @@ const SearchBar = ({
       }
 
       const parsedCandidates = getParsedCandidatesForKey(selectedKey, safeQuery);
-      if (parsedCandidates.length === 0) continue;
+      if (parsedCandidates.length === 0) {
+        if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
+        continue;
+      }
 
       const platformResults = await Promise.all(
         parsedCandidates.map(parsedValue =>
@@ -1080,6 +1106,7 @@ const SearchBar = ({
           ),
         ),
       );
+      if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
       if (isStaleRequest()) return { found: false, results: resultMap };
 
       platformResults.forEach(mergeLocalResult);
@@ -1090,11 +1117,14 @@ const SearchBar = ({
   };
 
   const cachedSearch = async (params, extraOptions = {}) => {
+    const perfLabel = `[SearchPerf][searchFunc] ${JSON.stringify(params)}`;
+    if (perfDebugEnabledRef.current) console.time(perfLabel);
     const res = await searchFunc(params, {
       ...(searchOptions || {}),
       forceEqualToAllCards: false,
       ...extraOptions,
     });
+    if (perfDebugEnabledRef.current) console.timeEnd(perfLabel);
     if (!res || Object.keys(res).length === 0) {
       return res;
     }
@@ -1435,9 +1465,14 @@ const SearchBar = ({
       isSearchEnabled('equalToAllCards');
 
     if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      const groupedPerfLabel = `[SearchPerf][grouped][total] ${trimmed}`;
+      if (perfDebugEnabledRef.current) console.time(groupedPerfLabel);
       const hasCache = loadCachedResult('name', trimmed);
       const freshCache = hasCache && isCacheFresh('name', trimmed);
-      if (freshCache) return;
+      if (freshCache) {
+        if (perfDebugEnabledRef.current) console.timeEnd(groupedPerfLabel);
+        return;
+      }
       setState && setState({});
       setUsers && setUsers({});
 
@@ -1493,8 +1528,10 @@ const SearchBar = ({
           getCacheKey('search', normalizeQueryKey(`names=${term}`)),
           ids,
         );
+        if (perfDebugEnabledRef.current) console.timeEnd(groupedPerfLabel);
         return;
       }
+      if (perfDebugEnabledRef.current) console.timeEnd(groupedPerfLabel);
     }
 
     if (isCombinedSearchMode) {
