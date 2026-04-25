@@ -30,7 +30,11 @@ import {
   getIndexedNewUsersIdsByRules,
   makeAdditionalRulesSetKey,
 } from 'utils/newUsersFilterSetsIndex';
-import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
+import {
+  getCachedAdditionalRulesPreview,
+  getCachedSearchKeyPayload,
+  saveCachedAdditionalRulesPreview,
+} from 'utils/searchKeyCache';
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -634,20 +638,41 @@ export const ProfileForm = ({
     let cancelled = false;
     const loadAvailableCards = async () => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(previewAdditionalRulesText);
+      const accessUserId = String(state?.userId || '').trim();
+      const cachedPreview = getCachedAdditionalRulesPreview({
+        rawRules: previewAdditionalRulesText,
+        accessUserId,
+      });
+      if (cachedPreview) {
+        setAvailableCardsCount(cachedPreview.count);
+        return;
+      }
+
       if (!parsedRuleGroups.length) {
         setAvailableCardsCount(0);
+        saveCachedAdditionalRulesPreview({
+          rawRules: previewAdditionalRulesText,
+          accessUserId,
+          count: 0,
+          userIds: [],
+        });
         return;
       }
 
       setIsLoadingAvailableCards(true);
       try {
-        const accessUserId = String(state?.userId || '').trim();
         const indexed = await getIndexedNewUsersIdsByRules({
           rawRules: previewAdditionalRulesText,
           accessUserId,
         });
 
         if (indexed?.userIds) {
+          saveCachedAdditionalRulesPreview({
+            rawRules: previewAdditionalRulesText,
+            accessUserId,
+            count: indexed.userIds.length,
+            userIds: indexed.userIds,
+          });
           if (!cancelled) {
             setAvailableCardsCount(indexed.userIds.length);
           }
@@ -742,7 +767,7 @@ export const ProfileForm = ({
         }
 
         const matchedIdList = [...matchedIds];
-        let matchedCount = 0;
+        const finalMatchedIds = [];
         const BATCH_SIZE = 150;
 
         for (let index = 0; index < matchedIdList.length; index += BATCH_SIZE) {
@@ -762,11 +787,23 @@ export const ProfileForm = ({
             })
           );
 
-          matchedCount += rows.filter(user => user && isUserAllowedByAnyAdditionalAccessRule(user, parsedRuleGroups)).length;
+          rows.forEach(user => {
+            if (!user) return;
+            if (isUserAllowedByAnyAdditionalAccessRule(user, parsedRuleGroups)) {
+              finalMatchedIds.push(user.userId);
+            }
+          });
         }
 
+        const uniqueMatchedUserIds = [...new Set(finalMatchedIds.filter(Boolean))];
+        saveCachedAdditionalRulesPreview({
+          rawRules: previewAdditionalRulesText,
+          accessUserId,
+          count: uniqueMatchedUserIds.length,
+          userIds: uniqueMatchedUserIds,
+        });
         if (!cancelled) {
-          setAvailableCardsCount(matchedCount);
+          setAvailableCardsCount(uniqueMatchedUserIds.length);
         }
       } catch (error) {
         console.error('Failed to build additional access preview', error);
