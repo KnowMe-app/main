@@ -1449,9 +1449,12 @@ const SearchBar = ({
         });
 
         const results = {};
-        const groupedExecutionKeys = groupedStrictKeySet
-          ? ['equalToAllCards']
-          : resolveGroupedSearchExecutionKeys();
+        // Для grouped-пошуку (з квадратними дужками) використовуємо той самий
+        // набір ключів, що і для звичайного пошуку по одному значенню.
+        // Інакше при увімкненому strict-наборі grouped режим запускав тільки
+        // equalToAllCards і пропускав searchId, через що частина телефонів
+        // могла не знаходитися, хоча поштучний пошук їх знаходив.
+        const groupedExecutionKeys = resolveGroupedSearchExecutionKeys();
 
         const perValueSearchResults = await Promise.all(
           values.map(async val => {
