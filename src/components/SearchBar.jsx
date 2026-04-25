@@ -607,7 +607,7 @@ const resolveEqualToExecutionKeys = ({ allKeys, selectedKeys, rawQuery }) => {
 };
 
 
-export const detectSearchParams = query => {
+export const detectSearchParamsByQueryContent = query => {
   const parsedUkTrigger = parseUkTriggerQuery(query);
   if (parsedUkTrigger?.searchPair?.telegram) {
     return { key: 'telegram', value: parsedUkTrigger.searchPair.telegram };
@@ -631,6 +631,8 @@ export const detectSearchParams = query => {
   }
   return { key: 'name', value: trimmed };
 };
+
+export const detectSearchParams = query => detectSearchParamsByQueryContent(query);
 
 const SearchBar = ({
   searchFunc,
@@ -960,171 +962,131 @@ const SearchBar = ({
     return { found: foundCombinedResults, results: resultMap };
   };
 
-  const runSearchIdSearch = async (rawQuery, isStaleRequest, resultMap = {}) => {
-    const searchIdInput = parseSearchIdExact(rawQuery);
-    if (!searchIdInput) return { found: false, results: resultMap };
+  const resolveGroupedSearchExecutionKeys = () => {
+    const orderedKeys = [
+      'searchId',
+      'equalToAllCards',
+      'partialUserId',
+      'userId',
+      'facebook',
+      'instagram',
+      'telegram',
+      'email',
+      'tiktok',
+      'phone',
+      'vk',
+      'other',
+      'name',
+    ];
 
-    const searchIdPrefixStrategy = resolveSearchIdPrefixStrategy(searchIdInput, searchOptions);
-    const prefixesToIterate =
-      searchIdPrefixStrategy.primaryPrefixes?.length > 0
-        ? searchIdPrefixStrategy.primaryPrefixes
-        : searchIdPrefixStrategy.fallbackPrefixes || [];
+    return orderedKeys.filter(key => isSearchEnabled(key));
+  };
 
-    if (prefixesToIterate.length === 0) {
+  const runGroupedSearchBySelectedKeys = async (
+    rawQuery,
+    selectedKeys,
+    isStaleRequest,
+    resultMap = {},
+  ) => {
+    const mergeLocalResult = res => {
+      if (!res || Object.keys(res).length === 0) return;
+      mergeSearchResultMap(resultMap, res);
+    };
+
+    const safeQuery = String(rawQuery || '').trim();
+    if (!safeQuery || !Array.isArray(selectedKeys) || selectedKeys.length === 0) {
       return { found: false, results: resultMap };
     }
 
-    const searchIdResults = await Promise.all(
-      prefixesToIterate.map(prefix =>
-        cachedSearch(
-          { searchId: searchIdInput },
-          {
-            forceEqualToAllCards: false,
-            searchIdPrefixes: [prefix],
-          },
-        )
-      )
-    );
-    if (isStaleRequest()) return { found: false, results: resultMap };
+    for (const selectedKey of selectedKeys) {
+      if (selectedKey === 'partialUserId') {
+        const partialResult = await runPartialUserIdSearch(safeQuery, isStaleRequest, resultMap);
+        if (isStaleRequest()) return { found: false, results: resultMap };
+        if (partialResult.found) return { found: true, results: resultMap };
+        continue;
+      }
 
-    let found = false;
-    searchIdResults.forEach(searchIdResult => {
-      if (!searchIdResult || Object.keys(searchIdResult).length === 0) return;
-      found = true;
-      mergeSearchResultMap(resultMap, searchIdResult);
-    });
+      if (selectedKey === 'searchId') {
+        const parsedSearchId = parseSearchIdExact(safeQuery);
+        if (!parsedSearchId) continue;
 
-    return { found, results: resultMap };
-  };
+        const configuredPrefixes = Array.isArray(searchOptions?.searchIdPrefixes)
+          ? [...new Set(searchOptions.searchIdPrefixes.filter(Boolean))]
+          : [];
+        const prefixesToTry = configuredPrefixes.length > 0 ? configuredPrefixes : [null];
 
-  const runPlatformParsedSearch = async (
-    platform,
-    parseFunction,
-    rawQuery,
-    isStaleRequest,
-    resultMap = {},
-    extraOptions = {},
-  ) => {
-    const parsedValue = parseFunction(rawQuery);
-    if (!parsedValue) return { found: false, results: resultMap };
+        const searchIdResults = await Promise.all(
+          prefixesToTry.map(prefix =>
+            cachedSearch(
+              { searchId: parsedSearchId },
+              {
+                forceEqualToAllCards: false,
+                ...(prefix ? { searchIdPrefixes: [prefix] } : {}),
+              },
+            ),
+          ),
+        );
+        if (isStaleRequest()) return { found: false, results: resultMap };
 
-    const scopedSearchIdPrefixes = SEARCH_ID_SCOPED_PLATFORMS.has(platform)
-      ? [platform]
-      : undefined;
+        searchIdResults.forEach(mergeLocalResult);
+        if (Object.keys(resultMap).length > 0) return { found: true, results: resultMap };
+        continue;
+      }
 
-    const res = await cachedSearch(
-      { [platform]: parsedValue },
-      {
-        ...(scopedSearchIdPrefixes ? { searchIdPrefixes: scopedSearchIdPrefixes } : {}),
-        forceEqualToAllCards: false,
-        ...extraOptions,
-      },
-    );
-    if (isStaleRequest()) return { found: false, results: resultMap };
-    if (!res || Object.keys(res).length === 0) return { found: false, results: resultMap };
+      if (selectedKey === 'equalToAllCards') {
+        const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
+        const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
+          ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
+          : allEqualToKeys;
 
-    mergeSearchResultMap(resultMap, res);
-    return { found: true, results: resultMap };
-  };
+        const equalToResults = await Promise.all(
+          selectedEqualToKeys.flatMap(equalToKey =>
+            getParsedCandidatesForKey(equalToKey, safeQuery).map(parsedValue =>
+              cachedSearch(
+                { [equalToKey]: parsedValue },
+                { forceEqualToAllCards: true },
+              ),
+            ),
+          ),
+        );
+        if (isStaleRequest()) return { found: false, results: resultMap };
 
-  const runSingleQueryFlow = async (
-    rawQuery,
-    isStaleRequest,
-    resultMap = {},
-    forcedEqualToKeys = null,
-  ) => {
-    if (isSearchEnabled('partialUserId')) {
-      const partialPerValueResult = await runPartialUserIdSearch(
-        rawQuery,
-        isStaleRequest,
-        resultMap,
+        equalToResults.forEach(mergeLocalResult);
+        if (Object.keys(resultMap).length > 0) return { found: true, results: resultMap };
+        continue;
+      }
+
+      if (selectedKey === 'name') {
+        const nameResult = await cachedSearch({ name: safeQuery });
+        if (isStaleRequest()) return { found: false, results: resultMap };
+        mergeLocalResult(nameResult);
+        if (Object.keys(resultMap).length > 0) return { found: true, results: resultMap };
+        continue;
+      }
+
+      const parsedCandidates = getParsedCandidatesForKey(selectedKey, safeQuery);
+      if (parsedCandidates.length === 0) continue;
+
+      const platformResults = await Promise.all(
+        parsedCandidates.map(parsedValue =>
+          cachedSearch(
+            { [selectedKey]: parsedValue },
+            {
+              forceEqualToAllCards: false,
+              ...(selectedKey === 'telegram'
+                ? { allowTelegramPrefixMatches: true }
+                : {}),
+            },
+          ),
+        ),
       );
       if (isStaleRequest()) return { found: false, results: resultMap };
-      if (partialPerValueResult.found) {
-        return { found: true, results: resultMap };
-      }
+
+      platformResults.forEach(mergeLocalResult);
+      if (Object.keys(resultMap).length > 0) return { found: true, results: resultMap };
     }
 
-    const looksLikeExactUserId = Boolean(parseUserId(rawQuery));
-    if (looksLikeExactUserId && isSearchEnabled('userId')) {
-      const userIdExactResult = await runPlatformParsedSearch(
-        'userId',
-        parseUserId,
-        rawQuery,
-        isStaleRequest,
-        resultMap,
-      );
-      if (isStaleRequest()) return { found: false, results: resultMap };
-      if (userIdExactResult.found) {
-        return { found: true, results: resultMap };
-      }
-    }
-
-    if (isSearchEnabled('searchId')) {
-      const searchIdResult = await runSearchIdSearch(
-        rawQuery,
-        isStaleRequest,
-        resultMap,
-      );
-      if (isStaleRequest()) return { found: false, results: resultMap };
-      if (searchIdResult.found) {
-        return { found: true, results: resultMap };
-      }
-    }
-
-    if (isSearchEnabled('equalToAllCards')) {
-      const equalToResult = await runEqualToAllCardsSearch(
-        rawQuery,
-        isStaleRequest,
-        resultMap,
-        forcedEqualToKeys,
-      );
-      if (isStaleRequest()) return { found: false, results: resultMap };
-      if (equalToResult.found) {
-        return { found: true, results: resultMap };
-      }
-    }
-
-    const sequentialParsers = [
-      ['userId', parseUserId],
-      ['facebook', parseFacebookId],
-      ['instagram', parseInstagramId],
-      ['telegram', parseTelegramId],
-      ['email', parseEmail],
-      ['tiktok', parseTikTokLink],
-      ['phone', parsePhoneNumber],
-      ['vk', parseVk],
-      ['other', parseOtherContact],
-    ];
-
-    for (const [platform, parser] of sequentialParsers) {
-      if (!isSearchEnabled(platform)) continue;
-      if (platform === 'userId' && looksLikeExactUserId) continue;
-
-      const platformResult = await runPlatformParsedSearch(
-        platform,
-        parser,
-        rawQuery,
-        isStaleRequest,
-        resultMap,
-        platform === 'telegram' ? { allowTelegramPrefixMatches: true } : {},
-      );
-      if (isStaleRequest()) return { found: false, results: resultMap };
-      if (platformResult.found) {
-        return { found: true, results: resultMap };
-      }
-    }
-
-    if (isSearchEnabled('name')) {
-      const nameResult = await cachedSearch({ name: rawQuery });
-      if (isStaleRequest()) return { found: false, results: resultMap };
-      if (nameResult && Object.keys(nameResult).length > 0) {
-        mergeSearchResultMap(resultMap, nameResult);
-        return { found: true, results: resultMap };
-      }
-    }
-
-    return { found: false, results: resultMap };
+    return { found: Object.keys(resultMap).length > 0, results: resultMap };
   };
 
   const cachedSearch = async (params, extraOptions = {}) => {
@@ -1487,20 +1449,27 @@ const SearchBar = ({
         });
 
         const results = {};
-        for (const val of values) {
-          const perValueResults = {};
-          const forcedEqualToKeys = groupedStrictKeySet
-            ? Array.from(groupedStrictKeySet)
-            : null;
-          const perValueFlowResult = await runSingleQueryFlow(
-            val,
-            isStaleRequest,
-            perValueResults,
-            forcedEqualToKeys,
-          );
-          if (isStaleRequest()) return;
+        const groupedExecutionKeys = groupedStrictKeySet
+          ? ['equalToAllCards']
+          : resolveGroupedSearchExecutionKeys();
 
-          if (!perValueFlowResult.found || Object.keys(perValueResults).length === 0) {
+        const perValueSearchResults = await Promise.all(
+          values.map(async val => {
+            const perValueResults = {};
+            const groupedResult = await runGroupedSearchBySelectedKeys(
+              val,
+              groupedExecutionKeys,
+              isStaleRequest,
+              perValueResults,
+            );
+
+            return { val, groupedResult, perValueResults };
+          }),
+        );
+        if (isStaleRequest()) return;
+
+        perValueSearchResults.forEach(({ val, groupedResult, perValueResults }) => {
+          if (!groupedResult.found || Object.keys(perValueResults).length === 0) {
             const fallbackSearchVal = isSearchEnabled('phone')
               ? parsePhoneNumber(val) || val
               : val;
@@ -1508,10 +1477,12 @@ const SearchBar = ({
               _notFound: true,
               searchVal: fallbackSearchVal,
             };
-          } else {
-            Object.assign(results, perValueResults);
+            return;
           }
-        }
+
+          Object.assign(results, perValueResults);
+        });
+
         setUsers && setUsers(results);
         const term = values.map(v => v).sort().join(',');
         const ids = Object.keys(results).filter(id => !results[id]._notFound);
