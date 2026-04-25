@@ -575,6 +575,8 @@ export const ProfileForm = ({
   const [availableCardsCount, setAvailableCardsCount] = useState(0);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
   const matchedUserIdsByInputIndexRef = useRef({});
+  const matchedRuleTextByInputIndexRef = useRef({});
+  const matchedRuleCacheAccessUserIdRef = useRef('');
   const autoAppliedOverlayForUserRef = useRef('');
 
   const addEmptyAdditionalFilter = useCallback(() => {
@@ -844,12 +846,43 @@ export const ProfileForm = ({
       const rawRules = payload?.[ADDITIONAL_ACCESS_FIELD];
       if (rawRules !== undefined) {
         const accessUserId = String(payload?.userId || state?.userId || '').trim();
-        if (options?.matchedUserIdsByInputIndex && typeof options.matchedUserIdsByInputIndex === 'object') {
+        const hasPrefilteredMatches =
+          !!options?.matchedUserIdsByInputIndex && typeof options.matchedUserIdsByInputIndex === 'object';
+        const currentRuleInputs = Array.isArray(rawRules)
+          ? rawRules.map(item => String(item || '').trim())
+          : String(rawRules || '')
+            .split(/\r?\n\s*\r?\n+/)
+            .map(item => item.trim());
+        const nextRuleTextByInputIndex = currentRuleInputs.reduce((acc, rulesText, idx) => {
+          acc[idx + 1] = rulesText;
+          return acc;
+        }, {});
+
+        if (matchedRuleCacheAccessUserIdRef.current !== accessUserId) {
+          matchedUserIdsByInputIndexRef.current = {};
+          matchedRuleTextByInputIndexRef.current = {};
+        }
+
+        const prevRuleTextByInputIndex = matchedRuleTextByInputIndexRef.current;
+        Object.keys(matchedUserIdsByInputIndexRef.current).forEach(rawInputIndex => {
+          const inputIndex = Number(rawInputIndex);
+          const prevRuleText = prevRuleTextByInputIndex[inputIndex] || '';
+          const nextRuleText = nextRuleTextByInputIndex[inputIndex] || '';
+          if (!nextRuleText || prevRuleText !== nextRuleText) {
+            delete matchedUserIdsByInputIndexRef.current[inputIndex];
+          }
+        });
+
+        if (hasPrefilteredMatches) {
           matchedUserIdsByInputIndexRef.current = {
             ...matchedUserIdsByInputIndexRef.current,
             ...options.matchedUserIdsByInputIndex,
           };
         }
+
+        matchedRuleCacheAccessUserIdRef.current = accessUserId;
+        matchedRuleTextByInputIndexRef.current = nextRuleTextByInputIndex;
+
         const matchedUserIdsBySetKey = buildMatchedUserIdsBySetKey(
           rawRules,
           accessUserId,
