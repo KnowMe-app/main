@@ -205,24 +205,6 @@ export const buildNewUsersFilterSetIndex = async ({
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
       if (parsedRuleGroups.length === 0) return null;
 
-      const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
-      const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
-        const normalizedIndexName = normalizePathSegment(indexName);
-        if (!normalizedIndexName) return acc;
-
-        const values = [
-          ...new Set(
-            (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
-              .map(normalizePathSegment)
-              .filter(Boolean)
-          ),
-        ];
-        if (values.length) acc[normalizedIndexName] = values;
-        return acc;
-      }, {});
-
-      if (Object.keys(indexBuckets).length === 0) return null;
-
       const ownerSetKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
       if (!ownerSetKey) return null;
       const prefilteredIds = matchedUserIdsBySetKey?.[ownerSetKey];
@@ -233,26 +215,10 @@ export const buildNewUsersFilterSetIndex = async ({
 
       return {
         setKey: ownerSetKey,
-        indexBuckets,
         userIds,
       };
     })
     .filter(Boolean);
-
-  const expectedBySetIndexValue = nextSetPayloads.reduce((acc, setPayload) => {
-    const setMap = {};
-    Object.entries(setPayload.indexBuckets || {}).forEach(([indexName, values]) => {
-      const valueMap = {};
-      values.forEach(value => {
-        valueMap[value] = new Set(Object.keys(setPayload.userIds || {}));
-      });
-      if (Object.keys(valueMap).length > 0) {
-        setMap[indexName] = valueMap;
-      }
-    });
-    acc[setPayload.setKey] = setMap;
-    return acc;
-  }, {});
 
   const rootSnap = await get(ref(database, SEARCH_KEY_SETS_ROOT));
   const rootMap = rootSnap.exists() ? rootSnap.val() || {} : {};
@@ -260,68 +226,31 @@ export const buildNewUsersFilterSetIndex = async ({
   const existingSetKeys = Object.keys(rootMap).filter(setKey => setKey.startsWith(ownerPrefix));
   const nextSetKeys = new Set(nextSetPayloads.map(item => item.setKey));
 
-  // Ключ набору має формат: $ownerUserId_$inputIndex
-  // searchKeySets/$ownerUserId_$inputIndex/$indexName/$value/$newUserId = true
   const writes = {};
-
   existingSetKeys.forEach(setKey => {
     if (!nextSetKeys.has(setKey)) {
-      const setPayload = rootMap?.[setKey];
-      if (!setPayload || typeof setPayload !== 'object') return;
-      Object.entries(setPayload).forEach(([indexName, indexPayload]) => {
-        if (!indexPayload || typeof indexPayload !== 'object') return;
-        Object.entries(indexPayload).forEach(([valueKey, valuePayload]) => {
-          if (!valuePayload || typeof valuePayload !== 'object') return;
-          Object.keys(valuePayload).forEach(userId => {
-            writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${valueKey}/${userId}`] = null;
-          });
-        });
-      });
-      return;
+      writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}`] = null;
     }
-
-    const setPayload = rootMap?.[setKey];
-    if (!setPayload || typeof setPayload !== 'object') return;
-
-    const expectedIndexes = expectedBySetIndexValue[setKey] || {};
-    Object.keys(setPayload).forEach(indexName => {
-      const expectedValues = expectedIndexes[indexName] || {};
-      const indexPayload = setPayload[indexName];
-      if (!indexPayload || typeof indexPayload !== 'object') return;
-      Object.keys(indexPayload).forEach(valueKey => {
-        const expectedUserIds = expectedValues[valueKey];
-        if (!expectedUserIds) {
-          const valuePayload = indexPayload[valueKey];
-          if (!valuePayload || typeof valuePayload !== 'object') return;
-          Object.keys(valuePayload).forEach(userId => {
-            writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${valueKey}/${userId}`] = null;
-          });
-          return;
-        }
-
-        const valuePayload = indexPayload[valueKey];
-        if (!valuePayload || typeof valuePayload !== 'object') return;
-        Object.keys(valuePayload).forEach(userId => {
-          if (!expectedUserIds.has(userId)) {
-            writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${valueKey}/${userId}`] = null;
-          }
-        });
-      });
-    });
   });
-
-  nextSetPayloads.forEach(({ setKey, indexBuckets, userIds }) => {
-    Object.entries(indexBuckets).forEach(([indexName, values]) => {
-      values.forEach(value => {
-        Object.keys(userIds || {}).forEach(userId => {
-          writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${value}/${userId}`] = true;
-        });
-      });
-    });
-  });
-
   if (Object.keys(writes).length > 0) {
     await update(ref(database), writes);
+  }
+
+  for (const { setKey, userIds } of nextSetPayloads) {
+    // eslint-disable-next-line no-await-in-loop
+    await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`));
+
+    const pickedUsers = pickUsersByIds(sourceNewUsers, Object.keys(userIds || {}));
+    const options = {
+      usersData: pickedUsers,
+      rootPath: `${SEARCH_KEY_SETS_ROOT}/${setKey}`,
+    };
+
+    // eslint-disable-next-line no-await-in-loop
+    for (const builder of SEARCH_KEY_SET_BUILDERS) {
+      // eslint-disable-next-line no-await-in-loop
+      await builder('newUsers', undefined, options);
+    }
   }
 
   const aggregatedUserIds = [...new Set(nextSetPayloads.flatMap(item => Object.keys(item.userIds)))];
@@ -329,7 +258,7 @@ export const buildNewUsersFilterSetIndex = async ({
     setKeys: [...nextSetKeys],
     userIds: aggregatedUserIds,
     ownerId: normalizedAccessUserId,
-    writesCount: Object.keys(writes).length,
+    writesCount: Object.keys(writes).length + nextSetPayloads.length,
   };
 };
 
