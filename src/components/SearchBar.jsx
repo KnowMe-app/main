@@ -1033,8 +1033,6 @@ const SearchBar = ({
     resultMap = {},
     forcedEqualToKeys = null,
   ) => {
-    let found = false;
-
     if (isSearchEnabled('partialUserId')) {
       const partialPerValueResult = await runPartialUserIdSearch(
         rawQuery,
@@ -1043,7 +1041,7 @@ const SearchBar = ({
       );
       if (isStaleRequest()) return { found: false, results: resultMap };
       if (partialPerValueResult.found) {
-        found = true;
+        return { found: true, results: resultMap };
       }
     }
 
@@ -1058,7 +1056,7 @@ const SearchBar = ({
       );
       if (isStaleRequest()) return { found: false, results: resultMap };
       if (userIdExactResult.found) {
-        found = true;
+        return { found: true, results: resultMap };
       }
     }
 
@@ -1070,7 +1068,7 @@ const SearchBar = ({
       );
       if (isStaleRequest()) return { found: false, results: resultMap };
       if (searchIdResult.found) {
-        found = true;
+        return { found: true, results: resultMap };
       }
     }
 
@@ -1083,7 +1081,7 @@ const SearchBar = ({
       );
       if (isStaleRequest()) return { found: false, results: resultMap };
       if (equalToResult.found) {
-        found = true;
+        return { found: true, results: resultMap };
       }
     }
 
@@ -1113,20 +1111,20 @@ const SearchBar = ({
       );
       if (isStaleRequest()) return { found: false, results: resultMap };
       if (platformResult.found) {
-        found = true;
+        return { found: true, results: resultMap };
       }
     }
 
-    if (!found && isSearchEnabled('name')) {
+    if (isSearchEnabled('name')) {
       const nameResult = await cachedSearch({ name: rawQuery });
       if (isStaleRequest()) return { found: false, results: resultMap };
       if (nameResult && Object.keys(nameResult).length > 0) {
         mergeSearchResultMap(resultMap, nameResult);
-        found = true;
+        return { found: true, results: resultMap };
       }
     }
 
-    return { found, results: resultMap };
+    return { found: false, results: resultMap };
   };
 
   const cachedSearch = async (params, extraOptions = {}) => {
