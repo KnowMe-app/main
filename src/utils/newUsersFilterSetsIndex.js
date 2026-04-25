@@ -1,5 +1,6 @@
 import { get, ref, remove, update } from 'firebase/database';
 import { database } from 'components/config';
+import { encodeKey } from './searchIndexCandidates';
 import {
   isUserAllowedByAnyAdditionalAccessRule,
   parseAdditionalAccessRuleGroups,
@@ -8,6 +9,14 @@ import {
 
 export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
+const FORBIDDEN_RTDB_SEGMENT_CHARS = ['.', '#', '$', '/', '[', ']'];
+
+const normalizePathSegment = value => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const hasForbiddenChars = FORBIDDEN_RTDB_SEGMENT_CHARS.some(char => raw.includes(char));
+  return hasForbiddenChars ? encodeKey(raw) : raw;
+};
 
 const splitRawRulesToSetTexts = rawRules => {
   if (Array.isArray(rawRules)) {
@@ -76,7 +85,20 @@ const mapMatchingIdsByRules = (newUsersData, parsedRuleGroups) => {
   return ids;
 };
 
-export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = null, accessUserId }) => {
+const buildUserIdsMapFromList = userIds =>
+  (Array.isArray(userIds) ? userIds : [])
+    .filter(Boolean)
+    .reduce((acc, userId) => {
+      acc[userId] = true;
+      return acc;
+    }, {});
+
+export const buildNewUsersFilterSetIndex = async ({
+  rawRules,
+  newUsersData = null,
+  accessUserId,
+  matchedUserIdsBySetKey = null,
+}) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   if (!normalizedAccessUserId) return null;
 
@@ -93,8 +115,17 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
 
       const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
       const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
-        const values = [...new Set((Array.isArray(rawValues) ? rawValues : [...(rawValues || [])]).filter(Boolean))];
-        if (values.length) acc[indexName] = values;
+        const normalizedIndexName = normalizePathSegment(indexName);
+        if (!normalizedIndexName) return acc;
+
+        const values = [
+          ...new Set(
+            (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
+              .map(normalizePathSegment)
+              .filter(Boolean)
+          ),
+        ];
+        if (values.length) acc[normalizedIndexName] = values;
         return acc;
       }, {});
 
@@ -102,10 +133,16 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
 
       const ownerSetKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
       if (!ownerSetKey) return null;
+      const prefilteredIds = matchedUserIdsBySetKey?.[ownerSetKey];
+      const userIds =
+        Array.isArray(prefilteredIds)
+          ? buildUserIdsMapFromList(prefilteredIds)
+          : mapMatchingIdsByRules(sourceNewUsers, parsedRuleGroups);
+
       return {
         setKey: ownerSetKey,
         indexBuckets,
-        userIds: mapMatchingIdsByRules(sourceNewUsers, parsedRuleGroups),
+        userIds,
       };
     })
     .filter(Boolean);
@@ -191,6 +228,7 @@ export const buildNewUsersFilterSetIndex = async ({ rawRules, newUsersData = nul
     setKeys: [...nextSetKeys],
     userIds: aggregatedUserIds,
     ownerId: normalizedAccessUserId,
+    writesCount: Object.keys(writes).length,
   };
 };
 
@@ -205,8 +243,16 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
       if (!parsedRuleGroups.length) return null;
       const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
       const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
-        const values = [...new Set((Array.isArray(rawValues) ? rawValues : [...(rawValues || [])]).filter(Boolean))];
-        if (values.length) acc[indexName] = values;
+        const normalizedIndexName = normalizePathSegment(indexName);
+        if (!normalizedIndexName) return acc;
+        const values = [
+          ...new Set(
+            (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
+              .map(normalizePathSegment)
+              .filter(Boolean)
+          ),
+        ];
+        if (values.length) acc[normalizedIndexName] = values;
         return acc;
       }, {});
       if (!Object.keys(indexBuckets).length) return null;
@@ -271,10 +317,34 @@ export const rebuildAllNewUsersFilterSetIndexes = async () => {
     }
 
     totalRuleSets += setTexts.length;
+
+    // Подвійна послідовна індексація:
+    // 1) формуємо попередньо відфільтрований набір newUsers для кожного setKey (як у модалці "Додаткові правила доступу")
+    // 2) записуємо searchKeySets з урахуванням цих наборів
+    const matchedUserIdsBySetKey = {};
+    const ruleEntries = parseRawRulesToSetEntries(rawRules);
+    ruleEntries.forEach(({ text: setText, inputIndex }) => {
+      const setKey = makeAdditionalRulesSetKey(setText, userId, inputIndex);
+      if (!setKey) return;
+      const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
+      if (!parsedRuleGroups.length) return;
+
+      const matchedUserIds = Object.entries(newUsersMap)
+        .filter(([newUserId, newUserData]) =>
+          isUserAllowedByAnyAdditionalAccessRule(
+            { userId: newUserId, ...(newUserData && typeof newUserData === 'object' ? newUserData : {}) },
+            parsedRuleGroups
+          )
+        )
+        .map(([newUserId]) => newUserId);
+      matchedUserIdsBySetKey[setKey] = matchedUserIds;
+    });
+
     const indexed = await buildNewUsersFilterSetIndex({
       rawRules,
       newUsersData: newUsersMap,
       accessUserId: userId,
+      matchedUserIdsBySetKey,
     });
     if (indexed?.setKeys?.length) indexedSets += indexed.setKeys.length;
   }

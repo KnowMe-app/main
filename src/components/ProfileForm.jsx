@@ -28,6 +28,7 @@ import {
 import {
   buildNewUsersFilterSetIndex,
   getIndexedNewUsersIdsByRules,
+  makeAdditionalRulesSetKey,
 } from 'utils/newUsersFilterSetsIndex';
 import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
 
@@ -573,6 +574,7 @@ export const ProfileForm = ({
   const [previewAdditionalRulesText, setPreviewAdditionalRulesText] = useState('');
   const [availableCardsCount, setAvailableCardsCount] = useState(0);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
+  const matchedUserIdsByInputIndexRef = useRef({});
   const autoAppliedOverlayForUserRef = useRef('');
 
   const addEmptyAdditionalFilter = useCallback(() => {
@@ -809,7 +811,31 @@ export const ProfileForm = ({
     return { ...draftState, getInTouch: normalized };
   };
 
-  const submitWithNormalization = useCallback(async (nextState, overwrite, delCondition) => {
+  const buildMatchedUserIdsBySetKey = useCallback((rawRules, accessUserId, matchedByInputIndex) => {
+    const normalizedAccessUserId = String(accessUserId || '').trim();
+    if (!normalizedAccessUserId || !matchedByInputIndex || typeof matchedByInputIndex !== 'object') return null;
+
+    const ruleInputs = Array.isArray(rawRules)
+      ? rawRules.map(item => String(item || '').trim())
+      : String(rawRules || '')
+        .split(/\r?\n\s*\r?\n+/)
+        .map(item => item.trim());
+
+    const matchedBySetKey = {};
+    ruleInputs.forEach((rulesText, index) => {
+      if (!rulesText) return;
+      const inputIndex = index + 1;
+      const setKey = makeAdditionalRulesSetKey(rulesText, normalizedAccessUserId, inputIndex);
+      if (!setKey) return;
+      const userIds = matchedByInputIndex[inputIndex];
+      if (!Array.isArray(userIds)) return;
+      matchedBySetKey[setKey] = userIds;
+    });
+
+    return Object.keys(matchedBySetKey).length > 0 ? matchedBySetKey : null;
+  }, []);
+
+  const submitWithNormalization = useCallback(async (nextState, overwrite, delCondition, options = {}) => {
     const payload =
       nextState && typeof nextState === 'object'
         ? normalizeGetInTouchForSubmit(nextState)
@@ -818,10 +844,27 @@ export const ProfileForm = ({
       const rawRules = payload?.[ADDITIONAL_ACCESS_FIELD];
       if (rawRules !== undefined) {
         const accessUserId = String(payload?.userId || state?.userId || '').trim();
-        await buildNewUsersFilterSetIndex({
+        if (options?.matchedUserIdsByInputIndex && typeof options.matchedUserIdsByInputIndex === 'object') {
+          matchedUserIdsByInputIndexRef.current = {
+            ...matchedUserIdsByInputIndexRef.current,
+            ...options.matchedUserIdsByInputIndex,
+          };
+        }
+        const matchedUserIdsBySetKey = buildMatchedUserIdsBySetKey(
           rawRules,
           accessUserId,
+          matchedUserIdsByInputIndexRef.current
+        );
+        const indexResult = await buildNewUsersFilterSetIndex({
+          rawRules,
+          accessUserId,
+          matchedUserIdsBySetKey,
         });
+        if (indexResult && Number(indexResult.writesCount || 0) === 0) {
+          toast(
+            'searchKeySets не оновлено: немає збігів newUsers для обраних фільтрів або не знайдено валідних правил.'
+          );
+        }
       }
     } catch (error) {
       const code = String(error?.code || '');
@@ -842,7 +885,7 @@ export const ProfileForm = ({
       const details = error?.message || String(error);
       toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
     });
-  }, [handleSubmit, state?.userId]);
+  }, [buildMatchedUserIdsBySetKey, handleSubmit, state?.userId]);
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
@@ -884,12 +927,30 @@ export const ProfileForm = ({
     setAdditionalRuleBuilder(prev => prev.filter((_, ruleIndex) => ruleIndex !== index));
   };
 
-  const applyAdditionalRulesFromBuilder = () => {
+  const applyAdditionalRulesFromBuilder = async () => {
     const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
     if (!rulesText.trim()) {
       toast.error('Оберіть щонайменше один фільтр перед застосуванням');
       return;
     }
+
+    let matchedUserIds = [];
+    try {
+      const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
+      const newUsersSnapshot = await get(refDb(database, 'newUsers'));
+      const newUsersMap = newUsersSnapshot.exists() ? newUsersSnapshot.val() || {} : {};
+      matchedUserIds = Object.entries(newUsersMap)
+        .filter(([userId, userData]) =>
+          isUserAllowedByAnyAdditionalAccessRule(
+            { userId, ...(userData && typeof userData === 'object' ? userData : {}) },
+            parsedRuleGroups
+          )
+        )
+        .map(([userId]) => userId);
+    } catch (error) {
+      console.error('Failed to precompute additional access matched users for indexing', error);
+    }
+
     setState(prevState => {
       const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
       const updatedValue = Array.isArray(currentValue)
@@ -899,7 +960,11 @@ export const ProfileForm = ({
         ...prevState,
         [ADDITIONAL_ACCESS_FIELD]: updatedValue,
       };
-      submitWithNormalization(updated, 'overwrite');
+      submitWithNormalization(updated, 'overwrite', undefined, {
+        matchedUserIdsByInputIndex: {
+          [activeAdditionalRuleInputIndex + 1]: matchedUserIds,
+        },
+      });
       return updated;
     });
     setPreviewAdditionalRulesText(prev => {
