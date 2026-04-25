@@ -603,13 +603,10 @@ export const ProfileForm = ({
     }
     return additionalRulesTextToInputs(rawValue);
   }, [additionalAccessFieldValue]);
-  const combinedAdditionalRulesDraftText = useMemo(() => {
-    const nextInputs = [...additionalRulesInputs];
-    nextInputs[activeAdditionalRuleInputIndex] = additionalRulesDraftText;
-    return nextInputs
-      .map(item => String(item || '').trim())
-      .filter(Boolean)
-      .join('\n\n');
+  const activeAdditionalRulesDraftText = useMemo(() => {
+    const activeInputValue = String(additionalRulesInputs[activeAdditionalRuleInputIndex] || '');
+    if (!activeInputValue.trim()) return additionalRulesDraftText;
+    return additionalRulesDraftText || activeInputValue;
   }, [activeAdditionalRuleInputIndex, additionalRulesDraftText, additionalRulesInputs]);
   useEffect(() => {
     if (state?.userId) return;
@@ -1226,15 +1223,9 @@ export const ProfileForm = ({
   };
 
   const handleCombinedAdditionalRulesChange = event => {
-    const nextRawValue = event?.target?.value || '';
-    const nextInputs = additionalRulesTextToInputs(nextRawValue);
-    const nextIndex = Math.min(
-      activeAdditionalRuleInputIndex,
-      Math.max(nextInputs.length - 1, 0)
-    );
-    const nextBuilder = parseAdditionalRulesTextToBuilder(nextInputs[nextIndex] || '');
+    const nextActiveRulesText = event?.target?.value || '';
+    const nextBuilder = parseAdditionalRulesTextToBuilder(nextActiveRulesText);
 
-    setActiveAdditionalRuleInputIndex(nextIndex);
     setAdditionalRuleBuilder(
       nextBuilder.length > 0
         ? nextBuilder
@@ -1242,9 +1233,13 @@ export const ProfileForm = ({
     );
 
     setState(prevState => {
+      const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
+      const updatedValue = Array.isArray(currentValue)
+        ? currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? nextActiveRulesText : item))
+        : nextActiveRulesText;
       const updated = {
         ...prevState,
-        [ADDITIONAL_ACCESS_FIELD]: nextRawValue,
+        [ADDITIONAL_ACCESS_FIELD]: updatedValue,
       };
       submitWithNormalization(updated, 'overwrite');
       return updated;
@@ -2321,7 +2316,7 @@ ${entries.join('\n')}`;
             </AdditionalRuleActions>
 
             <AdditionalRulePreview
-              value={combinedAdditionalRulesDraftText || ADDITIONAL_ACCESS_TEMPLATE}
+              value={activeAdditionalRulesDraftText || ADDITIONAL_ACCESS_TEMPLATE}
               onChange={handleCombinedAdditionalRulesChange}
             />
             <AdditionalCardsTitle>
