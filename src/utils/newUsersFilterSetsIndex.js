@@ -125,6 +125,38 @@ const pickUsersByIds = (usersMap, ids = []) =>
     return acc;
   }, {});
 
+const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds }) => {
+  const normalizedRootPath = String(rootPath || '').trim();
+  if (!normalizedRootPath) return {};
+
+  const normalizedUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
+  const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
+
+  return Object.entries(bucketMap || {}).reduce((writes, [indexName, rawValues]) => {
+    const normalizedIndexName = normalizePathSegment(indexName);
+    if (!normalizedIndexName) return writes;
+
+    const values = [
+      ...new Set(
+        (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
+          .map(normalizePathSegment)
+          .filter(Boolean)
+      ),
+    ];
+    if (!values.length) return writes;
+
+    values.forEach(value => {
+      const path = `${normalizedRootPath}/${normalizedIndexName}/${value}`;
+      writes[path] = normalizedUserIds.reduce((acc, userId) => {
+        acc[userId] = true;
+        return acc;
+      }, {});
+    });
+
+    return writes;
+  }, {});
+};
+
 export const buildSearchKeySetIndexFromMatchedUsers = async ({
   rawRules,
   accessUserId,
@@ -152,7 +184,7 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
         ? [...new Set(matchedUserIdsBySetKey[setKey].filter(Boolean))]
         : Object.keys(mapMatchingIdsByRules(sourceNewUsers, parsedRuleGroups));
 
-      return { setKey, userIds };
+      return { setKey, userIds, parsedRuleGroups };
     })
     .filter(Boolean);
 
@@ -170,11 +202,21 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
       usersData,
       rootPath: `${SEARCH_KEY_SETS_ROOT}/${setPayload.setKey}`,
     };
+    const ruleBucketWrites = buildRuleBucketWrites({
+      rootPath: options.rootPath,
+      parsedRuleGroups: setPayload.parsedRuleGroups,
+      userIds: setPayload.userIds,
+    });
 
     // eslint-disable-next-line no-await-in-loop
     for (const builder of SEARCH_KEY_SET_BUILDERS) {
       // eslint-disable-next-line no-await-in-loop
       await builder('newUsers', undefined, options);
+    }
+
+    if (Object.keys(ruleBucketWrites).length) {
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref(database), ruleBucketWrites);
     }
   }
 
@@ -216,6 +258,7 @@ export const buildNewUsersFilterSetIndex = async ({
       return {
         setKey: ownerSetKey,
         userIds,
+        parsedRuleGroups,
       };
     })
     .filter(Boolean);
@@ -236,7 +279,7 @@ export const buildNewUsersFilterSetIndex = async ({
     await update(ref(database), writes);
   }
 
-  for (const { setKey, userIds } of nextSetPayloads) {
+  for (const { setKey, userIds, parsedRuleGroups } of nextSetPayloads) {
     // eslint-disable-next-line no-await-in-loop
     await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`));
 
@@ -245,11 +288,21 @@ export const buildNewUsersFilterSetIndex = async ({
       usersData: pickedUsers,
       rootPath: `${SEARCH_KEY_SETS_ROOT}/${setKey}`,
     };
+    const ruleBucketWrites = buildRuleBucketWrites({
+      rootPath: options.rootPath,
+      parsedRuleGroups,
+      userIds: Object.keys(userIds || {}),
+    });
 
     // eslint-disable-next-line no-await-in-loop
     for (const builder of SEARCH_KEY_SET_BUILDERS) {
       // eslint-disable-next-line no-await-in-loop
       await builder('newUsers', undefined, options);
+    }
+
+    if (Object.keys(ruleBucketWrites).length) {
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref(database), ruleBucketWrites);
     }
   }
 
