@@ -1488,41 +1488,6 @@ const SearchBar = ({
           cleanedValues: values,
         });
 
-        if (isCombinedSearchMode) {
-          const combinedGroupedResults = {};
-          let foundCombinedGroupedResults = false;
-
-          for (const val of values) {
-            const combinedResult = await runCombinedSearchForQuery(
-              val,
-              isStaleRequest,
-              combinedGroupedResults,
-            );
-            if (isStaleRequest()) return;
-            if (combinedResult.found) {
-              foundCombinedGroupedResults = true;
-            }
-          }
-
-          if (foundCombinedGroupedResults && Object.keys(combinedGroupedResults).length > 0) {
-            setUserNotFound && setUserNotFound(false);
-            setState && setState({});
-            setUsers && setUsers({ ...combinedGroupedResults });
-          } else {
-            setState && setState({});
-            setUsers && setUsers({});
-            setUserNotFound && setUserNotFound(true);
-          }
-
-          const term = values.map(v => v).sort().join(',');
-          const ids = Object.keys(combinedGroupedResults);
-          setIdsForQuery(
-            getCacheKey('search', normalizeQueryKey(`names=${term}`)),
-            ids,
-          );
-          return;
-        }
-
         const results = {};
         for (const val of values) {
           const perValueResults = {};
