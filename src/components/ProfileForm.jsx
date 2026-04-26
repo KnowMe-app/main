@@ -595,9 +595,6 @@ export const ProfileForm = ({
   const [availableCardsCount, setAvailableCardsCount] = useState(0);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
   const [isIndexingAdditionalRules, setIsIndexingAdditionalRules] = useState(false);
-  const matchedUserIdsByInputIndexRef = useRef({});
-  const matchedRuleTextByInputIndexRef = useRef({});
-  const matchedRuleCacheAccessUserIdRef = useRef('');
   const autoAppliedOverlayForUserRef = useRef('');
 
   const addEmptyAdditionalFilter = useCallback(() => {
@@ -884,6 +881,42 @@ export const ProfileForm = ({
     return Object.keys(matchedBySetKey).length > 0 ? matchedBySetKey : null;
   }, []);
 
+  const getIndexedMatchedUserIdsByInputIndex = useCallback(async rawRules => {
+    const accessUserId = String(state?.userId || '').trim();
+    if (!accessUserId) {
+      toast.error('Не знайдено userId для індексації');
+      return null;
+    }
+
+    const ruleInputs = Array.isArray(rawRules)
+      ? rawRules.map(item => String(item || '').trim()).filter(Boolean)
+      : String(rawRules || '')
+        .split(/\r?\n\s*\r?\n+/)
+        .map(item => item.trim())
+        .filter(Boolean);
+    if (!ruleInputs.length) {
+      toast.error('Немає правил для індексації');
+      return null;
+    }
+
+    const matchedByInputIndex = {};
+    for (let index = 0; index < ruleInputs.length; index += 1) {
+      const rulesText = ruleInputs[index];
+      // eslint-disable-next-line no-await-in-loop
+      const indexed = await getIndexedNewUsersIdsByRules({
+        rawRules: rulesText,
+        accessUserId,
+      });
+      if (!indexed?.userIds) {
+        toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.');
+        return null;
+      }
+      matchedByInputIndex[index + 1] = [...new Set((indexed.userIds || []).filter(Boolean))];
+    }
+
+    return matchedByInputIndex;
+  }, [state?.userId]);
+
   const submitWithNormalization = useCallback(async (nextState, overwrite, delCondition, options = {}) => {
     const payload =
       nextState && typeof nextState === 'object'
@@ -895,47 +928,24 @@ export const ProfileForm = ({
         rawRules !== undefined || Boolean(delCondition?.[ADDITIONAL_ACCESS_FIELD] !== undefined);
       if (shouldReindexAfterAdditionalRulesChange) {
         const accessUserId = String(payload?.userId || state?.userId || '').trim();
-        const hasPrefilteredMatches =
-          !!options?.matchedUserIdsByInputIndex && typeof options.matchedUserIdsByInputIndex === 'object';
-        const currentRuleInputs = Array.isArray(rawRules)
-          ? rawRules.map(item => String(item || '').trim())
-          : String(rawRules || '')
-            .split(/\r?\n\s*\r?\n+/)
-            .map(item => item.trim());
-        const nextRuleTextByInputIndex = currentRuleInputs.reduce((acc, rulesText, idx) => {
-          acc[idx + 1] = rulesText;
-          return acc;
-        }, {});
+        const matchedUserIdsByInputIndex =
+          options?.matchedUserIdsByInputIndex && typeof options.matchedUserIdsByInputIndex === 'object'
+            ? options.matchedUserIdsByInputIndex
+            : await getIndexedMatchedUserIdsByInputIndex(rawRules);
 
-        if (matchedRuleCacheAccessUserIdRef.current !== accessUserId) {
-          matchedUserIdsByInputIndexRef.current = {};
-          matchedRuleTextByInputIndexRef.current = {};
+        if (!matchedUserIdsByInputIndex) {
+          Promise.resolve(handleSubmit(payload, overwrite, delCondition)).catch(error => {
+            console.error('Failed to submit profile changes', error);
+            const details = error?.message || String(error);
+            toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
+          });
+          return;
         }
-
-        const prevRuleTextByInputIndex = matchedRuleTextByInputIndexRef.current;
-        Object.keys(matchedUserIdsByInputIndexRef.current).forEach(rawInputIndex => {
-          const inputIndex = Number(rawInputIndex);
-          const prevRuleText = prevRuleTextByInputIndex[inputIndex] || '';
-          const nextRuleText = nextRuleTextByInputIndex[inputIndex] || '';
-          if (!nextRuleText || prevRuleText !== nextRuleText) {
-            delete matchedUserIdsByInputIndexRef.current[inputIndex];
-          }
-        });
-
-        if (hasPrefilteredMatches) {
-          matchedUserIdsByInputIndexRef.current = {
-            ...matchedUserIdsByInputIndexRef.current,
-            ...options.matchedUserIdsByInputIndex,
-          };
-        }
-
-        matchedRuleCacheAccessUserIdRef.current = accessUserId;
-        matchedRuleTextByInputIndexRef.current = nextRuleTextByInputIndex;
 
         const matchedUserIdsBySetKey = buildMatchedUserIdsBySetKey(
           rawRules,
           accessUserId,
-          matchedUserIdsByInputIndexRef.current
+          matchedUserIdsByInputIndex
         );
         const indexResult = await buildNewUsersFilterSetIndex({
           rawRules: rawRules !== undefined ? rawRules : '',
@@ -954,6 +964,8 @@ export const ProfileForm = ({
         toast.error(
           `Немає прав на запис у searchKeySets.\nПеревірте Firebase Rules для цього користувача.\n${details}`
         );
+      } else if (code.includes('MISSING_SEARCHKEY_INDEX')) {
+        toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.');
       } else {
         console.error('Failed to update additional access newUsers filter-set index', error);
         const details = error?.message || String(error);
@@ -965,7 +977,7 @@ export const ProfileForm = ({
       const details = error?.message || String(error);
       toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
     });
-  }, [buildMatchedUserIdsBySetKey, handleSubmit, state?.userId]);
+  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, handleSubmit, state?.userId]);
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
@@ -1038,8 +1050,6 @@ export const ProfileForm = ({
         updated[ADDITIONAL_ACCESS_FIELD] = nextInputs;
       }
 
-      matchedUserIdsByInputIndexRef.current = {};
-      matchedRuleTextByInputIndexRef.current = {};
       const delCondition =
         action === 'del' || removedValue !== undefined
           ? { [ADDITIONAL_ACCESS_FIELD]: removedValue }
@@ -1051,82 +1061,34 @@ export const ProfileForm = ({
 
   const indexAdditionalRulesForUser = useCallback(async rawRules => {
     const accessUserId = String(state?.userId || '').trim();
-    if (!accessUserId) {
-      toast.error('Не знайдено userId для індексації');
-      return null;
-    }
-
-    const ruleInputs = Array.isArray(rawRules)
-      ? rawRules.map(item => String(item || '').trim()).filter(Boolean)
-      : String(rawRules || '')
-        .split(/\r?\n\s*\r?\n+/)
-        .map(item => item.trim())
-        .filter(Boolean);
-    if (!ruleInputs.length) {
-      toast.error('Немає правил для індексації');
-      return null;
-    }
+    if (!accessUserId) return null;
 
     setIsIndexingAdditionalRules(true);
     const toastId = 'additional-rules-indexing';
     let stage = 'start';
     const stageToast = message => toast.loading(message, { id: toastId });
-    stageToast('1/5 Індексація searchKeySets: старт...');
+    stageToast('1/3 Індексація searchKeySets: старт...');
 
     try {
-      stage = 'load-new-users';
-      stageToast('2/5 Завантаження пулу newUsers...');
-      const newUsersSnapshot = await get(refDb(database, 'newUsers'));
-      const newUsersMap = newUsersSnapshot.exists() ? newUsersSnapshot.val() || {} : {};
-      const matchedUserIdsByInputIndex = {};
-
-      stage = 'compute-matches';
-      stageToast('3/5 Обчислення пулів користувачів по правилах...');
-      ruleInputs.forEach((rulesText, index) => {
-        const inputIndex = index + 1;
-        const cachedRuleText = String(matchedRuleTextByInputIndexRef.current?.[inputIndex] || '').trim();
-        const cachedUserIds = matchedUserIdsByInputIndexRef.current?.[inputIndex];
-        if (cachedRuleText && cachedRuleText === rulesText && Array.isArray(cachedUserIds)) {
-          matchedUserIdsByInputIndex[inputIndex] = cachedUserIds;
-          return;
-        }
-
-        const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
-        if (!parsedRuleGroups.length) return;
-
-        const matchedUserIds = Object.entries(newUsersMap)
-          .filter(([userId, userData]) =>
-            isUserAllowedByAnyAdditionalAccessRule(
-              { userId, ...(userData && typeof userData === 'object' ? userData : {}) },
-              parsedRuleGroups
-            )
-          )
-          .map(([userId]) => userId);
-
-        matchedUserIdsByInputIndex[inputIndex] = matchedUserIds;
-      });
+      stage = 'load-searchkey';
+      stageToast('2/3 Читання пулів із searchKey...');
+      const matchedUserIdsByInputIndex = await getIndexedMatchedUserIdsByInputIndex(rawRules);
+      if (!matchedUserIdsByInputIndex) {
+        toast('searchKeySets не оновлено: відсутні індекси searchKey.', { id: toastId });
+        return null;
+      }
 
       const matchedUserIdsBySetKey = buildMatchedUserIdsBySetKey(
         rawRules,
         accessUserId,
         matchedUserIdsByInputIndex
       );
-      matchedRuleTextByInputIndexRef.current = ruleInputs.reduce((acc, rulesText, idx) => {
-        acc[idx + 1] = rulesText;
-        return acc;
-      }, {});
-      matchedRuleCacheAccessUserIdRef.current = accessUserId;
-      matchedUserIdsByInputIndexRef.current = {
-        ...matchedUserIdsByInputIndexRef.current,
-        ...matchedUserIdsByInputIndex,
-      };
 
       stage = 'write-index';
-      stageToast('4/5 Запис індексів у searchKeySets...');
+      stageToast('3/3 Запис індексів у searchKeySets...');
       const indexResult = await buildNewUsersFilterSetIndex({
         rawRules,
         accessUserId,
-        newUsersData: newUsersMap,
         matchedUserIdsBySetKey,
       });
 
@@ -1151,6 +1113,8 @@ export const ProfileForm = ({
           `Помилка на етапі "${stage}": немає прав на запис у searchKeySets.\nПеревірте Firebase Rules для цього користувача.\n${details}`,
           { id: toastId }
         );
+      } else if (code.includes('MISSING_SEARCHKEY_INDEX')) {
+        toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.', { id: toastId });
       } else {
         toast.error(`Помилка на етапі "${stage}": не вдалося виконати індексацію наборів фільтрів.\n${details}`, { id: toastId });
       }
@@ -1158,7 +1122,7 @@ export const ProfileForm = ({
     } finally {
       setIsIndexingAdditionalRules(false);
     }
-  }, [buildMatchedUserIdsBySetKey, state?.userId]);
+  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, state?.userId]);
 
   const applyAdditionalRulesFromBuilder = async () => {
     const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
@@ -1167,22 +1131,9 @@ export const ProfileForm = ({
       return;
     }
 
-    let matchedUserIds = [];
-    try {
-      const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
-      const newUsersSnapshot = await get(refDb(database, 'newUsers'));
-      const newUsersMap = newUsersSnapshot.exists() ? newUsersSnapshot.val() || {} : {};
-      matchedUserIds = Object.entries(newUsersMap)
-        .filter(([userId, userData]) =>
-          isUserAllowedByAnyAdditionalAccessRule(
-            { userId, ...(userData && typeof userData === 'object' ? userData : {}) },
-            parsedRuleGroups
-          )
-        )
-        .map(([userId]) => userId);
-    } catch (error) {
-      console.error('Failed to precompute additional access matched users for indexing', error);
-    }
+    const matchedByInputIndex = await getIndexedMatchedUserIdsByInputIndex(rulesText);
+    if (!matchedByInputIndex) return;
+    const matchedUserIds = matchedByInputIndex[1] || [];
 
     setState(prevState => {
       const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
