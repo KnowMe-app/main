@@ -18,7 +18,11 @@ import {
   parseAdditionalAccessRuleGroups,
   resolveAdditionalAccessSearchKeyBuckets,
 } from './additionalAccessRules';
-import { getCachedSearchKeyPayload } from './searchKeyCache';
+import {
+  getCachedAdditionalRulesSetIndex,
+  getCachedSearchKeyPayload,
+  saveCachedAdditionalRulesSetIndex,
+} from './searchKeyCache';
 
 export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
@@ -230,17 +234,11 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
 
 export const buildNewUsersFilterSetIndex = async ({
   rawRules,
-  newUsersData = null,
   accessUserId,
   matchedUserIdsBySetKey = null,
 }) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   if (!normalizedAccessUserId) return null;
-
-  const sourceNewUsers =
-    newUsersData && typeof newUsersData === 'object'
-      ? newUsersData
-      : (await get(ref(database, 'newUsers'))).val() || {};
 
   const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
   const nextSetPayloads = ruleSetEntries
@@ -254,7 +252,15 @@ export const buildNewUsersFilterSetIndex = async ({
       const userIds =
         Array.isArray(prefilteredIds)
           ? buildUserIdsMapFromList(prefilteredIds)
-          : mapMatchingIdsByRules(sourceNewUsers, parsedRuleGroups);
+          : null;
+      if (!userIds) {
+        return {
+          setKey: ownerSetKey,
+          userIds: null,
+          parsedRuleGroups,
+          missingSearchKeyIndex: true,
+        };
+      }
 
       return {
         setKey: ownerSetKey,
@@ -263,6 +269,11 @@ export const buildNewUsersFilterSetIndex = async ({
       };
     })
     .filter(Boolean);
+  if (nextSetPayloads.some(item => item.missingSearchKeyIndex)) {
+    const error = new Error('Missing searchKey index for one or more additional access rule sets');
+    error.code = 'MISSING_SEARCHKEY_INDEX';
+    throw error;
+  }
 
   const rootSnap = await get(ref(database, SEARCH_KEY_SETS_ROOT));
   const rootMap = rootSnap.exists() ? rootSnap.val() || {} : {};
@@ -284,22 +295,12 @@ export const buildNewUsersFilterSetIndex = async ({
     // eslint-disable-next-line no-await-in-loop
     await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`));
 
-    const pickedUsers = pickUsersByIds(sourceNewUsers, Object.keys(userIds || {}));
-    const options = {
-      usersData: pickedUsers,
-      rootPath: `${SEARCH_KEY_SETS_ROOT}/${setKey}`,
-    };
+    const rootPath = `${SEARCH_KEY_SETS_ROOT}/${setKey}`;
     const ruleBucketWrites = buildRuleBucketWrites({
-      rootPath: options.rootPath,
+      rootPath,
       parsedRuleGroups,
       userIds: Object.keys(userIds || {}),
     });
-
-    // eslint-disable-next-line no-await-in-loop
-    for (const builder of SEARCH_KEY_SET_BUILDERS) {
-      // eslint-disable-next-line no-await-in-loop
-      await builder('newUsers', undefined, options);
-    }
 
     if (Object.keys(ruleBucketWrites).length) {
       // eslint-disable-next-line no-await-in-loop
@@ -319,6 +320,11 @@ export const buildNewUsersFilterSetIndex = async ({
 export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   if (!normalizedAccessUserId) return null;
+
+  const cachedIndexedSet = getCachedAdditionalRulesSetIndex({
+    rawRules,
+    accessUserId: normalizedAccessUserId,
+  });
 
   const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
   const setEntries = ruleSetEntries
@@ -346,10 +352,49 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
       const paths = Object.entries(indexBuckets).flatMap(([indexName, values]) =>
         values.map(value => `${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${value}`)
       );
-      return { setKey, paths };
+      return { setKey, paths, indexBuckets };
     })
     .filter(Boolean);
   if (!setEntries.length) return null;
+
+  const buildIndexedResultFromSetsMap = setsMap => {
+    if (!setsMap || typeof setsMap !== 'object') return null;
+
+    const userIds = new Set();
+    const setKeys = [];
+    for (const entry of setEntries) {
+      const setNode = setsMap?.[entry.setKey];
+      if (!setNode || typeof setNode !== 'object') return null;
+
+      Object.entries(entry.indexBuckets).forEach(([indexName, values]) => {
+        values.forEach(value => {
+          const bucketValue = setNode?.[indexName]?.[value];
+          if (!bucketValue || typeof bucketValue !== 'object') {
+            throw new Error('MISSING_BUCKET');
+          }
+          setKeys.push(`${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}/${value}`);
+          Object.keys(bucketValue).forEach(userId => {
+            if (userId) userIds.add(userId);
+          });
+        });
+      });
+    }
+
+    return {
+      setKeys,
+      userIds: [...userIds],
+      ownerId: normalizedAccessUserId,
+    };
+  };
+
+  if (cachedIndexedSet) {
+    try {
+      const cachedResult = buildIndexedResultFromSetsMap(cachedIndexedSet);
+      if (cachedResult) return cachedResult;
+    } catch {
+      // ignore malformed or incomplete cache and fallback to backend
+    }
+  }
 
   const payloadsBySet = await Promise.all(
     setEntries.map(async entry => {
@@ -373,19 +418,39 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
   }
 
   const userIds = new Set();
+  const setsMap = {};
   payloadsBySet.forEach(item => {
+    setsMap[item.setKey] = setsMap[item.setKey] && typeof setsMap[item.setKey] === 'object'
+      ? setsMap[item.setKey]
+      : {};
     item.payloads.forEach(payload => {
       Object.keys(payload?.value || {}).forEach(userId => {
         if (userId) userIds.add(userId);
       });
     });
+    item.paths.forEach((path, pathIndex) => {
+      const [, setKey, indexName, value] = String(path).split('/');
+      if (!setKey || !indexName || !value) return;
+      const payloadValue = item.payloads[pathIndex]?.value;
+      if (!payloadValue || typeof payloadValue !== 'object') return;
+      if (!setsMap[setKey][indexName] || typeof setsMap[setKey][indexName] !== 'object') {
+        setsMap[setKey][indexName] = {};
+      }
+      setsMap[setKey][indexName][value] = payloadValue;
+    });
   });
 
-  return {
+  const result = {
     setKeys: payloadsBySet.flatMap(item => item.paths),
     userIds: [...userIds],
     ownerId: normalizedAccessUserId,
   };
+  saveCachedAdditionalRulesSetIndex({
+    rawRules,
+    accessUserId: normalizedAccessUserId,
+    setsMap,
+  });
+  return result;
 };
 
 export const rebuildAllNewUsersFilterSetIndexes = async () => {

@@ -61,3 +61,28 @@ export const saveCachedAdditionalRulesPreview = ({ rawRules, accessUserId, count
     userIds: normalizedIds,
   });
 };
+
+export const buildAdditionalRulesSetIndexCacheKey = ({ rawRules, accessUserId }) => {
+  const normalizedRules = normalizeRulesText(rawRules);
+  const normalizedAccessUserId = String(accessUserId || '').trim() || 'anonymous';
+  if (!normalizedRules) return null;
+  return `additionalRulesSetIndex:${normalizedAccessUserId}:${encodeURIComponent(normalizedRules)}`;
+};
+
+export const getCachedAdditionalRulesSetIndex = ({ rawRules, accessUserId }) => {
+  const cacheKey = buildAdditionalRulesSetIndexCacheKey({ rawRules, accessUserId });
+  if (!cacheKey) return null;
+
+  const cached = loadCache(cacheKey);
+  if (!cached || typeof cached !== 'object') return null;
+  return cached;
+};
+
+export const saveCachedAdditionalRulesSetIndex = ({ rawRules, accessUserId, setsMap }) => {
+  const cacheKey = buildAdditionalRulesSetIndexCacheKey({ rawRules, accessUserId });
+  if (!cacheKey) return;
+
+  if (!setsMap || typeof setsMap !== 'object' || Array.isArray(setsMap)) return;
+  if (Object.keys(setsMap).length === 0) return;
+  saveCache(cacheKey, setsMap);
+};
