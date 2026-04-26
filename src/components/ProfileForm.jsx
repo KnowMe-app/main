@@ -95,6 +95,22 @@ const nestedIndentStyle = {
 };
 
 const ADDITIONAL_ACCESS_FIELD = 'additionalAccessRules';
+const PHENOTYPE_RESPONSIBILITY_FIELDS = new Set([
+  'eyeColor',
+  'hairColor',
+  'glasses',
+  'hairStructure',
+  'race',
+  'bodyType',
+  'faceShape',
+  'noseShape',
+  'lipsShape',
+  'chin',
+  'phenotype',
+  'phenotypicCharacteristics',
+  'phenotypeResponsibility',
+  'responsibility',
+]);
 const SEARCH_KEY_ROOT = 'searchKey';
 const ADDITIONAL_RULE_LABELS = {
   age: 'Вік',
@@ -1741,6 +1757,11 @@ ${entries.join('\n')}`;
     ...normalizedFieldsToRender.filter(field => !priorityOrder.includes(field.name)),
   ];
 
+  const normalizedRole = String(state?.role || state?.userRole || '')
+    .trim()
+    .toLowerCase();
+  const shouldHidePhenotypeResponsibilityInputs = ['pp', 'cl'].includes(normalizedRole);
+
   const handleOpenModal = fieldName => {
     setSelectedField(fieldName);
     setShowInfoModal('pickerOptions');
@@ -1810,6 +1831,10 @@ ${entries.join('\n')}`;
       {sortedFieldsToRender
         .filter(field => !['myComment', 'writer'].includes(field.name))
         .filter(field => (isAdmin ? true : field.name !== ADDITIONAL_ACCESS_FIELD))
+        .filter(field => {
+          if (!shouldHidePhenotypeResponsibilityInputs) return true;
+          return !PHENOTYPE_RESPONSIBILITY_FIELDS.has(field.name);
+        })
         .map((field, index) => {
           const overlayEntries = getOverlayEntriesForField(field.name);
           const hasOverlaySuggestions = overlayEntries.length > 0;
