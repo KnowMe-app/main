@@ -891,7 +891,9 @@ export const ProfileForm = ({
         : nextState;
     try {
       const rawRules = payload?.[ADDITIONAL_ACCESS_FIELD];
-      if (rawRules !== undefined) {
+      const shouldReindexAfterAdditionalRulesChange =
+        rawRules !== undefined || Boolean(delCondition?.[ADDITIONAL_ACCESS_FIELD] !== undefined);
+      if (shouldReindexAfterAdditionalRulesChange) {
         const accessUserId = String(payload?.userId || state?.userId || '').trim();
         const hasPrefilteredMatches =
           !!options?.matchedUserIdsByInputIndex && typeof options.matchedUserIdsByInputIndex === 'object';
@@ -936,7 +938,7 @@ export const ProfileForm = ({
           matchedUserIdsByInputIndexRef.current
         );
         const indexResult = await buildNewUsersFilterSetIndex({
-          rawRules,
+          rawRules: rawRules !== undefined ? rawRules : '',
           accessUserId,
           matchedUserIdsBySetKey,
         });
