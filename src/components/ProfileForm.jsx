@@ -632,11 +632,7 @@ export const ProfileForm = ({
   useEffect(() => {
     if (!showAdditionalRulesModal) return;
     const activeInputValue = additionalRulesInputs[activeAdditionalRuleInputIndex] || '';
-    const combinedAppliedText = additionalRulesInputs
-      .map(item => String(item || '').trim())
-      .filter(Boolean)
-      .join('\n\n');
-    setPreviewAdditionalRulesText(combinedAppliedText);
+    setPreviewAdditionalRulesText(String(activeInputValue || '').trim());
     const parsed = parseAdditionalRulesTextToBuilder(activeInputValue);
     if (parsed.length > 0) {
       setAdditionalRuleBuilder(parsed);
@@ -1021,7 +1017,7 @@ export const ProfileForm = ({
     );
 
     setActiveAdditionalRuleInputIndex(nextActiveIndex);
-    setPreviewAdditionalRulesText(nextInputs.join('\n\n'));
+    setPreviewAdditionalRulesText(String(nextInputs[nextActiveIndex] || '').trim());
 
     setState(prevState => {
       const updated = { ...prevState };
@@ -1205,10 +1201,7 @@ export const ProfileForm = ({
     setPreviewAdditionalRulesText(prev => {
       const nextInputs = additionalRulesTextToInputs(prev);
       nextInputs[activeAdditionalRuleInputIndex] = rulesText;
-      return nextInputs
-        .map(item => String(item || '').trim())
-        .filter(Boolean)
-        .join('\n\n');
+      return String(nextInputs[activeAdditionalRuleInputIndex] || '').trim();
     });
   };
 
@@ -1228,12 +1221,8 @@ export const ProfileForm = ({
       ...prevState,
       [ADDITIONAL_ACCESS_FIELD]: updatedValue,
     }));
-    setPreviewAdditionalRulesText(
-      (Array.isArray(updatedValue) ? updatedValue : additionalRulesTextToInputs(updatedValue))
-        .map(item => String(item || '').trim())
-        .filter(Boolean)
-        .join('\n\n')
-    );
+    const updatedInputs = Array.isArray(updatedValue) ? updatedValue : additionalRulesTextToInputs(updatedValue);
+    setPreviewAdditionalRulesText(String(updatedInputs[activeAdditionalRuleInputIndex] || '').trim());
 
     await indexAdditionalRulesForUser(updatedValue);
   };
@@ -2345,7 +2334,7 @@ ${entries.join('\n')}`;
               onChange={handleCombinedAdditionalRulesChange}
             />
             <AdditionalCardsTitle>
-              Доступні карточки ({availableCardsCount}) {isLoadingAvailableCards ? '...завантаження' : ''}
+              Доступні карточки для активного набору ({availableCardsCount}) {isLoadingAvailableCards ? '...завантаження' : ''}
             </AdditionalCardsTitle>
           </AdditionalRulesModal>
         </AdditionalRulesOverlay>
