@@ -18,6 +18,7 @@ import {
   parseAdditionalAccessRuleGroups,
   resolveAdditionalAccessSearchKeyBuckets,
 } from './additionalAccessRules';
+import { getCachedSearchKeyPayload } from './searchKeyCache';
 
 export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
@@ -350,28 +351,38 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
     .filter(Boolean);
   if (!setEntries.length) return null;
 
-  const snapshotsBySet = await Promise.all(
+  const payloadsBySet = await Promise.all(
     setEntries.map(async entry => {
-      const snapshots = await Promise.all(entry.paths.map(path => get(ref(database, path))));
-      return { setKey: entry.setKey, paths: entry.paths, snapshots };
+      const payloads = await Promise.all(
+        entry.paths.map(path =>
+          getCachedSearchKeyPayload(path, async () => {
+            const snapshot = await get(ref(database, path));
+            return {
+              exists: snapshot.exists(),
+              value: snapshot.exists() ? snapshot.val() || {} : null,
+            };
+          })
+        )
+      );
+      return { setKey: entry.setKey, paths: entry.paths, payloads };
     })
   );
 
-  if (snapshotsBySet.some(item => item.snapshots.some(snapshot => !snapshot.exists()))) {
+  if (payloadsBySet.some(item => item.payloads.some(payload => !payload?.exists))) {
     return null;
   }
 
   const userIds = new Set();
-  snapshotsBySet.forEach(item => {
-    item.snapshots.forEach(snapshot => {
-      Object.keys(snapshot.val() || {}).forEach(userId => {
+  payloadsBySet.forEach(item => {
+    item.payloads.forEach(payload => {
+      Object.keys(payload?.value || {}).forEach(userId => {
         if (userId) userIds.add(userId);
       });
     });
   });
 
   return {
-    setKeys: snapshotsBySet.flatMap(item => item.paths),
+    setKeys: payloadsBySet.flatMap(item => item.paths),
     userIds: [...userIds],
     ownerId: normalizedAccessUserId,
   };
