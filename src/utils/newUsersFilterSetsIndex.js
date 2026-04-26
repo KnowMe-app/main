@@ -14,7 +14,6 @@ import {
 } from 'components/config';
 import { encodeKey } from './searchIndexCandidates';
 import {
-  isUserAllowedByAnyAdditionalAccessRule,
   parseAdditionalAccessRuleGroups,
   resolveAdditionalAccessSearchKeyBuckets,
 } from './additionalAccessRules';
@@ -91,17 +90,6 @@ export const decodeAdditionalRulesSetKey = encodedSetKey => {
   return `${ownerId}${SET_KEY_INDEX_SEPARATOR}${normalizedSetIndex}`;
 };
 
-const mapMatchingIdsByRules = (newUsersData, parsedRuleGroups) => {
-  const ids = {};
-  Object.entries(newUsersData || {}).forEach(([userId, userData]) => {
-    const row = { userId, ...(userData && typeof userData === 'object' ? userData : {}) };
-    if (isUserAllowedByAnyAdditionalAccessRule(row, parsedRuleGroups)) {
-      ids[userId] = true;
-    }
-  });
-  return ids;
-};
-
 const buildUserIdsMapFromList = userIds =>
   (Array.isArray(userIds) ? userIds : [])
     .filter(Boolean)
@@ -122,13 +110,6 @@ const SEARCH_KEY_SET_BUILDERS = [
   createReactionSearchKeyIndexInCollection,
   createFieldCountSearchKeyIndexInCollection,
 ];
-
-const pickUsersByIds = (usersMap, ids = []) =>
-  ids.reduce((acc, userId) => {
-    if (!userId) return acc;
-    acc[userId] = usersMap?.[userId] && typeof usersMap[userId] === 'object' ? usersMap[userId] : {};
-    return acc;
-  }, {});
 
 const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds }) => {
   const normalizedRootPath = String(rootPath || '').trim();
@@ -165,16 +146,10 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds }) => {
 export const buildSearchKeySetIndexFromMatchedUsers = async ({
   rawRules,
   accessUserId,
-  newUsersData = null,
   matchedUserIdsBySetKey = null,
 }) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   if (!normalizedAccessUserId) return null;
-
-  const sourceNewUsers =
-    newUsersData && typeof newUsersData === 'object'
-      ? newUsersData
-      : (await get(ref(database, 'newUsers'))).val() || {};
 
   const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
   const setPayloads = ruleSetEntries
@@ -185,13 +160,26 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
       const setKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
       if (!setKey) return null;
 
-      const userIds = Array.isArray(matchedUserIdsBySetKey?.[setKey])
-        ? [...new Set(matchedUserIdsBySetKey[setKey].filter(Boolean))]
-        : Object.keys(mapMatchingIdsByRules(sourceNewUsers, parsedRuleGroups));
+      const prefilteredIds = matchedUserIdsBySetKey?.[setKey];
+      if (!Array.isArray(prefilteredIds)) {
+        return {
+          setKey,
+          userIds: [],
+          parsedRuleGroups,
+          missingSearchKeyIndex: true,
+        };
+      }
 
+      const userIds = [...new Set(prefilteredIds.filter(Boolean))];
       return { setKey, userIds, parsedRuleGroups };
     })
     .filter(Boolean);
+
+  if (setPayloads.some(item => item.missingSearchKeyIndex)) {
+    const error = new Error('Missing searchKey index for one or more additional access rule sets');
+    error.code = 'MISSING_SEARCHKEY_INDEX';
+    throw error;
+  }
 
   for (const setPayload of setPayloads) {
     // eslint-disable-next-line no-await-in-loop
@@ -202,9 +190,7 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
       continue;
     }
 
-    const usersData = pickUsersByIds(sourceNewUsers, setPayload.userIds);
     const options = {
-      usersData,
       rootPath: `${SEARCH_KEY_SETS_ROOT}/${setPayload.setKey}`,
     };
     const ruleBucketWrites = buildRuleBucketWrites({
@@ -453,15 +439,53 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
   return result;
 };
 
+const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
+  const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
+  const paths = Object.entries(bucketMap || {}).flatMap(([indexName, rawValues]) => {
+    const normalizedIndexName = normalizePathSegment(indexName);
+    if (!normalizedIndexName) return [];
+
+    const values = [
+      ...new Set(
+        (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
+          .map(normalizePathSegment)
+          .filter(Boolean)
+      ),
+    ];
+    return values.map(value => `searchKey/${normalizedIndexName}/${value}`);
+  });
+
+  if (!paths.length) return [];
+
+  const snapshots = await Promise.all(
+    paths.map(path =>
+      getCachedSearchKeyPayload(path, async () => {
+        const snapshot = await get(ref(database, path));
+        return {
+          exists: snapshot.exists(),
+          value: snapshot.exists() ? snapshot.val() || {} : null,
+        };
+      })
+    )
+  );
+
+  const ids = new Set();
+  snapshots.forEach(payload => {
+    if (!payload?.exists || !payload.value || typeof payload.value !== 'object') return;
+    Object.keys(payload.value).forEach(userId => {
+      if (userId) ids.add(userId);
+    });
+  });
+  return [...ids];
+};
+
 export const rebuildAllNewUsersFilterSetIndexes = async () => {
-  const [usersSnap, newUsersSnap, searchKeySetSnap] = await Promise.all([
+  const [usersSnap, searchKeySetSnap] = await Promise.all([
     get(ref(database, 'users')),
-    get(ref(database, 'newUsers')),
     get(ref(database, SEARCH_KEY_SETS_ROOT)),
   ]);
 
   const usersMap = usersSnap.exists() ? usersSnap.val() || {} : {};
-  const newUsersMap = newUsersSnap.exists() ? newUsersSnap.val() || {} : {};
   const searchKeySetMap = searchKeySetSnap.exists() ? searchKeySetSnap.val() || {} : {};
   await Promise.all(Object.keys(searchKeySetMap).map(key => remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${key}`))));
 
@@ -478,7 +502,7 @@ export const rebuildAllNewUsersFilterSetIndexes = async () => {
     totalRuleSets += setTexts.length;
 
     // Подвійна послідовна індексація:
-    // 1) формуємо попередньо відфільтрований набір newUsers для кожного setKey (як у модалці "Додаткові правила доступу")
+    // 1) формуємо попередньо відфільтрований набір userIds із searchKey buckets для кожного setKey
     // 2) записуємо searchKeySets з урахуванням цих наборів
     const matchedUserIdsBySetKey = {};
     const ruleEntries = parseRawRulesToSetEntries(rawRules);
@@ -488,20 +512,21 @@ export const rebuildAllNewUsersFilterSetIndexes = async () => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
       if (!parsedRuleGroups.length) return;
 
-      const matchedUserIds = Object.entries(newUsersMap)
-        .filter(([newUserId, newUserData]) =>
-          isUserAllowedByAnyAdditionalAccessRule(
-            { userId: newUserId, ...(newUserData && typeof newUserData === 'object' ? newUserData : {}) },
-            parsedRuleGroups
-          )
-        )
-        .map(([newUserId]) => newUserId);
-      matchedUserIdsBySetKey[setKey] = matchedUserIds;
+      matchedUserIdsBySetKey[setKey] = [];
     });
+
+    for (const { text: setText, inputIndex } of ruleEntries) {
+      const setKey = makeAdditionalRulesSetKey(setText, userId, inputIndex);
+      if (!setKey) continue;
+      const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
+      if (!parsedRuleGroups.length) continue;
+
+      // eslint-disable-next-line no-await-in-loop
+      matchedUserIdsBySetKey[setKey] = await getMatchedUserIdsFromSearchKey(parsedRuleGroups);
+    }
 
     const indexed = await buildNewUsersFilterSetIndex({
       rawRules,
-      newUsersData: newUsersMap,
       accessUserId: userId,
       matchedUserIdsBySetKey,
     });
