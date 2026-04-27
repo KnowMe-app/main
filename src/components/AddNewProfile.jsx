@@ -639,6 +639,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const location = useLocation();
   const lastUrlUserIdRef = useRef(new URLSearchParams(location.search).get('userId'));
   const hasRestoredStoredEditUserRef = useRef(false);
+  const initialAccess = resolveAccess({
+    uid: auth.currentUser?.uid,
+    accessLevel: localStorage.getItem('accessLevel'),
+  });
 
   const [userNotFound, setUserNotFound] = useState(false);
 
@@ -836,7 +840,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
-    const restoredUserId = params.get('userId') || '';
+    const restoredUserId = initialAccess.canAccessAdd ? params.get('userId') || '' : '';
 
     if (!restoredUserId) {
       return {};
