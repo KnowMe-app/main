@@ -638,7 +638,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const location = useLocation();
   const lastUrlUserIdRef = useRef(new URLSearchParams(location.search).get('userId'));
-  const hasRestoredStoredEditUserRef = useRef(false);
   const initialAccess = resolveAccess({
     uid: auth.currentUser?.uid,
     accessLevel: localStorage.getItem('accessLevel'),
@@ -1325,23 +1324,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       lastUrlUserIdRef.current = null;
     }
   }, [canAccessAdd, location.search, setSearch, setState]);
-
-  useEffect(() => {
-    if (hasRestoredStoredEditUserRef.current) return;
-    hasRestoredStoredEditUserRef.current = true;
-
-    if (!canAccessAdd) return;
-
-    const params = new URLSearchParams(location.search);
-    if (params.get('userId')) return;
-    if (state?.userId) return;
-
-    const storedUserId = localStorage.getItem(EDIT_PROFILE_USER_ID_KEY);
-    if (!storedUserId) return;
-
-    setProfileSource('');
-    setState(prev => (prev?.userId === storedUserId ? prev : { userId: storedUserId }));
-  }, [canAccessAdd, location.search, state?.userId, setState, EDIT_PROFILE_USER_ID_KEY]);
 
   useEffect(() => {
     const normalized = (search || '').trim();
