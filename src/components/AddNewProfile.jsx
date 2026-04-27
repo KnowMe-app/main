@@ -1328,10 +1328,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (!canAccessAdd) return;
 
-    const navigationEntry = performance.getEntriesByType('navigation')?.[0];
-    const isPageReload = navigationEntry?.type === 'reload';
-    if (!isPageReload) return;
-
     const params = new URLSearchParams(location.search);
     if (params.get('userId')) return;
     if (state?.userId) return;
