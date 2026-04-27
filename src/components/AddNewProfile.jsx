@@ -872,10 +872,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState(null);
   const navigate = useNavigate();
-  const access = resolveAccess({
-    uid: auth.currentUser?.uid,
-    accessLevel: localStorage.getItem('accessLevel'),
-  });
+  const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
   const isAdmin = access.isAdmin;
   const canAccessAdd = access.canAccessAdd;
   const [stimulationScheduleProfiles, setStimulationScheduleProfiles] = useState([]);
@@ -1283,20 +1280,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     };
 
     previousListStateRef.current = snapshot;
-    try {
-      const persistedSnapshot = {
-        ...snapshot,
-        userIds: Array.isArray(snapshot.userIds)
-          ? snapshot.userIds.slice(0, 200)
-          : [],
-        isUserIdsTruncated: Array.isArray(snapshot.userIds)
-          ? snapshot.userIds.length > 200
-          : false,
-      };
-      localStorage.setItem(PREVIOUS_LIST_STATE_KEY, JSON.stringify(persistedSnapshot));
-    } catch (error) {
-      console.warn('[AddNewProfile] Failed to persist previous list snapshot', error);
-    }
+    localStorage.setItem(PREVIOUS_LIST_STATE_KEY, JSON.stringify(snapshot));
   }, [
     state.userId,
     users,
@@ -1521,19 +1505,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     if (state?.userId) {
-      try {
-        localStorage.setItem(EDIT_PROFILE_USER_ID_KEY, state.userId);
-      } catch (error) {
-        console.warn('[AddNewProfile] Failed to persist edit user id', error);
-      }
+      localStorage.setItem(EDIT_PROFILE_USER_ID_KEY, state.userId);
       return;
     }
 
-    try {
-      localStorage.removeItem(EDIT_PROFILE_USER_ID_KEY);
-    } catch (error) {
-      console.warn('[AddNewProfile] Failed to clear edit user id', error);
-    }
+    localStorage.removeItem(EDIT_PROFILE_USER_ID_KEY);
   }, [state?.userId, EDIT_PROFILE_USER_ID_KEY]);
 
   useEffect(() => {
