@@ -595,6 +595,9 @@ export const ProfileForm = ({
   const [availableCardsCount, setAvailableCardsCount] = useState(0);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
   const [isIndexingAdditionalRules, setIsIndexingAdditionalRules] = useState(false);
+  const [showSearchKeySourceModal, setShowSearchKeySourceModal] = useState(false);
+  const [pendingRulesToApply, setPendingRulesToApply] = useState('');
+  const searchKeyFileInputRef = useRef(null);
   const autoAppliedOverlayForUserRef = useRef('');
 
   const addEmptyAdditionalFilter = useCallback(() => {
@@ -1124,16 +1127,9 @@ export const ProfileForm = ({
     }
   }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, state?.userId]);
 
-  const applyAdditionalRulesFromBuilder = async () => {
-    const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
-    if (!rulesText.trim()) {
-      toast.error('Оберіть щонайменше один фільтр перед застосуванням');
-      return;
-    }
-
-    const matchedByInputIndex = await getIndexedMatchedUserIdsByInputIndex(rulesText);
-    if (!matchedByInputIndex) return;
-    const matchedUserIds = matchedByInputIndex[1] || [];
+  const applyAdditionalRulesWithMatchedIds = async (rulesText, matchedByInputIndex) => {
+    if (!rulesText?.trim()) return;
+    const matchedUserIds = matchedByInputIndex?.[1] || [];
 
     setState(prevState => {
       const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
@@ -1156,6 +1152,111 @@ export const ProfileForm = ({
       nextInputs[activeAdditionalRuleInputIndex] = rulesText;
       return String(nextInputs[activeAdditionalRuleInputIndex] || '').trim();
     });
+  };
+
+  const resolveMatchedIdsFromSearchKeyPayload = useCallback((rulesText, payload) => {
+    if (!payload || typeof payload !== 'object') return null;
+
+    const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
+    if (!parsedRuleGroups.length) return { 1: [] };
+
+    const matched = new Set();
+    parsedRuleGroups.forEach(parsedRules => {
+      const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
+      Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
+        const indexNode = payload?.[indexName];
+        if (!indexNode || typeof indexNode !== 'object') return;
+        const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
+        normalizedValues.forEach(value => {
+          const bucket = indexNode?.[value];
+          if (!bucket || typeof bucket !== 'object') return;
+          Object.keys(bucket).forEach(userId => {
+            if (userId) matched.add(userId);
+          });
+        });
+      });
+    });
+
+    return { 1: [...matched] };
+  }, []);
+
+  const downloadSearchKeyFile = useCallback(async () => {
+    const toastId = 'download-searchkey-file';
+    toast.loading('Готуємо файл searchKey для завантаження...', { id: toastId });
+    try {
+      const snap = await get(refDb(database, SEARCH_KEY_ROOT));
+      if (!snap.exists()) {
+        toast.error('searchKey не знайдено в базі.', { id: toastId });
+        return false;
+      }
+      const payload = snap.val() || {};
+      const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `searchKey-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Файл searchKey завантажено.', { id: toastId });
+      return true;
+    } catch (error) {
+      const details = error?.message || String(error);
+      toast.error(`Не вдалося завантажити searchKey.\n${details}`, { id: toastId });
+      return false;
+    }
+  }, []);
+
+  const applyAdditionalRulesFromBuilder = async () => {
+    const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
+    if (!rulesText.trim()) {
+      toast.error('Оберіть щонайменше один фільтр перед застосуванням');
+      return;
+    }
+    setPendingRulesToApply(rulesText);
+    setShowSearchKeySourceModal(true);
+  };
+
+  const applyUsingSavedSearchKey = async () => {
+    if (!pendingRulesToApply.trim()) return;
+    if (searchKeyFileInputRef.current) {
+      searchKeyFileInputRef.current.value = '';
+      searchKeyFileInputRef.current.click();
+    }
+  };
+
+  const handleDownloadSearchKeyOnly = async () => {
+    const downloaded = await downloadSearchKeyFile();
+    if (downloaded) {
+      setShowSearchKeySourceModal(false);
+      setPendingRulesToApply('');
+    }
+  };
+
+  const handleSearchKeyFileSelected = async event => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    if (!pendingRulesToApply.trim()) {
+      toast.error('Немає правил для застосування.');
+      return;
+    }
+
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw);
+      const matchedByInputIndex = resolveMatchedIdsFromSearchKeyPayload(pendingRulesToApply, parsed);
+      if (!matchedByInputIndex) {
+        toast.error('Некоректний файл searchKey.');
+        return;
+      }
+      await applyAdditionalRulesWithMatchedIds(pendingRulesToApply, matchedByInputIndex);
+      setShowSearchKeySourceModal(false);
+      setPendingRulesToApply('');
+    } catch (error) {
+      const details = error?.message || String(error);
+      toast.error(`Не вдалося прочитати файл searchKey.\n${details}`);
+    }
   };
 
   const indexAdditionalRulesFromBuilder = async () => {
@@ -2293,6 +2394,41 @@ ${entries.join('\n')}`;
         </AdditionalRulesOverlay>
       )}
 
+      {showSearchKeySourceModal && (
+        <AdditionalRulesOverlay>
+          <SearchKeySourceModal onClick={e => e.stopPropagation()}>
+            <h3>Оберіть джерело SearchKey</h3>
+            <p>
+              Щоб зменшити навантаження, backend searchKey завантажується лише за прямої дії адміна.
+            </p>
+            <SearchKeySourceActions>
+              <button type="button" onClick={handleDownloadSearchKeyOnly}>
+                1) Викачати SearchKey
+              </button>
+              <button type="button" onClick={applyUsingSavedSearchKey}>
+                2) Обрати локально збережений файл SearchKey і застосувати
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSearchKeySourceModal(false);
+                  setPendingRulesToApply('');
+                }}
+              >
+                Скасувати
+              </button>
+            </SearchKeySourceActions>
+            <input
+              ref={searchKeyFileInputRef}
+              type="file"
+              accept="application/json,.json"
+              style={{ display: 'none' }}
+              onChange={handleSearchKeyFileSelected}
+            />
+          </SearchKeySourceModal>
+        </AdditionalRulesOverlay>
+      )}
+
       {showInfoModal && (
         <InfoModal
           onClose={handleCloseModal}
@@ -2616,6 +2752,28 @@ const AdditionalRulePreview = styled.textarea`
 const AdditionalCardsTitle = styled.h4`
   margin-top: 14px;
   margin-bottom: 8px;
+`;
+
+const SearchKeySourceModal = styled.div`
+  background: #fff;
+  color: #1f1f1f;
+  width: min(520px, calc(100vw - 24px));
+  margin: auto;
+  padding: 18px 16px;
+  border-radius: 12px;
+  line-height: 1.4;
+`;
+
+const SearchKeySourceActions = styled.div`
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  button {
+    padding: 10px 12px;
+    text-align: left;
+  }
 `;
 
 const DelKeyValueBTN = styled.button`
