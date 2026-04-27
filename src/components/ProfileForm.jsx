@@ -579,6 +579,7 @@ export const ProfileForm = ({
   overlayFieldAdditions = {},
   refreshOverlayForEditor,
 }) => {
+  const profileState = state || {};
   const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
@@ -608,7 +609,7 @@ export const ProfileForm = ({
     () => buildAdditionalRulesTextFromBuilder(additionalRuleBuilder),
     [additionalRuleBuilder]
   );
-  const additionalAccessFieldValue = state?.[ADDITIONAL_ACCESS_FIELD];
+  const additionalAccessFieldValue = profileState?.[ADDITIONAL_ACCESS_FIELD];
   const additionalRulesInputs = useMemo(() => {
     const rawValue = additionalAccessFieldValue;
     if (Array.isArray(rawValue)) {
@@ -622,9 +623,9 @@ export const ProfileForm = ({
     return additionalRulesDraftText || activeInputValue;
   }, [activeAdditionalRuleInputIndex, additionalRulesDraftText, additionalRulesInputs]);
   useEffect(() => {
-    if (state?.userId) return;
+    if (profileState?.userId) return;
     autoAppliedOverlayForUserRef.current = '';
-  }, [state?.userId]);
+  }, [profileState?.userId]);
 
   useEffect(() => {
     if (!showAdditionalRulesModal) return;
@@ -644,7 +645,7 @@ export const ProfileForm = ({
     let cancelled = false;
     const loadAvailableCards = async () => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(previewAdditionalRulesText);
-      const accessUserId = String(state?.userId || '').trim();
+      const accessUserId = String(profileState?.userId || '').trim();
       const cachedPreview = getCachedAdditionalRulesPreview({
         rawRules: previewAdditionalRulesText,
         accessUserId,
@@ -830,12 +831,12 @@ export const ProfileForm = ({
   }, [
     previewAdditionalRulesText,
     showAdditionalRulesModal,
-    state?.userId,
+    profileState?.userId,
   ]);
 
   useEffect(() => {
     setDismissedOverlayEntries({});
-  }, [state?.userId, overlayFieldAdditions]);
+  }, [profileState?.userId, overlayFieldAdditions]);
 
   const normalizeGetInTouchForSubmit = draftState => {
     if (!draftState || typeof draftState !== 'object') {
@@ -882,7 +883,7 @@ export const ProfileForm = ({
   }, []);
 
   const getIndexedMatchedUserIdsByInputIndex = useCallback(async rawRules => {
-    const accessUserId = String(state?.userId || '').trim();
+    const accessUserId = String(profileState?.userId || '').trim();
     if (!accessUserId) {
       toast.error('Не знайдено userId для індексації');
       return null;
@@ -915,7 +916,7 @@ export const ProfileForm = ({
     }
 
     return matchedByInputIndex;
-  }, [state?.userId]);
+  }, [profileState?.userId]);
 
   const submitWithNormalization = useCallback(async (nextState, overwrite, delCondition, options = {}) => {
     const payload =
@@ -927,7 +928,7 @@ export const ProfileForm = ({
       const shouldReindexAfterAdditionalRulesChange =
         rawRules !== undefined || Boolean(delCondition?.[ADDITIONAL_ACCESS_FIELD] !== undefined);
       if (shouldReindexAfterAdditionalRulesChange) {
-        const accessUserId = String(payload?.userId || state?.userId || '').trim();
+        const accessUserId = String(payload?.userId || profileState?.userId || '').trim();
         const matchedUserIdsByInputIndex =
           options?.matchedUserIdsByInputIndex && typeof options.matchedUserIdsByInputIndex === 'object'
             ? options.matchedUserIdsByInputIndex
@@ -977,11 +978,11 @@ export const ProfileForm = ({
       const details = error?.message || String(error);
       toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
     });
-  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, handleSubmit, state?.userId]);
+  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, handleSubmit, profileState?.userId]);
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
-    if (!state.myComment?.trim()) {
+    if (!profileState.myComment?.trim()) {
       handleDelKeyValue('myComment');
     }
     setState(prevState => {
@@ -1060,7 +1061,7 @@ export const ProfileForm = ({
   }, [additionalRulesInputs, setState, submitWithNormalization]);
 
   const indexAdditionalRulesForUser = useCallback(async rawRules => {
-    const accessUserId = String(state?.userId || '').trim();
+    const accessUserId = String(profileState?.userId || '').trim();
     if (!accessUserId) return null;
 
     setIsIndexingAdditionalRules(true);
@@ -1122,7 +1123,7 @@ export const ProfileForm = ({
     } finally {
       setIsIndexingAdditionalRules(false);
     }
-  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, state?.userId]);
+  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, profileState?.userId]);
 
   const applyAdditionalRulesFromBuilder = async () => {
     const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
@@ -1165,7 +1166,7 @@ export const ProfileForm = ({
       return;
     }
 
-    const currentValue = state?.[ADDITIONAL_ACCESS_FIELD];
+    const currentValue = profileState?.[ADDITIONAL_ACCESS_FIELD];
     const updatedValue = Array.isArray(currentValue)
       ? currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? rulesText : item))
       : rulesText;
@@ -1204,8 +1205,8 @@ export const ProfileForm = ({
     });
   };
 
-  const autoResizeMyComment = useAutoResize(textareaRef, state.myComment);
-  const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
+  const autoResizeMyComment = useAutoResize(textareaRef, profileState.myComment);
+  const autoResizeMoreInfo = useAutoResize(moreInfoRef, profileState.moreInfo_main);
 
   const priorityOrder = [
     'birth',
@@ -1241,7 +1242,7 @@ export const ProfileForm = ({
     { value: 'add+matching:view&write', label: 'add and matching view and write' },
   ];
 
-  const fieldsToRender = getFieldsToRender(state);
+  const fieldsToRender = getFieldsToRender(profileState);
 
   const normalizedFieldsToRender = (() => {
     let next = fieldsToRender;
@@ -1313,19 +1314,19 @@ export const ProfileForm = ({
   }, []);
 
   const removeOverlayEntryFromBackend = useCallback(async (fieldName, entry) => {
-    if (!fieldName || !entry?.editorUserId || !state?.userId) return;
+    if (!fieldName || !entry?.editorUserId || !profileState?.userId) return;
 
     try {
       await patchOverlayField({
         editorUserId: entry.editorUserId,
-        cardUserId: state.userId,
+        cardUserId: profileState.userId,
         fieldName,
         change: null,
       });
     } catch {
       toast.error('Не вдалося видалити оверлей-поле');
     }
-  }, [state?.userId]);
+  }, [profileState?.userId]);
 
   const removeOverlayValueFromState = useCallback((fieldName, entryValue) => {
     if (!fieldName) return;
@@ -1549,13 +1550,13 @@ export const ProfileForm = ({
         return;
       }
 
-      if (!state?.userId) {
+      if (!profileState?.userId) {
         if (isMounted) setAutoOverlayFieldAdditions({});
         return;
       }
 
       try {
-        const { result } = await readOverlayFieldAdditions(state.userId);
+        const { result } = await readOverlayFieldAdditions(profileState.userId);
         if (!isMounted) return;
 
         setAutoOverlayFieldAdditions(result);
@@ -1571,12 +1572,12 @@ export const ProfileForm = ({
     return () => {
       isMounted = false;
     };
-  }, [isAdmin, readOverlayFieldAdditions, state?.userId]);
+  }, [isAdmin, readOverlayFieldAdditions, profileState?.userId]);
 
   useEffect(() => {
     if (isAdmin) return;
-    if (!state?.userId) return;
-    if (autoAppliedOverlayForUserRef.current === state.userId) return;
+    if (!profileState?.userId) return;
+    if (autoAppliedOverlayForUserRef.current === profileState.userId) return;
 
     let cancelled = false;
 
@@ -1586,10 +1587,10 @@ export const ProfileForm = ({
         if (cancelled) return;
 
         applyEditorOverlayReplacements(replacements);
-        autoAppliedOverlayForUserRef.current = state.userId;
+        autoAppliedOverlayForUserRef.current = profileState.userId;
       } catch {
         if (!cancelled) {
-          autoAppliedOverlayForUserRef.current = state.userId;
+          autoAppliedOverlayForUserRef.current = profileState.userId;
         }
       }
     };
@@ -1599,10 +1600,10 @@ export const ProfileForm = ({
     return () => {
       cancelled = true;
     };
-  }, [applyEditorOverlayReplacements, collectEditorOverlayReplacements, isAdmin, state?.userId]);
+  }, [applyEditorOverlayReplacements, collectEditorOverlayReplacements, isAdmin, profileState?.userId]);
 
   const handleOverlayDebugAlert = async () => {
-    const paths = buildOverlayPaths(state?.userId);
+    const paths = buildOverlayPaths(profileState?.userId);
     const currentEditorId = auth.currentUser?.uid;
     const shouldShowOwnEditorOnly = !isAdmin;
 
@@ -1699,7 +1700,7 @@ ${entries.join('\n')}`;
     ...normalizedFieldsToRender.filter(field => !priorityOrder.includes(field.name)),
   ];
 
-  const normalizedRole = String(state?.role || state?.userRole || '')
+  const normalizedRole = String(profileState?.role || profileState?.userRole || '')
     .trim()
     .toLowerCase();
   const shouldHidePhenotypeResponsibilityInputs = ['pp', 'cl'].includes(normalizedRole);
@@ -1758,13 +1759,13 @@ ${entries.join('\n')}`;
 
   return (
     <>
-      {state.userId && (
+      {profileState.userId && (
         <div
-          id={state.userId}
+          id={profileState.userId}
           style={{ display: 'none', textAlign: 'left', marginBottom: '8px' }}
         >
           {renderAllFields(state, '', {
-            userId: state?.userId,
+            userId: profileState?.userId,
             setUsers: setState,
             onRemoveKey: handleProfileViewRemove,
           })}
@@ -1782,21 +1783,21 @@ ${entries.join('\n')}`;
           const hasOverlaySuggestions = overlayEntries.length > 0;
           const displayValue =
             field.name === 'lastAction'
-              ? formatDateToDisplay(normalizeLastAction(state.lastAction))
+              ? formatDateToDisplay(normalizeLastAction(profileState.lastAction))
               : field.name === 'lastDelivery'
-              ? formatDateToDisplay(state.lastDelivery)
+              ? formatDateToDisplay(profileState.lastDelivery)
               : field.name === 'getInTouch'
-              ? formatDateToDisplay(state.getInTouch)
-              : state[field.name] || '';
+              ? formatDateToDisplay(profileState.getInTouch)
+              : profileState[field.name] || '';
           return (
             <PickerContainer
               key={index}
               style={hasOverlaySuggestions ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
             >
               <FieldMainRow>
-              {Array.isArray(state[field.name]) ? (
+              {Array.isArray(profileState[field.name]) ? (
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
-                {state[field.name].map((value, idx) => (
+                {profileState[field.name].map((value, idx) => (
                   <InputDiv key={`${field.name}-${idx}`} $isHighlighted={highlightedFields.includes(field.name)} $isDeletedOverlay={deletedOverlayFields.includes(field.name)}>
                     <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
                       <InputField
@@ -1863,11 +1864,11 @@ ${entries.join('\n')}`;
               </div>
             ) : (
               <InputDiv $isHighlighted={highlightedFields.includes(field.name)} $isDeletedOverlay={deletedOverlayFields.includes(field.name)}>
-                <InputFieldContainer fieldName={field.name} value={state[field.name]}>
+                <InputFieldContainer fieldName={field.name} value={profileState[field.name]}>
                   {field.name === 'accessLevel' ? (
                     <AccessLevelSelect
                       name={field.name}
-                      value={state[field.name] || ''}
+                      value={profileState[field.name] || ''}
                       onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
                       onChange={e => {
                         const value = e.target.value;
@@ -1918,8 +1919,8 @@ ${entries.join('\n')}`;
 
                       if (
                         field.name !== 'education' &&
-                        state[field.name] !== '' &&
-                        state[field.name] !== undefined
+                        profileState[field.name] !== '' &&
+                        profileState[field.name] !== undefined
                       ) {
                         handleFieldFocus && handleFieldFocus(field.name);
                         return;
@@ -1956,13 +1957,13 @@ ${entries.join('\n')}`;
                             }));
                           },
                           onBlur: () => {
-                            if (field.name === 'myComment' && !state.myComment?.trim()) {
+                            if (field.name === 'myComment' && !profileState.myComment?.trim()) {
                               handleDelKeyValue('myComment');
                               return;
                             }
 
                             if (field.name === 'getInTouch') {
-                              const raw = state.getInTouch;
+                              const raw = profileState.getInTouch;
                               const trimmed = typeof raw === 'string' ? raw.trim() : raw;
 
                               if (!trimmed) {
@@ -1976,7 +1977,7 @@ ${entries.join('\n')}`;
                         })}
                   />
                   )}
-                  {field.name !== 'lastAction' && state[field.name] && (
+                  {field.name !== 'lastAction' && profileState[field.name] && (
                     <ClearButton
                       type="button"
                       onMouseDown={e => e.preventDefault()}
@@ -1991,7 +1992,7 @@ ${entries.join('\n')}`;
                       &times;
                     </ClearButton>
                   )}
-                  {field.name !== 'lastAction' && state[field.name] && (
+                  {field.name !== 'lastAction' && profileState[field.name] && (
                     <DelKeyValueBTN
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => {
@@ -2009,31 +2010,31 @@ ${entries.join('\n')}`;
 
                 {field.name !== 'accessLevel' && (
                   <>
-                    <Hint fieldName={field.name} isActive={state[field.name]}>
+                    <Hint fieldName={field.name} isActive={profileState[field.name]}>
                       {field.ukrainian || field.placeholder}
                     </Hint>
-                    <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                    <Placeholder isActive={profileState[field.name]}>{field.ukrainianHint}</Placeholder>
                   </>
                 )}
               </InputDiv>
             )}
 
             {field.name !== 'lastAction' &&
-              state[field.name] &&
-              (Array.isArray(state[field.name])
-                ? state[field.name].length === 0 || state[field.name][state[field.name].length - 1] !== ''
+              profileState[field.name] &&
+              (Array.isArray(profileState[field.name])
+                ? profileState[field.name].length === 0 || profileState[field.name][profileState[field.name].length - 1] !== ''
                 : true) &&
               ((Array.isArray(field.options) && field.options.length !== 2 && field.options.length !== 3) ||
                 !Array.isArray(field.options)) && (
                 <Button
                   style={{
-                    display: Array.isArray(state[field.name]) ? 'block' : 'inline-block',
-                    alignSelf: Array.isArray(state[field.name]) ? 'flex-end' : 'auto',
-                    marginBottom: Array.isArray(state[field.name]) ? '14px' : '0',
+                    display: Array.isArray(profileState[field.name]) ? 'block' : 'inline-block',
+                    alignSelf: Array.isArray(profileState[field.name]) ? 'flex-end' : 'auto',
+                    marginBottom: Array.isArray(profileState[field.name]) ? '14px' : '0',
                     marginLeft: 0,
                   }}
                   onClick={() => {
-                    if (!state.myComment?.trim()) {
+                    if (!profileState.myComment?.trim()) {
                       handleDelKeyValue('myComment');
                     }
                     setState(prevState => {
@@ -2057,7 +2058,7 @@ ${entries.join('\n')}`;
                   <Button
                     type="button"
                     onClick={() => {
-                      if (!state.myComment?.trim()) {
+                      if (!profileState.myComment?.trim()) {
                         handleDelKeyValue('myComment');
                       }
                       setState(prevState => {
@@ -2075,7 +2076,7 @@ ${entries.join('\n')}`;
                   <Button
                     type="button"
                     onClick={() => {
-                      if (!state.myComment?.trim()) {
+                      if (!profileState.myComment?.trim()) {
                         handleDelKeyValue('myComment');
                       }
                       setState(prevState => {
@@ -2093,7 +2094,7 @@ ${entries.join('\n')}`;
                   <Button
                     type="button"
                     onClick={() => {
-                      if (!state.myComment?.trim()) {
+                      if (!profileState.myComment?.trim()) {
                         handleDelKeyValue('myComment');
                       }
                       setState(prevState => {
@@ -2117,7 +2118,7 @@ ${entries.join('\n')}`;
                       key={`${field.name}-${option.placeholder}`}
                       type="button"
                       onClick={() => {
-                        if (!state.myComment?.trim()) {
+                        if (!profileState.myComment?.trim()) {
                           handleDelKeyValue('myComment');
                         }
                         setState(prevState => {
