@@ -872,7 +872,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState(null);
   const navigate = useNavigate();
-  const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
+  const access = resolveAccess({
+    uid: auth.currentUser?.uid,
+    accessLevel: localStorage.getItem('accessLevel'),
+  });
   const isAdmin = access.isAdmin;
   const canAccessAdd = access.canAccessAdd;
   const [stimulationScheduleProfiles, setStimulationScheduleProfiles] = useState([]);
