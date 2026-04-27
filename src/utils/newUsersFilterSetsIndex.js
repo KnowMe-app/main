@@ -399,8 +399,46 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
     })
   );
 
-  if (payloadsBySet.some(item => item.payloads.some(payload => !payload?.exists))) {
-    return null;
+  const hasMissingSetPayloads = payloadsBySet.some(item => item.payloads.some(payload => !payload?.exists));
+  if (hasMissingSetPayloads) {
+    const fallbackSearchKeyPayloads = await Promise.all(
+      setEntries.map(async entry => {
+        const paths = Object.entries(entry.indexBuckets).flatMap(([indexName, values]) =>
+          values.map(value => `searchKey/${indexName}/${value}`)
+        );
+        const payloads = await Promise.all(
+          paths.map(path =>
+            getCachedSearchKeyPayload(path, async () => {
+              const snapshot = await get(ref(database, path));
+              return {
+                exists: snapshot.exists(),
+                value: snapshot.exists() ? snapshot.val() || {} : null,
+              };
+            })
+          )
+        );
+        return { paths, payloads };
+      })
+    );
+
+    if (fallbackSearchKeyPayloads.some(item => item.payloads.some(payload => !payload?.exists))) {
+      return null;
+    }
+
+    const userIds = new Set();
+    fallbackSearchKeyPayloads.forEach(item => {
+      item.payloads.forEach(payload => {
+        Object.keys(payload?.value || {}).forEach(userId => {
+          if (userId) userIds.add(userId);
+        });
+      });
+    });
+
+    return {
+      setKeys: fallbackSearchKeyPayloads.flatMap(item => item.paths),
+      userIds: [...userIds],
+      ownerId: normalizedAccessUserId,
+    };
   }
 
   const userIds = new Set();
