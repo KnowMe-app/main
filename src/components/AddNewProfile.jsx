@@ -1228,6 +1228,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     isEditingRef.current = !!state.userId;
   }, [state.userId]);
+  const stateUserIdRef = useRef(state.userId || '');
+
+  useEffect(() => {
+    stateUserIdRef.current = state.userId || '';
+  }, [state.userId]);
 
   const [users, setUsers] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
@@ -1250,8 +1255,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [, setCacheCount] = useState(0);
   const [, setBackendCount] = useState(0);
   const [profileSource, setProfileSource] = useState('');
-  const hasUrlUserId = Boolean(new URLSearchParams(location.search).get('userId'));
-  const isResolvingEditMode = hasUrlUserId && canAccessAdd && !state.userId;
+  const [isResolvingEditMode, setIsResolvingEditMode] = useState(false);
 
   useEffect(() => {
     const enteringEditMode = Boolean(state.userId) && !isEditingRef.current;
@@ -1313,12 +1317,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (urlUserId) {
       if (!canAccessAdd) {
+        setIsResolvingEditMode(false);
         return;
       }
+      setIsResolvingEditMode(!stateUserIdRef.current || stateUserIdRef.current !== urlUserId);
       setProfileSource('');
       setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
+      return;
     }
+    setIsResolvingEditMode(false);
   }, [canAccessAdd, location.search, setSearch, setState]);
+
+  useEffect(() => {
+    if (state.userId) {
+      setIsResolvingEditMode(false);
+    }
+  }, [state.userId]);
 
   useEffect(() => {
     const normalized = (search || '').trim();
@@ -3407,6 +3421,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleBackToPreviousList = useCallback(() => {
+    if (location.search.includes('userId=')) {
+      navigate({ pathname: location.pathname, search: '' }, { replace: true });
+    }
+
     const persistedRaw = localStorage.getItem(PREVIOUS_LIST_STATE_KEY);
     const persisted =
       !previousListStateRef.current && persistedRaw
@@ -3454,7 +3472,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setSearch(snapshot.search || '');
     setHasSearched(Boolean(snapshot.hasSearched) || Object.keys(restoredUsers).length > 0);
     setState({});
-  }, [setSearch, setState]);
+  }, [location.pathname, location.search, navigate, setSearch, setState]);
 
   useEffect(() => {
     if (!state?.userId) {
