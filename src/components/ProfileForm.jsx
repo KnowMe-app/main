@@ -1764,7 +1764,7 @@ ${entries.join('\n')}`;
           id={profileState.userId}
           style={{ display: 'none', textAlign: 'left', marginBottom: '8px' }}
         >
-          {renderAllFields(profileState, '', {
+          {renderAllFields(state, '', {
             userId: profileState?.userId,
             setUsers: setState,
             onRemoveKey: handleProfileViewRemove,
@@ -1972,7 +1972,7 @@ ${entries.join('\n')}`;
                               }
                             }
 
-                            submitWithNormalization(profileState, 'overwrite');
+                            submitWithNormalization(state, 'overwrite');
                           },
                         })}
                   />
@@ -2213,7 +2213,7 @@ ${entries.join('\n')}`;
           <option value="users">users</option>
           <option value="newUsers">newUsers</option>
         </CollectionToggle>
-        <Photos state={profileState} setState={setState} collection={collection} />
+        <Photos state={state} setState={setState} collection={collection} />
       </PhotosBlock>
       {(canManageAccessLevel || !isAdmin) && (
         <OverlayDebugButton type="button" onClick={handleOverlayDebugAlert}>
