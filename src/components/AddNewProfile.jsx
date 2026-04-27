@@ -637,7 +637,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   ];
 
   const location = useLocation();
-  const lastUrlUserIdRef = useRef(new URLSearchParams(location.search).get('userId'));
   const initialAccess = resolveAccess({
     uid: auth.currentUser?.uid,
     accessLevel: localStorage.getItem('accessLevel'),
@@ -1251,6 +1250,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [, setCacheCount] = useState(0);
   const [, setBackendCount] = useState(0);
   const [profileSource, setProfileSource] = useState('');
+  const hasUrlUserId = Boolean(new URLSearchParams(location.search).get('userId'));
+  const isResolvingEditMode = hasUrlUserId && canAccessAdd && !state.userId;
 
   useEffect(() => {
     const enteringEditMode = Boolean(state.userId) && !isEditingRef.current;
@@ -1312,16 +1313,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (urlUserId) {
       if (!canAccessAdd) {
-        lastUrlUserIdRef.current = null;
         return;
       }
-      if (lastUrlUserIdRef.current !== urlUserId) {
-        lastUrlUserIdRef.current = urlUserId;
-        setProfileSource('');
-        setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
-      }
-    } else {
-      lastUrlUserIdRef.current = null;
+      setProfileSource('');
+      setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
     }
   }, [canAccessAdd, location.search, setSearch, setState]);
 
@@ -1366,22 +1361,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setSearchBarQueryActive,
     setLastSearchBarQuery,
   ]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const currentUserId = params.get('userId');
-
-    if (state.userId) {
-      if (currentUserId !== state.userId) {
-        params.set('userId', state.userId);
-        const nextSearch = params.toString();
-        const nextSearchString = nextSearch ? `?${nextSearch}` : '';
-        if (nextSearchString !== location.search) {
-          navigate({ pathname: location.pathname, search: nextSearchString }, { replace: true });
-        }
-      }
-    }
-  }, [state.userId, location.pathname, location.search, navigate]);
 
   const handleFilterChange = useCallback(nextFilters => {
     const nextValue = nextFilters ?? {};
@@ -1479,7 +1458,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const cached = getCard(state.userId);
     if (cached) {
-      setState(cached);
+      setState({ ...cached, userId: cached.userId || state.userId });
       setProfileSource('cache');
     } else {
       setProfileSource('loading');
@@ -1488,7 +1467,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           const data = await fetchUserById(state.userId);
           if (data) {
             updateCard(state.userId, data);
-            setState(data);
+            setState({ ...data, userId: data.userId || state.userId });
           }
         } catch (error) {
           toast.error(error.message);
@@ -3630,6 +3609,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             onClear={() => {
               // Не чистимо localStorage тут: SearchBar сам синхронізує query key,
               // а налаштування варіантів пошуку (addSearchOptions) мають зберігатися.
+              if (location.search) {
+                navigate({ pathname: location.pathname, search: '' }, { replace: true });
+              }
               setState({});
               setSearchKeyValuePair(null);
               // У режимі перегляду дублікатів зберігаємо поточний список
@@ -3743,7 +3725,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             ))}
           </SearchScopeContainer>
         )}
-        {state.userId ? (
+        {isResolvingEditMode ? null : state.userId ? (
           <>
             <div style={{ ...coloredCard(), marginBottom: '8px' }}>
               {renderTopBlock(
