@@ -1316,7 +1316,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         lastUrlUserIdRef.current = null;
         return;
       }
-      if (lastUrlUserIdRef.current !== urlUserId || state?.userId !== urlUserId) {
+      if (lastUrlUserIdRef.current !== urlUserId) {
         lastUrlUserIdRef.current = urlUserId;
         setProfileSource('');
         setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
@@ -1324,7 +1324,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     } else {
       lastUrlUserIdRef.current = null;
     }
-  }, [canAccessAdd, location.search, setSearch, setState, state?.userId]);
+  }, [canAccessAdd, location.search, setSearch, setState]);
 
   useEffect(() => {
     if (hasRestoredStoredEditUserRef.current) return;
