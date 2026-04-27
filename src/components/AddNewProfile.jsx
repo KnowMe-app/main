@@ -1251,7 +1251,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [, setBackendCount] = useState(0);
   const [profileSource, setProfileSource] = useState('');
   const hasUrlUserId = Boolean(new URLSearchParams(location.search).get('userId'));
-  const isResolvingEditMode = hasUrlUserId && canAccessAdd && !state.userId;
+  const [hasResolvedInitialEditMode, setHasResolvedInitialEditMode] = useState(
+    () => !hasUrlUserId,
+  );
+  const isResolvingEditMode =
+    !hasResolvedInitialEditMode && hasUrlUserId && canAccessAdd && !state.userId;
 
   useEffect(() => {
     const enteringEditMode = Boolean(state.userId) && !isEditingRef.current;
@@ -1315,10 +1319,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!canAccessAdd) {
         return;
       }
+      if (!state.userId) {
+        setHasResolvedInitialEditMode(false);
+      }
       setProfileSource('');
       setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
     }
-  }, [canAccessAdd, location.search, setSearch, setState]);
+  }, [canAccessAdd, location.search, setSearch, setState, state.userId]);
+
+  useEffect(() => {
+    if (!hasUrlUserId || !canAccessAdd || state.userId) {
+      setHasResolvedInitialEditMode(true);
+    }
+  }, [canAccessAdd, hasUrlUserId, state.userId]);
 
   useEffect(() => {
     const normalized = (search || '').trim();
@@ -3453,8 +3466,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLoadSortMode(snapshot.loadSortMode || 'SearchIdKeyOnly');
     setSearch(snapshot.search || '');
     setHasSearched(Boolean(snapshot.hasSearched) || Object.keys(restoredUsers).length > 0);
+    if (location.search) {
+      navigate({ pathname: location.pathname, search: '' }, { replace: true });
+    }
     setState({});
-  }, [setSearch, setState]);
+  }, [location.pathname, location.search, navigate, setSearch, setState]);
 
   useEffect(() => {
     if (!state?.userId) {
