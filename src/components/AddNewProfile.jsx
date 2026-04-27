@@ -637,12 +637,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   ];
 
   const location = useLocation();
-  const lastUrlUserIdRef = useRef(new URLSearchParams(location.search).get('userId'));
   const hasRestoredStoredEditUserRef = useRef(false);
-  const initialAccess = resolveAccess({
-    uid: auth.currentUser?.uid,
-    accessLevel: localStorage.getItem('accessLevel'),
-  });
 
   const [userNotFound, setUserNotFound] = useState(false);
 
@@ -666,8 +661,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (params.has('search')) {
       return params.get('search') || '';
     }
-    const urlUserId = params.get('userId');
-    if (urlUserId) return urlUserId;
     return '';
   });
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
@@ -839,19 +832,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [INDEX_SELECTION_STORAGE_KEY, selectedIndexJobs, selectedSearchKeyIndexes]);
 
   const [state, setState] = useState(() => {
-    const params = new URLSearchParams(location.search);
-    const restoredUserId = initialAccess.canAccessAdd ? params.get('userId') || '' : '';
-
-    if (!restoredUserId) {
-      return {};
-    }
-
-    const cachedCard = getCard(restoredUserId);
-    if (cachedCard) {
-      return cachedCard;
-    }
-
-    return { userId: restoredUserId };
+    return {};
   });
   const [, setHistoryVersion] = useState(0);
   const editHistoryRef = useRef({
@@ -875,7 +856,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const navigate = useNavigate();
   const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
   const isAdmin = access.isAdmin;
-  const canAccessAdd = access.canAccessAdd;
   const [stimulationScheduleProfiles, setStimulationScheduleProfiles] = useState([]);
   const [stimulationShortcutIds, setStimulationShortcutIdsState] = useState(() =>
     getStoredStimulationShortcutIds(),
@@ -1301,30 +1281,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const urlUserId = params.get('userId');
     const hasSearchParam = params.has('search');
     const urlSearchValue = hasSearchParam ? params.get('search') || '' : null;
 
     if (hasSearchParam) {
       setSearch(prev => (prev === urlSearchValue ? prev : urlSearchValue));
-    } else if (urlUserId && canAccessAdd) {
-      setSearch(prev => (prev ? prev : urlUserId));
     }
-
-    if (urlUserId) {
-      if (!canAccessAdd) {
-        lastUrlUserIdRef.current = null;
-        return;
-      }
-      if (lastUrlUserIdRef.current !== urlUserId || state?.userId !== urlUserId) {
-        lastUrlUserIdRef.current = urlUserId;
-        setProfileSource('');
-        setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
-      }
-    } else {
-      lastUrlUserIdRef.current = null;
-    }
-  }, [canAccessAdd, location.search, setSearch, setState, state?.userId]);
+  }, [location.search, setSearch]);
 
   useEffect(() => {
     if (hasRestoredStoredEditUserRef.current) return;
