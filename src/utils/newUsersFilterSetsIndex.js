@@ -1,4 +1,4 @@
-import { endAt, get, orderByKey, query, ref, remove, startAt, update } from 'firebase/database';
+import { get, ref, remove, update } from 'firebase/database';
 import {
   createAgeSearchKeyIndexInCollection,
   createContactSearchKeyIndexInCollection,
@@ -26,8 +26,6 @@ import {
 export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
 const FORBIDDEN_RTDB_SEGMENT_CHARS = ['.', '#', '$', '/', '[', ']'];
-const AGE_INDEX_NAME = 'age';
-const AGE_DATE_PREFIX = 'd_';
 
 const normalizePathSegment = value => {
   const raw = String(value ?? '').trim();
@@ -99,63 +97,6 @@ const buildUserIdsMapFromList = userIds =>
       acc[userId] = true;
       return acc;
     }, {});
-
-const toIsoDate = date =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-
-const subtractYears = (date, years) => {
-  const shifted = new Date(date);
-  shifted.setFullYear(shifted.getFullYear() - years);
-  return shifted;
-};
-
-const shiftDays = (date, days) => {
-  const shifted = new Date(date);
-  shifted.setDate(shifted.getDate() + days);
-  return shifted;
-};
-
-const getBirthDateRangeByAge = ({ minAge, maxAge, today = new Date() }) => {
-  let startDate = null;
-  let endDate = null;
-
-  if (Number.isFinite(maxAge)) {
-    startDate = shiftDays(subtractYears(today, maxAge + 1), 1);
-  }
-  if (Number.isFinite(minAge)) {
-    endDate = subtractYears(today, minAge);
-  }
-
-  if (!startDate) startDate = new Date(1900, 0, 1);
-  if (!endDate) endDate = today;
-  if (startDate > endDate) return null;
-
-  return {
-    startKey: `${AGE_DATE_PREFIX}${toIsoDate(startDate)}`,
-    endKey: `${AGE_DATE_PREFIX}${toIsoDate(endDate)}`,
-  };
-};
-
-const buildAgeRangeDescriptors = parsedRuleGroups => {
-  const rules = Array.isArray(parsedRuleGroups) ? parsedRuleGroups : [];
-  const descriptors = [];
-
-  rules.forEach(parsedRules => {
-    if (!parsedRules || typeof parsedRules !== 'object') return;
-
-    if (parsedRules.age instanceof Set && parsedRules.age.size > 0) {
-      [...parsedRules.age]
-        .filter(age => Number.isFinite(age) && age >= 18)
-        .forEach(age => descriptors.push({ minAge: age, maxAge: age }));
-    }
-
-    if (parsedRules.age42plus) descriptors.push({ minAge: 42 });
-    if (parsedRules.ageUnknown) descriptors.push({ token: '?' });
-    if (parsedRules.ageNo) descriptors.push({ token: 'no' });
-  });
-
-  return descriptors;
-};
 
 const SEARCH_KEY_SET_BUILDERS = [
   createSearchKeyIndexInCollection,
@@ -397,7 +338,7 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
       const paths = Object.entries(indexBuckets).flatMap(([indexName, values]) =>
         values.map(value => `${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${value}`)
       );
-      return { setKey, paths, indexBuckets, parsedRuleGroups };
+      return { setKey, paths, indexBuckets };
     })
     .filter(Boolean);
   if (!setEntries.length) return null;
@@ -462,24 +403,10 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
   if (hasMissingSetPayloads) {
     const fallbackSearchKeyPayloads = await Promise.all(
       setEntries.map(async entry => {
-        const ageRangeDescriptors = buildAgeRangeDescriptors(entry.parsedRuleGroups);
-        const genericPaths = Object.entries(entry.indexBuckets)
-          .filter(([indexName]) => indexName !== AGE_INDEX_NAME)
-          .flatMap(([indexName, values]) => values.map(value => `searchKey/${indexName}/${value}`));
-        const ageTokenPaths = ageRangeDescriptors
-          .filter(descriptor => descriptor.token === '?' || descriptor.token === 'no')
-          .map(descriptor => `searchKey/${AGE_INDEX_NAME}/${descriptor.token}`);
-
-        const paths = [...new Set([...genericPaths, ...ageTokenPaths])];
-        const ageRanges = ageRangeDescriptors
-          .filter(descriptor => Number.isFinite(descriptor.minAge) || Number.isFinite(descriptor.maxAge))
-          .map(descriptor => getBirthDateRangeByAge(descriptor))
-          .filter(Boolean);
-        const uniqueAgeRanges = [...new Map(
-          ageRanges.map(range => [`${range.startKey}_${range.endKey}`, range])
-        ).values()];
-
-        const pathPayloads = await Promise.all(
+        const paths = Object.entries(entry.indexBuckets).flatMap(([indexName, values]) =>
+          values.map(value => `searchKey/${indexName}/${value}`)
+        );
+        const payloads = await Promise.all(
           paths.map(path =>
             getCachedSearchKeyPayload(path, async () => {
               const snapshot = await get(ref(database, path));
@@ -490,64 +417,25 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
             })
           )
         );
-        const rangePayloads = await Promise.all(
-          uniqueAgeRanges.map(async range => {
-            const cachePath = `searchKey/${AGE_INDEX_NAME}/__range__/${range.startKey}_${range.endKey}`;
-            const payload = await getCachedSearchKeyPayload(cachePath, async () => {
-              const snapshot = await get(
-                query(ref(database, `searchKey/${AGE_INDEX_NAME}`), orderByKey(), startAt(range.startKey), endAt(range.endKey))
-              );
-              return {
-                exists: snapshot.exists(),
-                value: snapshot.exists() ? snapshot.val() || {} : null,
-              };
-            });
-            return { ...range, payload };
-          })
-        );
-        return { paths, pathPayloads, rangePayloads };
+        return { paths, payloads };
       })
     );
 
-    const indexNames = [...new Set(setEntries.flatMap(entry => Object.keys(entry.indexBuckets || {})))];
-    const indexRootPayloads = await Promise.all(
-      indexNames.map(indexName =>
-        getCachedSearchKeyPayload(`searchKey/${indexName}`, async () => {
-          const snapshot = await get(ref(database, `searchKey/${indexName}`));
-          return {
-            exists: snapshot.exists(),
-            value: snapshot.exists() ? snapshot.val() || {} : null,
-          };
-        })
-      )
-    );
-    const hasMissingIndexRoot = indexRootPayloads.some(payload => !payload?.exists);
-    if (hasMissingIndexRoot) {
+    if (fallbackSearchKeyPayloads.some(item => item.payloads.some(payload => !payload?.exists))) {
       return null;
     }
 
     const userIds = new Set();
     fallbackSearchKeyPayloads.forEach(item => {
-      item.pathPayloads.forEach(payload => {
+      item.payloads.forEach(payload => {
         Object.keys(payload?.value || {}).forEach(userId => {
           if (userId) userIds.add(userId);
-        });
-      });
-      item.rangePayloads.forEach(rangePayload => {
-        Object.values(rangePayload?.payload?.value || {}).forEach(bucketMap => {
-          if (!bucketMap || typeof bucketMap !== 'object') return;
-          Object.keys(bucketMap).forEach(userId => {
-            if (userId) userIds.add(userId);
-          });
         });
       });
     });
 
     return {
-      setKeys: fallbackSearchKeyPayloads.flatMap(item => [
-        ...item.paths,
-        ...item.rangePayloads.map(rangePayload => `searchKey/${AGE_INDEX_NAME}/${rangePayload.startKey}..${rangePayload.endKey}`),
-      ]),
+      setKeys: fallbackSearchKeyPayloads.flatMap(item => item.paths),
       userIds: [...userIds],
       ownerId: normalizedAccessUserId,
     };
