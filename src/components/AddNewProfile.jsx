@@ -1328,7 +1328,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (!canAccessAdd) return;
 
-    const navigationEntry = performance.getEntriesByType('navigation')?.[0];
+    const navigationEntry = window?.performance?.getEntriesByType?.('navigation')?.[0];
     const isPageReload = navigationEntry?.type === 'reload';
     if (!isPageReload) return;
 
