@@ -1329,7 +1329,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     if (hasRestoredStoredEditUserRef.current) return;
     hasRestoredStoredEditUserRef.current = true;
-  }, []);
+
+    if (!canAccessAdd) return;
+
+    const params = new URLSearchParams(location.search);
+    if (params.get('userId')) return;
+    if (state?.userId) return;
+
+    const storedUserId = localStorage.getItem(EDIT_PROFILE_USER_ID_KEY);
+    if (!storedUserId) return;
+
+    setProfileSource('');
+    setState(prev => (prev?.userId === storedUserId ? prev : { userId: storedUserId }));
+  }, [canAccessAdd, location.search, state?.userId, setState, EDIT_PROFILE_USER_ID_KEY]);
 
   useEffect(() => {
     const normalized = (search || '').trim();
@@ -1373,8 +1385,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLastSearchBarQuery,
   ]);
 
-  // Removed auto-redirect that forced `?userId=` into URL on every state change.
-  // It could trap navigation and return the user back to edit mode.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const currentUserId = params.get('userId');
+
+    if (state.userId) {
+      if (currentUserId !== state.userId) {
+        params.set('userId', state.userId);
+        const nextSearch = params.toString();
+        const nextSearchString = nextSearch ? `?${nextSearch}` : '';
+        if (nextSearchString !== location.search) {
+          navigate({ pathname: location.pathname, search: nextSearchString }, { replace: true });
+        }
+      }
+    }
+  }, [state.userId, location.pathname, location.search, navigate]);
 
   const handleFilterChange = useCallback(nextFilters => {
     const nextValue = nextFilters ?? {};
