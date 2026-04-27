@@ -31,6 +31,7 @@ import { useAutoResize } from '../hooks/useAutoResize';
 import { resolveAccess } from 'utils/accessLevel';
 import { normalizePhoneState } from './inputValidations';
 import { authNotifications } from './authNotifications';
+import { clearAllCardsCache } from 'utils/cache';
 
 const Container = styled.div`
   display: flex;
@@ -585,6 +586,10 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
+  const handleClearCache = () => {
+    clearAllCardsCache();
+  };
+
   const isValidEmail = email => {
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailPattern.test(email);
@@ -966,6 +971,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         )}
         <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
         <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
+        {isAdmin && <SubmitButton onClick={handleClearCache}>Очистити кеш</SubmitButton>}
         {!isEmailVerified && <VerifyEmail />}
         {isSessionActive && <ExitButton onClick={handleExit}>exit</ExitButton>}
       </>
