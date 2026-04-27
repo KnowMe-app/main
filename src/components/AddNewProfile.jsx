@@ -638,6 +638,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const location = useLocation();
   const lastUrlUserIdRef = useRef(new URLSearchParams(location.search).get('userId'));
+  const initialAccess = resolveAccess({
+    uid: auth.currentUser?.uid,
+    accessLevel: localStorage.getItem('accessLevel'),
+  });
 
   const [userNotFound, setUserNotFound] = useState(false);
 
@@ -835,7 +839,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
-    const restoredUserId = params.get('userId') || '';
+    const restoredUserId = initialAccess.canAccessAdd ? params.get('userId') || '' : '';
 
     if (!restoredUserId) {
       return {};
@@ -870,6 +874,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const navigate = useNavigate();
   const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
   const isAdmin = access.isAdmin;
+  const canAccessAdd = access.canAccessAdd;
   const [stimulationScheduleProfiles, setStimulationScheduleProfiles] = useState([]);
   const [stimulationShortcutIds, setStimulationShortcutIdsState] = useState(() =>
     getStoredStimulationShortcutIds(),
@@ -1301,21 +1306,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (hasSearchParam) {
       setSearch(prev => (prev === urlSearchValue ? prev : urlSearchValue));
-    } else if (urlUserId) {
+    } else if (urlUserId && canAccessAdd) {
       setSearch(prev => (prev ? prev : urlUserId));
     }
 
     if (urlUserId) {
+      if (!canAccessAdd) {
+        lastUrlUserIdRef.current = null;
+        return;
+      }
       if (lastUrlUserIdRef.current !== urlUserId) {
         lastUrlUserIdRef.current = urlUserId;
         setProfileSource('');
         setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
       }
-      return;
+    } else {
+      lastUrlUserIdRef.current = null;
     }
-
-    lastUrlUserIdRef.current = null;
-  }, [location.search, setSearch, setState]);
+  }, [canAccessAdd, location.search, setSearch, setState]);
 
   useEffect(() => {
     const normalized = (search || '').trim();
@@ -1358,6 +1366,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setSearchBarQueryActive,
     setLastSearchBarQuery,
   ]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const currentUserId = params.get('userId');
+
+    if (state.userId) {
+      if (currentUserId !== state.userId) {
+        params.set('userId', state.userId);
+        const nextSearch = params.toString();
+        const nextSearchString = nextSearch ? `?${nextSearch}` : '';
+        if (nextSearchString !== location.search) {
+          navigate({ pathname: location.pathname, search: nextSearchString }, { replace: true });
+        }
+      }
+    }
+  }, [state.userId, location.pathname, location.search, navigate]);
 
   const handleFilterChange = useCallback(nextFilters => {
     const nextValue = nextFilters ?? {};
