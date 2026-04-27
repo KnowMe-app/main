@@ -95,7 +95,7 @@ const nestedIndentStyle = {
 };
 
 const ADDITIONAL_ACCESS_FIELD = 'additionalAccessRules';
-const PHENOTYPE_RESPONSIBILITY_FIELDS = new Set([
+const PHENOTYPE_FIELDS = [
   'eyeColor',
   'hairColor',
   'glasses',
@@ -110,6 +110,35 @@ const PHENOTYPE_RESPONSIBILITY_FIELDS = new Set([
   'phenotypicCharacteristics',
   'phenotypeResponsibility',
   'responsibility',
+];
+const ANTHROPOMETRY_FIELDS = ['height', 'weight', 'imt', 'clothingSize', 'shoeSize', 'breastSize'];
+const REPRODUCTIVE_FIELDS = [
+  'birth',
+  'ownKids',
+  'lastDelivery',
+  'lastCycle',
+  'csection',
+  'experience',
+  'reward',
+  'opuDate',
+  'opuCountry',
+  'opuEggsNumber',
+];
+const MEDICAL_LIFESTYLE_FIELDS = [
+  'allergy',
+  'surgeries',
+  'chronicDiseases',
+  'smoking',
+  'alcohol',
+  'sport',
+  'hobbies',
+  'twinsInFamily',
+];
+const HIDDEN_FOR_CL_PP_FIELDS = new Set([
+  ...PHENOTYPE_FIELDS,
+  ...ANTHROPOMETRY_FIELDS,
+  ...REPRODUCTIVE_FIELDS,
+  ...MEDICAL_LIFESTYLE_FIELDS,
 ]);
 const SEARCH_KEY_ROOT = 'searchKey';
 const ADDITIONAL_RULE_LABELS = {
@@ -1699,10 +1728,15 @@ ${entries.join('\n')}`;
     ...normalizedFieldsToRender.filter(field => !priorityOrder.includes(field.name)),
   ];
 
-  const normalizedRole = String(state?.role || state?.userRole || '')
-    .trim()
-    .toLowerCase();
-  const shouldHidePhenotypeResponsibilityInputs = ['pp', 'cl'].includes(normalizedRole);
+  const roleTokens = Array.isArray(state?.role || state?.userRole)
+    ? (state?.role || state?.userRole)
+        .map(value => String(value || '').trim().toLowerCase())
+        .filter(Boolean)
+    : String(state?.role || state?.userRole || '')
+        .split(/[,\s/|]+/)
+        .map(value => value.trim().toLowerCase())
+        .filter(Boolean);
+  const shouldHideFieldsForClPp = roleTokens.some(role => ['pp', 'cl'].includes(role));
 
   const handleOpenModal = fieldName => {
     setSelectedField(fieldName);
@@ -1774,8 +1808,8 @@ ${entries.join('\n')}`;
         .filter(field => !['myComment', 'writer'].includes(field.name))
         .filter(field => (isAdmin ? true : field.name !== ADDITIONAL_ACCESS_FIELD))
         .filter(field => {
-          if (!shouldHidePhenotypeResponsibilityInputs) return true;
-          return !PHENOTYPE_RESPONSIBILITY_FIELDS.has(field.name);
+          if (!shouldHideFieldsForClPp) return true;
+          return !HIDDEN_FOR_CL_PP_FIELDS.has(field.name);
         })
         .map((field, index) => {
           const overlayEntries = getOverlayEntriesForField(field.name);
