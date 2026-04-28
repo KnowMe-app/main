@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
+import * as XLSX from 'xlsx';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
 import {
   auth,
@@ -571,6 +572,35 @@ const IndexModalList = styled.div`
   margin-bottom: 10px;
 `;
 
+const EXCEL_COMMENTS_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
+
+const extractSurnameAndName = fullName => {
+  const value = String(fullName ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (!value) {
+    return { surname: '', name: '' };
+  }
+
+  const [surname = '', name = ''] = value.split(' ');
+  return { surname, name };
+};
+
+const normalizeExcelPhone = rawPhone => {
+  const normalized = normalizePhoneState({ phone: rawPhone });
+  const phone = normalized?.phone;
+
+  if (phone === undefined || phone === null) {
+    return '';
+  }
+
+  if (Array.isArray(phone)) {
+    return phone[0] || '';
+  }
+
+  return String(phone).trim();
+};
+
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const cloneProfileState = useCallback(profileState => JSON.parse(JSON.stringify(profileState || {})), []);
   const toComparableHistoryState = useCallback(profileState => {
@@ -670,6 +700,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   });
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
+  const [isExcelImporting, setIsExcelImporting] = useState(false);
+  const excelImportInputRef = useRef(null);
   const [showSearchKeyIndexPanel, setShowSearchKeyIndexPanel] = useState(false);
   const [selectedIndexJobs, setSelectedIndexJobs] = useState(() => {
     const storedRaw = localStorage.getItem(INDEX_SELECTION_STORAGE_KEY);
@@ -877,6 +909,92 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [stimulationScheduleProfiles, setStimulationScheduleProfiles] = useState([]);
   const [stimulationShortcutIds, setStimulationShortcutIdsState] = useState(() =>
     getStoredStimulationShortcutIds(),
+  );
+
+  const downloadJsonFile = useCallback((filename, payload) => {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleExcelProfilesUpload = useCallback(
+    async event => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+
+      if (!file) return;
+
+      setIsExcelImporting(true);
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const firstSheetName = workbook.SheetNames?.[0];
+
+        if (!firstSheetName) {
+          toast.error('Не знайдено аркуш в Excel файлі');
+          return;
+        }
+
+        const worksheet = workbook.Sheets[firstSheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet, {
+          header: 1,
+          raw: false,
+          defval: '',
+        });
+
+        const dataRows = rows.slice(2);
+        const usersJson = {};
+        const commentsJson = {};
+        const directoryJson = {};
+        const todayTimestamp = Date.now();
+
+        dataRows.forEach((row, index) => {
+          const rowArray = Array.isArray(row) ? row : [];
+          const fullName = rowArray[0];
+          const commentText = String(rowArray[1] ?? '').trim();
+          const phoneRaw = rowArray[2];
+          const { surname, name } = extractSurnameAndName(fullName);
+          const phone = normalizeExcelPhone(phoneRaw);
+          const userId = `ID${String(index + 1).padStart(4, '0')}`;
+
+          usersJson[userId] = {
+            userId,
+            role: 'ed',
+            createdAt2: todayTimestamp,
+            ...(surname ? { surname } : {}),
+            ...(name ? { name } : {}),
+            ...(phone ? { phone } : {}),
+          };
+
+          commentsJson[`${EXCEL_COMMENTS_OWNER_ID}/${userId}`] = {
+            authorId: EXCEL_COMMENTS_OWNER_ID,
+            cardId: userId,
+            lastAction: { [todayTimestamp]: true },
+            text: commentText,
+          };
+
+          directoryJson[`${EXCEL_COMMENTS_OWNER_ID}/${userId}`] = true;
+        });
+
+        downloadJsonFile('users-cards.json', usersJson);
+        downloadJsonFile('users-comments.json', commentsJson);
+        downloadJsonFile('users-comments-directory.json', directoryJson);
+        toast.success(`Готово: ${dataRows.length} рядків оброблено`);
+      } catch (error) {
+        console.error('[AddNewProfile] Excel import failed', error);
+        toast.error('Помилка при обробці Excel');
+      } finally {
+        setIsExcelImporting(false);
+      }
+    },
+    [downloadJsonFile],
   );
   const isMountedRef = useRef(true);
   const scheduleShortcutPresenceRef = useRef({ userId: null, hasSchedule: null });
@@ -3977,6 +4095,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               {btnExportUsersCsv(exportFilteredUsersCsv)}
               <Button onClick={saveAllContacts}> S_All</Button>
               <Button onClick={saveFilteredContactsVcf}> saveVCF</Button>
+              <input
+                ref={excelImportInputRef}
+                type="file"
+                accept=".xls,.xlsx"
+                style={{ display: 'none' }}
+                onChange={handleExcelProfilesUpload}
+              />
+              <Button
+                onClick={() => excelImportInputRef.current?.click()}
+                disabled={isExcelImporting}
+                title="Імпорт Excel в 3 JSON"
+              >
+                {isExcelImporting ? '...' : 'XLSX'}
+              </Button>
 
               {/* <ExcelToJson/> */}
               {/* <UploadJson/> */}
