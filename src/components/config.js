@@ -3784,6 +3784,120 @@ export const createSelectedSearchKeyIndexesInCollection = async (collection, ind
   }
 };
 
+const toPlainObjectFromSetMap = indexMap =>
+  Object.entries(indexMap).reduce((acc, [key, value]) => {
+    if (value instanceof Set) {
+      const ids = [...value].filter(Boolean);
+      if (ids.length === 1) {
+        acc[key] = ids[0];
+      } else if (ids.length > 1) {
+        acc[key] = ids;
+      }
+      return acc;
+    }
+
+    if (value && typeof value === 'object') {
+      const nested = toPlainObjectFromSetMap(value);
+      if (nested && Object.keys(nested).length > 0) {
+        acc[key] = nested;
+      }
+    }
+
+    return acc;
+  }, {});
+
+export const buildSearchIdIndexPayloadFromCollections = collectionsMap => {
+  const searchIdMap = {};
+
+  Object.entries(collectionsMap || {}).forEach(([, usersMap]) => {
+    Object.entries(usersMap || {}).forEach(([userId, userData]) => {
+      if (!userId || !userData || typeof userData !== 'object') return;
+
+      keysToCheck.forEach(key => {
+        if (key === 'getInTouch' || key === 'lastAction') return;
+        const candidates = extractIndexableFieldValues(userData[key]).flatMap(value =>
+          buildSearchIndexCandidates(key, value)
+        );
+        candidates.forEach(candidate => {
+          if (!candidate) return;
+          const searchIdKey = `${key}_${encodeKey(String(candidate).toLowerCase())}`;
+          if (!searchIdMap[searchIdKey]) {
+            searchIdMap[searchIdKey] = new Set();
+          }
+          searchIdMap[searchIdKey].add(userId);
+        });
+      });
+    });
+  });
+
+  return toPlainObjectFromSetMap(searchIdMap);
+};
+
+const resolveSearchKeyValuesByIndexType = (indexType, userId, userData) => {
+  if (indexType === SEARCH_KEY_INDEX_TYPES.blood) {
+    return [{ indexName: BLOOD_SEARCH_KEY_INDEX, values: [...getBloodIndexSet(userData)] }];
+  }
+  if (indexType === SEARCH_KEY_INDEX_TYPES.maritalStatus) {
+    return [{ indexName: MARITAL_STATUS_SEARCH_KEY_INDEX, values: [...getMaritalStatusIndexSet(userData)] }];
+  }
+  if (indexType === SEARCH_KEY_INDEX_TYPES.csection) {
+    return [{ indexName: CSECTION_SEARCH_KEY_INDEX, values: [...getCsectionIndexSet(userData)] }];
+  }
+  if (indexType === SEARCH_KEY_INDEX_TYPES.contact) {
+    return [{ indexName: CONTACT_SEARCH_KEY_INDEX, values: [...getContactIndexSet(userData)] }];
+  }
+  if (indexType === SEARCH_KEY_INDEX_TYPES.role) {
+    return [{ indexName: ROLE_SEARCH_KEY_INDEX, values: [...getRoleIndexSet(userData)] }];
+  }
+  if (indexType === SEARCH_KEY_INDEX_TYPES.userId) {
+    return [{ indexName: USER_ID_SEARCH_KEY_INDEX, values: [...getUserIdIndexSet(userData?.userId || userId)] }];
+  }
+  if (indexType === SEARCH_KEY_INDEX_TYPES.age) {
+    return [{ indexName: AGE_SEARCH_KEY_INDEX, values: [...getAgeIndexSet(userData)] }];
+  }
+  if (indexType === SEARCH_KEY_INDEX_TYPES.imtHeightWeight) {
+    return [
+      { indexName: IMT_SEARCH_KEY_INDEX, values: [normalizeImtSearchKeyIndexValue(userData)] },
+      { indexName: HEIGHT_SEARCH_KEY_INDEX, values: [...normalizeMetricIndexValues(userData?.height)] },
+      { indexName: WEIGHT_SEARCH_KEY_INDEX, values: [...normalizeMetricIndexValues(userData?.weight)] },
+    ];
+  }
+  if (indexType === SEARCH_KEY_INDEX_TYPES.reaction) {
+    return [{ indexName: REACTION_SEARCH_KEY_INDEX, values: [...getReactionIndexSet(userData)] }];
+  }
+  if (indexType === SEARCH_KEY_INDEX_TYPES.fieldCount) {
+    return [{ indexName: FIELD_COUNT_SEARCH_KEY_INDEX, values: [normalizeFieldCountSearchKeyIndexValue(userData)] }];
+  }
+  return [];
+};
+
+export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexTypes = []) => {
+  const uniqueIndexTypes = [...new Set(indexTypes)].filter(indexType => Boolean(SEARCH_KEY_INDEX_BUILDERS[indexType]));
+  if (!uniqueIndexTypes.length) return {};
+
+  const payload = {};
+
+  Object.entries(collectionsMap || {}).forEach(([collectionName, usersMap]) => {
+    const rootPath = collectionName === 'users' ? 'searchKey/users' : 'searchKey';
+
+    Object.entries(usersMap || {}).forEach(([userId, userData]) => {
+      if (!userId || !userData || typeof userData !== 'object') return;
+
+      uniqueIndexTypes.forEach(indexType => {
+        const entries = resolveSearchKeyValuesByIndexType(indexType, userId, userData);
+        entries.forEach(({ indexName, values }) => {
+          values.filter(Boolean).forEach(value => {
+            const path = resolveSearchKeyLeafPath(rootPath, indexName, value, userId);
+            payload[path] = true;
+          });
+        });
+      });
+    });
+  });
+
+  return payload;
+};
+
 export const fetchUsersBySearchKeyBloodPaged = async ({
   filterSettings = {},
   offset = 0,
