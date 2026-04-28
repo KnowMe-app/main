@@ -261,6 +261,7 @@ export const SearchFilters = ({
           { val: 'vk', label: 'vk' },
           { val: 'aa', label: 'aa' },
           { val: 'ab', label: 'ab' },
+          { val: 'id', label: 'ID' },
           { val: 'long', label: '>20' },
           { val: 'mid', label: '>8<20' },
           { val: 'other', label: '?' },
