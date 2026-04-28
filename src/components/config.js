@@ -915,6 +915,37 @@ export const setUserComment = async (cardId, text) => {
   }
 };
 
+export const updateCommentByOwner = async ({ ownerId, commentId, cardId, text }) => {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error('User not authenticated');
+    }
+    const safeOwnerId = String(ownerId || '').trim();
+    const safeCommentId = String(commentId || '').trim();
+    if (!safeOwnerId || !safeCommentId || !cardId || typeof text !== 'string') {
+      throw new Error('ownerId, commentId, cardId і text обовʼязкові');
+    }
+
+    const targetRef = ref2(database, `multiData/comments/${safeOwnerId}/${safeCommentId}`);
+    const snap = await get(targetRef);
+    if (!snap.exists()) {
+      return null;
+    }
+
+    const lastAction = Date.now();
+    await update(targetRef, {
+      cardId,
+      text,
+      lastAction,
+    });
+    return { commentId: safeCommentId, lastAction };
+  } catch (error) {
+    console.error('Error updating comment by owner:', error);
+    return null;
+  }
+};
+
 export const fetchUserComment = async (ownerId, cardId) => {
   try {
     const q = query(

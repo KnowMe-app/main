@@ -18,7 +18,12 @@ import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
-import { fetchUserById, setUserComment as persistUserComment, fetchAllCommentsByCardId } from '../config';
+import {
+  fetchUserById,
+  setUserComment as persistUserComment,
+  updateCommentByOwner,
+  fetchAllCommentsByCardId
+} from '../config';
 import { updateCard, clearCardCache } from 'utils/cardsStorage';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
@@ -117,8 +122,9 @@ const multiCommentStyle = {
   fontStyle: 'italic',
   color: '#f3dfab',
   cursor: 'pointer',
-  textDecoration: 'underline',
-  textUnderlineOffset: '2px',
+  textDecoration: 'none',
+  fontSize: '60%',
+  lineHeight: 1.25,
 };
 
 const multiCommentRowStyle = {
@@ -250,7 +256,7 @@ const extractMultiDataComments = cardData => {
 
     if (typeof value === 'string') {
       const text = value.trim();
-      if (text) normalized.push({ commentId: `string-${sourceIndex}`, text, authorId: '' });
+      if (text) normalized.push({ commentId: `string-${sourceIndex}`, text, authorId: '', lastAction: 0 });
       return;
     }
 
@@ -258,7 +264,7 @@ const extractMultiDataComments = cardData => {
       value.forEach((item, itemIndex) => {
         if (typeof item === 'string') {
           const text = item.trim();
-          if (text) normalized.push({ commentId: `arr-${sourceIndex}-${itemIndex}`, text, authorId: '' });
+          if (text) normalized.push({ commentId: `arr-${sourceIndex}-${itemIndex}`, text, authorId: '', lastAction: 0 });
         } else if (item?.text) {
           const text = String(item.text).trim();
           if (text) {
@@ -266,6 +272,7 @@ const extractMultiDataComments = cardData => {
               commentId: item.commentId || `arr-${sourceIndex}-${itemIndex}`,
               text,
               authorId: item.authorId || '',
+              lastAction: item.lastAction || item.date || 0,
             });
           }
         }
@@ -277,7 +284,7 @@ const extractMultiDataComments = cardData => {
       Object.entries(value).forEach(([key, item]) => {
         if (typeof item === 'string') {
           const text = item.trim();
-          if (text) normalized.push({ commentId: key, text, authorId: '' });
+          if (text) normalized.push({ commentId: key, text, authorId: '', lastAction: 0 });
         } else if (item?.text) {
           const text = String(item.text).trim();
           if (text) {
@@ -285,6 +292,7 @@ const extractMultiDataComments = cardData => {
               commentId: item.commentId || key,
               text,
               authorId: item.authorId || '',
+              lastAction: item.lastAction || item.date || 0,
             });
           }
         }
@@ -315,6 +323,16 @@ const TopBlock = ({
   overlayFieldAdditions = {},
   onSubmitHistorySnapshot = null
 }) => {
+  const formatCommentDate = React.useCallback(value => {
+    if (!value) return '';
+    const parsed = typeof value === 'number' ? new Date(value) : new Date(String(value));
+    if (Number.isNaN(parsed.getTime())) return '';
+    const day = String(parsed.getDate()).padStart(2, '0');
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const year = parsed.getFullYear();
+    return `${day}.${month}.${year}`;
+  }, []);
+
   const [editableComment, setEditableComment] = React.useState('');
   const [isCommentModalOpen, setIsCommentModalOpen] = React.useState(false);
   const [selectedComment, setSelectedComment] = React.useState(null);
@@ -393,6 +411,7 @@ const TopBlock = ({
   const saveMultiComment = async () => {
     const prepared = editableComment.trim();
     const targetCommentId = selectedComment?.commentId || '';
+    const targetOwnerId = selectedComment?.ownerId || selectedComment?.authorId || '';
     if (!targetCommentId) {
       toast.error('Не обрано коментар для редагування');
       return;
@@ -431,7 +450,14 @@ const TopBlock = ({
       setState(prev => ({ ...prev, ...optimisticCard }));
     }
 
-    const result = await persistUserComment(cardData.userId, prepared);
+    const result = targetOwnerId
+      ? await updateCommentByOwner({
+          ownerId: targetOwnerId,
+          commentId: targetCommentId,
+          cardId: cardData.userId,
+          text: prepared,
+        })
+      : await persistUserComment(cardData.userId, prepared);
     if (!result) {
       toast.error('Не вдалося зберегти коментар в multiData');
       return;
@@ -681,7 +707,7 @@ const TopBlock = ({
                 setIsCommentModalOpen(true);
               }}
             >
-              {comment.text}
+              {`${formatCommentDate(comment.lastAction) || '--.--.----'} - ${comment.text}`}
             </div>
           </div>
         ))}
