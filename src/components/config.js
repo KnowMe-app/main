@@ -915,46 +915,6 @@ export const setUserComment = async (cardId, text) => {
   }
 };
 
-export const updateCommentByOwner = async ({ ownerId, commentId, cardId, text }) => {
-  try {
-    const user = auth.currentUser;
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-    if (!ownerId || !commentId || !cardId || typeof text !== 'string') {
-      throw new Error('ownerId, commentId, cardId і text обовʼязкові');
-    }
-    const lastAction = Date.now();
-    await set(ref2(database, `multiData/comments/${ownerId}/${commentId}`), {
-      cardId,
-      text,
-      authorId: ownerId,
-      lastAction,
-    });
-    return { commentId, lastAction, ownerId };
-  } catch (error) {
-    console.error('Error updating comment by owner:', error);
-    return null;
-  }
-};
-
-export const deleteCommentByOwner = async ({ ownerId, commentId }) => {
-  try {
-    const user = auth.currentUser;
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-    if (!ownerId || !commentId) {
-      throw new Error('ownerId і commentId обовʼязкові');
-    }
-    await remove(ref2(database, `multiData/comments/${ownerId}/${commentId}`));
-    return true;
-  } catch (error) {
-    console.error('Error deleting comment by owner:', error);
-    return false;
-  }
-};
-
 export const fetchUserComment = async (ownerId, cardId) => {
   try {
     const q = query(
