@@ -2761,7 +2761,6 @@ const getUserIdIndexSet = userId => {
   if (normalizedId.startsWith('vk')) userIdVariants.add('vk');
   if (normalizedId.startsWith('aa')) userIdVariants.add('aa');
   if (normalizedId.startsWith('ab')) userIdVariants.add('ab');
-  if (normalizedId.startsWith('id')) userIdVariants.add('id');
   if (normalizedId.length > 20) userIdVariants.add('long');
   if (normalizedId.length > 8 && normalizedId.length <= 20) userIdVariants.add('mid');
   if (userIdVariants.size === 0) userIdVariants.add('other');
@@ -2876,7 +2875,7 @@ const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
 const MARITAL_STATUS_SEARCH_KEY_BUCKETS = ['+', '-', '?', 'no'];
 const CONTACT_SEARCH_KEY_BUCKETS = ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'email'];
 const ROLE_SEARCH_KEY_BUCKETS = ['ed', 'sm', 'ag', 'ip', 'pp', 'cl', '?', 'no'];
-const USER_ID_SEARCH_KEY_BUCKETS = ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'];
+const USER_ID_SEARCH_KEY_BUCKETS = ['vk', 'aa', 'ab', 'long', 'mid', 'other'];
 const IMT_SEARCH_KEY_BUCKETS = ['le28', '29_31', '32_35', '36_plus', '?', 'no'];
 
 const getMaritalStatusFilterKey = bucket => {
