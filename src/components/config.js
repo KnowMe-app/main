@@ -3877,9 +3877,25 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
   if (!uniqueIndexTypes.length) return {};
 
   const payload = {};
+  const assignNestedLeaf = (target, pathSegments, leafValue) => {
+    if (!target || !Array.isArray(pathSegments) || pathSegments.length === 0) return;
+    let node = target;
+    pathSegments.forEach((segment, index) => {
+      if (!segment) return;
+      const isLeaf = index === pathSegments.length - 1;
+      if (isLeaf) {
+        node[segment] = leafValue;
+        return;
+      }
+      if (!node[segment] || typeof node[segment] !== 'object') {
+        node[segment] = {};
+      }
+      node = node[segment];
+    });
+  };
 
   Object.entries(collectionsMap || {}).forEach(([collectionName, usersMap]) => {
-    const rootPath = collectionName === 'users' ? 'searchKey/users' : 'searchKey';
+    const rootSegments = collectionName === 'users' ? ['users'] : [];
 
     Object.entries(usersMap || {}).forEach(([userId, userData]) => {
       if (!userId || !userData || typeof userData !== 'object') return;
@@ -3888,8 +3904,7 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
         const entries = resolveSearchKeyValuesByIndexType(indexType, userId, userData);
         entries.forEach(({ indexName, values }) => {
           values.filter(Boolean).forEach(value => {
-            const path = resolveSearchKeyLeafPath(rootPath, indexName, value, userId);
-            payload[path] = true;
+            assignNestedLeaf(payload, [...rootSegments, indexName, value, userId], true);
           });
         });
       });
