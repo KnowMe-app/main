@@ -156,7 +156,7 @@ export const ADDITIONAL_ACCESS_FILTER_OPTIONS = {
   imt: ['le28', '29_31', '32_35', '36_plus', '?', 'no'],
   role: ['ed', 'sm', 'ag', 'ip', 'cl', '?', 'no'],
   contact: ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'email'],
-  userId: ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'],
+  userId: ['vk', 'aa', 'ab', 'long', 'mid', 'other'],
   reaction: ['past', 'future', '99', '?', 'no'],
   height: ['lt163', '163_176', '177_180', '181_plus', '?', 'no'],
   weight: ['lt55', '55_69', '70_84', '85_plus', '?', 'no'],
@@ -184,7 +184,7 @@ maritalStatus: +,-,?,no
 csection: cs2plus,cs1,cs0,other,no
 contact: vk,instagram,facebook,phone,telegram,telegram2,tiktok,email
 role: ed,sm,ag,ip,cl,?,no
-userId: vk,aa,ab,id,long,mid,other
+userId: vk,aa,ab,long,mid,other
 imt: le28,29_31,32_35,36_plus,?,no
 ageBirthDate: d_2001-01-30,?,no
 reaction: d_2026-04-18,99,?,no
@@ -210,7 +210,6 @@ const toUserIdBuckets = userId => {
   if (normalized.startsWith('vk')) buckets.push('vk');
   if (normalized.startsWith('aa')) buckets.push('aa');
   if (normalized.startsWith('ab')) buckets.push('ab');
-  if (normalized.startsWith('id')) buckets.push('id');
   if (normalized.length > 20) buckets.push('long');
   if (normalized.length > 8 && normalized.length <= 20) buckets.push('mid');
   if (!buckets.length) buckets.push('other');
