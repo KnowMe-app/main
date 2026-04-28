@@ -18,7 +18,7 @@ import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
-import { fetchUserById, setUserComment as persistUserComment } from '../config';
+import { fetchUserById } from '../config';
 import { updateCard, clearCardCache } from 'utils/cardsStorage';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
@@ -113,72 +113,6 @@ const detailsToggleStyle = {
   fontSize: '18px',
 };
 
-const multiCommentStyle = {
-  fontStyle: 'italic',
-  color: '#f3dfab',
-  cursor: 'pointer',
-  textDecoration: 'underline',
-  textUnderlineOffset: '2px',
-};
-
-const multiCommentRowStyle = {
-  marginTop: '6px',
-  display: 'flex',
-  alignItems: 'center',
-  gap: '6px',
-};
-
-const commentAuthorButtonStyle = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '20px',
-  height: '20px',
-  border: 'none',
-  background: 'transparent',
-  color: '#f3dfab',
-  cursor: 'pointer',
-  padding: 0,
-};
-
-const inlineModalOverlayStyle = {
-  position: 'fixed',
-  inset: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.55)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 3000,
-  padding: '16px',
-};
-
-const inlineModalCardStyle = {
-  width: 'min(92vw, 560px)',
-  background: '#fff',
-  color: '#111',
-  borderRadius: '12px',
-  padding: '14px',
-  boxShadow: '0 18px 40px rgba(0, 0, 0, 0.35)',
-};
-
-const inlineModalTextareaStyle = {
-  width: '100%',
-  minHeight: '120px',
-  borderRadius: '8px',
-  border: '1px solid #c7c7c7',
-  padding: '10px',
-  resize: 'vertical',
-  fontSize: '14px',
-  boxSizing: 'border-box',
-};
-
-const inlineModalActionsStyle = {
-  marginTop: '10px',
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: '8px',
-};
-
 const hasAgentOrIPRole = data =>
   data.userRole === 'ag' || data.userRole === 'ip' || data.role === 'ag' || data.role === 'ip';
 
@@ -237,65 +171,7 @@ const getContrastColor = background => {
   return luminance > 0.5 ? '#000' : '#fff';
 };
 
-const extractMultiDataComments = cardData => {
-  const candidates = [
-    cardData?.multiData?.comments,
-    cardData?.multiDataComments,
-    cardData?.comments,
-  ];
-
-  const normalized = [];
-  candidates.forEach((value, sourceIndex) => {
-    if (!value) return;
-
-    if (typeof value === 'string') {
-      const text = value.trim();
-      if (text) normalized.push({ commentId: `string-${sourceIndex}`, text, authorId: '' });
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      value.forEach((item, itemIndex) => {
-        if (typeof item === 'string') {
-          const text = item.trim();
-          if (text) normalized.push({ commentId: `arr-${sourceIndex}-${itemIndex}`, text, authorId: '' });
-        } else if (item?.text) {
-          const text = String(item.text).trim();
-          if (text) {
-            normalized.push({
-              commentId: item.commentId || `arr-${sourceIndex}-${itemIndex}`,
-              text,
-              authorId: item.authorId || '',
-            });
-          }
-        }
-      });
-      return;
-    }
-
-    if (typeof value === 'object') {
-      Object.entries(value).forEach(([key, item]) => {
-        if (typeof item === 'string') {
-          const text = item.trim();
-          if (text) normalized.push({ commentId: key, text, authorId: '' });
-        } else if (item?.text) {
-          const text = String(item.text).trim();
-          if (text) {
-            normalized.push({
-              commentId: item.commentId || key,
-              text,
-              authorId: item.authorId || '',
-            });
-          }
-        }
-      });
-    }
-  });
-
-  return normalized.filter(comment => comment.text);
-};
-
-const TopBlock = ({
+export const renderTopBlock = (
   userData,
   setUsers,
   setShowInfoModal,
@@ -314,15 +190,10 @@ const TopBlock = ({
   additionalActions = null,
   overlayFieldAdditions = {},
   onSubmitHistorySnapshot = null
-}) => {
-  const [editableComment, setEditableComment] = React.useState('');
-  const [isCommentModalOpen, setIsCommentModalOpen] = React.useState(false);
-  const [selectedComment, setSelectedComment] = React.useState(null);
-
+) => {
   if (!userData) return null;
 
   const cardData = { ...userData, cycleStatus: getEffectiveCycleStatus(userData) };
-  const multiDataComments = extractMultiDataComments(cardData);
   const region = normalizeRegion(cardData.region);
   const showSideActions = !additionalActions;
   const hasHiddenCycleFieldRole = hasRoleWithoutCycle(cardData);
@@ -346,76 +217,6 @@ const TopBlock = ({
   };
 
   const submitOptions = { onSubmitHistorySnapshot };
-
-  const saveMultiComment = async () => {
-    const prepared = editableComment.trim();
-    const targetCommentId = selectedComment?.commentId || '';
-    if (!targetCommentId) {
-      toast.error('Не обрано коментар для редагування');
-      return;
-    }
-    const updatedComments = (multiDataComments || []).map(comment =>
-      comment.commentId === targetCommentId ? { ...comment, text: prepared } : comment
-    );
-    const optimisticCard = {
-      ...cardData,
-      multiData: {
-        ...(cardData.multiData || {}),
-        comments: updatedComments.map(comment => ({
-          commentId: comment.commentId,
-          text: comment.text,
-          authorId: comment.authorId || '',
-        })),
-      },
-    };
-    if (typeof setUsers === 'function') {
-      setUsers(prev => {
-        if (Array.isArray(prev)) {
-          return prev.map(item => (item?.userId === cardData.userId ? optimisticCard : item));
-        }
-        if (prev && typeof prev === 'object') {
-          const current = prev[cardData.userId];
-          if (!current) return prev;
-          return {
-            ...prev,
-            [cardData.userId]: optimisticCard,
-          };
-        }
-        return prev;
-      });
-    }
-    if (typeof setState === 'function' && !isFromListOfUsers) {
-      setState(prev => ({ ...prev, ...optimisticCard }));
-    }
-
-    const result = await persistUserComment(cardData.userId, prepared);
-    if (!result) {
-      toast.error('Не вдалося зберегти коментар в multiData');
-      return;
-    }
-    toast.success('Коментар в multiData збережено');
-    setIsCommentModalOpen(false);
-    setSelectedComment(null);
-  };
-
-  const openAuthorCardForEdit = async authorId => {
-    if (!authorId) {
-      toast.error('Немає автора для цього коментаря');
-      return;
-    }
-    if (typeof setSearch !== 'function' || typeof setState !== 'function') {
-      toast.error('Режим редагування недоступний у цьому контексті');
-      return;
-    }
-    const authorCard = await fetchUserById(authorId);
-    if (!authorCard) {
-      toast.error('Картку автора не знайдено');
-      return;
-    }
-    setSearch(authorId);
-    setState(authorCard);
-  };
-
   return (
     <div style={topBlockContainerStyle}>
       <div style={topButtonsRowStyle}>
@@ -611,74 +412,7 @@ const TopBlock = ({
       {fieldWriter(cardData, setUsers, setState, submitOptions)}
       <div style={commentFieldWrapperStyle}>
         <FieldComment userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />
-        {multiDataComments.map(comment => (
-          <div key={comment.commentId || `${comment.authorId}-${comment.text}`} style={multiCommentRowStyle}>
-            <button
-              type="button"
-              style={commentAuthorButtonStyle}
-              title="Відкрити автора коментаря в режимі редагування"
-              aria-label="Відкрити автора коментаря в режимі редагування"
-              onClick={event => {
-                event.stopPropagation();
-                openAuthorCardForEdit(comment.authorId);
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.8" />
-                <path d="M5 20a7 7 0 0 1 14 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-            </button>
-            <div
-              style={multiCommentStyle}
-              title="Редагувати коментар multiData"
-              onClick={event => {
-                event.stopPropagation();
-                setSelectedComment(comment);
-                setEditableComment(comment.text);
-                setIsCommentModalOpen(true);
-              }}
-            >
-              {comment.text}
-            </div>
-          </div>
-        ))}
       </div>
-      {isCommentModalOpen && (
-        <div
-          style={inlineModalOverlayStyle}
-          onClick={event => {
-            event.stopPropagation();
-            setIsCommentModalOpen(false);
-            setSelectedComment(null);
-          }}
-        >
-          <div
-            style={inlineModalCardStyle}
-            onClick={event => event.stopPropagation()}
-          >
-            <strong>Коментар з multiData</strong>
-            <textarea
-              value={editableComment}
-              onChange={event => setEditableComment(event.target.value)}
-              style={inlineModalTextareaStyle}
-            />
-            <div style={inlineModalActionsStyle}>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCommentModalOpen(false);
-                  setSelectedComment(null);
-                }}
-              >
-                Скасувати
-              </button>
-              <button type="button" onClick={saveMultiComment}>
-                Зберегти
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div
         onClick={async e => {
@@ -742,45 +476,3 @@ const TopBlock = ({
     </div>
   );
 };
-
-export const renderTopBlock = (
-  userData,
-  setUsers,
-  setShowInfoModal,
-  setState,
-  setUserIdToDelete,
-  isFromListOfUsers,
-  favoriteUsers = {},
-  setFavoriteUsers,
-  dislikeUsers = {},
-  setDislikeUsers = () => {},
-  currentFilter,
-  isDateInRange,
-  onOpenMedications,
-  setSearch = null,
-  topBlueAction = null,
-  additionalActions = null,
-  overlayFieldAdditions = {},
-  onSubmitHistorySnapshot = null
-) => (
-  <TopBlock
-    userData={userData}
-    setUsers={setUsers}
-    setShowInfoModal={setShowInfoModal}
-    setState={setState}
-    setUserIdToDelete={setUserIdToDelete}
-    isFromListOfUsers={isFromListOfUsers}
-    favoriteUsers={favoriteUsers}
-    setFavoriteUsers={setFavoriteUsers}
-    dislikeUsers={dislikeUsers}
-    setDislikeUsers={setDislikeUsers}
-    currentFilter={currentFilter}
-    isDateInRange={isDateInRange}
-    onOpenMedications={onOpenMedications}
-    setSearch={setSearch}
-    topBlueAction={topBlueAction}
-    additionalActions={additionalActions}
-    overlayFieldAdditions={overlayFieldAdditions}
-    onSubmitHistorySnapshot={onSubmitHistorySnapshot}
-  />
-);
