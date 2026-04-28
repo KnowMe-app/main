@@ -194,6 +194,12 @@ const inlineModalActionsStyle = {
   gap: '8px',
 };
 
+const deleteModalTextStyle = {
+  marginTop: '8px',
+  marginBottom: '12px',
+  lineHeight: 1.35,
+};
+
 const hasAgentOrIPRole = data =>
   data.userRole === 'ag' || data.userRole === 'ip' || data.role === 'ag' || data.role === 'ip';
 
@@ -333,6 +339,7 @@ const TopBlock = ({
   const [editableComment, setEditableComment] = React.useState('');
   const [isCommentModalOpen, setIsCommentModalOpen] = React.useState(false);
   const [selectedComment, setSelectedComment] = React.useState(null);
+  const [commentToDelete, setCommentToDelete] = React.useState(null);
   const [backendMultiComments, setBackendMultiComments] = React.useState([]);
   const isAdmin = isAdminUid(auth.currentUser?.uid);
   const cardData = React.useMemo(() => {
@@ -759,7 +766,7 @@ const TopBlock = ({
                 aria-label="Видалити оригінальний коментар"
                 onClick={event => {
                   event.stopPropagation();
-                  handleDeleteComment(comment);
+                  setCommentToDelete(comment);
                 }}
               >
                 ×
@@ -799,6 +806,44 @@ const TopBlock = ({
               </button>
               <button type="button" onClick={saveMultiComment}>
                 Зберегти
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {commentToDelete && (
+        <div
+          style={inlineModalOverlayStyle}
+          onClick={event => {
+            event.stopPropagation();
+            setCommentToDelete(null);
+          }}
+        >
+          <div
+            style={inlineModalCardStyle}
+            onClick={event => event.stopPropagation()}
+          >
+            <strong>Підтвердження видалення</strong>
+            <div style={deleteModalTextStyle}>
+              Ви впевнені, що хочете видалити цей коментар?
+            </div>
+            <div style={inlineModalActionsStyle}>
+              <button
+                type="button"
+                onClick={() => {
+                  setCommentToDelete(null);
+                }}
+              >
+                Скасувати
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await handleDeleteComment(commentToDelete);
+                  setCommentToDelete(null);
+                }}
+              >
+                Видалити
               </button>
             </div>
           </div>
