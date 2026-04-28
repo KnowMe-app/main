@@ -1123,9 +1123,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       if (syncedState?.userId) {
         try {
+          const isUsersCollectionId = syncedState.userId.length > 20;
+          const searchKeySyncTask = isUsersCollectionId
+            ? syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState, {
+                rootPath: 'searchKey/users',
+              })
+            : syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState);
+
           await Promise.all([
             syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState),
-            syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState),
+            searchKeySyncTask,
           ]);
         } catch (indexError) {
           const details = indexError?.message || String(indexError);

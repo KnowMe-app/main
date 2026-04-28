@@ -65,6 +65,7 @@ export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './
 
 const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
 const SEARCH_KEY_INDEX_ROOT = 'searchKey';
+const SEARCH_KEY_USERS_INDEX_ROOT = `${SEARCH_KEY_INDEX_ROOT}/users`;
 const BLOOD_SEARCH_KEY_INDEX = 'blood';
 const MARITAL_STATUS_SEARCH_KEY_INDEX = 'maritalStatus';
 const CONTACT_SEARCH_KEY_INDEX = 'contact';
@@ -2925,7 +2926,7 @@ const isUserIdBucketAllowedByFilters = (bucket, filterSettings = {}) => {
   return Boolean(userIdFilters?.[bucket]);
 };
 
-const collectFieldCountIdsByFilters = async fieldsFilters => {
+const collectFieldCountIdsByFilters = async (fieldsFilters, rootPaths = [SEARCH_KEY_INDEX_ROOT]) => {
   const shouldApplyFields = hasExplicitFilterSelection(fieldsFilters);
   if (!shouldApplyFields) return null;
 
@@ -2936,23 +2937,28 @@ const collectFieldCountIdsByFilters = async fieldsFilters => {
     f20_plus: Boolean(fieldsFilters?.f20_plus),
   };
 
-  const snapshot = await get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${FIELD_COUNT_SEARCH_KEY_INDEX}`));
   const fieldIds = new Set();
-  if (!snapshot.exists()) return fieldIds;
+  const snapshots = await Promise.all(
+    rootPaths.map(rootPath => get(ref2(database, `${rootPath}/${FIELD_COUNT_SEARCH_KEY_INDEX}`)))
+  );
 
-  Object.entries(snapshot.val() || {}).forEach(([countKey, usersMap]) => {
-    const parsedCount = Number.parseInt(String(countKey), 10);
-    if (!Number.isInteger(parsedCount) || parsedCount < 0) return;
+  snapshots.forEach(snapshot => {
+    if (!snapshot.exists()) return;
 
-    const inSelectedRange =
-      (selected.le5 && parsedCount <= 5) ||
-      (selected.f6_10 && parsedCount >= 6 && parsedCount <= 10) ||
-      (selected.f11_20 && parsedCount >= 11 && parsedCount <= 20) ||
-      (selected.f20_plus && parsedCount > 20);
+    Object.entries(snapshot.val() || {}).forEach(([countKey, usersMap]) => {
+      const parsedCount = Number.parseInt(String(countKey), 10);
+      if (!Number.isInteger(parsedCount) || parsedCount < 0) return;
 
-    if (!inSelectedRange) return;
-    Object.keys(usersMap || {}).forEach(userId => {
-      if (userId) fieldIds.add(userId);
+      const inSelectedRange =
+        (selected.le5 && parsedCount <= 5) ||
+        (selected.f6_10 && parsedCount >= 6 && parsedCount <= 10) ||
+        (selected.f11_20 && parsedCount >= 11 && parsedCount <= 20) ||
+        (selected.f20_plus && parsedCount > 20);
+
+      if (!inSelectedRange) return;
+      Object.keys(usersMap || {}).forEach(userId => {
+        if (userId) fieldIds.add(userId);
+      });
     });
   });
 
@@ -3015,7 +3021,7 @@ const collectIdsFromAgeSnapshot = (snapshot, idSet) => {
   });
 };
 
-const collectAgeIdsByFilters = async ageFilters => {
+const collectAgeIdsByFilters = async (ageFilters, rootPaths = [SEARCH_KEY_INDEX_ROOT]) => {
   const shouldApplyAge = hasExplicitFilterSelection(ageFilters);
   if (!shouldApplyAge) return null;
 
@@ -3023,12 +3029,12 @@ const collectAgeIdsByFilters = async ageFilters => {
   const ageIds = new Set();
   const requests = [];
 
-  const addRangeRequest = range => {
+  const addRangeRequest = (range, rootPath) => {
     if (!range) return;
     requests.push(
       get(
         query(
-          ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${AGE_SEARCH_KEY_INDEX}`),
+          ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}`),
           orderByKey(),
           startAt(range.startKey),
           endAt(range.endKey)
@@ -3037,14 +3043,16 @@ const collectAgeIdsByFilters = async ageFilters => {
     );
   };
 
-  if (selected('le25')) addRangeRequest(getBirthDateRangeByAge({ maxAge: 25 }));
-  if (selected('26_30')) addRangeRequest(getBirthDateRangeByAge({ minAge: 26, maxAge: 30 }));
-  if (selected('31_33')) addRangeRequest(getBirthDateRangeByAge({ minAge: 31, maxAge: 33 }));
-  if (selected('34_36')) addRangeRequest(getBirthDateRangeByAge({ minAge: 34, maxAge: 36 }));
-  if (selected('37_42')) addRangeRequest(getBirthDateRangeByAge({ minAge: 37, maxAge: 42 }));
-  if (selected('43_plus')) addRangeRequest(getBirthDateRangeByAge({ minAge: 43 }));
-  if (selected('other')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${AGE_SEARCH_KEY_INDEX}/?`)));
-  if (selected('empty')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${AGE_SEARCH_KEY_INDEX}/no`)));
+  rootPaths.forEach(rootPath => {
+    if (selected('le25')) addRangeRequest(getBirthDateRangeByAge({ maxAge: 25 }), rootPath);
+    if (selected('26_30')) addRangeRequest(getBirthDateRangeByAge({ minAge: 26, maxAge: 30 }), rootPath);
+    if (selected('31_33')) addRangeRequest(getBirthDateRangeByAge({ minAge: 31, maxAge: 33 }), rootPath);
+    if (selected('34_36')) addRangeRequest(getBirthDateRangeByAge({ minAge: 34, maxAge: 36 }), rootPath);
+    if (selected('37_42')) addRangeRequest(getBirthDateRangeByAge({ minAge: 37, maxAge: 42 }), rootPath);
+    if (selected('43_plus')) addRangeRequest(getBirthDateRangeByAge({ minAge: 43 }), rootPath);
+    if (selected('other')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/?`)));
+    if (selected('empty')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/no`)));
+  });
 
   const snapshots = await Promise.all(requests);
   snapshots.forEach(snapshot => {
@@ -3062,7 +3070,7 @@ const collectAgeIdsByFilters = async ageFilters => {
   return ageIds;
 };
 
-const collectImtIdsByFilters = async imtFilters => {
+const collectImtIdsByFilters = async (imtFilters, rootPaths = [SEARCH_KEY_INDEX_ROOT]) => {
   const shouldApplyImt = hasExplicitFilterSelection(imtFilters);
   if (!shouldApplyImt) return null;
 
@@ -3070,12 +3078,14 @@ const collectImtIdsByFilters = async imtFilters => {
   const imtIds = new Set();
   const requests = [];
 
-  if (selected('le28')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/le28`)));
-  if (selected('29_31')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/29_31`)));
-  if (selected('32_35')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/32_35`)));
-  if (selected('36_plus')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/36_plus`)));
-  if (selected('other')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/?`)));
-  if (selected('no')) requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/no`)));
+  rootPaths.forEach(rootPath => {
+    if (selected('le28')) requests.push(get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/le28`)));
+    if (selected('29_31')) requests.push(get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/29_31`)));
+    if (selected('32_35')) requests.push(get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/32_35`)));
+    if (selected('36_plus')) requests.push(get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/36_plus`)));
+    if (selected('other')) requests.push(get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/?`)));
+    if (selected('no')) requests.push(get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/no`)));
+  });
 
   const snapshots = await Promise.all(requests);
   snapshots.forEach(snapshot => {
@@ -3096,7 +3106,7 @@ const getHeightFilterBucket = heightValue => {
   return '181_plus';
 };
 
-const collectHeightIdsByFilters = async heightFilters => {
+const collectHeightIdsByFilters = async (heightFilters, rootPaths = [SEARCH_KEY_INDEX_ROOT]) => {
   const shouldApplyHeight = hasExplicitFilterSelection(heightFilters);
   if (!shouldApplyHeight) return null;
 
@@ -3108,18 +3118,22 @@ const collectHeightIdsByFilters = async heightFilters => {
 
   const selectedSet = new Set(selectedBuckets);
   const heightIds = new Set();
-  const snapshot = await get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${HEIGHT_SEARCH_KEY_INDEX}`));
+  const snapshots = await Promise.all(
+    rootPaths.map(rootPath => get(ref2(database, `${rootPath}/${HEIGHT_SEARCH_KEY_INDEX}`)))
+  );
 
-  if (!snapshot.exists()) return heightIds;
+  snapshots.forEach(snapshot => {
+    if (!snapshot.exists()) return;
 
-  Object.entries(snapshot.val() || {}).forEach(([storedHeight, usersMap]) => {
-    const parsedHeight = Number.parseFloat(String(storedHeight || '').replace(',', '.'));
-    let bucket = getHeightFilterBucket(parsedHeight);
-    if (!bucket && storedHeight === '?') bucket = 'other';
-    if (!bucket && storedHeight === 'no') bucket = 'no';
-    if (!bucket || !selectedSet.has(bucket)) return;
-    Object.keys(usersMap || {}).forEach(userId => {
-      if (userId) heightIds.add(userId);
+    Object.entries(snapshot.val() || {}).forEach(([storedHeight, usersMap]) => {
+      const parsedHeight = Number.parseFloat(String(storedHeight || '').replace(',', '.'));
+      let bucket = getHeightFilterBucket(parsedHeight);
+      if (!bucket && storedHeight === '?') bucket = 'other';
+      if (!bucket && storedHeight === 'no') bucket = 'no';
+      if (!bucket || !selectedSet.has(bucket)) return;
+      Object.keys(usersMap || {}).forEach(userId => {
+        if (userId) heightIds.add(userId);
+      });
     });
   });
 
@@ -3164,6 +3178,7 @@ const getReactionIndexSet = data => {
 const collectReactionIdsByFilters = async (
   reactionFilters,
   { favoritesMap = {}, dislikedMap = {} } = {},
+  rootPaths = [SEARCH_KEY_INDEX_ROOT],
 ) => {
   const shouldApplyReaction = hasExplicitFilterSelection(reactionFilters);
   if (!shouldApplyReaction) return null;
@@ -3176,11 +3191,11 @@ const collectReactionIdsByFilters = async (
   const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const todayKey = `${AGE_DATE_PREFIX}${toIsoDate(todayAtMidnight)}`;
 
-  const addRangeRequest = ({ startKey, endKey }) => {
+  const addRangeRequest = ({ startKey, endKey }, rootPath) => {
     requests.push(
       get(
         query(
-          ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${REACTION_SEARCH_KEY_INDEX}`),
+          ref2(database, `${rootPath}/${REACTION_SEARCH_KEY_INDEX}`),
           orderByKey(),
           startAt(startKey),
           endAt(endKey)
@@ -3189,19 +3204,21 @@ const collectReactionIdsByFilters = async (
     );
   };
 
-  const addBucketRequest = bucket => {
-    requests.push(get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${REACTION_SEARCH_KEY_INDEX}/${bucket}`)));
+  const addBucketRequest = (bucket, rootPath) => {
+    requests.push(get(ref2(database, `${rootPath}/${REACTION_SEARCH_KEY_INDEX}/${bucket}`)));
   };
 
-  if (selected('special99')) addBucketRequest('99');
-  if (selected('pastGetInTouch')) {
-    addRangeRequest({ startKey: `${AGE_DATE_PREFIX}1900-01-01`, endKey: todayKey });
-  }
-  if (selected('futureGetInTouch')) {
-    addRangeRequest({ startKey: todayKey, endKey: `${AGE_DATE_PREFIX}9999-12-31` });
-  }
-  if (selected('question')) addBucketRequest('?');
-  if (selected('none')) addBucketRequest('no');
+  rootPaths.forEach(rootPath => {
+    if (selected('special99')) addBucketRequest('99', rootPath);
+    if (selected('pastGetInTouch')) {
+      addRangeRequest({ startKey: `${AGE_DATE_PREFIX}1900-01-01`, endKey: todayKey }, rootPath);
+    }
+    if (selected('futureGetInTouch')) {
+      addRangeRequest({ startKey: todayKey, endKey: `${AGE_DATE_PREFIX}9999-12-31` }, rootPath);
+    }
+    if (selected('question')) addBucketRequest('?', rootPath);
+    if (selected('none')) addBucketRequest('no', rootPath);
+  });
 
   const snapshots = await Promise.all(requests);
   snapshots.forEach(snapshot => {
@@ -3267,8 +3284,10 @@ const updateSearchKeyLeaf = async (indexName, value, userId, action, options = {
   }
 };
 
-export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {}) => {
+export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {}, options = {}) => {
   if (!userId) return;
+  const updateLeaf = (indexName, value, action) =>
+    updateSearchKeyLeaf(indexName, value, userId, action, options);
 
   const prevValues = getBloodIndexSet(prevData);
   const nextValues = getBloodIndexSet(nextData);
@@ -3294,140 +3313,140 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   for (const value of prevValues) {
     if (!nextValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(BLOOD_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextValues) {
     if (!prevValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(BLOOD_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(BLOOD_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 
   for (const value of prevMaritalStatusValues) {
     if (!nextMaritalStatusValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(MARITAL_STATUS_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(MARITAL_STATUS_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextMaritalStatusValues) {
     if (!prevMaritalStatusValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(MARITAL_STATUS_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(MARITAL_STATUS_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 
   for (const value of prevCsectionValues) {
     if (!nextCsectionValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(CSECTION_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(CSECTION_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextCsectionValues) {
     if (!prevCsectionValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(CSECTION_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(CSECTION_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 
   for (const value of prevContactValues) {
     if (!nextContactValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(CONTACT_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(CONTACT_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextContactValues) {
     if (!prevContactValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(CONTACT_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(CONTACT_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 
   for (const value of prevRoleValues) {
     if (!nextRoleValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(ROLE_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(ROLE_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextRoleValues) {
     if (!prevRoleValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(ROLE_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(ROLE_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 
   for (const value of prevUserIdValues) {
     if (!nextUserIdValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(USER_ID_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(USER_ID_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextUserIdValues) {
     if (!prevUserIdValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(USER_ID_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(USER_ID_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 
   for (const value of prevAgeValues) {
     if (!nextAgeValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(AGE_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(AGE_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextAgeValues) {
     if (!prevAgeValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(AGE_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(AGE_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 
   for (const value of prevImtValues) {
     if (!nextImtValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(IMT_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(IMT_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextImtValues) {
     if (!prevImtValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(IMT_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(IMT_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 
   for (const value of prevHeightValues) {
     if (!nextHeightValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(HEIGHT_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(HEIGHT_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextHeightValues) {
     if (!prevHeightValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(HEIGHT_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(HEIGHT_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 
   for (const value of prevWeightValues) {
     if (!nextWeightValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(WEIGHT_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(WEIGHT_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextWeightValues) {
     if (!prevWeightValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(WEIGHT_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(WEIGHT_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 
@@ -3437,14 +3456,14 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   for (const value of prevReactionValues) {
     if (!nextReactionValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(REACTION_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(REACTION_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextReactionValues) {
     if (!prevReactionValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(REACTION_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(REACTION_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 
@@ -3454,14 +3473,14 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   for (const value of prevFieldCountValues) {
     if (!nextFieldCountValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(FIELD_COUNT_SEARCH_KEY_INDEX, value, userId, 'remove');
+      await updateLeaf(FIELD_COUNT_SEARCH_KEY_INDEX, value, 'remove');
     }
   }
 
   for (const value of nextFieldCountValues) {
     if (!prevFieldCountValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(FIELD_COUNT_SEARCH_KEY_INDEX, value, userId, 'add');
+      await updateLeaf(FIELD_COUNT_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 };
@@ -3921,6 +3940,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   favoritesMap = {},
   dislikedMap = {},
 } = {}) => {
+  const searchKeyRoots = [SEARCH_KEY_INDEX_ROOT, SEARCH_KEY_USERS_INDEX_ROOT];
   const filteredBuckets = BLOOD_SEARCH_KEY_BUCKETS.filter(bucket => isBucketAllowedByFilters(bucket, filterSettings));
   const filteredMaritalStatusBuckets = MARITAL_STATUS_SEARCH_KEY_BUCKETS.filter(bucket =>
     isMaritalStatusBucketAllowedByFilters(bucket, filterSettings)
@@ -3939,42 +3959,54 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     const filterKey = bucket === '?' ? 'other' : bucket;
     return Boolean(imtFilters?.[filterKey]);
   });
-  const ageUserIds = await collectAgeIdsByFilters(filterSettings?.age);
-  const imtUserIds = await collectImtIdsByFilters(filterSettings?.imt);
-  const heightUserIds = await collectHeightIdsByFilters(filterSettings?.height);
-  const fieldCountUserIds = await collectFieldCountIdsByFilters(filterSettings?.fields);
+  const ageUserIds = await collectAgeIdsByFilters(filterSettings?.age, searchKeyRoots);
+  const imtUserIds = await collectImtIdsByFilters(filterSettings?.imt, searchKeyRoots);
+  const heightUserIds = await collectHeightIdsByFilters(filterSettings?.height, searchKeyRoots);
+  const fieldCountUserIds = await collectFieldCountIdsByFilters(filterSettings?.fields, searchKeyRoots);
   const reactionUserIds = await collectReactionIdsByFilters(filterSettings?.reaction, {
     favoritesMap,
     dislikedMap,
-  });
+  }, searchKeyRoots);
 
   const [bucketSnapshots, maritalStatusSnapshots, contactSnapshots, roleSnapshots, userIdSnapshots, imtSnapshots] = await Promise.all([
     Promise.all(
-    filteredBuckets.map(bucket => get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${BLOOD_SEARCH_KEY_INDEX}/${bucket}`)))
-    ),
-    Promise.all(
-      filteredMaritalStatusBuckets.map(bucket =>
-        get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${bucket}`))
+      searchKeyRoots.flatMap(rootPath =>
+        filteredBuckets.map(bucket => get(ref2(database, `${rootPath}/${BLOOD_SEARCH_KEY_INDEX}/${bucket}`)))
       )
     ),
     Promise.all(
-      filteredContactBuckets.map(bucket =>
-        get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${CONTACT_SEARCH_KEY_INDEX}/${bucket}`))
+      searchKeyRoots.flatMap(rootPath =>
+        filteredMaritalStatusBuckets.map(bucket =>
+          get(ref2(database, `${rootPath}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${bucket}`))
+        )
       )
     ),
     Promise.all(
-      filteredRoleBuckets.map(bucket =>
-        get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${ROLE_SEARCH_KEY_INDEX}/${bucket}`))
+      searchKeyRoots.flatMap(rootPath =>
+        filteredContactBuckets.map(bucket =>
+          get(ref2(database, `${rootPath}/${CONTACT_SEARCH_KEY_INDEX}/${bucket}`))
+        )
       )
     ),
     Promise.all(
-      filteredUserIdBuckets.map(bucket =>
-        get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${USER_ID_SEARCH_KEY_INDEX}/${bucket}`))
+      searchKeyRoots.flatMap(rootPath =>
+        filteredRoleBuckets.map(bucket =>
+          get(ref2(database, `${rootPath}/${ROLE_SEARCH_KEY_INDEX}/${bucket}`))
+        )
       )
     ),
     Promise.all(
-      filteredImtBuckets.map(bucket =>
-        get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${IMT_SEARCH_KEY_INDEX}/${bucket}`))
+      searchKeyRoots.flatMap(rootPath =>
+        filteredUserIdBuckets.map(bucket =>
+          get(ref2(database, `${rootPath}/${USER_ID_SEARCH_KEY_INDEX}/${bucket}`))
+        )
+      )
+    ),
+    Promise.all(
+      searchKeyRoots.flatMap(rootPath =>
+        filteredImtBuckets.map(bucket =>
+          get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/${bucket}`))
+        )
       )
     ),
   ]);
