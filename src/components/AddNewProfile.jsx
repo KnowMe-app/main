@@ -93,7 +93,7 @@ import SearchBar, { detectSearchParams } from './SearchBar';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import { PAGE_SIZE, database } from './config';
-import { onValue, ref } from 'firebase/database';
+import { onValue, push, ref } from 'firebase/database';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 import {
@@ -588,7 +588,7 @@ const extractSurnameAndName = fullName => {
 
 const normalizeExcelPhone = rawPhone => {
   const normalized = normalizePhoneState({ phone: rawPhone });
-  const phone = normalized?.phone;
+  let phone = normalized?.phone;
 
   if (phone === undefined || phone === null) {
     return '';
@@ -598,7 +598,13 @@ const normalizeExcelPhone = rawPhone => {
     return phone[0] || '';
   }
 
-  return String(phone).trim();
+  phone = String(phone).trim();
+
+  if (/^\d{9}$/.test(phone)) {
+    return `380${phone}`;
+  }
+
+  return phone;
 };
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
@@ -951,9 +957,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
         const dataRows = rows.slice(2);
         const usersJson = {};
-        const commentsJson = {};
-        const directoryJson = {};
+        const commentsJson = { [EXCEL_COMMENTS_OWNER_ID]: {} };
+        const dislikesJson = { [EXCEL_COMMENTS_OWNER_ID]: {} };
         const todayTimestamp = Date.now();
+        const commentsOwnerRef = ref(database, `multiData/comments/${EXCEL_COMMENTS_OWNER_ID}`);
 
         dataRows.forEach((row, index) => {
           const rowArray = Array.isArray(row) ? row : [];
@@ -973,19 +980,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             ...(phone ? { phone } : {}),
           };
 
-          commentsJson[`${EXCEL_COMMENTS_OWNER_ID}/${userId}`] = {
+          const commentId = push(commentsOwnerRef).key || `comment-${userId}`;
+
+          commentsJson[EXCEL_COMMENTS_OWNER_ID][commentId] = {
             authorId: EXCEL_COMMENTS_OWNER_ID,
             cardId: userId,
-            lastAction: { [todayTimestamp]: true },
+            lastAction: todayTimestamp,
             text: commentText,
           };
 
-          directoryJson[`${EXCEL_COMMENTS_OWNER_ID}/${userId}`] = true;
+          dislikesJson[EXCEL_COMMENTS_OWNER_ID][userId] = true;
         });
 
         downloadJsonFile('users-cards.json', usersJson);
         downloadJsonFile('users-comments.json', commentsJson);
-        downloadJsonFile('users-comments-directory.json', directoryJson);
+        downloadJsonFile('users-dislikes.json', dislikesJson);
         toast.success(`Готово: ${dataRows.length} рядків оброблено`);
       } catch (error) {
         console.error('[AddNewProfile] Excel import failed', error);
