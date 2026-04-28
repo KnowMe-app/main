@@ -18,10 +18,18 @@ import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
-import { fetchUserById, setUserComment as persistUserComment, fetchAllCommentsByCardId } from '../config';
+import {
+  fetchUserById,
+  setUserComment as persistUserComment,
+  fetchAllCommentsByCardId,
+  updateCommentByOwner,
+  deleteCommentByOwner,
+} from '../config';
 import { updateCard, clearCardCache } from 'utils/cardsStorage';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
+import { isAdminUid } from 'utils/accessLevel';
+import { auth } from '../config';
 import toast from 'react-hot-toast';
 
 const topBlockContainerStyle = { padding: '7px', position: 'relative' };
@@ -117,8 +125,8 @@ const multiCommentStyle = {
   fontStyle: 'italic',
   color: '#f3dfab',
   cursor: 'pointer',
-  textDecoration: 'underline',
-  textUnderlineOffset: '2px',
+  textDecoration: 'none',
+  fontSize: '60%',
 };
 
 const multiCommentRowStyle = {
@@ -139,6 +147,13 @@ const commentAuthorButtonStyle = {
   color: '#f3dfab',
   cursor: 'pointer',
   padding: 0,
+};
+
+const commentDeleteButtonStyle = {
+  ...commentAuthorButtonStyle,
+  color: '#ffb4b4',
+  fontSize: '14px',
+  fontWeight: 700,
 };
 
 const inlineModalOverlayStyle = {
@@ -319,6 +334,7 @@ const TopBlock = ({
   const [isCommentModalOpen, setIsCommentModalOpen] = React.useState(false);
   const [selectedComment, setSelectedComment] = React.useState(null);
   const [backendMultiComments, setBackendMultiComments] = React.useState([]);
+  const isAdmin = isAdminUid(auth.currentUser?.uid);
   const cardData = React.useMemo(() => {
     if (!userData) return null;
     return { ...userData, cycleStatus: getEffectiveCycleStatus(userData) };
@@ -335,7 +351,7 @@ const TopBlock = ({
       authorId: item.authorId || item.ownerId || '',
       ownerId: item.ownerId || '',
       source: 'backend',
-      lastAction: item.lastAction || 0,
+      lastAction: Number(item.lastAction) || 0,
     }));
     const combined = [...fromLocal, ...fromBackend];
     const uniq = new Map();
@@ -393,8 +409,13 @@ const TopBlock = ({
   const saveMultiComment = async () => {
     const prepared = editableComment.trim();
     const targetCommentId = selectedComment?.commentId || '';
+    const currentUid = auth.currentUser?.uid || '';
     if (!targetCommentId) {
       toast.error('Не обрано коментар для редагування');
+      return;
+    }
+    if (selectedComment?.ownerId && selectedComment.ownerId !== currentUid && !isAdmin) {
+      toast.error('Недостатньо прав для редагування цього коментаря');
       return;
     }
     const updatedComments = (multiDataComments || []).map(comment =>
@@ -431,14 +452,61 @@ const TopBlock = ({
       setState(prev => ({ ...prev, ...optimisticCard }));
     }
 
-    const result = await persistUserComment(cardData.userId, prepared);
+    let result = null;
+    if (selectedComment?.ownerId && selectedComment?.commentId) {
+      result = await updateCommentByOwner({
+        ownerId: selectedComment.ownerId,
+        commentId: selectedComment.commentId,
+        cardId: cardData.userId,
+        text: prepared,
+      });
+    } else {
+      result = await persistUserComment(cardData.userId, prepared);
+    }
     if (!result) {
       toast.error('Не вдалося зберегти коментар в multiData');
       return;
     }
+    setBackendMultiComments(prev =>
+      prev.map(item =>
+        item.commentId === targetCommentId && (item.ownerId || '') === (selectedComment?.ownerId || '')
+          ? { ...item, text: prepared, lastAction: result.lastAction || Date.now() }
+          : item
+      )
+    );
     toast.success('Коментар в multiData збережено');
     setIsCommentModalOpen(false);
     setSelectedComment(null);
+  };
+
+  const handleDeleteComment = async comment => {
+    if (!isAdmin || !comment?.ownerId || !comment?.commentId) {
+      toast.error('Видалення недоступне');
+      return;
+    }
+    const isDeleted = await deleteCommentByOwner({
+      ownerId: comment.ownerId,
+      commentId: comment.commentId,
+    });
+    if (!isDeleted) {
+      toast.error('Не вдалося видалити коментар');
+      return;
+    }
+    setBackendMultiComments(prev =>
+      prev.filter(item => !(item.commentId === comment.commentId && item.ownerId === comment.ownerId))
+    );
+    toast.success('Коментар видалено');
+  };
+
+  const formatCommentDate = timestamp => {
+    const normalizedTimestamp = Number(timestamp);
+    if (!Number.isFinite(normalizedTimestamp) || normalizedTimestamp <= 0) return '';
+    const date = new Date(normalizedTimestamp);
+    if (Number.isNaN(date.getTime())) return '';
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = String(date.getFullYear());
+    return `${day}.${month}.${year}`;
   };
 
   const openAuthorCardForEdit = async authorId => {
@@ -681,8 +749,22 @@ const TopBlock = ({
                 setIsCommentModalOpen(true);
               }}
             >
-              {comment.text}
+              {`${formatCommentDate(comment.lastAction) || '--.--.----'} - ${comment.text}`}
             </div>
+            {isAdmin && comment.ownerId && (
+              <button
+                type="button"
+                style={commentDeleteButtonStyle}
+                title="Видалити оригінальний коментар"
+                aria-label="Видалити оригінальний коментар"
+                onClick={event => {
+                  event.stopPropagation();
+                  handleDeleteComment(comment);
+                }}
+              >
+                ×
+              </button>
+            )}
           </div>
         ))}
       </div>
