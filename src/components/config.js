@@ -961,6 +961,41 @@ export const fetchUserComments = async (ownerId, cardIds = []) => {
   }
 };
 
+export const fetchAllCommentsByCardId = async cardId => {
+  try {
+    if (!cardId) return [];
+    const snap = await get(ref2(database, 'multiData/comments'));
+    if (!snap.exists()) return [];
+
+    const normalizedCardId = String(cardId).trim().toLowerCase();
+    const result = [];
+
+    Object.entries(snap.val() || {}).forEach(([ownerId, ownerComments]) => {
+      if (!ownerComments || typeof ownerComments !== 'object') return;
+      Object.entries(ownerComments).forEach(([commentId, value]) => {
+        if (!value || typeof value !== 'object') return;
+        const candidateCardId = String(value.cardId || '').trim().toLowerCase();
+        if (candidateCardId !== normalizedCardId) return;
+        const text = String(value.text || '').trim();
+        if (!text) return;
+        result.push({
+          ownerId,
+          commentId,
+          cardId: value.cardId || cardId,
+          text,
+          authorId: value.authorId || ownerId,
+          lastAction: value.lastAction || 0,
+        });
+      });
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error fetching all comments by cardId:', error);
+    return [];
+  }
+};
+
 const buildFlowRef = ownerId => ref2(database, `multiData/flow/${ownerId}`);
 const sanitizeFlowPathPart = value =>
   String(value || '')
