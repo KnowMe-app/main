@@ -960,6 +960,25 @@ export const ProfileForm = ({
         rawRules !== undefined || Boolean(delCondition?.[ADDITIONAL_ACCESS_FIELD] !== undefined);
       if (shouldReindexAfterAdditionalRulesChange) {
         const accessUserId = String(payload?.userId || state?.userId || '').trim();
+        const hasAnyAdditionalRules =
+          (Array.isArray(rawRules) && rawRules.some(item => String(item || '').trim())) ||
+          (!Array.isArray(rawRules) && String(rawRules || '').trim().length > 0);
+
+        if (!hasAnyAdditionalRules) {
+          await buildNewUsersFilterSetIndex({
+            rawRules: '',
+            accessUserId,
+            matchedUserIdsBySetKey: {},
+          });
+          toast('searchKeySets очищено: additional access rules видалено.');
+          Promise.resolve(handleSubmit(payload, overwrite, delCondition)).catch(error => {
+            console.error('Failed to submit profile changes', error);
+            const details = error?.message || String(error);
+            toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
+          });
+          return;
+        }
+
         const matchedUserIdsByInputIndex =
           options?.matchedUserIdsByInputIndex && typeof options.matchedUserIdsByInputIndex === 'object'
             ? options.matchedUserIdsByInputIndex
