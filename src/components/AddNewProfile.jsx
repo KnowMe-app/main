@@ -36,6 +36,8 @@ import {
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
   createSelectedSearchKeyIndexesInCollection,
+  buildSearchIdIndexPayloadFromCollections,
+  buildSearchKeyIndexPayloadFromCollections,
   fetchUsersBySearchKeyBloodPaged,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -93,7 +95,7 @@ import SearchBar, { detectSearchParams } from './SearchBar';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import { PAGE_SIZE, database } from './config';
-import { onValue, push, ref } from 'firebase/database';
+import { get, onValue, push, ref } from 'firebase/database';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 import {
@@ -572,6 +574,32 @@ const IndexModalList = styled.div`
   margin-bottom: 10px;
 `;
 
+const LocalIndexOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 16px;
+`;
+
+const LocalIndexModal = styled.div`
+  width: min(560px, 100%);
+  background: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.2);
+`;
+
+const LocalIndexActions = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+`;
+
 const EXCEL_COMMENTS_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 
 const extractSurnameAndName = fullName => {
@@ -690,6 +718,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     stimulationShortcuts: true,
     searchKeyUsersAll: false,
     searchKeySetReindex: false,
+    searchLocalIdAndKey: false,
   };
   const defaultSelectedSearchKeyIndexes = SEARCH_KEY_INDEX_OPTIONS.reduce((acc, option) => {
     acc[option.key] = true;
@@ -709,6 +738,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isExcelImporting, setIsExcelImporting] = useState(false);
   const excelImportInputRef = useRef(null);
   const [showSearchKeyIndexPanel, setShowSearchKeyIndexPanel] = useState(false);
+  const [showLocalIndexModal, setShowLocalIndexModal] = useState(false);
+  const [pendingLocalIndexTypes, setPendingLocalIndexTypes] = useState([]);
+  const [pendingLocalUsersData, setPendingLocalUsersData] = useState(null);
+  const [pendingLocalNewUsersData, setPendingLocalNewUsersData] = useState(null);
+  const localUsersFileInputRef = useRef(null);
+  const localNewUsersFileInputRef = useRef(null);
   const [selectedIndexJobs, setSelectedIndexJobs] = useState(() => {
     const storedRaw = localStorage.getItem(INDEX_SELECTION_STORAGE_KEY);
     if (!storedRaw) return defaultSelectedIndexJobs;
@@ -3369,6 +3404,104 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }));
   };
 
+  const runLocalSearchIndexesWithCollections = useCallback(
+    async ({ usersData, newUsersData, indexTypes }) => {
+      const collectionsMap = {
+        users: usersData || {},
+        newUsers: newUsersData || {},
+      };
+
+      const searchIdPayload = buildSearchIdIndexPayloadFromCollections(collectionsMap);
+      const searchKeyPayload = buildSearchKeyIndexPayloadFromCollections(collectionsMap, indexTypes);
+
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      downloadJsonFile(`searchId-index-${stamp}.json`, searchIdPayload);
+      downloadJsonFile(`searchKey-index-${stamp}.json`, searchKeyPayload);
+    },
+    [downloadJsonFile],
+  );
+
+  const openLocalIndexModal = useCallback(indexTypes => {
+    setPendingLocalIndexTypes(indexTypes);
+    setPendingLocalUsersData(null);
+    setPendingLocalNewUsersData(null);
+    setShowLocalIndexModal(true);
+  }, []);
+
+  const handleDownloadCollectionsForLocalIndex = useCallback(async () => {
+    const toastId = 'download-local-index-collections';
+    toast.loading('Завантаження users та newUsers...', { id: toastId });
+    try {
+      const [usersData, newUsersData] = await Promise.all([
+        get(ref(database, 'users')).then(snapshot => (snapshot.exists() ? snapshot.val() || {} : {})),
+        get(ref(database, 'newUsers')).then(snapshot => (snapshot.exists() ? snapshot.val() || {} : {})),
+      ]);
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      downloadJsonFile(`users-${stamp}.json`, usersData || {});
+      downloadJsonFile(`newUsers-${stamp}.json`, newUsersData || {});
+      toast.success('Колекції users/newUsers завантажено', { id: toastId });
+    } catch (error) {
+      toast.error(`Не вдалося завантажити колекції: ${error?.message || 'невідома помилка'}`, { id: toastId });
+    }
+  }, [downloadJsonFile]);
+
+  const handlePickUsersFileForLocalIndex = useCallback(() => {
+    if (localUsersFileInputRef.current) {
+      localUsersFileInputRef.current.value = '';
+      localUsersFileInputRef.current.click();
+    }
+  }, []);
+
+  const handlePickNewUsersFileForLocalIndex = useCallback(() => {
+    if (localNewUsersFileInputRef.current) {
+      localNewUsersFileInputRef.current.value = '';
+      localNewUsersFileInputRef.current.click();
+    }
+  }, []);
+
+  const handleLocalCollectionFileSelected = useCallback(async (event, collection) => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!parsed || typeof parsed !== 'object') {
+        toast.error(`Некоректний JSON для ${collection}`);
+        return;
+      }
+
+      if (collection === 'users') {
+        setPendingLocalUsersData(parsed);
+      } else {
+        setPendingLocalNewUsersData(parsed);
+      }
+      toast.success(`Файл ${collection}.json прочитано`);
+    } catch (error) {
+      toast.error(`Не вдалося прочитати ${collection}.json: ${error?.message || 'невідома помилка'}`);
+    }
+  }, []);
+
+  const handleApplyLocalIndexing = useCallback(async () => {
+    if (!pendingLocalUsersData || !pendingLocalNewUsersData) {
+      toast.error('Спочатку оберіть обидва локальні файли: users.json і newUsers.json');
+      return;
+    }
+
+    const toastId = 'local-index-build';
+    toast.loading('Формуємо локальні JSON індекси searchId/searchKey...', { id: toastId });
+    try {
+      await runLocalSearchIndexesWithCollections({
+        usersData: pendingLocalUsersData,
+        newUsersData: pendingLocalNewUsersData,
+        indexTypes: pendingLocalIndexTypes,
+      });
+      toast.success('Локальні JSON індекси завантажено на пристрій', { id: toastId });
+      setShowLocalIndexModal(false);
+    } catch (error) {
+      toast.error(`Помилка локальної індексації: ${error?.message || 'невідома помилка'}`, { id: toastId });
+    }
+  }, [pendingLocalNewUsersData, pendingLocalUsersData, pendingLocalIndexTypes, runLocalSearchIndexesWithCollections]);
+
   const runSelectedIndexes = async () => {
     const selectedIndexTypes = SEARCH_KEY_INDEX_OPTIONS.filter(option => selectedSearchKeyIndexes[option.key]).map(
       option => option.key,
@@ -3379,6 +3512,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       !selectedIndexJobs.stimulationShortcuts &&
       !selectedIndexJobs.searchKeyUsersAll &&
       !selectedIndexJobs.searchKeySetReindex &&
+      !selectedIndexJobs.searchLocalIdAndKey &&
       !selectedIndexTypes.length
     ) {
       toast.error('Оберіть хоча б один індекс для запуску');
@@ -3402,6 +3536,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           `searchKeySet оновлено: ${stats.indexedRuleSets}/${stats.totalRuleSets} наборів.`,
           { id: toastId },
         );
+      }
+
+      if (selectedIndexJobs.searchLocalIdAndKey) {
+        openLocalIndexModal(selectedIndexTypes.length ? selectedIndexTypes : SEARCH_KEY_INDEX_OPTIONS.map(option => option.key));
+        return;
       }
 
       if (selectedIndexJobs.searchKeyUsersAll) {
@@ -4150,6 +4289,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   <SearchScopeLabel>
                     <input
                       type="checkbox"
+                      checked={Boolean(selectedIndexJobs.searchLocalIdAndKey)}
+                      onChange={() => toggleIndexJobSelection('searchLocalIdAndKey')}
+                    />
+                    <SearchScopeLabelTextGroup>
+                      <span>Локальна індексація searchId+searchKey (через JSON)</span>
+                    </SearchScopeLabelTextGroup>
+                  </SearchScopeLabel>
+                  <SearchScopeLabel>
+                    <input
+                      type="checkbox"
                       checked={Boolean(selectedIndexJobs.searchKeyUsersAll)}
                       onChange={() => toggleIndexJobSelection('searchKeyUsersAll')}
                     />
@@ -4223,6 +4372,45 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           CompareCards={compareCards}
           MoreActions={moreActions}
         />
+      )}
+      {showLocalIndexModal && (
+        <LocalIndexOverlay onClick={() => setShowLocalIndexModal(false)}>
+          <LocalIndexModal onClick={event => event.stopPropagation()}>
+            <h3>Локальна індексація searchId / searchKey</h3>
+            <p>1) Викачайте users та newUsers. 2) Оберіть ці файли локально. 3) Створіть JSON індекси.</p>
+            <LocalIndexActions>
+              <button type="button" onClick={handleDownloadCollectionsForLocalIndex}>
+                1) Викачати колекції users + newUsers
+              </button>
+              <button type="button" onClick={handlePickUsersFileForLocalIndex}>
+                2) Обрати users.json {pendingLocalUsersData ? '✅' : ''}
+              </button>
+              <button type="button" onClick={handlePickNewUsersFileForLocalIndex}>
+                3) Обрати newUsers.json {pendingLocalNewUsersData ? '✅' : ''}
+              </button>
+              <button type="button" onClick={handleApplyLocalIndexing}>
+                4) Побудувати і скачати JSON індекси searchId/searchKey
+              </button>
+              <button type="button" onClick={() => setShowLocalIndexModal(false)}>
+                Скасувати
+              </button>
+            </LocalIndexActions>
+            <input
+              ref={localUsersFileInputRef}
+              type="file"
+              accept="application/json,.json"
+              style={{ display: 'none' }}
+              onChange={event => handleLocalCollectionFileSelected(event, 'users')}
+            />
+            <input
+              ref={localNewUsersFileInputRef}
+              type="file"
+              accept="application/json,.json"
+              style={{ display: 'none' }}
+              onChange={event => handleLocalCollectionFileSelected(event, 'newUsers')}
+            />
+          </LocalIndexModal>
+        </LocalIndexOverlay>
       )}
     </Container>
   );
