@@ -21,6 +21,8 @@ export const BtnFavorite = ({
   dislikeUsers = {},
   setDislikeUsers,
   customStyle = {},
+  inactiveIconColor = '#fff',
+  activeIconColor = color.reactionIdleIcon,
   iconSize = 18,
   title = 'В обране',
   ariaLabel = 'В обране',
@@ -36,8 +38,8 @@ export const BtnFavorite = ({
   const isFavorite = !!favoriteUsers[userId];
   const activeColor = color.reactionLike;
   const inactiveOpacity = 0.7;
-  const activeIconColor = '#fff';
-  const inactiveIconColor = customTextColor || color.reactionIdleIcon;
+  const resolvedActiveIconColor = activeIconColor || customTextColor || color.reactionIdleIcon;
+  const resolvedInactiveIconColor = inactiveIconColor || '#fff';
   const activeBorderColor = '#fff';
 
   const toggleFavorite = async () => {
@@ -102,7 +104,7 @@ export const BtnFavorite = ({
         border: isFavorite
           ? `4px solid ${activeBorderColor}`
           : customBorder || `2px solid ${color.reactionIdleBorder}`,
-        color: isFavorite ? activeIconColor : inactiveIconColor,
+        color: isFavorite ? resolvedActiveIconColor : resolvedInactiveIconColor,
         boxShadow: isFavorite
           ? `0 0 0 2px ${activeColor}`
           : customBoxShadow || 'none',
@@ -122,9 +124,9 @@ export const BtnFavorite = ({
       }}
     >
       {isFavorite ? (
-        <FaHeart size={iconSize} color={activeIconColor} />
+        <FaHeart size={iconSize} color={resolvedActiveIconColor} />
       ) : (
-        <FaRegHeart size={iconSize} color={inactiveIconColor} />
+        <FaRegHeart size={iconSize} color={resolvedInactiveIconColor} />
       )}
     </button>
   );
