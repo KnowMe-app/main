@@ -1023,11 +1023,17 @@ export const ProfileForm = ({
       const setsCount = Number(indexResult?.setKeys?.length || 0);
       const matchedCount = Number(indexResult?.userIds?.length || 0);
       const writesCount = Number(indexResult?.writesCount || 0);
+      const bucketWritesCount = Number(indexResult?.bucketWritesCount || 0);
       if (setsCount === 0 && writesCount === 0) {
         toast('searchKeySets не оновлено: не знайдено валідних правил.', { id: toastId });
+      } else if (setsCount > 0 && bucketWritesCount === 0) {
+        toast.error(
+          `searchKeySets порожній після індексації: немає bucket-записів (наборів: ${setsCount}, карток: ${matchedCount}). Перевірте правила additionalAccessRules та відповідність індексам searchKey.`,
+          { id: toastId }
+        );
       } else {
         toast.success(
-          `5/5 Готово: індексацію searchKeySets оновлено (${setsCount} наборів, ${matchedCount} карток, ${writesCount} змін).`,
+          `5/5 Готово: індексацію searchKeySets оновлено (${setsCount} наборів, ${matchedCount} карток, ${writesCount} змін, ${bucketWritesCount} bucket-записів).`,
           { id: toastId }
         );
       }
