@@ -101,8 +101,8 @@ export const BtnFavorite = ({
           ? activeColor
           : customBackground || customBackgroundColor || color.accent5,
         border: isFavorite
-          ? `4px solid ${activeBorderColor}`
-          : customBorder || `2px solid ${color.reactionIdleBorder}`,
+          ? `3px solid ${activeBorderColor}`
+          : customBorder || `1px solid rgba(255,255,255,0.2)`,
         color: isFavorite ? resolvedActiveIconColor : resolvedInactiveIconColor,
         boxShadow: isFavorite
           ? `0 0 0 2px ${activeColor}`
