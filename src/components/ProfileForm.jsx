@@ -21,18 +21,15 @@ import { auth, database } from './config';
 import {
   ADDITIONAL_ACCESS_FILTER_OPTIONS,
   ADDITIONAL_ACCESS_TEMPLATE,
-  isUserAllowedByAnyAdditionalAccessRule,
   parseAdditionalAccessRuleGroups,
   resolveAdditionalAccessSearchKeyBuckets,
 } from 'utils/additionalAccessRules';
 import {
   buildNewUsersFilterSetIndex,
-  getIndexedNewUsersIdsByRules,
   makeAdditionalRulesSetKey,
 } from 'utils/newUsersFilterSetsIndex';
 import {
   getCachedAdditionalRulesPreview,
-  getCachedSearchKeyPayload,
   saveCachedAdditionalRulesPreview,
 } from 'utils/searchKeyCache';
 
@@ -627,6 +624,7 @@ export const ProfileForm = ({
   const [showSearchKeySourceModal, setShowSearchKeySourceModal] = useState(false);
   const [pendingRulesToApply, setPendingRulesToApply] = useState('');
   const searchKeyFileInputRef = useRef(null);
+  const [localSearchKeyPayload, setLocalSearchKeyPayload] = useState(null);
   const autoAppliedOverlayForUserRef = useRef('');
 
   const addEmptyAdditionalFilter = useCallback(() => {
@@ -688,170 +686,41 @@ export const ProfileForm = ({
 
       if (!parsedRuleGroups.length) {
         setAvailableCardsCount(0);
-        saveCachedAdditionalRulesPreview({
-          rawRules: previewAdditionalRulesText,
-          accessUserId,
-          count: 0,
-          userIds: [],
-        });
+        saveCachedAdditionalRulesPreview({ rawRules: previewAdditionalRulesText, accessUserId, count: 0, userIds: [] });
+        return;
+      }
+
+      if (!localSearchKeyPayload || typeof localSearchKeyPayload !== 'object') {
+        setAvailableCardsCount(0);
         return;
       }
 
       setIsLoadingAvailableCards(true);
       try {
-        const indexed = await getIndexedNewUsersIdsByRules({
-          rawRules: previewAdditionalRulesText,
-          accessUserId,
-        });
-
-        if (indexed?.userIds) {
-          saveCachedAdditionalRulesPreview({
-            rawRules: previewAdditionalRulesText,
-            accessUserId,
-            count: indexed.userIds.length,
-            userIds: indexed.userIds,
-          });
-          if (!cancelled) {
-            setAvailableCardsCount(indexed.userIds.length);
-          }
-          return;
-        }
-
-        const matchedIds = new Set();
-        const collectIdsByIndexValues = async (indexName, values) => {
-          const requestedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
-          if (!indexName || requestedValues.length === 0) return new Set();
-
-          const indexPayload = await getCachedSearchKeyPayload(`${SEARCH_KEY_ROOT}/${indexName}`, async () => {
-            const indexSnapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/${indexName}`));
-            return {
-              exists: indexSnapshot.exists(),
-              value: indexSnapshot.exists() ? indexSnapshot.val() || {} : null,
-            };
-          });
-
-          if (!indexPayload?.exists || !indexPayload.value || typeof indexPayload.value !== 'object') {
-            return new Set();
-          }
-
-          const ids = new Set();
-          requestedValues.forEach(value => {
-            const bucketValue = indexPayload.value?.[value];
-            if (!bucketValue || typeof bucketValue !== 'object') return;
-            Object.keys(bucketValue).forEach(userId => ids.add(userId));
-          });
-
-          return ids;
-        };
-
-        const collectAgeIdsByRule = async parsedRules => {
-          if (!parsedRules?.age && !parsedRules?.age42plus && !parsedRules?.ageUnknown && !parsedRules?.ageNo) {
-            return new Set();
-          }
-
-          const agePayload = await getCachedSearchKeyPayload(`${SEARCH_KEY_ROOT}/age`, async () => {
-            const ageSnapshot = await get(refDb(database, `${SEARCH_KEY_ROOT}/age`));
-            return {
-              exists: ageSnapshot.exists(),
-              value: ageSnapshot.exists() ? ageSnapshot.val() || {} : null,
-            };
-          });
-          if (!agePayload?.exists) return new Set();
-
-          const ids = new Set();
-          Object.entries(agePayload.value || {}).forEach(([bucket, value]) => {
-            let isBucketAllowed = false;
-
-            if (bucket === 'no') {
-              isBucketAllowed = Boolean(parsedRules.ageNo);
-            } else if (bucket === '?') {
-              isBucketAllowed = Boolean(parsedRules.ageUnknown);
-            } else {
-              const match = String(bucket).match(/^d_(\d{4})-(\d{2})-(\d{2})$/);
-              if (match) {
-                const [, year, month, day] = match;
-                const age = utilCalculateAge(`${day}.${month}.${year}`);
-                if (Number.isFinite(age)) {
-                  isBucketAllowed = Boolean(parsedRules.age?.has(age) || (parsedRules.age42plus && age >= 42));
-                }
-              }
-            }
-
-            if (!isBucketAllowed || !value || typeof value !== 'object') return;
-            Object.keys(value).forEach(userId => ids.add(userId));
-          });
-
-          return ids;
-        };
-
-        for (const parsedRules of parsedRuleGroups) {
+        const matched = new Set();
+        parsedRuleGroups.forEach(parsedRules => {
           const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
-          const activeGroups = Object.entries(bucketMap || {}).filter(([indexName, values]) => {
-            if (indexName === 'age') return false;
-            const asArray = Array.isArray(values) ? values : [...(values || [])];
-            return asArray.length > 0;
-          });
-          if (activeGroups.length > 0) {
-            const groupIds = await Promise.all(
-              activeGroups.map(([indexName, values]) => collectIdsByIndexValues(indexName, values))
-            );
-            groupIds.forEach(ids => {
-              ids.forEach(userId => matchedIds.add(userId));
+          Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
+            const indexNode = localSearchKeyPayload?.[indexName];
+            if (!indexNode || typeof indexNode !== 'object') return;
+            const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
+            normalizedValues.forEach(value => {
+              const bucket = indexNode?.[value];
+              if (!bucket || typeof bucket !== 'object') return;
+              Object.keys(bucket).forEach(userId => {
+                if (userId) matched.add(userId);
+              });
             });
-          }
-
-          const ageMatchedIds = await collectAgeIdsByRule(parsedRules);
-          ageMatchedIds.forEach(userId => matchedIds.add(userId));
-        }
-
-        const matchedIdList = [...matchedIds];
-        const finalMatchedIds = [];
-        const BATCH_SIZE = 150;
-
-        for (let index = 0; index < matchedIdList.length; index += BATCH_SIZE) {
-          const batch = matchedIdList.slice(index, index + BATCH_SIZE);
-          const rows = await Promise.all(
-            batch.map(async userId => {
-              const [newUserSnap, userSnap] = await Promise.all([
-                get(refDb(database, `newUsers/${userId}`)),
-                get(refDb(database, `users/${userId}`)),
-              ]);
-              if (!newUserSnap.exists() && !userSnap.exists()) return null;
-              return {
-                userId,
-                ...(userSnap.exists() ? userSnap.val() : {}),
-                ...(newUserSnap.exists() ? newUserSnap.val() : {}),
-              };
-            })
-          );
-
-          rows.forEach(user => {
-            if (!user) return;
-            if (isUserAllowedByAnyAdditionalAccessRule(user, parsedRuleGroups)) {
-              finalMatchedIds.push(user.userId);
-            }
           });
-        }
-
-        const uniqueMatchedUserIds = [...new Set(finalMatchedIds.filter(Boolean))];
-        saveCachedAdditionalRulesPreview({
-          rawRules: previewAdditionalRulesText,
-          accessUserId,
-          count: uniqueMatchedUserIds.length,
-          userIds: uniqueMatchedUserIds,
         });
-        if (!cancelled) {
-          setAvailableCardsCount(uniqueMatchedUserIds.length);
-        }
+        const userIds = [...matched];
+        saveCachedAdditionalRulesPreview({ rawRules: previewAdditionalRulesText, accessUserId, count: userIds.length, userIds });
+        if (!cancelled) setAvailableCardsCount(userIds.length);
       } catch (error) {
         console.error('Failed to build additional access preview', error);
-        if (!cancelled) {
-          setAvailableCardsCount(0);
-        }
+        if (!cancelled) setAvailableCardsCount(0);
       } finally {
-        if (!cancelled) {
-          setIsLoadingAvailableCards(false);
-        }
+        if (!cancelled) setIsLoadingAvailableCards(false);
       }
     };
 
@@ -863,6 +732,7 @@ export const ProfileForm = ({
     previewAdditionalRulesText,
     showAdditionalRulesModal,
     state?.userId,
+    localSearchKeyPayload,
   ]);
 
   useEffect(() => {
@@ -914,12 +784,6 @@ export const ProfileForm = ({
   }, []);
 
   const getIndexedMatchedUserIdsByInputIndex = useCallback(async rawRules => {
-    const accessUserId = String(state?.userId || '').trim();
-    if (!accessUserId) {
-      toast.error('Не знайдено userId для індексації');
-      return null;
-    }
-
     const ruleInputs = Array.isArray(rawRules)
       ? rawRules.map(item => String(item || '').trim()).filter(Boolean)
       : String(rawRules || '')
@@ -931,23 +795,36 @@ export const ProfileForm = ({
       return null;
     }
 
+    if (!localSearchKeyPayload || typeof localSearchKeyPayload !== 'object') {
+      toast.error('Спершу підвантажте локальний файл searchKey.');
+      return null;
+    }
+
     const matchedByInputIndex = {};
     for (let index = 0; index < ruleInputs.length; index += 1) {
       const rulesText = ruleInputs[index];
-      // eslint-disable-next-line no-await-in-loop
-      const indexed = await getIndexedNewUsersIdsByRules({
-        rawRules: rulesText,
-        accessUserId,
+      const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
+      const matched = new Set();
+      parsedRuleGroups.forEach(parsedRules => {
+        const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
+        Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
+          const indexNode = localSearchKeyPayload?.[indexName];
+          if (!indexNode || typeof indexNode !== 'object') return;
+          const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
+          normalizedValues.forEach(value => {
+            const bucket = indexNode?.[value];
+            if (!bucket || typeof bucket !== 'object') return;
+            Object.keys(bucket).forEach(userId => {
+              if (userId) matched.add(userId);
+            });
+          });
+        });
       });
-      if (!indexed?.userIds) {
-        toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.');
-        return null;
-      }
-      matchedByInputIndex[index + 1] = [...new Set((indexed.userIds || []).filter(Boolean))];
+      matchedByInputIndex[index + 1] = [...matched];
     }
 
     return matchedByInputIndex;
-  }, [state?.userId]);
+  }, [localSearchKeyPayload]);
 
   const submitWithNormalization = useCallback(async (nextState, overwrite, delCondition, options = {}) => {
     const payload =
@@ -1293,6 +1170,7 @@ export const ProfileForm = ({
     try {
       const raw = await file.text();
       const parsed = JSON.parse(raw);
+      setLocalSearchKeyPayload(parsed);
       const matchedByInputIndex = resolveMatchedIdsFromSearchKeyPayload(pendingRulesToApply, parsed);
       if (!matchedByInputIndex) {
         toast.error('Некоректний файл searchKey.');
