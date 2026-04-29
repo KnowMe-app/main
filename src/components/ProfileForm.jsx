@@ -2011,7 +2011,7 @@ ${entries.join('\n')}`;
                             let value = e?.target?.value;
                             if (field.name === 'publish') {
                               value = value.toLowerCase() === 'true';
-                            } else if (field.name === 'telgram') {
+                            } else if (field.name === 'telegram') {
                               value = e?.target?.value;
                             }
                             setState(prevState => ({
@@ -2037,7 +2037,25 @@ ${entries.join('\n')}`;
                               }
                             }
 
-                            submitWithNormalization(state, 'overwrite');
+                            const needsSocialCleanup = ['facebook', 'instagram'].includes(field.name);
+                            const rawValue = state[field.name];
+                            const normalizedValue = needsSocialCleanup
+                              ? inputUpdateValue(rawValue, field)
+                              : rawValue;
+
+                            const nextState =
+                              normalizedValue === rawValue
+                                ? state
+                                : {
+                                    ...state,
+                                    [field.name]: normalizedValue,
+                                  };
+
+                            if (normalizedValue !== rawValue) {
+                              setState(nextState);
+                            }
+
+                            submitWithNormalization(nextState, 'overwrite');
                           },
                         })}
                   />
