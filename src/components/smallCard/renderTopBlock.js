@@ -593,8 +593,9 @@ const TopBlock = ({
                   ...zoneActionButtonStyle,
                   backgroundColor: '#ef6c00',
                   border: 'none',
-                  color: '#fff',
                 }}
+                inactiveIconColor="#fff"
+                activeIconColor="#1f2937"
                 iconSize={18}
               />
             )}
@@ -623,8 +624,9 @@ const TopBlock = ({
                   ...zoneActionButtonStyle,
                   backgroundColor: '#f9a825',
                   border: 'none',
-                  color: '#fff',
                 }}
+                inactiveIconColor="#fff"
+                activeIconColor="#1f2937"
                 iconSize={18}
               />
             )}
