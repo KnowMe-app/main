@@ -36,6 +36,32 @@ const parseTokens = value =>
     .map(token => token.trim())
     .filter(Boolean);
 
+const toIsoDate = date =>
+  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(
+    date.getUTCDate()
+  ).padStart(2, '0')}`;
+
+const getBirthDateBucketsForAge = age => {
+  if (!Number.isFinite(age) || age < 0) return [];
+
+  const now = new Date();
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const start = new Date(todayUtc);
+  start.setUTCFullYear(start.getUTCFullYear() - (age + 1));
+  start.setUTCDate(start.getUTCDate() + 1);
+
+  const end = new Date(todayUtc);
+  end.setUTCFullYear(end.getUTCFullYear() - age);
+
+  const buckets = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    buckets.push(`d_${toIsoDate(cursor)}`);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return buckets;
+};
+
 const ageToBucket = age => {
   if (!Number.isFinite(age) || age < 0) return 'other';
   if (age <= 21) return 'le21';
@@ -749,14 +775,15 @@ const resolveCsectionSearchKeyBuckets = parsedRules => {
 };
 
 const resolveAgeSearchKeyBuckets = parsedRules => {
-  const exactAges = parsedRules?.age
-    ? [...parsedRules.age]
-      .filter(age => Number.isFinite(age) && age >= 18)
-      .map(age => String(age))
+  const normalizedAges = parsedRules?.age
+    ? [...parsedRules.age].filter(age => Number.isFinite(age) && age >= 18)
     : [];
+  const exactBirthDateBuckets = normalizedAges.flatMap(age => getBirthDateBucketsForAge(age));
   const extraBuckets = [];
   if (parsedRules?.age42plus) {
-    extraBuckets.push('42_plus');
+    extraBuckets.push(
+      ...Array.from({ length: 70 }, (_, idx) => idx + 42).flatMap(age => getBirthDateBucketsForAge(age))
+    );
   }
   if (parsedRules?.ageUnknown) {
     extraBuckets.push('?');
@@ -764,7 +791,7 @@ const resolveAgeSearchKeyBuckets = parsedRules => {
   if (parsedRules?.ageNo) {
     extraBuckets.push('no');
   }
-  return uniq([...exactAges, ...extraBuckets]);
+  return uniq([...exactBirthDateBuckets, ...extraBuckets]);
 };
 
 export const resolveAdditionalAccessSearchKeyBuckets = parsedRules => ({
