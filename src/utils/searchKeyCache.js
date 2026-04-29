@@ -7,6 +7,19 @@ const normalizePath = path =>
     .trim()
     .replace(/^\/+/, '');
 
+
+export const peekCachedSearchKeyPayload = path => {
+  const normalizedPath = normalizePath(path);
+  if (!normalizedPath) return null;
+
+  const cached = loadCache(normalizedPath);
+  if (cached && typeof cached.exists === 'boolean') {
+    return cached;
+  }
+
+  return null;
+};
+
 export const getCachedSearchKeyPayload = async (path, loader) => {
   const normalizedPath = normalizePath(path);
   if (!normalizedPath || typeof loader !== 'function') return null;
