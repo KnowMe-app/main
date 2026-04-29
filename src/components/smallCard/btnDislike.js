@@ -22,8 +22,6 @@ export const BtnDislike = ({
   favoriteUsers = {},
   setFavoriteUsers,
   customStyle = {},
-  inactiveIconColor = '#fff',
-  activeIconColor = color.reactionIdleIcon,
   iconSize = 18,
   title = 'Дизлайк',
   ariaLabel = 'Дизлайк',
@@ -39,8 +37,8 @@ export const BtnDislike = ({
   const isDisliked = !!dislikeUsers[userId];
   const activeColor = color.reactionDislike;
   const inactiveOpacity = 0.7;
-  const resolvedActiveIconColor = activeIconColor || customTextColor || color.reactionIdleIcon;
-  const resolvedInactiveIconColor = inactiveIconColor || '#fff';
+  const activeIconColor = '#fff';
+  const inactiveIconColor = customTextColor || color.reactionIdleIcon;
   const activeBorderColor = '#fff';
 
   const toggleDislike = async () => {
@@ -109,7 +107,7 @@ export const BtnDislike = ({
         border: isDisliked
           ? `4px solid ${activeBorderColor}`
           : customBorder || `2px solid ${color.reactionIdleBorder}`,
-        color: isDisliked ? resolvedActiveIconColor : resolvedInactiveIconColor,
+        color: isDisliked ? activeIconColor : inactiveIconColor,
         boxShadow: isDisliked
           ? `0 0 0 2px ${activeColor}`
           : customBoxShadow || 'none',
@@ -128,7 +126,7 @@ export const BtnDislike = ({
         toggleDislike();
       }}
     >
-      <FaTimes size={iconSize} color={isDisliked ? resolvedActiveIconColor : resolvedInactiveIconColor} />
+      <FaTimes size={iconSize} color={isDisliked ? activeIconColor : inactiveIconColor} />
     </button>
   );
 };
