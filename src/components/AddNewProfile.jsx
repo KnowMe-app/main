@@ -806,6 +806,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         { key: 'email', label: 'email', supportsSearchId: true, supportsEqualTo: true },
         { key: 'vk', label: 'vk', supportsSearchId: true, supportsEqualTo: true },
         { key: 'tiktok', label: 'tiktok', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'linkedin', label: 'linkedin', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'youtube', label: 'youtube', supportsSearchId: true, supportsEqualTo: true },
         { key: 'other', label: 'other', supportsSearchId: true, supportsEqualTo: true },
         { key: 'myComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
         { key: 'name', label: 'name', supportsSearchId: true, supportsEqualTo: true },
@@ -828,7 +830,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     'partialUserId',
     ...SEARCH_KEY_OPTIONS.map(option => option.key),
   ];
-  const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'instagram', 'facebook', 'email', 'vk', 'tiktok', 'other'];
+  const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'instagram', 'facebook', 'email', 'vk', 'tiktok', 'linkedin', 'youtube', 'other'];
 
   const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
     (acc, option) => {
@@ -1064,7 +1066,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
-    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
+    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'vk', 'userId'];
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     const now = Date.now();

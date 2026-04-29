@@ -427,7 +427,7 @@ export const handleSubmit = (userData, condition, removeKeys = []) => {
     'cycleStatus',
     'stimulationSchedule',
   ];
-  const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
+  const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'vk', 'userId'];
   const commonFields = [
     'lastAction',
     'lastLogin2',
@@ -506,7 +506,7 @@ export const handleSubmitAll = async (userData, overwrite) => {
     'cycleStatus',
     'stimulationSchedule',
   ];
-  const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
+  const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'vk', 'userId'];
   const commonFields = [
     'lastAction',
     'lastLogin2',
