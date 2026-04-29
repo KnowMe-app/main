@@ -34,6 +34,26 @@ const normalizePathSegment = value => {
   return hasForbiddenChars ? encodeKey(raw) : raw;
 };
 
+const mergeSearchKeyBuckets = parsedRuleGroups => {
+  const groups = Array.isArray(parsedRuleGroups) ? parsedRuleGroups : [parsedRuleGroups];
+  return groups.reduce((acc, rules) => {
+    const bucketMap = resolveAdditionalAccessSearchKeyBuckets(rules);
+    Object.entries(bucketMap || {}).forEach(([indexName, rawValues]) => {
+      const nextValues = Array.isArray(rawValues) ? rawValues : [...(rawValues || [])];
+      if (!nextValues.length) return;
+      if (!acc[indexName]) {
+        acc[indexName] = new Set();
+      }
+      nextValues.forEach(value => {
+        if (value !== undefined && value !== null && String(value).trim()) {
+          acc[indexName].add(value);
+        }
+      });
+    });
+    return acc;
+  }, {});
+};
+
 const splitRawRulesToSetTexts = rawRules => {
   if (Array.isArray(rawRules)) {
     return rawRules.map(item => String(item || '').trim()).filter(Boolean);
@@ -116,7 +136,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds }) => {
   if (!normalizedRootPath) return {};
 
   const normalizedUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
-  const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
+  const bucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
 
   return Object.entries(bucketMap || {}).reduce((writes, [indexName, rawValues]) => {
     const normalizedIndexName = normalizePathSegment(indexName);
@@ -333,7 +353,7 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
     .map(({ text: setText, inputIndex }) => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
       if (!parsedRuleGroups.length) return null;
-      const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
+      const bucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
       const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
         const normalizedIndexName = normalizePathSegment(indexName);
         if (!normalizedIndexName) return acc;
@@ -494,7 +514,7 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
 };
 
 const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
-  const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRuleGroups);
+  const bucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
   const paths = Object.entries(bucketMap || {}).flatMap(([indexName, rawValues]) => {
     const normalizedIndexName = normalizePathSegment(indexName);
     if (!normalizedIndexName) return [];
