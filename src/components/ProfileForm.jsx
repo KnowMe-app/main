@@ -2074,7 +2074,7 @@ ${entries.join('\n')}`;
 
                             const needsSocialCleanup = ['facebook', 'instagram'].includes(field.name);
                             const rawValue = state[field.name];
-                            const normalizedValue = needsSocialCleanup
+                            const normalizedValue = needsSocialCleanup && rawValue != null
                               ? inputUpdateValue(rawValue, field)
                               : rawValue;
 
