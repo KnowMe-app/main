@@ -268,6 +268,7 @@ export const buildNewUsersFilterSetIndex = async ({
   const nextSetKeys = new Set(nextSetPayloads.map(item => item.setKey));
 
   const writes = {};
+  let bucketWritesCount = 0;
   existingSetKeys.forEach(setKey => {
     if (!nextSetKeys.has(setKey)) {
       writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}`] = null;
@@ -289,6 +290,7 @@ export const buildNewUsersFilterSetIndex = async ({
     });
 
     if (Object.keys(ruleBucketWrites).length) {
+      bucketWritesCount += Object.keys(ruleBucketWrites).length;
       // eslint-disable-next-line no-await-in-loop
       await update(ref(database), ruleBucketWrites);
     }
@@ -300,6 +302,7 @@ export const buildNewUsersFilterSetIndex = async ({
     userIds: aggregatedUserIds,
     ownerId: normalizedAccessUserId,
     writesCount: Object.keys(writes).length + nextSetPayloads.length,
+    bucketWritesCount,
   };
 };
 
