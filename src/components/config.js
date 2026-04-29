@@ -3118,15 +3118,55 @@ const collectAgeIdsByFilters = async (ageFilters, rootPaths = [SEARCH_KEY_INDEX_
     );
   };
 
+  const ageRangeFilters = [
+    { keys: ['le21'], range: { maxAge: 21 } },
+    { keys: ['22_25'], range: { minAge: 22, maxAge: 25 } },
+    { keys: ['26_30'], range: { minAge: 26, maxAge: 30 } },
+    { keys: ['31_35'], range: { minAge: 31, maxAge: 35 } },
+    { keys: ['36_38'], range: { minAge: 36, maxAge: 38 } },
+    { keys: ['39_41'], range: { minAge: 39, maxAge: 41 } },
+    { keys: ['42_plus'], range: { minAge: 42 } },
+    // Backward compatibility with old buckets
+    { keys: ['le25'], range: { maxAge: 25 } },
+    { keys: ['31_33'], range: { minAge: 31, maxAge: 33 } },
+    { keys: ['34_36'], range: { minAge: 34, maxAge: 36 } },
+    { keys: ['37_42'], range: { minAge: 37, maxAge: 42 } },
+    { keys: ['43_plus'], range: { minAge: 43 } },
+  ];
+
+  const dynamicRanges = Object.entries(ageFilters || {}).reduce((acc, [key, enabled]) => {
+    if (!enabled) return acc;
+    const rangeMatch = String(key).trim().match(/^(\d{1,3})\s*[_-]\s*(\d{1,3})$/);
+    if (!rangeMatch) return acc;
+    const a = Number.parseInt(rangeMatch[1], 10);
+    const b = Number.parseInt(rangeMatch[2], 10);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return acc;
+    acc.push({ minAge: Math.min(a, b), maxAge: Math.max(a, b) });
+    return acc;
+  }, []);
+
   rootPaths.forEach(rootPath => {
-    if (selected('le25')) addRangeRequest(getBirthDateRangeByAge({ maxAge: 25 }), rootPath);
-    if (selected('26_30')) addRangeRequest(getBirthDateRangeByAge({ minAge: 26, maxAge: 30 }), rootPath);
-    if (selected('31_33')) addRangeRequest(getBirthDateRangeByAge({ minAge: 31, maxAge: 33 }), rootPath);
-    if (selected('34_36')) addRangeRequest(getBirthDateRangeByAge({ minAge: 34, maxAge: 36 }), rootPath);
-    if (selected('37_42')) addRangeRequest(getBirthDateRangeByAge({ minAge: 37, maxAge: 42 }), rootPath);
-    if (selected('43_plus')) addRangeRequest(getBirthDateRangeByAge({ minAge: 43 }), rootPath);
-    if (selected('other')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/?`)));
-    if (selected('empty')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/no`)));
+    ageRangeFilters.forEach(({ keys, range }) => {
+      if (keys.some(key => selected(key))) {
+        addRangeRequest(getBirthDateRangeByAge(range), rootPath);
+      }
+    });
+
+    dynamicRanges.forEach(range => {
+      addRangeRequest(getBirthDateRangeByAge(range), rootPath);
+    });
+
+    Object.entries(ageFilters || {}).forEach(([key, enabled]) => {
+      if (!enabled) return;
+      const normalizedKey = String(key).trim();
+      if (!/^\d{1,3}$/.test(normalizedKey)) return;
+      const ageValue = Number.parseInt(normalizedKey, 10);
+      if (!Number.isFinite(ageValue)) return;
+      addRangeRequest(getBirthDateRangeByAge({ minAge: ageValue, maxAge: ageValue }), rootPath);
+    });
+
+    if (selected('other') || selected('?')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/?`)));
+    if (selected('empty') || selected('no')) requests.push(get(ref2(database, `${rootPath}/${AGE_SEARCH_KEY_INDEX}/no`)));
   });
 
   const snapshots = await Promise.all(requests);

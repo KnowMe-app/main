@@ -19,7 +19,7 @@ import {
 } from './additionalAccessRules';
 import {
   getCachedAdditionalRulesSetIndex,
-  getCachedSearchKeyPayload,
+  peekCachedSearchKeyPayload,
   saveCachedAdditionalRulesSetIndex,
 } from './searchKeyCache';
 
@@ -131,7 +131,33 @@ const SEARCH_KEY_SET_BUILDERS = [
   createFieldCountSearchKeyIndexInCollection,
 ];
 
-const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds }) => {
+
+const buildAgeKeysByUserIdFromSearchKey = async userIds => {
+  const normalizedIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
+  if (normalizedIds.length === 0) return {};
+
+  const payload = peekCachedSearchKeyPayload('searchKey/age');
+
+  if (!payload?.exists || !payload.value || typeof payload.value !== 'object') return {};
+
+  const pending = new Set(normalizedIds);
+  const ageKeysByUserId = {};
+
+  Object.entries(payload.value).forEach(([ageKey, usersMap]) => {
+    if (!(usersMap && typeof usersMap === 'object')) return;
+    if (pending.size === 0) return;
+
+    Object.keys(usersMap).forEach(userId => {
+      if (!pending.has(userId)) return;
+      ageKeysByUserId[userId] = ageKey;
+      pending.delete(userId);
+    });
+  });
+
+  return ageKeysByUserId;
+};
+
+const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, ageKeysByUserId = {} }) => {
   const normalizedRootPath = String(rootPath || '').trim();
   if (!normalizedRootPath) return {};
 
@@ -141,6 +167,17 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds }) => {
   return Object.entries(bucketMap || {}).reduce((writes, [indexName, rawValues]) => {
     const normalizedIndexName = normalizePathSegment(indexName);
     if (!normalizedIndexName) return writes;
+
+    if (normalizedIndexName === 'age') {
+      normalizedUserIds.forEach(userId => {
+        const ageKey = normalizePathSegment(ageKeysByUserId?.[userId] || 'no');
+        if (!ageKey) return;
+        const path = `${normalizedRootPath}/${normalizedIndexName}/${ageKey}`;
+        if (!writes[path]) writes[path] = {};
+        writes[path][userId] = true;
+      });
+      return writes;
+    }
 
     const values = [
       ...new Set(
@@ -201,6 +238,9 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
     throw error;
   }
 
+  const allUserIds = [...new Set(setPayloads.flatMap(item => item.userIds || []).filter(Boolean))];
+  const ageKeysByUserId = await buildAgeKeysByUserIdFromSearchKey(allUserIds);
+
   for (const setPayload of setPayloads) {
     // eslint-disable-next-line no-await-in-loop
     await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setPayload.setKey}`));
@@ -217,6 +257,7 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
       rootPath: options.rootPath,
       parsedRuleGroups: setPayload.parsedRuleGroups,
       userIds: setPayload.userIds,
+      ageKeysByUserId,
     });
 
     // eslint-disable-next-line no-await-in-loop
@@ -414,22 +455,14 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
       const cachedResult = buildIndexedResultFromSetsMap(cachedIndexedSet);
       if (cachedResult) return cachedResult;
     } catch {
-      // ignore malformed or incomplete cache and fallback to backend
+      // ignore malformed or incomplete cache and fallback to searchKey cache payload lookup
     }
   }
 
   const payloadsBySet = await Promise.all(
     setEntries.map(async entry => {
       const payloads = await Promise.all(
-        entry.paths.map(path =>
-          getCachedSearchKeyPayload(path, async () => {
-            const snapshot = await get(ref(database, path));
-            return {
-              exists: snapshot.exists(),
-              value: snapshot.exists() ? snapshot.val() || {} : null,
-            };
-          })
-        )
+        entry.paths.map(path => Promise.resolve(peekCachedSearchKeyPayload(path)))
       );
       return { setKey: entry.setKey, paths: entry.paths, payloads };
     })
@@ -443,15 +476,7 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
           values.map(value => `searchKey/${indexName}/${value}`)
         );
         const payloads = await Promise.all(
-          paths.map(path =>
-            getCachedSearchKeyPayload(path, async () => {
-              const snapshot = await get(ref(database, path));
-              return {
-                exists: snapshot.exists(),
-                value: snapshot.exists() ? snapshot.val() || {} : null,
-              };
-            })
-          )
+          paths.map(path => Promise.resolve(peekCachedSearchKeyPayload(path)))
         );
         return { paths, payloads };
       })
@@ -532,15 +557,7 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
   if (!paths.length) return [];
 
   const snapshots = await Promise.all(
-    paths.map(path =>
-      getCachedSearchKeyPayload(path, async () => {
-        const snapshot = await get(ref(database, path));
-        return {
-          exists: snapshot.exists(),
-          value: snapshot.exists() ? snapshot.val() || {} : null,
-        };
-      })
-    )
+    paths.map(path => Promise.resolve(peekCachedSearchKeyPayload(path)))
   );
 
   const ids = new Set();

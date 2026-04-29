@@ -38,12 +38,13 @@ const parseTokens = value =>
 
 const ageToBucket = age => {
   if (!Number.isFinite(age) || age < 0) return 'other';
-  if (age <= 25) return 'le25';
+  if (age <= 21) return 'le21';
+  if (age <= 25) return '22_25';
   if (age <= 30) return '26_30';
-  if (age <= 33) return '31_33';
-  if (age <= 36) return '34_36';
-  if (age <= 42) return '37_42';
-  return '43_plus';
+  if (age <= 35) return '31_35';
+  if (age <= 38) return '36_38';
+  if (age <= 41) return '39_41';
+  return '42_plus';
 };
 
 const normalizeBlood = value =>
@@ -457,6 +458,19 @@ export const parseAdditionalAccessRules = raw => {
         }
         if (AGE_BUCKET_KEYS.has(normalizedToken)) return;
 
+        const rangeMatch = normalizedToken.match(/^(\d{1,3})\s*[_-]\s*(\d{1,3})$/);
+        if (rangeMatch) {
+          const rangeStart = Number.parseInt(rangeMatch[1], 10);
+          const rangeEnd = Number.parseInt(rangeMatch[2], 10);
+          if (Number.isFinite(rangeStart) && Number.isFinite(rangeEnd)) {
+            const from = Math.max(18, Math.min(rangeStart, rangeEnd));
+            const to = Math.max(rangeStart, rangeEnd);
+            addAgeRange(from, to);
+            if (to >= 42) allow42Plus = true;
+          }
+          return;
+        }
+
         const parsedAge = Number.parseInt(normalizedToken, 10);
         if (Number.isFinite(parsedAge) && parsedAge >= 18) {
           allowedAges.add(parsedAge);
@@ -735,19 +749,22 @@ const resolveCsectionSearchKeyBuckets = parsedRules => {
 };
 
 const resolveAgeSearchKeyBuckets = parsedRules => {
-  const numericBuckets = parsedRules?.age
+  const exactAges = parsedRules?.age
     ? [...parsedRules.age]
       .filter(age => Number.isFinite(age) && age >= 18)
-      .map(age => ageToBucket(age))
+      .map(age => String(age))
     : [];
   const extraBuckets = [];
   if (parsedRules?.age42plus) {
-    extraBuckets.push('37_42', '43_plus');
+    extraBuckets.push('42_plus');
   }
-  if (parsedRules?.ageUnknown || parsedRules?.ageNo) {
-    extraBuckets.push('other');
+  if (parsedRules?.ageUnknown) {
+    extraBuckets.push('?');
   }
-  return uniq([...numericBuckets, ...extraBuckets]);
+  if (parsedRules?.ageNo) {
+    extraBuckets.push('no');
+  }
+  return uniq([...exactAges, ...extraBuckets]);
 };
 
 export const resolveAdditionalAccessSearchKeyBuckets = parsedRules => ({
@@ -765,7 +782,7 @@ export const createAllFalseFilterGroup = keys =>
   }, {});
 
 export const defaultAdditionalAccessFilterState = {
-  age: defaultAllowed(['le25', '26_30', '31_33', '34_36', '37_42', '43_plus', 'other', 'empty']),
+  age: defaultAllowed(['le21', '22_25', '26_30', '31_35', '36_38', '39_41', '42_plus', 'other', 'empty']),
   bloodGroup: defaultAllowed(['1', '2', '3', '4', 'other', 'empty']),
   rh: defaultAllowed(['+', '-', 'other', 'empty']),
   maritalStatus: defaultAllowed(['married', 'unmarried', 'other', 'empty']),

@@ -406,11 +406,13 @@ const toAgeCategory = user => {
   const dayDiff = today.getDate() - birthDate.getDate();
   if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) age -= 1;
 
-  if (age <= 25) return 'le25';
+  if (age <= 21) return 'le21';
+  if (age <= 25) return '22_25';
   if (age <= 30) return '26_30';
-  if (age <= 33) return '31_33';
-  if (age <= 36) return '34_36';
-  if (age >= 37) return '37_plus';
+  if (age <= 35) return '31_35';
+  if (age <= 38) return '36_38';
+  if (age <= 41) return '39_41';
+  if (age >= 42) return '42_plus';
   return 'other';
 };
 
