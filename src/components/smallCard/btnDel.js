@@ -13,7 +13,7 @@ export const btnDel = (
 ) => (
   <CardMenuBtn
     style={{
-      backgroundColor: '#d32f2f',
+      backgroundColor: 'red',
       position: 'static',
       display: 'inline-flex',
       alignItems: 'center',
