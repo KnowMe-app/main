@@ -1207,6 +1207,34 @@ export const ProfileForm = ({
     await indexAdditionalRulesForUser(updatedValue);
   };
 
+  const saveAdditionalRulesToSearchKeySets = async () => {
+    const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
+    if (!rulesText.trim()) {
+      toast.error('Оберіть щонайменше один фільтр перед збереженням');
+      return;
+    }
+
+    const currentValue = state?.[ADDITIONAL_ACCESS_FIELD];
+    const updatedValue = Array.isArray(currentValue)
+      ? currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? rulesText : item))
+      : rulesText;
+
+    setState(prevState => ({
+      ...prevState,
+      [ADDITIONAL_ACCESS_FIELD]: updatedValue,
+    }));
+
+    await submitWithNormalization(
+      {
+        ...state,
+        [ADDITIONAL_ACCESS_FIELD]: updatedValue,
+      },
+      'overwrite'
+    );
+
+    await indexAdditionalRulesForUser(updatedValue);
+  };
+
   const handleCombinedAdditionalRulesChange = event => {
     const nextActiveRulesText = event?.target?.value || '';
     const nextBuilder = parseAdditionalRulesTextToBuilder(nextActiveRulesText);
@@ -2311,6 +2339,13 @@ ${entries.join('\n')}`;
                 disabled={isIndexingAdditionalRules}
               >
                 {isIndexingAdditionalRules ? 'Індексація...' : 'Індексувати'}
+              </button>
+              <button
+                type="button"
+                onClick={saveAdditionalRulesToSearchKeySets}
+                disabled={isIndexingAdditionalRules}
+              >
+                {isIndexingAdditionalRules ? 'Збереження...' : 'Зберегти'}
               </button>
             </AdditionalRuleActions>
 
