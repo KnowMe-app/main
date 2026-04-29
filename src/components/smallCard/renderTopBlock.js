@@ -33,21 +33,14 @@ import { auth } from '../config';
 import toast from 'react-hot-toast';
 import styles from './renderTopBlock.module.css';
 
-const topBlockContainerStyle = {
-  padding: '10px 10px 8px',
-  position: 'relative',
-  borderRadius: '14px',
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(0,0,0,0.08) 100%)',
-  border: '1px solid rgba(255,255,255,0.08)',
-  boxShadow: '0 10px 24px rgba(0,0,0,0.2)',
-};
+const topBlockContainerStyle = { padding: '7px', position: 'relative' };
 
 const topButtonsRowStyle = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
   gap: '8px',
-  marginBottom: '10px',
+  marginBottom: '8px',
 };
 
 const topButtonsZoneStyle = {
@@ -61,9 +54,8 @@ const topButtonsZoneStyle = {
   height: '40px',
   flex: '0 0 40px',
   padding: 0,
-  boxShadow: '0 4px 12px rgba(0,0,0,0.22)',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
   transition: 'transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease',
-  overflow: 'hidden',
 };
 
 const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1', '#1565c0', '#6a1b9a'];
@@ -82,17 +74,13 @@ const zoneActionButtonStyle = {
 
 const actionButtonsContainerStyle = {
   position: 'absolute',
-  top: '60px',
-  right: '12px',
+  top: '52px',
+  right: '10px',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'flex-end',
   gap: '6px',
   zIndex: 999,
-  padding: '6px',
-  borderRadius: '10px',
-  background: 'rgba(0, 0, 0, 0.22)',
-  backdropFilter: 'blur(4px)',
 };
 
 const addedOverlayEntryStyle = {
@@ -127,15 +115,13 @@ const commentFieldWrapperStyle = {
 
 const detailsToggleStyle = {
   position: 'absolute',
-  bottom: '8px',
-  right: '8px',
+  bottom: '10px',
+  right: '10px',
   cursor: 'pointer',
   color: '#ebe0c2',
-  fontSize: '20px',
+  fontSize: '22px',
   padding: '4px 8px',
-  borderRadius: '10px',
-  border: '1px solid rgba(255, 255, 255, 0.2)',
-  background: 'rgba(255, 255, 255, 0.06)',
+  borderRadius: '6px',
 };
 
 const multiCommentStyle = {
@@ -574,7 +560,7 @@ const TopBlock = ({
   };
 
   return (
-    <div style={topBlockContainerStyle} className={styles.topBlockContainer}>
+    <div style={topBlockContainerStyle}>
       <div style={topButtonsRowStyle}>
         {topButtonsZones.map((zoneColor, idx) => (
           <div
@@ -724,7 +710,7 @@ const TopBlock = ({
           </div>
         ))}
       </div>
-      <div style={actionButtonsContainerStyle} className={styles.sideActionsPanel}>
+      <div style={actionButtonsContainerStyle}>
         {showSideActions && btnExport(cardData)}
         {additionalActions}
       </div>
