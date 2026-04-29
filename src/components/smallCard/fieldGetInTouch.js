@@ -81,6 +81,7 @@ export const fieldGetInTouch = (
 
   const ActionButton = ({ label, days, onClick }) => (
     <OrangeBtn
+      className="get-in-touch-btn"
       onClick={() => (onClick ? onClick(days) : null)}
       style={{
         width: '25px' /* Встановіть ширину, яка визначатиме розмір кнопки */,
@@ -94,7 +95,12 @@ export const fieldGetInTouch = (
   );
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center' }}>
+    <div>
+      <style>{`
+        .get-in-touch-btn:hover { opacity: 0.75; }
+        .get-in-touch-btn:active { transform: scale(0.93); }
+      `}</style>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
       <UnderlinedInput
         type="text"
         value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
@@ -182,6 +188,7 @@ export const fieldGetInTouch = (
       <ActionButton label="3м" days={90} onClick={handleAddDays} />
       <ActionButton label="6м" days={180} onClick={handleAddDays} />
       <ActionButton label="1р" days={365} onClick={handleAddDays} />
+      </div>
     </div>
   );
 };

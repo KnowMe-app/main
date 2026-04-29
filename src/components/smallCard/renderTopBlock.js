@@ -45,25 +45,24 @@ const topBlockContainerStyle = {
 
 const topButtonsRowStyle = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+  gridTemplateColumns: 'repeat(5, max-content)',
   gap: '8px',
   marginBottom: '10px',
 };
 
 const topButtonsZoneStyle = {
   border: 'none',
-  borderRadius: '12px',
+  borderRadius: '10px',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: '100%',
-  height: '42px',
-  minWidth: 0,
+  width: '38px',
+  height: '38px',
+  flex: '0 0 38px',
   padding: 0,
-  boxShadow: '0 6px 14px rgba(0,0,0,0.24)',
-  transition: 'transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease',
-  overflow: 'hidden',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+  transition: 'transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease',
 };
 
 const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1', '#1565c0', '#6a1b9a'];
@@ -126,15 +125,17 @@ const commentFieldWrapperStyle = {
 
 const detailsToggleStyle = {
   position: 'absolute',
-  bottom: '8px',
-  right: '8px',
+  bottom: '10px',
+  right: '10px',
   cursor: 'pointer',
   color: '#ebe0c2',
   fontSize: '20px',
-  padding: '4px 8px',
-  borderRadius: '10px',
-  border: '1px solid rgba(255, 255, 255, 0.2)',
-  background: 'rgba(255, 255, 255, 0.06)',
+  padding: '4px 10px',
+  borderRadius: '6px',
+  border: 'none',
+  background: 'transparent',
+  lineHeight: 1,
+  letterSpacing: '2px',
 };
 
 const multiCommentStyle = {
@@ -143,15 +144,16 @@ const multiCommentStyle = {
   cursor: 'pointer',
   textDecoration: 'none',
   fontSize: '11px',
+  lineHeight: 1.4,
 };
 
 const multiCommentRowStyle = {
-  marginTop: '6px',
+  marginTop: '5px',
   display: 'flex',
-  alignItems: 'center',
+  alignItems: 'flex-start',
   gap: '6px',
-  background: 'rgba(243, 223, 171, 0.08)',
-  borderRadius: '6px',
+  background: 'rgba(243,223,171,0.06)',
+  borderRadius: '7px',
   padding: '4px 8px',
 };
 
@@ -178,33 +180,39 @@ const commentDeleteButtonStyle = {
 const inlineModalOverlayStyle = {
   position: 'fixed',
   inset: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  backgroundColor: 'rgba(0, 0, 0, 0.6)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   zIndex: 3000,
   padding: '16px',
+  backdropFilter: 'blur(4px)',
+  WebkitBackdropFilter: 'blur(4px)',
 };
 
 const inlineModalCardStyle = {
   width: 'min(92vw, 560px)',
-  background: '#fff',
-  color: '#111',
-  borderRadius: '12px',
-  padding: '14px',
-  boxShadow: '0 18px 40px rgba(0, 0, 0, 0.35)',
+  background: '#1e2d3d',
+  color: '#e8f0fa',
+  borderRadius: '14px',
+  padding: '18px',
+  boxShadow: '0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.07)',
   animation: 'fadeInUp 0.2s ease',
 };
 
 const inlineModalTextareaStyle = {
   width: '100%',
   minHeight: '120px',
-  borderRadius: '8px',
-  border: '1px solid #c7c7c7',
+  borderRadius: '10px',
+  border: '1px solid rgba(255,255,255,0.12)',
+  background: 'rgba(255,255,255,0.05)',
+  color: '#e8f0fa',
   padding: '10px',
   resize: 'vertical',
   fontSize: '14px',
   boxSizing: 'border-box',
+  outline: 'none',
+  fontFamily: 'inherit',
 };
 
 const inlineModalActionsStyle = {
@@ -574,13 +582,26 @@ const TopBlock = ({
 
   return (
     <div style={topBlockContainerStyle} className={styles.topBlockContainer}>
+      <style>{`
+        .top-zone-btn:hover {
+          transform: scale(1.07) translateY(-1px);
+          filter: brightness(1.15);
+        }
+        .top-zone-btn:active {
+          transform: scale(0.95);
+        }
+        .details-toggle-btn:hover {
+          background: rgba(255,255,255,0.1) !important;
+          color: #fff !important;
+        }
+      `}</style>
       <div style={topButtonsRowStyle}>
         {topButtonsZones.map((zoneColor, idx) => (
           <div
             key={`top-zone-${idx}`}
             aria-label={`top-zone-${idx + 1}`}
-            className={styles.topButtonsZoneHover}
-            style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor, display: idx === 5 || idx === 6 ? 'none' : 'flex' }}
+            className={`top-zone-btn ${styles.topButtonsZoneHover}`}
+            style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor, display: 'flex' }}
           >
             {idx === 0 &&
               btnDel(
@@ -718,8 +739,8 @@ const TopBlock = ({
                   </svg>
                 )
               ))}
-            {idx === 5 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#1565c0', color: '#fff' }} aria-label="Додаткова синя кнопка" title="Додаткова синя кнопка" />}
-            {idx === 6 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#6a1b9a', color: '#fff' }} aria-label="Додаткова фіолетова кнопка" title="Додаткова фіолетова кнопка" />}
+            {idx === 5 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#1565c0', color: '#fff', opacity: 0, pointerEvents: 'none' }} aria-label="Додаткова синя кнопка" title="Додаткова синя кнопка" />}
+            {idx === 6 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#6a1b9a', color: '#fff', opacity: 0, pointerEvents: 'none' }} aria-label="Додаткова фіолетова кнопка" title="Додаткова фіолетова кнопка" />}
           </div>
         ))}
       </div>
@@ -838,7 +859,17 @@ const TopBlock = ({
             <div style={inlineModalActionsStyle}>
               <button
                 type="button"
-                style={inlineModalCancelButtonStyle}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  background: 'transparent',
+                  color: '#8fa8c0',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  fontFamily: 'inherit',
+                }}
                 onClick={() => {
                   setIsCommentModalOpen(false);
                   setSelectedComment(null);
@@ -846,7 +877,22 @@ const TopBlock = ({
               >
                 Скасувати
               </button>
-              <button type="button" style={inlineModalSaveButtonStyle} onClick={saveMultiComment}>
+              <button
+                type="button"
+                style={{
+                  padding: '8px 18px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #2e7d32, #388e3c)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
+                  boxShadow: '0 4px 12px rgba(46,125,50,0.35)',
+                }}
+                onClick={saveMultiComment}
+              >
                 Зберегти
               </button>
             </div>
@@ -872,7 +918,17 @@ const TopBlock = ({
             <div style={inlineModalActionsStyle}>
               <button
                 type="button"
-                style={inlineModalCancelButtonStyle}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  background: 'transparent',
+                  color: '#8fa8c0',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  fontFamily: 'inherit',
+                }}
                 onClick={() => {
                   setCommentToDelete(null);
                 }}
@@ -881,6 +937,18 @@ const TopBlock = ({
               </button>
               <button
                 type="button"
+                style={{
+                  padding: '8px 18px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #c62828, #e53935)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
+                  boxShadow: '0 4px 12px rgba(198,40,40,0.35)',
+                }}
                 onClick={async () => {
                   await handleDeleteComment(commentToDelete);
                   setCommentToDelete(null);
@@ -893,7 +961,8 @@ const TopBlock = ({
         </div>
       )}
 
-      <div
+      <button
+        type="button"
         onClick={async e => {
           e.stopPropagation();
           const details = document.getElementById(cardData.userId);
@@ -948,11 +1017,11 @@ const TopBlock = ({
             toastFn(toastMsg);
           }
         }}
-        className={styles.detailsToggleHover}
+        className={`details-toggle-btn ${styles.detailsToggleHover}`}
         style={detailsToggleStyle}
       >
-        ...
-      </div>
+        ···
+      </button>
     </div>
   );
 };

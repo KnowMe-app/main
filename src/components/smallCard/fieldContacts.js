@@ -25,15 +25,17 @@ const iconStyle = {
 const phoneBtnStyle = {
   color: 'inherit',
   textDecoration: 'none',
-  marginLeft: '4px',
+  marginLeft: '3px',
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   width: '20px',
   height: '20px',
   lineHeight: '0',
-  border: `1px solid ${color.white}`,
+  border: `1px solid rgba(255,255,255,0.2)`,
   borderRadius: '50%',
+  opacity: 0.75,
+  transition: 'opacity 0.15s',
 };
 
 const normalizeExternalUrl = value => {
