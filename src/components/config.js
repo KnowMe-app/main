@@ -63,7 +63,7 @@ export const database = getDatabase(app);
 
 export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 
-const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
+const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
 const SEARCH_KEY_INDEX_ROOT = 'searchKey';
 const SEARCH_KEY_USERS_INDEX_ROOT = `${SEARCH_KEY_INDEX_ROOT}/users`;
 const BLOOD_SEARCH_KEY_INDEX = 'blood';
@@ -2949,7 +2949,7 @@ const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
 };
 
 const MARITAL_STATUS_SEARCH_KEY_BUCKETS = ['+', '-', '?', 'no'];
-const CONTACT_SEARCH_KEY_BUCKETS = ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'email'];
+const CONTACT_SEARCH_KEY_BUCKETS = ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email'];
 const ROLE_SEARCH_KEY_BUCKETS = ['ed', 'sm', 'ag', 'ip', 'pp', 'cl', '?', 'no'];
 const USER_ID_SEARCH_KEY_BUCKETS = ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'];
 const IMT_SEARCH_KEY_BUCKETS = ['le28', '29_31', '32_35', '36_plus', '?', 'no'];
@@ -4443,6 +4443,8 @@ const getContactIndexSet = data => {
     contactSet.add('telegram2');
   }
   if (hasContactValue(data.tiktok)) contactSet.add('tiktok');
+  if (hasContactValue(data.linkedin)) contactSet.add('linkedin');
+  if (hasContactValue(data.youtube)) contactSet.add('youtube');
   if (hasContactValue(data.email)) contactSet.add('email');
 
   return contactSet;
@@ -4607,6 +4609,8 @@ export const filterMain = (
         telegram: hasTelegramNonUk(value.telegram),
         telegram2: isTelegramUkOnly(value.telegram),
         tiktok: hasContactValue(value.tiktok),
+        linkedin: hasContactValue(value.linkedin),
+        youtube: hasContactValue(value.youtube),
         email: hasContactValue(value.email),
       };
       const allowedContacts = Object.entries(filterSettings.contact)

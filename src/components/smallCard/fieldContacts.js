@@ -7,6 +7,8 @@ import {
   FaWhatsapp,
   FaVk,
   FaGlobe,
+  FaLinkedin,
+  FaYoutube,
 } from 'react-icons/fa';
 import { FaPhoneVolume } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
@@ -61,6 +63,8 @@ export const fieldContacts = (data, parentKey = '') => {
     phone: value => `tel:${value}`,
     facebook: value => `https://facebook.com/${value}`,
     vk: value => `https://vk.com/${value}`,
+    linkedin: value => `https://www.linkedin.com/in/${value}`,
+    youtube: value => `https://www.youtube.com/@${value}`,
     otherLink: value => normalizeExternalUrl(value),
     email: value => `mailto:${value}`,
     telegramFromPhone: value => `https://t.me/${value.replace(/\s+/g, '')}`,
@@ -77,6 +81,8 @@ export const fieldContacts = (data, parentKey = '') => {
     whatsappFromPhone: <FaWhatsapp style={iconStyle} />,
     tiktok: <SiTiktok style={iconStyle} />,
     vk: <FaVk style={iconStyle} />,
+    linkedin: <FaLinkedin style={iconStyle} />,
+    youtube: <FaYoutube style={iconStyle} />,
     otherLink: <FaGlobe style={iconStyle} />,
     phone: <FaPhoneVolume style={iconStyle} />,
     email: <MdEmail style={iconStyle} />,
@@ -360,6 +366,8 @@ export const fieldContactsIcons = (
     phone: value => `tel:${value}`,
     facebook: value => `https://facebook.com/${value}`,
     vk: value => `https://vk.com/${value}`,
+    linkedin: value => `https://www.linkedin.com/in/${value}`,
+    youtube: value => `https://www.youtube.com/@${value}`,
     otherLink: value => normalizeExternalUrl(value),
     email: value => `mailto:${value}`,
     telegramFromPhone: value => `https://t.me/${value.replace(/\s+/g, '')}`,
@@ -541,6 +549,34 @@ export const fieldContactsIcons = (
         style={linkStyle}
       >
         <FaVk style={iconStyle} />
+      </a>
+    );
+  }
+
+  if (processed.linkedin) {
+    elements.push(
+      <a
+        key="linkedin"
+        href={links.linkedin(processed.linkedin)}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={linkStyle}
+      >
+        <FaLinkedin style={iconStyle} />
+      </a>
+    );
+  }
+
+  if (processed.youtube) {
+    elements.push(
+      <a
+        key="youtube"
+        href={links.youtube(processed.youtube)}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={linkStyle}
+      >
+        <FaYoutube style={iconStyle} />
       </a>
     );
   }

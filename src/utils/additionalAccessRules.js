@@ -155,7 +155,7 @@ export const ADDITIONAL_ACCESS_FILTER_OPTIONS = {
   maritalStatus: ['+', '-', '?', 'no'],
   imt: ['le28', '29_31', '32_35', '36_plus', '?', 'no'],
   role: ['ed', 'sm', 'ag', 'ip', 'cl', '?', 'no'],
-  contact: ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'email'],
+  contact: ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email'],
   userId: ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'],
   reaction: ['past', 'future', '99', '?', 'no'],
   height: ['lt163', '163_176', '177_180', '181_plus', '?', 'no'],
@@ -182,7 +182,7 @@ export const ADDITIONAL_ACCESS_TEMPLATE = `age: 18,19,20,21,22,23,24,25,26,27,28
 blood: 1+,1-,1,2+,2-,2,3+,3-,3,4+,4-,4,?,no
 maritalStatus: +,-,?,no
 csection: cs2plus,cs1,cs0,other,no
-contact: vk,instagram,facebook,phone,telegram,telegram2,tiktok,email
+contact: vk,instagram,facebook,phone,telegram,telegram2,tiktok,linkedin,youtube,email
 role: ed,sm,ag,ip,cl,?,no
 userId: vk,aa,ab,id,long,mid,other
 imt: le28,29_31,32_35,36_plus,?,no
@@ -249,7 +249,7 @@ const toMetricBucket = (value, ranges) => {
 };
 
 const toContactBuckets = user => {
-  const keys = ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'email'];
+  const keys = ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email'];
   return keys.filter(key => String(user?.[key] || '').trim() !== '');
 };
 
