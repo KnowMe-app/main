@@ -34,18 +34,18 @@ import toast from 'react-hot-toast';
 import styles from './renderTopBlock.module.css';
 
 const topBlockContainerStyle = {
-  padding: '10px 10px 8px',
+  padding: '12px 12px 10px',
   position: 'relative',
-  borderRadius: '14px',
-  background: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(0,0,0,0.08) 100%)',
-  border: '1px solid rgba(255,255,255,0.08)',
-  boxShadow: '0 10px 24px rgba(0,0,0,0.2)',
+  borderRadius: '16px',
+  background: 'linear-gradient(165deg, rgba(255,255,255,0.08) 0%, rgba(32,23,8,0.32) 45%, rgba(0,0,0,0.35) 100%)',
+  border: '1px solid rgba(255,255,255,0.12)',
+  boxShadow: '0 14px 32px rgba(0,0,0,0.26)',
+  backdropFilter: 'blur(2px)',
 };
 
 const topButtonsRowStyle = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
+  display: 'grid',
+  gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
   gap: '8px',
   marginBottom: '10px',
 };
@@ -57,11 +57,11 @@ const topButtonsZoneStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: '40px',
-  height: '40px',
-  flex: '0 0 40px',
+  width: '100%',
+  height: '42px',
+  minWidth: 0,
   padding: 0,
-  boxShadow: '0 4px 12px rgba(0,0,0,0.22)',
+  boxShadow: '0 6px 14px rgba(0,0,0,0.24)',
   transition: 'transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease',
   overflow: 'hidden',
 };
@@ -81,17 +81,16 @@ const zoneActionButtonStyle = {
 };
 
 const actionButtonsContainerStyle = {
-  position: 'absolute',
-  top: '60px',
-  right: '12px',
   display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'flex-end',
-  gap: '6px',
-  zIndex: 999,
-  padding: '6px',
-  borderRadius: '10px',
-  background: 'rgba(0, 0, 0, 0.22)',
+  justifyContent: 'flex-end',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: '8px',
+  marginBottom: '8px',
+  padding: '6px 8px',
+  borderRadius: '12px',
+  background: 'rgba(0, 0, 0, 0.2)',
+  border: '1px solid rgba(255,255,255,0.08)',
   backdropFilter: 'blur(4px)',
 };
 
@@ -581,7 +580,7 @@ const TopBlock = ({
             key={`top-zone-${idx}`}
             aria-label={`top-zone-${idx + 1}`}
             className={styles.topButtonsZoneHover}
-            style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor, visibility: idx === 5 || idx === 6 ? 'hidden' : 'visible' }}
+            style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor, display: idx === 5 || idx === 6 ? 'none' : 'flex' }}
           >
             {idx === 0 &&
               btnDel(
