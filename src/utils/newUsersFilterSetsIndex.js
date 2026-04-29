@@ -269,9 +269,14 @@ export const buildNewUsersFilterSetIndex = async ({
 
   const writes = {};
   let bucketWritesCount = 0;
+  const debug = {
+    removedSetKeys: [],
+    sets: [],
+  };
   existingSetKeys.forEach(setKey => {
     if (!nextSetKeys.has(setKey)) {
       writes[`${SEARCH_KEY_SETS_ROOT}/${setKey}`] = null;
+      debug.removedSetKeys.push(setKey);
     }
   });
   if (Object.keys(writes).length > 0) {
@@ -288,6 +293,13 @@ export const buildNewUsersFilterSetIndex = async ({
       parsedRuleGroups,
       userIds: Object.keys(userIds || {}),
     });
+    debug.sets.push({
+      setKey,
+      matchedUserIdsCount: Object.keys(userIds || {}).length,
+      parsedRuleGroupsCount: Array.isArray(parsedRuleGroups) ? parsedRuleGroups.length : 0,
+      bucketWritesCount: Object.keys(ruleBucketWrites).length,
+      bucketPathsPreview: Object.keys(ruleBucketWrites).slice(0, 12),
+    });
 
     if (Object.keys(ruleBucketWrites).length) {
       bucketWritesCount += Object.keys(ruleBucketWrites).length;
@@ -303,6 +315,7 @@ export const buildNewUsersFilterSetIndex = async ({
     ownerId: normalizedAccessUserId,
     writesCount: Object.keys(writes).length + nextSetPayloads.length,
     bucketWritesCount,
+    debug,
   };
 };
 

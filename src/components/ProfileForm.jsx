@@ -1011,6 +1011,20 @@ export const ProfileForm = ({
         accessUserId,
         matchedUserIdsByInputIndex
       );
+      const matchedSetEntries = Object.entries(matchedUserIdsBySetKey || {});
+      const matchedSetsCount = matchedSetEntries.length;
+      const matchedUsersTotal = matchedSetEntries.reduce(
+        (sum, [, ids]) => sum + (Array.isArray(ids) ? ids.length : 0),
+        0
+      );
+      const matchedPreview = matchedSetEntries
+        .slice(0, 2)
+        .map(([setKey, ids]) => `${setKey}: ${(Array.isArray(ids) ? ids.length : 0)} ids`)
+        .join(' | ');
+      toast(
+        `2.5/3 Префільтр searchKey: наборів ${matchedSetsCount}, сумарно userIds ${matchedUsersTotal}${matchedPreview ? ` (${matchedPreview})` : ''}`,
+        { id: `${toastId}-prefilter` }
+      );
 
       stage = 'write-index';
       stageToast('3/3 Запис індексів у searchKeySets...');
@@ -1024,11 +1038,32 @@ export const ProfileForm = ({
       const matchedCount = Number(indexResult?.userIds?.length || 0);
       const writesCount = Number(indexResult?.writesCount || 0);
       const bucketWritesCount = Number(indexResult?.bucketWritesCount || 0);
+      const removedSetsCount = Number(indexResult?.debug?.removedSetKeys?.length || 0);
+      const debugSets = Array.isArray(indexResult?.debug?.sets) ? indexResult.debug.sets : [];
+      const debugPreview = debugSets
+        .slice(0, 2)
+        .map(
+          set =>
+            `${set?.setKey || 'unknown'}: users=${Number(set?.matchedUserIdsCount || 0)}, buckets=${Number(
+              set?.bucketWritesCount || 0
+            )}`
+        )
+        .join(' | ');
+      toast(
+        `3.5/5 Діагностика searchKeySets: очищено наборів ${removedSetsCount}, нових наборів ${debugSets.length}${debugPreview ? ` (${debugPreview})` : ''}`,
+        { id: `${toastId}-debug` }
+      );
       if (setsCount === 0 && writesCount === 0) {
         toast('searchKeySets не оновлено: не знайдено валідних правил.', { id: toastId });
       } else if (setsCount > 0 && bucketWritesCount === 0) {
+        const bucketPathHints = debugSets
+          .flatMap(set => (Array.isArray(set?.bucketPathsPreview) ? set.bucketPathsPreview : []))
+          .slice(0, 5)
+          .join('\n');
         toast.error(
-          `searchKeySets порожній після індексації: немає bucket-записів (наборів: ${setsCount}, карток: ${matchedCount}). Перевірте правила additionalAccessRules та відповідність індексам searchKey.`,
+          `searchKeySets порожній після індексації: немає bucket-записів (наборів: ${setsCount}, карток: ${matchedCount}).\n` +
+            `Підказка: перевірте searchKey bucket-и для поточних токенів.\n` +
+            `${bucketPathHints || 'Preview bucket paths: (empty)'}`,
           { id: toastId }
         );
       } else {
