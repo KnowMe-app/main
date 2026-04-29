@@ -27,6 +27,16 @@ export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
 const FORBIDDEN_RTDB_SEGMENT_CHARS = ['.', '#', '$', '/', '[', ']'];
 
+
+const AGE_SEARCH_KEY_VALUE_PATTERN = /^d_\d{4}-\d{2}-\d{2}$/;
+
+const normalizeAgeSearchKeyValue = value => {
+  const normalized = normalizePathSegment(value);
+  if (!normalized) return '';
+  if (normalized === '?' || normalized === 'no') return normalized;
+  return AGE_SEARCH_KEY_VALUE_PATTERN.test(normalized) ? normalized : '';
+};
+
 const normalizePathSegment = value => {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -136,14 +146,21 @@ const buildAgeKeysByUserIdFromSearchKey = async userIds => {
   const normalizedIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
   if (normalizedIds.length === 0) return {};
 
-  const payload = peekCachedSearchKeyPayload('searchKey/age');
+  const agePayload = peekCachedSearchKeyPayload('searchKey/age');
+  const rootPayload = peekCachedSearchKeyPayload('searchKey');
+  const ageIndex =
+    agePayload?.exists && agePayload.value && typeof agePayload.value === 'object'
+      ? agePayload.value
+      : rootPayload?.exists && rootPayload.value && typeof rootPayload.value?.age === 'object'
+      ? rootPayload.value.age
+      : null;
 
-  if (!payload?.exists || !payload.value || typeof payload.value !== 'object') return {};
+  if (!ageIndex || typeof ageIndex !== 'object') return {};
 
   const pending = new Set(normalizedIds);
   const ageKeysByUserId = {};
 
-  Object.entries(payload.value).forEach(([ageKey, usersMap]) => {
+  Object.entries(ageIndex).forEach(([ageKey, usersMap]) => {
     if (!(usersMap && typeof usersMap === 'object')) return;
     if (pending.size === 0) return;
 
@@ -169,10 +186,17 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, ageKeysByU
     if (!normalizedIndexName) return writes;
 
     if (normalizedIndexName === 'age') {
+      const allowedAgeValues = new Set(
+        (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
+          .map(value => normalizeAgeSearchKeyValue(value))
+          .filter(Boolean)
+      );
+
       normalizedUserIds.forEach(userId => {
-        const ageKey = normalizePathSegment(ageKeysByUserId?.[userId] || 'no');
-        if (!ageKey) return;
-        const path = `${normalizedRootPath}/${normalizedIndexName}/${ageKey}`;
+        const resolvedAgeValue = normalizeAgeSearchKeyValue(ageKeysByUserId?.[userId]);
+        const ageValue = resolvedAgeValue || (allowedAgeValues.has('no') ? 'no' : '');
+        if (!ageValue) return;
+        const path = `${normalizedRootPath}/${normalizedIndexName}/${ageValue}`;
         if (!writes[path]) writes[path] = {};
         writes[path][userId] = true;
       });
