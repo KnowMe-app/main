@@ -222,28 +222,22 @@ const inlineModalActionsStyle = {
   gap: '8px',
 };
 
-
 const inlineModalCancelButtonStyle = {
-  padding: '8px 16px',
-  borderRadius: '8px',
-  border: '1px solid rgba(255,255,255,0.15)',
   background: 'transparent',
-  color: '#8fa8c0',
+  color: '#374151',
+  border: '1px solid #9ca3af',
+  borderRadius: '8px',
+  padding: '8px 16px',
   cursor: 'pointer',
-  fontSize: '13px',
-  fontWeight: 500,
-  fontFamily: 'inherit',
 };
 
 const inlineModalSaveButtonStyle = {
-  padding: '8px 18px',
-  borderRadius: '8px',
-  border: 'none',
+  background: '#2e7d32',
   color: '#fff',
+  border: 'none',
+  borderRadius: '8px',
+  padding: '8px 16px',
   cursor: 'pointer',
-  fontSize: '13px',
-  fontWeight: 600,
-  fontFamily: 'inherit',
 };
 
 const deleteModalTextStyle = {
@@ -865,7 +859,17 @@ const TopBlock = ({
             <div style={inlineModalActionsStyle}>
               <button
                 type="button"
-                style={inlineModalCancelButtonStyle}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  background: 'transparent',
+                  color: '#8fa8c0',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  fontFamily: 'inherit',
+                }}
                 onClick={() => {
                   setIsCommentModalOpen(false);
                   setSelectedComment(null);
@@ -876,8 +880,15 @@ const TopBlock = ({
               <button
                 type="button"
                 style={{
-                  ...inlineModalSaveButtonStyle,
+                  padding: '8px 18px',
+                  borderRadius: '8px',
+                  border: 'none',
                   background: 'linear-gradient(135deg, #2e7d32, #388e3c)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
                   boxShadow: '0 4px 12px rgba(46,125,50,0.35)',
                 }}
                 onClick={saveMultiComment}
@@ -907,7 +918,17 @@ const TopBlock = ({
             <div style={inlineModalActionsStyle}>
               <button
                 type="button"
-                style={inlineModalCancelButtonStyle}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  background: 'transparent',
+                  color: '#8fa8c0',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  fontFamily: 'inherit',
+                }}
                 onClick={() => {
                   setCommentToDelete(null);
                 }}
@@ -917,8 +938,15 @@ const TopBlock = ({
               <button
                 type="button"
                 style={{
-                  ...inlineModalSaveButtonStyle,
+                  padding: '8px 18px',
+                  borderRadius: '8px',
+                  border: 'none',
                   background: 'linear-gradient(135deg, #c62828, #e53935)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
                   boxShadow: '0 4px 12px rgba(198,40,40,0.35)',
                 }}
                 onClick={async () => {
