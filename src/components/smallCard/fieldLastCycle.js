@@ -554,13 +554,6 @@ export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {
             style={{
               cursor: 'pointer',
               color: 'white',
-              padding: '1px 7px',
-              borderRadius: '20px',
-              fontSize: '11px',
-              fontWeight: 500,
-              background: 'rgba(255,255,255,0.12)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              display: 'inline-block',
             }}
           >
             місячні

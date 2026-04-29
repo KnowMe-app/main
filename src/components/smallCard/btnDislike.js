@@ -106,8 +106,8 @@ export const BtnDislike = ({
           ? activeColor
           : customBackground || customBackgroundColor || color.accent5,
         border: isDisliked
-          ? `3px solid ${activeBorderColor}`
-          : customBorder || `1px solid rgba(255,255,255,0.2)`,
+          ? `4px solid ${activeBorderColor}`
+          : customBorder || `2px solid ${color.reactionIdleBorder}`,
         color: isDisliked ? resolvedActiveIconColor : resolvedInactiveIconColor,
         boxShadow: isDisliked
           ? `0 0 0 2px ${activeColor}`

@@ -29,15 +29,7 @@ export const fieldRole = (userData, setUsers, setState, submitOptions = {}) => {
         <OrangeBtn
           key={role}
           onClick={() => handleSetRole(role)}
-          style={{
-            width: '25px',
-            height: '25px',
-            marginLeft: '5px',
-            marginRight: 0,
-            opacity: userData.role === role ? 1 : 0.45,
-            fontWeight: userData.role === role ? 700 : 400,
-            boxShadow: userData.role === role ? '0 0 0 2px rgba(255,255,255,0.4)' : 'none',
-          }}
+          style={{ width: '25px', height: '25px', marginLeft: '5px', marginRight: 0 }}
         >
           {role}
         </OrangeBtn>

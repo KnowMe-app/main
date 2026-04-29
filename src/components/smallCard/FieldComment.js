@@ -14,18 +14,7 @@ export const FieldComment = ({ userData, setUsers, setState, submitOptions = {} 
   // autoResize will adjust height on mount and when value changes
 
   return (
-    <div>
-      <style>{`
-        .field-comment-textarea::placeholder {
-          color: rgba(255,255,255,0.3);
-          font-style: italic;
-        }
-        .field-comment-textarea:focus {
-          border-color: rgba(255,255,255,0.2);
-          background: rgba(255,255,255,0.07);
-        }
-      `}</style>
-      <div
+    <div
       style={{
         display: 'flex', // Використовуємо flexbox
         justifyContent: 'center', // Центрування по горизонталі
@@ -36,7 +25,6 @@ export const FieldComment = ({ userData, setUsers, setState, submitOptions = {} 
       }}
     >
       <textarea
-        className="field-comment-textarea"
         ref={textareaRef}
         placeholder="Додайте коментар"
         value={userData.myComment || ''}
@@ -63,17 +51,8 @@ export const FieldComment = ({ userData, setUsers, setState, submitOptions = {} 
           // minHeight: '40px',
           resize: 'none',
           overflow: 'hidden',
-          padding: '7px 10px',
+          padding: '5px',
           paddingRight: userData.myComment ? '42px' : '26px',
-          borderRadius: '8px',
-          border: '1px solid rgba(255,255,255,0.1)',
-          background: 'rgba(255,255,255,0.04)',
-          color: 'inherit',
-          fontSize: '12px',
-          lineHeight: 1.45,
-          fontFamily: 'inherit',
-          outline: 'none',
-          boxSizing: 'border-box',
         }}
       />
       {userData.myComment && (
@@ -101,7 +80,6 @@ export const FieldComment = ({ userData, setUsers, setState, submitOptions = {} 
           &times;
         </button>
       )}
-      </div>
     </div>
   );
 };
