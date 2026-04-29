@@ -31,6 +31,7 @@ import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
 import { auth } from '../config';
 import toast from 'react-hot-toast';
+import styles from './renderTopBlock.module.css';
 
 const topBlockContainerStyle = { padding: '7px', position: 'relative' };
 
@@ -53,7 +54,7 @@ const topButtonsZoneStyle = {
   height: '40px',
   flex: '0 0 40px',
   padding: 0,
-  boxShadow: '0 6px 14px rgba(17, 24, 39, 0.2)',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
   transition: 'transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease',
 };
 
@@ -118,7 +119,9 @@ const detailsToggleStyle = {
   right: '10px',
   cursor: 'pointer',
   color: '#ebe0c2',
-  fontSize: '18px',
+  fontSize: '22px',
+  padding: '4px 8px',
+  borderRadius: '6px',
 };
 
 const multiCommentStyle = {
@@ -126,7 +129,7 @@ const multiCommentStyle = {
   color: '#f3dfab',
   cursor: 'pointer',
   textDecoration: 'none',
-  fontSize: '60%',
+  fontSize: '11px',
 };
 
 const multiCommentRowStyle = {
@@ -134,6 +137,9 @@ const multiCommentRowStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: '6px',
+  background: 'rgba(243, 223, 171, 0.08)',
+  borderRadius: '6px',
+  padding: '4px 8px',
 };
 
 const commentAuthorButtonStyle = {
@@ -174,6 +180,7 @@ const inlineModalCardStyle = {
   borderRadius: '12px',
   padding: '14px',
   boxShadow: '0 18px 40px rgba(0, 0, 0, 0.35)',
+  animation: 'fadeInUp 0.2s ease',
 };
 
 const inlineModalTextareaStyle = {
@@ -192,6 +199,24 @@ const inlineModalActionsStyle = {
   display: 'flex',
   justifyContent: 'flex-end',
   gap: '8px',
+};
+
+const inlineModalCancelButtonStyle = {
+  background: 'transparent',
+  color: '#374151',
+  border: '1px solid #9ca3af',
+  borderRadius: '8px',
+  padding: '8px 16px',
+  cursor: 'pointer',
+};
+
+const inlineModalSaveButtonStyle = {
+  background: '#2e7d32',
+  color: '#fff',
+  border: 'none',
+  borderRadius: '8px',
+  padding: '8px 16px',
+  cursor: 'pointer',
 };
 
 const deleteModalTextStyle = {
@@ -541,7 +566,8 @@ const TopBlock = ({
           <div
             key={`top-zone-${idx}`}
             aria-label={`top-zone-${idx + 1}`}
-            style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor }}
+            className={styles.topButtonsZoneHover}
+            style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor, visibility: idx === 5 || idx === 6 ? 'hidden' : 'visible' }}
           >
             {idx === 0 &&
               btnDel(
@@ -799,6 +825,7 @@ const TopBlock = ({
             <div style={inlineModalActionsStyle}>
               <button
                 type="button"
+                style={inlineModalCancelButtonStyle}
                 onClick={() => {
                   setIsCommentModalOpen(false);
                   setSelectedComment(null);
@@ -806,7 +833,7 @@ const TopBlock = ({
               >
                 Скасувати
               </button>
-              <button type="button" onClick={saveMultiComment}>
+              <button type="button" style={inlineModalSaveButtonStyle} onClick={saveMultiComment}>
                 Зберегти
               </button>
             </div>
@@ -832,6 +859,7 @@ const TopBlock = ({
             <div style={inlineModalActionsStyle}>
               <button
                 type="button"
+                style={inlineModalCancelButtonStyle}
                 onClick={() => {
                   setCommentToDelete(null);
                 }}
@@ -907,6 +935,7 @@ const TopBlock = ({
             toastFn(toastMsg);
           }
         }}
+        className={styles.detailsToggleHover}
         style={detailsToggleStyle}
       >
         ...
