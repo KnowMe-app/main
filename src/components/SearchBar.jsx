@@ -364,6 +364,9 @@ const SEARCH_ID_PREFIX_KEYS = [
   'phone',
   'telegram',
   'tiktok',
+  'twitter',
+  'line',
+  'otherLink',
   'other',
   'vk',
   'name',
@@ -379,6 +382,9 @@ const SEARCH_ID_SCOPED_PLATFORMS = new Set([
   'phone',
   'telegram',
   'tiktok',
+  'twitter',
+  'line',
+  'otherLink',
   'other',
   'vk',
   'name',
@@ -490,6 +496,48 @@ const parseOtherContact = input => {
   return labeledValue[1].trim() || null;
 };
 
+const normalizeGenericUrl = input => {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const hasScheme = /^https?:\/\//i.test(trimmed);
+  const candidate = hasScheme ? trimmed : `https://${trimmed}`;
+
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch (error) {
+    return null;
+  }
+
+  if (!parsed.hostname || !parsed.hostname.includes('.')) return null;
+  const normalizedHost = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  const normalizedPath = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/+$/, '');
+  const normalized = `https://${normalizedHost}${normalizedPath}${parsed.search || ''}${parsed.hash || ''}`;
+  return normalized;
+};
+
+const parseTwitterId = input => {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/(?:twitter\.com|x\.com)\/@?([A-Za-z0-9_]{1,15})/i);
+  if (match?.[1]) return match[1].toLowerCase();
+  const labelMatch = trimmed.match(/(?:twitter|x)\s*:?\s*@?([A-Za-z0-9_]{1,15})/i);
+  return labelMatch?.[1]?.toLowerCase() || null;
+};
+
+const parseLineId = input => {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/line\.me\/(?:ti\/p\/)?@?([A-Za-z0-9._-]+)/i);
+  if (match?.[1]) return match[1];
+  const labelMatch = trimmed.match(/(?:^|\b)(?:line|лайн)\s*:?\s*@?([A-Za-z0-9._-]+)/i);
+  return labelMatch?.[1] || null;
+};
+
 const OTHER_SEARCH_FALLBACK_KEYS = [
   'userId',
   'facebook',
@@ -497,6 +545,9 @@ const OTHER_SEARCH_FALLBACK_KEYS = [
   'telegram',
   'email',
   'tiktok',
+  'twitter',
+  'line',
+  'otherLink',
   'phone',
   'vk',
   'name',
@@ -511,6 +562,9 @@ const EQUAL_TO_SEARCH_PARSERS = {
   telegram: parseTelegramId,
   email: parseEmail,
   tiktok: parseTikTokLink,
+  twitter: parseTwitterId,
+  line: parseLineId,
+  otherLink: normalizeGenericUrl,
   phone: parsePhoneNumber,
   vk: parseVk,
   other: parseOtherContact,
@@ -623,6 +677,9 @@ export const detectSearchParamsByQueryContent = query => {
     ['tiktok', parseTikTokLink],
     ['phone', parsePhoneNumber],
     ['vk', parseVk],
+    ['twitter', parseTwitterId],
+    ['line', parseLineId],
+    ['otherLink', normalizeGenericUrl],
     ['other', parseOtherContact],
   ];
   for (const [key, parser] of parsers) {
@@ -714,6 +771,9 @@ const SearchBar = ({
       'telegram',
       'email',
       'tiktok',
+      'twitter',
+      'line',
+      'otherLink',
       'phone',
       'vk',
       'other',
