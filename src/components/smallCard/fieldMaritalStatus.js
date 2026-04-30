@@ -17,6 +17,6 @@ export const fieldMaritalStatus = maritalStatus => {
       text = maritalStatus || '';
   }
   return text ? (
-    <AttentionDiv style={{ backgroundColor: 'rgba(255,152,0,0.18)', color: '#ffcc80', border: '1px solid rgba(255,152,0,0.25)' }}>{text}</AttentionDiv>
+    <AttentionDiv style={{ backgroundColor: 'orange' }}>{text}</AttentionDiv>
   ) : null;
 };

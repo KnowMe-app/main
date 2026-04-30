@@ -44,17 +44,17 @@ const topButtonsRowStyle = {
 
 const topButtonsZoneStyle = {
   border: 'none',
-  borderRadius: '10px',
+  borderRadius: '12px',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: '38px',
-  height: '38px',
-  flex: '0 0 38px',
+  width: '40px',
+  height: '40px',
+  flex: '0 0 40px',
   padding: 0,
-  boxShadow: '0 2px 8px rgba(0,0,0,0.22)',
-  transition: 'transform 0.15s ease, filter 0.15s ease',
+  boxShadow: '0 6px 14px rgba(17, 24, 39, 0.2)',
+  transition: 'transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease',
 };
 
 const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1', '#1565c0', '#6a1b9a'];
@@ -63,12 +63,12 @@ const zoneActionButtonStyle = {
   position: 'static',
   width: '100%',
   height: '100%',
-  minHeight: '38px',
-  borderRadius: '10px',
+  minHeight: '40px',
+  borderRadius: '12px',
   border: 'none',
   margin: 0,
   padding: 0,
-  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18)',
+  boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.2)',
 };
 
 const actionButtonsContainerStyle = {
@@ -118,14 +118,7 @@ const detailsToggleStyle = {
   right: '10px',
   cursor: 'pointer',
   color: '#ebe0c2',
-  fontSize: '20px',
-  padding: '3px 9px',
-  borderRadius: '6px',
-  border: 'none',
-  background: 'transparent',
-  lineHeight: 1,
-  letterSpacing: '2px',
-  transition: 'background 0.15s, color 0.15s',
+  fontSize: '18px',
 };
 
 const multiCommentStyle = {
@@ -133,19 +126,14 @@ const multiCommentStyle = {
   color: '#f3dfab',
   cursor: 'pointer',
   textDecoration: 'none',
-  fontSize: '11px',
-  lineHeight: 1.4,
-  transition: 'color 0.12s',
+  fontSize: '60%',
 };
 
 const multiCommentRowStyle = {
-  marginTop: '5px',
+  marginTop: '6px',
   display: 'flex',
-  alignItems: 'flex-start',
+  alignItems: 'center',
   gap: '6px',
-  background: 'rgba(243,223,171,0.06)',
-  borderRadius: '7px',
-  padding: '4px 6px',
 };
 
 const commentAuthorButtonStyle = {
@@ -171,38 +159,32 @@ const commentDeleteButtonStyle = {
 const inlineModalOverlayStyle = {
   position: 'fixed',
   inset: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.62)',
+  backgroundColor: 'rgba(0, 0, 0, 0.55)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   zIndex: 3000,
   padding: '16px',
-  backdropFilter: 'blur(4px)',
-  WebkitBackdropFilter: 'blur(4px)',
 };
 
 const inlineModalCardStyle = {
-  width: 'min(92vw, 520px)',
-  background: '#111827',
-  color: '#e8f0fa',
-  borderRadius: '14px',
-  padding: '18px',
-  boxShadow: '0 20px 50px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.07)',
+  width: 'min(92vw, 560px)',
+  background: '#fff',
+  color: '#111',
+  borderRadius: '12px',
+  padding: '14px',
+  boxShadow: '0 18px 40px rgba(0, 0, 0, 0.35)',
 };
 
 const inlineModalTextareaStyle = {
   width: '100%',
   minHeight: '120px',
-  borderRadius: '10px',
-  border: '1px solid rgba(255,255,255,0.12)',
-  background: 'rgba(255,255,255,0.05)',
-  color: '#e8f0fa',
+  borderRadius: '8px',
+  border: '1px solid #c7c7c7',
   padding: '10px',
   resize: 'vertical',
-  fontSize: '13px',
+  fontSize: '14px',
   boxSizing: 'border-box',
-  outline: 'none',
-  fontFamily: 'inherit',
 };
 
 const inlineModalActionsStyle = {
@@ -554,27 +536,10 @@ const TopBlock = ({
 
   return (
     <div style={topBlockContainerStyle}>
-      <style>{`
-  .top-zone-btn:hover {
-    transform: scale(1.07) translateY(-1px);
-    filter: brightness(1.15);
-  }
-  .top-zone-btn:active {
-    transform: scale(0.94);
-  }
-  .details-toggle:hover {
-    background: rgba(255,255,255,0.12) !important;
-    color: #fff !important;
-  }
-  .multi-comment-text:hover {
-    color: #fff;
-  }
-`}</style>
       <div style={topButtonsRowStyle}>
         {topButtonsZones.map((zoneColor, idx) => (
           <div
             key={`top-zone-${idx}`}
-            className="top-zone-btn"
             aria-label={`top-zone-${idx + 1}`}
             style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor }}
           >
@@ -714,8 +679,8 @@ const TopBlock = ({
                   </svg>
                 )
               ))}
-            {idx === 5 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#1565c0', color: '#fff', opacity: 0, pointerEvents: 'none' }} aria-label="Додаткова синя кнопка" title="Додаткова синя кнопка" />}
-            {idx === 6 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#6a1b9a', color: '#fff', opacity: 0, pointerEvents: 'none' }} aria-label="Додаткова фіолетова кнопка" title="Додаткова фіолетова кнопка" />}
+            {idx === 5 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#1565c0', color: '#fff' }} aria-label="Додаткова синя кнопка" title="Додаткова синя кнопка" />}
+            {idx === 6 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#6a1b9a', color: '#fff' }} aria-label="Додаткова фіолетова кнопка" title="Додаткова фіолетова кнопка" />}
           </div>
         ))}
       </div>
@@ -784,7 +749,6 @@ const TopBlock = ({
               </svg>
             </button>
             <div
-              className="multi-comment-text"
               style={multiCommentStyle}
               title="Редагувати коментар multiData"
               onClick={event => {
@@ -835,17 +799,6 @@ const TopBlock = ({
             <div style={inlineModalActionsStyle}>
               <button
                 type="button"
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  background: 'transparent',
-                  color: '#8fa8c0',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                  fontFamily: 'inherit',
-                }}
                 onClick={() => {
                   setIsCommentModalOpen(false);
                   setSelectedComment(null);
@@ -853,22 +806,7 @@ const TopBlock = ({
               >
                 Скасувати
               </button>
-              <button
-                type="button"
-                style={{
-                  padding: '8px 18px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #2e7d32, #388e3c)',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  fontFamily: 'inherit',
-                  boxShadow: '0 3px 10px rgba(46,125,50,0.35)',
-                }}
-                onClick={saveMultiComment}
-              >
+              <button type="button" onClick={saveMultiComment}>
                 Зберегти
               </button>
             </div>
@@ -894,17 +832,6 @@ const TopBlock = ({
             <div style={inlineModalActionsStyle}>
               <button
                 type="button"
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  background: 'transparent',
-                  color: '#8fa8c0',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                  fontFamily: 'inherit',
-                }}
                 onClick={() => {
                   setCommentToDelete(null);
                 }}
@@ -913,18 +840,6 @@ const TopBlock = ({
               </button>
               <button
                 type="button"
-                style={{
-                  padding: '8px 18px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #b71c1c, #e53935)',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  fontFamily: 'inherit',
-                  boxShadow: '0 3px 10px rgba(183,28,28,0.35)',
-                }}
                 onClick={async () => {
                   await handleDeleteComment(commentToDelete);
                   setCommentToDelete(null);
@@ -937,9 +852,7 @@ const TopBlock = ({
         </div>
       )}
 
-      <button
-        type="button"
-        className="details-toggle"
+      <div
         onClick={async e => {
           e.stopPropagation();
           const details = document.getElementById(cardData.userId);
@@ -997,7 +910,7 @@ const TopBlock = ({
         style={detailsToggleStyle}
       >
         ...
-      </button>
+      </div>
     </div>
   );
 };
