@@ -2703,123 +2703,341 @@ const ClearButton = styled.button`
 const AdditionalRulesOverlay = styled.div`
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.65);
   z-index: 1200;
   display: flex;
   align-items: stretch;
   justify-content: center;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 `;
 
 const AdditionalRulesModal = styled.div`
-  background: #fff;
-  color: #1f1f1f;
-  width: min(760px, 100vw);
+  background: #111827;
+  color: #e8f0fa;
+  width: min(720px, 100vw);
   height: 100vh;
-  padding: 16px 14px;
-  overflow: auto;
+  padding: 20px 16px 32px;
+  overflow-y: auto;
+  overflow-x: hidden;
   position: relative;
-  line-height: 1.35;
+  line-height: 1.45;
+  box-shadow: -4px 0 32px rgba(0, 0, 0, 0.5);
+
+  h3 {
+    font-size: 17px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    color: #e8f0fa;
+  }
+
+  small {
+    font-size: 12px;
+    color: #6b7f9a;
+  }
 `;
 
 const AdditionalRulesClose = styled.button`
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 14px;
+  right: 14px;
   border: none;
-  background: transparent;
-  font-size: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #8fa8c0;
+  font-size: 16px;
   cursor: pointer;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+  }
 `;
 
 const AdditionalRuleBlock = styled.div`
-  padding: 8px 0;
-  margin-top: 8px;
+  padding: 12px 14px;
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
 `;
 
 const AdditionalRuleHeader = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
 
-  select,
+  select {
+    flex: 1;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.08);
+    color: #e8f0fa;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%238fa8c0' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 10px 6px;
+    padding-right: 30px;
+  }
+
   button {
-    padding: 6px 10px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(220, 50, 50, 0.15);
+    color: #e57373;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    transition: background 0.15s;
+
+    &:hover {
+      background: rgba(220, 50, 50, 0.28);
+    }
   }
 `;
 
 const AdditionalRuleOptions = styled.div`
-  margin-top: 8px;
+  margin-top: 10px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 6px 10px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px 12px;
 
   label {
     display: flex;
     align-items: flex-start;
-    gap: 6px;
-  }
+    gap: 8px;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    transition: background 0.12s, border-color 0.12s;
 
-  input {
-    margin-top: 2px;
+    &:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    input[type='checkbox'] {
+      margin-top: 2px;
+      accent-color: #4a9eda;
+      width: 15px;
+      height: 15px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
   }
 `;
 
 const AdditionalRuleOptionText = styled.span`
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+
+  span {
+    font-size: 13px;
+    font-weight: 500;
+    color: #d0e0f0;
+  }
 
   small {
-    color: #666;
+    color: #6b7f9a;
     font-size: 11px;
-    line-height: 1.25;
+    line-height: 1.3;
   }
 `;
 
 const AdditionalRuleActions = styled.div`
-  margin-top: 14px;
+  margin-top: 16px;
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+
+  button {
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+
+    &:first-child {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #c8d8ea;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.14);
+      }
+    }
+
+    &:nth-child(2) {
+      background: linear-gradient(135deg, #1565c0, #1e88e5);
+      border: none;
+      color: #fff;
+      box-shadow: 0 3px 10px rgba(21, 101, 192, 0.4);
+
+      &:hover {
+        filter: brightness(1.1);
+      }
+    }
+
+    &:nth-child(3) {
+      background: rgba(255, 152, 0, 0.15);
+      border: 1px solid rgba(255, 152, 0, 0.3);
+      color: #ffb74d;
+
+      &:hover {
+        background: rgba(255, 152, 0, 0.25);
+      }
+
+      &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+    }
+
+    &:nth-child(4) {
+      background: linear-gradient(135deg, #2e7d32, #388e3c);
+      border: none;
+      color: #fff;
+      box-shadow: 0 3px 10px rgba(46, 125, 50, 0.35);
+
+      &:hover {
+        filter: brightness(1.1);
+      }
+
+      &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        filter: none;
+      }
+    }
+  }
 `;
 
 const AdditionalRulePreview = styled.textarea`
   margin-top: 14px;
-  background: #fafafa;
-  color: #1f1f1f;
-  border: 1px solid #ddd;
-  padding: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #c8daea;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 12px;
   white-space: pre-wrap;
   width: 100%;
-  min-height: 140px;
+  min-height: 120px;
   resize: vertical;
-  font-family: inherit;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s;
+
+  &:focus {
+    border-color: rgba(74, 158, 218, 0.4);
+  }
 `;
 
 const AdditionalCardsTitle = styled.h4`
-  margin-top: 14px;
-  margin-bottom: 8px;
+  margin-top: 12px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7f9a;
+  letter-spacing: 0.3px;
 `;
 
 const SearchKeySourceModal = styled.div`
-  background: #fff;
-  color: #1f1f1f;
-  width: min(520px, calc(100vw - 24px));
+  background: #111827;
+  color: #e8f0fa;
+  width: min(480px, calc(100vw - 24px));
   margin: auto;
-  padding: 18px 16px;
-  border-radius: 12px;
-  line-height: 1.4;
+  padding: 22px 18px;
+  border-radius: 16px;
+  line-height: 1.5;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.07);
+
+  h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: #e8f0fa;
+  }
+
+  p {
+    font-size: 13px;
+    color: #6b7f9a;
+    margin: 0 0 4px;
+  }
 `;
 
 const SearchKeySourceActions = styled.div`
-  margin-top: 14px;
+  margin-top: 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 
   button {
-    padding: 10px 12px;
+    padding: 11px 14px;
     text-align: left;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:nth-child(1) {
+      background: rgba(74, 158, 218, 0.15);
+      border: 1px solid rgba(74, 158, 218, 0.3);
+      color: #4ab3e8;
+
+      &:hover {
+        background: rgba(74, 158, 218, 0.25);
+      }
+    }
+
+    &:nth-child(2) {
+      background: linear-gradient(135deg, #2e7d32, #388e3c);
+      border: none;
+      color: #fff;
+      box-shadow: 0 3px 10px rgba(46, 125, 50, 0.3);
+
+      &:hover {
+        filter: brightness(1.1);
+      }
+    }
+
+    &:nth-child(3) {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #6b7f9a;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
   }
 `;
 
