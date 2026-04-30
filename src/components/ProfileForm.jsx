@@ -671,12 +671,16 @@ export const ProfileForm = ({
   useEffect(() => {
     if (!showAdditionalRulesModal) return;
 
+    const effectiveRulesText = activeAdditionalRulesDraftText.trim()
+      ? activeAdditionalRulesDraftText
+      : previewAdditionalRulesText;
+
     let cancelled = false;
     const loadAvailableCards = async () => {
-      const parsedRuleGroups = parseAdditionalAccessRuleGroups(previewAdditionalRulesText);
+      const parsedRuleGroups = parseAdditionalAccessRuleGroups(effectiveRulesText);
       const accessUserId = String(state?.userId || '').trim();
       const cachedPreview = getCachedAdditionalRulesPreview({
-        rawRules: previewAdditionalRulesText,
+        rawRules: effectiveRulesText,
         accessUserId,
       });
       if (cachedPreview) {
@@ -686,7 +690,7 @@ export const ProfileForm = ({
 
       if (!parsedRuleGroups.length) {
         setAvailableCardsCount(0);
-        saveCachedAdditionalRulesPreview({ rawRules: previewAdditionalRulesText, accessUserId, count: 0, userIds: [] });
+        saveCachedAdditionalRulesPreview({ rawRules: effectiveRulesText, accessUserId, count: 0, userIds: [] });
         return;
       }
 
@@ -714,7 +718,7 @@ export const ProfileForm = ({
           });
         });
         const userIds = [...matched];
-        saveCachedAdditionalRulesPreview({ rawRules: previewAdditionalRulesText, accessUserId, count: userIds.length, userIds });
+        saveCachedAdditionalRulesPreview({ rawRules: effectiveRulesText, accessUserId, count: userIds.length, userIds });
         if (!cancelled) setAvailableCardsCount(userIds.length);
       } catch (error) {
         console.error('Failed to build additional access preview', error);
@@ -730,6 +734,7 @@ export const ProfileForm = ({
     };
   }, [
     previewAdditionalRulesText,
+    activeAdditionalRulesDraftText,
     showAdditionalRulesModal,
     state?.userId,
     localSearchKeyPayload,
