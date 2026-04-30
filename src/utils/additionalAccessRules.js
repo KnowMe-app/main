@@ -779,6 +779,7 @@ const resolveAgeSearchKeyBuckets = parsedRules => {
     ? [...parsedRules.age].filter(age => Number.isFinite(age) && age >= 18)
     : [];
   const exactBirthDateBuckets = normalizedAges.flatMap(age => getBirthDateBucketsForAge(age));
+  const legacyAgeBuckets = normalizedAges.flatMap(age => [String(age), ageToBucket(age)]);
   const extraBuckets = [];
   if (parsedRules?.age42plus) {
     extraBuckets.push(
@@ -791,7 +792,7 @@ const resolveAgeSearchKeyBuckets = parsedRules => {
   if (parsedRules?.ageNo) {
     extraBuckets.push('no');
   }
-  return uniq([...exactBirthDateBuckets, ...extraBuckets]);
+  return uniq([...exactBirthDateBuckets, ...legacyAgeBuckets, ...extraBuckets]);
 };
 
 export const resolveAdditionalAccessSearchKeyBuckets = parsedRules => ({
