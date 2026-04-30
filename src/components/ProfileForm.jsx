@@ -92,6 +92,13 @@ const nestedIndentStyle = {
 };
 
 const ADDITIONAL_ACCESS_FIELD = 'additionalAccessRules';
+const getSearchKeyIndexes = payload => {
+  if (!payload || typeof payload !== 'object') return null;
+  if (payload.searchKey && typeof payload.searchKey === 'object') {
+    return payload.searchKey;
+  }
+  return payload;
+};
 const PHENOTYPE_FIELDS = [
   'eyeColor',
   'hairColor',
@@ -694,7 +701,8 @@ export const ProfileForm = ({
         return;
       }
 
-      if (!localSearchKeyPayload || typeof localSearchKeyPayload !== 'object') {
+      const searchKeyIndexes = getSearchKeyIndexes(localSearchKeyPayload);
+      if (!searchKeyIndexes) {
         setAvailableCardsCount(0);
         return;
       }
@@ -705,7 +713,7 @@ export const ProfileForm = ({
         parsedRuleGroups.forEach(parsedRules => {
           const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
           Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
-            const indexNode = localSearchKeyPayload?.[indexName];
+            const indexNode = searchKeyIndexes?.[indexName];
             if (!indexNode || typeof indexNode !== 'object') return;
             const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
             normalizedValues.forEach(value => {
@@ -800,7 +808,8 @@ export const ProfileForm = ({
       return null;
     }
 
-    if (!localSearchKeyPayload || typeof localSearchKeyPayload !== 'object') {
+    const searchKeyIndexes = getSearchKeyIndexes(localSearchKeyPayload);
+    if (!searchKeyIndexes) {
       toast.error('Спершу підвантажте локальний файл searchKey.');
       return null;
     }
@@ -813,7 +822,7 @@ export const ProfileForm = ({
       parsedRuleGroups.forEach(parsedRules => {
         const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
         Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
-          const indexNode = localSearchKeyPayload?.[indexName];
+          const indexNode = searchKeyIndexes?.[indexName];
           if (!indexNode || typeof indexNode !== 'object') return;
           const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
           normalizedValues.forEach(value => {
@@ -1133,7 +1142,8 @@ export const ProfileForm = ({
   };
 
   const resolveMatchedIdsFromSearchKeyPayload = useCallback((rulesText, payload) => {
-    if (!payload || typeof payload !== 'object') return null;
+    const searchKeyIndexes = getSearchKeyIndexes(payload);
+    if (!searchKeyIndexes) return null;
 
     const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
     if (!parsedRuleGroups.length) return { 1: [] };
@@ -1142,7 +1152,7 @@ export const ProfileForm = ({
     parsedRuleGroups.forEach(parsedRules => {
       const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
       Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
-        const indexNode = payload?.[indexName];
+        const indexNode = searchKeyIndexes?.[indexName];
         if (!indexNode || typeof indexNode !== 'object') return;
         const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
         normalizedValues.forEach(value => {
