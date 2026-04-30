@@ -704,29 +704,18 @@ export const ProfileForm = ({
         const matched = new Set();
         parsedRuleGroups.forEach(parsedRules => {
           const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
-          const perFilterSets = Object.entries(bucketMap || {}).reduce((acc, [indexName, values]) => {
+          Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
             const indexNode = localSearchKeyPayload?.[indexName];
-            if (!indexNode || typeof indexNode !== 'object') return acc;
+            if (!indexNode || typeof indexNode !== 'object') return;
             const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
-            if (!normalizedValues.length) return acc;
-            const idsForFilter = new Set();
             normalizedValues.forEach(value => {
               const bucket = indexNode?.[value];
               if (!bucket || typeof bucket !== 'object') return;
               Object.keys(bucket).forEach(userId => {
-                if (userId) idsForFilter.add(userId);
+                if (userId) matched.add(userId);
               });
             });
-            if (idsForFilter.size > 0) acc.push(idsForFilter);
-            return acc;
-          }, []);
-
-          if (!perFilterSets.length) return;
-
-          const groupIntersection = [...perFilterSets[0]].filter(userId =>
-            perFilterSets.every(set => set.has(userId))
-          );
-          groupIntersection.forEach(userId => matched.add(userId));
+          });
         });
         const userIds = [...matched];
         saveCachedAdditionalRulesPreview({ rawRules: effectiveRulesText, accessUserId, count: userIds.length, userIds });
@@ -823,29 +812,18 @@ export const ProfileForm = ({
       const matched = new Set();
       parsedRuleGroups.forEach(parsedRules => {
         const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
-        const perFilterSets = Object.entries(bucketMap || {}).reduce((acc, [indexName, values]) => {
+        Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
           const indexNode = localSearchKeyPayload?.[indexName];
-          if (!indexNode || typeof indexNode !== 'object') return acc;
+          if (!indexNode || typeof indexNode !== 'object') return;
           const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
-          if (!normalizedValues.length) return acc;
-          const idsForFilter = new Set();
           normalizedValues.forEach(value => {
             const bucket = indexNode?.[value];
             if (!bucket || typeof bucket !== 'object') return;
             Object.keys(bucket).forEach(userId => {
-              if (userId) idsForFilter.add(userId);
+              if (userId) matched.add(userId);
             });
           });
-          if (idsForFilter.size > 0) acc.push(idsForFilter);
-          return acc;
-        }, []);
-
-        if (!perFilterSets.length) return;
-
-        const groupIntersection = [...perFilterSets[0]].filter(userId =>
-          perFilterSets.every(set => set.has(userId))
-        );
-        groupIntersection.forEach(userId => matched.add(userId));
+        });
       });
       matchedByInputIndex[index + 1] = [...matched];
     }
