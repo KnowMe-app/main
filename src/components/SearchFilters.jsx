@@ -2,6 +2,7 @@ import React from 'react';
 import { FaFacebookF, FaInstagram, FaPhoneVolume, FaTelegramPlane, FaVk } from 'react-icons/fa';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
+import { FaXTwitter } from 'react-icons/fa6';
 import { CheckboxGroup } from './CheckboxGroup';
 import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 
@@ -252,6 +253,9 @@ export const SearchFilters = ({
           },
           { val: 'tiktok', label: <span style={contactIconStyle} title="TikTok"><SiTiktok /></span> },
           { val: 'email', label: <span style={contactIconStyle} title="Пошта"><MdEmail /></span> },
+          { val: 'twitter', label: <span style={contactIconStyle} title="Twitter / X"><FaXTwitter /></span> },
+          { val: 'line', label: <span style={contactIconStyle} title="Line">LINE</span> },
+          { val: 'otherLink', label: <span style={contactIconStyle} title="Website">www</span> },
         ],
       },
       {

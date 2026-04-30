@@ -808,6 +808,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         { key: 'tiktok', label: 'tiktok', supportsSearchId: true, supportsEqualTo: true },
         { key: 'linkedin', label: 'linkedin', supportsSearchId: true, supportsEqualTo: true },
         { key: 'youtube', label: 'youtube', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'twitter', label: 'twitter', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'line', label: 'line', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'otherLink', label: 'otherLink', supportsSearchId: true, supportsEqualTo: true },
         { key: 'other', label: 'other', supportsSearchId: true, supportsEqualTo: true },
         { key: 'myComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
         { key: 'name', label: 'name', supportsSearchId: true, supportsEqualTo: true },
@@ -830,7 +833,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     'partialUserId',
     ...SEARCH_KEY_OPTIONS.map(option => option.key),
   ];
-  const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'instagram', 'facebook', 'email', 'vk', 'tiktok', 'linkedin', 'youtube', 'other'];
+  const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'instagram', 'facebook', 'email', 'vk', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other'];
 
   const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
     (acc, option) => {
@@ -1066,7 +1069,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
-    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'vk', 'userId'];
+    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'vk', 'userId'];
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     const now = Date.now();

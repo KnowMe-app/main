@@ -34,7 +34,7 @@ const defaultsAdd = {
     other: true,
     no: true,
   },
-  contact: { vk: true, instagram: true, facebook: true, phone: true, telegram: true, telegram2: true, tiktok: true, email: true },
+  contact: { vk: true, instagram: true, facebook: true, phone: true, telegram: true, telegram2: true, tiktok: true, email: true, twitter: true, line: true, otherLink: true },
   userId: { vk: true, aa: true, ab: true, id: true, long: true, mid: true, other: true },
   fields: { le5: true, f6_10: true, f11_20: true, f20_plus: true },
   commentLength: {
