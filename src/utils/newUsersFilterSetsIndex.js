@@ -186,9 +186,25 @@ const getSearchKeyBucketUsers = (searchKeyFile, indexName, value) => {
   return new Set(Object.keys(bucketNode).filter(Boolean));
 };
 
-const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, ageKeysByUserId = {}, searchKeyFile = null }) => {
+const buildSanitizedBucketUsersMap = ({ searchKeyFile, indexName, values, allowedUserIds }) => {
+  const normalizedAllowedIds = new Set((Array.isArray(allowedUserIds) ? allowedUserIds : []).filter(Boolean));
+  if (!searchKeyFile || normalizedAllowedIds.size === 0) return {};
+
+  return (Array.isArray(values) ? values : []).reduce((acc, value) => {
+    const bucketUsers = getSearchKeyBucketUsers(searchKeyFile, indexName, value);
+    if (!(bucketUsers instanceof Set) || bucketUsers.size === 0) return acc;
+    const filtered = [...bucketUsers].filter(userId => normalizedAllowedIds.has(userId));
+    if (filtered.length) {
+      acc[value] = filtered;
+    }
+    return acc;
+  }, {});
+};
+
+const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyFile = null }) => {
   const normalizedRootPath = String(rootPath || '').trim();
   if (!normalizedRootPath) return {};
+  if (!searchKeyFile || typeof searchKeyFile !== 'object' || Array.isArray(searchKeyFile)) return {};
 
   const normalizedUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
   const bucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
@@ -198,19 +214,23 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, ageKeysByU
     if (!normalizedIndexName) return writes;
 
     if (normalizedIndexName === 'age') {
-      const allowedAgeValues = new Set(
+      const allowedAgeValues = [
         (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
           .map(value => normalizeAgeSearchKeyValue(value))
           .filter(Boolean)
-      );
-
-      normalizedUserIds.forEach(userId => {
-        const resolvedAgeValue = normalizeAgeSearchKeyValue(ageKeysByUserId?.[userId]);
-        const ageValue = resolvedAgeValue || (allowedAgeValues.has('no') ? 'no' : '');
-        if (!ageValue) return;
+      ];
+      const sanitized = buildSanitizedBucketUsersMap({
+        searchKeyFile,
+        indexName: normalizedIndexName,
+        values: allowedAgeValues,
+        allowedUserIds: normalizedUserIds,
+      });
+      Object.entries(sanitized).forEach(([ageValue, targetUserIds]) => {
         const path = `${normalizedRootPath}/${normalizedIndexName}/${ageValue}`;
-        if (!writes[path]) writes[path] = {};
-        writes[path][userId] = true;
+        writes[path] = targetUserIds.reduce((acc, userId) => {
+          acc[userId] = true;
+          return acc;
+        }, {});
       });
       return writes;
     }
@@ -224,19 +244,19 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, ageKeysByU
     ];
     if (!values.length) return writes;
 
-    values.forEach(value => {
+    const sanitized = buildSanitizedBucketUsersMap({
+      searchKeyFile,
+      indexName: normalizedIndexName,
+      values,
+      allowedUserIds: normalizedUserIds,
+    });
+    Object.entries(sanitized).forEach(([value, targetUserIds]) => {
       const path = `${normalizedRootPath}/${normalizedIndexName}/${value}`;
-      const sourceUsers = getSearchKeyBucketUsers(searchKeyFile, normalizedIndexName, value);
-      const targetUserIds = sourceUsers
-        ? normalizedUserIds.filter(userId => sourceUsers.has(userId))
-        : normalizedUserIds;
-      if (!targetUserIds.length) return;
       writes[path] = targetUserIds.reduce((acc, userId) => {
         acc[userId] = true;
         return acc;
       }, {});
     });
-
     return writes;
   }, {});
 };
@@ -330,6 +350,11 @@ export const buildNewUsersFilterSetIndex = async ({
 }) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   if (!normalizedAccessUserId) return null;
+  if (!searchKeyFile || typeof searchKeyFile !== 'object' || Array.isArray(searchKeyFile)) {
+    const error = new Error('Missing local searchKey file for additional access rule set indexing');
+    error.code = 'MISSING_SEARCHKEY_FILE';
+    throw error;
+  }
 
   const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
   const nextSetPayloads = ruleSetEntries
@@ -388,9 +413,6 @@ export const buildNewUsersFilterSetIndex = async ({
     await update(ref(database), writes);
   }
 
-  const allUserIds = [...new Set(nextSetPayloads.flatMap(item => Object.keys(item.userIds || {})).filter(Boolean))];
-  const ageKeysByUserId = await buildAgeKeysByUserIdFromSearchKey(allUserIds, searchKeyFile);
-
   for (const { setKey, userIds, parsedRuleGroups } of nextSetPayloads) {
     // eslint-disable-next-line no-await-in-loop
     await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`));
@@ -400,7 +422,6 @@ export const buildNewUsersFilterSetIndex = async ({
       rootPath,
       parsedRuleGroups,
       userIds: Object.keys(userIds || {}),
-      ageKeysByUserId,
       searchKeyFile,
     });
     debug.sets.push({

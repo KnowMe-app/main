@@ -846,6 +846,7 @@ export const ProfileForm = ({
             rawRules: '',
             accessUserId,
             matchedUserIdsBySetKey: {},
+            searchKeyFile: localSearchKeyPayload,
           });
           toast('searchKeySets очищено: additional access rules видалено.');
           Promise.resolve(handleSubmit(payload, overwrite, delCondition)).catch(error => {
@@ -879,6 +880,7 @@ export const ProfileForm = ({
           rawRules: rawRules !== undefined ? rawRules : '',
           accessUserId,
           matchedUserIdsBySetKey,
+          searchKeyFile: localSearchKeyPayload,
         });
         if (indexResult && Number(indexResult.writesCount || 0) === 0 && Number(indexResult?.setKeys?.length || 0) === 0) {
           toast('searchKeySets не оновлено: не знайдено валідних правил.');
@@ -892,6 +894,8 @@ export const ProfileForm = ({
         toast.error(
           `Немає прав на запис у searchKeySets.\nПеревірте Firebase Rules для цього користувача.\n${details}`
         );
+      } else if (code.includes('MISSING_SEARCHKEY_FILE')) {
+        toast.error('Спершу підвантажте локальний файл searchKey перед збереженням.');
       } else if (code.includes('MISSING_SEARCHKEY_INDEX')) {
         toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.');
       } else {
@@ -905,7 +909,7 @@ export const ProfileForm = ({
       const details = error?.message || String(error);
       toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
     });
-  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, handleSubmit, state?.userId]);
+  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, handleSubmit, localSearchKeyPayload, state?.userId]);
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
@@ -1032,6 +1036,7 @@ export const ProfileForm = ({
         rawRules,
         accessUserId,
         matchedUserIdsBySetKey,
+        searchKeyFile: localSearchKeyPayload,
       });
 
       const setsCount = Number(indexResult?.setKeys?.length || 0);
@@ -1082,6 +1087,8 @@ export const ProfileForm = ({
           `Помилка на етапі "${stage}": немає прав на запис у searchKeySets.\nПеревірте Firebase Rules для цього користувача.\n${details}`,
           { id: toastId }
         );
+      } else if (code.includes('MISSING_SEARCHKEY_FILE')) {
+        toast.error('Локальний файл searchKey не підвантажено. Індексація searchKeySets зупинена.', { id: toastId });
       } else if (code.includes('MISSING_SEARCHKEY_INDEX')) {
         toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.', { id: toastId });
       } else {
@@ -1091,7 +1098,7 @@ export const ProfileForm = ({
     } finally {
       setIsIndexingAdditionalRules(false);
     }
-  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, state?.userId]);
+  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, localSearchKeyPayload, state?.userId]);
 
   const applyAdditionalRulesWithMatchedIds = async (rulesText, matchedByInputIndex) => {
     if (!rulesText?.trim()) return;
