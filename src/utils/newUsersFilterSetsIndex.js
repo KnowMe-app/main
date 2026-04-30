@@ -214,11 +214,9 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
     if (!normalizedIndexName) return writes;
 
     if (normalizedIndexName === 'age') {
-      const allowedAgeValues = [
-        (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
-          .map(value => normalizeAgeSearchKeyValue(value))
-          .filter(Boolean)
-      ];
+      const allowedAgeValues = (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
+        .map(value => normalizeAgeSearchKeyValue(value))
+        .filter(Boolean);
       const sanitized = buildSanitizedBucketUsersMap({
         searchKeyFile,
         indexName: normalizedIndexName,
