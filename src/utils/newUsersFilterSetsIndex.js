@@ -142,17 +142,17 @@ const SEARCH_KEY_SET_BUILDERS = [
 ];
 
 
-const buildAgeKeysByUserIdFromSearchKey = async userIds => {
+const buildAgeKeysByUserIdFromSearchKey = async (userIds, searchKeyFile = null) => {
   const normalizedIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
   if (normalizedIds.length === 0) return {};
 
-  const agePayload = peekCachedSearchKeyPayload('searchKey/age');
-  const rootPayload = peekCachedSearchKeyPayload('searchKey');
+  const normalizedSearchKeyFile =
+    searchKeyFile && typeof searchKeyFile === 'object' && !Array.isArray(searchKeyFile)
+      ? searchKeyFile
+      : null;
   const ageIndex =
-    agePayload?.exists && agePayload.value && typeof agePayload.value === 'object'
-      ? agePayload.value
-      : rootPayload?.exists && rootPayload.value && typeof rootPayload.value?.age === 'object'
-      ? rootPayload.value.age
+    normalizedSearchKeyFile && typeof normalizedSearchKeyFile?.age === 'object'
+      ? normalizedSearchKeyFile.age
       : null;
 
   if (!ageIndex || typeof ageIndex !== 'object') return {};
@@ -174,7 +174,19 @@ const buildAgeKeysByUserIdFromSearchKey = async userIds => {
   return ageKeysByUserId;
 };
 
-const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, ageKeysByUserId = {} }) => {
+
+
+const getSearchKeyBucketUsers = (searchKeyFile, indexName, value) => {
+  const source = searchKeyFile && typeof searchKeyFile === 'object' && !Array.isArray(searchKeyFile) ? searchKeyFile : null;
+  if (!source) return null;
+  const indexNode = source?.[indexName];
+  if (!indexNode || typeof indexNode !== 'object') return null;
+  const bucketNode = indexNode?.[value];
+  if (!bucketNode || typeof bucketNode !== 'object') return null;
+  return new Set(Object.keys(bucketNode).filter(Boolean));
+};
+
+const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, ageKeysByUserId = {}, searchKeyFile = null }) => {
   const normalizedRootPath = String(rootPath || '').trim();
   if (!normalizedRootPath) return {};
 
@@ -214,7 +226,12 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, ageKeysByU
 
     values.forEach(value => {
       const path = `${normalizedRootPath}/${normalizedIndexName}/${value}`;
-      writes[path] = normalizedUserIds.reduce((acc, userId) => {
+      const sourceUsers = getSearchKeyBucketUsers(searchKeyFile, normalizedIndexName, value);
+      const targetUserIds = sourceUsers
+        ? normalizedUserIds.filter(userId => sourceUsers.has(userId))
+        : normalizedUserIds;
+      if (!targetUserIds.length) return;
+      writes[path] = targetUserIds.reduce((acc, userId) => {
         acc[userId] = true;
         return acc;
       }, {});
@@ -228,6 +245,7 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
   rawRules,
   accessUserId,
   matchedUserIdsBySetKey = null,
+  searchKeyFile = null,
 }) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   if (!normalizedAccessUserId) return null;
@@ -263,7 +281,7 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
   }
 
   const allUserIds = [...new Set(setPayloads.flatMap(item => item.userIds || []).filter(Boolean))];
-  const ageKeysByUserId = await buildAgeKeysByUserIdFromSearchKey(allUserIds);
+  const ageKeysByUserId = await buildAgeKeysByUserIdFromSearchKey(allUserIds, searchKeyFile);
 
   for (const setPayload of setPayloads) {
     // eslint-disable-next-line no-await-in-loop
@@ -282,6 +300,7 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
       parsedRuleGroups: setPayload.parsedRuleGroups,
       userIds: setPayload.userIds,
       ageKeysByUserId,
+      searchKeyFile,
     });
 
     // eslint-disable-next-line no-await-in-loop
@@ -307,6 +326,7 @@ export const buildNewUsersFilterSetIndex = async ({
   rawRules,
   accessUserId,
   matchedUserIdsBySetKey = null,
+  searchKeyFile = null,
 }) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   if (!normalizedAccessUserId) return null;
@@ -368,6 +388,9 @@ export const buildNewUsersFilterSetIndex = async ({
     await update(ref(database), writes);
   }
 
+  const allUserIds = [...new Set(nextSetPayloads.flatMap(item => Object.keys(item.userIds || {})).filter(Boolean))];
+  const ageKeysByUserId = await buildAgeKeysByUserIdFromSearchKey(allUserIds, searchKeyFile);
+
   for (const { setKey, userIds, parsedRuleGroups } of nextSetPayloads) {
     // eslint-disable-next-line no-await-in-loop
     await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`));
@@ -377,6 +400,8 @@ export const buildNewUsersFilterSetIndex = async ({
       rootPath,
       parsedRuleGroups,
       userIds: Object.keys(userIds || {}),
+      ageKeysByUserId,
+      searchKeyFile,
     });
     debug.sets.push({
       setKey,
