@@ -138,6 +138,14 @@ const HIDDEN_FOR_CL_PP_FIELDS = new Set([
   ...MEDICAL_LIFESTYLE_FIELDS,
 ]);
 const SEARCH_KEY_ROOT = 'searchKey';
+const normalizeSearchKeyPayload = payload => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const wrappedPayload = payload?.[SEARCH_KEY_ROOT];
+  if (wrappedPayload && typeof wrappedPayload === 'object' && !Array.isArray(wrappedPayload)) {
+    return wrappedPayload;
+  }
+  return payload;
+};
 const ADDITIONAL_RULE_LABELS = {
   age: 'Вік',
   csection: 'КС',
@@ -1155,7 +1163,8 @@ export const ProfileForm = ({
   };
 
   const resolveMatchedIdsFromSearchKeyPayload = useCallback((rulesText, payload) => {
-    if (!payload || typeof payload !== 'object') return null;
+    const normalizedPayload = normalizeSearchKeyPayload(payload);
+    if (!normalizedPayload) return null;
 
     const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
     if (!parsedRuleGroups.length) return { 1: [] };
@@ -1164,7 +1173,7 @@ export const ProfileForm = ({
     parsedRuleGroups.forEach(parsedRules => {
       const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
       Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
-        const indexNode = payload?.[indexName];
+        const indexNode = normalizedPayload?.[indexName];
         if (!indexNode || typeof indexNode !== 'object') return;
         const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
         normalizedValues.forEach(value => {
@@ -1245,8 +1254,9 @@ export const ProfileForm = ({
     try {
       const raw = await file.text();
       const parsed = JSON.parse(raw);
-      setLocalSearchKeyPayload(parsed);
-      const matchedByInputIndex = resolveMatchedIdsFromSearchKeyPayload(pendingRulesToApply, parsed);
+      const normalizedPayload = normalizeSearchKeyPayload(parsed);
+      setLocalSearchKeyPayload(normalizedPayload);
+      const matchedByInputIndex = resolveMatchedIdsFromSearchKeyPayload(pendingRulesToApply, normalizedPayload);
       if (!matchedByInputIndex) {
         toast.error('Некоректний файл searchKey.');
         return;
