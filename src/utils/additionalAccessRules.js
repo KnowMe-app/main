@@ -156,6 +156,7 @@ const ADDITIONAL_ACCESS_KEY_ALIASES = {
   age: 'age',
   blood: 'blood',
   кров: 'bloodGroup',
+  'групакрові': 'bloodGroup',
   bloodgroup: 'bloodGroup',
   rh: 'rh',
   'резус': 'rh',
@@ -732,6 +733,62 @@ const resolveBloodSearchKeyBuckets = parsedRules => {
   return uniq(buckets);
 };
 
+const resolveBloodBucketsFromGenericRules = parsedRules => {
+  const generic = parsedRules?.generic;
+  if (!generic || typeof generic !== 'object') return [];
+
+  const rhSet = generic.rh instanceof Set ? generic.rh : new Set();
+  const bloodGroupSet = generic.bloodGroup instanceof Set ? generic.bloodGroup : new Set();
+  if (rhSet.size === 0 && bloodGroupSet.size === 0) return [];
+
+  const normalizedRh = [...rhSet].map(item => String(item || '').trim().toLowerCase());
+  const normalizedGroups = [...bloodGroupSet].map(item => String(item || '').trim().toLowerCase());
+
+  const hasRhPlus = normalizedRh.includes('+');
+  const hasRhMinus = normalizedRh.includes('-');
+  const hasRhUnknown = normalizedRh.includes('?');
+  const hasRhNo = normalizedRh.includes('no');
+  const selectedGroups = normalizedGroups.filter(group => /^[1-4]$/.test(group));
+  const hasGroupUnknown = normalizedGroups.includes('?');
+  const hasGroupNo = normalizedGroups.includes('no');
+
+  const buckets = [];
+  const groupsForRh = selectedGroups.length ? selectedGroups : ALL_BLOOD_GROUPS;
+  if (hasRhPlus) {
+    groupsForRh.forEach(group => buckets.push(`${group}+`));
+    if (!selectedGroups.length || hasGroupUnknown) buckets.push('+');
+  }
+  if (hasRhMinus) {
+    groupsForRh.forEach(group => buckets.push(`${group}-`));
+    if (!selectedGroups.length || hasGroupUnknown) buckets.push('-');
+  }
+
+  if ((hasRhPlus || hasRhMinus) && hasGroupNo) {
+    buckets.push('no');
+  }
+
+  if (selectedGroups.length) {
+    const includeGroupOnly = rhSet.size === 0 || hasRhNo || hasRhUnknown;
+    if (includeGroupOnly) buckets.push(...selectedGroups);
+  }
+
+  if (hasGroupUnknown) {
+    if (hasRhPlus) buckets.push('+');
+    if (hasRhMinus) buckets.push('-');
+    if (hasRhUnknown || rhSet.size === 0) buckets.push('?');
+  }
+
+  if (hasRhUnknown && (selectedGroups.length === 0 || hasGroupUnknown)) {
+    buckets.push('?');
+  }
+
+  if (hasRhNo && (selectedGroups.length === 0 || hasGroupNo)) {
+    buckets.push('no');
+  }
+
+  return uniq(buckets);
+};
+
 const resolveMaritalStatusSearchKeyBuckets = parsedRules => {
   if (!parsedRules?.maritalStatus) return [];
 
@@ -806,7 +863,7 @@ const resolveAgeSearchKeyBuckets = parsedRules => {
 };
 
 export const resolveAdditionalAccessSearchKeyBuckets = parsedRules => ({
-  blood: resolveBloodSearchKeyBuckets(parsedRules),
+  blood: uniq([...resolveBloodSearchKeyBuckets(parsedRules), ...resolveBloodBucketsFromGenericRules(parsedRules)]),
   maritalStatus: resolveMaritalStatusSearchKeyBuckets(parsedRules),
   csection: resolveCsectionSearchKeyBuckets(parsedRules),
   age: resolveAgeSearchKeyBuckets(parsedRules),
