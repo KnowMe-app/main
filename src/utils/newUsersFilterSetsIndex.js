@@ -607,35 +607,59 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
 };
 
 const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
-  const bucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
-  const paths = Object.entries(bucketMap || {}).flatMap(([indexName, rawValues]) => {
-    const normalizedIndexName = normalizePathSegment(indexName);
-    if (!normalizedIndexName) return [];
+  const groups = Array.isArray(parsedRuleGroups) ? parsedRuleGroups : [parsedRuleGroups];
+  const matchedIds = new Set();
 
-    const values = [
-      ...new Set(
-        (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
-          .map(normalizePathSegment)
-          .filter(Boolean)
-      ),
-    ];
-    return values.map(value => `searchKey/${normalizedIndexName}/${value}`);
-  });
+  for (const parsedRules of groups) {
+    const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
+    const activeSources = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
+      const normalizedIndexName = normalizePathSegment(indexName);
+      if (!normalizedIndexName) return acc;
 
-  if (!paths.length) return [];
+      const values = [
+        ...new Set(
+          (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
+            .map(normalizePathSegment)
+            .filter(Boolean)
+        ),
+      ];
+      if (!values.length) return acc;
 
-  const snapshots = await Promise.all(
-    paths.map(path => Promise.resolve(peekCachedSearchKeyPayload(path)))
-  );
+      acc.push({ indexName: normalizedIndexName, values });
+      return acc;
+    }, []);
 
-  const ids = new Set();
-  snapshots.forEach(payload => {
-    if (!payload?.exists || !payload.value || typeof payload.value !== 'object') return;
-    Object.keys(payload.value).forEach(userId => {
-      if (userId) ids.add(userId);
-    });
-  });
-  return [...ids];
+    if (!activeSources.length) continue;
+
+    // eslint-disable-next-line no-await-in-loop
+    const sourceIdSets = await Promise.all(
+      activeSources.map(async ({ indexName, values }) => {
+        const paths = values.map(value => `searchKey/${indexName}/${value}`);
+        const payloads = await Promise.all(
+          paths.map(path => Promise.resolve(peekCachedSearchKeyPayload(path)))
+        );
+
+        const idsBySource = new Set();
+        payloads.forEach(payload => {
+          if (!payload?.exists || !payload.value || typeof payload.value !== 'object') return;
+          Object.keys(payload.value).forEach(userId => {
+            if (userId) idsBySource.add(userId);
+          });
+        });
+        return idsBySource;
+      })
+    );
+
+    const normalizedSets = sourceIdSets.filter(set => set instanceof Set);
+    if (!normalizedSets.length || normalizedSets.some(set => set.size === 0)) continue;
+
+    const [firstSet, ...restSets] = normalizedSets;
+    [...firstSet]
+      .filter(userId => restSets.every(set => set.has(userId)))
+      .forEach(userId => matchedIds.add(userId));
+  }
+
+  return [...matchedIds];
 };
 
 export const rebuildAllNewUsersFilterSetIndexes = async () => {
