@@ -794,7 +794,6 @@ const resolveAgeSearchKeyBuckets = parsedRules => {
     extraBuckets.push(
       ...Array.from({ length: 70 }, (_, idx) => idx + 42).flatMap(age => getBirthDateBucketsForAge(age))
     );
-    extraBuckets.push('42_plus', '43_plus');
   }
   if (parsedRules?.ageUnknown) {
     extraBuckets.push('?');
