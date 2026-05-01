@@ -679,9 +679,12 @@ export const ProfileForm = ({
   useEffect(() => {
     if (!showAdditionalRulesModal) return;
 
-    const effectiveRulesText = activeAdditionalRulesDraftText.trim()
-      ? activeAdditionalRulesDraftText
-      : previewAdditionalRulesText;
+    const builderRulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
+    const effectiveRulesText = builderRulesText.trim()
+      ? builderRulesText
+      : activeAdditionalRulesDraftText.trim()
+        ? activeAdditionalRulesDraftText
+        : previewAdditionalRulesText;
 
     let cancelled = false;
     const loadAvailableCards = async () => {
@@ -757,6 +760,7 @@ export const ProfileForm = ({
     showAdditionalRulesModal,
     state?.userId,
     localSearchKeyPayload,
+    additionalRuleBuilder,
   ]);
 
   useEffect(() => {
