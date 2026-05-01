@@ -2435,20 +2435,22 @@ ${entries.join('\n')}`;
 
             <AdditionalRuleActions>
               <button type="button" onClick={addEmptyAdditionalFilter}>+ Фільтр</button>
-              <button type="button" onClick={applyAdditionalRulesFromBuilder}>Застосувати</button>
+              <button type="button" onClick={applyAdditionalRulesFromBuilder}>
+                Оновити правила / підвантажити SearchKey
+              </button>
               <button
                 type="button"
                 onClick={indexAdditionalRulesFromBuilder}
                 disabled={isIndexingAdditionalRules}
               >
-                {isIndexingAdditionalRules ? 'Індексація...' : 'Індексувати'}
+                {isIndexingAdditionalRules ? 'Оновлення індексів...' : 'Оновити індекси'}
               </button>
               <button
                 type="button"
                 onClick={saveAdditionalRulesToSearchKeySets}
                 disabled={isIndexingAdditionalRules}
               >
-                {isIndexingAdditionalRules ? 'Збереження...' : 'Зберегти'}
+                {isIndexingAdditionalRules ? 'Збереження...' : 'Зберегти набір у searchKeySets'}
               </button>
             </AdditionalRuleActions>
 
@@ -2460,6 +2462,11 @@ ${entries.join('\n')}`;
               {availableCardsCount === null
                 ? 'Доступні карточки для активного набору: завантажте локальний файл searchKey'
                 : `Доступні карточки для активного набору (${availableCardsCount})`} {isLoadingAvailableCards ? '...завантаження' : ''}
+            </AdditionalCardsTitle>
+            <AdditionalCardsTitle>
+              {localSearchKeyPayload && typeof localSearchKeyPayload === 'object'
+                ? 'Локальний searchKey: файл підвантажено ✅'
+                : 'Локальний searchKey: файл ще не підвантажено'}
             </AdditionalCardsTitle>
           </AdditionalRulesModal>
         </AdditionalRulesOverlay>
@@ -2741,7 +2748,7 @@ const AdditionalRulesModal = styled.div`
   color: #e8f0fa;
   width: min(720px, 100vw);
   height: 100vh;
-  padding: 20px 16px 32px;
+  padding: 20px 16px calc(32px + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
