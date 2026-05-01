@@ -626,7 +626,7 @@ export const ProfileForm = ({
   const [activeAdditionalRuleInputIndex, setActiveAdditionalRuleInputIndex] = useState(0);
   const [additionalRuleBuilder, setAdditionalRuleBuilder] = useState([]);
   const [previewAdditionalRulesText, setPreviewAdditionalRulesText] = useState('');
-  const [availableCardsCount, setAvailableCardsCount] = useState(0);
+  const [availableCardsCount, setAvailableCardsCount] = useState(null);
   const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
   const [isIndexingAdditionalRules, setIsIndexingAdditionalRules] = useState(false);
   const [showSearchKeySourceModal, setShowSearchKeySourceModal] = useState(false);
@@ -657,7 +657,7 @@ export const ProfileForm = ({
   const activeAdditionalRulesDraftText = useMemo(() => {
     const activeInputValue = String(additionalRulesInputs[activeAdditionalRuleInputIndex] || '');
     if (!activeInputValue.trim()) return additionalRulesDraftText;
-    return additionalRulesDraftText || activeInputValue;
+    return activeInputValue;
   }, [activeAdditionalRuleInputIndex, additionalRulesDraftText, additionalRulesInputs]);
   useEffect(() => {
     if (state?.userId) return;
@@ -703,7 +703,7 @@ export const ProfileForm = ({
       }
 
       if (!localSearchKeyPayload || typeof localSearchKeyPayload !== 'object') {
-        setAvailableCardsCount(0);
+        setAvailableCardsCount(null);
         return;
       }
 
@@ -741,7 +741,7 @@ export const ProfileForm = ({
         if (!cancelled) setAvailableCardsCount(userIds.length);
       } catch (error) {
         console.error('Failed to build additional access preview', error);
-        if (!cancelled) setAvailableCardsCount(0);
+        if (!cancelled) setAvailableCardsCount(null);
       } finally {
         if (!cancelled) setIsLoadingAvailableCards(false);
       }
@@ -2457,7 +2457,9 @@ ${entries.join('\n')}`;
               onChange={handleCombinedAdditionalRulesChange}
             />
             <AdditionalCardsTitle>
-              Доступні карточки для активного набору ({availableCardsCount}) {isLoadingAvailableCards ? '...завантаження' : ''}
+              {availableCardsCount === null
+                ? 'Доступні карточки для активного набору: завантажте локальний файл searchKey'
+                : `Доступні карточки для активного набору (${availableCardsCount})`} {isLoadingAvailableCards ? '...завантаження' : ''}
             </AdditionalCardsTitle>
           </AdditionalRulesModal>
         </AdditionalRulesOverlay>
