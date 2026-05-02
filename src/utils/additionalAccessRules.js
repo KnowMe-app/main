@@ -789,6 +789,49 @@ const resolveBloodBucketsFromGenericRules = parsedRules => {
   return uniq(buckets);
 };
 
+
+const resolveImtSearchKeyBucketsFromGenericRules = parsedRules => {
+  const generic = parsedRules?.generic;
+  if (!generic || typeof generic !== 'object' || !(generic.imt instanceof Set)) return [];
+
+  const buckets = new Set();
+
+  const addBucketByNumber = value => {
+    if (!Number.isFinite(value) || value <= 0) return;
+    const rounded = Math.round(value);
+    if (rounded <= 28) buckets.add('le28');
+    else if (rounded <= 31) buckets.add('29_31');
+    else if (rounded <= 35) buckets.add('32_35');
+    else buckets.add('36_plus');
+  };
+
+  [...generic.imt].forEach(rawToken => {
+    const token = String(rawToken || '').trim().toLowerCase();
+    if (!token) return;
+
+    if (['le28', '29_31', '32_35', '36_plus', '?', 'no'].includes(token)) {
+      buckets.add(token);
+      return;
+    }
+
+    const rangeMatch = token.match(/^(\d+(?:[.,]\d+)?)\s*[_-]\s*(\d+(?:[.,]\d+)?)$/);
+    if (rangeMatch) {
+      const start = Number.parseFloat(rangeMatch[1].replace(',', '.'));
+      const end = Number.parseFloat(rangeMatch[2].replace(',', '.'));
+      if (Number.isFinite(start) && Number.isFinite(end)) {
+        addBucketByNumber(Math.min(start, end));
+        addBucketByNumber(Math.max(start, end));
+      }
+      return;
+    }
+
+    const numeric = Number.parseFloat(token.replace(',', '.'));
+    addBucketByNumber(numeric);
+  });
+
+  return uniq([...buckets]);
+};
+
 const resolveMaritalStatusSearchKeyBuckets = parsedRules => {
   if (!parsedRules?.maritalStatus) return [];
 
@@ -868,6 +911,7 @@ export const resolveAdditionalAccessSearchKeyBuckets = parsedRules => ({
   csection: resolveCsectionSearchKeyBuckets(parsedRules),
   age: resolveAgeSearchKeyBuckets(parsedRules),
   ...(parsedRules?.generic || {}),
+  imt: resolveImtSearchKeyBucketsFromGenericRules(parsedRules),
 });
 
 export const createAllFalseFilterGroup = keys =>
