@@ -832,6 +832,60 @@ const resolveImtSearchKeyBucketsFromGenericRules = parsedRules => {
   return uniq([...buckets]);
 };
 
+const resolveMetricSearchKeyBucketsFromGenericRules = (parsedRules, key) => {
+  const generic = parsedRules?.generic;
+  const rawSet = generic?.[key];
+  if (!generic || typeof generic !== 'object' || !(rawSet instanceof Set)) return [];
+
+  const buckets = new Set();
+
+  const addBucketByNumber = value => {
+    if (!Number.isFinite(value) || value <= 0) return;
+    if (key === 'height') {
+      if (value < 163) buckets.add('lt163');
+      else if (value <= 176) buckets.add('163_176');
+      else if (value <= 180) buckets.add('177_180');
+      else buckets.add('181_plus');
+      return;
+    }
+
+    if (value < 55) buckets.add('lt55');
+    else if (value <= 69) buckets.add('55_69');
+    else if (value <= 84) buckets.add('70_84');
+    else buckets.add('85_plus');
+  };
+
+  const allowed = key === 'height'
+    ? ['lt163', '163_176', '177_180', '181_plus', '?', 'no']
+    : ['lt55', '55_69', '70_84', '85_plus', '?', 'no'];
+
+  [...rawSet].forEach(rawToken => {
+    const token = String(rawToken || '').trim().toLowerCase();
+    if (!token) return;
+
+    if (allowed.includes(token)) {
+      buckets.add(token);
+      return;
+    }
+
+    const rangeMatch = token.match(/^(\d+(?:[.,]\d+)?)\s*[_-]\s*(\d+(?:[.,]\d+)?)$/);
+    if (rangeMatch) {
+      const start = Number.parseFloat(rangeMatch[1].replace(',', '.'));
+      const end = Number.parseFloat(rangeMatch[2].replace(',', '.'));
+      if (Number.isFinite(start) && Number.isFinite(end)) {
+        addBucketByNumber(Math.min(start, end));
+        addBucketByNumber(Math.max(start, end));
+      }
+      return;
+    }
+
+    const numeric = Number.parseFloat(token.replace(',', '.'));
+    addBucketByNumber(numeric);
+  });
+
+  return uniq([...buckets]);
+};
+
 const resolveMaritalStatusSearchKeyBuckets = parsedRules => {
   if (!parsedRules?.maritalStatus) return [];
 
@@ -912,6 +966,8 @@ export const resolveAdditionalAccessSearchKeyBuckets = parsedRules => ({
   age: resolveAgeSearchKeyBuckets(parsedRules),
   ...(parsedRules?.generic || {}),
   imt: resolveImtSearchKeyBucketsFromGenericRules(parsedRules),
+  height: resolveMetricSearchKeyBucketsFromGenericRules(parsedRules, 'height'),
+  weight: resolveMetricSearchKeyBucketsFromGenericRules(parsedRules, 'weight'),
 });
 
 export const createAllFalseFilterGroup = keys =>
