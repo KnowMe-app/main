@@ -886,6 +886,34 @@ const resolveMetricSearchKeyBucketsFromGenericRules = (parsedRules, key) => {
   return uniq([...buckets]);
 };
 
+
+const deriveMetricBucketsFromImtRules = parsedRules => {
+  const generic = parsedRules?.generic;
+  if (!generic || typeof generic !== 'object' || !(generic.imt instanceof Set)) {
+    return { height: [], weight: [] };
+  }
+
+  const imtTokens = [...generic.imt].map(token => String(token || '').trim().toLowerCase()).filter(Boolean);
+  if (!imtTokens.length) return { height: [], weight: [] };
+
+  const includeUnknown = imtTokens.includes('?');
+  const includeNo = imtTokens.includes('no');
+
+  const height = ['lt163', '163_176', '177_180', '181_plus'];
+  const weight = ['lt55', '55_69', '70_84', '85_plus'];
+
+  if (includeUnknown) {
+    height.push('?');
+    weight.push('?');
+  }
+  if (includeNo) {
+    height.push('no');
+    weight.push('no');
+  }
+
+  return { height: uniq(height), weight: uniq(weight) };
+};
+
 const resolveMaritalStatusSearchKeyBuckets = parsedRules => {
   if (!parsedRules?.maritalStatus) return [];
 
@@ -959,16 +987,22 @@ const resolveAgeSearchKeyBuckets = parsedRules => {
   return uniq([...exactBirthDateBuckets, ...legacyAgeBuckets, ...extraBuckets]);
 };
 
-export const resolveAdditionalAccessSearchKeyBuckets = parsedRules => ({
-  blood: uniq([...resolveBloodSearchKeyBuckets(parsedRules), ...resolveBloodBucketsFromGenericRules(parsedRules)]),
-  maritalStatus: resolveMaritalStatusSearchKeyBuckets(parsedRules),
-  csection: resolveCsectionSearchKeyBuckets(parsedRules),
-  age: resolveAgeSearchKeyBuckets(parsedRules),
-  ...(parsedRules?.generic || {}),
-  imt: resolveImtSearchKeyBucketsFromGenericRules(parsedRules),
-  height: resolveMetricSearchKeyBucketsFromGenericRules(parsedRules, 'height'),
-  weight: resolveMetricSearchKeyBucketsFromGenericRules(parsedRules, 'weight'),
-});
+export const resolveAdditionalAccessSearchKeyBuckets = parsedRules => {
+  const metricBucketsFromImt = deriveMetricBucketsFromImtRules(parsedRules);
+  const explicitHeightBuckets = resolveMetricSearchKeyBucketsFromGenericRules(parsedRules, 'height');
+  const explicitWeightBuckets = resolveMetricSearchKeyBucketsFromGenericRules(parsedRules, 'weight');
+
+  return {
+    blood: uniq([...resolveBloodSearchKeyBuckets(parsedRules), ...resolveBloodBucketsFromGenericRules(parsedRules)]),
+    maritalStatus: resolveMaritalStatusSearchKeyBuckets(parsedRules),
+    csection: resolveCsectionSearchKeyBuckets(parsedRules),
+    age: resolveAgeSearchKeyBuckets(parsedRules),
+    ...(parsedRules?.generic || {}),
+    imt: resolveImtSearchKeyBucketsFromGenericRules(parsedRules),
+    height: uniq([...explicitHeightBuckets, ...metricBucketsFromImt.height]),
+    weight: uniq([...explicitWeightBuckets, ...metricBucketsFromImt.weight]),
+  };
+};
 
 export const createAllFalseFilterGroup = keys =>
   keys.reduce((acc, key) => {
