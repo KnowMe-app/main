@@ -2715,20 +2715,24 @@ const normalizeMetricIndexValues = rawValue => {
   return new Set([hasNonEmptyValue ? '?' : 'no']);
 };
 
-const parseImtNumber = rawValue => {
-  const values = [...normalizeMetricIndexValues(rawValue)];
-  const firstNumericValue = values.find(value => value !== 'no' && value !== '?');
-  if (!firstNumericValue) return null;
-  const parsedValue = Number.parseFloat(String(firstNumericValue).replace(',', '.'));
-  if (!Number.isFinite(parsedValue) || parsedValue <= 0) return null;
-  return parsedValue;
+const normalizeImtBucketValue = value => {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return 'no';
+
+  const parsedValue = Number.parseFloat(normalized.replace(',', '.'));
+  if (!Number.isFinite(parsedValue) || parsedValue <= 0) return '?';
+
+  const roundedImt = Math.round(parsedValue);
+  if (roundedImt <= 28) return 'le28';
+  if (roundedImt <= 31) return '29_31';
+  if (roundedImt <= 35) return '32_35';
+  return '36_plus';
 };
 
 const normalizeImtSearchKeyIndexValue = data => {
   if (!data || typeof data !== 'object') return 'no';
 
-  const explicitImt = parseImtNumber(data.imt);
-  let imtValue = explicitImt;
+  let imtValue = null;
 
   if (!Number.isFinite(imtValue)) {
     const weight = Number.parseFloat(
@@ -2748,15 +2752,11 @@ const normalizeImtSearchKeyIndexValue = data => {
   }
 
   if (!Number.isFinite(imtValue) || imtValue <= 0) {
-    const hasAnyAnthropometry = String(data.imt ?? '').trim() || String(data.weight ?? '').trim() || String(data.height ?? '').trim();
+    const hasAnyAnthropometry = String(data.weight ?? '').trim() || String(data.height ?? '').trim();
     return hasAnyAnthropometry ? '?' : 'no';
   }
 
-  const roundedImt = Math.round(imtValue);
-  if (roundedImt <= 28) return 'le28';
-  if (roundedImt <= 31) return '29_31';
-  if (roundedImt <= 35) return '32_35';
-  return '36_plus';
+  return normalizeImtBucketValue(imtValue);
 };
 
 const getImtIndexSet = data => {
@@ -3810,10 +3810,12 @@ export const createImtHeightWeightSearchKeyIndexInCollection = async (collection
     batchIds =>
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
-        const imtValue = normalizeImtSearchKeyIndexValue(user);
+        const imtValues = getImtIndexSet(user);
         const heightValues = normalizeMetricIndexValues(user.height);
         const weightValues = normalizeMetricIndexValues(user.weight);
-        acc[`${searchKeyRoot}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
+        imtValues.forEach(imtValue => {
+          acc[`${searchKeyRoot}/${IMT_SEARCH_KEY_INDEX}/${imtValue}/${userId}`] = true;
+        });
         heightValues.forEach(heightValue => {
           acc[`${searchKeyRoot}/${HEIGHT_SEARCH_KEY_INDEX}/${heightValue}/${userId}`] = true;
         });
@@ -3992,7 +3994,7 @@ const resolveSearchKeyValuesByIndexType = (indexType, userId, userData) => {
   }
   if (indexType === SEARCH_KEY_INDEX_TYPES.imtHeightWeight) {
     return [
-      { indexName: IMT_SEARCH_KEY_INDEX, values: [normalizeImtSearchKeyIndexValue(userData)] },
+      { indexName: IMT_SEARCH_KEY_INDEX, values: [...getImtIndexSet(userData)] },
       { indexName: HEIGHT_SEARCH_KEY_INDEX, values: [...normalizeMetricIndexValues(userData?.height)] },
       { indexName: WEIGHT_SEARCH_KEY_INDEX, values: [...normalizeMetricIndexValues(userData?.weight)] },
     ];
