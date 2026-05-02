@@ -64,6 +64,34 @@ const mergeSearchKeyBuckets = parsedRuleGroups => {
   }, {});
 };
 
+const METRIC_BUCKETS_BY_INDEX = {
+  height: ['lt163', '163_176', '177_180', '181_plus', '?', 'no'],
+  weight: ['lt55', '55_69', '70_84', '85_plus', '?', 'no'],
+};
+
+const augmentBucketsWithImtMetricWrappers = bucketMap => {
+  if (!bucketMap || typeof bucketMap !== 'object') return bucketMap;
+
+  const imtBuckets = bucketMap.imt;
+  const hasImtBuckets =
+    (imtBuckets instanceof Set && imtBuckets.size > 0) ||
+    (Array.isArray(imtBuckets) && imtBuckets.length > 0);
+
+  if (!hasImtBuckets) return bucketMap;
+
+  const nextBucketMap = { ...bucketMap };
+  ['height', 'weight'].forEach(metricKey => {
+    const existing = nextBucketMap[metricKey];
+    const hasExisting =
+      (existing instanceof Set && existing.size > 0) ||
+      (Array.isArray(existing) && existing.length > 0);
+    if (hasExisting) return;
+    nextBucketMap[metricKey] = new Set(METRIC_BUCKETS_BY_INDEX[metricKey]);
+  });
+
+  return nextBucketMap;
+};
+
 const splitRawRulesToSetTexts = rawRules => {
   if (Array.isArray(rawRules)) {
     return rawRules.map(item => String(item || '').trim()).filter(Boolean);
@@ -224,7 +252,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
   if (!searchKeyFile || typeof searchKeyFile !== 'object' || Array.isArray(searchKeyFile)) return {};
 
   const normalizedUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
-  const bucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
+  const bucketMap = augmentBucketsWithImtMetricWrappers(mergeSearchKeyBuckets(parsedRuleGroups));
   const hasImtFilter = (() => {
     const imtValues = bucketMap?.imt;
     if (imtValues instanceof Set) return imtValues.size > 0;
@@ -504,7 +532,7 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
     .map(({ text: setText, inputIndex }) => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
       if (!parsedRuleGroups.length) return null;
-      const bucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
+      const bucketMap = augmentBucketsWithImtMetricWrappers(mergeSearchKeyBuckets(parsedRuleGroups));
       const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
         const normalizedIndexName = normalizePathSegment(indexName);
         if (!normalizedIndexName) return acc;
@@ -653,7 +681,7 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
   const matchedIds = new Set();
 
   for (const parsedRules of groups) {
-    const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
+    const bucketMap = augmentBucketsWithImtMetricWrappers(resolveAdditionalAccessSearchKeyBuckets(parsedRules));
     const activeSources = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
       const normalizedIndexName = normalizePathSegment(indexName);
       if (!normalizedIndexName) return acc;
