@@ -201,6 +201,23 @@ const buildSanitizedBucketUsersMap = ({ searchKeyFile, indexName, values, allowe
   }, {});
 };
 
+const buildMetricBucketsForAllowedUsers = ({ searchKeyFile, indexName, allowedUserIds }) => {
+  const normalizedAllowedIds = new Set((Array.isArray(allowedUserIds) ? allowedUserIds : []).filter(Boolean));
+  if (!searchKeyFile || normalizedAllowedIds.size === 0) return {};
+
+  const indexNode = searchKeyFile?.[indexName];
+  if (!indexNode || typeof indexNode !== 'object') return {};
+
+  return Object.entries(indexNode).reduce((acc, [bucketValue, usersMap]) => {
+    if (!usersMap || typeof usersMap !== 'object') return acc;
+    const filteredUserIds = Object.keys(usersMap).filter(userId => normalizedAllowedIds.has(userId));
+    if (filteredUserIds.length > 0) {
+      acc[bucketValue] = filteredUserIds;
+    }
+    return acc;
+  }, {});
+};
+
 const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyFile = null }) => {
   const normalizedRootPath = String(rootPath || '').trim();
   if (!normalizedRootPath) return {};
@@ -208,10 +225,16 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
 
   const normalizedUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
   const bucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
+  const hasImtFilter = (() => {
+    const imtValues = bucketMap?.imt;
+    if (imtValues instanceof Set) return imtValues.size > 0;
+    if (Array.isArray(imtValues)) return imtValues.length > 0;
+    return false;
+  })();
 
-  return Object.entries(bucketMap || {}).reduce((writes, [indexName, rawValues]) => {
+  const writes = Object.entries(bucketMap || {}).reduce((accWrites, [indexName, rawValues]) => {
     const normalizedIndexName = normalizePathSegment(indexName);
-    if (!normalizedIndexName) return writes;
+    if (!normalizedIndexName) return accWrites;
 
     if (normalizedIndexName === 'age') {
       const allowedAgeValues = (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
@@ -225,12 +248,12 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
       });
       Object.entries(sanitized).forEach(([ageValue, targetUserIds]) => {
         const path = `${normalizedRootPath}/${normalizedIndexName}/${ageValue}`;
-        writes[path] = targetUserIds.reduce((acc, userId) => {
-          acc[userId] = true;
-          return acc;
+        accWrites[path] = targetUserIds.reduce((result, userId) => {
+          result[userId] = true;
+          return result;
         }, {});
       });
-      return writes;
+      return accWrites;
     }
 
     const values = [
@@ -240,7 +263,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
           .filter(Boolean)
       ),
     ];
-    if (!values.length) return writes;
+    if (!values.length) return accWrites;
 
     const sanitized = buildSanitizedBucketUsersMap({
       searchKeyFile,
@@ -250,13 +273,32 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
     });
     Object.entries(sanitized).forEach(([value, targetUserIds]) => {
       const path = `${normalizedRootPath}/${normalizedIndexName}/${value}`;
-      writes[path] = targetUserIds.reduce((acc, userId) => {
-        acc[userId] = true;
-        return acc;
+      accWrites[path] = targetUserIds.reduce((result, userId) => {
+        result[userId] = true;
+        return result;
       }, {});
     });
-    return writes;
+    return accWrites;
   }, {});
+
+  if (hasImtFilter) {
+    ['height', 'weight'].forEach(metricIndexName => {
+      const metricBuckets = buildMetricBucketsForAllowedUsers({
+        searchKeyFile,
+        indexName: metricIndexName,
+        allowedUserIds: normalizedUserIds,
+      });
+      Object.entries(metricBuckets).forEach(([bucketValue, targetUserIds]) => {
+        const path = `${normalizedRootPath}/${metricIndexName}/${bucketValue}`;
+        writes[path] = targetUserIds.reduce((result, userId) => {
+          result[userId] = true;
+          return result;
+        }, {});
+      });
+    });
+  }
+
+  return writes;
 };
 
 export const buildSearchKeySetIndexFromMatchedUsers = async ({

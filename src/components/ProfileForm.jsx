@@ -223,6 +223,15 @@ const ADDITIONAL_RULE_OPTION_DESCRIPTIONS = {
   },
 };
 
+const normalizeAdditionalRuleKey = rawKey => {
+  const normalized = String(rawKey || '').trim().toLowerCase();
+  if (!normalized) return '';
+
+  if (normalized === 'імт' || normalized === 'imt' || normalized === 'bmi') return 'imt';
+  if (normalized === 'blood' || normalized === 'bloodgroup') return 'bloodGroup';
+  return normalized;
+};
+
 const parseAdditionalRulesTextToBuilder = raw => {
   const lines = String(raw || '')
     .split(/\r?\n/)
@@ -233,7 +242,7 @@ const parseAdditionalRulesTextToBuilder = raw => {
     .map(line => {
       const [keyRaw, ...rest] = line.split(':');
       if (!keyRaw || rest.length === 0) return null;
-      const key = keyRaw.trim();
+      const key = normalizeAdditionalRuleKey(keyRaw);
       const rawTokens = rest
         .join(':')
         .split(',')
@@ -263,14 +272,20 @@ const parseAdditionalRulesTextToBuilder = raw => {
       }
       return { key, allowedValues };
     })
-    .filter(Boolean);
+    .filter(rule => Boolean(rule?.key));
 };
 
 const buildAdditionalRulesTextFromBuilder = rules =>
   rules
-    .filter(rule => rule?.key && rule.allowedValues instanceof Set && rule.allowedValues.size > 0)
+    .filter(rule => {
+      const normalizedKey = normalizeAdditionalRuleKey(rule?.key);
+      if (!normalizedKey) return false;
+      if (!Object.prototype.hasOwnProperty.call(ADDITIONAL_ACCESS_FILTER_OPTIONS, normalizedKey)) return false;
+      return rule.allowedValues instanceof Set && rule.allowedValues.size > 0;
+    })
     .map(rule => {
-      if (rule.key !== 'age') return `${rule.key}: ${[...rule.allowedValues].join(',')}`;
+      const normalizedKey = normalizeAdditionalRuleKey(rule.key);
+      if (normalizedKey !== 'age') return `${normalizedKey}: ${[...rule.allowedValues].join(',')}`;
 
       const selected = rule.allowedValues;
       const numericAges = new Set();
@@ -285,7 +300,7 @@ const buildAdditionalRulesTextFromBuilder = rules =>
       if (selected.has('42_plus')) tokens.push('42_plus');
       if (selected.has('?')) tokens.push('?');
       if (selected.has('no')) tokens.push('no');
-      return `${rule.key}: ${tokens.join(',')}`;
+      return `${normalizedKey}: ${tokens.join(',')}`;
     })
     .join('\n');
 
