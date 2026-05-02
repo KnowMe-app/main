@@ -979,9 +979,12 @@ export const ProfileForm = ({
   };
 
   const handleAdditionalRuleKeyChange = (index, nextKey) => {
+    const defaultAllowedValues =
+      nextKey === 'imt' ? new Set(['le28', '29_31', '32_35', '36_plus']) : new Set();
+
     setAdditionalRuleBuilder(prev =>
       prev.map((rule, ruleIndex) =>
-        ruleIndex === index ? { key: nextKey, allowedValues: new Set() } : rule
+        ruleIndex === index ? { key: nextKey, allowedValues: new Set(defaultAllowedValues) } : rule
       )
     );
   };
