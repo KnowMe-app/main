@@ -805,8 +805,20 @@ const resolveImtSearchKeyBucketsFromGenericRules = parsedRules => {
     else buckets.add('36_plus');
   };
 
-  [...generic.imt].forEach(rawToken => {
+  const normalizeImtRuleToken = rawToken => {
     const token = String(rawToken || '').trim().toLowerCase();
+    if (!token) return '';
+    if (token === 'other') return '?';
+    if (token === 'empty') return 'no';
+    if (token === '<=28' || token === '<28') return 'le28';
+    if (token === '29-31') return '29_31';
+    if (token === '32-35') return '32_35';
+    if (token === '36+' || token === '>36' || token === '>=36') return '36_plus';
+    return token;
+  };
+
+  [...generic.imt].forEach(rawToken => {
+    const token = normalizeImtRuleToken(rawToken);
     if (!token) return;
 
     if (['le28', '29_31', '32_35', '36_plus', '?', 'no'].includes(token)) {
@@ -893,7 +905,14 @@ const deriveMetricBucketsFromImtRules = parsedRules => {
     return { height: [], weight: [] };
   }
 
-  const imtTokens = [...generic.imt].map(token => String(token || '').trim().toLowerCase()).filter(Boolean);
+  const imtTokens = [...generic.imt]
+    .map(token => String(token || '').trim().toLowerCase())
+    .map(token => {
+      if (token === 'other') return '?';
+      if (token === 'empty') return 'no';
+      return token;
+    })
+    .filter(Boolean);
   if (!imtTokens.length) return { height: [], weight: [] };
 
   const includeUnknown = imtTokens.includes('?');
