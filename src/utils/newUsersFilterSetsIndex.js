@@ -69,6 +69,27 @@ const METRIC_BUCKETS_BY_INDEX = {
   weight: ['lt55', '55_69', '70_84', '85_plus', '?', 'no'],
 };
 
+const IMT_BUCKET_RANGES = {
+  le28: { min: -Infinity, max: 28 },
+  '29_31': { min: 29, max: 31 },
+  '32_35': { min: 32, max: 35 },
+  '36_plus': { min: 36, max: Infinity },
+};
+
+const HEIGHT_BUCKET_RANGES = {
+  lt163: { min: 120, max: 162.99 },
+  '163_176': { min: 163, max: 176 },
+  '177_180': { min: 177, max: 180 },
+  '181_plus': { min: 181, max: 230 },
+};
+
+const WEIGHT_BUCKET_RANGES = {
+  lt55: { min: 30, max: 54.99 },
+  '55_69': { min: 55, max: 69 },
+  '70_84': { min: 70, max: 84 },
+  '85_plus': { min: 85, max: 220 },
+};
+
 const augmentBucketsWithImtMetricWrappers = bucketMap => {
   if (!bucketMap || typeof bucketMap !== 'object') return bucketMap;
 
@@ -253,16 +274,56 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
 
   const normalizedUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
   const bucketMap = augmentBucketsWithImtMetricWrappers(mergeSearchKeyBuckets(parsedRuleGroups));
-  const hasImtFilter = (() => {
-    const imtValues = bucketMap?.imt;
-    if (imtValues instanceof Set) return imtValues.size > 0;
-    if (Array.isArray(imtValues)) return imtValues.length > 0;
-    return false;
-  })();
+  const imtValuesRaw = bucketMap?.imt;
+  const imtValues = [
+    ...new Set((Array.isArray(imtValuesRaw) ? imtValuesRaw : [...(imtValuesRaw || [])]).map(normalizePathSegment)),
+  ];
+  const hasImtFilter = imtValues.length > 0;
+
+  const filterUserIdsByImtBuckets = candidateUserIds => {
+    if (!hasImtFilter) return [...candidateUserIds];
+    const includeUnknown = imtValues.includes('?');
+    const includeNo = imtValues.includes('no');
+    const ranges = imtValues.map(token => IMT_BUCKET_RANGES[token]).filter(Boolean);
+
+    const heightIndex = searchKeyFile?.height && typeof searchKeyFile.height === 'object' ? searchKeyFile.height : {};
+    const weightIndex = searchKeyFile?.weight && typeof searchKeyFile.weight === 'object' ? searchKeyFile.weight : {};
+    const heightByUserId = {};
+    const weightByUserId = {};
+    Object.entries(heightIndex).forEach(([bucket, usersMap]) => {
+      if (!usersMap || typeof usersMap !== 'object') return;
+      Object.keys(usersMap).forEach(userId => {
+        if (userId) heightByUserId[userId] = bucket;
+      });
+    });
+    Object.entries(weightIndex).forEach(([bucket, usersMap]) => {
+      if (!usersMap || typeof usersMap !== 'object') return;
+      Object.keys(usersMap).forEach(userId => {
+        if (userId) weightByUserId[userId] = bucket;
+      });
+    });
+
+    return [...candidateUserIds].filter(userId => {
+      const h = heightByUserId[userId];
+      const w = weightByUserId[userId];
+      if (!h || !w) return false;
+      if (includeUnknown && (h === '?' || w === '?')) return true;
+      if (includeNo && (h === 'no' || w === 'no')) return true;
+      const hr = HEIGHT_BUCKET_RANGES[h];
+      const wr = WEIGHT_BUCKET_RANGES[w];
+      if (!hr || !wr || !ranges.length) return false;
+      const minBmi = wr.min / ((hr.max / 100) ** 2);
+      const maxBmi = wr.max / ((hr.min / 100) ** 2);
+      return ranges.some(range => !(maxBmi < range.min || minBmi > range.max));
+    });
+  };
+
+  const imtAllowedUserIds = hasImtFilter ? filterUserIdsByImtBuckets(normalizedUserIds) : normalizedUserIds;
 
   const writes = Object.entries(bucketMap || {}).reduce((accWrites, [indexName, rawValues]) => {
     const normalizedIndexName = normalizePathSegment(indexName);
     if (!normalizedIndexName) return accWrites;
+    if (normalizedIndexName === 'imt') return accWrites;
 
     if (normalizedIndexName === 'age') {
       const allowedAgeValues = (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
@@ -314,7 +375,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
       const metricBuckets = buildMetricBucketsForAllowedUsers({
         searchKeyFile,
         indexName: metricIndexName,
-        allowedUserIds: normalizedUserIds,
+        allowedUserIds: imtAllowedUserIds,
       });
       Object.entries(metricBuckets).forEach(([bucketValue, targetUserIds]) => {
         const path = `${normalizedRootPath}/${metricIndexName}/${bucketValue}`;
@@ -536,6 +597,7 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
       const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
         const normalizedIndexName = normalizePathSegment(indexName);
         if (!normalizedIndexName) return acc;
+        if (normalizedIndexName === 'imt') return acc;
         const values = [
           ...new Set(
             (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
@@ -685,6 +747,7 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
     const activeSources = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
       const normalizedIndexName = normalizePathSegment(indexName);
       if (!normalizedIndexName) return acc;
+      if (normalizedIndexName === 'imt') return acc;
 
       const values = [
         ...new Set(
