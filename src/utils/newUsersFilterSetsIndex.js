@@ -83,6 +83,13 @@ const WEIGHT_BUCKET_RANGES = {
   '85_plus': { min: 85, max: 220 },
 };
 
+const IMT_BUCKET_RANGES = {
+  le28: { min: -Infinity, max: 28 },
+  '29_31': { min: 29, max: 31 },
+  '32_35': { min: 32, max: 35 },
+  '36_plus': { min: 36, max: Infinity },
+};
+
 const collectMetricBucketsByUserId = searchKeyFile => {
   const heightIndex = searchKeyFile?.height && typeof searchKeyFile.height === 'object' ? searchKeyFile.height : {};
   const weightIndex = searchKeyFile?.weight && typeof searchKeyFile.weight === 'object' ? searchKeyFile.weight : {};
@@ -106,22 +113,18 @@ const collectMetricBucketsByUserId = searchKeyFile => {
   return { heightByUserId, weightByUserId };
 };
 
-const resolveImtBucketFromMetricBuckets = (heightBucket, weightBucket) => {
-  if (!heightBucket || !weightBucket) return null;
-  if (heightBucket === 'no' || weightBucket === 'no') return 'no';
-  if (heightBucket === '?' || weightBucket === '?') return '?';
+const resolveImtBucketsFromMetricBuckets = (heightBucket, weightBucket) => {
+  if (!heightBucket || !weightBucket) return [];
+  if (heightBucket === 'no' || weightBucket === 'no') return ['no'];
+  if (heightBucket === '?' || weightBucket === '?') return ['?'];
   const hr = HEIGHT_BUCKET_RANGES[heightBucket];
   const wr = WEIGHT_BUCKET_RANGES[weightBucket];
-  if (!hr || !wr) return '?';
-
-  const representativeHeightM = ((hr.min + hr.max) / 2) / 100;
-  const representativeWeight = (wr.min + wr.max) / 2;
-  const bmi = representativeWeight / representativeHeightM ** 2;
-
-  if (bmi <= 28) return 'le28';
-  if (bmi <= 31) return '29_31';
-  if (bmi <= 35) return '32_35';
-  return '36_plus';
+  if (!hr || !wr) return ['?'];
+  const minBmi = wr.min / ((hr.max / 100) ** 2);
+  const maxBmi = wr.max / ((hr.min / 100) ** 2);
+  return Object.entries(IMT_BUCKET_RANGES)
+    .filter(([, range]) => !(maxBmi < range.min || minBmi > range.max))
+    .map(([bucket]) => bucket);
 };
 
 const augmentBucketsWithImtMetricWrappers = bucketMap => {
@@ -318,9 +321,8 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
     const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(searchKeyFile);
 
     return [...candidateUserIds].filter(userId => {
-      const imtBucket = resolveImtBucketFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
-      if (!imtBucket) return false;
-      return imtValues.includes(imtBucket);
+      const imtBuckets = resolveImtBucketsFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
+      return imtBuckets.some(bucket => imtValues.includes(bucket));
     });
   };
 
@@ -827,8 +829,8 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
       };
       const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(metricSearchKeyFile);
       groupMatchedIds = groupMatchedIds.filter(userId => {
-        const imtBucket = resolveImtBucketFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
-        return Boolean(imtBucket && imtValues.includes(imtBucket));
+        const imtBuckets = resolveImtBucketsFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
+        return imtBuckets.some(bucket => imtValues.includes(bucket));
       });
     }
 
