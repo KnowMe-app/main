@@ -69,13 +69,6 @@ const METRIC_BUCKETS_BY_INDEX = {
   weight: ['lt55', '55_69', '70_84', '85_plus', '?', 'no'],
 };
 
-const IMT_BUCKET_RANGES = {
-  le28: { min: -Infinity, max: 28 },
-  '29_31': { min: 29, max: 31 },
-  '32_35': { min: 32, max: 35 },
-  '36_plus': { min: 36, max: Infinity },
-};
-
 const HEIGHT_BUCKET_RANGES = {
   lt163: { min: 120, max: 162.99 },
   '163_176': { min: 163, max: 176 },
@@ -88,6 +81,47 @@ const WEIGHT_BUCKET_RANGES = {
   '55_69': { min: 55, max: 69 },
   '70_84': { min: 70, max: 84 },
   '85_plus': { min: 85, max: 220 },
+};
+
+const collectMetricBucketsByUserId = searchKeyFile => {
+  const heightIndex = searchKeyFile?.height && typeof searchKeyFile.height === 'object' ? searchKeyFile.height : {};
+  const weightIndex = searchKeyFile?.weight && typeof searchKeyFile.weight === 'object' ? searchKeyFile.weight : {};
+  const heightByUserId = {};
+  const weightByUserId = {};
+
+  Object.entries(heightIndex).forEach(([bucket, usersMap]) => {
+    if (!usersMap || typeof usersMap !== 'object') return;
+    Object.keys(usersMap).forEach(userId => {
+      if (userId && !heightByUserId[userId]) heightByUserId[userId] = bucket;
+    });
+  });
+
+  Object.entries(weightIndex).forEach(([bucket, usersMap]) => {
+    if (!usersMap || typeof usersMap !== 'object') return;
+    Object.keys(usersMap).forEach(userId => {
+      if (userId && !weightByUserId[userId]) weightByUserId[userId] = bucket;
+    });
+  });
+
+  return { heightByUserId, weightByUserId };
+};
+
+const resolveImtBucketFromMetricBuckets = (heightBucket, weightBucket) => {
+  if (!heightBucket || !weightBucket) return null;
+  if (heightBucket === 'no' || weightBucket === 'no') return 'no';
+  if (heightBucket === '?' || weightBucket === '?') return '?';
+  const hr = HEIGHT_BUCKET_RANGES[heightBucket];
+  const wr = WEIGHT_BUCKET_RANGES[weightBucket];
+  if (!hr || !wr) return '?';
+
+  const representativeHeightM = ((hr.min + hr.max) / 2) / 100;
+  const representativeWeight = (wr.min + wr.max) / 2;
+  const bmi = representativeWeight / representativeHeightM ** 2;
+
+  if (bmi <= 28) return 'le28';
+  if (bmi <= 31) return '29_31';
+  if (bmi <= 35) return '32_35';
+  return '36_plus';
 };
 
 const augmentBucketsWithImtMetricWrappers = bucketMap => {
@@ -279,55 +313,14 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
     ...new Set((Array.isArray(imtValuesRaw) ? imtValuesRaw : [...(imtValuesRaw || [])]).map(normalizePathSegment)),
   ];
   const hasImtFilter = imtValues.length > 0;
-  const deriveImtBucketsByMetricBuckets = (heightBucket, weightBucket) => {
-    if (!heightBucket || !weightBucket) return [];
-    if (heightBucket === 'no' || weightBucket === 'no') return ['no'];
-    if (heightBucket === '?' || weightBucket === '?') return ['?'];
-    const hr = HEIGHT_BUCKET_RANGES[heightBucket];
-    const wr = WEIGHT_BUCKET_RANGES[weightBucket];
-    if (!hr || !wr) return ['?'];
-    const minBmi = wr.min / ((hr.max / 100) ** 2);
-    const maxBmi = wr.max / ((hr.min / 100) ** 2);
-    return Object.entries(IMT_BUCKET_RANGES)
-      .filter(([, range]) => !(maxBmi < range.min || minBmi > range.max))
-      .map(([bucket]) => bucket);
-  };
-
   const filterUserIdsByImtBuckets = candidateUserIds => {
     if (!hasImtFilter) return [...candidateUserIds];
-    const includeUnknown = imtValues.includes('?');
-    const includeNo = imtValues.includes('no');
-    const ranges = imtValues.map(token => IMT_BUCKET_RANGES[token]).filter(Boolean);
-
-    const heightIndex = searchKeyFile?.height && typeof searchKeyFile.height === 'object' ? searchKeyFile.height : {};
-    const weightIndex = searchKeyFile?.weight && typeof searchKeyFile.weight === 'object' ? searchKeyFile.weight : {};
-    const heightByUserId = {};
-    const weightByUserId = {};
-    Object.entries(heightIndex).forEach(([bucket, usersMap]) => {
-      if (!usersMap || typeof usersMap !== 'object') return;
-      Object.keys(usersMap).forEach(userId => {
-        if (userId) heightByUserId[userId] = bucket;
-      });
-    });
-    Object.entries(weightIndex).forEach(([bucket, usersMap]) => {
-      if (!usersMap || typeof usersMap !== 'object') return;
-      Object.keys(usersMap).forEach(userId => {
-        if (userId) weightByUserId[userId] = bucket;
-      });
-    });
+    const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(searchKeyFile);
 
     return [...candidateUserIds].filter(userId => {
-      const h = heightByUserId[userId];
-      const w = weightByUserId[userId];
-      if (!h || !w) return false;
-      if (includeUnknown && (h === '?' || w === '?')) return true;
-      if (includeNo && (h === 'no' || w === 'no')) return true;
-      const hr = HEIGHT_BUCKET_RANGES[h];
-      const wr = WEIGHT_BUCKET_RANGES[w];
-      if (!hr || !wr || !ranges.length) return false;
-      const minBmi = wr.min / ((hr.max / 100) ** 2);
-      const maxBmi = wr.max / ((hr.min / 100) ** 2);
-      return ranges.some(range => !(maxBmi < range.min || minBmi > range.max));
+      const imtBucket = resolveImtBucketFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
+      if (!imtBucket) return false;
+      return imtValues.includes(imtBucket);
     });
   };
 
@@ -384,37 +377,6 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
   }, {});
 
   if (hasImtFilter) {
-    const heightIndex = searchKeyFile?.height && typeof searchKeyFile.height === 'object' ? searchKeyFile.height : {};
-    const weightIndex = searchKeyFile?.weight && typeof searchKeyFile.weight === 'object' ? searchKeyFile.weight : {};
-    const heightByUserId = {};
-    const weightByUserId = {};
-    Object.entries(heightIndex).forEach(([bucket, usersMap]) => {
-      if (!usersMap || typeof usersMap !== 'object') return;
-      Object.keys(usersMap).forEach(userId => {
-        if (userId) heightByUserId[userId] = bucket;
-      });
-    });
-    Object.entries(weightIndex).forEach(([bucket, usersMap]) => {
-      if (!usersMap || typeof usersMap !== 'object') return;
-      Object.keys(usersMap).forEach(userId => {
-        if (userId) weightByUserId[userId] = bucket;
-      });
-    });
-
-    const imtWritesByBucket = {};
-    imtAllowedUserIds.forEach(userId => {
-      const buckets = deriveImtBucketsByMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
-      if (!buckets.length) return;
-      buckets.forEach(bucket => {
-        if (!imtValues.includes(bucket)) return;
-        if (!imtWritesByBucket[bucket]) imtWritesByBucket[bucket] = {};
-        imtWritesByBucket[bucket][userId] = true;
-      });
-    });
-    Object.entries(imtWritesByBucket).forEach(([bucket, usersMap]) => {
-      writes[`${normalizedRootPath}/imt/${bucket}`] = usersMap;
-    });
-
     ['height', 'weight'].forEach(metricIndexName => {
       const metricBuckets = buildMetricBucketsForAllowedUsers({
         searchKeyFile,
@@ -575,6 +537,7 @@ export const buildNewUsersFilterSetIndex = async ({
   const debug = {
     removedSetKeys: [],
     sets: [],
+    backendRequests: [],
   };
   existingSetKeys.forEach(setKey => {
     if (!nextSetKeys.has(setKey)) {
@@ -583,11 +546,21 @@ export const buildNewUsersFilterSetIndex = async ({
     }
   });
   if (Object.keys(writes).length > 0) {
+    debug.backendRequests.push({
+      type: 'update',
+      path: '/',
+      payload: { ...writes },
+    });
     await update(ref(database), writes);
   }
 
   for (const { setKey, userIds, parsedRuleGroups } of nextSetPayloads) {
     // eslint-disable-next-line no-await-in-loop
+    debug.backendRequests.push({
+      type: 'remove',
+      path: `${SEARCH_KEY_SETS_ROOT}/${setKey}`,
+      payload: null,
+    });
     await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`));
 
     const rootPath = `${SEARCH_KEY_SETS_ROOT}/${setKey}`;
@@ -607,6 +580,11 @@ export const buildNewUsersFilterSetIndex = async ({
 
     if (Object.keys(ruleBucketWrites).length) {
       bucketWritesCount += Object.keys(ruleBucketWrites).length;
+      debug.backendRequests.push({
+        type: 'update',
+        path: '/',
+        payload: { ...ruleBucketWrites },
+      });
       // eslint-disable-next-line no-await-in-loop
       await update(ref(database), ruleBucketWrites);
     }
@@ -788,6 +766,11 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
 
   for (const parsedRules of groups) {
     const bucketMap = augmentBucketsWithImtMetricWrappers(resolveAdditionalAccessSearchKeyBuckets(parsedRules));
+    const imtValuesRaw = bucketMap?.imt;
+    const imtValues = [
+      ...new Set((Array.isArray(imtValuesRaw) ? imtValuesRaw : [...(imtValuesRaw || [])]).map(normalizePathSegment)),
+    ];
+    const hasImtFilter = imtValues.length > 0;
     const activeSources = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
       const normalizedIndexName = normalizePathSegment(indexName);
       if (!normalizedIndexName) return acc;
@@ -831,9 +814,25 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
     if (!normalizedSets.length || normalizedSets.some(set => set.size === 0)) continue;
 
     const [firstSet, ...restSets] = normalizedSets;
-    [...firstSet]
-      .filter(userId => restSets.every(set => set.has(userId)))
-      .forEach(userId => matchedIds.add(userId));
+    let groupMatchedIds = [...firstSet].filter(userId => restSets.every(set => set.has(userId)));
+
+    if (hasImtFilter) {
+      const [heightPayload, weightPayload] = await Promise.all([
+        Promise.resolve(peekCachedSearchKeyPayload('searchKey/height')),
+        Promise.resolve(peekCachedSearchKeyPayload('searchKey/weight')),
+      ]);
+      const metricSearchKeyFile = {
+        height: heightPayload?.exists && typeof heightPayload?.value === 'object' ? heightPayload.value : {},
+        weight: weightPayload?.exists && typeof weightPayload?.value === 'object' ? weightPayload.value : {},
+      };
+      const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(metricSearchKeyFile);
+      groupMatchedIds = groupMatchedIds.filter(userId => {
+        const imtBucket = resolveImtBucketFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
+        return Boolean(imtBucket && imtValues.includes(imtBucket));
+      });
+    }
+
+    groupMatchedIds.forEach(userId => matchedIds.add(userId));
   }
 
   return [...matchedIds];

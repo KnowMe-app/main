@@ -1095,6 +1095,12 @@ export const ProfileForm = ({
         matchedUserIdsBySetKey,
         searchKeyFile: localSearchKeyPayload,
       });
+      downloadSearchKeySetsWritePreview({
+        accessUserId,
+        rawRules,
+        matchedUserIdsBySetKey,
+        indexResult,
+      });
 
       const setsCount = Number(indexResult?.setKeys?.length || 0);
       const matchedCount = Number(indexResult?.userIds?.length || 0);
@@ -1238,6 +1244,26 @@ export const ProfileForm = ({
       return false;
     }
   }, []);
+
+  function downloadSearchKeySetsWritePreview({ accessUserId, rawRules, matchedUserIdsBySetKey, indexResult }) {
+    try {
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      const payload = {
+        backendRequests: Array.isArray(indexResult?.debug?.backendRequests) ? indexResult.debug.backendRequests : [],
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `searchKeySets-write-preview-${accessUserId || 'unknown'}-${stamp}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.warn('Failed to auto-download searchKeySets write preview', error);
+    }
+  }
 
   const applyAdditionalRulesFromBuilder = async () => {
     const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
