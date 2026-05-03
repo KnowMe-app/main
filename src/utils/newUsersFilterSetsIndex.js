@@ -829,7 +829,7 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
     );
 
     const normalizedSets = sourceIdSets.filter(set => set instanceof Set);
-    if (normalizedSets.some(set => set.size === 0)) continue;
+    if (!hasImtFilter && normalizedSets.some(set => set.size === 0)) continue;
 
     let groupMatchedIds = [];
     if (normalizedSets.length) {
@@ -847,7 +847,7 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
         weight: weightPayload?.exists && typeof weightPayload?.value === 'object' ? weightPayload.value : {},
       };
       const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(metricSearchKeyFile);
-      if (!groupMatchedIds.length && !activeSources.length) {
+      if (!groupMatchedIds.length) {
         const metricUserIds = new Set([
           ...Object.keys(heightByUserId || {}),
           ...Object.keys(weightByUserId || {}),

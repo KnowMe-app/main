@@ -808,6 +808,8 @@ const resolveImtSearchKeyBucketsFromGenericRules = parsedRules => {
   const normalizeImtRuleToken = rawToken => {
     const token = String(rawToken || '').trim().toLowerCase();
     if (!token) return '';
+    // Часта опечатка: "1e28" (цифра 1) замість "le28" (літера l)
+    if (token === '1e28') return 'le28';
     if (token === 'other') return '?';
     if (token === 'empty') return 'no';
     if (token === '<=28' || token === '<28') return 'le28';
