@@ -316,6 +316,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
     ...new Set((Array.isArray(imtValuesRaw) ? imtValuesRaw : [...(imtValuesRaw || [])]).map(normalizePathSegment)),
   ];
   const hasImtFilter = imtValues.length > 0;
+
   const filterUserIdsByImtBuckets = candidateUserIds => {
     if (!hasImtFilter) return [...candidateUserIds];
     const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(searchKeyFile);
