@@ -327,7 +327,22 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
     });
   };
 
-  const imtAllowedUserIds = hasImtFilter ? filterUserIdsByImtBuckets(normalizedUserIds) : normalizedUserIds;
+  const resolveImtCandidateUserIds = () => {
+    if (!hasImtFilter) return normalizedUserIds;
+    if (normalizedUserIds.length > 0) return normalizedUserIds;
+
+    const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(searchKeyFile);
+    return [
+      ...new Set([
+        ...Object.keys(heightByUserId || {}),
+        ...Object.keys(weightByUserId || {}),
+      ]),
+    ];
+  };
+
+  const imtCandidateUserIds = resolveImtCandidateUserIds();
+  const allowedUserIdsForWrites = hasImtFilter ? imtCandidateUserIds : normalizedUserIds;
+  const imtAllowedUserIds = hasImtFilter ? filterUserIdsByImtBuckets(imtCandidateUserIds) : normalizedUserIds;
 
   const writes = Object.entries(bucketMap || {}).reduce((accWrites, [indexName, rawValues]) => {
     const normalizedIndexName = normalizePathSegment(indexName);
@@ -342,7 +357,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
         searchKeyFile,
         indexName: normalizedIndexName,
         values: allowedAgeValues,
-        allowedUserIds: normalizedUserIds,
+        allowedUserIds: allowedUserIdsForWrites,
       });
       Object.entries(sanitized).forEach(([ageValue, targetUserIds]) => {
         const path = `${normalizedRootPath}/${normalizedIndexName}/${ageValue}`;
@@ -367,7 +382,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
       searchKeyFile,
       indexName: normalizedIndexName,
       values,
-      allowedUserIds: normalizedUserIds,
+      allowedUserIds: allowedUserIdsForWrites,
     });
     Object.entries(sanitized).forEach(([value, targetUserIds]) => {
       const path = `${normalizedRootPath}/${normalizedIndexName}/${value}`;
