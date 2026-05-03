@@ -719,6 +719,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     searchKeyUsersAll: false,
     searchKeySetReindex: false,
     searchLocalIdAndKey: false,
+    searchLocalImtHeightWeight: false,
   };
   const defaultSelectedSearchKeyIndexes = SEARCH_KEY_INDEX_OPTIONS.reduce((acc, option) => {
     acc[option.key] = true;
@@ -3525,6 +3526,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       !selectedIndexJobs.searchKeyUsersAll &&
       !selectedIndexJobs.searchKeySetReindex &&
       !selectedIndexJobs.searchLocalIdAndKey &&
+      !selectedIndexJobs.searchLocalImtHeightWeight &&
       !selectedIndexTypes.length
     ) {
       toast.error('Оберіть хоча б один індекс для запуску');
@@ -3552,6 +3554,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       if (selectedIndexJobs.searchLocalIdAndKey) {
         openLocalIndexModal(selectedIndexTypes.length ? selectedIndexTypes : SEARCH_KEY_INDEX_OPTIONS.map(option => option.key));
+        return;
+      }
+
+      if (selectedIndexJobs.searchLocalImtHeightWeight) {
+        openLocalIndexModal(['imtHeightWeight']);
         return;
       }
 
@@ -4306,6 +4313,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     />
                     <SearchScopeLabelTextGroup>
                       <span>Локальна індексація searchId+searchKey (через JSON)</span>
+                    </SearchScopeLabelTextGroup>
+                  </SearchScopeLabel>
+                  <SearchScopeLabel>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedIndexJobs.searchLocalImtHeightWeight)}
+                      onChange={() => toggleIndexJobSelection('searchLocalImtHeightWeight')}
+                    />
+                    <SearchScopeLabelTextGroup>
+                      <span>Локальна індексація imt+height+weight (users + newUsers JSON)</span>
                     </SearchScopeLabelTextGroup>
                   </SearchScopeLabel>
                   <SearchScopeLabel>
