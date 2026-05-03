@@ -27,6 +27,8 @@ import {
 import {
   buildNewUsersFilterSetIndex,
   makeAdditionalRulesSetKey,
+  collectMetricBucketsByUserId,
+  resolveImtBucketsFromMetricBuckets,
 } from 'utils/newUsersFilterSetsIndex';
 import {
   getCachedAdditionalRulesPreview,
@@ -845,118 +847,59 @@ export const ProfileForm = ({
 
     const matchedByInputIndex = {};
 
-    const collectMetricBucketsByUserId = searchKeyFile => {
-      const heightIndex = searchKeyFile?.height && typeof searchKeyFile.height === 'object' ? searchKeyFile.height : {};
-      const weightIndex = searchKeyFile?.weight && typeof searchKeyFile.weight === 'object' ? searchKeyFile.weight : {};
-      const heightByUserId = {};
-      const weightByUserId = {};
-
-      Object.entries(heightIndex).forEach(([bucket, usersMap]) => {
-        if (!usersMap || typeof usersMap !== 'object') return;
-        Object.keys(usersMap).forEach(userId => {
-          if (userId && !heightByUserId[userId]) heightByUserId[userId] = bucket;
-        });
-      });
-
-      Object.entries(weightIndex).forEach(([bucket, usersMap]) => {
-        if (!usersMap || typeof usersMap !== 'object') return;
-        Object.keys(usersMap).forEach(userId => {
-          if (userId && !weightByUserId[userId]) weightByUserId[userId] = bucket;
-        });
-      });
-
-      return { heightByUserId, weightByUserId };
-    };
-
-    const resolveImtBucketsFromMetricBuckets = (heightBucket, weightBucket) => {
-      if (!heightBucket || !weightBucket) return [];
-      if (heightBucket === 'no' || weightBucket === 'no') return ['no'];
-      if (heightBucket === '?' || weightBucket === '?') return ['?'];
-
-      const heightRanges = {
-        lt163: { min: 120, max: 162.99 },
-        '163_176': { min: 163, max: 176 },
-        '177_180': { min: 177, max: 180 },
-        '181_plus': { min: 181, max: 230 },
-      };
-      const weightRanges = {
-        lt55: { min: 30, max: 54.99 },
-        '55_69': { min: 55, max: 69 },
-        '70_84': { min: 70, max: 84 },
-        '85_plus': { min: 85, max: 220 },
-      };
-      const imtRanges = {
-        le28: { min: -Infinity, max: 28 },
-        '29_31': { min: 29, max: 31 },
-        '32_35': { min: 32, max: 35 },
-        '36_plus': { min: 36, max: Infinity },
-      };
-
-      const hr = heightRanges[heightBucket];
-      const wr = weightRanges[weightBucket];
-      if (!hr || !wr) return ['?'];
-
-      const minBmi = wr.min / ((hr.max / 100) ** 2);
-      const maxBmi = wr.max / ((hr.min / 100) ** 2);
-      return Object.entries(imtRanges)
-        .filter(([, range]) => !(maxBmi < range.min || minBmi > range.max))
-        .map(([bucket]) => bucket);
-    };
-
-    const metricBucketsByUser = collectMetricBucketsByUserId(localSearchKeyPayload);
-    const allMetricUserIds = new Set([
-      ...Object.keys(metricBucketsByUser.heightByUserId || {}),
-      ...Object.keys(metricBucketsByUser.weightByUserId || {}),
-    ]);
-
     for (let index = 0; index < ruleInputs.length; index += 1) {
       const rulesText = ruleInputs[index];
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
       const matched = new Set();
       parsedRuleGroups.forEach(parsedRules => {
         const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
-        const perFilterSets = Object.entries(bucketMap || {}).reduce((acc, [indexName, values]) => {
-          if (indexName === 'imt') {
-            const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
-            if (!normalizedValues.length) return acc;
-
-            const idsForImt = new Set();
-            allMetricUserIds.forEach(userId => {
-              const imtBuckets = resolveImtBucketsFromMetricBuckets(
-                metricBucketsByUser.heightByUserId[userId],
-                metricBucketsByUser.weightByUserId[userId]
-              );
-              if (imtBuckets.some(bucket => normalizedValues.includes(bucket))) {
-                idsForImt.add(userId);
-              }
-            });
-
-            if (idsForImt.size > 0) acc.push(idsForImt);
-            return acc;
-          }
-
+        Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
           const indexNode = localSearchKeyPayload?.[indexName];
-          if (!indexNode || typeof indexNode !== 'object') return acc;
-          const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
-          if (!normalizedValues.length) return acc;
-          const idsForFilter = new Set();
+          if (!indexNode || typeof indexNode !== 'object') return;
+          const normalizedValues = [...new Set(
+            (Array.isArray(values) ? values : [...(values || [])]).filter(Boolean)
+          )];
           normalizedValues.forEach(value => {
             const bucket = indexNode?.[value];
             if (!bucket || typeof bucket !== 'object') return;
-            Object.keys(bucket).forEach(userId => {
-              if (userId) idsForFilter.add(userId);
-            });
+            Object.keys(bucket).forEach(userId => { if (userId) matched.add(userId); });
           });
-          if (idsForFilter.size > 0) acc.push(idsForFilter);
-          return acc;
-        }, []);
+        });
+      });
 
-        if (!perFilterSets.length) return;
+      parsedRuleGroups.forEach(parsedRules => {
+        const rawBucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
+        const imtRawValues = rawBucketMap?.imt;
+        if (!imtRawValues) return;
 
-        const groupIntersection = [...perFilterSets[0]].filter(userId =>
-          perFilterSets.every(set => set.has(userId))
+        const imtValues = new Set(
+          (Array.isArray(imtRawValues) ? imtRawValues : [...(imtRawValues || [])])
+            .map(v => String(v || '').trim())
+            .filter(Boolean)
         );
-        groupIntersection.forEach(userId => matched.add(userId));
+        if (imtValues.size === 0) return;
+
+        const heightIndex = localSearchKeyPayload?.height;
+        const weightIndex = localSearchKeyPayload?.weight;
+        if (!heightIndex || !weightIndex) return;
+
+        const pseudoSearchKeyFile = { height: heightIndex, weight: weightIndex };
+        const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(pseudoSearchKeyFile);
+
+        const allMetricUserIds = new Set([
+          ...Object.keys(heightByUserId || {}),
+          ...Object.keys(weightByUserId || {}),
+        ]);
+
+        allMetricUserIds.forEach(userId => {
+          const imtBuckets = resolveImtBucketsFromMetricBuckets(
+            heightByUserId[userId],
+            weightByUserId[userId]
+          );
+          if (imtBuckets.some(bucket => imtValues.has(bucket))) {
+            matched.add(userId);
+          }
+        });
       });
       matchedByInputIndex[index + 1] = [...matched];
     }
