@@ -279,20 +279,18 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
     ...new Set((Array.isArray(imtValuesRaw) ? imtValuesRaw : [...(imtValuesRaw || [])]).map(normalizePathSegment)),
   ];
   const hasImtFilter = imtValues.length > 0;
-  const deriveImtBucketByMetricBuckets = (heightBucket, weightBucket) => {
-    if (!heightBucket || !weightBucket) return null;
-    if (heightBucket === 'no' || weightBucket === 'no') return 'no';
-    if (heightBucket === '?' || weightBucket === '?') return '?';
+  const deriveImtBucketsByMetricBuckets = (heightBucket, weightBucket) => {
+    if (!heightBucket || !weightBucket) return [];
+    if (heightBucket === 'no' || weightBucket === 'no') return ['no'];
+    if (heightBucket === '?' || weightBucket === '?') return ['?'];
     const hr = HEIGHT_BUCKET_RANGES[heightBucket];
     const wr = WEIGHT_BUCKET_RANGES[weightBucket];
-    if (!hr || !wr) return '?';
+    if (!hr || !wr) return ['?'];
     const minBmi = wr.min / ((hr.max / 100) ** 2);
     const maxBmi = wr.max / ((hr.min / 100) ** 2);
-    if (maxBmi <= 28) return 'le28';
-    if (minBmi >= 29 && maxBmi <= 31) return '29_31';
-    if (minBmi >= 32 && maxBmi <= 35) return '32_35';
-    if (minBmi >= 36) return '36_plus';
-    return '?';
+    return Object.entries(IMT_BUCKET_RANGES)
+      .filter(([, range]) => !(maxBmi < range.min || minBmi > range.max))
+      .map(([bucket]) => bucket);
   };
 
   const filterUserIdsByImtBuckets = candidateUserIds => {
@@ -405,11 +403,13 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
 
     const imtWritesByBucket = {};
     imtAllowedUserIds.forEach(userId => {
-      const bucket = deriveImtBucketByMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
-      if (!bucket) return;
-      if (!imtValues.includes(bucket)) return;
-      if (!imtWritesByBucket[bucket]) imtWritesByBucket[bucket] = {};
-      imtWritesByBucket[bucket][userId] = true;
+      const buckets = deriveImtBucketsByMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
+      if (!buckets.length) return;
+      buckets.forEach(bucket => {
+        if (!imtValues.includes(bucket)) return;
+        if (!imtWritesByBucket[bucket]) imtWritesByBucket[bucket] = {};
+        imtWritesByBucket[bucket][userId] = true;
+      });
     });
     Object.entries(imtWritesByBucket).forEach(([bucket, usersMap]) => {
       writes[`${normalizedRootPath}/imt/${bucket}`] = usersMap;
