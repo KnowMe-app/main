@@ -90,7 +90,7 @@ const IMT_BUCKET_RANGES = {
   '36_plus': { min: 36, max: Infinity },
 };
 
-const collectMetricBucketsByUserId = searchKeyFile => {
+export const collectMetricBucketsByUserId = searchKeyFile => {
   const heightIndex = searchKeyFile?.height && typeof searchKeyFile.height === 'object' ? searchKeyFile.height : {};
   const weightIndex = searchKeyFile?.weight && typeof searchKeyFile.weight === 'object' ? searchKeyFile.weight : {};
   const heightByUserId = {};
@@ -113,7 +113,7 @@ const collectMetricBucketsByUserId = searchKeyFile => {
   return { heightByUserId, weightByUserId };
 };
 
-const resolveImtBucketsFromMetricBuckets = (heightBucket, weightBucket) => {
+export const resolveImtBucketsFromMetricBuckets = (heightBucket, weightBucket) => {
   if (!heightBucket || !weightBucket) return [];
   if (heightBucket === 'no' || weightBucket === 'no') return ['no'];
   if (heightBucket === '?' || weightBucket === '?') return ['?'];
