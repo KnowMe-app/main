@@ -792,7 +792,7 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
       return acc;
     }, []);
 
-    if (!activeSources.length) continue;
+    if (!activeSources.length && !hasImtFilter) continue;
 
     // eslint-disable-next-line no-await-in-loop
     const sourceIdSets = await Promise.all(
@@ -814,10 +814,13 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
     );
 
     const normalizedSets = sourceIdSets.filter(set => set instanceof Set);
-    if (!normalizedSets.length || normalizedSets.some(set => set.size === 0)) continue;
+    if (normalizedSets.some(set => set.size === 0)) continue;
 
-    const [firstSet, ...restSets] = normalizedSets;
-    let groupMatchedIds = [...firstSet].filter(userId => restSets.every(set => set.has(userId)));
+    let groupMatchedIds = [];
+    if (normalizedSets.length) {
+      const [firstSet, ...restSets] = normalizedSets;
+      groupMatchedIds = [...firstSet].filter(userId => restSets.every(set => set.has(userId)));
+    }
 
     if (hasImtFilter) {
       const [heightPayload, weightPayload] = await Promise.all([
@@ -829,11 +832,20 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
         weight: weightPayload?.exists && typeof weightPayload?.value === 'object' ? weightPayload.value : {},
       };
       const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(metricSearchKeyFile);
+      if (!groupMatchedIds.length) {
+        const metricUserIds = new Set([
+          ...Object.keys(heightByUserId || {}),
+          ...Object.keys(weightByUserId || {}),
+        ]);
+        groupMatchedIds = [...metricUserIds];
+      }
       groupMatchedIds = groupMatchedIds.filter(userId => {
         const imtBuckets = resolveImtBucketsFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
         return imtBuckets.some(bucket => imtValues.includes(bucket));
       });
     }
+
+    if (!groupMatchedIds.length) continue;
 
     groupMatchedIds.forEach(userId => matchedIds.add(userId));
   }
