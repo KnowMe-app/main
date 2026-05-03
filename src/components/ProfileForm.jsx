@@ -844,6 +844,71 @@ export const ProfileForm = ({
     }
 
     const matchedByInputIndex = {};
+
+    const collectMetricBucketsByUserId = searchKeyFile => {
+      const heightIndex = searchKeyFile?.height && typeof searchKeyFile.height === 'object' ? searchKeyFile.height : {};
+      const weightIndex = searchKeyFile?.weight && typeof searchKeyFile.weight === 'object' ? searchKeyFile.weight : {};
+      const heightByUserId = {};
+      const weightByUserId = {};
+
+      Object.entries(heightIndex).forEach(([bucket, usersMap]) => {
+        if (!usersMap || typeof usersMap !== 'object') return;
+        Object.keys(usersMap).forEach(userId => {
+          if (userId && !heightByUserId[userId]) heightByUserId[userId] = bucket;
+        });
+      });
+
+      Object.entries(weightIndex).forEach(([bucket, usersMap]) => {
+        if (!usersMap || typeof usersMap !== 'object') return;
+        Object.keys(usersMap).forEach(userId => {
+          if (userId && !weightByUserId[userId]) weightByUserId[userId] = bucket;
+        });
+      });
+
+      return { heightByUserId, weightByUserId };
+    };
+
+    const resolveImtBucketsFromMetricBuckets = (heightBucket, weightBucket) => {
+      if (!heightBucket || !weightBucket) return [];
+      if (heightBucket === 'no' || weightBucket === 'no') return ['no'];
+      if (heightBucket === '?' || weightBucket === '?') return ['?'];
+
+      const heightRanges = {
+        lt163: { min: 120, max: 162.99 },
+        '163_176': { min: 163, max: 176 },
+        '177_180': { min: 177, max: 180 },
+        '181_plus': { min: 181, max: 230 },
+      };
+      const weightRanges = {
+        lt55: { min: 30, max: 54.99 },
+        '55_69': { min: 55, max: 69 },
+        '70_84': { min: 70, max: 84 },
+        '85_plus': { min: 85, max: 220 },
+      };
+      const imtRanges = {
+        le28: { min: -Infinity, max: 28 },
+        '29_31': { min: 29, max: 31 },
+        '32_35': { min: 32, max: 35 },
+        '36_plus': { min: 36, max: Infinity },
+      };
+
+      const hr = heightRanges[heightBucket];
+      const wr = weightRanges[weightBucket];
+      if (!hr || !wr) return ['?'];
+
+      const minBmi = wr.min / ((hr.max / 100) ** 2);
+      const maxBmi = wr.max / ((hr.min / 100) ** 2);
+      return Object.entries(imtRanges)
+        .filter(([, range]) => !(maxBmi < range.min || minBmi > range.max))
+        .map(([bucket]) => bucket);
+    };
+
+    const metricBucketsByUser = collectMetricBucketsByUserId(localSearchKeyPayload);
+    const allMetricUserIds = new Set([
+      ...Object.keys(metricBucketsByUser.heightByUserId || {}),
+      ...Object.keys(metricBucketsByUser.weightByUserId || {}),
+    ]);
+
     for (let index = 0; index < ruleInputs.length; index += 1) {
       const rulesText = ruleInputs[index];
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
@@ -851,6 +916,25 @@ export const ProfileForm = ({
       parsedRuleGroups.forEach(parsedRules => {
         const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
         const perFilterSets = Object.entries(bucketMap || {}).reduce((acc, [indexName, values]) => {
+          if (indexName === 'imt') {
+            const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
+            if (!normalizedValues.length) return acc;
+
+            const idsForImt = new Set();
+            allMetricUserIds.forEach(userId => {
+              const imtBuckets = resolveImtBucketsFromMetricBuckets(
+                metricBucketsByUser.heightByUserId[userId],
+                metricBucketsByUser.weightByUserId[userId]
+              );
+              if (imtBuckets.some(bucket => normalizedValues.includes(bucket))) {
+                idsForImt.add(userId);
+              }
+            });
+
+            if (idsForImt.size > 0) acc.push(idsForImt);
+            return acc;
+          }
+
           const indexNode = localSearchKeyPayload?.[indexName];
           if (!indexNode || typeof indexNode !== 'object') return acc;
           const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
