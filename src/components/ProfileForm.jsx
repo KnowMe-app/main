@@ -11,6 +11,7 @@ import {
   formatDateToDisplay,
   formatDateAndFormula,
 } from 'components/inputValidations';
+import { parseUkTriggerQuery } from 'utils/parseUkTrigger';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { patchOverlayField } from 'utils/multiAccountEdits';
 import toast from 'react-hot-toast';
@@ -1920,6 +1921,40 @@ ${entries.join('\n')}`;
         .map(value => value.trim().toLowerCase())
         .filter(Boolean);
   const shouldHideFieldsForClPp = roleTokens.some(role => ['pp', 'cl'].includes(role));
+  const shouldShowPpTechnicalInput = roleTokens.includes('pp');
+  const [ppTechnicalInput, setPpTechnicalInput] = useState('');
+
+  const handlePpTechnicalInputSubmit = useCallback(() => {
+    const rawValue = String(ppTechnicalInput || '').trim();
+    if (!rawValue) return;
+
+    const parsed = parseUkTriggerQuery(rawValue);
+
+    setState(prevState => {
+      const nextState = { ...prevState };
+
+      if (!parsed) {
+        nextState.name = rawValue;
+      } else {
+        const { contactType, contactValues, name, surname } = parsed;
+
+        if (contactType) {
+          nextState[contactType] = contactValues;
+        }
+        if (name) {
+          nextState.name = name;
+        }
+        if (surname) {
+          nextState.surname = surname;
+        }
+      }
+
+      submitWithNormalization(nextState, 'overwrite');
+      return nextState;
+    });
+
+    setPpTechnicalInput('');
+  }, [ppTechnicalInput, setState, submitWithNormalization]);
 
   const handleOpenModal = fieldName => {
     setSelectedField(fieldName);
@@ -2006,8 +2041,26 @@ ${entries.join('\n')}`;
               ? formatDateToDisplay(state.getInTouch)
               : state[field.name] || '';
           return (
+            <React.Fragment key={index}>
+            {shouldShowPpTechnicalInput && field.name === 'name' && (
+              <PickerContainer>
+                <FieldMainRow>
+                  <InputDiv>
+                    <InputFieldContainer fieldName="ppTechnicalInput" value={ppTechnicalInput}>
+                      <InputField
+                        fieldName="ppTechnicalInput"
+                        name="ppTechnicalInput"
+                        value={ppTechnicalInput}
+                        onChange={e => setPpTechnicalInput(e?.target?.value || '')}
+                        onBlur={handlePpTechnicalInputSubmit}
+                        placeholder="Технічний інпут для PP"
+                      />
+                    </InputFieldContainer>
+                  </InputDiv>
+                </FieldMainRow>
+              </PickerContainer>
+            )}
             <PickerContainer
-              key={index}
               style={hasOverlaySuggestions ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
             >
               <FieldMainRow>
@@ -2407,8 +2460,9 @@ ${entries.join('\n')}`;
                 </Button>
               </OverlayEntryRow>
             ))}
-          </PickerContainer>
-        );
+            </PickerContainer>
+            </React.Fragment>
+          );
         })}
       <KeyValueRow>
         <CustomInput
