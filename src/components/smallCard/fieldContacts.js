@@ -50,6 +50,27 @@ const normalizeExternalUrl = value => {
   return `https://${rawValue}`;
 };
 
+
+const buildLinkedinUrl = value => {
+  const rawValue = String(value ?? '').trim();
+
+  if (!rawValue) {
+    return '';
+  }
+
+  if (/^[a-z][a-z\d+\-.]*:/i.test(rawValue)) {
+    return rawValue;
+  }
+
+  const normalizedValue = rawValue.replace(/^\/+/, '');
+
+  if (normalizedValue.startsWith('in/') || normalizedValue.startsWith('company/')) {
+    return `https://www.linkedin.com/${normalizedValue}`;
+  }
+
+  return `https://www.linkedin.com/in/${normalizedValue}`;
+};
+
 export const fieldContacts = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderContacts:', data);
@@ -63,7 +84,7 @@ export const fieldContacts = (data, parentKey = '') => {
     phone: value => `tel:${value}`,
     facebook: value => `https://facebook.com/${value}`,
     vk: value => `https://vk.com/${value}`,
-    linkedin: value => `https://www.linkedin.com/in/${value}`,
+    linkedin: value => buildLinkedinUrl(value),
     youtube: value => `https://www.youtube.com/@${value}`,
     otherLink: value => normalizeExternalUrl(value),
     email: value => `mailto:${value}`,
@@ -366,7 +387,7 @@ export const fieldContactsIcons = (
     phone: value => `tel:${value}`,
     facebook: value => `https://facebook.com/${value}`,
     vk: value => `https://vk.com/${value}`,
-    linkedin: value => `https://www.linkedin.com/in/${value}`,
+    linkedin: value => buildLinkedinUrl(value),
     youtube: value => `https://www.youtube.com/@${value}`,
     otherLink: value => normalizeExternalUrl(value),
     email: value => `mailto:${value}`,
