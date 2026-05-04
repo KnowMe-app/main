@@ -358,10 +358,9 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
   const resolveImtCandidateUserIds = () => {
     if (!hasImtFilter) return normalizedUserIds;
 
+    // IMT-фільтр має стартувати з усіх userId, які присутні в height (включно з ?, no і числовими bucket-ами).
     const heightUserIds = Object.keys(heightByUserId || {});
-    const weightUserIds = Object.keys(weightByUserId || {});
-    const weightUserIdsSet = new Set(weightUserIds);
-    return heightUserIds.filter(userId => weightUserIdsSet.has(userId));
+    return [...new Set(heightUserIds.filter(Boolean))];
   };
 
   const imtCandidateUserIds = resolveImtCandidateUserIds();
@@ -442,14 +441,38 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
       });
     });
 
+    const usersWithWeight = imtCandidateUserIds.filter(userId => Boolean(weightByUserId[userId])).length;
+    const usersWithValidImt = imtCandidateUserIds.filter(userId => {
+      const buckets = resolveImtBucketsFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
+      return buckets.some(bucket => ['le28', '29_31', '32_35', '36_plus'].includes(bucket));
+    }).length;
+    const usersInLe28 = imtCandidateUserIds.filter(userId => {
+      const buckets = resolveImtBucketsFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
+      return buckets.includes('le28');
+    }).length;
+    const writtenHeightUsers = new Set();
+    const writtenWeightUsers = new Set();
+    Object.entries(writes).forEach(([path, usersMap]) => {
+      const parts = String(path).split('/');
+      const metric = parts[parts.length - 2];
+      Object.keys(usersMap || {}).forEach(userId => {
+        if (!userId) return;
+        if (metric === 'height') writtenHeightUsers.add(userId);
+        if (metric === 'weight') writtenWeightUsers.add(userId);
+      });
+    });
+
     console.info('[searchKeySets][IMT] Diagnostics', {
       rootPath: normalizedRootPath,
       heightUsers: Object.keys(heightByUserId || {}).length,
-      weightUsers: Object.keys(weightByUserId || {}).length,
-      usersWithHeightAndWeight: imtCandidateUserIds.length,
+      usersWithWeight,
+      usersWithValidImt,
+      usersInLe28,
       usersPassedImt: imtAllowedUserIds.length,
       bucketsWritten: Object.keys(writes).length,
       usersWritten: writtenUserIds.size,
+      writtenHeightUsers: writtenHeightUsers.size,
+      writtenWeightUsers: writtenWeightUsers.size,
     });
   }
 
