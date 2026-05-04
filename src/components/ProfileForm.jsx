@@ -978,6 +978,69 @@ export const ProfileForm = ({
           matchedUserIdsBySetKey,
           searchKeyFile: localSearchKeyPayload,
         });
+        const lastSetDebug = indexResult?.debug?.lastSetDebug || {};
+        const selectedRulesSummary = Array.isArray(lastSetDebug?.imtValues) && lastSetDebug.imtValues.length
+          ? `imt=${lastSetDebug.imtValues.join(',')}`
+          : 'imt=none';
+        toast(`1/8 Rules parsed: ${selectedRulesSummary}`);
+        toast(`2/8 Allowed users: ${Number(lastSetDebug?.allowedUserIdsCount || 0)}`);
+        const searchKeyFields = Array.isArray(lastSetDebug?.searchKeyFields) ? lastSetDebug.searchKeyFields : [];
+        toast(`3/8 searchKey fields: ${searchKeyFields.join(', ') || 'none'}`);
+        toast(`4/8 Start copying filtered searchKey, allowed=${Number(lastSetDebug?.allowedUserIdsCount || 0)}`);
+        const copiedByField = lastSetDebug?.copiedByField && typeof lastSetDebug.copiedByField === 'object'
+          ? lastSetDebug.copiedByField
+          : {};
+        ['height', 'weight', 'age'].forEach(field => {
+          const stats = copiedByField[field];
+          if (stats) {
+            toast(`5/8 Copied ${field}: buckets=${Number(stats.buckets || 0)}, records=${Number(stats.records || 0)}`);
+          }
+        });
+        if (Array.isArray(lastSetDebug?.skippedFields) && lastSetDebug.skippedFields.includes('imt')) {
+          toast('5/8 Skipped imt field');
+        }
+        const filteredFields = Array.isArray(lastSetDebug?.filteredFields) ? lastSetDebug.filteredFields : [];
+        toast(
+          `6/8 Filtered set ready: fields=${filteredFields.length}, buckets=${Number(lastSetDebug?.copiedBuckets || 0)}, records=${Number(lastSetDebug?.copiedRecords || 0)}`
+        );
+        const backendRequests = Array.isArray(lastSetDebug?.backendRequests) ? lastSetDebug.backendRequests : [];
+        const removeCount = backendRequests.filter(item => item?.type === 'remove').length;
+        const setCount = backendRequests.filter(item => item?.type === 'set').length;
+        toast(`7/8 Backend requests: remove=${removeCount}, set=${setCount}, payloadRecords=${Number(lastSetDebug?.copiedRecords || 0)}`);
+        if (lastSetDebug?.setKey) {
+          toast(`8/8 Saved searchKeySets/${lastSetDebug.setKey}: records=${Number(lastSetDebug?.copiedRecords || 0)}`);
+        }
+        if (Number(lastSetDebug?.allowedUserIdsCount || 0) === 0) {
+          toast.error('STOP: allowedUserIds=0. Перевір tokens/rules/searchKey.imt');
+        }
+        if (!searchKeyFields.length) {
+          toast.error('STOP: searchKey empty or not loaded');
+        }
+        if ((searchKeyFields.length === 1 && searchKeyFields[0] === 'imt') || !searchKeyFields.includes('height') || !searchKeyFields.includes('weight')) {
+          toast.error('STOP: searchKey missing height/weight fields');
+        }
+        if (Number(lastSetDebug?.copiedRecords || 0) === 0 && Number(lastSetDebug?.allowedUserIdsCount || 0) > 0) {
+          toast.error('STOP: copiedRecords=0. allowedUserIds є, але жоден userId не знайдений у searchKey buckets');
+        }
+        if (removeCount > 0 && setCount === 0) {
+          toast.error('STOP: only remove request created. set/update missing');
+        }
+        const hasSetPayload = backendRequests.some(item => item?.type === 'set' && item?.payload && Object.keys(item.payload).length > 0);
+        if (!hasSetPayload) {
+          toast.error('STOP: payload empty before backend write');
+        }
+        console.log('[searchKeySets debug]', {
+          selectedRules: lastSetDebug?.selectedRules,
+          allowedUserIdsCount: Number(lastSetDebug?.allowedUserIdsCount || 0),
+          allowedSample: Array.isArray(lastSetDebug?.allowedSample) ? lastSetDebug.allowedSample.slice(0, 10) : [],
+          searchKeyFields,
+          skippedFields: Array.isArray(lastSetDebug?.skippedFields) ? lastSetDebug.skippedFields : [],
+          copiedByField,
+          copiedRecords: Number(lastSetDebug?.copiedRecords || 0),
+          copiedBuckets: Number(lastSetDebug?.copiedBuckets || 0),
+          filteredFields,
+          backendRequests,
+        });
         if (indexResult && Number(indexResult.writesCount || 0) === 0 && Number(indexResult?.setKeys?.length || 0) === 0) {
           toast('searchKeySets не оновлено: не знайдено валідних правил.');
         }
