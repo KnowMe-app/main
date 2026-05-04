@@ -325,7 +325,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
   const imtCandidateUserIds = resolveImtCandidateUserIds();
   const imtAllowedUserIds = hasImtFilter ? filterUserIdsByImtBuckets(imtCandidateUserIds) : normalizedUserIds;
   const allowedUserIdsForWrites = hasImtFilter
-    ? normalizedUserIds.filter(userId => imtAllowedUserIds.includes(userId))
+    ? imtAllowedUserIds
     : normalizedUserIds;
   const normalizedAllowedIds = new Set(allowedUserIdsForWrites.filter(Boolean));
 
@@ -336,7 +336,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
 
   Object.entries(searchKeyFile || {}).forEach(([indexName, bucketsMap]) => {
     const normalizedIndexName = normalizePathSegment(indexName);
-    if (!normalizedIndexName || normalizedIndexName === 'imt') return;
+    if (!normalizedIndexName || normalizedIndexName === 'imt' || normalizedIndexName === 'users') return;
     if (!bucketsMap || typeof bucketsMap !== 'object' || Array.isArray(bucketsMap)) return;
 
     Object.entries(bucketsMap).forEach(([bucketValue, usersMap]) => {
@@ -682,7 +682,7 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
       const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
         const normalizedIndexName = normalizePathSegment(indexName);
         if (!normalizedIndexName) return acc;
-        if (normalizedIndexName === 'imt') return acc;
+        if (normalizedIndexName === 'imt' || normalizedIndexName === 'users') return acc;
         const values = [
           ...new Set(
             (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
@@ -837,7 +837,7 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
     const activeSources = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
       const normalizedIndexName = normalizePathSegment(indexName);
       if (!normalizedIndexName) return acc;
-      if (normalizedIndexName === 'imt') return acc;
+      if (normalizedIndexName === 'imt' || normalizedIndexName === 'users') return acc;
 
       const values = [
         ...new Set(
