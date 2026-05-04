@@ -353,17 +353,15 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
     });
   };
 
+  const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(searchKeyFile);
+
   const resolveImtCandidateUserIds = () => {
     if (!hasImtFilter) return normalizedUserIds;
-    if (normalizedUserIds.length > 0) return normalizedUserIds;
 
-    const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(searchKeyFile);
-    return [
-      ...new Set([
-        ...Object.keys(heightByUserId || {}),
-        ...Object.keys(weightByUserId || {}),
-      ]),
-    ];
+    const heightUserIds = Object.keys(heightByUserId || {});
+    const weightUserIds = Object.keys(weightByUserId || {});
+    const weightUserIdsSet = new Set(weightUserIds);
+    return heightUserIds.filter(userId => weightUserIdsSet.has(userId));
   };
 
   const imtCandidateUserIds = resolveImtCandidateUserIds();
@@ -371,6 +369,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
   const imtAllowedUserIds = hasImtFilter ? filterUserIdsByImtBuckets(imtCandidateUserIds) : normalizedUserIds;
 
   const writes = Object.entries(bucketMap || {}).reduce((accWrites, [indexName, rawValues]) => {
+    if (hasImtFilter) return accWrites;
     const normalizedIndexName = normalizePathSegment(indexName);
     if (!normalizedIndexName) return accWrites;
     if (normalizedIndexName === 'imt') return accWrites;
@@ -434,6 +433,23 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
           return result;
         }, {});
       });
+    });
+
+    const writtenUserIds = new Set();
+    Object.values(writes).forEach(usersMap => {
+      Object.keys(usersMap || {}).forEach(userId => {
+        if (userId) writtenUserIds.add(userId);
+      });
+    });
+
+    console.info('[searchKeySets][IMT] Diagnostics', {
+      rootPath: normalizedRootPath,
+      heightUsers: Object.keys(heightByUserId || {}).length,
+      weightUsers: Object.keys(weightByUserId || {}).length,
+      usersWithHeightAndWeight: imtCandidateUserIds.length,
+      usersPassedImt: imtAllowedUserIds.length,
+      bucketsWritten: Object.keys(writes).length,
+      usersWritten: writtenUserIds.size,
     });
   }
 
