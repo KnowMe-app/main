@@ -304,13 +304,39 @@ const buildMetricBucketsForAllowedUsers = ({ searchKeyFile, indexName, allowedUs
   }, {});
 };
 
-const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyFile = null }) => {
+const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyFile = null, rawText = '' }) => {
   const normalizedRootPath = String(rootPath || '').trim();
   if (!normalizedRootPath) return {};
   if (!searchKeyFile || typeof searchKeyFile !== 'object' || Array.isArray(searchKeyFile)) return {};
 
   const normalizedUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
-  const bucketMap = augmentBucketsWithImtMetricWrappers(mergeSearchKeyBuckets(parsedRuleGroups));
+  const baseBucketMap = augmentBucketsWithImtMetricWrappers(mergeSearchKeyBuckets(parsedRuleGroups));
+
+  const existingImt = baseBucketMap?.imt;
+  const hasExistingImt =
+    (existingImt instanceof Set && existingImt.size > 0) ||
+    (Array.isArray(existingImt) && existingImt.length > 0);
+
+  let bucketMap = baseBucketMap;
+  if (!hasExistingImt && rawText) {
+    const imtLineMatch = String(rawText).match(/(?:^|\n)\s*imt\s*:\s*([^\n]+)/i);
+    if (imtLineMatch) {
+      const imtTokens = imtLineMatch[1].split(',').map(t => t.trim()).filter(Boolean);
+      if (imtTokens.length > 0) {
+        bucketMap = {
+          ...baseBucketMap,
+          imt: new Set(imtTokens),
+          height: (baseBucketMap.height instanceof Set && baseBucketMap.height.size > 0)
+            ? baseBucketMap.height
+            : new Set(METRIC_BUCKETS_BY_INDEX.height),
+          weight: (baseBucketMap.weight instanceof Set && baseBucketMap.weight.size > 0)
+            ? baseBucketMap.weight
+            : new Set(METRIC_BUCKETS_BY_INDEX.weight),
+        };
+      }
+    }
+  }
+
   const imtValuesRaw = bucketMap?.imt;
   const imtValues = [
     ...new Set((Array.isArray(imtValuesRaw) ? imtValuesRaw : [...(imtValuesRaw || [])]).map(normalizePathSegment)),
@@ -535,6 +561,7 @@ export const buildNewUsersFilterSetIndex = async ({
         setKey: ownerSetKey,
         userIds,
         parsedRuleGroups,
+        rawText: setText,
       };
     })
     .filter(Boolean);
@@ -572,7 +599,7 @@ export const buildNewUsersFilterSetIndex = async ({
     await update(ref(database), writes);
   }
 
-  for (const { setKey, userIds, parsedRuleGroups } of nextSetPayloads) {
+  for (const { setKey, userIds, parsedRuleGroups, rawText } of nextSetPayloads) {
     // eslint-disable-next-line no-await-in-loop
     debug.backendRequests.push({
       type: 'remove',
@@ -587,6 +614,7 @@ export const buildNewUsersFilterSetIndex = async ({
       parsedRuleGroups,
       userIds: Object.keys(userIds || {}),
       searchKeyFile,
+      rawText,
     });
     debug.sets.push({
       setKey,

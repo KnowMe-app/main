@@ -867,40 +867,37 @@ export const ProfileForm = ({
         });
       });
 
-      parsedRuleGroups.forEach(parsedRules => {
-        const rawBucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
-        const imtRawValues = rawBucketMap?.imt;
-        if (!imtRawValues) return;
-
-        const imtValues = new Set(
-          (Array.isArray(imtRawValues) ? imtRawValues : [...(imtRawValues || [])])
-            .map(v => String(v || '').trim())
-            .filter(Boolean)
-        );
-        if (imtValues.size === 0) return;
-
-        const heightIndex = localSearchKeyPayload?.height;
-        const weightIndex = localSearchKeyPayload?.weight;
-        if (!heightIndex || !weightIndex) return;
-
-        const pseudoSearchKeyFile = { height: heightIndex, weight: weightIndex };
-        const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(pseudoSearchKeyFile);
-
-        const allMetricUserIds = new Set([
-          ...Object.keys(heightByUserId || {}),
-          ...Object.keys(weightByUserId || {}),
-        ]);
-
-        allMetricUserIds.forEach(userId => {
-          const imtBuckets = resolveImtBucketsFromMetricBuckets(
-            heightByUserId[userId],
-            weightByUserId[userId]
-          );
-          if (imtBuckets.some(bucket => imtValues.has(bucket))) {
-            matched.add(userId);
-          }
-        });
-      });
+      // IMT: searchKey не має індексу /imt/ — обчислюємо з height/weight
+      const imtLineMatch = rulesText.match(/(?:^|\n)\s*imt\s*:\s*([^\n]+)/i);
+      if (imtLineMatch) {
+        const imtValues = imtLineMatch[1]
+          .split(',')
+          .map(t => t.trim())
+          .filter(Boolean);
+        const heightIdx = localSearchKeyPayload?.height;
+        const weightIdx = localSearchKeyPayload?.weight;
+        if (
+          imtValues.length > 0 &&
+          heightIdx && typeof heightIdx === 'object' &&
+          weightIdx && typeof weightIdx === 'object'
+        ) {
+          const pseudoFile = { height: heightIdx, weight: weightIdx };
+          const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(pseudoFile);
+          const allMetricUsers = new Set([
+            ...Object.keys(heightByUserId),
+            ...Object.keys(weightByUserId),
+          ]);
+          allMetricUsers.forEach(uid => {
+            const imtBuckets = resolveImtBucketsFromMetricBuckets(
+              heightByUserId[uid],
+              weightByUserId[uid]
+            );
+            if (imtBuckets.some(b => imtValues.includes(b))) {
+              matched.add(uid);
+            }
+          });
+        }
+      }
       matchedByInputIndex[index + 1] = [...matched];
     }
 
