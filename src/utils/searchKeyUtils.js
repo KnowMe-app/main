@@ -10,10 +10,10 @@ export const normalizeSearchIdInput = (searchKey, rawValue) => {
     return normalizePhoneValue(baseValue);
   }
 
-  if (searchKey === 'telegram') {
+  if (['telegram', 'instagram', 'facebook', 'tiktok', 'linkedin', 'youtube', 'twitter'].includes(searchKey)) {
     const parsedTrigger = parseUkTriggerQuery(baseValue);
-    if (parsedTrigger?.searchPair?.telegram) {
-      return parsedTrigger.searchPair.telegram;
+    if (parsedTrigger?.contactType === searchKey && parsedTrigger?.searchPair?.[searchKey]) {
+      return parsedTrigger.searchPair[searchKey];
     }
   }
 
