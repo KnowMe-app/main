@@ -1478,6 +1478,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     hasSearched,
   ]);
 
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const urlUserId = params.get('userId');
@@ -1508,6 +1509,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setIsResolvingEditMode(false);
     }
   }, [state.userId]);
+
+  useEffect(() => {
+    if (!canAccessAdd) return;
+
+    const params = new URLSearchParams(location.search);
+    const currentUserIdInUrl = params.get('userId') || '';
+    const activeUserId = String(state.userId || '').trim();
+
+    if (activeUserId) {
+      if (currentUserIdInUrl === activeUserId) return;
+      params.set('userId', activeUserId);
+      navigate(
+        { pathname: location.pathname, search: `?${params.toString()}` },
+        { replace: true }
+      );
+      return;
+    }
+
+    if (!currentUserIdInUrl) return;
+    params.delete('userId');
+    const nextSearch = params.toString();
+    navigate(
+      { pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : '' },
+      { replace: true }
+    );
+  }, [canAccessAdd, location.pathname, location.search, navigate, state.userId]);
 
   useEffect(() => {
     const normalized = (search || '').trim();
