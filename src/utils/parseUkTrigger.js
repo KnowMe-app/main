@@ -43,8 +43,8 @@ export const parseUkTriggerQuery = rawQuery => {
     searchPair: { telegram: normalizedQuery },
   };
 
-  if (name) result.name = name;
-  if (surname) result.surname = surname;
+  result.name = name;
+  result.surname = surname;
 
   return result;
 };
