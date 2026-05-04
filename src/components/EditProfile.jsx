@@ -428,6 +428,12 @@ const EditProfile = () => {
     refreshOverlays();
   }, [userId, refreshOverlays, currentUid, isAdmin, location.key]);
 
+  useEffect(() => {
+    if (!state?.userId) return;
+    updateCachedUser(state);
+  }, [state]);
+
+
   const handleSubmit = async (newState, overwrite, delCondition) => {
     const now = Date.now();
     const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
@@ -625,7 +631,8 @@ const EditProfile = () => {
 
   if (!state) return null;
 
-  const shouldShowEditorSkeleton = !isAdmin && !isOverlayResolved;
+  const hasCachedCardState = dataSource === 'cache' && Boolean(state?.userId);
+  const shouldShowEditorSkeleton = !isAdmin && !isOverlayResolved && !hasCachedCardState;
 
   return (
     <Container>
