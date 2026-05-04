@@ -227,46 +227,10 @@ const SEARCH_KEY_SET_BUILDERS = [
 ];
 
 
-const buildAgeKeysByUserIdFromSearchKey = async (userIds, searchKeyFile = null) => {
-  const normalizedIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
-  if (normalizedIds.length === 0) return {};
-
-  const normalizedSearchKeyFile =
-    searchKeyFile && typeof searchKeyFile === 'object' && !Array.isArray(searchKeyFile)
-      ? searchKeyFile
-      : null;
-  const ageIndex =
-    normalizedSearchKeyFile && typeof normalizedSearchKeyFile?.age === 'object'
-      ? normalizedSearchKeyFile.age
-      : null;
-
-  if (!ageIndex || typeof ageIndex !== 'object') return {};
-
-  const pending = new Set(normalizedIds);
-  const ageKeysByUserId = {};
-
-  Object.entries(ageIndex).forEach(([ageKey, usersMap]) => {
-    if (!(usersMap && typeof usersMap === 'object')) return;
-    if (pending.size === 0) return;
-
-    Object.keys(usersMap).forEach(userId => {
-      if (!pending.has(userId)) return;
-      ageKeysByUserId[userId] = ageKey;
-      pending.delete(userId);
-    });
-  });
-
-  return ageKeysByUserId;
-};
-
-
-
-
-
 const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyFile = null, rawText = '' }) => {
   const normalizedRootPath = String(rootPath || '').trim();
-  if (!normalizedRootPath) return {};
-  if (!searchKeyFile || typeof searchKeyFile !== 'object' || Array.isArray(searchKeyFile)) return {};
+  if (!normalizedRootPath) return { writes: {}, debugInfo: null };
+  if (!searchKeyFile || typeof searchKeyFile !== 'object' || Array.isArray(searchKeyFile)) return { writes: {}, debugInfo: null };
 
   const normalizedUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
   const baseBucketMap = augmentBucketsWithImtMetricWrappers(mergeSearchKeyBuckets(parsedRuleGroups));
@@ -334,10 +298,17 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
   const copiedBuckets = new Set();
   let copiedUserRecords = 0;
 
+  const copiedByField = {};
+  const skippedFields = [];
   Object.entries(searchKeyFile || {}).forEach(([indexName, bucketsMap]) => {
     const normalizedIndexName = normalizePathSegment(indexName);
-    if (!normalizedIndexName || normalizedIndexName === 'imt' || normalizedIndexName === 'users') return;
+    if (!normalizedIndexName || normalizedIndexName === 'users') return;
+    if (normalizedIndexName === 'imt') {
+      skippedFields.push('imt');
+      return;
+    }
     if (!bucketsMap || typeof bucketsMap !== 'object' || Array.isArray(bucketsMap)) return;
+    if (!copiedByField[normalizedIndexName]) copiedByField[normalizedIndexName] = { buckets: 0, records: 0 };
 
     Object.entries(bucketsMap).forEach(([bucketValue, usersMap]) => {
       if (!usersMap || typeof usersMap !== 'object' || Array.isArray(usersMap)) return;
@@ -354,6 +325,8 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
       copiedFields.add(normalizedIndexName);
       copiedBuckets.add(path);
       copiedUserRecords += filteredUserIds.length;
+      copiedByField[normalizedIndexName].buckets += 1;
+      copiedByField[normalizedIndexName].records += filteredUserIds.length;
     });
   });
 
@@ -419,7 +392,22 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
     }
   }
 
-  return writes;
+  return {
+    writes,
+    debugInfo: {
+      selectedRules: parsedRuleGroups,
+      allowedUserIdsCount: allowedUserIdsForWrites.length,
+      allowedSample: [...normalizedAllowedIds].slice(0, 10),
+      searchKeyFields: Object.keys(searchKeyFile || {}),
+      skippedFields,
+      copiedByField,
+      copiedRecords: copiedUserRecords,
+      copiedBuckets: copiedBuckets.size,
+      filteredFields: [...copiedFields],
+      hasImtFilter,
+      imtValues,
+    },
+  };
 };
 
 export const buildSearchKeySetIndexFromMatchedUsers = async ({
@@ -461,9 +449,6 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
     throw error;
   }
 
-  const allUserIds = [...new Set(setPayloads.flatMap(item => item.userIds || []).filter(Boolean))];
-  const ageKeysByUserId = await buildAgeKeysByUserIdFromSearchKey(allUserIds, searchKeyFile);
-
   for (const setPayload of setPayloads) {
     // eslint-disable-next-line no-await-in-loop
     await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setPayload.setKey}`));
@@ -476,11 +461,10 @@ export const buildSearchKeySetIndexFromMatchedUsers = async ({
     const options = {
       rootPath: `${SEARCH_KEY_SETS_ROOT}/${setPayload.setKey}`,
     };
-    const ruleBucketWrites = buildRuleBucketWrites({
+    const { writes: ruleBucketWrites } = buildRuleBucketWrites({
       rootPath: options.rootPath,
       parsedRuleGroups: setPayload.parsedRuleGroups,
       userIds: setPayload.userIds,
-      ageKeysByUserId,
       searchKeyFile,
     });
 
@@ -591,7 +575,7 @@ export const buildNewUsersFilterSetIndex = async ({
     await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`));
 
     const rootPath = `${SEARCH_KEY_SETS_ROOT}/${setKey}`;
-    const ruleBucketWrites = buildRuleBucketWrites({
+    const { writes: ruleBucketWrites, debugInfo } = buildRuleBucketWrites({
       rootPath,
       parsedRuleGroups,
       userIds: Object.keys(userIds || {}),
@@ -604,6 +588,7 @@ export const buildNewUsersFilterSetIndex = async ({
       parsedRuleGroupsCount: Array.isArray(parsedRuleGroups) ? parsedRuleGroups.length : 0,
       bucketWritesCount: Object.keys(ruleBucketWrites).length,
       bucketPathsPreview: Object.keys(ruleBucketWrites).slice(0, 12),
+      debugInfo,
     });
 
     const filteredSearchKeySet = Object.entries(ruleBucketWrites).reduce((acc, [path, payload]) => {
@@ -636,6 +621,12 @@ export const buildNewUsersFilterSetIndex = async ({
       path: `${SEARCH_KEY_SETS_ROOT}/${setKey}`,
       payload: filteredSearchKeySet,
     });
+    debug.lastSetDebug = {
+      ...(debugInfo || {}),
+      filteredFields: Object.keys(filteredSearchKeySet || {}),
+      backendRequests: debug.backendRequests,
+      setKey,
+    };
     console.log('backendRequests:', debug.backendRequests);
 
     const writesCountForSet = Object.keys(ruleBucketWrites).length;
