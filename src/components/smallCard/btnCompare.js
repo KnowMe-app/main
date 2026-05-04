@@ -88,29 +88,31 @@ export const btnCompare = (
   
     if (users[targetUserId]) {
       const updatedUsers = { ...users };
+      const updatedTargetUser = { ...updatedUsers[targetUserId] };
   
       if (key === 'getInTouch' || key === 'lastCycle' || key === 'myComment') {
-        updatedUsers[targetUserId][key] = currentVal || nextVal;
+        updatedTargetUser[key] = currentVal || nextVal;
       } else {
         const mergedValue = mergeValues(key, currentVal, nextVal);
   
         if (mergedValue.includes(',')) {
           // Зберігаємо правильний порядок масиву
-          updatedUsers[targetUserId][key] = mergedValue.split(',').map((item) => item.trim());
+          updatedTargetUser[key] = mergedValue.split(',').map((item) => item.trim());
         } else {
-          updatedUsers[targetUserId][key] = mergedValue;
+          updatedTargetUser[key] = mergedValue;
         }
       }
   
       // Видаляємо `duplicate` перед збереженням
-      if (updatedUsers[targetUserId]?.hasOwnProperty('duplicate')) {
-        delete updatedUsers[targetUserId].duplicate;
+      if (updatedTargetUser?.hasOwnProperty('duplicate')) {
+        delete updatedTargetUser.duplicate;
       }
   
+      updatedUsers[targetUserId] = updatedTargetUser;
       setUsers(updatedUsers);
-      handleSubmitAll(updatedUsers[targetUserId], 'overwrite');
+      handleSubmitAll(updatedTargetUser, 'overwrite');
   
-      console.log('Updated user data:', updatedUsers[targetUserId]);
+      console.log('Updated user data:', updatedTargetUser);
     } else {
       console.error(`User with ID ${targetUserId} not found`);
     }
