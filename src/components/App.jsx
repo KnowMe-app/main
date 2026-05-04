@@ -19,6 +19,7 @@ export const App = () => {
   const [isAdmin, setIsAdmin] = useState(null);
   const [canAccessAdd, setCanAccessAdd] = useState(false);
   const [canAccessMatching, setCanAccessMatching] = useState(false);
+  const [isAccessResolved, setIsAccessResolved] = useState(false);
   // console.log('isLoggedIn :>> ', isLoggedIn);
 
   const navigate = useNavigate();
@@ -32,7 +33,7 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    if (!isLoggedIn || isAdmin !== false) {
+    if (!isLoggedIn || !isAccessResolved || isAdmin !== false) {
       return;
     }
 
@@ -43,7 +44,7 @@ export const App = () => {
     if (isRootRoute || isUnauthorizedAddRoute || isUnauthorizedMatchingRoute) {
       navigate('/my-profile');
     }
-  }, [isLoggedIn, navigate, isAdmin, location.pathname, canAccessAdd, canAccessMatching]);
+  }, [isLoggedIn, isAccessResolved, navigate, isAdmin, location.pathname, canAccessAdd, canAccessMatching]);
 
   // Special page for admin
   useEffect(() => {
@@ -63,12 +64,14 @@ export const App = () => {
         setCanAccessAdd(access.canAccessAdd);
         setCanAccessMatching(access.canAccessMatching);
         localStorage.setItem('accessLevel', accessLevel);
+        setIsAccessResolved(true);
       } else {
         localStorage.removeItem('ownerId');
         localStorage.removeItem('accessLevel');
         setIsAdmin(false);
         setCanAccessAdd(false);
         setCanAccessMatching(false);
+        setIsAccessResolved(true);
       }
     });
     return () => unsubscribe();
