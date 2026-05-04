@@ -364,14 +364,16 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
   };
 
   const imtCandidateUserIds = resolveImtCandidateUserIds();
-  const allowedUserIdsForWrites = hasImtFilter ? imtCandidateUserIds : normalizedUserIds;
   const imtAllowedUserIds = hasImtFilter ? filterUserIdsByImtBuckets(imtCandidateUserIds) : normalizedUserIds;
+  const allowedUserIdsForWrites = hasImtFilter
+    ? normalizedUserIds.filter(userId => imtAllowedUserIds.includes(userId))
+    : normalizedUserIds;
 
   const writes = Object.entries(bucketMap || {}).reduce((accWrites, [indexName, rawValues]) => {
-    if (hasImtFilter) return accWrites;
     const normalizedIndexName = normalizePathSegment(indexName);
     if (!normalizedIndexName) return accWrites;
     if (normalizedIndexName === 'imt') return accWrites;
+    if (hasImtFilter && !['height', 'weight'].includes(normalizedIndexName)) return accWrites;
 
     if (normalizedIndexName === 'age') {
       const allowedAgeValues = (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
@@ -419,12 +421,14 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
   }, {});
 
   if (hasImtFilter) {
+    const copiedBucketCountByMetric = { height: 0, weight: 0 };
     ['height', 'weight'].forEach(metricIndexName => {
       const metricBuckets = buildMetricBucketsForAllowedUsers({
         searchKeyFile,
         indexName: metricIndexName,
-        allowedUserIds: imtAllowedUserIds,
+        allowedUserIds: allowedUserIdsForWrites,
       });
+      copiedBucketCountByMetric[metricIndexName] = Object.keys(metricBuckets).length;
       Object.entries(metricBuckets).forEach(([bucketValue, targetUserIds]) => {
         const path = `${normalizedRootPath}/${metricIndexName}/${bucketValue}`;
         writes[path] = targetUserIds.reduce((result, userId) => {
@@ -468,8 +472,13 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
       usersWithWeight,
       usersWithValidImt,
       usersInLe28,
-      usersPassedImt: imtAllowedUserIds.length,
+      imtSelectedTokens: imtValues,
+      allowedUserIdsCount: allowedUserIdsForWrites.length,
       bucketsWritten: Object.keys(writes).length,
+      copiedHeightBucketCount: copiedBucketCountByMetric.height,
+      copiedWeightBucketCount: copiedBucketCountByMetric.weight,
+      totalCopiedBucketPaths: copiedBucketCountByMetric.height + copiedBucketCountByMetric.weight,
+      hasImtBucketWrites: Object.keys(writes).some(path => String(path).includes('/imt/')),
       usersWritten: writtenUserIds.size,
       writtenHeightUsers: writtenHeightUsers.size,
       writtenWeightUsers: writtenWeightUsers.size,
