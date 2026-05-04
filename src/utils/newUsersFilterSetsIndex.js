@@ -28,15 +28,6 @@ const SET_KEY_INDEX_SEPARATOR = '_';
 const FORBIDDEN_RTDB_SEGMENT_CHARS = ['.', '#', '$', '/', '[', ']'];
 
 
-const AGE_SEARCH_KEY_VALUE_PATTERN = /^d_\d{4}-\d{2}-\d{2}$/;
-
-const normalizeAgeSearchKeyValue = value => {
-  const normalized = normalizePathSegment(value);
-  if (!normalized) return '';
-  if (normalized === '?' || normalized === 'no') return normalized;
-  return AGE_SEARCH_KEY_VALUE_PATTERN.test(normalized) ? normalized : '';
-};
-
 const normalizePathSegment = value => {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -262,47 +253,7 @@ const buildAgeKeysByUserIdFromSearchKey = async (userIds, searchKeyFile = null) 
 
 
 
-const getSearchKeyBucketUsers = (searchKeyFile, indexName, value) => {
-  const source = searchKeyFile && typeof searchKeyFile === 'object' && !Array.isArray(searchKeyFile) ? searchKeyFile : null;
-  if (!source) return null;
-  const indexNode = source?.[indexName];
-  if (!indexNode || typeof indexNode !== 'object') return null;
-  const bucketNode = indexNode?.[value];
-  if (!bucketNode || typeof bucketNode !== 'object') return null;
-  return new Set(Object.keys(bucketNode).filter(Boolean));
-};
 
-const buildSanitizedBucketUsersMap = ({ searchKeyFile, indexName, values, allowedUserIds }) => {
-  const normalizedAllowedIds = new Set((Array.isArray(allowedUserIds) ? allowedUserIds : []).filter(Boolean));
-  if (!searchKeyFile || normalizedAllowedIds.size === 0) return {};
-
-  return (Array.isArray(values) ? values : []).reduce((acc, value) => {
-    const bucketUsers = getSearchKeyBucketUsers(searchKeyFile, indexName, value);
-    if (!(bucketUsers instanceof Set) || bucketUsers.size === 0) return acc;
-    const filtered = [...bucketUsers].filter(userId => normalizedAllowedIds.has(userId));
-    if (filtered.length) {
-      acc[value] = filtered;
-    }
-    return acc;
-  }, {});
-};
-
-const buildMetricBucketsForAllowedUsers = ({ searchKeyFile, indexName, allowedUserIds }) => {
-  const normalizedAllowedIds = new Set((Array.isArray(allowedUserIds) ? allowedUserIds : []).filter(Boolean));
-  if (!searchKeyFile || normalizedAllowedIds.size === 0) return {};
-
-  const indexNode = searchKeyFile?.[indexName];
-  if (!indexNode || typeof indexNode !== 'object') return {};
-
-  return Object.entries(indexNode).reduce((acc, [bucketValue, usersMap]) => {
-    if (!usersMap || typeof usersMap !== 'object') return acc;
-    const filteredUserIds = Object.keys(usersMap).filter(userId => normalizedAllowedIds.has(userId));
-    if (filteredUserIds.length > 0) {
-      acc[bucketValue] = filteredUserIds;
-    }
-    return acc;
-  }, {});
-};
 
 const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyFile = null, rawText = '' }) => {
   const normalizedRootPath = String(rootPath || '').trim();
