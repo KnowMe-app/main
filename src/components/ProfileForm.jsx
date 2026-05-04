@@ -994,6 +994,8 @@ export const ProfileForm = ({
         toast.error('Спершу підвантажте локальний файл searchKey перед збереженням.');
       } else if (code.includes('MISSING_SEARCHKEY_INDEX')) {
         toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.');
+      } else if (code.includes('EMPTY_FILTERED_SEARCHKEY_SET')) {
+        toast.error('Набір очищено, але нові дані не сформовані');
       } else {
         console.error('Failed to update additional access newUsers filter-set index', error);
         const details = error?.message || String(error);
@@ -1148,6 +1150,9 @@ export const ProfileForm = ({
       const matchedCount = Number(indexResult?.userIds?.length || 0);
       const writesCount = Number(indexResult?.writesCount || 0);
       const bucketWritesCount = Number(indexResult?.bucketWritesCount || 0);
+      const backendRequests = Array.isArray(indexResult?.debug?.backendRequests)
+        ? indexResult.debug.backendRequests
+        : [];
       const removedSetsCount = Number(indexResult?.debug?.removedSetKeys?.length || 0);
       const debugSets = Array.isArray(indexResult?.debug?.sets) ? indexResult.debug.sets : [];
       const debugPreview = debugSets
@@ -1165,6 +1170,11 @@ export const ProfileForm = ({
       );
       if (setsCount === 0 && writesCount === 0) {
         toast('searchKeySets не оновлено: не знайдено валідних правил.', { id: toastId });
+      } else if (
+        backendRequests.length === 1 &&
+        backendRequests[0]?.type === 'remove'
+      ) {
+        toast.error('Набір очищено, але нові дані не сформовані', { id: toastId });
       } else if (setsCount > 0 && bucketWritesCount === 0) {
         const bucketPathHints = debugSets
           .flatMap(set => (Array.isArray(set?.bucketPathsPreview) ? set.bucketPathsPreview : []))
@@ -1196,6 +1206,8 @@ export const ProfileForm = ({
         toast.error('Локальний файл searchKey не підвантажено. Індексація searchKeySets зупинена.', { id: toastId });
       } else if (code.includes('MISSING_SEARCHKEY_INDEX')) {
         toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.', { id: toastId });
+      } else if (code.includes('EMPTY_FILTERED_SEARCHKEY_SET')) {
+        toast.error('Набір очищено, але нові дані не сформовані', { id: toastId });
       } else {
         toast.error(`Помилка на етапі "${stage}": не вдалося виконати індексацію наборів фільтрів.\n${details}`, { id: toastId });
       }
