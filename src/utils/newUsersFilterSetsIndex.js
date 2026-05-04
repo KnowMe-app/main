@@ -1,4 +1,4 @@
-import { get, ref, remove, update } from 'firebase/database';
+import { get, ref, remove, set, update } from 'firebase/database';
 import {
   createAgeSearchKeyIndexInCollection,
   createContactSearchKeyIndexInCollection,
@@ -79,6 +79,14 @@ const IMT_BUCKET_RANGES = {
   '29_31': { min: 29, max: 31 },
   '32_35': { min: 32, max: 35 },
   '36_plus': { min: 36, max: Infinity },
+};
+
+const countRecords = node => {
+  if (!node || typeof node !== 'object') return 0;
+  return Object.values(node).reduce((total, value) => {
+    if (!value || typeof value !== 'object') return total;
+    return total + Object.keys(value).length;
+  }, 0);
 };
 
 export const collectMetricBucketsByUserId = searchKeyFile => {
@@ -598,25 +606,51 @@ export const buildNewUsersFilterSetIndex = async ({
       bucketPathsPreview: Object.keys(ruleBucketWrites).slice(0, 12),
     });
 
-    if (Object.keys(ruleBucketWrites).length) {
-      bucketWritesCount += Object.keys(ruleBucketWrites).length;
-      debug.backendRequests.push({
-        type: 'update',
-        path: '/',
-        payload: { ...ruleBucketWrites },
-      });
-      console.info('[searchKeySets] Firebase write start', {
-        path: '/',
-        setKey,
-        writesCount: Object.keys(ruleBucketWrites).length,
-      });
-      // eslint-disable-next-line no-await-in-loop
-      await update(ref(database), ruleBucketWrites);
-      console.info('[searchKeySets] Firebase write success', {
-        path: '/',
-        setKey,
-      });
+    const filteredSearchKeySet = Object.entries(ruleBucketWrites).reduce((acc, [path, payload]) => {
+      const prefix = `${SEARCH_KEY_SETS_ROOT}/${setKey}/`;
+      if (!path.startsWith(prefix) || payload == null) return acc;
+      const relativePath = path.slice(prefix.length);
+      const [indexName, bucketName, userId] = relativePath.split('/');
+      if (!indexName || !bucketName || !userId) return acc;
+      if (!acc[indexName]) acc[indexName] = {};
+      if (!acc[indexName][bucketName]) acc[indexName][bucketName] = {};
+      acc[indexName][bucketName][userId] = payload;
+      return acc;
+    }, {});
+
+    if (!filteredSearchKeySet || Object.keys(filteredSearchKeySet).length === 0) {
+      const error = new Error('filteredSearchKeySet empty — nothing to save');
+      error.code = 'EMPTY_FILTERED_SEARCHKEY_SET';
+      throw error;
     }
+
+    console.log('WRITE PAYLOAD:', {
+      setId: setKey,
+      hasPayload: !!filteredSearchKeySet,
+      fields: Object.keys(filteredSearchKeySet),
+      totalRecords: countRecords(filteredSearchKeySet),
+    });
+
+    debug.backendRequests.push({
+      type: 'set',
+      path: `${SEARCH_KEY_SETS_ROOT}/${setKey}`,
+      payload: filteredSearchKeySet,
+    });
+    console.log('backendRequests:', debug.backendRequests);
+
+    const writesCountForSet = Object.keys(ruleBucketWrites).length;
+    bucketWritesCount += writesCountForSet;
+    console.info('[searchKeySets] Firebase write start', {
+      path: `${SEARCH_KEY_SETS_ROOT}/${setKey}`,
+      setKey,
+      writesCount: writesCountForSet,
+    });
+    // eslint-disable-next-line no-await-in-loop
+    await set(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`), filteredSearchKeySet);
+    console.info('[searchKeySets] Firebase write success', {
+      path: `${SEARCH_KEY_SETS_ROOT}/${setKey}`,
+      setKey,
+    });
   }
 
   const aggregatedUserIds = [...new Set(nextSetPayloads.flatMap(item => Object.keys(item.userIds)))];
