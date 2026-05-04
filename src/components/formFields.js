@@ -158,6 +158,7 @@ export const pickerFields = [
   { name: 'facebook', placeholder: 'facebook_nickname', svg: 'facebook-f', ukrainianHint:'Facebook' },
   { name: 'instagram', placeholder: 'instagram_nickname', svg: 'instagram', ukrainianHint:'Instagram' },
   { name: 'tiktok', placeholder: 'tiktok_nickname', svg: 'tiktok', ukrainianHint:'TikTok' },
+  { name: 'twitter', placeholder: 'twitter_nickname', svg: 'no', ukrainianHint:'Twitter / X' },
   { name: 'linkedin', placeholder: 'linkedin_nickname', svg: 'no', ukrainianHint:'LinkedIn' },
   { name: 'youtube', placeholder: 'youtube_nickname', svg: 'no', ukrainianHint:'YouTube' },
   { name: 'vk', placeholder: '0107655', hint: '0107655', svg: 'vk', ukrainianHint:'VK' },

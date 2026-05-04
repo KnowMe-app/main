@@ -10,6 +10,7 @@ import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import {
   formatDateToDisplay,
   formatDateAndFormula,
+  normalizePhoneValue,
 } from 'components/inputValidations';
 import { parseUkTriggerQuery } from 'utils/parseUkTrigger';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
@@ -112,6 +113,22 @@ const PHENOTYPE_FIELDS = [
   'responsibility',
 ];
 const ANTHROPOMETRY_FIELDS = ['height', 'weight', 'imt', 'clothingSize', 'shoeSize', 'breastSize'];
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+const appendFieldValue = (currentValue, nextValue) => {
+  const normalizedNextValue = String(nextValue ?? '').trim();
+  if (!normalizedNextValue) return currentValue;
+
+  if (Array.isArray(currentValue)) {
+    return [...currentValue, normalizedNextValue];
+  }
+
+  const normalizedCurrentValue = String(currentValue ?? '').trim();
+  if (!normalizedCurrentValue) {
+    return normalizedNextValue;
+  }
+
+  return [normalizedCurrentValue, normalizedNextValue];
+};
 const REPRODUCTIVE_FIELDS = [
   'birth',
   'ownKids',
@@ -1934,18 +1951,39 @@ ${entries.join('\n')}`;
       const nextState = { ...prevState };
 
       if (!parsed) {
-        nextState.name = rawValue;
+        const normalizedPhone = normalizePhoneValue(rawValue);
+        const strippedPhoneCandidate = String(rawValue).replace(/[^\d+]/g, '');
+        const looksLikePhone =
+          Boolean(normalizedPhone) && /^[+]?\d[\d\s().-]*$/.test(strippedPhoneCandidate || rawValue);
+        const looksLikeEmail = EMAIL_REGEX.test(rawValue);
+
+        if (looksLikeEmail) {
+          nextState.email = appendFieldValue(prevState.email, rawValue);
+        } else if (looksLikePhone) {
+          nextState.phone = appendFieldValue(prevState.phone, normalizedPhone);
+        } else {
+          nextState.name = appendFieldValue(prevState.name, rawValue);
+        }
       } else {
         const { contactType, contactValues, name, surname } = parsed;
 
         if (contactType) {
-          nextState[contactType] = contactValues;
+          if (contactType === 'phone') {
+            const rawPhoneValue = Array.isArray(contactValues) ? contactValues[0] : contactValues;
+            nextState.phone = appendFieldValue(prevState.phone, normalizePhoneValue(rawPhoneValue));
+          } else if (contactType === 'email') {
+            const rawEmailValue = Array.isArray(contactValues) ? contactValues[0] : contactValues;
+            nextState.email = appendFieldValue(prevState.email, String(rawEmailValue || '').trim());
+          } else {
+            const rawContactValue = Array.isArray(contactValues) ? contactValues[0] : contactValues;
+            nextState[contactType] = appendFieldValue(prevState[contactType], rawContactValue);
+          }
         }
         if (name) {
-          nextState.name = name;
+          nextState.name = appendFieldValue(prevState.name, name);
         }
         if (surname) {
-          nextState.surname = surname;
+          nextState.surname = appendFieldValue(prevState.surname, surname);
         }
       }
 
@@ -2241,7 +2279,7 @@ ${entries.join('\n')}`;
                               }
                             }
 
-                            const needsSocialCleanup = ['facebook', 'instagram'].includes(field.name);
+                            const needsSocialCleanup = ['facebook', 'instagram', 'twitter'].includes(field.name);
                             const rawValue = state[field.name];
                             const normalizedValue = needsSocialCleanup && rawValue != null
                               ? inputUpdateValue(rawValue, field)
@@ -2720,7 +2758,7 @@ const InputField = styled.input`
   border-radius: 0;
   padding-left: ${({ fieldName, value }) => {
     if (fieldName === 'phone') return '20px';
-    if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok') return '25px';
+    if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok' || fieldName === 'twitter') return '25px';
     if (fieldName === 'facebook') return /^\d+$/.test(value) ? '20px' : '25px';
     if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' ? '23px' : '10px';
     return '10px';
@@ -2769,7 +2807,7 @@ const Hint = styled.label`
   position: absolute;
   padding-left: ${({ fieldName }) => {
     if (fieldName === 'phone') return '20px';
-    if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram' || fieldName === 'tiktok') return '25px';
+    if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram' || fieldName === 'tiktok' || fieldName === 'twitter') return '25px';
     if (fieldName === 'vk') return '23px';
     return '10px';
   }};
@@ -2824,7 +2862,7 @@ const InputFieldContainer = styled.div`
   &::before {
     content: ${({ fieldName, value }) => {
       if (fieldName === 'phone') return "'+'";
-      if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok') return "'@'";
+      if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok' || fieldName === 'twitter') return "'@'";
       if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
       if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' || value === undefined ? "'id'" : "''";
       return "''";
