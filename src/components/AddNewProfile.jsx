@@ -1653,6 +1653,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
     }
 
+    if (currentFilter === 'LAST_ACTION') {
+      filtersRef.current = nextValue;
+      setUsers({});
+      setCurrentPage(1);
+      setHasMore(true);
+      setDateOffsetLA(0);
+      setSearchLoading(true);
+      setHasSearched(true);
+      setTotalCount(0);
+      setFilters(nextValue);
+      return;
+    }
+
     filtersRef.current = nextValue;
     setSearchLoading(true);
     setHasSearched(true);
@@ -1660,6 +1673,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setFilters(nextValue);
   }, [
     currentFilter,
+    setDateOffsetLA,
     dislikeUsersData,
     favoriteUsersData,
     loadSortMode,
@@ -2928,18 +2942,84 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     const backendOffset = dateOffsetLA + slice.length;
-    const res = await fetchUsersByLastActionPaged(
-      backendOffset,
-      PAGE_SIZE,
-      undefined,
-      id => fetchUserById(id),
-      currentFilters,
-      fav,
-      dislikedUsersMap,
-      filterMain
-    );
+    const loadLastActionFilteredPage = async ({
+      targetCount = PAGE_SIZE,
+      startOffset = backendOffset,
+      startDateOffsetLA = backendOffset,
+    }) => {
+      const collected = {};
+      let cursor = Number.isFinite(startOffset) ? startOffset : 0;
+      let dateOffset = Number.isFinite(startDateOffsetLA) ? startDateOffsetLA : cursor;
+      let hasMoreLA = true;
+      let guard = 0;
 
-    if (res && Object.keys(res.users).length > 0) {
+      while (Object.keys(collected).length < targetCount && hasMoreLA && guard < 200) {
+        guard += 1;
+        // В LAST_ACTION завжди тягнемо RAW batch без checkbox-фільтрів, а потім фільтруємо локально.
+        // eslint-disable-next-line no-await-in-loop
+        const rawBatch = await fetchUsersByLastActionPaged(
+          cursor,
+          PAGE_SIZE,
+          undefined,
+          id => fetchUserById(id),
+          {},
+          fav,
+          dislikedUsersMap,
+          filterMain
+        );
+        const rawEntries = Object.entries(rawBatch?.users || {});
+        const filteredEntries = filterMain(
+          rawEntries,
+          'LAST_ACTION',
+          currentFilters,
+          fav,
+          dislikedUsersMap,
+        );
+
+        filteredEntries.forEach(([id, user]) => {
+          if (!collected[id]) {
+            collected[id] = user;
+          }
+        });
+
+        const nextCursor = Number.isFinite(rawBatch?.lastKey) ? rawBatch.lastKey : cursor + rawEntries.length;
+        cursor = nextCursor;
+        dateOffset = nextCursor;
+        hasMoreLA = Boolean(rawBatch?.hasMore);
+
+        const debugMessage = `[LA][checkbox] raw=${rawEntries.length}, filtered=${filteredEntries.length}, next=${hasMoreLA}, cursor=${cursor}, dateOffset=${dateOffset}, lastKey=${rawBatch?.lastKey ?? 'n/a'}, visible=${Object.keys(collected).length}`;
+        console.info(debugMessage);
+        toast(debugMessage, { duration: 1800 });
+
+        if (rawEntries.length === 0 && !hasMoreLA) break;
+      }
+
+      return { users: collected, cursor, dateOffsetLA: dateOffset, hasMore: hasMoreLA };
+    };
+
+    const hasCheckboxFilters = Object.values(currentFilters || {}).some(value => {
+      if (!value || value === 'off') return false;
+      if (typeof value === 'object') return Object.values(value).some(Boolean);
+      return true;
+    });
+    const res = hasCheckboxFilters
+      ? await loadLastActionFilteredPage({
+          targetCount: PAGE_SIZE,
+          startOffset: backendOffset,
+          startDateOffsetLA: backendOffset,
+        })
+      : await fetchUsersByLastActionPaged(
+          backendOffset,
+          PAGE_SIZE,
+          undefined,
+          id => fetchUserById(id),
+          currentFilters,
+          fav,
+          dislikedUsersMap,
+          filterMain
+        );
+
+    if (res && Object.keys(res.users || {}).length > 0) {
       const filteredUsers = currentFilters.favorite?.favOnly
         ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
         : res.users;
@@ -2947,10 +3027,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!isEditingRef.current) {
         setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
       }
-      setDateOffsetLA(res.lastKey);
+      const nextOffset = Number.isFinite(res.dateOffsetLA) ? res.dateOffsetLA : res.lastKey;
+      setDateOffsetLA(nextOffset);
       setHasMore(res.hasMore);
       setTotalCount(prev =>
-        Math.max(prev, res.lastKey + (res.hasMore ? PAGE_SIZE : 0), sortedCachedArr.length),
+        Math.max(prev, nextOffset + (res.hasMore ? PAGE_SIZE : 0), sortedCachedArr.length),
       );
       backendCount += Object.keys(filteredUsers).length;
       return { cacheCount, backendCount, hasMore: res.hasMore };
