@@ -140,10 +140,11 @@ const resolveImtTokensFromExactMetrics = (heightValue, weightValue) => {
   const bmi = weight / Math.pow(height / 100, 2);
   if (!Number.isFinite(bmi) || bmi <= 0) return ['?'];
 
-  if (bmi <= 28) return ['le28'];
-  if (bmi <= 31) return ['29_31'];
-  if (bmi <= 35) return ['32_35'];
-  return ['36_plus'];
+  if (bmi < 29) return ['le28'];
+  if (bmi >= 29 && bmi <= 31) return ['29_31'];
+  if (bmi >= 32 && bmi <= 35) return ['32_35'];
+  if (bmi >= 36) return ['36_plus'];
+  return ['?'];
 };
 
 const augmentBucketsWithImtMetricWrappers = bucketMap => {
