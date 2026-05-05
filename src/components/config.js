@@ -4586,66 +4586,81 @@ export const filterMain = (
   favoriteUsers = {},
   dislikedUsers = {},
 ) => {
-  console.log('filterMain called with', {
-    filterForload,
-    filterSettings,
-    usersCount: usersData.length,
-  });
+  const isPartialFilterActive = group =>
+    Boolean(group) && Object.values(group).some(value => !value);
+  const hasCsectionFilter = isPartialFilterActive(filterSettings.csection);
+  const hasUserRoleFilter = isPartialFilterActive(filterSettings.userRole);
+  const hasRoleFilter = !hasUserRoleFilter && isPartialFilterActive(filterSettings.role);
+  const hasMaritalStatusFilter = isPartialFilterActive(filterSettings.maritalStatus);
+  const hasBloodGroupFilter = isPartialFilterActive(filterSettings.bloodGroup);
+  const hasRhFilter = isPartialFilterActive(filterSettings.rh);
+  const hasAgeFilter = isPartialFilterActive(filterSettings.age);
+  const hasContactFilter = isPartialFilterActive(filterSettings.contact);
+  const hasBmiFilter = isPartialFilterActive(filterSettings.bmi);
+  const hasImtFilter = isPartialFilterActive(filterSettings.imt);
+  const hasHeightFilter = isPartialFilterActive(filterSettings.height);
+  const hasCountryFilter = isPartialFilterActive(filterSettings.country);
+  const hasUserIdFilter = isPartialFilterActive(filterSettings.userId);
+  const hasFieldsFilter = isPartialFilterActive(filterSettings.fields);
+  const hasCommentLengthFilter = isPartialFilterActive(filterSettings.commentLength);
+  const hasReactionFilter = isPartialFilterActive(filterSettings.reaction);
+  const isFavoriteOnlyFilter = Boolean(filterSettings.favorite?.favOnly);
+  const allowedContacts = hasContactFilter
+    ? Object.entries(filterSettings.contact)
+        .filter(([, isAllowed]) => isAllowed)
+        .map(([key]) => key)
+    : [];
 
   const filteredUsers = usersData.filter(([key, value]) => {
     const userId = value.userId || key;
-    let filters = {};
     if (filterForload === 'ED') {
-      // Якщо filterForload === ED, використовуємо додаткові фільтри
-      Object.assign(filters, {
-        filterByUserRole: filterByUserRole(value),
-        filterByUserIdLength: filterByUserIdLength(userId),
-        filterByAge: filterByAge(value, 30),
-      });
+      if (!filterByUserRole(value)) return false;
+      if (!filterByUserIdLength(userId)) return false;
+      if (!filterByAge(value, 30)) return false;
     }
 
-    if (filterSettings.csection && Object.values(filterSettings.csection).some(v => !v)) {
+    if (hasCsectionFilter) {
       const cat = categorizeCsection(value.csection);
-      filters.csection = !!filterSettings.csection[cat];
+      if (!filterSettings.csection[cat]) return false;
     }
 
-    if (filterSettings.userRole && Object.values(filterSettings.userRole).some(v => !v)) {
+    if (hasUserRoleFilter) {
       const cat = getUserRoleCategory(value);
-      filters.userRole = !!filterSettings.userRole[cat];
-    } else if (filterSettings.role && Object.values(filterSettings.role).some(v => !v)) {
+      if (!filterSettings.userRole[cat]) return false;
+    } else if (hasRoleFilter) {
       const cat = getRoleCategory(value);
-      filters.role = !!filterSettings.role[cat];
+      if (!filterSettings.role[cat]) return false;
     }
 
-    if (filterSettings.maritalStatus && Object.values(filterSettings.maritalStatus).some(v => !v)) {
+    if (hasMaritalStatusFilter) {
       const cat = getMaritalStatusCategory(value);
-      filters.maritalStatus = !!filterSettings.maritalStatus[cat];
+      if (!filterSettings.maritalStatus[cat]) return false;
     }
 
-    if (filterSettings.bloodGroup && Object.values(filterSettings.bloodGroup).some(v => !v)) {
+    if (hasBloodGroupFilter) {
       const cat = getBloodGroupCategory(value);
-      filters.bloodGroup = !!filterSettings.bloodGroup[cat];
+      if (!filterSettings.bloodGroup[cat]) return false;
     }
 
-    if (filterSettings.rh && Object.values(filterSettings.rh).some(v => !v)) {
+    if (hasRhFilter) {
       const cat = getRhCategory(value);
-      filters.rh = !!filterSettings.rh[cat];
+      if (!filterSettings.rh[cat]) return false;
     }
 
-    if (filterSettings.age && Object.values(filterSettings.age).some(v => !v)) {
+    if (hasAgeFilter) {
       const cat = getAgeCategory(value);
       if (Object.prototype.hasOwnProperty.call(filterSettings.age, '37_plus')) {
         if (cat === '37_42' || cat === '43_plus') {
-          filters.age = !!filterSettings.age['37_plus'];
+          if (!filterSettings.age['37_plus']) return false;
         } else {
-          filters.age = !!filterSettings.age[cat];
+          if (!filterSettings.age[cat]) return false;
         }
       } else {
-        filters.age = !!filterSettings.age[cat];
+        if (!filterSettings.age[cat]) return false;
       }
     }
 
-    if (filterSettings.contact && Object.values(filterSettings.contact).some(v => !v)) {
+    if (hasContactFilter) {
       const contactMap = {
         vk: hasContactValue(value.vk),
         instagram: hasContactValue(value.instagram),
@@ -4661,66 +4676,54 @@ export const filterMain = (
         line: hasContactValue(value.line),
         otherLink: hasContactValue(value.otherLink),
       };
-      const allowedContacts = Object.entries(filterSettings.contact)
-        .filter(([, isAllowed]) => isAllowed)
-        .map(([key]) => key);
-      filters.contact = allowedContacts.some(key => contactMap[key]);
+      if (!allowedContacts.some(contactKey => contactMap[contactKey])) return false;
     }
 
-    if (filterSettings.bmi && Object.values(filterSettings.bmi).some(v => !v)) {
+    if (hasBmiFilter) {
       const cat = getBmiCategory(value);
-      filters.bmi = !!filterSettings.bmi[cat];
+      if (!filterSettings.bmi[cat]) return false;
     }
 
-    if (filterSettings.imt && Object.values(filterSettings.imt).some(v => !v)) {
+    if (hasImtFilter) {
       const cat = getImtCategory(value);
-      filters.imt = !!filterSettings.imt[cat];
+      if (!filterSettings.imt[cat]) return false;
     }
 
-    if (filterSettings.height && Object.values(filterSettings.height).some(v => !v)) {
+    if (hasHeightFilter) {
       const cat = getHeightCategory(value);
-      filters.height = !!filterSettings.height[cat];
+      if (!filterSettings.height[cat]) return false;
     }
 
-    if (filterSettings.country && Object.values(filterSettings.country).some(v => !v)) {
+    if (hasCountryFilter) {
       const cat = getCountryCategory(value);
-      filters.country = !!filterSettings.country[cat];
+      if (!filterSettings.country[cat]) return false;
     }
 
-    if (filterSettings.userId && Object.values(filterSettings.userId).some(v => !v)) {
+    if (hasUserIdFilter) {
       const cat = getUserIdCategory(userId);
-      filters.userId = !!filterSettings.userId[cat];
+      if (!filterSettings.userId[cat]) return false;
     }
 
-    if (filterSettings.fields && Object.values(filterSettings.fields).some(v => !v)) {
+    if (hasFieldsFilter) {
       const cat = getFieldCountCategory(value);
-      filters.fields = !!filterSettings.fields[cat];
+      if (!filterSettings.fields[cat]) return false;
     }
 
-    if (filterSettings.commentLength && Object.values(filterSettings.commentLength).some(v => !v)) {
+    if (hasCommentLengthFilter) {
       const cat = getCommentLengthCategory(value.myComment);
-      filters.commentLength = !!filterSettings.commentLength[cat];
+      if (!filterSettings.commentLength[cat]) return false;
     }
 
-    if (filterSettings.favorite && filterSettings.favorite.favOnly) {
-      filters.favorite = isFavoriteUser(userId, favoriteUsers);
+    if (isFavoriteOnlyFilter && !isFavoriteUser(userId, favoriteUsers)) {
+      return false;
     }
 
-    if (filterSettings.reaction && Object.values(filterSettings.reaction).some(v => !v)) {
+    if (hasReactionFilter) {
       const reactionCategory = getReactionCategory(value, favoriteUsers, dislikedUsers);
-      filters.reaction = !!filterSettings.reaction[reactionCategory];
+      if (!filterSettings.reaction[reactionCategory]) return false;
     }
 
-    const failedFilters = Object.entries(filters).filter(([, result]) => !result);
-
-    if (failedFilters.length > 0) {
-      // console.log(`User excluded by filter: ${key}`);
-      failedFilters.forEach(() => {
-        // console.log(`Failed filter`);
-      });
-    }
-
-    return failedFilters.length === 0;
+    return true;
   });
 
   return filteredUsers;
