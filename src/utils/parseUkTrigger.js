@@ -94,7 +94,9 @@ export const parseUkTriggerQuery = rawQuery => {
   };
 
   result.name = name;
-  result.surname = surname;
+  if (surname) {
+    result.surname = surname;
+  }
 
   return result;
 };

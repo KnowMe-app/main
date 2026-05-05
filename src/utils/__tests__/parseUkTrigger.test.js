@@ -37,7 +37,6 @@ describe('parseUkTriggerQuery', () => {
       contactType: 'telegram',
       contactValues: ['УК СМ @just_nickname', 'just_nickname'],
       name: '',
-      surname: '',
       handle: 'just_nickname',
       searchPair: { telegram: 'УК СМ @just_nickname' },
     });
@@ -73,7 +72,6 @@ describe('parseUkTriggerQuery', () => {
       contactType: 'telegram',
       contactValues: ['УК АГЕНТ Надія @nadia_agent', 'nadia_agent'],
       name: 'Надія',
-      surname: '',
       handle: 'nadia_agent',
       searchPair: { telegram: 'УК АГЕНТ Надія @nadia_agent' },
     });
