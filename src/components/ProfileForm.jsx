@@ -129,6 +129,52 @@ const appendFieldValue = (currentValue, nextValue) => {
 
   return [normalizedCurrentValue, normalizedNextValue];
 };
+
+const normalizeUrlForStorage = rawValue => {
+  const trimmed = String(rawValue || '').trim();
+  if (!trimmed) return '';
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (/^www\./i.test(trimmed) || /^[\w-]+(\.[\w-]+)+/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+
+  return trimmed;
+};
+
+const resolvePpTechnicalInputTarget = rawValue => {
+  const trimmed = String(rawValue || '').trim();
+  if (!trimmed) return null;
+
+  const socialUrlMatchers = [
+    { fieldName: 'instagram', pattern: /(?:https?:\/\/)?(?:www\.)?instagram\.com\/([^/?#]+)/i },
+    { fieldName: 'facebook', pattern: /(?:https?:\/\/)?(?:www\.)?(?:facebook\.com|fb\.com)\/([^/?#]+)/i },
+    { fieldName: 'tiktok', pattern: /(?:https?:\/\/)?(?:www\.)?tiktok\.com\/([^/?#]+)/i },
+    { fieldName: 'linkedin', pattern: /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/([^/?#]+)/i },
+    { fieldName: 'youtube', pattern: /(?:https?:\/\/)?(?:m\.|www\.)?(?:youtube\.com|youtu\.be)\/([^/?#]+)/i },
+    { fieldName: 'twitter', pattern: /(?:https?:\/\/)?(?:www\.)?(?:twitter\.com|x\.com)\/([^/?#]+)/i },
+    { fieldName: 'telegram', pattern: /(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)\/([^/?#]+)/i },
+  ];
+
+  for (const matcher of socialUrlMatchers) {
+    const match = trimmed.match(matcher.pattern);
+    if (!match?.[1]) continue;
+
+    const normalizedValue = String(match[1]).replace(/^@/, '').trim();
+    if (normalizedValue) {
+      return { fieldName: matcher.fieldName, value: normalizedValue };
+    }
+  }
+
+  if (/^(https?:\/\/|www\.)/i.test(trimmed) || /^[\w-]+(\.[\w-]+)+/i.test(trimmed)) {
+    return { fieldName: 'otherLink', value: normalizeUrlForStorage(trimmed) };
+  }
+
+  return null;
+};
 const REPRODUCTIVE_FIELDS = [
   'birth',
   'ownKids',
@@ -2028,15 +2074,20 @@ ${entries.join('\n')}`;
 
       if (!parsed) {
         const normalizedPhone = normalizePhoneValue(rawValue);
-        const strippedPhoneCandidate = String(rawValue).replace(/[^\d+]/g, '');
         const looksLikePhone =
-          Boolean(normalizedPhone) && /^[+]?\d[\d\s().-]*$/.test(strippedPhoneCandidate || rawValue);
+          Boolean(normalizedPhone) && /^[+]?\d[\d\s().-]*$/.test(rawValue);
         const looksLikeEmail = EMAIL_REGEX.test(rawValue);
+        const resolvedTechnicalTarget = resolvePpTechnicalInputTarget(rawValue);
 
         if (looksLikeEmail) {
           nextState.email = appendFieldValue(prevState.email, rawValue);
         } else if (looksLikePhone) {
           nextState.phone = appendFieldValue(prevState.phone, normalizedPhone);
+        } else if (resolvedTechnicalTarget) {
+          nextState[resolvedTechnicalTarget.fieldName] = appendFieldValue(
+            prevState[resolvedTechnicalTarget.fieldName],
+            resolvedTechnicalTarget.value
+          );
         } else {
           nextState.name = appendFieldValue(prevState.name, rawValue);
         }
