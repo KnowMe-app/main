@@ -616,18 +616,65 @@ export const buildNewUsersFilterSetIndex = async ({
 
     const filteredSearchKeySet = Object.entries(ruleBucketWrites).reduce((acc, [path, payload]) => {
       const prefix = `${SEARCH_KEY_SETS_ROOT}/${setKey}/`;
+
       if (!path.startsWith(prefix) || payload == null) return acc;
+
       const relativePath = path.slice(prefix.length);
-      const [indexName, bucketName, userId] = relativePath.split('/');
-      if (!indexName || !bucketName || !userId) return acc;
+      const [indexName, bucketName] = relativePath.split('/');
+
+      if (!indexName || !bucketName) return acc;
+
+      if (indexName === 'imt') return acc;
+
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return acc;
+
+      const userIds = Object.keys(payload).filter(Boolean);
+
+      if (!userIds.length) return acc;
+
       if (!acc[indexName]) acc[indexName] = {};
       if (!acc[indexName][bucketName]) acc[indexName][bucketName] = {};
-      acc[indexName][bucketName][userId] = payload;
+
+      userIds.forEach(userId => {
+        acc[indexName][bucketName][userId] = true;
+      });
+
       return acc;
     }, {});
 
+    const debugFilteredFields = Object.keys(filteredSearchKeySet || {});
+    const debugRecordsCount = countRecords(filteredSearchKeySet || {});
+    const debugBucketsCount = debugFilteredFields.reduce((sum, field) => {
+      return sum + Object.keys(filteredSearchKeySet[field] || {}).length;
+    }, 0);
+
+    console.log('[searchKeySets][debug] build result', {
+      setKey,
+      ruleBucketWritesPaths: Object.keys(ruleBucketWrites),
+      ruleBucketWritesCount: Object.keys(ruleBucketWrites).length,
+      filteredFields: debugFilteredFields,
+      bucketsCount: debugBucketsCount,
+      recordsCount: debugRecordsCount,
+      firstPayload: Object.entries(ruleBucketWrites || {})[0],
+    });
+
     if (!filteredSearchKeySet || Object.keys(filteredSearchKeySet).length === 0) {
-      const error = new Error('filteredSearchKeySet empty — nothing to save');
+      console.error('[searchKeySets][EMPTY_FILTERED_SEARCHKEY_SET]', {
+        setKey,
+        rawText,
+        matchedUserIdsCount: Object.keys(userIds || {}).length,
+        ruleBucketWritesPaths: Object.keys(ruleBucketWrites || {}),
+        ruleBucketWritesPreview: Object.entries(ruleBucketWrites || {}).slice(0, 5),
+        searchKeyFields: Object.keys(searchKeyFile || {}),
+        hasHeight: Boolean(searchKeyFile?.height),
+        hasWeight: Boolean(searchKeyFile?.weight),
+        heightKeysSample: Object.keys(searchKeyFile?.height || {}).slice(0, 10),
+        weightKeysSample: Object.keys(searchKeyFile?.weight || {}).slice(0, 10),
+      });
+
+      const error = new Error(
+        `filteredSearchKeySet empty: matched=${Object.keys(userIds || {}).length}, writes=${Object.keys(ruleBucketWrites || {}).length}`
+      );
       error.code = 'EMPTY_FILTERED_SEARCHKEY_SET';
       throw error;
     }

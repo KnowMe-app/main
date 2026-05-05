@@ -1058,7 +1058,8 @@ export const ProfileForm = ({
       } else if (code.includes('MISSING_SEARCHKEY_INDEX')) {
         toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.');
       } else if (code.includes('EMPTY_FILTERED_SEARCHKEY_SET')) {
-        toast.error('Набір очищено, але нові дані не сформовані');
+        const details = error?.message || String(error);
+        toast.error(`Набір очищено, але нові дані не сформовані.\n${details}`);
       } else {
         console.error('Failed to update additional access newUsers filter-set index', error);
         const details = error?.message || String(error);
@@ -1270,7 +1271,7 @@ export const ProfileForm = ({
       } else if (code.includes('MISSING_SEARCHKEY_INDEX')) {
         toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.', { id: toastId });
       } else if (code.includes('EMPTY_FILTERED_SEARCHKEY_SET')) {
-        toast.error('Набір очищено, але нові дані не сформовані', { id: toastId });
+        toast.error(`Набір очищено, але нові дані не сформовані.\n${details}`, { id: toastId });
       } else {
         toast.error(`Помилка на етапі "${stage}": не вдалося виконати індексацію наборів фільтрів.\n${details}`, { id: toastId });
       }
