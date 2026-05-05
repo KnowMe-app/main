@@ -126,6 +126,26 @@ export const resolveImtBucketsFromMetricBuckets = (heightBucket, weightBucket) =
     .map(([bucket]) => bucket);
 };
 
+const resolveImtTokensFromExactMetrics = (heightValue, weightValue) => {
+  const normalizedHeight = String(heightValue ?? '').trim();
+  const normalizedWeight = String(weightValue ?? '').trim();
+  if (!normalizedHeight || !normalizedWeight) return [];
+  if (normalizedHeight === 'no' || normalizedWeight === 'no') return ['no'];
+  if (normalizedHeight === '?' || normalizedWeight === '?') return ['?'];
+
+  const height = Number.parseFloat(normalizedHeight.replace(',', '.'));
+  const weight = Number.parseFloat(normalizedWeight.replace(',', '.'));
+  if (!Number.isFinite(height) || !Number.isFinite(weight) || height <= 0 || weight <= 0) return ['?'];
+
+  const bmi = weight / Math.pow(height / 100, 2);
+  if (!Number.isFinite(bmi) || bmi <= 0) return ['?'];
+
+  if (bmi <= 28) return ['le28'];
+  if (bmi <= 31) return ['29_31'];
+  if (bmi <= 35) return ['32_35'];
+  return ['36_plus'];
+};
+
 const augmentBucketsWithImtMetricWrappers = bucketMap => {
   if (!bucketMap || typeof bucketMap !== 'object') return bucketMap;
 
@@ -268,11 +288,10 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
 
   const filterUserIdsByImtBuckets = candidateUserIds => {
     if (!hasImtFilter) return [...candidateUserIds];
-    const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(searchKeyFile);
 
     return [...candidateUserIds].filter(userId => {
-      const imtBuckets = resolveImtBucketsFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
-      return imtBuckets.some(bucket => imtValues.includes(bucket));
+      const imtTokens = resolveImtTokensFromExactMetrics(heightByUserId[userId], weightByUserId[userId]);
+      return imtTokens.some(token => imtValues.includes(token));
     });
   };
 
@@ -341,15 +360,16 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
 
     const usersWithWeight = imtCandidateUserIds.filter(userId => Boolean(weightByUserId[userId])).length;
     const usersWithValidImt = imtCandidateUserIds.filter(userId => {
-      const buckets = resolveImtBucketsFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
-      return buckets.some(bucket => ['le28', '29_31', '32_35', '36_plus'].includes(bucket));
+      const tokens = resolveImtTokensFromExactMetrics(heightByUserId[userId], weightByUserId[userId]);
+      return tokens.some(token => ['le28', '29_31', '32_35', '36_plus'].includes(token));
     }).length;
-    const usersInLe28 = imtCandidateUserIds.filter(userId => {
-      const buckets = resolveImtBucketsFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
-      return buckets.includes('le28');
+    const usersWithUnknownHeightWeight = imtCandidateUserIds.filter(userId => {
+      const heightValue = String(heightByUserId[userId] ?? '').trim();
+      const weightValue = String(weightByUserId[userId] ?? '').trim();
+      return ['?', 'no'].includes(heightValue) || ['?', 'no'].includes(weightValue);
     }).length;
-      const writtenHeightUsers = new Set();
-      const writtenWeightUsers = new Set();
+    const writtenHeightUsers = new Set();
+    const writtenWeightUsers = new Set();
     Object.entries(writes).forEach(([path, usersMap]) => {
       const parts = String(path).split('/');
       const metric = parts[parts.length - 2];
@@ -366,9 +386,10 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
         heightUsers: Object.keys(heightByUserId || {}).length,
         usersWithWeight,
         usersWithValidImt,
-        usersInLe28,
+        usersWithUnknownHeightWeight,
         imtSelectedTokens: imtValues,
         allowedUserIdsCount: allowedUserIdsForWrites.length,
+        allowedUserIdsPreview: allowedUserIdsForWrites.slice(0, 5),
         copiedFieldsCount: copiedFields.size,
         totalCopiedBuckets: copiedBuckets.size,
         totalCopiedUserRecords: copiedUserRecords,
@@ -377,6 +398,8 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
         usersWritten: writtenUserIds.size,
         writtenHeightUsers: writtenHeightUsers.size,
         writtenWeightUsers: writtenWeightUsers.size,
+        finalSearchKeySetFields: [...new Set(Object.keys(writes).map(path => String(path).split('/').slice(-2, -1)[0]))],
+        finalRecordsCount: copiedUserRecords,
         samplePaths: Object.keys(writes)
           .filter(path => path.includes('/height/') || path.includes('/weight/'))
           .slice(0, 10),
