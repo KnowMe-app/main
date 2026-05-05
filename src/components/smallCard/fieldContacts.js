@@ -10,7 +10,7 @@ import {
   FaLinkedin,
   FaYoutube,
 } from 'react-icons/fa';
-import { FaPhoneVolume } from 'react-icons/fa6';
+import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getCurrentValue } from '../getCurrentValue';
@@ -71,6 +71,20 @@ const buildLinkedinUrl = value => {
   return `https://www.linkedin.com/in/${normalizedValue}`;
 };
 
+const buildTwitterUrl = value => {
+  const rawValue = String(value ?? '').trim();
+
+  if (!rawValue) {
+    return '';
+  }
+
+  if (/^[a-z][a-z\d+\-.]*:/i.test(rawValue)) {
+    return rawValue;
+  }
+
+  return `https://x.com/${rawValue.replace(/^@/, '')}`;
+};
+
 export const fieldContacts = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderContacts:', data);
@@ -86,6 +100,7 @@ export const fieldContacts = (data, parentKey = '') => {
     vk: value => `https://vk.com/${value}`,
     linkedin: value => buildLinkedinUrl(value),
     youtube: value => `https://www.youtube.com/@${value}`,
+    twitter: value => buildTwitterUrl(value),
     otherLink: value => normalizeExternalUrl(value),
     email: value => `mailto:${value}`,
     telegramFromPhone: value => `https://t.me/${value.replace(/\s+/g, '')}`,
@@ -104,6 +119,7 @@ export const fieldContacts = (data, parentKey = '') => {
     vk: <FaVk style={iconStyle} />,
     linkedin: <FaLinkedin style={iconStyle} />,
     youtube: <FaYoutube style={iconStyle} />,
+    twitter: <FaXTwitter style={iconStyle} />,
     otherLink: <FaGlobe style={iconStyle} />,
     phone: <FaPhoneVolume style={iconStyle} />,
     email: <MdEmail style={iconStyle} />,
@@ -389,6 +405,7 @@ export const fieldContactsIcons = (
     vk: value => `https://vk.com/${value}`,
     linkedin: value => buildLinkedinUrl(value),
     youtube: value => `https://www.youtube.com/@${value}`,
+    twitter: value => buildTwitterUrl(value),
     otherLink: value => normalizeExternalUrl(value),
     email: value => `mailto:${value}`,
     telegramFromPhone: value => `https://t.me/${value.replace(/\s+/g, '')}`,
@@ -584,6 +601,20 @@ export const fieldContactsIcons = (
         style={linkStyle}
       >
         <FaLinkedin style={iconStyle} />
+      </a>
+    );
+  }
+
+  if (processed.twitter) {
+    elements.push(
+      <a
+        key="twitter"
+        href={links.twitter(processed.twitter)}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={linkStyle}
+      >
+        <FaXTwitter style={iconStyle} />
       </a>
     );
   }
