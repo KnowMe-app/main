@@ -12,6 +12,7 @@ import { PAGE_SIZE, MAX_LOOKBACK_DAYS } from './constants';
 import normalizeLastAction from '../utils/normalizeLastAction';
 
 const LOOKBACK_BATCH_DAYS = 7;
+const FILTER_CHUNK_SIZE = 40;
 
 const toLastActionTimestamp = value => {
   const normalized = normalizeLastAction(value);
@@ -60,8 +61,9 @@ export async function fetchUsersByLastActionPaged(
   }
 
   const combined = [];
-  let filtered = [];
+  const filtered = [];
   let dayOffset = 0;
+  let rawCursor = 0;
   const seenIds = new Set();
 
   while (filtered.length < target && dayOffset < MAX_LOOKBACK_DAYS) {
@@ -108,13 +110,18 @@ export async function fetchUsersByLastActionPaged(
       combined.sort(compareByLastActionDesc);
     }
 
-    filtered = filterMainFn(
-      combined,
-      'LAST_ACTION',
-      filterSettings,
-      favoriteUsers,
-      dislikedUsers
-    );
+    while (filtered.length < target && rawCursor < combined.length) {
+      const chunk = combined.slice(rawCursor, rawCursor + FILTER_CHUNK_SIZE);
+      rawCursor += FILTER_CHUNK_SIZE;
+      const filteredChunk = filterMainFn(
+        chunk,
+        'LAST_ACTION',
+        filterSettings,
+        favoriteUsers,
+        dislikedUsers
+      );
+      filtered.push(...filteredChunk);
+    }
 
     if (onProgress) {
       const partial = filtered.slice(
