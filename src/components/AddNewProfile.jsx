@@ -732,6 +732,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
     const urlUserId = params.get('userId');
     if (urlUserId) return urlUserId;
+    const persistedEditUserId = localStorage.getItem(EDIT_PROFILE_USER_ID_KEY) || '';
+    if (persistedEditUserId) return persistedEditUserId;
     return '';
   });
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
@@ -917,7 +919,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [state, setState] = useState(() => {
     const params = new URLSearchParams(location.search);
-    const restoredUserId = initialAccess.canAccessAdd ? params.get('userId') || '' : '';
+    const restoredUserIdFromUrl = params.get('userId') || '';
+    const restoredUserIdFromCache = localStorage.getItem(EDIT_PROFILE_USER_ID_KEY) || '';
+    const restoredUserId = initialAccess.canAccessAdd
+      ? (restoredUserIdFromUrl || restoredUserIdFromCache)
+      : '';
 
     if (!restoredUserId) {
       return {};
@@ -1489,6 +1495,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setSearch(prev => (prev === urlSearchValue ? prev : urlSearchValue));
     } else if (urlUserId && canAccessAdd) {
       setSearch(prev => (prev ? prev : urlUserId));
+    } else if (!urlUserId) {
+      setSearch(prev => (prev ? '' : prev));
     }
 
     if (urlUserId) {
@@ -1500,6 +1508,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setProfileSource('');
       setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
       return;
+    }
+    if (!hasSearchParam && stateUserIdRef.current) {
+      setState({});
     }
     setIsResolvingEditMode(false);
   }, [canAccessAdd, location.search, setSearch, setState]);
