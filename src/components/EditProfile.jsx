@@ -333,7 +333,8 @@ const EditProfile = () => {
     }
 
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
-    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
+    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'userId'];
+    const ppTechnicalInputFields = ['name', 'surname', ...contacts];
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     if (updatedState?.userId?.length > 20) {
@@ -357,7 +358,7 @@ const EditProfile = () => {
 
       const cleanedStateForNewUsers = Object.fromEntries(
         Object.entries(updatedState).filter(([key]) =>
-          [...fieldsForNewUsersOnly, ...contacts, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
+          [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
         )
       );
 
@@ -559,7 +560,8 @@ const EditProfile = () => {
 
   const persistCanonicalByRules = async mergedCard => {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
-    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'vk', 'userId'];
+    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'userId'];
+    const ppTechnicalInputFields = ['name', 'surname', ...contacts];
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     if (mergedCard?.userId?.length > 20) {
@@ -570,7 +572,7 @@ const EditProfile = () => {
       await updateDataInFiresoreDB(mergedCard.userId, cleanedState, 'check');
       const cleanedStateForNewUsers = Object.fromEntries(
         Object.entries(mergedCard).filter(([key]) =>
-          [...fieldsForNewUsersOnly, ...contacts, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
+          [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
         )
       );
       await updateDataInNewUsersRTDB(mergedCard.userId, cleanedStateForNewUsers, 'update');
