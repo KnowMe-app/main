@@ -210,11 +210,7 @@ export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {
   const processLastCycle = value => {
     const val = value.trim();
     const date = parseDate(val);
-    const normalizedStatus = status || (val ? 'menstruation' : '');
-
-    if (!status && normalizedStatus) {
-      setStatus(normalizedStatus);
-    }
+    const normalizedStatus = status;
 
     if (date) {
       const lastCycleFormatted = formatDateToServer(formatDate(date));
