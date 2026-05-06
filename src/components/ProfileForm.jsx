@@ -30,12 +30,35 @@ import {
   buildNewUsersFilterSetIndex,
   makeAdditionalRulesSetKey,
   collectMetricBucketsByUserId,
-  resolveImtBucketsFromMetricBuckets,
+  prepareAdditionalAccessBucketMapForSearchKey,
+  resolveImtTokensFromExactMetrics,
 } from 'utils/newUsersFilterSetsIndex';
 import {
   getCachedAdditionalRulesPreview,
   saveCachedAdditionalRulesPreview,
 } from 'utils/searchKeyCache';
+
+const getImtAllowedUserIdsFromSearchKey = (searchKeyPayload, imtValues) => {
+  const normalizedImtValues = [...new Set((Array.isArray(imtValues) ? imtValues : []).filter(Boolean))];
+  if (!normalizedImtValues.length || !searchKeyPayload || typeof searchKeyPayload !== 'object') return new Set();
+
+  const heightIdx = searchKeyPayload?.height;
+  const weightIdx = searchKeyPayload?.weight;
+  if (!heightIdx || typeof heightIdx !== 'object' || !weightIdx || typeof weightIdx !== 'object') {
+    return new Set();
+  }
+
+  const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId({ height: heightIdx, weight: weightIdx });
+  const metricUsers = new Set([
+    ...Object.keys(heightByUserId || {}),
+    ...Object.keys(weightByUserId || {}),
+  ]);
+
+  return new Set([...metricUsers].filter(userId => {
+    const imtBuckets = resolveImtTokensFromExactMetrics(heightByUserId[userId], weightByUserId[userId]);
+    return imtBuckets.some(bucket => normalizedImtValues.includes(bucket));
+  }));
+};
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -795,8 +818,11 @@ export const ProfileForm = ({
       try {
         const matched = new Set();
         parsedRuleGroups.forEach(parsedRules => {
-          const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
+          const { bucketMap, hasImtFilter, imtValues } = prepareAdditionalAccessBucketMapForSearchKey(
+            resolveAdditionalAccessSearchKeyBuckets(parsedRules)
+          );
           const perFilterSets = Object.entries(bucketMap || {}).reduce((acc, [indexName, values]) => {
+            if (indexName === 'imt' || indexName === 'users') return acc;
             const indexNode = localSearchKeyPayload?.[indexName];
             if (!indexNode || typeof indexNode !== 'object') return acc;
             const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
@@ -809,11 +835,15 @@ export const ProfileForm = ({
                 if (userId) idsForFilter.add(userId);
               });
             });
-            if (idsForFilter.size > 0) acc.push(idsForFilter);
+            acc.push(idsForFilter);
             return acc;
           }, []);
 
-          if (!perFilterSets.length) return;
+          if (hasImtFilter) {
+            perFilterSets.push(getImtAllowedUserIdsFromSearchKey(localSearchKeyPayload, imtValues));
+          }
+
+          if (!perFilterSets.length || perFilterSets.some(set => set.size === 0)) return;
 
           const groupIntersection = [...perFilterSets[0]].filter(userId =>
             perFilterSets.every(set => set.has(userId))
@@ -916,52 +946,38 @@ export const ProfileForm = ({
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
       const matched = new Set();
       parsedRuleGroups.forEach(parsedRules => {
-        const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
-        Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
+        const { bucketMap, hasImtFilter, imtValues } = prepareAdditionalAccessBucketMapForSearchKey(
+          resolveAdditionalAccessSearchKeyBuckets(parsedRules)
+        );
+        const perFilterSets = Object.entries(bucketMap || {}).reduce((acc, [indexName, values]) => {
+          if (indexName === 'imt' || indexName === 'users') return acc;
           const indexNode = localSearchKeyPayload?.[indexName];
-          if (!indexNode || typeof indexNode !== 'object') return;
+          if (!indexNode || typeof indexNode !== 'object') return acc;
           const normalizedValues = [...new Set(
             (Array.isArray(values) ? values : [...(values || [])]).filter(Boolean)
           )];
+          if (!normalizedValues.length) return acc;
+          const idsForFilter = new Set();
           normalizedValues.forEach(value => {
             const bucket = indexNode?.[value];
             if (!bucket || typeof bucket !== 'object') return;
-            Object.keys(bucket).forEach(userId => { if (userId) matched.add(userId); });
+            Object.keys(bucket).forEach(userId => { if (userId) idsForFilter.add(userId); });
           });
-        });
-      });
+          acc.push(idsForFilter);
+          return acc;
+        }, []);
 
-      // IMT: searchKey не має індексу /imt/ — обчислюємо з height/weight
-      const imtLineMatch = rulesText.match(/(?:^|\n)\s*imt\s*:\s*([^\n]+)/i);
-      if (imtLineMatch) {
-        const imtValues = imtLineMatch[1]
-          .split(',')
-          .map(t => t.trim())
-          .filter(Boolean);
-        const heightIdx = localSearchKeyPayload?.height;
-        const weightIdx = localSearchKeyPayload?.weight;
-        if (
-          imtValues.length > 0 &&
-          heightIdx && typeof heightIdx === 'object' &&
-          weightIdx && typeof weightIdx === 'object'
-        ) {
-          const pseudoFile = { height: heightIdx, weight: weightIdx };
-          const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(pseudoFile);
-          const allMetricUsers = new Set([
-            ...Object.keys(heightByUserId),
-            ...Object.keys(weightByUserId),
-          ]);
-          allMetricUsers.forEach(uid => {
-            const imtBuckets = resolveImtBucketsFromMetricBuckets(
-              heightByUserId[uid],
-              weightByUserId[uid]
-            );
-            if (imtBuckets.some(b => imtValues.includes(b))) {
-              matched.add(uid);
-            }
-          });
+        if (hasImtFilter) {
+          perFilterSets.push(getImtAllowedUserIdsFromSearchKey(localSearchKeyPayload, imtValues));
         }
-      }
+
+        if (!perFilterSets.length || perFilterSets.some(set => set.size === 0)) return;
+
+        const groupIntersection = [...perFilterSets[0]].filter(userId =>
+          perFilterSets.every(set => set.has(userId))
+        );
+        groupIntersection.forEach(userId => matched.add(userId));
+      });
       matchedByInputIndex[index + 1] = [...matched];
     }
 
@@ -1029,10 +1045,21 @@ export const ProfileForm = ({
           ? `imt=${lastSetDebug.imtValues.join(',')}`
           : 'imt=none';
         toast(`1/8 Rules parsed: ${selectedRulesSummary}`);
-        toast(`2/8 Allowed users: ${Number(lastSetDebug?.allowedUserIdsCount || 0)}`);
+        const finalAllowedCount = Number(lastSetDebug?.finalAllowedCount ?? lastSetDebug?.allowedUserIdsCount ?? 0);
+        const payloadUsersCount = Number(lastSetDebug?.payloadUsers ?? 0);
+        const payloadRecordsCount = Number(lastSetDebug?.payloadRecords ?? lastSetDebug?.copiedRecords ?? 0);
+        const payloadBucketsCount = Number(lastSetDebug?.payloadBuckets ?? lastSetDebug?.copiedBuckets ?? 0);
+        toast(
+          `Rules: imtAllowed=${lastSetDebug?.imtAllowedCount ?? '-'}, ageAllowed=${lastSetDebug?.ageAllowedCount ?? '-'}, finalAllowed=${finalAllowedCount}`
+        );
+        if (lastSetDebug?.hasImtFilter) {
+          toast(
+            `IMT: allowed=${lastSetDebug?.imtAllowedCount ?? '-'}, skipped derived height/weight buckets=${lastSetDebug?.skippedDerivedMetricBuckets ? 'true' : 'false'}`
+          );
+        }
         const searchKeyFields = Array.isArray(lastSetDebug?.searchKeyFields) ? lastSetDebug.searchKeyFields : [];
         toast(`3/8 searchKey fields: ${searchKeyFields.join(', ') || 'none'}`);
-        toast(`4/8 Start copying filtered searchKey, allowed=${Number(lastSetDebug?.allowedUserIdsCount || 0)}`);
+        toast(`Start copying filtered searchKey, finalAllowed=${finalAllowedCount}`);
         const copiedByField = lastSetDebug?.copiedByField && typeof lastSetDebug.copiedByField === 'object'
           ? lastSetDebug.copiedByField
           : {};
@@ -1047,16 +1074,16 @@ export const ProfileForm = ({
         }
         const filteredFields = Array.isArray(lastSetDebug?.filteredFields) ? lastSetDebug.filteredFields : [];
         toast(
-          `6/8 Filtered set ready: fields=${filteredFields.length}, buckets=${Number(lastSetDebug?.copiedBuckets || 0)}, records=${Number(lastSetDebug?.copiedRecords || 0)}`
+          `Filtered set ready: payloadUsers=${payloadUsersCount}, finalAllowed=${finalAllowedCount}, buckets=${payloadBucketsCount}, records=${payloadRecordsCount}`
         );
         const backendRequests = Array.isArray(lastSetDebug?.backendRequests) ? lastSetDebug.backendRequests : [];
         const removeCount = backendRequests.filter(item => item?.type === 'remove').length;
         const setCount = backendRequests.filter(item => item?.type === 'set').length;
-        toast(`7/8 Backend requests: remove=${removeCount}, set=${setCount}, payloadRecords=${Number(lastSetDebug?.copiedRecords || 0)}`);
+        toast(`Backend requests: remove=${removeCount}, set=${setCount}, payloadUsers=${payloadUsersCount}, payloadRecords=${payloadRecordsCount}`);
         if (lastSetDebug?.setKey) {
-          toast(`8/8 Saved searchKeySets/${lastSetDebug.setKey}: records=${Number(lastSetDebug?.copiedRecords || 0)}`);
+          toast.success(`Saved searchKeySets/${lastSetDebug.setKey}: users=${payloadUsersCount}, records=${payloadRecordsCount}`);
         }
-        if (Number(lastSetDebug?.allowedUserIdsCount || 0) === 0) {
+        if (finalAllowedCount === 0) {
           toast.error('STOP: allowedUserIds=0. Перевір tokens/rules/searchKey.imt');
         }
         if (!searchKeyFields.length) {
@@ -1065,7 +1092,7 @@ export const ProfileForm = ({
         if ((searchKeyFields.length === 1 && searchKeyFields[0] === 'imt') || !searchKeyFields.includes('height') || !searchKeyFields.includes('weight')) {
           toast.error('STOP: searchKey missing height/weight fields');
         }
-        if (Number(lastSetDebug?.copiedRecords || 0) === 0 && Number(lastSetDebug?.allowedUserIdsCount || 0) > 0) {
+        if (payloadRecordsCount === 0 && finalAllowedCount > 0) {
           toast.error('STOP: copiedRecords=0. allowedUserIds є, але жоден userId не знайдений у searchKey buckets');
         }
         if (removeCount > 0 && setCount === 0) {
@@ -1078,12 +1105,14 @@ export const ProfileForm = ({
         console.log('[searchKeySets debug]', {
           selectedRules: lastSetDebug?.selectedRules,
           allowedUserIdsCount: Number(lastSetDebug?.allowedUserIdsCount || 0),
+          finalAllowedCount,
+          payloadUsers: payloadUsersCount,
           allowedSample: Array.isArray(lastSetDebug?.allowedSample) ? lastSetDebug.allowedSample.slice(0, 10) : [],
           searchKeyFields,
           skippedFields: Array.isArray(lastSetDebug?.skippedFields) ? lastSetDebug.skippedFields : [],
           copiedByField,
-          copiedRecords: Number(lastSetDebug?.copiedRecords || 0),
-          copiedBuckets: Number(lastSetDebug?.copiedBuckets || 0),
+          copiedRecords: payloadRecordsCount,
+          copiedBuckets: payloadBucketsCount,
           filteredFields,
           backendRequests,
         });
@@ -1106,6 +1135,9 @@ export const ProfileForm = ({
       } else if (code.includes('EMPTY_FILTERED_SEARCHKEY_SET')) {
         const details = error?.message || String(error);
         toast.error(`Набір очищено, але нові дані не сформовані.\n${details}`);
+      } else if (code.includes('SEARCH_KEY_SET_PAYLOAD_MISMATCH')) {
+        const details = error?.message || String(error);
+        toast.error(details);
       } else {
         console.error('Failed to update additional access newUsers filter-set index', error);
         const details = error?.message || String(error);
@@ -1269,8 +1301,8 @@ export const ProfileForm = ({
         .slice(0, 2)
         .map(
           set =>
-            `${set?.setKey || 'unknown'}: users=${Number(set?.matchedUserIdsCount || 0)}, buckets=${Number(
-              set?.bucketWritesCount || 0
+            `${set?.setKey || 'unknown'}: payloadUsers=${Number(set?.debugInfo?.payloadUsers ?? 0)}, finalAllowed=${Number(set?.debugInfo?.finalAllowedCount ?? 0)}, buckets=${Number(
+              set?.debugInfo?.payloadBuckets ?? set?.bucketWritesCount ?? 0
             )}`
         )
         .join(' | ');
@@ -1318,6 +1350,8 @@ export const ProfileForm = ({
         toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.', { id: toastId });
       } else if (code.includes('EMPTY_FILTERED_SEARCHKEY_SET')) {
         toast.error(`Набір очищено, але нові дані не сформовані.\n${details}`, { id: toastId });
+      } else if (code.includes('SEARCH_KEY_SET_PAYLOAD_MISMATCH')) {
+        toast.error(details, { id: toastId });
       } else {
         toast.error(`Помилка на етапі "${stage}": не вдалося виконати індексацію наборів фільтрів.\n${details}`, { id: toastId });
       }
