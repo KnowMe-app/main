@@ -2113,15 +2113,15 @@ ${entries.join('\n')}`;
         const looksLikeEmail = EMAIL_REGEX.test(rawValue);
         const resolvedTechnicalTarget = resolvePpTechnicalInputTarget(rawValue);
 
-        if (looksLikeEmail) {
-          nextState.email = appendFieldValue(prevState.email, rawValue);
-        } else if (looksLikePhone) {
-          nextState.phone = appendFieldValue(prevState.phone, normalizedPhone);
-        } else if (resolvedTechnicalTarget) {
+        if (resolvedTechnicalTarget) {
           nextState[resolvedTechnicalTarget.fieldName] = appendFieldValue(
             prevState[resolvedTechnicalTarget.fieldName],
             resolvedTechnicalTarget.value
           );
+        } else if (looksLikeEmail) {
+          nextState.email = appendFieldValue(prevState.email, rawValue);
+        } else if (looksLikePhone) {
+          nextState.phone = appendFieldValue(prevState.phone, normalizedPhone);
         } else {
           nextState.name = appendFieldValue(prevState.name, rawValue);
         }
