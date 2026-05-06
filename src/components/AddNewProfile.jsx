@@ -1216,7 +1216,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             ...serverData,
             lastAction: serverLast,
             lastDelivery: formatDateToDisplay(serverData.lastDelivery),
-            cycleStatus: serverData.cycleStatus || 'menstruation',
           };
           updateCachedUser(formattedServer);
           cacheFetchedUsers(
@@ -3755,9 +3754,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const fieldsToRender = getFieldsToRender(state);
 
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
-  const scheduleUserData = state
-    ? { ...state, cycleStatus: effectiveCycleStatus ?? state.cycleStatus }
-    : state;
+  const scheduleUserData = state;
   const shouldShowSchedule = ['stimulation', 'pregnant'].includes(effectiveCycleStatus);
 
 
