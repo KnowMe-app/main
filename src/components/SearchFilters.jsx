@@ -116,6 +116,21 @@ export const SearchFilters = ({
         })),
       },
       {
+        filterName: 'lastAction',
+        label: 'LA',
+        compact: true,
+        options: [
+          { val: 'today', label: 'Today' },
+          { val: 'yesterday', label: 'Yesterday' },
+          { val: 'last3days', label: '3d' },
+          { val: 'last7days', label: '7d' },
+          { val: 'last14days', label: '14d' },
+          { val: 'last30days', label: '30d' },
+          { val: 'no', label: 'empty' },
+          { val: '?', label: 'unknown format' },
+        ],
+      },
+      {
         filterName: 'csection',
         label: 'C-section',
         options: [

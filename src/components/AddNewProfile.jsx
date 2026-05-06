@@ -114,6 +114,18 @@ import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { rebuildAllNewUsersFilterSetIndexes } from 'utils/newUsersFilterSetsIndex';
+import {
+  LAST_ACTION2_FILTER,
+  LAST_ACTION2_FILTER_STORAGE_KEY,
+  LAST_ACTION2_SORT_MODE,
+  LastAction2SortModeButton,
+  createInitialLA2State,
+  getLA2AcceptedOrder,
+  loadMoreUsersLastAction2 as loadMoreUsersLastAction2Mode,
+  resetLA2StateRef,
+  restoreLA2State,
+  serializeLA2State,
+} from './LastAction2Mode';
 
 const Container = styled.div`
   display: flex;
@@ -684,6 +696,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const LOAD_SORT_MODES = {
     GIT: 'GIT',
     LAST_ACTION: 'LA',
+    LAST_ACTION2: LAST_ACTION2_SORT_MODE,
     NO_GIT: 'NoGIT',
     SEARCH_ID_KEY_ONLY: 'SearchIdKeyOnly',
   };
@@ -698,6 +711,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     { key: 'imtHeightWeight', label: 'imt+height+weight' },
     { key: 'reaction', label: 'reaction' },
     { key: 'fieldCount', label: 'fields' },
+    { key: 'lastAction', label: 'lastAction' },
   ];
 
   const location = useLocation();
@@ -1137,15 +1151,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (syncedState?.userId) {
         try {
           const isUsersCollectionId = syncedState.userId.length > 20;
-          const searchKeySyncTask = isUsersCollectionId
-            ? syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState, {
+          const searchKeySyncTasks = [
+            syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState),
+          ];
+          if (isUsersCollectionId) {
+            searchKeySyncTasks.push(
+              syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState, {
                 rootPath: 'searchKey/users',
               })
-            : syncUserSearchKeyIndex(syncedState.userId, existingData || {}, syncedState);
+            );
+          }
 
           await Promise.all([
             syncUserSearchIdIndex(syncedState.userId, existingData || {}, syncedState),
-            searchKeySyncTask,
+            ...searchKeySyncTasks,
           ]);
         } catch (indexError) {
           const details = indexError?.message || String(indexError);
@@ -1429,6 +1448,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [dateOffset2, setDateOffset2] = useState(0);
   const [dateOffset21, setDateOffset21] = useState(0);
   const [dateOffsetLA, setDateOffsetLA] = useState(0);
+  const la2StateRef = useRef(createInitialLA2State());
   const initialFav = getFavorites();
   const [favoriteUsersData, setFavoriteUsersData] = useState(initialFav);
   const initialDis = getDislikes();
@@ -1460,6 +1480,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       dateOffset2,
       dateOffset21,
       dateOffsetLA,
+      la2State: currentFilter === LAST_ACTION2_FILTER ? serializeLA2State(la2StateRef.current) : undefined,
       loadSortMode,
       search,
       hasSearched,
@@ -1653,6 +1674,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
     }
 
+    if (currentFilter === LAST_ACTION2_FILTER) {
+      filtersRef.current = nextValue;
+      setUsers({});
+      setCurrentPage(1);
+      setHasMore(true);
+      setSearchLoading(true);
+      setHasSearched(true);
+      setTotalCount(0);
+      resetLA2StateRef(la2StateRef);
+      setFilters(nextValue);
+      return;
+    }
+
     if (currentFilter === 'LAST_ACTION') {
       filtersRef.current = nextValue;
       setUsers({});
@@ -1765,6 +1799,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     switch (mode) {
       case LOAD_SORT_MODES.LAST_ACTION:
         return 'LAST_ACTION';
+      case LOAD_SORT_MODES.LAST_ACTION2:
+        return LAST_ACTION2_FILTER;
       case LOAD_SORT_MODES.NO_GIT:
       case LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY:
         return 'DATE2.1';
@@ -1775,7 +1811,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const filterStorageKey =
-    loadSortMode === LOAD_SORT_MODES.LAST_ACTION ? 'addFiltersLA' : 'addFilters';
+    loadSortMode === LOAD_SORT_MODES.LAST_ACTION
+      ? 'addFiltersLA'
+      : loadSortMode === LOAD_SORT_MODES.LAST_ACTION2
+      ? LAST_ACTION2_FILTER_STORAGE_KEY
+      : 'addFilters';
 
   const searchIdAndSearchKeyOnlyMode = loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY;
 
@@ -2157,6 +2197,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
+    if (currentFilter === LAST_ACTION2_FILTER) {
+      loadMoreUsersLastAction2()
+        .then(({ cacheCount, backendCount }) => {
+          setCacheCount(cacheCount);
+          setBackendCount(backendCount);
+        })
+        .finally(() => setSearchLoading(false));
+      return;
+    }
+
     if (currentFilter === 'FAVORITE') {
       loadFavoriteUsers().finally(() => setSearchLoading(false));
       return;
@@ -2460,6 +2510,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
     return merged;
   };
+
+
+  const loadMoreUsersLastAction2 = (currentFilters = filters) =>
+    loadMoreUsersLastAction2Mode({
+      la2StateRef,
+      currentFilters,
+      currentPage,
+      hasMore,
+      isEditingRef,
+      fetchUserById,
+      mergeWithoutOverwrite,
+      cacheFetchedUsers,
+      setUsers,
+      setHasMore,
+      setTotalCount,
+    });
 
   useEffect(() => {
     const handleMoreActionsBackNavigation = () => {
@@ -2875,6 +2941,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setIdsForQuery(queryKey, [...new Set([...existingIds, ...loadedIds])]);
     return { cacheCount, backendCount, hasMore: more };
   };
+
   const loadMoreUsersLastAction = async (currentFilters = filters) => {
     let favRaw = getFavorites();
     let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
@@ -3062,6 +3129,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             : await loadMoreUsers21()
           : currentFilter === 'LAST_ACTION'
           ? await loadMoreUsersLastAction()
+          : currentFilter === LAST_ACTION2_FILTER
+          ? await loadMoreUsersLastAction2()
           : await loadMoreUsers(currentFilter);
       cacheLoaded += cacheCount;
       backendLoaded += backendCount;
@@ -3774,6 +3843,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return ids;
     }
 
+    if (currentFilter === LAST_ACTION2_FILTER) {
+      const acceptedOrder = getLA2AcceptedOrder(la2StateRef);
+      return ids.sort((a, b) => acceptedOrder.indexOf(a) - acceptedOrder.indexOf(b));
+    }
+
     if (currentFilter === 'LAST_ACTION') {
       return ids.sort((a, b) => {
         const left = normalizeLastAction(users[a]?.lastAction) || 0;
@@ -3813,6 +3887,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setDateOffset2(0);
     setDateOffset21(0);
     setDateOffsetLA(0);
+    resetLA2StateRef(la2StateRef);
     setLastKey21(null);
     setDuplicates('');
     setIsDuplicateView(false);
@@ -3870,6 +3945,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setDateOffset2(snapshot.dateOffset2 || 0);
     setDateOffset21(snapshot.dateOffset21 || 0);
     setDateOffsetLA(snapshot.dateOffsetLA || 0);
+    if (snapshot.la2State) {
+      la2StateRef.current = restoreLA2State(snapshot.la2State);
+    }
     setLoadSortMode(snapshot.loadSortMode || 'SearchIdKeyOnly');
     setSearch(snapshot.search || '');
     setHasSearched(Boolean(snapshot.hasSearched) || Object.keys(restoredUsers).length > 0);
@@ -4286,6 +4364,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 />
                 LA
               </SortModeLabel>
+              <LastAction2SortModeButton
+                SortModeLabel={SortModeLabel}
+                loadSortMode={loadSortMode}
+                onChange={handleLoadSortModeChange}
+              />
               <SortModeLabel>
                 <input
                   type="radio"
@@ -4312,7 +4395,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onChange={handleFilterChange}
               storageKey={filterStorageKey}
               bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
-              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction'] : undefined}
+              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'lastAction'] : undefined}
             />
             <ButtonsContainer>
               {userNotFound && (
