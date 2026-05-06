@@ -81,12 +81,87 @@ const IMT_BUCKET_RANGES = {
   '36_plus': { min: 36, max: Infinity },
 };
 
-const countRecords = node => {
-  if (!node || typeof node !== 'object') return 0;
-  return Object.values(node).reduce((total, value) => {
-    if (!value || typeof value !== 'object') return total;
-    return total + Object.keys(value).length;
+const collectUniqueUserIds = tree => {
+  const ids = new Set();
+
+  Object.values(tree || {}).forEach(fieldMap => {
+    Object.values(fieldMap || {}).forEach(bucketMap => {
+      Object.keys(bucketMap || {}).forEach(userId => {
+        if (userId) ids.add(userId);
+      });
+    });
+  });
+
+  return ids;
+};
+
+const countBuckets = tree => Object.values(tree || {}).reduce((sum, fieldMap) => {
+  return sum + Object.keys(fieldMap || {}).length;
+}, 0);
+
+const countRecords = tree => Object.values(tree || {}).reduce((total, fieldMap) => {
+  return total + Object.values(fieldMap || {}).reduce((fieldTotal, bucketMap) => {
+    return fieldTotal + Object.keys(bucketMap || {}).length;
   }, 0);
+}, 0);
+
+const intersectUserIdSets = userIdSets => {
+  const sets = (Array.isArray(userIdSets) ? userIdSets : [])
+    .filter(setValue => setValue instanceof Set);
+  if (!sets.length) return new Set();
+
+  const [smallestSet, ...remainingSets] = [...sets].sort((a, b) => a.size - b.size);
+  return new Set(
+    [...smallestSet].filter(userId => remainingSets.every(setValue => setValue.has(userId)))
+  );
+};
+
+const collectSearchKeyUserIdsForBuckets = (searchKeyFile, indexName, values) => {
+  const ids = new Set();
+  const normalizedIndexName = normalizePathSegment(indexName);
+  const indexNode = searchKeyFile?.[normalizedIndexName];
+  if (!normalizedIndexName || !indexNode || typeof indexNode !== 'object' || Array.isArray(indexNode)) return ids;
+
+  const normalizedValues = [
+    ...new Set((Array.isArray(values) ? values : [...(values || [])]).map(normalizePathSegment).filter(Boolean)),
+  ];
+
+  normalizedValues.forEach(value => {
+    const usersMap = indexNode?.[value];
+    if (!usersMap || typeof usersMap !== 'object' || Array.isArray(usersMap)) return;
+    Object.keys(usersMap).forEach(userId => {
+      if (userId) ids.add(userId);
+    });
+  });
+
+  return ids;
+};
+
+const buildSearchKeySetFromAllowedUsers = (searchKey, finalAllowedUserIds) => {
+  const result = {};
+
+  if (!searchKey || !finalAllowedUserIds || finalAllowedUserIds.size === 0) {
+    return result;
+  }
+
+  Object.entries(searchKey).forEach(([fieldName, fieldBuckets]) => {
+    if (fieldName === 'imt') return;
+    if (!fieldBuckets || typeof fieldBuckets !== 'object' || Array.isArray(fieldBuckets)) return;
+
+    Object.entries(fieldBuckets).forEach(([bucketName, bucketUsers]) => {
+      if (!bucketUsers || typeof bucketUsers !== 'object' || Array.isArray(bucketUsers)) return;
+
+      Object.keys(bucketUsers).forEach(userId => {
+        if (!finalAllowedUserIds.has(userId)) return;
+
+        if (!result[fieldName]) result[fieldName] = {};
+        if (!result[fieldName][bucketName]) result[fieldName][bucketName] = {};
+        result[fieldName][bucketName][userId] = true;
+      });
+    });
+  });
+
+  return result;
 };
 
 export const collectMetricBucketsByUserId = searchKeyFile => {
@@ -126,7 +201,7 @@ export const resolveImtBucketsFromMetricBuckets = (heightBucket, weightBucket) =
     .map(([bucket]) => bucket);
 };
 
-const resolveImtTokensFromExactMetrics = (heightValue, weightValue) => {
+export const resolveImtTokensFromExactMetrics = (heightValue, weightValue) => {
   const normalizedHeight = String(heightValue ?? '').trim();
   const normalizedWeight = String(weightValue ?? '').trim();
   if (!normalizedHeight || !normalizedWeight) return [];
@@ -147,27 +222,44 @@ const resolveImtTokensFromExactMetrics = (heightValue, weightValue) => {
   return ['?'];
 };
 
-const augmentBucketsWithImtMetricWrappers = bucketMap => {
-  if (!bucketMap || typeof bucketMap !== 'object') return bucketMap;
+const normalizeBucketValues = values => [
+  ...new Set((Array.isArray(values) ? values : [...(values || [])]).map(normalizePathSegment).filter(Boolean)),
+];
 
-  const imtBuckets = bucketMap.imt;
-  const hasImtBuckets =
-    (imtBuckets instanceof Set && imtBuckets.size > 0) ||
-    (Array.isArray(imtBuckets) && imtBuckets.length > 0);
+const hasBucketValues = values =>
+  (values instanceof Set && values.size > 0) ||
+  (Array.isArray(values) && values.length > 0);
 
-  if (!hasImtBuckets) return bucketMap;
+export const prepareAdditionalAccessBucketMapForSearchKey = bucketMap => {
+  if (!bucketMap || typeof bucketMap !== 'object') {
+    return { bucketMap: {}, hasImtFilter: false, imtValues: [], skippedDerivedMetricBuckets: false };
+  }
 
+  const imtValues = normalizeBucketValues(bucketMap.imt || []);
+  const hasImtFilter = imtValues.length > 0;
   const nextBucketMap = { ...bucketMap };
-  ['height', 'weight'].forEach(metricKey => {
-    const existing = nextBucketMap[metricKey];
-    const hasExisting =
-      (existing instanceof Set && existing.size > 0) ||
-      (Array.isArray(existing) && existing.length > 0);
-    if (hasExisting) return;
-    nextBucketMap[metricKey] = new Set(METRIC_BUCKETS_BY_INDEX[metricKey]);
-  });
+  let skippedDerivedMetricBuckets = false;
 
-  return nextBucketMap;
+  if (hasImtFilter) {
+    ['height', 'weight'].forEach(metricKey => {
+      const metricValues = normalizeBucketValues(nextBucketMap[metricKey] || []);
+      if (!metricValues.length) return;
+
+      const derivedMetricBuckets = new Set(METRIC_BUCKETS_BY_INDEX[metricKey] || []);
+      const realSearchKeyValues = metricValues.filter(value => !derivedMetricBuckets.has(value));
+      if (realSearchKeyValues.length !== metricValues.length) {
+        skippedDerivedMetricBuckets = true;
+      }
+
+      if (realSearchKeyValues.length) {
+        nextBucketMap[metricKey] = new Set(realSearchKeyValues);
+      } else {
+        delete nextBucketMap[metricKey];
+      }
+    });
+  }
+
+  return { bucketMap: nextBucketMap, hasImtFilter, imtValues, skippedDerivedMetricBuckets };
 };
 
 const splitRawRulesToSetTexts = rawRules => {
@@ -254,38 +346,31 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
   if (!searchKeyFile || typeof searchKeyFile !== 'object' || Array.isArray(searchKeyFile)) return { writes: {}, debugInfo: null };
 
   const normalizedUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).filter(Boolean))];
-  const baseBucketMap = augmentBucketsWithImtMetricWrappers(mergeSearchKeyBuckets(parsedRuleGroups));
+  const rawBucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
+  let bucketMapWithFallbackImt = rawBucketMap;
 
-  const existingImt = baseBucketMap?.imt;
-  const hasExistingImt =
-    (existingImt instanceof Set && existingImt.size > 0) ||
-    (Array.isArray(existingImt) && existingImt.length > 0);
+  const existingImt = rawBucketMap?.imt;
+  const hasExistingImt = hasBucketValues(existingImt);
 
-  let bucketMap = baseBucketMap;
   if (!hasExistingImt && rawText) {
     const imtLineMatch = String(rawText).match(/(?:^|\n)\s*imt\s*:\s*([^\n]+)/i);
     if (imtLineMatch) {
       const imtTokens = imtLineMatch[1].split(',').map(t => t.trim()).filter(Boolean);
       if (imtTokens.length > 0) {
-        bucketMap = {
-          ...baseBucketMap,
+        bucketMapWithFallbackImt = {
+          ...rawBucketMap,
           imt: new Set(imtTokens),
-          height: (baseBucketMap.height instanceof Set && baseBucketMap.height.size > 0)
-            ? baseBucketMap.height
-            : new Set(METRIC_BUCKETS_BY_INDEX.height),
-          weight: (baseBucketMap.weight instanceof Set && baseBucketMap.weight.size > 0)
-            ? baseBucketMap.weight
-            : new Set(METRIC_BUCKETS_BY_INDEX.weight),
         };
       }
     }
   }
 
-  const imtValuesRaw = bucketMap?.imt;
-  const imtValues = [
-    ...new Set((Array.isArray(imtValuesRaw) ? imtValuesRaw : [...(imtValuesRaw || [])]).map(normalizePathSegment)),
-  ];
-  const hasImtFilter = imtValues.length > 0;
+  const {
+    bucketMap,
+    hasImtFilter,
+    imtValues,
+    skippedDerivedMetricBuckets,
+  } = prepareAdditionalAccessBucketMapForSearchKey(bucketMapWithFallbackImt);
 
   const filterUserIdsByImtBuckets = candidateUserIds => {
     if (!hasImtFilter) return [...candidateUserIds];
@@ -308,45 +393,64 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
 
   const imtCandidateUserIds = resolveImtCandidateUserIds();
   const imtAllowedUserIds = hasImtFilter ? filterUserIdsByImtBuckets(imtCandidateUserIds) : normalizedUserIds;
-  const allowedUserIdsForWrites = hasImtFilter
-    ? imtAllowedUserIds
-    : normalizedUserIds;
-  const normalizedAllowedIds = new Set(allowedUserIdsForWrites.filter(Boolean));
+  const prefilterUserIdsSet = new Set(normalizedUserIds.filter(Boolean));
+  const activeRuleUserIdSets = [];
+  const ruleAllowedCounts = {};
+
+  if (prefilterUserIdsSet.size > 0) {
+    activeRuleUserIdSets.push(prefilterUserIdsSet);
+    ruleAllowedCounts.prefilter = prefilterUserIdsSet.size;
+  }
+
+  Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
+    const normalizedIndexName = normalizePathSegment(indexName);
+    if (!normalizedIndexName || normalizedIndexName === 'users' || normalizedIndexName === 'imt') return;
+
+    const normalizedValues = [
+      ...new Set((Array.isArray(values) ? values : [...(values || [])]).map(normalizePathSegment).filter(Boolean)),
+    ];
+    if (!normalizedValues.length) return;
+
+    const fieldAllowedUserIds = collectSearchKeyUserIdsForBuckets(
+      searchKeyFile,
+      normalizedIndexName,
+      normalizedValues
+    );
+    activeRuleUserIdSets.push(fieldAllowedUserIds);
+    ruleAllowedCounts[normalizedIndexName] = fieldAllowedUserIds.size;
+  });
+
+  if (hasImtFilter) {
+    const imtAllowedUserIdsSet = new Set(imtAllowedUserIds.filter(Boolean));
+    activeRuleUserIdSets.push(imtAllowedUserIdsSet);
+    ruleAllowedCounts.imt = imtAllowedUserIdsSet.size;
+  }
+
+  const finalAllowedUserIds = activeRuleUserIdSets.length
+    ? intersectUserIdSets(activeRuleUserIdSets)
+    : prefilterUserIdsSet;
+  const allowedUserIdsForWrites = [...finalAllowedUserIds];
+  const normalizedAllowedIds = finalAllowedUserIds;
+
+  const filteredSearchKeySet = buildSearchKeySetFromAllowedUsers(searchKeyFile, normalizedAllowedIds);
+  const payloadUserIds = collectUniqueUserIds(filteredSearchKeySet);
+  const payloadBuckets = countBuckets(filteredSearchKeySet);
+  const copiedUserRecords = countRecords(filteredSearchKeySet);
 
   const writes = {};
-  const copiedFields = new Set();
+  const copiedFields = new Set(Object.keys(filteredSearchKeySet || {}));
   const copiedBuckets = new Set();
-  let copiedUserRecords = 0;
-
   const copiedByField = {};
-  const skippedFields = [];
-  Object.entries(searchKeyFile || {}).forEach(([indexName, bucketsMap]) => {
-    const normalizedIndexName = normalizePathSegment(indexName);
-    if (!normalizedIndexName || normalizedIndexName === 'users') return;
-    if (normalizedIndexName === 'imt') {
-      skippedFields.push('imt');
-      return;
-    }
-    if (!bucketsMap || typeof bucketsMap !== 'object' || Array.isArray(bucketsMap)) return;
-    if (!copiedByField[normalizedIndexName]) copiedByField[normalizedIndexName] = { buckets: 0, records: 0 };
+  const skippedFields = Object.prototype.hasOwnProperty.call(searchKeyFile || {}, 'imt') ? ['imt'] : [];
 
-    Object.entries(bucketsMap).forEach(([bucketValue, usersMap]) => {
-      if (!usersMap || typeof usersMap !== 'object' || Array.isArray(usersMap)) return;
-      const filteredUserIds = Object.keys(usersMap).filter(userId => (
-        Boolean(userId) && normalizedAllowedIds.has(userId)
-      ));
-      if (!filteredUserIds.length) return;
-
-      const path = `${normalizedRootPath}/${normalizedIndexName}/${normalizePathSegment(bucketValue)}`;
-      writes[path] = filteredUserIds.reduce((result, userId) => {
-        result[userId] = true;
-        return result;
-      }, {});
-      copiedFields.add(normalizedIndexName);
+  Object.entries(filteredSearchKeySet || {}).forEach(([indexName, bucketsMap]) => {
+    if (!copiedByField[indexName]) copiedByField[indexName] = { buckets: 0, records: 0 };
+    Object.entries(bucketsMap || {}).forEach(([bucketValue, usersMap]) => {
+      const path = `${normalizedRootPath}/${indexName}/${bucketValue}`;
+      writes[path] = usersMap;
       copiedBuckets.add(path);
-      copiedUserRecords += filteredUserIds.length;
-      copiedByField[normalizedIndexName].buckets += 1;
-      copiedByField[normalizedIndexName].records += filteredUserIds.length;
+      copiedByField[indexName].buckets += 1;
+      copiedByField[indexName].records += Object.keys(usersMap || {}).length;
     });
   });
 
@@ -389,6 +493,10 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
         usersWithValidImt,
         usersWithUnknownHeightWeight,
         imtSelectedTokens: imtValues,
+        imtAllowedCount: hasImtFilter ? imtAllowedUserIds.length : null,
+        ageAllowedCount: ruleAllowedCounts.age ?? null,
+        finalAllowedCount: finalAllowedUserIds.size,
+        payloadUsers: payloadUserIds.size,
         allowedUserIdsCount: allowedUserIdsForWrites.length,
         allowedUserIdsPreview: allowedUserIdsForWrites.slice(0, 5),
         copiedFieldsCount: copiedFields.size,
@@ -396,6 +504,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
         totalCopiedUserRecords: copiedUserRecords,
         bucketsWritten: Object.keys(writes).length,
         hasImtBucketWrites: Object.keys(writes).some(path => String(path).includes('/imt/')),
+        skippedDerivedMetricBuckets,
         usersWritten: writtenUserIds.size,
         writtenHeightUsers: writtenHeightUsers.size,
         writtenWeightUsers: writtenWeightUsers.size,
@@ -406,21 +515,21 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
           .slice(0, 10),
       });
 
-    const heightBucketsCount = Object.keys(writes).filter(path => path.includes('/height/')).length;
-    const weightBucketsCount = Object.keys(writes).filter(path => path.includes('/weight/')).length;
-    if (allowedUserIdsForWrites.length > 0 && copiedUserRecords === 0) {
-      throw new Error('Allowed users знайдені, але buckets не сформовані');
-    }
-    if (allowedUserIdsForWrites.length > 0 && (heightBucketsCount === 0 || weightBucketsCount === 0)) {
-      throw new Error('Allowed users знайдені, але buckets height/weight не сформовані');
-    }
   }
 
   return {
     writes,
+    finalAllowedUserIds,
     debugInfo: {
       selectedRules: parsedRuleGroups,
       allowedUserIdsCount: allowedUserIdsForWrites.length,
+      finalAllowedCount: finalAllowedUserIds.size,
+      imtAllowedCount: hasImtFilter ? imtAllowedUserIds.length : null,
+      ageAllowedCount: ruleAllowedCounts.age ?? null,
+      ruleAllowedCounts,
+      payloadUsers: payloadUserIds.size,
+      payloadBuckets,
+      payloadRecords: copiedUserRecords,
       allowedSample: [...normalizedAllowedIds].slice(0, 10),
       searchKeyFields: Object.keys(searchKeyFile || {}),
       skippedFields,
@@ -430,6 +539,7 @@ const buildRuleBucketWrites = ({ rootPath, parsedRuleGroups, userIds, searchKeyF
       filteredFields: [...copiedFields],
       hasImtFilter,
       imtValues,
+      skippedDerivedMetricBuckets,
     },
   };
 };
@@ -599,84 +709,84 @@ export const buildNewUsersFilterSetIndex = async ({
     await remove(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`));
 
     const rootPath = `${SEARCH_KEY_SETS_ROOT}/${setKey}`;
-    const { writes: ruleBucketWrites, debugInfo } = buildRuleBucketWrites({
+    const { writes: ruleBucketWrites, debugInfo, finalAllowedUserIds } = buildRuleBucketWrites({
       rootPath,
       parsedRuleGroups,
       userIds: Object.keys(userIds || {}),
       searchKeyFile,
       rawText,
     });
+    const saveAllowedUserIds = finalAllowedUserIds instanceof Set
+      ? finalAllowedUserIds
+      : new Set(Object.keys(userIds || {}).filter(Boolean));
+
+    const filteredSearchKeySet = buildSearchKeySetFromAllowedUsers(
+      searchKeyFile,
+      saveAllowedUserIds
+    );
+    const debugFilteredFields = Object.keys(filteredSearchKeySet || {});
+    const payloadUserIds = collectUniqueUserIds(filteredSearchKeySet || {});
+    const debugRecordsCount = countRecords(filteredSearchKeySet || {});
+    const debugBucketsCount = countBuckets(filteredSearchKeySet || {});
+    const finalAllowedCount = saveAllowedUserIds.size;
+
     debug.sets.push({
       setKey,
       matchedUserIdsCount: Object.keys(userIds || {}).length,
       parsedRuleGroupsCount: Array.isArray(parsedRuleGroups) ? parsedRuleGroups.length : 0,
-      bucketWritesCount: Object.keys(ruleBucketWrites).length,
-      bucketPathsPreview: Object.keys(ruleBucketWrites).slice(0, 12),
-      debugInfo,
+      bucketWritesCount: debugBucketsCount,
+      bucketPathsPreview: Object.entries(filteredSearchKeySet || {})
+        .flatMap(([fieldName, bucketsMap]) => Object.keys(bucketsMap || {}).map(bucketName => `${fieldName}/${bucketName}`))
+        .slice(0, 12),
+      debugInfo: {
+        ...(debugInfo || {}),
+        finalAllowedCount,
+        payloadUsers: payloadUserIds.size,
+        payloadBuckets: debugBucketsCount,
+        payloadRecords: debugRecordsCount,
+      },
     });
-
-    const filteredSearchKeySet = Object.entries(ruleBucketWrites).reduce((acc, [path, payload]) => {
-      const prefix = `${SEARCH_KEY_SETS_ROOT}/${setKey}/`;
-
-      if (!path.startsWith(prefix) || payload == null) return acc;
-
-      const relativePath = path.slice(prefix.length);
-      const [indexName, bucketName] = relativePath.split('/');
-
-      if (!indexName || !bucketName) return acc;
-
-      if (indexName === 'imt') return acc;
-
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return acc;
-
-      const userIds = Object.keys(payload).filter(Boolean);
-
-      if (!userIds.length) return acc;
-
-      if (!acc[indexName]) acc[indexName] = {};
-      if (!acc[indexName][bucketName]) acc[indexName][bucketName] = {};
-
-      userIds.forEach(userId => {
-        acc[indexName][bucketName][userId] = true;
-      });
-
-      return acc;
-    }, {});
-
-    const debugFilteredFields = Object.keys(filteredSearchKeySet || {});
-    const debugRecordsCount = countRecords(filteredSearchKeySet || {});
-    const debugBucketsCount = debugFilteredFields.reduce((sum, field) => {
-      return sum + Object.keys(filteredSearchKeySet[field] || {}).length;
-    }, 0);
 
     console.log('[searchKeySets][debug] build result', {
       setKey,
-      ruleBucketWritesPaths: Object.keys(ruleBucketWrites),
-      ruleBucketWritesCount: Object.keys(ruleBucketWrites).length,
+      legacyRuleBucketWritesPaths: Object.keys(ruleBucketWrites),
+      payloadBucketsCount: debugBucketsCount,
       filteredFields: debugFilteredFields,
       bucketsCount: debugBucketsCount,
       recordsCount: debugRecordsCount,
-      firstPayload: Object.entries(ruleBucketWrites || {})[0],
+      payloadUsers: payloadUserIds.size,
+      finalAllowedCount,
+      source: 'searchKeyFile+finalAllowedUserIds',
     });
 
-    if (!filteredSearchKeySet || Object.keys(filteredSearchKeySet).length === 0) {
-      console.error('[searchKeySets][EMPTY_FILTERED_SEARCHKEY_SET]', {
-        setKey,
-        rawText,
-        matchedUserIdsCount: Object.keys(userIds || {}).length,
-        ruleBucketWritesPaths: Object.keys(ruleBucketWrites || {}),
-        ruleBucketWritesPreview: Object.entries(ruleBucketWrites || {}).slice(0, 5),
+    if (payloadUserIds.size === 0 || debugRecordsCount === 0) {
+      console.error('[searchKeySets] EMPTY PAYLOAD', {
+        finalAllowedCount,
         searchKeyFields: Object.keys(searchKeyFile || {}),
-        hasHeight: Boolean(searchKeyFile?.height),
-        hasWeight: Boolean(searchKeyFile?.weight),
-        heightKeysSample: Object.keys(searchKeyFile?.height || {}).slice(0, 10),
-        weightKeysSample: Object.keys(searchKeyFile?.weight || {}).slice(0, 10),
+        payloadUserIds: payloadUserIds.size,
+        payloadRecords: debugRecordsCount,
+        payloadBuckets: debugBucketsCount,
       });
 
       const error = new Error(
-        `filteredSearchKeySet empty: matched=${Object.keys(userIds || {}).length}, writes=${Object.keys(ruleBucketWrites || {}).length}`
+        `filteredSearchKeySet empty: matched=${finalAllowedCount}, payloadUsers=${payloadUserIds.size}, records=${debugRecordsCount}`
       );
       error.code = 'EMPTY_FILTERED_SEARCHKEY_SET';
+      throw error;
+    }
+
+    if (payloadUserIds.size !== finalAllowedCount) {
+      console.error('Mismatch before save', {
+        uiAvailableCount: finalAllowedCount,
+        finalAllowedCount,
+        payloadUsers: payloadUserIds.size,
+        selectedRules: debugInfo?.selectedRules,
+        imtAllowedCount: debugInfo?.imtAllowedCount,
+        ageAllowedCount: debugInfo?.ageAllowedCount,
+      });
+
+      const error = new Error(`Mismatch before save: final=${finalAllowedCount}, payload=${payloadUserIds.size}`);
+      error.code = 'SEARCH_KEY_SET_PAYLOAD_MISMATCH';
       throw error;
     }
 
@@ -684,7 +794,8 @@ export const buildNewUsersFilterSetIndex = async ({
       setId: setKey,
       hasPayload: !!filteredSearchKeySet,
       fields: Object.keys(filteredSearchKeySet),
-      totalRecords: countRecords(filteredSearchKeySet),
+      payloadUsers: payloadUserIds.size,
+      totalRecords: debugRecordsCount,
     });
 
     debug.backendRequests.push({
@@ -695,17 +806,23 @@ export const buildNewUsersFilterSetIndex = async ({
     debug.lastSetDebug = {
       ...(debugInfo || {}),
       filteredFields: Object.keys(filteredSearchKeySet || {}),
+      finalAllowedCount,
+      payloadUsers: payloadUserIds.size,
+      payloadBuckets: debugBucketsCount,
+      payloadRecords: debugRecordsCount,
       backendRequests: debug.backendRequests,
       setKey,
     };
     console.log('backendRequests:', debug.backendRequests);
 
-    const writesCountForSet = Object.keys(ruleBucketWrites).length;
+    const writesCountForSet = debugBucketsCount;
     bucketWritesCount += writesCountForSet;
     console.info('[searchKeySets] Firebase write start', {
       path: `${SEARCH_KEY_SETS_ROOT}/${setKey}`,
       setKey,
       writesCount: writesCountForSet,
+      payloadUsers: payloadUserIds.size,
+      payloadRecords: debugRecordsCount,
     });
     // eslint-disable-next-line no-await-in-loop
     await set(ref(database, `${SEARCH_KEY_SETS_ROOT}/${setKey}`), filteredSearchKeySet);
@@ -715,7 +832,13 @@ export const buildNewUsersFilterSetIndex = async ({
     });
   }
 
-  const aggregatedUserIds = [...new Set(nextSetPayloads.flatMap(item => Object.keys(item.userIds)))];
+  const aggregatedUserIds = [
+    ...new Set(
+      debug.backendRequests
+        .filter(item => item?.type === 'set')
+        .flatMap(item => [...collectUniqueUserIds(item?.payload || {})])
+    ),
+  ];
   return {
     setKeys: [...nextSetKeys],
     userIds: aggregatedUserIds,
@@ -740,7 +863,7 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
     .map(({ text: setText, inputIndex }) => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
       if (!parsedRuleGroups.length) return null;
-      const bucketMap = augmentBucketsWithImtMetricWrappers(mergeSearchKeyBuckets(parsedRuleGroups));
+      const { bucketMap } = prepareAdditionalAccessBucketMapForSearchKey(mergeSearchKeyBuckets(parsedRuleGroups));
       const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
         const normalizedIndexName = normalizePathSegment(indexName);
         if (!normalizedIndexName) return acc;
@@ -890,12 +1013,9 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
   const matchedIds = new Set();
 
   for (const parsedRules of groups) {
-    const bucketMap = augmentBucketsWithImtMetricWrappers(resolveAdditionalAccessSearchKeyBuckets(parsedRules));
-    const imtValuesRaw = bucketMap?.imt;
-    const imtValues = [
-      ...new Set((Array.isArray(imtValuesRaw) ? imtValuesRaw : [...(imtValuesRaw || [])]).map(normalizePathSegment)),
-    ];
-    const hasImtFilter = imtValues.length > 0;
+    const { bucketMap, hasImtFilter, imtValues } = prepareAdditionalAccessBucketMapForSearchKey(
+      resolveAdditionalAccessSearchKeyBuckets(parsedRules)
+    );
     const activeSources = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
       const normalizedIndexName = normalizePathSegment(indexName);
       if (!normalizedIndexName) return acc;
@@ -954,7 +1074,7 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
         weight: weightPayload?.exists && typeof weightPayload?.value === 'object' ? weightPayload.value : {},
       };
       const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId(metricSearchKeyFile);
-      if (!groupMatchedIds.length) {
+      if (!normalizedSets.length) {
         const metricUserIds = new Set([
           ...Object.keys(heightByUserId || {}),
           ...Object.keys(weightByUserId || {}),
@@ -962,7 +1082,7 @@ const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
         groupMatchedIds = [...metricUserIds];
       }
       groupMatchedIds = groupMatchedIds.filter(userId => {
-        const imtBuckets = resolveImtBucketsFromMetricBuckets(heightByUserId[userId], weightByUserId[userId]);
+        const imtBuckets = resolveImtTokensFromExactMetrics(heightByUserId[userId], weightByUserId[userId]);
         return imtBuckets.some(bucket => imtValues.includes(bucket));
       });
     }
