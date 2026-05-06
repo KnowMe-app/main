@@ -1076,7 +1076,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
-    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'vk', 'userId'];
+    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'userId'];
+    const ppTechnicalInputFields = ['name', 'surname', ...contacts];
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     const now = Date.now();
@@ -1175,7 +1176,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
         const cleanedStateForNewUsers = Object.fromEntries(
           Object.entries(syncedState).filter(([key]) =>
-            [...fieldsForNewUsersOnly, ...contacts, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
+            [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
           )
         );
 
