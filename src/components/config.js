@@ -78,6 +78,7 @@ const ROLE_SEARCH_KEY_INDEX = 'role';
 const USER_ID_SEARCH_KEY_INDEX = 'userId';
 const REACTION_SEARCH_KEY_INDEX = 'reaction';
 const FIELD_COUNT_SEARCH_KEY_INDEX = 'fields';
+const LAST_ACTION_SEARCH_KEY_INDEX = 'lastAction';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
 const SEARCH_INDEX_COLLECTION_CACHE_PREFIX = 'search-index:collection:v1:';
 const SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -92,6 +93,7 @@ const SEARCH_KEY_INDEX_TYPES = {
   imtHeightWeight: IMT_SEARCH_KEY_INDEX,
   reaction: REACTION_SEARCH_KEY_INDEX,
   fieldCount: FIELD_COUNT_SEARCH_KEY_INDEX,
+  lastAction: LAST_ACTION_SEARCH_KEY_INDEX,
 };
 
 const getSearchIndexCacheStorage = () => {
@@ -1681,6 +1683,7 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
 
   // Записуємо нового користувача в базу даних
   await set(newUserRef, newUser);
+  await syncUserSearchKeyIndex(newUserId, {}, newUser);
 
   if (searchMeta) {
     const { searchIdKey } = searchMeta;
@@ -3041,6 +3044,62 @@ const collectFieldCountIdsByFilters = async (fieldsFilters, rootPaths = [SEARCH_
 };
 
 const AGE_DATE_PREFIX = 'd_';
+
+export const normalizeLastActionSearchKeyBucket = rawValue => {
+  if (rawValue === undefined || rawValue === null) return 'no';
+
+  const normalized = String(rawValue).trim();
+  if (!normalized) return 'no';
+
+  let parsedDate = null;
+  const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const dotMatch = normalized.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
+
+  if (isoMatch) {
+    const [, yearRaw, monthRaw, dayRaw] = isoMatch;
+    const year = Number.parseInt(yearRaw, 10);
+    const month = Number.parseInt(monthRaw, 10);
+    const day = Number.parseInt(dayRaw, 10);
+    parsedDate = new Date(year, month - 1, day);
+    if (
+      parsedDate.getFullYear() !== year ||
+      parsedDate.getMonth() !== month - 1 ||
+      parsedDate.getDate() !== day
+    ) {
+      return '?';
+    }
+  } else if (dotMatch) {
+    const [, dayRaw, monthRaw, yearRaw] = dotMatch;
+    const year = Number.parseInt(yearRaw, 10);
+    const month = Number.parseInt(monthRaw, 10);
+    const day = Number.parseInt(dayRaw, 10);
+    parsedDate = new Date(year, month - 1, day);
+    if (
+      parsedDate.getFullYear() !== year ||
+      parsedDate.getMonth() !== month - 1 ||
+      parsedDate.getDate() !== day
+    ) {
+      return '?';
+    }
+  } else if (typeof rawValue === 'number' || /^\d+$/.test(normalized)) {
+    const timestamp = Number(rawValue);
+    if (!Number.isFinite(timestamp)) return '?';
+    parsedDate = new Date(timestamp);
+    if (Number.isNaN(parsedDate.getTime())) return '?';
+  } else {
+    const timestamp = Date.parse(normalized);
+    if (Number.isNaN(timestamp)) return '?';
+    parsedDate = new Date(timestamp);
+  }
+
+  return `${AGE_DATE_PREFIX}${toIsoDate(parsedDate)}`;
+};
+
+const getLastActionIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set(['no']);
+  return new Set([normalizeLastActionSearchKeyBucket(data.lastAction)]);
+};
+
 const GET_IN_TOUCH_SPECIAL_VALUES = new Set([
   '2099-99-99',
   '9999-99-99',
@@ -3584,6 +3643,8 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
 
   const prevFieldCountValues = getFieldCountIndexSet(prevData);
   const nextFieldCountValues = getFieldCountIndexSet(nextData);
+  const prevLastActionValues = getLastActionIndexSet(prevData);
+  const nextLastActionValues = getLastActionIndexSet(nextData);
 
   for (const value of prevFieldCountValues) {
     if (!nextFieldCountValues.has(value)) {
@@ -3596,6 +3657,20 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
     if (!prevFieldCountValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
       await updateLeaf(FIELD_COUNT_SEARCH_KEY_INDEX, value, 'add');
+    }
+  }
+
+  for (const value of prevLastActionValues) {
+    if (!nextLastActionValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(LAST_ACTION_SEARCH_KEY_INDEX, value, 'remove');
+    }
+  }
+
+  for (const value of nextLastActionValues) {
+    if (!prevLastActionValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(LAST_ACTION_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 };
@@ -3876,6 +3951,35 @@ export const createFieldCountSearchKeyIndexInCollection = async (collection, onP
   );
 };
 
+
+export const createLastActionSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
+  if (collection !== 'newUsers' && searchKeyRoot === SEARCH_KEY_INDEX_ROOT) return;
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  if (!usersData) return;
+
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  if (searchKeyRoot === SEARCH_KEY_INDEX_ROOT) {
+    await remove(ref2(database, `${searchKeyRoot}/${LAST_ACTION_SEARCH_KEY_INDEX}`));
+  }
+
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        const bucket = normalizeLastActionSearchKeyBucket(user.lastAction);
+        acc[`${searchKeyRoot}/${LAST_ACTION_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
+        return acc;
+      }, {}),
+    onProgress
+  );
+};
+
 const SEARCH_KEY_INDEX_BUILDERS = {
   [SEARCH_KEY_INDEX_TYPES.blood]: createSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.maritalStatus]: createMaritalStatusSearchKeyIndexInCollection,
@@ -3887,6 +3991,7 @@ const SEARCH_KEY_INDEX_BUILDERS = {
   [SEARCH_KEY_INDEX_TYPES.imtHeightWeight]: createImtHeightWeightSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.reaction]: createReactionSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.fieldCount]: createFieldCountSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.lastAction]: createLastActionSearchKeyIndexInCollection,
 };
 
 export const createSelectedSearchKeyIndexesInCollection = async (collection, indexTypes = [], onProgress, options = {}) => {
@@ -4004,6 +4109,9 @@ const resolveSearchKeyValuesByIndexType = (indexType, userId, userData) => {
   }
   if (indexType === SEARCH_KEY_INDEX_TYPES.fieldCount) {
     return [{ indexName: FIELD_COUNT_SEARCH_KEY_INDEX, values: [normalizeFieldCountSearchKeyIndexValue(userData)] }];
+  }
+  if (indexType === SEARCH_KEY_INDEX_TYPES.lastAction) {
+    return [{ indexName: LAST_ACTION_SEARCH_KEY_INDEX, values: [normalizeLastActionSearchKeyBucket(userData?.lastAction)] }];
   }
   return [];
 };

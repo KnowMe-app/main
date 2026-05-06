@@ -47,6 +47,16 @@ const defaultsAdd = {
     other: true,
   },
   reaction: { ...REACTION_FILTER_DEFAULTS },
+  lastAction: {
+    today: false,
+    yesterday: false,
+    last3days: false,
+    last7days: false,
+    last14days: false,
+    last30days: false,
+    no: false,
+    '?': false,
+  },
 };
 
 const defaultsMatching = {
