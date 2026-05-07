@@ -133,7 +133,11 @@ const UsersList = ({
     const res = await makeNewUser({ name: value }, value);
     setUsers(prev => {
       const copy = { ...prev };
-      delete copy[`new_${value}`];
+      Object.entries(copy).forEach(([key, item]) => {
+        if (item?._notFound && item.searchVal === value) {
+          delete copy[key];
+        }
+      });
       return { ...copy, [res.userId]: res };
     });
   };
