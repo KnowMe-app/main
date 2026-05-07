@@ -31,6 +31,7 @@ import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getCacheKey } from '../utils/cache';
 import { getReactionCategory } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
+import { getSubmittedSearchIndexKeys } from '../utils/searchIndexSync';
 import {
   buildSearchIdCandidateKeys,
   getEqualToCandidates,
@@ -2520,7 +2521,7 @@ const extractIndexableFieldValues = rawValue => {
 export const syncUserSearchIdIndex = async (userId, prevData = {}, nextData = {}) => {
   if (!userId) return;
 
-  for (const key of keysToCheck) {
+  for (const key of getSubmittedSearchIndexKeys(keysToCheck, nextData)) {
     if (key === 'getInTouch' || key === 'lastAction') continue;
 
     const prevCandidates = new Set(
