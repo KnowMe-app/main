@@ -15,6 +15,7 @@ import {
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
+import { normalizeSearchIdInput } from '../utils/searchKeyUtils';
 
 const SearchIcon = (
   <svg
@@ -209,6 +210,22 @@ const parseTikTokLink = url => {
   return null;
 };
 
+const parseLinkedInId = input => {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (!/(?:linkedin|linked\s*in|лінкедін|линкедин)/i.test(trimmed)) return null;
+  return normalizeSearchIdInput('linkedin', trimmed) || null;
+};
+
+const parseYoutubeId = input => {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (!/(?:youtube|youtu\.?be|yt|ютуб)/i.test(trimmed)) return null;
+  return normalizeSearchIdInput('youtube', trimmed) || null;
+};
+
 const normalizeVkValue = rawValue => {
   if (typeof rawValue !== 'string') return null;
   const trimmed = rawValue.trim();
@@ -309,6 +326,9 @@ const detectHttpSocialSearch = input => {
     { platform: 'telegram', hostPattern: /(?:^|\.)t\.me$/i, parser: parseTelegramId },
     { platform: 'telegram', hostPattern: /(?:^|\.)telegram\.me$/i, parser: parseTelegramId },
     { platform: 'tiktok', hostPattern: /(?:^|\.)tiktok\.com$/i, parser: parseTikTokLink },
+    { platform: 'linkedin', hostPattern: /(?:^|\.)linkedin\.com$/i, parser: parseLinkedInId },
+    { platform: 'youtube', hostPattern: /(?:^|\.)youtube\.com$/i, parser: parseYoutubeId },
+    { platform: 'youtube', hostPattern: /(?:^|\.)youtu\.be$/i, parser: parseYoutubeId },
     { platform: 'vk', hostPattern: /(?:^|\.)vk\.com$/i, parser: parseVk },
     { platform: 'vk', hostPattern: /(?:^|\.)vkontakte\.ru$/i, parser: parseVk },
   ];
@@ -342,6 +362,8 @@ const inferSearchIdPrefix = input => {
     ['facebook', parseFacebookId],
     ['telegram', parseTelegramId],
     ['tiktok', parseTikTokLink],
+    ['linkedin', parseLinkedInId],
+    ['youtube', parseYoutubeId],
     ['vk', parseVk],
     ['email', parseEmail],
     ['phone', parsePhoneNumber],
@@ -364,6 +386,8 @@ const SEARCH_ID_PREFIX_KEYS = [
   'phone',
   'telegram',
   'tiktok',
+  'linkedin',
+  'youtube',
   'twitter',
   'line',
   'otherLink',
@@ -382,6 +406,8 @@ const SEARCH_ID_SCOPED_PLATFORMS = new Set([
   'phone',
   'telegram',
   'tiktok',
+  'linkedin',
+  'youtube',
   'twitter',
   'line',
   'otherLink',
@@ -426,6 +452,8 @@ const parseSearchIdExact = input => {
     parseFacebookId,
     parseTelegramId,
     parseTikTokLink,
+    parseLinkedInId,
+    parseYoutubeId,
     parseVk,
   ];
 
@@ -562,6 +590,8 @@ const EQUAL_TO_SEARCH_PARSERS = {
   telegram: parseTelegramId,
   email: parseEmail,
   tiktok: parseTikTokLink,
+  linkedin: value => normalizeSearchIdInput('linkedin', value),
+  youtube: value => normalizeSearchIdInput('youtube', value),
   twitter: parseTwitterId,
   line: parseLineId,
   otherLink: normalizeGenericUrl,
