@@ -2518,10 +2518,10 @@ const extractIndexableFieldValues = rawValue => {
   return [];
 };
 
-export const syncUserSearchIdIndex = async (userId, prevData = {}, nextData = {}) => {
+export const syncUserSearchIdIndex = async (userId, prevData = {}, nextData = {}, deletedKeys = []) => {
   if (!userId) return;
 
-  for (const key of getSubmittedSearchIndexKeys(keysToCheck, nextData)) {
+  for (const key of getSubmittedSearchIndexKeys(keysToCheck, nextData, deletedKeys)) {
     if (key === 'getInTouch' || key === 'lastAction') continue;
 
     const prevCandidates = new Set(
