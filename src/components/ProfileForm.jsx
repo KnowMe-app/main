@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import styled, { css } from 'styled-components';
-import { endAt, get, orderByKey, query, ref as refDb, startAt } from 'firebase/database';
+import { get, ref as refDb } from 'firebase/database';
 import Photos from './Photos';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -18,7 +18,7 @@ import { resolvePpTechnicalInputTarget } from 'utils/ppTechnicalInputTarget';
 import { patchOverlayField } from 'utils/multiAccountEdits';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
-import { FaArrowRight, FaTimes } from 'react-icons/fa';
+import { FaTimes } from 'react-icons/fa';
 import { InfoModal } from './InfoModal';
 import { auth, database } from './config';
 import {
@@ -181,58 +181,6 @@ const HIDDEN_FOR_CL_PP_FIELDS = new Set([
   ...REPRODUCTIVE_FIELDS,
   ...MEDICAL_LIFESTYLE_FIELDS,
 ]);
-const SEARCH_ID_INDEXED_FIELDS = new Set([
-  'instagram',
-  'facebook',
-  'email',
-  'phone',
-  'telegram',
-  'tiktok',
-  'linkedin',
-  'youtube',
-  'twitter',
-  'line',
-  'otherLink',
-  'other',
-  'vk',
-  'name',
-  'surname',
-]);
-const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
-const getFirebaseConsoleProjectId = () =>
-  process.env.REACT_APP_PROJECT_ID || FALLBACK_FIREBASE_PROJECT_ID;
-const getFirebaseRealtimeDatabaseName = () => {
-  const fallbackProjectId = getFirebaseConsoleProjectId();
-  const databaseUrl = process.env.REACT_APP_DATABASE_URL || '';
-
-  try {
-    const { hostname } = new URL(databaseUrl);
-    return hostname.split('.')[0] || `${fallbackProjectId}-default-rtdb`;
-  } catch (error) {
-    return `${fallbackProjectId}-default-rtdb`;
-  }
-};
-const canOpenSearchIdBackendShortcut = (fieldName, value) =>
-  SEARCH_ID_INDEXED_FIELDS.has(fieldName) && String(value ?? '').trim();
-const searchIdRecordContainsUserId = (recordValue, userId) => {
-  if (!userId) return false;
-  if (Array.isArray(recordValue)) return recordValue.includes(userId);
-  if (recordValue && typeof recordValue === 'object') {
-    return Object.values(recordValue).includes(userId);
-  }
-  return recordValue === userId;
-};
-const buildSearchIdBackendUrl = searchIdRecordKey => {
-  if (!searchIdRecordKey) return '';
-
-  const projectId = getFirebaseConsoleProjectId();
-  const databaseName = getFirebaseRealtimeDatabaseName();
-  const encodedPath = ['searchId', searchIdRecordKey]
-    .map(segment => `~2F${encodeURIComponent(segment)}`)
-    .join('');
-
-  return `https://console.firebase.google.com/u/0/project/${projectId}/database/${databaseName}/data/${encodedPath}`;
-};
 const SEARCH_KEY_ROOT = 'searchKey';
 const normalizeSearchKeyPayload = payload => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
@@ -2180,58 +2128,6 @@ ${entries.join('\n')}`;
     handleCloseModal();
   };
 
-  const handleOpenSearchIdBackend = async (fieldName, value) => {
-    if (!canOpenSearchIdBackendShortcut(fieldName, value)) {
-      toast.error('Немає значення для пошуку в searchId.');
-      return;
-    }
-
-    const userId = String(state?.userId || '').trim();
-    if (!userId) {
-      toast.error('Немає userId для пошуку запису searchId.');
-      return;
-    }
-
-    const searchIdPrefix = `${fieldName}_`;
-
-    try {
-      const snapshot = await get(
-        query(
-          refDb(database, 'searchId'),
-          orderByKey(),
-          startAt(searchIdPrefix),
-          endAt(`${searchIdPrefix}\uf8ff`),
-        )
-      );
-
-      if (!snapshot.exists()) {
-        toast.error(`У backend searchId немає записів для ${fieldName}.`);
-        return;
-      }
-
-      const matchedKeys = [];
-      snapshot.forEach(childSnapshot => {
-        if (searchIdRecordContainsUserId(childSnapshot.val(), userId)) {
-          matchedKeys.push(childSnapshot.key);
-        }
-      });
-
-      if (!matchedKeys.length) {
-        toast.error(`У backend searchId не знайдено ${fieldName} для userId ${userId}.`);
-        return;
-      }
-
-      if (matchedKeys.length > 1) {
-        toast(`Знайдено кілька searchId записів для ${fieldName}; відкриваю перший.`);
-      }
-
-      window.open(buildSearchIdBackendUrl(matchedKeys[0]), '_blank', 'noopener,noreferrer');
-    } catch (error) {
-      const details = error?.message || String(error);
-      toast.error(`Не вдалося відкрити searchId backend.\n${details}`);
-    }
-  };
-
   const handleProfileViewRemove = keyPath => {
     const normalizedPath = String(keyPath || '').trim();
     if (!normalizedPath) return false;
@@ -2353,18 +2249,6 @@ ${entries.join('\n')}`;
                         }}
                         onBlur={() => handleBlur(`${field.name}-${idx}`)}
                       />
-                      {canOpenSearchIdBackendShortcut(field.name, value) && (
-                        <SearchIdBackendButton
-                          type="button"
-                          title="Відкрити запис searchId у Firebase"
-                          aria-label="Відкрити запис searchId у Firebase"
-                          $rightOffset="35px"
-                          onMouseDown={e => e.preventDefault()}
-                          onClick={() => handleOpenSearchIdBackend(field.name, value)}
-                        >
-                          <FaArrowRight size={14} />
-                        </SearchIdBackendButton>
-                      )}
                       {(value || value === '') && (
                           <ClearButton
                           type="button"
@@ -2525,18 +2409,6 @@ ${entries.join('\n')}`;
                           },
                         })}
                   />
-                  )}
-                  {canOpenSearchIdBackendShortcut(field.name, state[field.name]) && (
-                    <SearchIdBackendButton
-                      type="button"
-                      title="Відкрити запис searchId у Firebase"
-                      aria-label="Відкрити запис searchId у Firebase"
-                      $rightOffset={field.name !== 'lastAction' && state[field.name] ? '82px' : '0px'}
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => handleOpenSearchIdBackend(field.name, state[field.name])}
-                    >
-                      <FaArrowRight size={14} />
-                    </SearchIdBackendButton>
                   )}
                   {field.name !== 'lastAction' && state[field.name] && (
                     <ClearButton
@@ -3110,29 +2982,6 @@ const InputFieldContainer = styled.div`
     color: ${({ value }) => (value ? '#000' : 'gray')};
     font-size: 16px;
     text-align: center;
-  }
-`;
-
-const SearchIdBackendButton = styled.button`
-  position: absolute;
-  right: ${({ $rightOffset }) => $rightOffset || '0px'};
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: ${color.accent};
-  font-size: 16px;
-  width: 35px;
-  height: 35px;
-  padding: 0;
-  z-index: 1;
-
-  &:hover {
-    color: ${color.iconActive};
   }
 `;
 
