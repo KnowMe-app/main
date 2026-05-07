@@ -744,6 +744,44 @@ const SearchBar = ({
     perfDebugEnabledRef.current = isSearchPerfDebugEnabled();
   }, [searchOptions, enabledSearchKeys]);
 
+
+  const repeatedSearchCollectorRef = useRef(null);
+
+  const collectSearchOutput = output => {
+    const collector = repeatedSearchCollectorRef.current;
+    if (!collector || !output || Object.keys(output).length === 0) return;
+    mergeSearchResultMap(collector.results, output);
+  };
+
+  const applyUsers = nextUsers => {
+    const collector = repeatedSearchCollectorRef.current;
+    if (collector) {
+      collector.lastUsers = nextUsers;
+      collectSearchOutput(nextUsers);
+      return;
+    }
+    setUsers && setUsers(nextUsers);
+  };
+
+  const applyState = nextState => {
+    const collector = repeatedSearchCollectorRef.current;
+    if (collector) {
+      collector.lastState = nextState;
+      collectSearchOutput(nextState);
+      return;
+    }
+    setState && setState(nextState);
+  };
+
+  const applyUserNotFound = nextValue => {
+    const collector = repeatedSearchCollectorRef.current;
+    if (collector) {
+      collector.lastUserNotFound = nextValue;
+      return;
+    }
+    setUserNotFound && setUserNotFound(nextValue);
+  };
+
   const isSearchEnabled = key => {
     const effectiveEnabledSearchKeys =
       enabledSearchKeys && typeof enabledSearchKeys === 'object'
@@ -754,7 +792,7 @@ const SearchBar = ({
     return Boolean(effectiveEnabledSearchKeys[key]);
   };
 
-  const resolveGroupedStrictKeySet = () => {
+  const resolveStrictSearchKeySet = () => {
     const effectiveEnabledSearchKeys =
       enabledSearchKeys && typeof enabledSearchKeys === 'object'
         ? enabledSearchKeys
@@ -783,46 +821,21 @@ const SearchBar = ({
   };
 
   const loadCachedResult = (key, value) => {
-    if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
-      const inside = value.slice(1, -1);
-      // eslint-disable-next-line no-useless-escape
-      const matches = inside.match(/"[^\"]+"|[^\s,;]+/g) || [];
-      const values = matches
-        .map(v => v.replace(/^"|"$/g, '').trim())
-        .filter(Boolean);
-      if (values.length > 0) {
-        const term = values.map(v => v).sort().join(',');
-        const cacheKey = getCacheKey('search', normalizeQueryKey(`names=${term}`));
-        const ids = getIdsByQuery(cacheKey);
-        if (ids.length > 0) {
-          const results = {};
-          ids.forEach(id => {
-            const card = getCard(id);
-            if (card) results[id] = card;
-          });
-          if (Object.keys(results).length > 0) {
-            setUserNotFound && setUserNotFound(false);
-            setUsers && setUsers(results);
-            return true;
-          }
-        }
-      }
-    }
     const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
     const ids = getIdsByQuery(cacheKey);
     if (ids.length > 0) {
       const cards = ids.map(id => getCard(id)).filter(Boolean);
       if (cards.length > 0) {
-        setUserNotFound && setUserNotFound(false);
+        applyUserNotFound(false);
         if (key === 'name' || key === 'names' || cards.length > 1) {
-          setState && setState({});
+          applyState({});
           const map = {};
           cards.forEach(c => {
             map[c.userId] = c;
           });
-          setUsers && setUsers(map);
+          applyUsers(map);
         } else {
-          setState && setState(cards[0]);
+          applyState(cards[0]);
         }
         return true;
       }
@@ -831,22 +844,7 @@ const SearchBar = ({
   };
 
   const isCacheFresh = (key, value) => {
-    let cacheKey;
-    if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
-      const inside = value.slice(1, -1);
-      // eslint-disable-next-line no-useless-escape
-      const matches = inside.match(/"[^\"]+"|[^\s,;]+/g) || [];
-      const values = matches
-        .map(v => v.replace(/^"|"$/g, '').trim())
-        .filter(Boolean);
-      if (values.length > 0) {
-        const term = values.map(v => v).sort().join(',');
-        cacheKey = getCacheKey('search', normalizeQueryKey(`names=${term}`));
-      }
-    } else {
-      cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
-    }
-    if (!cacheKey) return false;
+    const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
     const queries = loadQueries();
     const entry = queries[cacheKey];
     if (!entry) return false;
@@ -1037,145 +1035,6 @@ const SearchBar = ({
     return { found: foundCombinedResults, results: resultMap };
   };
 
-  const resolveGroupedSearchExecutionKeys = () => {
-    const orderedKeys = [
-      'searchId',
-      'equalToAllCards',
-      'partialUserId',
-      'userId',
-      'facebook',
-      'instagram',
-      'telegram',
-      'email',
-      'tiktok',
-      'phone',
-      'vk',
-      'other',
-      'name',
-    ];
-
-    return orderedKeys.filter(key => isSearchEnabled(key));
-  };
-
-  const runGroupedSearchBySelectedKeys = async (
-    rawQuery,
-    selectedKeys,
-    isStaleRequest,
-    resultMap = {},
-  ) => {
-    const mergeLocalResult = res => {
-      if (!res || Object.keys(res).length === 0) return;
-      mergeSearchResultMap(resultMap, res);
-    };
-
-    const safeQuery = String(rawQuery || '').trim();
-    if (!safeQuery || !Array.isArray(selectedKeys) || selectedKeys.length === 0) {
-      return { found: false, results: resultMap };
-    }
-
-    for (const selectedKey of selectedKeys) {
-      const shouldMeasureSelectedKey = perfDebugEnabledRef.current;
-      const selectedKeyPerfLabel = `[SearchPerf][grouped][${selectedKey}] ${safeQuery}`;
-      if (shouldMeasureSelectedKey) console.time(selectedKeyPerfLabel);
-
-      if (selectedKey === 'partialUserId') {
-        const partialResult = await runPartialUserIdSearch(safeQuery, isStaleRequest, resultMap);
-        if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
-        if (isStaleRequest()) return { found: false, results: resultMap };
-        if (partialResult.found) return { found: true, results: resultMap };
-        continue;
-      }
-
-      if (selectedKey === 'searchId') {
-        const parsedSearchId = parseSearchIdExact(safeQuery);
-        if (!parsedSearchId) continue;
-
-        const configuredPrefixes = Array.isArray(searchOptions?.searchIdPrefixes)
-          ? [...new Set(searchOptions.searchIdPrefixes.filter(Boolean))]
-          : [];
-        const prefixesToTry = configuredPrefixes.length > 0 ? configuredPrefixes : [null];
-
-        const searchIdResults = await Promise.all(
-          prefixesToTry.map(prefix =>
-            cachedSearch(
-              { searchId: parsedSearchId },
-              {
-                forceEqualToAllCards: false,
-                ...(prefix ? { searchIdPrefixes: [prefix] } : {}),
-              },
-            ),
-          ),
-        );
-        if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
-        if (isStaleRequest()) return { found: false, results: resultMap };
-
-        searchIdResults.forEach(mergeLocalResult);
-        if (Object.keys(resultMap).length > 0) return { found: true, results: resultMap };
-        continue;
-      }
-
-      if (selectedKey === 'equalToAllCards') {
-        const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
-        const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
-          ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
-          : allEqualToKeys;
-
-        const equalToResults = await Promise.all(
-          selectedEqualToKeys.flatMap(equalToKey =>
-            getParsedCandidatesForKey(equalToKey, safeQuery).map(parsedValue =>
-              cachedSearch(
-                { [equalToKey]: parsedValue },
-                { forceEqualToAllCards: true },
-              ),
-            ),
-          ),
-        );
-        if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
-        if (isStaleRequest()) return { found: false, results: resultMap };
-
-        equalToResults.forEach(mergeLocalResult);
-        if (Object.keys(resultMap).length > 0) return { found: true, results: resultMap };
-        continue;
-      }
-
-      if (selectedKey === 'name') {
-        const nameResult = await cachedSearch({ name: safeQuery });
-        if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
-        if (isStaleRequest()) return { found: false, results: resultMap };
-        mergeLocalResult(nameResult);
-        if (Object.keys(resultMap).length > 0) return { found: true, results: resultMap };
-        continue;
-      }
-
-      const parsedCandidates = getParsedCandidatesForKey(selectedKey, safeQuery);
-      if (parsedCandidates.length === 0) {
-        if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
-        continue;
-      }
-
-      const platformResults = await Promise.all(
-        parsedCandidates.map(parsedValue =>
-          cachedSearch(
-            { [selectedKey]: parsedValue },
-            {
-              forceEqualToAllCards: false,
-              ...(selectedKey === 'telegram'
-                ? { allowTelegramPrefixMatches: true }
-                : {}),
-            },
-          ),
-        ),
-      );
-      if (shouldMeasureSelectedKey) console.timeEnd(selectedKeyPerfLabel);
-      if (isStaleRequest()) return { found: false, results: resultMap };
-
-      platformResults.forEach(mergeLocalResult);
-      if (Object.keys(resultMap).length > 0) return { found: true, results: resultMap };
-    }
-
-    return { found: Object.keys(resultMap).length > 0, results: resultMap };
-  };
-
   const cachedSearch = async (params, extraOptions = {}) => {
     const perfLabel = `[SearchPerf][searchFunc] ${JSON.stringify(params)}`;
     if (perfDebugEnabledRef.current) console.time(perfLabel);
@@ -1256,8 +1115,8 @@ const SearchBar = ({
           if (freshCache) return true;
 
           if (!hasCache) {
-            setState && setState({});
-            setUsers && setUsers({});
+            applyState({});
+            applyUsers({});
           }
 
           const res = await cachedSearch(
@@ -1270,17 +1129,17 @@ const SearchBar = ({
               res,
               { preferredKeys: ['telegram'] },
             );
-            setUserNotFound && setUserNotFound(false);
+            applyUserNotFound(false);
             if ('userId' in res) {
-              setState && setState(res);
+              applyState(res);
             } else {
-              setUsers && setUsers(res);
+              applyUsers(res);
             }
             return true;
           }
         }
 
-        setUserNotFound && setUserNotFound(true);
+        applyUserNotFound(true);
         return true;
       }
     }
@@ -1294,7 +1153,7 @@ const SearchBar = ({
             normalizeQueryKey(`userId=${id}`),
           );
           setIdsForQuery(userIdCacheKey, [id]);
-          setUserNotFound && setUserNotFound(false);
+          applyUserNotFound(false);
           emitSearchLabel({ userId: id }, {
             mode: platform,
             stage: 'local-card-cache',
@@ -1302,7 +1161,7 @@ const SearchBar = ({
           notifySearchResult({ userId: id }, cachedCardByUserId, {
             preferredKeys: ['userId'],
           });
-          setState && setState(cachedCardByUserId);
+          applyState(cachedCardByUserId);
           return true;
         }
       }
@@ -1316,8 +1175,8 @@ const SearchBar = ({
         return true;
       }
       if (!hasCache) {
-        setState && setState({});
-        setUsers && setUsers({});
+        applyState({});
+        applyUsers({});
       }
       const searchIdPrefixStrategy =
         platform === 'searchId'
@@ -1365,9 +1224,9 @@ const SearchBar = ({
         });
 
         if (Object.keys(aggregatedResults).length > 0) {
-          setUserNotFound && setUserNotFound(false);
-          setState && setState({});
-          setUsers && setUsers({ ...aggregatedResults });
+          applyUserNotFound(false);
+          applyState({});
+          applyUsers({ ...aggregatedResults });
         }
 
         finalRes = Object.keys(aggregatedResults).length > 0 ? aggregatedResults : null;
@@ -1413,11 +1272,11 @@ const SearchBar = ({
             notifySearchResult(fallbackParams, fallbackRes, {
               preferredKeys: [fallbackKey],
             });
-            setUserNotFound && setUserNotFound(false);
+            applyUserNotFound(false);
             if ('userId' in fallbackRes) {
-              setState && setState(fallbackRes);
+              applyState(fallbackRes);
             } else {
-              setUsers && setUsers(fallbackRes);
+              applyUsers(fallbackRes);
             }
             return true;
           }
@@ -1429,15 +1288,15 @@ const SearchBar = ({
             source: 'other-fallback-default',
           });
         }
-        setUserNotFound && setUserNotFound(true);
+        applyUserNotFound(true);
         return !continueOnMiss;
       } else {
-        setUserNotFound && setUserNotFound(false);
+        applyUserNotFound(false);
         notifySearchResult(result, finalRes, { preferredKeys: [platform] });
         if ('userId' in finalRes) {
-          setState && setState(finalRes);
+          applyState(finalRes);
         } else {
-          setUsers && setUsers(finalRes);
+          applyUsers(finalRes);
         }
         return true;
       }
@@ -1445,22 +1304,27 @@ const SearchBar = ({
     return false;
   };
 
-  const writeData = async (query = search) => {
-    const requestId = ++activeSearchRequestRef.current;
+  const writeData = async (query = search, options = {}) => {
+    const {
+      requestId: inheritedRequestId = null,
+      suppressHistory = false,
+      suppressSearchExecuted = false,
+    } = options;
+    const requestId = inheritedRequestId ?? ++activeSearchRequestRef.current;
     const isStaleRequest = () => activeSearchRequestRef.current !== requestId;
 
-    setUserNotFound && setUserNotFound(false);
+    applyUserNotFound(false);
     const rawQuery = typeof query === 'string' ? query : '';
     const trimmed = rawQuery.trim();
 
-    if (onSearchExecuted) {
+    if (onSearchExecuted && !suppressSearchExecuted) {
       onSearchExecuted(trimmed);
     }
 
     if (typeof query === 'string') {
       console.log('[SearchBar] Incoming query', { raw: rawQuery, trimmed });
     }
-    if (trimmed && !trimmed.startsWith('!')) {
+    if (trimmed && !trimmed.startsWith('!') && !suppressHistory) {
       addToHistory(trimmed);
     }
     if (trimmed && trimmed.startsWith('!')) {
@@ -1504,12 +1368,12 @@ const SearchBar = ({
       }
       const results = searchCachedCards(term, ids);
       if (Object.keys(results).length === 0) {
-        setState && setState({});
-        setUsers && setUsers({});
-        setUserNotFound && setUserNotFound(true);
+        applyState({});
+        applyUsers({});
+        applyUserNotFound(true);
       } else {
-        setState && setState({});
-        setUsers && setUsers(results);
+        applyState({});
+        applyUsers(results);
         const searchKey = getCacheKey(
           'search',
           normalizeQueryKey(`${term}:${filtersKey}`),
@@ -1518,80 +1382,56 @@ const SearchBar = ({
       }
       return;
     }
-    const groupedStrictKeySet = resolveGroupedStrictKeySet();
+    const strictSearchKeySet = resolveStrictSearchKeySet();
     const isCombinedSearchMode =
-      !groupedStrictKeySet &&
+      !strictSearchKeySet &&
       isSearchEnabled('searchId') &&
       isSearchEnabled('equalToAllCards');
 
-    if (trimmed && trimmed.startsWith('[') && trimmed.endsWith(']')) {
-      const groupedPerfLabel = `[SearchPerf][grouped][total] ${trimmed}`;
-      if (perfDebugEnabledRef.current) console.time(groupedPerfLabel);
-      const hasCache = loadCachedResult('name', trimmed);
-      const freshCache = hasCache && isCacheFresh('name', trimmed);
-      if (freshCache) {
-        if (perfDebugEnabledRef.current) console.timeEnd(groupedPerfLabel);
-        return;
+    const repeatedValues = parseGroupedSearchValues(trimmed);
+    if (repeatedValues.length > 0) {
+      const repeatedPerfLabel = `[SearchPerf][repeat][total] ${trimmed}`;
+      if (perfDebugEnabledRef.current) console.time(repeatedPerfLabel);
+      console.log('[SearchBar] Processing repeated search values', {
+        raw: trimmed,
+        values: repeatedValues,
+      });
+
+      const collector = {
+        results: {},
+        lastState: undefined,
+        lastUsers: undefined,
+        lastUserNotFound: false,
+      };
+      repeatedSearchCollectorRef.current = collector;
+
+      try {
+        for (const value of repeatedValues) {
+          await writeData(value, {
+            requestId,
+            suppressHistory: true,
+            suppressSearchExecuted: true,
+          });
+          if (isStaleRequest()) return;
+        }
+      } finally {
+        repeatedSearchCollectorRef.current = null;
+        if (perfDebugEnabledRef.current) console.timeEnd(repeatedPerfLabel);
       }
-      setState && setState({});
-      setUsers && setUsers({});
 
-      const values = parseGroupedSearchValues(trimmed);
-      if (values.length > 0) {
-        console.log('[SearchBar] Processing grouped search', {
-          raw: trimmed,
-          cleanedValues: values,
-        });
+      const mergedResults = collector.results;
+      const hasMergedResults = Object.keys(mergedResults).length > 0;
 
-        const results = {};
-        // Для grouped-пошуку (з квадратними дужками) використовуємо той самий
-        // набір ключів, що і для звичайного пошуку по одному значенню.
-        // Інакше при увімкненому strict-наборі grouped режим запускав тільки
-        // equalToAllCards і пропускав searchId, через що частина телефонів
-        // могла не знаходитися, хоча поштучний пошук їх знаходив.
-        const groupedExecutionKeys = resolveGroupedSearchExecutionKeys();
-
-        const perValueSearchResults = await Promise.all(
-          values.map(async val => {
-            const perValueResults = {};
-            const groupedResult = await runGroupedSearchBySelectedKeys(
-              val,
-              groupedExecutionKeys,
-              isStaleRequest,
-              perValueResults,
-            );
-
-            return { val, groupedResult, perValueResults };
-          }),
-        );
-        if (isStaleRequest()) return;
-
-        perValueSearchResults.forEach(({ val, groupedResult, perValueResults }) => {
-          if (!groupedResult.found || Object.keys(perValueResults).length === 0) {
-            const fallbackSearchVal = isSearchEnabled('phone')
-              ? parsePhoneNumber(val) || val
-              : val;
-            results[`new_${fallbackSearchVal}`] = {
-              _notFound: true,
-              searchVal: fallbackSearchVal,
-            };
-            return;
-          }
-
-          Object.assign(results, perValueResults);
-        });
-
-        setUsers && setUsers(results);
-        const term = values.map(v => v).sort().join(',');
-        const ids = Object.keys(results).filter(id => !results[id]._notFound);
-        setIdsForQuery(
-          getCacheKey('search', normalizeQueryKey(`names=${term}`)),
-          ids,
-        );
-        if (perfDebugEnabledRef.current) console.timeEnd(groupedPerfLabel);
-        return;
+      if (hasMergedResults) {
+        setUserNotFound && setUserNotFound(false);
+        setState && setState({});
+        setUsers && setUsers({ ...mergedResults });
+      } else {
+        setUserNotFound && setUserNotFound(true);
+        setState && setState({});
+        setUsers && setUsers({});
       }
-      if (perfDebugEnabledRef.current) console.timeEnd(groupedPerfLabel);
+      return;
     }
 
     if (isCombinedSearchMode) {
@@ -1600,11 +1440,11 @@ const SearchBar = ({
       if (isStaleRequest()) return;
 
       if (combinedResult.found) {
-        setUserNotFound && setUserNotFound(false);
-        setState && setState({});
-        setUsers && setUsers({ ...combinedResults });
+        applyUserNotFound(false);
+        applyState({});
+        applyUsers({ ...combinedResults });
       } else {
-        setUserNotFound && setUserNotFound(true);
+        applyUserNotFound(true);
       }
       return;
     }
@@ -1613,9 +1453,9 @@ const SearchBar = ({
       const partialUserIdResult = await runPartialUserIdSearch(rawQuery, isStaleRequest);
       if (isStaleRequest()) return;
       if (partialUserIdResult.found) {
-        setUserNotFound && setUserNotFound(false);
-        setState && setState({});
-        setUsers && setUsers({ ...partialUserIdResult.results });
+        applyUserNotFound(false);
+        applyState({});
+        applyUsers({ ...partialUserIdResult.results });
         return;
       }
     }
@@ -1692,12 +1532,12 @@ const SearchBar = ({
           }
 
           if (Object.keys(aggregatedResults).length > 0) {
-            setUserNotFound && setUserNotFound(false);
+            applyUserNotFound(false);
             if (!emittedProgressiveResults) {
-              setState && setState({});
+              applyState({});
               emittedProgressiveResults = true;
             }
-            setUsers && setUsers({ ...aggregatedResults });
+            applyUsers({ ...aggregatedResults });
           }
         }
       }
@@ -1744,12 +1584,12 @@ const SearchBar = ({
             }
 
             if (Object.keys(aggregatedResults).length > 0) {
-              setUserNotFound && setUserNotFound(false);
+              applyUserNotFound(false);
               if (!emittedProgressiveResults) {
-                setState && setState({});
+                applyState({});
                 emittedProgressiveResults = true;
               }
-              setUsers && setUsers({ ...aggregatedResults });
+              applyUsers({ ...aggregatedResults });
             }
           }
         }
@@ -1757,13 +1597,13 @@ const SearchBar = ({
 
       if (foundEqualToResults) {
         if (usedFreshEqualToCache && Object.keys(aggregatedResults).length === 0) {
-          setUserNotFound && setUserNotFound(false);
+          applyUserNotFound(false);
           return;
         }
 
-        setUserNotFound && setUserNotFound(false);
-        setState && setState({});
-        setUsers && setUsers(aggregatedResults);
+        applyUserNotFound(false);
+        applyState({});
+        applyUsers(aggregatedResults);
 
         const [firstMatchedKey] = Object.keys(aggregatedResults);
         if (firstMatchedKey) {
@@ -1829,9 +1669,9 @@ const SearchBar = ({
     ) return;
 
     if (!isSearchEnabled('name')) {
-      setUserNotFound && setUserNotFound(true);
-      setState && setState({});
-      setUsers && setUsers({});
+      applyUserNotFound(true);
+      applyState({});
+      applyUsers({});
       return;
     }
 
@@ -1849,16 +1689,16 @@ const SearchBar = ({
       return;
     }
     if (!hasCache) {
-      setState && setState({});
-      setUsers && setUsers({});
+      applyState({});
+      applyUsers({});
     }
 
     const res = await cachedSearch({ name: nameTrim });
     if (isStaleRequest()) return;
     if (!res || Object.keys(res).length === 0) {
-      setUserNotFound && setUserNotFound(true);
+      applyUserNotFound(true);
     } else {
-      setUserNotFound && setUserNotFound(false);
+      applyUserNotFound(false);
       const searchValueForNotification =
         (res && typeof res === 'object' && res.name) || nameTrim;
       notifySearchResult(
@@ -1867,9 +1707,9 @@ const SearchBar = ({
         { preferredKeys: ['name'] },
       );
       if ('userId' in res) {
-        setState && setState(res);
+        applyState(res);
       } else {
-        setUsers && setUsers(res);
+        applyUsers(res);
       }
     }
   };
@@ -1893,7 +1733,7 @@ const SearchBar = ({
           <ClearButton
             onClick={() => {
               setSearch('');
-              setUserNotFound && setUserNotFound(false);
+              applyUserNotFound(false);
               onClear && onClear();
             }}
           >
