@@ -129,12 +129,16 @@ const UsersList = ({
 }) => {
   const entries = Object.entries(users);
 
-  const handleCreate = async value => {
-    const res = await makeNewUser({ name: value }, value);
+  const handleCreate = async item => {
+    const value = item?.searchVal || '';
+    const searchKey = item?.searchKey || 'name';
+    const searchValue = item?.searchValue || value;
+    const rawSearchValue = item?.rawSearchValue || value;
+    const res = await makeNewUser({ [searchKey]: searchValue }, rawSearchValue);
     setUsers(prev => {
       const copy = { ...prev };
-      Object.entries(copy).forEach(([key, item]) => {
-        if (item?._notFound && item.searchVal === value) {
+      Object.entries(copy).forEach(([key, existingItem]) => {
+        if (existingItem === item || (existingItem?._notFound && existingItem.searchVal === value)) {
           delete copy[key];
         }
       });
@@ -170,7 +174,7 @@ const UsersList = ({
               }}
             >
               <span>{userData.searchVal}</span>
-              <svg onClick={() => handleCreate(userData.searchVal)} width="40" height="40" viewBox="0 0 40 40" style={{ cursor: 'pointer' }}>
+              <svg onClick={() => handleCreate(userData)} width="40" height="40" viewBox="0 0 40 40" style={{ cursor: 'pointer' }}>
                 <rect x="18" y="8" width="4" height="24" fill="white" />
                 <rect x="8" y="18" width="24" height="4" fill="white" />
               </svg>

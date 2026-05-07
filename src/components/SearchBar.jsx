@@ -922,6 +922,12 @@ const SearchBar = ({
       ...meta,
       params,
     });
+
+    // Repeated [] search keeps a per-value create context for not-found
+    // placeholders, so fallback labels (for example the final name search)
+    // must not replace the parent add payload.
+    if (repeatedSearchCollectorRef.current) return;
+
     onSearchKey && onSearchKey(params);
   };
 
@@ -944,9 +950,66 @@ const SearchBar = ({
     Object.assign(acc, res);
   };
 
-  const buildRepeatedNotFoundItem = value => ({
+  const buildRepeatedSearchContext = value => {
+    const rawValue = typeof value === 'string' ? value : '';
+    const trimmedValue = rawValue.trim();
+    if (!trimmedValue) return null;
+
+    if (isSearchEnabled('searchId')) {
+      const parsedSearchIdValue = parseSearchIdExact(trimmedValue);
+      if (parsedSearchIdValue) {
+        const searchIdPrefixStrategy = resolveSearchIdPrefixStrategy(trimmedValue, searchOptions);
+        const [primarySearchKey] = searchIdPrefixStrategy.primaryPrefixes || [];
+
+        if (primarySearchKey) {
+          return {
+            searchMode: 'searchId',
+            searchKey: primarySearchKey,
+            searchValue: parsedSearchIdValue,
+            rawSearchValue: rawValue,
+          };
+        }
+      }
+    }
+
+    if (isSearchEnabled('equalToAllCards')) {
+      const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
+      const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
+        ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
+        : [];
+      const equalToExecutionPlan = resolveEqualToExecutionKeys({
+        allKeys: allEqualToKeys,
+        selectedKeys: selectedEqualToKeys,
+        rawQuery: trimmedValue,
+      });
+      const [primaryEqualToKey] = equalToExecutionPlan.primaryKeys || [];
+      const [primaryEqualToValue] = primaryEqualToKey
+        ? getParsedCandidatesForKey(primaryEqualToKey, trimmedValue)
+        : [];
+
+      if (primaryEqualToKey && primaryEqualToValue) {
+        return {
+          searchMode: 'equalToAllCards',
+          searchKey: primaryEqualToKey,
+          searchValue: primaryEqualToValue,
+          rawSearchValue: rawValue,
+        };
+      }
+    }
+
+    const detectedParams = detectSearchParams(trimmedValue);
+    return {
+      searchMode: detectedParams?.key === 'name' ? 'name' : 'detected',
+      searchKey: detectedParams?.key || 'name',
+      searchValue: detectedParams?.value || trimmedValue,
+      rawSearchValue: rawValue,
+    };
+  };
+
+  const buildRepeatedNotFoundItem = (value, searchContext = null) => ({
     _notFound: true,
     searchVal: value,
+    ...(searchContext || {}),
   });
 
   const addRepeatedSearchItem = (collector, key, item) => {
@@ -971,7 +1034,7 @@ const SearchBar = ({
     addRepeatedSearchItem(
       collector,
       `new_${index}_${value}`,
-      buildRepeatedNotFoundItem(value),
+      buildRepeatedNotFoundItem(value, collector.searchContexts?.[index]),
     );
   };
 
@@ -1459,6 +1522,7 @@ const SearchBar = ({
         lastState: undefined,
         lastUsers: undefined,
         lastUserNotFound: false,
+        searchContexts: {},
       };
       repeatedSearchCollectorRef.current = collector;
 
@@ -1466,6 +1530,7 @@ const SearchBar = ({
         for (const [index, value] of repeatedValues.entries()) {
           collector.currentValue = value;
           collector.currentResults = {};
+          collector.searchContexts[index] = buildRepeatedSearchContext(value);
           collector.lastState = undefined;
           collector.lastUsers = undefined;
           collector.lastUserNotFound = false;
