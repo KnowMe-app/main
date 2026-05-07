@@ -8,6 +8,7 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
   removeKeyFromFirebase,
+  syncUserSearchIdIndex,
   auth,
 } from './config';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -338,7 +339,9 @@ const EditProfile = () => {
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     if (updatedState?.userId?.length > 20) {
-      const { existingData } = await fetchUserById(updatedState.userId);
+      const existingData = await fetchUserById(updatedState.userId) || {};
+
+      await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState);
 
       const sanitizedExistingData = { ...existingData };
       if (delCondition) {
@@ -362,9 +365,11 @@ const EditProfile = () => {
         )
       );
 
-      await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update');
+      await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update', true);
     } else if (updatedState?.userId) {
-      await updateDataInNewUsersRTDB(updatedState.userId, updatedState, 'update');
+      const existingData = await fetchUserById(updatedState.userId) || {};
+      await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState);
+      await updateDataInNewUsersRTDB(updatedState.userId, updatedState, 'update', true);
     }
 
     try {
@@ -564,6 +569,9 @@ const EditProfile = () => {
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     if (mergedCard?.userId?.length > 20) {
+      const existingData = await fetchUserById(mergedCard.userId) || {};
+      await syncUserSearchIdIndex(mergedCard.userId, existingData, mergedCard);
+
       const cleanedState = Object.fromEntries(
         Object.entries(mergedCard).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
       );
@@ -574,11 +582,13 @@ const EditProfile = () => {
           [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
         )
       );
-      await updateDataInNewUsersRTDB(mergedCard.userId, cleanedStateForNewUsers, 'update');
+      await updateDataInNewUsersRTDB(mergedCard.userId, cleanedStateForNewUsers, 'update', true);
       return;
     }
 
-    await updateDataInNewUsersRTDB(mergedCard.userId, mergedCard, 'update');
+    const existingData = await fetchUserById(mergedCard.userId) || {};
+    await syncUserSearchIdIndex(mergedCard.userId, existingData, mergedCard);
+    await updateDataInNewUsersRTDB(mergedCard.userId, mergedCard, 'update', true);
   };
 
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
