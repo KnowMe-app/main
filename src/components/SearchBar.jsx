@@ -755,7 +755,9 @@ const SearchBar = ({
       !output ||
       Object.keys(output).length === 0
     ) return;
-    mergeSearchResultMap(collector.results, output);
+
+    const targetResults = collector.currentResults || collector.results;
+    mergeSearchResultMap(targetResults, output);
   };
 
   const applyUsers = (nextUsers, requestId = null) => {
@@ -940,6 +942,37 @@ const SearchBar = ({
       return;
     }
     Object.assign(acc, res);
+  };
+
+  const buildRepeatedNotFoundItem = value => ({
+    _notFound: true,
+    searchVal: value,
+  });
+
+  const addRepeatedSearchItem = (collector, key, item) => {
+    const orderedKey = collector.orderedItems.some(entry => entry.key === key)
+      ? `${key}_${collector.orderedItems.length}`
+      : key;
+    collector.orderedItems.push({ key: orderedKey, item });
+  };
+
+  const flushRepeatedSearchValue = (collector, value, index) => {
+    const currentResults = collector.currentResults || {};
+    const resultEntries = Object.entries(currentResults);
+
+    if (resultEntries.length > 0) {
+      resultEntries.forEach(([key, item]) => {
+        addRepeatedSearchItem(collector, key, item);
+      });
+      mergeSearchResultMap(collector.results, currentResults);
+      return;
+    }
+
+    addRepeatedSearchItem(
+      collector,
+      `new_${index}_${value}`,
+      buildRepeatedNotFoundItem(value),
+    );
   };
 
   const runEqualToAllCardsSearch = async (
@@ -1418,6 +1451,9 @@ const SearchBar = ({
       const collector = {
         requestId,
         results: {},
+        orderedItems: [],
+        currentResults: {},
+        currentValue: null,
         states: {},
         users: {},
         lastState: undefined,
@@ -1427,13 +1463,21 @@ const SearchBar = ({
       repeatedSearchCollectorRef.current = collector;
 
       try {
-        for (const value of repeatedValues) {
+        for (const [index, value] of repeatedValues.entries()) {
+          collector.currentValue = value;
+          collector.currentResults = {};
+          collector.lastState = undefined;
+          collector.lastUsers = undefined;
+          collector.lastUserNotFound = false;
+
           await writeData(value, {
             requestId,
             suppressHistory: true,
             suppressSearchExecuted: true,
           });
           if (isStaleRequest()) return;
+
+          flushRepeatedSearchValue(collector, value, index);
         }
       } finally {
         if (repeatedSearchCollectorRef.current?.requestId === requestId) {
@@ -1444,18 +1488,14 @@ const SearchBar = ({
 
       if (isStaleRequest()) return;
 
-      const mergedResults = collector.results;
-      const hasMergedResults = Object.keys(mergedResults).length > 0;
+      const orderedResults = collector.orderedItems.reduce((acc, { key, item }) => {
+        acc[key] = item;
+        return acc;
+      }, {});
 
-      if (hasMergedResults) {
-        setUserNotFound && setUserNotFound(false);
-        setState && setState({});
-        setUsers && setUsers({ ...mergedResults });
-      } else {
-        setUserNotFound && setUserNotFound(true);
-        setState && setState({});
-        setUsers && setUsers({});
-      }
+      setUserNotFound && setUserNotFound(false);
+      setState && setState({});
+      setUsers && setUsers(orderedResults);
       return;
     }
 
