@@ -2,6 +2,65 @@ import { normalizePhoneValue } from '../components/inputValidations';
 import { parseUkTriggerQuery } from './parseUkTrigger';
 import { encodeKey } from './searchIndexCandidates';
 import { getSearchIdPrefixes } from './searchKeyCheckboxFilters';
+
+const SOCIAL_SEARCH_KEYS = new Set([
+  'telegram',
+  'instagram',
+  'facebook',
+  'tiktok',
+  'linkedin',
+  'youtube',
+  'twitter',
+]);
+
+const stripQueryHashAndSlashSuffix = value =>
+  String(value || '')
+    .split(/[?#]/)[0]
+    .split('/')[0]
+    .trim();
+
+const normalizeLabeledContactValue = (baseValue, labelPattern) => {
+  const labelMatch = baseValue.match(labelPattern);
+  if (!labelMatch?.[1]) return null;
+  return stripQueryHashAndSlashSuffix(labelMatch[1].replace(/^@/, ''));
+};
+
+const normalizeLinkedInValue = baseValue => {
+  const urlMatch = baseValue.match(/linkedin\.com\/(?:in|company)\/([^/?#]+)/i);
+  if (urlMatch?.[1]) return stripQueryHashAndSlashSuffix(urlMatch[1]);
+
+  return normalizeLabeledContactValue(
+    baseValue,
+    /(?:^|[^A-Za-z0-9_])(?:linkedin|linked\s*in|лінкедін|линкедин)\s*:?\s*@?([A-Za-z0-9._-]+)/i,
+  );
+};
+
+const normalizeYoutubeValue = baseValue => {
+  const urlMatch = baseValue.match(/(?:youtube\.com\/(?:@|c\/|channel\/|user\/)?|youtu\.be\/)([^/?#]+)/i);
+  if (urlMatch?.[1]) return stripQueryHashAndSlashSuffix(urlMatch[1].replace(/^@/, ''));
+
+  return normalizeLabeledContactValue(
+    baseValue,
+    /(?:^|[^A-Za-z0-9_])(?:youtube|youtu\.?be|yt|ютуб)\s*:?\s*@?([A-Za-z0-9._-]+)/i,
+  );
+};
+
+const normalizeSocialSearchValue = (searchKey, baseValue) => {
+  const parsedTrigger = parseUkTriggerQuery(baseValue);
+  if (parsedTrigger?.contactType === searchKey && parsedTrigger?.searchPair?.[searchKey]) {
+    return parsedTrigger.searchPair[searchKey];
+  }
+
+  if (searchKey === 'linkedin') {
+    return normalizeLinkedInValue(baseValue) || baseValue.replace(/\s+/g, ' ');
+  }
+
+  if (searchKey === 'youtube') {
+    return normalizeYoutubeValue(baseValue) || baseValue.replace(/\s+/g, ' ');
+  }
+
+  return baseValue.replace(/\s+/g, ' ');
+};
 export const normalizeSearchIdInput = (searchKey, rawValue) => {
   const baseValue = String(rawValue || '').trim();
   if (!baseValue) return '';
@@ -10,11 +69,8 @@ export const normalizeSearchIdInput = (searchKey, rawValue) => {
     return normalizePhoneValue(baseValue);
   }
 
-  if (['telegram', 'instagram', 'facebook', 'tiktok', 'linkedin', 'youtube', 'twitter'].includes(searchKey)) {
-    const parsedTrigger = parseUkTriggerQuery(baseValue);
-    if (parsedTrigger?.contactType === searchKey && parsedTrigger?.searchPair?.[searchKey]) {
-      return parsedTrigger.searchPair[searchKey];
-    }
+  if (SOCIAL_SEARCH_KEYS.has(searchKey)) {
+    return normalizeSocialSearchValue(searchKey, baseValue);
   }
 
   return baseValue.replace(/\s+/g, ' ');

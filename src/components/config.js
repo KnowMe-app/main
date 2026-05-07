@@ -36,6 +36,7 @@ import {
   buildSearchIdCandidateKeys,
   getEqualToCandidates,
   makeSearchKeyValue,
+  normalizeSearchIdInput,
   shouldSkipBroadFallbackForExactSearchId,
 } from '../utils/searchKeyUtils';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
@@ -2434,7 +2435,7 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
       return;
     }
 
-    const normalizedValue = String(searchValue).toLowerCase();
+    const normalizedValue = normalizeSearchIdInput(searchKey, searchValue).toLowerCase();
     const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`;
     const searchIdRef = ref2(database, `searchId/${searchIdKey}`);
     if (isDev) console.log('searchIdKey in updateSearchId :>> ', searchIdKey);
@@ -4059,7 +4060,7 @@ export const buildSearchIdIndexPayloadFromCollections = collectionsMap => {
       keysToCheck.forEach(key => {
         if (key === 'getInTouch' || key === 'lastAction') return;
         const candidates = extractIndexableFieldValues(userData[key]).flatMap(value =>
-          buildSearchIndexCandidates(key, value)
+          buildSearchIndexCandidates(key, normalizeSearchIdInput(key, value))
         );
         candidates.forEach(candidate => {
           if (!candidate) return;
@@ -4466,7 +4467,7 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
   const db = getDatabase();
 
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
-  const normalizedValue = String(searchValue).toLowerCase();
+  const normalizedValue = normalizeSearchIdInput(searchKey, searchValue).toLowerCase();
   const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`; // Формуємо ключ для пошуку у searchId
   console.log(`searchIdKey`, searchIdKey);
   // Отримуємо всі пари в searchId
