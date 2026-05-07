@@ -341,7 +341,7 @@ const EditProfile = () => {
     if (updatedState?.userId?.length > 20) {
       const existingData = await fetchUserById(updatedState.userId) || {};
 
-      await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState);
+      await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState, delCondition);
 
       const sanitizedExistingData = { ...existingData };
       if (delCondition) {
@@ -368,7 +368,7 @@ const EditProfile = () => {
       await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update', true);
     } else if (updatedState?.userId) {
       const existingData = await fetchUserById(updatedState.userId) || {};
-      await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState);
+      await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState, delCondition);
       await updateDataInNewUsersRTDB(updatedState.userId, updatedState, 'update', true);
     }
 
