@@ -335,13 +335,36 @@ const ADDITIONAL_RULE_OPTION_DESCRIPTIONS = {
   },
 };
 
+const ADDITIONAL_RULE_KEY_ALIASES = {
+  age: 'age',
+  'вік': 'age',
+  csection: 'csection',
+  'кс': 'csection',
+  blood: 'bloodGroup',
+  bloodgroup: 'bloodGroup',
+  'групакрові': 'bloodGroup',
+  'кров': 'bloodGroup',
+  rh: 'rh',
+  'резус': 'rh',
+  maritalstatus: 'maritalStatus',
+  'сімейнийстан': 'maritalStatus',
+  imt: 'imt',
+  'імт': 'imt',
+  bmi: 'imt',
+  role: 'role',
+  contact: 'contact',
+  userid: 'userId',
+  reaction: 'reaction',
+  height: 'height',
+  weight: 'weight',
+  agebirthdate: 'ageBirthDate',
+};
+
 const normalizeAdditionalRuleKey = rawKey => {
-  const normalized = String(rawKey || '').trim().toLowerCase();
+  const normalized = String(rawKey || '').trim().toLowerCase().replace(/\s+/g, '');
   if (!normalized) return '';
 
-  if (normalized === 'імт' || normalized === 'imt' || normalized === 'bmi') return 'imt';
-  if (normalized === 'blood' || normalized === 'bloodgroup') return 'bloodGroup';
-  return normalized;
+  return ADDITIONAL_RULE_KEY_ALIASES[normalized] || normalized;
 };
 
 const parseAdditionalRulesTextToBuilder = raw => {
