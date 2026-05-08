@@ -1779,8 +1779,8 @@ const addUserToResults = async (userId, users) => {
 
 const getDateFormats = input => {
   const trimmed = (input || '').trim();
-  const isoMatch = /^(\d{4})[-./\\](\d{2})[-./\\](\d{2})$/;
-  const dmyMatch = /^(\d{2})[-./\\](\d{2})[-./\\](\d{4})$/;
+  const isoMatch = /^(\d{4})[-./\\](\d{1,2})[-./\\](\d{1,2})$/;
+  const dmyMatch = /^(\d{1,2})[-./\\](\d{1,2})[-./\\](\d{4})$/;
   let yyyy, mm, dd;
 
   if (isoMatch.test(trimmed)) {
@@ -1791,7 +1791,10 @@ const getDateFormats = input => {
     return [];
   }
 
-  return [`${yyyy}-${mm}-${dd}`, `${dd}.${mm}.${yyyy}`];
+  const paddedMonth = String(mm).padStart(2, '0');
+  const paddedDay = String(dd).padStart(2, '0');
+
+  return [`${yyyy}-${paddedMonth}-${paddedDay}`, `${paddedDay}.${paddedMonth}.${yyyy}`];
 };
 
 const getIsoDateVariants = dateFormats => {
@@ -1809,6 +1812,9 @@ const getIsoDateVariants = dateFormats => {
     })
     .filter(Boolean);
 };
+
+
+const getIsoDateVariantsForSearch = rawValue => getIsoDateVariants(getDateFormats(rawValue));
 
 const getDayTimestampRange = isoDate => {
   const dayStart = new Date(`${isoDate}T00:00:00`);
@@ -1943,6 +1949,23 @@ const executeSearchBySearchKeyBucket = async (searchKeys, rawSearchValue, unique
   }
 };
 
+const buildEqualToQueriesForField = (collectionRef, key, candidate) => {
+  if (key === 'lastAction') {
+    const ranges = getIsoDateVariantsForSearch(candidate)
+      .map(getDayTimestampRange)
+      .filter(Boolean);
+
+    if (ranges.length > 0) {
+      return ranges.flatMap(({ startMs, endMs, startSec, endSec }) => [
+        query(collectionRef, orderByChild(key), startAt(startMs), endAt(endMs)),
+        query(collectionRef, orderByChild(key), startAt(startSec), endAt(endSec)),
+      ]);
+    }
+  }
+
+  return [query(collectionRef, orderByChild(key), equalTo(candidate))];
+};
+
 const executeSearchByEqualToFields = async (searchKeys, rawSearchValue, uniqueUserIds, users) => {
   if (!Array.isArray(searchKeys) || searchKeys.length === 0) return;
 
@@ -1969,19 +1992,22 @@ const executeSearchByEqualToFields = async (searchKeys, rawSearchValue, uniqueUs
             }
           }
 
-          // eslint-disable-next-line no-await-in-loop
-          const snapshot = await get(
-            query(ref2(database, collection), orderByChild(key), equalTo(candidate))
-          );
+          const collectionRef = ref2(database, collection);
+          const equalToQueries = buildEqualToQueriesForField(collectionRef, key, candidate);
 
-          if (snapshot.exists()) {
-            snapshot.forEach(userSnapshot => {
-              const userId = userSnapshot.key;
-              if (uniqueUserIds.has(userId)) return;
+          for (const currentQuery of equalToQueries) {
+            // eslint-disable-next-line no-await-in-loop
+            const snapshot = await get(currentQuery);
 
-              uniqueUserIds.add(userId);
-              promises.push(addUserToResults(userId, users));
-            });
+            if (snapshot.exists()) {
+              snapshot.forEach(userSnapshot => {
+                const userId = userSnapshot.key;
+                if (uniqueUserIds.has(userId)) return;
+
+                uniqueUserIds.add(userId);
+                promises.push(addUserToResults(userId, users));
+              });
+            }
           }
 
           // eslint-disable-next-line no-await-in-loop
@@ -2134,12 +2160,13 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
       }
     }
 
-    // Для exact-пошуку по searchId не запускаємо date-пошук по полях картки
-    // (getInTouch/lastAction/...): інакше запити на кшталт
-    // "УК СМ Лилит 12.04.2026" можуть некоректно підтягувати date-збіги.
-    const isDateSearch = (searchKey === 'searchId' || forceSearchKeyBucket)
-      ? false
-      : await searchByDate(searchValue, uniqueUserIds, users);
+    // Broad date search intentionally checks several date fields. Do not run it for
+    // explicit EqualTo/searchKey requests: selected checkboxes must limit backend
+    // queries to only those selected keys.
+    const shouldRunBroadDateSearch = searchKey !== 'searchId' && !forceSearchKeyBucket && !forceEqualToAllCards;
+    const isDateSearch = shouldRunBroadDateSearch
+      ? await searchByDate(searchValue, uniqueUserIds, users)
+      : false;
     if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
       if (forcePartialUserIdSearch) {
