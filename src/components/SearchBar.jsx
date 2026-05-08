@@ -615,11 +615,13 @@ const resolveExecutionPlan = ({ allKeys, selectedKeys, detectedKey, rawQuery, da
   const normalizedSelectedKeys = Array.isArray(selectedKeys) ? selectedKeys : [];
   const isAllEnabled = normalizedSelectedKeys.length === allKeys.length;
   const isAllDisabled = normalizedSelectedKeys.length === 0;
-  const baseKeys = isAllEnabled || isAllDisabled ? allKeys : normalizedSelectedKeys;
+  const hasExplicitSelectedKeys = !isAllDisabled && !isAllEnabled;
+  const baseKeys = hasExplicitSelectedKeys ? normalizedSelectedKeys : allKeys;
 
   const hasDateScopedKeys = dateLikeKeys instanceof Set;
   const queryLooksLikeDate = hasDateScopedKeys ? looksLikeDateQuery(rawQuery) : false;
-  const filteredBaseKeys = hasDateScopedKeys
+  const shouldApplyDateScope = hasDateScopedKeys && !hasExplicitSelectedKeys;
+  const filteredBaseKeys = shouldApplyDateScope
     ? baseKeys.filter(key =>
       queryLooksLikeDate ? dateLikeKeys.has(key) : !dateLikeKeys.has(key)
     )
@@ -628,7 +630,7 @@ const resolveExecutionPlan = ({ allKeys, selectedKeys, detectedKey, rawQuery, da
 
   if (detectedKey && effectiveBaseKeys.includes(detectedKey)) {
     const prioritizedKeys = prioritizeEqualToKeys(effectiveBaseKeys, detectedKey);
-    const shouldRunDetectedOnlyFirst = isAllEnabled || isAllDisabled;
+    const shouldRunDetectedOnlyFirst = !hasExplicitSelectedKeys && (isAllEnabled || isAllDisabled);
 
     if (shouldRunDetectedOnlyFirst) {
       return {
@@ -1079,7 +1081,7 @@ const SearchBar = ({
       for (const parsedValue of candidates) {
         const res = await cachedSearch(
           { [equalToKey]: parsedValue },
-          { forceEqualToAllCards: true },
+          { forceEqualToAllCards: true, equalToKeys: [equalToKey] },
         );
         if (isStaleRequest()) return { found, results: resultMap };
         if (!res || Object.keys(res).length === 0) continue;
@@ -1710,6 +1712,7 @@ const SearchBar = ({
 
           const res = await cachedSearch(queryParams, {
             forceEqualToAllCards: true,
+            equalToKeys: [equalToKey],
           });
           if (isStaleRequest()) return;
           if (!res || Object.keys(res).length === 0) {
@@ -1762,6 +1765,7 @@ const SearchBar = ({
 
             const res = await cachedSearch(queryParams, {
               forceEqualToAllCards: true,
+              equalToKeys: [equalToKey],
             });
             if (isStaleRequest()) return;
             if (!res || Object.keys(res).length === 0) {
