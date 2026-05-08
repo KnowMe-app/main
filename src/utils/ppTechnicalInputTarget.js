@@ -21,7 +21,7 @@ export const resolvePpTechnicalInputSocialTarget = rawValue => {
 
   const socialUrlMatchers = [
     { fieldName: 'instagram', pattern: /(?:https?:\/\/)?(?:www\.)?instagram\.com\/([^/?#]+)/i },
-    { fieldName: 'facebook', pattern: /(?:https?:\/\/)?(?:www\.)?(?:facebook\.com|fb\.com)\/([^/?#]+)/i },
+    { fieldName: 'facebook', pattern: /(?:https?:\/\/)?(?:www\.)?(?:facebook\.com|fb\.com)\/([^/?#]+)/i, useRawValue: true },
     { fieldName: 'tiktok', pattern: /(?:https?:\/\/)?(?:www\.)?tiktok\.com\/([^/?#]+)/i },
     { fieldName: 'linkedin', pattern: /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/([^/?#]+)/i },
     { fieldName: 'youtube', pattern: /(?:https?:\/\/)?(?:m\.|www\.)?(?:youtube\.com|youtu\.be)\/([^/?#]+)/i },
@@ -33,7 +33,7 @@ export const resolvePpTechnicalInputSocialTarget = rawValue => {
     const match = trimmed.match(matcher.pattern);
     if (!match?.[1]) continue;
 
-    const normalizedValue = String(match[1]).replace(/^@/, '').trim();
+    const normalizedValue = String(matcher.useRawValue ? trimmed : match[1]).replace(/^@/, '').trim();
     if (normalizedValue) {
       return { fieldName: matcher.fieldName, value: normalizedValue };
     }
