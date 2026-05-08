@@ -24,7 +24,7 @@ export const resolvePpTechnicalInputSocialTarget = rawValue => {
     { fieldName: 'facebook', pattern: /(?:https?:\/\/)?(?:www\.)?(?:facebook\.com|fb\.com)\/([^/?#]+)/i, useRawValue: true },
     { fieldName: 'tiktok', pattern: /(?:https?:\/\/)?(?:www\.)?tiktok\.com\/([^/?#]+)/i },
     { fieldName: 'linkedin', pattern: /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/([^/?#]+)/i },
-    { fieldName: 'youtube', pattern: /(?:https?:\/\/)?(?:m\.|www\.)?(?:youtube\.com|youtu\.be)\/([^/?#]+)/i },
+    { fieldName: 'youtube', pattern: /(?:https?:\/\/)?(?:m\.|www\.)?(?:(?:youtube\.com)\/(?:@|c\/|channel\/|user\/)?|(?:youtu\.be)\/)([^/?#]+)/i },
     { fieldName: 'twitter', pattern: /(?:https?:\/\/)?(?:www\.)?(?:twitter\.com|x\.com)\/([^/?#]+)/i },
     { fieldName: 'telegram', pattern: /(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)\/([^/?#]+)/i },
   ];

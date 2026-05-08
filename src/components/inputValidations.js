@@ -179,16 +179,33 @@ export const formatEmail = email => {
     return value.replace(/^@/g, '').toLowerCase();
   };
 
+  const extractYoutubeIdentifier = value => {
+    const youtubeUrlMatch = value.match(
+      /^(?:https?:\/\/)?(?:m\.|www\.)?(?:(?:youtube\.com)\/|(?:youtu\.be)\/)(.+)$/i,
+    );
+
+    const rawPath = youtubeUrlMatch?.[1] || value;
+    const [pathBeforeQuery] = rawPath.split(/[?#]/);
+    const pathSegments = pathBeforeQuery.split('/').filter(Boolean);
+
+    if (!pathSegments.length) {
+      return '';
+    }
+
+    const [firstSegment, secondSegment] = pathSegments;
+    const lowerFirstSegment = firstSegment.toLowerCase();
+
+    if (['channel', 'c', 'user'].includes(lowerFirstSegment) && secondSegment) {
+      return secondSegment.replace(/^@/, '');
+    }
+
+    return firstSegment.replace(/^@/, '');
+  };
+
   export const formatYoutube = value => {
-    let normalized = removeSpaceAndNewLine(String(value ?? '').trim());
+    const normalized = String(value ?? '').trim().replace(/\s/g, '');
 
-    normalized = normalized
-      .replace(/^https?:\/\/(?:m\.|www\.)?(?:youtube\.com|youtu\.be)\//i, '')
-      .replace(/^@/g, '');
-
-    normalized = normalized.split(/[/?#]/)[0];
-
-    return normalized.toLowerCase();
+    return extractYoutubeIdentifier(normalized).toLowerCase();
   };
 
   export const formatOther = value => {
