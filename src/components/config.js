@@ -1632,7 +1632,6 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
 export const makeNewUser = async (searchedValue, rawQuery = '') => {
   const db = getDatabase();
   const newUsersRef = ref2(db, 'newUsers');
-  const searchIdRef = ref2(db, 'searchId');
 
   const parsedQuery = parseUkTriggerQuery(rawQuery);
   const trimmedRawQuery = typeof rawQuery === 'string' ? rawQuery.trim() : '';
@@ -1688,16 +1687,13 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   await syncUserSearchKeyIndex(newUserId, {}, newUser);
 
   if (searchMeta) {
-    const { searchIdKey } = searchMeta;
-    const searchIdUpdates = { [searchIdKey]: newUserId };
+    const { searchKey, searchValue } = searchMeta;
+
+    await updateSearchId(searchKey, searchValue, newUserId, 'add');
 
     if (parsedQuery?.handle) {
-      const normalizedHandle = parsedQuery.handle.toLowerCase();
-      const handleKey = `telegram_${encodeKey(normalizedHandle)}`;
-      searchIdUpdates[handleKey] = newUserId;
+      await updateSearchId('telegram', parsedQuery.handle, newUserId, 'add');
     }
-
-    await update(searchIdRef, searchIdUpdates);
   }
 
   return {
