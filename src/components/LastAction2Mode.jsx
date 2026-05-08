@@ -120,6 +120,11 @@ const mapLA2FilterValueToBuckets = (filterName, value) => {
   return [];
 };
 
+const getSortableLastActionValue = value => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 const getLA2SearchKeyBucketIds = async (la2StateRef, indexName, bucket) => {
   const cacheKey = `${indexName}/${bucket}`;
   const cache = indexName === LAST_ACTION2_SEARCH_KEY_INDEX
@@ -128,7 +133,19 @@ const getLA2SearchKeyBucketIds = async (la2StateRef, indexName, bucket) => {
   if (cache[cacheKey]) return cache[cacheKey];
 
   const snapshot = await get(ref(database, `searchKey/${indexName}/${bucket}`));
-  const ids = snapshot.exists() ? Object.keys(snapshot.val() || {}).filter(Boolean) : [];
+  const bucketValue = snapshot.exists() ? snapshot.val() || {} : {};
+  const ids = Object.entries(bucketValue)
+    .filter(([userId]) => Boolean(userId))
+    .sort((a, b) => {
+      if (indexName !== LAST_ACTION2_SEARCH_KEY_INDEX) return 0;
+
+      const right = getSortableLastActionValue(b[1]);
+      const left = getSortableLastActionValue(a[1]);
+      if (right !== left) return right - left;
+
+      return String(a[0]).localeCompare(String(b[0]));
+    })
+    .map(([userId]) => userId);
   const idSet = new Set(ids);
   cache[cacheKey] = idSet;
   return idSet;
