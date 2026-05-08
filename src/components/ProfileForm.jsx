@@ -38,6 +38,7 @@ import {
   getCachedAdditionalRulesPreview,
   saveCachedAdditionalRulesPreview,
 } from 'utils/searchKeyCache';
+import { MULTI_DATA_ACCESS_FIELD } from 'utils/multiDataAccess';
 
 const getImtAllowedUserIdsFromSearchKey = (searchKeyPayload, imtValues) => {
   const normalizedImtValues = [...new Set((Array.isArray(imtValues) ? imtValues : []).filter(Boolean))];
@@ -1637,6 +1638,7 @@ export const ProfileForm = ({
     'role',
     'accessLevel',
     ADDITIONAL_ACCESS_FIELD,
+    MULTI_DATA_ACCESS_FIELD,
   ];
 
   const accessLevelOptions = [
@@ -1665,6 +1667,17 @@ export const ProfileForm = ({
           name: ADDITIONAL_ACCESS_FIELD,
           placeholder: 'age: 21,22,23',
           ukrainianHint: 'додаткові правила доступу до newUsers',
+        },
+      ];
+    }
+
+    if (canManageAccessLevel && !next.some(field => field.name === MULTI_DATA_ACCESS_FIELD)) {
+      next = [
+        ...next,
+        {
+          name: MULTI_DATA_ACCESS_FIELD,
+          placeholder: 'userId1, userId2',
+          ukrainianHint: 'один або декілька userId через кому, чиї multiData показувати на matching',
         },
       ];
     }

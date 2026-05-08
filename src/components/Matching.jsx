@@ -72,6 +72,7 @@ import {
   buildNewUsersFilterSetIndex,
   getIndexedNewUsersIdsByRules,
 } from 'utils/newUsersFilterSetsIndex';
+import { resolveMatchingMultiDataOwnerIds } from 'utils/multiDataAccess';
 
 // Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
 const isValidId = id => typeof id === 'string' && id.length >= 20;
@@ -599,6 +600,16 @@ const CommentInput = styled.textarea`
 const CommentBox = styled.div`
   position: relative;
   width: 100%;
+`;
+
+const SharedCommentText = styled.div`
+  padding: 0 10px 3px;
+  font-size: 12px;
+  line-height: 1.25;
+  color: ${color.gray1};
+  font-style: italic;
+  white-space: pre-wrap;
+  word-break: break-word;
 `;
 
 const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) => {
@@ -1193,6 +1204,7 @@ const SwipeableCard = ({
   viewMode,
   handleRemove,
   togglePublish,
+  multiDataOwnerId,
 }) => {
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
@@ -1401,6 +1413,7 @@ const SwipeableCard = ({
         dislikeUsers={dislikeUsers}
         setDislikeUsers={setDislikeUsers}
         onRemove={handleRemove}
+        multiDataOwnerId={multiDataOwnerId}
       />
       <BtnDislike
         userId={user.userId}
@@ -1410,6 +1423,7 @@ const SwipeableCard = ({
         favoriteUsers={favoriteUsers}
         setFavoriteUsers={setFavoriteUsers}
         onRemove={handleRemove}
+        multiDataOwnerId={multiDataOwnerId}
       />
       {current === 'main' && isAgency && (
         <CardInfo>
@@ -1728,9 +1742,11 @@ const Matching = () => {
   const defaultListKey = `default:${collectionSource}`;
   const [filterResetToken, setFilterResetToken] = useState(0);
   const [comments, setComments] = useState({});
+  const [sharedComments, setSharedComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ownerId, setOwnerId] = useState(null);
+  const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
     () => localStorage.getItem('additionalAccessRules') || ''
@@ -1786,12 +1802,17 @@ const Matching = () => {
   }, [loading, users]);
 
   const getOwnerId = () => auth.currentUser?.uid || localStorage.getItem('ownerId');
+  const getMatchingMultiDataOwnerIds = React.useCallback(() => {
+    const fallbackOwnerId = getOwnerId();
+    const ids = multiDataOwnerIds.length ? multiDataOwnerIds : [fallbackOwnerId];
+    return [...new Set(ids.filter(Boolean))];
+  }, [multiDataOwnerIds]);
   const waitForOwnerId = () =>
     new Promise(resolve => {
       const check = () => {
-        const id = getOwnerId();
-        if (id) {
-          resolve(id);
+        const ids = getMatchingMultiDataOwnerIds();
+        if (ids.length) {
+          resolve(ids);
         } else {
           setTimeout(check, 100);
         }
@@ -1844,6 +1865,13 @@ const Matching = () => {
       });
       return map;
     });
+    setSharedComments(prev => {
+      const map = {};
+      ids.forEach(id => {
+        if (prev[id]) map[id] = prev[id];
+      });
+      return map;
+    });
   }, [users]);
 
   useEffect(() => {
@@ -1857,39 +1885,53 @@ const Matching = () => {
     );
   }, [favoriteUsers, dislikeUsers, viewMode]);
 
-  const loadCommentsFor = async list => {
-    const owner = auth.currentUser?.uid;
-    if (!owner) return;
+  const loadCommentsFor = React.useCallback(async list => {
+    const owners = getMatchingMultiDataOwnerIds();
+    const ownOwnerId = getOwnerId();
+    if (!owners.length || !ownOwnerId) return;
     const ids = Array.from(
       new Set([...usersRef.current.map(u => u.userId), ...list.map(u => u.userId)])
     );
     const cache = loadComments();
-    const fetched = await fetchUserComments(owner, ids);
+    const fetchedEntries = await Promise.all(
+      owners.map(async owner => ({ owner, comments: await fetchUserComments(owner, ids) }))
+    );
     const newStore = {};
     const commentsMap = {};
+    const sharedCommentsMap = {};
     ids.forEach(id => {
-      const arr = fetched[id] || [];
-      const server = arr[0];
+      const ownEntry = fetchedEntries.find(entry => entry.owner === ownOwnerId);
+      const ownComments = ownEntry?.comments?.[id] || [];
+      const ownServer = [...ownComments].sort((a, b) => (b.lastAction || 0) - (a.lastAction || 0))[0];
       const local = cache[id];
-      if (server && (!local || server.lastAction > local.lastAction)) {
-        newStore[id] = server;
-        commentsMap[id] = server.text;
+      if (ownServer) {
+        newStore[id] = ownServer;
+        commentsMap[id] = ownServer.text;
       } else if (local) {
         newStore[id] = local;
         commentsMap[id] = local.text;
       } else {
         commentsMap[id] = '';
       }
+
+      sharedCommentsMap[id] = fetchedEntries
+        .filter(entry => entry.owner !== ownOwnerId)
+        .flatMap(entry => entry.comments?.[id] || [])
+        .sort((a, b) => (b.lastAction || 0) - (a.lastAction || 0))
+        .map(comment => String(comment.text || '').trim())
+        .filter(Boolean);
     });
     saveComments(newStore);
     setComments(commentsMap);
-  };
+    setSharedComments(sharedCommentsMap);
+  }, [getMatchingMultiDataOwnerIds]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       if (user) {
         localStorage.setItem('ownerId', user.uid);
         setOwnerId(user.uid);
+        setMultiDataOwnerIds(resolveMatchingMultiDataOwnerIds({ viewerId: user.uid }));
 
         const syncAccessProfile = async () => {
           try {
@@ -1901,6 +1943,7 @@ const Matching = () => {
             setCurrentAdditionalAccessRules(additionalAccessRules);
             localStorage.setItem('accessLevel', accessLevel);
             localStorage.setItem('additionalAccessRules', additionalAccessRules);
+            setMultiDataOwnerIds(resolveMatchingMultiDataOwnerIds({ viewerId: user.uid, profile }));
           } catch (error) {
             console.error('Failed to refresh access profile on Matching', error);
             const cachedAccessLevel = localStorage.getItem('accessLevel') || '';
@@ -1916,8 +1959,10 @@ const Matching = () => {
         localStorage.removeItem('accessLevel');
         localStorage.removeItem('additionalAccessRules');
         setOwnerId('');
+        setMultiDataOwnerIds([]);
         setFavoriteUsers({});
         setDislikeUsers({});
+        setSharedComments({});
         setCurrentAccessLevel('');
         setCurrentAdditionalAccessRules('');
         setAdditionalNewUsers([]);
@@ -1927,30 +1972,45 @@ const Matching = () => {
       const { todayDash } = getCurrentDate();
       updateDataInNewUsersRTDB(user.uid, { lastLogin2: todayDash }, 'update');
 
-      const favRef = refDb(database, `multiData/favorites/${user.uid}`);
-      const disRef = refDb(database, `multiData/dislikes/${user.uid}`);
-
-        const unsubFav = onValue(favRef, snap => {
-          const data = snap.exists() ? snap.val() : {};
-          setFavoriteUsers(data);
-          syncFavorites(data);
-        });
-        const unsubDis = onValue(disRef, snap => {
-          const data = snap.exists() ? snap.val() : {};
-          setDislikeUsers(data);
-          syncDislikes(data);
-        });
-
-      return () => {
-        unsubFav();
-        unsubDis();
-      };
     });
 
     return () => {
       unsubscribeAuth();
     };
   }, []);
+
+  useEffect(() => {
+    const ownerIds = getMatchingMultiDataOwnerIds();
+    if (!ownerIds.length) return undefined;
+
+    const favoriteSnapshots = {};
+    const dislikeSnapshots = {};
+    const mergeSnapshots = snapshots => Object.assign({}, ...Object.values(snapshots));
+
+    const unsubs = ownerIds.flatMap(effectiveOwnerId => {
+      const favRef = refDb(database, `multiData/favorites/${effectiveOwnerId}`);
+      const disRef = refDb(database, `multiData/dislikes/${effectiveOwnerId}`);
+
+      const unsubFav = onValue(favRef, snap => {
+        favoriteSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
+        const data = mergeSnapshots(favoriteSnapshots);
+        setFavoriteUsers(data);
+        syncFavorites(data);
+      });
+      const unsubDis = onValue(disRef, snap => {
+        dislikeSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
+        const data = mergeSnapshots(dislikeSnapshots);
+        setDislikeUsers(data);
+        syncDislikes(data);
+      });
+
+      return [unsubFav, unsubDis];
+    });
+
+    return () => {
+      unsubs.forEach(unsub => unsub());
+    };
+  }, [getMatchingMultiDataOwnerIds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2128,32 +2188,35 @@ const Matching = () => {
     setUsers([]); // clear previous list to avoid caching wrong data
     loadedIdsRef.current = new Set();
     try {
-      const owner = auth.currentUser?.uid;
+      const owners = getMatchingMultiDataOwnerIds();
       let exclude = new Set();
+      if (owners.length) {
+        const [favMaps, disMaps] = await Promise.all([
+          Promise.all(owners.map(owner => fetchFavoriteUsers(owner))),
+          Promise.all(owners.map(owner => fetchDislikeUsers(owner))),
+        ]);
+        const favIds = Object.assign({}, ...favMaps);
+        const disIds = Object.assign({}, ...disMaps);
+        setFavoriteUsers(favIds);
+        setDislikeUsers(disIds);
+        syncFavorites(favIds);
+        syncDislikes(disIds);
+        exclude = new Set([
+          ...Object.keys(favIds),
+          ...Object.keys(disIds),
+        ]);
+      } else {
         const localFav = getFavorites();
         const localDis = getDislikes();
-      if (Object.keys(localFav).length || Object.keys(localDis).length) {
-        setFavoriteUsers(localFav);
-        setDislikeUsers(localDis);
-        exclude = new Set([
-          ...Object.keys(localFav),
-          ...Object.keys(localDis),
-        ]);
-      }
-      if (owner) {
-        const [favIds, disIds] = await Promise.all([
-          fetchFavoriteUsers(owner),
-          fetchDislikeUsers(owner),
-        ]);
-          setFavoriteUsers(favIds);
-          setDislikeUsers(disIds);
-          syncFavorites(favIds);
-          syncDislikes(disIds);
+        if (Object.keys(localFav).length || Object.keys(localDis).length) {
+          setFavoriteUsers(localFav);
+          setDislikeUsers(localDis);
           exclude = new Set([
-            ...Object.keys(favIds),
-            ...Object.keys(disIds),
+            ...Object.keys(localFav),
+            ...Object.keys(localDis),
           ]);
         }
+      }
 
       const { cards: cached } = await getCardsByList(defaultListKey);
       if (cached.length && viewModeRef.current === startMode) {
@@ -2206,7 +2269,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [collectionSource, defaultListKey, fetchChunk]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, loadCommentsFor]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     viewModeRef.current = 'default';
@@ -2227,30 +2290,14 @@ const Matching = () => {
     setViewMode('favorites');
     setLoading(true);
     setUsers([]);
-    const owner = await waitForOwnerId();
-    if (!owner) {
+    const owners = await waitForOwnerId();
+    if (!owners.length) {
       setLoading(false);
       return;
     }
 
-    const localIds = getIdsByQuery('favorite').filter(isMatchingCardId);
-    if (localIds.length > 0) {
-      const favMap = getFavorites();
-      setFavoriteUsers(favMap);
-      setFavoriteIds(favMap);
-      syncFavorites(favMap);
-      const { cards: favCards } = await getFavoriteCards(id => fetchUserById(id));
-      const list = filterMatchingUsers(favCards).sort(compareUsersByLastLogin2);
-      loadedIdsRef.current = new Set(list.map(u => u.userId));
-      setUsers(list);
-      await loadCommentsFor(list);
-      setHasMore(false);
-      setLastKey(null);
-      setLoading(false);
-      return;
-    }
-
-    const favUsers = await fetchFavoriteUsersData(owner);
+    const favoriteDataByOwner = await Promise.all(owners.map(owner => fetchFavoriteUsersData(owner)));
+    const favUsers = Object.assign({}, ...favoriteDataByOwner);
     const favMap = Object.fromEntries(Object.keys(favUsers).map(id => [id, true]));
     syncFavorites(favMap);
     setFavoriteUsers(favMap);
@@ -2271,30 +2318,14 @@ const Matching = () => {
     setViewMode('dislikes');
     setLoading(true);
     setUsers([]);
-    const owner = await waitForOwnerId();
-    if (!owner) {
+    const owners = await waitForOwnerId();
+    if (!owners.length) {
       setLoading(false);
       return;
     }
 
-    const localIds = getIdsByQuery('dislike').filter(isMatchingCardId);
-    if (localIds.length > 0) {
-      const localDis = getDislikes();
-      const disMap = Object.fromEntries(Object.keys(localDis).map(id => [id, true]));
-      setDislikeUsers(disMap);
-      setIdsForQuery('dislike', Object.keys(disMap));
-      const { cards: disCards } = await getDislikedCards(id => fetchUserById(id));
-      const list = filterMatchingUsers(disCards).sort(compareUsersByLastLogin2);
-      loadedIdsRef.current = new Set(list.map(u => u.userId));
-      setUsers(list);
-      await loadCommentsFor(list);
-      setHasMore(false);
-      setLastKey(null);
-      setLoading(false);
-      return;
-    }
-
-    const loaded = await fetchDislikeUsersData(owner);
+    const dislikeDataByOwner = await Promise.all(owners.map(owner => fetchDislikeUsersData(owner)));
+    const loaded = Object.assign({}, ...dislikeDataByOwner);
     const disMap = Object.fromEntries(Object.keys(loaded).map(id => [id, true]));
     cacheDislikedUsers(loaded);
     syncDislikes(disMap);
@@ -2419,7 +2450,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [defaultListKey, hasMore, lastKey, viewMode, fetchChunk]);
+  }, [defaultListKey, hasMore, lastKey, viewMode, fetchChunk, loadCommentsFor]);
 
   useEffect(() => {
     console.log('[useEffect] calling loadInitial');
@@ -2696,6 +2727,7 @@ const Matching = () => {
                         viewMode={viewMode}
                         handleRemove={handleRemove}
                         togglePublish={togglePublish}
+                        multiDataOwnerId={ownerId}
                       />
                       <CommentBox>
                         <ResizableCommentInput
@@ -2710,11 +2742,16 @@ const Matching = () => {
                           onBlur={async () => {
                             if (auth.currentUser) {
                               const text = comments[user.userId] || '';
-                              const res = await setUserComment(user.userId, text);
+                              const res = await setUserComment(user.userId, text, ownerId);
                               setLocalComment(user.userId, text, res?.lastAction);
                             }
                           }}
                         />
+                        {(sharedComments[user.userId] || []).map((text, idx) => (
+                          <SharedCommentText key={`${user.userId}-shared-comment-${idx}`}>
+                            {text}
+                          </SharedCommentText>
+                        ))}
                         {isAdmin && (
                           <Id
                             onClick={() => {
