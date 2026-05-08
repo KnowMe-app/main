@@ -3047,11 +3047,11 @@ const collectFieldCountIdsByFilters = async (fieldsFilters, rootPaths = [SEARCH_
 
 const AGE_DATE_PREFIX = 'd_';
 
-export const normalizeLastActionSearchKeyBucket = rawValue => {
-  if (rawValue === undefined || rawValue === null) return 'no';
+const parseLastActionDate = rawValue => {
+  if (rawValue === undefined || rawValue === null) return { status: 'empty', date: null };
 
   const normalized = String(rawValue).trim();
-  if (!normalized) return 'no';
+  if (!normalized) return { status: 'empty', date: null };
 
   let parsedDate = null;
   const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -3062,13 +3062,22 @@ export const normalizeLastActionSearchKeyBucket = rawValue => {
     const year = Number.parseInt(yearRaw, 10);
     const month = Number.parseInt(monthRaw, 10);
     const day = Number.parseInt(dayRaw, 10);
-    parsedDate = new Date(year, month - 1, day);
+    const dateOnly = new Date(year, month - 1, day);
     if (
-      parsedDate.getFullYear() !== year ||
-      parsedDate.getMonth() !== month - 1 ||
-      parsedDate.getDate() !== day
+      dateOnly.getFullYear() !== year ||
+      dateOnly.getMonth() !== month - 1 ||
+      dateOnly.getDate() !== day
     ) {
-      return '?';
+      return { status: 'invalid', date: null };
+    }
+
+    const includesTime = normalized.length > isoMatch[0].length;
+    if (includesTime) {
+      const timestamp = Date.parse(normalized);
+      if (Number.isNaN(timestamp)) return { status: 'invalid', date: null };
+      parsedDate = new Date(timestamp);
+    } else {
+      parsedDate = dateOnly;
     }
   } else if (dotMatch) {
     const [, dayRaw, monthRaw, yearRaw] = dotMatch;
@@ -3081,20 +3090,35 @@ export const normalizeLastActionSearchKeyBucket = rawValue => {
       parsedDate.getMonth() !== month - 1 ||
       parsedDate.getDate() !== day
     ) {
-      return '?';
+      return { status: 'invalid', date: null };
     }
   } else if (typeof rawValue === 'number' || /^\d+$/.test(normalized)) {
     const timestamp = Number(rawValue);
-    if (!Number.isFinite(timestamp)) return '?';
+    if (!Number.isFinite(timestamp)) return { status: 'invalid', date: null };
     parsedDate = new Date(timestamp);
-    if (Number.isNaN(parsedDate.getTime())) return '?';
+    if (Number.isNaN(parsedDate.getTime())) return { status: 'invalid', date: null };
   } else {
     const timestamp = Date.parse(normalized);
-    if (Number.isNaN(timestamp)) return '?';
+    if (Number.isNaN(timestamp)) return { status: 'invalid', date: null };
     parsedDate = new Date(timestamp);
   }
 
-  return `${AGE_DATE_PREFIX}${toIsoDate(parsedDate)}`;
+  return { status: 'valid', date: parsedDate };
+};
+
+export const normalizeLastActionSearchKeyBucket = rawValue => {
+  const parsed = parseLastActionDate(rawValue);
+  if (parsed.status === 'empty') return 'no';
+  if (parsed.status === 'invalid') return '?';
+
+  return `${AGE_DATE_PREFIX}${toIsoDate(parsed.date)}`;
+};
+
+export const normalizeLastActionSearchKeyValue = rawValue => {
+  const parsed = parseLastActionDate(rawValue);
+  if (parsed.status !== 'valid') return true;
+
+  return parsed.date.getTime();
 };
 
 const getLastActionIndexSet = data => {
@@ -3451,7 +3475,7 @@ const updateSearchKeyLeaf = async (indexName, value, userId, action, options = {
   const indexRef = ref2(database, resolveSearchKeyLeafPath(options?.rootPath, indexName, value, userId));
 
   if (action === 'add') {
-    await set(indexRef, true);
+    await set(indexRef, options?.leafValue ?? true);
     return;
   }
 
@@ -3647,6 +3671,8 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   const nextFieldCountValues = getFieldCountIndexSet(nextData);
   const prevLastActionValues = getLastActionIndexSet(prevData);
   const nextLastActionValues = getLastActionIndexSet(nextData);
+  const prevLastActionLeafValue = normalizeLastActionSearchKeyValue(prevData?.lastAction);
+  const nextLastActionLeafValue = normalizeLastActionSearchKeyValue(nextData?.lastAction);
 
   for (const value of prevFieldCountValues) {
     if (!nextFieldCountValues.has(value)) {
@@ -3670,9 +3696,12 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   }
 
   for (const value of nextLastActionValues) {
-    if (!prevLastActionValues.has(value)) {
+    if (!prevLastActionValues.has(value) || prevLastActionLeafValue !== nextLastActionLeafValue) {
       // eslint-disable-next-line no-await-in-loop
-      await updateLeaf(LAST_ACTION_SEARCH_KEY_INDEX, value, 'add');
+      await updateSearchKeyLeaf(LAST_ACTION_SEARCH_KEY_INDEX, value, userId, 'add', {
+        ...options,
+        leafValue: nextLastActionLeafValue,
+      });
     }
   }
 };
@@ -3975,7 +4004,8 @@ export const createLastActionSearchKeyIndexInCollection = async (collection, onP
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
         const bucket = normalizeLastActionSearchKeyBucket(user.lastAction);
-        acc[`${searchKeyRoot}/${LAST_ACTION_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
+        acc[`${searchKeyRoot}/${LAST_ACTION_SEARCH_KEY_INDEX}/${bucket}/${userId}`] =
+          normalizeLastActionSearchKeyValue(user.lastAction);
         return acc;
       }, {}),
     onProgress
@@ -4150,7 +4180,10 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
         const entries = resolveSearchKeyValuesByIndexType(indexType, userId, userData);
         entries.forEach(({ indexName, values }) => {
           values.filter(Boolean).forEach(value => {
-            assignNestedLeaf(payload, [...rootSegments, indexName, value, userId], true);
+            const leafValue = indexType === SEARCH_KEY_INDEX_TYPES.lastAction
+              ? normalizeLastActionSearchKeyValue(userData?.lastAction)
+              : true;
+            assignNestedLeaf(payload, [...rootSegments, indexName, value, userId], leafValue);
           });
         });
       });
