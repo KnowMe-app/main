@@ -34,6 +34,12 @@ export const setLocalComment = (id, text, lastAction = Date.now()) => {
   saveComments(comments);
 };
 
+export const shouldUseServerComment = (server, local) => {
+  if (!server) return false;
+  if (!local) return true;
+  return (server.lastAction || 0) > (local.lastAction || 0);
+};
+
 export const pruneComments = ids => {
   const existing = loadComments();
   const pruned = {};
