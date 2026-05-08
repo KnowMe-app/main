@@ -1,7 +1,43 @@
 import { normalizePhoneValue } from '../components/inputValidations';
 import { parseUkTriggerQuery } from './parseUkTrigger';
 import { encodeKey } from './searchIndexCandidates';
-import { getSearchIdPrefixes } from './searchKeyCheckboxFilters';
+
+
+export const SEARCH_ID_INDEXED_FIELDS = new Set([
+  'instagram',
+  'facebook',
+  'email',
+  'phone',
+  'telegram',
+  'tiktok',
+  'linkedin',
+  'youtube',
+  'twitter',
+  'line',
+  'otherLink',
+  'other',
+  'vk',
+  'name',
+  'surname',
+]);
+
+export const getSearchIdIndexedFields = () => [...SEARCH_ID_INDEXED_FIELDS];
+
+export const isSearchIdIndexedField = field => SEARCH_ID_INDEXED_FIELDS.has(field);
+
+export const getSearchIdPrefixes = searchIdPrefixes => {
+  const fallback = getSearchIdIndexedFields();
+  if (!Array.isArray(searchIdPrefixes) || searchIdPrefixes.length === 0) {
+    return fallback;
+  }
+
+  const normalizedPrefixes = searchIdPrefixes
+    .map(prefix => (typeof prefix === 'string' ? prefix.trim() : ''))
+    .filter(Boolean);
+
+  const allowedPrefixes = fallback.filter(prefix => normalizedPrefixes.includes(prefix));
+  return allowedPrefixes.length > 0 ? allowedPrefixes : fallback;
+};
 
 const SOCIAL_SEARCH_KEYS = new Set([
   'telegram',
@@ -149,11 +185,29 @@ export const shouldSkipBroadFallbackForExactSearchId = searchKey => {
   return true;
 };
 
+export const buildSearchIdRecordKey = searchedValue => {
+  if (!searchedValue || typeof searchedValue !== 'object' || Array.isArray(searchedValue)) {
+    return null;
+  }
+
+  const entries = Object.entries(searchedValue);
+  if (entries.length !== 1) return null;
+
+  const [[searchKey, searchValue]] = entries;
+  if (!SEARCH_ID_INDEXED_FIELDS.has(searchKey)) return null;
+  if (typeof searchValue !== 'string') return null;
+
+  const normalizedSearchValue = normalizeSearchIdInput(searchKey, searchValue);
+  if (!normalizedSearchValue) return null;
+
+  return `${searchKey}_${encodeKey(normalizedSearchValue).toLowerCase()}`;
+};
+
 export const makeSearchKeyValue = searchedValue => {
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
   const normalizedSearchValue = normalizeSearchIdInput(searchKey, searchValue);
   const modifiedSearchValue = encodeKey(normalizedSearchValue);
-  const searchIdKey = `${searchKey}_${modifiedSearchValue.toLowerCase()}`;
+  const searchIdKey = buildSearchIdRecordKey({ [searchKey]: searchValue });
 
   return {
     searchKey,
