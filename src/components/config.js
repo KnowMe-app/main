@@ -484,41 +484,41 @@ export const fetchUsersByLastLogin2 = async (limit = 9, lastDate) => {
 
 // Favorites are stored per owner so multiple users can have their own lists
 // Add userId to the current owner's favorites list
-export const addFavoriteUser = async userId => {
+export const addFavoriteUser = async (userId, ownerId) => {
   try {
     const owner = auth.currentUser;
     if (!owner) return;
-    await set(ref2(database, `multiData/favorites/${owner.uid}/${userId}`), true);
+    await set(ref2(database, `multiData/favorites/${ownerId || owner.uid}/${userId}`), true);
   } catch (error) {
     console.error('Error adding favorite user:', error);
   }
 };
 
-export const removeFavoriteUser = async userId => {
+export const removeFavoriteUser = async (userId, ownerId) => {
   try {
     const owner = auth.currentUser;
     if (!owner) return;
-    await remove(ref2(database, `multiData/favorites/${owner.uid}/${userId}`));
+    await remove(ref2(database, `multiData/favorites/${ownerId || owner.uid}/${userId}`));
   } catch (error) {
     console.error('Error removing favorite user:', error);
   }
 };
 
-export const addDislikeUser = async userId => {
+export const addDislikeUser = async (userId, ownerId) => {
   try {
     const owner = auth.currentUser;
     if (!owner) return;
-    await set(ref2(database, `multiData/dislikes/${owner.uid}/${userId}`), true);
+    await set(ref2(database, `multiData/dislikes/${ownerId || owner.uid}/${userId}`), true);
   } catch (error) {
     console.error('Error adding dislike user:', error);
   }
 };
 
-export const removeDislikeUser = async userId => {
+export const removeDislikeUser = async (userId, ownerId) => {
   try {
     const owner = auth.currentUser;
     if (!owner) return;
-    await remove(ref2(database, `multiData/dislikes/${owner.uid}/${userId}`));
+    await remove(ref2(database, `multiData/dislikes/${ownerId || owner.uid}/${userId}`));
   } catch (error) {
     console.error('Error removing dislike user:', error);
   }
@@ -891,7 +891,7 @@ export const fetchCycleUsersData = async (
   }
 };
 
-export const setUserComment = async (cardId, text) => {
+export const setUserComment = async (cardId, text, ownerId) => {
   try {
     const user = auth.currentUser;
     if (!user) {
@@ -900,22 +900,23 @@ export const setUserComment = async (cardId, text) => {
     if (!cardId || typeof text !== 'string') {
       throw new Error('cardId і text обовʼязкові');
     }
-    const commentsRef = ref2(database, `multiData/comments/${user.uid}`);
+    const commentsOwnerId = ownerId || user.uid;
+    const commentsRef = ref2(database, `multiData/comments/${commentsOwnerId}`);
     const q = query(commentsRef, orderByChild('cardId'), equalTo(cardId));
     const snap = await get(q);
     const lastAction = Date.now();
     if (snap.exists()) {
       const key = Object.keys(snap.val())[0];
-      await set(ref2(database, `multiData/comments/${user.uid}/${key}`), {
+      await set(ref2(database, `multiData/comments/${commentsOwnerId}/${key}`), {
         cardId,
         text,
-        authorId: user.uid,
+        authorId: commentsOwnerId,
         lastAction,
       });
       return { commentId: key, lastAction };
     }
     const newRef = push(commentsRef);
-    await set(newRef, { cardId, text, authorId: user.uid, lastAction });
+    await set(newRef, { cardId, text, authorId: commentsOwnerId, lastAction });
     return { commentId: newRef.key, lastAction };
   } catch (error) {
     console.error('Error setting comment:', error);

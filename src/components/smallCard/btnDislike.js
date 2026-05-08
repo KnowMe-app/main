@@ -27,6 +27,7 @@ export const BtnDislike = ({
   iconSize = 18,
   title = 'Дизлайк',
   ariaLabel = 'Дизлайк',
+  multiDataOwnerId,
 }) => {
   const {
     background: customBackground,
@@ -49,7 +50,7 @@ export const BtnDislike = ({
     }
     if (isDisliked) {
       try {
-        await removeDislikeUser(userId);
+        await removeDislikeUser(userId, multiDataOwnerId);
         const updated = { ...dislikeUsers };
         delete updated[userId];
         setDislikeUsers(updated);
@@ -64,7 +65,7 @@ export const BtnDislike = ({
       }
     } else {
       try {
-        await addDislikeUser(userId);
+        await addDislikeUser(userId, multiDataOwnerId);
         const updated = { ...dislikeUsers, [userId]: true };
         setDislikeUsers(updated);
         setDislike(userId, true);
@@ -74,7 +75,7 @@ export const BtnDislike = ({
         }
         if (favoriteUsers[userId]) {
           try {
-            await removeFavoriteUser(userId);
+            await removeFavoriteUser(userId, multiDataOwnerId);
           } catch (err) {
             console.error('Failed to remove favorite when adding dislike:', err);
           }
