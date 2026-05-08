@@ -1,22 +1,5 @@
-const SEARCH_ID_CHECKBOX_KEYS = [
-  'instagram',
-  'facebook',
-  'email',
-  'phone',
-  'telegram',
-  'tiktok',
-  'linkedin',
-  'youtube',
-  'twitter',
-  'line',
-  'otherLink',
-  'other',
-  'vk',
-  'name',
-  'surname',
-  'lastAction',
-  'getInTouch',
-];
+import { getSearchIdIndexedFields } from './searchKeyUtils';
+const SEARCH_ID_CHECKBOX_KEYS = getSearchIdIndexedFields();
 
 const EQUAL_TO_INDEX_KEYS = [
   'instagram',

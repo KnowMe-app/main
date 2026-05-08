@@ -33,7 +33,9 @@ import { getReactionCategory } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
 import { getSubmittedSearchIndexKeys } from '../utils/searchIndexSync';
 import {
+  SEARCH_ID_INDEXED_FIELDS,
   buildSearchIdCandidateKeys,
+  buildSearchIdRecordKey,
   getEqualToCandidates,
   makeSearchKeyValue,
   normalizeSearchIdInput,
@@ -65,7 +67,7 @@ export const database = getDatabase(app);
 
 export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 
-const keysToCheck = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'name', 'surname', 'lastAction', 'getInTouch'];
+const keysToCheck = [...SEARCH_ID_INDEXED_FIELDS];
 const SEARCH_KEY_INDEX_ROOT = 'searchKey';
 const SEARCH_KEY_USERS_INDEX_ROOT = `${SEARCH_KEY_INDEX_ROOT}/users`;
 const BLOOD_SEARCH_KEY_INDEX = 'blood';
@@ -81,6 +83,7 @@ const USER_ID_SEARCH_KEY_INDEX = 'userId';
 const REACTION_SEARCH_KEY_INDEX = 'reaction';
 const FIELD_COUNT_SEARCH_KEY_INDEX = 'fields';
 const LAST_ACTION_SEARCH_KEY_INDEX = 'lastAction';
+const GET_IN_TOUCH_SEARCH_KEY_INDEX = 'getInTouch';
 const SEARCH_KEY_BATCH_UPLOAD_SIZE = 100;
 const SEARCH_INDEX_COLLECTION_CACHE_PREFIX = 'search-index:collection:v1:';
 const SEARCH_INDEX_COLLECTION_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -96,6 +99,7 @@ const SEARCH_KEY_INDEX_TYPES = {
   reaction: REACTION_SEARCH_KEY_INDEX,
   fieldCount: FIELD_COUNT_SEARCH_KEY_INDEX,
   lastAction: LAST_ACTION_SEARCH_KEY_INDEX,
+  getInTouch: GET_IN_TOUCH_SEARCH_KEY_INDEX,
 };
 
 const getSearchIndexCacheStorage = () => {
@@ -1687,7 +1691,7 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   await set(newUserRef, newUser);
   await syncUserSearchKeyIndex(newUserId, {}, newUser);
 
-  if (searchMeta) {
+  if (searchMeta?.searchIdKey) {
     const { searchIdKey } = searchMeta;
     const searchIdUpdates = { [searchIdKey]: newUserId };
 
@@ -1899,6 +1903,45 @@ const executeSearchBySearchIdIndex = async (
 };
 
 const SEARCH_COLLECTIONS = ['newUsers', 'users'];
+
+const SEARCH_KEY_DATE_FIELDS = new Set([LAST_ACTION_SEARCH_KEY_INDEX, GET_IN_TOUCH_SEARCH_KEY_INDEX]);
+
+const normalizeDateSearchBucketFromQuery = rawSearchValue => {
+  const parsed = parseLastActionDate(rawSearchValue);
+  if (parsed.status !== 'valid') return null;
+  return `${AGE_DATE_PREFIX}${toIsoDate(parsed.date)}`;
+};
+
+const collectUserIdsBySearchKeyBucket = async (field, rawSearchValue) => {
+  if (!SEARCH_KEY_DATE_FIELDS.has(field)) return [];
+  const bucket = normalizeDateSearchBucketFromQuery(rawSearchValue);
+  if (!bucket) return [];
+
+  const snapshot = await get(ref2(database, `${SEARCH_KEY_INDEX_ROOT}/${field}/${bucket}`));
+  if (!snapshot.exists()) return [];
+
+  return Object.entries(snapshot.val() || {})
+    .filter(([userId, enabled]) => Boolean(userId) && enabled)
+    .map(([userId]) => userId);
+};
+
+const executeSearchBySearchKeyBucket = async (searchKeys, rawSearchValue, uniqueUserIds, users) => {
+  if (!Array.isArray(searchKeys) || searchKeys.length === 0) return;
+
+  for (const key of searchKeys) {
+    // eslint-disable-next-line no-await-in-loop
+    const userIds = await collectUserIdsBySearchKeyBucket(key, rawSearchValue);
+    // eslint-disable-next-line no-await-in-loop
+    await Promise.all(
+      userIds.map(async userId => {
+        if (uniqueUserIds.has(userId)) return;
+        uniqueUserIds.add(userId);
+        await addUserToResults(userId, users);
+      })
+    );
+  }
+};
+
 const executeSearchByEqualToFields = async (searchKeys, rawSearchValue, uniqueUserIds, users) => {
   if (!Array.isArray(searchKeys) || searchKeys.length === 0) return;
 
@@ -2060,6 +2103,8 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
     searchIdPrefixes,
     equalToKeys,
     forceEqualToAllCards = false,
+    forceSearchKeyBucket = false,
+    searchKeyFields,
     forcePartialUserIdSearch = false,
     allowTelegramPrefixMatches = false,
   } = options;
@@ -2091,13 +2136,18 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
     // Для exact-пошуку по searchId не запускаємо date-пошук по полях картки
     // (getInTouch/lastAction/...): інакше запити на кшталт
     // "УК СМ Лилит 12.04.2026" можуть некоректно підтягувати date-збіги.
-    const isDateSearch = searchKey === 'searchId'
+    const isDateSearch = (searchKey === 'searchId' || forceSearchKeyBucket)
       ? false
       : await searchByDate(searchValue, uniqueUserIds, users);
     if (isDev) console.log('fetchNewUsersCollectionInRTDB → isDateSearch:', isDateSearch);
     if (!isDateSearch) {
       if (forcePartialUserIdSearch) {
         await searchUserByPartialUserId(searchValue, users);
+      } else if (forceSearchKeyBucket) {
+        const selectedSearchKeyFields = Array.isArray(searchKeyFields)
+          ? searchKeyFields.filter(key => SEARCH_KEY_DATE_FIELDS.has(key))
+          : [...SEARCH_KEY_DATE_FIELDS];
+        await executeSearchBySearchKeyBucket(selectedSearchKeyFields, searchValue, uniqueUserIds, users);
       } else if (forceEqualToAllCards) {
         const selectedEqualToKeys = resolveEqualToSearchKeys(equalToKeys);
         await executeSearchByEqualToFields(selectedEqualToKeys, searchValue, uniqueUserIds, users);
@@ -2430,8 +2480,8 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
       return;
     }
 
-    if (searchKey === 'getInTouch' || searchKey === 'lastAction') {
-      if (isDev) console.log('Пропускаємо непотрібні ключі :>> ', searchKey);
+    if (!SEARCH_ID_INDEXED_FIELDS.has(searchKey)) {
+      if (isDev) console.log('Пропускаємо не-searchId ключ :>> ', searchKey);
       return;
     }
 
@@ -2523,7 +2573,6 @@ export const syncUserSearchIdIndex = async (userId, prevData = {}, nextData = {}
   if (!userId) return;
 
   for (const key of getSubmittedSearchIndexKeys(keysToCheck, nextData, deletedKeys)) {
-    if (key === 'getInTouch' || key === 'lastAction') continue;
 
     const prevCandidates = new Set(
       extractIndexableFieldValues(prevData[key]).flatMap(value => buildSearchIndexCandidates(key, value))
@@ -3126,6 +3175,20 @@ const getLastActionIndexSet = data => {
   return new Set([normalizeLastActionSearchKeyBucket(data.lastAction)]);
 };
 
+
+const normalizeDateSearchKeyBucket = rawValue => {
+  const parsed = parseLastActionDate(rawValue);
+  if (parsed.status === 'empty') return 'no';
+  if (parsed.status === 'invalid') return '?';
+
+  return `${AGE_DATE_PREFIX}${toIsoDate(parsed.date)}`;
+};
+
+const getGetInTouchIndexSet = data => {
+  if (!data || typeof data !== 'object') return new Set(['no']);
+  return new Set([normalizeDateSearchKeyBucket(data.getInTouch)]);
+};
+
 const GET_IN_TOUCH_SPECIAL_VALUES = new Set([
   '2099-99-99',
   '9999-99-99',
@@ -3671,8 +3734,8 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   const nextFieldCountValues = getFieldCountIndexSet(nextData);
   const prevLastActionValues = getLastActionIndexSet(prevData);
   const nextLastActionValues = getLastActionIndexSet(nextData);
-  const prevLastActionLeafValue = normalizeLastActionSearchKeyValue(prevData?.lastAction);
-  const nextLastActionLeafValue = normalizeLastActionSearchKeyValue(nextData?.lastAction);
+  const prevGetInTouchValues = getGetInTouchIndexSet(prevData);
+  const nextGetInTouchValues = getGetInTouchIndexSet(nextData);
 
   for (const value of prevFieldCountValues) {
     if (!nextFieldCountValues.has(value)) {
@@ -3696,12 +3759,23 @@ export const syncUserSearchKeyIndex = async (userId, prevData = {}, nextData = {
   }
 
   for (const value of nextLastActionValues) {
-    if (!prevLastActionValues.has(value) || prevLastActionLeafValue !== nextLastActionLeafValue) {
+    if (!prevLastActionValues.has(value)) {
       // eslint-disable-next-line no-await-in-loop
-      await updateSearchKeyLeaf(LAST_ACTION_SEARCH_KEY_INDEX, value, userId, 'add', {
-        ...options,
-        leafValue: nextLastActionLeafValue,
-      });
+      await updateLeaf(LAST_ACTION_SEARCH_KEY_INDEX, value, 'add');
+    }
+  }
+
+  for (const value of prevGetInTouchValues) {
+    if (!nextGetInTouchValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(GET_IN_TOUCH_SEARCH_KEY_INDEX, value, 'remove');
+    }
+  }
+
+  for (const value of nextGetInTouchValues) {
+    if (!prevGetInTouchValues.has(value)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateLeaf(GET_IN_TOUCH_SEARCH_KEY_INDEX, value, 'add');
     }
   }
 };
@@ -4004,8 +4078,36 @@ export const createLastActionSearchKeyIndexInCollection = async (collection, onP
       batchIds.reduce((acc, userId) => {
         const user = usersData[userId] || {};
         const bucket = normalizeLastActionSearchKeyBucket(user.lastAction);
-        acc[`${searchKeyRoot}/${LAST_ACTION_SEARCH_KEY_INDEX}/${bucket}/${userId}`] =
-          normalizeLastActionSearchKeyValue(user.lastAction);
+        acc[`${searchKeyRoot}/${LAST_ACTION_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
+        return acc;
+      }, {}),
+    onProgress
+  );
+};
+
+
+export const createGetInTouchSearchKeyIndexInCollection = async (collection, onProgress, options = {}) => {
+  const searchKeyRoot = options?.rootPath || SEARCH_KEY_INDEX_ROOT;
+  if (collection !== 'newUsers' && searchKeyRoot === SEARCH_KEY_INDEX_ROOT) return;
+  const usersData = options?.usersData || (await loadCollectionWithIndexCache(collection));
+  if (!usersData) return;
+
+  const userIds = Object.keys(usersData);
+  const totalUsers = userIds.length;
+  if (totalUsers === 0) return;
+
+  if (searchKeyRoot === SEARCH_KEY_INDEX_ROOT) {
+    await remove(ref2(database, `${searchKeyRoot}/${GET_IN_TOUCH_SEARCH_KEY_INDEX}`));
+  }
+
+  await uploadChunkedSearchKeyIndexUpdates(
+    userIds,
+    totalUsers,
+    batchIds =>
+      batchIds.reduce((acc, userId) => {
+        const user = usersData[userId] || {};
+        const bucket = normalizeDateSearchKeyBucket(user.getInTouch);
+        acc[`${searchKeyRoot}/${GET_IN_TOUCH_SEARCH_KEY_INDEX}/${bucket}/${userId}`] = true;
         return acc;
       }, {}),
     onProgress
@@ -4024,6 +4126,7 @@ const SEARCH_KEY_INDEX_BUILDERS = {
   [SEARCH_KEY_INDEX_TYPES.reaction]: createReactionSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.fieldCount]: createFieldCountSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.lastAction]: createLastActionSearchKeyIndexInCollection,
+  [SEARCH_KEY_INDEX_TYPES.getInTouch]: createGetInTouchSearchKeyIndexInCollection,
 };
 
 export const createSelectedSearchKeyIndexesInCollection = async (collection, indexTypes = [], onProgress, options = {}) => {
@@ -4088,7 +4191,6 @@ export const buildSearchIdIndexPayloadFromCollections = collectionsMap => {
       if (!userId || !userData || typeof userData !== 'object') return;
 
       keysToCheck.forEach(key => {
-        if (key === 'getInTouch' || key === 'lastAction') return;
         const candidates = extractIndexableFieldValues(userData[key]).flatMap(value =>
           buildSearchIndexCandidates(key, normalizeSearchIdInput(key, value))
         );
@@ -4145,6 +4247,9 @@ const resolveSearchKeyValuesByIndexType = (indexType, userId, userData) => {
   if (indexType === SEARCH_KEY_INDEX_TYPES.lastAction) {
     return [{ indexName: LAST_ACTION_SEARCH_KEY_INDEX, values: [normalizeLastActionSearchKeyBucket(userData?.lastAction)] }];
   }
+  if (indexType === SEARCH_KEY_INDEX_TYPES.getInTouch) {
+    return [{ indexName: GET_IN_TOUCH_SEARCH_KEY_INDEX, values: [normalizeDateSearchKeyBucket(userData?.getInTouch)] }];
+  }
   return [];
 };
 
@@ -4180,10 +4285,7 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
         const entries = resolveSearchKeyValuesByIndexType(indexType, userId, userData);
         entries.forEach(({ indexName, values }) => {
           values.filter(Boolean).forEach(value => {
-            const leafValue = indexType === SEARCH_KEY_INDEX_TYPES.lastAction
-              ? normalizeLastActionSearchKeyValue(userData?.lastAction)
-              : true;
-            assignNestedLeaf(payload, [...rootSegments, indexName, value, userId], leafValue);
+            assignNestedLeaf(payload, [...rootSegments, indexName, value, userId], true);
           });
         });
       });
@@ -4500,8 +4602,8 @@ export const removeSpecificSearchId = async (userId, searchedValue) => {
   const db = getDatabase();
 
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
-  const normalizedValue = normalizeSearchIdInput(searchKey, searchValue).toLowerCase();
-  const searchIdKey = `${searchKey}_${encodeKey(normalizedValue)}`; // Формуємо ключ для пошуку у searchId
+  const searchIdKey = buildSearchIdRecordKey({ [searchKey]: searchValue }); // Формуємо ключ для пошуку у searchId
+  if (!searchIdKey) return;
   console.log(`searchIdKey`, searchIdKey);
   // Отримуємо всі пари в searchId
   const searchIdSnapshot = await get(ref2(db, `searchId`));

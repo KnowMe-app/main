@@ -15,7 +15,7 @@ import {
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
-import { normalizeSearchIdInput } from '../utils/searchKeyUtils';
+import { SEARCH_ID_INDEXED_FIELDS, normalizeSearchIdInput } from '../utils/searchKeyUtils';
 
 const SearchIcon = (
   <svg
@@ -379,45 +379,9 @@ const inferSearchIdPrefix = input => {
   return null;
 };
 
-const SEARCH_ID_PREFIX_KEYS = [
-  'instagram',
-  'facebook',
-  'email',
-  'phone',
-  'telegram',
-  'tiktok',
-  'linkedin',
-  'youtube',
-  'twitter',
-  'line',
-  'otherLink',
-  'other',
-  'vk',
-  'name',
-  'surname',
-  'lastAction',
-  'getInTouch',
-];
+const SEARCH_ID_PREFIX_KEYS = [...SEARCH_ID_INDEXED_FIELDS];
 
-const SEARCH_ID_SCOPED_PLATFORMS = new Set([
-  'instagram',
-  'facebook',
-  'email',
-  'phone',
-  'telegram',
-  'tiktok',
-  'linkedin',
-  'youtube',
-  'twitter',
-  'line',
-  'otherLink',
-  'other',
-  'vk',
-  'name',
-  'surname',
-  'lastAction',
-  'getInTouch',
-]);
+const SEARCH_ID_SCOPED_PLATFORMS = new Set(SEARCH_ID_PREFIX_KEYS);
 
 const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
   const configuredPrefixes = Array.isArray(searchOptions?.searchIdPrefixes)
@@ -610,8 +574,14 @@ const EQUAL_TO_SEARCH_PARSERS = {
   lastLogin: value => value?.trim(),
 };
 
+const SEARCH_KEY_BUCKET_SEARCH_PARSERS = {
+  lastAction: value => value?.trim(),
+  getInTouch: value => value?.trim(),
+};
+
 const SEARCH_KEY_PARSERS = {
   ...EQUAL_TO_SEARCH_PARSERS,
+  ...SEARCH_KEY_BUCKET_SEARCH_PARSERS,
   searchId: parseSearchIdExact,
 };
 
@@ -1002,6 +972,19 @@ const SearchBar = ({
       }
     }
 
+    if (isSearchEnabled('searchKey')) {
+      const [primarySearchKeyField] = Object.keys(SEARCH_KEY_BUCKET_SEARCH_PARSERS);
+      const [primarySearchKeyValue] = getParsedCandidatesForKey(primarySearchKeyField, trimmedValue);
+      if (primarySearchKeyField && primarySearchKeyValue) {
+        return {
+          searchMode: 'searchKey',
+          searchKey: primarySearchKeyField,
+          searchValue: primarySearchKeyValue,
+          rawSearchValue: rawValue,
+        };
+      }
+    }
+
     if (isSearchEnabled('equalToAllCards')) {
       const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
       const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
@@ -1108,6 +1091,42 @@ const SearchBar = ({
     return { found, results: resultMap };
   };
 
+
+  const runSearchKeyBucketSearch = async (rawQuery, isStaleRequest, resultMap = {}) => {
+    const allSearchKeyFields = Object.keys(SEARCH_KEY_BUCKET_SEARCH_PARSERS);
+    const selectedSearchKeyFields = Array.isArray(searchOptions?.searchKeyFields)
+      ? searchOptions.searchKeyFields.filter(key => allSearchKeyFields.includes(key))
+      : [];
+    const executionPlan = resolveExecutionPlan({
+      allKeys: allSearchKeyFields,
+      selectedKeys: selectedSearchKeyFields,
+      detectedKey: null,
+      rawQuery,
+      dateLikeKeys: new Set(allSearchKeyFields),
+    });
+    const keysToTry = [
+      ...(executionPlan.primaryKeys || []),
+      ...(executionPlan.fallbackKeys || []),
+    ];
+
+    let found = false;
+    for (const searchKeyField of keysToTry) {
+      const candidates = getParsedCandidatesForKey(searchKeyField, rawQuery);
+      for (const parsedValue of candidates) {
+        const res = await cachedSearch(
+          { [searchKeyField]: parsedValue },
+          { forceSearchKeyBucket: true, searchKeyFields: [searchKeyField] },
+        );
+        if (isStaleRequest()) return { found, results: resultMap };
+        if (!res || Object.keys(res).length === 0) continue;
+        found = true;
+        mergeSearchResultMap(resultMap, res);
+      }
+    }
+
+    return { found, results: resultMap };
+  };
+
   const runPartialUserIdSearch = async (rawQuery, isStaleRequest, resultMap = {}) => {
     const parsedUserId = parseUserId(rawQuery);
     if (!parsedUserId) return { found: false, results: resultMap };
@@ -1163,6 +1182,14 @@ const SearchBar = ({
         foundCombinedResults = true;
         mergeSearchResultMap(resultMap, searchIdResult);
       });
+    }
+
+    if (isSearchEnabled('searchKey')) {
+      const searchKeyResult = await runSearchKeyBucketSearch(rawQuery, isStaleRequest, resultMap);
+      if (isStaleRequest()) return { found: false, results: resultMap };
+      if (searchKeyResult.found) {
+        foundCombinedResults = true;
+      }
     }
 
     const equalToResult = await runEqualToAllCardsSearch(rawQuery, isStaleRequest, resultMap);
@@ -1634,6 +1661,17 @@ const SearchBar = ({
       isSearchEnabled('searchId') &&
       await processUserSearch('searchId', parseSearchIdExact, rawQuery, { requestId })
     ) return;
+
+    if (isSearchEnabled('searchKey')) {
+      const searchKeyResult = await runSearchKeyBucketSearch(rawQuery, isStaleRequest);
+      if (isStaleRequest()) return;
+      if (searchKeyResult.found) {
+        applyUserNotFound(false, requestId);
+        applyState({}, requestId);
+        applyUsers({ ...searchKeyResult.results }, requestId);
+        return;
+      }
+    }
 
     if (isSearchEnabled('equalToAllCards')) {
       const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);

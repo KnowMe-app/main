@@ -712,6 +712,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     { key: 'reaction', label: 'reaction' },
     { key: 'fieldCount', label: 'fields' },
     { key: 'lastAction', label: 'lastAction' },
+    { key: 'getInTouch', label: 'getInTouch' },
   ];
 
   const location = useLocation();
@@ -809,6 +810,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       options: [
         { key: 'searchId', label: 'searchId (точний)' },
         { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
+        { key: 'searchKey', label: 'searchKey bucket/date' },
         { key: 'partialUserId', label: 'userId (частковий збіг)' },
       ],
     },
@@ -833,8 +835,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         { key: 'name', label: 'name', supportsSearchId: true, supportsEqualTo: true },
         { key: 'surname', label: 'surname', supportsSearchId: true, supportsEqualTo: true },
         { key: 'cycleStatus', label: 'cycleStatus', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'getInTouch', label: 'getInTouch', supportsSearchId: true, supportsEqualTo: true, isDate: true },
-        { key: 'lastAction', label: 'lastAction', supportsSearchId: true, supportsEqualTo: true, isDate: true },
+        { key: 'getInTouch', label: 'getInTouch', supportsSearchId: false, supportsEqualTo: true, supportsSearchKey: true, isDate: true },
+        { key: 'lastAction', label: 'lastAction', supportsSearchId: false, supportsEqualTo: true, supportsSearchKey: true, isDate: true },
         { key: 'lastLogin2', label: 'lastLogin2', supportsSearchId: false, supportsEqualTo: true, isDate: true },
         { key: 'createdAt', label: 'createdAt', supportsSearchId: false, supportsEqualTo: true, isDate: true },
         { key: 'lastCycle', label: 'lastCycle', supportsSearchId: false, supportsEqualTo: true, isDate: true },
@@ -847,6 +849,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const TOGGLEABLE_SEARCH_KEYS = [
     'searchId',
     'equalToAllCards',
+    'searchKey',
     'partialUserId',
     ...SEARCH_KEY_OPTIONS.map(option => option.key),
   ];
@@ -856,7 +859,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     (acc, option) => {
       // equalTo-пошук має вмикатись тільки явним чекбоксом користувача.
       // Раніше через дефолт `true` для всіх ключів цей режим запускався неочікувано.
-      acc[option.key] = option.key !== 'equalToAllCards';
+      acc[option.key] = option.key !== 'equalToAllCards' && option.key !== 'searchKey';
       return acc;
     },
     {},
@@ -888,6 +891,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const selectedEqualToKeys = SEARCH_KEY_OPTIONS
     .filter(option => option.supportsEqualTo && enabledSearchKeys[option.key])
+    .map(option => option.label);
+
+  const selectedSearchKeyFields = SEARCH_KEY_OPTIONS
+    .filter(option => option.supportsSearchKey && enabledSearchKeys[option.key])
     .map(option => option.label);
 
   const enabledContactSearchCount = CONTACT_SEARCH_KEYS.filter(key => enabledSearchKeys[key]).length;
@@ -1824,6 +1831,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         ...enabledSearchKeys,
         searchId: true,
         equalToAllCards: true,
+        searchKey: true,
         // Не вимикаємо partialUserId примусово: якщо чекбокс увімкнений,
         // користувач очікує пошук по ключах users/newUsers.
         partialUserId: enabledSearchKeys.partialUserId,
@@ -4129,6 +4137,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             searchOptions={{
               searchIdPrefixes: selectedSearchIdPrefixes,
               equalToKeys: selectedEqualToKeys,
+              searchKeyFields: selectedSearchKeyFields,
               autoOtherFallback: shouldAutoRunOtherFallback,
               enabledSearchKeys: effectiveEnabledSearchKeys,
             }}
@@ -4172,11 +4181,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
                       return options.map((option, index) => {
                       const isSearchModeOption = block.id === 'search-keys';
-                      const searchIdModeOnly = enabledSearchKeys.searchId && !enabledSearchKeys.equalToAllCards;
-                      const equalToModeOnly = enabledSearchKeys.equalToAllCards && !enabledSearchKeys.searchId;
+                      const searchIdModeOnly = enabledSearchKeys.searchId && !enabledSearchKeys.equalToAllCards && !enabledSearchKeys.searchKey;
+                      const equalToModeOnly = enabledSearchKeys.equalToAllCards && !enabledSearchKeys.searchId && !enabledSearchKeys.searchKey;
+                      const searchKeyModeOnly = enabledSearchKeys.searchKey && !enabledSearchKeys.searchId && !enabledSearchKeys.equalToAllCards;
                       const disabled = isSearchModeOption && (
                         (searchIdModeOnly && !option.supportsSearchId) ||
-                        (equalToModeOnly && !option.supportsEqualTo)
+                        (equalToModeOnly && !option.supportsEqualTo) ||
+                        (searchKeyModeOnly && !option.supportsSearchKey)
                       );
 
                       const isFirstDateOption = option.isDate && options[index - 1] && !options[index - 1].isDate;
@@ -4395,7 +4406,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onChange={handleFilterChange}
               storageKey={filterStorageKey}
               bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
-              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'lastAction'] : undefined}
+              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'lastAction', 'getInTouch'] : undefined}
             />
             <ButtonsContainer>
               {userNotFound && (
