@@ -179,6 +179,18 @@ export const formatEmail = email => {
     return value.replace(/^@/g, '').toLowerCase();
   };
 
+  export const formatYoutube = value => {
+    let normalized = removeSpaceAndNewLine(String(value ?? '').trim());
+
+    normalized = normalized
+      .replace(/^https?:\/\/(?:m\.|www\.)?(?:youtube\.com|youtu\.be)\//i, '')
+      .replace(/^@/g, '');
+
+    normalized = normalized.split(/[/?#]/)[0];
+
+    return normalized.toLowerCase();
+  };
+
   export const formatOther = value => {
     value = removeSpaceAndNewLine(value);
     return value.toLowerCase();

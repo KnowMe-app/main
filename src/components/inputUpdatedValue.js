@@ -6,6 +6,7 @@ import {
   formatOther,
   formatTelegram,
   formatTikTok,
+  formatYoutube,
   formatVk,
   formatDate,
   removeSpacesLeaveEnter,
@@ -53,6 +54,8 @@ export const inputUpdateValue = (value, field, data) => {
       ? formatEmail(value)
       : field.name === 'tiktok'
       ? formatTikTok(value)
+      : field.name === 'youtube'
+      ? formatYoutube(value)
       : field.name === 'other'
       ? formatOther(value)
       : field.name === 'experience'
