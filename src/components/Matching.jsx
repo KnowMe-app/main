@@ -74,6 +74,7 @@ import {
   getIndexedNewUsersIdsByRules,
 } from 'utils/newUsersFilterSetsIndex';
 import { resolveMatchingMultiDataOwnerIds } from 'utils/multiDataAccess';
+import { resolvePrioritizedReactionMaps } from 'utils/reactionPriority';
 
 // Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
 const isValidId = id => typeof id === 'string' && id.length >= 20;
@@ -1986,7 +1987,18 @@ const Matching = () => {
 
     const favoriteSnapshots = {};
     const dislikeSnapshots = {};
-    const mergeSnapshots = snapshots => Object.assign({}, ...Object.values(snapshots));
+    const applyPrioritizedReactionMaps = () => {
+      const { favorites, dislikes } = resolvePrioritizedReactionMaps({
+        ownerIds,
+        ownOwnerId: getOwnerId(),
+        favoriteSnapshots,
+        dislikeSnapshots,
+      });
+      setFavoriteUsers(favorites);
+      syncFavorites(favorites);
+      setDislikeUsers(dislikes);
+      syncDislikes(dislikes);
+    };
 
     const unsubs = ownerIds.flatMap(effectiveOwnerId => {
       const favRef = refDb(database, `multiData/favorites/${effectiveOwnerId}`);
@@ -1994,15 +2006,11 @@ const Matching = () => {
 
       const unsubFav = onValue(favRef, snap => {
         favoriteSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
-        const data = mergeSnapshots(favoriteSnapshots);
-        setFavoriteUsers(data);
-        syncFavorites(data);
+        applyPrioritizedReactionMaps();
       });
       const unsubDis = onValue(disRef, snap => {
         dislikeSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
-        const data = mergeSnapshots(dislikeSnapshots);
-        setDislikeUsers(data);
-        syncDislikes(data);
+        applyPrioritizedReactionMaps();
       });
 
       return [unsubFav, unsubDis];
@@ -2196,8 +2204,14 @@ const Matching = () => {
           Promise.all(owners.map(owner => fetchFavoriteUsers(owner))),
           Promise.all(owners.map(owner => fetchDislikeUsers(owner))),
         ]);
-        const favIds = Object.assign({}, ...favMaps);
-        const disIds = Object.assign({}, ...disMaps);
+        const favoriteSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, favMaps[index]]));
+        const dislikeSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, disMaps[index]]));
+        const { favorites: favIds, dislikes: disIds } = resolvePrioritizedReactionMaps({
+          ownerIds: owners,
+          ownOwnerId: getOwnerId(),
+          favoriteSnapshots,
+          dislikeSnapshots,
+        });
         setFavoriteUsers(favIds);
         setDislikeUsers(disIds);
         syncFavorites(favIds);
@@ -2297,11 +2311,24 @@ const Matching = () => {
       return;
     }
 
-    const favoriteDataByOwner = await Promise.all(owners.map(owner => fetchFavoriteUsersData(owner)));
-    const favUsers = Object.assign({}, ...favoriteDataByOwner);
-    const favMap = Object.fromEntries(Object.keys(favUsers).map(id => [id, true]));
+    const [favoriteMaps, dislikeMaps] = await Promise.all([
+      Promise.all(owners.map(owner => fetchFavoriteUsers(owner))),
+      Promise.all(owners.map(owner => fetchDislikeUsers(owner))),
+    ]);
+    const favoriteSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, favoriteMaps[index]]));
+    const dislikeSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, dislikeMaps[index]]));
+    const { favorites: favMap, dislikes: disMap } = resolvePrioritizedReactionMaps({
+      ownerIds: owners,
+      ownOwnerId: getOwnerId(),
+      favoriteSnapshots,
+      dislikeSnapshots,
+    });
+    const favDataByOwner = await Promise.all(owners.map(owner => fetchFavoriteUsersData(owner)));
+    const favUsers = Object.assign({}, ...favDataByOwner);
     syncFavorites(favMap);
+    syncDislikes(disMap);
     setFavoriteUsers(favMap);
+    setDislikeUsers(disMap);
     setFavoriteIds(favMap);
     cacheFavoriteUsers(favUsers);
     setIdsForQuery('favorite', Object.keys(favMap));
@@ -2325,10 +2352,23 @@ const Matching = () => {
       return;
     }
 
+    const [favoriteMaps, dislikeMaps] = await Promise.all([
+      Promise.all(owners.map(owner => fetchFavoriteUsers(owner))),
+      Promise.all(owners.map(owner => fetchDislikeUsers(owner))),
+    ]);
+    const favoriteSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, favoriteMaps[index]]));
+    const dislikeSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, dislikeMaps[index]]));
+    const { favorites: favMap, dislikes: disMap } = resolvePrioritizedReactionMaps({
+      ownerIds: owners,
+      ownOwnerId: getOwnerId(),
+      favoriteSnapshots,
+      dislikeSnapshots,
+    });
     const dislikeDataByOwner = await Promise.all(owners.map(owner => fetchDislikeUsersData(owner)));
     const loaded = Object.assign({}, ...dislikeDataByOwner);
-    const disMap = Object.fromEntries(Object.keys(loaded).map(id => [id, true]));
     cacheDislikedUsers(loaded);
+    syncFavorites(favMap);
+    setFavoriteUsers(favMap);
     syncDislikes(disMap);
     setDislikeUsers(disMap);
     setIdsForQuery('dislike', Object.keys(disMap));
