@@ -153,6 +153,21 @@ const appendFieldValue = (currentValue, nextValue) => {
   return [normalizedCurrentValue, normalizedNextValue];
 };
 
+const normalizePpTechnicalTargetValue = (fieldName, value) => {
+  const rawValue = String(value ?? '').trim();
+  if (!rawValue) return '';
+
+  if (fieldName === 'phone') {
+    return normalizePhoneValue(rawValue);
+  }
+
+  if (fieldName === 'otherLink') {
+    return rawValue;
+  }
+
+  return inputUpdateValue(rawValue, { name: fieldName });
+};
+
 const REPRODUCTIVE_FIELDS = [
   'birth',
   'ownKids',
@@ -2119,9 +2134,13 @@ ${entries.join('\n')}`;
         });
 
         if (resolvedTechnicalTarget) {
+          const normalizedTechnicalValue = normalizePpTechnicalTargetValue(
+            resolvedTechnicalTarget.fieldName,
+            resolvedTechnicalTarget.value
+          );
           nextState[resolvedTechnicalTarget.fieldName] = appendFieldValue(
             prevState[resolvedTechnicalTarget.fieldName],
-            resolvedTechnicalTarget.value
+            normalizedTechnicalValue
           );
         }
       } else {
