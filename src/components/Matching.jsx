@@ -61,6 +61,7 @@ import {
   saveComments,
   setLocalComment,
   pruneComments,
+  shouldUseServerComment,
 } from '../utils/commentsStorage';
 import {
   isUserAllowedByAnyAdditionalAccessRule,
@@ -1904,7 +1905,7 @@ const Matching = () => {
       const ownComments = ownEntry?.comments?.[id] || [];
       const ownServer = [...ownComments].sort((a, b) => (b.lastAction || 0) - (a.lastAction || 0))[0];
       const local = cache[id];
-      if (ownServer) {
+      if (shouldUseServerComment(ownServer, local)) {
         newStore[id] = ownServer;
         commentsMap[id] = ownServer.text;
       } else if (local) {
