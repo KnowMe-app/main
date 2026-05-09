@@ -32,10 +32,11 @@ const UserCard = ({
     cycleStatus: effectiveStatus ?? userData?.cycleStatus,
   };
   const shouldShowSchedule = ['stimulation', 'pregnant'].includes(effectiveStatus);
+  const role = userData?.role || userData?.userRole;
 
   return (
     <div>
-      <div style={{ ...coloredCard(), marginBottom: '8px' }}>
+      <div style={{ ...coloredCard(role), marginBottom: '8px' }}>
         {renderTopBlock(
           userData,
           setUsers,
@@ -56,7 +57,7 @@ const UserCard = ({
         )}
       </div>
       {shouldShowSchedule && (
-        <div style={{ ...coloredCard(), marginBottom: '8px' }}>
+        <div style={{ ...coloredCard(role), marginBottom: '8px' }}>
           <StimulationSchedule
             userData={scheduleUserData}
             setUsers={setUsers}
@@ -148,11 +149,13 @@ const UsersList = ({
 
   return (
     <div style={styles.container}>
-      {entries.map(([userId, userData], index) => (
+      {entries.map(([userId, userData], index) => {
+        const entryRole = userData?.role || userData?.userRole;
+        return (
         <FadeContainer
           key={userId}
           className={`fade-in${userData._pendingRemove ? ' fade-out' : ''}`}
-          style={{ ...coloredCard(index) }}
+          style={{ ...coloredCard(entryRole || index) }}
           onAnimationEnd={() => {
             if (userData._pendingRemove) {
               setUsers(prev => {
@@ -203,7 +206,8 @@ const UsersList = ({
             />
           )}
         </FadeContainer>
-      ))}
+        );
+      })}
     </div>
   );
 };

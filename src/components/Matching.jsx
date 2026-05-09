@@ -78,6 +78,15 @@ import { resolvePrioritizedReactionMaps } from 'utils/reactionPriority';
 
 // Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
 const isValidId = id => typeof id === 'string' && id.length >= 20;
+
+const ROLE_COLORS = {
+  ed: { accent: '#c2185b', light: 'rgba(194,24,91,0.07)', border: 'rgba(194,24,91,0.22)', text: '#9c1057', tag: 'rgba(252,228,236,0.9)' },
+  ag: { accent: '#1565c0', light: 'rgba(21,101,192,0.07)', border: 'rgba(21,101,192,0.22)', text: '#0d47a1', tag: 'rgba(227,242,253,0.9)' },
+  ip: { accent: '#00695c', light: 'rgba(0,105,92,0.07)', border: 'rgba(0,105,92,0.22)', text: '#004d40', tag: 'rgba(224,242,241,0.9)' },
+  sm: { accent: '#6a1b9a', light: 'rgba(106,27,154,0.07)', border: 'rgba(106,27,154,0.22)', text: '#4a148c', tag: 'rgba(243,229,245,0.9)' },
+  cl: { accent: '#0277bd', light: 'rgba(2,119,189,0.07)', border: 'rgba(2,119,189,0.22)', text: '#01579b', tag: 'rgba(225,245,254,0.9)' },
+};
+const getRoleColors = role => ROLE_COLORS[role] || { accent: color.accent5, light: 'rgba(247,147,30,0.08)', border: 'rgba(247,147,30,0.25)', text: color.accent3, tag: 'rgba(255,243,224,0.9)' };
 const isShortId = id => typeof id === 'string' && id.length > 0 && id.length < 20;
 const isMatchingCardId = id => isValidId(id) || isShortId(id);
 const isAllowedIdForCollection = (id, collection = 'users') =>
@@ -572,7 +581,8 @@ const ThirdInfoCard = styled(NextInfoCard)`
 const CardWrapper = styled.div`
   position: relative;
   width: 100%;
-  border: 1px solid rgba(214, 193, 163, 0.35);
+  border: 1px solid ${props => props.$role ? getRoleColors(props.$role).border : 'rgba(214, 193, 163, 0.35)'};
+  border-top: 3px solid ${props => props.$role ? getRoleColors(props.$role).accent : color.accent5};
   border-radius: ${STACK_CARD_RADIUS};
   box-sizing: border-box;
   overflow: hidden;
@@ -640,7 +650,7 @@ const Card = styled.div`
   aspect-ratio: ${({ $hasPhoto, $small }) =>
     $hasPhoto ? ($small ? '4 / 5' : '3 / 4') : 'auto'};
   min-height: ${({ $hasPhoto, $small, $compactWithoutPhoto }) =>
-    !$hasPhoto && $compactWithoutPhoto ? ($small ? '320px' : '380px') : $small ? '280px' : '340px'};
+    !$hasPhoto && $compactWithoutPhoto ? ($small ? '180px' : '220px') : $small ? '260px' : '320px'};
   padding-bottom: 0;
   background: linear-gradient(180deg, #fffaf2 0%, #f8f5ef 100%);
   background-size: cover;
@@ -919,7 +929,7 @@ const CollectionSourceLabel = styled.label`
 // during builds, so the unused definitions have been removed.
 
 const Title = styled.span`
-  color: ${color.accent3};
+  color: ${props => getRoleColors(props.$role).text};
   font-weight: 800;
   margin-bottom: 4px;
   margin-right: 4px;
@@ -927,8 +937,8 @@ const Title = styled.span`
   text-transform: uppercase;
   letter-spacing: 0.6px;
   font-size: 10px;
-  background: rgba(247, 147, 30, 0.12);
-  border: 1px solid rgba(247, 147, 30, 0.3);
+  background: ${props => getRoleColors(props.$role).tag};
+  border: 1px solid ${props => getRoleColors(props.$role).border};
   border-radius: 8px;
   padding: 3px 8px;
 `;
@@ -952,9 +962,9 @@ const DonorName = styled.strong`
 const ProfileSection = styled.div`
   display: flex;
   align-items: center;
-  margin-bottom: 10px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  padding-bottom: 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  padding-bottom: 8px;
 `;
 
 const Info = styled.div`
@@ -1000,31 +1010,31 @@ const MAIN_INFO_FIELDS_LIMIT = 15;
 const Table = styled.div`
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  row-gap: 6px;
-  column-gap: 6px;
-  font-size: 14px;
-  margin-bottom: 10px;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 14px;
-  padding: 8px;
+  row-gap: 5px;
+  column-gap: 5px;
+  font-size: 13px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  padding: 7px;
 
   & > div {
-    line-height: 1.2;
+    line-height: 1.15;
     display: flex;
     flex-direction: column;
     background: #fbf9f5;
-    border: 1px solid rgba(0, 0, 0, 0.06);
-    border-radius: 10px;
-    padding: 5.6px 8px;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    padding: 4px 7px;
   }
 
   & strong {
-    font-size: 9px;
-    color: ${color.accent3};
+    font-size: 8px;
+    color: ${props => props.$roleColor || color.accent3};
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 3px;
+    margin-bottom: 2px;
   }
 
   & > div > span,
@@ -1058,29 +1068,30 @@ const Contact = styled.div`
 
 const Icons = styled.div`
   display: flex;
-  gap: 6px;
+  gap: 5px;
   font-size: inherit;
   color: ${color.accent5};
   align-items: center;
+  flex-wrap: wrap;
 
   & a {
-    width: 34px !important;
-    height: 34px !important;
-    border-radius: 10px;
-    background: rgba(247, 147, 30, 0.12);
-    border: 1px solid rgba(247, 147, 30, 0.26) !important;
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 8px;
+    background: rgba(247, 147, 30, 0.1);
+    border: 1px solid rgba(247, 147, 30, 0.22) !important;
     transition: all 0.15s ease;
   }
 
   & a:hover {
-    background: rgba(255, 108, 0, 0.2);
-    border-color: rgba(255, 108, 0, 0.42) !important;
+    background: rgba(255, 108, 0, 0.18);
+    border-color: rgba(255, 108, 0, 0.38) !important;
     transform: translateY(-1px);
   }
 
   & svg {
-    width: 15px !important;
-    height: 15px !important;
+    width: 13px !important;
+    height: 13px !important;
   }
 `;
 
@@ -1157,12 +1168,15 @@ const InfoSlide = styled.div`
   width: 100%;
   height: auto;
   min-height: auto;
-  background: linear-gradient(180deg, #fffdf8 0%, #f6f2eb 100%);
+  background: ${props =>
+    props.$role
+      ? `linear-gradient(160deg, #fffdf8 0%, ${getRoleColors(props.$role).light} 100%)`
+      : 'linear-gradient(180deg, #fffdf8 0%, #f6f2eb 100%)'};
   color: #2c2d38;
   overflow-y: visible;
   box-sizing: border-box;
-  padding: 12px;
-  padding-bottom: ${({ $reserveActionButtons }) => ($reserveActionButtons ? '56px' : '12px')};
+  padding: 10px 12px;
+  padding-bottom: ${({ $reserveActionButtons }) => ($reserveActionButtons ? '56px' : '10px')};
 `;
 
 const slideLeft = keyframes`
@@ -1338,8 +1352,8 @@ const SwipeableCard = ({
       style={style}
     >
       {current === 'description' && (
-        <InfoSlide $reserveActionButtons={!photo}>
-          {extraFields.length > 0 && <Table>{extraFields}</Table>}
+        <InfoSlide $reserveActionButtons={!photo} $role={role}>
+          {extraFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{extraFields}</Table>}
           {education && (
             <MoreInfo>
               <strong>Education</strong>
@@ -1356,38 +1370,42 @@ const SwipeableCard = ({
           )}
           {moreInfo && (
             <MoreInfo>
-              {role === 'ag' ? (
-                moreInfo
-              ) : (
-                <>
-                  <strong>More information</strong>
-                  <br />
-                  {moreInfo}
-                </>
-              )}
+              {moreInfo}
             </MoreInfo>
           )}
         </InfoSlide>
       )}
       {current === 'info' && (
-        <InfoSlide $reserveActionButtons={!photo}>
-          <ProfileSection>
-            <Info>
-              <HeaderIdentityRow>
-                <Title>{getRoleTitle(user)}</Title>
-                <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
-              </HeaderIdentityRow>
-              <LocationLine>
-                <span>{locationInfo}</span>
-                {isEggDonor && contacts && <Icons>{contacts}</Icons>}
-              </LocationLine>
-            </Info>
-          </ProfileSection>
-          {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
-          {!isEggDonor && contacts && (
+        <InfoSlide $reserveActionButtons={!photo} $role={role}>
+          {photo ? (
+            <HeaderIdentityRow style={{ marginBottom: '8px' }}>
+              <Title $role={role}>{getRoleTitle(user)}</Title>
+              {contacts && <Icons style={{ marginLeft: 'auto' }}>{contacts}</Icons>}
+            </HeaderIdentityRow>
+          ) : (
+            <ProfileSection>
+              <Info>
+                <HeaderIdentityRow>
+                  <Title $role={role}>{getRoleTitle(user)}</Title>
+                  <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
+                </HeaderIdentityRow>
+                <LocationLine>
+                  <span>{locationInfo}</span>
+                  {isEggDonor && contacts && <Icons>{contacts}</Icons>}
+                </LocationLine>
+              </Info>
+            </ProfileSection>
+          )}
+          {selectedFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{selectedFields}</Table>}
+          {!isEggDonor && !photo && contacts && (
             <Contact $withBorder={selectedFields.length > 0}>
               <Icons>{contacts}</Icons>
             </Contact>
+          )}
+          {isEggDonor && photo && locationInfo && (
+            <LocationLine style={{ marginTop: '4px', fontSize: '11px', opacity: 0.7 }}>
+              <span>{locationInfo}</span>
+            </LocationLine>
           )}
         </InfoSlide>
       )}
@@ -1430,7 +1448,7 @@ const SwipeableCard = ({
       {current === 'main' && isAgency && (
         <CardInfo>
           <HeaderRow>
-            <RoleHeader>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
+            <RoleHeader $role={role}>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
             {nameParts && <strong>{nameParts}</strong>}
           </HeaderRow>
           <LocationLine>
@@ -1601,8 +1619,8 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
 
   if (variant === 'description') {
     return (
-      <InfoSlide>
-        {extraFields.length > 0 && <Table>{extraFields}</Table>}
+      <InfoSlide $role={role}>
+        {extraFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{extraFields}</Table>}
         {education && (
           <MoreInfo>
             <strong>Education</strong>
@@ -1617,29 +1635,17 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
             {profession}
           </MoreInfo>
         )}
-        {moreInfo && (
-          <MoreInfo>
-            {role === 'ag' ? (
-              moreInfo
-            ) : (
-              <>
-                <strong>More information</strong>
-                <br />
-                {moreInfo}
-              </>
-            )}
-          </MoreInfo>
-        )}
+        {moreInfo && <MoreInfo>{moreInfo}</MoreInfo>}
       </InfoSlide>
     );
   }
 
   return (
-    <InfoSlide>
+    <InfoSlide $role={role}>
       <ProfileSection>
         <Info>
           <HeaderIdentityRow>
-            <Title $isPotentialED={roleTitle === 'Potential ED'}>{roleTitle}</Title>
+            <Title $role={role}>{roleTitle}</Title>
             <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
           </HeaderIdentityRow>
           <LocationLine>
@@ -1648,7 +1654,7 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
           </LocationLine>
         </Info>
       </ProfileSection>
-      {selectedFields.length > 0 && <Table>{selectedFields}</Table>}
+      {selectedFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{selectedFields}</Table>}
       {!isEggDonor && contacts && (
         <Contact $withBorder={selectedFields.length > 0}>
           <Icons>{contacts}</Icons>
@@ -2753,7 +2759,7 @@ const Matching = () => {
                       </NextInfoCard>
                     )}
                     {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
-                    <CardWrapper>
+                    <CardWrapper $role={role}>
                       <SwipeableCard
                         user={user}
                         photo={photo}

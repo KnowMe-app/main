@@ -207,17 +207,38 @@ export const FadeContainer = styled.div`
 
 const gradients = ['linear-gradient(to right, #fc466b, #3f5efb)', 'linear-gradient(to right, #6a11cb, #2575fc)', 'linear-gradient(to right, #ff7e5f, #feb47b)'];
 
-export const coloredCard = index => {
-  const exactIndex = index % gradients.length;
-  const randomIndex = Math.floor(Math.random() * gradients.length);
+const roleGradients = {
+  ed: 'linear-gradient(135deg, #b5336a 0%, #e91e63 60%, #f06292 100%)',
+  ag: 'linear-gradient(135deg, #1a237e 0%, #1565c0 60%, #1e88e5 100%)',
+  ip: 'linear-gradient(135deg, #004d40 0%, #00695c 60%, #00897b 100%)',
+  pp: 'linear-gradient(135deg, #4527a0 0%, #6a1b9a 60%, #8e24aa 100%)',
+};
+
+export const roleAccentColors = {
+  ed: '#e91e63',
+  ag: '#1565c0',
+  ip: '#00897b',
+  pp: '#8e24aa',
+};
+
+export const coloredCard = (indexOrRole) => {
+  if (typeof indexOrRole === 'string' && roleGradients[indexOrRole]) {
+    return {
+      position: 'relative',
+      background: roleGradients[indexOrRole],
+      width: '100%',
+      marginTop: '10px',
+      marginBottom: '20px',
+    };
+  }
+
+  const index = indexOrRole;
+  const exactIndex = typeof index === 'number' ? index % gradients.length : Math.floor(Math.random() * gradients.length);
 
   return {
     position: 'relative',
-    background: index !== undefined ? gradients[exactIndex] : gradients[randomIndex],
+    background: gradients[exactIndex],
     width: '100%',
-    // margin: index !== undefined
-    // ? '5px'
-    // : 0,
     marginTop: index !== undefined ? '10px' : 0,
     marginBottom: index !== undefined ? '20px' : '10px',
   };
