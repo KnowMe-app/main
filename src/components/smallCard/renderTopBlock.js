@@ -32,54 +32,50 @@ import { isAdminUid } from 'utils/accessLevel';
 import { auth } from '../config';
 import toast from 'react-hot-toast';
 
-const topBlockContainerStyle = { padding: '7px', position: 'relative' };
+const topBlockContainerStyle = { padding: '8px', position: 'relative' };
 
 const topButtonsRowStyle = {
   display: 'flex',
-  justifyContent: 'space-between',
   alignItems: 'center',
-  gap: '8px',
-  marginBottom: '8px',
+  gap: '5px',
+  marginBottom: '7px',
 };
 
 const topButtonsZoneStyle = {
   border: 'none',
-  borderRadius: '12px',
+  borderRadius: '9px',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: '40px',
-  height: '40px',
-  flex: '0 0 40px',
+  width: '30px',
+  height: '30px',
+  flex: '0 0 30px',
   padding: 0,
-  boxShadow: '0 6px 14px rgba(17, 24, 39, 0.2)',
-  transition: 'transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease',
+  boxShadow: '0 3px 8px rgba(17, 24, 39, 0.25)',
+  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
 };
 
-const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1', '#1565c0', '#6a1b9a'];
+const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1'];
 
 const zoneActionButtonStyle = {
   position: 'static',
   width: '100%',
   height: '100%',
-  minHeight: '40px',
-  borderRadius: '12px',
+  minHeight: '30px',
+  borderRadius: '9px',
   border: 'none',
   margin: 0,
   padding: 0,
   boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.2)',
 };
 
-const actionButtonsContainerStyle = {
-  position: 'absolute',
-  top: '88px',
-  right: '10px',
+const secondaryActionsStyle = {
+  marginLeft: 'auto',
   display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'flex-end',
-  gap: '6px',
-  zIndex: 999,
+  alignItems: 'center',
+  gap: '5px',
+  flexShrink: 0,
 };
 
 const addedOverlayEntryStyle = {
@@ -102,14 +98,21 @@ const identityMetaStyle = {
 };
 
 const cardHeaderStyle = {
-  marginBottom: '8px',
+  marginBottom: '6px',
+};
+
+const cardNameRowStyle = {
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: '6px',
+  flexWrap: 'wrap',
+  marginBottom: '2px',
 };
 
 const cardNameStyle = {
   fontSize: '15px',
   fontWeight: 700,
   lineHeight: 1.25,
-  marginBottom: '2px',
 };
 
 const cardIdRowStyle = {
@@ -121,20 +124,35 @@ const cardIdRowStyle = {
   flexWrap: 'wrap',
 };
 
+const roleBadgeStyle = role => ({
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '1px 7px',
+  borderRadius: '10px',
+  fontSize: '10px',
+  fontWeight: 700,
+  letterSpacing: '0.6px',
+  textTransform: 'uppercase',
+  background: 'rgba(255,255,255,0.22)',
+  color: '#fff',
+  flexShrink: 0,
+  border: `1px solid rgba(255,255,255,0.3)`,
+});
+
 const statusRowStyle = {
   display: 'flex',
   flexDirection: 'column',
   gap: '3px',
   padding: '5px 0',
-  borderTop: '1px solid rgba(255,255,255,0.08)',
-  borderBottom: '1px solid rgba(255,255,255,0.08)',
-  margin: '6px 0',
+  borderTop: '1px solid rgba(255,255,255,0.1)',
+  borderBottom: '1px solid rgba(255,255,255,0.1)',
+  margin: '5px 0',
 };
 
 const bioSectionStyle = {
   display: 'flex',
   flexDirection: 'column',
-  gap: '3px',
+  gap: '2px',
 };
 
 const bioRowStyle = {
@@ -142,33 +160,34 @@ const bioRowStyle = {
   alignItems: 'center',
   flexWrap: 'wrap',
   gap: '4px',
+  fontSize: '13px',
 };
 
 const contactsSectionStyle = {
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'flex-start',
-  gap: '3px',
+  gap: '2px',
   marginTop: '4px',
 };
 
 const commentsSectionStyle = {
-  marginTop: '8px',
-  padding: '6px 8px',
-  borderRadius: '8px',
-  background: 'rgba(255,255,255,0.06)',
+  marginTop: '6px',
+  padding: '5px 7px',
+  borderRadius: '7px',
+  background: 'rgba(255,255,255,0.07)',
   display: 'flex',
   flexDirection: 'column',
-  gap: '4px',
+  gap: '3px',
 };
 
 const detailsToggleStyle = {
   position: 'absolute',
-  bottom: '10px',
-  right: '10px',
+  bottom: '8px',
+  right: '8px',
   cursor: 'pointer',
   color: '#ebe0c2',
-  opacity: 0.7,
+  opacity: 0.6,
   lineHeight: 1,
   display: 'flex',
   alignItems: 'center',
@@ -617,10 +636,15 @@ const TopBlock = ({
     setState(authorCard);
   };
 
+  const cardRole = cardData.role || cardData.userRole;
+
   return (
     <div style={topBlockContainerStyle}>
       <div style={cardHeaderStyle}>
-        <div style={cardNameStyle}>{buildName(cardData)}</div>
+        <div style={cardNameRowStyle}>
+          <div style={cardNameStyle}>{buildName(cardData)}</div>
+          {cardRole && <span style={roleBadgeStyle(cardRole)}>{cardRole}</span>}
+        </div>
         {renderOverlayEntries(['surname', 'name', 'fathersname'])}
         <div style={cardIdRowStyle}>
           {cardData.lastAction && <span>{formatDateToDisplay(normalizeLastAction(cardData.lastAction))}</span>}
@@ -652,7 +676,7 @@ const TopBlock = ({
                 setShowInfoModal,
                 setUserIdToDelete,
                 isFromListOfUsers,
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M4 7h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   <path d="M7 7l1 12a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9L17 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -699,7 +723,7 @@ const TopBlock = ({
                 }}
                 inactiveIconColor="#fff"
                 activeIconColor="#1f2937"
-                iconSize={18}
+                iconSize={15}
               />
             )}
             {idx === 2 && (
@@ -730,7 +754,7 @@ const TopBlock = ({
                 }}
                 inactiveIconColor="#fff"
                 activeIconColor="#1f2937"
-                iconSize={18}
+                iconSize={15}
               />
             )}
             {idx === 3 && (
@@ -746,7 +770,7 @@ const TopBlock = ({
                 aria-label="Ліки"
                 title="Ліки"
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M8.5 8.5l7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   <path d="M6.2 10.8a3.25 3.25 0 0 1 4.6-4.6l6.9 6.9a3.25 3.25 0 1 1-4.6 4.6l-6.9-6.9z" stroke="currentColor" strokeWidth="2" />
                 </svg>
@@ -776,20 +800,18 @@ const TopBlock = ({
                   setSearch,
                   setState,
                   { ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' },
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
                     <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                   </svg>
                 )
               ))}
-            {idx === 5 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#1565c0', color: '#fff' }} aria-label="Додаткова синя кнопка" title="Додаткова синя кнопка" />}
-            {idx === 6 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#6a1b9a', color: '#fff' }} aria-label="Додаткова фіолетова кнопка" title="Додаткова фіолетова кнопка" />}
           </div>
         ))}
-      </div>
-      <div style={actionButtonsContainerStyle}>
-        {showSideActions && btnExport(cardData)}
-        {additionalActions}
+        <div style={secondaryActionsStyle}>
+          {showSideActions && btnExport(cardData)}
+          {additionalActions}
+        </div>
       </div>
       <div style={statusRowStyle}>
         {fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, submitOptions)}
