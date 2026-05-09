@@ -11,8 +11,8 @@ const FiltersCard = styled.div`
   background: #fff;
   border: 1px solid #eee;
   border-radius: 10px;
-  padding: 12px 14px 4px;
-  margin: 8px 0;
+  padding: 8px 12px 4px;
+  margin: 0 0 8px;
 `;
 
 export const SearchFilters = ({
