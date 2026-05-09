@@ -510,45 +510,44 @@ const SortModeLabel = styled.label`
 const SearchScopeContainer = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: -4px 0 10px;
-  padding: 0 2px;
+  gap: 6px;
+  margin-bottom: 8px;
 `;
 
 const SearchScopeBlock = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 8px;
   background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 8px 12px 10px;
 `;
 
 const SearchScopeBlockTitle = styled.div`
-  font-size: 12px;
-  font-weight: 600;
-  color: #333;
+  font-size: 10px;
+  font-weight: 700;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1;
 `;
 
 const SearchScopeBlockHeader = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 8px;
 `;
-
 
 const SearchScopeItems = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: 4px;
 `;
 
 const SearchScopeDivider = styled.hr`
-  width: 100%;
+  flex-basis: 100%;
   border: 0;
-  border-top: 1px solid #e3e3e3;
-  margin: 2px 0;
+  border-top: 1px solid #e8e8e8;
+  margin: 4px 0;
 `;
 
 const SearchScopeLabel = styled.label`
@@ -559,12 +558,35 @@ const SearchScopeLabel = styled.label`
   color: #1f1f1f;
 `;
 
-const SearchScopeRow = styled.div`
-  width: 100%;
-  display: flex;
+const SearchScopeLabelTextGroup = styled.span`
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.2;
+`;
+
+const ScopeChip = styled.button`
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1.5px solid ${({ $active }) => ($active ? '#FF8C00' : '#e0e0e0')};
+  background: ${({ $active }) => ($active ? '#FFF3E0' : '#fafafa')};
+  color: ${({ $active }) => ($active ? '#CC5500' : '#666')};
+  font-size: 12px;
+  font-weight: ${({ $active }) => ($active ? '600' : '400')};
+  cursor: pointer;
+  line-height: 1.5;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  &:hover:not(:disabled) {
+    border-color: #FF8C00;
+    color: #CC5500;
+  }
 `;
 
 const ToggleSearchScopeButton = styled.button`
@@ -576,16 +598,11 @@ const ToggleSearchScopeButton = styled.button`
   line-height: 1;
   padding: 5px 8px;
   cursor: pointer;
+  flex-shrink: 0;
 
   &:hover {
     background: #e9edff;
   }
-`;
-
-const SearchScopeLabelTextGroup = styled.span`
-  display: inline-flex;
-  flex-direction: column;
-  line-height: 1.2;
 `;
 
 const SearchBarRow = styled.div`
@@ -597,18 +614,21 @@ const SearchBarRow = styled.div`
 const SearchSettingsButton = styled.button`
   width: 38px;
   height: 38px;
-  border: 1px solid #d5d5d5;
+  border: 1.5px solid ${({ $active }) => ($active ? '#FF8C00' : '#d5d5d5')};
   border-radius: 8px;
-  background: #fff;
+  background: ${({ $active }) => ($active ? '#FFF3E0' : '#fff')};
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #666;
+  color: ${({ $active }) => ($active ? '#CC5500' : '#666')};
+  flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 
   &:hover {
-    color: #111;
-    border-color: #a9a9a9;
+    border-color: #FF8C00;
+    color: #CC5500;
+    background: #FFF3E0;
   }
 `;
 
@@ -4189,6 +4209,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             type="button"
             aria-label="Налаштування пошуку"
             title="Показати/сховати варіанти пошуку"
+            $active={showSearchOptions}
             onClick={() => setShowSearchOptions(prev => !prev)}
           >
             <svg
@@ -4213,15 +4234,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               <SearchScopeBlock key={block.id}>
                 <SearchScopeBlockHeader>
                   <SearchScopeBlockTitle>{block.title}</SearchScopeBlockTitle>
+                  {block.id === 'id-search' && (
+                    <ToggleSearchScopeButton type="button" onClick={toggleAllSearchScopes}>
+                      {areAllSearchScopesEnabled ? 'Вимкнути всі' : 'Увімкнути всі'}
+                    </ToggleSearchScopeButton>
+                  )}
                 </SearchScopeBlockHeader>
                 <SearchScopeItems>
-                    {(() => {
-                      const options = block.id === 'search-keys'
-                        ? [...block.options.filter(option => !option.isDate), ...block.options.filter(option => option.isDate)]
-                        : block.options;
-                      const hasDateOptions = block.id === 'search-keys' && options.some(option => option.isDate);
+                  {(() => {
+                    const options = block.id === 'search-keys'
+                      ? [...block.options.filter(option => !option.isDate), ...block.options.filter(option => option.isDate)]
+                      : block.options;
+                    const hasDateOptions = block.id === 'search-keys' && options.some(option => option.isDate);
 
-                      return options.map((option, index) => {
+                    return options.map((option, index) => {
                       const isSearchModeOption = block.id === 'search-keys';
                       const searchIdModeOnly = enabledSearchKeys.searchId && !enabledSearchKeys.equalToAllCards && !enabledSearchKeys.searchKey;
                       const equalToModeOnly = enabledSearchKeys.equalToAllCards && !enabledSearchKeys.searchId && !enabledSearchKeys.searchKey;
@@ -4235,43 +4261,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       const isFirstDateOption = option.isDate && options[index - 1] && !options[index - 1].isDate;
 
                       return (
-                      <React.Fragment key={option.key}>
-                        {hasDateOptions && isFirstDateOption && <SearchScopeDivider />}
-                        {option.key === 'searchId' ? (
-                          <SearchScopeRow>
-                            <SearchScopeLabel>
-                              <input
-                                type="checkbox"
-                                checked={Boolean(enabledSearchKeys[option.key])}
-                                disabled={disabled}
-                                onChange={() => handleSearchScopeChange(option.key, disabled)}
-                              />
-                              <SearchScopeLabelTextGroup>
-                                <span>{option.label}</span>
-                              </SearchScopeLabelTextGroup>
-                            </SearchScopeLabel>
-                            <ToggleSearchScopeButton type="button" onClick={toggleAllSearchScopes}>
-                              {areAllSearchScopesEnabled ? 'Вимкнути всі' : 'Увімкнути всі'}
-                            </ToggleSearchScopeButton>
-                          </SearchScopeRow>
-                        ) : (
-                          <SearchScopeLabel>
-                            <input
-                              type="checkbox"
-                              checked={Boolean(enabledSearchKeys[option.key])}
-                              disabled={disabled}
-                              onChange={() => handleSearchScopeChange(option.key, disabled)}
-                            />
-                            <SearchScopeLabelTextGroup>
-                              <span>{option.label}</span>
-                            </SearchScopeLabelTextGroup>
-                          </SearchScopeLabel>
-                        )}
-                      </React.Fragment>
+                        <React.Fragment key={option.key}>
+                          {hasDateOptions && isFirstDateOption && <SearchScopeDivider />}
+                          <ScopeChip
+                            type="button"
+                            $active={Boolean(enabledSearchKeys[option.key])}
+                            disabled={disabled}
+                            onClick={() => handleSearchScopeChange(option.key, disabled)}
+                          >
+                            {option.label}
+                          </ScopeChip>
+                        </React.Fragment>
                       );
                     });
                   })()}
-                  </SearchScopeItems>
+                </SearchScopeItems>
               </SearchScopeBlock>
             ))}
           </SearchScopeContainer>
