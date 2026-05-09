@@ -650,7 +650,7 @@ const Card = styled.div`
   aspect-ratio: ${({ $hasPhoto, $small }) =>
     $hasPhoto ? ($small ? '4 / 5' : '3 / 4') : 'auto'};
   min-height: ${({ $hasPhoto, $small, $compactWithoutPhoto }) =>
-    !$hasPhoto && $compactWithoutPhoto ? '0' : $small ? '260px' : '320px'};
+    !$hasPhoto && $compactWithoutPhoto ? ($small ? '180px' : '220px') : $small ? '260px' : '320px'};
   padding-bottom: 0;
   background: linear-gradient(180deg, #fffaf2 0%, #f8f5ef 100%);
   background-size: cover;
@@ -666,7 +666,7 @@ const Card = styled.div`
   margin-bottom: 0;
 
   &::after {
-    content: ${({ $hasPhoto }) => ($hasPhoto ? "''" : 'none')};
+    content: '';
     position: absolute;
     bottom: 0;
     left: 0;
@@ -967,11 +967,6 @@ const ProfileSection = styled.div`
   padding-bottom: 8px;
 `;
 
-const CompactProfileSection = styled(ProfileSection)`
-  margin-bottom: 7px;
-  padding-bottom: 7px;
-`;
-
 const Info = styled.div`
   flex: 1;
 `;
@@ -1010,67 +1005,65 @@ const FIELDS = [
   { key: 'reward', label: 'Expected reward $' },
   { key: 'experience', label: 'Donation exp' },
 ];
-const MAIN_INFO_FIELDS_LIMIT = Infinity;
+const MAIN_INFO_FIELDS_LIMIT = 15;
 
 const Table = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  font-size: 12px;
-  margin-bottom: 7px;
-  background: rgba(255, 255, 255, 0.72);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  row-gap: 5px;
+  column-gap: 5px;
+  font-size: 13px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.82);
   border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 13px;
-  padding: 6px;
+  border-radius: 12px;
+  padding: 7px;
 
   & > div {
-    min-width: 0;
-    line-height: 1.12;
-    display: inline-flex;
-    align-items: baseline;
-    gap: 4px;
+    line-height: 1.15;
+    display: flex;
+    flex-direction: column;
     background: #fbf9f5;
     border: 1px solid rgba(0, 0, 0, 0.05);
-    border-radius: 999px;
-    padding: 4px 8px;
-    color: #2f2f39;
-    font-weight: 750;
+    border-radius: 8px;
+    padding: 4px 7px;
   }
 
   & strong {
     font-size: 8px;
     color: ${props => props.$roleColor || color.accent3};
     text-transform: uppercase;
-    letter-spacing: 0.45px;
-    white-space: nowrap;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
   }
 
-  & span {
-    min-width: 0;
-    overflow-wrap: anywhere;
+  & > div > span,
+  & > div {
+    color: #2f2f39;
+    font-weight: 700;
   }
 `;
 
 const MoreInfo = styled.div`
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.88);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  border-left: 3px solid ${props => (props.$role ? getRoleColors(props.$role).accent : '#f7931e')};
+  border-left: 4px solid ${props => (props.$isAdmin ? '#ff6b6b' : '#f7931e')};
   border-radius: 12px;
-  padding: 7px 9px;
-  margin-bottom: 7px;
-  font-size: 12px;
-  line-height: 1.28;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  font-size: 14px;
   white-space: pre-line;
   color: #3e3f4c;
+`;
 
-  & strong {
-    display: inline;
-    color: ${props => (props.$role ? getRoleColors(props.$role).text : color.accent3)};
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.45px;
-    margin-right: 5px;
-  }
+const Contact = styled.div`
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  font-size: 14px;
+  border-top: ${props => (props.$withBorder ? `1px solid rgba(0, 0, 0, 0.08)` : 'none')};
+  padding-top: ${props => (props.$withBorder ? '10px' : '0')};
+  margin-top: ${props => (props.$withBorder ? '6px' : '0')};
 `;
 
 const Icons = styled.div`
@@ -1117,6 +1110,35 @@ const BasicInfo = styled.div`
   z-index: 2;
 `;
 
+const CardInfo = styled.div`
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  width: calc(100% - 24px);
+  padding: 10px 11px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #2c2d38;
+  font-size: 13px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
+`;
+
+const RoleHeader = styled(Title)`
+  margin-bottom: 2px;
+`;
+
+const HeaderRow = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+`;
+
 const AdminToggle = styled.div`
   position: absolute;
   top: 5px;
@@ -1153,8 +1175,8 @@ const InfoSlide = styled.div`
   color: #2c2d38;
   overflow-y: visible;
   box-sizing: border-box;
-  padding: 9px 10px;
-  padding-bottom: ${({ $reserveActionButtons }) => ($reserveActionButtons ? '52px' : '9px')};
+  padding: 10px 12px;
+  padding-bottom: ${({ $reserveActionButtons }) => ($reserveActionButtons ? '56px' : '10px')};
 `;
 
 const slideLeft = keyframes`
@@ -1189,28 +1211,41 @@ const SwipeableCard = ({
   photo,
   role,
   isAgency,
+  nameParts,
   isAdmin,
   favoriteUsers,
   setFavoriteUsers,
   dislikeUsers,
   setDislikeUsers,
+  viewMode,
   handleRemove,
   togglePublish,
   multiDataOwnerId,
 }) => {
+  const moreInfo = getCurrentValue(user.moreInfo_main);
+  const profession = getCurrentValue(user.profession);
+  const education = getCurrentValue(user.education);
+  const { mainFields, extraFields } = splitSelectedFields(user, { isAdmin });
+  const showDescriptionSlide = Boolean(
+    moreInfo || profession || education || extraFields.length > 0
+  );
+
   const slides = React.useMemo(() => {
     const photosArr = Array.isArray(user.photos)
       ? user.photos.filter(Boolean).map(convertDriveLinkToImage)
       : [getCurrentValue(user.photos)]
           .filter(Boolean)
           .map(convertDriveLinkToImage);
-    const hasInfo = getInfoSlidesCount(user) > 0;
-    const base = photo ? ['main'] : [];
-
-    if (hasInfo || base.length === 0) base.push('info');
+    let base;
+    if (role === 'ag') {
+      base = ['main'];
+    } else {
+      base = photo ? ['main', 'info'] : ['info'];
+    }
+    if (showDescriptionSlide) base.push('description');
     base.push(...photosArr.slice(1));
     return base;
-  }, [user, photo]);
+  }, [user.photos, showDescriptionSlide, photo, role]);
 
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(null);
@@ -1272,12 +1307,14 @@ const SwipeableCard = ({
   };
 
   const current = slides[index];
-  const isPhotoSlide = current === 'main' || current !== 'info';
-  const style = isPhotoSlide && photo && current === 'main'
-    ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' }
-    : isPhotoSlide && current !== 'main'
-    ? { backgroundImage: `url(${current})`, backgroundColor: 'transparent' }
-    : { backgroundColor: '#fff' };
+  const style =
+    current === 'main'
+      ? photo
+        ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' }
+        : { backgroundColor: '#fff' }
+      : current !== 'description' && current !== 'info'
+      ? { backgroundImage: `url(${current})`, backgroundColor: 'transparent' }
+      : { backgroundColor: '#fff' };
 
   const displayName = [
     getCurrentValue(user.name),
@@ -1287,6 +1324,8 @@ const SwipeableCard = ({
     .map(v => String(v).trim())
     .join(' ');
   const isEggDonor = (role || '').includes('ed');
+  const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
+  const selectedFields = mainFields;
   const regionInfo = normalizeRegion(getCurrentValue(user.region));
   const cityInfo = getCurrentValue(user.city);
   const locationInfo = isEggDonor
@@ -1305,22 +1344,72 @@ const SwipeableCard = ({
       $dir={dir}
       $small={isAgency}
       $compactWithoutPhoto={!photo}
-      $hasPhoto={!!photo && isPhotoSlide}
+      $hasPhoto={!!photo}
       data-card
       onClick={handleClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       style={style}
     >
-      {current === 'info' && (
-        <ProfileInfoContent
-          user={user}
-          isAdmin={isAdmin}
-          reserveActionButtons={!photo}
-          compactHeader={!!photo}
-        />
+      {current === 'description' && (
+        <InfoSlide $reserveActionButtons={!photo} $role={role}>
+          {extraFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{extraFields}</Table>}
+          {education && (
+            <MoreInfo>
+              <strong>Education</strong>
+              <br />
+              {education}
+            </MoreInfo>
+          )}
+          {profession && (
+            <MoreInfo>
+              <strong>Profession</strong>
+              <br />
+              {profession}
+            </MoreInfo>
+          )}
+          {moreInfo && (
+            <MoreInfo>
+              {moreInfo}
+            </MoreInfo>
+          )}
+        </InfoSlide>
       )}
-      {current === 'main' && (
+      {current === 'info' && (
+        <InfoSlide $reserveActionButtons={!photo} $role={role}>
+          {photo ? (
+            <HeaderIdentityRow style={{ marginBottom: '8px' }}>
+              <Title $role={role}>{getRoleTitle(user)}</Title>
+              {contacts && <Icons style={{ marginLeft: 'auto' }}>{contacts}</Icons>}
+            </HeaderIdentityRow>
+          ) : (
+            <ProfileSection>
+              <Info>
+                <HeaderIdentityRow>
+                  <Title $role={role}>{getRoleTitle(user)}</Title>
+                  <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
+                </HeaderIdentityRow>
+                <LocationLine>
+                  <span>{locationInfo}</span>
+                  {isEggDonor && contacts && <Icons>{contacts}</Icons>}
+                </LocationLine>
+              </Info>
+            </ProfileSection>
+          )}
+          {selectedFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{selectedFields}</Table>}
+          {!isEggDonor && !photo && contacts && (
+            <Contact $withBorder={selectedFields.length > 0}>
+              <Icons>{contacts}</Icons>
+            </Contact>
+          )}
+          {isEggDonor && photo && locationInfo && (
+            <LocationLine style={{ marginTop: '4px', fontSize: '11px', opacity: 0.7 }}>
+              <span>{locationInfo}</span>
+            </LocationLine>
+          )}
+        </InfoSlide>
+      )}
+      {current === 'main' && role !== 'ag' && (
         <BasicInfo>
           {formatNameAndAge(user, displayName)}
           <br />
@@ -1356,6 +1445,19 @@ const SwipeableCard = ({
         onRemove={handleRemove}
         multiDataOwnerId={multiDataOwnerId}
       />
+      {current === 'main' && isAgency && (
+        <CardInfo>
+          <HeaderRow>
+            <RoleHeader $role={role}>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
+            {nameParts && <strong>{nameParts}</strong>}
+          </HeaderRow>
+          <LocationLine>
+            {locationInfo && <span>{locationInfo}</span>}
+            {contacts && <Icons>{contacts}</Icons>}
+          </LocationLine>
+        </CardInfo>
+      )}
+      {(current === 'info' || current === 'main') && null}
     </AnimatedCard>
   );
 };
@@ -1366,49 +1468,15 @@ const normalizeOwnKidsValue = value => {
   if (normalized === '') return value;
 
   if (['0', '-', 'no', 'ні', 'немає'].includes(normalized)) {
-    return 'No kids';
+    return 'No';
   }
 
   const numericValue = Number(normalized);
   if (Number.isFinite(numericValue) && numericValue >= 1) {
-    return 'Has kids';
+    return 'Yes';
   }
 
   return value;
-};
-
-const normalizeMaritalStatusValue = value => {
-  const normalized = (value ?? '').toString().trim().toLowerCase();
-
-  if (!normalized) return value;
-  if (['yes', 'так', '+', 'married', 'заміжня', 'одружена'].includes(normalized)) {
-    return 'Married';
-  }
-  if (
-    ['no', 'ні', '-', 'single', 'unmarried', 'незаміжня', 'не заміжня'].includes(
-      normalized
-    )
-  ) {
-    return 'Single';
-  }
-
-  return value;
-};
-
-const normalizeBloodValue = value => {
-  const raw = (value ?? '').toString().trim();
-  if (!raw) return value;
-
-  const upper = raw.toUpperCase().replace(/\s+/g, '');
-  const groupMatch = upper.match(/^(AB|A|B|O|0)/);
-  const group = groupMatch ? (groupMatch[1] === '0' ? 'O' : groupMatch[1]) : null;
-  const isNegative = /-|NEG|NEGATIVE|RH-/.test(upper);
-  const isPositive = /\+|POS|POSITIVE|RH\+/.test(upper);
-
-  if (group && (isNegative || isPositive)) return `${group}(${isNegative ? '-' : '+'})`;
-  if (group) return group;
-
-  return raw.replace(/\bpositive\b/i, '+').replace(/\bnegative\b/i, '-');
 };
 
 const buildSelectedFields = (user, { isAdmin } = {}) => {
@@ -1428,11 +1496,29 @@ const buildSelectedFields = (user, { isAdmin } = {}) => {
     value = getCurrentValue(value);
 
     if (field.key === 'maritalStatus') {
-      value = normalizeMaritalStatusValue(value);
-    }
-
-    if (field.key === 'blood') {
-      value = normalizeBloodValue(value);
+      const role = (user.userRole || '').toString().trim().toLowerCase();
+      if (role === 'ed' && value) {
+        const normalized = value.toString().trim().toLowerCase();
+        if (
+          ['yes', 'так', '+', 'married', 'заміжня', 'одружена'].includes(
+            normalized
+          )
+        ) {
+          value = 'Married';
+        } else if (
+          [
+            'no',
+            'ні',
+            '-',
+            'single',
+            'unmarried',
+            'незаміжня',
+            'не заміжня',
+          ].includes(normalized)
+        ) {
+          value = 'Single';
+        }
+      }
     }
 
     if (field.key === 'ownKids') {
@@ -1441,12 +1527,10 @@ const buildSelectedFields = (user, { isAdmin } = {}) => {
 
     if (value === undefined || value === '' || value === null) return null;
 
-    const isSelfExplaining = ['maritalStatus', 'blood', 'ownKids'].includes(field.key);
-
     return (
       <div key={field.key}>
-        {!isSelfExplaining && <strong>{field.label}</strong>}
-        <span>{String(value)}</span>
+        <strong>{field.label}</strong>{' '}
+        {String(value)}
       </div>
     );
   });
@@ -1461,13 +1545,14 @@ const splitSelectedFields = (user, { isAdmin } = {}) => {
 };
 
 const getInfoSlidesCount = user => {
-  const hasFields = splitSelectedFields(user).mainFields.length > 0;
-  const hasText = Boolean(
-    getCurrentValue(user.moreInfo_main) ||
-      getCurrentValue(user.profession) ||
-      getCurrentValue(user.education)
+  const moreInfo = getCurrentValue(user.moreInfo_main);
+  const profession = getCurrentValue(user.profession);
+  const education = getCurrentValue(user.education);
+  const { extraFields } = splitSelectedFields(user);
+  const showDescriptionSlide = Boolean(
+    moreInfo || profession || education || extraFields.length > 0
   );
-  return hasFields || hasText ? 1 : 0;
+  return 1 + (showDescriptionSlide ? 1 : 0);
 };
 
 const getRoleTitle = user => {
@@ -1498,11 +1583,11 @@ const formatNameAndAge = (user, displayName) => {
   return `${displayName}${age ? `, ${age}` : ''}`;
 };
 
-const ProfileInfoContent = ({ user, isAdmin, reserveActionButtons = false, compactHeader = false }) => {
+const InfoCardContent = ({ user, variant, isAdmin }) => {
   const moreInfo = getCurrentValue(user.moreInfo_main);
   const profession = getCurrentValue(user.profession);
   const education = getCurrentValue(user.education);
-  const { mainFields } = splitSelectedFields(user, { isAdmin });
+  const { mainFields, extraFields } = splitSelectedFields(user, { isAdmin });
 
   const displayName = [
     getCurrentValue(user.name),
@@ -1517,6 +1602,7 @@ const ProfileInfoContent = ({ user, isAdmin, reserveActionButtons = false, compa
     .toLowerCase();
   const isEggDonor = role.includes('ed');
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
+  const selectedFields = mainFields;
   const roleTitle = getRoleTitle(user);
   const regionInfo = normalizeRegion(getCurrentValue(user.region));
   const cityInfo = getCurrentValue(user.city);
@@ -1530,44 +1616,54 @@ const ProfileInfoContent = ({ user, isAdmin, reserveActionButtons = false, compa
         .filter(Boolean)
         .join(', ')
     : cityInfo || regionInfo;
-  const Section = compactHeader ? CompactProfileSection : ProfileSection;
+
+  if (variant === 'description') {
+    return (
+      <InfoSlide $role={role}>
+        {extraFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{extraFields}</Table>}
+        {education && (
+          <MoreInfo>
+            <strong>Education</strong>
+            <br />
+            {education}
+          </MoreInfo>
+        )}
+        {profession && (
+          <MoreInfo>
+            <strong>Profession</strong>
+            <br />
+            {profession}
+          </MoreInfo>
+        )}
+        {moreInfo && <MoreInfo>{moreInfo}</MoreInfo>}
+      </InfoSlide>
+    );
+  }
 
   return (
-    <InfoSlide $reserveActionButtons={reserveActionButtons} $role={role}>
-      <Section>
+    <InfoSlide $role={role}>
+      <ProfileSection>
         <Info>
           <HeaderIdentityRow>
-            {roleTitle && <Title $role={role}>{roleTitle}</Title>}
+            <Title $role={role}>{roleTitle}</Title>
             <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
-            {!isEggDonor && contacts && <Icons style={{ marginLeft: 'auto' }}>{contacts}</Icons>}
           </HeaderIdentityRow>
-          {(locationInfo || (isEggDonor && contacts)) && (
-            <LocationLine>
-              {locationInfo && <span>{locationInfo}</span>}
-              {isEggDonor && contacts && <Icons>{contacts}</Icons>}
-            </LocationLine>
-          )}
+          <LocationLine>
+            <span>{locationInfo}</span>
+            {isEggDonor && contacts && <Icons>{contacts}</Icons>}
+          </LocationLine>
         </Info>
-      </Section>
-      {mainFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{mainFields}</Table>}
-      {education && (
-        <MoreInfo $role={role}>
-          <strong>Education</strong>{education}
-        </MoreInfo>
+      </ProfileSection>
+      {selectedFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{selectedFields}</Table>}
+      {!isEggDonor && contacts && (
+        <Contact $withBorder={selectedFields.length > 0}>
+          <Icons>{contacts}</Icons>
+        </Contact>
       )}
-      {profession && (
-        <MoreInfo $role={role}>
-          <strong>Profession</strong>{profession}
-        </MoreInfo>
-      )}
-      {moreInfo && <MoreInfo $role={role}>{moreInfo}</MoreInfo>}
     </InfoSlide>
   );
 };
 
-const InfoCardContent = ({ user, isAdmin }) => (
-  <ProfileInfoContent user={user} isAdmin={isAdmin} />
-);
 
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 6;
@@ -2617,10 +2713,33 @@ const Matching = () => {
                 .toLowerCase();
               const isAgency = role === 'ag' || role === 'ip';
 
-              const infoVariants = photo && getInfoSlidesCount(user) > 0 ? ['info'] : [];
-              const nextVariant = nextPhoto ? null : infoVariants.shift();
-              const thirdVariant = null;
+              const infoVariants = [];
+              if (role === 'ag') {
+                const moreInfo = getCurrentValue(user.moreInfo_main);
+                const profession = getCurrentValue(user.profession);
+                const education = getCurrentValue(user.education);
+                const { extraFields } = splitSelectedFields(user, { isAdmin });
+                const showDescriptionSlide = Boolean(
+                  moreInfo || profession || education || extraFields.length > 0
+                );
+                if (showDescriptionSlide) infoVariants.push('description');
+              } else {
+                const infoSlides = getInfoSlidesCount(user);
+                if (infoSlides >= 1) infoVariants.push('info');
+                if (infoSlides >= 2) infoVariants.push('description');
+                if (!photo) infoVariants.shift();
+              }
 
+              const nextVariant = nextPhoto ? null : infoVariants.shift();
+              const thirdVariant = thirdPhoto ? null : infoVariants.shift();
+
+              const nameParts = [
+                getCurrentValue(user.name),
+                getCurrentValue(user.surname),
+              ]
+                .filter(Boolean)
+                .map(v => String(v).trim())
+                .join(' ');
               return (
                 <CardContainer
                   key={user.userId}
@@ -2630,13 +2749,13 @@ const Matching = () => {
                 >
                   {thirdVariant && (
                     <ThirdInfoCard>
-                      <InfoCardContent user={user} isAdmin={isAdmin} />
+                      <InfoCardContent user={user} variant={thirdVariant} isAdmin={isAdmin} />
                     </ThirdInfoCard>
                   )}
                     {thirdPhoto && <ThirdPhoto src={thirdPhoto} alt="third" />}
                     {nextVariant && (
                       <NextInfoCard>
-                        <InfoCardContent user={user} isAdmin={isAdmin} />
+                        <InfoCardContent user={user} variant={nextVariant} isAdmin={isAdmin} />
                       </NextInfoCard>
                     )}
                     {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
@@ -2646,6 +2765,7 @@ const Matching = () => {
                         photo={photo}
                         role={role}
                         isAgency={isAgency}
+                        nameParts={nameParts}
                         isAdmin={isAdmin}
                         favoriteUsers={favoriteUsers}
                         setFavoriteUsers={setFavoriteUsers}
