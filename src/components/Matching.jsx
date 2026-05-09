@@ -87,26 +87,6 @@ const ROLE_COLORS = {
   cl: { accent: '#0277bd', light: 'rgba(2,119,189,0.07)', border: 'rgba(2,119,189,0.22)', text: '#01579b', tag: 'rgba(225,245,254,0.9)' },
 };
 const getRoleColors = role => ROLE_COLORS[role] || { accent: color.accent5, light: 'rgba(247,147,30,0.08)', border: 'rgba(247,147,30,0.25)', text: color.accent3, tag: 'rgba(255,243,224,0.9)' };
-
-const formatBlood = blood => {
-  if (!blood) return blood;
-  const str = String(blood).trim();
-  const match = str.match(/^(O|A|B|AB)\s*([+-])$/i);
-  if (!match) return str;
-  return `${match[1].toUpperCase()}(${match[2]})`;
-};
-
-const getMaritalStatus = user => {
-  const role = (user.userRole || '').toString().trim().toLowerCase();
-  if (role !== 'ed') return null;
-  const value = getCurrentValue(user.maritalStatus);
-  if (!value) return null;
-  const normalized = String(value).trim().toLowerCase();
-  if (['yes', 'так', '+', 'married', 'заміжня', 'одружена'].includes(normalized)) return 'Married';
-  if (['no', 'ні', '-', 'single', 'unmarried', 'незаміжня', 'не заміжня'].includes(normalized)) return 'Single';
-  return null;
-};
-
 const isShortId = id => typeof id === 'string' && id.length > 0 && id.length < 20;
 const isMatchingCardId = id => isValidId(id) || isShortId(id);
 const isAllowedIdForCollection = (id, collection = 'users') =>
@@ -667,10 +647,10 @@ const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) =>
 const Card = styled.div`
   width: 100%;
   height: auto;
-  aspect-ratio: ${({ $isPhotoSlide, $small }) =>
-    $isPhotoSlide ? ($small ? '4 / 5' : '3 / 4') : 'auto'};
-  min-height: ${({ $isPhotoSlide, $small }) =>
-    $isPhotoSlide ? ($small ? '260px' : '320px') : 'auto'};
+  aspect-ratio: ${({ $hasPhoto, $small }) =>
+    $hasPhoto ? ($small ? '4 / 5' : '3 / 4') : 'auto'};
+  min-height: ${({ $hasPhoto, $small, $compactWithoutPhoto }) =>
+    !$hasPhoto && $compactWithoutPhoto ? ($small ? '180px' : '220px') : $small ? '260px' : '320px'};
   padding-bottom: 0;
   background: linear-gradient(180deg, #fffaf2 0%, #f8f5ef 100%);
   background-size: cover;
@@ -687,7 +667,6 @@ const Card = styled.div`
 
   &::after {
     content: '';
-    display: ${({ $isPhotoSlide }) => ($isPhotoSlide ? 'block' : 'none')};
     position: absolute;
     bottom: 0;
     left: 0;
@@ -951,35 +930,41 @@ const CollectionSourceLabel = styled.label`
 
 const Title = styled.span`
   color: ${props => getRoleColors(props.$role).text};
-  font-weight: 700;
+  font-weight: 800;
+  margin-bottom: 4px;
+  margin-right: 4px;
   display: inline-block;
   text-transform: uppercase;
-  letter-spacing: 0.7px;
-  font-size: 9px;
+  letter-spacing: 0.6px;
+  font-size: 10px;
   background: ${props => getRoleColors(props.$role).tag};
   border: 1px solid ${props => getRoleColors(props.$role).border};
-  border-radius: 6px;
-  padding: 2px 7px;
-  flex-shrink: 0;
+  border-radius: 8px;
+  padding: 3px 8px;
 `;
 
 const HeaderIdentityRow = styled.div`
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
 `;
 
-const DonorName = styled.span`
-  font-size: 17px;
-  font-weight: 700;
-  color: #1a1b22;
+const DonorName = styled.strong`
+  display: inline-block;
   line-height: 1.2;
+  color: #1f1f26;
+  font-size: 18px;
+  font-weight: 700;
 `;
 
 const ProfileSection = styled.div`
-  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  padding-bottom: 8px;
 `;
 
 const Info = styled.div`
@@ -989,189 +974,124 @@ const Info = styled.div`
 const LocationLine = styled.div`
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  color: #7a7b8e;
-  font-size: 12px;
-  margin-top: 2px;
-`;
-
-const MaritalBadge = styled.span`
-  font-size: 10px;
-  font-weight: 600;
-  color: #666;
-  background: rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 6px;
-  padding: 2px 6px;
-  white-space: nowrap;
-`;
-
-const StatsRow = styled.div`
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0;
-  row-gap: 2px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #1e1f28;
-  border-top: 1px solid rgba(0, 0, 0, 0.07);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
-  padding: 7px 0;
-  margin: 6px 0 8px;
-  letter-spacing: 0.1px;
-`;
-
-const StatDot = styled.span`
-  margin: 0 6px;
-  color: rgba(0, 0, 0, 0.2);
-  font-weight: 400;
+  gap: 6px;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  color: #6f7182;
   font-size: 12px;
 `;
 
-const BloodStat = styled.span`
-  color: ${props => props.$color || '#b71c1c'};
-`;
+// Fields to display in the details modal
+const FIELDS = [
+  { key: 'height', label: 'Height (cm)' },
+  { key: 'weight', label: 'Weight (kg)' },
+  { key: 'bmi', label: 'BMI' },
+  { key: 'clothingSize', label: 'Clothing size' },
+  { key: 'shoeSize', label: 'Shoe size' },
+  { key: 'blood', label: 'Rh' },
+  { key: 'eyeColor', label: 'Eyes' },
+  { key: 'glasses', label: 'Glasses' },
+  { key: 'race', label: 'Race' },
+  { key: 'hairColor', label: 'Hair color' },
+  { key: 'hairStructure', label: 'Hair structure' },
+  { key: 'chin', label: 'Chin' },
+  { key: 'breastSize', label: 'Breast size' },
+  { key: 'bodyType', label: 'Body type' },
+  { key: 'maritalStatus', label: 'Marital status' },
+  { key: 'ownKids', label: 'Own kids' },
+  { key: 'faceShape', label: 'Face shape' },
+  { key: 'noseShape', label: 'Nose shape' },
+  { key: 'lipsShape', label: 'Lips shape' },
+  { key: 'reward', label: 'Expected reward $' },
+  { key: 'experience', label: 'Donation exp' },
+];
+const MAIN_INFO_FIELDS_LIMIT = 15;
 
-const AttrGrid = styled.div`
+const Table = styled.div`
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 3px;
+  row-gap: 5px;
+  column-gap: 5px;
+  font-size: 13px;
   margin-bottom: 8px;
-`;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  padding: 7px;
 
-const AttrCell = styled.div`
-  display: flex;
-  flex-direction: column;
-  padding: 4px 7px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.55);
-`;
-
-const AttrLabel = styled.span`
-  font-size: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: ${props => props.$color || '#999'};
-  font-weight: 700;
-  margin-bottom: 1px;
-  line-height: 1;
-`;
-
-const AttrValue = styled.span`
-  font-size: 12px;
-  font-weight: 600;
-  color: #1e1f28;
-  line-height: 1.25;
-`;
-
-const EduProfWrap = styled.div`
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
-`;
-
-const EduProfTag = styled.span`
-  font-size: 12px;
-  color: #5a5b6a;
-  background: rgba(255, 255, 255, 0.65);
-  border: 1px solid rgba(0, 0, 0, 0.09);
-  border-radius: 6px;
-  padding: 3px 9px;
-  font-style: italic;
-`;
-
-const buildProfileData = (user, { isAdmin } = {}) => {
-  const get = key => getCurrentValue(user[key]);
-
-  const heightRaw = get('height');
-  const weightRaw = get('weight');
-  const heightNum = Number(heightRaw);
-  const weightNum = Number(weightRaw);
-
-  const stats = [];
-  if (heightRaw) stats.push({ type: 'plain', text: `${heightRaw} cm` });
-  if (weightRaw) stats.push({ type: 'plain', text: `${weightRaw} kg` });
-  if (heightNum > 0 && weightNum > 0) {
-    stats.push({ type: 'plain', text: `BMI ${Math.round((weightNum / (heightNum * heightNum)) * 10000)}` });
+  & > div {
+    line-height: 1.15;
+    display: flex;
+    flex-direction: column;
+    background: #fbf9f5;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    padding: 4px 7px;
   }
-  const bloodFormatted = formatBlood(get('blood'));
-  if (bloodFormatted) stats.push({ type: 'blood', text: bloodFormatted });
 
-  const glassesRaw = (get('glasses') || '').toString().toLowerCase();
-  const showGlasses = ['yes', 'так', '+', '1', 'true'].includes(glassesRaw);
+  & strong {
+    font-size: 8px;
+    color: ${props => props.$roleColor || color.accent3};
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
 
-  const kidsNormalized = normalizeOwnKidsValue(get('ownKids'));
-
-  const hairValue = [get('hairColor'), get('hairStructure')].filter(Boolean).join(', ');
-
-  const rawAttrs = [
-    get('eyeColor') && { label: 'Eyes', value: get('eyeColor') },
-    hairValue && { label: 'Hair', value: hairValue },
-    get('race') && { label: 'Race', value: get('race') },
-    get('bodyType') && { label: 'Body', value: get('bodyType') },
-    get('breastSize') && { label: 'Breast', value: get('breastSize') },
-    get('clothingSize') && { label: 'Size', value: get('clothingSize') },
-    get('shoeSize') && { label: 'Shoe', value: get('shoeSize') },
-    get('chin') && { label: 'Chin', value: get('chin') },
-    get('faceShape') && { label: 'Face', value: get('faceShape') },
-    get('noseShape') && { label: 'Nose', value: get('noseShape') },
-    get('lipsShape') && { label: 'Lips', value: get('lipsShape') },
-    showGlasses && { label: 'Glasses', value: 'Yes' },
-    kidsNormalized && { label: 'Kids', value: kidsNormalized },
-    get('experience') && { label: 'Exp', value: get('experience') },
-    isAdmin && get('reward') && { label: 'Reward', value: `$${get('reward')}` },
-  ];
-
-  const attrs = rawAttrs.filter(Boolean);
-
-  return { stats, attrs };
-};
-
+  & > div > span,
+  & > div {
+    color: #2f2f39;
+    font-weight: 700;
+  }
+`;
 
 const MoreInfo = styled.div`
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  border-left: 3px solid ${props => props.$accentColor || '#f7931e'};
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
-  font-size: 13px;
-  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-left: 4px solid ${props => (props.$isAdmin ? '#ff6b6b' : '#f7931e')};
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  font-size: 14px;
   white-space: pre-line;
   color: #3e3f4c;
 `;
 
+const Contact = styled.div`
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  font-size: 14px;
+  border-top: ${props => (props.$withBorder ? `1px solid rgba(0, 0, 0, 0.08)` : 'none')};
+  padding-top: ${props => (props.$withBorder ? '10px' : '0')};
+  margin-top: ${props => (props.$withBorder ? '6px' : '0')};
+`;
 
 const Icons = styled.div`
   display: flex;
-  gap: 4px;
+  gap: 5px;
+  font-size: inherit;
+  color: ${color.accent5};
   align-items: center;
   flex-wrap: wrap;
-  flex-shrink: 0;
 
   & a {
-    width: 28px !important;
-    height: 28px !important;
-    border-radius: 7px;
-    background: rgba(0, 0, 0, 0.05) !important;
-    border: 1px solid rgba(0, 0, 0, 0.11) !important;
-    transition: background 0.15s ease;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 8px;
+    background: rgba(247, 147, 30, 0.1);
+    border: 1px solid rgba(247, 147, 30, 0.22) !important;
+    transition: all 0.15s ease;
   }
 
   & a:hover {
-    background: rgba(0, 0, 0, 0.1) !important;
+    background: rgba(255, 108, 0, 0.18);
+    border-color: rgba(255, 108, 0, 0.38) !important;
+    transform: translateY(-1px);
   }
 
   & svg {
     width: 13px !important;
     height: 13px !important;
-    color: #555 !important;
-    fill: #555 !important;
   }
 `;
 
@@ -1247,14 +1167,16 @@ const Id = styled.div`
 const InfoSlide = styled.div`
   width: 100%;
   height: auto;
+  min-height: auto;
   background: ${props =>
     props.$role
-      ? `linear-gradient(150deg, #fefdfb 0%, ${getRoleColors(props.$role).light} 100%)`
-      : 'linear-gradient(150deg, #fefdfb 0%, #f4f1ec 100%)'};
+      ? `linear-gradient(160deg, #fffdf8 0%, ${getRoleColors(props.$role).light} 100%)`
+      : 'linear-gradient(180deg, #fffdf8 0%, #f6f2eb 100%)'};
   color: #2c2d38;
+  overflow-y: visible;
   box-sizing: border-box;
-  padding: 12px 13px;
-  padding-bottom: ${({ $reserveActionButtons }) => ($reserveActionButtons ? '58px' : '12px')};
+  padding: 10px 12px;
+  padding-bottom: ${({ $reserveActionButtons }) => ($reserveActionButtons ? '56px' : '10px')};
 `;
 
 const slideLeft = keyframes`
@@ -1284,81 +1206,6 @@ const AnimatedCard = styled(Card)`
       : 'none'} 0.3s ease;
 `;
 
-const ProfileInfoContent = ({ user, role, isAdmin, reserveButtons }) => {
-  const { stats, attrs } = buildProfileData(user, { isAdmin });
-  const moreInfo = getCurrentValue(user.moreInfo_main);
-  const profession = getCurrentValue(user.profession);
-  const education = getCurrentValue(user.education);
-  const maritalStatus = getMaritalStatus(user);
-  const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
-  const isEggDonor = (role || '').includes('ed');
-  const regionInfo = normalizeRegion(getCurrentValue(user.region));
-  const cityInfo = getCurrentValue(user.city);
-  const locationInfo = isEggDonor
-    ? regionInfo || ''
-    : getCurrentValue(user.country)
-    ? [normalizeCountry(getCurrentValue(user.country)), cityInfo || regionInfo].filter(Boolean).join(', ')
-    : cityInfo || regionInfo;
-
-  const displayName = [getCurrentValue(user.name), getCurrentValue(user.surname)]
-    .filter(Boolean)
-    .map(v => String(v).trim())
-    .join(' ');
-
-  const rc = getRoleColors(role);
-
-  return (
-    <InfoSlide $role={role} $reserveActionButtons={reserveButtons}>
-      <ProfileSection>
-        <Info>
-          <HeaderIdentityRow>
-            <Title $role={role}>{getRoleTitle(user)}</Title>
-            <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
-            {maritalStatus && <MaritalBadge>{maritalStatus}</MaritalBadge>}
-          </HeaderIdentityRow>
-          <LocationLine>
-            {locationInfo ? <span>{locationInfo}</span> : <span />}
-            {contacts && <Icons>{contacts}</Icons>}
-          </LocationLine>
-        </Info>
-      </ProfileSection>
-
-      {stats.length > 0 && (
-        <StatsRow>
-          {stats.map((s, i) => (
-            <React.Fragment key={i}>
-              {i > 0 && <StatDot>·</StatDot>}
-              {s.type === 'blood'
-                ? <BloodStat $color={rc.accent}>{s.text}</BloodStat>
-                : <span>{s.text}</span>}
-            </React.Fragment>
-          ))}
-        </StatsRow>
-      )}
-
-      {attrs.length > 0 && (
-        <AttrGrid>
-          {attrs.map((a, i) => (
-            <AttrCell key={i}>
-              <AttrLabel $color={rc.text}>{a.label}</AttrLabel>
-              <AttrValue>{a.value}</AttrValue>
-            </AttrCell>
-          ))}
-        </AttrGrid>
-      )}
-
-      {(education || profession) && (
-        <EduProfWrap>
-          {education && <EduProfTag>{education}</EduProfTag>}
-          {profession && <EduProfTag>{profession}</EduProfTag>}
-        </EduProfWrap>
-      )}
-
-      {moreInfo && <MoreInfo $accentColor={rc.accent}>{moreInfo}</MoreInfo>}
-    </InfoSlide>
-  );
-};
-
 const SwipeableCard = ({
   user,
   photo,
@@ -1375,6 +1222,14 @@ const SwipeableCard = ({
   togglePublish,
   multiDataOwnerId,
 }) => {
+  const moreInfo = getCurrentValue(user.moreInfo_main);
+  const profession = getCurrentValue(user.profession);
+  const education = getCurrentValue(user.education);
+  const { mainFields, extraFields } = splitSelectedFields(user, { isAdmin });
+  const showDescriptionSlide = Boolean(
+    moreInfo || profession || education || extraFields.length > 0
+  );
+
   const slides = React.useMemo(() => {
     const photosArr = Array.isArray(user.photos)
       ? user.photos.filter(Boolean).map(convertDriveLinkToImage)
@@ -1387,9 +1242,10 @@ const SwipeableCard = ({
     } else {
       base = photo ? ['main', 'info'] : ['info'];
     }
+    if (showDescriptionSlide) base.push('description');
     base.push(...photosArr.slice(1));
     return base;
-  }, [user.photos, photo, role]);
+  }, [user.photos, showDescriptionSlide, photo, role]);
 
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(null);
@@ -1451,15 +1307,14 @@ const SwipeableCard = ({
   };
 
   const current = slides[index];
-  const isPhotoSlide = current !== 'info' && current !== 'description';
   const style =
     current === 'main'
       ? photo
         ? { backgroundImage: `url(${photo})`, backgroundColor: 'transparent' }
         : { backgroundColor: '#fff' }
-      : isPhotoSlide
+      : current !== 'description' && current !== 'info'
       ? { backgroundImage: `url(${current})`, backgroundColor: 'transparent' }
-      : {};
+      : { backgroundColor: '#fff' };
 
   const displayName = [
     getCurrentValue(user.name),
@@ -1470,48 +1325,104 @@ const SwipeableCard = ({
     .join(' ');
   const isEggDonor = (role || '').includes('ed');
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
-  const regionInfo = normalizeRegion(getCurrentValue(user.region));
-  const cityInfo = getCurrentValue(user.city);
-  const isEggDonor = (role || '').includes('ed');
-  const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
+  const selectedFields = mainFields;
   const regionInfo = normalizeRegion(getCurrentValue(user.region));
   const cityInfo = getCurrentValue(user.city);
   const locationInfo = isEggDonor
     ? regionInfo || ''
     : getCurrentValue(user.country)
-    ? [normalizeCountry(getCurrentValue(user.country)), cityInfo || regionInfo].filter(Boolean).join(', ')
+    ? [
+        normalizeCountry(getCurrentValue(user.country)),
+        cityInfo || regionInfo,
+      ]
+        .filter(Boolean)
+        .join(', ')
     : cityInfo || regionInfo;
-
-  const displayName = [getCurrentValue(user.name), getCurrentValue(user.surname)]
-    .filter(Boolean)
-    .map(v => String(v).trim())
-    .join(' ');
 
   return (
     <AnimatedCard
       $dir={dir}
       $small={isAgency}
-      $isPhotoSlide={isPhotoSlide}
+      $compactWithoutPhoto={!photo}
+      $hasPhoto={!!photo}
       data-card
       onClick={handleClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       style={style}
     >
-      {current === 'info' && (
-        <ProfileInfoContent user={user} role={role} isAdmin={isAdmin} reserveButtons />
+      {current === 'description' && (
+        <InfoSlide $reserveActionButtons={!photo} $role={role}>
+          {extraFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{extraFields}</Table>}
+          {education && (
+            <MoreInfo>
+              <strong>Education</strong>
+              <br />
+              {education}
+            </MoreInfo>
+          )}
+          {profession && (
+            <MoreInfo>
+              <strong>Profession</strong>
+              <br />
+              {profession}
+            </MoreInfo>
+          )}
+          {moreInfo && (
+            <MoreInfo>
+              {moreInfo}
+            </MoreInfo>
+          )}
+        </InfoSlide>
       )}
-      {isPhotoSlide && role !== 'ag' && (
+      {current === 'info' && (
+        <InfoSlide $reserveActionButtons={!photo} $role={role}>
+          {photo ? (
+            <HeaderIdentityRow style={{ marginBottom: '8px' }}>
+              <Title $role={role}>{getRoleTitle(user)}</Title>
+              {contacts && <Icons style={{ marginLeft: 'auto' }}>{contacts}</Icons>}
+            </HeaderIdentityRow>
+          ) : (
+            <ProfileSection>
+              <Info>
+                <HeaderIdentityRow>
+                  <Title $role={role}>{getRoleTitle(user)}</Title>
+                  <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
+                </HeaderIdentityRow>
+                <LocationLine>
+                  <span>{locationInfo}</span>
+                  {isEggDonor && contacts && <Icons>{contacts}</Icons>}
+                </LocationLine>
+              </Info>
+            </ProfileSection>
+          )}
+          {selectedFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{selectedFields}</Table>}
+          {!isEggDonor && !photo && contacts && (
+            <Contact $withBorder={selectedFields.length > 0}>
+              <Icons>{contacts}</Icons>
+            </Contact>
+          )}
+          {isEggDonor && photo && locationInfo && (
+            <LocationLine style={{ marginTop: '4px', fontSize: '11px', opacity: 0.7 }}>
+              <span>{locationInfo}</span>
+            </LocationLine>
+          )}
+        </InfoSlide>
+      )}
+      {current === 'main' && role !== 'ag' && (
         <BasicInfo>
           {formatNameAndAge(user, displayName)}
           <br />
           {locationInfo}
         </BasicInfo>
       )}
-      {isAdmin && (
+      {(current === 'main' || (!photo && current === 'info')) && isAdmin && (
         <AdminToggle
           published={user.publish}
-          onClick={e => { e.stopPropagation(); togglePublish(user); }}
+          onClick={e => {
+            e.stopPropagation();
+            togglePublish(user);
+          }}
         />
       )}
       <BtnFavorite
@@ -1546,6 +1457,7 @@ const SwipeableCard = ({
           </LocationLine>
         </CardInfo>
       )}
+      {(current === 'info' || current === 'main') && null}
     </AnimatedCard>
   );
 };
@@ -1567,7 +1479,81 @@ const normalizeOwnKidsValue = value => {
   return value;
 };
 
+const buildSelectedFields = (user, { isAdmin } = {}) => {
+  return FIELDS.map(field => {
+    if (field.key === 'reward' && !isAdmin) return null;
 
+    let value = user[field.key];
+    if (field.key === 'bmi') {
+      const { weight, height } = user;
+      if (weight && height) {
+        value = Math.round((weight / (height * height)) * 10000);
+      } else {
+        value = null;
+      }
+    }
+
+    value = getCurrentValue(value);
+
+    if (field.key === 'maritalStatus') {
+      const role = (user.userRole || '').toString().trim().toLowerCase();
+      if (role === 'ed' && value) {
+        const normalized = value.toString().trim().toLowerCase();
+        if (
+          ['yes', 'так', '+', 'married', 'заміжня', 'одружена'].includes(
+            normalized
+          )
+        ) {
+          value = 'Married';
+        } else if (
+          [
+            'no',
+            'ні',
+            '-',
+            'single',
+            'unmarried',
+            'незаміжня',
+            'не заміжня',
+          ].includes(normalized)
+        ) {
+          value = 'Single';
+        }
+      }
+    }
+
+    if (field.key === 'ownKids') {
+      value = normalizeOwnKidsValue(value);
+    }
+
+    if (value === undefined || value === '' || value === null) return null;
+
+    return (
+      <div key={field.key}>
+        <strong>{field.label}</strong>{' '}
+        {String(value)}
+      </div>
+    );
+  });
+};
+
+const splitSelectedFields = (user, { isAdmin } = {}) => {
+  const allFields = buildSelectedFields(user, { isAdmin }).filter(Boolean);
+  return {
+    mainFields: allFields.slice(0, MAIN_INFO_FIELDS_LIMIT),
+    extraFields: allFields.slice(MAIN_INFO_FIELDS_LIMIT),
+  };
+};
+
+const getInfoSlidesCount = user => {
+  const moreInfo = getCurrentValue(user.moreInfo_main);
+  const profession = getCurrentValue(user.profession);
+  const education = getCurrentValue(user.education);
+  const { extraFields } = splitSelectedFields(user);
+  const showDescriptionSlide = Boolean(
+    moreInfo || profession || education || extraFields.length > 0
+  );
+  return 1 + (showDescriptionSlide ? 1 : 0);
+};
 
 const getRoleTitle = user => {
   const userRole = (user.userRole || '')
@@ -1597,9 +1583,85 @@ const formatNameAndAge = (user, displayName) => {
   return `${displayName}${age ? `, ${age}` : ''}`;
 };
 
-const InfoCardContent = ({ user, isAdmin }) => {
-  const role = (user.userRole || user.role || '').toString().trim().toLowerCase();
-  return <ProfileInfoContent user={user} role={role} isAdmin={isAdmin} />;
+const InfoCardContent = ({ user, variant, isAdmin }) => {
+  const moreInfo = getCurrentValue(user.moreInfo_main);
+  const profession = getCurrentValue(user.profession);
+  const education = getCurrentValue(user.education);
+  const { mainFields, extraFields } = splitSelectedFields(user, { isAdmin });
+
+  const displayName = [
+    getCurrentValue(user.name),
+    getCurrentValue(user.surname),
+  ]
+    .filter(Boolean)
+    .map(v => String(v).trim())
+    .join(' ');
+  const role = (user.userRole || user.role || '')
+    .toString()
+    .trim()
+    .toLowerCase();
+  const isEggDonor = role.includes('ed');
+  const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
+  const selectedFields = mainFields;
+  const roleTitle = getRoleTitle(user);
+  const regionInfo = normalizeRegion(getCurrentValue(user.region));
+  const cityInfo = getCurrentValue(user.city);
+  const locationInfo = isEggDonor
+    ? regionInfo || ''
+    : getCurrentValue(user.country)
+    ? [
+        normalizeCountry(getCurrentValue(user.country)),
+        cityInfo || regionInfo,
+      ]
+        .filter(Boolean)
+        .join(', ')
+    : cityInfo || regionInfo;
+
+  if (variant === 'description') {
+    return (
+      <InfoSlide $role={role}>
+        {extraFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{extraFields}</Table>}
+        {education && (
+          <MoreInfo>
+            <strong>Education</strong>
+            <br />
+            {education}
+          </MoreInfo>
+        )}
+        {profession && (
+          <MoreInfo>
+            <strong>Profession</strong>
+            <br />
+            {profession}
+          </MoreInfo>
+        )}
+        {moreInfo && <MoreInfo>{moreInfo}</MoreInfo>}
+      </InfoSlide>
+    );
+  }
+
+  return (
+    <InfoSlide $role={role}>
+      <ProfileSection>
+        <Info>
+          <HeaderIdentityRow>
+            <Title $role={role}>{roleTitle}</Title>
+            <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
+          </HeaderIdentityRow>
+          <LocationLine>
+            <span>{locationInfo}</span>
+            {isEggDonor && contacts && <Icons>{contacts}</Icons>}
+          </LocationLine>
+        </Info>
+      </ProfileSection>
+      {selectedFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{selectedFields}</Table>}
+      {!isEggDonor && contacts && (
+        <Contact $withBorder={selectedFields.length > 0}>
+          <Icons>{contacts}</Icons>
+        </Contact>
+      )}
+    </InfoSlide>
+  );
 };
 
 
@@ -2652,8 +2714,20 @@ const Matching = () => {
               const isAgency = role === 'ag' || role === 'ip';
 
               const infoVariants = [];
-              if (role !== 'ag' && photo) {
-                infoVariants.push('info');
+              if (role === 'ag') {
+                const moreInfo = getCurrentValue(user.moreInfo_main);
+                const profession = getCurrentValue(user.profession);
+                const education = getCurrentValue(user.education);
+                const { extraFields } = splitSelectedFields(user, { isAdmin });
+                const showDescriptionSlide = Boolean(
+                  moreInfo || profession || education || extraFields.length > 0
+                );
+                if (showDescriptionSlide) infoVariants.push('description');
+              } else {
+                const infoSlides = getInfoSlidesCount(user);
+                if (infoSlides >= 1) infoVariants.push('info');
+                if (infoSlides >= 2) infoVariants.push('description');
+                if (!photo) infoVariants.shift();
               }
 
               const nextVariant = nextPhoto ? null : infoVariants.shift();
@@ -2675,13 +2749,13 @@ const Matching = () => {
                 >
                   {thirdVariant && (
                     <ThirdInfoCard>
-                      <InfoCardContent user={user} isAdmin={isAdmin} />
+                      <InfoCardContent user={user} variant={thirdVariant} isAdmin={isAdmin} />
                     </ThirdInfoCard>
                   )}
                     {thirdPhoto && <ThirdPhoto src={thirdPhoto} alt="third" />}
                     {nextVariant && (
                       <NextInfoCard>
-                        <InfoCardContent user={user} isAdmin={isAdmin} />
+                        <InfoCardContent user={user} variant={nextVariant} isAdmin={isAdmin} />
                       </NextInfoCard>
                     )}
                     {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
