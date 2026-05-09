@@ -1,10 +1,19 @@
 import React from 'react';
+import styled from 'styled-components';
 import { FaFacebookF, FaInstagram, FaPhoneVolume, FaTelegramPlane, FaVk } from 'react-icons/fa';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { FaXTwitter } from 'react-icons/fa6';
 import { CheckboxGroup } from './CheckboxGroup';
 import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
+
+const FiltersCard = styled.div`
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 12px 14px 4px;
+  margin: 8px 0;
+`;
 
 export const SearchFilters = ({
   filters,
@@ -324,7 +333,7 @@ export const SearchFilters = ({
   }
 
   return (
-    <div style={{ margin: '10px 0', color: 'black' }}>
+    <FiltersCard>
       {groups.map(group => (
         <CheckboxGroup
           key={group.filterName}
@@ -336,6 +345,6 @@ export const SearchFilters = ({
           compact={group.compact}
         />
       ))}
-    </div>
+    </FiltersCard>
   );
 };

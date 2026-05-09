@@ -409,56 +409,98 @@ const EditActionIcon = styled.svg`
 
 
 const Button = styled.button`
-  width: 35px; /* Встановіть ширину, яка визначатиме розмір кнопки */
-  height: 35px; /* Встановіть висоту, яка повинна дорівнювати ширині */
-  padding: 3px; /* Видаліть внутрішні відступи */
-  border: none;
-  background-color: ${color.accent5};
-  color: white;
-  border-radius: 50px;
+  padding: 0 12px;
+  height: 30px;
+  border: 1.5px solid #e5e5e5;
+  background: #fff;
+  color: #444;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
-  flex: 0 0 35px;
-  display: flex;
+  font-weight: 500;
+  flex-shrink: 0;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition:
-    background-color 0.3s ease,
-    box-shadow 0.3s ease;
-  margin-right: 10px;
+  white-space: nowrap;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.15s;
 
   &:hover {
-    background-color: ${color.accent}; /* Колір кнопки при наведенні */
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Тінь при наведенні */
+    background: #FFF3E0;
+    border-color: #FF8C00;
+    color: #CC5500;
   }
 
   &:active {
-    transform: scale(0.98); /* Легкий ефект при натисканні */
+    transform: scale(0.97);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
   }
 `;
 
 const ButtonsContainer = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  margin: 8px 0;
 `;
 
 const SortModeContainer = styled.div`
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
+  gap: 4px;
   margin: 8px 0;
-  color: #1f1f1f;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+`;
+
+const SortModeTitle = styled.span`
+  font-size: 10px;
+  font-weight: 700;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 4px;
 `;
 
 const SortModeLabel = styled.label`
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
-  color: #1f1f1f;
+  font-size: 12px;
+  color: #444;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1.5px solid transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+
+  input[type='radio'] {
+    display: none;
+  }
+
+  &:has(input:checked) {
+    background: #FFF3E0;
+    border-color: #FF8C00;
+    color: #CC5500;
+    font-weight: 600;
+  }
+
+  &:hover:not(:has(input:checked)) {
+    background: #f5f5f5;
+    border-color: #ddd;
+  }
 `;
 
 
@@ -4354,7 +4396,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
             )}
             <SortModeContainer>
-              <span>Сортування:</span>
+              <SortModeTitle>Сортування</SortModeTitle>
               <SortModeLabel>
                 <input
                   type="radio"

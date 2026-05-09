@@ -224,26 +224,30 @@ export const coloredCard = index => {
 };
 
 export const OrangeBtn = styled.button`
-  width: 35px; /* Встановіть ширину, яка визначатиме розмір кнопки */
-  height: 35px; /* Встановіть висоту, яка повинна дорівнювати ширині */
-  padding: 3px; /* Видаліть внутрішні відступи */
-  border: none;
-  background-color: ${color.accent5};
-  color: white;
-  border-radius: 50px;
+  padding: 0 12px;
+  height: 30px;
+  border: 1.5px solid #e5e5e5;
+  background: #fff;
+  color: #444;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
-  flex: 0 1 auto;
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
-  margin-right: 10px;
+  font-weight: 500;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.15s;
 
   &:hover {
-    background-color: ${color.accent}; /* Колір кнопки при наведенні */
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Тінь при наведенні */
+    background: #FFF3E0;
+    border-color: #FF8C00;
+    color: #CC5500;
   }
 
   &:active {
-    transform: scale(0.98); /* Легкий ефект при натисканні */
+    transform: scale(0.97);
   }
 `;
 
