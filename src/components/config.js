@@ -1461,6 +1461,9 @@ export const fetchUsersByIds = async ids => {
             ...(newSnap.exists() ? newSnap.val() : {}),
             ...(userSnap.exists() ? userSnap.val() : {}),
           };
+          // Preserve the database node key as the canonical id even when profile
+          // data has a nested `userId` object for searchKey buckets.
+          data.userId = id;
           return Object.keys(data).length > 1 ? [id, data] : null;
         })
       )
