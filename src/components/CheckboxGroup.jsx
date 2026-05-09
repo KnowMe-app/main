@@ -1,6 +1,48 @@
 import React from 'react';
+import styled from 'styled-components';
 
-export const CheckboxGroup = ({ label, filterName, options, filters, onChange, compact = false }) => {
+const GroupWrapper = styled.div`
+  margin-bottom: 10px;
+`;
+
+const GroupLabel = styled.span`
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 5px;
+  line-height: 1;
+`;
+
+const ChipsRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+`;
+
+const Chip = styled.button`
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1.5px solid ${({ $active }) => ($active ? '#FF8C00' : '#e0e0e0')};
+  background: ${({ $active }) => ($active ? '#FFF3E0' : '#fafafa')};
+  color: ${({ $active }) => ($active ? '#CC5500' : '#666')};
+  font-size: 12px;
+  font-weight: ${({ $active }) => ($active ? '600' : '400')};
+  cursor: pointer;
+  line-height: 1.5;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  display: inline-flex;
+  align-items: center;
+
+  &:hover {
+    border-color: #FF8C00;
+    color: #CC5500;
+  }
+`;
+
+export const CheckboxGroup = ({ label, filterName, options, filters, onChange }) => {
   const handleToggle = option => {
     onChange({
       ...filters,
@@ -12,15 +54,20 @@ export const CheckboxGroup = ({ label, filterName, options, filters, onChange, c
   };
 
   return (
-      <div style={{ marginBottom: compact ? '4px' : '8px' }}>
-        {label && <span style={{ marginRight: compact ? '4px' : '8px' }}>{label}:</span>}
+    <GroupWrapper>
+      {label && <GroupLabel>{label}</GroupLabel>}
+      <ChipsRow>
         {options.map(({ val, label: optionLabel }) => (
-          <label key={val} style={{ marginLeft: compact ? '4px' : '10px', color: 'black' }}>
-            <input type="checkbox" checked={filters[filterName][val]} onChange={() => handleToggle(val)} />
+          <Chip
+            key={val}
+            $active={filters[filterName][val]}
+            onClick={() => handleToggle(val)}
+            type="button"
+          >
             {optionLabel}
-          </label>
+          </Chip>
         ))}
-      <hr style={{ borderColor: '#ccc', borderWidth: '1px', borderStyle: 'solid', margin: '4px 0' }} />
-    </div>
+      </ChipsRow>
+    </GroupWrapper>
   );
 };
