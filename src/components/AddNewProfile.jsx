@@ -4266,6 +4266,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                           <ScopeChip
                             type="button"
                             $active={Boolean(enabledSearchKeys[option.key])}
+                            aria-pressed={Boolean(enabledSearchKeys[option.key])}
                             disabled={disabled}
                             onClick={() => handleSearchScopeChange(option.key, disabled)}
                           >
