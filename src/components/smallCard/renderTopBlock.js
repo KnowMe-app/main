@@ -57,7 +57,7 @@ const topButtonsZoneStyle = {
   transition: 'transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease',
 };
 
-const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1', '#1565c0', '#6a1b9a'];
+const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1'];
 
 const zoneActionButtonStyle = {
   position: 'static',
@@ -118,7 +118,11 @@ const detailsToggleStyle = {
   right: '10px',
   cursor: 'pointer',
   color: '#ebe0c2',
-  fontSize: '18px',
+  opacity: 0.7,
+  lineHeight: 1,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };
 
 const multiCommentStyle = {
@@ -192,6 +196,45 @@ const inlineModalActionsStyle = {
   display: 'flex',
   justifyContent: 'flex-end',
   gap: '8px',
+};
+
+const modalButtonBaseStyle = {
+  padding: '7px 16px',
+  borderRadius: '8px',
+  border: 'none',
+  fontSize: '14px',
+  fontWeight: 600,
+  cursor: 'pointer',
+  lineHeight: 1.4,
+};
+
+const modalCancelButtonStyle = {
+  ...modalButtonBaseStyle,
+  background: '#e5e7eb',
+  color: '#374151',
+};
+
+const modalSaveButtonStyle = {
+  ...modalButtonBaseStyle,
+  background: '#0288d1',
+  color: '#fff',
+};
+
+const modalDeleteButtonStyle = {
+  ...modalButtonBaseStyle,
+  background: '#d32f2f',
+  color: '#fff',
+};
+
+const sectionDividerStyle = {
+  borderTop: '1px solid rgba(255,255,255,0.08)',
+  margin: '6px 0',
+};
+
+const metaSectionStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '2px',
 };
 
 const deleteModalTextStyle = {
@@ -679,8 +722,6 @@ const TopBlock = ({
                   </svg>
                 )
               ))}
-            {idx === 5 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#1565c0', color: '#fff' }} aria-label="Додаткова синя кнопка" title="Додаткова синя кнопка" />}
-            {idx === 6 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#6a1b9a', color: '#fff' }} aria-label="Додаткова фіолетова кнопка" title="Додаткова фіолетова кнопка" />}
           </div>
         ))}
       </div>
@@ -688,21 +729,23 @@ const TopBlock = ({
         {showSideActions && btnExport(cardData)}
         {additionalActions}
       </div>
-      <div>
-        {cardData.lastAction && formatDateToDisplay(normalizeLastAction(cardData.lastAction))}
-        {cardData.lastAction && ', '}
-        {cardData.userId && (
-          <a
-            href={buildRtdbLink(cardData.userId)}
-            target="_blank"
-            rel="noreferrer"
-            title="Відкрити профіль в Firebase RTDB"
-            onClick={event => event.stopPropagation()}
-            style={{ color: 'inherit', textDecoration: 'none' }}
-          >
-            {cardData.userId}
-          </a>
-        )}
+      <div style={metaSectionStyle}>
+        <div>
+          {cardData.lastAction && formatDateToDisplay(normalizeLastAction(cardData.lastAction))}
+          {cardData.lastAction && ', '}
+          {cardData.userId && (
+            <a
+              href={buildRtdbLink(cardData.userId)}
+              target="_blank"
+              rel="noreferrer"
+              title="Відкрити профіль в Firebase RTDB"
+              onClick={event => event.stopPropagation()}
+              style={{ color: 'inherit', textDecoration: 'none' }}
+            >
+              {cardData.userId}
+            </a>
+          )}
+        </div>
         {fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, submitOptions)}
         {fieldRole(cardData, setUsers, setState, submitOptions)}
         {!hasHiddenCycleFieldRole && <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />}
@@ -714,11 +757,10 @@ const TopBlock = ({
         </div>
         {renderOverlayEntries('birth')}
       </div>
-      {/* <div style={{ color: '#856404', fontWeight: 'bold' }}>{nextContactDate}</div> */}
-      <div>
+      <div style={sectionDividerStyle} />
+      <div style={metaSectionStyle}>
         <strong>{buildName(cardData)}</strong>
         {renderOverlayEntries(['surname', 'name', 'fathersname'])}
-        {/* {renderCsection(cardData.csection)}  */}
         <div style={identityMetaStyle}>{renderIdentityMeta(cardData)}</div>
         {renderOverlayEntries(['maritalStatus', 'blood', 'height', 'weight'])}
         {region && <div>{region}</div>}
@@ -799,6 +841,7 @@ const TopBlock = ({
             <div style={inlineModalActionsStyle}>
               <button
                 type="button"
+                style={modalCancelButtonStyle}
                 onClick={() => {
                   setIsCommentModalOpen(false);
                   setSelectedComment(null);
@@ -806,7 +849,7 @@ const TopBlock = ({
               >
                 Скасувати
               </button>
-              <button type="button" onClick={saveMultiComment}>
+              <button type="button" style={modalSaveButtonStyle} onClick={saveMultiComment}>
                 Зберегти
               </button>
             </div>
@@ -832,6 +875,7 @@ const TopBlock = ({
             <div style={inlineModalActionsStyle}>
               <button
                 type="button"
+                style={modalCancelButtonStyle}
                 onClick={() => {
                   setCommentToDelete(null);
                 }}
@@ -840,6 +884,7 @@ const TopBlock = ({
               </button>
               <button
                 type="button"
+                style={modalDeleteButtonStyle}
                 onClick={async () => {
                   await handleDeleteComment(commentToDelete);
                   setCommentToDelete(null);
@@ -908,8 +953,13 @@ const TopBlock = ({
           }
         }}
         style={detailsToggleStyle}
+        title="Оновити дані з бекенду"
+        aria-label="Оновити дані з бекенду"
       >
-        ...
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 12a8 8 0 0 1 14.93-4H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M20 12a8 8 0 0 1-14.93 4H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </div>
     </div>
   );
