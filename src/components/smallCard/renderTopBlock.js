@@ -57,7 +57,7 @@ const topButtonsZoneStyle = {
   transition: 'transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease',
 };
 
-const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1'];
+const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1', '#1565c0', '#6a1b9a'];
 
 const zoneActionButtonStyle = {
   position: 'static',
@@ -722,6 +722,8 @@ const TopBlock = ({
                   </svg>
                 )
               ))}
+            {idx === 5 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#1565c0', color: '#fff' }} aria-label="Додаткова синя кнопка" title="Додаткова синя кнопка" />}
+            {idx === 6 && <button type="button" style={{ ...zoneActionButtonStyle, backgroundColor: '#6a1b9a', color: '#fff' }} aria-label="Додаткова фіолетова кнопка" title="Додаткова фіолетова кнопка" />}
           </div>
         ))}
       </div>
