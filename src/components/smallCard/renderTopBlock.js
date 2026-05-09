@@ -73,7 +73,7 @@ const zoneActionButtonStyle = {
 
 const actionButtonsContainerStyle = {
   position: 'absolute',
-  top: '52px',
+  top: '88px',
   right: '10px',
   display: 'flex',
   flexDirection: 'column',
@@ -101,15 +101,65 @@ const identityMetaStyle = {
   flexWrap: 'wrap',
 };
 
-const contactsWrapperStyle = {
+const cardHeaderStyle = {
+  marginBottom: '8px',
+};
+
+const cardNameStyle = {
+  fontSize: '15px',
+  fontWeight: 700,
+  lineHeight: 1.25,
+  marginBottom: '2px',
+};
+
+const cardIdRowStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '5px',
+  fontSize: '10px',
+  opacity: 0.55,
+  flexWrap: 'wrap',
+};
+
+const statusRowStyle = {
   display: 'flex',
   flexDirection: 'column',
-  alignItems: 'flex-start',
+  gap: '3px',
+  padding: '5px 0',
+  borderTop: '1px solid rgba(255,255,255,0.08)',
+  borderBottom: '1px solid rgba(255,255,255,0.08)',
+  margin: '6px 0',
+};
+
+const bioSectionStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '3px',
+};
+
+const bioRowStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
   gap: '4px',
 };
 
-const commentFieldWrapperStyle = {
-  position: 'relative',
+const contactsSectionStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  gap: '3px',
+  marginTop: '4px',
+};
+
+const commentsSectionStyle = {
+  marginTop: '8px',
+  padding: '6px 8px',
+  borderRadius: '8px',
+  background: 'rgba(255,255,255,0.06)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '4px',
 };
 
 const detailsToggleStyle = {
@@ -226,16 +276,6 @@ const modalDeleteButtonStyle = {
   color: '#fff',
 };
 
-const sectionDividerStyle = {
-  borderTop: '1px solid rgba(255,255,255,0.08)',
-  margin: '6px 0',
-};
-
-const metaSectionStyle = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '2px',
-};
 
 const deleteModalTextStyle = {
   marginTop: '8px',
@@ -579,6 +619,26 @@ const TopBlock = ({
 
   return (
     <div style={topBlockContainerStyle}>
+      <div style={cardHeaderStyle}>
+        <div style={cardNameStyle}>{buildName(cardData)}</div>
+        {renderOverlayEntries(['surname', 'name', 'fathersname'])}
+        <div style={cardIdRowStyle}>
+          {cardData.lastAction && <span>{formatDateToDisplay(normalizeLastAction(cardData.lastAction))}</span>}
+          {cardData.lastAction && cardData.userId && <span>·</span>}
+          {cardData.userId && (
+            <a
+              href={buildRtdbLink(cardData.userId)}
+              target="_blank"
+              rel="noreferrer"
+              title="Відкрити профіль в Firebase RTDB"
+              onClick={event => event.stopPropagation()}
+              style={{ color: 'inherit', textDecoration: 'none' }}
+            >
+              {cardData.userId}
+            </a>
+          )}
+        </div>
+      </div>
       <div style={topButtonsRowStyle}>
         {topButtonsZones.map((zoneColor, idx) => (
           <div
@@ -731,49 +791,32 @@ const TopBlock = ({
         {showSideActions && btnExport(cardData)}
         {additionalActions}
       </div>
-      <div style={metaSectionStyle}>
-        <div>
-          {cardData.lastAction && formatDateToDisplay(normalizeLastAction(cardData.lastAction))}
-          {cardData.lastAction && ', '}
-          {cardData.userId && (
-            <a
-              href={buildRtdbLink(cardData.userId)}
-              target="_blank"
-              rel="noreferrer"
-              title="Відкрити профіль в Firebase RTDB"
-              onClick={event => event.stopPropagation()}
-              style={{ color: 'inherit', textDecoration: 'none' }}
-            >
-              {cardData.userId}
-            </a>
-          )}
-        </div>
+      <div style={statusRowStyle}>
         {fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, submitOptions)}
         {fieldRole(cardData, setUsers, setState, submitOptions)}
         {!hasHiddenCycleFieldRole && <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />}
+      </div>
+      <div style={bioSectionStyle}>
+        <div style={bioRowStyle}>
+          {cardData.birth && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              {cardData.birth} {fieldBirth(cardData.birth)}
+            </span>
+          )}
+          <div style={identityMetaStyle}>{renderIdentityMeta(cardData)}</div>
+        </div>
+        {renderOverlayEntries(['birth', 'maritalStatus', 'blood', 'height', 'weight'])}
         <div>{fieldDeliveryInfo(setUsers, setState, cardData, submitOptions)}</div>
         {renderOverlayEntries(['lastDelivery', 'ownKids'])}
-        <div>
-          {cardData.birth && `${cardData.birth} - `}
-          {cardData.birth && fieldBirth(cardData.birth)}
-        </div>
-        {renderOverlayEntries('birth')}
-      </div>
-      <div style={sectionDividerStyle} />
-      <div style={metaSectionStyle}>
-        <strong>{buildName(cardData)}</strong>
-        {renderOverlayEntries(['surname', 'name', 'fathersname'])}
-        <div style={identityMetaStyle}>{renderIdentityMeta(cardData)}</div>
-        {renderOverlayEntries(['maritalStatus', 'blood', 'height', 'weight'])}
         {region && <div>{region}</div>}
         {renderOverlayEntries('region')}
-        <div style={contactsWrapperStyle}>
-          {fieldContacts(cardData)}
-        </div>
+      </div>
+      <div style={contactsSectionStyle}>
+        {fieldContacts(cardData)}
         {renderOverlayEntries(['phone', 'phone2', 'phone3', 'telegram', 'email', 'facebook', 'instagram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'vk'])}
       </div>
-      {fieldWriter(cardData, setUsers, setState, submitOptions)}
-      <div style={commentFieldWrapperStyle}>
+      <div style={commentsSectionStyle}>
+        {fieldWriter(cardData, setUsers, setState, submitOptions)}
         <FieldComment userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />
         {multiDataComments.map(comment => (
           <div key={comment.commentId || `${comment.authorId}-${comment.text}`} style={multiCommentRowStyle}>
