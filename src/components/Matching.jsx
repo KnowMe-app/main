@@ -1102,6 +1102,16 @@ const MoreInfo = styled.div`
   color: #3e3f4c;
 `;
 
+const Contact = styled.div`
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  font-size: 14px;
+  border-top: ${props => (props.$withBorder ? `1px solid rgba(0, 0, 0, 0.08)` : 'none')};
+  padding-top: ${props => (props.$withBorder ? '10px' : '0')};
+  margin-top: ${props => (props.$withBorder ? '6px' : '0')};
+`;
+
 const Icons = styled.div`
   display: flex;
   gap: 5px;
