@@ -1472,20 +1472,11 @@ const SwipeableCard = ({
   const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
   const regionInfo = normalizeRegion(getCurrentValue(user.region));
   const cityInfo = getCurrentValue(user.city);
-  const isEggDonor = (role || '').includes('ed');
-  const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
-  const regionInfo = normalizeRegion(getCurrentValue(user.region));
-  const cityInfo = getCurrentValue(user.city);
   const locationInfo = isEggDonor
     ? regionInfo || ''
     : getCurrentValue(user.country)
     ? [normalizeCountry(getCurrentValue(user.country)), cityInfo || regionInfo].filter(Boolean).join(', ')
     : cityInfo || regionInfo;
-
-  const displayName = [getCurrentValue(user.name), getCurrentValue(user.surname)]
-    .filter(Boolean)
-    .map(v => String(v).trim())
-    .join(' ');
 
   return (
     <AnimatedCard
