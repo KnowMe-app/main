@@ -232,6 +232,17 @@ const toRoleBucket = user => {
 };
 
 const toUserIdBuckets = userId => {
+  if (userId && typeof userId === 'object' && !Array.isArray(userId)) {
+    const buckets = Object.entries(userId).reduce((acc, [bucketName, bucketValue]) => {
+      if (!bucketValue) return acc;
+      if (typeof bucketValue === 'object' && !Array.isArray(bucketValue) && Object.keys(bucketValue).length === 0) return acc;
+      const normalizedBucket = String(bucketName || '').trim().toLowerCase();
+      if (normalizedBucket) acc.push(normalizedBucket);
+      return acc;
+    }, []);
+    return buckets.length ? [...new Set(buckets)] : ['other'];
+  }
+
   const normalized = String(userId || '').trim().toLowerCase();
   if (!normalized) return ['other'];
   const buckets = [];
