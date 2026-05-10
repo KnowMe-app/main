@@ -64,14 +64,11 @@ import {
   shouldUseServerComment,
 } from '../utils/commentsStorage';
 import {
-  isUserAllowedByAnyAdditionalAccessRule,
   parseAdditionalAccessRuleGroups,
-  resolveAdditionalAccessSearchKeyBuckets,
 } from 'utils/additionalAccessRules';
-import { getCachedSearchKeyPayload } from 'utils/searchKeyCache';
 import {
-  buildNewUsersFilterSetIndex,
   getIndexedNewUsersIdsByRules,
+  normalizeSearchKeySetKeys,
 } from 'utils/newUsersFilterSetsIndex';
 import { resolveMatchingMultiDataOwnerIds } from 'utils/multiDataAccess';
 import { resolvePrioritizedReactionMaps } from 'utils/reactionPriority';
@@ -96,44 +93,23 @@ const filterMatchingUsers = list => list.filter(u => isMatchingCardId(u?.userId)
 const compareUsersByLastLogin2 = (a = {}, b = {}) =>
   (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
 
-const SEARCH_KEY_ROOT = 'searchKey';
-const USERS_SEARCH_KEY_ROOT = `${SEARCH_KEY_ROOT}/users`;
-const SEARCH_KEY_INDEX_NAMES = {
-  blood: 'blood',
-  maritalStatus: 'maritalStatus',
-  csection: 'csection',
-  age: 'age',
-};
-
-const readIndexedIds = async (indexName, values = [], rootPath = SEARCH_KEY_ROOT) => {
-  const uniqueValues = [...new Set(values.filter(Boolean))];
-  if (!indexName || uniqueValues.length === 0) return null;
-
-  const payloads = await Promise.all(
-    uniqueValues.map(value =>
-      getCachedSearchKeyPayload(`${rootPath}/${indexName}/${value}`, async () => {
-        const snapshot = await get(refDb(database, `${rootPath}/${indexName}/${value}`));
-        return {
-          exists: snapshot.exists(),
-          value: snapshot.exists() ? snapshot.val() || {} : null,
-        };
-      })
-    )
-  );
-
-  const ids = new Set();
-  payloads.forEach(payload => {
-    if (!payload?.exists) return;
-    Object.keys(payload.value || {}).forEach(userId => {
-      if (userId) ids.add(userId);
-    });
-  });
-  return ids;
-};
-
 const FETCH_USERS_BY_IDS_BATCH_SIZE = 100;
 
-const fetchUsersAndNewUsersByIds = async (ids, batchSize = FETCH_USERS_BY_IDS_BATCH_SIZE) => {
+const ADDITIONAL_SEARCH_KEY_SET_PROFILE_FIELDS = [
+  'searchKeySetKeys',
+  'searchKeySets',
+  'additionalSearchKeySetKeys',
+  'additionalAccessKeySets',
+  'additionalAccessSearchKeySets',
+  'keySets',
+];
+
+const getAdditionalSearchKeySetKeysFromProfile = profile =>
+  normalizeSearchKeySetKeys(
+    ADDITIONAL_SEARCH_KEY_SET_PROFILE_FIELDS.map(fieldName => profile?.[fieldName])
+  );
+
+const fetchNewUsersByIdsForMatching = async (ids, batchSize = FETCH_USERS_BY_IDS_BATCH_SIZE) => {
   if (!Array.isArray(ids) || ids.length === 0) return [];
 
   const uniqueIds = [...new Set(ids.filter(Boolean))];
@@ -145,32 +121,12 @@ const fetchUsersAndNewUsersByIds = async (ids, batchSize = FETCH_USERS_BY_IDS_BA
     const chunkIds = uniqueIds.slice(offset, offset + safeBatchSize);
     const chunkSnapshots = await Promise.all(
       chunkIds.map(async userId => {
-        const [newUserResult, userResult] = await Promise.allSettled([
-          get(refDb(database, `newUsers/${userId}`)),
-          get(refDb(database, `users/${userId}`)),
-        ]);
-
-        const merged = { userId };
-        let hasAnyData = false;
-
-        if (newUserResult.status === 'fulfilled' && newUserResult.value.exists()) {
-          Object.assign(merged, newUserResult.value.val() || {});
-          hasAnyData = true;
-        }
-
-        if (userResult.status === 'fulfilled' && userResult.value.exists()) {
-          Object.assign(merged, userResult.value.val() || {});
-          hasAnyData = true;
-        }
-
-        if (!hasAnyData) return null;
+        const snapshot = await get(refDb(database, `newUsers/${userId}`));
+        if (!snapshot.exists()) return null;
         return {
-          merged,
-          hasNewUser: newUserResult.status === 'fulfilled' && newUserResult.value.exists(),
-          newUserData:
-            newUserResult.status === 'fulfilled' && newUserResult.value.exists()
-              ? newUserResult.value.val() || {}
-              : null,
+          userId,
+          ...(snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {}),
+          __sourceCollection: 'newUsers',
         };
       })
     );
@@ -182,89 +138,31 @@ const fetchUsersAndNewUsersByIds = async (ids, batchSize = FETCH_USERS_BY_IDS_BA
   return result;
 };
 
-const fetchAdditionalNewUsersBySearchIndex = async ({ parsedRuleGroups, rawRules, accessUserId }) => {
-  if (!Array.isArray(parsedRuleGroups) || parsedRuleGroups.length === 0) return [];
+const fetchAdditionalNewUsersBySearchIndex = async ({
+  rawRules,
+  accessUserId,
+  searchKeySetKeys,
+  offset = 0,
+  limit = FETCH_USERS_BY_IDS_BATCH_SIZE,
+}) => {
+  const indexed = await getIndexedNewUsersIdsByRules({
+    rawRules,
+    accessUserId,
+    searchKeySetKeys,
+    fetchMissingBuckets: true,
+    resultOffset: offset,
+    resultLimit: limit,
+  });
 
-  try {
-    let indexed = await getIndexedNewUsersIdsByRules({
-      rawRules,
-      accessUserId,
-    });
-    if (!indexed) {
-      await buildNewUsersFilterSetIndex({
-        rawRules,
-        accessUserId,
-      });
-      indexed = await getIndexedNewUsersIdsByRules({
-        rawRules,
-        accessUserId,
-      });
-    }
-    if (indexed?.userIds) {
-      const indexedRows = await fetchUsersAndNewUsersByIds(indexed.userIds);
-      return indexedRows
-        .filter(row => row.hasNewUser)
-        .map(row => ({ ...row.merged, __sourceCollection: 'newUsers' }));
-    }
-  } catch (error) {
-    console.error('Failed to load preindexed additional access set; fallback to searchKey buckets', error);
-  }
+  const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
+  const users = await fetchNewUsersByIdsForMatching(userIds);
 
-  const matchedIdsSet = new Set();
-
-  for (const parsedRules of parsedRuleGroups) {
-    const buckets = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
-    const activeSources = Object.entries(buckets || {})
-      .map(([indexName, values]) => ({
-        indexName: SEARCH_KEY_INDEX_NAMES[indexName] || indexName,
-        values: Array.isArray(values) ? values : [...(values || [])],
-      }))
-      .filter(source => source.values.length > 0);
-
-    if (activeSources.length === 0) continue;
-
-    const indexedSets = await Promise.all(
-      activeSources.map(source => readIndexedIds(source.indexName, source.values, USERS_SEARCH_KEY_ROOT))
-    );
-
-    const normalizedSets = indexedSets.filter(set => set instanceof Set);
-    if (normalizedSets.length === 0) continue;
-    if (normalizedSets.some(set => set.size === 0)) {
-      continue;
-    }
-
-    const [firstSet, ...restSets] = normalizedSets;
-    const matchedByCurrentRule = [...firstSet].filter(userId =>
-      restSets.every(set => set.has(userId))
-    );
-    matchedByCurrentRule.forEach(userId => matchedIdsSet.add(userId));
-  }
-
-  const matchedIds = [...matchedIdsSet];
-  if (matchedIds.length === 0) {
-    const newUsersSnapshot = await get(refDb(database, 'newUsers'));
-    if (!newUsersSnapshot.exists()) return [];
-
-    const newUsersMap = newUsersSnapshot.val() || {};
-    return Object.entries(newUsersMap)
-      .map(([userId, userData]) => ({
-        userId,
-        ...(userData && typeof userData === 'object' ? userData : {}),
-      }))
-      .filter(user => isUserAllowedByAnyAdditionalAccessRule(user, parsedRuleGroups))
-      .map(user => ({ ...user, __sourceCollection: 'newUsers' }));
-  }
-
-  const combinedRows = await fetchUsersAndNewUsersByIds(matchedIds);
-  return combinedRows
-    .filter(row => row.hasNewUser)
-    .filter(row =>
-      isUserAllowedByAnyAdditionalAccessRule(
-        { userId: row.merged.userId, ...(row.newUserData || {}) },
-        parsedRuleGroups
-      )
-    )
-    .map(row => ({ ...row.merged, __sourceCollection: 'newUsers' }));
+  return {
+    userIds,
+    users,
+    nextOffset: Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : userIds.length,
+    hasMore: Boolean(indexed?.hasMore),
+  };
 };
 
 const isSameCursor = (a, b) => {
@@ -274,7 +172,6 @@ const isSameCursor = (a, b) => {
 };
 
 const MATCHING_SEARCHKEY_FILTER_KEYS = ['userRole', 'maritalStatus', 'bloodGroup', 'rh', 'age'];
-const MATCHING_ROLE_SEARCH_KEY_BUCKETS = ['ed', 'ag', 'ip', '?', 'no'];
 
 const isFilterGroupActive = group =>
   group && typeof group === 'object' && Object.values(group).some(v => !v);
@@ -475,6 +372,24 @@ const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = null) => 
     return true;
   });
 };
+
+const applyMatchingUiFiltersToUsers = ({
+  users,
+  filters,
+  favoriteUsers,
+  roleIndexSets,
+  collectionSource,
+}) =>
+  applyMatchingSearchKeyFilters(
+    filterMain(
+      users.map(u => [u.userId, u]),
+      null,
+      getMatchingFiltersWithoutSearchKeyGroups(filters),
+      favoriteUsers
+    ).map(([, u]) => u),
+    filters,
+    roleIndexSets
+  ).filter(u => isAllowedIdForCollection(u.userId, collectionSource));
 
 const Container = styled.div`
   display: flex;
@@ -1667,6 +1582,7 @@ const InfoCardContent = ({ user, variant, isAdmin }) => {
 
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 6;
+const ADDITIONAL_BACKFILL_MAX_PAGES = 3;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
 const COLLECTION_SOURCE_KEY = 'matchingCollectionSource';
@@ -1759,8 +1675,12 @@ const Matching = () => {
   const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
     () => localStorage.getItem('additionalAccessRules') || ''
   );
+  const [currentSearchKeySetKeys, setCurrentSearchKeySetKeys] = useState(() =>
+    normalizeSearchKeySetKeys(localStorage.getItem('additionalSearchKeySetKeys') || '')
+  );
   const [additionalNewUsers, setAdditionalNewUsers] = useState([]);
-  const [roleIndexSets, setRoleIndexSets] = useState(null);
+  const [additionalNextOffset, setAdditionalNextOffset] = useState(0);
+  const [roleIndexSets] = useState(null);
   const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: currentAccessLevel });
   const isAdmin = access.isAdmin;
   const parsedAdditionalAccessRules = useMemo(
@@ -1770,6 +1690,19 @@ const Matching = () => {
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
   const additionalRulesToastRef = useRef('');
+  const additionalFiltersSignature = useMemo(() => JSON.stringify(filters || {}), [filters]);
+  const resetAdditionalMatchingState = React.useCallback(({ resetHasMore = true, resetLoading = false } = {}) => {
+    setAdditionalNewUsers([]);
+    setAdditionalNextOffset(0);
+    setLastKey(null);
+    loadedIdsRef.current = new Set();
+    additionalRulesToastRef.current = '';
+    if (resetHasMore) setHasMore(true);
+    if (resetLoading) {
+      loadingRef.current = false;
+      setLoading(false);
+    }
+  }, []);
   const restoreRef = useRef(false);
   const scrollPositionRef = useRef(0);
   const saveScrollPosition = () => {
@@ -1946,18 +1879,23 @@ const Matching = () => {
             const profile = await fetchUserById(user.uid);
             const accessLevel = profile?.accessLevel || '';
             const additionalAccessRules = profile?.additionalAccessRules || '';
+            const searchKeySetKeys = getAdditionalSearchKeySetKeysFromProfile(profile);
 
             setCurrentAccessLevel(accessLevel);
             setCurrentAdditionalAccessRules(additionalAccessRules);
+            setCurrentSearchKeySetKeys(searchKeySetKeys);
             localStorage.setItem('accessLevel', accessLevel);
             localStorage.setItem('additionalAccessRules', additionalAccessRules);
+            localStorage.setItem('additionalSearchKeySetKeys', searchKeySetKeys.join(','));
             setMultiDataOwnerIds(resolveMatchingMultiDataOwnerIds({ viewerId: user.uid, profile }));
           } catch (error) {
             console.error('Failed to refresh access profile on Matching', error);
             const cachedAccessLevel = localStorage.getItem('accessLevel') || '';
             const cachedAdditionalAccessRules = localStorage.getItem('additionalAccessRules') || '';
+            const cachedSearchKeySetKeys = normalizeSearchKeySetKeys(localStorage.getItem('additionalSearchKeySetKeys') || '');
             setCurrentAccessLevel(cachedAccessLevel);
             setCurrentAdditionalAccessRules(cachedAdditionalAccessRules);
+            setCurrentSearchKeySetKeys(cachedSearchKeySetKeys);
           }
         };
 
@@ -1966,6 +1904,7 @@ const Matching = () => {
         localStorage.removeItem('ownerId');
         localStorage.removeItem('accessLevel');
         localStorage.removeItem('additionalAccessRules');
+        localStorage.removeItem('additionalSearchKeySetKeys');
         setOwnerId('');
         setMultiDataOwnerIds([]);
         setFavoriteUsers({});
@@ -1973,7 +1912,8 @@ const Matching = () => {
         setSharedComments({});
         setCurrentAccessLevel('');
         setCurrentAdditionalAccessRules('');
-        setAdditionalNewUsers([]);
+        setCurrentSearchKeySetKeys([]);
+        resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
         return;
       }
 
@@ -1985,7 +1925,7 @@ const Matching = () => {
     return () => {
       unsubscribeAuth();
     };
-  }, []);
+  }, [resetAdditionalMatchingState]);
 
   useEffect(() => {
     const ownerIds = getMatchingMultiDataOwnerIds();
@@ -2032,29 +1972,40 @@ const Matching = () => {
 
     const loadAdditionalNewUsers = async () => {
       if (collectionSource !== 'newUsers') {
-        setAdditionalNewUsers([]);
+        resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
         return;
       }
 
       if (!parsedAdditionalAccessRules || parsedAdditionalAccessRules.length === 0) {
-        setAdditionalNewUsers([]);
-        additionalRulesToastRef.current = '';
+        resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
         return;
       }
+
+      resetAdditionalMatchingState({ resetHasMore: true });
+      loadingRef.current = true;
+      setLoading(true);
 
       try {
         const loaded = await fetchAdditionalNewUsersBySearchIndex({
           parsedRuleGroups: parsedAdditionalAccessRules,
           rawRules: currentAdditionalAccessRules,
           accessUserId: ownerId,
+          searchKeySetKeys: currentSearchKeySetKeys,
+          offset: 0,
+          limit: INITIAL_LOAD,
         });
 
         if (!cancelled) {
-          setAdditionalNewUsers(loaded);
-          const toastSignature = `${currentAdditionalAccessRules}::${loaded.length}`;
+          setAdditionalNewUsers(loaded.users);
+          setAdditionalNextOffset(loaded.nextOffset);
+          loadedIdsRef.current = new Set(loaded.users.map(user => user.userId).filter(Boolean));
+          setHasMore(loaded.hasMore);
+          setLastKey(null);
+          await loadCommentsFor(loaded.users);
+          const toastSignature = `${currentAdditionalAccessRules}::${loaded.nextOffset}${loaded.hasMore ? '+' : ''}`;
           if (additionalRulesToastRef.current !== toastSignature) {
             toast(
-              `Додаткові правила доступу (newUsers): доступно ${loaded.length} карточок для matching.`,
+              `Додаткові правила доступу (newUsers): завантажено ${loaded.nextOffset}${loaded.hasMore ? '+' : ''} карточок для matching.`,
               { icon: 'ℹ️' }
             );
             additionalRulesToastRef.current = toastSignature;
@@ -2063,7 +2014,13 @@ const Matching = () => {
       } catch (error) {
         console.error('Failed to load additional newUsers for matching', error);
         if (!cancelled) {
-          setAdditionalNewUsers([]);
+          resetAdditionalMatchingState({ resetHasMore: false });
+          setHasMore(false);
+        }
+      } finally {
+        if (!cancelled) {
+          loadingRef.current = false;
+          setLoading(false);
         }
       }
     };
@@ -2073,49 +2030,16 @@ const Matching = () => {
     return () => {
       cancelled = true;
     };
-  }, [parsedAdditionalAccessRules, currentAdditionalAccessRules, collectionSource, ownerId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadRoleIndexSets = async () => {
-      try {
-        const snapshots = await Promise.all(
-          MATCHING_ROLE_SEARCH_KEY_BUCKETS.map(async bucket => {
-            const payload = await getCachedSearchKeyPayload(
-              `${USERS_SEARCH_KEY_ROOT}/role/${bucket}`,
-              async () => {
-                const usersSnapshot = await get(refDb(database, `${USERS_SEARCH_KEY_ROOT}/role/${bucket}`));
-                return {
-                  exists: usersSnapshot.exists(),
-                  value: usersSnapshot.exists() ? usersSnapshot.val() || {} : null,
-                };
-              }
-            );
-            return [bucket, payload];
-          })
-        );
-
-        if (cancelled) return;
-
-        const nextSets = snapshots.reduce((acc, [bucket, payload]) => {
-          acc[bucket] = new Set(Object.keys(payload?.exists ? payload.value || {} : {}));
-          return acc;
-        }, {});
-
-        setRoleIndexSets(nextSets);
-      } catch (error) {
-        console.error('Failed to load role searchKey index for matching filters', error);
-        if (!cancelled) setRoleIndexSets(null);
-      }
-    };
-
-    loadRoleIndexSets();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [
+    additionalFiltersSignature,
+    collectionSource,
+    currentAdditionalAccessRules,
+    currentSearchKeySetKeys,
+    loadCommentsFor,
+    ownerId,
+    parsedAdditionalAccessRules,
+    resetAdditionalMatchingState,
+  ]);
 
   const fetchChunk = React.useCallback(
     async (
@@ -2131,6 +2055,10 @@ const Matching = () => {
       let prevCursor;
 
       while (collected.length < limit) {
+        if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
+          break;
+        }
+
         const remaining = limit - collected.length;
         const sourceRes =
           collectionSource === 'newUsers'
@@ -2187,7 +2115,7 @@ const Matching = () => {
         excludedCount,
       };
     },
-    [collectionSource, filters, isAdmin, roleIndexSets]
+    [collectionSource, filters, isAdmin, parsedAdditionalAccessRules.length, roleIndexSets]
   );
 
   const loadInitial = React.useCallback(async () => {
@@ -2237,6 +2165,12 @@ const Matching = () => {
             ...Object.keys(localDis),
           ]);
         }
+      }
+
+      if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
+        setLastKey(null);
+        setViewMode('default');
+        return;
       }
 
       const { cards: cached } = await getCardsByList(defaultListKey);
@@ -2290,7 +2224,7 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, loadCommentsFor]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, loadCommentsFor, parsedAdditionalAccessRules.length]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     viewModeRef.current = 'default';
@@ -2430,7 +2364,7 @@ const Matching = () => {
     }
   };
 
-  const loadMore = React.useCallback(async () => {
+  const loadMore = React.useCallback(async ({ targetVisibleCount = 0, currentVisibleCount = 0 } = {}) => {
     if (!hasMore || loadingRef.current || viewMode !== 'default') {
       console.log('[loadMore] skip', { hasMore, loading: loadingRef.current, viewMode });
       return;
@@ -2443,6 +2377,67 @@ const Matching = () => {
         ...Object.keys(favoriteUsersRef.current),
         ...Object.keys(dislikeUsersRef.current),
       ]);
+
+      if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
+        const collected = [];
+        let nextOffset = additionalNextOffset;
+        let canLoadMoreAdditional = true;
+        let visibleCount = Math.max(0, Number(currentVisibleCount) || 0);
+        const requiredVisibleCount = Math.max(0, Number(targetVisibleCount) || 0);
+        let loadedPages = 0;
+
+        while (
+          canLoadMoreAdditional &&
+          loadedPages < ADDITIONAL_BACKFILL_MAX_PAGES &&
+          (collected.length === 0 || visibleCount < requiredVisibleCount)
+        ) {
+          loadedPages += 1;
+          // eslint-disable-next-line no-await-in-loop
+          const loaded = await fetchAdditionalNewUsersBySearchIndex({
+            rawRules: currentAdditionalAccessRules,
+            accessUserId: ownerId,
+            searchKeySetKeys: currentSearchKeySetKeys,
+            offset: nextOffset,
+            limit: LOAD_MORE,
+          });
+
+          const pageUsers = loaded.users.filter(user =>
+            user?.userId &&
+            !baseExclude.has(user.userId) &&
+            !loadedIdsRef.current.has(user.userId) &&
+            !collected.some(collectedUser => collectedUser.userId === user.userId)
+          );
+          collected.push(...pageUsers);
+
+          const candidateMap = new Map(additionalNewUsers.map(user => [user.userId, user]));
+          collected.forEach(user => candidateMap.set(user.userId, user));
+          visibleCount = applyMatchingUiFiltersToUsers({
+            users: Array.from(candidateMap.values()),
+            filters,
+            favoriteUsers: favoriteUsersRef.current,
+            roleIndexSets,
+            collectionSource,
+          }).length;
+
+          canLoadMoreAdditional = Boolean(loaded.hasMore) && loaded.nextOffset > nextOffset;
+          nextOffset = loaded.nextOffset;
+        }
+
+        collected.forEach(user => {
+          loadedIdsRef.current.add(user.userId);
+          updateCard(user.userId, user);
+        });
+        setAdditionalNewUsers(prev => {
+          const map = new Map(prev.map(user => [user.userId, user]));
+          collected.forEach(user => map.set(user.userId, user));
+          return Array.from(map.values());
+        });
+        await loadCommentsFor(collected);
+        setAdditionalNextOffset(nextOffset);
+        setHasMore(canLoadMoreAdditional);
+        setLastKey(null);
+        return;
+      }
 
       const collected = [];
       let cursor = lastKey;
@@ -2497,7 +2492,23 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [defaultListKey, hasMore, lastKey, viewMode, fetchChunk, loadCommentsFor]);
+  }, [
+    additionalNewUsers,
+    additionalNextOffset,
+    collectionSource,
+    currentAdditionalAccessRules,
+    currentSearchKeySetKeys,
+    defaultListKey,
+    fetchChunk,
+    filters,
+    hasMore,
+    lastKey,
+    loadCommentsFor,
+    ownerId,
+    parsedAdditionalAccessRules.length,
+    roleIndexSets,
+    viewMode,
+  ]);
 
   useEffect(() => {
     console.log('[useEffect] calling loadInitial');
@@ -2518,8 +2529,7 @@ const Matching = () => {
       const allowedBySetKey = new Set(additionalNewUsers.map(user => user.userId).filter(Boolean));
       baseUsers = baseUsers.filter(user => {
         if (user?.__sourceCollection !== 'newUsers') return true;
-        if (collectionSource === 'newUsers' && !allowedBySetKey.has(user.userId)) return false;
-        return isUserAllowedByAnyAdditionalAccessRule(user, parsedAdditionalAccessRules);
+        return collectionSource !== 'newUsers' || allowedBySetKey.has(user.userId);
       });
     }
 
@@ -2560,16 +2570,13 @@ const Matching = () => {
     collectionSource,
   ]);
 
-  const filteredUsers = applyMatchingSearchKeyFilters(
-    filterMain(
-      visibleUsers.map(u => [u.userId, u]),
-      null,
-      getMatchingFiltersWithoutSearchKeyGroups(filters),
-      favoriteUsers
-    ).map(([, u]) => u),
+  const filteredUsers = applyMatchingUiFiltersToUsers({
+    users: visibleUsers,
     filters,
-    roleIndexSets
-  ).filter(u => isAllowedIdForCollection(u.userId, collectionSource));
+    favoriteUsers,
+    roleIndexSets,
+    collectionSource,
+  });
 
   useEffect(() => {
     if (viewMode !== 'default') return;
@@ -2577,7 +2584,10 @@ const Matching = () => {
     if (!hasMore) return;
     if (filteredUsers.length >= INITIAL_LOAD) return;
 
-    loadMore();
+    loadMore({
+      currentVisibleCount: filteredUsers.length,
+      targetVisibleCount: INITIAL_LOAD,
+    });
   }, [filteredUsers.length, hasMore, loadMore, loading, viewMode]);
 
   useEffect(() => {
@@ -2638,8 +2648,8 @@ const Matching = () => {
               value="users"
               checked={collectionSource === 'users'}
               onChange={e => {
+                resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
                 setCollectionSource(e.target.value);
-                reloadDefault();
               }}
             />
             Основна (users)
@@ -2651,8 +2661,8 @@ const Matching = () => {
               value="newUsers"
               checked={collectionSource === 'newUsers'}
               onChange={e => {
+                resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
                 setCollectionSource(e.target.value);
-                reloadDefault();
               }}
             />
             Додаткова (newUsers)
