@@ -1,4 +1,6 @@
-import { get, ref, remove, set, update } from 'firebase/database';
+import { get as firebaseGet, ref, remove, set, update } from 'firebase/database';
+import { withAdminDownloadToast } from 'utils/backendDownloadToast';
+
 import {
   createAgeSearchKeyIndexInCollection,
   createContactSearchKeyIndexInCollection,
@@ -22,6 +24,13 @@ import {
   peekCachedSearchKeyPayload,
   saveCachedAdditionalRulesSetIndex,
 } from './searchKeyCache';
+
+const get = (...args) =>
+  withAdminDownloadToast(firebaseGet(...args), {
+    operation: 'get',
+    source: 'newUsersFilterSetsIndex',
+    path: args[0],
+  });
 
 export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';

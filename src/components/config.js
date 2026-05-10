@@ -1,11 +1,11 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
-import { getDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll } from 'firebase/storage';
+import { collection, doc, getDoc as firebaseGetDoc, getDocs as firebaseGetDocs, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
+import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll } from 'firebase/storage';
 import {
   getDatabase,
   ref as ref2,
-  get,
+  get as firebaseGet,
   remove,
   set,
   update,
@@ -43,6 +43,7 @@ import {
 } from '../utils/searchKeyUtils';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
 import { searchByIndexOn } from './searchByIndexOn';
+import { withAdminDownloadToast } from '../utils/backendDownloadToast';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -64,6 +65,52 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const database = getDatabase(app);
+
+const getCurrentAdminUid = () => auth.currentUser?.uid;
+
+if (typeof window !== 'undefined') {
+  window.__getBackendDownloadToastUid = getCurrentAdminUid;
+}
+
+const get = (...args) =>
+  withAdminDownloadToast(firebaseGet(...args), {
+    getUid: getCurrentAdminUid,
+    operation: 'get',
+    source: 'config',
+    path: args[0],
+  });
+
+const getDoc = (...args) =>
+  withAdminDownloadToast(firebaseGetDoc(...args), {
+    getUid: getCurrentAdminUid,
+    operation: 'getDoc',
+    source: 'config',
+    path: args[0],
+  });
+
+const getDocs = (...args) =>
+  withAdminDownloadToast(firebaseGetDocs(...args), {
+    getUid: getCurrentAdminUid,
+    operation: 'getDocs',
+    source: 'config',
+    path: args[0],
+  });
+
+const listAll = (...args) =>
+  withAdminDownloadToast(firebaseListAll(...args), {
+    getUid: getCurrentAdminUid,
+    operation: 'listAll',
+    source: 'config',
+    path: args[0],
+  });
+
+const getDownloadURL = (...args) =>
+  withAdminDownloadToast(firebaseGetDownloadURL(...args), {
+    getUid: getCurrentAdminUid,
+    operation: 'Storage URL metadata',
+    source: 'config',
+    path: args[0],
+  });
 
 export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 

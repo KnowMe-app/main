@@ -1,5 +1,14 @@
-import { get, ref as ref2, remove, set, update } from 'firebase/database';
+import { get as firebaseGet, ref as ref2, remove, set, update } from 'firebase/database';
+import { withAdminDownloadToast } from 'utils/backendDownloadToast';
+
 import { database } from 'components/config';
+
+const get = (...args) =>
+  withAdminDownloadToast(firebaseGet(...args), {
+    operation: 'get',
+    source: 'multiAccountEdits',
+    path: args[0],
+  });
 
 const EDITS_ROOT = 'multiData/edits';
 const TECHNICAL_FIELD_NAMES = new Set(['lastAction', 'cachedAt']);

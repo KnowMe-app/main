@@ -1,8 +1,17 @@
 import React from 'react';
-import { get, ref } from 'firebase/database';
+import { get as firebaseGet, ref } from 'firebase/database';
+import { withAdminDownloadToast } from 'utils/backendDownloadToast';
+
 import { cacheLoad2Users } from 'utils/load2Storage';
 import { getCard, serializeQueryFilters } from 'utils/cardIndex';
 import { PAGE_SIZE, database } from './config';
+
+const get = (...args) =>
+  withAdminDownloadToast(firebaseGet(...args), {
+    operation: 'get',
+    source: 'LastAction2',
+    path: args[0],
+  });
 
 export const LAST_ACTION2_SORT_MODE = 'LA2';
 export const LAST_ACTION2_FILTER = 'LAST_ACTION2';

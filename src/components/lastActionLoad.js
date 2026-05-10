@@ -6,10 +6,19 @@ import {
   startAt,
   endAt,
   limitToLast,
-  get,
+  get as firebaseGet,
 } from 'firebase/database';
+import { withAdminDownloadToast } from 'utils/backendDownloadToast';
+
 import { PAGE_SIZE, MAX_LOOKBACK_DAYS } from './constants';
 import normalizeLastAction from '../utils/normalizeLastAction';
+
+const get = (...args) =>
+  withAdminDownloadToast(firebaseGet(...args), {
+    operation: 'get',
+    source: 'lastActionLoad',
+    path: args[0],
+  });
 
 const LOOKBACK_BATCH_DAYS = 7;
 const FILTER_CHUNK_SIZE = 40;
