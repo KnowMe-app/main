@@ -6,9 +6,18 @@ import {
   orderByChild,
   equalTo,
   limitToFirst,
-  get,
+  get as firebaseGet,
 } from 'firebase/database';
+import { withAdminDownloadToast } from 'utils/backendDownloadToast';
+
 import { PAGE_SIZE, MAX_LOOKBACK_DAYS } from './constants';
+
+const get = (...args) =>
+  withAdminDownloadToast(firebaseGet(...args), {
+    operation: 'get',
+    source: 'lastLoginLoad',
+    path: args[0],
+  });
 
 export async function defaultFetchByLastLogin(dateStr, limit) {
   const db = getDatabase();

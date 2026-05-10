@@ -23,7 +23,9 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
 } from './config';
-import { get, onValue, ref as refDb, query, orderByChild, endAt, limitToLast } from 'firebase/database';
+import { get as firebaseGet, onValue as firebaseOnValue, ref as refDb, query, orderByChild, endAt, limitToLast } from 'firebase/database';
+import { withAdminDownloadToast, wrapAdminOnValue } from 'utils/backendDownloadToast';
+
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
@@ -72,6 +74,18 @@ import {
 } from 'utils/newUsersFilterSetsIndex';
 import { resolveMatchingMultiDataOwnerIds } from 'utils/multiDataAccess';
 import { resolvePrioritizedReactionMaps } from 'utils/reactionPriority';
+
+const get = (...args) =>
+  withAdminDownloadToast(firebaseGet(...args), {
+    operation: 'get',
+    source: 'Matching',
+    path: args[0],
+  });
+
+const onValue = wrapAdminOnValue(firebaseOnValue, {
+  operation: 'onValue',
+  source: 'Matching',
+});
 
 // Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
 const isValidId = id => typeof id === 'string' && id.length >= 20;

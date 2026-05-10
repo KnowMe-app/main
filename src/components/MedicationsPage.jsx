@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
-import { onValue } from 'firebase/database';
+import { onValue as firebaseOnValue } from 'firebase/database';
+import { wrapAdminOnValue } from 'utils/backendDownloadToast';
 import { FiCopy, FiImage, FiTrash2, FiUpload, FiX } from 'react-icons/fi';
 import PhotoViewer from './PhotoViewer';
 import MedicationSchedule from './MedicationSchedule';
@@ -19,6 +20,11 @@ import {
 import { formatMedicationScheduleForClipboard } from '../utils/medicationClipboard';
 import { isMedicationPhotoUrl } from '../utils/photoFilters';
 import { MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
+
+const onValue = wrapAdminOnValue(firebaseOnValue, {
+  operation: 'onValue',
+  source: 'MedicationsPage',
+});
 
 const normalizePhotosArray = rawPhotos => {
   if (Array.isArray(rawPhotos)) {

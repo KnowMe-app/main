@@ -1,6 +1,8 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import styled, { css } from 'styled-components';
-import { endAt, get, orderByKey, query, ref as refDb, startAt } from 'firebase/database';
+import { endAt, get as firebaseGet, orderByKey, query, ref as refDb, startAt } from 'firebase/database';
+import { withAdminDownloadToast } from 'utils/backendDownloadToast';
+
 import Photos from './Photos';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -39,6 +41,13 @@ import {
   saveCachedAdditionalRulesPreview,
 } from 'utils/searchKeyCache';
 import { MULTI_DATA_ACCESS_FIELD } from 'utils/multiDataAccess';
+
+const get = (...args) =>
+  withAdminDownloadToast(firebaseGet(...args), {
+    operation: 'get',
+    source: 'ProfileForm',
+    path: args[0],
+  });
 
 const getImtAllowedUserIdsFromSearchKey = (searchKeyPayload, imtValues) => {
   const normalizedImtValues = [...new Set((Array.isArray(imtValues) ? imtValues : []).filter(Boolean))];

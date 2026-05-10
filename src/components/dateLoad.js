@@ -1,5 +1,14 @@
-import { getDatabase, ref as ref2, query, orderByChild, equalTo, limitToFirst, get } from 'firebase/database';
+import { getDatabase, ref as ref2, query, orderByChild, equalTo, limitToFirst, get as firebaseGet } from 'firebase/database';
+import { withAdminDownloadToast } from 'utils/backendDownloadToast';
+
 import { PAGE_SIZE, INVALID_DATE_TOKENS, MAX_LOOKBACK_DAYS } from './constants';
+
+const get = (...args) =>
+  withAdminDownloadToast(firebaseGet(...args), {
+    operation: 'get',
+    source: 'dateLoad',
+    path: args[0],
+  });
 
 export async function defaultFetchByDate(dateStr, limit) {
   const db = getDatabase();

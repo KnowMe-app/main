@@ -95,7 +95,8 @@ import SearchBar, { detectSearchParams } from './SearchBar';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import { PAGE_SIZE, database } from './config';
-import { get, onValue, push, ref } from 'firebase/database';
+import { get as firebaseGet, onValue as firebaseOnValue, push, ref } from 'firebase/database';
+import { withAdminDownloadToast, wrapAdminOnValue } from 'utils/backendDownloadToast';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 import {
@@ -126,6 +127,18 @@ import {
   restoreLA2State,
   serializeLA2State,
 } from './LastAction2Mode';
+
+const get = (...args) =>
+  withAdminDownloadToast(firebaseGet(...args), {
+    operation: 'get',
+    source: 'AddNewProfile',
+    path: args[0],
+  });
+
+const onValue = wrapAdminOnValue(firebaseOnValue, {
+  operation: 'onValue',
+  source: 'AddNewProfile',
+});
 
 const Container = styled.div`
   display: flex;
