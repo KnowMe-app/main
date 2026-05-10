@@ -18,7 +18,7 @@ import {
   resolveAdditionalAccessSearchKeyBuckets,
 } from './additionalAccessRules';
 import {
-  getCachedAdditionalRulesSetIndex,
+  getCachedSearchKeyPayload,
   peekCachedSearchKeyPayload,
   saveCachedAdditionalRulesSetIndex,
 } from './searchKeyCache';
@@ -33,6 +33,37 @@ const normalizePathSegment = value => {
   if (!raw) return '';
   const hasForbiddenChars = FORBIDDEN_RTDB_SEGMENT_CHARS.some(char => raw.includes(char));
   return hasForbiddenChars ? encodeKey(raw) : raw;
+};
+
+const normalizeSearchKeySetKey = value =>
+  normalizePathSegment(String(value || '').trim().replace(/^\/?searchKeySets\//, ''));
+
+export const normalizeSearchKeySetKeys = rawKeys => {
+  const collect = value => {
+    if (!value) return [];
+
+    if (typeof value === 'string') {
+      return value
+        .split(/[\n,;\s]+/)
+        .map(normalizeSearchKeySetKey)
+        .filter(Boolean);
+    }
+
+    if (Array.isArray(value)) {
+      return value.flatMap(collect);
+    }
+
+    if (typeof value === 'object') {
+      return Object.entries(value).flatMap(([key, valueByKey]) => {
+        if (valueByKey === true) return collect(key);
+        return collect(valueByKey);
+      });
+    }
+
+    return [];
+  };
+
+  return [...new Set(collect(rawKeys))];
 };
 
 const mergeSearchKeyBuckets = parsedRuleGroups => {
@@ -849,25 +880,31 @@ export const buildNewUsersFilterSetIndex = async ({
   };
 };
 
-export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) => {
+export const getIndexedNewUsersIdsByRules = async ({
+  rawRules,
+  accessUserId,
+  searchKeySetKeys = [],
+  fetchMissingBuckets = false,
+  resultOffset = 0,
+  resultLimit = Number.POSITIVE_INFINITY,
+}) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   if (!normalizedAccessUserId) return null;
 
-  const cachedIndexedSet = getCachedAdditionalRulesSetIndex({
-    rawRules,
-    accessUserId: normalizedAccessUserId,
-  });
-
+  const explicitSetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
   const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
-  const setEntries = ruleSetEntries
+  const ruleBucketEntries = ruleSetEntries
     .map(({ text: setText, inputIndex }) => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
       if (!parsedRuleGroups.length) return null;
-      const { bucketMap } = prepareAdditionalAccessBucketMapForSearchKey(mergeSearchKeyBuckets(parsedRuleGroups));
-      const indexBuckets = Object.entries(bucketMap || {}).reduce((acc, [indexName, rawValues]) => {
+
+      const bucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
+      const { bucketMap: preparedBucketMap } = prepareAdditionalAccessBucketMapForSearchKey(bucketMap);
+      const indexBuckets = Object.entries(preparedBucketMap || {}).reduce((acc, [indexName, rawValues]) => {
         const normalizedIndexName = normalizePathSegment(indexName);
         if (!normalizedIndexName) return acc;
         if (normalizedIndexName === 'imt' || normalizedIndexName === 'users') return acc;
+
         const values = [
           ...new Set(
             (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
@@ -880,132 +917,130 @@ export const getIndexedNewUsersIdsByRules = async ({ rawRules, accessUserId }) =
       }, {});
       if (!Object.keys(indexBuckets).length) return null;
 
-      const setKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
-      if (!setKey) return null;
-      const paths = Object.entries(indexBuckets).flatMap(([indexName, values]) =>
-        values.map(value => `${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${value}`)
-      );
-      return { setKey, paths, indexBuckets };
+      const defaultSetKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
+      if (!defaultSetKey && explicitSetKeys.length === 0) return null;
+      return { defaultSetKey, indexBuckets };
     })
     .filter(Boolean);
-  if (!setEntries.length) return null;
 
-  const buildIndexedResultFromSetsMap = setsMap => {
-    if (!setsMap || typeof setsMap !== 'object') return null;
-
-    const userIds = new Set();
-    const setKeys = [];
-    for (const entry of setEntries) {
-      const setNode = setsMap?.[entry.setKey];
-      if (!setNode || typeof setNode !== 'object') return null;
-
-      Object.entries(entry.indexBuckets).forEach(([indexName, values]) => {
-        values.forEach(value => {
-          const bucketValue = setNode?.[indexName]?.[value];
-          if (!bucketValue || typeof bucketValue !== 'object') {
-            throw new Error('MISSING_BUCKET');
-          }
-          setKeys.push(`${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}/${value}`);
-          Object.keys(bucketValue).forEach(userId => {
-            if (userId) userIds.add(userId);
-          });
-        });
-      });
-    }
-
-    return {
-      setKeys,
-      userIds: [...userIds],
-      ownerId: normalizedAccessUserId,
-    };
-  };
-
-  if (cachedIndexedSet) {
-    try {
-      const cachedResult = buildIndexedResultFromSetsMap(cachedIndexedSet);
-      if (cachedResult) return cachedResult;
-    } catch {
-      // ignore malformed or incomplete cache and fallback to searchKey cache payload lookup
-    }
-  }
-
-  const payloadsBySet = await Promise.all(
-    setEntries.map(async entry => {
-      const payloads = await Promise.all(
-        entry.paths.map(path => Promise.resolve(peekCachedSearchKeyPayload(path)))
-      );
-      return { setKey: entry.setKey, paths: entry.paths, payloads };
-    })
-  );
-
-  const hasMissingSetPayloads = payloadsBySet.some(item => item.payloads.some(payload => !payload?.exists));
-  if (hasMissingSetPayloads) {
-    const fallbackSearchKeyPayloads = await Promise.all(
-      setEntries.map(async entry => {
-        const paths = Object.entries(entry.indexBuckets).flatMap(([indexName, values]) =>
-          values.map(value => `searchKey/${indexName}/${value}`)
-        );
-        const payloads = await Promise.all(
-          paths.map(path => Promise.resolve(peekCachedSearchKeyPayload(path)))
-        );
-        return { paths, payloads };
-      })
-    );
-
-    if (fallbackSearchKeyPayloads.some(item => item.payloads.some(payload => !payload?.exists))) {
-      return null;
-    }
-
-    const userIds = new Set();
-    fallbackSearchKeyPayloads.forEach(item => {
-      item.payloads.forEach(payload => {
-        Object.keys(payload?.value || {}).forEach(userId => {
-          if (userId) userIds.add(userId);
-        });
-      });
-    });
-
-    return {
-      setKeys: fallbackSearchKeyPayloads.flatMap(item => item.paths),
-      userIds: [...userIds],
-      ownerId: normalizedAccessUserId,
-    };
-  }
-
-  const userIds = new Set();
-  const setsMap = {};
-  payloadsBySet.forEach(item => {
-    setsMap[item.setKey] = setsMap[item.setKey] && typeof setsMap[item.setKey] === 'object'
-      ? setsMap[item.setKey]
-      : {};
-    item.payloads.forEach(payload => {
-      Object.keys(payload?.value || {}).forEach(userId => {
-        if (userId) userIds.add(userId);
-      });
-    });
-    item.paths.forEach((path, pathIndex) => {
-      const [, setKey, indexName, value] = String(path).split('/');
-      if (!setKey || !indexName || !value) return;
-      const payloadValue = item.payloads[pathIndex]?.value;
-      if (!payloadValue || typeof payloadValue !== 'object') return;
-      if (!setsMap[setKey][indexName] || typeof setsMap[setKey][indexName] !== 'object') {
-        setsMap[setKey][indexName] = {};
-      }
-      setsMap[setKey][indexName][value] = payloadValue;
-    });
+  const setEntries = ruleBucketEntries.flatMap(entry => {
+    const setKeys = explicitSetKeys.length ? explicitSetKeys : [entry.defaultSetKey];
+    return setKeys.filter(Boolean).map(setKey => ({ setKey, indexBuckets: entry.indexBuckets }));
   });
 
-  const result = {
-    setKeys: payloadsBySet.flatMap(item => item.paths),
-    userIds: [...userIds],
-    ownerId: normalizedAccessUserId,
+  if (!setEntries.length) return { setKeys: [], userIds: [], ownerId: normalizedAccessUserId };
+
+  const readBucketPayload = async path => {
+    const cached = peekCachedSearchKeyPayload(path);
+    if (cached && typeof cached.exists === 'boolean') return cached;
+    if (!fetchMissingBuckets) return null;
+
+    try {
+      return await getCachedSearchKeyPayload(path, async () => {
+        const snapshot = await get(ref(database, path));
+        return {
+          exists: snapshot.exists(),
+          value: snapshot.exists() ? snapshot.val() || {} : null,
+        };
+      });
+    } catch (error) {
+      console.warn('[searchKeySets] Failed to read bucket; treating as empty without searchKey fallback', {
+        path,
+        error,
+      });
+      return { exists: false, value: null };
+    }
   };
+
+  const setsMap = {};
+  const resultPaths = [];
+  const pageUserIds = [];
+  const seenMatchedIds = new Set();
+  const safeResultOffset = Math.max(0, Number(resultOffset) || 0);
+  const numericResultLimit = Number(resultLimit);
+  const safeResultLimit = Number.isFinite(numericResultLimit)
+    ? Math.max(0, numericResultLimit)
+    : Number.POSITIVE_INFINITY;
+  let matchedIndex = 0;
+  let hasMore = false;
+
+  const addMatchedUserId = userId => {
+    if (!userId || seenMatchedIds.has(userId)) return false;
+    seenMatchedIds.add(userId);
+
+    if (matchedIndex < safeResultOffset) {
+      matchedIndex += 1;
+      return false;
+    }
+
+    if (pageUserIds.length < safeResultLimit) {
+      pageUserIds.push(userId);
+      matchedIndex += 1;
+      return false;
+    }
+
+    hasMore = true;
+    return true;
+  };
+
+  for (const entry of setEntries) {
+    const filterSets = [];
+
+    for (const [indexName, values] of Object.entries(entry.indexBuckets)) {
+      const idsForFilter = new Set();
+
+      for (const value of values) {
+        const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}/${value}`;
+        resultPaths.push(path);
+
+        // eslint-disable-next-line no-await-in-loop
+        const payload = await readBucketPayload(path);
+        const bucketValue = payload?.exists && payload.value && typeof payload.value === 'object'
+          ? payload.value
+          : {};
+
+        if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
+        if (!setsMap[entry.setKey][indexName]) setsMap[entry.setKey][indexName] = {};
+        setsMap[entry.setKey][indexName][value] = bucketValue;
+
+        Object.keys(bucketValue)
+          .sort((a, b) => a.localeCompare(b))
+          .forEach(userId => {
+            if (userId) idsForFilter.add(userId);
+          });
+      }
+
+      filterSets.push(idsForFilter);
+    }
+
+    if (!filterSets.length || filterSets.some(set => set.size === 0)) {
+      // Empty or missing searchKeySets buckets mean this rule set allows no cards.
+      // Do not fallback to searchKey/searchKeyFile/newUsers scans.
+      continue;
+    }
+
+    const [firstSet, ...restSets] = filterSets;
+    for (const userId of firstSet) {
+      if (!restSets.every(set => set.has(userId))) continue;
+      if (addMatchedUserId(userId)) break;
+    }
+
+    if (hasMore) break;
+  }
+
   saveCachedAdditionalRulesSetIndex({
     rawRules,
     accessUserId: normalizedAccessUserId,
     setsMap,
   });
-  return result;
+
+  return {
+    setKeys: resultPaths,
+    userIds: pageUserIds,
+    ownerId: normalizedAccessUserId,
+    nextOffset: safeResultOffset + pageUserIds.length,
+    hasMore,
+  };
 };
 
 const getMatchedUserIdsFromSearchKey = async parsedRuleGroups => {
