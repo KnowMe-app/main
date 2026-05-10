@@ -109,6 +109,29 @@ const getAdditionalSearchKeySetKeysFromProfile = profile =>
     ADDITIONAL_SEARCH_KEY_SET_PROFILE_FIELDS.map(fieldName => profile?.[fieldName])
   );
 
+const sortAdditionalSearchKeySetKeys = keys =>
+  [...keys].sort((a, b) => {
+    const ai = Number(String(a).split('_').pop()) || 0;
+    const bi = Number(String(b).split('_').pop()) || 0;
+    return ai - bi;
+  });
+
+async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserId) {
+  const keysFromProfile = getAdditionalSearchKeySetKeysFromProfile(profile);
+  if (keysFromProfile.length) return keysFromProfile;
+
+  const normalizedAccessUserId = String(accessUserId || '').trim();
+  if (!normalizedAccessUserId) return [];
+
+  const snap = await get(refDb(database, 'searchKeySets'));
+  if (!snap.exists()) return [];
+
+  const keysFromSearchKeySetsRoot = Object.keys(snap.val() || {})
+    .filter(key => key.startsWith(`${normalizedAccessUserId}_`));
+
+  return sortAdditionalSearchKeySetKeys(normalizeSearchKeySetKeys(keysFromSearchKeySetsRoot));
+}
+
 const fetchNewUsersByIdsForMatching = async (ids, batchSize = FETCH_USERS_BY_IDS_BATCH_SIZE) => {
   if (!Array.isArray(ids) || ids.length === 0) return [];
 
@@ -155,7 +178,10 @@ const fetchAdditionalNewUsersBySearchIndex = async ({
   });
 
   const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
+  console.info('[Matching][additionalNewUsers] indexedUserIdsCount', userIds.length);
+
   const users = await fetchNewUsersByIdsForMatching(userIds);
+  console.info('[Matching][additionalNewUsers] fetchedUsersCount', users.length);
 
   return {
     userIds,
@@ -1879,7 +1905,9 @@ const Matching = () => {
             const profile = await fetchUserById(user.uid);
             const accessLevel = profile?.accessLevel || '';
             const additionalAccessRules = profile?.additionalAccessRules || '';
-            const searchKeySetKeys = getAdditionalSearchKeySetKeysFromProfile(profile);
+            const searchKeySetKeys = await resolveAdditionalSearchKeySetKeysForMatching(profile, user.uid);
+
+            console.info('[Matching][additionalNewUsers] resolvedSearchKeySetKeys', searchKeySetKeys);
 
             setCurrentAccessLevel(accessLevel);
             setCurrentAdditionalAccessRules(additionalAccessRules);
@@ -1893,9 +1921,13 @@ const Matching = () => {
             const cachedAccessLevel = localStorage.getItem('accessLevel') || '';
             const cachedAdditionalAccessRules = localStorage.getItem('additionalAccessRules') || '';
             const cachedSearchKeySetKeys = normalizeSearchKeySetKeys(localStorage.getItem('additionalSearchKeySetKeys') || '');
+            const fallbackSearchKeySetKeys = cachedSearchKeySetKeys.length
+              ? cachedSearchKeySetKeys
+              : await resolveAdditionalSearchKeySetKeysForMatching(null, user.uid);
+            console.info('[Matching][additionalNewUsers] resolvedSearchKeySetKeys', fallbackSearchKeySetKeys);
             setCurrentAccessLevel(cachedAccessLevel);
             setCurrentAdditionalAccessRules(cachedAdditionalAccessRules);
-            setCurrentSearchKeySetKeys(cachedSearchKeySetKeys);
+            setCurrentSearchKeySetKeys(fallbackSearchKeySetKeys);
           }
         };
 
@@ -1986,11 +2018,17 @@ const Matching = () => {
       setLoading(true);
 
       try {
+        const resolvedSearchKeySetKeys = currentSearchKeySetKeys.length
+          ? currentSearchKeySetKeys
+          : await resolveAdditionalSearchKeySetKeysForMatching(null, ownerId);
+
+        console.info('[Matching][additionalNewUsers] resolvedSearchKeySetKeys', resolvedSearchKeySetKeys);
+
         const loaded = await fetchAdditionalNewUsersBySearchIndex({
           parsedRuleGroups: parsedAdditionalAccessRules,
           rawRules: currentAdditionalAccessRules,
           accessUserId: ownerId,
-          searchKeySetKeys: currentSearchKeySetKeys,
+          searchKeySetKeys: resolvedSearchKeySetKeys,
           offset: 0,
           limit: INITIAL_LOAD,
         });
@@ -2393,10 +2431,16 @@ const Matching = () => {
         ) {
           loadedPages += 1;
           // eslint-disable-next-line no-await-in-loop
+          const resolvedSearchKeySetKeys = currentSearchKeySetKeys.length
+            ? currentSearchKeySetKeys
+            : await resolveAdditionalSearchKeySetKeysForMatching(null, ownerId);
+
+          console.info('[Matching][additionalNewUsers] resolvedSearchKeySetKeys', resolvedSearchKeySetKeys);
+
           const loaded = await fetchAdditionalNewUsersBySearchIndex({
             rawRules: currentAdditionalAccessRules,
             accessUserId: ownerId,
-            searchKeySetKeys: currentSearchKeySetKeys,
+            searchKeySetKeys: resolvedSearchKeySetKeys,
             offset: nextOffset,
             limit: LOAD_MORE,
           });
