@@ -81,15 +81,29 @@ const DEBUG_ADDITIONAL_MATCHING_USER_ID = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
 const shouldDebugAdditionalMatching = (...ids) =>
   ids.some(id => String(id || '').trim() === DEBUG_ADDITIONAL_MATCHING_USER_ID);
 
+const formatDebugToastValue = value => {
+  if (Array.isArray(value)) {
+    const preview = value.slice(0, 8).map(item => String(item)).join(', ');
+    return `[${preview}${value.length > 8 ? ', …' : ''}] (${value.length})`;
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value);
+    const preview = entries
+      .slice(0, 6)
+      .map(([entryKey, entryValue]) => `${entryKey}: ${Array.isArray(entryValue) ? `[${entryValue.slice(0, 4).join(', ')}]` : String(entryValue)}`)
+      .join(', ');
+    return `{${preview}${entries.length > 6 ? ', …' : ''}}`;
+  }
+
+  return String(value);
+};
+
 const debugAdditionalToast = (accessUserId, message, data = {}) => {
   if (!shouldDebugAdditionalMatching(accessUserId)) return;
 
   const compact = Object.entries(data)
-    .map(([key, value]) => {
-      if (Array.isArray(value)) return `${key}: ${value.length}`;
-      if (value && typeof value === 'object') return `${key}: ${Object.keys(value).length}`;
-      return `${key}: ${value}`;
-    })
+    .map(([key, value]) => `${key}: ${formatDebugToastValue(value)}`)
     .join(', ');
 
   toast(`[ADD newUsers] ${message}${compact ? ` | ${compact}` : ''}`, {
@@ -251,18 +265,23 @@ const fetchAdditionalNewUsersBySearchIndex = async ({
   rawRules,
   accessUserId,
   searchKeySetKeys,
+  collectionSource = 'newUsers',
   offset = 0,
   limit = FETCH_USERS_BY_IDS_BATCH_SIZE,
 }) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
 
-  debugAdditionalToast(normalizedAccessUserId, 'index request', {
-    rawRules,
+  const indexRequestDebugData = {
+    collectionSource,
     accessUserId: normalizedAccessUserId,
+    rawRules,
     searchKeySetKeys,
     offset,
     limit,
-  });
+  };
+
+  console.info('[Matching][additionalNewUsers] getIndexedNewUsersIdsByRules request', indexRequestDebugData);
+  debugAdditionalToast(normalizedAccessUserId, 'before getIndexedNewUsersIdsByRules', indexRequestDebugData);
 
   const indexed = await getIndexedNewUsersIdsByRules({
     rawRules,
@@ -271,6 +290,8 @@ const fetchAdditionalNewUsersBySearchIndex = async ({
     fetchMissingBuckets: true,
     resultOffset: offset,
     resultLimit: limit,
+    debugMatchingFlow: shouldDebugAdditionalMatching(normalizedAccessUserId),
+    debugToast: (message, data) => debugAdditionalToast(normalizedAccessUserId, message, data),
   });
 
   const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
@@ -2153,6 +2174,7 @@ const Matching = () => {
           rawRules: currentAdditionalAccessRules,
           accessUserId: ownerId,
           searchKeySetKeys: resolvedSearchKeySetKeys,
+          collectionSource,
           offset: 0,
           limit: INITIAL_LOAD,
         });
@@ -2565,6 +2587,7 @@ const Matching = () => {
             rawRules: currentAdditionalAccessRules,
             accessUserId: ownerId,
             searchKeySetKeys: resolvedSearchKeySetKeys,
+            collectionSource,
             offset: nextOffset,
             limit: LOAD_MORE,
           });

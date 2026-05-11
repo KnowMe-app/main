@@ -911,11 +911,27 @@ export const getIndexedNewUsersIdsByRules = async ({
   fetchMissingBuckets = false,
   resultOffset = 0,
   resultLimit = Number.POSITIVE_INFINITY,
+  debugMatchingFlow = false,
+  debugToast,
 }) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
+  const emitDebug = (message, data = {}) => {
+    if (!debugMatchingFlow) return;
+
+    console.info('[getIndexedNewUsersIdsByRules][additionalNewUsers]', message, data);
+    if (typeof debugToast === 'function') {
+      debugToast(`getIndexed: ${message}`, data);
+    }
+  };
+
   if (!normalizedAccessUserId) return null;
 
   const explicitSetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
+  emitDebug('normalized searchKeySetKeys', {
+    accessUserId: normalizedAccessUserId,
+    searchKeySetKeys: explicitSetKeys,
+  });
+
   const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
   const ruleBucketEntries = ruleSetEntries
     .map(({ text: setText, inputIndex }) => {
@@ -943,20 +959,39 @@ export const getIndexedNewUsersIdsByRules = async ({
 
       const defaultSetKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
       if (!defaultSetKey && explicitSetKeys.length === 0) return null;
-      return { defaultSetKey, indexBuckets };
+      return { defaultSetKey, inputIndex, indexBuckets };
     })
     .filter(Boolean);
+
+  emitDebug('parsed rule buckets', {
+    ruleSetCount: ruleSetEntries.length,
+    bucketSetCount: ruleBucketEntries.length,
+    ruleBuckets: ruleBucketEntries.map(entry => ({
+      setKey: entry.defaultSetKey,
+      inputIndex: entry.inputIndex,
+      indexBuckets: entry.indexBuckets,
+    })),
+  });
 
   const setEntries = ruleBucketEntries.flatMap(entry => {
     const setKeys = explicitSetKeys.length ? explicitSetKeys : [entry.defaultSetKey];
     return [...new Set(setKeys.filter(Boolean))].map(setKey => ({ setKey, indexBuckets: entry.indexBuckets }));
   });
 
-  if (!setEntries.length) return { setKeys: [], userIds: [], ownerId: normalizedAccessUserId };
+  if (!setEntries.length) {
+    emitDebug('final userIds before pagination', { userIds: [], count: 0 });
+    emitDebug('returned userIds after pagination', { userIds: [], count: 0, offset: resultOffset, limit: resultLimit });
+    return { setKeys: [], userIds: [], ownerId: normalizedAccessUserId };
+  }
 
   const readBucketPayload = async path => {
     const cached = peekCachedSearchKeyPayload(path);
-    if (cached && typeof cached.exists === 'boolean') return cached;
+    if (cached && typeof cached.exists === 'boolean') {
+      emitDebug('cache hit', { path, exists: cached.exists });
+      return cached;
+    }
+
+    emitDebug('cache miss', { path });
 
     try {
       const payload = await getCachedSearchKeyPayload(path, async () => {
@@ -997,12 +1032,21 @@ export const getIndexedNewUsersIdsByRules = async ({
       for (const value of values) {
         const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}/${value}`;
         resultPaths.push(path);
+        emitDebug('reading Firebase path', { path, setKey: entry.setKey, indexName, value });
 
         // eslint-disable-next-line no-await-in-loop
         const payload = await readBucketPayload(path);
         const bucketValue = payload?.exists && payload.value && typeof payload.value === 'object'
           ? payload.value
           : {};
+
+        emitDebug('ids count from bucket', {
+          path,
+          setKey: entry.setKey,
+          indexName,
+          value,
+          idsCount: Object.keys(bucketValue).filter(Boolean).length,
+        });
 
         if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
         if (!setsMap[entry.setKey][indexName]) setsMap[entry.setKey][indexName] = {};
@@ -1034,12 +1078,26 @@ export const getIndexedNewUsersIdsByRules = async ({
   }
 
   const finalUserIds = [...matchedUserIds];
+  emitDebug('final userIds before pagination', {
+    userIds: finalUserIds,
+    count: finalUserIds.length,
+  });
+
   const pageUserIds = finalUserIds.slice(
     safeResultOffset,
     safeResultLimit === Number.POSITIVE_INFINITY ? undefined : safeResultOffset + safeResultLimit
   );
   const nextOffset = safeResultOffset + pageUserIds.length;
   const hasMore = nextOffset < finalUserIds.length;
+
+  emitDebug('returned userIds after pagination', {
+    userIds: pageUserIds,
+    count: pageUserIds.length,
+    offset: safeResultOffset,
+    limit: safeResultLimit,
+    nextOffset,
+    hasMore,
+  });
 
   saveCachedAdditionalRulesSetIndex({
     rawRules,
