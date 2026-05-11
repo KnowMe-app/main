@@ -36,6 +36,7 @@ export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
 const FORBIDDEN_RTDB_SEGMENT_CHARS = ['.', '#', '$', '/', '[', ']'];
 const SEARCH_KEY_SET_KEYS_OBJECT_FIELDS = [
+  'searchKeySetsOfExactUser',
   'searchKeySetKeys',
   'searchKeySets',
   'additionalSearchKeySetKeys',
@@ -908,6 +909,7 @@ export const getIndexedNewUsersIdsByRules = async ({
   rawRules,
   accessUserId,
   searchKeySetKeys = [],
+  searchKeySetsOfExactUser,
   fetchMissingBuckets = false,
   resultOffset = 0,
   resultLimit = Number.POSITIVE_INFINITY,
@@ -926,10 +928,12 @@ export const getIndexedNewUsersIdsByRules = async ({
 
   if (!normalizedAccessUserId) return null;
 
-  const explicitSetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
-  emitDebug('normalized searchKeySetKeys', {
+  const explicitSetKeys = normalizeSearchKeySetKeys(
+    searchKeySetsOfExactUser !== undefined ? searchKeySetsOfExactUser : searchKeySetKeys
+  );
+  emitDebug('normalized searchKeySetsOfExactUser', {
     accessUserId: normalizedAccessUserId,
-    searchKeySetKeys: explicitSetKeys,
+    searchKeySetsOfExactUser: explicitSetKeys,
   });
 
   const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
@@ -1009,6 +1013,11 @@ export const getIndexedNewUsersIdsByRules = async ({
         path,
         fetchMissingBuckets,
         error,
+      });
+      emitDebug('Firebase bucket read error', {
+        path,
+        fetchMissingBuckets,
+        error: error?.message || String(error),
       });
       return { exists: false, value: null };
     }
