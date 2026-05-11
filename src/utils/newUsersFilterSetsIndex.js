@@ -34,6 +34,7 @@ const get = (...args) =>
 
 export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
+export const INVALID_SETKEY_OWNER_PREFIX = 'INVALID_SETKEY_OWNER_PREFIX';
 const FORBIDDEN_RTDB_SEGMENT_CHARS = ['.', '#', '$', '/', '[', ']'];
 const SEARCH_KEY_SET_KEYS_OBJECT_FIELDS = [
   'searchKeySetsOfExactUser',
@@ -935,12 +936,23 @@ export const getIndexedNewUsersIdsByRules = async ({
 
   if (!normalizedAccessUserId) return null;
 
-  const explicitSetKeys = normalizeSearchKeySetKeys(
+  const ownerPrefix = `${normalizedAccessUserId}${SET_KEY_INDEX_SEPARATOR}`;
+  const rawExplicitSetKeys = normalizeSearchKeySetKeys(
     searchKeySetsOfExactUser !== undefined ? searchKeySetsOfExactUser : searchKeySetKeys
   );
+  const invalidExplicitSetKeys = rawExplicitSetKeys.filter(setKey => !setKey.startsWith(ownerPrefix));
+  const explicitSetKeys = rawExplicitSetKeys.filter(setKey => setKey.startsWith(ownerPrefix));
+  if (invalidExplicitSetKeys.length > 0) {
+    emitAccessScopeEmpty(INVALID_SETKEY_OWNER_PREFIX, {
+      accessUserId: normalizedAccessUserId,
+      ownerPrefix,
+      invalidSetKeys: invalidExplicitSetKeys,
+    });
+  }
   emitDebug('normalized searchKeySetsOfExactUser', {
     accessUserId: normalizedAccessUserId,
     searchKeySetsOfExactUser: explicitSetKeys,
+    invalidSetKeys: invalidExplicitSetKeys,
   });
 
   if (requireSearchKeySetKeys && explicitSetKeys.length === 0) {
