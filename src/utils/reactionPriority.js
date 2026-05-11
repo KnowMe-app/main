@@ -10,6 +10,38 @@ export const normalizeReactionMap = map => {
   );
 };
 
+
+export const uniqueTruthyReactionIds = maps => [
+  ...new Set((maps || []).flatMap(map => Object.keys(normalizeReactionMap(map))))
+];
+
+export const buildSharedReactionCandidateIds = ({
+  ownerIds = [],
+  ownOwnerId,
+  favoriteSnapshots = {},
+  dislikeSnapshots = {},
+  favorites = {},
+  dislikes = {},
+} = {}) => {
+  const normalizedOwnOwnerId = String(ownOwnerId || '').trim();
+  const orderedOwnerIds = [...new Set(ownerIds.filter(Boolean))];
+  const sharedOwnerIds = orderedOwnerIds.filter(ownerId => ownerId !== normalizedOwnOwnerId);
+  const ownDecisionIds = new Set([
+    ...Object.keys(normalizeReactionMap(favoriteSnapshots[normalizedOwnOwnerId])),
+    ...Object.keys(normalizeReactionMap(dislikeSnapshots[normalizedOwnOwnerId])),
+  ]);
+  const sharedReactionIds = uniqueTruthyReactionIds([
+    ...sharedOwnerIds.map(sharedOwnerId => favoriteSnapshots[sharedOwnerId]),
+    ...sharedOwnerIds.map(sharedOwnerId => dislikeSnapshots[sharedOwnerId]),
+  ]);
+  const appliedReactionIds = new Set([
+    ...Object.keys(normalizeReactionMap(favorites)),
+    ...Object.keys(normalizeReactionMap(dislikes)),
+  ]);
+
+  return sharedReactionIds.filter(id => appliedReactionIds.has(id) && !ownDecisionIds.has(id));
+};
+
 const mergeReactionMaps = maps =>
   Object.assign({}, ...maps.map(map => normalizeReactionMap(map)));
 
