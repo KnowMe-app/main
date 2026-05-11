@@ -3,6 +3,7 @@ import { isAdminUid } from './accessLevel';
 
 export const ENABLE_BACKEND_TRAFFIC_TOAST = true;
 export const BACKEND_TRAFFIC_SILENT_MODE = false;
+export const BACKEND_DOWNLOAD_TOASTS_STORAGE_KEY = 'backendDownloadSizeToastsEnabled';
 
 const TOAST_GROUP_DELAY_MS = 750;
 const TOAST_DURATION_MS = 5000;
@@ -23,6 +24,38 @@ const PROPERTY_OVERHEAD_BYTES = 4;
 const WRAPPED_ON_VALUE_FLAG = Symbol.for('knowme.backendTraffic.wrapAdminOnValue');
 
 const formatRows = rows => (Array.isArray(rows) ? rows : []);
+
+const getStoredBackendDownloadToastsEnabled = () => {
+  if (typeof localStorage === 'undefined') return true;
+
+  const storedValue = localStorage.getItem(BACKEND_DOWNLOAD_TOASTS_STORAGE_KEY);
+  return storedValue !== 'false';
+};
+
+export const getBackendDownloadToastsEnabled = () => {
+  if (BACKEND_TRAFFIC_SILENT_MODE) return false;
+
+  if (typeof window !== 'undefined' && typeof window.__BACKEND_TRAFFIC_SILENT_MODE === 'boolean') {
+    return !window.__BACKEND_TRAFFIC_SILENT_MODE;
+  }
+
+  return getStoredBackendDownloadToastsEnabled();
+};
+
+export const setBackendDownloadToastsEnabled = enabled => {
+  const normalizedEnabled = Boolean(enabled);
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(BACKEND_DOWNLOAD_TOASTS_STORAGE_KEY, normalizedEnabled ? 'true' : 'false');
+  }
+
+  if (typeof window !== 'undefined') {
+    window.__BACKEND_TRAFFIC_SILENT_MODE = !normalizedEnabled;
+  }
+
+  return normalizedEnabled;
+};
+
 
 export const formatBytes = bytes => {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
@@ -410,9 +443,7 @@ const shouldEstimateAndToast = (runtime, request) => {
   return shouldEstimate;
 };
 
-const isSilentMode = () =>
-  BACKEND_TRAFFIC_SILENT_MODE ||
-  (typeof window !== 'undefined' && window.__BACKEND_TRAFFIC_SILENT_MODE === true);
+const isSilentMode = () => !getBackendDownloadToastsEnabled();
 
 const scheduleToast = request => {
   if (isSilentMode()) return;
