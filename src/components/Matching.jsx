@@ -1935,6 +1935,7 @@ const Matching = () => {
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({});
+  const filtersRef = useRef(filters);
   const [collectionSource, setCollectionSource] = useState(
     () => localStorage.getItem(COLLECTION_SOURCE_KEY) || 'users'
   );
@@ -1954,6 +1955,7 @@ const Matching = () => {
     normalizeSearchKeySetKeys(localStorage.getItem('additionalSearchKeySetKeys') || '')
   );
   const [additionalNewUsers, setAdditionalNewUsers] = useState([]);
+  const additionalNewUsersRef = useRef(additionalNewUsers);
   const [additionalNextOffset, setAdditionalNextOffset] = useState(0);
   const [roleIndexSets] = useState(null);
   const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: currentAccessLevel });
@@ -1966,7 +1968,16 @@ const Matching = () => {
   const loadedIdsRef = useRef(new Set());
   const additionalRulesToastRef = useRef('');
   const additionalProfileCacheRef = useRef(null);
-  const additionalFiltersSignature = useMemo(() => stableAdditionalSignature(filters || {}), [filters]);
+  const additionalProfileRequestVersionRef = useRef(0);
+  const additionalMatchingFetchVersionRef = useRef(0);
+  const additionalLoadMoreFetchVersionRef = useRef(0);
+  const additionalMatchingApplyVersionRef = useRef(0);
+  const matchingProfileStateRef = useRef({
+    ownerId: null,
+    collectionSource,
+    currentAdditionalAccessRules,
+    currentSearchKeySetKeys,
+  });
   const resetAdditionalMatchingState = React.useCallback(({ resetHasMore = true, resetLoading = false } = {}) => {
     setAdditionalNewUsers([]);
     setAdditionalNextOffset(0);
@@ -1993,6 +2004,14 @@ const Matching = () => {
   useEffect(() => {
     localStorage.setItem(COLLECTION_SOURCE_KEY, collectionSource);
   }, [collectionSource]);
+  useEffect(() => {
+    matchingProfileStateRef.current = {
+      ownerId,
+      collectionSource,
+      currentAdditionalAccessRules,
+      currentSearchKeySetKeys,
+    };
+  }, [collectionSource, currentAdditionalAccessRules, currentSearchKeySetKeys, ownerId]);
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
     const handleScroll = () => {
@@ -2064,6 +2083,14 @@ const Matching = () => {
   };
 
   useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+
+  useEffect(() => {
+    additionalNewUsersRef.current = additionalNewUsers;
+  }, [additionalNewUsers]);
+
+  useEffect(() => {
     favoriteUsersRef.current = favoriteUsers;
   }, [favoriteUsers]);
 
@@ -2105,28 +2132,38 @@ const Matching = () => {
 
 
   const ensureFreshAdditionalMatchingProfile = React.useCallback(async ({ accessUserId, reason = 'additional-matching' } = {}) => {
-    const normalizedAccessUserId = String(accessUserId || auth.currentUser?.uid || ownerId || '').trim();
+    const state = matchingProfileStateRef.current || {};
+    const normalizedAccessUserId = String(accessUserId || auth.currentUser?.uid || state.ownerId || '').trim();
     if (!normalizedAccessUserId) return null;
 
     const now = Date.now();
     const currentMetadata = {
       accessUserId: normalizedAccessUserId,
-      rawRulesSignature: getRawRulesSignature(currentAdditionalAccessRules),
-      searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(currentSearchKeySetKeys),
-      collectionSource,
-      filtersSignature: additionalFiltersSignature,
+      rawRulesSignature: getRawRulesSignature(state.currentAdditionalAccessRules),
+      searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(state.currentSearchKeySetKeys),
+      collectionSource: state.collectionSource,
     };
     const cached = additionalProfileCacheRef.current;
     const staleReasons = [];
+    const paginationInvalidationReasons = [];
 
     if (!cached) staleReasons.push('missing-cache');
-    if (cached && cached.accessUserId !== currentMetadata.accessUserId) staleReasons.push('accessUserId-changed');
-    if (cached && cached.rawRulesSignature !== currentMetadata.rawRulesSignature) staleReasons.push('rawRulesSignature-changed');
+    if (cached && cached.accessUserId !== currentMetadata.accessUserId) {
+      staleReasons.push('accessUserId-changed');
+      paginationInvalidationReasons.push('accessUserId-changed');
+    }
+    if (cached && cached.rawRulesSignature !== currentMetadata.rawRulesSignature) {
+      staleReasons.push('rawRulesSignature-changed');
+      paginationInvalidationReasons.push('rawRulesSignature-changed');
+    }
     if (cached && cached.searchKeySetsOfExactUserSignature !== currentMetadata.searchKeySetsOfExactUserSignature) {
       staleReasons.push('searchKeySetsOfExactUserSignature-changed');
+      paginationInvalidationReasons.push('searchKeySetsOfExactUserSignature-changed');
     }
-    if (cached && cached.collectionSource !== currentMetadata.collectionSource) staleReasons.push('collectionSource-changed');
-    if (cached && cached.filtersSignature !== currentMetadata.filtersSignature) staleReasons.push('filtersSignature-changed');
+    if (cached && cached.collectionSource !== currentMetadata.collectionSource) {
+      staleReasons.push('collectionSource-changed');
+      paginationInvalidationReasons.push('collectionSource-changed');
+    }
     if (cached && now - Number(cached.cachedAt || 0) > ADDITIONAL_PROFILE_CACHE_TTL_MS) staleReasons.push('ttl-expired');
 
     if (cached && staleReasons.length === 0) {
@@ -2138,35 +2175,55 @@ const Matching = () => {
         rawRules: cached.rawRules,
         searchKeySetsOfExactUser: cached.searchKeySetsOfExactUser,
       });
-      return { ...cached, cacheHit: true, staleReasons: [] };
+      return { ...cached, cacheHit: true, staleReasons: [], paginationInvalidationReasons: [] };
     }
 
     logAdditionalMatchingDebug(normalizedAccessUserId, 'profile cache miss/stale', {
       reason,
       staleReason: staleReasons,
+      paginationInvalidationReasons,
       cachedAt: cached?.cachedAt || null,
       ttlMs: ADDITIONAL_PROFILE_CACHE_TTL_MS,
       metadata: currentMetadata,
     });
 
-    resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
-
-    const profilePath = `users/${normalizedAccessUserId}`;
+    const profileRequestVersion = additionalProfileRequestVersionRef.current + 1;
+    additionalProfileRequestVersionRef.current = profileRequestVersion;
+    const profilePath = `fetchUserById(${normalizedAccessUserId})`;
     try {
-      const profileSnap = await get(refDb(database, profilePath));
-      const profile = profileSnap.exists() && profileSnap.val() && typeof profileSnap.val() === 'object'
-        ? { userId: normalizedAccessUserId, ...profileSnap.val() }
-        : {};
+      const profile = await fetchUserById(normalizedAccessUserId) || {};
       const accessLevel = profile?.accessLevel || '';
       const additionalAccessRules = profile?.additionalAccessRules || '';
       const searchKeySetsOfExactUser = await resolveAdditionalSearchKeySetKeysForMatching(profile, normalizedAccessUserId);
+
+      if (profileRequestVersion !== additionalProfileRequestVersionRef.current) {
+        const latestCache = additionalProfileCacheRef.current;
+        logAdditionalMatchingDebug(normalizedAccessUserId, 'ignored stale profile refetch', {
+          firebasePath: profilePath,
+          requestVersion: profileRequestVersion,
+          latestVersion: additionalProfileRequestVersionRef.current,
+          rawRules: additionalAccessRules,
+          searchKeySetsOfExactUser,
+        });
+        return latestCache
+          ? { ...latestCache, cacheHit: true, staleResponse: true, staleReasons, paginationInvalidationReasons: [] }
+          : null;
+      }
       const freshMetadata = {
         accessUserId: normalizedAccessUserId,
         rawRulesSignature: getRawRulesSignature(additionalAccessRules),
         searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(searchKeySetsOfExactUser),
-        collectionSource,
-        filtersSignature: additionalFiltersSignature,
+        collectionSource: state.collectionSource,
       };
+      const confirmedPaginationInvalidationReasons = [];
+      if (!cached) confirmedPaginationInvalidationReasons.push('missing-cache');
+      if (cached && cached.accessUserId !== freshMetadata.accessUserId) confirmedPaginationInvalidationReasons.push('accessUserId-changed');
+      if (cached && cached.rawRulesSignature !== freshMetadata.rawRulesSignature) confirmedPaginationInvalidationReasons.push('rawRulesSignature-changed');
+      if (cached && cached.searchKeySetsOfExactUserSignature !== freshMetadata.searchKeySetsOfExactUserSignature) {
+        confirmedPaginationInvalidationReasons.push('searchKeySetsOfExactUserSignature-changed');
+      }
+      if (cached && cached.collectionSource !== freshMetadata.collectionSource) confirmedPaginationInvalidationReasons.push('collectionSource-changed');
+
       const freshCache = {
         ...freshMetadata,
         profile,
@@ -2178,9 +2235,19 @@ const Matching = () => {
       };
 
       additionalProfileCacheRef.current = freshCache;
-      setCurrentAccessLevel(accessLevel);
-      setCurrentAdditionalAccessRules(additionalAccessRules);
-      setCurrentSearchKeySetKeys(searchKeySetsOfExactUser);
+      matchingProfileStateRef.current = {
+        ...matchingProfileStateRef.current,
+        ownerId: normalizedAccessUserId,
+        currentAdditionalAccessRules: additionalAccessRules,
+        currentSearchKeySetKeys: searchKeySetsOfExactUser,
+      };
+      setCurrentAccessLevel(prev => (prev === accessLevel ? prev : accessLevel));
+      setCurrentAdditionalAccessRules(prev => (prev === additionalAccessRules ? prev : additionalAccessRules));
+      setCurrentSearchKeySetKeys(prev => (
+        getSearchKeySetsOfExactUserSignature(prev) === getSearchKeySetsOfExactUserSignature(searchKeySetsOfExactUser)
+          ? prev
+          : searchKeySetsOfExactUser
+      ));
       localStorage.setItem('accessLevel', accessLevel);
       localStorage.setItem('additionalAccessRules', additionalAccessRules);
       localStorage.setItem('additionalSearchKeySetKeys', searchKeySetsOfExactUser.join(','));
@@ -2191,21 +2258,22 @@ const Matching = () => {
         rawRules: additionalAccessRules,
         searchKeySetsOfExactUser,
         metadata: freshMetadata,
+        staleReasons,
+        paginationInvalidationReasons: confirmedPaginationInvalidationReasons,
       });
 
-      return { ...freshCache, cacheHit: false, staleReasons };
+      return {
+        ...freshCache,
+        cacheHit: confirmedPaginationInvalidationReasons.length === 0,
+        refreshed: true,
+        staleReasons,
+        paginationInvalidationReasons: confirmedPaginationInvalidationReasons,
+      };
     } catch (error) {
       logAdditionalMatchingDebug(normalizedAccessUserId, 'profile refetch failed', { firebasePath: profilePath }, error);
       throw error;
     }
-  }, [
-    additionalFiltersSignature,
-    collectionSource,
-    currentAdditionalAccessRules,
-    currentSearchKeySetKeys,
-    ownerId,
-    resetAdditionalMatchingState,
-  ]);
+  }, []);
 
   const loadCommentsFor = React.useCallback(async list => {
     const owners = getMatchingMultiDataOwnerIds();
@@ -2348,10 +2416,21 @@ const Matching = () => {
 
   useEffect(() => {
     let cancelled = false;
+    const fetchVersion = additionalMatchingFetchVersionRef.current + 1;
+    const applyVersion = additionalMatchingApplyVersionRef.current + 1;
+    additionalMatchingFetchVersionRef.current = fetchVersion;
+    additionalMatchingApplyVersionRef.current = applyVersion;
+    const isLatestAdditionalFetch = () => (
+      !cancelled &&
+      fetchVersion === additionalMatchingFetchVersionRef.current &&
+      applyVersion === additionalMatchingApplyVersionRef.current
+    );
 
     const loadAdditionalNewUsers = async () => {
       if (collectionSource !== 'newUsers') {
-        resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
+        if (isLatestAdditionalFetch()) {
+          resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
+        }
         return;
       }
 
@@ -2360,14 +2439,26 @@ const Matching = () => {
           accessUserId: ownerId,
           reason: 'initial-additional-newUsers-load',
         });
+        if (!isLatestAdditionalFetch()) {
+          logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional profile result', {
+            fetchVersion,
+            latestFetchVersion: additionalMatchingFetchVersionRef.current,
+            applyVersion,
+            latestApplyVersion: additionalMatchingApplyVersionRef.current,
+          });
+          return;
+        }
         const freshRawRules = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
         const freshParsedAdditionalAccessRules = parseAdditionalAccessRuleGroups(freshRawRules);
 
         if (!freshParsedAdditionalAccessRules || freshParsedAdditionalAccessRules.length === 0) {
-          resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
+          if (isLatestAdditionalFetch()) {
+            resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
+          }
           return;
         }
 
+        if (!isLatestAdditionalFetch()) return;
         resetAdditionalMatchingState({ resetHasMore: true });
         loadingRef.current = true;
         setLoading(true);
@@ -2379,12 +2470,22 @@ const Matching = () => {
           ? (freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys)
           : await resolveAdditionalSearchKeySetKeysForMatching(null, ownerId);
 
+        if (!isLatestAdditionalFetch()) {
+          logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional key resolution', {
+            fetchVersion,
+            latestFetchVersion: additionalMatchingFetchVersionRef.current,
+            applyVersion,
+            latestApplyVersion: additionalMatchingApplyVersionRef.current,
+          });
+          return;
+        }
+
         console.info('[Matching][additionalNewUsers] resolvedSearchKeySetsOfExactUser', resolvedSearchKeySetKeys);
         logAdditionalMatchingDebug(ownerId, 'initial additional matching request', {
           rawRules: freshRawRules,
           searchKeySetsOfExactUser: resolvedSearchKeySetKeys,
           collectionSource,
-          filtersSignature: additionalFiltersSignature,
+          filtersSignature: stableAdditionalSignature(filtersRef.current || {}),
           pagination: { offset: 0, limit: INITIAL_LOAD },
         });
 
@@ -2398,7 +2499,18 @@ const Matching = () => {
           limit: INITIAL_LOAD,
         });
 
-        if (!cancelled) {
+        if (!isLatestAdditionalFetch()) {
+          logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional fetch result', {
+            fetchVersion,
+            latestFetchVersion: additionalMatchingFetchVersionRef.current,
+            applyVersion,
+            latestApplyVersion: additionalMatchingApplyVersionRef.current,
+            fetchedIds: loaded?.userIds || [],
+          });
+          return;
+        }
+
+        if (isLatestAdditionalFetch()) {
           setAdditionalNewUsers(loaded.users);
           setAdditionalNextOffset(loaded.nextOffset);
           loadedIdsRef.current = new Set(loaded.users.map(user => user.userId).filter(Boolean));
@@ -2422,12 +2534,12 @@ const Matching = () => {
         }
       } catch (error) {
         console.error('Failed to load additional newUsers for matching', error);
-        if (!cancelled) {
+        if (isLatestAdditionalFetch() && additionalNewUsersRef.current.length === 0) {
           resetAdditionalMatchingState({ resetHasMore: false });
           setHasMore(false);
         }
       } finally {
-        if (!cancelled) {
+        if (isLatestAdditionalFetch()) {
           loadingRef.current = false;
           setLoading(false);
         }
@@ -2440,14 +2552,12 @@ const Matching = () => {
       cancelled = true;
     };
   }, [
-    additionalFiltersSignature,
     collectionSource,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
     ensureFreshAdditionalMatchingProfile,
     loadCommentsFor,
     ownerId,
-    parsedAdditionalAccessRules,
     resetAdditionalMatchingState,
   ]);
 
@@ -2475,15 +2585,16 @@ const Matching = () => {
             ? await fetchUsersByLastLogin2FromCollection('newUsers', remaining + exclude.size + 1, cursor)
             : await fetchUsersByLastLogin2(remaining + exclude.size + 1, cursor);
 
+        const activeFilters = filtersRef.current || {};
         const filtered = isAdmin
           ? applyMatchingSearchKeyFilters(
               filterMain(
                 sourceRes.users.map(u => [u.userId, u]),
                 null,
-                getMatchingFiltersWithoutSearchKeyGroups(filters),
+                getMatchingFiltersWithoutSearchKeyGroups(activeFilters),
                 favoriteUsersRef.current
               ).map(([, u]) => u),
-              filters,
+              activeFilters,
               roleIndexSets
             ).filter(
               u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
@@ -2525,7 +2636,7 @@ const Matching = () => {
         excludedCount,
       };
     },
-    [collectionSource, filters, isAdmin, parsedAdditionalAccessRules.length, roleIndexSets]
+    [collectionSource, isAdmin, parsedAdditionalAccessRules.length, roleIndexSets]
   );
 
   const loadInitial = React.useCallback(async () => {
@@ -2782,6 +2893,14 @@ const Matching = () => {
     console.log('[loadMore] start', { lastKey, hasMore });
     loadingRef.current = true;
     setLoading(true);
+    const loadMoreVersion = additionalLoadMoreFetchVersionRef.current + 1;
+    const applyVersion = additionalMatchingApplyVersionRef.current + 1;
+    additionalLoadMoreFetchVersionRef.current = loadMoreVersion;
+    additionalMatchingApplyVersionRef.current = applyVersion;
+    const isLatestLoadMore = () => (
+      loadMoreVersion === additionalLoadMoreFetchVersionRef.current &&
+      applyVersion === additionalMatchingApplyVersionRef.current
+    );
     try {
       const baseExclude = new Set([
         ...Object.keys(favoriteUsersRef.current),
@@ -2793,20 +2912,39 @@ const Matching = () => {
           accessUserId: ownerId,
           reason: 'load-more-additional-newUsers',
         });
-        const freshRawRules = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
-        const freshParsedAdditionalAccessRules = parseAdditionalAccessRuleGroups(freshRawRules);
-        const collected = [];
-        let nextOffset = freshProfileCache?.cacheHit ? additionalNextOffset : 0;
-        let canLoadMoreAdditional = true;
-        let visibleCount = freshProfileCache?.cacheHit ? Math.max(0, Number(currentVisibleCount) || 0) : 0;
-        const requiredVisibleCount = Math.max(0, Number(targetVisibleCount) || 0);
-        let loadedPages = 0;
-        const additionalCandidateBase = freshProfileCache?.cacheHit ? additionalNewUsers : [];
-
-        if (!freshParsedAdditionalAccessRules.length) {
-          resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
+        if (!isLatestLoadMore()) {
+          logAdditionalMatchingDebug(ownerId, 'ignored stale load more additional profile result', {
+            loadMoreVersion,
+            latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current,
+            applyVersion,
+            latestApplyVersion: additionalMatchingApplyVersionRef.current,
+          });
           return;
         }
+        const freshRawRules = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
+        const freshParsedAdditionalAccessRules = parseAdditionalAccessRuleGroups(freshRawRules);
+        const shouldResetAdditionalPagination =
+          !freshProfileCache?.cacheHit &&
+          (freshProfileCache?.paginationInvalidationReasons || []).length > 0;
+        const collected = [];
+        let nextOffset = shouldResetAdditionalPagination ? 0 : additionalNextOffset;
+        let canLoadMoreAdditional = true;
+        let visibleCount = shouldResetAdditionalPagination ? 0 : Math.max(0, Number(currentVisibleCount) || 0);
+        const requiredVisibleCount = Math.max(0, Number(targetVisibleCount) || 0);
+        let loadedPages = 0;
+        const additionalCandidateBase = shouldResetAdditionalPagination ? [] : additionalNewUsers;
+
+        if (!freshParsedAdditionalAccessRules.length) {
+          if (isLatestLoadMore()) {
+            resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
+          }
+          return;
+        }
+
+        if (shouldResetAdditionalPagination && isLatestLoadMore()) {
+          resetAdditionalMatchingState({ resetHasMore: true });
+        }
+        if (!isLatestLoadMore()) return;
 
         while (
           canLoadMoreAdditional &&
@@ -2822,12 +2960,22 @@ const Matching = () => {
             ? (freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys)
             : await resolveAdditionalSearchKeySetKeysForMatching(null, ownerId);
 
+          if (!isLatestLoadMore()) {
+            logAdditionalMatchingDebug(ownerId, 'ignored stale load more additional key resolution', {
+              loadMoreVersion,
+              latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current,
+              applyVersion,
+              latestApplyVersion: additionalMatchingApplyVersionRef.current,
+            });
+            return;
+          }
+
           console.info('[Matching][additionalNewUsers] resolvedSearchKeySetsOfExactUser', resolvedSearchKeySetKeys);
           logAdditionalMatchingDebug(ownerId, 'load more additional matching request', {
             rawRules: freshRawRules,
             searchKeySetsOfExactUser: resolvedSearchKeySetKeys,
             collectionSource,
-            filtersSignature: additionalFiltersSignature,
+            filtersSignature: stableAdditionalSignature(filtersRef.current || {}),
             pagination: { offset: nextOffset, limit: LOAD_MORE },
           });
 
@@ -2839,6 +2987,18 @@ const Matching = () => {
             offset: nextOffset,
             limit: LOAD_MORE,
           });
+
+          if (!isLatestLoadMore()) {
+            logAdditionalMatchingDebug(ownerId, 'ignored stale load more additional page result', {
+              loadMoreVersion,
+              latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current,
+              applyVersion,
+              latestApplyVersion: additionalMatchingApplyVersionRef.current,
+              fetchedIds: loaded?.userIds || [],
+              pagination: { nextOffset: loaded?.nextOffset, hasMore: loaded?.hasMore },
+            });
+            return;
+          }
 
           const pageUsers = loaded.users.filter(user =>
             user?.userId &&
@@ -2862,16 +3022,19 @@ const Matching = () => {
           nextOffset = loaded.nextOffset;
         }
 
+        if (!isLatestLoadMore()) return;
+
         collected.forEach(user => {
           loadedIdsRef.current.add(user.userId);
           updateCard(user.userId, user);
         });
         setAdditionalNewUsers(prev => {
-          const map = new Map((freshProfileCache?.cacheHit ? prev : []).map(user => [user.userId, user]));
+          const map = new Map((shouldResetAdditionalPagination ? [] : prev).map(user => [user.userId, user]));
           collected.forEach(user => map.set(user.userId, user));
           return Array.from(map.values());
         });
         await loadCommentsFor(collected);
+        if (!isLatestLoadMore()) return;
         setAdditionalNextOffset(nextOffset);
         setHasMore(canLoadMoreAdditional);
         logAdditionalMatchingDebug(ownerId, 'load more additional matching final cards', {
@@ -2934,8 +3097,10 @@ const Matching = () => {
       }
       setLastKey(cursor);
     } finally {
-      loadingRef.current = false;
-      setLoading(false);
+      if (isLatestLoadMore()) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
   }, [
     additionalNewUsers,
@@ -2947,7 +3112,6 @@ const Matching = () => {
     defaultListKey,
     fetchChunk,
     filters,
-    additionalFiltersSignature,
     hasMore,
     lastKey,
     loadCommentsFor,
