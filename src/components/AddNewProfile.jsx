@@ -95,7 +95,12 @@ import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import { PAGE_SIZE, database } from './config';
 import { get as firebaseGet, onValue as firebaseOnValue, push, ref } from 'firebase/database';
-import { withAdminDownloadToast, wrapAdminOnValue } from 'utils/backendDownloadToast';
+import {
+  getBackendDownloadToastsEnabled,
+  setBackendDownloadToastsEnabled,
+  withAdminDownloadToast,
+  wrapAdminOnValue,
+} from 'utils/backendDownloadToast';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
 import {
@@ -407,6 +412,23 @@ const EditActionButton = styled.button`
 const EditActionIcon = styled.svg`
   width: 20px;
   height: 20px;
+`;
+
+const DownloadSizeToastToggleButton = styled(EditActionButton)`
+  width: auto;
+  min-width: 40px;
+  padding: 0 10px;
+  gap: 6px;
+  color: ${({ $active }) => ($active ? color.accent : color.accent5)};
+  background-color: ${({ $active }) => ($active ? color.paleAccent2 : 'transparent')};
+  border-color: ${({ $active }) => ($active ? color.paleAccent5 : 'transparent')};
+  font-size: 13px;
+  font-weight: 700;
+`;
+
+const DownloadSizeToastStatus = styled.span`
+  font-size: 11px;
+  font-weight: 700;
 `;
 
 // const iconMap = {
@@ -828,6 +850,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
   const [isExcelImporting, setIsExcelImporting] = useState(false);
+  const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
   const excelImportInputRef = useRef(null);
   const [showSearchKeyIndexPanel, setShowSearchKeyIndexPanel] = useState(false);
   const [showLocalIndexModal, setShowLocalIndexModal] = useState(false);
@@ -3866,6 +3889,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, [searchIdAndSearchKeyOnlyMode]);
 
+  useEffect(() => {
+    setBackendDownloadToastsEnabled(downloadSizeToastsEnabled);
+  }, [downloadSizeToastsEnabled]);
+
+  const handleDownloadSizeToastsToggle = () => {
+    setDownloadSizeToastsEnabled(prev => !prev);
+  };
+
   const fieldsToRender = getFieldsToRender(state);
 
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
@@ -4128,6 +4159,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </EditActionButton>
               </>
             )}
+            <DownloadSizeToastToggleButton
+              type="button"
+              $active={downloadSizeToastsEnabled}
+              aria-pressed={downloadSizeToastsEnabled}
+              title={
+                downloadSizeToastsEnabled
+                  ? 'Вимкнути тости щодо розміру завантаження файлів'
+                  : 'Увімкнути тости щодо розміру завантаження файлів'
+              }
+              aria-label={
+                downloadSizeToastsEnabled
+                  ? 'Вимкнути тости щодо розміру завантаження файлів'
+                  : 'Увімкнути тости щодо розміру завантаження файлів'
+              }
+              onClick={handleDownloadSizeToastsToggle}
+            >
+              📦
+              <DownloadSizeToastStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</DownloadSizeToastStatus>
+            </DownloadSizeToastToggleButton>
             <DotsButton
               onClick={() => {
                 setShowInfoModal('dotsMenu');
