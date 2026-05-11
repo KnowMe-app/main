@@ -261,6 +261,14 @@ const fetchNewUsersByIdsForMatching = async (ids, batchSize = FETCH_USERS_BY_IDS
   return result;
 };
 
+const buildEmptyAdditionalSearchIndexResult = (reason, offset = 0) => ({
+  userIds: [],
+  users: [],
+  nextOffset: Math.max(0, Number(offset) || 0),
+  hasMore: false,
+  reason,
+});
+
 const fetchAdditionalNewUsersBySearchIndex = async ({
   rawRules,
   accessUserId,
@@ -270,15 +278,29 @@ const fetchAdditionalNewUsersBySearchIndex = async ({
   limit = FETCH_USERS_BY_IDS_BATCH_SIZE,
 }) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
+  const normalizedSearchKeySetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
 
   const indexRequestDebugData = {
     collectionSource,
     accessUserId: normalizedAccessUserId,
     rawRules,
-    searchKeySetKeys,
+    searchKeySetKeys: normalizedSearchKeySetKeys,
     offset,
     limit,
   };
+
+  if (collectionSource === 'newUsers' && normalizedSearchKeySetKeys.length === 0) {
+    const reason = 'no searchKeySets data';
+    console.info('[Matching][additionalNewUsers] access scope empty', {
+      ...indexRequestDebugData,
+      reason,
+    });
+    debugAdditionalToast(normalizedAccessUserId, 'access scope empty', {
+      ...indexRequestDebugData,
+      reason,
+    });
+    return buildEmptyAdditionalSearchIndexResult(reason, offset);
+  }
 
   console.info('[Matching][additionalNewUsers] getIndexedNewUsersIdsByRules request', indexRequestDebugData);
   debugAdditionalToast(normalizedAccessUserId, 'before getIndexedNewUsersIdsByRules', indexRequestDebugData);
@@ -286,8 +308,9 @@ const fetchAdditionalNewUsersBySearchIndex = async ({
   const indexed = await getIndexedNewUsersIdsByRules({
     rawRules,
     accessUserId: normalizedAccessUserId,
-    searchKeySetKeys,
+    searchKeySetKeys: normalizedSearchKeySetKeys,
     fetchMissingBuckets: true,
+    requireSearchKeySetKeys: collectionSource === 'newUsers',
     resultOffset: offset,
     resultLimit: limit,
     debugMatchingFlow: shouldDebugAdditionalMatching(normalizedAccessUserId),
