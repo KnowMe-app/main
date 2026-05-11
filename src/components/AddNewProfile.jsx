@@ -25,7 +25,6 @@ import {
   loadDuplicateUsers,
   removeCardAndSearchId,
   fetchAllUsersFromRTDB,
-  fetchTotalNewUsersCount,
   fetchFilteredUsersByPage,
   indexLastLogin,
   fetchUsersByLastActionPaged,
@@ -1520,7 +1519,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
   const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
   const [lastKey21, setLastKey21] = useState(null);
-  const [totalCount, setTotalCount] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1555,7 +1553,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       userIds,
       currentFilter,
       currentPage,
-      totalCount,
       hasMore,
       lastKey: lastKey ?? null,
       lastKey21: lastKey21 ?? null,
@@ -1575,7 +1572,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     users,
     currentFilter,
     currentPage,
-    totalCount,
     hasMore,
     lastKey,
     lastKey21,
@@ -1671,7 +1667,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (!normalized) {
       setSearchLoading(false);
       setHasSearched(false);
-      setTotalCount(0);
       setCurrentPage(1);
       setSearchBarQueryActive(false);
       setLastSearchBarQuery('');
@@ -1679,14 +1674,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
     setSearchLoading(true);
     setHasSearched(true);
-    setTotalCount(0);
     setCurrentPage(1);
     setSearchBarQueryActive(true);
     setLastSearchBarQuery(normalized);
   }, [
     setSearchLoading,
     setHasSearched,
-    setTotalCount,
     setCurrentPage,
     setSearchBarQueryActive,
     setLastSearchBarQuery,
@@ -1748,7 +1741,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         filtersRef.current = nextValue;
         setFilters(nextValue);
         setUsers(filteredUsers);
-        setTotalCount(Object.keys(filteredUsers).length);
         setCurrentPage(1);
         setSearchLoading(false);
         setHasSearched(true);
@@ -1763,7 +1755,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setHasMore(true);
       setSearchLoading(true);
       setHasSearched(true);
-      setTotalCount(0);
       resetLA2StateRef(la2StateRef);
       setFilters(nextValue);
       return;
@@ -1777,7 +1768,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setDateOffsetLA(0);
       setSearchLoading(true);
       setHasSearched(true);
-      setTotalCount(0);
       setFilters(nextValue);
       return;
     }
@@ -1785,7 +1775,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     filtersRef.current = nextValue;
     setSearchLoading(true);
     setHasSearched(true);
-    setTotalCount(0);
     setFilters(nextValue);
   }, [
     currentFilter,
@@ -1798,7 +1787,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setFilters,
     setHasSearched,
     setSearchLoading,
-    setTotalCount,
     setUsers,
     users,
   ]);
@@ -1850,8 +1838,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     if (!searchBarQueryActive) return;
-    const count = userNotFound ? 0 : state.userId ? 1 : Object.keys(users || {}).length;
-    setTotalCount(count);
     if (searchLoading) {
       setSearchLoading(false);
     }
@@ -1859,10 +1845,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     searchBarQueryActive,
     searchLoading,
     setSearchLoading,
-    setTotalCount,
-    state.userId,
-    userNotFound,
-    users,
   ]);
 
   const cacheFetchedUsers = useCallback(
@@ -2186,7 +2168,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLastKey(null);
     setLastKey21(null);
     setHasMore(true);
-    setTotalCount(0);
     setCurrentPage(1);
     setCacheCount(0);
     setBackendCount(0);
@@ -2222,7 +2203,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           return acc;
         }, {});
         setUsers(cachedUsers);
-        setTotalCount(ids.length);
         setCacheCount(cachedCards.length);
         setBackendCount(0);
         setSearchLoading(false);
@@ -2250,7 +2230,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           const derivedIds = Object.keys(derivedUsers);
           setIdsForQuery(queryKey, derivedIds);
           setUsers(derivedUsers);
-          setTotalCount(derivedIds.length);
           setCacheCount(derivedIds.length);
           setBackendCount(0);
           setSearchLoading(false);
@@ -2309,7 +2288,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return acc;
       }, {});
       setUsers(cachedUsers);
-      setTotalCount(ids.length);
       setCacheCount(cards.length);
       setBackendCount(0);
       setSearchLoading(false);
@@ -2607,7 +2585,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       cacheFetchedUsers,
       setUsers,
       setHasMore,
-      setTotalCount,
     });
 
   useEffect(() => {
@@ -2683,9 +2660,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
-      if (res.totalCount !== undefined) {
-        setTotalCount(res.totalCount);
-      }
       // console.log('222 :>> ');
       // console.log('res.users :>> ', res.users);
 
@@ -2803,7 +2777,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     setDateOffset21(res?.lastKey ?? dateOffset21);
     setHasMore(Boolean(res?.hasMore));
-    setTotalCount(res?.totalCount || 0);
 
     const backendCount = Object.keys(normalizedUsers).length;
     const filtersKey = serializeQueryFilters(currentFilters);
@@ -3087,7 +3060,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const nextOffset = dateOffsetLA + slice.length;
       setDateOffsetLA(nextOffset);
       setHasMore(hasCachedMore);
-      setTotalCount(prev => Math.max(prev, sortedCachedArr.length));
       return { cacheCount, backendCount, hasMore: hasCachedMore };
     }
 
@@ -3180,15 +3152,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const nextOffset = Number.isFinite(res.dateOffsetLA) ? res.dateOffsetLA : res.lastKey;
       setDateOffsetLA(nextOffset);
       setHasMore(res.hasMore);
-      setTotalCount(prev =>
-        Math.max(prev, nextOffset + (res.hasMore ? PAGE_SIZE : 0), sortedCachedArr.length),
-      );
       backendCount += Object.keys(filteredUsers).length;
       return { cacheCount, backendCount, hasMore: res.hasMore };
     }
 
     setHasMore(false);
-    setTotalCount(prev => Math.max(prev, dateOffsetLA + slice.length, sortedCachedArr.length));
     if (slice.length > 0) {
       setDateOffsetLA(prev => prev + slice.length);
     }
@@ -3337,7 +3305,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setHasMore(false);
     setLastKey(null);
     setCurrentPage(1);
-    setTotalCount(0);
     setCacheCount(0);
     setBackendCount(0);
 
@@ -3377,8 +3344,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setUsers(normalized);
       setHasMore(false);
       setLastKey(null);
-        setCurrentPage(1);
-      setTotalCount(ids.length);
+      setCurrentPage(1);
       setCacheCount(cacheCount);
       setBackendCount(backendCount);
 
@@ -3392,7 +3358,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setCurrentPage,
       setHasMore,
       setLastKey,
-      setTotalCount,
       setUsers,
     ],
   );
@@ -3521,7 +3486,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setHasMore(false);
     setLastKey(null);
     setCurrentPage(1);
-    setTotalCount(sortedUsers.length);
     setCacheCount(0);
     setBackendCount(sortedUsers.length);
   };
@@ -3654,9 +3618,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setIsDuplicateView(true);
   };
 
-  const handleInfo = async () => {
-    const count = await fetchTotalNewUsersCount();
-    alert(`Total cards in newUsers: ${count}`);
+  const handleInfo = () => {
+    alert(`Loaded cards: ${Object.keys(users || {}).length}`);
   };
 
   const handleClearCache = () => {
@@ -3917,9 +3880,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
 
   const shouldPaginate = searchBarQueryActive
-    ? totalCount > PAGE_SIZE
+    ? Object.keys(users || {}).length > PAGE_SIZE
     : currentFilter !== 'FAVORITE' && currentFilter !== 'CYCLE_FAVORITE';
-  const totalPages = shouldPaginate ? Math.ceil(totalCount / PAGE_SIZE) || 1 : 1;
   const getSortedIds = () => {
     const ids = Object.keys(users);
     if (isDuplicateView || currentFilter === 'CYCLE_FAVORITE') {
@@ -3954,6 +3916,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const sortedIds = getSortedIds();
+  const loadedPages = Math.ceil(sortedIds.length / PAGE_SIZE) || 1;
+  const totalPages = shouldPaginate ? Math.max(loadedPages, hasMore ? currentPage + 1 : currentPage) : 1;
   const displayedUserIds = shouldPaginate
     ? sortedIds.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
     : sortedIds;
@@ -4015,7 +3979,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (Object.keys(restoredUsers).length) {
       setUsers(restoredUsers);
-      setTotalCount(snapshot.totalCount || Object.keys(restoredUsers).length);
       setHasSearched(true);
       setUserNotFound(false);
     }
@@ -4402,10 +4365,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             {(searchLoading || hasSearched) && !userNotFound && (
               <p style={{ textAlign: 'center', color: 'black' }}>
                 Знайдено{' '}
-                {searchLoading || (searchBarQueryActive && totalCount === 0) ? (
+                {searchLoading ? (
                   <span className="spinner" />
                 ) : (
-                  totalCount
+                  Object.keys(users || {}).length
                 )}{' '}
                 карток.
               </p>
