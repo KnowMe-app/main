@@ -4517,7 +4517,6 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     users,
     lastKey: nextOffset,
     hasMore,
-    totalCount: sortedIds.length,
     loadedIds: pageIds,
   };
 };
@@ -5167,21 +5166,10 @@ export const fetchPaginatedNewUsers = async (
       return acc;
     }, {});
 
-    let totalCount;
-    if (!lastKey) {
-      totalCount = await fetchTotalFilteredUsersCount(
-        filterForload,
-        filterSettings,
-        favoriteUsers,
-        options,
-      );
-    }
-
     return {
       users: finalUsers,
       lastKey: nextKey,
       hasMore: !!nextKey,
-      totalCount,
     };
   } catch (error) {
     console.error('Error fetching paginated filtered users:', error);
@@ -5886,35 +5874,6 @@ export const fetchAllFilteredUsers = async (
   }
 };
 
-export const fetchTotalFilteredUsersCount = async (
-  filterForload,
-  filterSettings = {},
-  favoriteUsers = {},
-  options = {},
-) => {
-  const allUsers = await fetchAllFilteredUsers(
-    filterForload,
-    filterSettings,
-    favoriteUsers,
-    options,
-  );
-  return Object.keys(allUsers).length;
-};
-
-export const fetchTotalNewUsersCount = async () => {
-  try {
-    const snapshot = await get(ref2(database, 'newUsers'));
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      return Object.keys(data).length;
-    }
-    return 0;
-  } catch (error) {
-    console.error('Error fetching total newUsers count:', error);
-    return 0;
-  }
-};
-
 export const fetchAllUsersFromRTDB = async () => {
   try {
     // Отримуємо дані з двох колекцій
@@ -6083,7 +6042,7 @@ export async function fetchSortedUsersByDate(limit = PAGE_SIZE, offset = 0) {
   // Records with special future dates are skipped
 
   const sliced = result.slice(offset, offset + limit);
-  return { data: Object.fromEntries(sliced), totalCount: result.length };
+  return { data: Object.fromEntries(sliced) };
 }
 
 export { fetchFilteredUsersByPage } from './dateLoad';

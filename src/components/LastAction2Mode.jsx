@@ -206,7 +206,6 @@ export const loadMoreUsersLastAction2 = async ({
   cacheFetchedUsers,
   setUsers,
   setHasMore,
-  setTotalCount,
 }) => {
   if (isEditingRef?.current) return { cacheCount: 0, backendCount: 0, hasMore };
   ensureLA2StateForFilters(la2StateRef, currentFilters);
@@ -270,7 +269,6 @@ export const loadMoreUsersLastAction2 = async ({
   if (!isEditingRef?.current) setUsers(prev => mergeWithoutOverwrite(prev, pageUsers));
   cacheFetchedUsers(pageUsers, cacheLoad2Users, currentFilters);
   setHasMore(la2State.hasMore);
-  setTotalCount(Math.max(la2State.acceptedIds.length + (la2State.hasMore ? PAGE_SIZE : 0), la2State.acceptedIds.length));
   return { cacheCount: 0, backendCount: Object.keys(pageUsers).length, hasMore: la2State.hasMore };
 };
 
