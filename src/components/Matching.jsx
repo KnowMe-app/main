@@ -1361,6 +1361,23 @@ const HeaderRow = styled.div`
   flex-wrap: wrap;
 `;
 
+
+const ReactionOwnershipBadge = styled.div`
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 6;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: ${props => (props.$type === 'dislike' ? 'rgba(239, 68, 68, 0.92)' : 'rgba(236, 72, 153, 0.92)')};
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+  pointer-events: none;
+`;
+
 const AdminToggle = styled.div`
   position: absolute;
   top: 5px;
@@ -1564,6 +1581,19 @@ const SwipeableCard = ({
         .filter(Boolean)
         .join(', ')
     : cityInfo || regionInfo;
+  const isOwnFavorite = Boolean(ownFavoriteUsers?.[user.userId]);
+  const isOwnDislike = Boolean(ownDislikeUsers?.[user.userId]);
+  const isEffectiveFavorite = Boolean(favoriteUsers?.[user.userId]);
+  const isEffectiveDislike = Boolean(dislikeUsers?.[user.userId]);
+  const reactionBadge = isOwnFavorite
+    ? { label: 'Liked by you', type: 'favorite', ownership: 'own' }
+    : isOwnDislike
+      ? { label: 'Disliked by you', type: 'dislike', ownership: 'own' }
+      : isEffectiveFavorite
+        ? { label: 'Liked by shared owner', type: 'favorite', ownership: 'shared' }
+        : isEffectiveDislike
+          ? { label: 'Disliked by shared owner', type: 'dislike', ownership: 'shared' }
+          : null;
 
   return (
     <AnimatedCard
@@ -1577,6 +1607,15 @@ const SwipeableCard = ({
       onTouchEnd={handleTouchEnd}
       style={style}
     >
+      {reactionBadge && (
+        <ReactionOwnershipBadge
+          $type={reactionBadge.type}
+          data-reaction-ownership={reactionBadge.ownership}
+          data-reaction-type={reactionBadge.type}
+        >
+          {reactionBadge.label}
+        </ReactionOwnershipBadge>
+      )}
       {current === 'description' && (
         <InfoSlide $reserveActionButtons={!photo} $role={role}>
           {extraFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{extraFields}</Table>}
@@ -3018,8 +3057,8 @@ const Matching = () => {
         syncFavorites(favIds);
         syncDislikes(disIds);
         exclude = new Set([
-          ...Object.keys(ownFavorites),
-          ...Object.keys(ownDislikes),
+          ...Object.keys(favIds),
+          ...Object.keys(disIds),
         ]);
       } else {
         const localFav = getFavorites();
@@ -3274,8 +3313,8 @@ const Matching = () => {
     );
     try {
       const baseExclude = new Set([
-        ...Object.keys(ownFavoriteUsersRef.current),
-        ...Object.keys(ownDislikeUsersRef.current),
+        ...Object.keys(favoriteUsersRef.current),
+        ...Object.keys(dislikeUsersRef.current),
       ]);
 
       if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
@@ -3510,10 +3549,14 @@ const Matching = () => {
     viewMode,
     collectionSource,
     hasAdditionalAccessRules: parsedAdditionalAccessRules.length > 0,
+    favoriteUsers,
+    dislikeUsers,
     ownFavoriteUsers,
     ownDislikeUsers,
   }), [
     additionalNewUsers,
+    dislikeUsers,
+    favoriteUsers,
     ownDislikeUsers,
     ownFavoriteUsers,
     isAdmin,
