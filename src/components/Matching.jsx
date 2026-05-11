@@ -75,6 +75,38 @@ import {
 import { resolveMatchingMultiDataOwnerIds } from 'utils/multiDataAccess';
 import { resolvePrioritizedReactionMaps } from 'utils/reactionPriority';
 
+
+const DEBUG_ADDITIONAL_MATCHING_USER_ID = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+
+const shouldDebugAdditionalMatching = (...ids) =>
+  ids.some(id => String(id || '').trim() === DEBUG_ADDITIONAL_MATCHING_USER_ID);
+
+const debugAdditionalToast = (accessUserId, message, data = {}) => {
+  if (!shouldDebugAdditionalMatching(accessUserId)) return;
+
+  const compact = Object.entries(data)
+    .map(([key, value]) => {
+      if (Array.isArray(value)) return `${key}: ${value.length}`;
+      if (value && typeof value === 'object') return `${key}: ${Object.keys(value).length}`;
+      return `${key}: ${value}`;
+    })
+    .join(', ');
+
+  toast(`[ADD newUsers] ${message}${compact ? ` | ${compact}` : ''}`, {
+    duration: 8000,
+  });
+
+  console.info('[ADD newUsers debug]', message, data);
+};
+
+const debugMissingNewUsersToast = (accessUserId, indexedCount) => {
+  if (!shouldDebugAdditionalMatching(accessUserId) || indexedCount <= 0) return;
+
+  toast(`Індекс searchKeySets знайшов ${indexedCount} ID, але відповідні записи не знайдені в /newUsers`, {
+    duration: 8000,
+  });
+};
+
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
     operation: 'get',
@@ -130,20 +162,60 @@ const sortAdditionalSearchKeySetKeys = keys =>
     return ai - bi;
   });
 
-async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserId) {
-  const keysFromProfile = getAdditionalSearchKeySetKeysFromProfile(profile);
-  if (keysFromProfile.length) return keysFromProfile;
-
+const areSearchKeySetKeysForAccessUserId = (keys, accessUserId) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
-  if (!normalizedAccessUserId) return [];
+  const normalizedKeys = normalizeSearchKeySetKeys(keys);
+  if (!normalizedAccessUserId || normalizedKeys.length === 0) return false;
+  return normalizedKeys.every(key => String(key || '').startsWith(`${normalizedAccessUserId}_`));
+};
+
+async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserId) {
+  const normalizedAccessUserId = String(accessUserId || '').trim();
+  const keysFromProfile = getAdditionalSearchKeySetKeysFromProfile(profile);
+  let keysFromSearchKeySetsRoot = [];
+
+  debugAdditionalToast(normalizedAccessUserId, 'resolve keys: accessUserId', {
+    accessUserId: normalizedAccessUserId,
+  });
+  debugAdditionalToast(normalizedAccessUserId, 'resolve keys: profile keys', {
+    keysFromProfile,
+  });
+
+  if (!normalizedAccessUserId) {
+    debugAdditionalToast(normalizedAccessUserId, 'resolve keys: final', {
+      searchKeySetKeys: keysFromProfile,
+    });
+    return keysFromProfile;
+  }
+
+  if (keysFromProfile.length && areSearchKeySetKeysForAccessUserId(keysFromProfile, normalizedAccessUserId)) {
+    debugAdditionalToast(normalizedAccessUserId, 'resolve keys: final', {
+      searchKeySetKeys: keysFromProfile,
+    });
+    return keysFromProfile;
+  }
+
+  if (keysFromProfile.length) {
+    debugAdditionalToast(normalizedAccessUserId, 'resolve keys: ignored profile keys for another owner', {
+      keysFromProfile,
+    });
+  }
 
   const snap = await get(refDb(database, 'searchKeySets'));
-  if (!snap.exists()) return [];
+  if (snap.exists()) {
+    keysFromSearchKeySetsRoot = Object.keys(snap.val() || {})
+      .filter(key => key.startsWith(`${normalizedAccessUserId}_`));
+  }
 
-  const keysFromSearchKeySetsRoot = Object.keys(snap.val() || {})
-    .filter(key => key.startsWith(`${normalizedAccessUserId}_`));
+  const searchKeySetKeys = sortAdditionalSearchKeySetKeys(normalizeSearchKeySetKeys(keysFromSearchKeySetsRoot));
+  debugAdditionalToast(normalizedAccessUserId, 'resolve keys: root keys', {
+    keysFromSearchKeySetsRoot,
+  });
+  debugAdditionalToast(normalizedAccessUserId, 'resolve keys: final', {
+    searchKeySetKeys,
+  });
 
-  return sortAdditionalSearchKeySetKeys(normalizeSearchKeySetKeys(keysFromSearchKeySetsRoot));
+  return searchKeySetKeys;
 }
 
 const fetchNewUsersByIdsForMatching = async (ids, batchSize = FETCH_USERS_BY_IDS_BATCH_SIZE) => {
@@ -182,9 +254,19 @@ const fetchAdditionalNewUsersBySearchIndex = async ({
   offset = 0,
   limit = FETCH_USERS_BY_IDS_BATCH_SIZE,
 }) => {
+  const normalizedAccessUserId = String(accessUserId || '').trim();
+
+  debugAdditionalToast(normalizedAccessUserId, 'index request', {
+    rawRules,
+    accessUserId: normalizedAccessUserId,
+    searchKeySetKeys,
+    offset,
+    limit,
+  });
+
   const indexed = await getIndexedNewUsersIdsByRules({
     rawRules,
-    accessUserId,
+    accessUserId: normalizedAccessUserId,
     searchKeySetKeys,
     fetchMissingBuckets: true,
     resultOffset: offset,
@@ -193,9 +275,24 @@ const fetchAdditionalNewUsersBySearchIndex = async ({
 
   const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
   console.info('[Matching][additionalNewUsers] indexedUserIdsCount', userIds.length);
+  debugAdditionalToast(normalizedAccessUserId, 'index response', {
+    indexedUserIds: userIds,
+    first10IndexedUserIds: userIds.slice(0, 10),
+    hasMore: Boolean(indexed?.hasMore),
+    nextOffset: Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : userIds.length,
+  });
 
   const users = await fetchNewUsersByIdsForMatching(userIds);
   console.info('[Matching][additionalNewUsers] fetchedUsersCount', users.length);
+  debugAdditionalToast(normalizedAccessUserId, 'newUsers fetch response', {
+    requestedIds: userIds,
+    fetchedUsers: users,
+    first10FetchedUserIds: users.map(user => user.userId).filter(Boolean).slice(0, 10),
+  });
+
+  if (userIds.length > 0 && users.length === 0) {
+    debugMissingNewUsersToast(normalizedAccessUserId, userIds.length);
+  }
 
   return {
     userIds,
@@ -430,6 +527,19 @@ const applyMatchingUiFiltersToUsers = ({
     filters,
     roleIndexSets
   ).filter(u => isAllowedIdForCollection(u.userId, collectionSource));
+
+const getActiveMatchingFiltersDebug = filters => Object.entries(filters || {}).reduce((acc, [key, value]) => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const disabled = Object.entries(value)
+      .filter(([, enabled]) => !enabled)
+      .map(([filterKey]) => filterKey);
+    if (disabled.length) acc[key] = disabled;
+    return acc;
+  }
+
+  if (value) acc[key] = value;
+  return acc;
+}, {});
 
 const Container = styled.div`
   display: flex;
@@ -1935,7 +2045,7 @@ const Matching = () => {
             const cachedAccessLevel = localStorage.getItem('accessLevel') || '';
             const cachedAdditionalAccessRules = localStorage.getItem('additionalAccessRules') || '';
             const cachedSearchKeySetKeys = normalizeSearchKeySetKeys(localStorage.getItem('additionalSearchKeySetKeys') || '');
-            const fallbackSearchKeySetKeys = cachedSearchKeySetKeys.length
+            const fallbackSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(cachedSearchKeySetKeys, user.uid)
               ? cachedSearchKeySetKeys
               : await resolveAdditionalSearchKeySetKeysForMatching(null, user.uid);
             console.info('[Matching][additionalNewUsers] resolvedSearchKeySetKeys', fallbackSearchKeySetKeys);
@@ -2032,7 +2142,7 @@ const Matching = () => {
       setLoading(true);
 
       try {
-        const resolvedSearchKeySetKeys = currentSearchKeySetKeys.length
+        const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(currentSearchKeySetKeys, ownerId)
           ? currentSearchKeySetKeys
           : await resolveAdditionalSearchKeySetKeysForMatching(null, ownerId);
 
@@ -2445,7 +2555,7 @@ const Matching = () => {
         ) {
           loadedPages += 1;
           // eslint-disable-next-line no-await-in-loop
-          const resolvedSearchKeySetKeys = currentSearchKeySetKeys.length
+          const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(currentSearchKeySetKeys, ownerId)
             ? currentSearchKeySetKeys
             : await resolveAdditionalSearchKeySetKeysForMatching(null, ownerId);
 
@@ -2635,6 +2745,33 @@ const Matching = () => {
     roleIndexSets,
     collectionSource,
   });
+
+  const additionalFiltersDebugSignatureRef = useRef('');
+  useEffect(() => {
+    if (collectionSource !== 'newUsers') return;
+    if (!parsedAdditionalAccessRules.length) return;
+    if (!shouldDebugAdditionalMatching(ownerId)) return;
+
+    const first10FilteredUserIds = filteredUsers.map(user => user.userId).filter(Boolean).slice(0, 10);
+    const signature = JSON.stringify({
+      ownerId,
+      beforeFilters: visibleUsers.length,
+      afterFilters: filteredUsers.length,
+      activeFilters: getActiveMatchingFiltersDebug(filters),
+      collectionSource,
+      first10FilteredUserIds,
+    });
+    if (additionalFiltersDebugSignatureRef.current === signature) return;
+    additionalFiltersDebugSignatureRef.current = signature;
+
+    debugAdditionalToast(ownerId, 'after UI filters', {
+      beforeFilters: visibleUsers.length,
+      afterFilters: filteredUsers.length,
+      activeFilters: getActiveMatchingFiltersDebug(filters),
+      collectionSource,
+      first10FilteredUserIds,
+    });
+  }, [collectionSource, filteredUsers, filters, ownerId, parsedAdditionalAccessRules.length, visibleUsers]);
 
   useEffect(() => {
     if (viewMode !== 'default') return;
