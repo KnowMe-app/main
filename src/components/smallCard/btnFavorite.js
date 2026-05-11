@@ -16,10 +16,14 @@ export const BtnFavorite = ({
   userData = {},
   favoriteUsers = {},
   setFavoriteUsers,
+  ownFavoriteUsers,
+  setOwnFavoriteUsers,
   onRemove,
   onDislikeRemoved,
   dislikeUsers = {},
   setDislikeUsers,
+  ownDislikeUsers,
+  setOwnDislikeUsers,
   customStyle = {},
   inactiveIconColor = '#fff',
   activeIconColor = color.reactionIdleIcon,
@@ -36,7 +40,12 @@ export const BtnFavorite = ({
     boxShadow: customBoxShadow,
     ...restCustomStyle
   } = customStyle;
-  const isFavorite = !!favoriteUsers[userId];
+  const viewerFavoriteUsers = ownFavoriteUsers || favoriteUsers;
+  const updateOwnFavoriteUsers = setOwnFavoriteUsers || setFavoriteUsers;
+  const viewerDislikeUsers = ownDislikeUsers || dislikeUsers;
+  const updateOwnDislikeUsers = setOwnDislikeUsers || setDislikeUsers;
+  const isFavorite = !!viewerFavoriteUsers[userId];
+  const isSharedFavorite = !isFavorite && !!favoriteUsers[userId];
   const activeColor = color.reactionLike;
   const resolvedActiveIconColor = activeIconColor || customTextColor || color.reactionIdleIcon;
   const resolvedInactiveIconColor = inactiveIconColor || '#fff';
@@ -50,7 +59,11 @@ export const BtnFavorite = ({
     if (isFavorite) {
       try {
         await removeFavoriteUser(userId, multiDataOwnerId);
-        const updated = { ...favoriteUsers, [userId]: false };
+        const updatedOwn = { ...viewerFavoriteUsers };
+        delete updatedOwn[userId];
+        if (updateOwnFavoriteUsers) updateOwnFavoriteUsers(updatedOwn);
+        const updated = { ...favoriteUsers };
+        delete updated[userId];
         setFavoriteUsers(updated);
         setFavoriteIds(Object.fromEntries(Object.entries(updated).filter(([, v]) => v)));
         updateCachedUser(userData || { userId }, { removeFavorite: true });
@@ -62,18 +75,25 @@ export const BtnFavorite = ({
     } else {
       try {
         await addFavoriteUser(userId, multiDataOwnerId);
+        const updatedOwnFav = { ...viewerFavoriteUsers, [userId]: true };
+        if (updateOwnFavoriteUsers) updateOwnFavoriteUsers(updatedOwnFav);
         const updatedFav = { ...favoriteUsers, [userId]: true };
         setFavoriteUsers(updatedFav);
         setFavoriteIds(updatedFav);
         updateCachedUser(userData || { userId });
         setFavorite(userId, true);
         if (onRemove) onRemove(userId);
-        if (dislikeUsers[userId]) {
-          try {
-            await removeDislikeUser(userId, multiDataOwnerId);
-          } catch (err) {
-            console.error('Failed to remove dislike when adding favorite:', err);
+        if (dislikeUsers[userId] || viewerDislikeUsers[userId]) {
+          if (viewerDislikeUsers[userId]) {
+            try {
+              await removeDislikeUser(userId, multiDataOwnerId);
+            } catch (err) {
+              console.error('Failed to remove dislike when adding favorite:', err);
+            }
           }
+          const updatedOwnDislikes = { ...viewerDislikeUsers };
+          delete updatedOwnDislikes[userId];
+          if (updateOwnDislikeUsers) updateOwnDislikeUsers(updatedOwnDislikes);
           const upd = { ...dislikeUsers };
           delete upd[userId];
           if (setDislikeUsers) setDislikeUsers(upd);
@@ -115,8 +135,10 @@ export const BtnFavorite = ({
         alignItems: 'center',
         justifyContent: 'center',
       }}
-      title={title}
+      title={isSharedFavorite ? `${title} (shared)` : title}
       aria-label={ariaLabel}
+      aria-pressed={isFavorite}
+      data-shared-favorite={isSharedFavorite ? 'true' : undefined}
       disabled={!auth.currentUser}
       onClick={e => {
         e.stopPropagation();

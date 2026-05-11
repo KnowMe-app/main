@@ -79,7 +79,10 @@ import {
 } from 'utils/multiDataAccess';
 import {
   buildSharedReactionCandidateIds,
+  canShowMatchingUser,
+  mergeMatchingCandidateUsers,
   normalizeReactionMap,
+  readReactionSnapshotMaps,
   resolvePrioritizedReactionMaps,
   uniqueTruthyReactionIds,
 } from 'utils/reactionPriority';
@@ -1436,6 +1439,10 @@ const SwipeableCard = ({
   setFavoriteUsers,
   dislikeUsers,
   setDislikeUsers,
+  ownFavoriteUsers,
+  setOwnFavoriteUsers,
+  ownDislikeUsers,
+  setOwnDislikeUsers,
   viewMode,
   handleRemove,
   togglePublish,
@@ -1649,8 +1656,12 @@ const SwipeableCard = ({
         userData={user}
         favoriteUsers={favoriteUsers}
         setFavoriteUsers={setFavoriteUsers}
+        ownFavoriteUsers={ownFavoriteUsers}
+        setOwnFavoriteUsers={setOwnFavoriteUsers}
         dislikeUsers={dislikeUsers}
         setDislikeUsers={setDislikeUsers}
+        ownDislikeUsers={ownDislikeUsers}
+        setOwnDislikeUsers={setOwnDislikeUsers}
         onRemove={handleRemove}
         multiDataOwnerId={multiDataOwnerId}
       />
@@ -1659,8 +1670,12 @@ const SwipeableCard = ({
         userData={user}
         dislikeUsers={dislikeUsers}
         setDislikeUsers={setDislikeUsers}
+        ownDislikeUsers={ownDislikeUsers}
+        setOwnDislikeUsers={setOwnDislikeUsers}
         favoriteUsers={favoriteUsers}
         setFavoriteUsers={setFavoriteUsers}
+        ownFavoriteUsers={ownFavoriteUsers}
+        setOwnFavoriteUsers={setOwnFavoriteUsers}
         onRemove={handleRemove}
         multiDataOwnerId={multiDataOwnerId}
       />
@@ -2437,7 +2452,12 @@ const Matching = () => {
     const loadedUsers = [];
     if (collectionSource === 'newUsers' && allowedNewUserIds.length > 0) {
       const newUsersCards = await fetchNewUsersByIdsForMatching(allowedNewUserIds);
-      loadedUsers.push(...newUsersCards);
+      loadedUsers.push(
+        ...newUsersCards.map(user => ({
+          ...user,
+          __matchingAccessAllowed: parsedAdditionalAccessRules.length > 0,
+        }))
+      );
     }
 
     if (collectionSource !== 'newUsers') {
@@ -2449,6 +2469,7 @@ const Matching = () => {
             .map(id => usersMap[id])
             .filter(Boolean)
             .map(user => ({ ...user, __sourceCollection: 'users' }))
+            .filter(user => canShowMatchingUser(user, { isAdmin }))
         );
       }
     }
@@ -2458,7 +2479,10 @@ const Matching = () => {
       ? allowedNewUserIds.filter(id => !loadedIds.has(id))
       : candidateIds.filter(isValidId).filter(id => !loadedIds.has(id));
 
-    loadedUsers.forEach(user => updateCard(user.userId, user));
+    loadedUsers.forEach(user => {
+      const { __matchingAccessAllowed, ...cacheUser } = user;
+      updateCard(user.userId, cacheUser);
+    });
     setSharedReactionCandidateUsers(loadedUsers);
     await loadCommentsFor(loadedUsers);
 
@@ -2490,6 +2514,7 @@ const Matching = () => {
     currentSearchKeySetKeys,
     loadCommentsFor,
     ownerId,
+    isAdmin,
     parsedAdditionalAccessRules.length,
     sharedReactionIds,
   ]);
@@ -2599,13 +2624,18 @@ const Matching = () => {
     const loadedDislikeOwnerIds = new Set();
     const applyPrioritizedReactionMaps = () => {
       const ownOwnerId = getOwnerId();
-      const hasLoadedReactionSnapshots = ownerIds.every(
-        ownerId => loadedFavoriteOwnerIds.has(ownerId) && loadedDislikeOwnerIds.has(ownerId)
-      );
-      if (!hasLoadedReactionSnapshots) return;
-      const sharedOwnerIds = ownerIds.filter(id => id !== ownOwnerId);
+      const hasLoadedOwnReactionSnapshots =
+        ownOwnerId &&
+        loadedFavoriteOwnerIds.has(ownOwnerId) &&
+        loadedDislikeOwnerIds.has(ownOwnerId);
+      if (!hasLoadedOwnReactionSnapshots) return;
+      const availableOwnerIds = ownerIds.filter(ownerId => (
+        ownerId === ownOwnerId ||
+        (loadedFavoriteOwnerIds.has(ownerId) && loadedDislikeOwnerIds.has(ownerId))
+      ));
+      const sharedOwnerIds = availableOwnerIds.filter(id => id !== ownOwnerId);
       const { favorites, dislikes } = resolvePrioritizedReactionMaps({
-        ownerIds,
+        ownerIds: availableOwnerIds,
         ownOwnerId,
         favoriteSnapshots,
         dislikeSnapshots,
@@ -2613,7 +2643,7 @@ const Matching = () => {
       const ownFavorites = normalizeReactionMap(favoriteSnapshots[ownOwnerId]);
       const ownDislikes = normalizeReactionMap(dislikeSnapshots[ownOwnerId]);
       const nextSharedReactionIds = buildSharedReactionCandidateIds({
-        ownerIds,
+        ownerIds: availableOwnerIds,
         ownOwnerId,
         favoriteSnapshots,
         dislikeSnapshots,
@@ -2622,6 +2652,7 @@ const Matching = () => {
       });
       debugSharedReactionsLog(ownOwnerId, 'priority merge applied for shared reactions', {
         ownerIds,
+        availableOwnerIds,
         sharedOwnerIds,
         sharedFavoritesFound: countTruthyReactionEntries(
           sharedOwnerIds.map(sharedOwnerId => favoriteSnapshots[sharedOwnerId])
@@ -2663,16 +2694,29 @@ const Matching = () => {
       const favRef = refDb(database, `multiData/favorites/${effectiveOwnerId}`);
       const disRef = refDb(database, `multiData/dislikes/${effectiveOwnerId}`);
 
+      const markOwnerSnapshotLoaded = (snapshotStore, loadedOwnerIds, type, error) => {
+        snapshotStore[effectiveOwnerId] = {};
+        loadedOwnerIds.add(effectiveOwnerId);
+        if (error) {
+          debugSharedReactionsLog(getOwnerId(), `shared ${type} snapshot unavailable`, {
+            ownerId: effectiveOwnerId,
+            type,
+            message: error.message || String(error),
+          }, error);
+        }
+        applyPrioritizedReactionMaps();
+      };
+
       const unsubFav = onValue(favRef, snap => {
         favoriteSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
         loadedFavoriteOwnerIds.add(effectiveOwnerId);
         applyPrioritizedReactionMaps();
-      });
+      }, error => markOwnerSnapshotLoaded(favoriteSnapshots, loadedFavoriteOwnerIds, 'favorites', error));
       const unsubDis = onValue(disRef, snap => {
         dislikeSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
         loadedDislikeOwnerIds.add(effectiveOwnerId);
         applyPrioritizedReactionMaps();
-      });
+      }, error => markOwnerSnapshotLoaded(dislikeSnapshots, loadedDislikeOwnerIds, 'dislikes', error));
 
       return [unsubFav, unsubDis];
     });
@@ -2923,12 +2967,12 @@ const Matching = () => {
       const owners = getMatchingMultiDataOwnerIds();
       let exclude = new Set();
       if (owners.length) {
-        const [favMaps, disMaps] = await Promise.all([
-          Promise.all(owners.map(owner => fetchFavoriteUsers(owner))),
-          Promise.all(owners.map(owner => fetchDislikeUsers(owner))),
-        ]);
-        const favoriteSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, favMaps[index]]));
-        const dislikeSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, disMaps[index]]));
+        const { favoriteSnapshots, dislikeSnapshots } = await readReactionSnapshotMaps({
+          ownerIds: owners,
+          fetchFavoriteUsers,
+          fetchDislikeUsers,
+          onWarning: warning => debugSharedReactionsLog(getOwnerId(), 'initial shared reaction snapshot unavailable', warning, warning.error),
+        });
         const ownOwnerId = getOwnerId();
         const { favorites: favIds, dislikes: disIds } = resolvePrioritizedReactionMaps({
           ownerIds: owners,
@@ -3077,12 +3121,12 @@ const Matching = () => {
       return;
     }
 
-    const [favoriteMaps, dislikeMaps] = await Promise.all([
-      Promise.all(owners.map(owner => fetchFavoriteUsers(owner))),
-      Promise.all(owners.map(owner => fetchDislikeUsers(owner))),
-    ]);
-    const favoriteSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, favoriteMaps[index]]));
-    const dislikeSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, dislikeMaps[index]]));
+    const { favoriteSnapshots, dislikeSnapshots } = await readReactionSnapshotMaps({
+      ownerIds: owners,
+      fetchFavoriteUsers,
+      fetchDislikeUsers,
+      onWarning: warning => debugSharedReactionsLog(getOwnerId(), 'reaction snapshot unavailable while loading reaction cards', warning, warning.error),
+    });
     const ownOwnerId = getOwnerId();
     const { favorites: favMap, dislikes: disMap } = resolvePrioritizedReactionMaps({
       ownerIds: owners,
@@ -3129,12 +3173,12 @@ const Matching = () => {
       return;
     }
 
-    const [favoriteMaps, dislikeMaps] = await Promise.all([
-      Promise.all(owners.map(owner => fetchFavoriteUsers(owner))),
-      Promise.all(owners.map(owner => fetchDislikeUsers(owner))),
-    ]);
-    const favoriteSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, favoriteMaps[index]]));
-    const dislikeSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, dislikeMaps[index]]));
+    const { favoriteSnapshots, dislikeSnapshots } = await readReactionSnapshotMaps({
+      ownerIds: owners,
+      fetchFavoriteUsers,
+      fetchDislikeUsers,
+      onWarning: warning => debugSharedReactionsLog(getOwnerId(), 'reaction snapshot unavailable while loading reaction cards', warning, warning.error),
+    });
     const ownOwnerId = getOwnerId();
     const { favorites: favMap, dislikes: disMap } = resolvePrioritizedReactionMaps({
       ownerIds: owners,
@@ -3458,54 +3502,17 @@ const Matching = () => {
   const [preLastCardNode, setPreLastCardNode] = useState(null);
 
 
-  const visibleUsers = useMemo(() => {
-    let baseUsers = isAdmin
-      ? users
-      : users.filter(user => user.__sourceCollection === 'newUsers' || user.publish === true);
-
-    const hasAdditionalAccessRules = parsedAdditionalAccessRules.length > 0;
-    if (hasAdditionalAccessRules) {
-      const allowedBySetKey = new Set(additionalNewUsers.map(user => user.userId).filter(Boolean));
-      baseUsers = baseUsers.filter(user => {
-        if (user?.__sourceCollection !== 'newUsers') return true;
-        return collectionSource !== 'newUsers' || allowedBySetKey.has(user.userId);
-      });
-    }
-
-    const shouldInjectAdditionalCards =
-      viewMode === 'default' &&
-      collectionSource === 'newUsers' &&
-      hasAdditionalAccessRules &&
-      additionalNewUsers.length > 0;
-
-    const byId = new Map(baseUsers.map(user => [user.userId, user]));
-    const injectCandidate = user => {
-      if (!user?.userId) return;
-      const existing = byId.get(user.userId);
-      if (existing) {
-        byId.set(user.userId, { ...existing, ...user });
-      } else {
-        byId.set(user.userId, user);
-      }
-    };
-
-    if (shouldInjectAdditionalCards) {
-      additionalNewUsers.forEach(injectCandidate);
-    }
-
-    if (viewMode === 'default') {
-      sharedReactionCandidateUsers.forEach(injectCandidate);
-    }
-
-    const mergedUsers = Array.from(byId.values());
-    if (viewMode !== 'default') {
-      return baseUsers;
-    }
-
-    return mergedUsers.filter(
-      user => !ownFavoriteUsers[user.userId] && !ownDislikeUsers[user.userId]
-    );
-  }, [
+  const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
+    users,
+    additionalNewUsers,
+    sharedReactionCandidateUsers,
+    isAdmin,
+    viewMode,
+    collectionSource,
+    hasAdditionalAccessRules: parsedAdditionalAccessRules.length > 0,
+    ownFavoriteUsers,
+    ownDislikeUsers,
+  }), [
     additionalNewUsers,
     ownDislikeUsers,
     ownFavoriteUsers,
@@ -3753,8 +3760,12 @@ const Matching = () => {
                         isAdmin={isAdmin}
                         favoriteUsers={favoriteUsers}
                         setFavoriteUsers={setFavoriteUsers}
+                        ownFavoriteUsers={ownFavoriteUsers}
+                        setOwnFavoriteUsers={setOwnFavoriteUsers}
                         dislikeUsers={dislikeUsers}
                         setDislikeUsers={setDislikeUsers}
+                        ownDislikeUsers={ownDislikeUsers}
+                        setOwnDislikeUsers={setOwnDislikeUsers}
                         viewMode={viewMode}
                         handleRemove={handleRemove}
                         togglePublish={togglePublish}
