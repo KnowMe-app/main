@@ -20,7 +20,7 @@ import {
   resolveAdditionalAccessSearchKeyBuckets,
 } from './additionalAccessRules';
 import {
-  getCachedAdditionalRulesSetIndex,
+  getCachedSearchKeyPayload,
   peekCachedSearchKeyPayload,
   saveCachedAdditionalRulesSetIndex,
 } from './searchKeyCache';
@@ -892,27 +892,28 @@ export const buildNewUsersFilterSetIndex = async ({
 export const getIndexedNewUsersIdsByRules = async ({
   rawRules,
   accessUserId,
-  // eslint-disable-next-line no-unused-vars
   searchKeySetKeys = [],
   fetchMissingBuckets = false,
   resultOffset = 0,
-  resultLimit = null,
+  resultLimit = Number.POSITIVE_INFINITY,
 }) => {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   if (!normalizedAccessUserId) return null;
 
+  const explicitSetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
   const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
-  const setEntries = ruleSetEntries
+  const ruleBucketEntries = ruleSetEntries
     .map(({ text: setText, inputIndex }) => {
       const parsedRuleGroups = parseAdditionalAccessRuleGroups(setText);
       if (!parsedRuleGroups.length) return null;
 
-      const rawBucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
-      const indexBuckets = Object.entries(rawBucketMap || {}).reduce((acc, [indexName, rawValues]) => {
+      const bucketMap = mergeSearchKeyBuckets(parsedRuleGroups);
+      const { bucketMap: preparedBucketMap } = prepareAdditionalAccessBucketMapForSearchKey(bucketMap);
+      const indexBuckets = Object.entries(preparedBucketMap || {}).reduce((acc, [indexName, rawValues]) => {
         const normalizedIndexName = normalizePathSegment(indexName);
         if (!normalizedIndexName) return acc;
-        // imt is derived at index-build time and not stored as a direct bucket
-        if (normalizedIndexName === 'imt') return acc;
+        if (normalizedIndexName === 'imt' || normalizedIndexName === 'users') return acc;
+
         const values = [
           ...new Set(
             (Array.isArray(rawValues) ? rawValues : [...(rawValues || [])])
@@ -925,199 +926,116 @@ export const getIndexedNewUsersIdsByRules = async ({
       }, {});
       if (!Object.keys(indexBuckets).length) return null;
 
-      const setKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
-      if (!setKey) return null;
-
-      const paths = Object.entries(indexBuckets).flatMap(([indexName, values]) =>
-        values.map(value => `${SEARCH_KEY_SETS_ROOT}/${setKey}/${indexName}/${value}`)
-      );
-
-      return { setKey, paths, indexBuckets };
+      const defaultSetKey = makeAdditionalRulesSetKey(setText, normalizedAccessUserId, inputIndex);
+      if (!defaultSetKey && explicitSetKeys.length === 0) return null;
+      return { defaultSetKey, indexBuckets };
     })
     .filter(Boolean);
 
-  if (!setEntries.length) return { setKeys: [], userIds: [], ownerId: normalizedAccessUserId, nextOffset: 0, hasMore: false };
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  const applyPagination = allUserIds => {
-    const offset = Math.max(0, Number(resultOffset) || 0);
-    const limit =
-      Number.isFinite(Number(resultLimit)) && Number(resultLimit) > 0
-        ? Number(resultLimit)
-        : null;
-    const sliced =
-      limit !== null ? allUserIds.slice(offset, offset + limit) : allUserIds.slice(offset);
-    return {
-      userIds: sliced,
-      nextOffset: offset + sliced.length,
-      hasMore: limit !== null && offset + sliced.length < allUserIds.length,
-    };
-  };
-
-  // Throws 'MISSING_BUCKET' if any required bucket is absent in setsMap.
-  const buildUserIdsFromSetsMap = setsMap => {
-    const userIds = new Set();
-    const setKeys = [];
-    for (const entry of setEntries) {
-      const setNode = setsMap?.[entry.setKey];
-      if (!setNode || typeof setNode !== 'object') return null;
-      for (const [indexName, values] of Object.entries(entry.indexBuckets)) {
-        for (const value of values) {
-          const bucketValue = setNode?.[indexName]?.[value];
-          if (!bucketValue || typeof bucketValue !== 'object') {
-            throw new Error('MISSING_BUCKET');
-          }
-          setKeys.push(`${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}/${value}`);
-          Object.keys(bucketValue).forEach(userId => {
-            if (userId) userIds.add(userId);
-          });
-        }
-      }
-    }
-    return { setKeys, userIds: [...userIds] };
-  };
-
-  // ── 1. Higher-level cache (full setsMap) ──────────────────────────────────
-  const cachedIndexedSet = getCachedAdditionalRulesSetIndex({
-    rawRules,
-    accessUserId: normalizedAccessUserId,
+  const setEntries = ruleBucketEntries.flatMap(entry => {
+    const setKeys = explicitSetKeys.length ? explicitSetKeys : [entry.defaultSetKey];
+    return setKeys.filter(Boolean).map(setKey => ({ setKey, indexBuckets: entry.indexBuckets }));
   });
-  if (cachedIndexedSet) {
+
+  if (!setEntries.length) return { setKeys: [], userIds: [], ownerId: normalizedAccessUserId };
+
+  const readBucketPayload = async path => {
+    const cached = peekCachedSearchKeyPayload(path);
+    if (cached && typeof cached.exists === 'boolean') return cached;
+    if (!fetchMissingBuckets) return null;
+
     try {
-      const built = buildUserIdsFromSetsMap(cachedIndexedSet);
-      if (built) {
-        const paged = applyPagination(built.userIds);
-        return { setKeys: built.setKeys, ownerId: normalizedAccessUserId, ...paged };
-      }
-    } catch {
-      // stale or incomplete — fall through
-    }
-  }
-
-  // ── 2. Peek per-path cache ────────────────────────────────────────────────
-  // Note: treats both null AND { exists: false } as "missing" so that a stale
-  // negative cache entry from before searchKeySets were built does not block
-  // the subsequent Firebase fetch.
-  const payloadsBySet = await Promise.all(
-    setEntries.map(async entry => {
-      const payloads = await Promise.all(
-        entry.paths.map(path => Promise.resolve(peekCachedSearchKeyPayload(path)))
-      );
-      return { setKey: entry.setKey, paths: entry.paths, payloads };
-    })
-  );
-
-  const hasMissingSetPayloads = payloadsBySet.some(item =>
-    item.payloads.some(payload => !payload?.exists)
-  );
-
-  // ── 3. Firebase fetch for missing/stale buckets ───────────────────────────
-  if (hasMissingSetPayloads && fetchMissingBuckets) {
-    const setsMap = {};
-    let allFetched = true;
-
-    for (const entry of setEntries) {
-      setsMap[entry.setKey] = {};
-      for (const [indexName, values] of Object.entries(entry.indexBuckets)) {
-        setsMap[entry.setKey][indexName] = {};
-        for (const value of values) {
-          const fbPath = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}/${value}`;
-          try {
-            // eslint-disable-next-line no-await-in-loop
-            const snap = await get(ref(database, fbPath));
-            if (snap.exists() && snap.val() && typeof snap.val() === 'object') {
-              setsMap[entry.setKey][indexName][value] = snap.val();
-            } else {
-              allFetched = false;
-            }
-          } catch (err) {
-            console.warn('[getIndexedNewUsersIdsByRules] Firebase fetch failed', fbPath, err);
-            allFetched = false;
-          }
-        }
-      }
-    }
-
-    if (allFetched) {
-      try {
-        const built = buildUserIdsFromSetsMap(setsMap);
-        if (built) {
-          saveCachedAdditionalRulesSetIndex({
-            rawRules,
-            accessUserId: normalizedAccessUserId,
-            setsMap,
-          });
-          const paged = applyPagination(built.userIds);
-          return { setKeys: built.setKeys, ownerId: normalizedAccessUserId, ...paged };
-        }
-      } catch {
-        // setsMap built but incomplete — fall through to global searchKey fallback
-      }
-    }
-  }
-
-  // ── 4. Fallback: peek global searchKey/ index (no Firebase fetch) ─────────
-  if (hasMissingSetPayloads) {
-    const fallbackSearchKeyPayloads = await Promise.all(
-      setEntries.map(async entry => {
-        const paths = Object.entries(entry.indexBuckets).flatMap(([indexName, values]) =>
-          values.map(value => `searchKey/${indexName}/${value}`)
-        );
-        const payloads = await Promise.all(
-          paths.map(path => Promise.resolve(peekCachedSearchKeyPayload(path)))
-        );
-        return { paths, payloads };
-      })
-    );
-
-    if (fallbackSearchKeyPayloads.some(item => item.payloads.some(payload => !payload?.exists))) {
-      return null;
-    }
-
-    const userIds = new Set();
-    fallbackSearchKeyPayloads.forEach(item => {
-      item.payloads.forEach(payload => {
-        Object.keys(payload?.value || {}).forEach(userId => {
-          if (userId) userIds.add(userId);
-        });
+      return await getCachedSearchKeyPayload(path, async () => {
+        const snapshot = await get(ref(database, path));
+        return {
+          exists: snapshot.exists(),
+          value: snapshot.exists() ? snapshot.val() || {} : null,
+        };
       });
-    });
+    } catch (error) {
+      console.warn('[searchKeySets] Failed to read bucket; treating as empty without searchKey fallback', {
+        path,
+        error,
+      });
+      return { exists: false, value: null };
+    }
+  };
 
-    const paged = applyPagination([...userIds]);
-    return {
-      setKeys: fallbackSearchKeyPayloads.flatMap(item => item.paths),
-      ownerId: normalizedAccessUserId,
-      ...paged,
-    };
-  }
-
-  // ── 5. All per-path cache hits — build result and save to higher-level cache
-  const userIds = new Set();
   const setsMap = {};
+  const resultPaths = [];
+  const pageUserIds = [];
+  const seenMatchedIds = new Set();
+  const safeResultOffset = Math.max(0, Number(resultOffset) || 0);
+  const numericResultLimit = Number(resultLimit);
+  const safeResultLimit = Number.isFinite(numericResultLimit)
+    ? Math.max(0, numericResultLimit)
+    : Number.POSITIVE_INFINITY;
+  let matchedIndex = 0;
+  let hasMore = false;
 
-  payloadsBySet.forEach(item => {
-    if (!setsMap[item.setKey] || typeof setsMap[item.setKey] !== 'object') {
-      setsMap[item.setKey] = {};
+  const addMatchedUserId = userId => {
+    if (!userId || seenMatchedIds.has(userId)) return false;
+    seenMatchedIds.add(userId);
+
+    if (matchedIndex < safeResultOffset) {
+      matchedIndex += 1;
+      return false;
     }
-    item.payloads.forEach(payload => {
-      Object.keys(payload?.value || {}).forEach(userId => {
-        if (userId) userIds.add(userId);
-      });
-    });
-    item.paths.forEach((path, pathIndex) => {
-      const parts = String(path).split('/');
-      // path: searchKeySets/{setKey}/{indexName}/{value}
-      const [, setKey, indexName, value] = parts;
-      if (!setKey || !indexName || !value) return;
-      const payloadValue = item.payloads[pathIndex]?.value;
-      if (!payloadValue || typeof payloadValue !== 'object') return;
-      if (!setsMap[setKey][indexName] || typeof setsMap[setKey][indexName] !== 'object') {
-        setsMap[setKey][indexName] = {};
+
+    if (pageUserIds.length < safeResultLimit) {
+      pageUserIds.push(userId);
+      matchedIndex += 1;
+      return false;
+    }
+
+    hasMore = true;
+    return true;
+  };
+
+  for (const entry of setEntries) {
+    const filterSets = [];
+
+    for (const [indexName, values] of Object.entries(entry.indexBuckets)) {
+      const idsForFilter = new Set();
+
+      for (const value of values) {
+        const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}/${value}`;
+        resultPaths.push(path);
+
+        // eslint-disable-next-line no-await-in-loop
+        const payload = await readBucketPayload(path);
+        const bucketValue = payload?.exists && payload.value && typeof payload.value === 'object'
+          ? payload.value
+          : {};
+
+        if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
+        if (!setsMap[entry.setKey][indexName]) setsMap[entry.setKey][indexName] = {};
+        setsMap[entry.setKey][indexName][value] = bucketValue;
+
+        Object.keys(bucketValue)
+          .sort((a, b) => a.localeCompare(b))
+          .forEach(userId => {
+            if (userId) idsForFilter.add(userId);
+          });
       }
-      setsMap[setKey][indexName][value] = payloadValue;
-    });
-  });
+
+      filterSets.push(idsForFilter);
+    }
+
+    if (!filterSets.length || filterSets.some(set => set.size === 0)) {
+      // Empty or missing searchKeySets buckets mean this rule set allows no cards.
+      // Do not fallback to searchKey/searchKeyFile/newUsers scans.
+      continue;
+    }
+
+    const [firstSet, ...restSets] = filterSets;
+    for (const userId of firstSet) {
+      if (!restSets.every(set => set.has(userId))) continue;
+      if (addMatchedUserId(userId)) break;
+    }
+
+    if (hasMore) break;
+  }
 
   saveCachedAdditionalRulesSetIndex({
     rawRules,
@@ -1125,11 +1043,12 @@ export const getIndexedNewUsersIdsByRules = async ({
     setsMap,
   });
 
-  const paged = applyPagination([...userIds]);
   return {
-    setKeys: payloadsBySet.flatMap(item => item.paths),
+    setKeys: resultPaths,
+    userIds: pageUserIds,
     ownerId: normalizedAccessUserId,
-    ...paged,
+    nextOffset: safeResultOffset + pageUserIds.length,
+    hasMore,
   };
 };
 
