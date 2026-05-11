@@ -909,6 +909,7 @@ export const getIndexedNewUsersIdsByRules = async ({
   accessUserId,
   searchKeySetKeys = [],
   fetchMissingBuckets = false,
+  requireSearchKeySetKeys = true,
   resultOffset = 0,
   resultLimit = Number.POSITIVE_INFINITY,
   debugMatchingFlow = false,
@@ -924,6 +925,12 @@ export const getIndexedNewUsersIdsByRules = async ({
     }
   };
 
+  const emitAccessScopeEmpty = (reason, data = {}) => {
+    const payload = { reason, ...data };
+    console.info('[searchKeySets][additionalNewUsers] access scope empty', payload);
+    emitDebug('access scope empty', payload);
+  };
+
   if (!normalizedAccessUserId) return null;
 
   const explicitSetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
@@ -931,6 +938,21 @@ export const getIndexedNewUsersIdsByRules = async ({
     accessUserId: normalizedAccessUserId,
     searchKeySetKeys: explicitSetKeys,
   });
+
+  if (requireSearchKeySetKeys && explicitSetKeys.length === 0) {
+    emitAccessScopeEmpty('no searchKeySets data', {
+      accessUserId: normalizedAccessUserId,
+      searchKeySetKeys: explicitSetKeys,
+    });
+    return {
+      setKeys: [],
+      userIds: [],
+      ownerId: normalizedAccessUserId,
+      nextOffset: Math.max(0, Number(resultOffset) || 0),
+      hasMore: false,
+      reason: 'no searchKeySets data',
+    };
+  }
 
   const ruleSetEntries = parseRawRulesToSetEntries(rawRules);
   const ruleBucketEntries = ruleSetEntries
@@ -979,6 +1001,11 @@ export const getIndexedNewUsersIdsByRules = async ({
   });
 
   if (!setEntries.length) {
+    emitAccessScopeEmpty('access scope empty', {
+      accessUserId: normalizedAccessUserId,
+      searchKeySetKeys: explicitSetKeys,
+      ruleBucketEntriesCount: ruleBucketEntries.length,
+    });
     emitDebug('final userIds before pagination', { userIds: [], count: 0 });
     emitDebug('returned userIds after pagination', { userIds: [], count: 0, offset: resultOffset, limit: resultLimit });
     return { setKeys: [], userIds: [], ownerId: normalizedAccessUserId };
@@ -1025,6 +1052,9 @@ export const getIndexedNewUsersIdsByRules = async ({
 
   for (const entry of setEntries) {
     const filterSets = [];
+    let existingBucketsForSet = 0;
+    let emptyBucketsForSet = 0;
+    let missingBucketsForSet = 0;
 
     for (const [indexName, values] of Object.entries(entry.indexBuckets)) {
       const idsForFilter = new Set();
@@ -1039,13 +1069,21 @@ export const getIndexedNewUsersIdsByRules = async ({
         const bucketValue = payload?.exists && payload.value && typeof payload.value === 'object'
           ? payload.value
           : {};
+        const bucketIdsCount = Object.keys(bucketValue).filter(Boolean).length;
+
+        if (payload?.exists) {
+          existingBucketsForSet += 1;
+          if (bucketIdsCount === 0) emptyBucketsForSet += 1;
+        } else {
+          missingBucketsForSet += 1;
+        }
 
         emitDebug('ids count from bucket', {
           path,
           setKey: entry.setKey,
           indexName,
           value,
-          idsCount: Object.keys(bucketValue).filter(Boolean).length,
+          idsCount: bucketIdsCount,
         });
 
         if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
@@ -1066,6 +1104,18 @@ export const getIndexedNewUsersIdsByRules = async ({
     if (!filterSets.length || filterSets.some(set => set.size === 0)) {
       // Empty or missing searchKeySets buckets mean this rule set allows no cards.
       // Do not fallback to searchKey/searchKeyFile/newUsers scans.
+      const reason = existingBucketsForSet === 0
+        ? 'missing setKey'
+        : emptyBucketsForSet > 0 || missingBucketsForSet > 0
+          ? 'empty bucket'
+          : 'access scope empty';
+      emitAccessScopeEmpty(reason, {
+        setKey: entry.setKey,
+        existingBuckets: existingBucketsForSet,
+        emptyBuckets: emptyBucketsForSet,
+        missingBuckets: missingBucketsForSet,
+        filters: filterSets.map(set => set.size),
+      });
       continue;
     }
 
@@ -1075,6 +1125,14 @@ export const getIndexedNewUsersIdsByRules = async ({
       .forEach(userId => {
         if (restSets.every(set => set.has(userId))) matchedUserIds.add(userId);
       });
+  }
+
+  if (matchedUserIds.size === 0) {
+    emitAccessScopeEmpty('access scope empty', {
+      accessUserId: normalizedAccessUserId,
+      setKeys: setEntries.map(entry => entry.setKey),
+      readPaths: resultPaths,
+    });
   }
 
   const finalUserIds = [...matchedUserIds];
