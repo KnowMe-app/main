@@ -72,11 +72,22 @@ import {
   getIndexedNewUsersIdsByRules,
   normalizeSearchKeySetKeys,
 } from 'utils/newUsersFilterSetsIndex';
-import { resolveMatchingMultiDataOwnerIds } from 'utils/multiDataAccess';
-import { resolvePrioritizedReactionMaps } from 'utils/reactionPriority';
+import {
+  MULTI_DATA_ACCESS_FIELD,
+  parseMultiDataAccessUserIds,
+  resolveMatchingMultiDataOwnerIds,
+} from 'utils/multiDataAccess';
+import {
+  buildSharedReactionCandidateIds,
+  normalizeReactionMap,
+  resolvePrioritizedReactionMaps,
+  uniqueTruthyReactionIds,
+} from 'utils/reactionPriority';
 
 
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
+const DEBUG_SHARED_NEW_USER_ID = 'ID0001';
 
 const shouldDebugAdditionalMatching = (...ids) =>
   ids.some(id => String(id || '').trim() === DEBUG_ADDITIONAL_MATCHING_USER_ID);
@@ -111,6 +122,24 @@ const debugAdditionalToast = (accessUserId, message, data = {}) => {
   });
 
   console.info('[ADD newUsers debug]', message, data);
+};
+
+
+const summarizeIdsForDebug = (ids, limit = 25) => {
+  const normalized = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
+  return {
+    count: normalized.length,
+    ids: normalized.slice(0, limit),
+    truncated: normalized.length > limit,
+  };
+};
+
+const countTruthyReactionEntries = maps =>
+  maps.reduce((total, map) => total + Object.keys(normalizeReactionMap(map)).length, 0);
+
+const debugSharedReactionsLog = (viewerId, message, data = {}) => {
+  if (!shouldDebugAdditionalMatching(viewerId)) return;
+  console.info('[Matching][sharedReactions debug]', message, data);
 };
 
 const debugMissingNewUsersToast = (accessUserId, indexedCount) => {
@@ -1848,8 +1877,14 @@ const Matching = () => {
   // removed selected user modal logic
   const [favoriteUsers, setFavoriteUsers] = useState({});
   const [dislikeUsers, setDislikeUsers] = useState({});
+  const [ownFavoriteUsers, setOwnFavoriteUsers] = useState({});
+  const [ownDislikeUsers, setOwnDislikeUsers] = useState({});
+  const [sharedReactionIds, setSharedReactionIds] = useState([]);
+  const [sharedReactionCandidateUsers, setSharedReactionCandidateUsers] = useState([]);
   const favoriteUsersRef = useRef(favoriteUsers);
   const dislikeUsersRef = useRef(dislikeUsers);
+  const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
+  const ownDislikeUsersRef = useRef(ownDislikeUsers);
   const [viewMode, setViewMode] = useState('default');
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
@@ -1990,8 +2025,19 @@ const Matching = () => {
   }, [dislikeUsers]);
 
   useEffect(() => {
+    ownFavoriteUsersRef.current = ownFavoriteUsers;
+  }, [ownFavoriteUsers]);
+
+  useEffect(() => {
+    ownDislikeUsersRef.current = ownDislikeUsers;
+  }, [ownDislikeUsers]);
+
+  useEffect(() => {
     usersRef.current = users;
-    const ids = users.map(u => u.userId);
+    const ids = [
+      ...users.map(u => u.userId),
+      ...sharedReactionCandidateUsers.map(u => u.userId),
+    ];
     pruneComments(ids);
     setComments(prev => {
       const map = {};
@@ -2007,7 +2053,7 @@ const Matching = () => {
       });
       return map;
     });
-  }, [users]);
+  }, [sharedReactionCandidateUsers, users]);
 
   useEffect(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') {
@@ -2015,10 +2061,10 @@ const Matching = () => {
     }
     setUsers(prev =>
       prev.filter(
-        u => !favoriteUsers[u.userId] && !dislikeUsers[u.userId]
+        u => !ownFavoriteUsers[u.userId] && !ownDislikeUsers[u.userId]
       )
     );
-  }, [favoriteUsers, dislikeUsers, viewMode]);
+  }, [ownFavoriteUsers, ownDislikeUsers, viewMode]);
 
   const loadCommentsFor = React.useCallback(async list => {
     const owners = getMatchingMultiDataOwnerIds();
@@ -2056,17 +2102,157 @@ const Matching = () => {
         .map(comment => String(comment.text || '').trim())
         .filter(Boolean);
     });
+    const sharedOwnerIds = owners.filter(owner => owner !== ownOwnerId);
+    const sharedCommentsCount = Object.values(sharedCommentsMap)
+      .reduce((total, cardComments) => total + cardComments.length, 0);
+    debugSharedReactionsLog(ownOwnerId, 'shared comments loaded', {
+      ownerIds: owners,
+      sharedOwnerIds,
+      cardIds: summarizeIdsForDebug(ids),
+      sharedCommentsCount,
+      cardsWithSharedComments: summarizeIdsForDebug(
+        Object.entries(sharedCommentsMap)
+          .filter(([, cardComments]) => cardComments.length > 0)
+          .map(([cardId]) => cardId)
+      ),
+    });
     saveComments(newStore);
     setComments(commentsMap);
     setSharedComments(sharedCommentsMap);
   }, [getMatchingMultiDataOwnerIds]);
 
   useEffect(() => {
+    if (!users.length || !multiDataOwnerIds.length) return;
+    loadCommentsFor(users);
+  }, [loadCommentsFor, multiDataOwnerIds, users]);
+
+  const loadSharedReactionCandidates = React.useCallback(async () => {
+    const viewerId = ownerId || getOwnerId();
+    const candidateIds = [...new Set(sharedReactionIds.filter(Boolean))];
+    debugSharedReactionsLog(viewerId, 'shared reaction ids found for candidate pool', {
+      sharedReactionIds: summarizeIdsForDebug(candidateIds),
+      collectionSource,
+    });
+
+    if (!viewerId || candidateIds.length === 0) {
+      setSharedReactionCandidateUsers([]);
+      return;
+    }
+
+    const filteredInvalidIds = candidateIds.filter(id => !isMatchingCardId(id));
+    const filteredByCollectionIds = [];
+    const filteredByAccessIds = [];
+    let allowedNewUserIds = [];
+    let indexedAllowedNewUserIds = null;
+
+    if (collectionSource === 'newUsers') {
+      const newUserCandidateIds = candidateIds.filter(isShortId);
+      filteredByCollectionIds.push(...candidateIds.filter(id => !isShortId(id)));
+
+      if (parsedAdditionalAccessRules.length > 0) {
+        const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(currentSearchKeySetKeys, viewerId)
+          ? currentSearchKeySetKeys
+          : await resolveAdditionalSearchKeySetKeysForMatching(null, viewerId);
+
+        if (resolvedSearchKeySetKeys.length === 0) {
+          filteredByAccessIds.push(...newUserCandidateIds);
+        } else {
+          const indexed = await getIndexedNewUsersIdsByRules({
+            rawRules: currentAdditionalAccessRules,
+            accessUserId: viewerId,
+            searchKeySetKeys: resolvedSearchKeySetKeys,
+            fetchMissingBuckets: true,
+            requireSearchKeySetKeys: true,
+            resultOffset: 0,
+            resultLimit: Number.POSITIVE_INFINITY,
+            debugMatchingFlow: shouldDebugAdditionalMatching(viewerId),
+            debugToast: (message, data) => debugAdditionalToast(viewerId, message, data),
+          });
+          indexedAllowedNewUserIds = new Set(Array.isArray(indexed?.userIds) ? indexed.userIds : []);
+          allowedNewUserIds = newUserCandidateIds.filter(id => indexedAllowedNewUserIds.has(id));
+          filteredByAccessIds.push(...newUserCandidateIds.filter(id => !indexedAllowedNewUserIds.has(id)));
+        }
+      } else {
+        allowedNewUserIds = newUserCandidateIds;
+      }
+    } else {
+      filteredByCollectionIds.push(...candidateIds.filter(id => !isValidId(id)));
+    }
+
+    const loadedUsers = [];
+    if (collectionSource === 'newUsers' && allowedNewUserIds.length > 0) {
+      const newUsersCards = await fetchNewUsersByIdsForMatching(allowedNewUserIds);
+      loadedUsers.push(...newUsersCards);
+    }
+
+    if (collectionSource !== 'newUsers') {
+      const userIds = candidateIds.filter(isValidId);
+      if (userIds.length > 0) {
+        const usersMap = await fetchUsersByIds(userIds);
+        loadedUsers.push(
+          ...userIds
+            .map(id => usersMap[id])
+            .filter(Boolean)
+            .map(user => ({ ...user, __sourceCollection: 'users' }))
+        );
+      }
+    }
+
+    const loadedIds = new Set(loadedUsers.map(user => user.userId).filter(Boolean));
+    const missingAllowedIds = collectionSource === 'newUsers'
+      ? allowedNewUserIds.filter(id => !loadedIds.has(id))
+      : candidateIds.filter(isValidId).filter(id => !loadedIds.has(id));
+
+    loadedUsers.forEach(user => updateCard(user.userId, user));
+    setSharedReactionCandidateUsers(loadedUsers);
+    await loadCommentsFor(loadedUsers);
+
+    debugSharedReactionsLog(viewerId, 'shared reaction candidate pool resolved', {
+      sharedReactionIds: summarizeIdsForDebug(candidateIds),
+      addedToCandidatePool: summarizeIdsForDebug(loadedUsers.map(user => user.userId)),
+      foundCollections: loadedUsers.map(user => ({
+        userId: user.userId,
+        collection: user.__sourceCollection || (isShortId(user.userId) ? 'newUsers' : 'users'),
+      })),
+      filteredInvalidIds: summarizeIdsForDebug(filteredInvalidIds),
+      filteredByCollectionIds: summarizeIdsForDebug(filteredByCollectionIds),
+      filteredByAccessOrSearchKeySets: summarizeIdsForDebug(filteredByAccessIds),
+      missingAllowedCards: summarizeIdsForDebug(missingAllowedIds),
+      allowedBySearchKeySetsCount: indexedAllowedNewUserIds ? indexedAllowedNewUserIds.size : null,
+      id0001SelfCheck: {
+        sharedReactionIdFound: candidateIds.includes(DEBUG_SHARED_NEW_USER_ID),
+        allowedBySearchKeySets: collectionSource === 'newUsers'
+          ? allowedNewUserIds.includes(DEBUG_SHARED_NEW_USER_ID)
+          : null,
+        filteredByAccessOrSearchKeySets: filteredByAccessIds.includes(DEBUG_SHARED_NEW_USER_ID),
+        foundInCollection: loadedUsers.find(user => user.userId === DEBUG_SHARED_NEW_USER_ID)?.__sourceCollection || null,
+        addedToCandidatePool: loadedIds.has(DEBUG_SHARED_NEW_USER_ID),
+      },
+    });
+  }, [
+    collectionSource,
+    currentAdditionalAccessRules,
+    currentSearchKeySetKeys,
+    loadCommentsFor,
+    ownerId,
+    parsedAdditionalAccessRules.length,
+    sharedReactionIds,
+  ]);
+
+  useEffect(() => {
+    loadSharedReactionCandidates();
+  }, [loadSharedReactionCandidates]);
+
+  useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       if (user) {
         localStorage.setItem('ownerId', user.uid);
         setOwnerId(user.uid);
-        setMultiDataOwnerIds(resolveMatchingMultiDataOwnerIds({ viewerId: user.uid }));
+        const initialOwnerIds = resolveMatchingMultiDataOwnerIds({ viewerId: user.uid });
+        setMultiDataOwnerIds(initialOwnerIds);
+        debugSharedReactionsLog(user.uid, 'initial ownerIds before profile access load', {
+          ownerIds: initialOwnerIds,
+        });
 
         const syncAccessProfile = async () => {
           try {
@@ -2083,7 +2269,18 @@ const Matching = () => {
             localStorage.setItem('accessLevel', accessLevel);
             localStorage.setItem('additionalAccessRules', additionalAccessRules);
             localStorage.setItem('additionalSearchKeySetKeys', searchKeySetKeys.join(','));
-            setMultiDataOwnerIds(resolveMatchingMultiDataOwnerIds({ viewerId: user.uid, profile }));
+            const accessOwnerIds = parseMultiDataAccessUserIds(profile?.[MULTI_DATA_ACCESS_FIELD]);
+            const resolvedOwnerIds = resolveMatchingMultiDataOwnerIds({ viewerId: user.uid, profile });
+            debugSharedReactionsLog(user.uid, 'ownerIds read from multiDataAccessUserIds', {
+              multiDataAccessUserIds: accessOwnerIds,
+              ownerIds: resolvedOwnerIds,
+              paths: accessOwnerIds.map(sharedOwnerId => ({
+                favorites: `multiData/favorites/${sharedOwnerId}`,
+                dislikes: `multiData/dislikes/${sharedOwnerId}`,
+                comments: `multiData/comments/${sharedOwnerId}`,
+              })),
+            });
+            setMultiDataOwnerIds(resolvedOwnerIds);
           } catch (error) {
             console.error('Failed to refresh access profile on Matching', error);
             const cachedAccessLevel = localStorage.getItem('accessLevel') || '';
@@ -2109,6 +2306,10 @@ const Matching = () => {
         setMultiDataOwnerIds([]);
         setFavoriteUsers({});
         setDislikeUsers({});
+        setOwnFavoriteUsers({});
+        setOwnDislikeUsers({});
+        setSharedReactionIds([]);
+        setSharedReactionCandidateUsers([]);
         setSharedComments({});
         setCurrentAccessLevel('');
         setCurrentAdditionalAccessRules('');
@@ -2133,13 +2334,64 @@ const Matching = () => {
 
     const favoriteSnapshots = {};
     const dislikeSnapshots = {};
+    const loadedFavoriteOwnerIds = new Set();
+    const loadedDislikeOwnerIds = new Set();
     const applyPrioritizedReactionMaps = () => {
+      const ownOwnerId = getOwnerId();
+      const hasLoadedReactionSnapshots = ownerIds.every(
+        ownerId => loadedFavoriteOwnerIds.has(ownerId) && loadedDislikeOwnerIds.has(ownerId)
+      );
+      if (!hasLoadedReactionSnapshots) return;
+      const sharedOwnerIds = ownerIds.filter(id => id !== ownOwnerId);
       const { favorites, dislikes } = resolvePrioritizedReactionMaps({
         ownerIds,
-        ownOwnerId: getOwnerId(),
+        ownOwnerId,
         favoriteSnapshots,
         dislikeSnapshots,
       });
+      const ownFavorites = normalizeReactionMap(favoriteSnapshots[ownOwnerId]);
+      const ownDislikes = normalizeReactionMap(dislikeSnapshots[ownOwnerId]);
+      const nextSharedReactionIds = buildSharedReactionCandidateIds({
+        ownerIds,
+        ownOwnerId,
+        favoriteSnapshots,
+        dislikeSnapshots,
+        favorites,
+        dislikes,
+      });
+      debugSharedReactionsLog(ownOwnerId, 'priority merge applied for shared reactions', {
+        ownerIds,
+        sharedOwnerIds,
+        sharedFavoritesFound: countTruthyReactionEntries(
+          sharedOwnerIds.map(sharedOwnerId => favoriteSnapshots[sharedOwnerId])
+        ),
+        sharedDislikesFound: countTruthyReactionEntries(
+          sharedOwnerIds.map(sharedOwnerId => dislikeSnapshots[sharedOwnerId])
+        ),
+        sharedFavoriteIdsFound: summarizeIdsForDebug(
+          uniqueTruthyReactionIds(sharedOwnerIds.map(sharedOwnerId => favoriteSnapshots[sharedOwnerId]))
+        ),
+        sharedDislikeIdsFound: summarizeIdsForDebug(
+          uniqueTruthyReactionIds(sharedOwnerIds.map(sharedOwnerId => dislikeSnapshots[sharedOwnerId]))
+        ),
+        sharedReactionIdsFound: summarizeIdsForDebug(nextSharedReactionIds),
+        ownFavoritesFound: Object.keys(ownFavorites).length,
+        ownDislikesFound: Object.keys(ownDislikes).length,
+        appliedFavorites: summarizeIdsForDebug(Object.keys(favorites)),
+        appliedDislikes: summarizeIdsForDebug(Object.keys(dislikes)),
+        id0001SelfCheck: {
+          hasAccessToSharedOwner: ownerIds.includes(DEBUG_SHARED_OWNER_ID),
+          sharedOwnerDislikesId0001: Boolean(normalizeReactionMap(dislikeSnapshots[DEBUG_SHARED_OWNER_ID])[DEBUG_SHARED_NEW_USER_ID]),
+          viewerOwnLikeId0001: Boolean(ownFavorites[DEBUG_SHARED_NEW_USER_ID]),
+          viewerOwnDislikeId0001: Boolean(ownDislikes[DEBUG_SHARED_NEW_USER_ID]),
+          appliedAsLiked: Boolean(favorites[DEBUG_SHARED_NEW_USER_ID]),
+          appliedAsDisliked: Boolean(dislikes[DEBUG_SHARED_NEW_USER_ID]),
+          requestedForCandidatePool: nextSharedReactionIds.includes(DEBUG_SHARED_NEW_USER_ID),
+        },
+      });
+      setOwnFavoriteUsers(ownFavorites);
+      setOwnDislikeUsers(ownDislikes);
+      setSharedReactionIds(nextSharedReactionIds);
       setFavoriteUsers(favorites);
       syncFavorites(favorites);
       setDislikeUsers(dislikes);
@@ -2152,10 +2404,12 @@ const Matching = () => {
 
       const unsubFav = onValue(favRef, snap => {
         favoriteSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
+        loadedFavoriteOwnerIds.add(effectiveOwnerId);
         applyPrioritizedReactionMaps();
       });
       const unsubDis = onValue(disRef, snap => {
         dislikeSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
+        loadedDislikeOwnerIds.add(effectiveOwnerId);
         applyPrioritizedReactionMaps();
       });
 
@@ -2347,24 +2601,61 @@ const Matching = () => {
         ]);
         const favoriteSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, favMaps[index]]));
         const dislikeSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, disMaps[index]]));
+        const ownOwnerId = getOwnerId();
         const { favorites: favIds, dislikes: disIds } = resolvePrioritizedReactionMaps({
           ownerIds: owners,
-          ownOwnerId: getOwnerId(),
+          ownOwnerId,
           favoriteSnapshots,
           dislikeSnapshots,
         });
+        const ownFavorites = normalizeReactionMap(favoriteSnapshots[ownOwnerId]);
+        const ownDislikes = normalizeReactionMap(dislikeSnapshots[ownOwnerId]);
+        const nextSharedReactionIds = buildSharedReactionCandidateIds({
+          ownerIds: owners,
+          ownOwnerId,
+          favoriteSnapshots,
+          dislikeSnapshots,
+          favorites: favIds,
+          dislikes: disIds,
+        });
+        const sharedOwnerIds = owners.filter(id => id !== ownOwnerId);
+        debugSharedReactionsLog(ownOwnerId, 'initial shared reaction ids found', {
+          ownerIds: owners,
+          sharedFavoriteIdsFound: summarizeIdsForDebug(
+            uniqueTruthyReactionIds(sharedOwnerIds.map(sharedOwnerId => favoriteSnapshots[sharedOwnerId]))
+          ),
+          sharedDislikeIdsFound: summarizeIdsForDebug(
+            uniqueTruthyReactionIds(sharedOwnerIds.map(sharedOwnerId => dislikeSnapshots[sharedOwnerId]))
+          ),
+          sharedReactionIdsFound: summarizeIdsForDebug(nextSharedReactionIds),
+          id0001SelfCheck: {
+            hasAccessToSharedOwner: owners.includes(DEBUG_SHARED_OWNER_ID),
+            sharedOwnerDislikesId0001: Boolean(normalizeReactionMap(dislikeSnapshots[DEBUG_SHARED_OWNER_ID])[DEBUG_SHARED_NEW_USER_ID]),
+            viewerOwnLikeId0001: Boolean(ownFavorites[DEBUG_SHARED_NEW_USER_ID]),
+            viewerOwnDislikeId0001: Boolean(ownDislikes[DEBUG_SHARED_NEW_USER_ID]),
+            appliedAsLiked: Boolean(favIds[DEBUG_SHARED_NEW_USER_ID]),
+            appliedAsDisliked: Boolean(disIds[DEBUG_SHARED_NEW_USER_ID]),
+            requestedForCandidatePool: nextSharedReactionIds.includes(DEBUG_SHARED_NEW_USER_ID),
+          },
+        });
+        setOwnFavoriteUsers(ownFavorites);
+        setOwnDislikeUsers(ownDislikes);
+        setSharedReactionIds(nextSharedReactionIds);
         setFavoriteUsers(favIds);
         setDislikeUsers(disIds);
         syncFavorites(favIds);
         syncDislikes(disIds);
         exclude = new Set([
-          ...Object.keys(favIds),
-          ...Object.keys(disIds),
+          ...Object.keys(ownFavorites),
+          ...Object.keys(ownDislikes),
         ]);
       } else {
         const localFav = getFavorites();
         const localDis = getDislikes();
         if (Object.keys(localFav).length || Object.keys(localDis).length) {
+          setOwnFavoriteUsers(localFav);
+          setOwnDislikeUsers(localDis);
+          setSharedReactionIds([]);
           setFavoriteUsers(localFav);
           setDislikeUsers(localDis);
           exclude = new Set([
@@ -2464,12 +2755,23 @@ const Matching = () => {
     ]);
     const favoriteSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, favoriteMaps[index]]));
     const dislikeSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, dislikeMaps[index]]));
+    const ownOwnerId = getOwnerId();
     const { favorites: favMap, dislikes: disMap } = resolvePrioritizedReactionMaps({
       ownerIds: owners,
-      ownOwnerId: getOwnerId(),
+      ownOwnerId,
       favoriteSnapshots,
       dislikeSnapshots,
     });
+    setOwnFavoriteUsers(normalizeReactionMap(favoriteSnapshots[ownOwnerId]));
+    setOwnDislikeUsers(normalizeReactionMap(dislikeSnapshots[ownOwnerId]));
+    setSharedReactionIds(buildSharedReactionCandidateIds({
+      ownerIds: owners,
+      ownOwnerId,
+      favoriteSnapshots,
+      dislikeSnapshots,
+      favorites: favMap,
+      dislikes: disMap,
+    }));
     const favDataByOwner = await Promise.all(owners.map(owner => fetchFavoriteUsersData(owner)));
     const favUsers = Object.assign({}, ...favDataByOwner);
     syncFavorites(favMap);
@@ -2505,12 +2807,23 @@ const Matching = () => {
     ]);
     const favoriteSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, favoriteMaps[index]]));
     const dislikeSnapshots = Object.fromEntries(owners.map((owner, index) => [owner, dislikeMaps[index]]));
+    const ownOwnerId = getOwnerId();
     const { favorites: favMap, dislikes: disMap } = resolvePrioritizedReactionMaps({
       ownerIds: owners,
-      ownOwnerId: getOwnerId(),
+      ownOwnerId,
       favoriteSnapshots,
       dislikeSnapshots,
     });
+    setOwnFavoriteUsers(normalizeReactionMap(favoriteSnapshots[ownOwnerId]));
+    setOwnDislikeUsers(normalizeReactionMap(dislikeSnapshots[ownOwnerId]));
+    setSharedReactionIds(buildSharedReactionCandidateIds({
+      ownerIds: owners,
+      ownOwnerId,
+      favoriteSnapshots,
+      dislikeSnapshots,
+      favorites: favMap,
+      dislikes: disMap,
+    }));
     const dislikeDataByOwner = await Promise.all(owners.map(owner => fetchDislikeUsersData(owner)));
     const loaded = Object.assign({}, ...dislikeDataByOwner);
     cacheDislikedUsers(loaded);
@@ -2581,8 +2894,8 @@ const Matching = () => {
     setLoading(true);
     try {
       const baseExclude = new Set([
-        ...Object.keys(favoriteUsersRef.current),
-        ...Object.keys(dislikeUsersRef.current),
+        ...Object.keys(ownFavoriteUsersRef.current),
+        ...Object.keys(ownDislikeUsersRef.current),
       ]);
 
       if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
@@ -2754,15 +3067,22 @@ const Matching = () => {
       additionalNewUsers.length > 0;
 
     const byId = new Map(baseUsers.map(user => [user.userId, user]));
+    const injectCandidate = user => {
+      if (!user?.userId) return;
+      const existing = byId.get(user.userId);
+      if (existing) {
+        byId.set(user.userId, { ...existing, ...user });
+      } else {
+        byId.set(user.userId, user);
+      }
+    };
+
     if (shouldInjectAdditionalCards) {
-      additionalNewUsers.forEach(user => {
-        const existing = byId.get(user.userId);
-        if (existing) {
-          byId.set(user.userId, { ...existing, ...user });
-        } else {
-          byId.set(user.userId, user);
-        }
-      });
+      additionalNewUsers.forEach(injectCandidate);
+    }
+
+    if (viewMode === 'default') {
+      sharedReactionCandidateUsers.forEach(injectCandidate);
     }
 
     const mergedUsers = Array.from(byId.values());
@@ -2771,14 +3091,15 @@ const Matching = () => {
     }
 
     return mergedUsers.filter(
-      user => !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
+      user => !ownFavoriteUsers[user.userId] && !ownDislikeUsers[user.userId]
     );
   }, [
     additionalNewUsers,
-    dislikeUsers,
-    favoriteUsers,
+    ownDislikeUsers,
+    ownFavoriteUsers,
     isAdmin,
     parsedAdditionalAccessRules,
+    sharedReactionCandidateUsers,
     users,
     viewMode,
     collectionSource,
