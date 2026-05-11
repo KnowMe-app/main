@@ -48,8 +48,10 @@ describe('BtnFavorite', () => {
     const setDislikeUsers = jest.fn();
     const setOwnDislikeUsers = jest.fn();
 
+    const mountComponent = ui => root.render(ui);
+
     await act(async () => {
-      root.render(
+      mountComponent(
         <BtnFavorite
           userId="ID0001"
           userData={{ userId: 'ID0001' }}

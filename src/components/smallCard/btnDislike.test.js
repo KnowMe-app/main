@@ -46,8 +46,10 @@ describe('BtnDislike', () => {
     const setDislikeUsers = jest.fn();
     const setOwnDislikeUsers = jest.fn();
 
+    const mountComponent = ui => root.render(ui);
+
     await act(async () => {
-      root.render(
+      mountComponent(
         <BtnDislike
           userId="card1"
           userData={{ userId: 'card1' }}
