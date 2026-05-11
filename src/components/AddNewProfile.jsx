@@ -4299,6 +4299,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   ),
                 },
                 null,
+                {},
                 handleTopBlockSubmitHistorySnapshot,
               )}
             </div>
