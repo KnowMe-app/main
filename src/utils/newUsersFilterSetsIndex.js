@@ -35,6 +35,14 @@ const get = (...args) =>
 export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
 const FORBIDDEN_RTDB_SEGMENT_CHARS = ['.', '#', '$', '/', '[', ']'];
+const SEARCH_KEY_SET_KEYS_OBJECT_FIELDS = [
+  'searchKeySetKeys',
+  'searchKeySets',
+  'additionalSearchKeySetKeys',
+  'additionalAccessKeySets',
+  'additionalAccessSearchKeySets',
+  'keySets',
+];
 
 
 const normalizePathSegment = value => {
@@ -63,8 +71,15 @@ export const normalizeSearchKeySetKeys = rawKeys => {
     }
 
     if (typeof value === 'object') {
+      const nestedFieldValues = SEARCH_KEY_SET_KEYS_OBJECT_FIELDS
+        .filter(fieldName => Object.prototype.hasOwnProperty.call(value, fieldName))
+        .flatMap(fieldName => collect(value[fieldName]));
+      if (nestedFieldValues.length) return nestedFieldValues;
+
       return Object.entries(value).flatMap(([key, valueByKey]) => {
         if (valueByKey === true) return collect(key);
+        if (!valueByKey) return [];
+        if (typeof valueByKey === 'object' && !Array.isArray(valueByKey)) return collect(key);
         return collect(valueByKey);
       });
     }
@@ -934,7 +949,7 @@ export const getIndexedNewUsersIdsByRules = async ({
 
   const setEntries = ruleBucketEntries.flatMap(entry => {
     const setKeys = explicitSetKeys.length ? explicitSetKeys : [entry.defaultSetKey];
-    return setKeys.filter(Boolean).map(setKey => ({ setKey, indexBuckets: entry.indexBuckets }));
+    return [...new Set(setKeys.filter(Boolean))].map(setKey => ({ setKey, indexBuckets: entry.indexBuckets }));
   });
 
   if (!setEntries.length) return { setKeys: [], userIds: [], ownerId: normalizedAccessUserId };
@@ -942,19 +957,22 @@ export const getIndexedNewUsersIdsByRules = async ({
   const readBucketPayload = async path => {
     const cached = peekCachedSearchKeyPayload(path);
     if (cached && typeof cached.exists === 'boolean') return cached;
-    if (!fetchMissingBuckets) return null;
 
     try {
-      return await getCachedSearchKeyPayload(path, async () => {
+      const payload = await getCachedSearchKeyPayload(path, async () => {
         const snapshot = await get(ref(database, path));
         return {
           exists: snapshot.exists(),
           value: snapshot.exists() ? snapshot.val() || {} : null,
         };
       });
+
+      if (payload && typeof payload.exists === 'boolean') return payload;
+      return { exists: false, value: null };
     } catch (error) {
       console.warn('[searchKeySets] Failed to read bucket; treating as empty without searchKey fallback', {
         path,
+        fetchMissingBuckets,
         error,
       });
       return { exists: false, value: null };
@@ -963,34 +981,12 @@ export const getIndexedNewUsersIdsByRules = async ({
 
   const setsMap = {};
   const resultPaths = [];
-  const pageUserIds = [];
-  const seenMatchedIds = new Set();
+  const matchedUserIds = new Set();
   const safeResultOffset = Math.max(0, Number(resultOffset) || 0);
   const numericResultLimit = Number(resultLimit);
   const safeResultLimit = Number.isFinite(numericResultLimit)
     ? Math.max(0, numericResultLimit)
     : Number.POSITIVE_INFINITY;
-  let matchedIndex = 0;
-  let hasMore = false;
-
-  const addMatchedUserId = userId => {
-    if (!userId || seenMatchedIds.has(userId)) return false;
-    seenMatchedIds.add(userId);
-
-    if (matchedIndex < safeResultOffset) {
-      matchedIndex += 1;
-      return false;
-    }
-
-    if (pageUserIds.length < safeResultLimit) {
-      pageUserIds.push(userId);
-      matchedIndex += 1;
-      return false;
-    }
-
-    hasMore = true;
-    return true;
-  };
 
   for (const entry of setEntries) {
     const filterSets = [];
@@ -1019,6 +1015,7 @@ export const getIndexedNewUsersIdsByRules = async ({
           });
       }
 
+      // OR between bucket values for the same indexName, AND between different indexName fields.
       filterSets.push(idsForFilter);
     }
 
@@ -1028,14 +1025,21 @@ export const getIndexedNewUsersIdsByRules = async ({
       continue;
     }
 
-    const [firstSet, ...restSets] = filterSets;
-    for (const userId of firstSet) {
-      if (!restSets.every(set => set.has(userId))) continue;
-      if (addMatchedUserId(userId)) break;
-    }
-
-    if (hasMore) break;
+    const [firstSet, ...restSets] = [...filterSets].sort((a, b) => a.size - b.size);
+    [...firstSet]
+      .sort((a, b) => a.localeCompare(b))
+      .forEach(userId => {
+        if (restSets.every(set => set.has(userId))) matchedUserIds.add(userId);
+      });
   }
+
+  const finalUserIds = [...matchedUserIds];
+  const pageUserIds = finalUserIds.slice(
+    safeResultOffset,
+    safeResultLimit === Number.POSITIVE_INFINITY ? undefined : safeResultOffset + safeResultLimit
+  );
+  const nextOffset = safeResultOffset + pageUserIds.length;
+  const hasMore = nextOffset < finalUserIds.length;
 
   saveCachedAdditionalRulesSetIndex({
     rawRules,
@@ -1047,7 +1051,7 @@ export const getIndexedNewUsersIdsByRules = async ({
     setKeys: resultPaths,
     userIds: pageUserIds,
     ownerId: normalizedAccessUserId,
-    nextOffset: safeResultOffset + pageUserIds.length,
+    nextOffset,
     hasMore,
   };
 };
