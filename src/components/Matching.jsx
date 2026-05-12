@@ -3114,6 +3114,29 @@ const Matching = () => {
     toast.success('Фільтри та кеш скинуто');
   }, [reloadDefault]);
 
+  const fetchReactionCardsByIds = React.useCallback(async ids => {
+    const entries = await Promise.all(
+      ids.map(async id => {
+        const cached = getCard(id);
+        const cachedPhotos = Array.isArray(cached?.photos) ? cached.photos : [];
+        const canUseCachedCard = cached && cachedPhotos.length > 0 && (
+          cached.__sourceCollection ||
+          cached.publish === true ||
+          !isShortId(id)
+        );
+        const user = canUseCachedCard ? cached : await fetchUserById(id);
+        return user ? [id, user] : null;
+      })
+    );
+
+    return entries.reduce((acc, entry) => {
+      if (!entry) return acc;
+      const [id, user] = entry;
+      acc[id] = user;
+      return acc;
+    }, {});
+  }, []);
+
   const loadReactionCards = async reactionType => {
     const isFavoritesMode = reactionType === 'favorites';
     setViewMode(reactionType);
@@ -3169,7 +3192,7 @@ const Matching = () => {
       offset: 0,
       limit: INITIAL_LOAD,
     });
-    const usersMap = await fetchUsersByIds(page.pageIds);
+    const usersMap = await fetchReactionCardsByIds(page.pageIds);
     const list = page.pageIds
       .map(id => usersMap[id])
       .filter(Boolean)
@@ -3275,7 +3298,7 @@ const Matching = () => {
           limit: LOAD_MORE,
           excludeIds: loadedIdsRef.current,
         });
-        const usersMap = await fetchUsersByIds(page.pageIds);
+        const usersMap = await fetchReactionCardsByIds(page.pageIds);
         const list = page.pageIds
           .map(id => usersMap[id])
           .filter(Boolean)
@@ -3514,6 +3537,7 @@ const Matching = () => {
     ensureFreshAdditionalMatchingProfile,
     defaultListKey,
     fetchChunk,
+    fetchReactionCardsByIds,
     filters,
     hasMore,
     lastKey,

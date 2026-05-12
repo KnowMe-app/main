@@ -9,4 +9,12 @@ describe('Matching shared reaction card UI', () => {
     expect(source).not.toContain('Disliked by shared owner');
     expect(source).not.toContain('ReactionOwnershipBadge');
   });
+
+  it('loads reaction tab cards through fetchUserById-compatible photo hydration', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain('const fetchReactionCardsByIds = React.useCallback');
+    expect(source).toContain('await fetchUserById(id)');
+    expect(source).not.toContain('const usersMap = await fetchUsersByIds(page.pageIds);');
+  });
 });

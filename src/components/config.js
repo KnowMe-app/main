@@ -1503,12 +1503,17 @@ export const fetchUsersByIds = async ids => {
           get(ref2(database, `newUsers/${id}`)),
           get(ref2(database, `users/${id}`)),
         ]).then(([newSnap, userSnap]) => {
+          const hasNewUser = newSnap.exists();
+          const hasUser = userSnap.exists();
+          if (!hasNewUser && !hasUser) return null;
+
           const data = {
             userId: id,
-            ...(newSnap.exists() ? newSnap.val() : {}),
-            ...(userSnap.exists() ? userSnap.val() : {}),
+            ...(hasUser ? userSnap.val() : {}),
+            ...(hasNewUser ? newSnap.val() : {}),
+            __sourceCollection: hasNewUser ? 'newUsers' : 'users',
           };
-          return Object.keys(data).length > 1 ? [id, data] : null;
+          return [id, data];
         })
       )
     );
@@ -5230,12 +5235,14 @@ export const fetchUserById = async userId => {
           ...userSnapshotInUsers.val(),
           ...newUserSnapshot.val(),
           photos,
+          __sourceCollection: 'newUsers',
         };
       }
       return {
         userId,
         ...newUserSnapshot.val(),
         photos,
+        __sourceCollection: 'newUsers',
       };
     }
 
@@ -5248,6 +5255,7 @@ export const fetchUserById = async userId => {
         userId,
         ...userSnapshot.val(),
         photos,
+        __sourceCollection: 'users',
       };
     }
 
