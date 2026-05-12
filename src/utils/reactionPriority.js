@@ -159,6 +159,46 @@ export const mergeMatchingCandidateUsers = ({
   );
 };
 
+
+export const getReactionUserIds = reactionMap =>
+  Object.keys(normalizeReactionMap(reactionMap));
+
+export const buildReactionCardsPage = ({
+  reactionMap = {},
+  reactionIds,
+  offset = 0,
+  limit = 6,
+  excludeIds = [],
+} = {}) => {
+  const ids = Array.isArray(reactionIds)
+    ? [...new Set(reactionIds.filter(Boolean))]
+    : getReactionUserIds(reactionMap);
+  const exclude = new Set(
+    Array.from(excludeIds || [])
+      .map(id => String(id || '').trim())
+      .filter(Boolean)
+  );
+  const safeLimit = Math.max(0, Number(limit) || 0);
+  let cursor = Math.max(0, Number(offset) || 0);
+  const pageIds = [];
+
+  while (cursor < ids.length && pageIds.length < safeLimit) {
+    const id = ids[cursor];
+    cursor += 1;
+    if (!id || exclude.has(id)) continue;
+    pageIds.push(id);
+  }
+
+  const hasMore = ids.slice(cursor).some(id => id && !exclude.has(id));
+
+  return {
+    pageIds,
+    nextOffset: cursor,
+    hasMore,
+    total: ids.length,
+  };
+};
+
 export const readReactionSnapshotMaps = async ({
   ownerIds = [],
   fetchFavoriteUsers,
