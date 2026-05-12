@@ -8,8 +8,6 @@ import { color } from './styles';
 import {
   fetchUsersByLastLogin2,
   fetchUserById,
-  fetchFavoriteUsersData,
-  fetchDislikeUsersData,
   fetchFavoriteUsers,
   fetchDislikeUsers,
   filterMain,
@@ -50,13 +48,11 @@ import {
   cacheFavoriteUsers,
   syncFavorites,
   getFavorites,
-  getFavoriteCards,
 } from '../utils/favoritesStorage';
 import {
   cacheDislikedUsers,
   syncDislikes,
   getDislikes,
-  getDislikedCards,
 } from '../utils/dislikesStorage';
 import {
   loadComments,
@@ -78,6 +74,7 @@ import {
   resolveMatchingMultiDataOwnerIds,
 } from 'utils/multiDataAccess';
 import {
+  buildReactionCardsPage,
   buildSharedReactionCandidateIds,
   canShowMatchingUser,
   mergeMatchingCandidateUsers,
@@ -232,8 +229,6 @@ const isShortId = id => typeof id === 'string' && id.length > 0 && id.length < 2
 const isMatchingCardId = id => isValidId(id) || isShortId(id);
 const isAllowedIdForCollection = (id, collection = 'users') =>
   collection === 'newUsers' ? isShortId(id) : isValidId(id);
-const filterMatchingUsers = list => list.filter(u => isMatchingCardId(u?.userId));
-
 const compareUsersByLastLogin2 = (a = {}, b = {}) =>
   (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
 
@@ -1361,6 +1356,8 @@ const HeaderRow = styled.div`
   flex-wrap: wrap;
 `;
 
+
+
 const AdminToggle = styled.div`
   position: absolute;
   top: 5px;
@@ -1977,6 +1974,12 @@ const Matching = () => {
   const [ownDislikeUsers, setOwnDislikeUsers] = useState({});
   const [sharedReactionIds, setSharedReactionIds] = useState([]);
   const [sharedReactionCandidateUsers, setSharedReactionCandidateUsers] = useState([]);
+  const [reactionPagination, setReactionPagination] = useState({
+    type: null,
+    ids: [],
+    nextOffset: 0,
+    hasMore: false,
+  });
   const favoriteUsersRef = useRef(favoriteUsers);
   const dislikeUsersRef = useRef(dislikeUsers);
   const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
@@ -3111,12 +3114,15 @@ const Matching = () => {
     toast.success('Фільтри та кеш скинуто');
   }, [reloadDefault]);
 
-  const loadFavoriteCards = async () => {
-    setViewMode('favorites');
+  const loadReactionCards = async reactionType => {
+    const isFavoritesMode = reactionType === 'favorites';
+    setViewMode(reactionType);
     setLoading(true);
     setUsers([]);
+    setReactionPagination({ type: reactionType, ids: [], nextOffset: 0, hasMore: false });
     const owners = await waitForOwnerId();
     if (!owners.length) {
+      setHasMore(false);
       setLoading(false);
       return;
     }
@@ -3134,8 +3140,10 @@ const Matching = () => {
       favoriteSnapshots,
       dislikeSnapshots,
     });
-    setOwnFavoriteUsers(normalizeReactionMap(favoriteSnapshots[ownOwnerId]));
-    setOwnDislikeUsers(normalizeReactionMap(dislikeSnapshots[ownOwnerId]));
+    const ownFavorites = normalizeReactionMap(favoriteSnapshots[ownOwnerId]);
+    const ownDislikes = normalizeReactionMap(dislikeSnapshots[ownOwnerId]);
+    setOwnFavoriteUsers(ownFavorites);
+    setOwnDislikeUsers(ownDislikes);
     setSharedReactionIds(buildSharedReactionCandidateIds({
       ownerIds: owners,
       ownOwnerId,
@@ -3144,75 +3152,55 @@ const Matching = () => {
       favorites: favMap,
       dislikes: disMap,
     }));
-    const favDataByOwner = await Promise.all(owners.map(owner => fetchFavoriteUsersData(owner)));
-    const favUsers = Object.assign({}, ...favDataByOwner);
+
     syncFavorites(favMap);
     syncDislikes(disMap);
     setFavoriteUsers(favMap);
     setDislikeUsers(disMap);
-    setFavoriteIds(favMap);
-    cacheFavoriteUsers(favUsers);
-    setIdsForQuery('favorite', Object.keys(favMap));
-    const { cards: favCards } = await getFavoriteCards(id => fetchUserById(id));
-    const list = filterMatchingUsers(favCards).sort(compareUsersByLastLogin2);
-    loadedIdsRef.current = new Set(list.map(u => u.userId));
-    setUsers(list);
-    await loadCommentsFor(list);
-    setHasMore(false);
-    setLastKey(null);
-    setLoading(false);
-  };
 
-  const loadDislikeCards = async () => {
-    setViewMode('dislikes');
-    setLoading(true);
-    setUsers([]);
-    const owners = await waitForOwnerId();
-    if (!owners.length) {
-      setLoading(false);
-      return;
+    const reactionMap = isFavoritesMode ? favMap : disMap;
+    const listKey = isFavoritesMode ? 'favorite' : 'dislike';
+    const reactionIds = Object.keys(reactionMap);
+    setIdsForQuery(listKey, reactionIds);
+    if (isFavoritesMode) setFavoriteIds(favMap);
+
+    const page = buildReactionCardsPage({
+      reactionIds,
+      offset: 0,
+      limit: INITIAL_LOAD,
+    });
+    const usersMap = await fetchUsersByIds(page.pageIds);
+    const list = page.pageIds
+      .map(id => usersMap[id])
+      .filter(Boolean)
+      .map(user => ({ ...user, userId: user.userId }))
+      .filter(user => isMatchingCardId(user.userId))
+      .filter(user => canShowMatchingUser(user, { isAdmin }))
+      .sort(compareUsersByLastLogin2);
+
+    list.forEach(user => updateCard(user.userId, user));
+    if (isFavoritesMode) {
+      cacheFavoriteUsers(Object.fromEntries(list.map(user => [user.userId, user])));
+    } else {
+      cacheDislikedUsers(Object.fromEntries(list.map(user => [user.userId, user])));
     }
-
-    const { favoriteSnapshots, dislikeSnapshots } = await readReactionSnapshotMaps({
-      ownerIds: owners,
-      fetchFavoriteUsers,
-      fetchDislikeUsers,
-      onWarning: warning => debugSharedReactionsLog(getOwnerId(), 'reaction snapshot unavailable while loading reaction cards', warning, warning.error),
-    });
-    const ownOwnerId = getOwnerId();
-    const { favorites: favMap, dislikes: disMap } = resolvePrioritizedReactionMaps({
-      ownerIds: owners,
-      ownOwnerId,
-      favoriteSnapshots,
-      dislikeSnapshots,
-    });
-    setOwnFavoriteUsers(normalizeReactionMap(favoriteSnapshots[ownOwnerId]));
-    setOwnDislikeUsers(normalizeReactionMap(dislikeSnapshots[ownOwnerId]));
-    setSharedReactionIds(buildSharedReactionCandidateIds({
-      ownerIds: owners,
-      ownOwnerId,
-      favoriteSnapshots,
-      dislikeSnapshots,
-      favorites: favMap,
-      dislikes: disMap,
-    }));
-    const dislikeDataByOwner = await Promise.all(owners.map(owner => fetchDislikeUsersData(owner)));
-    const loaded = Object.assign({}, ...dislikeDataByOwner);
-    cacheDislikedUsers(loaded);
-    syncFavorites(favMap);
-    setFavoriteUsers(favMap);
-    syncDislikes(disMap);
-    setDislikeUsers(disMap);
-    setIdsForQuery('dislike', Object.keys(disMap));
-    const { cards: disCards } = await getDislikedCards(id => fetchUserById(id));
-    const list = filterMatchingUsers(disCards).sort(compareUsersByLastLogin2);
     loadedIdsRef.current = new Set(list.map(u => u.userId));
     setUsers(list);
     await loadCommentsFor(list);
-    setHasMore(false);
+    setReactionPagination({
+      type: reactionType,
+      ids: reactionIds,
+      nextOffset: page.nextOffset,
+      hasMore: page.hasMore,
+    });
+    setHasMore(page.hasMore);
     setLastKey(null);
     setLoading(false);
   };
+
+  const loadFavoriteCards = () => loadReactionCards('favorites');
+
+  const loadDislikeCards = () => loadReactionCards('dislikes');
 
   const searchUsers = async params => {
     const [key, value] = Object.entries(params)[0] || [];
@@ -3257,7 +3245,8 @@ const Matching = () => {
   };
 
   const loadMore = React.useCallback(async ({ targetVisibleCount = 0, currentVisibleCount = 0 } = {}) => {
-    if (!hasMore || loadingRef.current || viewMode !== 'default') {
+    const isReactionViewMode = viewMode === 'favorites' || viewMode === 'dislikes';
+    if (!hasMore || loadingRef.current || (viewMode !== 'default' && !isReactionViewMode)) {
       console.log('[loadMore] skip', { hasMore, loading: loadingRef.current, viewMode });
       return;
     }
@@ -3273,6 +3262,49 @@ const Matching = () => {
       applyVersion === additionalMatchingApplyVersionRef.current
     );
     try {
+      if (isReactionViewMode) {
+        const reactionMap = viewMode === 'favorites'
+          ? favoriteUsersRef.current
+          : dislikeUsersRef.current;
+        const reactionIds = reactionPagination.type === viewMode
+          ? reactionPagination.ids
+          : Object.keys(reactionMap);
+        const page = buildReactionCardsPage({
+          reactionIds,
+          offset: reactionPagination.type === viewMode ? reactionPagination.nextOffset : 0,
+          limit: LOAD_MORE,
+          excludeIds: loadedIdsRef.current,
+        });
+        const usersMap = await fetchUsersByIds(page.pageIds);
+        const list = page.pageIds
+          .map(id => usersMap[id])
+          .filter(Boolean)
+          .filter(user => isMatchingCardId(user.userId))
+          .filter(user => canShowMatchingUser(user, { isAdmin }))
+          .filter(user => !loadedIdsRef.current.has(user.userId))
+          .sort(compareUsersByLastLogin2);
+
+        list.forEach(user => {
+          loadedIdsRef.current.add(user.userId);
+          updateCard(user.userId, user);
+        });
+        setUsers(prev => {
+          const map = new Map(prev.map(user => [user.userId, user]));
+          list.forEach(user => map.set(user.userId, user));
+          return Array.from(map.values());
+        });
+        await loadCommentsFor(list);
+        setReactionPagination({
+          type: viewMode,
+          ids: reactionIds,
+          nextOffset: page.nextOffset,
+          hasMore: page.hasMore,
+        });
+        setHasMore(page.hasMore);
+        setLastKey(null);
+        return;
+      }
+
       const baseExclude = new Set([
         ...Object.keys(ownFavoriteUsersRef.current),
         ...Object.keys(ownDislikeUsersRef.current),
@@ -3486,7 +3518,9 @@ const Matching = () => {
     hasMore,
     lastKey,
     loadCommentsFor,
+    isAdmin,
     ownerId,
+    reactionPagination,
     resetAdditionalMatchingState,
     parsedAdditionalAccessRules.length,
     roleIndexSets,
@@ -3560,7 +3594,7 @@ const Matching = () => {
   }, [collectionSource, filteredUsers, filters, ownerId, parsedAdditionalAccessRules.length, visibleUsers]);
 
   useEffect(() => {
-    if (viewMode !== 'default') return;
+    if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (loadingRef.current || loading) return;
     if (!hasMore) return;
     if (filteredUsers.length >= INITIAL_LOAD) return;
@@ -3572,7 +3606,7 @@ const Matching = () => {
   }, [filteredUsers.length, hasMore, loadMore, loading, viewMode]);
 
   useEffect(() => {
-    if (viewMode !== 'default') return;
+    if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (!hasMore || !preLastCardNode) return;
 
     const observer = new IntersectionObserver(
@@ -3816,7 +3850,7 @@ const Matching = () => {
             ))}
           </Grid>
 
-          {viewMode === 'default' && (
+          {(viewMode === 'default' || viewMode === 'favorites' || viewMode === 'dislikes') && (
             <LoadMoreFooter>
               <LoadMoreButton onClick={loadMore} disabled={loading || !hasMore}>
                 {loading

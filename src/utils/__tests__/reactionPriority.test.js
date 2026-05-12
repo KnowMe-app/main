@@ -1,4 +1,5 @@
 import {
+  buildReactionCardsPage,
   buildSharedReactionCandidateIds,
   resolvePrioritizedReactionMaps,
 } from '../reactionPriority';
@@ -173,6 +174,70 @@ describe('mergeMatchingCandidateUsers', () => {
     });
 
     expect(result).toEqual([]);
+  });
+
+  it('keeps shared effective dislike cards available in the dislikes tab', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+
+    const result = mergeMatchingCandidateUsers({
+      users: [
+        { userId: 'sharedDislikeOnly', publish: true, __sourceCollection: 'users' },
+      ],
+      favoriteUsers: {},
+      dislikeUsers: { sharedDislikeOnly: true },
+      ownFavoriteUsers: {},
+      ownDislikeUsers: {},
+      isAdmin: false,
+      viewMode: 'dislikes',
+      collectionSource: 'users',
+    });
+
+    expect(result.map(user => user.userId)).toEqual(['sharedDislikeOnly']);
+  });
+});
+
+describe('reaction card pagination', () => {
+  it('keeps hasMore true while more effective disliked ids exist after the first page', () => {
+    const reactionIds = Array.from({ length: 8 }, (_, index) => `disliked-${index + 1}`);
+
+    const page = buildReactionCardsPage({
+      reactionIds,
+      limit: 6,
+    });
+
+    expect(page.pageIds).toEqual(reactionIds.slice(0, 6));
+    expect(page.nextOffset).toBe(6);
+    expect(page.hasMore).toBe(true);
+  });
+
+  it('returns additional shared disliked cards for loadMore after the first page', () => {
+    const reactionIds = Array.from({ length: 8 }, (_, index) => `shared-disliked-${index + 1}`);
+    const firstPage = buildReactionCardsPage({ reactionIds, limit: 6 });
+
+    const nextPage = buildReactionCardsPage({
+      reactionIds,
+      offset: firstPage.nextOffset,
+      limit: 6,
+      excludeIds: firstPage.pageIds,
+    });
+
+    expect(nextPage.pageIds).toEqual(reactionIds.slice(6));
+    expect(nextPage.hasMore).toBe(false);
+  });
+
+  it('does not let fetchedIds or excludeIds conflicts block later reaction pages', () => {
+    const reactionIds = Array.from({ length: 8 }, (_, index) => `effective-dislike-${index + 1}`);
+
+    const page = buildReactionCardsPage({
+      reactionIds,
+      offset: 0,
+      limit: 6,
+      excludeIds: reactionIds.slice(0, 6),
+    });
+
+    expect(page.pageIds).toEqual(reactionIds.slice(6));
+    expect(page.nextOffset).toBe(8);
+    expect(page.hasMore).toBe(false);
   });
 });
 
