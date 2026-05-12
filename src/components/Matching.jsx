@@ -1561,6 +1561,7 @@ const SwipeableCard = ({
         .filter(Boolean)
         .join(', ')
     : cityInfo || regionInfo;
+
   return (
     <AnimatedCard
       $dir={dir}
@@ -3020,8 +3021,8 @@ const Matching = () => {
         syncFavorites(favIds);
         syncDislikes(disIds);
         exclude = new Set([
-          ...Object.keys(favIds),
-          ...Object.keys(disIds),
+          ...Object.keys(ownFavorites),
+          ...Object.keys(ownDislikes),
         ]);
       } else {
         const localFav = getFavorites();
@@ -3305,8 +3306,8 @@ const Matching = () => {
       }
 
       const baseExclude = new Set([
-        ...Object.keys(favoriteUsersRef.current),
-        ...Object.keys(dislikeUsersRef.current),
+        ...Object.keys(ownFavoriteUsersRef.current),
+        ...Object.keys(ownDislikeUsersRef.current),
       ]);
 
       if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
@@ -3543,14 +3544,10 @@ const Matching = () => {
     viewMode,
     collectionSource,
     hasAdditionalAccessRules: parsedAdditionalAccessRules.length > 0,
-    favoriteUsers,
-    dislikeUsers,
     ownFavoriteUsers,
     ownDislikeUsers,
   }), [
     additionalNewUsers,
-    dislikeUsers,
-    favoriteUsers,
     ownDislikeUsers,
     ownFavoriteUsers,
     isAdmin,
