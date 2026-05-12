@@ -1,6 +1,7 @@
 import {
   buildReactionCardsPage,
   buildSharedReactionCandidateIds,
+  canShowMatchingUser,
   resolvePrioritizedReactionMaps,
 } from '../reactionPriority';
 
@@ -120,6 +121,13 @@ describe('resolvePrioritizedReactionMaps', () => {
     ).toEqual([]);
   });
 
+});
+
+
+describe('canShowMatchingUser', () => {
+  it('allows newUsers reaction records for non-admin viewers even without publish', () => {
+    expect(canShowMatchingUser({ userId: 'ID0001', __sourceCollection: 'newUsers' }, { isAdmin: false })).toBe(true);
+  });
 });
 
 describe('mergeMatchingCandidateUsers', () => {
