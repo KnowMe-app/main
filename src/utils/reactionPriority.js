@@ -94,8 +94,6 @@ export const mergeMatchingCandidateUsers = ({
   viewMode = 'default',
   collectionSource = 'users',
   hasAdditionalAccessRules = false,
-  favoriteUsers,
-  dislikeUsers,
   ownFavoriteUsers = {},
   ownDislikeUsers = {},
 } = {}) => {
@@ -151,11 +149,8 @@ export const mergeMatchingCandidateUsers = ({
     return baseUsers;
   }
 
-  const defaultExcludeFavorites = favoriteUsers || ownFavoriteUsers;
-  const defaultExcludeDislikes = dislikeUsers || ownDislikeUsers;
-
   return mergedUsers.filter(
-    user => !defaultExcludeFavorites[user.userId] && !defaultExcludeDislikes[user.userId]
+    user => !ownFavoriteUsers[user.userId] && !ownDislikeUsers[user.userId]
   );
 };
 

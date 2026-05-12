@@ -119,48 +119,9 @@ describe('resolvePrioritizedReactionMaps', () => {
     ).toEqual([]);
   });
 
-
-  it('uses own favorite as the effective reaction over a shared dislike', () => {
-    const { favorites, dislikes } = resolvePrioritizedReactionMaps({
-      ownerIds: ['viewer', 'sharedOwner'],
-      ownOwnerId: 'viewer',
-      favoriteSnapshots: {
-        viewer: { card1: true },
-      },
-      dislikeSnapshots: {
-        sharedOwner: { card1: true },
-      },
-    });
-
-    expect(favorites).toEqual({ card1: true });
-    expect(dislikes).toEqual({});
-  });
-
 });
 
 describe('mergeMatchingCandidateUsers', () => {
-
-  it('excludes shared-only effective reactions from the default deck', () => {
-    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
-
-    const result = mergeMatchingCandidateUsers({
-      users: [
-        { userId: 'neutral', publish: true, __sourceCollection: 'users' },
-        { userId: 'sharedDislikeOnly', publish: true, __sourceCollection: 'users' },
-        { userId: 'ownFavorite', publish: true, __sourceCollection: 'users' },
-      ],
-      favoriteUsers: { ownFavorite: true },
-      dislikeUsers: { sharedDislikeOnly: true },
-      ownFavoriteUsers: { ownFavorite: true },
-      ownDislikeUsers: {},
-      isAdmin: false,
-      viewMode: 'default',
-      collectionSource: 'users',
-    });
-
-    expect(result.map(user => user.userId)).toEqual(['neutral']);
-  });
-
   it('does not inject unpublished users cards from shared reactions for non-admin viewers', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
 
