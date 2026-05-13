@@ -81,6 +81,7 @@ import {
   normalizeReactionMap,
   readReactionSnapshotMaps,
   resolvePrioritizedReactionMaps,
+  shouldApplyReactionPageResult,
   uniqueTruthyReactionIds,
 } from 'utils/reactionPriority';
 
@@ -90,6 +91,7 @@ const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_NEW_USER_ID = 'ID0001';
 const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
 const ADDITIONAL_MATCHING_LOG_LIMIT = 300;
+const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false });
 
 const shouldDebugAdditionalMatching = (...ids) =>
   ids.some(id => String(id || '').trim() === DEBUG_ADDITIONAL_MATCHING_USER_ID);
@@ -666,6 +668,8 @@ const applyMatchingUiFiltersToUsers = ({
   users,
   filters,
   favoriteUsers,
+  dislikeUsers,
+  excludeReactionUsers = false,
   roleIndexSets,
   collectionSource,
 }) =>
@@ -674,8 +678,14 @@ const applyMatchingUiFiltersToUsers = ({
       users.map(u => [u.userId, u]),
       null,
       getMatchingFiltersWithoutSearchKeyGroups(filters),
-      favoriteUsers
-    ).map(([, u]) => u),
+      favoriteUsers,
+      dislikeUsers
+    )
+      .map(([, u]) => u)
+      .filter(u => (
+        !excludeReactionUsers ||
+        (!favoriteUsers[u.userId] && !dislikeUsers[u.userId])
+      )),
     filters,
     roleIndexSets
   ).filter(u => isAllowedIdForCollection(u.userId, collectionSource));
@@ -1974,11 +1984,9 @@ const Matching = () => {
   const [ownDislikeUsers, setOwnDislikeUsers] = useState({});
   const [sharedReactionIds, setSharedReactionIds] = useState([]);
   const [sharedReactionCandidateUsers, setSharedReactionCandidateUsers] = useState([]);
-  const [reactionPagination, setReactionPagination] = useState({
-    type: null,
-    ids: [],
-    nextOffset: 0,
-    hasMore: false,
+  const [reactionPaginationByType, setReactionPaginationByType] = useState({
+    favorites: buildEmptyReactionPagination(),
+    dislikes: buildEmptyReactionPagination(),
   });
   const favoriteUsersRef = useRef(favoriteUsers);
   const dislikeUsersRef = useRef(dislikeUsers);
@@ -2019,12 +2027,17 @@ const Matching = () => {
   );
   const loadingRef = useRef(false);
   const loadedIdsRef = useRef(new Set());
+  const reactionLoadedIdsRef = useRef({
+    favorites: new Set(),
+    dislikes: new Set(),
+  });
   const additionalRulesToastRef = useRef('');
   const additionalProfileCacheRef = useRef(null);
   const additionalProfileRequestVersionRef = useRef(0);
   const additionalMatchingFetchVersionRef = useRef(0);
   const additionalLoadMoreFetchVersionRef = useRef(0);
   const additionalMatchingApplyVersionRef = useRef(0);
+  const reactionLoadVersionRef = useRef(0);
   const matchingProfileStateRef = useRef({
     ownerId: null,
     collectionSource,
@@ -2042,6 +2055,32 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
+  }, []);
+  const resetReactionPaginationState = React.useCallback((reactionType = null) => {
+    if (reactionType === 'favorites' || reactionType === 'dislikes') {
+      reactionLoadedIdsRef.current[reactionType] = new Set();
+      setReactionPaginationByType(prev => ({
+        ...prev,
+        [reactionType]: buildEmptyReactionPagination(),
+      }));
+      return;
+    }
+
+    reactionLoadedIdsRef.current = {
+      favorites: new Set(),
+      dislikes: new Set(),
+    };
+    setReactionPaginationByType({
+      favorites: buildEmptyReactionPagination(),
+      dislikes: buildEmptyReactionPagination(),
+    });
+  }, []);
+  const invalidateReactionAsyncWork = React.useCallback(() => {
+    reactionLoadVersionRef.current += 1;
+    additionalLoadMoreFetchVersionRef.current += 1;
+    additionalMatchingApplyVersionRef.current += 1;
+    loadingRef.current = false;
+    setLoading(false);
   }, []);
   const restoreRef = useRef(false);
   const scrollPositionRef = useRef(0);
@@ -2188,10 +2227,10 @@ const Matching = () => {
     }
     setUsers(prev =>
       prev.filter(
-        u => !ownFavoriteUsers[u.userId] && !ownDislikeUsers[u.userId]
+        u => !favoriteUsers[u.userId] && !dislikeUsers[u.userId]
       )
     );
-  }, [ownFavoriteUsers, ownDislikeUsers, viewMode]);
+  }, [favoriteUsers, dislikeUsers, viewMode]);
 
 
 
@@ -2684,6 +2723,10 @@ const Matching = () => {
           requestedForCandidatePool: nextSharedReactionIds.includes(DEBUG_SHARED_NEW_USER_ID),
         },
       });
+      ownFavoriteUsersRef.current = ownFavorites;
+      ownDislikeUsersRef.current = ownDislikes;
+      favoriteUsersRef.current = favorites;
+      dislikeUsersRef.current = dislikes;
       setOwnFavoriteUsers(ownFavorites);
       setOwnDislikeUsers(ownDislikes);
       setSharedReactionIds(nextSharedReactionIds);
@@ -2907,7 +2950,8 @@ const Matching = () => {
                 sourceRes.users.map(u => [u.userId, u]),
                 null,
                 getMatchingFiltersWithoutSearchKeyGroups(activeFilters),
-                favoriteUsersRef.current
+                favoriteUsersRef.current,
+                dislikeUsersRef.current
               ).map(([, u]) => u),
               activeFilters,
               roleIndexSets
@@ -3013,6 +3057,10 @@ const Matching = () => {
             requestedForCandidatePool: nextSharedReactionIds.includes(DEBUG_SHARED_NEW_USER_ID),
           },
         });
+        ownFavoriteUsersRef.current = ownFavorites;
+        ownDislikeUsersRef.current = ownDislikes;
+        favoriteUsersRef.current = favIds;
+        dislikeUsersRef.current = disIds;
         setOwnFavoriteUsers(ownFavorites);
         setOwnDislikeUsers(ownDislikes);
         setSharedReactionIds(nextSharedReactionIds);
@@ -3021,13 +3069,17 @@ const Matching = () => {
         syncFavorites(favIds);
         syncDislikes(disIds);
         exclude = new Set([
-          ...Object.keys(ownFavorites),
-          ...Object.keys(ownDislikes),
+          ...Object.keys(favIds),
+          ...Object.keys(disIds),
         ]);
       } else {
         const localFav = getFavorites();
         const localDis = getDislikes();
         if (Object.keys(localFav).length || Object.keys(localDis).length) {
+          ownFavoriteUsersRef.current = localFav;
+          ownDislikeUsersRef.current = localDis;
+          favoriteUsersRef.current = localFav;
+          dislikeUsersRef.current = localDis;
           setOwnFavoriteUsers(localFav);
           setOwnDislikeUsers(localDis);
           setSharedReactionIds([]);
@@ -3101,9 +3153,25 @@ const Matching = () => {
 
   const reloadDefault = React.useCallback(() => {
     viewModeRef.current = 'default';
+    invalidateReactionAsyncWork();
+    resetReactionPaginationState();
     setViewMode('default');
     loadInitial();
-  }, [loadInitial]);
+  }, [invalidateReactionAsyncWork, loadInitial, resetReactionPaginationState]);
+
+
+  const handleFiltersChange = React.useCallback(nextFilters => {
+    filtersRef.current = nextFilters;
+    setFilters(nextFilters);
+    const currentMode = viewModeRef.current;
+    if (currentMode === 'favorites' || currentMode === 'dislikes') {
+      invalidateReactionAsyncWork();
+      resetReactionPaginationState(currentMode);
+      setUsers([]);
+      setLastKey(null);
+      setHasMore(true);
+    }
+  }, [invalidateReactionAsyncWork, resetReactionPaginationState]);
 
   const resetFiltersAndCache = React.useCallback(() => {
     localStorage.removeItem('matchingFilters');
@@ -3137,88 +3205,229 @@ const Matching = () => {
     }, {});
   }, []);
 
+  const getAccessibleReactionIds = React.useCallback(async reactionIds => {
+    const uniqueIds = [...new Set((reactionIds || []).filter(Boolean))];
+    if (collectionSource !== 'newUsers') {
+      return uniqueIds.filter(isValidId);
+    }
+
+    const newUserReactionIds = uniqueIds.filter(isShortId);
+    if (parsedAdditionalAccessRules.length === 0) {
+      return newUserReactionIds;
+    }
+
+    const viewerId = ownerId || getOwnerId();
+    if (!viewerId) return [];
+
+    const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(currentSearchKeySetKeys, viewerId)
+      ? currentSearchKeySetKeys
+      : await resolveAdditionalSearchKeySetKeysForMatching(null, viewerId);
+
+    if (!resolvedSearchKeySetKeys.length) return [];
+
+    const indexed = await getIndexedNewUsersIdsByRules({
+      rawRules: currentAdditionalAccessRules,
+      accessUserId: viewerId,
+      searchKeySetsOfExactUser: resolvedSearchKeySetKeys,
+      fetchMissingBuckets: true,
+      requireSearchKeySetKeys: true,
+      resultOffset: 0,
+      resultLimit: Number.POSITIVE_INFINITY,
+      debugMatchingFlow: shouldDebugAdditionalMatching(viewerId),
+      debugToast: (message, data) => debugAdditionalToast(viewerId, message, data),
+    });
+    const allowedIds = new Set(Array.isArray(indexed?.userIds) ? indexed.userIds : []);
+    return newUserReactionIds.filter(id => allowedIds.has(id));
+  }, [
+    collectionSource,
+    currentAdditionalAccessRules,
+    currentSearchKeySetKeys,
+    ownerId,
+    parsedAdditionalAccessRules.length,
+  ]);
+
+  const loadReactionCardsPage = React.useCallback(async ({
+    reactionIds,
+    offset = 0,
+    limit = LOAD_MORE,
+    loadedIds = new Set(),
+  }) => {
+    const collected = [];
+    let nextOffset = Math.max(0, Number(offset) || 0);
+    let hasMore = false;
+
+    while (collected.length < limit && nextOffset < reactionIds.length) {
+      const page = buildReactionCardsPage({
+        reactionIds,
+        offset: nextOffset,
+        limit: Math.max(1, limit - collected.length),
+        excludeIds: loadedIds,
+      });
+
+      nextOffset = page.nextOffset;
+      hasMore = page.hasMore;
+      if (page.pageIds.length === 0) {
+        if (!page.hasMore) break;
+        continue;
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      const usersMap = await fetchReactionCardsByIds(page.pageIds);
+      const candidates = page.pageIds
+        .map(id => usersMap[id])
+        .filter(Boolean)
+        .map(user => ({
+          ...user,
+          userId: user.userId,
+          ...(collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0
+            ? { __matchingAccessAllowed: true }
+            : {}),
+        }))
+        .filter(user => isMatchingCardId(user.userId))
+        .filter(user => isAllowedIdForCollection(user.userId, collectionSource))
+        .filter(user => canShowMatchingUser(user, { isAdmin }))
+        .filter(user => !loadedIds.has(user.userId));
+
+      const filteredCandidates = applyMatchingUiFiltersToUsers({
+        users: candidates,
+        filters: filtersRef.current || {},
+        favoriteUsers: favoriteUsersRef.current,
+        dislikeUsers: dislikeUsersRef.current,
+        excludeReactionUsers: false,
+        roleIndexSets,
+        collectionSource,
+      });
+
+      filteredCandidates.forEach(user => {
+        if (collected.length < limit && !loadedIds.has(user.userId)) {
+          loadedIds.add(user.userId);
+          collected.push(user);
+        }
+      });
+
+      if (!page.hasMore) break;
+    }
+
+    return {
+      users: collected.sort(compareUsersByLastLogin2),
+      nextOffset,
+      hasMore: hasMore || reactionIds.slice(nextOffset).some(id => id && !loadedIds.has(id)),
+    };
+  }, [
+    collectionSource,
+    fetchReactionCardsByIds,
+    isAdmin,
+    parsedAdditionalAccessRules.length,
+    roleIndexSets,
+  ]);
+
   const loadReactionCards = async reactionType => {
     const isFavoritesMode = reactionType === 'favorites';
+    reactionLoadVersionRef.current += 1;
+    const reactionLoadVersion = reactionLoadVersionRef.current;
+    const requestCollectionSource = collectionSource;
+    const canApplyReactionLoad = () => shouldApplyReactionPageResult({
+      requestVersion: reactionLoadVersion,
+      currentVersion: reactionLoadVersionRef.current,
+      requestViewMode: reactionType,
+      currentViewMode: viewModeRef.current,
+      requestCollectionSource,
+      currentCollectionSource: collectionSource,
+    });
+    viewModeRef.current = reactionType;
     setViewMode(reactionType);
+    loadingRef.current = true;
     setLoading(true);
     setUsers([]);
-    setReactionPagination({ type: reactionType, ids: [], nextOffset: 0, hasMore: false });
-    const owners = await waitForOwnerId();
-    if (!owners.length) {
-      setHasMore(false);
-      setLoading(false);
-      return;
-    }
-
-    const { favoriteSnapshots, dislikeSnapshots } = await readReactionSnapshotMaps({
-      ownerIds: owners,
-      fetchFavoriteUsers,
-      fetchDislikeUsers,
-      onWarning: warning => debugSharedReactionsLog(getOwnerId(), 'reaction snapshot unavailable while loading reaction cards', warning, warning.error),
-    });
-    const ownOwnerId = getOwnerId();
-    const { favorites: favMap, dislikes: disMap } = resolvePrioritizedReactionMaps({
-      ownerIds: owners,
-      ownOwnerId,
-      favoriteSnapshots,
-      dislikeSnapshots,
-    });
-    const ownFavorites = normalizeReactionMap(favoriteSnapshots[ownOwnerId]);
-    const ownDislikes = normalizeReactionMap(dislikeSnapshots[ownOwnerId]);
-    setOwnFavoriteUsers(ownFavorites);
-    setOwnDislikeUsers(ownDislikes);
-    setSharedReactionIds(buildSharedReactionCandidateIds({
-      ownerIds: owners,
-      ownOwnerId,
-      favoriteSnapshots,
-      dislikeSnapshots,
-      favorites: favMap,
-      dislikes: disMap,
-    }));
-
-    syncFavorites(favMap);
-    syncDislikes(disMap);
-    setFavoriteUsers(favMap);
-    setDislikeUsers(disMap);
-
-    const reactionMap = isFavoritesMode ? favMap : disMap;
-    const listKey = isFavoritesMode ? 'favorite' : 'dislike';
-    const reactionIds = Object.keys(reactionMap);
-    setIdsForQuery(listKey, reactionIds);
-    if (isFavoritesMode) setFavoriteIds(favMap);
-
-    const page = buildReactionCardsPage({
-      reactionIds,
-      offset: 0,
-      limit: INITIAL_LOAD,
-    });
-    const usersMap = await fetchReactionCardsByIds(page.pageIds);
-    const list = page.pageIds
-      .map(id => usersMap[id])
-      .filter(Boolean)
-      .map(user => ({ ...user, userId: user.userId }))
-      .filter(user => isMatchingCardId(user.userId))
-      .filter(user => canShowMatchingUser(user, { isAdmin }))
-      .sort(compareUsersByLastLogin2);
-
-    list.forEach(user => updateCard(user.userId, user));
-    if (isFavoritesMode) {
-      cacheFavoriteUsers(Object.fromEntries(list.map(user => [user.userId, user])));
-    } else {
-      cacheDislikedUsers(Object.fromEntries(list.map(user => [user.userId, user])));
-    }
-    loadedIdsRef.current = new Set(list.map(u => u.userId));
-    setUsers(list);
-    await loadCommentsFor(list);
-    setReactionPagination({
-      type: reactionType,
-      ids: reactionIds,
-      nextOffset: page.nextOffset,
-      hasMore: page.hasMore,
-    });
-    setHasMore(page.hasMore);
     setLastKey(null);
-    setLoading(false);
+    setHasMore(false);
+    resetReactionPaginationState(reactionType);
+
+    try {
+      const owners = await waitForOwnerId();
+      if (!owners.length) {
+        setHasMore(false);
+        return;
+      }
+
+      const { favoriteSnapshots, dislikeSnapshots } = await readReactionSnapshotMaps({
+        ownerIds: owners,
+        fetchFavoriteUsers,
+        fetchDislikeUsers,
+        onWarning: warning => debugSharedReactionsLog(getOwnerId(), 'reaction snapshot unavailable while loading reaction cards', warning, warning.error),
+      });
+      const ownOwnerId = getOwnerId();
+      const { favorites: favMap, dislikes: disMap } = resolvePrioritizedReactionMaps({
+        ownerIds: owners,
+        ownOwnerId,
+        favoriteSnapshots,
+        dislikeSnapshots,
+      });
+      const ownFavorites = normalizeReactionMap(favoriteSnapshots[ownOwnerId]);
+      const ownDislikes = normalizeReactionMap(dislikeSnapshots[ownOwnerId]);
+      ownFavoriteUsersRef.current = ownFavorites;
+      ownDislikeUsersRef.current = ownDislikes;
+      favoriteUsersRef.current = favMap;
+      dislikeUsersRef.current = disMap;
+      setOwnFavoriteUsers(ownFavorites);
+      setOwnDislikeUsers(ownDislikes);
+      setSharedReactionIds(buildSharedReactionCandidateIds({
+        ownerIds: owners,
+        ownOwnerId,
+        favoriteSnapshots,
+        dislikeSnapshots,
+        favorites: favMap,
+        dislikes: disMap,
+      }));
+
+      syncFavorites(favMap);
+      syncDislikes(disMap);
+      setFavoriteUsers(favMap);
+      setDislikeUsers(disMap);
+
+      const reactionMap = isFavoritesMode ? favMap : disMap;
+      const listKey = isFavoritesMode ? 'favorite' : 'dislike';
+      const fullReactionIds = Object.keys(reactionMap);
+      const reactionIds = await getAccessibleReactionIds(fullReactionIds);
+      if (!canApplyReactionLoad()) return;
+      setIdsForQuery(listKey, reactionIds);
+      if (isFavoritesMode) setFavoriteIds(favMap);
+
+      const loadedIds = new Set();
+      const page = await loadReactionCardsPage({
+        reactionIds,
+        offset: 0,
+        limit: INITIAL_LOAD,
+        loadedIds,
+      });
+      if (!canApplyReactionLoad()) return;
+
+      page.users.forEach(user => updateCard(user.userId, user));
+      if (isFavoritesMode) {
+        cacheFavoriteUsers(Object.fromEntries(page.users.map(user => [user.userId, user])));
+      } else {
+        cacheDislikedUsers(Object.fromEntries(page.users.map(user => [user.userId, user])));
+      }
+      reactionLoadedIdsRef.current[reactionType] = loadedIds;
+      loadedIdsRef.current = new Set(page.users.map(user => user.userId));
+      setUsers(page.users);
+      await loadCommentsFor(page.users);
+      if (!canApplyReactionLoad()) return;
+      setReactionPaginationByType(prev => ({
+        ...prev,
+        [reactionType]: {
+          ids: reactionIds,
+          nextOffset: page.nextOffset,
+          hasMore: page.hasMore,
+        },
+      }));
+      setHasMore(page.hasMore);
+    } finally {
+      if (canApplyReactionLoad()) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
+    }
   };
 
   const loadFavoriteCards = () => loadReactionCards('favorites');
@@ -3280,57 +3489,69 @@ const Matching = () => {
     const applyVersion = additionalMatchingApplyVersionRef.current + 1;
     additionalLoadMoreFetchVersionRef.current = loadMoreVersion;
     additionalMatchingApplyVersionRef.current = applyVersion;
+    const requestCollectionSource = collectionSource;
+    const requestViewMode = viewMode;
     const isLatestLoadMore = () => (
       loadMoreVersion === additionalLoadMoreFetchVersionRef.current &&
       applyVersion === additionalMatchingApplyVersionRef.current
+    );
+    const canApplyLoadMoreResult = () => (
+      isLatestLoadMore() &&
+      shouldApplyReactionPageResult({
+        requestVersion: applyVersion,
+        currentVersion: additionalMatchingApplyVersionRef.current,
+        requestViewMode,
+        currentViewMode: viewModeRef.current,
+        requestCollectionSource,
+        currentCollectionSource: collectionSource,
+      })
     );
     try {
       if (isReactionViewMode) {
         const reactionMap = viewMode === 'favorites'
           ? favoriteUsersRef.current
           : dislikeUsersRef.current;
-        const reactionIds = reactionPagination.type === viewMode
-          ? reactionPagination.ids
-          : Object.keys(reactionMap);
-        const page = buildReactionCardsPage({
+        const currentPagination = reactionPaginationByType[viewMode] || buildEmptyReactionPagination();
+        const reactionIds = currentPagination.ids.length > 0
+          ? currentPagination.ids
+          : await getAccessibleReactionIds(Object.keys(reactionMap));
+        const loadedIds = reactionLoadedIdsRef.current[viewMode] || new Set();
+        const page = await loadReactionCardsPage({
           reactionIds,
-          offset: reactionPagination.type === viewMode ? reactionPagination.nextOffset : 0,
+          offset: currentPagination.ids.length > 0 ? currentPagination.nextOffset : 0,
           limit: LOAD_MORE,
-          excludeIds: loadedIdsRef.current,
+          loadedIds,
         });
-        const usersMap = await fetchReactionCardsByIds(page.pageIds);
-        const list = page.pageIds
-          .map(id => usersMap[id])
-          .filter(Boolean)
-          .filter(user => isMatchingCardId(user.userId))
-          .filter(user => canShowMatchingUser(user, { isAdmin }))
-          .filter(user => !loadedIdsRef.current.has(user.userId))
-          .sort(compareUsersByLastLogin2);
 
-        list.forEach(user => {
-          loadedIdsRef.current.add(user.userId);
+        if (!canApplyLoadMoreResult()) return;
+
+        page.users.forEach(user => {
           updateCard(user.userId, user);
         });
+        reactionLoadedIdsRef.current[viewMode] = loadedIds;
+        loadedIdsRef.current = new Set(loadedIds);
         setUsers(prev => {
           const map = new Map(prev.map(user => [user.userId, user]));
-          list.forEach(user => map.set(user.userId, user));
+          page.users.forEach(user => map.set(user.userId, user));
           return Array.from(map.values());
         });
-        await loadCommentsFor(list);
-        setReactionPagination({
-          type: viewMode,
-          ids: reactionIds,
-          nextOffset: page.nextOffset,
-          hasMore: page.hasMore,
-        });
+        await loadCommentsFor(page.users);
+        setReactionPaginationByType(prev => ({
+          ...prev,
+          [viewMode]: {
+            ids: reactionIds,
+            nextOffset: page.nextOffset,
+            hasMore: page.hasMore,
+          },
+        }));
         setHasMore(page.hasMore);
         setLastKey(null);
         return;
       }
 
       const baseExclude = new Set([
-        ...Object.keys(ownFavoriteUsersRef.current),
-        ...Object.keys(ownDislikeUsersRef.current),
+        ...Object.keys(favoriteUsersRef.current),
+        ...Object.keys(dislikeUsersRef.current),
       ]);
 
       if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
@@ -3440,6 +3661,8 @@ const Matching = () => {
             users: Array.from(candidateMap.values()),
             filters,
             favoriteUsers: favoriteUsersRef.current,
+            dislikeUsers: dislikeUsersRef.current,
+            excludeReactionUsers: true,
             roleIndexSets,
             collectionSource,
           }).length;
@@ -3523,7 +3746,7 @@ const Matching = () => {
       }
       setLastKey(cursor);
     } finally {
-      if (isLatestLoadMore()) {
+      if (canApplyLoadMoreResult()) {
         loadingRef.current = false;
         setLoading(false);
       }
@@ -3537,14 +3760,15 @@ const Matching = () => {
     ensureFreshAdditionalMatchingProfile,
     defaultListKey,
     fetchChunk,
-    fetchReactionCardsByIds,
     filters,
+    getAccessibleReactionIds,
     hasMore,
     lastKey,
     loadCommentsFor,
     isAdmin,
     ownerId,
-    reactionPagination,
+    loadReactionCardsPage,
+    reactionPaginationByType,
     resetAdditionalMatchingState,
     parsedAdditionalAccessRules.length,
     roleIndexSets,
@@ -3570,8 +3794,12 @@ const Matching = () => {
     hasAdditionalAccessRules: parsedAdditionalAccessRules.length > 0,
     ownFavoriteUsers,
     ownDislikeUsers,
+    favoriteUsers,
+    dislikeUsers,
   }), [
     additionalNewUsers,
+    dislikeUsers,
+    favoriteUsers,
     ownDislikeUsers,
     ownFavoriteUsers,
     isAdmin,
@@ -3586,6 +3814,8 @@ const Matching = () => {
     users: visibleUsers,
     filters,
     favoriteUsers,
+    dislikeUsers,
+    excludeReactionUsers: viewMode === 'default',
     roleIndexSets,
     collectionSource,
   });
@@ -3687,7 +3917,9 @@ const Matching = () => {
               value="users"
               checked={collectionSource === 'users'}
               onChange={e => {
+                invalidateReactionAsyncWork();
                 resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
+                resetReactionPaginationState();
                 setCollectionSource(e.target.value);
               }}
             />
@@ -3700,7 +3932,9 @@ const Matching = () => {
               value="newUsers"
               checked={collectionSource === 'newUsers'}
               onChange={e => {
+                invalidateReactionAsyncWork();
                 resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
+                resetReactionPaginationState();
                 setCollectionSource(e.target.value);
               }}
             />
@@ -3711,7 +3945,7 @@ const Matching = () => {
           mode="matching"
           hideUserId
           hideCommentLength
-          onChange={setFilters}
+          onChange={handleFiltersChange}
           resetToken={filterResetToken}
           nonAdminAllActive={!isAdmin}
         />

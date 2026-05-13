@@ -96,6 +96,8 @@ export const mergeMatchingCandidateUsers = ({
   hasAdditionalAccessRules = false,
   ownFavoriteUsers = {},
   ownDislikeUsers = {},
+  favoriteUsers = ownFavoriteUsers,
+  dislikeUsers = ownDislikeUsers,
 } = {}) => {
   let baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin }));
 
@@ -150,7 +152,7 @@ export const mergeMatchingCandidateUsers = ({
   }
 
   return mergedUsers.filter(
-    user => !ownFavoriteUsers[user.userId] && !ownDislikeUsers[user.userId]
+    user => !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
   );
 };
 
@@ -193,6 +195,19 @@ export const buildReactionCardsPage = ({
     total: ids.length,
   };
 };
+
+export const shouldApplyReactionPageResult = ({
+  requestVersion,
+  currentVersion,
+  requestViewMode,
+  currentViewMode,
+  requestCollectionSource,
+  currentCollectionSource,
+} = {}) => (
+  requestVersion === currentVersion &&
+  requestViewMode === currentViewMode &&
+  requestCollectionSource === currentCollectionSource
+);
 
 export const readReactionSnapshotMaps = async ({
   ownerIds = [],

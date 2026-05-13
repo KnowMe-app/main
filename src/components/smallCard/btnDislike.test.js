@@ -70,7 +70,8 @@ describe('BtnDislike', () => {
     expect(button).not.toBeNull();
     expect(button.style.background).toBe('rgb(255, 140, 0)');
     expect(button.getAttribute('aria-pressed')).toBe('false');
-    expect(button.getAttribute('data-shared-disliked')).toBe('true');
+    expect(button.getAttribute('data-shared-disliked')).toBeNull();
+    expect(button.getAttribute('title')).toBe('Дизлайк');
 
     await act(async () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -81,4 +82,31 @@ describe('BtnDislike', () => {
     expect(setOwnDislikeUsers).toHaveBeenCalledWith({ card1: true });
     expect(setDislikeUsers).toHaveBeenCalledWith({ card1: true });
   });
+
+  it('marks BtnDislike active only for viewer-owned dislikes', async () => {
+    const mountComponent = ui => root.render(ui);
+
+    await act(async () => {
+      mountComponent(
+        <BtnDislike
+          userId="card2"
+          userData={{ userId: 'card2' }}
+          dislikeUsers={{ card2: true }}
+          ownDislikeUsers={{ card2: true }}
+          setDislikeUsers={jest.fn()}
+          setOwnDislikeUsers={jest.fn()}
+          favoriteUsers={{}}
+          ownFavoriteUsers={{}}
+          setFavoriteUsers={jest.fn()}
+          setOwnFavoriteUsers={jest.fn()}
+          multiDataOwnerId="viewer"
+        />
+      );
+    });
+
+    const button = container.querySelector('button[aria-label="Дизлайк"]');
+    expect(button).not.toBeNull();
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+  });
+
 });
