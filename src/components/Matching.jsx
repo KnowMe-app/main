@@ -37,6 +37,9 @@ import {
   ModernBioText,
   ModernChip,
   ModernChipGrid,
+  ModernContactLinks,
+  ModernContactLink,
+  ModernDesktopNavButton,
   ModernFactPill,
   ModernGallery,
   ModernGalleryImage,
@@ -94,7 +97,11 @@ import { normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard } from '../ut
 import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
-import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaDownload } from 'react-icons/fa';
+import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaDownload, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
+import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
+import { MdEmail } from 'react-icons/md';
+import { SiTiktok } from 'react-icons/si';
+import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
 import { handleEmptyFetch } from './loadMoreUtils';
 import {
   getHeroFields,
@@ -840,6 +847,95 @@ const ProfileChips = ({ fields, role }) => {
   );
 };
 
+const CONTACT_ICONS = {
+  phone: FaPhoneVolume,
+  email: MdEmail,
+  telegram: FaTelegramPlane,
+  whatsapp: FaWhatsapp,
+  viber: FaViber,
+  facebook: FaFacebookF,
+  instagram: FaInstagram,
+  tiktok: SiTiktok,
+  vk: FaVk,
+  linkedin: FaLinkedin,
+  youtube: FaYoutube,
+  twitter: FaXTwitter,
+  website: FaGlobe,
+  otherLink: FaGlobe,
+};
+
+const getContactLabel = key => ({
+  otherLink: 'Other link',
+}[key] || key.charAt(0).toUpperCase() + key.slice(1));
+
+const ProfileContactLinks = ({ user, role }) => {
+  const entries = getContactEntries(user);
+  if (!entries.length) return null;
+
+  return (
+    <ModernContactLinks onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+      {entries.map(entry => {
+        const Icon = CONTACT_ICONS[entry.key] || FaGlobe;
+        const valueText = String(entry.value || '').trim();
+        const displayValue = entry.key === 'phone' ? `+${valueText.replace(/\s/g, '')}` : valueText;
+
+        return (
+          <ModernContactLink
+            key={`${entry.key}-${entry.index}-${valueText}`}
+            href={entry.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            $role={role}
+            title={`${getContactLabel(entry.key)}: ${displayValue}`}
+            aria-label={`${getContactLabel(entry.key)}: ${displayValue}`}
+          >
+            <Icon />
+            <span>{displayValue}</span>
+          </ModernContactLink>
+        );
+      })}
+      {getContactEntries({
+        telegram: [],
+        phone: user?.phone,
+      }).filter(entry => entry.key === 'phone').flatMap(entry => [
+        <ModernContactLink
+          key={`phone-telegram-${entry.index}`}
+          href={CONTACT_LINK_BUILDERS.telegramFromPhone(entry.value)}
+          target="_blank"
+          rel="noopener noreferrer"
+          $role={role}
+          title="Telegram from phone"
+          aria-label="Telegram from phone"
+        >
+          <FaTelegramPlane />
+        </ModernContactLink>,
+        <ModernContactLink
+          key={`phone-viber-${entry.index}`}
+          href={CONTACT_LINK_BUILDERS.viberFromPhone(entry.value)}
+          target="_blank"
+          rel="noopener noreferrer"
+          $role={role}
+          title="Viber from phone"
+          aria-label="Viber from phone"
+        >
+          <FaViber />
+        </ModernContactLink>,
+        <ModernContactLink
+          key={`phone-whatsapp-${entry.index}`}
+          href={CONTACT_LINK_BUILDERS.whatsappFromPhone(entry.value)}
+          target="_blank"
+          rel="noopener noreferrer"
+          $role={role}
+          title="WhatsApp from phone"
+          aria-label="WhatsApp from phone"
+        >
+          <FaWhatsapp />
+        </ModernContactLink>,
+      ])}
+    </ModernContactLinks>
+  );
+};
+
 const ProfileBio = ({ text }) => {
   const [expanded, setExpanded] = useState(false);
   if (!text) return null;
@@ -1035,7 +1131,11 @@ const SwipeableCard = ({
           {sections.map(section => (
             <ModernSection key={section.title}>
               <ModernSectionTitle>{section.title}</ModernSectionTitle>
-              <ProfileChips fields={section.fields} role={resolvedRole} />
+              {section.variant === 'contacts' ? (
+                <ProfileContactLinks user={user} role={resolvedRole} />
+              ) : (
+                <ProfileChips fields={section.fields} role={resolvedRole} />
+              )}
             </ModernSection>
           ))}
           {galleryPhotos.length > 0 && (
@@ -3152,6 +3252,26 @@ const Matching = () => {
     });
   }, [filteredUsers.length]);
 
+  useEffect(() => {
+    const handleKeyDown = event => {
+      const target = event.target;
+      const tagName = target?.tagName?.toLowerCase();
+      const isTyping = tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target?.isContentEditable;
+      if (isTyping) return;
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        navigateActiveProfile(1);
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        navigateActiveProfile(-1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigateActiveProfile]);
+
   const additionalFiltersDebugSignatureRef = useRef('');
   useEffect(() => {
     if (collectionSource !== 'newUsers') return;
@@ -3353,6 +3473,24 @@ const Matching = () => {
               return (
                 <CardContainer key={user.userId}>
                   <CardWrapper $role={role}>
+                    <ModernDesktopNavButton
+                      type="button"
+                      $side="left"
+                      onClick={e => { e.stopPropagation(); navigateActiveProfile(-1); }}
+                      disabled={activeProfileIndex === 0}
+                      aria-label="Previous profile"
+                    >
+                      <FaChevronLeft />
+                    </ModernDesktopNavButton>
+                    <ModernDesktopNavButton
+                      type="button"
+                      $side="right"
+                      onClick={e => { e.stopPropagation(); navigateActiveProfile(1); }}
+                      disabled={activeProfileIndex >= filteredUsers.length - 1}
+                      aria-label="Next profile"
+                    >
+                      <FaChevronRight />
+                    </ModernDesktopNavButton>
                     <SwipeableCard
                       user={user}
                       photo={photo}
