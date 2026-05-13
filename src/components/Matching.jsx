@@ -97,6 +97,9 @@ const DEBUG_SHARED_NEW_USER_ID = 'ID0001';
 const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
 const ADDITIONAL_MATCHING_LOG_LIMIT = 300;
 const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false, accessSnapshotKey: null });
+const shouldUseFreshAdditionalProfileRules = freshCache => (
+  freshCache?.refreshSucceeded === true && freshCache?.profileFound === true
+);
 
 const shouldDebugAdditionalMatching = (...ids) =>
   ids.some(id => String(id || '').trim() === DEBUG_ADDITIONAL_MATCHING_USER_ID);
@@ -2400,7 +2403,21 @@ const Matching = () => {
         rawRules: cached.rawRules,
         searchKeySetsOfExactUser: cached.searchKeySetsOfExactUser,
       });
-      return { ...cached, cacheHit: true, staleReasons: [], paginationInvalidationReasons: [] };
+      const accessSnapshotKey = getMatchingAccessSnapshotKey({
+        accessUserId: cached.accessUserId,
+        rawRules: cached.rawRules,
+        searchKeySetKeys: cached.searchKeySetsOfExactUser,
+      });
+      return {
+        ...cached,
+        cacheHit: true,
+        staleReasons: [],
+        paginationInvalidationReasons: [],
+        refreshSucceeded: true,
+        profileFound: true,
+        parsedRules: parseAdditionalAccessRuleGroups(cached.rawRules),
+        accessSnapshotKey,
+      };
     }
 
     logAdditionalMatchingDebug(normalizedAccessUserId, 'profile cache miss/stale', {
@@ -2416,7 +2433,42 @@ const Matching = () => {
     additionalProfileRequestVersionRef.current = profileRequestVersion;
     const profilePath = `fetchUserById(${normalizedAccessUserId})`;
     try {
-      const profile = await fetchUserById(normalizedAccessUserId) || {};
+      const fetchedProfile = await fetchUserById(normalizedAccessUserId);
+      const profileFound = Boolean(fetchedProfile && typeof fetchedProfile === 'object');
+      if (!profileFound) {
+        const fallbackRawRules = state.currentAdditionalAccessRules || '';
+        const fallbackSearchKeySetKeys = state.currentSearchKeySetKeys || [];
+        const fallbackAccessSnapshotKey = getMatchingAccessSnapshotKey({
+          accessUserId: normalizedAccessUserId,
+          rawRules: fallbackRawRules,
+          searchKeySetKeys: fallbackSearchKeySetKeys,
+        });
+        logAdditionalMatchingDebug(normalizedAccessUserId, 'profile refetch returned no profile; keeping current rules', {
+          firebasePath: profilePath,
+          staleReasons,
+          rawRules: fallbackRawRules,
+          searchKeySetsOfExactUser: fallbackSearchKeySetKeys,
+        });
+        return {
+          ...(cached || {}),
+          accessUserId: normalizedAccessUserId,
+          rawRules: fallbackRawRules,
+          searchKeySetsOfExactUser: fallbackSearchKeySetKeys,
+          rawRulesSignature: getRawRulesSignature(fallbackRawRules),
+          searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(fallbackSearchKeySetKeys),
+          collectionSource: state.collectionSource,
+          cacheHit: false,
+          refreshed: false,
+          refreshSucceeded: false,
+          profileFound: false,
+          parsedRules: parseAdditionalAccessRuleGroups(fallbackRawRules),
+          accessSnapshotKey: fallbackAccessSnapshotKey,
+          staleReasons,
+          paginationInvalidationReasons: [],
+          profilePath,
+        };
+      }
+      const profile = fetchedProfile;
       const accessLevel = profile?.accessLevel || '';
       const additionalAccessRules = profile?.additionalAccessRules || '';
       const searchKeySetsOfExactUser = await resolveAdditionalSearchKeySetKeysForMatching(profile, normalizedAccessUserId);
@@ -2449,22 +2501,27 @@ const Matching = () => {
       }
       if (cached && cached.collectionSource !== freshMetadata.collectionSource) confirmedPaginationInvalidationReasons.push('collectionSource-changed');
 
+      const accessSnapshotKey = getMatchingAccessSnapshotKey({
+        accessUserId: normalizedAccessUserId,
+        rawRules: additionalAccessRules,
+        searchKeySetKeys: searchKeySetsOfExactUser,
+      });
       const freshCache = {
         ...freshMetadata,
         profile,
         accessLevel,
         rawRules: additionalAccessRules,
+        parsedRules: parseAdditionalAccessRuleGroups(additionalAccessRules),
         searchKeySetsOfExactUser,
         cachedAt: Date.now(),
         profilePath,
+        profileFound: true,
+        refreshSucceeded: true,
+        accessSnapshotKey,
       };
 
       additionalProfileCacheRef.current = freshCache;
-      matchingAccessSnapshotKeyRef.current = getMatchingAccessSnapshotKey({
-        accessUserId: normalizedAccessUserId,
-        rawRules: additionalAccessRules,
-        searchKeySetKeys: searchKeySetsOfExactUser,
-      });
+      matchingAccessSnapshotKeyRef.current = accessSnapshotKey;
       if (!deferStateSync) {
         applyFreshAdditionalProfileState(freshCache, accessLevel);
       }
@@ -2482,12 +2539,43 @@ const Matching = () => {
         ...freshCache,
         cacheHit: confirmedPaginationInvalidationReasons.length === 0,
         refreshed: true,
+        refreshSucceeded: true,
+        profileFound: true,
         staleReasons,
         paginationInvalidationReasons: confirmedPaginationInvalidationReasons,
       };
     } catch (error) {
-      logAdditionalMatchingDebug(normalizedAccessUserId, 'profile refetch failed', { firebasePath: profilePath }, error);
-      throw error;
+      const fallbackRawRules = state.currentAdditionalAccessRules || '';
+      const fallbackSearchKeySetKeys = state.currentSearchKeySetKeys || [];
+      const fallbackAccessSnapshotKey = getMatchingAccessSnapshotKey({
+        accessUserId: normalizedAccessUserId,
+        rawRules: fallbackRawRules,
+        searchKeySetKeys: fallbackSearchKeySetKeys,
+      });
+      logAdditionalMatchingDebug(normalizedAccessUserId, 'profile refetch failed; keeping current rules', {
+        firebasePath: profilePath,
+        rawRules: fallbackRawRules,
+        searchKeySetsOfExactUser: fallbackSearchKeySetKeys,
+        staleReasons,
+      }, error);
+      return {
+        ...(cached || {}),
+        accessUserId: normalizedAccessUserId,
+        rawRules: fallbackRawRules,
+        searchKeySetsOfExactUser: fallbackSearchKeySetKeys,
+        rawRulesSignature: getRawRulesSignature(fallbackRawRules),
+        searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(fallbackSearchKeySetKeys),
+        collectionSource: state.collectionSource,
+        cacheHit: false,
+        refreshed: false,
+        refreshSucceeded: false,
+        profileFound: false,
+        parsedRules: parseAdditionalAccessRuleGroups(fallbackRawRules),
+        accessSnapshotKey: fallbackAccessSnapshotKey,
+        staleReasons,
+        paginationInvalidationReasons: [],
+        profilePath,
+      };
     }
   }, [applyFreshAdditionalProfileState]);
 
@@ -2604,9 +2692,14 @@ const Matching = () => {
       if (!canApplySharedCandidateResult()) {
         return;
       }
-      rawRulesForRequest = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
-      parsedRulesForRequest = parseAdditionalAccessRuleGroups(rawRulesForRequest);
-      searchKeySetKeysForRequest = freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys;
+      const useFreshProfileRules = shouldUseFreshAdditionalProfileRules(freshProfileCache);
+      rawRulesForRequest = useFreshProfileRules ? freshProfileCache.rawRules : currentAdditionalAccessRules;
+      parsedRulesForRequest = useFreshProfileRules
+        ? (freshProfileCache.parsedRules || parseAdditionalAccessRuleGroups(rawRulesForRequest))
+        : parsedAdditionalAccessRules;
+      searchKeySetKeysForRequest = useFreshProfileRules
+        ? (freshProfileCache.searchKeySetsOfExactUser || [])
+        : currentSearchKeySetKeys;
     }
     const requestMatchingAccessSnapshotKey = getMatchingAccessSnapshotKey({
       accessUserId: viewerId,
@@ -2726,7 +2819,7 @@ const Matching = () => {
         accessSnapshotKey: requestMatchingAccessSnapshotKey,
       });
     }
-    if (freshProfileCache) {
+    if (shouldUseFreshAdditionalProfileRules(freshProfileCache)) {
       applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache.accessLevel);
     }
     await loadCommentsFor(mergedSharedReactionCandidates);
@@ -3018,8 +3111,11 @@ const Matching = () => {
           });
           return;
         }
-        const freshRawRules = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
-        const freshParsedAdditionalAccessRules = parseAdditionalAccessRuleGroups(freshRawRules);
+        const useFreshProfileRules = shouldUseFreshAdditionalProfileRules(freshProfileCache);
+        const freshRawRules = useFreshProfileRules ? freshProfileCache.rawRules : currentAdditionalAccessRules;
+        const freshParsedAdditionalAccessRules = useFreshProfileRules
+          ? (freshProfileCache.parsedRules || parseAdditionalAccessRuleGroups(freshRawRules))
+          : parsedAdditionalAccessRules;
 
         if (!freshParsedAdditionalAccessRules || freshParsedAdditionalAccessRules.length === 0) {
           if (isLatestAdditionalFetch()) {
@@ -3135,6 +3231,7 @@ const Matching = () => {
     loadCommentsFor,
     markMatchingAccessValidated,
     ownerId,
+    parsedAdditionalAccessRules,
     resetAdditionalMatchingState,
   ]);
 
@@ -3441,13 +3538,20 @@ const Matching = () => {
       forceRefresh: true,
       deferStateSync: true,
     });
-    const rawRulesForRequest = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
-    const parsedRulesForRequest = parseAdditionalAccessRuleGroups(rawRulesForRequest);
+    const useFreshProfileRules = shouldUseFreshAdditionalProfileRules(freshProfileCache);
+    const rawRulesForRequest = useFreshProfileRules ? freshProfileCache.rawRules : currentAdditionalAccessRules;
+    const parsedRulesForRequest = useFreshProfileRules
+      ? (freshProfileCache.parsedRules || parseAdditionalAccessRuleGroups(rawRulesForRequest))
+      : parsedAdditionalAccessRules;
     if (parsedRulesForRequest.length === 0) {
-      applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
+      if (useFreshProfileRules) {
+        applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
+      }
       return newUserReactionIds;
     }
-    const searchKeySetKeysForRequest = freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys;
+    const searchKeySetKeysForRequest = useFreshProfileRules
+      ? (freshProfileCache.searchKeySetsOfExactUser || [])
+      : currentSearchKeySetKeys;
     const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(searchKeySetKeysForRequest, viewerId)
       ? searchKeySetKeysForRequest
       : await resolveAdditionalSearchKeySetKeysForMatching(null, viewerId);
@@ -3462,7 +3566,9 @@ const Matching = () => {
           searchKeySetKeys: resolvedSearchKeySetKeys,
         }),
       });
-      applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
+      if (useFreshProfileRules) {
+        applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
+      }
       return [];
     }
 
@@ -3488,7 +3594,9 @@ const Matching = () => {
       sharedAllowedNewUserIds: sharedReactionIds.filter(id => allowedIds.has(id)),
       accessSnapshotKey,
     });
-    applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
+    if (useFreshProfileRules) {
+      applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
+    }
     return newUserReactionIds.filter(id => allowedIds.has(id));
   }, [
     collectionSource,
@@ -3496,6 +3604,7 @@ const Matching = () => {
     currentSearchKeySetKeys,
     ensureFreshAdditionalMatchingProfile,
     ownerId,
+    parsedAdditionalAccessRules,
     applyFreshAdditionalProfileState,
     revalidateCurrentMatchingAccessPools,
     sharedReactionIds,
@@ -3761,11 +3870,30 @@ const Matching = () => {
         const reactionIds = shouldRefreshReactionIds || currentPagination.ids.length === 0
           ? await getAccessibleReactionIds(Object.keys(reactionMap))
           : currentPagination.ids;
-        const loadedIds = reactionLoadedIdsRef.current[viewMode] || new Set();
+        if (!canApplyLoadMoreResult()) return;
+        const refreshedAccessSnapshotKey = matchingAccessSnapshotKeyRef.current;
+        const accessSnapshotChanged = shouldRefreshReactionIds && (
+          currentPagination.accessSnapshotKey !== refreshedAccessSnapshotKey
+        );
+        const loadedIds = accessSnapshotChanged
+          ? new Set()
+          : (reactionLoadedIdsRef.current[viewMode] || new Set());
+        if (accessSnapshotChanged) {
+          reactionLoadedIdsRef.current[viewMode] = loadedIds;
+          setReactionPaginationByType(prev => ({
+            ...prev,
+            [viewMode]: {
+              ...buildEmptyReactionPagination(),
+              accessSnapshotKey: refreshedAccessSnapshotKey,
+            },
+          }));
+        }
         const page = await loadReactionCardsPage({
           reactionIds,
           reactionMap,
-          offset: shouldRefreshReactionIds ? 0 : (currentPagination.ids.length > 0 ? currentPagination.nextOffset : 0),
+          offset: (shouldRefreshReactionIds || accessSnapshotChanged)
+            ? 0
+            : (currentPagination.ids.length > 0 ? currentPagination.nextOffset : 0),
           limit: LOAD_MORE,
           loadedIds,
         });
@@ -3818,8 +3946,11 @@ const Matching = () => {
           });
           return;
         }
-        const freshRawRules = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
-        const freshParsedAdditionalAccessRules = parseAdditionalAccessRuleGroups(freshRawRules);
+        const useFreshProfileRules = shouldUseFreshAdditionalProfileRules(freshProfileCache);
+        const freshRawRules = useFreshProfileRules ? freshProfileCache.rawRules : currentAdditionalAccessRules;
+        const freshParsedAdditionalAccessRules = useFreshProfileRules
+          ? (freshProfileCache.parsedRules || parseAdditionalAccessRuleGroups(freshRawRules))
+          : parsedAdditionalAccessRules;
         const shouldResetAdditionalPagination =
           !freshProfileCache?.cacheHit &&
           (freshProfileCache?.paginationInvalidationReasons || []).length > 0;
@@ -3836,6 +3967,9 @@ const Matching = () => {
           ));
 
         if (!freshParsedAdditionalAccessRules.length) {
+          if (useFreshProfileRules) {
+            applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
+          }
           if (isLatestLoadMore()) {
             resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
           }
@@ -3944,7 +4078,9 @@ const Matching = () => {
           mergedAdditionalNewUsers = Array.from(map.values());
           return mergedAdditionalNewUsers;
         });
-        applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
+        if (useFreshProfileRules) {
+          applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
+        }
         await loadCommentsFor(mergedAdditionalNewUsers.length ? mergedAdditionalNewUsers : collected);
         if (!isLatestLoadMore()) return;
         setAdditionalNextOffset(nextOffset);
@@ -4034,7 +4170,7 @@ const Matching = () => {
     loadReactionCardsPage,
     reactionPaginationByType,
     resetAdditionalMatchingState,
-    parsedAdditionalAccessRules.length,
+    parsedAdditionalAccessRules,
     roleIndexSets,
     viewMode,
   ]);

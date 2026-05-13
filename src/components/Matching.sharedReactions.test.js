@@ -88,4 +88,37 @@ describe('Matching shared reaction card UI', () => {
     expect(source).toContain('const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false, accessSnapshotKey: null });');
   });
 
+  it('resets open reaction pagination when refreshed access snapshot changes', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain('const refreshedAccessSnapshotKey = matchingAccessSnapshotKeyRef.current;');
+    expect(source).toContain('const accessSnapshotChanged = shouldRefreshReactionIds && (');
+    expect(source).toContain('currentPagination.accessSnapshotKey !== refreshedAccessSnapshotKey');
+    expect(source).toContain('const loadedIds = accessSnapshotChanged\n          ? new Set()');
+    expect(source).toContain('reactionLoadedIdsRef.current[viewMode] = loadedIds;');
+    expect(source).toContain('...buildEmptyReactionPagination(),');
+    expect(source).toContain('offset: (shouldRefreshReactionIds || accessSnapshotChanged)');
+  });
+
+  it('syncs a successful forced empty-rules profile before returning from additional load more', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain('const useFreshProfileRules = shouldUseFreshAdditionalProfileRules(freshProfileCache);');
+    expect(source).toContain(`if (!freshParsedAdditionalAccessRules.length) {
+          if (useFreshProfileRules) {
+            applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
+          }`);
+  });
+
+  it('keeps current additional rules when a forced profile refresh fails or finds no profile', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain('const shouldUseFreshAdditionalProfileRules = freshCache => (');
+    expect(source).toContain('freshCache?.refreshSucceeded === true && freshCache?.profileFound === true');
+    expect(source).toContain('profile refetch returned no profile; keeping current rules');
+    expect(source).toContain('profile refetch failed; keeping current rules');
+    expect(source).toContain('const rawRulesForRequest = useFreshProfileRules ? freshProfileCache.rawRules : currentAdditionalAccessRules;');
+    expect(source).toContain('const freshRawRules = useFreshProfileRules ? freshProfileCache.rawRules : currentAdditionalAccessRules;');
+  });
+
 });
