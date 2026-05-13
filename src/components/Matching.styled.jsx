@@ -768,34 +768,34 @@ export const ModernProfileShell = styled.div`
 
 export const ModernProfileScroll = styled.div`
   position: absolute;
-  inset: 0;
+  inset: 0 0 82px;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  scroll-padding-bottom: 104px;
+  scroll-padding-bottom: 28px;
 `;
 
 export const ModernHero = styled.div`
   position: relative;
-  min-height: clamp(300px, 56%, 440px);
-  height: 56%;
+  min-height: clamp(330px, 58%, 455px);
+  height: 58%;
   background:
-    ${({ $image }) => $image ? `linear-gradient(180deg, rgba(12, 9, 7, 0.02) 0%, rgba(12, 9, 7, 0.12) 42%, rgba(12, 9, 7, 0.78) 100%), url(${$image})` : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)'};
+    ${({ $image }) => $image ? `linear-gradient(180deg, rgba(12, 9, 7, 0) 0%, rgba(12, 9, 7, 0.04) 42%, rgba(12, 9, 7, 0.48) 78%, rgba(12, 9, 7, 0.72) 100%), url(${$image})` : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)'};
   background-size: cover;
-  background-position: center 28%;
+  background-position: center 18%;
   display: flex;
   align-items: flex-end;
-  padding: 20px 18px 112px;
+  padding: 20px 18px 22px;
   box-sizing: border-box;
 
   &::after {
     content: '';
     position: absolute;
     inset: auto 0 0;
-    height: 46%;
-    background: linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.72) 100%);
+    height: 38%;
+    background: linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.62) 100%);
     pointer-events: none;
   }
 `;
@@ -846,15 +846,17 @@ export const ModernRoleBadge = styled.span`
 export const ModernHeroTitle = styled.h2`
   margin: 0;
   color: #fff;
-  font-size: clamp(32px, 8vw, 44px);
-  line-height: 1;
-  font-weight: 900;
+  max-width: 92%;
+  font-size: clamp(30px, 7.2vw, 42px);
+  line-height: 0.98;
+  font-weight: 850;
+  text-wrap: balance;
 `;
 
 export const ModernHeroLocation = styled.p`
   margin: 7px 0 0;
   color: rgba(255, 246, 232, 0.88);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
 `;
 
@@ -862,7 +864,7 @@ export const ModernHeroFacts = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 12px;
+  margin-top: 10px;
 `;
 
 export const ModernFactPill = styled.span`
@@ -870,11 +872,11 @@ export const ModernFactPill = styled.span`
   gap: 5px;
   align-items: baseline;
   max-width: 100%;
-  padding: 6px 9px;
+  padding: 5px 8px;
   border-radius: 999px;
   color: #fff8ec;
-  background: rgba(24, 18, 12, 0.48);
-  border: 1px solid rgba(255, 204, 115, 0.24);
+  background: rgba(22, 17, 12, 0.38);
+  border: 1px solid rgba(255, 204, 115, 0.18);
   backdrop-filter: blur(12px);
   font-size: 12px;
   line-height: 1.1;
@@ -890,28 +892,28 @@ export const ModernFactPill = styled.span`
 export const ModernProfileBody = styled.div`
   position: relative;
   z-index: 3;
-  margin-top: -76px;
-  padding: 0 12px 108px;
+  margin-top: 0;
+  padding: 12px 12px 18px;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 10px;
 `;
 
 export const ModernSection = styled.section`
-  background: rgba(25, 21, 18, 0.9);
+  background: rgba(26, 23, 20, 0.82);
   color: #fff8ec;
   border-radius: 18px;
   padding: 12px;
-  border: 1px solid rgba(255, 214, 148, 0.13);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 214, 148, 0.11);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(14px);
 `;
 
 export const ModernSectionTitle = styled.h3`
   margin: 0 0 8px;
-  color: #ffd899;
-  font-size: 13px;
-  font-weight: 900;
+  color: #ffd18a;
+  font-size: 18px;
+  font-weight: 750;
   letter-spacing: 0.2px;
 `;
 
@@ -926,20 +928,53 @@ export const ModernChip = styled.div`
   flex-direction: column;
   gap: 2px;
   max-width: 100%;
-  padding: 7px 9px;
+  padding: 7px 10px;
   border-radius: 13px;
-  background: rgba(255, 255, 255, 0.055);
-  border: 1px solid rgba(255, 214, 148, 0.16);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 214, 148, 0.12);
   color: #fff8ec;
-  font-size: 12px;
-  font-weight: 750;
+  font-size: 14px;
+  font-weight: 650;
   line-height: 1.15;
 
   strong {
-    color: #f7b95f;
+    color: rgba(247, 185, 95, 0.76);
     font-size: 10px;
+    font-weight: 650;
     text-transform: uppercase;
-    letter-spacing: 0.55px;
+    letter-spacing: 0.03em;
+  }
+`;
+
+
+export const ModernFieldList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+`;
+
+export const ModernFieldRow = styled.div`
+  display: grid;
+  grid-template-columns: minmax(92px, 0.42fr) 1fr;
+  gap: 12px;
+  align-items: baseline;
+  padding: 0 2px;
+  color: rgba(255, 248, 236, 0.9);
+
+  strong {
+    color: rgba(255, 216, 153, 0.62);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.03em;
+  }
+
+  span {
+    color: #fff8ec;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.25;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 `;
 
@@ -989,8 +1024,8 @@ export const ModernContactLink = styled.a`
   max-width: 100%;
   padding: 8px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.055);
-  border: 1px solid rgba(255, 214, 148, 0.16);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 214, 148, 0.12);
   color: #ffd899;
   font-size: 12px;
   font-weight: 900;
@@ -1016,11 +1051,11 @@ export const ModernDesktopNavButton = styled.button`
   ${({ $side }) => ($side === 'left' ? 'left: 8px;' : 'right: 8px;')}
   transform: translateY(-50%);
   z-index: 9;
-  width: 34px;
-  height: 54px;
+  width: 26px;
+  height: 40px;
   border: 1px solid rgba(255, 255, 255, 0.26);
   border-radius: 999px;
-  background: rgba(21, 18, 15, 0.42);
+  background: rgba(21, 18, 15, 0.26);
   color: rgba(255, 255, 255, 0.84);
   display: flex;
   align-items: center;
@@ -1039,6 +1074,10 @@ export const ModernDesktopNavButton = styled.button`
     opacity: 0.24;
     cursor: default;
   }
+
+  @media (max-width: 768px) {
+    display: none;
+  }
 `;
 
 export const ModernActionRail = styled.div`
@@ -1049,9 +1088,13 @@ export const ModernActionRail = styled.div`
   z-index: 8;
   display: flex;
   justify-content: space-between;
-  padding: 18px 24px 20px;
+  min-height: 82px;
+  box-sizing: border-box;
+  align-items: center;
+  padding: 12px 46px 14px;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(12, 9, 7, 0) 0%, rgba(12, 9, 7, 0.76) 54%, rgba(12, 9, 7, 0.96) 100%);
+  background: linear-gradient(180deg, rgba(12, 9, 7, 0.72) 0%, rgba(12, 9, 7, 0.96) 100%);
+  border-top: 1px solid rgba(255, 214, 148, 0.1);
 
   & > span {
     pointer-events: auto;
@@ -1059,8 +1102,8 @@ export const ModernActionRail = styled.div`
 
   button {
     position: static !important;
-    width: 56px !important;
-    height: 56px !important;
+    width: 52px !important;
+    height: 52px !important;
     border-radius: 50% !important;
     box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32) !important;
   }
