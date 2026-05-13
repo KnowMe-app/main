@@ -4,6 +4,7 @@ import {
   canShowMatchingUser,
   hasPendingSharedReactionCandidates,
   loadReactionCardsPageRecords,
+  mergeMatchingCandidateUsers,
   mergeSharedReactionCandidateUsers,
   resolvePrioritizedReactionMaps,
   shouldApplyReactionPageResult,
@@ -718,7 +719,7 @@ describe('pre-merge shared reaction verification', () => {
     expect(dislikesTab.map(user => user.userId)).toEqual(['ID0002']);
   });
 
-  it('ignores stale shared candidate results for changed tab, source, or version', () => {
+  it('ignores stale shared candidate results for changed tab or version while reaction sources stay global', () => {
     const base = {
       requestVersion: 9,
       currentVersion: 9,
@@ -731,7 +732,7 @@ describe('pre-merge shared reaction verification', () => {
     expect(shouldApplySharedReactionCandidateResult(base)).toBe(true);
     expect(shouldApplySharedReactionCandidateResult({ ...base, currentVersion: 10 })).toBe(false);
     expect(shouldApplySharedReactionCandidateResult({ ...base, currentViewMode: 'favorites' })).toBe(false);
-    expect(shouldApplySharedReactionCandidateResult({ ...base, currentCollectionSource: 'newUsers' })).toBe(false);
+    expect(shouldApplySharedReactionCandidateResult({ ...base, currentCollectionSource: 'newUsers' })).toBe(true);
   });
 
   it('deduplicates when a card exists in both base users and shared reaction candidates', () => {
@@ -1014,7 +1015,7 @@ describe('readReactionSnapshotMaps', () => {
 
 
 describe('reaction pagination race guards', () => {
-  it('rejects async reaction page results after rapid tab switches, source changes, or newer requests', () => {
+  it('rejects async reaction page results after rapid tab switches or newer requests while reaction sources stay global', () => {
     const base = {
       requestVersion: 7,
       currentVersion: 7,
@@ -1027,7 +1028,7 @@ describe('reaction pagination race guards', () => {
     expect(shouldApplyReactionPageResult(base)).toBe(true);
     expect(shouldApplyReactionPageResult({ ...base, currentVersion: 8 })).toBe(false);
     expect(shouldApplyReactionPageResult({ ...base, currentViewMode: 'favorites' })).toBe(false);
-    expect(shouldApplyReactionPageResult({ ...base, currentCollectionSource: 'newUsers' })).toBe(false);
+    expect(shouldApplyReactionPageResult({ ...base, currentCollectionSource: 'newUsers' })).toBe(true);
   });
 
   it('can exhaust more than two pages of shared dislikes without duplicates', () => {
@@ -1155,4 +1156,106 @@ describe('reaction pagination race guards', () => {
     expect(defaultDeck.map(user => user.userId)).toEqual(['neutralCard']);
   });
 
+});
+
+describe('global cross-collection reaction overlay', () => {
+  const usersCard = { userId: 'firebasePushIdCard0001', publish: true, __sourceCollection: 'users' };
+  const newUsersCard = { userId: 'ID0001', __sourceCollection: 'newUsers', __matchingAccessAllowed: true };
+  const inaccessibleNewUsersCard = { userId: 'ID0002', __sourceCollection: 'newUsers' };
+
+  it('shows own /users and /newUsers favorites in both collection modes', () => {
+    ['users', 'newUsers'].forEach(collectionSource => {
+      const favoritesTab = mergeMatchingCandidateUsers({
+        users: [usersCard, newUsersCard],
+        favoriteUsers: { firebasePushIdCard0001: true, ID0001: true },
+        dislikeUsers: {},
+        viewMode: 'favorites',
+        collectionSource,
+        hasAdditionalAccessRules: true,
+      });
+
+      expect(favoritesTab.map(user => user.userId)).toEqual(['firebasePushIdCard0001', 'ID0001']);
+    });
+  });
+
+  it('shows shared /users and accessible /newUsers dislikes in both collection modes', () => {
+    ['users', 'newUsers'].forEach(collectionSource => {
+      const dislikesTab = mergeMatchingCandidateUsers({
+        users: [usersCard, newUsersCard],
+        favoriteUsers: {},
+        dislikeUsers: { firebasePushIdCard0001: true, ID0001: true },
+        viewMode: 'dislikes',
+        collectionSource,
+        hasAdditionalAccessRules: true,
+      });
+
+      expect(dislikesTab.map(user => user.userId)).toEqual(['firebasePushIdCard0001', 'ID0001']);
+    });
+  });
+
+  it('excludes all effective favorites and dislikes from the default deck in both collection modes', () => {
+    ['users', 'newUsers'].forEach(collectionSource => {
+      const defaultDeck = mergeMatchingCandidateUsers({
+        users: [
+          usersCard,
+          newUsersCard,
+          { userId: 'neutralUserCard0000001', publish: true, __sourceCollection: 'users' },
+          { userId: 'ID0099', __sourceCollection: 'newUsers', __matchingAccessAllowed: true },
+        ],
+        favoriteUsers: { firebasePushIdCard0001: true },
+        dislikeUsers: { ID0001: true },
+        viewMode: 'default',
+        collectionSource,
+        hasAdditionalAccessRules: true,
+      });
+
+      expect(defaultDeck.map(user => user.userId)).not.toEqual(expect.arrayContaining(['firebasePushIdCard0001', 'ID0001']));
+    });
+  });
+
+  it('keeps own reaction priority global across users and newUsers ids', () => {
+    const { favorites, dislikes } = resolvePrioritizedReactionMaps({
+      ownerIds: ['viewer', 'sharedOwner'],
+      ownOwnerId: 'viewer',
+      favoriteSnapshots: {
+        viewer: { ID0001: true },
+        sharedOwner: { firebasePushIdCard0001: true },
+      },
+      dislikeSnapshots: {
+        viewer: { ID0002: true },
+        sharedOwner: { ID0001: true, ID0002: true },
+      },
+    });
+
+    expect(favorites).toEqual({ firebasePushIdCard0001: true, ID0001: true });
+    expect(dislikes).toEqual({ ID0002: true });
+  });
+
+  it('does not leak newUsers reaction cards without allowed searchKeySets/access scope', () => {
+    const favoritesTab = mergeMatchingCandidateUsers({
+      users: [newUsersCard, inaccessibleNewUsersCard],
+      favoriteUsers: { ID0001: true, ID0002: true },
+      dislikeUsers: {},
+      viewMode: 'favorites',
+      collectionSource: 'users',
+      hasAdditionalAccessRules: true,
+    });
+
+    expect(favoritesTab.map(user => user.userId)).toEqual(['ID0001']);
+  });
+
+  it('does not make reaction async results stale merely because collectionSource changed', () => {
+    const base = {
+      requestVersion: 1,
+      currentVersion: 1,
+      requestViewMode: 'favorites',
+      currentViewMode: 'favorites',
+      requestCollectionSource: 'users',
+      currentCollectionSource: 'newUsers',
+    };
+
+    expect(shouldApplyReactionPageResult(base)).toBe(true);
+    expect(shouldApplySharedReactionCandidateResult(base)).toBe(true);
+    expect(shouldApplyReactionPageResult({ ...base, requestViewMode: 'default', currentViewMode: 'default' })).toBe(false);
+  });
 });
