@@ -3,6 +3,7 @@ import {
   buildSharedReactionCandidateIds,
   canShowMatchingUser,
   resolvePrioritizedReactionMaps,
+  shouldApplyReactionPageResult,
 } from '../reactionPriority';
 
 describe('resolvePrioritizedReactionMaps', () => {
@@ -184,6 +185,142 @@ describe('mergeMatchingCandidateUsers', () => {
     expect(result).toEqual([]);
   });
 
+
+  it('hides shared-only effective dislikes from the default deck but keeps them for dislikes tab', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+    const card = { userId: 'sharedDislikeOnly', publish: true, __sourceCollection: 'users' };
+
+    const defaultDeck = mergeMatchingCandidateUsers({
+      users: [card],
+      sharedReactionCandidateUsers: [card],
+      favoriteUsers: {},
+      dislikeUsers: { sharedDislikeOnly: true },
+      ownFavoriteUsers: {},
+      ownDislikeUsers: {},
+      isAdmin: false,
+      viewMode: 'default',
+      collectionSource: 'users',
+    });
+
+    const dislikesTab = mergeMatchingCandidateUsers({
+      users: [card],
+      favoriteUsers: {},
+      dislikeUsers: { sharedDislikeOnly: true },
+      ownFavoriteUsers: {},
+      ownDislikeUsers: {},
+      isAdmin: false,
+      viewMode: 'dislikes',
+      collectionSource: 'users',
+    });
+
+    expect(defaultDeck).toEqual([]);
+    expect(dislikesTab.map(user => user.userId)).toEqual(['sharedDislikeOnly']);
+  });
+
+  it('routes own favorite over shared dislike to favorites and away from default/dislikes', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+    const card = { userId: 'ownFavoriteSharedDislike', publish: true, __sourceCollection: 'users' };
+    const merged = resolvePrioritizedReactionMaps({
+      ownerIds: ['viewer', 'sharedOwner'],
+      ownOwnerId: 'viewer',
+      favoriteSnapshots: { viewer: { ownFavoriteSharedDislike: true } },
+      dislikeSnapshots: { sharedOwner: { ownFavoriteSharedDislike: true } },
+    });
+
+    const defaultDeck = mergeMatchingCandidateUsers({
+      users: [card],
+      favoriteUsers: merged.favorites,
+      dislikeUsers: merged.dislikes,
+      isAdmin: false,
+      viewMode: 'default',
+      collectionSource: 'users',
+    });
+    const favoritesTab = mergeMatchingCandidateUsers({
+      users: [card],
+      favoriteUsers: merged.favorites,
+      dislikeUsers: merged.dislikes,
+      isAdmin: false,
+      viewMode: 'favorites',
+      collectionSource: 'users',
+    }).filter(user => merged.favorites[user.userId]);
+    const dislikesTab = mergeMatchingCandidateUsers({
+      users: [card],
+      favoriteUsers: merged.favorites,
+      dislikeUsers: merged.dislikes,
+      isAdmin: false,
+      viewMode: 'dislikes',
+      collectionSource: 'users',
+    }).filter(user => merged.dislikes[user.userId]);
+
+    expect(merged.favorites).toEqual({ ownFavoriteSharedDislike: true });
+    expect(merged.dislikes).toEqual({});
+    expect(defaultDeck).toEqual([]);
+    expect(favoritesTab.map(user => user.userId)).toEqual(['ownFavoriteSharedDislike']);
+    expect(dislikesTab).toEqual([]);
+  });
+
+  it('routes own dislike over shared favorite to dislikes and away from default/favorites', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+    const card = { userId: 'ownDislikeSharedFavorite', publish: true, __sourceCollection: 'users' };
+    const merged = resolvePrioritizedReactionMaps({
+      ownerIds: ['viewer', 'sharedOwner'],
+      ownOwnerId: 'viewer',
+      favoriteSnapshots: { sharedOwner: { ownDislikeSharedFavorite: true } },
+      dislikeSnapshots: { viewer: { ownDislikeSharedFavorite: true } },
+    });
+
+    const defaultDeck = mergeMatchingCandidateUsers({
+      users: [card],
+      favoriteUsers: merged.favorites,
+      dislikeUsers: merged.dislikes,
+      ownDislikeUsers: { ownDislikeSharedFavorite: true },
+      isAdmin: false,
+      viewMode: 'default',
+      collectionSource: 'users',
+    });
+    const favoritesTab = mergeMatchingCandidateUsers({
+      users: [card],
+      favoriteUsers: merged.favorites,
+      dislikeUsers: merged.dislikes,
+      isAdmin: false,
+      viewMode: 'favorites',
+      collectionSource: 'users',
+    }).filter(user => merged.favorites[user.userId]);
+    const dislikesTab = mergeMatchingCandidateUsers({
+      users: [card],
+      favoriteUsers: merged.favorites,
+      dislikeUsers: merged.dislikes,
+      isAdmin: false,
+      viewMode: 'dislikes',
+      collectionSource: 'users',
+    }).filter(user => merged.dislikes[user.userId]);
+
+    expect(merged.favorites).toEqual({});
+    expect(merged.dislikes).toEqual({ ownDislikeSharedFavorite: true });
+    expect(defaultDeck).toEqual([]);
+    expect(favoritesTab).toEqual([]);
+    expect(dislikesTab.map(user => user.userId)).toEqual(['ownDislikeSharedFavorite']);
+  });
+
+  it('keeps default deck free of all effective favorite and dislike cards', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+
+    const defaultDeck = mergeMatchingCandidateUsers({
+      users: [
+        { userId: 'plainCard', publish: true, __sourceCollection: 'users' },
+        { userId: 'effectiveFavorite', publish: true, __sourceCollection: 'users' },
+        { userId: 'effectiveDislike', publish: true, __sourceCollection: 'users' },
+      ],
+      favoriteUsers: { effectiveFavorite: true },
+      dislikeUsers: { effectiveDislike: true },
+      isAdmin: false,
+      viewMode: 'default',
+      collectionSource: 'users',
+    });
+
+    expect(defaultDeck.map(user => user.userId)).toEqual(['plainCard']);
+  });
+
   it('keeps shared effective dislike cards available in the dislikes tab', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
 
@@ -289,4 +426,147 @@ describe('readReactionSnapshotMaps', () => {
     }).sort()).toEqual(['sharedDislike', 'sharedFavorite']);
     expect(warnings).toHaveLength(2);
   });
+});
+
+
+describe('reaction pagination race guards', () => {
+  it('rejects async reaction page results after rapid tab switches, source changes, or newer requests', () => {
+    const base = {
+      requestVersion: 7,
+      currentVersion: 7,
+      requestViewMode: 'dislikes',
+      currentViewMode: 'dislikes',
+      requestCollectionSource: 'users',
+      currentCollectionSource: 'users',
+    };
+
+    expect(shouldApplyReactionPageResult(base)).toBe(true);
+    expect(shouldApplyReactionPageResult({ ...base, currentVersion: 8 })).toBe(false);
+    expect(shouldApplyReactionPageResult({ ...base, currentViewMode: 'favorites' })).toBe(false);
+    expect(shouldApplyReactionPageResult({ ...base, currentCollectionSource: 'newUsers' })).toBe(false);
+  });
+
+  it('can exhaust more than two pages of shared dislikes without duplicates', () => {
+    const reactionIds = Array.from({ length: 15 }, (_, index) => `shared-dislike-${index + 1}`);
+    const loaded = new Set();
+    const rendered = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const page = buildReactionCardsPage({
+        reactionIds,
+        offset,
+        limit: 6,
+        excludeIds: loaded,
+      });
+      page.pageIds.forEach(id => {
+        loaded.add(id);
+        rendered.push(id);
+      });
+      offset = page.nextOffset;
+      hasMore = page.hasMore;
+    }
+
+    expect(rendered).toEqual(reactionIds);
+    expect(new Set(rendered).size).toBe(reactionIds.length);
+    expect(offset).toBe(reactionIds.length);
+  });
+
+  it('keeps traversing reaction ids after filtered or inaccessible cards are skipped', () => {
+    const reactionIds = Array.from({ length: 9 }, (_, index) => `effective-dislike-${index + 1}`);
+    const hidden = new Set(['effective-dislike-1', 'effective-dislike-2', 'effective-dislike-4']);
+    const loaded = new Set();
+    const rendered = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (rendered.length < 3 && hasMore) {
+      const page = buildReactionCardsPage({ reactionIds, offset, limit: 3, excludeIds: loaded });
+      page.pageIds
+        .filter(id => !hidden.has(id))
+        .forEach(id => {
+          loaded.add(id);
+          rendered.push(id);
+        });
+      offset = page.nextOffset;
+      hasMore = page.hasMore || reactionIds.slice(offset).some(id => id && !loaded.has(id));
+    }
+
+    expect(rendered).toEqual(['effective-dislike-3', 'effective-dislike-5', 'effective-dislike-6']);
+    expect(hasMore).toBe(true);
+  });
+
+  it('keeps favorites and dislikes pagination offsets isolated across tab switches', () => {
+    const favoriteIds = Array.from({ length: 8 }, (_, index) => `favorite-${index + 1}`);
+    const dislikeIds = Array.from({ length: 8 }, (_, index) => `dislike-${index + 1}`);
+    const loadedByType = { favorites: new Set(), dislikes: new Set() };
+
+    const firstDislikes = buildReactionCardsPage({ reactionIds: dislikeIds, limit: 3, excludeIds: loadedByType.dislikes });
+    firstDislikes.pageIds.forEach(id => loadedByType.dislikes.add(id));
+    const firstFavorites = buildReactionCardsPage({ reactionIds: favoriteIds, limit: 3, excludeIds: loadedByType.favorites });
+    firstFavorites.pageIds.forEach(id => loadedByType.favorites.add(id));
+    const secondDislikes = buildReactionCardsPage({
+      reactionIds: dislikeIds,
+      offset: firstDislikes.nextOffset,
+      limit: 3,
+      excludeIds: loadedByType.dislikes,
+    });
+
+    expect(firstDislikes.pageIds).toEqual(['dislike-1', 'dislike-2', 'dislike-3']);
+    expect(firstFavorites.pageIds).toEqual(['favorite-1', 'favorite-2', 'favorite-3']);
+    expect(secondDislikes.pageIds).toEqual(['dislike-4', 'dislike-5', 'dislike-6']);
+  });
+
+  it('keeps accessible shared newUsers dislikes in dislikes tab but out of default deck', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+    const sharedNewUserDislike = {
+      userId: 'ID0001',
+      __sourceCollection: 'newUsers',
+      __matchingAccessAllowed: true,
+    };
+
+    const defaultDeck = mergeMatchingCandidateUsers({
+      users: [],
+      additionalNewUsers: [],
+      sharedReactionCandidateUsers: [sharedNewUserDislike],
+      favoriteUsers: {},
+      dislikeUsers: { ID0001: true },
+      viewMode: 'default',
+      collectionSource: 'newUsers',
+      hasAdditionalAccessRules: true,
+    });
+    const dislikesTab = mergeMatchingCandidateUsers({
+      users: [sharedNewUserDislike],
+      additionalNewUsers: [sharedNewUserDislike],
+      favoriteUsers: {},
+      dislikeUsers: { ID0001: true },
+      viewMode: 'dislikes',
+      collectionSource: 'newUsers',
+      hasAdditionalAccessRules: true,
+    }).filter(user => user.__matchingAccessAllowed && user.userId === 'ID0001');
+
+    expect(defaultDeck).toEqual([]);
+    expect(dislikesTab.map(user => user.userId)).toEqual(['ID0001']);
+  });
+
+  it('returns to a neutral-only default deck after reaction tab pagination', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+    const paginatedReactionCards = [
+      { userId: 'effectiveFavorite', publish: true, __sourceCollection: 'users' },
+      { userId: 'effectiveDislike', publish: true, __sourceCollection: 'users' },
+      { userId: 'neutralCard', publish: true, __sourceCollection: 'users' },
+    ];
+
+    const defaultDeck = mergeMatchingCandidateUsers({
+      users: paginatedReactionCards,
+      favoriteUsers: { effectiveFavorite: true },
+      dislikeUsers: { effectiveDislike: true },
+      viewMode: 'default',
+      collectionSource: 'users',
+    });
+
+    expect(defaultDeck.map(user => user.userId)).toEqual(['neutralCard']);
+  });
+
 });
