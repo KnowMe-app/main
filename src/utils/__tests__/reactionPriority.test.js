@@ -2,6 +2,7 @@ import {
   buildReactionCardsPage,
   buildSharedReactionCandidateIds,
   canShowMatchingUser,
+  loadReactionCardsPageRecords,
   resolvePrioritizedReactionMaps,
   shouldApplyReactionPageResult,
 } from '../reactionPriority';
@@ -339,6 +340,107 @@ describe('mergeMatchingCandidateUsers', () => {
 
     expect(result.map(user => user.userId)).toEqual(['sharedDislikeOnly']);
   });
+
+
+  it('isolates active reaction tabs even when given a combined shared candidate pool', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+    const cards = [
+      { userId: 'effectiveFavorite', publish: true, __sourceCollection: 'users' },
+      { userId: 'effectiveDislike', publish: true, __sourceCollection: 'users' },
+    ];
+
+    const favoritesTab = mergeMatchingCandidateUsers({
+      users: [],
+      sharedReactionCandidateUsers: cards,
+      favoriteUsers: { effectiveFavorite: true },
+      dislikeUsers: { effectiveDislike: true },
+      viewMode: 'favorites',
+      collectionSource: 'users',
+    });
+    const dislikesTab = mergeMatchingCandidateUsers({
+      users: [],
+      sharedReactionCandidateUsers: cards,
+      favoriteUsers: { effectiveFavorite: true },
+      dislikeUsers: { effectiveDislike: true },
+      viewMode: 'dislikes',
+      collectionSource: 'users',
+    });
+
+    expect(favoritesTab.map(user => user.userId)).toEqual(['effectiveFavorite']);
+    expect(dislikesTab.map(user => user.userId)).toEqual(['effectiveDislike']);
+  });
+
+  it('routes shared-only dislike to dislikes only and keeps it out of default/favorites', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+    const sharedDislike = { userId: 'sharedOnlyDislike', publish: true, __sourceCollection: 'users' };
+    const favoriteUsers = {};
+    const dislikeUsers = { sharedOnlyDislike: true };
+
+    const defaultDeck = mergeMatchingCandidateUsers({
+      users: [sharedDislike],
+      sharedReactionCandidateUsers: [sharedDislike],
+      favoriteUsers,
+      dislikeUsers,
+      viewMode: 'default',
+      collectionSource: 'users',
+    });
+    const favoritesTab = mergeMatchingCandidateUsers({
+      users: [],
+      sharedReactionCandidateUsers: [sharedDislike],
+      favoriteUsers,
+      dislikeUsers,
+      viewMode: 'favorites',
+      collectionSource: 'users',
+    });
+    const dislikesTab = mergeMatchingCandidateUsers({
+      users: [],
+      sharedReactionCandidateUsers: [sharedDislike],
+      favoriteUsers,
+      dislikeUsers,
+      viewMode: 'dislikes',
+      collectionSource: 'users',
+    });
+
+    expect(defaultDeck).toEqual([]);
+    expect(favoritesTab).toEqual([]);
+    expect(dislikesTab.map(user => user.userId)).toEqual(['sharedOnlyDislike']);
+  });
+
+  it('routes shared-only favorite to favorites only and keeps it out of default/dislikes', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+    const sharedFavorite = { userId: 'sharedOnlyFavorite', publish: true, __sourceCollection: 'users' };
+    const favoriteUsers = { sharedOnlyFavorite: true };
+    const dislikeUsers = {};
+
+    const defaultDeck = mergeMatchingCandidateUsers({
+      users: [sharedFavorite],
+      sharedReactionCandidateUsers: [sharedFavorite],
+      favoriteUsers,
+      dislikeUsers,
+      viewMode: 'default',
+      collectionSource: 'users',
+    });
+    const favoritesTab = mergeMatchingCandidateUsers({
+      users: [],
+      sharedReactionCandidateUsers: [sharedFavorite],
+      favoriteUsers,
+      dislikeUsers,
+      viewMode: 'favorites',
+      collectionSource: 'users',
+    });
+    const dislikesTab = mergeMatchingCandidateUsers({
+      users: [],
+      sharedReactionCandidateUsers: [sharedFavorite],
+      favoriteUsers,
+      dislikeUsers,
+      viewMode: 'dislikes',
+      collectionSource: 'users',
+    });
+
+    expect(defaultDeck).toEqual([]);
+    expect(favoritesTab.map(user => user.userId)).toEqual(['sharedOnlyFavorite']);
+    expect(dislikesTab).toEqual([]);
+  });
 });
 
 describe('reaction card pagination', () => {
@@ -383,6 +485,74 @@ describe('reaction card pagination', () => {
     expect(page.pageIds).toEqual(reactionIds.slice(6));
     expect(page.nextOffset).toBe(8);
     expect(page.hasMore).toBe(false);
+  });
+
+
+  it('fetches reaction user records page-by-page without hydrating the full reaction list', async () => {
+    const pageSize = 6;
+    const reactionIds = Array.from({ length: pageSize * 2 + 2 }, (_, index) => `dislike-${index + 1}`);
+    const fetchCalls = [];
+    const fetchUsersByIds = jest.fn(async ids => {
+      fetchCalls.push([...ids]);
+      return Object.fromEntries(ids.map(id => [id, { userId: id, publish: true, __sourceCollection: 'users' }]));
+    });
+    const loaded = new Set();
+
+    const firstPage = await loadReactionCardsPageRecords({
+      reactionIds,
+      limit: pageSize,
+      loadedIds: loaded,
+      fetchUsersByIds,
+    });
+    const secondPage = await loadReactionCardsPageRecords({
+      reactionIds,
+      offset: firstPage.nextOffset,
+      limit: pageSize,
+      loadedIds: loaded,
+      fetchUsersByIds,
+    });
+
+    expect(firstPage.users.map(user => user.userId)).toEqual(reactionIds.slice(0, pageSize));
+    expect(firstPage.hasMore).toBe(true);
+    expect(secondPage.users.map(user => user.userId)).toEqual(reactionIds.slice(pageSize, pageSize * 2));
+    expect(fetchCalls).toEqual([
+      reactionIds.slice(0, pageSize),
+      reactionIds.slice(pageSize, pageSize * 2),
+    ]);
+    expect(fetchCalls.flat()).toHaveLength(pageSize * 2);
+    expect(new Set([...firstPage.users, ...secondPage.users].map(user => user.userId)).size).toBe(pageSize * 2);
+  });
+
+  it('backfills skipped reaction ids only until the visible page is filled', async () => {
+    const reactionIds = Array.from({ length: 12 }, (_, index) => `effective-dislike-${index + 1}`);
+    const hidden = new Set(['effective-dislike-1', 'effective-dislike-2', 'effective-dislike-4']);
+    const fetchCalls = [];
+    const fetchUsersByIds = jest.fn(async ids => {
+      fetchCalls.push([...ids]);
+      return Object.fromEntries(ids.map(id => [id, { userId: id, publish: true, __sourceCollection: 'users' }]));
+    });
+
+    const page = await loadReactionCardsPageRecords({
+      reactionIds,
+      limit: 3,
+      loadedIds: new Set(),
+      fetchUsersByIds,
+      filterUsers: users => users.filter(user => !hidden.has(user.userId)),
+    });
+
+    expect(page.users.map(user => user.userId)).toEqual([
+      'effective-dislike-3',
+      'effective-dislike-5',
+      'effective-dislike-6',
+    ]);
+    expect(fetchCalls).toEqual([
+      ['effective-dislike-1', 'effective-dislike-2', 'effective-dislike-3'],
+      ['effective-dislike-4', 'effective-dislike-5'],
+      ['effective-dislike-6'],
+    ]);
+    expect(fetchCalls.flat()).toHaveLength(6);
+    expect(fetchCalls.flat()).not.toEqual(reactionIds);
+    expect(page.hasMore).toBe(true);
   });
 });
 
