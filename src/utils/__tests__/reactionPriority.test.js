@@ -303,6 +303,64 @@ describe('mergeMatchingCandidateUsers', () => {
     expect(dislikesTab.map(user => user.userId)).toEqual(['ownDislikeSharedFavorite']);
   });
 
+
+  it('keeps reacted cards in search results while preserving default and reaction tab isolation', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+    const favoriteCard = { userId: 'favoriteCard', publish: true, __sourceCollection: 'users' };
+    const dislikeCard = { userId: 'dislikeCard', publish: true, __sourceCollection: 'users' };
+    const neutralCard = { userId: 'neutralCard', publish: true, __sourceCollection: 'users' };
+    const favoriteUsers = { favoriteCard: true };
+    const dislikeUsers = { dislikeCard: true };
+
+    const searchResults = mergeMatchingCandidateUsers({
+      users: [favoriteCard, dislikeCard, neutralCard],
+      favoriteUsers,
+      dislikeUsers,
+      viewMode: 'search',
+      collectionSource: 'users',
+    });
+    const defaultDeck = mergeMatchingCandidateUsers({
+      users: [favoriteCard, dislikeCard, neutralCard],
+      favoriteUsers,
+      dislikeUsers,
+      viewMode: 'default',
+      collectionSource: 'users',
+    });
+    const favoritesTab = mergeMatchingCandidateUsers({
+      users: [favoriteCard, dislikeCard, neutralCard],
+      favoriteUsers,
+      dislikeUsers,
+      viewMode: 'favorites',
+      collectionSource: 'users',
+    });
+    const dislikesTab = mergeMatchingCandidateUsers({
+      users: [favoriteCard, dislikeCard, neutralCard],
+      favoriteUsers,
+      dislikeUsers,
+      viewMode: 'dislikes',
+      collectionSource: 'users',
+    });
+
+    expect(searchResults.map(user => user.userId)).toEqual(['favoriteCard', 'dislikeCard', 'neutralCard']);
+    expect(defaultDeck.map(user => user.userId)).toEqual(['neutralCard']);
+    expect(favoritesTab.map(user => user.userId)).toEqual(['favoriteCard']);
+    expect(dislikesTab.map(user => user.userId)).toEqual(['dislikeCard']);
+  });
+
+  it('does not apply default deck reaction exclusion to unknown non-default modes', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+
+    const result = mergeMatchingCandidateUsers({
+      users: [{ userId: 'reactedCard', publish: true, __sourceCollection: 'users' }],
+      favoriteUsers: { reactedCard: true },
+      dislikeUsers: {},
+      viewMode: 'custom-non-default',
+      collectionSource: 'users',
+    });
+
+    expect(result.map(user => user.userId)).toEqual(['reactedCard']);
+  });
+
   it('keeps default deck free of all effective favorite and dislike cards', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
 
@@ -440,6 +498,49 @@ describe('mergeMatchingCandidateUsers', () => {
     expect(defaultDeck).toEqual([]);
     expect(favoritesTab.map(user => user.userId)).toEqual(['sharedOnlyFavorite']);
     expect(dislikesTab).toEqual([]);
+  });
+});
+
+
+describe('shouldApplySharedReactionCandidateResult', () => {
+  it('allows only the current default-mode shared candidate request to apply', () => {
+    const { shouldApplySharedReactionCandidateResult } = require('../reactionPriority');
+
+    expect(shouldApplySharedReactionCandidateResult({
+      requestVersion: 3,
+      currentVersion: 3,
+      requestViewMode: 'default',
+      currentViewMode: 'default',
+      requestCollectionSource: 'users',
+      currentCollectionSource: 'users',
+    })).toBe(true);
+
+    expect(shouldApplySharedReactionCandidateResult({
+      requestVersion: 3,
+      currentVersion: 4,
+      requestViewMode: 'default',
+      currentViewMode: 'default',
+      requestCollectionSource: 'users',
+      currentCollectionSource: 'users',
+    })).toBe(false);
+
+    expect(shouldApplySharedReactionCandidateResult({
+      requestVersion: 3,
+      currentVersion: 3,
+      requestViewMode: 'default',
+      currentViewMode: 'dislikes',
+      requestCollectionSource: 'users',
+      currentCollectionSource: 'users',
+    })).toBe(false);
+
+    expect(shouldApplySharedReactionCandidateResult({
+      requestVersion: 3,
+      currentVersion: 3,
+      requestViewMode: 'default',
+      currentViewMode: 'default',
+      requestCollectionSource: 'users',
+      currentCollectionSource: 'newUsers',
+    })).toBe(false);
   });
 });
 

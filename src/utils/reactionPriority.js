@@ -86,6 +86,20 @@ export const canShowMatchingUser = (user, { isAdmin = false } = {}) => {
   return user?.__sourceCollection === 'newUsers' || user?.publish === true;
 };
 
+export const shouldApplySharedReactionCandidateResult = ({
+  requestVersion,
+  currentVersion,
+  requestViewMode,
+  currentViewMode,
+  requestCollectionSource,
+  currentCollectionSource,
+} = {}) => (
+  requestViewMode === 'default' &&
+  currentViewMode === 'default' &&
+  requestCollectionSource === currentCollectionSource &&
+  requestVersion === currentVersion
+);
+
 export const mergeMatchingCandidateUsers = ({
   users = [],
   additionalNewUsers = [],
@@ -157,9 +171,13 @@ export const mergeMatchingCandidateUsers = ({
     );
   }
 
-  return mergedUsers.filter(
-    user => !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
-  );
+  if (viewMode === 'default') {
+    return mergedUsers.filter(
+      user => !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
+    );
+  }
+
+  return mergedUsers;
 };
 
 
