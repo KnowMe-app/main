@@ -102,16 +102,50 @@ export const shouldApplySharedReactionCandidateResult = ({
   requestVersion === currentVersion
 );
 
+export const markUserMatchingAccessValidated = (user, matchingAccessSnapshotKey) => ({
+  ...user,
+  __matchingAccessAllowed: true,
+  __matchingAccessSnapshotKey: matchingAccessSnapshotKey,
+});
+
+export const revalidateMatchingAccessForUsers = ({
+  users = [],
+  allowedIds = [],
+  matchingAccessSnapshotKey = null,
+  collectionSource = 'newUsers',
+  hasAdditionalAccessRules = true,
+} = {}) => {
+  if (!hasAdditionalAccessRules || collectionSource !== 'newUsers') return users;
+  const allowedIdSet = new Set((allowedIds || []).filter(Boolean));
+
+  return (users || [])
+    .filter(user => (
+      user?.__sourceCollection !== 'newUsers' ||
+      allowedIdSet.has(user.userId)
+    ))
+    .map(user => (user?.__sourceCollection === 'newUsers'
+      ? markUserMatchingAccessValidated(user, matchingAccessSnapshotKey)
+      : user));
+};
+
 export const mergeSharedReactionCandidateUsers = ({
   currentUsers = [],
   loadedUsers = [],
   candidateIds = [],
+  matchingAccessSnapshotKey = null,
+  collectionSource = 'newUsers',
+  hasAdditionalAccessRules = false,
 } = {}) => {
   const candidateIdSet = new Set((candidateIds || []).filter(Boolean));
   const map = new Map(
     (currentUsers || [])
       .filter(user => user?.userId && candidateIdSet.has(user.userId))
-      .map(user => [user.userId, user])
+      .map(user => {
+        const currentUser = hasAdditionalAccessRules && collectionSource === 'newUsers' && user?.__sourceCollection === 'newUsers'
+          ? markUserMatchingAccessValidated(user, matchingAccessSnapshotKey)
+          : user;
+        return [currentUser.userId, currentUser];
+      })
   );
 
   (loadedUsers || []).forEach(user => {
@@ -135,16 +169,29 @@ export const mergeMatchingCandidateUsers = ({
   ownDislikeUsers = {},
   favoriteUsers = ownFavoriteUsers,
   dislikeUsers = ownDislikeUsers,
+  matchingAccessSnapshotKey = null,
 } = {}) => {
   let baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin }));
 
-  const allowedBySetKey = new Set(additionalNewUsers.map(user => user.userId).filter(Boolean));
+  const hasCurrentMatchingAccessSnapshot = user => (
+    user?.__matchingAccessAllowed === true &&
+    Boolean(matchingAccessSnapshotKey) &&
+    user?.__matchingAccessSnapshotKey === matchingAccessSnapshotKey
+  );
+  const isCurrentAdditionalNewUser = user => (
+    !hasAdditionalAccessRules ||
+    collectionSource !== 'newUsers' ||
+    user?.__sourceCollection !== 'newUsers' ||
+    hasCurrentMatchingAccessSnapshot(user)
+  );
+  const currentAdditionalNewUsers = additionalNewUsers.filter(isCurrentAdditionalNewUser);
+  const allowedBySetKey = new Set(currentAdditionalNewUsers.map(user => user.userId).filter(Boolean));
   const isAllowedNewUsersCandidate = user => (
     !hasAdditionalAccessRules ||
     collectionSource !== 'newUsers' ||
     user?.__sourceCollection !== 'newUsers' ||
     allowedBySetKey.has(user.userId) ||
-    user?.__matchingAccessAllowed === true
+    hasCurrentMatchingAccessSnapshot(user)
   );
   const canInjectCandidate = user => (
     canShowMatchingUser(user, { isAdmin }) && isAllowedNewUsersCandidate(user)
@@ -156,7 +203,7 @@ export const mergeMatchingCandidateUsers = ({
       return (
         collectionSource !== 'newUsers' ||
         allowedBySetKey.has(user.userId) ||
-        user?.__matchingAccessAllowed === true
+        hasCurrentMatchingAccessSnapshot(user)
       );
     });
   }
@@ -165,7 +212,7 @@ export const mergeMatchingCandidateUsers = ({
     viewMode === 'default' &&
     collectionSource === 'newUsers' &&
     hasAdditionalAccessRules &&
-    additionalNewUsers.length > 0;
+    currentAdditionalNewUsers.length > 0;
 
   const byId = new Map(baseUsers.map(user => [user.userId, user]));
   const injectCandidate = user => {
@@ -180,7 +227,7 @@ export const mergeMatchingCandidateUsers = ({
   };
 
   if (shouldInjectAdditionalCards) {
-    additionalNewUsers.forEach(injectCandidate);
+    currentAdditionalNewUsers.forEach(injectCandidate);
   }
 
   sharedReactionCandidateUsers.forEach(injectCandidate);
