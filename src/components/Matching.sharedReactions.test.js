@@ -10,15 +10,16 @@ describe('Matching shared reaction card UI', () => {
     expect(source).not.toContain('ReactionOwnershipBadge');
   });
 
-  it('loads reaction tab cards through fetchUserById-compatible photo hydration', () => {
+  it('loads reaction tab cards through mixed users/newUsers fetch hydration', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
     expect(source).toContain('const fetchReactionCardsByIds = React.useCallback');
-    expect(source).toContain('await fetchUserById(id)');
+    expect(source).toContain('missingUserIds.length ? fetchUsersByIds(missingUserIds)');
+    expect(source).toContain('missingNewUserIds.length ? fetchNewUsersByIdsForMatching(missingNewUserIds)');
     expect(source).not.toContain('const usersMap = await fetchUsersByIds(page.pageIds);');
   });
 
-  it('guards stale default shared-candidate requests before applying them in reaction tabs', () => {
+  it('guards stale default shared-candidate requests while allowing reaction tabs across collections', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
     expect(source).toContain('const sharedReactionCandidateLoadVersionRef = useRef(0);');
@@ -51,6 +52,15 @@ describe('Matching shared reaction card UI', () => {
 
     expect(source).toContain(`setSharedReactionCandidateUsers([]);
     viewModeRef.current = 'search';`);
+  });
+
+
+  it('requires searchKeySets for newUsers reaction access instead of falling back to global searchKey', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain('requireSearchKeySetKeys: true');
+    expect(source).not.toContain("refDb(database, 'searchKey')");
+    expect(source).not.toContain("ref2(database, 'searchKey')");
   });
 
 });
