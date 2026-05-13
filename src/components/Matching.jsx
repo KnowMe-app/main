@@ -40,10 +40,6 @@ import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaDownload } from 'react-icons/fa';
 import { handleEmptyFetch } from './loadMoreUtils';
 import {
-  buildFallbackProfileRefreshMetadata,
-  buildProfilePaginationInvalidationReasons,
-} from 'utils/matchingProfileRefreshMetadata';
-import {
   normalizeCountry,
   normalizeRegion,
 } from './normalizeLocation';
@@ -2440,32 +2436,37 @@ const Matching = () => {
       const fetchedProfile = await fetchUserById(normalizedAccessUserId);
       const profileFound = Boolean(fetchedProfile && typeof fetchedProfile === 'object');
       if (!profileFound) {
-        const fallbackMetadata = buildFallbackProfileRefreshMetadata({
-          cached,
-          latestCache: additionalProfileCacheRef.current,
-          state,
-          normalizedAccessUserId,
-          staleReasons,
-          requestVersion: profileRequestVersion,
-          latestRequestVersion: additionalProfileRequestVersionRef.current,
-          profilePath,
-          buildAccessSnapshotKey: getMatchingAccessSnapshotKey,
-          parseRules: parseAdditionalAccessRuleGroups,
-          getRawRulesSignature,
-          getSearchKeySetsOfExactUserSignature,
+        const fallbackRawRules = state.currentAdditionalAccessRules || '';
+        const fallbackSearchKeySetKeys = state.currentSearchKeySetKeys || [];
+        const fallbackAccessSnapshotKey = getMatchingAccessSnapshotKey({
+          accessUserId: normalizedAccessUserId,
+          rawRules: fallbackRawRules,
+          searchKeySetKeys: fallbackSearchKeySetKeys,
         });
-        logAdditionalMatchingDebug(normalizedAccessUserId, fallbackMetadata?.staleFallbackIgnored
-          ? 'ignored stale empty profile refetch fallback'
-          : 'profile refetch returned no profile; keeping current rules', {
+        logAdditionalMatchingDebug(normalizedAccessUserId, 'profile refetch returned no profile; keeping current rules', {
           firebasePath: profilePath,
           staleReasons,
-          rawRules: fallbackMetadata?.rawRules,
-          searchKeySetsOfExactUser: fallbackMetadata?.searchKeySetsOfExactUser,
-          paginationInvalidationReasons: fallbackMetadata?.paginationInvalidationReasons || [],
-          requestVersion: profileRequestVersion,
-          latestVersion: additionalProfileRequestVersionRef.current,
+          rawRules: fallbackRawRules,
+          searchKeySetsOfExactUser: fallbackSearchKeySetKeys,
         });
-        return fallbackMetadata;
+        return {
+          ...(cached || {}),
+          accessUserId: normalizedAccessUserId,
+          rawRules: fallbackRawRules,
+          searchKeySetsOfExactUser: fallbackSearchKeySetKeys,
+          rawRulesSignature: getRawRulesSignature(fallbackRawRules),
+          searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(fallbackSearchKeySetKeys),
+          collectionSource: state.collectionSource,
+          cacheHit: false,
+          refreshed: false,
+          refreshSucceeded: false,
+          profileFound: false,
+          parsedRules: parseAdditionalAccessRuleGroups(fallbackRawRules),
+          accessSnapshotKey: fallbackAccessSnapshotKey,
+          staleReasons,
+          paginationInvalidationReasons: [],
+          profilePath,
+        };
       }
       const profile = fetchedProfile;
       const accessLevel = profile?.accessLevel || '';
@@ -2491,16 +2492,19 @@ const Matching = () => {
         searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(searchKeySetsOfExactUser),
         collectionSource: state.collectionSource,
       };
+      const confirmedPaginationInvalidationReasons = [];
+      if (!cached) confirmedPaginationInvalidationReasons.push('missing-cache');
+      if (cached && cached.accessUserId !== freshMetadata.accessUserId) confirmedPaginationInvalidationReasons.push('accessUserId-changed');
+      if (cached && cached.rawRulesSignature !== freshMetadata.rawRulesSignature) confirmedPaginationInvalidationReasons.push('rawRulesSignature-changed');
+      if (cached && cached.searchKeySetsOfExactUserSignature !== freshMetadata.searchKeySetsOfExactUserSignature) {
+        confirmedPaginationInvalidationReasons.push('searchKeySetsOfExactUserSignature-changed');
+      }
+      if (cached && cached.collectionSource !== freshMetadata.collectionSource) confirmedPaginationInvalidationReasons.push('collectionSource-changed');
 
       const accessSnapshotKey = getMatchingAccessSnapshotKey({
         accessUserId: normalizedAccessUserId,
         rawRules: additionalAccessRules,
         searchKeySetKeys: searchKeySetsOfExactUser,
-      });
-      const confirmedPaginationInvalidationReasons = buildProfilePaginationInvalidationReasons({
-        cached,
-        metadata: freshMetadata,
-        accessSnapshotKey,
       });
       const freshCache = {
         ...freshMetadata,
@@ -2541,32 +2545,37 @@ const Matching = () => {
         paginationInvalidationReasons: confirmedPaginationInvalidationReasons,
       };
     } catch (error) {
-      const fallbackMetadata = buildFallbackProfileRefreshMetadata({
-        cached,
-        latestCache: additionalProfileCacheRef.current,
-        state,
-        normalizedAccessUserId,
-        staleReasons,
-        requestVersion: profileRequestVersion,
-        latestRequestVersion: additionalProfileRequestVersionRef.current,
-        profilePath,
-        buildAccessSnapshotKey: getMatchingAccessSnapshotKey,
-        parseRules: parseAdditionalAccessRuleGroups,
-        getRawRulesSignature,
-        getSearchKeySetsOfExactUserSignature,
+      const fallbackRawRules = state.currentAdditionalAccessRules || '';
+      const fallbackSearchKeySetKeys = state.currentSearchKeySetKeys || [];
+      const fallbackAccessSnapshotKey = getMatchingAccessSnapshotKey({
+        accessUserId: normalizedAccessUserId,
+        rawRules: fallbackRawRules,
+        searchKeySetKeys: fallbackSearchKeySetKeys,
       });
-      logAdditionalMatchingDebug(normalizedAccessUserId, fallbackMetadata?.staleFallbackIgnored
-        ? 'ignored stale failed profile refetch fallback'
-        : 'profile refetch failed; keeping current rules', {
+      logAdditionalMatchingDebug(normalizedAccessUserId, 'profile refetch failed; keeping current rules', {
         firebasePath: profilePath,
-        rawRules: fallbackMetadata?.rawRules,
-        searchKeySetsOfExactUser: fallbackMetadata?.searchKeySetsOfExactUser,
+        rawRules: fallbackRawRules,
+        searchKeySetsOfExactUser: fallbackSearchKeySetKeys,
         staleReasons,
-        paginationInvalidationReasons: fallbackMetadata?.paginationInvalidationReasons || [],
-        requestVersion: profileRequestVersion,
-        latestVersion: additionalProfileRequestVersionRef.current,
       }, error);
-      return fallbackMetadata;
+      return {
+        ...(cached || {}),
+        accessUserId: normalizedAccessUserId,
+        rawRules: fallbackRawRules,
+        searchKeySetsOfExactUser: fallbackSearchKeySetKeys,
+        rawRulesSignature: getRawRulesSignature(fallbackRawRules),
+        searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(fallbackSearchKeySetKeys),
+        collectionSource: state.collectionSource,
+        cacheHit: false,
+        refreshed: false,
+        refreshSucceeded: false,
+        profileFound: false,
+        parsedRules: parseAdditionalAccessRuleGroups(fallbackRawRules),
+        accessSnapshotKey: fallbackAccessSnapshotKey,
+        staleReasons,
+        paginationInvalidationReasons: [],
+        profilePath,
+      };
     }
   }, [applyFreshAdditionalProfileState]);
 
