@@ -718,11 +718,24 @@ const slideRight = keyframes`
   }
 `;
 
-export const AnimatedCard = styled(Card)`
-  ${({ $backgroundImage }) =>
-    $backgroundImage
-      ? `background-image: url(${$backgroundImage}); background-color: transparent;`
-      : 'background-color: #fff;'}
+const escapeCssUrl = value =>
+  String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\a ')
+    .replace(/\r/g, '\\d ')
+    .replace(/\f/g, '\\c ');
+
+const getBackgroundImageStyle = backgroundImage =>
+  backgroundImage ? `url("${escapeCssUrl(backgroundImage)}")` : undefined;
+
+export const AnimatedCard = styled(Card).attrs(({ $backgroundImage, style }) => ({
+  style: {
+    ...style,
+    backgroundImage: getBackgroundImageStyle($backgroundImage),
+  },
+}))`
+  background-color: ${({ $backgroundImage }) => ($backgroundImage ? 'transparent' : '#fff')};
   animation: ${({ $dir }) =>
     $dir === 'left'
       ? slideLeft
