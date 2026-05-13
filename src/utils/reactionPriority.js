@@ -86,6 +86,8 @@ export const canShowMatchingUser = (user, { isAdmin = false } = {}) => {
   return user?.__sourceCollection === 'newUsers' || user?.publish === true;
 };
 
+const SHARED_REACTION_CANDIDATE_VIEW_MODES = new Set(['default', 'favorites', 'dislikes']);
+
 export const shouldApplySharedReactionCandidateResult = ({
   requestVersion,
   currentVersion,
@@ -94,11 +96,32 @@ export const shouldApplySharedReactionCandidateResult = ({
   requestCollectionSource,
   currentCollectionSource,
 } = {}) => (
-  requestViewMode === 'default' &&
-  currentViewMode === 'default' &&
+  SHARED_REACTION_CANDIDATE_VIEW_MODES.has(requestViewMode) &&
+  requestViewMode === currentViewMode &&
   requestCollectionSource === currentCollectionSource &&
   requestVersion === currentVersion
 );
+
+export const mergeSharedReactionCandidateUsers = ({
+  currentUsers = [],
+  loadedUsers = [],
+  candidateIds = [],
+} = {}) => {
+  const candidateIdSet = new Set((candidateIds || []).filter(Boolean));
+  const map = new Map(
+    (currentUsers || [])
+      .filter(user => user?.userId && candidateIdSet.has(user.userId))
+      .map(user => [user.userId, user])
+  );
+
+  (loadedUsers || []).forEach(user => {
+    if (user?.userId && candidateIdSet.has(user.userId)) {
+      map.set(user.userId, user);
+    }
+  });
+
+  return Array.from(map.values());
+};
 
 export const mergeMatchingCandidateUsers = ({
   users = [],
@@ -130,7 +153,11 @@ export const mergeMatchingCandidateUsers = ({
   if (hasAdditionalAccessRules) {
     baseUsers = baseUsers.filter(user => {
       if (user?.__sourceCollection !== 'newUsers') return true;
-      return collectionSource !== 'newUsers' || allowedBySetKey.has(user.userId);
+      return (
+        collectionSource !== 'newUsers' ||
+        allowedBySetKey.has(user.userId) ||
+        user?.__matchingAccessAllowed === true
+      );
     });
   }
 
@@ -183,6 +210,26 @@ export const mergeMatchingCandidateUsers = ({
 
 export const getReactionUserIds = reactionMap =>
   Object.keys(normalizeReactionMap(reactionMap));
+
+export const hasPendingSharedReactionCandidates = ({
+  reactionIds = [],
+  sharedReactionIds = [],
+  loadedIds = new Set(),
+  reactionMap = {},
+} = {}) => {
+  const activeReactionMap = normalizeReactionMap(reactionMap);
+  const sharedIds = new Set((sharedReactionIds || []).filter(Boolean));
+  const loaded = loadedIds instanceof Set
+    ? loadedIds
+    : new Set(Array.from(loadedIds || []).filter(Boolean));
+
+  return (reactionIds || []).some(id => (
+    id &&
+    sharedIds.has(id) &&
+    activeReactionMap[id] &&
+    !loaded.has(id)
+  ));
+};
 
 export const buildReactionCardsPage = ({
   reactionMap = {},

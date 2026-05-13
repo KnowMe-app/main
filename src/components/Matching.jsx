@@ -77,7 +77,9 @@ import {
   buildSharedReactionCandidateIds,
   canShowMatchingUser,
   mergeMatchingCandidateUsers,
+  mergeSharedReactionCandidateUsers,
   loadReactionCardsPageRecords,
+  hasPendingSharedReactionCandidates,
   normalizeReactionMap,
   readReactionSnapshotMaps,
   resolvePrioritizedReactionMaps,
@@ -2461,10 +2463,11 @@ const Matching = () => {
       currentCollectionSource: collectionSourceRef.current,
     });
 
-    if (requestViewMode !== 'default') {
+    if (!['default', 'favorites', 'dislikes'].includes(requestViewMode)) {
       setSharedReactionCandidateUsers([]);
       return;
     }
+
     const candidateIds = [...new Set(sharedReactionIds.filter(Boolean))];
     debugSharedReactionsLog(viewerId, 'shared reaction ids found for candidate pool', {
       sharedReactionIds: summarizeIdsForDebug(candidateIds),
@@ -2576,7 +2579,11 @@ const Matching = () => {
       const { __matchingAccessAllowed, ...cacheUser } = user;
       updateCard(user.userId, cacheUser);
     });
-    setSharedReactionCandidateUsers(loadedUsers);
+    setSharedReactionCandidateUsers(prev => mergeSharedReactionCandidateUsers({
+      currentUsers: prev,
+      loadedUsers,
+      candidateIds,
+    }));
     await loadCommentsFor(loadedUsers);
 
     if (!canApplySharedCandidateResult()) {
@@ -3406,14 +3413,15 @@ const Matching = () => {
       dislikeUsersRef.current = disMap;
       setOwnFavoriteUsers(ownFavorites);
       setOwnDislikeUsers(ownDislikes);
-      setSharedReactionIds(buildSharedReactionCandidateIds({
+      const nextSharedReactionIds = buildSharedReactionCandidateIds({
         ownerIds: owners,
         ownOwnerId,
         favoriteSnapshots,
         dislikeSnapshots,
         favorites: favMap,
         dislikes: disMap,
-      }));
+      });
+      setSharedReactionIds(nextSharedReactionIds);
 
       syncFavorites(favMap);
       syncDislikes(disMap);
@@ -3449,15 +3457,22 @@ const Matching = () => {
       setUsers(page.users);
       await loadCommentsFor(page.users);
       if (!canApplyReactionLoad()) return;
+      const hasPendingSharedCandidates = hasPendingSharedReactionCandidates({
+        reactionIds,
+        sharedReactionIds: nextSharedReactionIds,
+        loadedIds,
+        reactionMap,
+      });
+      const nextHasMore = page.hasMore || hasPendingSharedCandidates;
       setReactionPaginationByType(prev => ({
         ...prev,
         [reactionType]: {
           ids: reactionIds,
           nextOffset: page.nextOffset,
-          hasMore: page.hasMore,
+          hasMore: nextHasMore,
         },
       }));
-      setHasMore(page.hasMore);
+      setHasMore(nextHasMore);
     } finally {
       if (canApplyReactionLoad()) {
         loadingRef.current = false;

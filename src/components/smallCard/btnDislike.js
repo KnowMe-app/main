@@ -46,6 +46,7 @@ export const BtnDislike = ({
   const viewerFavoriteUsers = ownFavoriteUsers || favoriteUsers;
   const updateOwnFavoriteUsers = setOwnFavoriteUsers || setFavoriteUsers;
   const isDisliked = !!viewerDislikeUsers[userId];
+  const isSharedDisliked = !isDisliked && !!dislikeUsers[userId];
   const activeColor = color.reactionDislike;
   const resolvedActiveIconColor = activeIconColor || customTextColor || color.reactionIdleIcon;
   const resolvedInactiveIconColor = inactiveIconColor || '#fff';
@@ -138,9 +139,10 @@ export const BtnDislike = ({
         alignItems: 'center',
         justifyContent: 'center',
       }}
-      title={title}
+      title={isSharedDisliked ? `${title} (shared)` : title}
       aria-label={ariaLabel}
       aria-pressed={isDisliked}
+      data-shared-disliked={isSharedDisliked ? 'true' : undefined}
       disabled={!auth.currentUser}
       onClick={e => {
         e.stopPropagation();
