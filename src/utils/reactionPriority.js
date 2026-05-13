@@ -142,13 +142,11 @@ export const mergeMatchingCandidateUsers = ({
     additionalNewUsers.forEach(injectCandidate);
   }
 
-  if (viewMode === 'default') {
-    sharedReactionCandidateUsers.forEach(injectCandidate);
-  }
+  sharedReactionCandidateUsers.forEach(injectCandidate);
 
   const mergedUsers = Array.from(byId.values()).filter(canInjectCandidate);
   if (viewMode !== 'default') {
-    return baseUsers;
+    return mergedUsers;
   }
 
   return mergedUsers.filter(
