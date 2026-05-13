@@ -23,8 +23,6 @@ import {
   Grid,
   HeaderContainer,
   InnerContainer,
-  LoadMoreButton,
-  LoadMoreFooter,
   OwnerStatusMessage,
   SharedCommentText,
   SkeletonCardInner,
@@ -66,6 +64,7 @@ import {
   fetchUserComments,
   setUserComment,
   fetchUsersByIds,
+  getAllUserPhotos,
   database,
   auth,
   updateDataInNewUsersRTDB,
@@ -414,6 +413,18 @@ async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserI
   return searchKeySetKeys;
 }
 
+const hasHydratedProfilePhotos = user => Array.isArray(user?.photos) && user.photos.some(Boolean);
+
+const hydrateMatchingProfilePhotos = async (userId, data = {}) => {
+  if (hasHydratedProfilePhotos(data)) return data;
+  const photos = await getAllUserPhotos(userId);
+  return {
+    ...data,
+    photos,
+    __photosHydrated: true,
+  };
+};
+
 const fetchNewUsersByIdsForMatching = async (ids, batchSize = FETCH_USERS_BY_IDS_BATCH_SIZE) => {
   if (!Array.isArray(ids) || ids.length === 0) return [];
 
@@ -428,9 +439,11 @@ const fetchNewUsersByIdsForMatching = async (ids, batchSize = FETCH_USERS_BY_IDS
       chunkIds.map(async userId => {
         const snapshot = await get(refDb(database, `newUsers/${userId}`));
         if (!snapshot.exists()) return null;
+        const rawData = snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {};
+        const hydratedData = await hydrateMatchingProfilePhotos(userId, rawData);
         return {
           userId,
-          ...(snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {}),
+          ...hydratedData,
           __sourceCollection: 'newUsers',
         };
       })
@@ -893,6 +906,7 @@ const SwipeableCard = ({
   const favoriteButtonWrapRef = useRef(null);
   const dislikeButtonWrapRef = useRef(null);
   const touchStart = useRef(null);
+  const swipeAxisRef = useRef(null);
   const swipedRef = useRef(false);
 
   useEffect(() => {
@@ -926,6 +940,7 @@ const SwipeableCard = ({
     if (!e.touches || e.touches.length !== 1) return;
     const touch = e.touches[0];
     touchStart.current = { x: touch.clientX, y: touch.clientY };
+    swipeAxisRef.current = null;
   };
 
   const handleTouchMove = e => {
@@ -933,7 +948,12 @@ const SwipeableCard = ({
     const touch = e.touches[0];
     const dx = touch.clientX - touchStart.current.x;
     const dy = touch.clientY - touchStart.current.y;
-    if (Math.abs(dx) > 16 && Math.abs(dx) > Math.abs(dy) * 1.25) e.preventDefault();
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (!swipeAxisRef.current && (absX > 10 || absY > 10)) {
+      swipeAxisRef.current = absX > absY * 1.35 ? 'x' : 'y';
+    }
+    if (swipeAxisRef.current === 'x') e.preventDefault();
   };
 
   const handleTouchEnd = e => {
@@ -942,7 +962,9 @@ const SwipeableCard = ({
     const dx = touch.clientX - touchStart.current.x;
     const dy = touch.clientY - touchStart.current.y;
     touchStart.current = null;
-    if (Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+    const axis = swipeAxisRef.current;
+    swipeAxisRef.current = null;
+    if (axis === 'y' || Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
     const direction = dx > 0 ? 'right' : 'left';
     swipedRef.current = true;
     setDir(direction);
@@ -2445,7 +2467,7 @@ const Matching = () => {
     uniqueIds.forEach(id => {
       const cached = getCard(id);
       const cachedPhotos = Array.isArray(cached?.photos) ? cached.photos : [];
-      const canUseCachedCard = cached && cachedPhotos.length > 0 && (
+      const canUseCachedCard = cached && (cachedPhotos.length > 0 || cached.__photosHydrated === true) && (
         cached.__sourceCollection ||
         cached.publish === true ||
         !isShortId(id)
@@ -2787,7 +2809,9 @@ const Matching = () => {
           ? favoriteUsersRef.current
           : dislikeUsersRef.current;
         const currentPagination = reactionPaginationByType[viewMode] || buildEmptyReactionPagination();
-        const shouldRefreshReactionIds = collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0;
+        const fullReactionIds = Object.keys(reactionMap);
+        const hasAccessScopedNewUserReactionIds = [...fullReactionIds, ...(currentPagination.ids || [])].some(isShortId);
+        const shouldRefreshReactionIds = parsedAdditionalAccessRules.length > 0 && hasAccessScopedNewUserReactionIds;
         const freshProfileCache = shouldRefreshReactionIds
           ? await ensureFreshAdditionalMatchingProfile({
             accessUserId: ownerId,
@@ -2810,7 +2834,7 @@ const Matching = () => {
           currentPagination.accessSnapshotKey !== reactionAccessSnapshotKey
         );
         const reactionIds = shouldRefreshReactionIds || currentPagination.ids.length === 0
-          ? await getAccessibleReactionIds(Object.keys(reactionMap), reactionAccessSnapshot)
+          ? await getAccessibleReactionIds(fullReactionIds, reactionAccessSnapshot)
           : currentPagination.ids;
 
         if (!canApplyLoadMoreResult()) return;
@@ -2834,9 +2858,12 @@ const Matching = () => {
         reactionLoadedIdsRef.current[viewMode] = loadedIds;
         loadedIdsRef.current = new Set(loadedIds);
         setUsers(prev => {
-          const map = new Map(prev.map(user => [user.userId, user]));
+          const scopedPrev = didAccessSnapshotChange
+            ? prev.filter(user => reactionIds.includes(user.userId))
+            : prev;
+          const map = new Map(scopedPrev.map(user => [user.userId, user]));
           page.users.forEach(user => map.set(user.userId, user));
-          return Array.from(map.values());
+          return Array.from(map.values()).filter(user => reactionIds.includes(user.userId));
         });
         await loadCommentsFor(page.users);
         setReactionPaginationByType(prev => ({
@@ -3384,18 +3411,6 @@ const Matching = () => {
               <OwnerStatusMessage>Немає доступних профілів</OwnerStatusMessage>
             )}
           </Grid>
-
-          {(viewMode === 'default' || viewMode === 'favorites' || viewMode === 'dislikes') && (
-            <LoadMoreFooter>
-              <LoadMoreButton onClick={loadMore} disabled={loading || !hasMore}>
-                {loading
-                  ? 'Завантаження...'
-                  : hasMore
-                    ? 'Дозавантажити карточки'
-                    : 'Більше карточок завтра'}
-              </LoadMoreButton>
-            </LoadMoreFooter>
-          )}
 
           {showInfoModal && (
             <InfoModal onClose={() => setShowInfoModal(false)} text="dotsMenu" Context={dotsMenu} />

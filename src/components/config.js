@@ -1502,18 +1502,20 @@ export const fetchUsersByIds = async ids => {
         Promise.all([
           get(ref2(database, `newUsers/${id}`)),
           get(ref2(database, `users/${id}`)),
-        ]).then(([newSnap, userSnap]) => {
+        ]).then(async ([newSnap, userSnap]) => {
           const hasNewUser = newSnap.exists();
           const hasUser = userSnap.exists();
           if (!hasNewUser && !hasUser) return null;
 
-          const data = {
+          const mergedData = {
             userId: id,
             ...(hasUser ? userSnap.val() : {}),
             ...(hasNewUser ? newSnap.val() : {}),
             __sourceCollection: hasNewUser ? 'newUsers' : 'users',
           };
-          return [id, data];
+          const hasHydratedPhotos = Array.isArray(mergedData.photos) && mergedData.photos.some(Boolean);
+          const photos = hasHydratedPhotos ? mergedData.photos : await getAllUserPhotos(id);
+          return [id, { ...mergedData, photos, __photosHydrated: true }];
         })
       )
     );
@@ -2341,7 +2343,7 @@ const removeUndefined = obj => {
   return obj;
 };
 
-const transientUserDataKeys = ['__sourceCollection'];
+const transientUserDataKeys = ['__sourceCollection', '__photosHydrated'];
 
 const stripTransientUserDataFields = (payload, { markForRealtimeDeletion = false } = {}) => {
   const cleaned = removeUndefined(payload);

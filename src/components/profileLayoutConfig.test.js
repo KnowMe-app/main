@@ -50,6 +50,33 @@ describe('profileLayoutConfig', () => {
     expect(shouldRenderField(user.emptyValue)).toBe(false);
   });
 
+  it('removes expected reward from matching layout while preserving donor secondary fields', () => {
+    const user = {
+      userRole: 'ed',
+      height: 170,
+      weight: 60,
+      reward: '5000',
+      desiredReward: '6000',
+      breastSize: 'C',
+      clothingSize: 'M',
+      shoeSize: '38',
+      glasses: 'No',
+      chin: 'Soft',
+      lipsShape: 'Full',
+      noseShape: 'Straight',
+      cSection: 'No',
+    };
+
+    const hero = getHeroFields(user, 'ed');
+    const quickFacts = getQuickFacts(user, 'ed', { excludeKeys: collectKeys(hero) });
+    const sections = getProfileSections(user, 'ed', { excludeKeys: collectKeys([...hero, ...quickFacts]) });
+    const detailKeys = sectionFieldKeys(sections);
+    const allKeys = [...hero, ...quickFacts, ...sections.flatMap(section => section.fields)].map(field => field.key);
+
+    expect(allKeys).not.toEqual(expect.arrayContaining(['reward', 'desiredReward']));
+    expect(detailKeys).toEqual(expect.arrayContaining(['breastSize', 'clothingSize', 'shoeSize', 'glasses', 'chin', 'cSection']));
+  });
+
   it('keeps intended parents layout free of donor-only physical facts when absent', () => {
     const user = {
       userRole: 'ip',

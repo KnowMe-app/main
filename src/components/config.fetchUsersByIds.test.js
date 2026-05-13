@@ -12,6 +12,8 @@ describe('fetchUsersByIds merging', () => {
     expect(fetchUsersByIdsBody.indexOf('...(hasUser ? userSnap.val() : {})'))
       .toBeLessThan(fetchUsersByIdsBody.indexOf('...(hasNewUser ? newSnap.val() : {})'));
     expect(fetchUsersByIdsBody).toContain("__sourceCollection: hasNewUser ? 'newUsers' : 'users'");
+    expect(fetchUsersByIdsBody).toContain('const photos = hasHydratedPhotos ? mergedData.photos : await getAllUserPhotos(id);');
+    expect(fetchUsersByIdsBody).toContain('__photosHydrated: true');
   });
 
   it('marks fetchUserById records with their backing collection', () => {
@@ -24,7 +26,7 @@ describe('fetchUsersByIds merging', () => {
   it('strips client-only source markers before database writes', () => {
     const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
 
-    expect(source).toContain("const transientUserDataKeys = ['__sourceCollection']");
+    expect(source).toContain("const transientUserDataKeys = ['__sourceCollection', '__photosHydrated']");
     expect(source).toContain('const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo);');
     expect(source.match(/markForRealtimeDeletion: condition === 'update'/g)).toHaveLength(2);
   });

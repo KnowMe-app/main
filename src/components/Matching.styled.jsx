@@ -24,39 +24,37 @@ export const Container = styled.div`
   flex-direction: column;
   align-items: center;
   padding: 0;
-  background-color: #f5f5f5;
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(214, 146, 68, 0.2), transparent 34%),
+    linear-gradient(180deg, #1b1510 0%, #0c0b0d 100%);
 `;
 
 export const InnerContainer = styled.div`
   max-width: 480px;
   width: 100%;
-  background-color: #f0f0f0;
+  min-height: 100dvh;
+  background: transparent;
   padding: 0;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
+  box-shadow: none;
+  border-radius: 0;
   box-sizing: border-box;
   position: relative;
-
   display: flex;
   flex-direction: column;
-
-  @media (max-width: 768px) {
-    background-color: #f5f5f5;
-    box-shadow: 0 4px 8px #f5f5f5;
-    border-radius: 0;
-  }
 `;
 
 export const Grid = styled.div`
   display: flex;
   flex-wrap: nowrap;
   gap: 0;
-  padding: 0 10px;
-  margin-bottom: 8px;
+  padding: 0 10px 10px;
   justify-content: center;
   width: 100%;
   box-sizing: border-box;
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
 `;
 
 export const LoadMoreFooter = styled.div`
@@ -126,15 +124,15 @@ export const CardWrapper = styled.div`
   position: relative;
   width: 100%;
   max-width: 100%;
-  border: 1px solid ${props => props.$role ? getRoleColors(props.$role).border : 'rgba(214, 193, 163, 0.35)'};
-  border-top: 3px solid ${props => props.$role ? getRoleColors(props.$role).accent : color.accent5};
-  border-radius: ${STACK_CARD_RADIUS};
+  height: 100%;
+  border: 1px solid rgba(218, 167, 95, 0.28);
+  border-radius: 26px;
   box-sizing: border-box;
   overflow: hidden;
-  background: #fffdfa;
+  background: #15120f;
   box-shadow:
-    0 14px 32px rgba(33, 26, 17, 0.12),
-    0 2px 8px rgba(33, 26, 17, 0.06);
+    0 24px 70px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
   z-index: 2;
 `;
 
@@ -329,14 +327,19 @@ export const HeaderContainer = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px;
+  padding: 10px 12px 8px;
+  color: rgba(255, 247, 232, 0.88);
 `;
 
 export const CardCount = styled.p`
   width: 100%;
   margin: 0;
   text-align: center;
-  color: black;
+  color: rgba(255, 247, 232, 0.86);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
 `;
 
 export const LoadMoreButton = styled.button`
@@ -725,8 +728,8 @@ const slideRight = keyframes`
 
 export const AnimatedCard = styled(Card)`
   ${({ $activeProfile }) => $activeProfile && `
-    height: min(760px, calc(100dvh - 112px));
-    min-height: 480px;
+    height: min(820px, calc(100dvh - 64px));
+    min-height: 540px;
     aspect-ratio: auto;
     padding-bottom: 0;
     background: transparent;
@@ -757,9 +760,11 @@ export const OwnerStatusMessage = styled.p`
 export const ModernProfileShell = styled.div`
   position: relative;
   height: 100%;
-  background: #15120f;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(230, 166, 74, 0.16), transparent 34%),
+    linear-gradient(180deg, #1a1511 0%, #0f0d0e 100%);
   color: #fff;
-  border-radius: ${STACK_CARD_RADIUS};
+  border-radius: 26px;
   overflow: hidden;
   touch-action: pan-y;
 `;
@@ -776,15 +781,24 @@ export const ModernProfileScroll = styled.div`
 
 export const ModernHero = styled.div`
   position: relative;
-  min-height: min(430px, 62dvh);
+  min-height: clamp(330px, 56dvh, 480px);
   background:
-    ${({ $image }) => $image ? `linear-gradient(180deg, rgba(13, 10, 8, 0.05) 0%, rgba(13, 10, 8, 0.18) 45%, rgba(13, 10, 8, 0.9) 100%), url(${$image})` : 'radial-gradient(circle at 22% 18%, rgba(247, 147, 30, 0.44), transparent 32%), linear-gradient(145deg, #2a211b 0%, #111015 58%, #060507 100%)'};
+    ${({ $image }) => $image ? `linear-gradient(180deg, rgba(12, 9, 7, 0.03) 0%, rgba(12, 9, 7, 0.12) 42%, rgba(12, 9, 7, 0.72) 100%), url(${$image})` : 'radial-gradient(circle at 30% 18%, rgba(247, 147, 30, 0.38), transparent 28%), radial-gradient(circle at 82% 12%, rgba(255, 211, 126, 0.16), transparent 24%), linear-gradient(145deg, #3b2c20 0%, #181318 58%, #080708 100%)'};
   background-size: cover;
-  background-position: center;
+  background-position: center 22%;
   display: flex;
   align-items: flex-end;
-  padding: 22px 18px 88px;
+  padding: 24px 18px 96px;
   box-sizing: border-box;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0;
+    height: 46%;
+    background: linear-gradient(180deg, rgba(15, 12, 10, 0) 0%, rgba(15, 12, 10, 0.82) 100%);
+    pointer-events: none;
+  }
 `;
 
 export const ModernHeroFallbackMark = styled.div`
@@ -819,14 +833,14 @@ export const ModernRoleBadge = styled.span`
   align-items: center;
   width: fit-content;
   margin-bottom: 10px;
-  padding: 5px 10px;
+  padding: 5px 11px;
   border-radius: 999px;
-  color: #fff;
-  background: ${({ $role }) => getRoleColors($role).accent};
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.7px;
+  color: #2a1705;
+  background: linear-gradient(135deg, #ffd58a 0%, #f7931e 100%);
+  box-shadow: 0 10px 26px rgba(247, 147, 30, 0.22);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.8px;
   text-transform: uppercase;
 `;
 
@@ -859,81 +873,89 @@ export const ModernFactPill = styled.span`
   max-width: 100%;
   padding: 6px 9px;
   border-radius: 999px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(10px);
+  color: #fff8ea;
+  background: rgba(22, 18, 14, 0.42);
+  border: 1px solid rgba(255, 213, 138, 0.28);
+  backdrop-filter: blur(12px);
   font-size: 12px;
   line-height: 1.1;
 
   strong {
-    color: rgba(255, 255, 255, 0.64);
-    font-size: 10px;
+    color: #ffd58a;
+    font-size: 9px;
     text-transform: uppercase;
-    letter-spacing: 0.4px;
+    letter-spacing: 0.45px;
   }
 `;
 
 export const ModernProfileBody = styled.div`
   position: relative;
   z-index: 3;
-  margin-top: -46px;
-  padding: 0 12px 92px;
+  margin-top: -58px;
+  padding: 0 12px 96px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 `;
 
 export const ModernSection = styled.section`
-  background: rgba(255, 253, 248, 0.97);
-  color: #242127;
+  background: rgba(31, 27, 23, 0.82);
+  color: #fff4df;
+  border: 1px solid rgba(255, 214, 150, 0.13);
   border-radius: 20px;
-  padding: 14px;
-  box-shadow: 0 16px 40px rgba(10, 8, 6, 0.17);
+  padding: 12px;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(18px);
 `;
 
 export const ModernSectionTitle = styled.h3`
-  margin: 0 0 10px;
-  color: #211d19;
-  font-size: 14px;
-  font-weight: 900;
-  letter-spacing: 0.2px;
+  margin: 0 0 8px;
+  color: #ffd58a;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
 `;
 
 export const ModernChipGrid = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+
+  @media (max-width: 380px) {
+    grid-template-columns: 1fr;
+  }
 `;
 
 export const ModernChip = styled.div`
   display: inline-flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
   max-width: 100%;
-  padding: 8px 10px;
-  border-radius: 14px;
-  background: ${({ $role }) => getRoleColors($role).light};
-  border: 1px solid ${({ $role }) => getRoleColors($role).border};
-  color: #25222a;
-  font-size: 13px;
+  padding: 7px 9px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 214, 150, 0.13);
+  color: #fff3dd;
+  font-size: 12px;
   font-weight: 800;
-  line-height: 1.15;
+  line-height: 1.16;
 
   strong {
-    color: ${({ $role }) => getRoleColors($role).text};
-    font-size: 10px;
+    color: #dba55f;
+    font-size: 9px;
     text-transform: uppercase;
-    letter-spacing: 0.55px;
+    letter-spacing: 0.58px;
   }
 `;
 
 export const ModernBioText = styled.p`
   margin: 0;
-  color: #3d3a42;
+  color: rgba(255, 244, 223, 0.88);
   white-space: pre-line;
   font-size: 14px;
-  line-height: 1.48;
+  line-height: 1.44;
 `;
 
 export const ModernMoreButton = styled.button`
@@ -964,12 +986,26 @@ export const ModernActionRail = styled.div`
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 14px;
+  bottom: 16px;
   z-index: 8;
   display: flex;
   justify-content: space-between;
-  padding: 0 18px;
+  padding: 0 22px;
   pointer-events: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -9px;
+    width: min(250px, 62%);
+    height: 76px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    background: rgba(9, 8, 7, 0.44);
+    filter: blur(18px);
+    z-index: -1;
+  }
 
   & > span {
     pointer-events: auto;
@@ -977,9 +1013,10 @@ export const ModernActionRail = styled.div`
 
   button {
     position: static !important;
-    width: 52px !important;
-    height: 52px !important;
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28) !important;
+    width: 58px !important;
+    height: 58px !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.34) !important;
   }
 `;
 

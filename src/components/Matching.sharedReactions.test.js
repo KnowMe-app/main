@@ -2,6 +2,16 @@ import fs from 'fs';
 import path from 'path';
 
 describe('Matching shared reaction card UI', () => {
+  it('renders a single active luxury profile without load-more controls', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain('const activeProfile = filteredUsers[activeProfileIndex] || null;');
+    expect(source).toContain('data-testid="matching-profile-card"');
+    expect(source).not.toContain('Дозавантажити карточки');
+    expect(source).not.toContain('Більше карточок завтра');
+    expect(source).not.toContain('<LoadMoreButton');
+  });
+
   it('does not render overlay text for shared liked or disliked cards', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
@@ -17,6 +27,27 @@ describe('Matching shared reaction card UI', () => {
     expect(source).toContain('missingUserIds.length ? fetchUsersByIds(missingUserIds)');
     expect(source).toContain('missingNewUserIds.length ? fetchNewUsersByIdsForMatching(missingNewUserIds)');
     expect(source).not.toContain('const usersMap = await fetchUsersByIds(page.pageIds);');
+  });
+
+
+  it('hydrates uncached reaction cards with storage photos before caching', () => {
+    const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+    const configSource = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
+
+    expect(matchingSource).toContain('const hydrateMatchingProfilePhotos = async (userId, data = {}) =>');
+    expect(matchingSource).toContain('const hydratedData = await hydrateMatchingProfilePhotos(userId, rawData);');
+    expect(matchingSource).toContain("cached.__photosHydrated === true");
+    expect(configSource).toContain('const hasHydratedPhotos = Array.isArray(mergedData.photos) && mergedData.photos.some(Boolean);');
+    expect(configSource).toContain('const photos = hasHydratedPhotos ? mergedData.photos : await getAllUserPhotos(id);');
+    expect(configSource).toContain('__photosHydrated: true');
+  });
+
+  it('refreshes mixed users-mode reaction ids when access-scoped newUsers are present', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain('const hasAccessScopedNewUserReactionIds = [...fullReactionIds, ...(currentPagination.ids || [])].some(isShortId);');
+    expect(source).toContain('const shouldRefreshReactionIds = parsedAdditionalAccessRules.length > 0 && hasAccessScopedNewUserReactionIds;');
+    expect(source).toContain('return Array.from(map.values()).filter(user => reactionIds.includes(user.userId));');
   });
 
   it('guards stale default shared-candidate requests while allowing reaction tabs across collections', () => {
