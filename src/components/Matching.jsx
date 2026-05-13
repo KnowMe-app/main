@@ -59,6 +59,7 @@ import {
 import {
   fetchUsersByLastLogin2,
   fetchUserById,
+  getAllUserPhotos,
   fetchFavoriteUsers,
   fetchDislikeUsers,
   filterMain,
@@ -426,11 +427,15 @@ const fetchNewUsersByIdsForMatching = async (ids, batchSize = FETCH_USERS_BY_IDS
     const chunkIds = uniqueIds.slice(offset, offset + safeBatchSize);
     const chunkSnapshots = await Promise.all(
       chunkIds.map(async userId => {
-        const snapshot = await get(refDb(database, `newUsers/${userId}`));
+        const [snapshot, photos] = await Promise.all([
+          get(refDb(database, `newUsers/${userId}`)),
+          getAllUserPhotos(userId),
+        ]);
         if (!snapshot.exists()) return null;
         return {
           userId,
           ...(snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {}),
+          photos: Array.isArray(photos) ? photos : [],
           __sourceCollection: 'newUsers',
         };
       })
@@ -2787,7 +2792,15 @@ const Matching = () => {
           ? favoriteUsersRef.current
           : dislikeUsersRef.current;
         const currentPagination = reactionPaginationByType[viewMode] || buildEmptyReactionPagination();
-        const shouldRefreshReactionIds = collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0;
+        const reactionMapIds = Object.keys(reactionMap);
+        const hasAccessScopedNewUserReactionIds = [
+          ...reactionMapIds,
+          ...(currentPagination.ids || []),
+        ].some(isShortId);
+        const shouldRefreshReactionIds = Boolean(
+          parsedAdditionalAccessRules.length > 0 &&
+          (collectionSource === 'newUsers' || hasAccessScopedNewUserReactionIds)
+        );
         const freshProfileCache = shouldRefreshReactionIds
           ? await ensureFreshAdditionalMatchingProfile({
             accessUserId: ownerId,
@@ -2810,7 +2823,7 @@ const Matching = () => {
           currentPagination.accessSnapshotKey !== reactionAccessSnapshotKey
         );
         const reactionIds = shouldRefreshReactionIds || currentPagination.ids.length === 0
-          ? await getAccessibleReactionIds(Object.keys(reactionMap), reactionAccessSnapshot)
+          ? await getAccessibleReactionIds(reactionMapIds, reactionAccessSnapshot)
           : currentPagination.ids;
 
         if (!canApplyLoadMoreResult()) return;
@@ -2834,6 +2847,7 @@ const Matching = () => {
         reactionLoadedIdsRef.current[viewMode] = loadedIds;
         loadedIdsRef.current = new Set(loadedIds);
         setUsers(prev => {
+          if (didAccessSnapshotChange) return page.users;
           const map = new Map(prev.map(user => [user.userId, user]));
           page.users.forEach(user => map.set(user.userId, user));
           return Array.from(map.values());

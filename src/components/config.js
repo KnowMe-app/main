@@ -1502,7 +1502,8 @@ export const fetchUsersByIds = async ids => {
         Promise.all([
           get(ref2(database, `newUsers/${id}`)),
           get(ref2(database, `users/${id}`)),
-        ]).then(([newSnap, userSnap]) => {
+          getAllUserPhotos(id),
+        ]).then(([newSnap, userSnap, photos]) => {
           const hasNewUser = newSnap.exists();
           const hasUser = userSnap.exists();
           if (!hasNewUser && !hasUser) return null;
@@ -1511,6 +1512,7 @@ export const fetchUsersByIds = async ids => {
             userId: id,
             ...(hasUser ? userSnap.val() : {}),
             ...(hasNewUser ? newSnap.val() : {}),
+            photos: Array.isArray(photos) ? photos : [],
             __sourceCollection: hasNewUser ? 'newUsers' : 'users',
           };
           return [id, data];
