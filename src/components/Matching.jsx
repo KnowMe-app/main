@@ -82,6 +82,7 @@ import {
   readReactionSnapshotMaps,
   resolvePrioritizedReactionMaps,
   shouldApplyReactionPageResult,
+  shouldApplySharedReactionCandidateResult,
   uniqueTruthyReactionIds,
 } from 'utils/reactionPriority';
 
@@ -2000,6 +2001,7 @@ const Matching = () => {
   const [collectionSource, setCollectionSource] = useState(
     () => localStorage.getItem(COLLECTION_SOURCE_KEY) || 'users'
   );
+  const collectionSourceRef = useRef(collectionSource);
   const defaultListKey = `default:${collectionSource}`;
   const [filterResetToken, setFilterResetToken] = useState(0);
   const [comments, setComments] = useState({});
@@ -2038,6 +2040,7 @@ const Matching = () => {
   const additionalLoadMoreFetchVersionRef = useRef(0);
   const additionalMatchingApplyVersionRef = useRef(0);
   const reactionLoadVersionRef = useRef(0);
+  const sharedReactionCandidateLoadVersionRef = useRef(0);
   const matchingProfileStateRef = useRef({
     ownerId: null,
     collectionSource,
@@ -2077,6 +2080,7 @@ const Matching = () => {
   }, []);
   const invalidateReactionAsyncWork = React.useCallback(() => {
     reactionLoadVersionRef.current += 1;
+    sharedReactionCandidateLoadVersionRef.current += 1;
     additionalLoadMoreFetchVersionRef.current += 1;
     additionalMatchingApplyVersionRef.current += 1;
     loadingRef.current = false;
@@ -2094,6 +2098,7 @@ const Matching = () => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
   useEffect(() => {
+    collectionSourceRef.current = collectionSource;
     localStorage.setItem(COLLECTION_SOURCE_KEY, collectionSource);
   }, [collectionSource]);
   useEffect(() => {
@@ -2169,9 +2174,12 @@ const Matching = () => {
     const filtered = arr.filter(u => isValidId(u?.userId));
     setUsers(filtered);
     setHasMore(false);
-    await loadCommentsFor(filtered);
     setLastKey(null);
+    invalidateReactionAsyncWork();
+    setSharedReactionCandidateUsers([]);
+    viewModeRef.current = 'search';
     setViewMode('search');
+    await loadCommentsFor(filtered);
   };
 
   useEffect(() => {
@@ -2440,7 +2448,20 @@ const Matching = () => {
 
   const loadSharedReactionCandidates = React.useCallback(async () => {
     const viewerId = ownerId || getOwnerId();
-    if (viewMode === 'favorites' || viewMode === 'dislikes') {
+    const requestVersion = sharedReactionCandidateLoadVersionRef.current + 1;
+    sharedReactionCandidateLoadVersionRef.current = requestVersion;
+    const requestViewMode = viewModeRef.current;
+    const requestCollectionSource = collectionSource;
+    const canApplySharedCandidateResult = () => shouldApplySharedReactionCandidateResult({
+      requestVersion,
+      currentVersion: sharedReactionCandidateLoadVersionRef.current,
+      requestViewMode,
+      currentViewMode: viewModeRef.current,
+      requestCollectionSource,
+      currentCollectionSource: collectionSourceRef.current,
+    });
+
+    if (requestViewMode !== 'default') {
       setSharedReactionCandidateUsers([]);
       return;
     }
@@ -2451,7 +2472,9 @@ const Matching = () => {
     });
 
     if (!viewerId || candidateIds.length === 0) {
-      setSharedReactionCandidateUsers([]);
+      if (canApplySharedCandidateResult()) {
+        setSharedReactionCandidateUsers([]);
+      }
       return;
     }
 
@@ -2470,6 +2493,10 @@ const Matching = () => {
           ? currentSearchKeySetKeys
           : await resolveAdditionalSearchKeySetKeysForMatching(null, viewerId);
 
+        if (!canApplySharedCandidateResult()) {
+          return;
+        }
+
         if (resolvedSearchKeySetKeys.length === 0) {
           filteredByAccessIds.push(...newUserCandidateIds);
         } else {
@@ -2484,6 +2511,9 @@ const Matching = () => {
             debugMatchingFlow: shouldDebugAdditionalMatching(viewerId),
             debugToast: (message, data) => debugAdditionalToast(viewerId, message, data),
           });
+          if (!canApplySharedCandidateResult()) {
+            return;
+          }
           indexedAllowedNewUserIds = new Set(Array.isArray(indexed?.userIds) ? indexed.userIds : []);
           allowedNewUserIds = newUserCandidateIds.filter(id => indexedAllowedNewUserIds.has(id));
           filteredByAccessIds.push(...newUserCandidateIds.filter(id => !indexedAllowedNewUserIds.has(id)));
@@ -2496,8 +2526,15 @@ const Matching = () => {
     }
 
     const loadedUsers = [];
+    if (!canApplySharedCandidateResult()) {
+      return;
+    }
+
     if (collectionSource === 'newUsers' && allowedNewUserIds.length > 0) {
       const newUsersCards = await fetchNewUsersByIdsForMatching(allowedNewUserIds);
+      if (!canApplySharedCandidateResult()) {
+        return;
+      }
       loadedUsers.push(
         ...newUsersCards.map(user => ({
           ...user,
@@ -2509,7 +2546,13 @@ const Matching = () => {
     if (collectionSource !== 'newUsers') {
       const userIds = candidateIds.filter(isValidId);
       if (userIds.length > 0) {
+        if (!canApplySharedCandidateResult()) {
+          return;
+        }
         const usersMap = await fetchUsersByIds(userIds);
+        if (!canApplySharedCandidateResult()) {
+          return;
+        }
         loadedUsers.push(
           ...userIds
             .map(id => usersMap[id])
@@ -2525,12 +2568,20 @@ const Matching = () => {
       ? allowedNewUserIds.filter(id => !loadedIds.has(id))
       : candidateIds.filter(isValidId).filter(id => !loadedIds.has(id));
 
+    if (!canApplySharedCandidateResult()) {
+      return;
+    }
+
     loadedUsers.forEach(user => {
       const { __matchingAccessAllowed, ...cacheUser } = user;
       updateCard(user.userId, cacheUser);
     });
     setSharedReactionCandidateUsers(loadedUsers);
     await loadCommentsFor(loadedUsers);
+
+    if (!canApplySharedCandidateResult()) {
+      return;
+    }
 
     debugSharedReactionsLog(viewerId, 'shared reaction candidate pool resolved', {
       sharedReactionIds: summarizeIdsForDebug(candidateIds),
@@ -2563,7 +2614,6 @@ const Matching = () => {
     isAdmin,
     parsedAdditionalAccessRules.length,
     sharedReactionIds,
-    viewMode,
   ]);
 
   useEffect(() => {
@@ -3905,6 +3955,7 @@ const Matching = () => {
                 invalidateReactionAsyncWork();
                 resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
                 resetReactionPaginationState();
+                collectionSourceRef.current = e.target.value;
                 setCollectionSource(e.target.value);
               }}
             />
@@ -3920,6 +3971,7 @@ const Matching = () => {
                 invalidateReactionAsyncWork();
                 resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
                 resetReactionPaginationState();
+                collectionSourceRef.current = e.target.value;
                 setCollectionSource(e.target.value);
               }}
             />

@@ -17,4 +17,26 @@ describe('Matching shared reaction card UI', () => {
     expect(source).toContain('await fetchUserById(id)');
     expect(source).not.toContain('const usersMap = await fetchUsersByIds(page.pageIds);');
   });
+
+  it('guards stale default shared-candidate requests before applying them in reaction tabs', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain('const sharedReactionCandidateLoadVersionRef = useRef(0);');
+    expect(source).toContain('const canApplySharedCandidateResult = () => shouldApplySharedReactionCandidateResult({');
+    expect(source).toContain('currentViewMode: viewModeRef.current');
+    expect(source).toContain('currentCollectionSource: collectionSourceRef.current');
+    expect(source).toContain(`if (!canApplySharedCandidateResult()) {
+      return;
+    }
+
+    loadedUsers.forEach`);
+  });
+
+  it('clears shared candidates when entering search so search renders only returned results', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain(`setSharedReactionCandidateUsers([]);
+    viewModeRef.current = 'search';`);
+  });
+
 });
