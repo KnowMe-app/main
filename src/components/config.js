@@ -1513,6 +1513,7 @@ export const fetchUsersByIds = async ids => {
             ...(hasUser ? userSnap.val() : {}),
             ...(hasNewUser ? newSnap.val() : {}),
             photos: Array.isArray(photos) ? photos : [],
+            __photosHydrated: true,
             __sourceCollection: hasNewUser ? 'newUsers' : 'users',
           };
           return [id, data];
