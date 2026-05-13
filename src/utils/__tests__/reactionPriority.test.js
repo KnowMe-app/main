@@ -518,7 +518,7 @@ describe('reaction pagination race guards', () => {
     expect(secondDislikes.pageIds).toEqual(['dislike-4', 'dislike-5', 'dislike-6']);
   });
 
-  it('keeps accessible shared newUsers dislikes in dislikes tab but out of default deck', () => {
+  it('keeps accessible shared-only newUsers dislikes in dislikes tab but out of default deck', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
     const sharedNewUserDislike = {
       userId: 'ID0001',
@@ -537,10 +537,12 @@ describe('reaction pagination race guards', () => {
       hasAdditionalAccessRules: true,
     });
     const dislikesTab = mergeMatchingCandidateUsers({
-      users: [sharedNewUserDislike],
-      additionalNewUsers: [sharedNewUserDislike],
+      users: [],
+      additionalNewUsers: [],
+      sharedReactionCandidateUsers: [sharedNewUserDislike],
       favoriteUsers: {},
       dislikeUsers: { ID0001: true },
+      ownDislikeUsers: {},
       viewMode: 'dislikes',
       collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
