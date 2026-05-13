@@ -54,6 +54,23 @@ describe('backendDownloadToast admin traffic tracker', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
+
+  it('tracks backend payloads for the matching test user', () => {
+    const { tracker, toast } = loadTracker();
+    window.__getBackendDownloadToastUid = () => tracker.BACKEND_TRAFFIC_TRACKING_TEST_UID;
+
+    tracker.recordAdminBackendTraffic(
+      { exists: () => true, val: () => ({ name: 'Matching test payload' }) },
+      { operation: 'get', source: 'Matching', path: 'newUsers' },
+    );
+    jest.advanceTimersByTime(1000);
+
+    const summary = window.backendTrafficStats.summary({ log: false });
+    expect(summary.totals.actualRequestCount).toBe(1);
+    expect(summary.totals.estimatedPayloadBytes).toBeGreaterThan(0);
+    expect(toast.success).toHaveBeenCalled();
+  });
+
   it('collects stats while silent mode suppresses toast output', () => {
     const { tracker, toast } = loadTracker();
     window.__getBackendDownloadToastUid = () => ADMIN_UID;

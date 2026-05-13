@@ -295,6 +295,30 @@ export const ActionButton = styled.button`
   }
 `;
 
+
+export const BackendTrafficToggleButton = styled(ActionButton)`
+  width: auto;
+  min-width: 54px;
+  padding: 3px 8px;
+  gap: 5px;
+  color: ${({ $active }) => ($active ? '#fff' : color.accent3)};
+  background-color: ${({ $active }) => ($active ? color.accent5 : '#fff')};
+  border: 1px solid ${({ $active }) => ($active ? color.accent5 : color.gray)};
+  border-radius: 50px;
+  font-size: 14px;
+  font-weight: 700;
+
+  &:hover {
+    background-color: ${({ $active }) => ($active ? color.accent4 || color.accent5 : color.paleAccent2)};
+  }
+`;
+
+export const BackendTrafficToggleStatus = styled.span`
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+`;
+
 export const HeaderContainer = styled.div`
   position: relative;
   display: flex;
