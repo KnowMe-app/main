@@ -2,9 +2,12 @@ import {
   buildReactionCardsPage,
   buildSharedReactionCandidateIds,
   canShowMatchingUser,
+  hasPendingSharedReactionCandidates,
   loadReactionCardsPageRecords,
+  mergeSharedReactionCandidateUsers,
   resolvePrioritizedReactionMaps,
   shouldApplyReactionPageResult,
+  shouldApplySharedReactionCandidateResult,
 } from '../reactionPriority';
 
 describe('resolvePrioritizedReactionMaps', () => {
@@ -179,6 +182,47 @@ describe('mergeMatchingCandidateUsers', () => {
       sharedReactionCandidateUsers: [{ userId: 'ID0001', __sourceCollection: 'newUsers' }],
       isAdmin: false,
       viewMode: 'default',
+      collectionSource: 'newUsers',
+      hasAdditionalAccessRules: true,
+    });
+
+    expect(result).toEqual([]);
+  });
+
+
+  it('keeps access-validated shared-only newUsers cards in reaction tabs when base users are empty', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+
+    const result = mergeMatchingCandidateUsers({
+      users: [],
+      additionalNewUsers: [],
+      sharedReactionCandidateUsers: [{
+        userId: 'ID0001',
+        __sourceCollection: 'newUsers',
+        __matchingAccessAllowed: true,
+      }],
+      favoriteUsers: {},
+      dislikeUsers: { ID0001: true },
+      isAdmin: false,
+      viewMode: 'dislikes',
+      collectionSource: 'newUsers',
+      hasAdditionalAccessRules: true,
+    });
+
+    expect(result.map(user => user.userId)).toEqual(['ID0001']);
+  });
+
+  it('rejects shared-only newUsers reaction tab cards without searchKeySets access validation', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+
+    const result = mergeMatchingCandidateUsers({
+      users: [],
+      additionalNewUsers: [],
+      sharedReactionCandidateUsers: [{ userId: 'ID0001', __sourceCollection: 'newUsers' }],
+      favoriteUsers: { ID0001: true },
+      dislikeUsers: {},
+      isAdmin: false,
+      viewMode: 'favorites',
       collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
     });
@@ -499,27 +543,269 @@ describe('mergeMatchingCandidateUsers', () => {
     expect(favoritesTab.map(user => user.userId)).toEqual(['sharedOnlyFavorite']);
     expect(dislikesTab).toEqual([]);
   });
+
+  it('injects shared reaction tab cards without duplicating base users', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+    const baseCard = { userId: 'sharedDislike', publish: true, __sourceCollection: 'users', name: 'base' };
+    const sharedCard = { userId: 'sharedDislike', publish: true, __sourceCollection: 'users', name: 'shared' };
+
+    const dislikesTab = mergeMatchingCandidateUsers({
+      users: [baseCard],
+      sharedReactionCandidateUsers: [sharedCard, sharedCard],
+      favoriteUsers: {},
+      dislikeUsers: { sharedDislike: true },
+      viewMode: 'dislikes',
+      collectionSource: 'users',
+    });
+
+    expect(dislikesTab.map(user => user.userId)).toEqual(['sharedDislike']);
+    expect(dislikesTab).toHaveLength(1);
+    expect(dislikesTab[0].name).toBe('shared');
+  });
+
 });
 
 
+
+describe('pre-merge shared reaction verification', () => {
+  const makeCard = userId => ({ userId, publish: true, __sourceCollection: 'users' });
+
+  it('keeps default deck free of own and shared effective reactions, including injected shared candidates', () => {
+    const { favorites, dislikes } = resolvePrioritizedReactionMaps({
+      ownerIds: ['viewer', 'sharedOwner'],
+      ownOwnerId: 'viewer',
+      favoriteSnapshots: {
+        viewer: { ownFavorite: true },
+        sharedOwner: { sharedFavorite: true },
+      },
+      dislikeSnapshots: {
+        viewer: { ownDislike: true },
+        sharedOwner: { sharedDislike: true },
+      },
+    });
+    const cards = ['neutral', 'ownFavorite', 'ownDislike', 'sharedFavorite', 'sharedDislike'].map(makeCard);
+
+    const defaultDeck = require('../reactionPriority').mergeMatchingCandidateUsers({
+      users: cards,
+      sharedReactionCandidateUsers: [makeCard('sharedFavorite'), makeCard('sharedDislike')],
+      favoriteUsers: favorites,
+      dislikeUsers: dislikes,
+      viewMode: 'default',
+      collectionSource: 'users',
+    });
+
+    expect(defaultDeck.map(user => user.userId)).toEqual(['neutral']);
+  });
+
+  it('does not reintroduce effective reactions during default loadMore/backfill filtering', async () => {
+    const sourceIds = ['ownFavorite', 'sharedFavorite', 'ownDislike', 'sharedDislike', 'neutral'];
+    const effectiveFavorites = { ownFavorite: true, sharedFavorite: true };
+    const effectiveDislikes = { ownDislike: true, sharedDislike: true };
+    const baseExclude = new Set([...Object.keys(effectiveFavorites), ...Object.keys(effectiveDislikes)]);
+    const fetchUsersByIds = jest.fn(async ids => Object.fromEntries(
+      ids.map(id => [id, makeCard(id)])
+    ));
+
+    const page = await loadReactionCardsPageRecords({
+      reactionIds: sourceIds,
+      limit: 5,
+      loadedIds: new Set(),
+      fetchUsersByIds,
+      filterUsers: users => users.filter(user => !baseExclude.has(user.userId)),
+    });
+
+    expect(page.users.map(user => user.userId)).toEqual(['neutral']);
+    expect(page.users.some(user => baseExclude.has(user.userId))).toBe(false);
+  });
+
+  it('shows own favorites, shared-only favorites, and own favorite overriding shared dislike in favorites tab', () => {
+    const { favorites, dislikes } = resolvePrioritizedReactionMaps({
+      ownerIds: ['viewer', 'sharedOwner'],
+      ownOwnerId: 'viewer',
+      favoriteSnapshots: {
+        viewer: { ownFavorite: true, ownFavoriteSharedDislike: true },
+        sharedOwner: { sharedFavorite: true },
+      },
+      dislikeSnapshots: {
+        sharedOwner: { ownFavoriteSharedDislike: true },
+      },
+    });
+
+    const favoritesTab = require('../reactionPriority').mergeMatchingCandidateUsers({
+      users: [makeCard('ownFavorite')],
+      sharedReactionCandidateUsers: [makeCard('sharedFavorite'), makeCard('ownFavoriteSharedDislike')],
+      favoriteUsers: favorites,
+      dislikeUsers: dislikes,
+      viewMode: 'favorites',
+      collectionSource: 'users',
+    });
+
+    expect(favorites).toEqual({ sharedFavorite: true, ownFavorite: true, ownFavoriteSharedDislike: true });
+    expect(dislikes).toEqual({});
+    expect(favoritesTab.map(user => user.userId)).toEqual([
+      'ownFavorite',
+      'sharedFavorite',
+      'ownFavoriteSharedDislike',
+    ]);
+  });
+
+  it('shows own dislikes, shared-only dislikes, and own dislike overriding shared favorite in dislikes tab', () => {
+    const { favorites, dislikes } = resolvePrioritizedReactionMaps({
+      ownerIds: ['viewer', 'sharedOwner'],
+      ownOwnerId: 'viewer',
+      favoriteSnapshots: {
+        sharedOwner: { ownDislikeSharedFavorite: true },
+      },
+      dislikeSnapshots: {
+        viewer: { ownDislike: true, ownDislikeSharedFavorite: true },
+        sharedOwner: { sharedDislike: true },
+      },
+    });
+
+    const dislikesTab = require('../reactionPriority').mergeMatchingCandidateUsers({
+      users: [makeCard('ownDislike')],
+      sharedReactionCandidateUsers: [makeCard('sharedDislike'), makeCard('ownDislikeSharedFavorite')],
+      favoriteUsers: favorites,
+      dislikeUsers: dislikes,
+      viewMode: 'dislikes',
+      collectionSource: 'users',
+    });
+
+    expect(favorites).toEqual({});
+    expect(dislikes).toEqual({ sharedDislike: true, ownDislike: true, ownDislikeSharedFavorite: true });
+    expect(dislikesTab.map(user => user.userId)).toEqual([
+      'ownDislike',
+      'sharedDislike',
+      'ownDislikeSharedFavorite',
+    ]);
+  });
+
+  it('applies searchKeySets validation to shared newUsers favorites and dislikes', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+    const validatedFavorite = {
+      userId: 'ID0001',
+      __sourceCollection: 'newUsers',
+      __matchingAccessAllowed: true,
+    };
+    const validatedDislike = {
+      userId: 'ID0002',
+      __sourceCollection: 'newUsers',
+      __matchingAccessAllowed: true,
+    };
+    const unvalidatedFavorite = { userId: 'ID0003', __sourceCollection: 'newUsers' };
+    const unvalidatedDislike = { userId: 'ID0004', __sourceCollection: 'newUsers' };
+
+    const favoritesTab = mergeMatchingCandidateUsers({
+      users: [],
+      sharedReactionCandidateUsers: [validatedFavorite, unvalidatedFavorite],
+      favoriteUsers: { ID0001: true, ID0003: true },
+      dislikeUsers: {},
+      viewMode: 'favorites',
+      collectionSource: 'newUsers',
+      hasAdditionalAccessRules: true,
+    });
+    const dislikesTab = mergeMatchingCandidateUsers({
+      users: [],
+      sharedReactionCandidateUsers: [validatedDislike, unvalidatedDislike],
+      favoriteUsers: {},
+      dislikeUsers: { ID0002: true, ID0004: true },
+      viewMode: 'dislikes',
+      collectionSource: 'newUsers',
+      hasAdditionalAccessRules: true,
+    });
+
+    expect(favoritesTab.map(user => user.userId)).toEqual(['ID0001']);
+    expect(dislikesTab.map(user => user.userId)).toEqual(['ID0002']);
+  });
+
+  it('ignores stale shared candidate results for changed tab, source, or version', () => {
+    const base = {
+      requestVersion: 9,
+      currentVersion: 9,
+      requestViewMode: 'dislikes',
+      currentViewMode: 'dislikes',
+      requestCollectionSource: 'users',
+      currentCollectionSource: 'users',
+    };
+
+    expect(shouldApplySharedReactionCandidateResult(base)).toBe(true);
+    expect(shouldApplySharedReactionCandidateResult({ ...base, currentVersion: 10 })).toBe(false);
+    expect(shouldApplySharedReactionCandidateResult({ ...base, currentViewMode: 'favorites' })).toBe(false);
+    expect(shouldApplySharedReactionCandidateResult({ ...base, currentCollectionSource: 'newUsers' })).toBe(false);
+  });
+
+  it('deduplicates when a card exists in both base users and shared reaction candidates', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+
+    const result = mergeMatchingCandidateUsers({
+      users: [makeCard('duplicate')],
+      sharedReactionCandidateUsers: [makeCard('duplicate'), makeCard('duplicate')],
+      favoriteUsers: { duplicate: true },
+      dislikeUsers: {},
+      viewMode: 'favorites',
+      collectionSource: 'users',
+    });
+
+    expect(result.map(user => user.userId)).toEqual(['duplicate']);
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe('mergeSharedReactionCandidateUsers', () => {
+  it('adds late shared candidates without resetting existing candidate cards', () => {
+    const result = mergeSharedReactionCandidateUsers({
+      currentUsers: [{ userId: 'already-visible', publish: true }],
+      loadedUsers: [{ userId: 'late-shared', publish: true }],
+      candidateIds: ['already-visible', 'late-shared'],
+    });
+
+    expect(result.map(user => user.userId)).toEqual(['already-visible', 'late-shared']);
+  });
+
+  it('deduplicates candidate cards and prunes ids no longer in the shared candidate set', () => {
+    const result = mergeSharedReactionCandidateUsers({
+      currentUsers: [
+        { userId: 'stale-shared', publish: true },
+        { userId: 'duplicate-shared', name: 'old', publish: true },
+      ],
+      loadedUsers: [
+        { userId: 'duplicate-shared', name: 'new', publish: true },
+        { userId: 'duplicate-shared', name: 'newest', publish: true },
+      ],
+      candidateIds: ['duplicate-shared'],
+    });
+
+    expect(result).toEqual([{ userId: 'duplicate-shared', name: 'newest', publish: true }]);
+  });
+});
+
 describe('shouldApplySharedReactionCandidateResult', () => {
-  it('allows only the current default-mode shared candidate request to apply', () => {
-    const { shouldApplySharedReactionCandidateResult } = require('../reactionPriority');
+  it('allows current shared candidate requests in default and reaction tabs only', () => {
+    ['default', 'favorites', 'dislikes'].forEach(mode => {
+      expect(shouldApplySharedReactionCandidateResult({
+        requestVersion: 3,
+        currentVersion: 3,
+        requestViewMode: mode,
+        currentViewMode: mode,
+        requestCollectionSource: 'users',
+        currentCollectionSource: 'users',
+      })).toBe(true);
+    });
 
     expect(shouldApplySharedReactionCandidateResult({
       requestVersion: 3,
       currentVersion: 3,
-      requestViewMode: 'default',
-      currentViewMode: 'default',
+      requestViewMode: 'search',
+      currentViewMode: 'search',
       requestCollectionSource: 'users',
       currentCollectionSource: 'users',
-    })).toBe(true);
+    })).toBe(false);
 
     expect(shouldApplySharedReactionCandidateResult({
       requestVersion: 3,
       currentVersion: 4,
-      requestViewMode: 'default',
-      currentViewMode: 'default',
+      requestViewMode: 'dislikes',
+      currentViewMode: 'dislikes',
       requestCollectionSource: 'users',
       currentCollectionSource: 'users',
     })).toBe(false);
@@ -527,7 +813,7 @@ describe('shouldApplySharedReactionCandidateResult', () => {
     expect(shouldApplySharedReactionCandidateResult({
       requestVersion: 3,
       currentVersion: 3,
-      requestViewMode: 'default',
+      requestViewMode: 'favorites',
       currentViewMode: 'dislikes',
       requestCollectionSource: 'users',
       currentCollectionSource: 'users',
@@ -540,6 +826,33 @@ describe('shouldApplySharedReactionCandidateResult', () => {
       currentViewMode: 'default',
       requestCollectionSource: 'users',
       currentCollectionSource: 'newUsers',
+    })).toBe(false);
+  });
+});
+
+describe('hasPendingSharedReactionCandidates', () => {
+  it('keeps reaction tab hasMore true until unloaded shared reaction candidates can merge', () => {
+    expect(hasPendingSharedReactionCandidates({
+      reactionIds: ['shared-disliked'],
+      sharedReactionIds: ['shared-disliked'],
+      loadedIds: new Set(),
+      reactionMap: { 'shared-disliked': true },
+    })).toBe(true);
+  });
+
+  it('does not keep hasMore true after shared reaction candidates are loaded or inactive', () => {
+    expect(hasPendingSharedReactionCandidates({
+      reactionIds: ['shared-disliked'],
+      sharedReactionIds: ['shared-disliked'],
+      loadedIds: new Set(['shared-disliked']),
+      reactionMap: { 'shared-disliked': true },
+    })).toBe(false);
+
+    expect(hasPendingSharedReactionCandidates({
+      reactionIds: ['shared-disliked'],
+      sharedReactionIds: ['shared-disliked'],
+      loadedIds: new Set(),
+      reactionMap: {},
     })).toBe(false);
   });
 });

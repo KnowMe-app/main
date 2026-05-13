@@ -70,8 +70,8 @@ describe('BtnDislike', () => {
     expect(button).not.toBeNull();
     expect(button.style.background).toBe('rgb(255, 140, 0)');
     expect(button.getAttribute('aria-pressed')).toBe('false');
-    expect(button.getAttribute('data-shared-disliked')).toBeNull();
-    expect(button.getAttribute('title')).toBe('Дизлайк');
+    expect(button.getAttribute('data-shared-disliked')).toBe('true');
+    expect(button.getAttribute('title')).toBe('Дизлайк (shared)');
 
     await act(async () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -107,6 +107,7 @@ describe('BtnDislike', () => {
     const button = container.querySelector('button[aria-label="Дизлайк"]');
     expect(button).not.toBeNull();
     expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(button.getAttribute('data-shared-disliked')).toBeNull();
   });
 
 });
