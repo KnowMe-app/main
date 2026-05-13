@@ -2295,8 +2295,11 @@ export const getUserCards = async () => {
 };
 
 export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition, delCondition) => {
-  const cleanedUploadedInfo = removeUndefined(uploadedInfo);
-  const keysToDelete = delCondition ? Object.keys(delCondition) : [];
+  const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo);
+  const keysToDelete = [
+    ...(delCondition ? Object.keys(delCondition) : []),
+    ...transientUserDataKeys,
+  ];
   const basePayload = { ...cleanedUploadedInfo };
   keysToDelete.forEach(key => {
     delete basePayload[key];
@@ -2338,6 +2341,25 @@ const removeUndefined = obj => {
   return obj;
 };
 
+const transientUserDataKeys = ['__sourceCollection'];
+
+const stripTransientUserDataFields = (payload, { markForRealtimeDeletion = false } = {}) => {
+  const cleaned = removeUndefined(payload);
+  if (typeof cleaned !== 'object' || cleaned === null || Array.isArray(cleaned)) {
+    return cleaned;
+  }
+
+  const nextPayload = { ...cleaned };
+  transientUserDataKeys.forEach(key => {
+    delete nextPayload[key];
+    if (markForRealtimeDeletion) {
+      nextPayload[key] = null;
+    }
+  });
+
+  return nextPayload;
+};
+
 const normalizePhoneForStorage = value => {
   if (value === undefined || value === null) return value;
 
@@ -2365,7 +2387,9 @@ const sanitizeUploadedInfoPhones = uploadedInfo => {
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
     const userRefRTDB = ref2(database, `users/${userId}`);
-    const cleanedUploadedInfo = removeUndefined(uploadedInfo);
+    const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo, {
+      markForRealtimeDeletion: condition === 'update',
+    });
     if (condition === 'update') {
       await update(userRefRTDB, cleanedUploadedInfo);
     } else {
@@ -2468,7 +2492,9 @@ export const updateDataInNewUsersRTDB = async (userId, uploadedInfo, condition, 
     console.log('currentUserData :>> ', currentUserData);
 
     // if (condition === 'update' && !(Object.keys(uploadedInfo).length < Object.keys(currentUserData).length)) {
-    const cleanedUploadedInfo = removeUndefined(uploadedInfo);
+    const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo, {
+      markForRealtimeDeletion: condition === 'update',
+    });
 
     if (condition === 'update') {
       console.log('update :>> ');
