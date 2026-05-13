@@ -19,6 +19,26 @@ describe('Matching shared reaction card UI', () => {
     expect(source).not.toContain('const usersMap = await fetchUsersByIds(page.pageIds);');
   });
 
+
+  it('hydrates uncached reaction cards with photos from both backing collections', () => {
+    const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+    const configSource = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
+
+    expect(matchingSource).toContain('getAllUserPhotos(userId)');
+    expect(matchingSource).toContain('photos: Array.isArray(photos) ? photos : []');
+    expect(configSource).toContain('getAllUserPhotos(id)');
+    expect(configSource).toContain('photos: Array.isArray(photos) ? photos : []');
+  });
+
+  it('refreshes mixed users/newUsers reaction pagination when access scope changes in users mode', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain('const hasAccessScopedNewUserReactionIds = [');
+    expect(source).toContain("(collectionSource === 'newUsers' || hasAccessScopedNewUserReactionIds)");
+    expect(source).toContain('currentPagination.accessSnapshotKey !== reactionAccessSnapshotKey');
+    expect(source).toContain('if (didAccessSnapshotChange) return page.users;');
+  });
+
   it('guards stale default shared-candidate requests while allowing reaction tabs across collections', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
