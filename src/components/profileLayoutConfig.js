@@ -157,15 +157,15 @@ const quickFacts = {
 
 const sectionConfig = {
   ed: [
-    { title: 'Appearance', fields: [
+    { title: 'Main information', fields: [
+      field('education', 'Education'), field('profession', 'Profession'), field('maritalStatus', 'Marital status'),
+      field('ownKids', 'Own kids', ownKidsValue), field('clothingSize', 'Clothing'), field('shoeSize', 'Shoe'),
+    ] },
+    { title: 'Appearance', variant: 'chips', fields: [
       field('eyeColor', 'Eyes'), field('hairColor', 'Hair color'), field('hairStructure', 'Hair structure'),
       field('faceShape', 'Face shape'), field('noseShape', 'Nose'), field('lipsShape', 'Lips'),
       field('chin', 'Chin'), field('bodyType', 'Body type'), field('breastSize', 'Breast size'),
       field('race', 'Race'), field('glasses', 'Glasses'),
-    ] },
-    { title: 'Main information', fields: [
-      field('education', 'Education'), field('profession', 'Profession'), field('maritalStatus', 'Marital status'),
-      field('ownKids', 'Own kids', ownKidsValue), field('clothingSize', 'Clothing'), field('shoeSize', 'Shoe'),
     ] },
     { title: 'Donation experience', fields: [
       field('experience', 'Previous donation'), field('donationCount', 'Donation count'), field('donationsCount', 'Donations'),

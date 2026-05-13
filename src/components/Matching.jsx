@@ -37,6 +37,8 @@ import {
   ModernChipGrid,
   ModernContactLinks,
   ModernContactLink,
+  ModernFieldList,
+  ModernFieldRow,
   ModernDesktopNavButton,
   ModernFactPill,
   ModernGallery,
@@ -110,7 +112,6 @@ import {
   getProfilePhotos,
   getProfileRole,
   getProfileSections,
-  getQuickFacts,
   getRoleLabel,
 } from './profileLayoutConfig';
 import {
@@ -846,6 +847,20 @@ const ProfileChips = ({ fields, role }) => {
   );
 };
 
+const ProfileFieldRows = ({ fields }) => {
+  if (!fields.length) return null;
+  return (
+    <ModernFieldList>
+      {fields.map(field => (
+        <ModernFieldRow key={`${field.key}-${field.label}`}>
+          <strong>{field.label}</strong>
+          <span>{field.value}</span>
+        </ModernFieldRow>
+      ))}
+    </ModernFieldList>
+  );
+};
+
 const CONTACT_ICONS = {
   phone: FaPhoneVolume,
   email: MdEmail,
@@ -1012,9 +1027,7 @@ const SwipeableCard = ({
   const locationInfo = getProfileLocation(user);
   const identityAndLocationKeys = ['name', 'surname', 'agencyName', 'companyName', 'agency', 'country', 'region', 'city', 'role', 'userRole'];
   const heroFields = getHeroFields(user, resolvedRole, { excludeKeys: identityAndLocationKeys });
-  const heroFieldKeys = collectProfileFieldKeys(heroFields);
-  const quickFacts = getQuickFacts(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...heroFieldKeys] });
-  const usedSummaryFieldKeys = collectProfileFieldKeys([...heroFields, ...quickFacts]);
+  const usedSummaryFieldKeys = collectProfileFieldKeys(heroFields);
   const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys] });
   const bio = getProfileBio(user);
   const initials = name
@@ -1084,7 +1097,7 @@ const SwipeableCard = ({
             {locationInfo && <ModernHeroLocation>{locationInfo}</ModernHeroLocation>}
             {heroFields.length > 0 && (
               <ModernHeroFacts>
-                {heroFields.map(item => (
+                {heroFields.slice(0, 6).map(item => (
                   <ModernFactPill key={`hero-${item.key}`}>
                     <strong>{item.label}</strong>
                     <span>{item.value}</span>
@@ -1098,13 +1111,33 @@ const SwipeableCard = ({
           <AdminToggle published={user.publish} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
         )}
         <ModernProfileBody>
-          {quickFacts.length > 0 && (
+          <ProfileBio text={bio} />
+          {sections.filter(section => section.variant !== 'contacts').map(section => (
+            <ModernSection key={section.title}>
+              <ModernSectionTitle>{section.title}</ModernSectionTitle>
+              {section.variant === 'chips' || section.title === 'Appearance' ? (
+                <ProfileChips fields={section.fields} role={resolvedRole} />
+              ) : (
+                <ProfileFieldRows fields={section.fields} />
+              )}
+            </ModernSection>
+          ))}
+          {galleryPhotos.length > 0 && (
             <ModernSection>
-              <ModernSectionTitle>Quick facts</ModernSectionTitle>
-              <ProfileChips fields={quickFacts} role={resolvedRole} />
+              <ModernSectionTitle>Gallery</ModernSectionTitle>
+              <ModernGallery>
+                {galleryPhotos.map(src => (
+                  <ModernGalleryImage key={src} src={src} alt={`${name} profile`} onError={event => { event.currentTarget.style.display = 'none'; }} />
+                ))}
+              </ModernGallery>
             </ModernSection>
           )}
-          <ProfileBio text={bio} />
+          {sections.filter(section => section.variant === 'contacts').map(section => (
+            <ModernSection key={section.title}>
+              <ModernSectionTitle>{section.title}</ModernSectionTitle>
+              <ProfileContactLinks user={user} role={resolvedRole} />
+            </ModernSection>
+          ))}
           <ModernSection>
             <ModernSectionTitle>Comment</ModernSectionTitle>
             <CommentBox>
@@ -1128,26 +1161,6 @@ const SwipeableCard = ({
               )}
             </CommentBox>
           </ModernSection>
-          {sections.map(section => (
-            <ModernSection key={section.title}>
-              <ModernSectionTitle>{section.title}</ModernSectionTitle>
-              {section.variant === 'contacts' ? (
-                <ProfileContactLinks user={user} role={resolvedRole} />
-              ) : (
-                <ProfileChips fields={section.fields} role={resolvedRole} />
-              )}
-            </ModernSection>
-          ))}
-          {galleryPhotos.length > 0 && (
-            <ModernSection>
-              <ModernSectionTitle>Gallery</ModernSectionTitle>
-              <ModernGallery>
-                {galleryPhotos.map(src => (
-                  <ModernGalleryImage key={src} src={src} alt={`${name} profile`} onError={event => { event.currentTarget.style.display = 'none'; }} />
-                ))}
-              </ModernGallery>
-            </ModernSection>
-          )}
         </ModernProfileBody>
         </ModernProfileScroll>
         <ModernActionRail>
