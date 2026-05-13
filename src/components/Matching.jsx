@@ -3765,7 +3765,6 @@ const Matching = () => {
     hasMore,
     lastKey,
     loadCommentsFor,
-    isAdmin,
     ownerId,
     loadReactionCardsPage,
     reactionPaginationByType,
