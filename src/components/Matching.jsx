@@ -22,7 +22,12 @@ import {
   updateDataInFiresoreDB,
 } from './config';
 import { get as firebaseGet, onValue as firebaseOnValue, ref as refDb, query, orderByChild, orderByKey, startAt, endAt, limitToLast } from 'firebase/database';
-import { withAdminDownloadToast, wrapAdminOnValue } from 'utils/backendDownloadToast';
+import {
+  getBackendDownloadToastsEnabled,
+  setBackendDownloadToastsEnabled,
+  withAdminDownloadToast,
+  wrapAdminOnValue,
+} from 'utils/backendDownloadToast';
 
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
@@ -1033,6 +1038,21 @@ const ActionButton = styled.button`
   }
 `;
 
+const BackendTrafficToggleButton = styled(ActionButton)`
+  width: auto;
+  min-width: 35px;
+  padding: 3px 8px;
+  gap: 4px;
+  background-color: ${({ $active }) => ($active ? color.accent : color.accent5)};
+  font-size: 12px;
+  font-weight: 700;
+`;
+
+const BackendTrafficToggleStatus = styled.span`
+  font-size: 10px;
+  line-height: 1;
+`;
+
 const HeaderContainer = styled.div`
   position: relative;
   display: flex;
@@ -2026,6 +2046,7 @@ const Matching = () => {
   const [sharedComments, setSharedComments] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
   const [ownerId, setOwnerId] = useState(null);
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
@@ -2041,6 +2062,7 @@ const Matching = () => {
   const [roleIndexSets] = useState(null);
   const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: currentAccessLevel });
   const isAdmin = access.isAdmin;
+  const canToggleBackendTrafficToasts = ownerId === DEBUG_ADDITIONAL_MATCHING_USER_ID;
   const parsedAdditionalAccessRules = useMemo(
     () => parseAdditionalAccessRuleGroups(currentAdditionalAccessRules),
     [currentAdditionalAccessRules]
@@ -2054,6 +2076,14 @@ const Matching = () => {
   useEffect(() => {
     matchingAccessSnapshotKeyRef.current = matchingAccessSnapshotKey;
   }, [matchingAccessSnapshotKey]);
+
+  useEffect(() => {
+    setBackendDownloadToastsEnabled(downloadSizeToastsEnabled);
+  }, [downloadSizeToastsEnabled]);
+
+  const handleDownloadSizeToastsToggle = () => {
+    setDownloadSizeToastsEnabled(prev => !prev);
+  };
   const markMatchingAccessValidated = React.useCallback(
     (user, accessSnapshotKey = matchingAccessSnapshotKeyRef.current) =>
       markUserMatchingAccessValidated(user, accessSnapshotKey),
@@ -4352,6 +4382,27 @@ const Matching = () => {
             <TopActions>
               {viewMode !== 'default' && (
                 <ActionButton onClick={reloadDefault}><FaDownload /></ActionButton>
+              )}
+              {canToggleBackendTrafficToasts && (
+                <BackendTrafficToggleButton
+                  type="button"
+                  $active={downloadSizeToastsEnabled}
+                  aria-pressed={downloadSizeToastsEnabled}
+                  title={
+                    downloadSizeToastsEnabled
+                      ? 'Вимкнути відстежування розміру трафіку з бекенду'
+                      : 'Увімкнути відстежування розміру трафіку з бекенду'
+                  }
+                  aria-label={
+                    downloadSizeToastsEnabled
+                      ? 'Вимкнути відстежування розміру трафіку з бекенду'
+                      : 'Увімкнути відстежування розміру трафіку з бекенду'
+                  }
+                  onClick={handleDownloadSizeToastsToggle}
+                >
+                  📦
+                  <BackendTrafficToggleStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</BackendTrafficToggleStatus>
+                </BackendTrafficToggleButton>
               )}
               <ActionButton onClick={() => setShowFilters(s => !s)}><FaFilter /></ActionButton>
               <ActionButton

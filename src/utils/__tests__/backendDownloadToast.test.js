@@ -1,4 +1,5 @@
 const ADMIN_UID = '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2';
+const BACKEND_TRAFFIC_TEST_UID = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
 
 const loadTracker = () => {
   jest.resetModules();
@@ -52,6 +53,23 @@ describe('backendDownloadToast admin traffic tracker', () => {
     expect(toast).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('tracks payloads for the matching test user', () => {
+    const { tracker, toast } = loadTracker();
+    window.__getBackendDownloadToastUid = () => BACKEND_TRAFFIC_TEST_UID;
+
+    tracker.recordAdminBackendTraffic(
+      { exists: () => true, val: () => ({ name: 'Matching test payload' }) },
+      { operation: 'get', source: 'Matching', path: 'users/test-user' },
+    );
+    jest.advanceTimersByTime(1000);
+
+    expect(window.backendTrafficStats.summary({ log: false }).totals.actualRequestCount).toBe(1);
+    expect(toast.success).toHaveBeenCalledWith(
+      expect.stringContaining('[Matching] Backend get users/test-user'),
+      expect.objectContaining({ icon: '📦' }),
+    );
   });
 
   it('collects stats while silent mode suppresses toast output', () => {
