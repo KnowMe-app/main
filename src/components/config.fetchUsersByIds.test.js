@@ -20,4 +20,13 @@ describe('fetchUsersByIds merging', () => {
     expect(source).toContain("__sourceCollection: 'newUsers'");
     expect(source).toContain("__sourceCollection: 'users'");
   });
+
+  it('strips client-only source markers before database writes', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
+
+    expect(source).toContain("const transientUserDataKeys = ['__sourceCollection']");
+    expect(source).toContain('const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo);');
+    expect(source.match(/markForRealtimeDeletion: condition === 'update'/g)).toHaveLength(2);
+  });
+
 });
