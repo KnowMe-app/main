@@ -4,6 +4,8 @@ import { isAdminUid } from './accessLevel';
 export const ENABLE_BACKEND_TRAFFIC_TOAST = true;
 export const BACKEND_TRAFFIC_SILENT_MODE = false;
 export const BACKEND_DOWNLOAD_TOASTS_STORAGE_KEY = 'backendDownloadSizeToastsEnabled';
+export const BACKEND_TRAFFIC_TRACKING_TEST_UID = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+const BACKEND_TRAFFIC_EXTRA_TRACKED_UIDS = [BACKEND_TRAFFIC_TRACKING_TEST_UID];
 
 const TOAST_GROUP_DELAY_MS = 750;
 const TOAST_DURATION_MS = 5000;
@@ -245,7 +247,7 @@ const shouldTrack = getUid => {
   if (!ENABLE_BACKEND_TRAFFIC_TOAST) return false;
   try {
     const uid = typeof getUid === 'function' ? getUid() : getUid;
-    return isAdminUid(uid);
+    return isAdminUid(uid) || BACKEND_TRAFFIC_EXTRA_TRACKED_UIDS.includes(uid);
   } catch (error) {
     return false;
   }

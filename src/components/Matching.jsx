@@ -57,6 +57,8 @@ import {
   ThirdPhoto,
   Title,
   TopActions,
+  BackendTrafficToggleButton,
+  BackendTrafficToggleStatus,
 } from './Matching.styled';
 import {
   fetchUsersByLastLogin2,
@@ -75,7 +77,13 @@ import {
   updateDataInFiresoreDB,
 } from './config';
 import { get as firebaseGet, onValue as firebaseOnValue, ref as refDb, query, orderByChild, orderByKey, startAt, endAt, limitToLast } from 'firebase/database';
-import { withAdminDownloadToast, wrapAdminOnValue } from 'utils/backendDownloadToast';
+import {
+  BACKEND_TRAFFIC_TRACKING_TEST_UID,
+  getBackendDownloadToastsEnabled,
+  setBackendDownloadToastsEnabled,
+  withAdminDownloadToast,
+  wrapAdminOnValue,
+} from 'utils/backendDownloadToast';
 
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
@@ -142,7 +150,7 @@ import {
 } from 'utils/reactionPriority';
 
 
-const DEBUG_ADDITIONAL_MATCHING_USER_ID = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_NEW_USER_ID = 'ID0001';
 const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
@@ -1381,6 +1389,7 @@ const Matching = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ownerId, setOwnerId] = useState(null);
+  const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
@@ -3298,6 +3307,16 @@ const Matching = () => {
     return () => observer.disconnect();
   }, [hasMore, loadMore, preLastCardNode, viewMode]);
 
+  useEffect(() => {
+    setBackendDownloadToastsEnabled(downloadSizeToastsEnabled);
+  }, [downloadSizeToastsEnabled]);
+
+  const handleDownloadSizeToastsToggle = () => {
+    setDownloadSizeToastsEnabled(prev => !prev);
+  };
+
+  const showBackendTrafficToggle = ownerId === BACKEND_TRAFFIC_TRACKING_TEST_UID;
+
   const dotsMenu = () => (
     <>
       {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
@@ -3394,6 +3413,27 @@ const Matching = () => {
               >
                 <FaHeart />
               </ActionButton>
+              {showBackendTrafficToggle && (
+                <BackendTrafficToggleButton
+                  type="button"
+                  $active={downloadSizeToastsEnabled}
+                  aria-pressed={downloadSizeToastsEnabled}
+                  title={
+                    downloadSizeToastsEnabled
+                      ? 'Вимкнути тости щодо розміру завантаження з бекенду'
+                      : 'Увімкнути тости щодо розміру завантаження з бекенду'
+                  }
+                  aria-label={
+                    downloadSizeToastsEnabled
+                      ? 'Вимкнути тости щодо розміру завантаження з бекенду'
+                      : 'Увімкнути тости щодо розміру завантаження з бекенду'
+                  }
+                  onClick={handleDownloadSizeToastsToggle}
+                >
+                  📦
+                  <BackendTrafficToggleStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</BackendTrafficToggleStatus>
+                </BackendTrafficToggleButton>
+              )}
               <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
             </TopActions>
           </HeaderContainer>
