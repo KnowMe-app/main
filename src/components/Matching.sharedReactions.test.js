@@ -32,6 +32,20 @@ describe('Matching shared reaction card UI', () => {
     loadedUsers.forEach`);
   });
 
+
+  it('reloads shared candidates when returning to default mode without shared id changes', () => {
+    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+    expect(source).toContain('const requestViewMode = viewMode;');
+    expect(source).toContain(`sharedReactionIds,
+    viewMode,
+  ]);
+
+  useEffect(() => {
+    loadSharedReactionCandidates();
+  }, [loadSharedReactionCandidates]);`);
+  });
+
   it('clears shared candidates when entering search so search renders only returned results', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 

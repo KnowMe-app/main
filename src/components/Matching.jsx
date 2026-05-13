@@ -2450,7 +2450,7 @@ const Matching = () => {
     const viewerId = ownerId || getOwnerId();
     const requestVersion = sharedReactionCandidateLoadVersionRef.current + 1;
     sharedReactionCandidateLoadVersionRef.current = requestVersion;
-    const requestViewMode = viewModeRef.current;
+    const requestViewMode = viewMode;
     const requestCollectionSource = collectionSource;
     const canApplySharedCandidateResult = () => shouldApplySharedReactionCandidateResult({
       requestVersion,
@@ -2614,6 +2614,7 @@ const Matching = () => {
     isAdmin,
     parsedAdditionalAccessRules.length,
     sharedReactionIds,
+    viewMode,
   ]);
 
   useEffect(() => {
