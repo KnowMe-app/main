@@ -14,6 +14,11 @@ import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getCurrentValue } from '../getCurrentValue';
+import {
+  CONTACT_LINK_BUILDERS,
+  getContactEntries,
+  getContactValues,
+} from '../contactMethods';
 import { color } from '../styles';
 
 const iconStyle = {
@@ -36,77 +41,13 @@ const phoneBtnStyle = {
   borderRadius: '50%',
 };
 
-const normalizeExternalUrl = value => {
-  const rawValue = String(value ?? '').trim();
-
-  if (!rawValue) {
-    return '';
-  }
-
-  if (/^[a-z][a-z\d+\-.]*:/i.test(rawValue)) {
-    return rawValue;
-  }
-
-  return `https://${rawValue}`;
-};
-
-
-const buildLinkedinUrl = value => {
-  const rawValue = String(value ?? '').trim();
-
-  if (!rawValue) {
-    return '';
-  }
-
-  if (/^[a-z][a-z\d+\-.]*:/i.test(rawValue)) {
-    return rawValue;
-  }
-
-  const normalizedValue = rawValue.replace(/^\/+/, '');
-
-  if (normalizedValue.startsWith('in/') || normalizedValue.startsWith('company/')) {
-    return `https://www.linkedin.com/${normalizedValue}`;
-  }
-
-  return `https://www.linkedin.com/in/${normalizedValue}`;
-};
-
-const buildTwitterUrl = value => {
-  const rawValue = String(value ?? '').trim();
-
-  if (!rawValue) {
-    return '';
-  }
-
-  if (/^[a-z][a-z\d+\-.]*:/i.test(rawValue)) {
-    return rawValue;
-  }
-
-  return `https://x.com/${rawValue.replace(/^@/, '')}`;
-};
-
 export const fieldContacts = (data, parentKey = '') => {
   if (!data || typeof data !== 'object') {
     console.error('Invalid data passed to renderContacts:', data);
     return null;
   }
 
-  const links = {
-    telegram: value => `https://t.me/${value}`,
-    instagram: value => `https://instagram.com/${value}`,
-    tiktok: value => `https://www.tiktok.com/@${value}`,
-    phone: value => `tel:${value}`,
-    facebook: value => `https://facebook.com/${value}`,
-    vk: value => `https://vk.com/${value}`,
-    linkedin: value => buildLinkedinUrl(value),
-    youtube: value => `https://www.youtube.com/@${value}`,
-    twitter: value => buildTwitterUrl(value),
-    otherLink: value => normalizeExternalUrl(value),
-    email: value => `mailto:${value}`,
-    telegramFromPhone: value => `https://t.me/${value.replace(/\s+/g, '')}`,
-    viberFromPhone: value => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`,
-    whatsappFromPhone: value => `https://wa.me/${value.replace(/\s+/g, '')}`,
-  };
+  const links = CONTACT_LINK_BUILDERS;
 
   const icons = {
     facebook: <FaFacebookF style={iconStyle} />,
@@ -396,43 +337,14 @@ export const fieldContactsIcons = (
     return null;
   }
 
-  const links = {
-    telegram: value => `https://t.me/${value}`,
-    instagram: value => `https://instagram.com/${value}`,
-    tiktok: value => `https://www.tiktok.com/@${value}`,
-    phone: value => `tel:${value}`,
-    facebook: value => `https://facebook.com/${value}`,
-    vk: value => `https://vk.com/${value}`,
-    linkedin: value => buildLinkedinUrl(value),
-    youtube: value => `https://www.youtube.com/@${value}`,
-    twitter: value => buildTwitterUrl(value),
-    otherLink: value => normalizeExternalUrl(value),
-    email: value => `mailto:${value}`,
-    telegramFromPhone: value => `https://t.me/${value.replace(/\s+/g, '')}`,
-    viberFromPhone: value => `viber://chat?number=%2B${value.replace(/\s+/g, '')}`,
-    whatsappFromPhone: value => `https://wa.me/${value.replace(/\s+/g, '')}`,
-  };
+  const links = CONTACT_LINK_BUILDERS;
 
   const processed = Object.fromEntries(
     Object.entries(data).map(([k, v]) => [k, getCurrentValue(v)])
   );
 
-  // Filter out telegram links starting with "УК СМ"
-  const telegramValues = processed.telegram
-    ? Array.isArray(processed.telegram)
-      ? processed.telegram.filter(
-          v => v && !String(v).trim().startsWith('УК СМ')
-        )
-      : String(processed.telegram).trim().startsWith('УК СМ')
-        ? []
-        : [processed.telegram]
-    : [];
-
-  const phoneValues = processed.phone
-    ? Array.isArray(processed.phone)
-      ? processed.phone.filter(v => v)
-      : [processed.phone]
-    : [];
+  const telegramValues = getContactValues(data, 'telegram');
+  const phoneValues = getContactValues(data, 'phone');
 
   const iconStyle = {
     verticalAlign: 'middle',
@@ -632,6 +544,24 @@ export const fieldContactsIcons = (
       </a>
     );
   }
+
+
+  getContactEntries(data)
+    .filter(({ key }) => ['whatsapp', 'viber', 'website'].includes(key))
+    .forEach(({ key, href }, idx) => {
+      const Icon = key === 'whatsapp' ? FaWhatsapp : key === 'viber' ? FaViber : FaGlobe;
+      elements.push(
+        <a
+          key={`${key}-${idx}`}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={linkStyle}
+        >
+          <Icon style={iconStyle} />
+        </a>
+      );
+    });
 
   if (processed.otherLink) {
     const others = Array.isArray(processed.otherLink)

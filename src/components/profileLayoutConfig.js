@@ -2,6 +2,7 @@ import { getCurrentValue } from './getCurrentValue';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
+import { CONTACT_FIELDS, getContactValues } from './contactMethods';
 
 const EMPTY_VALUES = new Set(['', '-', '—', 'n/a', 'na', 'null', 'undefined', 'none', 'немає', 'нет']);
 
@@ -22,12 +23,12 @@ export const normalizeDisplayValue = value => {
 export const shouldRenderField = value => Boolean(normalizeDisplayValue(value));
 
 export const getProfileRole = user => {
-  const role = normalizeDisplayValue(user?.userRole || user?.role).toLowerCase();
-  if (role === 'ed') return 'ed';
-  if (role === 'ag') return 'ag';
-  if (role === 'ip') return 'ip';
+  const role = normalizeDisplayValue(user?.role || user?.userRole).toLowerCase();
+  if (['ed', 'egg donor', 'egg_donor'].includes(role)) return 'ed';
+  if (['ag', 'agency'].includes(role)) return 'ag';
+  if (['ip', 'intended parents', 'intended_parent'].includes(role)) return 'ip';
   if (user?.__sourceCollection === 'newUsers' && !role) return 'ed';
-  return role || 'other';
+  return 'other';
 };
 
 export const getRoleLabel = role => {
@@ -169,7 +170,6 @@ const sectionConfig = {
     { title: 'Donation experience', fields: [
       field('experience', 'Previous donation'), field('donationCount', 'Donation count'), field('donationsCount', 'Donations'),
       field('cSection', 'C-section', user => user?.cSection || user?.csection || user?.c_section || user?.cesareanSection, ['cSection', 'csection', 'c_section', 'cesareanSection']),
-      field('reward', 'Expected reward'),
     ] },
   ],
   ip: [
@@ -195,10 +195,13 @@ export const getHeroFields = (user, role = getProfileRole(user), { excludeKeys =
 export const getQuickFacts = (user, role = getProfileRole(user), { excludeKeys = [] } = {}) =>
   toDisplayFields(quickFacts[role] || quickFacts.other, user, excludeKeys).slice(0, 8);
 
-const contactFields = [
-  field('phone', 'Phone'), field('telegram', 'Telegram'), field('whatsapp', 'WhatsApp'), field('email', 'Email'),
-  field('vk', 'VK'), field('instagram', 'Instagram'), field('website', 'Website'),
-];
+const contactFields = CONTACT_FIELDS.map(key =>
+  field(
+    key,
+    key === 'otherLink' ? 'Other link' : key.charAt(0).toUpperCase() + key.slice(1),
+    user => getContactValues(user, key).join(', ')
+  )
+);
 
 export const getProfileSections = (user, role = getProfileRole(user), { excludeKeys = [] } = {}) => {
   const sections = (sectionConfig[role] || sectionConfig.other).map(section => ({

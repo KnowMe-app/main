@@ -960,6 +960,72 @@ export const ModernGalleryImage = styled.img`
   background: #2a251f;
 `;
 
+
+export const ModernContactLinks = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+`;
+
+export const ModernContactLink = styled.a`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: ${({ $role }) => getRoleColors($role).light};
+  border: 1px solid ${({ $role }) => getRoleColors($role).border};
+  color: ${({ $role }) => getRoleColors($role).text};
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  text-decoration: none;
+
+  svg {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+  }
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+`;
+
+export const ModernDesktopNavButton = styled.button`
+  position: absolute;
+  top: 50%;
+  ${({ $side }) => ($side === 'left' ? 'left: 8px;' : 'right: 8px;')}
+  transform: translateY(-50%);
+  z-index: 9;
+  width: 34px;
+  height: 54px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 999px;
+  background: rgba(21, 18, 15, 0.42);
+  color: rgba(255, 255, 255, 0.84);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: opacity 0.2s ease, background 0.2s ease;
+
+  &:hover:not(:disabled),
+  &:focus-visible:not(:disabled) {
+    background: rgba(21, 18, 15, 0.68);
+    color: #fff;
+  }
+
+  &:disabled {
+    opacity: 0.24;
+    cursor: default;
+  }
+`;
+
 export const ModernActionRail = styled.div`
   position: absolute;
   left: 0;

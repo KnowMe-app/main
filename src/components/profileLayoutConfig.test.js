@@ -92,4 +92,40 @@ describe('profileLayoutConfig', () => {
     expect(agencyDetails.fields.map(field => field.key)).toEqual(['agencyName']);
     expect(contacts.fields.map(field => field.key)).toEqual(['telegram', 'website']);
   });
+
+  it('does not render expected reward anywhere in Matching layout sections', () => {
+    const user = {
+      role: 'ed',
+      reward: '5000 EUR',
+      desiredReward: '6000 EUR',
+      height: 170,
+      weight: 60,
+      experience: 'Yes',
+    };
+
+    const hero = getHeroFields(user, 'ed');
+    const quickFacts = getQuickFacts(user, 'ed', { excludeKeys: collectKeys(hero) });
+    const sections = getProfileSections(user, 'ed', { excludeKeys: collectKeys([...hero, ...quickFacts]) });
+    const allFields = [...hero, ...quickFacts, ...sections.flatMap(section => section.fields)];
+
+    expect(allFields.map(field => field.key)).not.toEqual(expect.arrayContaining(['reward', 'desiredReward']));
+    expect(allFields.map(field => field.label.toLowerCase())).not.toEqual(expect.arrayContaining(['expected reward', 'desired reward']));
+    expect(allFields.map(field => field.value)).not.toEqual(expect.arrayContaining(['5000 EUR', '6000 EUR']));
+  });
+
+  it('prefers canonical role over stale userRole and normalizes aliases', () => {
+    const user = {
+      role: 'agency',
+      userRole: 'ed',
+      agencyName: 'Canonical Agency',
+      services: 'Matching',
+    };
+
+    expect(getProfileRole(user)).toBe('ag');
+    expect(getProfileSections(user).map(section => section.title)).toEqual(expect.arrayContaining(['Agency details']));
+    expect(getProfileRole({ role: 'egg_donor' })).toBe('ed');
+    expect(getProfileRole({ role: 'intended parents' })).toBe('ip');
+    expect(getProfileRole({ role: 'sm' })).toBe('other');
+  });
+
 });
