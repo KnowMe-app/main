@@ -162,7 +162,7 @@ const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_NEW_USER_ID = 'ID0001';
 const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
 const ADDITIONAL_MATCHING_LOG_LIMIT = 300;
-const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false });
+const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false, accessSnapshotKey: '' });
 
 const shouldDebugAdditionalMatching = (...ids) =>
   ids.some(id => String(id || '').trim() === DEBUG_ADDITIONAL_MATCHING_USER_ID);
@@ -349,6 +349,21 @@ const stableAdditionalSignature = value => {
 const getRawRulesSignature = rawRules => stableAdditionalSignature(String(rawRules || ''));
 const getSearchKeySetsOfExactUserSignature = keys =>
   stableAdditionalSignature(sortAdditionalSearchKeySetKeys(normalizeSearchKeySetKeys(keys)));
+
+const buildAdditionalAccessSnapshotKey = ({
+  accessUserId = '',
+  collectionSource = '',
+  rawRules = '',
+  searchKeySetKeys = [],
+  searchKeySetsOfExactUser,
+} = {}) => stableAdditionalSignature({
+  accessUserId: String(accessUserId || '').trim(),
+  collectionSource,
+  rawRulesSignature: getRawRulesSignature(rawRules),
+  searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(
+    searchKeySetsOfExactUser ?? searchKeySetKeys
+  ),
+});
 async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserId) {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   const keysFromProfile = getAdditionalSearchKeySetKeysFromProfile(profile);
@@ -1412,7 +1427,54 @@ const Matching = () => {
     additionalProfileRequestVersionRef.current = profileRequestVersion;
     const profilePath = `fetchUserById(${normalizedAccessUserId})`;
     try {
-      const profile = await fetchUserById(normalizedAccessUserId) || {};
+      const fetchedProfile = await fetchUserById(normalizedAccessUserId);
+      const profileFound = Boolean(fetchedProfile && typeof fetchedProfile === 'object');
+
+      if (!profileFound) {
+        const fallbackSearchKeySetsOfExactUser = areSearchKeySetKeysForAccessUserId(
+          state.currentSearchKeySetKeys,
+          normalizedAccessUserId
+        )
+          ? state.currentSearchKeySetKeys
+          : await resolveAdditionalSearchKeySetKeysForMatching(null, normalizedAccessUserId);
+        const fallbackCache = {
+          accessUserId: normalizedAccessUserId,
+          rawRulesSignature: getRawRulesSignature(state.currentAdditionalAccessRules),
+          searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(fallbackSearchKeySetsOfExactUser),
+          collectionSource: state.collectionSource,
+          profile: cached?.profile || {},
+          accessLevel: cached?.accessLevel || '',
+          rawRules: state.currentAdditionalAccessRules || '',
+          searchKeySetsOfExactUser: fallbackSearchKeySetsOfExactUser,
+          cachedAt: cached?.cachedAt || Date.now(),
+          profilePath,
+          profileFound: false,
+        };
+
+        logAdditionalMatchingDebug(normalizedAccessUserId, 'profile refetch returned empty; keeping current access state', {
+          firebasePath: profilePath,
+          rawRules: fallbackCache.rawRules,
+          searchKeySetsOfExactUser: fallbackSearchKeySetsOfExactUser,
+          metadata: {
+            accessUserId: fallbackCache.accessUserId,
+            rawRulesSignature: fallbackCache.rawRulesSignature,
+            searchKeySetsOfExactUserSignature: fallbackCache.searchKeySetsOfExactUserSignature,
+            collectionSource: fallbackCache.collectionSource,
+          },
+          staleReasons,
+          paginationInvalidationReasons,
+        });
+
+        return {
+          ...fallbackCache,
+          cacheHit: true,
+          profileRefreshFailed: true,
+          staleReasons,
+          paginationInvalidationReasons: [],
+        };
+      }
+
+      const profile = fetchedProfile;
       const accessLevel = profile?.accessLevel || '';
       const additionalAccessRules = profile?.additionalAccessRules || '';
       const searchKeySetsOfExactUser = await resolveAdditionalSearchKeySetKeysForMatching(profile, normalizedAccessUserId);
@@ -1448,6 +1510,7 @@ const Matching = () => {
       const freshCache = {
         ...freshMetadata,
         profile,
+        profileFound: true,
         accessLevel,
         rawRules: additionalAccessRules,
         searchKeySetsOfExactUser,
@@ -2376,28 +2439,31 @@ const Matching = () => {
     }, {});
   }, []);
 
-  const getAccessibleReactionIds = React.useCallback(async reactionIds => {
+  const getAccessibleReactionIds = React.useCallback(async (reactionIds, accessSnapshot = {}) => {
     const uniqueIds = [...new Set((reactionIds || []).filter(Boolean))];
     if (collectionSource !== 'newUsers') {
       return uniqueIds.filter(isValidId);
     }
 
+    const rawRulesForRequest = accessSnapshot.rawRules ?? currentAdditionalAccessRules;
+    const parsedRulesForRequest = parseAdditionalAccessRuleGroups(rawRulesForRequest);
+    const searchKeySetsForRequest = accessSnapshot.searchKeySetsOfExactUser ?? currentSearchKeySetKeys;
     const newUserReactionIds = uniqueIds.filter(isShortId);
-    if (parsedAdditionalAccessRules.length === 0) {
+    if (parsedRulesForRequest.length === 0) {
       return newUserReactionIds;
     }
 
-    const viewerId = ownerId || getOwnerId();
+    const viewerId = accessSnapshot.accessUserId || ownerId || getOwnerId();
     if (!viewerId) return [];
 
-    const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(currentSearchKeySetKeys, viewerId)
-      ? currentSearchKeySetKeys
+    const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(searchKeySetsForRequest, viewerId)
+      ? searchKeySetsForRequest
       : await resolveAdditionalSearchKeySetKeysForMatching(null, viewerId);
 
     if (!resolvedSearchKeySetKeys.length) return [];
 
     const indexed = await getIndexedNewUsersIdsByRules({
-      rawRules: currentAdditionalAccessRules,
+      rawRules: rawRulesForRequest,
       accessUserId: viewerId,
       searchKeySetsOfExactUser: resolvedSearchKeySetKeys,
       fetchMissingBuckets: true,
@@ -2414,7 +2480,6 @@ const Matching = () => {
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
     ownerId,
-    parsedAdditionalAccessRules.length,
   ]);
 
   const loadReactionCardsPage = React.useCallback(async ({
@@ -2539,7 +2604,14 @@ const Matching = () => {
       const reactionMap = isFavoritesMode ? favMap : disMap;
       const listKey = isFavoritesMode ? 'favorite' : 'dislike';
       const fullReactionIds = Object.keys(reactionMap);
-      const reactionIds = await getAccessibleReactionIds(fullReactionIds);
+      const reactionAccessSnapshot = {
+        accessUserId: ownerId || getOwnerId(),
+        collectionSource,
+        rawRules: currentAdditionalAccessRules,
+        searchKeySetsOfExactUser: currentSearchKeySetKeys,
+      };
+      const reactionAccessSnapshotKey = buildAdditionalAccessSnapshotKey(reactionAccessSnapshot);
+      const reactionIds = await getAccessibleReactionIds(fullReactionIds, reactionAccessSnapshot);
       if (!canApplyReactionLoad()) return;
       setIdsForQuery(listKey, reactionIds);
       if (isFavoritesMode) setFavoriteIds(favMap);
@@ -2578,6 +2650,7 @@ const Matching = () => {
           ids: reactionIds,
           nextOffset: page.nextOffset,
           hasMore: nextHasMore,
+          accessSnapshotKey: reactionAccessSnapshotKey,
         },
       }));
       setHasMore(nextHasMore);
@@ -2671,14 +2744,41 @@ const Matching = () => {
           ? favoriteUsersRef.current
           : dislikeUsersRef.current;
         const currentPagination = reactionPaginationByType[viewMode] || buildEmptyReactionPagination();
-        const reactionIds = currentPagination.ids.length > 0
-          ? currentPagination.ids
-          : await getAccessibleReactionIds(Object.keys(reactionMap));
-        const loadedIds = reactionLoadedIdsRef.current[viewMode] || new Set();
+        const shouldRefreshReactionIds = collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0;
+        const freshProfileCache = shouldRefreshReactionIds
+          ? await ensureFreshAdditionalMatchingProfile({
+            accessUserId: ownerId,
+            reason: `load-more-${viewMode}-reaction-access`,
+          })
+          : null;
+
+        if (!canApplyLoadMoreResult()) return;
+
+        const reactionAccessSnapshot = {
+          accessUserId: ownerId || getOwnerId(),
+          collectionSource,
+          rawRules: freshProfileCache?.rawRules ?? currentAdditionalAccessRules,
+          searchKeySetsOfExactUser: freshProfileCache?.searchKeySetsOfExactUser ?? currentSearchKeySetKeys,
+        };
+        const reactionAccessSnapshotKey = buildAdditionalAccessSnapshotKey(reactionAccessSnapshot);
+        const didAccessSnapshotChange = Boolean(
+          shouldRefreshReactionIds &&
+          currentPagination.ids.length > 0 &&
+          currentPagination.accessSnapshotKey !== reactionAccessSnapshotKey
+        );
+        const reactionIds = shouldRefreshReactionIds || currentPagination.ids.length === 0
+          ? await getAccessibleReactionIds(Object.keys(reactionMap), reactionAccessSnapshot)
+          : currentPagination.ids;
+
+        if (!canApplyLoadMoreResult()) return;
+
+        const loadedIds = didAccessSnapshotChange
+          ? new Set()
+          : (reactionLoadedIdsRef.current[viewMode] || new Set());
         const page = await loadReactionCardsPage({
           reactionIds,
           reactionMap,
-          offset: currentPagination.ids.length > 0 ? currentPagination.nextOffset : 0,
+          offset: didAccessSnapshotChange || currentPagination.ids.length === 0 ? 0 : currentPagination.nextOffset,
           limit: LOAD_MORE,
           loadedIds,
         });
@@ -2702,6 +2802,7 @@ const Matching = () => {
             ids: reactionIds,
             nextOffset: page.nextOffset,
             hasMore: page.hasMore,
+            accessSnapshotKey: reactionAccessSnapshotKey,
           },
         }));
         setHasMore(page.hasMore);
