@@ -49,11 +49,14 @@ export const InnerContainer = styled.div`
 
 export const Grid = styled.div`
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-wrap: nowrap;
+  gap: 0;
   padding: 0 10px;
   margin-bottom: 8px;
   justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 `;
 
 export const LoadMoreFooter = styled.div`
@@ -67,6 +70,7 @@ export const LoadMoreFooter = styled.div`
 export const CardContainer = styled.div`
   position: relative;
   width: 100%;
+  max-width: 100%;
 `;
 
 export const NextPhoto = styled.img`
@@ -121,6 +125,7 @@ export const ThirdInfoCard = styled(NextInfoCard)`
 export const CardWrapper = styled.div`
   position: relative;
   width: 100%;
+  max-width: 100%;
   border: 1px solid ${props => props.$role ? getRoleColors(props.$role).border : 'rgba(214, 193, 163, 0.35)'};
   border-top: 3px solid ${props => props.$role ? getRoleColors(props.$role).accent : color.accent5};
   border-radius: ${STACK_CARD_RADIUS};
@@ -718,24 +723,24 @@ const slideRight = keyframes`
   }
 `;
 
-const escapeCssUrl = value =>
-  String(value)
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\a ')
-    .replace(/\r/g, '\\d ')
-    .replace(/\f/g, '\\c ');
+export const AnimatedCard = styled(Card)`
+  ${({ $activeProfile }) => $activeProfile && `
+    height: min(760px, calc(100dvh - 112px));
+    min-height: 480px;
+    aspect-ratio: auto;
+    padding-bottom: 0;
+    background: transparent;
+    box-shadow: none;
+    border: none;
 
-const getBackgroundImageStyle = backgroundImage =>
-  backgroundImage ? `url("${escapeCssUrl(backgroundImage)}")` : undefined;
-
-export const AnimatedCard = styled(Card).attrs(({ $backgroundImage, style }) => ({
-  style: {
-    ...style,
-    backgroundImage: getBackgroundImageStyle($backgroundImage),
-  },
-}))`
-  background-color: ${({ $backgroundImage }) => ($backgroundImage ? 'transparent' : '#fff')};
+    &::after {
+      display: none;
+    }
+  `}
+  ${({ $backgroundImage }) =>
+    $backgroundImage
+      ? `background-image: url(${$backgroundImage}); background-color: transparent;`
+      : 'background-color: #fff;'}
   animation: ${({ $dir }) =>
     $dir === 'left'
       ? slideLeft
@@ -747,4 +752,249 @@ export const AnimatedCard = styled(Card).attrs(({ $backgroundImage, style }) => 
 export const OwnerStatusMessage = styled.p`
   text-align: center;
   padding: 0 10px;
+`;
+
+export const ModernProfileShell = styled.div`
+  position: relative;
+  height: 100%;
+  background: #15120f;
+  color: #fff;
+  border-radius: ${STACK_CARD_RADIUS};
+  overflow: hidden;
+  touch-action: pan-y;
+`;
+
+export const ModernProfileScroll = styled.div`
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+`;
+
+export const ModernHero = styled.div`
+  position: relative;
+  min-height: min(430px, 62dvh);
+  background:
+    ${({ $image }) => $image ? `linear-gradient(180deg, rgba(13, 10, 8, 0.05) 0%, rgba(13, 10, 8, 0.18) 45%, rgba(13, 10, 8, 0.9) 100%), url(${$image})` : 'radial-gradient(circle at 22% 18%, rgba(247, 147, 30, 0.44), transparent 32%), linear-gradient(145deg, #2a211b 0%, #111015 58%, #060507 100%)'};
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: flex-end;
+  padding: 22px 18px 88px;
+  box-sizing: border-box;
+`;
+
+export const ModernHeroFallbackMark = styled.div`
+  position: absolute;
+  inset: 72px 0 auto;
+  margin: auto;
+  width: 104px;
+  height: 104px;
+  border-radius: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  background: rgba(255, 255, 255, 0.11);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(12px);
+`;
+
+export const ModernHeroContent = styled.div`
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
+`;
+
+export const ModernRoleBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-bottom: 10px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: #fff;
+  background: ${({ $role }) => getRoleColors($role).accent};
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+`;
+
+export const ModernHeroTitle = styled.h2`
+  margin: 0;
+  color: #fff;
+  font-size: clamp(30px, 8vw, 42px);
+  line-height: 0.98;
+  font-weight: 900;
+`;
+
+export const ModernHeroLocation = styled.p`
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 14px;
+  font-weight: 600;
+`;
+
+export const ModernHeroFacts = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 14px;
+`;
+
+export const ModernFactPill = styled.span`
+  display: inline-flex;
+  gap: 5px;
+  align-items: baseline;
+  max-width: 100%;
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+  font-size: 12px;
+  line-height: 1.1;
+
+  strong {
+    color: rgba(255, 255, 255, 0.64);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+`;
+
+export const ModernProfileBody = styled.div`
+  position: relative;
+  z-index: 3;
+  margin-top: -46px;
+  padding: 0 12px 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+`;
+
+export const ModernSection = styled.section`
+  background: rgba(255, 253, 248, 0.97);
+  color: #242127;
+  border-radius: 20px;
+  padding: 14px;
+  box-shadow: 0 16px 40px rgba(10, 8, 6, 0.17);
+`;
+
+export const ModernSectionTitle = styled.h3`
+  margin: 0 0 10px;
+  color: #211d19;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.2px;
+`;
+
+export const ModernChipGrid = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+`;
+
+export const ModernChip = styled.div`
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: ${({ $role }) => getRoleColors($role).light};
+  border: 1px solid ${({ $role }) => getRoleColors($role).border};
+  color: #25222a;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.15;
+
+  strong {
+    color: ${({ $role }) => getRoleColors($role).text};
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.55px;
+  }
+`;
+
+export const ModernBioText = styled.p`
+  margin: 0;
+  color: #3d3a42;
+  white-space: pre-line;
+  font-size: 14px;
+  line-height: 1.48;
+`;
+
+export const ModernMoreButton = styled.button`
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: ${color.accent5};
+  font-weight: 900;
+  cursor: pointer;
+`;
+
+export const ModernGallery = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+`;
+
+export const ModernGalleryImage = styled.img`
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 14px;
+  background: #2a251f;
+`;
+
+export const ModernActionRail = styled.div`
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14px;
+  z-index: 8;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 18px;
+  pointer-events: none;
+
+  & > span {
+    pointer-events: auto;
+  }
+
+  button {
+    position: static !important;
+    width: 52px !important;
+    height: 52px !important;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28) !important;
+  }
+`;
+
+export const ModernSwipeHint = styled.div`
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: rgba(255,255,255,0.82);
+  background: rgba(0,0,0,0.2);
+  border: 1px solid rgba(255,255,255,0.12);
+  font-size: 11px;
+  font-weight: 800;
+  backdrop-filter: blur(8px);
 `;
