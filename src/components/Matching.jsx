@@ -2,15 +2,12 @@ import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 're
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
-import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import {
   ActionButton,
   AdminToggle,
   AnimatedCard,
-  BasicInfo,
   CardContainer,
   CardCount,
-  CardInfo,
   CardWrapper,
   ClickableId,
   CollectionSourceLabel,
@@ -18,45 +15,44 @@ import {
   CollectionSourceWrap,
   CommentBox,
   CommentInput,
-  Contact,
   Container,
-  DonorName,
-  EggDonorPhotoLocation,
   ExitButton,
   FilterContainer,
   FilterOverlay,
   FilterResetButton,
-  getRoleColors,
   Grid,
   HeaderContainer,
-  HeaderIdentityRow,
-  HeaderIdentityRowSpaced,
-  HeaderRow,
-  Icons,
-  IconsTrailing,
-  Info,
-  InfoSlide,
   InnerContainer,
   LoadMoreButton,
   LoadMoreFooter,
-  LocationLine,
-  MoreInfo,
-  NextInfoCard,
-  NextPhoto,
   OwnerStatusMessage,
-  ProfileSection,
-  RoleHeader,
   SharedCommentText,
   SkeletonCardInner,
   SkeletonInfo,
   SkeletonLine,
   SkeletonPhoto,
   SubmitButton,
-  Table,
-  ThirdInfoCard,
-  ThirdPhoto,
-  Title,
   TopActions,
+  ModernActionRail,
+  ModernBioText,
+  ModernChip,
+  ModernChipGrid,
+  ModernFactPill,
+  ModernGallery,
+  ModernGalleryImage,
+  ModernHero,
+  ModernHeroContent,
+  ModernHeroFacts,
+  ModernHeroFallbackMark,
+  ModernHeroLocation,
+  ModernHeroTitle,
+  ModernMoreButton,
+  ModernProfileBody,
+  ModernProfileScroll,
+  ModernProfileShell,
+  ModernRoleBadge,
+  ModernSection,
+  ModernSectionTitle,
   BackendTrafficToggleButton,
   BackendTrafficToggleStatus,
 } from './Matching.styled';
@@ -89,7 +85,6 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
-import { fieldContactsIcons } from './smallCard/fieldContacts';
 import SearchBar from './SearchBar';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -101,10 +96,17 @@ import InfoModal from './InfoModal';
 import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaDownload } from 'react-icons/fa';
 import { handleEmptyFetch } from './loadMoreUtils';
 import {
-  normalizeCountry,
-  normalizeRegion,
-} from './normalizeLocation';
-import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
+  getHeroFields,
+  getProfileAge,
+  getProfileBio,
+  getProfileLocation,
+  getProfileName,
+  getProfilePhotos,
+  getProfileRole,
+  getProfileSections,
+  getQuickFacts,
+  getRoleLabel,
+} from './profileLayoutConfig';
 import {
   cacheFavoriteUsers,
   syncFavorites,
@@ -792,31 +794,50 @@ const MatchingSkeleton = ({ $small }) => (
   </CardWrapper>
 );
 
-// Fields to display in the details modal
-const FIELDS = [
-  { key: 'height', label: 'Height (cm)' },
-  { key: 'weight', label: 'Weight (kg)' },
-  { key: 'bmi', label: 'BMI' },
-  { key: 'clothingSize', label: 'Clothing size' },
-  { key: 'shoeSize', label: 'Shoe size' },
-  { key: 'blood', label: 'Rh' },
-  { key: 'eyeColor', label: 'Eyes' },
-  { key: 'glasses', label: 'Glasses' },
-  { key: 'race', label: 'Race' },
-  { key: 'hairColor', label: 'Hair color' },
-  { key: 'hairStructure', label: 'Hair structure' },
-  { key: 'chin', label: 'Chin' },
-  { key: 'breastSize', label: 'Breast size' },
-  { key: 'bodyType', label: 'Body type' },
-  { key: 'maritalStatus', label: 'Marital status' },
-  { key: 'ownKids', label: 'Own kids' },
-  { key: 'faceShape', label: 'Face shape' },
-  { key: 'noseShape', label: 'Nose shape' },
-  { key: 'lipsShape', label: 'Lips shape' },
-  { key: 'reward', label: 'Expected reward $' },
-  { key: 'experience', label: 'Donation exp' },
+
+const collectProfileFieldKeys = fields => [
+  ...new Set(
+    (fields || []).flatMap(field => [field.key, ...(field.sourceKeys || [])].filter(Boolean))
+  ),
 ];
-const MAIN_INFO_FIELDS_LIMIT = 15;
+
+const ProfileChips = ({ fields, role }) => {
+  if (!fields.length) return null;
+  return (
+    <ModernChipGrid>
+      {fields.map(field => (
+        <ModernChip key={`${field.key}-${field.label}`} $role={role}>
+          <strong>{field.label}</strong>
+          <span>{field.value}</span>
+        </ModernChip>
+      ))}
+    </ModernChipGrid>
+  );
+};
+
+const ProfileBio = ({ text }) => {
+  const [expanded, setExpanded] = useState(false);
+  if (!text) return null;
+  const shouldCollapse = text.length > 230;
+  const displayText = shouldCollapse && !expanded ? `${text.slice(0, 230).trim()}…` : text;
+  return (
+    <ModernSection>
+      <ModernSectionTitle>About</ModernSectionTitle>
+      <ModernBioText>{displayText}</ModernBioText>
+      {shouldCollapse && (
+        <ModernMoreButton
+          type="button"
+          onClick={e => {
+            e.stopPropagation();
+            setExpanded(value => !value);
+          }}
+        >
+          {expanded ? 'less' : 'more'}
+        </ModernMoreButton>
+      )}
+    </ModernSection>
+  );
+};
 
 const SwipeableCard = ({
   user,
@@ -833,459 +854,189 @@ const SwipeableCard = ({
   setOwnFavoriteUsers,
   ownDislikeUsers,
   setOwnDislikeUsers,
-  viewMode,
   handleRemove,
   togglePublish,
   multiDataOwnerId,
+  onNavigate,
+  commentValue,
+  sharedCommentTexts = [],
+  onCommentChange,
+  onCommentBlur,
+  onAdminEdit,
 }) => {
-  const moreInfo = getCurrentValue(user.moreInfo_main);
-  const profession = getCurrentValue(user.profession);
-  const education = getCurrentValue(user.education);
-  const { mainFields, extraFields } = splitSelectedFields(user, { isAdmin });
-  const showDescriptionSlide = Boolean(
-    moreInfo || profession || education || extraFields.length > 0
-  );
-
-  const slides = React.useMemo(() => {
-    const photosArr = Array.isArray(user.photos)
-      ? user.photos.filter(Boolean).map(convertDriveLinkToImage)
-      : [getCurrentValue(user.photos)]
-          .filter(Boolean)
-          .map(convertDriveLinkToImage);
-    let base;
-    if (role === 'ag') {
-      base = ['main'];
-    } else {
-      base = photo ? ['main', 'info'] : ['info'];
-    }
-    if (showDescriptionSlide) base.push('description');
-    base.push(...photosArr.slice(1));
-    return base;
-  }, [user.photos, showDescriptionSlide, photo, role]);
-
-  const [index, setIndex] = useState(0);
+  const resolvedRole = getProfileRole(user) || role;
+  const photos = getProfilePhotos(user);
+  const heroPhoto = photo || photos[0] || '';
+  const galleryPhotos = photos.filter(item => item && item !== heroPhoto);
+  const [activeHeroPhoto, setActiveHeroPhoto] = useState(heroPhoto);
   const [dir, setDir] = useState(null);
-  const startX = useRef(null);
-  const wasSwiped = useRef(false);
+  const favoriteButtonWrapRef = useRef(null);
+  const dislikeButtonWrapRef = useRef(null);
+  const touchStart = useRef(null);
+  const swipedRef = useRef(false);
 
+  useEffect(() => {
+    setActiveHeroPhoto(heroPhoto);
+  }, [heroPhoto, user.userId]);
+
+  useEffect(() => {
+    if (!dir) return undefined;
+    const t = setTimeout(() => setDir(null), 260);
+    return () => clearTimeout(t);
+  }, [dir]);
+
+  const name = getProfileName(user) || nameParts || getRoleLabel(resolvedRole);
+  const age = getProfileAge(user);
+  const title = `${name}${age ? `, ${age}` : ''}`;
+  const roleLabel = getRoleLabel(resolvedRole);
+  const locationInfo = getProfileLocation(user);
+  const heroFields = getHeroFields(user, resolvedRole);
+  const heroFieldKeys = collectProfileFieldKeys(heroFields);
+  const quickFacts = getQuickFacts(user, resolvedRole, { excludeKeys: heroFieldKeys });
+  const usedSummaryFieldKeys = collectProfileFieldKeys([...heroFields, ...quickFacts]);
+  const sections = getProfileSections(user, resolvedRole, { excludeKeys: usedSummaryFieldKeys });
+  const bio = getProfileBio(user);
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join('') || roleLabel.slice(0, 2).toUpperCase();
   const handleTouchStart = e => {
-    if (slides.length <= 1) return;
-    if (e.touches && e.touches.length > 0) {
-      startX.current = e.touches[0].clientX;
-    }
+    if (!e.touches || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    touchStart.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleTouchMove = e => {
+    if (!touchStart.current || !e.touches || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - touchStart.current.x;
+    const dy = touch.clientY - touchStart.current.y;
+    if (Math.abs(dx) > 16 && Math.abs(dx) > Math.abs(dy) * 1.25) e.preventDefault();
   };
 
   const handleTouchEnd = e => {
-    if (slides.length <= 1) return;
-    if (startX.current === null) return;
-    const deltaX = e.changedTouches[0].clientX - startX.current;
-    if (deltaX > 50) {
-      setDir('right');
-      setIndex(i => (i - 1 + slides.length) % slides.length);
-      wasSwiped.current = true;
-      setTimeout(() => {
-        wasSwiped.current = false;
-      }, 50);
-    } else if (deltaX < -50) {
-      setDir('left');
-      setIndex(i => (i + 1) % slides.length);
-      wasSwiped.current = true;
-      setTimeout(() => {
-        wasSwiped.current = false;
-      }, 50);
+    if (!touchStart.current || !e.changedTouches || e.changedTouches.length !== 1) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - touchStart.current.x;
+    const dy = touch.clientY - touchStart.current.y;
+    touchStart.current = null;
+    if (Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+    const direction = dx > 0 ? 'right' : 'left';
+    swipedRef.current = true;
+    setDir(direction);
+    if (typeof onNavigate === 'function') {
+      onNavigate(direction === 'left' ? 1 : -1);
     }
-    startX.current = null;
+    setTimeout(() => {
+      swipedRef.current = false;
+    }, 80);
   };
 
-  useEffect(() => {
-    if (dir) {
-      const t = setTimeout(() => setDir(null), 300);
-      return () => clearTimeout(t);
-    }
-  }, [dir]);
-
-  const handleClick = e => {
-    if (wasSwiped.current) {
-      wasSwiped.current = false;
-      return;
-    }
-    if (slides.length > 1) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      if (clickX > rect.width / 2) {
-        setDir('left');
-        setIndex(i => (i + 1) % slides.length);
-      } else {
-        setDir('right');
-        setIndex(i => (i - 1 + slides.length) % slides.length);
-      }
-    }
+  const handleClick = () => {
+    if (swipedRef.current) swipedRef.current = false;
   };
-
-  const current = slides[index];
-  const backgroundImage =
-    current === 'main'
-      ? photo
-      : current !== 'description' && current !== 'info'
-      ? current
-      : '';
-
-  const displayName = [
-    getCurrentValue(user.name),
-    getCurrentValue(user.surname),
-  ]
-    .filter(Boolean)
-    .map(v => String(v).trim())
-    .join(' ');
-  const isEggDonor = (role || '').includes('ed');
-  const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
-  const selectedFields = mainFields;
-  const regionInfo = normalizeRegion(getCurrentValue(user.region));
-  const cityInfo = getCurrentValue(user.city);
-  const locationInfo = isEggDonor
-    ? regionInfo || ''
-    : getCurrentValue(user.country)
-    ? [
-        normalizeCountry(getCurrentValue(user.country)),
-        cityInfo || regionInfo,
-      ]
-        .filter(Boolean)
-        .join(', ')
-    : cityInfo || regionInfo;
 
   return (
     <AnimatedCard
       $dir={dir}
       $small={isAgency}
-      $compactWithoutPhoto={!photo}
-      $hasPhoto={!!photo}
+      $compactWithoutPhoto={!activeHeroPhoto}
+      $hasPhoto={!!activeHeroPhoto}
       data-card
+      data-testid="matching-profile-card"
       onClick={handleClick}
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      $backgroundImage={backgroundImage}
+      $activeProfile
     >
-      {current === 'description' && (
-        <InfoSlide $reserveActionButtons={!photo} $role={role}>
-          {extraFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{extraFields}</Table>}
-          {education && (
-            <MoreInfo>
-              <strong>Education</strong>
-              <br />
-              {education}
-            </MoreInfo>
+      <ModernProfileShell>
+        <ModernProfileScroll>
+        <ModernHero $image={activeHeroPhoto}>
+          {!activeHeroPhoto && <ModernHeroFallbackMark>{initials}</ModernHeroFallbackMark>}
+          {activeHeroPhoto && <img src={activeHeroPhoto} alt="" style={{ display: 'none' }} onError={() => setActiveHeroPhoto('')} />}
+          <ModernHeroContent>
+            <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>
+            <ModernHeroTitle>{title}</ModernHeroTitle>
+            {locationInfo && <ModernHeroLocation>{locationInfo}</ModernHeroLocation>}
+            {heroFields.length > 0 && (
+              <ModernHeroFacts>
+                {heroFields.map(item => (
+                  <ModernFactPill key={`hero-${item.key}`}>
+                    <strong>{item.label}</strong>
+                    <span>{item.value}</span>
+                  </ModernFactPill>
+                ))}
+              </ModernHeroFacts>
+            )}
+          </ModernHeroContent>
+        </ModernHero>
+        {isAdmin && (
+          <AdminToggle published={user.publish} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
+        )}
+        <ModernProfileBody>
+          {quickFacts.length > 0 && (
+            <ModernSection>
+              <ModernSectionTitle>Quick facts</ModernSectionTitle>
+              <ProfileChips fields={quickFacts} role={resolvedRole} />
+            </ModernSection>
           )}
-          {profession && (
-            <MoreInfo>
-              <strong>Profession</strong>
-              <br />
-              {profession}
-            </MoreInfo>
+          <ProfileBio text={bio} />
+          <ModernSection>
+            <ModernSectionTitle>Comment</ModernSectionTitle>
+            <CommentBox>
+              <ResizableCommentInput
+                plain
+                placeholder="Мій коментар / My comment"
+                value={commentValue || ''}
+                onClick={e => e.stopPropagation()}
+                onChange={e => onCommentChange && onCommentChange(e.target.value)}
+                onBlur={onCommentBlur}
+              />
+              {sharedCommentTexts.map((text, idx) => (
+                <SharedCommentText key={`${user.userId}-shared-comment-${idx}`}>
+                  {text}
+                </SharedCommentText>
+              ))}
+              {isAdmin && (
+                <ClickableId onClick={onAdminEdit}>
+                  ID: {user.userId ? user.userId.slice(0, 5) : ''}
+                </ClickableId>
+              )}
+            </CommentBox>
+          </ModernSection>
+          {sections.map(section => (
+            <ModernSection key={section.title}>
+              <ModernSectionTitle>{section.title}</ModernSectionTitle>
+              <ProfileChips fields={section.fields} role={resolvedRole} />
+            </ModernSection>
+          ))}
+          {galleryPhotos.length > 0 && (
+            <ModernSection>
+              <ModernSectionTitle>Gallery</ModernSectionTitle>
+              <ModernGallery>
+                {galleryPhotos.map(src => (
+                  <ModernGalleryImage key={src} src={src} alt={`${name} profile`} onError={event => { event.currentTarget.style.display = 'none'; }} />
+                ))}
+              </ModernGallery>
+            </ModernSection>
           )}
-          {moreInfo && (
-            <MoreInfo>
-              {moreInfo}
-            </MoreInfo>
-          )}
-        </InfoSlide>
-      )}
-      {current === 'info' && (
-        <InfoSlide $reserveActionButtons={!photo} $role={role}>
-          {photo ? (
-            <HeaderIdentityRowSpaced>
-              <Title $role={role}>{getRoleTitle(user)}</Title>
-              {contacts && <IconsTrailing>{contacts}</IconsTrailing>}
-            </HeaderIdentityRowSpaced>
-          ) : (
-            <ProfileSection>
-              <Info>
-                <HeaderIdentityRow>
-                  <Title $role={role}>{getRoleTitle(user)}</Title>
-                  <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
-                </HeaderIdentityRow>
-                <LocationLine>
-                  <span>{locationInfo}</span>
-                  {isEggDonor && contacts && <Icons>{contacts}</Icons>}
-                </LocationLine>
-              </Info>
-            </ProfileSection>
-          )}
-          {selectedFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{selectedFields}</Table>}
-          {!isEggDonor && !photo && contacts && (
-            <Contact $withBorder={selectedFields.length > 0}>
-              <Icons>{contacts}</Icons>
-            </Contact>
-          )}
-          {isEggDonor && photo && locationInfo && (
-            <EggDonorPhotoLocation>
-              <span>{locationInfo}</span>
-            </EggDonorPhotoLocation>
-          )}
-        </InfoSlide>
-      )}
-      {current === 'main' && role !== 'ag' && (
-        <BasicInfo>
-          {formatNameAndAge(user, displayName)}
-          <br />
-          {locationInfo}
-        </BasicInfo>
-      )}
-      {(current === 'main' || (!photo && current === 'info')) && isAdmin && (
-        <AdminToggle
-          published={user.publish}
-          onClick={e => {
-            e.stopPropagation();
-            togglePublish(user);
-          }}
-        />
-      )}
-      <BtnFavorite
-        userId={user.userId}
-        userData={user}
-        favoriteUsers={favoriteUsers}
-        setFavoriteUsers={setFavoriteUsers}
-        ownFavoriteUsers={ownFavoriteUsers}
-        setOwnFavoriteUsers={setOwnFavoriteUsers}
-        dislikeUsers={dislikeUsers}
-        setDislikeUsers={setDislikeUsers}
-        ownDislikeUsers={ownDislikeUsers}
-        setOwnDislikeUsers={setOwnDislikeUsers}
-        onRemove={handleRemove}
-        multiDataOwnerId={multiDataOwnerId}
-      />
-      <BtnDislike
-        userId={user.userId}
-        userData={user}
-        dislikeUsers={dislikeUsers}
-        setDislikeUsers={setDislikeUsers}
-        ownDislikeUsers={ownDislikeUsers}
-        setOwnDislikeUsers={setOwnDislikeUsers}
-        favoriteUsers={favoriteUsers}
-        setFavoriteUsers={setFavoriteUsers}
-        ownFavoriteUsers={ownFavoriteUsers}
-        setOwnFavoriteUsers={setOwnFavoriteUsers}
-        onRemove={handleRemove}
-        multiDataOwnerId={multiDataOwnerId}
-      />
-      {current === 'main' && isAgency && (
-        <CardInfo>
-          <HeaderRow>
-            <RoleHeader $role={role}>{role === 'ag' ? 'Agency' : 'Couple'}</RoleHeader>
-            {nameParts && <strong>{nameParts}</strong>}
-          </HeaderRow>
-          <LocationLine>
-            {locationInfo && <span>{locationInfo}</span>}
-            {contacts && <Icons>{contacts}</Icons>}
-          </LocationLine>
-        </CardInfo>
-      )}
-      {(current === 'info' || current === 'main') && null}
+        </ModernProfileBody>
+        </ModernProfileScroll>
+        <ModernActionRail>
+          <span ref={dislikeButtonWrapRef}>
+            <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={{ background: 'rgba(24, 21, 18, 0.78)' }} />
+          </span>
+          <span ref={favoriteButtonWrapRef}>
+            <BtnFavorite userId={user.userId} userData={user} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={{ background: 'rgba(247, 147, 30, 0.95)' }} />
+          </span>
+        </ModernActionRail>
+      </ModernProfileShell>
     </AnimatedCard>
   );
 };
-
-const normalizeOwnKidsValue = value => {
-  const normalized = (value ?? '').toString().trim().toLowerCase();
-
-  if (normalized === '') return value;
-
-  if (['0', '-', 'no', 'ні', 'немає'].includes(normalized)) {
-    return 'No';
-  }
-
-  const numericValue = Number(normalized);
-  if (Number.isFinite(numericValue) && numericValue >= 1) {
-    return 'Yes';
-  }
-
-  return value;
-};
-
-const buildSelectedFields = (user, { isAdmin } = {}) => {
-  return FIELDS.map(field => {
-    if (field.key === 'reward' && !isAdmin) return null;
-
-    let value = user[field.key];
-    if (field.key === 'bmi') {
-      const { weight, height } = user;
-      if (weight && height) {
-        value = Math.round((weight / (height * height)) * 10000);
-      } else {
-        value = null;
-      }
-    }
-
-    value = getCurrentValue(value);
-
-    if (field.key === 'maritalStatus') {
-      const role = (user.userRole || '').toString().trim().toLowerCase();
-      if (role === 'ed' && value) {
-        const normalized = value.toString().trim().toLowerCase();
-        if (
-          ['yes', 'так', '+', 'married', 'заміжня', 'одружена'].includes(
-            normalized
-          )
-        ) {
-          value = 'Married';
-        } else if (
-          [
-            'no',
-            'ні',
-            '-',
-            'single',
-            'unmarried',
-            'незаміжня',
-            'не заміжня',
-          ].includes(normalized)
-        ) {
-          value = 'Single';
-        }
-      }
-    }
-
-    if (field.key === 'ownKids') {
-      value = normalizeOwnKidsValue(value);
-    }
-
-    if (value === undefined || value === '' || value === null) return null;
-
-    return (
-      <div key={field.key}>
-        <strong>{field.label}</strong>{' '}
-        {String(value)}
-      </div>
-    );
-  });
-};
-
-const splitSelectedFields = (user, { isAdmin } = {}) => {
-  const allFields = buildSelectedFields(user, { isAdmin }).filter(Boolean);
-  return {
-    mainFields: allFields.slice(0, MAIN_INFO_FIELDS_LIMIT),
-    extraFields: allFields.slice(MAIN_INFO_FIELDS_LIMIT),
-  };
-};
-
-const getInfoSlidesCount = user => {
-  const moreInfo = getCurrentValue(user.moreInfo_main);
-  const profession = getCurrentValue(user.profession);
-  const education = getCurrentValue(user.education);
-  const { extraFields } = splitSelectedFields(user);
-  const showDescriptionSlide = Boolean(
-    moreInfo || profession || education || extraFields.length > 0
-  );
-  return 1 + (showDescriptionSlide ? 1 : 0);
-};
-
-const getRoleTitle = user => {
-  const userRole = (user.userRole || '')
-    .toString()
-    .trim()
-    .toLowerCase();
-  const role = (user.userRole || user.role || '')
-    .toString()
-    .trim()
-    .toLowerCase();
-
-  if (role === 'ag') return 'Agency';
-  if (role === 'ip') return 'Intended parents';
-  if (role === 'ed') return 'Egg donor';
-  if (!userRole) return 'Potential ED';
-  return '';
-};
-
-const formatNameAndAge = (user, displayName) => {
-  const age = user?.birth ? utilCalculateAge(user.birth) : '';
-  const sourceCollection = user?.__sourceCollection || '';
-
-  if (!displayName && age && sourceCollection === 'newUsers') {
-    return `${age} years old`;
-  }
-
-  return `${displayName}${age ? `, ${age}` : ''}`;
-};
-
-const InfoCardContent = ({ user, variant, isAdmin }) => {
-  const moreInfo = getCurrentValue(user.moreInfo_main);
-  const profession = getCurrentValue(user.profession);
-  const education = getCurrentValue(user.education);
-  const { mainFields, extraFields } = splitSelectedFields(user, { isAdmin });
-
-  const displayName = [
-    getCurrentValue(user.name),
-    getCurrentValue(user.surname),
-  ]
-    .filter(Boolean)
-    .map(v => String(v).trim())
-    .join(' ');
-  const role = (user.userRole || user.role || '')
-    .toString()
-    .trim()
-    .toLowerCase();
-  const isEggDonor = role.includes('ed');
-  const contacts = fieldContactsIcons(user, { phoneAsIcon: true, iconSize: 16 });
-  const selectedFields = mainFields;
-  const roleTitle = getRoleTitle(user);
-  const regionInfo = normalizeRegion(getCurrentValue(user.region));
-  const cityInfo = getCurrentValue(user.city);
-  const locationInfo = isEggDonor
-    ? regionInfo || ''
-    : getCurrentValue(user.country)
-    ? [
-        normalizeCountry(getCurrentValue(user.country)),
-        cityInfo || regionInfo,
-      ]
-        .filter(Boolean)
-        .join(', ')
-    : cityInfo || regionInfo;
-
-  if (variant === 'description') {
-    return (
-      <InfoSlide $role={role}>
-        {extraFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{extraFields}</Table>}
-        {education && (
-          <MoreInfo>
-            <strong>Education</strong>
-            <br />
-            {education}
-          </MoreInfo>
-        )}
-        {profession && (
-          <MoreInfo>
-            <strong>Profession</strong>
-            <br />
-            {profession}
-          </MoreInfo>
-        )}
-        {moreInfo && <MoreInfo>{moreInfo}</MoreInfo>}
-      </InfoSlide>
-    );
-  }
-
-  return (
-    <InfoSlide $role={role}>
-      <ProfileSection>
-        <Info>
-          <HeaderIdentityRow>
-            <Title $role={role}>{roleTitle}</Title>
-            <DonorName>{formatNameAndAge(user, displayName)}</DonorName>
-          </HeaderIdentityRow>
-          <LocationLine>
-            <span>{locationInfo}</span>
-            {isEggDonor && contacts && <Icons>{contacts}</Icons>}
-          </LocationLine>
-        </Info>
-      </ProfileSection>
-      {selectedFields.length > 0 && <Table $roleColor={getRoleColors(role).text}>{selectedFields}</Table>}
-      {!isEggDonor && contacts && (
-        <Contact $withBorder={selectedFields.length > 0}>
-          <Icons>{contacts}</Icons>
-        </Contact>
-      )}
-    </InfoSlide>
-  );
-};
-
 
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 6;
@@ -3210,10 +2961,6 @@ const Matching = () => {
     reloadDefault();
   }, [reloadDefault]);
 
-  const gridRef = useRef(null);
-  const [preLastCardNode, setPreLastCardNode] = useState(null);
-
-
   const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
     users,
     additionalNewUsers,
@@ -3249,6 +2996,24 @@ const Matching = () => {
     roleIndexSets,
     collectionSource,
   });
+
+  const [activeProfileIndex, setActiveProfileIndex] = useState(0);
+  const activeProfile = filteredUsers[activeProfileIndex] || null;
+
+  useEffect(() => {
+    setActiveProfileIndex(index => {
+      if (filteredUsers.length === 0) return 0;
+      return Math.min(index, filteredUsers.length - 1);
+    });
+  }, [filteredUsers.length]);
+
+  const navigateActiveProfile = React.useCallback((step) => {
+    setActiveProfileIndex(index => {
+      if (filteredUsers.length === 0) return 0;
+      const nextIndex = Math.max(0, Math.min(filteredUsers.length - 1, index + step));
+      return nextIndex;
+    });
+  }, [filteredUsers.length]);
 
   const additionalFiltersDebugSignatureRef = useRef('');
   useEffect(() => {
@@ -3291,21 +3056,12 @@ const Matching = () => {
 
   useEffect(() => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
-    if (!hasMore || !preLastCardNode) return;
+    if (!hasMore || loadingRef.current || loading) return;
+    if (filteredUsers.length === 0) return;
+    if (activeProfileIndex < filteredUsers.length - 2) return;
 
-    const observer = new IntersectionObserver(
-      entries => {
-        if (entries[0]?.isIntersecting) {
-          loadMore();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(preLastCardNode);
-
-    return () => observer.disconnect();
-  }, [hasMore, loadMore, preLastCardNode, viewMode]);
+    loadMore({ currentVisibleCount: filteredUsers.length });
+  }, [activeProfileIndex, filteredUsers.length, hasMore, loadMore, loading, viewMode]);
 
   useEffect(() => {
     setBackendDownloadToastsEnabled(downloadSizeToastsEnabled);
@@ -3395,7 +3151,7 @@ const Matching = () => {
       <Container>
         <InnerContainer>
           <HeaderContainer>
-            <CardCount>{filteredUsers.length} карточок</CardCount>
+            <CardCount>{filteredUsers.length ? `${activeProfileIndex + 1} / ${filteredUsers.length}` : '0'} карточок</CardCount>
             <TopActions>
               {viewMode !== 'default' && (
                 <ActionButton onClick={reloadDefault}><FaDownload /></ActionButton>
@@ -3443,42 +3199,13 @@ const Matching = () => {
             </OwnerStatusMessage>
           )}
 
-          <Grid ref={gridRef}>
-            {filteredUsers.map((user, index) => {
-              const photos = Array.isArray(user.photos)
-                ? user.photos.filter(Boolean).map(convertDriveLinkToImage)
-                : [getCurrentValue(user.photos)]
-                    .filter(Boolean)
-                    .map(convertDriveLinkToImage);
+          <Grid>
+            {activeProfile ? (() => {
+              const user = activeProfile;
+              const photos = getProfilePhotos(user);
               const photo = photos[0];
-              const nextPhoto = photos[1];
-              const thirdPhoto = photos[2];
-              const role = (user.role || user.userRole || '')
-                .toString()
-                .trim()
-                .toLowerCase();
+              const role = getProfileRole(user);
               const isAgency = role === 'ag' || role === 'ip';
-
-              const infoVariants = [];
-              if (role === 'ag') {
-                const moreInfo = getCurrentValue(user.moreInfo_main);
-                const profession = getCurrentValue(user.profession);
-                const education = getCurrentValue(user.education);
-                const { extraFields } = splitSelectedFields(user, { isAdmin });
-                const showDescriptionSlide = Boolean(
-                  moreInfo || profession || education || extraFields.length > 0
-                );
-                if (showDescriptionSlide) infoVariants.push('description');
-              } else {
-                const infoSlides = getInfoSlidesCount(user);
-                if (infoSlides >= 1) infoVariants.push('info');
-                if (infoSlides >= 2) infoVariants.push('description');
-                if (!photo) infoVariants.shift();
-              }
-
-              const nextVariant = nextPhoto ? null : infoVariants.shift();
-              const thirdVariant = thirdPhoto ? null : infoVariants.shift();
-
               const nameParts = [
                 getCurrentValue(user.name),
                 getCurrentValue(user.surname),
@@ -3487,87 +3214,52 @@ const Matching = () => {
                 .map(v => String(v).trim())
                 .join(' ');
               return (
-                <CardContainer
-                  key={user.userId}
-                  ref={
-                    index === filteredUsers.length - 2 ? setPreLastCardNode : null
-                  }
-                >
-                  {thirdVariant && (
-                    <ThirdInfoCard>
-                      <InfoCardContent user={user} variant={thirdVariant} isAdmin={isAdmin} />
-                    </ThirdInfoCard>
-                  )}
-                    {thirdPhoto && <ThirdPhoto src={thirdPhoto} alt="third" />}
-                    {nextVariant && (
-                      <NextInfoCard>
-                        <InfoCardContent user={user} variant={nextVariant} isAdmin={isAdmin} />
-                      </NextInfoCard>
-                    )}
-                    {nextPhoto && <NextPhoto src={nextPhoto} alt="next" />}
-                    <CardWrapper $role={role}>
-                      <SwipeableCard
-                        user={user}
-                        photo={photo}
-                        role={role}
-                        isAgency={isAgency}
-                        nameParts={nameParts}
-                        isAdmin={isAdmin}
-                        favoriteUsers={favoriteUsers}
-                        setFavoriteUsers={setFavoriteUsers}
-                        ownFavoriteUsers={ownFavoriteUsers}
-                        setOwnFavoriteUsers={setOwnFavoriteUsers}
-                        dislikeUsers={dislikeUsers}
-                        setDislikeUsers={setDislikeUsers}
-                        ownDislikeUsers={ownDislikeUsers}
-                        setOwnDislikeUsers={setOwnDislikeUsers}
-                        viewMode={viewMode}
-                        handleRemove={handleRemove}
-                        togglePublish={togglePublish}
-                        multiDataOwnerId={ownerId}
-                      />
-                      <CommentBox>
-                        <ResizableCommentInput
-                          plain
-                          placeholder="Мій коментар / My comment"
-                          value={comments[user.userId] || ''}
-                          onClick={e => e.stopPropagation()}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setComments(prev => ({ ...prev, [user.userId]: val }));
-                          }}
-                          onBlur={async () => {
-                            if (auth.currentUser) {
-                              const text = comments[user.userId] || '';
-                              const res = await setUserComment(user.userId, text, ownerId);
-                              setLocalComment(user.userId, text, res?.lastAction);
-                            }
-                          }}
-                        />
-                        {(sharedComments[user.userId] || []).map((text, idx) => (
-                          <SharedCommentText key={`${user.userId}-shared-comment-${idx}`}>
-                            {text}
-                          </SharedCommentText>
-                        ))}
-                        {isAdmin && (
-                          <ClickableId
-                            onClick={() => {
-                              saveScrollPosition();
-                              navigate(`/edit/${user.userId}`, { state: user });
-                            }}
-                          >
-                            ID: {user.userId ? user.userId.slice(0, 5) : ''}
-                          </ClickableId>
-                        )}
-                      </CommentBox>
-                    </CardWrapper>
-                  </CardContainer>
-                );
-              })}
-          {loading &&
-            Array.from({ length: 4 }).map((_, idx) => (
-              <MatchingSkeleton key={`skeleton-${idx}`} />
-            ))}
+                <CardContainer key={user.userId}>
+                  <CardWrapper $role={role}>
+                    <SwipeableCard
+                      user={user}
+                      photo={photo}
+                      role={role}
+                      isAgency={isAgency}
+                      nameParts={nameParts}
+                      isAdmin={isAdmin}
+                      favoriteUsers={favoriteUsers}
+                      setFavoriteUsers={setFavoriteUsers}
+                      ownFavoriteUsers={ownFavoriteUsers}
+                      setOwnFavoriteUsers={setOwnFavoriteUsers}
+                      dislikeUsers={dislikeUsers}
+                      setDislikeUsers={setDislikeUsers}
+                      ownDislikeUsers={ownDislikeUsers}
+                      setOwnDislikeUsers={setOwnDislikeUsers}
+                      handleRemove={handleRemove}
+                      togglePublish={togglePublish}
+                      multiDataOwnerId={ownerId}
+                      onNavigate={navigateActiveProfile}
+                      commentValue={comments[user.userId] || ''}
+                      sharedCommentTexts={sharedComments[user.userId] || []}
+                      onCommentChange={val => {
+                        setComments(prev => ({ ...prev, [user.userId]: val }));
+                      }}
+                      onCommentBlur={async () => {
+                        if (auth.currentUser) {
+                          const text = comments[user.userId] || '';
+                          const res = await setUserComment(user.userId, text, ownerId);
+                          setLocalComment(user.userId, text, res?.lastAction);
+                        }
+                      }}
+                      onAdminEdit={() => {
+                        saveScrollPosition();
+                        navigate(`/edit/${user.userId}`, { state: user });
+                      }}
+                    />
+                  </CardWrapper>
+                </CardContainer>
+              );
+            })() : loading ? (
+              <MatchingSkeleton />
+            ) : (
+              <OwnerStatusMessage>Немає доступних профілів</OwnerStatusMessage>
+            )}
           </Grid>
 
           {(viewMode === 'default' || viewMode === 'favorites' || viewMode === 'dislikes') && (
