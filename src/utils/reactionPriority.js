@@ -145,8 +145,16 @@ export const mergeMatchingCandidateUsers = ({
   sharedReactionCandidateUsers.forEach(injectCandidate);
 
   const mergedUsers = Array.from(byId.values()).filter(canInjectCandidate);
-  if (viewMode !== 'default') {
-    return mergedUsers;
+  if (viewMode === 'favorites') {
+    return mergedUsers.filter(
+      user => Boolean(favoriteUsers[user.userId]) && !dislikeUsers[user.userId]
+    );
+  }
+
+  if (viewMode === 'dislikes') {
+    return mergedUsers.filter(
+      user => Boolean(dislikeUsers[user.userId]) && !favoriteUsers[user.userId]
+    );
   }
 
   return mergedUsers.filter(
@@ -191,6 +199,67 @@ export const buildReactionCardsPage = ({
     nextOffset: cursor,
     hasMore,
     total: ids.length,
+  };
+};
+
+
+export const loadReactionCardsPageRecords = async ({
+  reactionIds = [],
+  offset = 0,
+  limit = 6,
+  loadedIds = new Set(),
+  fetchUsersByIds,
+  mapUser = user => user,
+  filterUsers = users => users,
+} = {}) => {
+  if (typeof fetchUsersByIds !== 'function') {
+    throw new TypeError('fetchUsersByIds is required');
+  }
+
+  const collected = [];
+  let nextOffset = Math.max(0, Number(offset) || 0);
+  let hasMore = false;
+  const safeLimit = Math.max(0, Number(limit) || 0);
+
+  while (collected.length < safeLimit && nextOffset < reactionIds.length) {
+    const page = buildReactionCardsPage({
+      reactionIds,
+      offset: nextOffset,
+      limit: Math.max(1, safeLimit - collected.length),
+      excludeIds: loadedIds,
+    });
+
+    nextOffset = page.nextOffset;
+    hasMore = page.hasMore;
+    if (page.pageIds.length === 0) {
+      if (!page.hasMore) break;
+      continue;
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    const usersMap = await fetchUsersByIds(page.pageIds);
+    const mappedUsers = page.pageIds
+      .map(id => usersMap?.[id])
+      .filter(Boolean)
+      .map(mapUser)
+      .filter(Boolean)
+      .filter(user => user?.userId && !loadedIds.has(user.userId));
+
+    const filteredUsers = filterUsers(mappedUsers) || [];
+    filteredUsers.forEach(user => {
+      if (collected.length < safeLimit && user?.userId && !loadedIds.has(user.userId)) {
+        loadedIds.add(user.userId);
+        collected.push(user);
+      }
+    });
+
+    if (!page.hasMore) break;
+  }
+
+  return {
+    users: collected,
+    nextOffset,
+    hasMore: hasMore || reactionIds.slice(nextOffset).some(id => id && !loadedIds.has(id)),
   };
 };
 

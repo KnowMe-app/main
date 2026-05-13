@@ -74,10 +74,10 @@ import {
   resolveMatchingMultiDataOwnerIds,
 } from 'utils/multiDataAccess';
 import {
-  buildReactionCardsPage,
   buildSharedReactionCandidateIds,
   canShowMatchingUser,
   mergeMatchingCandidateUsers,
+  loadReactionCardsPageRecords,
   normalizeReactionMap,
   readReactionSnapshotMaps,
   resolvePrioritizedReactionMaps,
@@ -2440,6 +2440,10 @@ const Matching = () => {
 
   const loadSharedReactionCandidates = React.useCallback(async () => {
     const viewerId = ownerId || getOwnerId();
+    if (viewMode === 'favorites' || viewMode === 'dislikes') {
+      setSharedReactionCandidateUsers([]);
+      return;
+    }
     const candidateIds = [...new Set(sharedReactionIds.filter(Boolean))];
     debugSharedReactionsLog(viewerId, 'shared reaction ids found for candidate pool', {
       sharedReactionIds: summarizeIdsForDebug(candidateIds),
@@ -2559,6 +2563,7 @@ const Matching = () => {
     isAdmin,
     parsedAdditionalAccessRules.length,
     sharedReactionIds,
+    viewMode,
   ]);
 
   useEffect(() => {
@@ -3248,70 +3253,48 @@ const Matching = () => {
 
   const loadReactionCardsPage = React.useCallback(async ({
     reactionIds,
+    reactionMap = {},
     offset = 0,
     limit = LOAD_MORE,
     loadedIds = new Set(),
   }) => {
-    const collected = [];
-    let nextOffset = Math.max(0, Number(offset) || 0);
-    let hasMore = false;
+    const activeReactionMap = normalizeReactionMap(reactionMap);
+    const page = await loadReactionCardsPageRecords({
+      reactionIds,
+      offset,
+      limit,
+      loadedIds,
+      fetchUsersByIds: fetchReactionCardsByIds,
+      mapUser: user => ({
+        ...user,
+        userId: user.userId,
+        ...(collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0
+          ? { __matchingAccessAllowed: true }
+          : {}),
+      }),
+      filterUsers: candidates => {
+        const scopedCandidates = candidates
+          .filter(user => activeReactionMap[user.userId])
+          .filter(user => isMatchingCardId(user.userId))
+          .filter(user => isAllowedIdForCollection(user.userId, collectionSource))
+          .filter(user => canShowMatchingUser(user, { isAdmin }))
+          .filter(user => !loadedIds.has(user.userId));
 
-    while (collected.length < limit && nextOffset < reactionIds.length) {
-      const page = buildReactionCardsPage({
-        reactionIds,
-        offset: nextOffset,
-        limit: Math.max(1, limit - collected.length),
-        excludeIds: loadedIds,
-      });
-
-      nextOffset = page.nextOffset;
-      hasMore = page.hasMore;
-      if (page.pageIds.length === 0) {
-        if (!page.hasMore) break;
-        continue;
-      }
-
-      // eslint-disable-next-line no-await-in-loop
-      const usersMap = await fetchReactionCardsByIds(page.pageIds);
-      const candidates = page.pageIds
-        .map(id => usersMap[id])
-        .filter(Boolean)
-        .map(user => ({
-          ...user,
-          userId: user.userId,
-          ...(collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0
-            ? { __matchingAccessAllowed: true }
-            : {}),
-        }))
-        .filter(user => isMatchingCardId(user.userId))
-        .filter(user => isAllowedIdForCollection(user.userId, collectionSource))
-        .filter(user => canShowMatchingUser(user, { isAdmin }))
-        .filter(user => !loadedIds.has(user.userId));
-
-      const filteredCandidates = applyMatchingUiFiltersToUsers({
-        users: candidates,
-        filters: filtersRef.current || {},
-        favoriteUsers: favoriteUsersRef.current,
-        dislikeUsers: dislikeUsersRef.current,
-        excludeReactionUsers: false,
-        roleIndexSets,
-        collectionSource,
-      });
-
-      filteredCandidates.forEach(user => {
-        if (collected.length < limit && !loadedIds.has(user.userId)) {
-          loadedIds.add(user.userId);
-          collected.push(user);
-        }
-      });
-
-      if (!page.hasMore) break;
-    }
+        return applyMatchingUiFiltersToUsers({
+          users: scopedCandidates,
+          filters: filtersRef.current || {},
+          favoriteUsers: favoriteUsersRef.current,
+          dislikeUsers: dislikeUsersRef.current,
+          excludeReactionUsers: false,
+          roleIndexSets,
+          collectionSource,
+        });
+      },
+    });
 
     return {
-      users: collected.sort(compareUsersByLastLogin2),
-      nextOffset,
-      hasMore: hasMore || reactionIds.slice(nextOffset).some(id => id && !loadedIds.has(id)),
+      ...page,
+      users: page.users.sort(compareUsersByLastLogin2),
     };
   }, [
     collectionSource,
@@ -3339,6 +3322,7 @@ const Matching = () => {
     loadingRef.current = true;
     setLoading(true);
     setUsers([]);
+    setSharedReactionCandidateUsers([]);
     setLastKey(null);
     setHasMore(false);
     resetReactionPaginationState(reactionType);
@@ -3396,6 +3380,7 @@ const Matching = () => {
       const loadedIds = new Set();
       const page = await loadReactionCardsPage({
         reactionIds,
+        reactionMap,
         offset: 0,
         limit: INITIAL_LOAD,
         loadedIds,
@@ -3518,6 +3503,7 @@ const Matching = () => {
         const loadedIds = reactionLoadedIdsRef.current[viewMode] || new Set();
         const page = await loadReactionCardsPage({
           reactionIds,
+          reactionMap,
           offset: currentPagination.ids.length > 0 ? currentPagination.nextOffset : 0,
           limit: LOAD_MORE,
           loadedIds,
