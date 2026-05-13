@@ -163,13 +163,11 @@ describe('mergeMatchingCandidateUsers', () => {
         userId: 'ID0001',
         __sourceCollection: 'newUsers',
         __matchingAccessAllowed: true,
-        __matchingAccessSnapshotKey: 'current-access',
       }],
       isAdmin: false,
       viewMode: 'default',
       collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
-      matchingAccessSnapshotKey: 'current-access',
     });
 
     expect(result.map(user => user.userId)).toEqual(['ID0001']);
@@ -202,7 +200,6 @@ describe('mergeMatchingCandidateUsers', () => {
         userId: 'ID0001',
         __sourceCollection: 'newUsers',
         __matchingAccessAllowed: true,
-        __matchingAccessSnapshotKey: 'current-access',
       }],
       favoriteUsers: {},
       dislikeUsers: { ID0001: true },
@@ -210,7 +207,6 @@ describe('mergeMatchingCandidateUsers', () => {
       viewMode: 'dislikes',
       collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
-      matchingAccessSnapshotKey: 'current-access',
     });
 
     expect(result.map(user => user.userId)).toEqual(['ID0001']);
@@ -690,13 +686,11 @@ describe('pre-merge shared reaction verification', () => {
       userId: 'ID0001',
       __sourceCollection: 'newUsers',
       __matchingAccessAllowed: true,
-      __matchingAccessSnapshotKey: 'current-access',
     };
     const validatedDislike = {
       userId: 'ID0002',
       __sourceCollection: 'newUsers',
       __matchingAccessAllowed: true,
-      __matchingAccessSnapshotKey: 'current-access',
     };
     const unvalidatedFavorite = { userId: 'ID0003', __sourceCollection: 'newUsers' };
     const unvalidatedDislike = { userId: 'ID0004', __sourceCollection: 'newUsers' };
@@ -709,7 +703,6 @@ describe('pre-merge shared reaction verification', () => {
       viewMode: 'favorites',
       collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
-      matchingAccessSnapshotKey: 'current-access',
     });
     const dislikesTab = mergeMatchingCandidateUsers({
       users: [],
@@ -719,94 +712,10 @@ describe('pre-merge shared reaction verification', () => {
       viewMode: 'dislikes',
       collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
-      matchingAccessSnapshotKey: 'current-access',
     });
 
     expect(favoritesTab.map(user => user.userId)).toEqual(['ID0001']);
     expect(dislikesTab.map(user => user.userId)).toEqual(['ID0002']);
-  });
-
-  it('does not let stale additionalNewUsers keep old shared newUsers visible', () => {
-    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
-
-    const result = mergeMatchingCandidateUsers({
-      users: [],
-      additionalNewUsers: [{
-        userId: 'ID0001',
-        __sourceCollection: 'newUsers',
-        __matchingAccessAllowed: true,
-        __matchingAccessSnapshotKey: 'old-access',
-      }],
-      sharedReactionCandidateUsers: [{
-        userId: 'ID0001',
-        __sourceCollection: 'newUsers',
-        __matchingAccessAllowed: true,
-        __matchingAccessSnapshotKey: 'old-access',
-      }],
-      favoriteUsers: {},
-      dislikeUsers: { ID0001: true },
-      viewMode: 'dislikes',
-      collectionSource: 'newUsers',
-      hasAdditionalAccessRules: true,
-      matchingAccessSnapshotKey: 'current-access',
-    });
-
-    expect(result).toEqual([]);
-  });
-
-  it('filters out base newUsers cards with stale matching access validation', () => {
-    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
-
-    const result = mergeMatchingCandidateUsers({
-      users: [{
-        userId: 'ID0001',
-        __sourceCollection: 'newUsers',
-        __matchingAccessAllowed: true,
-        __matchingAccessSnapshotKey: 'old-access',
-      }],
-      additionalNewUsers: [],
-      sharedReactionCandidateUsers: [],
-      favoriteUsers: {},
-      dislikeUsers: {},
-      viewMode: 'default',
-      collectionSource: 'newUsers',
-      hasAdditionalAccessRules: true,
-      matchingAccessSnapshotKey: 'current-access',
-    });
-
-    expect(result).toEqual([]);
-  });
-
-  it('accepts only currently validated shared newUsers candidates in reaction tabs', () => {
-    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
-
-    const result = mergeMatchingCandidateUsers({
-      users: [],
-      additionalNewUsers: [],
-      sharedReactionCandidateUsers: [
-        {
-          userId: 'ID0001',
-          __sourceCollection: 'newUsers',
-          __matchingAccessAllowed: true,
-          __matchingAccessSnapshotKey: 'current-access',
-        },
-        {
-          userId: 'ID0002',
-          __sourceCollection: 'newUsers',
-          __matchingAccessAllowed: true,
-          __matchingAccessSnapshotKey: 'old-access',
-        },
-        { userId: 'ID0003', __sourceCollection: 'newUsers' },
-      ],
-      favoriteUsers: { ID0001: true, ID0002: true, ID0003: true },
-      dislikeUsers: {},
-      viewMode: 'favorites',
-      collectionSource: 'newUsers',
-      hasAdditionalAccessRules: true,
-      matchingAccessSnapshotKey: 'current-access',
-    });
-
-    expect(result.map(user => user.userId)).toEqual(['ID0001']);
   });
 
   it('ignores stale shared candidate results for changed tab, source, or version', () => {
@@ -851,34 +760,6 @@ describe('mergeSharedReactionCandidateUsers', () => {
     });
 
     expect(result.map(user => user.userId)).toEqual(['already-visible', 'late-shared']);
-  });
-
-  it('prunes stale shared newUsers candidates rejected by current access validation', () => {
-    const result = mergeSharedReactionCandidateUsers({
-      currentUsers: [
-        { userId: 'ID0001', __sourceCollection: 'newUsers', __matchingAccessAllowed: true },
-        { userId: 'ID0002', __sourceCollection: 'newUsers', __matchingAccessAllowed: true },
-      ],
-      loadedUsers: [
-        { userId: 'ID0001', __sourceCollection: 'newUsers', __matchingAccessAllowed: true },
-      ],
-      candidateIds: ['ID0001'],
-    });
-
-    expect(result.map(user => user.userId)).toEqual(['ID0001']);
-  });
-
-  it('retains prior shared candidate comment badge data when a later partial request adds a card', () => {
-    const result = mergeSharedReactionCandidateUsers({
-      currentUsers: [{ userId: 'ID0001', hasSharedCommentBadge: true, comments: 'shared note' }],
-      loadedUsers: [{ userId: 'ID0002' }],
-      candidateIds: ['ID0001', 'ID0002'],
-    });
-
-    expect(result).toEqual([
-      { userId: 'ID0001', hasSharedCommentBadge: true, comments: 'shared note' },
-      { userId: 'ID0002' },
-    ]);
   });
 
   it('deduplicates candidate cards and prunes ids no longer in the shared candidate set', () => {
@@ -946,56 +827,6 @@ describe('shouldApplySharedReactionCandidateResult', () => {
       requestCollectionSource: 'users',
       currentCollectionSource: 'newUsers',
     })).toBe(false);
-  });
-});
-
-describe('matching access revalidation', () => {
-  it('revalidates retained shared newUsers candidates onto the current access snapshot', () => {
-    const { mergeSharedReactionCandidateUsers } = require('../reactionPriority');
-
-    const result = mergeSharedReactionCandidateUsers({
-      currentUsers: [{
-        userId: 'ID0001',
-        __sourceCollection: 'newUsers',
-        __matchingAccessAllowed: true,
-        __matchingAccessSnapshotKey: 'old-access',
-        sharedCommentBadge: true,
-      }],
-      loadedUsers: [],
-      candidateIds: ['ID0001'],
-      collectionSource: 'newUsers',
-      hasAdditionalAccessRules: true,
-      matchingAccessSnapshotKey: 'new-access',
-    });
-
-    expect(result).toEqual([{
-      userId: 'ID0001',
-      __sourceCollection: 'newUsers',
-      __matchingAccessAllowed: true,
-      __matchingAccessSnapshotKey: 'new-access',
-      sharedCommentBadge: true,
-    }]);
-  });
-
-  it('revalidates current access pools by pruning revoked ids and updating still-allowed snapshots', () => {
-    const { revalidateMatchingAccessForUsers } = require('../reactionPriority');
-
-    const result = revalidateMatchingAccessForUsers({
-      users: [
-        { userId: 'ID0001', __sourceCollection: 'newUsers', __matchingAccessAllowed: true, __matchingAccessSnapshotKey: 'old-access', commentsCount: 2 },
-        { userId: 'ID0002', __sourceCollection: 'newUsers', __matchingAccessAllowed: true, __matchingAccessSnapshotKey: 'old-access' },
-        { userId: 'publishedUser', __sourceCollection: 'users', publish: true },
-      ],
-      allowedIds: ['ID0001'],
-      matchingAccessSnapshotKey: 'new-access',
-      collectionSource: 'newUsers',
-      hasAdditionalAccessRules: true,
-    });
-
-    expect(result).toEqual([
-      { userId: 'ID0001', __sourceCollection: 'newUsers', __matchingAccessAllowed: true, __matchingAccessSnapshotKey: 'new-access', commentsCount: 2 },
-      { userId: 'publishedUser', __sourceCollection: 'users', publish: true },
-    ]);
   });
 });
 
@@ -1277,7 +1108,6 @@ describe('reaction pagination race guards', () => {
       userId: 'ID0001',
       __sourceCollection: 'newUsers',
       __matchingAccessAllowed: true,
-      __matchingAccessSnapshotKey: 'current-access',
     };
 
     const defaultDeck = mergeMatchingCandidateUsers({
@@ -1289,7 +1119,6 @@ describe('reaction pagination race guards', () => {
       viewMode: 'default',
       collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
-      matchingAccessSnapshotKey: 'current-access',
     });
     const dislikesTab = mergeMatchingCandidateUsers({
       users: [],
@@ -1301,7 +1130,6 @@ describe('reaction pagination race guards', () => {
       viewMode: 'dislikes',
       collectionSource: 'newUsers',
       hasAdditionalAccessRules: true,
-      matchingAccessSnapshotKey: 'current-access',
     }).filter(user => user.__matchingAccessAllowed && user.userId === 'ID0001');
 
     expect(defaultDeck).toEqual([]);

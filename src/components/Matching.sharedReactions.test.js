@@ -37,9 +37,11 @@ describe('Matching shared reaction card UI', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
     expect(source).toContain('const requestViewMode = viewMode;');
-    expect(source).toContain('sharedReactionIds,');
-    expect(source).toContain('viewMode,');
-    expect(source).toContain(`useEffect(() => {
+    expect(source).toContain(`sharedReactionIds,
+    viewMode,
+  ]);
+
+  useEffect(() => {
     loadSharedReactionCandidates();
   }, [loadSharedReactionCandidates]);`);
   });
@@ -49,43 +51,6 @@ describe('Matching shared reaction card UI', () => {
 
     expect(source).toContain(`setSharedReactionCandidateUsers([]);
     viewModeRef.current = 'search';`);
-  });
-
-
-  it('merges shared candidates with access-filtered ids and refreshes comments for retained cards', () => {
-    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
-
-    expect(source).toContain("const allowedCandidateIds = collectionSource === 'newUsers'");
-    expect(source).toContain('candidateIds: allowedCandidateIds');
-    expect(source).toContain('currentUsers: sharedReactionCandidateUsersRef.current');
-    expect(source).toContain('await loadCommentsFor(mergedSharedReactionCandidates);');
-  });
-
-
-  it('prunes stale access-snapshotted shared and additional newUsers without a full reload', () => {
-    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
-
-    expect(source).toContain('setAdditionalNewUsers(prev => {');
-    expect(source).toContain('setSharedReactionCandidateUsers(prev => {');
-    expect(source).toContain("user?.__matchingAccessSnapshotKey === matchingAccessSnapshotKey");
-  });
-
-
-  it('refreshes open reaction tabs against current access and stamps retained cards before syncing snapshot state', () => {
-    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
-
-    expect(source).toContain('deferStateSync: true');
-    expect(source).toContain("const shouldRefreshReactionIds = collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0;");
-    expect(source).toContain('revalidateCurrentMatchingAccessPools({');
-    expect(source).toContain('sharedAllowedNewUserIds: sharedReactionIds.filter(id => allowedIds.has(id))');
-    expect(source).toContain('applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);');
-  });
-
-  it('stores reaction pagination with the access snapshot used to load the page', () => {
-    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
-
-    expect(source).toContain('accessSnapshotKey: matchingAccessSnapshotKeyRef.current');
-    expect(source).toContain('const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false, accessSnapshotKey: null });');
   });
 
 });
