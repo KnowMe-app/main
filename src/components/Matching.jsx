@@ -23,8 +23,6 @@ import {
   Grid,
   HeaderContainer,
   InnerContainer,
-  LoadMoreButton,
-  LoadMoreFooter,
   OwnerStatusMessage,
   SharedCommentText,
   SkeletonCardInner,
@@ -443,6 +441,7 @@ const fetchNewUsersByIdsForMatching = async (ids, batchSize = FETCH_USERS_BY_IDS
           userId,
           ...(snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {}),
           photos: Array.isArray(photos) ? photos : [],
+          __photosHydrated: true,
           __sourceCollection: 'newUsers',
         };
       })
@@ -1011,11 +1010,12 @@ const SwipeableCard = ({
   const title = `${name}${age ? `, ${age}` : ''}`;
   const roleLabel = getRoleLabel(resolvedRole);
   const locationInfo = getProfileLocation(user);
-  const heroFields = getHeroFields(user, resolvedRole);
+  const identityAndLocationKeys = ['name', 'surname', 'agencyName', 'companyName', 'agency', 'country', 'region', 'city', 'role', 'userRole'];
+  const heroFields = getHeroFields(user, resolvedRole, { excludeKeys: identityAndLocationKeys });
   const heroFieldKeys = collectProfileFieldKeys(heroFields);
-  const quickFacts = getQuickFacts(user, resolvedRole, { excludeKeys: heroFieldKeys });
+  const quickFacts = getQuickFacts(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...heroFieldKeys] });
   const usedSummaryFieldKeys = collectProfileFieldKeys([...heroFields, ...quickFacts]);
-  const sections = getProfileSections(user, resolvedRole, { excludeKeys: usedSummaryFieldKeys });
+  const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys] });
   const bio = getProfileBio(user);
   const initials = name
     .split(/\s+/)
@@ -2550,7 +2550,8 @@ const Matching = () => {
     uniqueIds.forEach(id => {
       const cached = getCard(id);
       const cachedPhotos = Array.isArray(cached?.photos) ? cached.photos : [];
-      const canUseCachedCard = cached && cachedPhotos.length > 0 && (
+      const hasHydratedPhotoState = cachedPhotos.length > 0 || cached?.__photosHydrated === true;
+      const canUseCachedCard = cached && hasHydratedPhotoState && (
         cached.__sourceCollection ||
         cached.publish === true ||
         !isShortId(id)
@@ -3536,18 +3537,6 @@ const Matching = () => {
               <OwnerStatusMessage>Немає доступних профілів</OwnerStatusMessage>
             )}
           </Grid>
-
-          {(viewMode === 'default' || viewMode === 'favorites' || viewMode === 'dislikes') && (
-            <LoadMoreFooter>
-              <LoadMoreButton onClick={loadMore} disabled={loading || !hasMore}>
-                {loading
-                  ? 'Завантаження...'
-                  : hasMore
-                    ? 'Дозавантажити карточки'
-                    : 'Більше карточок завтра'}
-              </LoadMoreButton>
-            </LoadMoreFooter>
-          )}
 
           {showInfoModal && (
             <InfoModal onClose={() => setShowInfoModal(false)} text="dotsMenu" Context={dotsMenu} />

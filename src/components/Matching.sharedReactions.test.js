@@ -37,6 +37,7 @@ describe('Matching shared reaction card UI', () => {
     expect(source).toContain("(collectionSource === 'newUsers' || hasAccessScopedNewUserReactionIds)");
     expect(source).toContain('currentPagination.accessSnapshotKey !== reactionAccessSnapshotKey');
     expect(source).toContain('if (didAccessSnapshotChange) return page.users;');
+    expect(source).toContain('const hasHydratedPhotoState = cachedPhotos.length > 0 || cached?.__photosHydrated === true;');
   });
 
   it('guards stale default shared-candidate requests while allowing reaction tabs across collections', () => {
@@ -81,6 +82,24 @@ describe('Matching shared reaction card UI', () => {
     expect(source).toContain('requireSearchKeySetKeys: true');
     expect(source).not.toContain("refDb(database, 'searchKey')");
     expect(source).not.toContain("ref2(database, 'searchKey')");
+  });
+
+
+  it('keeps Matching as a single premium active profile without reward or load-more chrome', () => {
+    const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+    const styledSource = fs.readFileSync(path.join(__dirname, 'Matching.styled.jsx'), 'utf8');
+
+    expect(matchingSource).toContain('const activeProfile = filteredUsers[activeProfileIndex] || null;');
+    expect(matchingSource).toContain('data-testid="matching-profile-card"');
+    expect(matchingSource).toContain('onNavigate(direction === \'left\' ? 1 : -1);');
+    expect(matchingSource).toContain('const identityAndLocationKeys =');
+    expect(matchingSource).not.toContain('Дозавантажити карточки');
+    expect(matchingSource).not.toContain('Більше карточок завтра');
+    expect(matchingSource).not.toContain('<LoadMoreButton');
+    expect(styledSource).toContain('height: 56%;');
+    expect(styledSource).toContain('linear-gradient(135deg, #ffcc73 0%, #f7931e 100%)');
+    expect(styledSource).toContain('position: absolute;\n  left: 0;\n  right: 0;\n  bottom: 0;');
+    expect(styledSource).toContain('background: rgba(255, 255, 255, 0.055);');
   });
 
 });

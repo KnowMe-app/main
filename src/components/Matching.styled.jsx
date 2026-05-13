@@ -757,7 +757,9 @@ export const OwnerStatusMessage = styled.p`
 export const ModernProfileShell = styled.div`
   position: relative;
   height: 100%;
-  background: #15120f;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(247, 147, 30, 0.16), transparent 28%),
+    linear-gradient(180deg, #17120e 0%, #0c0a09 100%);
   color: #fff;
   border-radius: ${STACK_CARD_RADIUS};
   overflow: hidden;
@@ -772,28 +774,39 @@ export const ModernProfileScroll = styled.div`
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
+  scroll-padding-bottom: 104px;
 `;
 
 export const ModernHero = styled.div`
   position: relative;
-  min-height: min(430px, 62dvh);
+  min-height: clamp(300px, 56%, 440px);
+  height: 56%;
   background:
-    ${({ $image }) => $image ? `linear-gradient(180deg, rgba(13, 10, 8, 0.05) 0%, rgba(13, 10, 8, 0.18) 45%, rgba(13, 10, 8, 0.9) 100%), url(${$image})` : 'radial-gradient(circle at 22% 18%, rgba(247, 147, 30, 0.44), transparent 32%), linear-gradient(145deg, #2a211b 0%, #111015 58%, #060507 100%)'};
+    ${({ $image }) => $image ? `linear-gradient(180deg, rgba(12, 9, 7, 0.02) 0%, rgba(12, 9, 7, 0.12) 42%, rgba(12, 9, 7, 0.78) 100%), url(${$image})` : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)'};
   background-size: cover;
-  background-position: center;
+  background-position: center 28%;
   display: flex;
   align-items: flex-end;
-  padding: 22px 18px 88px;
+  padding: 20px 18px 112px;
   box-sizing: border-box;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0;
+    height: 46%;
+    background: linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.72) 100%);
+    pointer-events: none;
+  }
 `;
 
 export const ModernHeroFallbackMark = styled.div`
   position: absolute;
-  inset: 72px 0 auto;
+  inset: 58px 0 auto;
   margin: auto;
-  width: 104px;
-  height: 104px;
-  border-radius: 32px;
+  width: 112px;
+  height: 112px;
+  border-radius: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -801,29 +814,29 @@ export const ModernHeroFallbackMark = styled.div`
   font-size: 38px;
   font-weight: 900;
   letter-spacing: 1px;
-  background: rgba(255, 255, 255, 0.11);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
-  backdrop-filter: blur(12px);
+  background: linear-gradient(145deg, rgba(255,255,255,0.16), rgba(247,147,30,0.16));
+  border: 1px solid rgba(255, 214, 148, 0.24);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(14px);
 `;
 
 export const ModernHeroContent = styled.div`
   position: relative;
   z-index: 2;
   width: 100%;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.46);
 `;
 
 export const ModernRoleBadge = styled.span`
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  margin-bottom: 10px;
+  margin-bottom: 9px;
   padding: 5px 10px;
   border-radius: 999px;
-  color: #fff;
-  background: ${({ $role }) => getRoleColors($role).accent};
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  color: #211407;
+  background: linear-gradient(135deg, #ffcc73 0%, #f7931e 100%);
+  box-shadow: 0 8px 24px rgba(247, 147, 30, 0.22);
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.7px;
@@ -833,14 +846,14 @@ export const ModernRoleBadge = styled.span`
 export const ModernHeroTitle = styled.h2`
   margin: 0;
   color: #fff;
-  font-size: clamp(30px, 8vw, 42px);
-  line-height: 0.98;
+  font-size: clamp(32px, 8vw, 44px);
+  line-height: 1;
   font-weight: 900;
 `;
 
 export const ModernHeroLocation = styled.p`
-  margin: 8px 0 0;
-  color: rgba(255, 255, 255, 0.84);
+  margin: 7px 0 0;
+  color: rgba(255, 246, 232, 0.88);
   font-size: 14px;
   font-weight: 600;
 `;
@@ -848,8 +861,8 @@ export const ModernHeroLocation = styled.p`
 export const ModernHeroFacts = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 14px;
+  gap: 6px;
+  margin-top: 12px;
 `;
 
 export const ModernFactPill = styled.span`
@@ -859,15 +872,15 @@ export const ModernFactPill = styled.span`
   max-width: 100%;
   padding: 6px 9px;
   border-radius: 999px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(10px);
+  color: #fff8ec;
+  background: rgba(24, 18, 12, 0.48);
+  border: 1px solid rgba(255, 204, 115, 0.24);
+  backdrop-filter: blur(12px);
   font-size: 12px;
   line-height: 1.1;
 
   strong {
-    color: rgba(255, 255, 255, 0.64);
+    color: rgba(255, 204, 115, 0.82);
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
@@ -877,25 +890,27 @@ export const ModernFactPill = styled.span`
 export const ModernProfileBody = styled.div`
   position: relative;
   z-index: 3;
-  margin-top: -46px;
-  padding: 0 12px 92px;
+  margin-top: -76px;
+  padding: 0 12px 108px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 9px;
 `;
 
 export const ModernSection = styled.section`
-  background: rgba(255, 253, 248, 0.97);
-  color: #242127;
-  border-radius: 20px;
-  padding: 14px;
-  box-shadow: 0 16px 40px rgba(10, 8, 6, 0.17);
+  background: rgba(25, 21, 18, 0.9);
+  color: #fff8ec;
+  border-radius: 18px;
+  padding: 12px;
+  border: 1px solid rgba(255, 214, 148, 0.13);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(14px);
 `;
 
 export const ModernSectionTitle = styled.h3`
-  margin: 0 0 10px;
-  color: #211d19;
-  font-size: 14px;
+  margin: 0 0 8px;
+  color: #ffd899;
+  font-size: 13px;
   font-weight: 900;
   letter-spacing: 0.2px;
 `;
@@ -911,17 +926,17 @@ export const ModernChip = styled.div`
   flex-direction: column;
   gap: 2px;
   max-width: 100%;
-  padding: 8px 10px;
-  border-radius: 14px;
-  background: ${({ $role }) => getRoleColors($role).light};
-  border: 1px solid ${({ $role }) => getRoleColors($role).border};
-  color: #25222a;
-  font-size: 13px;
-  font-weight: 800;
+  padding: 7px 9px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 214, 148, 0.16);
+  color: #fff8ec;
+  font-size: 12px;
+  font-weight: 750;
   line-height: 1.15;
 
   strong {
-    color: ${({ $role }) => getRoleColors($role).text};
+    color: #f7b95f;
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.55px;
@@ -930,10 +945,10 @@ export const ModernChip = styled.div`
 
 export const ModernBioText = styled.p`
   margin: 0;
-  color: #3d3a42;
+  color: rgba(255, 248, 236, 0.88);
   white-space: pre-line;
   font-size: 14px;
-  line-height: 1.48;
+  line-height: 1.45;
 `;
 
 export const ModernMoreButton = styled.button`
@@ -974,9 +989,9 @@ export const ModernContactLink = styled.a`
   max-width: 100%;
   padding: 8px 10px;
   border-radius: 999px;
-  background: ${({ $role }) => getRoleColors($role).light};
-  border: 1px solid ${({ $role }) => getRoleColors($role).border};
-  color: ${({ $role }) => getRoleColors($role).text};
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 214, 148, 0.16);
+  color: #ffd899;
   font-size: 12px;
   font-weight: 900;
   line-height: 1;
@@ -1030,12 +1045,13 @@ export const ModernActionRail = styled.div`
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 14px;
+  bottom: 0;
   z-index: 8;
   display: flex;
   justify-content: space-between;
-  padding: 0 18px;
+  padding: 18px 24px 20px;
   pointer-events: none;
+  background: linear-gradient(180deg, rgba(12, 9, 7, 0) 0%, rgba(12, 9, 7, 0.76) 54%, rgba(12, 9, 7, 0.96) 100%);
 
   & > span {
     pointer-events: auto;
@@ -1043,9 +1059,10 @@ export const ModernActionRail = styled.div`
 
   button {
     position: static !important;
-    width: 52px !important;
-    height: 52px !important;
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28) !important;
+    width: 56px !important;
+    height: 56px !important;
+    border-radius: 50% !important;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32) !important;
   }
 `;
 
