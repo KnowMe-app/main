@@ -297,6 +297,15 @@ const getMatchingAccessSnapshotKey = ({ accessUserId, rawRules, searchKeySetKeys
     rawRules: String(rawRules || ''),
     searchKeySetKeys: sortAdditionalSearchKeySetKeys(normalizeSearchKeySetKeys(searchKeySetKeys)),
   });
+const wasAdditionalProfileFound = freshProfileCache => freshProfileCache?.profileFound !== false;
+const getFreshProfileRawRules = (freshProfileCache, fallbackRawRules = '') =>
+  wasAdditionalProfileFound(freshProfileCache) && freshProfileCache?.rawRules !== undefined
+    ? freshProfileCache.rawRules
+    : fallbackRawRules;
+const getFreshProfileSearchKeySetKeys = (freshProfileCache, fallbackSearchKeySetKeys = []) =>
+  wasAdditionalProfileFound(freshProfileCache) && freshProfileCache?.searchKeySetsOfExactUser
+    ? freshProfileCache.searchKeySetsOfExactUser
+    : fallbackSearchKeySetKeys;
 async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserId) {
   const normalizedAccessUserId = String(accessUserId || '').trim();
   const keysFromProfile = getAdditionalSearchKeySetKeysFromProfile(profile);
@@ -2069,6 +2078,7 @@ const Matching = () => {
   const matchingProfileStateRef = useRef({
     ownerId: null,
     collectionSource,
+    currentAccessLevel,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
   });
@@ -2130,10 +2140,11 @@ const Matching = () => {
     matchingProfileStateRef.current = {
       ownerId,
       collectionSource,
+      currentAccessLevel,
       currentAdditionalAccessRules,
       currentSearchKeySetKeys,
     };
-  }, [collectionSource, currentAdditionalAccessRules, currentSearchKeySetKeys, ownerId]);
+  }, [collectionSource, currentAccessLevel, currentAdditionalAccessRules, currentSearchKeySetKeys, ownerId]);
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
     const handleScroll = () => {
@@ -2292,7 +2303,7 @@ const Matching = () => {
 
 
   const applyFreshAdditionalProfileState = React.useCallback((freshCache, accessLevel = freshCache?.accessLevel || '') => {
-    if (!freshCache) return;
+    if (!freshCache || freshCache.profileFound === false) return;
     matchingAccessSnapshotKeyRef.current = getMatchingAccessSnapshotKey({
       accessUserId: freshCache.accessUserId,
       rawRules: freshCache.rawRules,
@@ -2301,6 +2312,7 @@ const Matching = () => {
     matchingProfileStateRef.current = {
       ...matchingProfileStateRef.current,
       ownerId: freshCache.accessUserId,
+      currentAccessLevel: accessLevel,
       currentAdditionalAccessRules: freshCache.rawRules,
       currentSearchKeySetKeys: freshCache.searchKeySetsOfExactUser,
     };
@@ -2416,10 +2428,16 @@ const Matching = () => {
     additionalProfileRequestVersionRef.current = profileRequestVersion;
     const profilePath = `fetchUserById(${normalizedAccessUserId})`;
     try {
-      const profile = await fetchUserById(normalizedAccessUserId) || {};
-      const accessLevel = profile?.accessLevel || '';
-      const additionalAccessRules = profile?.additionalAccessRules || '';
-      const searchKeySetsOfExactUser = await resolveAdditionalSearchKeySetKeysForMatching(profile, normalizedAccessUserId);
+      const fetchedProfile = await fetchUserById(normalizedAccessUserId);
+      const profileFound = Boolean(fetchedProfile);
+      const profile = fetchedProfile || null;
+      const accessLevel = profileFound ? (profile?.accessLevel || '') : (state.currentAccessLevel || '');
+      const additionalAccessRules = profileFound
+        ? (profile?.additionalAccessRules || '')
+        : (state.currentAdditionalAccessRules || '');
+      const searchKeySetsOfExactUser = profileFound
+        ? await resolveAdditionalSearchKeySetKeysForMatching(profile, normalizedAccessUserId)
+        : normalizeSearchKeySetKeys(state.currentSearchKeySetKeys || []);
 
       if (profileRequestVersion !== additionalProfileRequestVersionRef.current) {
         const latestCache = additionalProfileCacheRef.current;
@@ -2452,6 +2470,7 @@ const Matching = () => {
       const freshCache = {
         ...freshMetadata,
         profile,
+        profileFound,
         accessLevel,
         rawRules: additionalAccessRules,
         searchKeySetsOfExactUser,
@@ -2604,9 +2623,9 @@ const Matching = () => {
       if (!canApplySharedCandidateResult()) {
         return;
       }
-      rawRulesForRequest = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
+      rawRulesForRequest = getFreshProfileRawRules(freshProfileCache, currentAdditionalAccessRules);
       parsedRulesForRequest = parseAdditionalAccessRuleGroups(rawRulesForRequest);
-      searchKeySetKeysForRequest = freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys;
+      searchKeySetKeysForRequest = getFreshProfileSearchKeySetKeys(freshProfileCache, currentSearchKeySetKeys);
     }
     const requestMatchingAccessSnapshotKey = getMatchingAccessSnapshotKey({
       accessUserId: viewerId,
@@ -3018,7 +3037,7 @@ const Matching = () => {
           });
           return;
         }
-        const freshRawRules = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
+        const freshRawRules = getFreshProfileRawRules(freshProfileCache, currentAdditionalAccessRules);
         const freshParsedAdditionalAccessRules = parseAdditionalAccessRuleGroups(freshRawRules);
 
         if (!freshParsedAdditionalAccessRules || freshParsedAdditionalAccessRules.length === 0) {
@@ -3033,11 +3052,12 @@ const Matching = () => {
         loadingRef.current = true;
         setLoading(true);
 
+        const searchKeySetKeysForRequest = getFreshProfileSearchKeySetKeys(freshProfileCache, currentSearchKeySetKeys);
         const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(
-          freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys,
+          searchKeySetKeysForRequest,
           ownerId
         )
-          ? (freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys)
+          ? searchKeySetKeysForRequest
           : await resolveAdditionalSearchKeySetKeysForMatching(null, ownerId);
 
         if (!isLatestAdditionalFetch()) {
@@ -3441,13 +3461,13 @@ const Matching = () => {
       forceRefresh: true,
       deferStateSync: true,
     });
-    const rawRulesForRequest = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
+    const rawRulesForRequest = getFreshProfileRawRules(freshProfileCache, currentAdditionalAccessRules);
     const parsedRulesForRequest = parseAdditionalAccessRuleGroups(rawRulesForRequest);
     if (parsedRulesForRequest.length === 0) {
       applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
       return newUserReactionIds;
     }
-    const searchKeySetKeysForRequest = freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys;
+    const searchKeySetKeysForRequest = getFreshProfileSearchKeySetKeys(freshProfileCache, currentSearchKeySetKeys);
     const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(searchKeySetKeysForRequest, viewerId)
       ? searchKeySetKeysForRequest
       : await resolveAdditionalSearchKeySetKeysForMatching(null, viewerId);
@@ -3761,11 +3781,16 @@ const Matching = () => {
         const reactionIds = shouldRefreshReactionIds || currentPagination.ids.length === 0
           ? await getAccessibleReactionIds(Object.keys(reactionMap))
           : currentPagination.ids;
-        const loadedIds = reactionLoadedIdsRef.current[viewMode] || new Set();
+        const refreshedAccessSnapshotKey = matchingAccessSnapshotKeyRef.current;
+        const didAccessSnapshotChange = shouldRefreshReactionIds &&
+          currentPagination.accessSnapshotKey !== refreshedAccessSnapshotKey;
+        const loadedIds = didAccessSnapshotChange
+          ? new Set()
+          : (reactionLoadedIdsRef.current[viewMode] || new Set());
         const page = await loadReactionCardsPage({
           reactionIds,
           reactionMap,
-          offset: shouldRefreshReactionIds ? 0 : (currentPagination.ids.length > 0 ? currentPagination.nextOffset : 0),
+          offset: didAccessSnapshotChange || shouldRefreshReactionIds ? 0 : (currentPagination.ids.length > 0 ? currentPagination.nextOffset : 0),
           limit: LOAD_MORE,
           loadedIds,
         });
@@ -3789,7 +3814,7 @@ const Matching = () => {
             ids: reactionIds,
             nextOffset: page.nextOffset,
             hasMore: page.hasMore,
-            accessSnapshotKey: matchingAccessSnapshotKeyRef.current,
+            accessSnapshotKey: refreshedAccessSnapshotKey,
           },
         }));
         setHasMore(page.hasMore);
@@ -3818,7 +3843,7 @@ const Matching = () => {
           });
           return;
         }
-        const freshRawRules = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
+        const freshRawRules = getFreshProfileRawRules(freshProfileCache, currentAdditionalAccessRules);
         const freshParsedAdditionalAccessRules = parseAdditionalAccessRuleGroups(freshRawRules);
         const shouldResetAdditionalPagination =
           !freshProfileCache?.cacheHit &&
@@ -3837,6 +3862,7 @@ const Matching = () => {
 
         if (!freshParsedAdditionalAccessRules.length) {
           if (isLatestLoadMore()) {
+            applyFreshAdditionalProfileState(freshProfileCache, freshProfileCache?.accessLevel);
             resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
           }
           return;
@@ -3854,11 +3880,12 @@ const Matching = () => {
         ) {
           loadedPages += 1;
           // eslint-disable-next-line no-await-in-loop
+          const searchKeySetKeysForRequest = getFreshProfileSearchKeySetKeys(freshProfileCache, currentSearchKeySetKeys);
           const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(
-            freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys,
+            searchKeySetKeysForRequest,
             ownerId
           )
-            ? (freshProfileCache?.searchKeySetsOfExactUser || currentSearchKeySetKeys)
+            ? searchKeySetKeysForRequest
             : await resolveAdditionalSearchKeySetKeysForMatching(null, ownerId);
 
           if (!isLatestLoadMore()) {
