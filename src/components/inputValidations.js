@@ -179,6 +179,11 @@ export const formatEmail = email => {
     return value.replace(/^@/g, '').toLowerCase();
   };
 
+  export const formatTwitter = value => {
+    value = removeSpaceAndNewLine(value);
+    return value.replace(/^@/g, '').toLowerCase();
+  };
+
   const extractYoutubeIdentifier = value => {
     const youtubeUrlMatch = value.match(
       /^(?:https?:\/\/)?(?:m\.|www\.)?(?:(?:youtube\.com)\/|(?:youtu\.be)\/)(.+)$/i,
