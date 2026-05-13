@@ -88,18 +88,30 @@ export const canShowMatchingUser = (user, { isAdmin = false } = {}) => {
 
 const SHARED_REACTION_CANDIDATE_VIEW_MODES = new Set(['default', 'favorites', 'dislikes']);
 
-export const shouldApplySharedReactionCandidateResult = ({
+const isReactionViewMode = viewMode => viewMode === 'favorites' || viewMode === 'dislikes';
+
+const isCurrentMatchingAsyncResult = ({
   requestVersion,
   currentVersion,
   requestViewMode,
   currentViewMode,
   requestCollectionSource,
   currentCollectionSource,
-} = {}) => (
-  SHARED_REACTION_CANDIDATE_VIEW_MODES.has(requestViewMode) &&
-  requestViewMode === currentViewMode &&
-  requestCollectionSource === currentCollectionSource &&
-  requestVersion === currentVersion
+} = {}) => {
+  if (requestVersion !== currentVersion || requestViewMode !== currentViewMode) return false;
+
+  // Reaction tabs are a global overlay across /users and /newUsers. Source changes
+  // must not make an otherwise current favorites/dislikes request stale. Keep the
+  // source guard only for the default base deck, where collectionSource selects
+  // the backing pool.
+  if (isReactionViewMode(requestViewMode)) return true;
+
+  return requestCollectionSource === currentCollectionSource;
+};
+
+export const shouldApplySharedReactionCandidateResult = options => (
+  SHARED_REACTION_CANDIDATE_VIEW_MODES.has(options?.requestViewMode) &&
+  isCurrentMatchingAsyncResult(options)
 );
 
 export const mergeSharedReactionCandidateUsers = ({
@@ -141,7 +153,6 @@ export const mergeMatchingCandidateUsers = ({
   const allowedBySetKey = new Set(additionalNewUsers.map(user => user.userId).filter(Boolean));
   const isAllowedNewUsersCandidate = user => (
     !hasAdditionalAccessRules ||
-    collectionSource !== 'newUsers' ||
     user?.__sourceCollection !== 'newUsers' ||
     allowedBySetKey.has(user.userId) ||
     user?.__matchingAccessAllowed === true
@@ -151,14 +162,7 @@ export const mergeMatchingCandidateUsers = ({
   );
 
   if (hasAdditionalAccessRules) {
-    baseUsers = baseUsers.filter(user => {
-      if (user?.__sourceCollection !== 'newUsers') return true;
-      return (
-        collectionSource !== 'newUsers' ||
-        allowedBySetKey.has(user.userId) ||
-        user?.__matchingAccessAllowed === true
-      );
-    });
+    baseUsers = baseUsers.filter(isAllowedNewUsersCandidate);
   }
 
   const shouldInjectAdditionalCards =
@@ -328,18 +332,7 @@ export const loadReactionCardsPageRecords = async ({
   };
 };
 
-export const shouldApplyReactionPageResult = ({
-  requestVersion,
-  currentVersion,
-  requestViewMode,
-  currentViewMode,
-  requestCollectionSource,
-  currentCollectionSource,
-} = {}) => (
-  requestVersion === currentVersion &&
-  requestViewMode === currentViewMode &&
-  requestCollectionSource === currentCollectionSource
-);
+export const shouldApplyReactionPageResult = options => isCurrentMatchingAsyncResult(options);
 
 export const readReactionSnapshotMaps = async ({
   ownerIds = [],

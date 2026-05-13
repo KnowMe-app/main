@@ -743,6 +743,7 @@ const applyMatchingUiFiltersToUsers = ({
   excludeReactionUsers = false,
   roleIndexSets,
   collectionSource,
+  viewMode = 'default',
 }) =>
   applyMatchingSearchKeyFilters(
     filterMain(
@@ -759,7 +760,11 @@ const applyMatchingUiFiltersToUsers = ({
       )),
     filters,
     roleIndexSets
-  ).filter(u => isAllowedIdForCollection(u.userId, collectionSource));
+  ).filter(u => (
+    viewMode === 'favorites' ||
+    viewMode === 'dislikes' ||
+    isAllowedIdForCollection(u.userId, collectionSource)
+  ));
 
 const getActiveMatchingFiltersDebug = filters => Object.entries(filters || {}).reduce((acc, [key, value]) => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -1926,13 +1931,12 @@ const Matching = () => {
     const filteredInvalidIds = candidateIds.filter(id => !isMatchingCardId(id));
     const filteredByCollectionIds = [];
     const filteredByAccessIds = [];
+    const userCandidateIds = candidateIds.filter(isValidId);
+    const newUserCandidateIds = candidateIds.filter(isShortId);
     let allowedNewUserIds = [];
     let indexedAllowedNewUserIds = null;
 
-    if (collectionSource === 'newUsers') {
-      const newUserCandidateIds = candidateIds.filter(isShortId);
-      filteredByCollectionIds.push(...candidateIds.filter(id => !isShortId(id)));
-
+    if (newUserCandidateIds.length > 0) {
       if (parsedAdditionalAccessRules.length > 0) {
         const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(currentSearchKeySetKeys, viewerId)
           ? currentSearchKeySetKeys
@@ -1948,7 +1952,7 @@ const Matching = () => {
           const indexed = await getIndexedNewUsersIdsByRules({
             rawRules: currentAdditionalAccessRules,
             accessUserId: viewerId,
-            searchKeySetKeys: resolvedSearchKeySetKeys,
+            searchKeySetsOfExactUser: resolvedSearchKeySetKeys,
             fetchMissingBuckets: true,
             requireSearchKeySetKeys: true,
             resultOffset: 0,
@@ -1966,8 +1970,6 @@ const Matching = () => {
       } else {
         allowedNewUserIds = newUserCandidateIds;
       }
-    } else {
-      filteredByCollectionIds.push(...candidateIds.filter(id => !isValidId(id)));
     }
 
     const loadedUsers = [];
@@ -1975,7 +1977,7 @@ const Matching = () => {
       return;
     }
 
-    if (collectionSource === 'newUsers' && allowedNewUserIds.length > 0) {
+    if (allowedNewUserIds.length > 0) {
       const newUsersCards = await fetchNewUsersByIdsForMatching(allowedNewUserIds);
       if (!canApplySharedCandidateResult()) {
         return;
@@ -1983,35 +1985,31 @@ const Matching = () => {
       loadedUsers.push(
         ...newUsersCards.map(user => ({
           ...user,
+          __sourceCollection: 'newUsers',
           __matchingAccessAllowed: parsedAdditionalAccessRules.length > 0,
         }))
       );
     }
 
-    if (collectionSource !== 'newUsers') {
-      const userIds = candidateIds.filter(isValidId);
-      if (userIds.length > 0) {
-        if (!canApplySharedCandidateResult()) {
-          return;
-        }
-        const usersMap = await fetchUsersByIds(userIds);
-        if (!canApplySharedCandidateResult()) {
-          return;
-        }
-        loadedUsers.push(
-          ...userIds
-            .map(id => usersMap[id])
-            .filter(Boolean)
-            .map(user => ({ ...user, __sourceCollection: 'users' }))
-            .filter(user => canShowMatchingUser(user, { isAdmin }))
-        );
+    if (userCandidateIds.length > 0) {
+      const usersMap = await fetchUsersByIds(userCandidateIds);
+      if (!canApplySharedCandidateResult()) {
+        return;
       }
+      loadedUsers.push(
+        ...userCandidateIds
+          .map(id => usersMap[id])
+          .filter(Boolean)
+          .map(user => ({ ...user, __sourceCollection: 'users' }))
+          .filter(user => canShowMatchingUser(user, { isAdmin }))
+      );
     }
 
     const loadedIds = new Set(loadedUsers.map(user => user.userId).filter(Boolean));
-    const missingAllowedIds = collectionSource === 'newUsers'
-      ? allowedNewUserIds.filter(id => !loadedIds.has(id))
-      : candidateIds.filter(isValidId).filter(id => !loadedIds.has(id));
+    const missingAllowedIds = [
+      ...userCandidateIds,
+      ...allowedNewUserIds,
+    ].filter(id => !loadedIds.has(id));
 
     if (!canApplySharedCandidateResult()) {
       return;
@@ -2046,9 +2044,7 @@ const Matching = () => {
       allowedBySearchKeySetsCount: indexedAllowedNewUserIds ? indexedAllowedNewUserIds.size : null,
       id0001SelfCheck: {
         sharedReactionIdFound: candidateIds.includes(DEBUG_SHARED_NEW_USER_ID),
-        allowedBySearchKeySets: collectionSource === 'newUsers'
-          ? allowedNewUserIds.includes(DEBUG_SHARED_NEW_USER_ID)
-          : null,
+        allowedBySearchKeySets: allowedNewUserIds.includes(DEBUG_SHARED_NEW_USER_ID),
         filteredByAccessOrSearchKeySets: filteredByAccessIds.includes(DEBUG_SHARED_NEW_USER_ID),
         foundInCollection: loadedUsers.find(user => user.userId === DEBUG_SHARED_NEW_USER_ID)?.__sourceCollection || null,
         addedToCandidatePool: loadedIds.has(DEBUG_SHARED_NEW_USER_ID),
@@ -2688,50 +2684,78 @@ const Matching = () => {
   }, [reloadDefault]);
 
   const fetchReactionCardsByIds = React.useCallback(async ids => {
-    const entries = await Promise.all(
-      ids.map(async id => {
-        const cached = getCard(id);
-        const cachedPhotos = Array.isArray(cached?.photos) ? cached.photos : [];
-        const canUseCachedCard = cached && cachedPhotos.length > 0 && (
-          cached.__sourceCollection ||
-          cached.publish === true ||
-          !isShortId(id)
-        );
-        const user = canUseCachedCard ? cached : await fetchUserById(id);
-        return user ? [id, user] : null;
-      })
-    );
+    const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+    const usersIds = uniqueIds.filter(isValidId);
+    const newUsersIds = uniqueIds.filter(isShortId);
+    const cachedEntries = new Map();
+    const missingUserIds = [];
+    const missingNewUserIds = [];
 
-    return entries.reduce((acc, entry) => {
-      if (!entry) return acc;
-      const [id, user] = entry;
-      acc[id] = user;
-      return acc;
-    }, {});
+    uniqueIds.forEach(id => {
+      const cached = getCard(id);
+      const cachedPhotos = Array.isArray(cached?.photos) ? cached.photos : [];
+      const canUseCachedCard = cached && cachedPhotos.length > 0 && (
+        cached.__sourceCollection ||
+        cached.publish === true ||
+        !isShortId(id)
+      );
+
+      if (canUseCachedCard) {
+        cachedEntries.set(id, {
+          ...cached,
+          userId: id,
+          __sourceCollection: cached.__sourceCollection || (isShortId(id) ? 'newUsers' : 'users'),
+        });
+      } else if (isShortId(id)) {
+        missingNewUserIds.push(id);
+      } else if (isValidId(id)) {
+        missingUserIds.push(id);
+      }
+    });
+
+    const [usersMap, newUsersCards] = await Promise.all([
+      missingUserIds.length ? fetchUsersByIds(missingUserIds) : Promise.resolve({}),
+      missingNewUserIds.length ? fetchNewUsersByIdsForMatching(missingNewUserIds) : Promise.resolve([]),
+    ]);
+
+    const result = {};
+    usersIds.forEach(id => {
+      const user = cachedEntries.get(id) || usersMap?.[id];
+      if (user) {
+        result[id] = { ...user, userId: id, __sourceCollection: 'users' };
+      }
+    });
+    newUsersIds.forEach(id => {
+      const user = cachedEntries.get(id) || newUsersCards.find(card => card.userId === id);
+      if (user) {
+        result[id] = { ...user, userId: id, __sourceCollection: 'newUsers' };
+      }
+    });
+
+    return result;
   }, []);
 
   const getAccessibleReactionIds = React.useCallback(async (reactionIds, accessSnapshot = {}) => {
     const uniqueIds = [...new Set((reactionIds || []).filter(Boolean))];
-    if (collectionSource !== 'newUsers') {
-      return uniqueIds.filter(isValidId);
-    }
+    const userReactionIds = uniqueIds.filter(isValidId);
+    const newUserReactionIds = uniqueIds.filter(isShortId);
+    if (newUserReactionIds.length === 0) return userReactionIds;
 
     const rawRulesForRequest = accessSnapshot.rawRules ?? currentAdditionalAccessRules;
     const parsedRulesForRequest = parseAdditionalAccessRuleGroups(rawRulesForRequest);
-    const searchKeySetsForRequest = accessSnapshot.searchKeySetsOfExactUser ?? currentSearchKeySetKeys;
-    const newUserReactionIds = uniqueIds.filter(isShortId);
     if (parsedRulesForRequest.length === 0) {
-      return newUserReactionIds;
+      return uniqueIds.filter(isMatchingCardId);
     }
 
+    const searchKeySetsForRequest = accessSnapshot.searchKeySetsOfExactUser ?? currentSearchKeySetKeys;
     const viewerId = accessSnapshot.accessUserId || ownerId || getOwnerId();
-    if (!viewerId) return [];
+    if (!viewerId) return userReactionIds;
 
     const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(searchKeySetsForRequest, viewerId)
       ? searchKeySetsForRequest
       : await resolveAdditionalSearchKeySetKeysForMatching(null, viewerId);
 
-    if (!resolvedSearchKeySetKeys.length) return [];
+    if (!resolvedSearchKeySetKeys.length) return userReactionIds;
 
     const indexed = await getIndexedNewUsersIdsByRules({
       rawRules: rawRulesForRequest,
@@ -2745,9 +2769,9 @@ const Matching = () => {
       debugToast: (message, data) => debugAdditionalToast(viewerId, message, data),
     });
     const allowedIds = new Set(Array.isArray(indexed?.userIds) ? indexed.userIds : []);
-    return newUserReactionIds.filter(id => allowedIds.has(id));
+    const allowedNewUserReactionIds = newUserReactionIds.filter(id => allowedIds.has(id));
+    return uniqueIds.filter(id => userReactionIds.includes(id) || allowedNewUserReactionIds.includes(id));
   }, [
-    collectionSource,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
     ownerId,
@@ -2770,15 +2794,12 @@ const Matching = () => {
       mapUser: user => ({
         ...user,
         userId: user.userId,
-        ...(collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0
-          ? { __matchingAccessAllowed: true }
-          : {}),
+        ...(user.__sourceCollection === 'newUsers' ? { __matchingAccessAllowed: true } : {}),
       }),
       filterUsers: candidates => {
         const scopedCandidates = candidates
           .filter(user => activeReactionMap[user.userId])
           .filter(user => isMatchingCardId(user.userId))
-          .filter(user => isAllowedIdForCollection(user.userId, collectionSource))
           .filter(user => canShowMatchingUser(user, { isAdmin }))
           .filter(user => !loadedIds.has(user.userId));
 
@@ -2790,6 +2811,7 @@ const Matching = () => {
           excludeReactionUsers: false,
           roleIndexSets,
           collectionSource,
+          viewMode: viewModeRef.current,
         });
       },
     });
@@ -2802,7 +2824,6 @@ const Matching = () => {
     collectionSource,
     fetchReactionCardsByIds,
     isAdmin,
-    parsedAdditionalAccessRules.length,
     roleIndexSets,
   ]);
 
@@ -3349,6 +3370,7 @@ const Matching = () => {
     excludeReactionUsers: viewMode === 'default',
     roleIndexSets,
     collectionSource,
+    viewMode,
   });
 
   const additionalFiltersDebugSignatureRef = useRef('');
