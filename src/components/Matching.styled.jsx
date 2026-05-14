@@ -1296,10 +1296,8 @@ export const ModernMoreButton = styled.button`
 `;
 
 export const ModernContactDetails = styled.details`
-  border: 1px solid var(--matching-contact-border);
-  border-radius: 16px;
-  background: var(--matching-card-bg);
-  overflow: hidden;
+  margin: 0;
+  padding: 0;
 `;
 
 export const ModernContactSummary = styled.summary`
@@ -1307,10 +1305,11 @@ export const ModernContactSummary = styled.summary`
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 14px;
-  color: var(--matching-contact-text);
-  font-size: 13px;
-  font-weight: 900;
+  margin: 0;
+  color: var(--matching-section-title);
+  font-size: clamp(20px, 4.8vw, 22px);
+  font-weight: 700;
+  letter-spacing: 0.2px;
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -1327,6 +1326,10 @@ export const ModernContactSummary = styled.summary`
     transition: transform 0.18s ease;
   }
 
+  ${ModernContactDetails}[open] & {
+    margin-bottom: 8px;
+  }
+
   ${ModernContactDetails}[open] &::after {
     transform: rotate(180deg);
   }
@@ -1334,31 +1337,30 @@ export const ModernContactSummary = styled.summary`
 
 export const ModernContactLinks = styled.div`
   display: flex;
-  padding: 0 12px 12px;
   flex-wrap: wrap;
   gap: 8px;
 `;
 
 export const ModernContactLink = styled.a`
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 2px;
   max-width: 100%;
-  padding: 8px 10px;
-  border-radius: 999px;
-  background: var(--matching-card-bg);
-  border: 1px solid var(--matching-contact-border);
-  color: var(--matching-contact-text);
-  font-size: 12px;
-  font-weight: 900;
-  line-height: 1;
+  padding: 7px 10px;
+  border-radius: 13px;
+  background: var(--matching-chip-bg);
+  border: 1px solid var(--matching-chip-border);
+  color: var(--matching-chip-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.15;
   text-decoration: none;
 
   svg {
     flex: 0 0 auto;
     width: 14px;
     height: 14px;
-    color: var(--matching-accent);
+    color: var(--matching-chip-label);
   }
 
   span {
