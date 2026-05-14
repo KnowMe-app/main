@@ -779,25 +779,41 @@ export const ModernProfileScroll = styled.div`
 
 export const ModernHero = styled.div`
   position: relative;
-  min-height: clamp(330px, 58%, 455px);
-  height: 58%;
-  background:
-    ${({ $image }) => $image ? `linear-gradient(180deg, rgba(12, 9, 7, 0) 0%, rgba(12, 9, 7, 0.04) 42%, rgba(12, 9, 7, 0.48) 78%, rgba(12, 9, 7, 0.72) 100%), url(${$image})` : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)'};
-  background-size: cover;
-  background-position: center 18%;
+  min-height: clamp(370px, 64%, 505px);
+  height: 64%;
+  background: ${({ $image }) => $image
+    ? 'linear-gradient(180deg, #17120e 0%, #0c0a09 100%)'
+    : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)'};
   display: flex;
   align-items: flex-end;
   padding: 20px 18px 22px;
   box-sizing: border-box;
+  overflow: hidden;
+  cursor: ${({ $clickable }) => ($clickable ? 'zoom-in' : 'default')};
 
   &::after {
     content: '';
     position: absolute;
     inset: auto 0 0;
-    height: 38%;
-    background: linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.62) 100%);
+    height: 34%;
+    background: linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.36) 46%, rgba(9, 7, 5, 0.66) 100%);
     pointer-events: none;
   }
+
+  &:focus-visible {
+    outline: 3px solid rgba(247, 147, 30, 0.75);
+    outline-offset: -5px;
+  }
+`;
+
+export const ModernHeroImage = styled.img`
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 16%;
+  display: block;
 `;
 
 export const ModernHeroFallbackMark = styled.div`
@@ -847,7 +863,7 @@ export const ModernHeroTitle = styled.h2`
   margin: 0;
   color: #fff;
   max-width: 92%;
-  font-size: clamp(30px, 7.2vw, 42px);
+  font-size: clamp(28px, 6.8vw, 40px);
   line-height: 0.98;
   font-weight: 850;
   text-wrap: balance;
@@ -998,16 +1014,39 @@ export const ModernMoreButton = styled.button`
 
 export const ModernGallery = styled.div`
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 `;
 
-export const ModernGalleryImage = styled.img`
+export const ModernGalleryImage = styled.button`
   width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
-  border-radius: 14px;
+  aspect-ratio: 4 / 5;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 214, 148, 0.14);
+  border-radius: 16px;
   background: #2a251f;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
+  cursor: zoom-in;
+
+  img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    object-position: center 18%;
+    transition: transform 0.18s ease;
+  }
+
+  &:hover img,
+  &:focus-visible img {
+    transform: scale(1.03);
+  }
+
+  &:focus-visible {
+    outline: 3px solid rgba(247, 147, 30, 0.65);
+    outline-offset: 2px;
+  }
 `;
 
 
