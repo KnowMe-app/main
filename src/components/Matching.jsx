@@ -1158,29 +1158,29 @@ const SwipeableCard = ({
         >
           {!activeHeroPhoto && <ModernHeroFallbackMark>{initials}</ModernHeroFallbackMark>}
           {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name} profile hero`} onError={() => setActiveHeroPhoto('')} />}
-          <ModernHeroContent>
-            <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>
-            <ModernHeroTitle>{title}</ModernHeroTitle>
-            {locationInfo && <ModernHeroLocation><FaMapMarkerAlt aria-hidden="true" />{locationInfo}</ModernHeroLocation>}
-            {heroFields.length > 0 && (
-              <ModernHeroFacts>
-                {heroFields.slice(0, 6).map(item => {
-                  const fact = formatHeroFact(item);
-                  return (
-                    <ModernFactPill key={`hero-${item.key}`}>
-                      <span className="fact-icon" aria-hidden="true">{getHeroFactIcon(item)}</span>
-                      <span className="fact-copy">
-                        <strong>{item.label}</strong>
-                        <span className="fact-value">{fact.value}</span>
-                        {fact.unit && <span className="fact-unit">{fact.unit}</span>}
-                      </span>
-                    </ModernFactPill>
-                  );
-                })}
-              </ModernHeroFacts>
-            )}
-          </ModernHeroContent>
         </ModernHero>
+        <ModernHeroContent>
+          <ModernHeroTitle>{title}</ModernHeroTitle>
+          {locationInfo && <ModernHeroLocation><FaMapMarkerAlt aria-hidden="true" />{locationInfo}</ModernHeroLocation>}
+          <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>
+          {heroFields.length > 0 && (
+            <ModernHeroFacts>
+              {heroFields.slice(0, 6).map(item => {
+                const fact = formatHeroFact(item);
+                return (
+                  <ModernFactPill key={`hero-${item.key}`}>
+                    <span className="fact-icon" aria-hidden="true">{getHeroFactIcon(item)}</span>
+                    <span className="fact-copy">
+                      <strong>{item.label}</strong>
+                      <span className="fact-value">{fact.value}</span>
+                      {fact.unit && <span className="fact-unit">{fact.unit}</span>}
+                    </span>
+                  </ModernFactPill>
+                );
+              })}
+            </ModernHeroFacts>
+          )}
+        </ModernHeroContent>
         {isAdmin && (
           <AdminToggle published={user.publish} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
         )}
