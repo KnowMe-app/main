@@ -202,6 +202,14 @@ export const CommentInput = styled.textarea`
   border: ${props => (props.plain ? 'none' : `1px solid ${color.gray3}`)};
   border-radius: ${props => (props.plain ? '0' : '8px')};
   outline: ${props => (props.plain ? 'none' : 'auto')};
+  background: ${props => (props.plain ? 'transparent' : 'var(--matching-chip-bg, #fff)')};
+  color: var(--matching-chip-text, #161616);
+  caret-color: var(--matching-accent, ${color.accent5});
+  transition: background 220ms cubic-bezier(0.4, 0, 0.2, 1), color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  &::placeholder {
+    color: var(--matching-muted-text, ${color.gray1});
+  }
 `;
 
 export const CommentBox = styled.div`
