@@ -460,12 +460,13 @@ export const ThemeToggleScene = styled.span`
     transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
     ${({ $themeMode }) => ($themeMode === 'light'
       ? `
-        width: 13px;
-        height: 13px;
-        left: 7px;
-        top: 7px;
+        width: 12px;
+        height: 12px;
+        left: 6px;
+        top: 6px;
+        z-index: 1;
         background: #ffd45c;
-        box-shadow: 0 0 0 4px rgba(255, 212, 92, 0.28);
+        box-shadow: 0 0 0 3px rgba(255, 212, 92, 0.22);
       `
       : `
         width: 15px;
@@ -487,9 +488,10 @@ export const ThemeToggleScene = styled.span`
         height: 9px;
         right: 5px;
         bottom: 8px;
+        z-index: 2;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.92);
-        box-shadow: -8px 0 0 -2px rgba(255, 255, 255, 0.9);
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: -8px 0 0 -2px rgba(255, 255, 255, 0.94);
       `
       : `
         width: 3px;
