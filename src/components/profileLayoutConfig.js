@@ -102,6 +102,8 @@ const ownKidsValue = user => {
   return raw;
 };
 
+
+
 const donorExperienceValue = user => {
   const exp = normalizeDisplayValue(user?.experience || user?.donationExperience || user?.previousDonation);
   const count = normalizeDisplayValue(user?.donationCount || user?.donationsCount);
