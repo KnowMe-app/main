@@ -1,7 +1,51 @@
-import styled, { keyframes } from 'styled-components';
+import styled, { css, keyframes } from 'styled-components';
 import { color } from './styles';
 
 const STACK_CARD_RADIUS = '18px';
+
+const matchingThemeVars = css`
+  --matching-page-bg: ${({ $themeMode }) => ($themeMode === 'light'
+    ? 'radial-gradient(circle at 50% 0%, rgba(247, 147, 30, 0.13), transparent 34%), linear-gradient(180deg, #f7f4ef 0%, #ebe4da 100%)'
+    : 'radial-gradient(circle at 50% 0%, rgba(247, 147, 30, 0.11), transparent 32%), linear-gradient(180deg, #17120e 0%, #0c0a09 100%)')};
+  --matching-shell-bg: ${({ $themeMode }) => ($themeMode === 'light'
+    ? 'radial-gradient(circle at 18% 0%, rgba(247, 147, 30, 0.12), transparent 28%), linear-gradient(180deg, #fbf8f3 0%, #f2ece3 100%)'
+    : 'radial-gradient(circle at 18% 0%, rgba(247, 147, 30, 0.16), transparent 28%), linear-gradient(180deg, #17120e 0%, #0c0a09 100%)')};
+  --matching-card-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#fbf8f3' : '#17120e')};
+  --matching-card-border: ${({ $themeMode }) => ($themeMode === 'light' ? 'rgba(214, 193, 163, 0.56)' : 'rgba(255, 214, 148, 0.14)')};
+  --matching-card-shadow: ${({ $themeMode }) => ($themeMode === 'light'
+    ? '0 16px 36px rgba(83, 61, 35, 0.14), 0 2px 10px rgba(83, 61, 35, 0.08)'
+    : '0 18px 40px rgba(0, 0, 0, 0.3), 0 0 22px rgba(247, 147, 30, 0.05)')};
+  --matching-header-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#3b2b1d' : '#fff8ec')};
+  --matching-muted-text: ${({ $themeMode }) => ($themeMode === 'light' ? 'rgba(72, 54, 36, 0.72)' : 'rgba(255, 248, 236, 0.88)')};
+  --matching-panel-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#fbf8f3' : '#15120f')};
+  --matching-panel-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#2f261d' : '#fff8ec')};
+  --matching-section-bg: ${({ $themeMode }) => ($themeMode === 'light' ? 'rgba(255, 252, 246, 0.86)' : 'rgba(26, 23, 20, 0.82)')};
+  --matching-section-border: ${({ $themeMode }) => ($themeMode === 'light' ? 'rgba(214, 193, 163, 0.5)' : 'rgba(255, 214, 148, 0.11)')};
+  --matching-section-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 12px 28px rgba(83, 61, 35, 0.11)' : '0 12px 28px rgba(0, 0, 0, 0.18)')};
+  --matching-section-title: ${({ $themeMode }) => ($themeMode === 'light' ? '#a75c08' : '#ffd18a')};
+  --matching-chip-bg: ${({ $themeMode }) => ($themeMode === 'light' ? 'rgba(255, 250, 242, 0.88)' : 'rgba(255, 255, 255, 0.045)')};
+  --matching-chip-border: ${({ $themeMode }) => ($themeMode === 'light' ? 'rgba(214, 193, 163, 0.62)' : 'rgba(255, 214, 148, 0.12)')};
+  --matching-chip-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#33271c' : '#fff8ec')};
+  --matching-chip-label: ${({ $themeMode }) => ($themeMode === 'light' ? 'rgba(171, 91, 5, 0.78)' : 'rgba(247, 185, 95, 0.76)')};
+  --matching-hero-fallback: ${({ $themeMode }) => ($themeMode === 'light'
+    ? 'radial-gradient(circle at 26% 16%, rgba(255, 203, 115, 0.58), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 244, 222, 0.82), transparent 24%), linear-gradient(145deg, #f2dcc0 0%, #d7b484 54%, #8d5d2d 100%)'
+    : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)')};
+  --matching-hero-overlay: ${({ $themeMode }) => ($themeMode === 'light'
+    ? 'linear-gradient(180deg, rgba(255, 248, 236, 0) 0%, rgba(48, 33, 19, 0.08) 42%, rgba(44, 29, 15, 0.42) 78%, rgba(36, 23, 12, 0.64) 100%)'
+    : 'linear-gradient(180deg, rgba(12, 9, 7, 0) 0%, rgba(12, 9, 7, 0.04) 42%, rgba(12, 9, 7, 0.48) 78%, rgba(12, 9, 7, 0.72) 100%)')};
+  --matching-hero-bottom: ${({ $themeMode }) => ($themeMode === 'light'
+    ? 'linear-gradient(180deg, transparent 0%, rgba(46, 31, 17, 0.28) 46%, rgba(42, 27, 13, 0.62) 100%)'
+    : 'linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.36) 46%, rgba(9, 7, 5, 0.66) 100%)')};
+  --matching-rail-bg: ${({ $themeMode }) => ($themeMode === 'light'
+    ? 'linear-gradient(180deg, rgba(251, 248, 243, 0.72) 0%, rgba(244, 236, 224, 0.96) 100%)'
+    : 'linear-gradient(180deg, rgba(12, 9, 7, 0.72) 0%, rgba(12, 9, 7, 0.96) 100%)')};
+  --matching-rail-border: ${({ $themeMode }) => ($themeMode === 'light' ? 'rgba(214, 193, 163, 0.5)' : 'rgba(255, 214, 148, 0.1)')};
+  --matching-action-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#fbf8f3' : '#211b16')};
+  --matching-action-color: ${({ $themeMode }) => ($themeMode === 'light' ? '#a75c08' : '#fff8ec')};
+  --matching-action-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 8px 18px rgba(83, 61, 35, 0.14)' : '0 8px 18px rgba(0, 0, 0, 0.22)')};
+  color-scheme: ${({ $themeMode }) => ($themeMode === 'light' ? 'light' : 'dark')};
+  transition: background 280ms cubic-bezier(0.4, 0, 0.2, 1), color 280ms cubic-bezier(0.4, 0, 0.2, 1);
+`;
 
 export const ROLE_COLORS = {
   ed: { accent: '#c2185b', light: 'rgba(194,24,91,0.07)', border: 'rgba(194,24,91,0.22)', text: '#9c1057', tag: 'rgba(252,228,236,0.9)' },
@@ -25,9 +69,8 @@ export const Container = styled.div`
   align-items: center;
   min-height: 100dvh;
   padding: 0;
-  background:
-    radial-gradient(circle at 50% 0%, rgba(247, 147, 30, 0.11), transparent 32%),
-    linear-gradient(180deg, #17120e 0%, #0c0a09 100%);
+  ${matchingThemeVars}
+  background: var(--matching-page-bg);
 `;
 
 export const InnerContainer = styled.div`
@@ -119,7 +162,7 @@ export const NextInfoCard = styled.div`
   border-radius: ${STACK_CARD_RADIUS};
   transform: translate(4px, -4px);
   z-index: 1;
-  background: #fff;
+  background: var(--matching-card-bg, #fff);
   overflow: hidden;
 `;
 
@@ -140,10 +183,9 @@ export const CardWrapper = styled.div`
   border-radius: ${STACK_CARD_RADIUS};
   box-sizing: border-box;
   overflow: hidden;
-  background: #fffdfa;
-  box-shadow:
-    0 14px 32px rgba(33, 26, 17, 0.12),
-    0 2px 8px rgba(33, 26, 17, 0.06);
+  background: var(--matching-card-bg, #fffdfa);
+  box-shadow: var(--matching-card-shadow, 0 14px 32px rgba(33, 26, 17, 0.12));
+  transition: background 280ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1), border-color 280ms cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 2;
 `;
 
@@ -294,14 +336,24 @@ export const ActionButton = styled.button`
   height: 35px;
   padding: 3px;
   border: none;
-  background-color: ${color.accent5};
-  color: white;
+  background: var(--matching-action-bg, ${color.accent5});
+  color: var(--matching-action-color, white);
+  box-shadow: var(--matching-action-shadow, none);
+  transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), background 240ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 240ms cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50px;
   cursor: pointer;
   font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
+  &:hover:not(:disabled) {
+    transform: translateY(-1px) scale(1.03);
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+
   &:disabled {
     background-color: ${color.gray3};
     color: ${color.gray4};
@@ -309,6 +361,149 @@ export const ActionButton = styled.button`
   }
 `;
 
+
+
+export const ThemeToggleButton = styled.button`
+  position: relative;
+  flex: 0 0 auto;
+  width: 82px;
+  height: 44px;
+  padding: 4px;
+  border: 0;
+  border-radius: 9999px;
+  background: ${({ $themeMode }) => ($themeMode === 'light' ? '#f5f5f7' : '#24242a')};
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.06),
+    ${({ $themeMode }) => ($themeMode === 'light'
+      ? '0 6px 14px rgba(83, 61, 35, 0.12)'
+      : '0 6px 16px rgba(0, 0, 0, 0.34)')};
+  cursor: pointer;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    background 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 180ms ease;
+
+  &:hover {
+    transform: scale(1.03);
+    box-shadow:
+      inset 0 2px 7px rgba(0, 0, 0, 0.07),
+      ${({ $themeMode }) => ($themeMode === 'light'
+        ? '0 8px 18px rgba(83, 61, 35, 0.16)'
+        : '0 8px 20px rgba(0, 0, 0, 0.42)')};
+  }
+
+  &:active {
+    transform: scale(0.97);
+    opacity: 0.92;
+  }
+
+  &:focus-visible {
+    outline: 3px solid rgba(247, 147, 30, 0.48);
+    outline-offset: 3px;
+  }
+`;
+
+export const ThemeToggleTrackIcon = styled.span`
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
+  color: ${({ $active }) => ($active ? 'rgba(247, 147, 30, 0.78)' : 'rgba(120, 112, 104, 0.42)')};
+  opacity: ${({ $active }) => ($active ? 0.95 : 0.5)};
+  transition: opacity 260ms cubic-bezier(0.4, 0, 0.2, 1), color 260ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  ${({ $side }) => ($side === 'left' ? 'left: 11px;' : 'right: 11px;')}
+
+  svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+`;
+
+export const ThemeToggleKnob = styled.span`
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transform: translateX(${({ $themeMode }) => ($themeMode === 'light' ? '38px' : '0')});
+  background: ${({ $themeMode }) => ($themeMode === 'light'
+    ? 'linear-gradient(145deg, #dff2ff 0%, #9ed7ff 100%)'
+    : 'linear-gradient(145deg, #162950 0%, #071327 100%)')};
+  box-shadow:
+    0 5px 12px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  transition:
+    transform 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    background 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1);
+`;
+
+export const ThemeToggleScene = styled.span`
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: block;
+
+  &::before {
+    content: '';
+    position: absolute;
+    border-radius: 999px;
+    transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
+    ${({ $themeMode }) => ($themeMode === 'light'
+      ? `
+        width: 13px;
+        height: 13px;
+        left: 7px;
+        top: 7px;
+        background: #ffd45c;
+        box-shadow: 0 0 0 4px rgba(255, 212, 92, 0.28);
+      `
+      : `
+        width: 15px;
+        height: 15px;
+        left: 8px;
+        top: 7px;
+        background: #fffaf0;
+        box-shadow: inset -5px -1px 0 #cbd7ef;
+      `)}
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
+    ${({ $themeMode }) => ($themeMode === 'light'
+      ? `
+        width: 19px;
+        height: 9px;
+        right: 5px;
+        bottom: 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: -8px 0 0 -2px rgba(255, 255, 255, 0.9);
+      `
+      : `
+        width: 3px;
+        height: 3px;
+        right: 8px;
+        top: 8px;
+        border-radius: 50%;
+        background: #ffd45c;
+        box-shadow: -8px 7px 0 #ffd45c, 2px 13px 0 rgba(255, 212, 92, 0.82);
+      `)}
+  }
+`;
 
 export const BackendTrafficToggleButton = styled(ActionButton)`
   width: auto;
@@ -345,9 +540,9 @@ export const CardCount = styled.p`
   width: 100%;
   margin: 0;
   text-align: center;
-  color: #fff8ec;
+  color: var(--matching-header-text, #fff8ec);
   font-weight: 700;
-  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.28);
+  text-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 1px 0 rgba(255,255,255,0.72)' : '0 1px 12px rgba(0, 0, 0, 0.28)')};
 `;
 
 export const LoadMoreButton = styled.button`
@@ -360,6 +555,14 @@ export const LoadMoreButton = styled.button`
   font-size: 14px;
   font-weight: 600;
   padding: 10px 16px;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-1px) scale(1.03);
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.96);
+  }
 
   &:disabled {
     background-color: ${color.gray3};
@@ -426,12 +629,26 @@ export const FilterContainer = styled.div`
   height: 100%;
   width: 320px;
   max-width: 80%;
-  background: #fff;
+  ${matchingThemeVars}
+  background: var(--matching-panel-bg);
+  color: var(--matching-panel-text);
   z-index: 20;
   transform: translateX(${props => (props.show ? '0' : '100%')});
   transition: transform 0.3s ease-in-out;
   padding: 10px;
   overflow-y: auto;
+
+  input,
+  textarea,
+  select {
+    background: var(--matching-chip-bg);
+    color: var(--matching-panel-text);
+    border-color: var(--matching-chip-border);
+  }
+
+  button {
+    transition: background 220ms cubic-bezier(0.4, 0, 0.2, 1), color 220ms cubic-bezier(0.4, 0, 0.2, 1), border-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
 `;
 
 export const FilterResetButton = styled.button`
@@ -451,8 +668,8 @@ export const CollectionSourceWrap = styled.div`
   border: 1px solid ${color.gray3};
   border-radius: 8px;
   padding: 10px;
-  background: #fff;
-  color: #2c2d38;
+  background: var(--matching-section-bg, #fff);
+  color: var(--matching-panel-text, #2c2d38);
 `;
 
 export const CollectionSourceTitle = styled.p`
@@ -769,10 +986,9 @@ export const OwnerStatusMessage = styled.p`
 export const ModernProfileShell = styled.div`
   position: relative;
   height: 100%;
-  background:
-    radial-gradient(circle at 18% 0%, rgba(247, 147, 30, 0.16), transparent 28%),
-    linear-gradient(180deg, #17120e 0%, #0c0a09 100%);
-  color: #fff;
+  background: var(--matching-shell-bg);
+  color: var(--matching-chip-text, #fff);
+  transition: background 280ms cubic-bezier(0.4, 0, 0.2, 1), color 280ms cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: ${STACK_CARD_RADIUS};
   overflow: hidden;
   touch-action: pan-y;
@@ -794,7 +1010,7 @@ export const ModernHero = styled.div`
   min-height: clamp(300px, 52%, 430px);
   height: 52%;
   background:
-    ${({ $image }) => $image ? `linear-gradient(180deg, rgba(12, 9, 7, 0) 0%, rgba(12, 9, 7, 0.04) 42%, rgba(12, 9, 7, 0.48) 78%, rgba(12, 9, 7, 0.72) 100%), url(${$image})` : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)'};
+    ${({ $image }) => $image ? `var(--matching-hero-overlay), url(${$image})` : 'var(--matching-hero-fallback)'};
   background-size: cover;
   background-position: center 18%;
   display: flex;
@@ -809,7 +1025,7 @@ export const ModernHero = styled.div`
     position: absolute;
     inset: auto 0 0;
     height: 34%;
-    background: linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.36) 46%, rgba(9, 7, 5, 0.66) 100%);
+    background: var(--matching-hero-bottom);
     pointer-events: none;
   }
 
@@ -1000,18 +1216,18 @@ export const ModernProfileBody = styled.div`
 `;
 
 export const ModernSection = styled.section`
-  background: rgba(26, 23, 20, 0.82);
-  color: #fff8ec;
+  background: var(--matching-section-bg);
+  color: var(--matching-chip-text);
   border-radius: 18px;
   padding: 12px;
-  border: 1px solid rgba(255, 214, 148, 0.11);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--matching-section-border);
+  box-shadow: var(--matching-section-shadow);
   backdrop-filter: blur(14px);
 `;
 
 export const ModernSectionTitle = styled.h3`
   margin: 0 0 8px;
-  color: #ffd18a;
+  color: var(--matching-section-title);
   font-size: 18px;
   font-weight: 750;
   letter-spacing: 0.2px;
@@ -1030,15 +1246,15 @@ export const ModernChip = styled.div`
   max-width: 100%;
   padding: 7px 10px;
   border-radius: 13px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 214, 148, 0.12);
-  color: #fff8ec;
+  background: var(--matching-chip-bg);
+  border: 1px solid var(--matching-chip-border);
+  color: var(--matching-chip-text);
   font-size: 14px;
   font-weight: 650;
   line-height: 1.15;
 
   strong {
-    color: rgba(247, 185, 95, 0.76);
+    color: var(--matching-chip-label);
     font-size: 10px;
     font-weight: 650;
     text-transform: uppercase;
@@ -1059,17 +1275,17 @@ export const ModernFieldRow = styled.div`
   gap: 12px;
   align-items: baseline;
   padding: 0 2px;
-  color: rgba(255, 248, 236, 0.9);
+  color: var(--matching-muted-text);
 
   strong {
-    color: rgba(255, 216, 153, 0.62);
+    color: var(--matching-chip-label);
     font-size: 11px;
     font-weight: 650;
     letter-spacing: 0.03em;
   }
 
   span {
-    color: #fff8ec;
+    color: var(--matching-chip-text);
     font-size: 15px;
     font-weight: 600;
     line-height: 1.25;
@@ -1080,7 +1296,7 @@ export const ModernFieldRow = styled.div`
 
 export const ModernBioText = styled.p`
   margin: 0;
-  color: rgba(255, 248, 236, 0.88);
+  color: var(--matching-muted-text);
   white-space: pre-line;
   font-size: 14px;
   line-height: 1.45;
@@ -1147,8 +1363,8 @@ export const ModernContactLink = styled.a`
   max-width: 100%;
   padding: 8px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 214, 148, 0.12);
+  background: var(--matching-chip-bg);
+  border: 1px solid var(--matching-chip-border);
   color: #ffd899;
   font-size: 12px;
   font-weight: 900;
@@ -1216,8 +1432,8 @@ export const ModernActionRail = styled.div`
   align-items: center;
   padding: 7px 48px 8px;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(12, 9, 7, 0.72) 0%, rgba(12, 9, 7, 0.96) 100%);
-  border-top: 1px solid rgba(255, 214, 148, 0.1);
+  background: var(--matching-rail-bg);
+  border-top: 1px solid var(--matching-rail-border);
 
   & > span {
     pointer-events: auto;
