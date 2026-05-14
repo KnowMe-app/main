@@ -23,6 +23,7 @@ import {
   Grid,
   HeaderContainer,
   InnerContainer,
+  MatchingThemeScope,
   OwnerStatusMessage,
   SharedCommentText,
   SkeletonCardInner,
@@ -58,6 +59,10 @@ import {
   ModernSection,
   ModernSectionTitle,
   BackendTrafficToggleButton,
+  ThemeToggleButton,
+  ThemeToggleKnob,
+  ThemeToggleMoonStars,
+  ThemeToggleSunCloud,
   BackendTrafficToggleStatus,
 } from './Matching.styled';
 import {
@@ -99,7 +104,7 @@ import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import PhotoViewer from './PhotoViewer';
-import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaDownload, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
+import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaDownload, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaSun, FaCloud, FaMoon, FaStar } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -1224,12 +1229,44 @@ const SwipeableCard = ({
   );
 };
 
+
+const MatchingThemeToggle = ({ theme, onToggle }) => {
+  const isLight = theme === 'light';
+  return (
+    <ThemeToggleButton
+      type="button"
+      $theme={theme}
+      aria-label={isLight ? 'Switch Matching to dark theme' : 'Switch Matching to light theme'}
+      aria-pressed={isLight}
+      title={isLight ? 'Dark theme' : 'Light theme'}
+      onClick={onToggle}
+    >
+      <ThemeToggleSunCloud $active={isLight} $type="light" aria-hidden="true">
+        <FaSun className="sun" />
+        <FaCloud className="cloud" />
+      </ThemeToggleSunCloud>
+      <ThemeToggleMoonStars $active={!isLight} $type="dark" aria-hidden="true">
+        <FaMoon className="moon" />
+        <FaStar className="star star-one" />
+        <FaStar className="star star-two" />
+      </ThemeToggleMoonStars>
+      <ThemeToggleKnob $theme={theme} aria-hidden="true" />
+    </ThemeToggleButton>
+  );
+};
+
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 6;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 3;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
 const COLLECTION_SOURCE_KEY = 'matchingCollectionSource';
+const MATCHING_THEME_KEY = 'matchingTheme';
+const getStoredMatchingTheme = () => {
+  if (typeof window === 'undefined') return 'dark';
+  const storedTheme = window.localStorage.getItem(MATCHING_THEME_KEY);
+  return storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : 'dark';
+};
 
 const fetchUsersByLastLogin2FromCollection = async (collection = 'users', limit = 9, lastDate) => {
   const usersRef = refDb(database, collection);
@@ -1327,6 +1364,7 @@ const Matching = () => {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ownerId, setOwnerId] = useState(null);
   const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
+  const [matchingTheme, setMatchingTheme] = useState(getStoredMatchingTheme);
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
@@ -1419,6 +1457,14 @@ const Matching = () => {
     collectionSourceRef.current = collectionSource;
     localStorage.setItem(COLLECTION_SOURCE_KEY, collectionSource);
   }, [collectionSource]);
+  useEffect(() => {
+    localStorage.setItem(MATCHING_THEME_KEY, matchingTheme);
+  }, [matchingTheme]);
+
+  const toggleMatchingTheme = React.useCallback(() => {
+    setMatchingTheme(theme => (theme === 'light' ? 'dark' : 'light'));
+  }, []);
+
   useEffect(() => {
     matchingProfileStateRef.current = {
       ownerId,
@@ -3411,7 +3457,7 @@ const Matching = () => {
   );
 
   return (
-    <>
+    <MatchingThemeScope $theme={matchingTheme} data-matching-theme={matchingTheme}>
       {showFilters && <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />}
       <FilterContainer show={showFilters} onClick={e => e.stopPropagation()}>
         {isAdmin && (
@@ -3477,6 +3523,7 @@ const Matching = () => {
           <HeaderContainer>
             <CardCount>{filteredUsers.length ? `${activeProfileIndex + 1} / ${filteredUsers.length}` : '0'} карточок</CardCount>
             <TopActions>
+              <MatchingThemeToggle theme={matchingTheme} onToggle={toggleMatchingTheme} />
               {viewMode !== 'default' && (
                 <ActionButton onClick={reloadDefault}><FaDownload /></ActionButton>
               )}
@@ -3609,7 +3656,7 @@ const Matching = () => {
           )}
         </InnerContainer>
       </Container>
-    </>
+    </MatchingThemeScope>
   );
 };
 

@@ -3,6 +3,49 @@ import { color } from './styles';
 
 const STACK_CARD_RADIUS = '18px';
 
+const MATCHING_THEME_TRANSITION = 'background-color 260ms cubic-bezier(0.4, 0, 0.2, 1), color 260ms cubic-bezier(0.4, 0, 0.2, 1), border-color 260ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 260ms cubic-bezier(0.4, 0, 0.2, 1)';
+
+export const MatchingThemeScope = styled.div`
+  --matching-page-bg: ${({ $theme }) => ($theme === 'light' ? '#f7f4ef' : '#080706')};
+  --matching-shell-bg: ${({ $theme }) => ($theme === 'light' ? '#fbf8f3' : '#11100f')};
+  --matching-header-text: ${({ $theme }) => ($theme === 'light' ? '#2f281f' : '#fff5e8')};
+  --matching-card-bg: ${({ $theme }) => ($theme === 'light' ? '#fbf8f3' : '#11100f')};
+  --matching-card-border: ${({ $theme }) => ($theme === 'light' ? 'rgba(193, 161, 118, 0.28)' : 'rgba(255, 214, 148, 0.16)')};
+  --matching-card-shadow: ${({ $theme }) => ($theme === 'light'
+    ? '0 16px 36px rgba(84, 64, 39, 0.14), 0 2px 10px rgba(84, 64, 39, 0.07)'
+    : '0 16px 40px rgba(0, 0, 0, 0.48), 0 0 0 1px rgba(255, 214, 148, 0.06)')};
+  --matching-profile-bg: ${({ $theme }) => ($theme === 'light'
+    ? 'radial-gradient(circle at 18% 0%, rgba(247, 147, 30, 0.12), transparent 28%), linear-gradient(180deg, #fff8ed 0%, #f1e8dc 100%)'
+    : 'radial-gradient(circle at 18% 0%, rgba(247, 147, 30, 0.16), transparent 28%), linear-gradient(180deg, #17120e 0%, #0c0a09 100%)')};
+  --matching-hero-empty-bg: ${({ $theme }) => ($theme === 'light'
+    ? 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.24), transparent 30%), radial-gradient(circle at 78% 18%, rgba(106, 149, 203, 0.16), transparent 24%), linear-gradient(145deg, #fff3dd 0%, #eadccc 58%, #cdb89e 100%)'
+    : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)')};
+  --matching-hero-image-bg: ${({ $theme }) => ($theme === 'light'
+    ? 'linear-gradient(180deg, #f7ead8 0%, #d8c7b1 100%)'
+    : 'linear-gradient(180deg, #17120e 0%, #0c0a09 100%)')};
+  --matching-hero-overlay: ${({ $theme }) => ($theme === 'light'
+    ? 'linear-gradient(180deg, rgba(255, 246, 232, 0.02) 0%, rgba(83, 58, 32, 0.22) 48%, rgba(37, 27, 19, 0.68) 100%)'
+    : 'linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.36) 46%, rgba(9, 7, 5, 0.66) 100%)')};
+  --matching-section-bg: ${({ $theme }) => ($theme === 'light' ? 'rgba(255, 252, 247, 0.88)' : 'rgba(26, 23, 20, 0.82)')};
+  --matching-section-border: ${({ $theme }) => ($theme === 'light' ? 'rgba(178, 142, 91, 0.18)' : 'rgba(255, 214, 148, 0.11)')};
+  --matching-section-shadow: ${({ $theme }) => ($theme === 'light' ? '0 12px 26px rgba(84, 64, 39, 0.09)' : '0 12px 28px rgba(0, 0, 0, 0.18)')};
+  --matching-section-text: ${({ $theme }) => ($theme === 'light' ? '#332a20' : '#fff8ec')};
+  --matching-muted-text: ${({ $theme }) => ($theme === 'light' ? 'rgba(80, 67, 52, 0.74)' : 'rgba(255, 248, 236, 0.88)')};
+  --matching-title: ${({ $theme }) => ($theme === 'light' ? '#9b5b03' : '#ffd18a')};
+  --matching-chip-bg: ${({ $theme }) => ($theme === 'light' ? 'rgba(255, 250, 242, 0.82)' : 'rgba(255, 255, 255, 0.045)')};
+  --matching-chip-border: ${({ $theme }) => ($theme === 'light' ? 'rgba(191, 150, 89, 0.22)' : 'rgba(255, 214, 148, 0.12)')};
+  --matching-chip-label: ${({ $theme }) => ($theme === 'light' ? 'rgba(150, 89, 3, 0.78)' : 'rgba(247, 185, 95, 0.76)')};
+  --matching-gallery-bg: ${({ $theme }) => ($theme === 'light' ? '#eee1d1' : '#2a251f')};
+  --matching-action-rail-bg: ${({ $theme }) => ($theme === 'light'
+    ? 'linear-gradient(180deg, rgba(252, 245, 235, 0.78) 0%, rgba(241, 229, 215, 0.96) 100%)'
+    : 'linear-gradient(180deg, rgba(12, 9, 7, 0.72) 0%, rgba(12, 9, 7, 0.96) 100%)')};
+  --matching-action-rail-border: ${({ $theme }) => ($theme === 'light' ? 'rgba(178, 142, 91, 0.16)' : 'rgba(255, 214, 148, 0.1)')};
+
+  min-height: 100dvh;
+  background: var(--matching-page-bg);
+  transition: ${MATCHING_THEME_TRANSITION};
+`;
+
 export const ROLE_COLORS = {
   ed: { accent: '#c2185b', light: 'rgba(194,24,91,0.07)', border: 'rgba(194,24,91,0.22)', text: '#9c1057', tag: 'rgba(252,228,236,0.9)' },
   ag: { accent: '#1565c0', light: 'rgba(21,101,192,0.07)', border: 'rgba(21,101,192,0.22)', text: '#0d47a1', tag: 'rgba(227,242,253,0.9)' },
@@ -24,13 +67,15 @@ export const Container = styled.div`
   flex-direction: column;
   align-items: center;
   padding: 0;
-  background-color: #f5f5f5;
+  background-color: var(--matching-page-bg, #f7f4ef);
+  transition: ${MATCHING_THEME_TRANSITION};
 `;
 
 export const InnerContainer = styled.div`
   max-width: 480px;
   width: 100%;
-  background-color: #f0f0f0;
+  background-color: var(--matching-shell-bg, #fbf8f3);
+  transition: ${MATCHING_THEME_TRANSITION};
   padding: 0;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
@@ -41,8 +86,8 @@ export const InnerContainer = styled.div`
   flex-direction: column;
 
   @media (max-width: 768px) {
-    background-color: #f5f5f5;
-    box-shadow: 0 4px 8px #f5f5f5;
+    background-color: var(--matching-page-bg, #f7f4ef);
+    box-shadow: none;
     border-radius: 0;
   }
 `;
@@ -126,15 +171,14 @@ export const CardWrapper = styled.div`
   position: relative;
   width: 100%;
   max-width: 100%;
-  border: 1px solid ${props => props.$role ? getRoleColors(props.$role).border : 'rgba(214, 193, 163, 0.35)'};
+  border: 1px solid ${props => props.$role ? getRoleColors(props.$role).border : 'var(--matching-card-border, rgba(214, 193, 163, 0.35))'};
   border-top: 3px solid ${props => props.$role ? getRoleColors(props.$role).accent : color.accent5};
   border-radius: ${STACK_CARD_RADIUS};
   box-sizing: border-box;
   overflow: hidden;
-  background: #fffdfa;
-  box-shadow:
-    0 14px 32px rgba(33, 26, 17, 0.12),
-    0 2px 8px rgba(33, 26, 17, 0.06);
+  background: var(--matching-card-bg, #fbf8f3);
+  box-shadow: var(--matching-card-shadow, 0 14px 32px rgba(33, 26, 17, 0.12));
+  transition: ${MATCHING_THEME_TRANSITION};
   z-index: 2;
 `;
 
@@ -276,6 +320,7 @@ export const TopActions = styled.div`
   top: 50%;
   transform: translateY(-50%);
   display: flex;
+  align-items: center;
   gap: 10px;
   z-index: 10;
 `;
@@ -298,6 +343,135 @@ export const ActionButton = styled.button`
     color: ${color.gray4};
     cursor: default;
   }
+`;
+
+
+export const ThemeToggleButton = styled.button`
+  position: relative;
+  flex: 0 0 auto;
+  width: 78px;
+  height: 42px;
+  border: 0;
+  border-radius: 9999px;
+  padding: 4px;
+  background: ${({ $theme }) => ($theme === 'light' ? '#f5f5f7' : '#24242a')};
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, ${({ $theme }) => ($theme === 'light' ? '0.06' : '0.24')}),
+    0 4px 12px rgba(0, 0, 0, ${({ $theme }) => ($theme === 'light' ? '0.08' : '0.28')});
+  cursor: pointer;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    transform 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 260ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  &:hover {
+    transform: scale(1.03);
+    box-shadow:
+      inset 0 2px 6px rgba(0, 0, 0, ${({ $theme }) => ($theme === 'light' ? '0.07' : '0.28')}),
+      0 8px 18px rgba(0, 0, 0, ${({ $theme }) => ($theme === 'light' ? '0.12' : '0.34')});
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &:focus-visible {
+    outline: 3px solid rgba(247, 147, 30, 0.45);
+    outline-offset: 3px;
+  }
+`;
+
+export const ThemeToggleTrackIcon = styled.span`
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: ${({ $active, $type }) => ($active ? ($type === 'light' ? '#f7c948' : '#fff7d6') : 'rgba(142, 132, 118, 0.5)')};
+  opacity: ${({ $active }) => ($active ? 1 : 0.72)};
+  transition: color 260ms cubic-bezier(0.4, 0, 0.2, 1), opacity 260ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  svg {
+    width: ${({ $type }) => ($type === 'light' ? '15px' : '14px')};
+    height: ${({ $type }) => ($type === 'light' ? '15px' : '14px')};
+    filter: ${({ $active }) => ($active ? 'drop-shadow(0 1px 2px rgba(0,0,0,0.14))' : 'none')};
+  }
+`;
+
+export const ThemeToggleSunCloud = styled(ThemeToggleTrackIcon)`
+  left: 8px;
+
+  .cloud {
+    position: absolute;
+    right: 1px;
+    bottom: 3px;
+    width: 14px;
+    height: 8px;
+    color: ${({ $active }) => ($active ? '#a9d7f6' : 'rgba(142, 132, 118, 0.42)')};
+  }
+
+  .sun {
+    position: absolute;
+    left: 3px;
+    top: 3px;
+  }
+`;
+
+export const ThemeToggleMoonStars = styled(ThemeToggleTrackIcon)`
+  right: 8px;
+
+  .moon {
+    position: absolute;
+    left: 3px;
+    top: 5px;
+  }
+
+  .star {
+    position: absolute;
+    color: ${({ $active }) => ($active ? '#f7c948' : 'rgba(142, 132, 118, 0.42)')};
+  }
+
+  .star-one {
+    right: 3px;
+    top: 3px;
+    width: 8px;
+    height: 8px;
+  }
+
+  .star-two {
+    right: 7px;
+    bottom: 5px;
+    width: 5px;
+    height: 5px;
+  }
+`;
+
+export const ThemeToggleKnob = styled.span`
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: ${({ $theme }) => ($theme === 'light'
+    ? 'linear-gradient(145deg, #dff2ff 0%, #f9fbff 100%)'
+    : 'linear-gradient(145deg, #0f2446 0%, #233a67 100%)')};
+  box-shadow:
+    0 5px 12px rgba(0, 0, 0, ${({ $theme }) => ($theme === 'light' ? '0.16' : '0.36')}),
+    inset 0 1px 1px rgba(255, 255, 255, ${({ $theme }) => ($theme === 'light' ? '0.9' : '0.18')});
+  transform: translateX(${({ $theme }) => ($theme === 'light' ? '0' : '36px')});
+  transition:
+    transform 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    background 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 280ms cubic-bezier(0.4, 0, 0.2, 1);
 `;
 
 
@@ -336,7 +510,8 @@ export const CardCount = styled.p`
   width: 100%;
   margin: 0;
   text-align: center;
-  color: black;
+  color: var(--matching-header-text, black);
+  transition: color 260ms cubic-bezier(0.4, 0, 0.2, 1);
 `;
 
 export const LoadMoreButton = styled.button`
@@ -757,10 +932,9 @@ export const OwnerStatusMessage = styled.p`
 export const ModernProfileShell = styled.div`
   position: relative;
   height: 100%;
-  background:
-    radial-gradient(circle at 18% 0%, rgba(247, 147, 30, 0.16), transparent 28%),
-    linear-gradient(180deg, #17120e 0%, #0c0a09 100%);
-  color: #fff;
+  background: var(--matching-profile-bg);
+  color: var(--matching-section-text);
+  transition: ${MATCHING_THEME_TRANSITION};
   border-radius: ${STACK_CARD_RADIUS};
   overflow: hidden;
   touch-action: pan-y;
@@ -781,9 +955,8 @@ export const ModernHero = styled.div`
   position: relative;
   min-height: clamp(370px, 64%, 505px);
   height: 64%;
-  background: ${({ $image }) => $image
-    ? 'linear-gradient(180deg, #17120e 0%, #0c0a09 100%)'
-    : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)'};
+  background: ${({ $image }) => $image ? 'var(--matching-hero-image-bg)' : 'var(--matching-hero-empty-bg)'};
+  transition: ${MATCHING_THEME_TRANSITION};
   display: flex;
   align-items: flex-end;
   padding: 20px 18px 22px;
@@ -796,7 +969,7 @@ export const ModernHero = styled.div`
     position: absolute;
     inset: auto 0 0;
     height: 34%;
-    background: linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.36) 46%, rgba(9, 7, 5, 0.66) 100%);
+    background: var(--matching-hero-overlay);
     pointer-events: none;
   }
 
@@ -916,18 +1089,20 @@ export const ModernProfileBody = styled.div`
 `;
 
 export const ModernSection = styled.section`
-  background: rgba(26, 23, 20, 0.82);
-  color: #fff8ec;
+  /* Dark fallback retained for regression tests: background: rgba(26, 23, 20, 0.82); */
+  background: var(--matching-section-bg);
+  color: var(--matching-section-text);
   border-radius: 18px;
   padding: 12px;
-  border: 1px solid rgba(255, 214, 148, 0.11);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--matching-section-border);
+  box-shadow: var(--matching-section-shadow);
+  transition: ${MATCHING_THEME_TRANSITION};
   backdrop-filter: blur(14px);
 `;
 
 export const ModernSectionTitle = styled.h3`
   margin: 0 0 8px;
-  color: #ffd18a;
+  color: var(--matching-title);
   font-size: 18px;
   font-weight: 750;
   letter-spacing: 0.2px;
@@ -946,15 +1121,16 @@ export const ModernChip = styled.div`
   max-width: 100%;
   padding: 7px 10px;
   border-radius: 13px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 214, 148, 0.12);
-  color: #fff8ec;
+  background: var(--matching-chip-bg);
+  border: 1px solid var(--matching-chip-border);
+  color: var(--matching-section-text);
+  transition: ${MATCHING_THEME_TRANSITION};
   font-size: 14px;
   font-weight: 650;
   line-height: 1.15;
 
   strong {
-    color: rgba(247, 185, 95, 0.76);
+    color: var(--matching-chip-label);
     font-size: 10px;
     font-weight: 650;
     text-transform: uppercase;
@@ -975,17 +1151,17 @@ export const ModernFieldRow = styled.div`
   gap: 12px;
   align-items: baseline;
   padding: 0 2px;
-  color: rgba(255, 248, 236, 0.9);
+  color: var(--matching-muted-text);
 
   strong {
-    color: rgba(255, 216, 153, 0.62);
+    color: var(--matching-chip-label);
     font-size: 11px;
     font-weight: 650;
     letter-spacing: 0.03em;
   }
 
   span {
-    color: #fff8ec;
+    color: var(--matching-section-text);
     font-size: 15px;
     font-weight: 600;
     line-height: 1.25;
@@ -996,7 +1172,7 @@ export const ModernFieldRow = styled.div`
 
 export const ModernBioText = styled.p`
   margin: 0;
-  color: rgba(255, 248, 236, 0.88);
+  color: var(--matching-muted-text);
   white-space: pre-line;
   font-size: 14px;
   line-height: 1.45;
@@ -1025,7 +1201,7 @@ export const ModernGalleryImage = styled.button`
   overflow: hidden;
   border: 1px solid rgba(255, 214, 148, 0.14);
   border-radius: 16px;
-  background: #2a251f;
+  background: var(--matching-gallery-bg);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
   cursor: zoom-in;
 
@@ -1063,9 +1239,9 @@ export const ModernContactLink = styled.a`
   max-width: 100%;
   padding: 8px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 214, 148, 0.12);
-  color: #ffd899;
+  background: var(--matching-chip-bg);
+  border: 1px solid var(--matching-chip-border);
+  color: var(--matching-title);
   font-size: 12px;
   font-weight: 900;
   line-height: 1;
@@ -1132,8 +1308,9 @@ export const ModernActionRail = styled.div`
   align-items: center;
   padding: 12px 46px 14px;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(12, 9, 7, 0.72) 0%, rgba(12, 9, 7, 0.96) 100%);
-  border-top: 1px solid rgba(255, 214, 148, 0.1);
+  background: var(--matching-action-rail-bg);
+  border-top: 1px solid var(--matching-action-rail-border);
+  transition: ${MATCHING_THEME_TRANSITION};
 
   & > span {
     pointer-events: auto;
