@@ -39,8 +39,10 @@ import {
   ModernBioText,
   ModernChip,
   ModernChipGrid,
+  ModernContactDetails,
   ModernContactLinks,
   ModernContactLink,
+  ModernContactSummary,
   ModernFieldList,
   ModernFieldRow,
   ModernDesktopNavButton,
@@ -108,6 +110,7 @@ import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
 import { handleEmptyFetch } from './loadMoreUtils';
 import {
   getHeroFields,
+  getQuickFacts,
   getProfileAge,
   getProfileBio,
   getProfileLocation,
@@ -1054,9 +1057,10 @@ const SwipeableCard = ({
   const locationInfo = getProfileLocation(user);
   const identityAndLocationKeys = ['name', 'surname', 'agencyName', 'companyName', 'agency', 'country', 'region', 'city', 'role', 'userRole'];
   const heroFields = getHeroFields(user, resolvedRole, { excludeKeys: identityAndLocationKeys });
-  const bodyHeroFields = heroFields.slice(3);
   const usedSummaryFieldKeys = collectProfileFieldKeys(heroFields);
-  const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys] });
+  const bodyHeroFields = getQuickFacts(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys] });
+  const usedBodyFieldKeys = collectProfileFieldKeys(bodyHeroFields);
+  const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys, ...usedBodyFieldKeys] });
   const bio = getProfileBio(user);
   const initials = name
     .split(/\s+/)
@@ -1190,8 +1194,10 @@ const SwipeableCard = ({
           ))}
           {sections.filter(section => section.variant === 'contacts').map(section => (
             <ModernSection key={section.title}>
-              <ModernSectionTitle>{section.title}</ModernSectionTitle>
-              <ProfileContactLinks user={user} role={resolvedRole} />
+              <ModernContactDetails onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+                <ModernContactSummary>Show contacts</ModernContactSummary>
+                <ProfileContactLinks user={user} role={resolvedRole} />
+              </ModernContactDetails>
             </ModernSection>
           ))}
           <ModernSection>

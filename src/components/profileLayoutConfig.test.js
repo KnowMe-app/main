@@ -42,7 +42,8 @@ describe('profileLayoutConfig', () => {
 
     expect(getProfileRole(user)).toBe('ed');
     expect(getProfilePhotos(user)).toEqual(['hero.jpg', 'gallery.jpg']);
-    expect(hero.map(field => field.key)).toEqual(['height', 'weight', 'bmi', 'blood', 'eyeColor', 'experience']);
+    expect(hero.map(field => field.key)).toEqual(['height', 'weight', 'bmi', 'blood', 'experience']);
+    expect(hero.find(field => field.key === 'experience')?.label).toBe('Exp');
     expect(quickFacts.map(field => field.key)).toEqual([]);
     expect(sections.map(section => section.title)).toEqual(expect.arrayContaining(['Appearance', 'Main information', 'Donation experience']));
     expect(detailKeys).toEqual(expect.arrayContaining(['breastSize', 'ownKids', 'education', 'cSection']));

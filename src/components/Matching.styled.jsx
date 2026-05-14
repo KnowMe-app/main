@@ -1295,8 +1295,46 @@ export const ModernMoreButton = styled.button`
   cursor: pointer;
 `;
 
+export const ModernContactDetails = styled.details`
+  border: 1px solid var(--matching-contact-border);
+  border-radius: 16px;
+  background: var(--matching-card-bg);
+  overflow: hidden;
+`;
+
+export const ModernContactSummary = styled.summary`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  color: var(--matching-contact-text);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+
+  &::after {
+    content: '⌄';
+    color: var(--matching-accent);
+    font-size: 16px;
+    line-height: 1;
+    transition: transform 0.18s ease;
+  }
+
+  ${ModernContactDetails}[open] &::after {
+    transform: rotate(180deg);
+  }
+`;
+
 export const ModernContactLinks = styled.div`
   display: flex;
+  padding: 0 12px 12px;
   flex-wrap: wrap;
   gap: 8px;
 `;
