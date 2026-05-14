@@ -47,7 +47,6 @@ import {
   ModernHeroContent,
   ModernHeroFacts,
   ModernHeroFallbackMark,
-  ModernHeroImage,
   ModernHeroLocation,
   ModernHeroTitle,
   ModernMoreButton,
@@ -98,7 +97,6 @@ import { normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard } from '../ut
 import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
-import PhotoViewer from './PhotoViewer';
 import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaDownload, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
@@ -1004,9 +1002,8 @@ const SwipeableCard = ({
   const resolvedRole = getProfileRole(user) || role;
   const photos = getProfilePhotos(user);
   const heroPhoto = photo || photos[0] || '';
-  const allPhotos = [heroPhoto, ...photos].filter(Boolean).filter((item, index, list) => list.indexOf(item) === index);
+  const galleryPhotos = photos.filter(item => item && item !== heroPhoto);
   const [activeHeroPhoto, setActiveHeroPhoto] = useState(heroPhoto);
-  const [viewerIndex, setViewerIndex] = useState(null);
   const [dir, setDir] = useState(null);
   const favoriteButtonWrapRef = useRef(null);
   const dislikeButtonWrapRef = useRef(null);
@@ -1075,26 +1072,8 @@ const SwipeableCard = ({
     if (swipedRef.current) swipedRef.current = false;
   };
 
-  const openPhotoViewer = index => event => {
-    if (event) event.stopPropagation();
-    if (swipedRef.current || index < 0 || !allPhotos[index]) return;
-    setViewerIndex(index);
-  };
-
-  const openHeroViewer = event => {
-    const heroIndex = allPhotos.indexOf(activeHeroPhoto);
-    openPhotoViewer(heroIndex === -1 ? 0 : heroIndex)(event);
-  };
-
-  const handleHeroKeyDown = event => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    openHeroViewer(event);
-  };
-
   return (
-    <>
-      <AnimatedCard
+    <AnimatedCard
       $dir={dir}
       $small={isAgency}
       $compactWithoutPhoto={!activeHeroPhoto}
@@ -1109,24 +1088,16 @@ const SwipeableCard = ({
     >
       <ModernProfileShell>
         <ModernProfileScroll>
-        <ModernHero
-          $image={activeHeroPhoto}
-          $clickable={!!activeHeroPhoto}
-          role={activeHeroPhoto ? 'button' : undefined}
-          tabIndex={activeHeroPhoto ? 0 : undefined}
-          aria-label={activeHeroPhoto ? `Open ${name} photo` : undefined}
-          onClick={activeHeroPhoto ? openHeroViewer : undefined}
-          onKeyDown={activeHeroPhoto ? handleHeroKeyDown : undefined}
-        >
+        <ModernHero $image={activeHeroPhoto}>
           {!activeHeroPhoto && <ModernHeroFallbackMark>{initials}</ModernHeroFallbackMark>}
-          {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name} profile hero`} onError={() => setActiveHeroPhoto('')} />}
+          {activeHeroPhoto && <img src={activeHeroPhoto} alt="" style={{ display: 'none' }} onError={() => setActiveHeroPhoto('')} />}
           <ModernHeroContent>
             <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>
             <ModernHeroTitle>{title}</ModernHeroTitle>
             {locationInfo && <ModernHeroLocation>{locationInfo}</ModernHeroLocation>}
             {heroFields.length > 0 && (
               <ModernHeroFacts>
-                {heroFields.slice(0, 3).map(item => (
+                {heroFields.slice(0, 6).map(item => (
                   <ModernFactPill key={`hero-${item.key}`}>
                     <strong>{item.label}</strong>
                     <span>{item.value}</span>
@@ -1151,19 +1122,12 @@ const SwipeableCard = ({
               )}
             </ModernSection>
           ))}
-          {allPhotos.length > 0 && (
+          {galleryPhotos.length > 0 && (
             <ModernSection>
               <ModernSectionTitle>Gallery</ModernSectionTitle>
               <ModernGallery>
-                {allPhotos.map((src, index) => (
-                  <ModernGalleryImage
-                    type="button"
-                    key={src}
-                    onClick={openPhotoViewer(index)}
-                    aria-label={`Open ${name} photo ${index + 1}`}
-                  >
-                    <img src={src} alt={`${name} profile ${index + 1}`} onError={event => { event.currentTarget.closest('button').style.display = 'none'; }} />
-                  </ModernGalleryImage>
+                {galleryPhotos.map(src => (
+                  <ModernGalleryImage key={src} src={src} alt={`${name} profile`} onError={event => { event.currentTarget.style.display = 'none'; }} />
                 ))}
               </ModernGallery>
             </ModernSection>
@@ -1201,18 +1165,14 @@ const SwipeableCard = ({
         </ModernProfileScroll>
         <ModernActionRail>
           <span ref={dislikeButtonWrapRef}>
-            <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={{ background: 'rgba(255, 253, 248, 0.96)', color: '#9c5a09' }} />
+            <BtnDislike userId={user.userId} userData={user} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={{ background: 'rgba(24, 21, 18, 0.78)' }} />
           </span>
           <span ref={favoriteButtonWrapRef}>
             <BtnFavorite userId={user.userId} userData={user} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={handleRemove} multiDataOwnerId={multiDataOwnerId} customStyle={{ background: 'rgba(247, 147, 30, 0.95)' }} />
           </span>
         </ModernActionRail>
       </ModernProfileShell>
-      </AnimatedCard>
-      {viewerIndex !== null && allPhotos.length > 0 && (
-        <PhotoViewer photos={allPhotos} index={viewerIndex} onClose={() => setViewerIndex(null)} />
-      )}
-    </>
+    </AnimatedCard>
   );
 };
 
