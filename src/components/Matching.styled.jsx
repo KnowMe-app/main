@@ -23,16 +23,20 @@ export const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-height: 100dvh;
   padding: 0;
-  background-color: #f5f5f5;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(247, 147, 30, 0.11), transparent 32%),
+    linear-gradient(180deg, #17120e 0%, #0c0a09 100%);
 `;
 
 export const InnerContainer = styled.div`
   max-width: 480px;
   width: 100%;
-  background-color: #f0f0f0;
+  min-height: 100dvh;
+  background: transparent;
   padding: 0;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.22);
   border-radius: 8px;
   box-sizing: border-box;
   position: relative;
@@ -41,20 +45,21 @@ export const InnerContainer = styled.div`
   flex-direction: column;
 
   @media (max-width: 768px) {
-    background-color: #f5f5f5;
-    box-shadow: 0 4px 8px #f5f5f5;
+    box-shadow: none;
     border-radius: 0;
   }
 `;
 
 export const Grid = styled.div`
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: nowrap;
   gap: 0;
-  padding: 0 10px;
-  margin-bottom: 8px;
+  padding: 0 10px 10px;
+  margin-bottom: 0;
   justify-content: center;
   width: 100%;
+  min-height: 0;
   box-sizing: border-box;
   overflow: hidden;
 `;
@@ -69,8 +74,10 @@ export const LoadMoreFooter = styled.div`
 
 export const CardContainer = styled.div`
   position: relative;
+  display: flex;
   width: 100%;
   max-width: 100%;
+  min-height: 0;
 `;
 
 export const NextPhoto = styled.img`
@@ -124,8 +131,10 @@ export const ThirdInfoCard = styled(NextInfoCard)`
 
 export const CardWrapper = styled.div`
   position: relative;
+  display: flex;
   width: 100%;
   max-width: 100%;
+  min-height: 0;
   border: 1px solid ${props => props.$role ? getRoleColors(props.$role).border : 'rgba(214, 193, 163, 0.35)'};
   border-top: 3px solid ${props => props.$role ? getRoleColors(props.$role).accent : color.accent5};
   border-radius: ${STACK_CARD_RADIUS};
@@ -336,7 +345,9 @@ export const CardCount = styled.p`
   width: 100%;
   margin: 0;
   text-align: center;
-  color: black;
+  color: #fff8ec;
+  font-weight: 700;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.28);
 `;
 
 export const LoadMoreButton = styled.button`
@@ -725,8 +736,9 @@ const slideRight = keyframes`
 
 export const AnimatedCard = styled(Card)`
   ${({ $activeProfile }) => $activeProfile && `
-    height: min(760px, calc(100dvh - 112px));
-    min-height: 480px;
+    flex: 1 1 auto;
+    height: auto;
+    min-height: min(480px, calc(100dvh - 66px));
     aspect-ratio: auto;
     padding-bottom: 0;
     background: transparent;
@@ -768,19 +780,19 @@ export const ModernProfileShell = styled.div`
 
 export const ModernProfileScroll = styled.div`
   position: absolute;
-  inset: 0 0 82px;
+  inset: 0 0 66px;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  scroll-padding-bottom: 28px;
+  scroll-padding-bottom: 18px;
 `;
 
 export const ModernHero = styled.div`
   position: relative;
-  min-height: clamp(330px, 58%, 455px);
-  height: 58%;
+  min-height: clamp(300px, 52%, 430px);
+  height: 52%;
   background:
     ${({ $image }) => $image ? `linear-gradient(180deg, rgba(12, 9, 7, 0) 0%, rgba(12, 9, 7, 0.04) 42%, rgba(12, 9, 7, 0.48) 78%, rgba(12, 9, 7, 0.72) 100%), url(${$image})` : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)'};
   background-size: cover;
@@ -854,38 +866,109 @@ export const ModernHeroTitle = styled.h2`
 `;
 
 export const ModernHeroLocation = styled.p`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin: 7px 0 0;
-  color: rgba(255, 246, 232, 0.88);
+  color: rgba(255, 246, 232, 0.92);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 650;
+
+  svg {
+    flex: 0 0 auto;
+    color: #f7931e;
+    filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.42));
+  }
 `;
 
 export const ModernHeroFacts = styled.div`
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-bottom: 2px;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 `;
 
 export const ModernFactPill = styled.span`
+  flex: 0 0 74px;
+  min-height: 74px;
   display: inline-flex;
-  gap: 5px;
-  align-items: baseline;
-  max-width: 100%;
-  padding: 5px 8px;
-  border-radius: 999px;
-  color: #fff8ec;
-  background: rgba(22, 17, 12, 0.38);
-  border: 1px solid rgba(255, 204, 115, 0.18);
-  backdrop-filter: blur(12px);
-  font-size: 12px;
-  line-height: 1.1;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 9px 10px 8px;
+  border-radius: 18px;
+  color: #2a2118;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 249, 238, 0.82) 100%);
+  border: 1px solid rgba(255, 214, 148, 0.5);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(14px);
+  text-shadow: none;
+  line-height: 1;
+
+  .fact-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #f7931e;
+    background: rgba(247, 147, 30, 0.12);
+    font-size: 12px;
+  }
+
+  .fact-copy {
+    display: grid;
+    grid-template-columns: minmax(0, auto) auto;
+    align-items: end;
+    column-gap: 3px;
+    row-gap: 2px;
+  }
 
   strong {
-    color: rgba(255, 204, 115, 0.82);
-    font-size: 10px;
+    grid-column: 1 / -1;
+    color: rgba(247, 108, 0, 0.88);
+    font-size: 9px;
+    font-weight: 850;
     text-transform: uppercase;
-    letter-spacing: 0.4px;
+    letter-spacing: 0.45px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .fact-value {
+    color: #241a12;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: -0.7px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .fact-unit {
+    align-self: end;
+    padding-bottom: 2px;
+    color: rgba(66, 49, 32, 0.68);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: lowercase;
+  }
+
+  @media (max-width: 380px) {
+    flex-basis: 68px;
+    min-height: 70px;
+    padding: 8px;
   }
 `;
 
@@ -1088,10 +1171,10 @@ export const ModernActionRail = styled.div`
   z-index: 8;
   display: flex;
   justify-content: space-between;
-  min-height: 82px;
+  min-height: 66px;
   box-sizing: border-box;
   align-items: center;
-  padding: 12px 46px 14px;
+  padding: 7px 48px 8px;
   pointer-events: none;
   background: linear-gradient(180deg, rgba(12, 9, 7, 0.72) 0%, rgba(12, 9, 7, 0.96) 100%);
   border-top: 1px solid rgba(255, 214, 148, 0.1);
@@ -1102,8 +1185,8 @@ export const ModernActionRail = styled.div`
 
   button {
     position: static !important;
-    width: 52px !important;
-    height: 52px !important;
+    width: 48px !important;
+    height: 48px !important;
     border-radius: 50% !important;
     box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32) !important;
   }

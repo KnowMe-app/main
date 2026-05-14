@@ -97,7 +97,7 @@ import { normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard } from '../ut
 import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
-import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaDownload, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
+import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaDownload, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaRulerVertical, FaWeight, FaTint, FaEye, FaRegStar } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -974,6 +974,39 @@ const ProfileBio = ({ text }) => {
   );
 };
 
+
+const HERO_FACT_UNITS = {
+  height: 'cm',
+  weight: 'kg',
+};
+
+const normalizeHeroFactLabel = label => String(label || '').toLowerCase();
+
+const getHeroFactIcon = item => {
+  const key = String(item?.key || '').toLowerCase();
+  const label = normalizeHeroFactLabel(item?.label);
+  if (key.includes('height') || label.includes('height')) return <FaRulerVertical />;
+  if (key.includes('weight') || label.includes('weight')) return <FaWeight />;
+  if (key.includes('blood') || key === 'rh' || label.includes('blood') || label === 'rh') return <FaTint />;
+  if (key.includes('eye') || label.includes('eye')) return <FaEye />;
+  return <FaRegStar />;
+};
+
+const formatHeroFact = item => {
+  const rawValue = String(item?.value || '').trim();
+  const preferredUnit = HERO_FACT_UNITS[item?.key];
+  if (!rawValue) return { value: '', unit: preferredUnit || '' };
+
+  if (preferredUnit) {
+    const withoutUnit = rawValue.replace(new RegExp(`\\s*${preferredUnit}$`, 'i'), '').trim();
+    return { value: withoutUnit || rawValue, unit: preferredUnit };
+  }
+
+  const unitMatch = rawValue.match(/^(.+?)\s*(cm|kg|кг|см)$/i);
+  if (unitMatch) return { value: unitMatch[1].trim(), unit: unitMatch[2] };
+  return { value: rawValue, unit: '' };
+};
+
 const SwipeableCard = ({
   user,
   photo,
@@ -1094,15 +1127,22 @@ const SwipeableCard = ({
           <ModernHeroContent>
             <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>
             <ModernHeroTitle>{title}</ModernHeroTitle>
-            {locationInfo && <ModernHeroLocation>{locationInfo}</ModernHeroLocation>}
+            {locationInfo && <ModernHeroLocation><FaMapMarkerAlt aria-hidden="true" />{locationInfo}</ModernHeroLocation>}
             {heroFields.length > 0 && (
               <ModernHeroFacts>
-                {heroFields.slice(0, 6).map(item => (
-                  <ModernFactPill key={`hero-${item.key}`}>
-                    <strong>{item.label}</strong>
-                    <span>{item.value}</span>
-                  </ModernFactPill>
-                ))}
+                {heroFields.slice(0, 6).map(item => {
+                  const fact = formatHeroFact(item);
+                  return (
+                    <ModernFactPill key={`hero-${item.key}`}>
+                      <span className="fact-icon" aria-hidden="true">{getHeroFactIcon(item)}</span>
+                      <span className="fact-copy">
+                        <strong>{item.label}</strong>
+                        <span className="fact-value">{fact.value}</span>
+                        {fact.unit && <span className="fact-unit">{fact.unit}</span>}
+                      </span>
+                    </ModernFactPill>
+                  );
+                })}
               </ModernHeroFacts>
             )}
           </ModernHeroContent>
