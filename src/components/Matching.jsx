@@ -1244,6 +1244,8 @@ const SwipeableCard = ({
 
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 6;
+const PREFETCH_BUFFER = 3;
+const EXHAUSTED_RETRY_INTERVAL_MS = 15 * 1000;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 3;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
@@ -2959,14 +2961,20 @@ const Matching = () => {
     }
   };
 
-  const loadMore = React.useCallback(async ({ targetVisibleCount = 0, currentVisibleCount = 0, limit = LOAD_MORE } = {}) => {
+  const loadMore = React.useCallback(async ({
+    targetVisibleCount = 0,
+    currentVisibleCount = 0,
+    limit = LOAD_MORE,
+    force = false,
+    refreshFromStartWhenExhausted = false,
+  } = {}) => {
     const isReactionViewMode = viewMode === 'favorites' || viewMode === 'dislikes';
-    if (!hasMore || loadingRef.current || (viewMode !== 'default' && !isReactionViewMode)) {
-      console.log('[loadMore] skip', { hasMore, loading: loadingRef.current, viewMode });
+    if ((!hasMore && !force) || loadingRef.current || (viewMode !== 'default' && !isReactionViewMode)) {
+      console.log('[loadMore] skip', { hasMore, force, loading: loadingRef.current, viewMode });
       return;
     }
     const requestedLimit = Math.max(1, Number(limit) || LOAD_MORE);
-    console.log('[loadMore] start', { lastKey, hasMore, requestedLimit });
+    console.log('[loadMore] start', { lastKey, hasMore, requestedLimit, force, refreshFromStartWhenExhausted });
     loadingRef.current = true;
     setLoading(true);
     const loadMoreVersion = additionalLoadMoreFetchVersionRef.current + 1;
@@ -3092,11 +3100,13 @@ const Matching = () => {
         }
         const freshRawRules = freshProfileCache?.rawRules ?? currentAdditionalAccessRules;
         const freshParsedAdditionalAccessRules = parseAdditionalAccessRuleGroups(freshRawRules);
+        const shouldRefreshAdditionalFromStart = Boolean(refreshFromStartWhenExhausted && !hasMore);
         const shouldResetAdditionalPagination =
+          !shouldRefreshAdditionalFromStart &&
           !freshProfileCache?.cacheHit &&
           (freshProfileCache?.paginationInvalidationReasons || []).length > 0;
         const collected = [];
-        let nextOffset = shouldResetAdditionalPagination ? 0 : additionalNextOffset;
+        let nextOffset = shouldResetAdditionalPagination || shouldRefreshAdditionalFromStart ? 0 : additionalNextOffset;
         let canLoadMoreAdditional = true;
         let visibleCount = shouldResetAdditionalPagination ? 0 : Math.max(0, Number(currentVisibleCount) || 0);
         const requiredVisibleCount = Math.max(0, Number(targetVisibleCount) || 0);
@@ -3207,11 +3217,11 @@ const Matching = () => {
         await loadCommentsFor(collected);
         if (!isLatestLoadMore()) return;
         setAdditionalNextOffset(nextOffset);
-        setHasMore(canLoadMoreAdditional);
+        setHasMore(refreshFromStartWhenExhausted && collected.length === 0 ? false : canLoadMoreAdditional);
         logAdditionalMatchingDebug(ownerId, 'load more additional matching final cards', {
           fetchedIds: collected.map(user => user.userId).filter(Boolean),
           filteredIds: collected.map(user => user.userId).filter(Boolean),
-          pagination: { nextOffset, hasMore: canLoadMoreAdditional },
+          pagination: { nextOffset, hasMore: refreshFromStartWhenExhausted && collected.length === 0 ? false : canLoadMoreAdditional },
           finalCardsCount: collected.length,
         });
         setLastKey(null);
@@ -3219,8 +3229,8 @@ const Matching = () => {
       }
 
       const collected = [];
-      let cursor = lastKey;
-      let canLoadMore = hasMore;
+      let cursor = refreshFromStartWhenExhausted && !hasMore ? undefined : lastKey;
+      let canLoadMore = hasMore || Boolean(refreshFromStartWhenExhausted);
 
       while (collected.length < requestedLimit && canLoadMore) {
         const remaining = requestedLimit - collected.length;
@@ -3261,7 +3271,9 @@ const Matching = () => {
       });
       await loadCommentsFor(collected);
 
-      if (handleEmptyFetch({ users: collected, lastKey: cursor }, lastKey, setHasMore)) {
+      if (refreshFromStartWhenExhausted && collected.length === 0) {
+        setHasMore(false);
+      } else if (handleEmptyFetch({ users: collected, lastKey: cursor }, lastKey, setHasMore)) {
         console.log('[loadMore] empty fetch, no more cards');
       } else {
         setHasMore(canLoadMore);
@@ -3419,14 +3431,36 @@ const Matching = () => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (!hasMore || loadingRef.current || loading) return;
     if (filteredUsers.length === 0) return;
-    if (activeProfileIndex < filteredUsers.length - 2) return;
+
+    const cardsAhead = filteredUsers.length - activeProfileIndex - 1;
+    if (cardsAhead > PREFETCH_BUFFER) return;
 
     loadMore({
       currentVisibleCount: filteredUsers.length,
-      targetVisibleCount: filteredUsers.length + 1,
-      limit: 1,
+      targetVisibleCount: filteredUsers.length + PREFETCH_BUFFER,
+      limit: Math.max(1, PREFETCH_BUFFER - cardsAhead + 1),
     });
   }, [activeProfileIndex, filteredUsers.length, hasMore, loadMore, loading, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== 'default') return undefined;
+    if (hasMore || loadingRef.current || loading) return undefined;
+    if (filteredUsers.length === 0) return undefined;
+
+    const retryLoad = () => {
+      if (loadingRef.current || viewModeRef.current !== 'default') return;
+      loadMore({
+        currentVisibleCount: filteredUsers.length,
+        targetVisibleCount: filteredUsers.length + PREFETCH_BUFFER,
+        limit: LOAD_MORE,
+        force: true,
+        refreshFromStartWhenExhausted: true,
+      });
+    };
+
+    const retryId = window.setInterval(retryLoad, EXHAUSTED_RETRY_INTERVAL_MS);
+    return () => window.clearInterval(retryId);
+  }, [filteredUsers.length, hasMore, loadMore, loading, viewMode]);
 
   useEffect(() => {
     setBackendDownloadToastsEnabled(downloadSizeToastsEnabled);
