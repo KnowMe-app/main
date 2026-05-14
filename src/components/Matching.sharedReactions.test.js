@@ -96,12 +96,13 @@ describe('Matching shared reaction card UI', () => {
     expect(matchingSource).not.toContain('Дозавантажити карточки');
     expect(matchingSource).not.toContain('Більше карточок завтра');
     expect(matchingSource).not.toContain('<LoadMoreButton');
-    expect(styledSource).toContain('height: 52%;');
-    expect(styledSource).toContain('min-height: 66px;');
-    expect(styledSource).toContain('linear-gradient(135deg, #ffcc73 0%, #f7931e 100%)');
-    expect(styledSource).toContain('position: absolute;\n  left: 0;\n  right: 0;\n  bottom: 0;');
-    expect(styledSource).toContain('linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 249, 238, 0.82) 100%)');
-    expect(styledSource).toContain('color: #f7931e;');
+    expect(matchingSource).not.toContain('ModernGallery');
+    expect(matchingSource).not.toContain('Gallery</ModernSectionTitle>');
+    expect(styledSource).toContain('height: 55%;');
+    expect(styledSource).toContain('top: 14px;\n  left: 14px;');
+    expect(styledSource).toContain('& + &::before');
+    expect(styledSource).toContain('width: 1px;');
+    expect(styledSource).toContain('flex: 1 1 0;');
   });
 
 });

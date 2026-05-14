@@ -1077,10 +1077,14 @@ export const ModernHeroContent = styled.div`
 `;
 
 export const ModernRoleBadge = styled.span`
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 3;
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  margin-top: 8px;
+  max-width: calc(100% - 28px);
   padding: 5px 10px;
   border-radius: 999px;
   color: #FFFFFF;
@@ -1119,89 +1123,67 @@ export const ModernHeroLocation = styled.p`
 
 export const ModernHeroFacts = styled.div`
   display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
+  align-items: stretch;
+  gap: 0;
   margin-top: 12px;
-  padding-bottom: 2px;
   max-width: 100%;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
+  overflow: hidden;
+  border: 1px solid var(--matching-contact-border);
+  border-radius: 16px;
+  background: var(--matching-card-bg);
 `;
 
 export const ModernFactPill = styled.span`
-  flex: 0 0 auto;
-  min-height: 36px;
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 54px;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 7px 11px;
-  border-radius: 999px;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 4px;
   color: var(--matching-chip-text);
-  background: var(--matching-card-bg);
-  border: 1px solid var(--matching-contact-border);
-  box-shadow: none;
+  text-align: center;
   text-shadow: none;
   line-height: 1;
 
-  .fact-icon {
-    width: 18px;
-    height: 18px;
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--matching-accent);
-    background: rgba(255, 149, 0, 0.1);
-    font-size: 10px;
+  & + &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 9px;
+    bottom: 9px;
+    width: 1px;
+    background: var(--matching-contact-border);
   }
 
-  .fact-copy {
-    display: grid;
-    grid-template-columns: minmax(0, auto) auto;
-    align-items: baseline;
-    column-gap: 4px;
-    row-gap: 0;
-  }
-
-  strong {
-    grid-column: 1 / -1;
-    color: var(--matching-chip-label);
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
+  .fact-value,
+  .fact-label {
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .fact-value {
     color: var(--matching-chip-text);
-    font-size: 15px;
-    font-weight: 650;
-    letter-spacing: -0.1px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: clamp(14px, 3.8vw, 18px);
+    font-weight: 750;
+    letter-spacing: -0.2px;
   }
 
-  .fact-unit {
-    align-self: end;
-    padding-bottom: 0;
+  .fact-label {
     color: var(--matching-muted-text);
-    font-size: 12px;
+    font-size: clamp(10px, 2.8vw, 12px);
     font-weight: 600;
     text-transform: lowercase;
   }
 
   @media (max-width: 380px) {
-    min-height: 34px;
-    padding: 6px 9px;
+    min-height: 50px;
+    padding: 6px 3px;
   }
 `;
 
@@ -1312,49 +1294,6 @@ export const ModernMoreButton = styled.button`
   font-weight: 900;
   cursor: pointer;
 `;
-
-export const ModernGallery = styled.div`
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 10px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  padding-bottom: 2px;
-  scrollbar-width: thin;
-`;
-
-export const ModernGalleryImage = styled.button`
-  flex: 0 0 92px;
-  width: 92px;
-  height: 120px;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--matching-contact-border);
-  border-radius: 14px;
-  background: var(--matching-card-bg);
-  box-shadow: 0 8px 18px rgba(22, 22, 22, 0.08);
-  cursor: zoom-in;
-
-  img {
-    width: 100%;
-    height: 100%;
-    display: block;
-    object-fit: cover;
-    object-position: center 18%;
-    transition: transform 0.18s ease;
-  }
-
-  &:hover img,
-  &:focus-visible img {
-    transform: scale(1.03);
-  }
-
-  &:focus-visible {
-    outline: 3px solid rgba(255, 149, 0, 0.65);
-    outline-offset: 2px;
-  }
-`;
-
 
 export const ModernContactLinks = styled.div`
   display: flex;
