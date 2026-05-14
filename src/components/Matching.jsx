@@ -7,7 +7,6 @@ import {
   AdminToggle,
   AnimatedCard,
   CardContainer,
-  CardCount,
   CardWrapper,
   ClickableId,
   CollectionSourceLabel,
@@ -3517,7 +3516,6 @@ const Matching = () => {
       <Container $themeMode={themeMode}>
         <InnerContainer>
           <HeaderContainer>
-            <CardCount $themeMode={themeMode}>{filteredUsers.length ? `${activeProfileIndex + 1} / ${filteredUsers.length}` : '0'} карточок</CardCount>
             <TopActions>
               <ThemeToggleButton
                 type="button"

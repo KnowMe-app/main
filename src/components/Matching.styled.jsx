@@ -330,7 +330,6 @@ export const SkeletonLine = styled.div`
 
 export const TopActions = styled.div`
   position: static;
-  grid-column: 3;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -538,20 +537,11 @@ export const BackendTrafficToggleStatus = styled.span`
 
 export const HeaderContainer = styled.div`
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(64px, 1fr) auto minmax(64px, 1fr);
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-`;
-
-export const CardCount = styled.p`
-  grid-column: 2;
-  margin: 0;
-  text-align: center;
-  color: var(--matching-header-text, #fff8ec);
-  font-weight: 700;
-  text-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 1px 0 rgba(255,255,255,0.72)' : '0 1px 12px rgba(0, 0, 0, 0.28)')};
 `;
 
 export const LoadMoreButton = styled.button`
