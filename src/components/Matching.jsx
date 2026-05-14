@@ -2870,13 +2870,14 @@ const Matching = () => {
     }
   };
 
-  const loadMore = React.useCallback(async ({ targetVisibleCount = 0, currentVisibleCount = 0 } = {}) => {
+  const loadMore = React.useCallback(async ({ targetVisibleCount = 0, currentVisibleCount = 0, limit = LOAD_MORE } = {}) => {
     const isReactionViewMode = viewMode === 'favorites' || viewMode === 'dislikes';
     if (!hasMore || loadingRef.current || (viewMode !== 'default' && !isReactionViewMode)) {
       console.log('[loadMore] skip', { hasMore, loading: loadingRef.current, viewMode });
       return;
     }
-    console.log('[loadMore] start', { lastKey, hasMore });
+    const requestedLimit = Math.max(1, Number(limit) || LOAD_MORE);
+    console.log('[loadMore] start', { lastKey, hasMore, requestedLimit });
     loadingRef.current = true;
     setLoading(true);
     const loadMoreVersion = additionalLoadMoreFetchVersionRef.current + 1;
@@ -2949,7 +2950,7 @@ const Matching = () => {
           reactionIds,
           reactionMap,
           offset: didAccessSnapshotChange || currentPagination.ids.length === 0 ? 0 : currentPagination.nextOffset,
-          limit: LOAD_MORE,
+          limit: requestedLimit,
           loadedIds,
         });
 
@@ -3055,7 +3056,7 @@ const Matching = () => {
             searchKeySetsOfExactUser: resolvedSearchKeySetKeys,
             collectionSource,
             filtersSignature: stableAdditionalSignature(filtersRef.current || {}),
-            pagination: { offset: nextOffset, limit: LOAD_MORE },
+            pagination: { offset: nextOffset, limit: requestedLimit },
           });
 
           const loaded = await fetchAdditionalNewUsersBySearchIndex({
@@ -3064,7 +3065,7 @@ const Matching = () => {
             searchKeySetKeys: resolvedSearchKeySetKeys,
             collectionSource,
             offset: nextOffset,
-            limit: LOAD_MORE,
+            limit: requestedLimit,
           });
 
           if (!isLatestLoadMore()) {
@@ -3132,8 +3133,8 @@ const Matching = () => {
       let cursor = lastKey;
       let canLoadMore = hasMore;
 
-      while (collected.length < LOAD_MORE && canLoadMore) {
-        const remaining = LOAD_MORE - collected.length;
+      while (collected.length < requestedLimit && canLoadMore) {
+        const remaining = requestedLimit - collected.length;
         const dynamicExclude = new Set([
           ...baseExclude,
           ...loadedIdsRef.current,
@@ -3331,7 +3332,11 @@ const Matching = () => {
     if (filteredUsers.length === 0) return;
     if (activeProfileIndex < filteredUsers.length - 2) return;
 
-    loadMore({ currentVisibleCount: filteredUsers.length });
+    loadMore({
+      currentVisibleCount: filteredUsers.length,
+      targetVisibleCount: filteredUsers.length + 1,
+      limit: 1,
+    });
   }, [activeProfileIndex, filteredUsers.length, hasMore, loadMore, loading, viewMode]);
 
   useEffect(() => {
