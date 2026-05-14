@@ -1284,8 +1284,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         );
 
         const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
-        if (delCondition) {
-          Object.keys(delCondition).forEach(key => {
+        // Only set null for fields that were completely removed, not for partial array updates
+        const completelyDeletedCondition = delCondition
+          ? Object.fromEntries(Object.entries(delCondition).filter(([key]) => !(key in cleanedState)))
+          : null;
+        if (completelyDeletedCondition) {
+          Object.keys(completelyDeletedCondition).forEach(key => {
             uploadedInfo[key] = null;
           });
         }
@@ -1293,15 +1297,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         if (!makeIndex) {
           await Promise.all([
             updateDataInRealtimeDB(syncedState.userId, uploadedInfo, 'update'),
-            updateDataInFiresoreDB(syncedState.userId, uploadedInfo, 'check', delCondition),
+            updateDataInFiresoreDB(syncedState.userId, uploadedInfo, 'check', completelyDeletedCondition),
           ]);
         }
 
+        const newUsersWhitelist = new Set([...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids']);
         const cleanedStateForNewUsers = Object.fromEntries(
-          Object.entries(syncedState).filter(([key]) =>
-            [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
-          )
+          Object.entries(syncedState).filter(([key]) => newUsersWhitelist.has(key))
         );
+        if (completelyDeletedCondition) {
+          Object.keys(completelyDeletedCondition).forEach(key => {
+            if (newUsersWhitelist.has(key)) {
+              cleanedStateForNewUsers[key] = null;
+            }
+          });
+        }
 
         await updateDataInNewUsersRTDB(
           syncedState.userId,
@@ -1319,7 +1329,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           }
           if (delCondition) {
             Object.keys(delCondition).forEach(key => {
-              newStateWithDelivery[key] = null;
+              // Only null-out fields that were completely removed, not partially-updated arrays
+              if (!(key in newStateWithDelivery)) {
+                newStateWithDelivery[key] = null;
+              }
             });
           }
           await updateDataInNewUsersRTDB(
