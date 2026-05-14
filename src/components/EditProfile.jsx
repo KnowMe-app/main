@@ -464,7 +464,9 @@ const EditProfile = () => {
 
     setState(updatedState);
 
-    const removeKeys = delCondition ? Object.keys(delCondition) : [];
+    const removeKeys = delCondition
+      ? Object.keys(delCondition).filter(key => !(key in updatedState))
+      : [];
     updateCachedUser(updatedState, { removeKeys });
 
     const formattedLastDelivery = formatDateToServer(
