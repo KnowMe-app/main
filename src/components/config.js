@@ -2344,7 +2344,7 @@ const removeUndefined = obj => {
   return obj;
 };
 
-const transientUserDataKeys = ['__sourceCollection'];
+const transientUserDataKeys = ['__sourceCollection', '__photosHydrated'];
 
 const stripTransientUserDataFields = (payload, { markForRealtimeDeletion = false } = {}) => {
   const cleaned = removeUndefined(payload);

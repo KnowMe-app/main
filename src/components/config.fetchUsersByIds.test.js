@@ -24,7 +24,7 @@ describe('fetchUsersByIds merging', () => {
   it('strips client-only source markers before database writes', () => {
     const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
 
-    expect(source).toContain("const transientUserDataKeys = ['__sourceCollection']");
+    expect(source).toContain("const transientUserDataKeys = ['__sourceCollection', '__photosHydrated']");
     expect(source).toContain('const cleanedUploadedInfo = stripTransientUserDataFields(uploadedInfo);');
     expect(source.match(/markForRealtimeDeletion: condition === 'update'/g)).toHaveLength(2);
   });
