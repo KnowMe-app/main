@@ -10,10 +10,20 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('const ProfileContactLinks = ({ user, role }) =>');
     expect(matchingSource).toContain("section.variant === 'contacts'");
     expect(matchingSource).toContain('<ProfileContactLinks user={user} role={resolvedRole} />');
+    expect(matchingSource).toContain('<ModernContactSummary>Show contacts</ModernContactSummary>');
     expect(matchingSource).toContain('href={entry.href}');
     expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.telegramFromPhone');
     expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.viberFromPhone');
     expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.whatsappFromPhone');
+  });
+
+
+  it('keeps Key details from repeating hero fields', () => {
+    const matchingSource = source();
+
+    expect(matchingSource).toContain('const bodyHeroFields = getQuickFacts(user, resolvedRole');
+    expect(matchingSource).toContain('const usedBodyFieldKeys = collectProfileFieldKeys(bodyHeroFields);');
+    expect(matchingSource).not.toContain('const bodyHeroFields = heroFields.slice(3);');
   });
 
   it('supports desktop next/previous navigation without reaction side effects', () => {

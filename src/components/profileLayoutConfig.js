@@ -117,8 +117,7 @@ const heroFields = {
     field('weight', 'Weight'),
     field('bmi', 'BMI', bmiValue, ['bmi']),
     field('blood', 'Blood/Rh'),
-    field('eyeColor', 'Eyes'),
-    field('experience', 'Experience', donorExperienceValue, ['experience', 'donationExperience', 'previousDonation', 'donationCount', 'donationsCount']),
+    field('experience', 'Exp', donorExperienceValue, ['experience', 'donationExperience', 'previousDonation', 'donationCount', 'donationsCount']),
   ],
   ip: [
     field('country', 'Country'),
