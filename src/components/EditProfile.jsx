@@ -343,9 +343,14 @@ const EditProfile = () => {
 
       await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState, delCondition);
 
+      // Only treat fields as deleted if they were completely removed (not partial array updates)
+      const completelyDeletedCondition = delCondition
+        ? Object.fromEntries(Object.entries(delCondition).filter(([key]) => !(key in updatedState)))
+        : null;
+
       const sanitizedExistingData = { ...existingData };
-      if (delCondition) {
-        Object.keys(delCondition).forEach(key => {
+      if (completelyDeletedCondition) {
+        Object.keys(completelyDeletedCondition).forEach(key => {
           delete sanitizedExistingData[key];
         });
       }
@@ -357,19 +362,33 @@ const EditProfile = () => {
       const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
 
       await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
-      await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
+      await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', completelyDeletedCondition);
 
+      const newUsersWhitelist = new Set([...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids']);
       const cleanedStateForNewUsers = Object.fromEntries(
-        Object.entries(updatedState).filter(([key]) =>
-          [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
-        )
+        Object.entries(updatedState).filter(([key]) => newUsersWhitelist.has(key))
       );
+      if (completelyDeletedCondition) {
+        Object.keys(completelyDeletedCondition).forEach(key => {
+          if (newUsersWhitelist.has(key)) {
+            cleanedStateForNewUsers[key] = null;
+          }
+        });
+      }
 
       await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update', true);
     } else if (updatedState?.userId) {
       const existingData = await fetchUserById(updatedState.userId) || {};
       await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState, delCondition);
-      await updateDataInNewUsersRTDB(updatedState.userId, updatedState, 'update', true);
+      const dataToUpdate = { ...updatedState };
+      if (delCondition) {
+        Object.keys(delCondition).forEach(key => {
+          if (!(key in updatedState)) {
+            dataToUpdate[key] = null;
+          }
+        });
+      }
+      await updateDataInNewUsersRTDB(updatedState.userId, dataToUpdate, 'update', true);
     }
 
     try {
