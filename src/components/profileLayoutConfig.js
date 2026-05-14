@@ -46,11 +46,44 @@ const getEmailName = user => {
   return email.split('@')[0].trim();
 };
 
-export const getProfileName = user => {
-  const name = [user?.name, user?.surname, user?.nameWife, user?.nameHusband]
+const normalizeNameKey = part => part.toLowerCase().replace(/\s+/g, ' ').trim();
+
+const isDuplicateNameKey = (seen, key) => {
+  const keyTokens = key.split(' ');
+
+  return Array.from(seen).some(existingKey => {
+    const existingTokens = existingKey.split(' ');
+    return existingKey === key
+      || keyTokens.every(token => existingTokens.includes(token));
+  });
+};
+
+const appendUniqueNamePart = (parts, seen, part) => {
+  const key = normalizeNameKey(part);
+  if (!key || isDuplicateNameKey(seen, key)) return;
+  seen.add(key);
+  parts.push(part);
+};
+
+const getPrimaryNamePart = user => [user?.name, user?.surname]
+  .map(normalizeDisplayValue)
+  .filter(Boolean)
+  .join(' ');
+
+const getUniqueNameParts = user => {
+  const parts = [];
+  const seen = new Set();
+
+  [getPrimaryNamePart(user), user?.nameWife, user?.nameHusband]
     .map(normalizeDisplayValue)
     .filter(Boolean)
-    .join(' ');
+    .forEach(part => appendUniqueNamePart(parts, seen, part));
+
+  return parts;
+};
+
+export const getProfileName = user => {
+  const name = getUniqueNameParts(user).join(' ');
   return name || getEmailName(user);
 };
 

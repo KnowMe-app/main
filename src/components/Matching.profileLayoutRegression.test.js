@@ -24,9 +24,13 @@ describe('Matching redesigned profile regressions', () => {
     const layoutSource = fs.readFileSync(path.join(__dirname, 'profileLayoutConfig.js'), 'utf8');
 
     expect(getProfileName({ name: 'Anna', surname: 'Smith', nameWife: 'Olena', nameHusband: 'Petro' })).toBe('Anna Smith Olena Petro');
+    expect(getProfileName({ name: 'Anna', surname: 'Smith', nameWife: 'Anna', nameHusband: 'Petro' })).toBe('Anna Smith Petro');
+    expect(getProfileName({ name: 'Anna Smith', surname: '', nameWife: 'Anna Smith', nameHusband: 'Petro' })).toBe('Anna Smith Petro');
+    expect(getProfileName({ name: ['Rajpootgkhan', 'Muhammad'], surname: ['Shafique', 'Hafeez'], nameHusband: 'Muhammad Hafeez' })).toBe('Muhammad Hafeez');
     expect(getProfileName({ email: 'person@example.com', agencyName: 'Agency LLC', companyName: 'Company LLC', agency: 'Hidden Agency' })).toBe('person');
     expect(getProfileName({ agencyName: 'Agency LLC', companyName: 'Company LLC', agency: 'Hidden Agency' })).toBe('');
-    expect(layoutSource).toContain('const name = [user?.name, user?.surname, user?.nameWife, user?.nameHusband]');
+    expect(layoutSource).toContain('const getPrimaryNamePart = user => [user?.name, user?.surname]');
+    expect(layoutSource).toContain('const getUniqueNameParts = user =>');
     expect(layoutSource).toContain('return name || getEmailName(user);');
     expect(layoutSource).not.toContain('agencyName || name');
     expect(layoutSource).not.toContain('companyName');
