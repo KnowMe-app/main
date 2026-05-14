@@ -1245,6 +1245,7 @@ const SwipeableCard = ({
 const INITIAL_LOAD = 6;
 const LOAD_MORE = 6;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 3;
+const SOURCE_BACKFILL_MAX_PAGES = 5;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
 const COLLECTION_SOURCE_KEY = 'matchingCollectionSource';
@@ -2306,44 +2307,85 @@ const Matching = () => {
           pagination: { offset: 0, limit: INITIAL_LOAD },
         });
 
-        const loaded = await fetchAdditionalNewUsersBySearchIndex({
-          parsedRuleGroups: freshParsedAdditionalAccessRules,
-          rawRules: freshRawRules,
-          accessUserId: ownerId,
-          searchKeySetKeys: resolvedSearchKeySetKeys,
-          collectionSource,
-          offset: 0,
-          limit: INITIAL_LOAD,
-        });
+        const collected = [];
+        const fetchedIds = [];
+        let nextOffset = 0;
+        let sourceHasMore = true;
+        let visibleCount = 0;
+        let loadedPages = 0;
 
-        if (!isLatestAdditionalFetch()) {
-          logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional fetch result', {
-            fetchVersion,
-            latestFetchVersion: additionalMatchingFetchVersionRef.current,
-            applyVersion,
-            latestApplyVersion: additionalMatchingApplyVersionRef.current,
-            fetchedIds: loaded?.userIds || [],
+        while (
+          sourceHasMore &&
+          loadedPages < ADDITIONAL_BACKFILL_MAX_PAGES &&
+          (collected.length === 0 || visibleCount < INITIAL_LOAD)
+        ) {
+          loadedPages += 1;
+          // eslint-disable-next-line no-await-in-loop
+          const loaded = await fetchAdditionalNewUsersBySearchIndex({
+            parsedRuleGroups: freshParsedAdditionalAccessRules,
+            rawRules: freshRawRules,
+            accessUserId: ownerId,
+            searchKeySetKeys: resolvedSearchKeySetKeys,
+            collectionSource,
+            offset: nextOffset,
+            limit: INITIAL_LOAD,
           });
-          return;
+
+          if (!isLatestAdditionalFetch()) {
+            logAdditionalMatchingDebug(ownerId, 'ignored stale initial additional fetch result', {
+              fetchVersion,
+              latestFetchVersion: additionalMatchingFetchVersionRef.current,
+              applyVersion,
+              latestApplyVersion: additionalMatchingApplyVersionRef.current,
+              fetchedIds: loaded?.userIds || [],
+            });
+            return;
+          }
+
+          fetchedIds.push(...(loaded.userIds || []));
+          const previousOffset = nextOffset;
+          nextOffset = Number.isFinite(Number(loaded.nextOffset)) ? loaded.nextOffset : previousOffset;
+          sourceHasMore = Boolean(loaded.hasMore) && nextOffset > previousOffset;
+
+          const pageUsers = (loaded.users || []).filter(user =>
+            user?.userId &&
+            !favoriteUsersRef.current[user.userId] &&
+            !dislikeUsersRef.current[user.userId] &&
+            !collected.some(collectedUser => collectedUser.userId === user.userId)
+          );
+          collected.push(...pageUsers);
+
+          visibleCount = applyMatchingUiFiltersToUsers({
+            users: collected,
+            filters: filtersRef.current || {},
+            favoriteUsers: favoriteUsersRef.current,
+            dislikeUsers: dislikeUsersRef.current,
+            excludeReactionUsers: true,
+            roleIndexSets,
+            collectionSource,
+          }).length;
         }
 
         if (isLatestAdditionalFetch()) {
-          setAdditionalNewUsers(loaded.users);
-          setAdditionalNextOffset(loaded.nextOffset);
-          loadedIdsRef.current = new Set(loaded.users.map(user => user.userId).filter(Boolean));
-          setHasMore(loaded.hasMore);
+          setAdditionalNewUsers(collected);
+          setAdditionalNextOffset(nextOffset);
+          loadedIdsRef.current = new Set(collected.map(user => user.userId).filter(Boolean));
+          setHasMore(sourceHasMore);
           setLastKey(null);
           logAdditionalMatchingDebug(ownerId, 'initial additional matching final cards', {
-            fetchedIds: loaded.userIds,
-            filteredIds: loaded.users.map(user => user.userId).filter(Boolean),
-            pagination: { nextOffset: loaded.nextOffset, hasMore: loaded.hasMore },
-            finalCardsCount: loaded.users.length,
+            fetchedIds,
+            filteredIds: collected.map(user => user.userId).filter(Boolean),
+            pagination: { nextOffset, hasMore: sourceHasMore },
+            finalCardsCount: collected.length,
+            loadedPages,
+            visibleCount,
           });
-          await loadCommentsFor(loaded.users);
-          const toastSignature = `${currentAdditionalAccessRules}::${loaded.nextOffset}${loaded.hasMore ? '+' : ''}`;
+          collected.forEach(user => updateCard(user.userId, user));
+          await loadCommentsFor(collected);
+          const toastSignature = `${currentAdditionalAccessRules}::${nextOffset}${sourceHasMore ? '+' : ''}`;
           if (additionalRulesToastRef.current !== toastSignature) {
             toast(
-              `Додаткові правила доступу (newUsers): завантажено ${loaded.nextOffset}${loaded.hasMore ? '+' : ''} карточок для matching.`,
+              `Додаткові правила доступу (newUsers): завантажено ${nextOffset}${sourceHasMore ? '+' : ''} карточок для matching.`,
               { icon: 'ℹ️' }
             );
             additionalRulesToastRef.current = toastSignature;
@@ -2356,10 +2398,8 @@ const Matching = () => {
           setHasMore(false);
         }
       } finally {
-        if (isLatestAdditionalFetch()) {
-          loadingRef.current = false;
-          setLoading(false);
-        }
+        loadingRef.current = false;
+        setLoading(false);
       }
     };
 
@@ -2376,6 +2416,7 @@ const Matching = () => {
     loadCommentsFor,
     ownerId,
     resetAdditionalMatchingState,
+    roleIndexSets,
   ]);
 
   const fetchChunk = React.useCallback(
@@ -2390,8 +2431,10 @@ const Matching = () => {
       let hasMore = false;
       let excludedCount = 0;
       let prevCursor;
+      let loadedPages = 0;
 
-      while (collected.length < limit) {
+      while (collected.length < limit && loadedPages < SOURCE_BACKFILL_MAX_PAGES) {
+        loadedPages += 1;
         if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
           break;
         }
@@ -2447,10 +2490,18 @@ const Matching = () => {
         }
       }
 
+      const reachedSafetyCap = Boolean(
+        hasMore &&
+        loadedPages >= SOURCE_BACKFILL_MAX_PAGES &&
+        collected.length < limit
+      );
+
       return {
         users: collected,
         lastKey: cursor,
         hasMore,
+        sourceHasMore: hasMore,
+        reachedSafetyCap,
         excludedCount,
       };
     },
@@ -2906,10 +2957,8 @@ const Matching = () => {
       }));
       setHasMore(nextHasMore);
     } finally {
-      if (canApplyReactionLoad()) {
-        loadingRef.current = false;
-        setLoading(false);
-      }
+      loadingRef.current = false;
+      setLoading(false);
     }
   };
 
@@ -3057,16 +3106,23 @@ const Matching = () => {
           return Array.from(map.values());
         });
         await loadCommentsFor(page.users);
+        const hasPendingSharedCandidates = hasPendingSharedReactionCandidates({
+          reactionIds,
+          sharedReactionIds,
+          loadedIds,
+          reactionMap,
+        });
+        const nextHasMore = page.hasMore || hasPendingSharedCandidates;
         setReactionPaginationByType(prev => ({
           ...prev,
           [viewMode]: {
             ids: reactionIds,
             nextOffset: page.nextOffset,
-            hasMore: page.hasMore,
+            hasMore: nextHasMore,
             accessSnapshotKey: reactionAccessSnapshotKey,
           },
         }));
-        setHasMore(page.hasMore);
+        setHasMore(nextHasMore);
         setLastKey(null);
         return;
       }
@@ -3221,8 +3277,10 @@ const Matching = () => {
       const collected = [];
       let cursor = lastKey;
       let canLoadMore = hasMore;
+      let loadedChunkCalls = 0;
 
-      while (collected.length < requestedLimit && canLoadMore) {
+      while (collected.length < requestedLimit && canLoadMore && loadedChunkCalls < 1) {
+        loadedChunkCalls += 1;
         const remaining = requestedLimit - collected.length;
         const dynamicExclude = new Set([
           ...baseExclude,
@@ -3236,6 +3294,7 @@ const Matching = () => {
           cursor,
           nextCursor: res.lastKey,
           hasMore: res.hasMore,
+          reachedSafetyCap: res.reachedSafetyCap,
         });
 
         const unique = res.users.filter(
@@ -3261,17 +3320,19 @@ const Matching = () => {
       });
       await loadCommentsFor(collected);
 
-      if (handleEmptyFetch({ users: collected, lastKey: cursor }, lastKey, setHasMore)) {
+      const stoppedBySafetyCapWithMoreSource = canLoadMore && collected.length === 0;
+      if (stoppedBySafetyCapWithMoreSource) {
+        console.log('[loadMore] source backfill safety cap reached; keeping hasMore true for next cycle');
+        setHasMore(true);
+      } else if (handleEmptyFetch({ users: collected, lastKey: cursor }, lastKey, setHasMore)) {
         console.log('[loadMore] empty fetch, no more cards');
       } else {
         setHasMore(canLoadMore);
       }
       setLastKey(cursor);
     } finally {
-      if (canApplyLoadMoreResult()) {
-        loadingRef.current = false;
-        setLoading(false);
-      }
+      loadingRef.current = false;
+      setLoading(false);
     }
   }, [
     additionalNewUsers,
@@ -3293,6 +3354,7 @@ const Matching = () => {
     resetAdditionalMatchingState,
     parsedAdditionalAccessRules.length,
     roleIndexSets,
+    sharedReactionIds,
     viewMode,
   ]);
 
