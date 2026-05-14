@@ -91,6 +91,7 @@ import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import { getCurrentValue } from './getCurrentValue';
 import SearchBar from './SearchBar';
+import PhotoViewer from './PhotoViewer';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
@@ -1062,7 +1063,6 @@ const SwipeableCard = ({
   const locationInfo = getProfileLocation(user);
   const identityAndLocationKeys = ['name', 'surname', 'agencyName', 'companyName', 'agency', 'country', 'region', 'city', 'role', 'userRole'];
   const heroFields = getHeroFields(user, resolvedRole, { excludeKeys: identityAndLocationKeys });
-  const displayedHeroFields = heroFields.slice(0, 3);
   const bodyHeroFields = heroFields.slice(3);
   const usedSummaryFieldKeys = collectProfileFieldKeys(heroFields);
   const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys] });
