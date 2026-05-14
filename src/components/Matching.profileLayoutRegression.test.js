@@ -16,6 +16,19 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.whatsappFromPhone');
   });
 
+
+  it('does not render generic Profile copy for unnamed unknown-role cards', () => {
+    const matchingSource = source();
+    const layoutSource = fs.readFileSync(path.join(__dirname, 'profileLayoutConfig.js'), 'utf8');
+
+    expect(layoutSource).toContain('return agencyName || name;');
+    expect(layoutSource).not.toContain('return agencyName || name || getRoleLabel(getProfileRole(user));');
+    expect(matchingSource).toContain("const isGenericProfileRole = roleLabel === 'Profile';");
+    expect(matchingSource).toContain('const shouldShowRoleBadge = !isGenericProfileRole;');
+    expect(matchingSource).toContain('{title && <ModernHeroTitle>{title}</ModernHeroTitle>}');
+    expect(matchingSource).toContain('{shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>}');
+  });
+
   it('supports desktop next/previous navigation without reaction side effects', () => {
     const matchingSource = source();
 

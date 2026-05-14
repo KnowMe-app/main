@@ -46,7 +46,7 @@ export const getProfileName = user => {
     .map(normalizeDisplayValue)
     .filter(Boolean)
     .join(' ');
-  return agencyName || name || getRoleLabel(getProfileRole(user));
+  return agencyName || name;
 };
 
 export const getProfileAge = user => {
