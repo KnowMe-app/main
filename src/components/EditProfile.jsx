@@ -355,6 +355,13 @@ const EditProfile = () => {
       );
 
       const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
+      if (delCondition) {
+        Object.keys(delCondition).forEach(key => {
+          if (key !== 'userId') {
+            uploadedInfo[key] = null;
+          }
+        });
+      }
 
       await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
       await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
@@ -364,6 +371,13 @@ const EditProfile = () => {
           [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
         )
       );
+      if (delCondition) {
+        Object.keys(delCondition).forEach(key => {
+          if (key !== 'userId') {
+            cleanedStateForNewUsers[key] = null;
+          }
+        });
+      }
 
       await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update', true);
     } else if (updatedState?.userId) {
