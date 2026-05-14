@@ -8,8 +8,9 @@ import { CheckboxGroup } from './CheckboxGroup';
 import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 
 const FiltersCard = styled.div`
-  background: #fff;
-  border: 1px solid #eee;
+  background: var(--matching-section-bg, #fff);
+  border: 1px solid var(--matching-section-border, #eee);
+  color: var(--matching-panel-text, inherit);
   border-radius: 10px;
   padding: 8px 12px 4px;
   margin: 0 0 8px;

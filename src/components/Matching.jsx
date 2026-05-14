@@ -30,6 +30,10 @@ import {
   SkeletonLine,
   SkeletonPhoto,
   SubmitButton,
+  ThemeToggleButton,
+  ThemeToggleKnob,
+  ThemeToggleScene,
+  ThemeToggleTrackIcon,
   TopActions,
   ModernActionRail,
   ModernBioText,
@@ -1269,6 +1273,16 @@ const ADDITIONAL_BACKFILL_MAX_PAGES = 3;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
 const COLLECTION_SOURCE_KEY = 'matchingCollectionSource';
+const MATCHING_THEME_KEY = 'matchingThemeMode';
+
+const getStoredMatchingTheme = () => {
+  try {
+    const storedTheme = localStorage.getItem(MATCHING_THEME_KEY) || sessionStorage.getItem(MATCHING_THEME_KEY);
+    return storedTheme === 'light' ? 'light' : 'dark';
+  } catch (error) {
+    return 'dark';
+  }
+};
 
 const fetchUsersByLastLogin2FromCollection = async (collection = 'users', limit = 9, lastDate) => {
   const usersRef = refDb(database, collection);
@@ -1350,6 +1364,7 @@ const Matching = () => {
   const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
   const ownDislikeUsersRef = useRef(ownDislikeUsers);
   const [viewMode, setViewMode] = useState('default');
+  const [themeMode, setThemeMode] = useState(getStoredMatchingTheme);
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({});
@@ -1454,6 +1469,18 @@ const Matching = () => {
   useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(MATCHING_THEME_KEY, themeMode);
+      sessionStorage.setItem(MATCHING_THEME_KEY, themeMode);
+    } catch (error) {
+      // Theme persistence is non-critical; keep the in-memory theme if storage is unavailable.
+    }
+    document.documentElement.dataset.matchingTheme = themeMode;
+  }, [themeMode]);
+  const handleThemeToggle = React.useCallback(() => {
+    setThemeMode(current => (current === 'light' ? 'dark' : 'light'));
+  }, []);
   useEffect(() => {
     collectionSourceRef.current = collectionSource;
     localStorage.setItem(COLLECTION_SOURCE_KEY, collectionSource);
@@ -3452,7 +3479,7 @@ const Matching = () => {
   return (
     <>
       {showFilters && <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />}
-      <FilterContainer show={showFilters} onClick={e => e.stopPropagation()}>
+      <FilterContainer show={showFilters} $themeMode={themeMode} onClick={e => e.stopPropagation()}>
         {isAdmin && (
           <SearchBar
             searchFunc={searchUsers}
@@ -3511,11 +3538,36 @@ const Matching = () => {
           nonAdminAllActive={!isAdmin}
         />
       </FilterContainer>
-      <Container>
+      <Container $themeMode={themeMode}>
         <InnerContainer>
           <HeaderContainer>
-            <CardCount>{filteredUsers.length ? `${activeProfileIndex + 1} / ${filteredUsers.length}` : '0'} карточок</CardCount>
+            <CardCount $themeMode={themeMode}>{filteredUsers.length ? `${activeProfileIndex + 1} / ${filteredUsers.length}` : '0'} карточок</CardCount>
             <TopActions>
+              <ThemeToggleButton
+                type="button"
+                $themeMode={themeMode}
+                aria-pressed={themeMode === 'light'}
+                aria-label={themeMode === 'light' ? 'Switch Matching to dark theme' : 'Switch Matching to light theme'}
+                title={themeMode === 'light' ? 'Dark theme' : 'Light theme'}
+                onClick={handleThemeToggle}
+              >
+                <ThemeToggleTrackIcon $side="left" $active={themeMode === 'dark'} aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img">
+                    <path fill="currentColor" d="M15.4 2.8a7.4 7.4 0 1 0 5.8 10.8 6.2 6.2 0 1 1-5.8-10.8Z" />
+                    <circle cx="6" cy="6" r="1.4" fill="#ffd45c" />
+                    <circle cx="19" cy="5.5" r="1.1" fill="#ffd45c" />
+                  </svg>
+                </ThemeToggleTrackIcon>
+                <ThemeToggleTrackIcon $side="right" $active={themeMode === 'light'} aria-hidden="true">
+                  <svg viewBox="0 0 24 24" role="img">
+                    <circle cx="9" cy="9" r="4" fill="#ffd45c" />
+                    <path fill="currentColor" d="M8 17.5h8.8a3.8 3.8 0 0 0 .4-7.6 5.3 5.3 0 0 0-10.1 1.7A3 3 0 0 0 8 17.5Z" />
+                  </svg>
+                </ThemeToggleTrackIcon>
+                <ThemeToggleKnob $themeMode={themeMode} aria-hidden="true">
+                  <ThemeToggleScene $themeMode={themeMode} />
+                </ThemeToggleKnob>
+              </ThemeToggleButton>
               {viewMode !== 'default' && (
                 <ActionButton onClick={reloadDefault}><FaDownload /></ActionButton>
               )}

@@ -9,7 +9,7 @@ const GroupLabel = styled.span`
   display: block;
   font-size: 10px;
   font-weight: 700;
-  color: #aaa;
+  color: var(--matching-chip-label, #aaa);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 5px;
@@ -25,9 +25,9 @@ const ChipsRow = styled.div`
 const Chip = styled.button`
   padding: 3px 9px;
   border-radius: 20px;
-  border: 1.5px solid ${({ $active }) => ($active ? '#FF8C00' : '#e0e0e0')};
-  background: ${({ $active }) => ($active ? '#FFF3E0' : '#fafafa')};
-  color: ${({ $active }) => ($active ? '#CC5500' : '#666')};
+  border: 1.5px solid ${({ $active }) => ($active ? '#FF8C00' : 'var(--matching-chip-border, #e0e0e0)')};
+  background: ${({ $active }) => ($active ? 'rgba(255, 243, 224, 0.92)' : 'var(--matching-chip-bg, #fafafa)')};
+  color: ${({ $active }) => ($active ? '#CC5500' : 'var(--matching-chip-text, #666)')};
   font-size: 12px;
   font-weight: ${({ $active }) => ($active ? '600' : '400')};
   cursor: pointer;
