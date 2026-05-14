@@ -758,12 +758,16 @@ export const ModernProfileShell = styled.div`
   position: relative;
   height: 100%;
   background:
-    radial-gradient(circle at 18% 0%, rgba(247, 147, 30, 0.16), transparent 28%),
-    linear-gradient(180deg, #17120e 0%, #0c0a09 100%);
-  color: #fff;
+    radial-gradient(circle at 18% 0%, rgba(247, 147, 30, 0.12), transparent 30%),
+    linear-gradient(180deg, #fffaf1 0%, #f4eadc 100%);
+  color: #31261c;
+  border: 1px solid rgba(189, 137, 63, 0.22);
   border-radius: ${STACK_CARD_RADIUS};
   overflow: hidden;
   touch-action: pan-y;
+  box-shadow:
+    0 18px 44px rgba(68, 48, 24, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
 `;
 
 export const ModernProfileScroll = styled.div`
@@ -775,68 +779,86 @@ export const ModernProfileScroll = styled.div`
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scroll-padding-bottom: 28px;
+  background: linear-gradient(180deg, rgba(255, 250, 241, 0.9) 0%, rgba(246, 238, 226, 0.96) 100%);
 `;
 
 export const ModernHero = styled.div`
   position: relative;
-  min-height: clamp(330px, 58%, 455px);
-  height: 58%;
-  background:
-    ${({ $image }) => $image ? `linear-gradient(180deg, rgba(12, 9, 7, 0) 0%, rgba(12, 9, 7, 0.04) 42%, rgba(12, 9, 7, 0.48) 78%, rgba(12, 9, 7, 0.72) 100%), url(${$image})` : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.54), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.16), transparent 24%), linear-gradient(145deg, #3a281b 0%, #15110f 56%, #070605 100%)'};
-  background-size: cover;
-  background-position: center 18%;
+  min-height: clamp(380px, 66%, 520px);
+  height: 66%;
+  background: ${({ $image }) => $image
+    ? 'linear-gradient(180deg, #f7efe2 0%, #f5ead9 100%)'
+    : 'radial-gradient(circle at 26% 16%, rgba(247, 147, 30, 0.28), transparent 30%), radial-gradient(circle at 78% 18%, rgba(255, 218, 145, 0.26), transparent 24%), linear-gradient(145deg, #fff2dc 0%, #f2dcc0 58%, #e9d1af 100%)'};
   display: flex;
   align-items: flex-end;
-  padding: 20px 18px 22px;
+  padding: 20px 18px 24px;
   box-sizing: border-box;
+  overflow: hidden;
+  cursor: ${({ $clickable }) => ($clickable ? 'zoom-in' : 'default')};
 
   &::after {
     content: '';
     position: absolute;
     inset: auto 0 0;
-    height: 38%;
-    background: linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.62) 100%);
+    height: 32%;
+    background: linear-gradient(180deg, transparent 0%, rgba(30, 22, 12, 0.18) 42%, rgba(30, 22, 12, 0.46) 100%);
     pointer-events: none;
   }
+
+  &:focus-visible {
+    outline: 3px solid rgba(247, 147, 30, 0.7);
+    outline-offset: -5px;
+  }
+`;
+
+export const ModernHeroImage = styled.img`
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 16%;
+  display: block;
 `;
 
 export const ModernHeroFallbackMark = styled.div`
   position: absolute;
-  inset: 58px 0 auto;
+  inset: 78px 0 auto;
   margin: auto;
-  width: 112px;
-  height: 112px;
-  border-radius: 36px;
+  width: 118px;
+  height: 118px;
+  border-radius: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.9);
+  color: #81521b;
   font-size: 38px;
   font-weight: 900;
   letter-spacing: 1px;
-  background: linear-gradient(145deg, rgba(255,255,255,0.16), rgba(247,147,30,0.16));
-  border: 1px solid rgba(255, 214, 148, 0.24);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(14px);
+  background: linear-gradient(145deg, rgba(255,255,255,0.78), rgba(255, 226, 181, 0.72));
+  border: 1px solid rgba(247, 147, 30, 0.2);
+  box-shadow: 0 24px 70px rgba(131, 91, 38, 0.18);
 `;
 
 export const ModernHeroContent = styled.div`
   position: relative;
   z-index: 2;
   width: 100%;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.46);
+  max-width: min(100%, 440px);
+  padding-top: 46px;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.34);
 `;
 
 export const ModernRoleBadge = styled.span`
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  margin-bottom: 9px;
+  margin-bottom: 8px;
   padding: 5px 10px;
   border-radius: 999px;
-  color: #211407;
-  background: linear-gradient(135deg, #ffcc73 0%, #f7931e 100%);
-  box-shadow: 0 8px 24px rgba(247, 147, 30, 0.22);
+  color: #2a1807;
+  background: linear-gradient(135deg, #ffe3a9 0%, #f7931e 100%);
+  box-shadow: 0 8px 22px rgba(247, 147, 30, 0.22);
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.7px;
@@ -845,19 +867,19 @@ export const ModernRoleBadge = styled.span`
 
 export const ModernHeroTitle = styled.h2`
   margin: 0;
-  color: #fff;
+  color: #fffaf1;
   max-width: 92%;
-  font-size: clamp(30px, 7.2vw, 42px);
-  line-height: 0.98;
+  font-size: clamp(26px, 6.4vw, 38px);
+  line-height: 1;
   font-weight: 850;
   text-wrap: balance;
 `;
 
 export const ModernHeroLocation = styled.p`
-  margin: 7px 0 0;
-  color: rgba(255, 246, 232, 0.88);
+  margin: 6px 0 0;
+  color: rgba(255, 248, 236, 0.92);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 650;
 `;
 
 export const ModernHeroFacts = styled.div`
@@ -874,15 +896,15 @@ export const ModernFactPill = styled.span`
   max-width: 100%;
   padding: 5px 8px;
   border-radius: 999px;
-  color: #fff8ec;
-  background: rgba(22, 17, 12, 0.38);
-  border: 1px solid rgba(255, 204, 115, 0.18);
-  backdrop-filter: blur(12px);
+  color: #fffaf1;
+  background: rgba(35, 25, 13, 0.34);
+  border: 1px solid rgba(255, 226, 181, 0.3);
+  backdrop-filter: blur(10px);
   font-size: 12px;
   line-height: 1.1;
 
   strong {
-    color: rgba(255, 204, 115, 0.82);
+    color: rgba(255, 220, 162, 0.9);
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
@@ -893,27 +915,26 @@ export const ModernProfileBody = styled.div`
   position: relative;
   z-index: 3;
   margin-top: 0;
-  padding: 12px 12px 18px;
+  padding: 14px 12px 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 `;
 
 export const ModernSection = styled.section`
-  background: rgba(26, 23, 20, 0.82);
-  color: #fff8ec;
-  border-radius: 18px;
-  padding: 12px;
-  border: 1px solid rgba(255, 214, 148, 0.11);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(14px);
+  background: rgba(255, 253, 248, 0.88);
+  color: #30261c;
+  border-radius: 20px;
+  padding: 13px;
+  border: 1px solid rgba(205, 162, 96, 0.2);
+  box-shadow: 0 10px 26px rgba(79, 55, 25, 0.08);
 `;
 
 export const ModernSectionTitle = styled.h3`
   margin: 0 0 8px;
-  color: #ffd18a;
+  color: #9c5a09;
   font-size: 18px;
-  font-weight: 750;
+  font-weight: 800;
   letter-spacing: 0.2px;
 `;
 
@@ -928,19 +949,19 @@ export const ModernChip = styled.div`
   flex-direction: column;
   gap: 2px;
   max-width: 100%;
-  padding: 7px 10px;
-  border-radius: 13px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 214, 148, 0.12);
-  color: #fff8ec;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 247, 232, 0.95) 0%, rgba(255, 241, 215, 0.88) 100%);
+  border: 1px solid rgba(223, 177, 105, 0.28);
+  color: #30261c;
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 700;
   line-height: 1.15;
 
   strong {
-    color: rgba(247, 185, 95, 0.76);
+    color: #a7640e;
     font-size: 10px;
-    font-weight: 650;
+    font-weight: 750;
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
@@ -959,19 +980,19 @@ export const ModernFieldRow = styled.div`
   gap: 12px;
   align-items: baseline;
   padding: 0 2px;
-  color: rgba(255, 248, 236, 0.9);
+  color: #49392a;
 
   strong {
-    color: rgba(255, 216, 153, 0.62);
+    color: #9c5a09;
     font-size: 11px;
-    font-weight: 650;
+    font-weight: 750;
     letter-spacing: 0.03em;
   }
 
   span {
-    color: #fff8ec;
+    color: #2d241b;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 650;
     line-height: 1.25;
     min-width: 0;
     overflow-wrap: anywhere;
@@ -980,7 +1001,7 @@ export const ModernFieldRow = styled.div`
 
 export const ModernBioText = styled.p`
   margin: 0;
-  color: rgba(255, 248, 236, 0.88);
+  color: #49392a;
   white-space: pre-line;
   font-size: 14px;
   line-height: 1.45;
@@ -998,16 +1019,39 @@ export const ModernMoreButton = styled.button`
 
 export const ModernGallery = styled.div`
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 `;
 
-export const ModernGalleryImage = styled.img`
+export const ModernGalleryImage = styled.button`
   width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
-  border-radius: 14px;
-  background: #2a251f;
+  aspect-ratio: 4 / 5;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(205, 162, 96, 0.26);
+  border-radius: 16px;
+  background: #f3e3cc;
+  box-shadow: 0 8px 20px rgba(85, 57, 20, 0.08);
+  cursor: zoom-in;
+
+  img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    object-position: center 18%;
+    transition: transform 0.18s ease;
+  }
+
+  &:hover img,
+  &:focus-visible img {
+    transform: scale(1.03);
+  }
+
+  &:focus-visible {
+    outline: 3px solid rgba(247, 147, 30, 0.45);
+    outline-offset: 2px;
+  }
 `;
 
 
@@ -1024,9 +1068,9 @@ export const ModernContactLink = styled.a`
   max-width: 100%;
   padding: 8px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 214, 148, 0.12);
-  color: #ffd899;
+  background: rgba(255, 246, 230, 0.88);
+  border: 1px solid rgba(223, 177, 105, 0.28);
+  color: #9c5a09;
   font-size: 12px;
   font-weight: 900;
   line-height: 1;
@@ -1093,8 +1137,9 @@ export const ModernActionRail = styled.div`
   align-items: center;
   padding: 12px 46px 14px;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(12, 9, 7, 0.72) 0%, rgba(12, 9, 7, 0.96) 100%);
-  border-top: 1px solid rgba(255, 214, 148, 0.1);
+  background: linear-gradient(180deg, rgba(255, 250, 241, 0.72) 0%, rgba(250, 235, 211, 0.96) 100%);
+  border-top: 1px solid rgba(205, 162, 96, 0.22);
+  backdrop-filter: blur(12px);
 
   & > span {
     pointer-events: auto;
@@ -1105,7 +1150,7 @@ export const ModernActionRail = styled.div`
     width: 52px !important;
     height: 52px !important;
     border-radius: 50% !important;
-    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32) !important;
+    box-shadow: 0 14px 30px rgba(92, 57, 12, 0.2) !important;
   }
 `;
 
