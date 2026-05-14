@@ -1302,6 +1302,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
           )
         );
+        if (delCondition) {
+          Object.keys(delCondition).forEach(key => {
+            if (key !== 'userId') {
+              cleanedStateForNewUsers[key] = null;
+            }
+          });
+        }
 
         await updateDataInNewUsersRTDB(
           syncedState.userId,
