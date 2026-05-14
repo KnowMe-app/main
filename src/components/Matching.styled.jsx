@@ -1337,30 +1337,31 @@ export const ModernContactSummary = styled.summary`
 
 export const ModernContactLinks = styled.div`
   display: flex;
+  padding: 0 12px 12px;
   flex-wrap: wrap;
   gap: 8px;
 `;
 
 export const ModernContactLink = styled.a`
   display: inline-flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 6px;
   max-width: 100%;
-  padding: 7px 10px;
-  border-radius: 13px;
-  background: var(--matching-chip-bg);
-  border: 1px solid var(--matching-chip-border);
-  color: var(--matching-chip-text);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.15;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: var(--matching-card-bg);
+  border: none;
+  color: var(--matching-contact-text);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
   text-decoration: none;
 
   svg {
     flex: 0 0 auto;
     width: 14px;
     height: 14px;
-    color: var(--matching-chip-label);
+    color: var(--matching-accent);
   }
 
   span {
