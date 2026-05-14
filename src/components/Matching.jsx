@@ -93,7 +93,6 @@ import {
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
-import { getCurrentValue } from './getCurrentValue';
 import SearchBar from './SearchBar';
 import PhotoViewer from './PhotoViewer';
 import FilterPanel from './FilterPanel';
@@ -1007,7 +1006,6 @@ const SwipeableCard = ({
   photo,
   role,
   isAgency,
-  nameParts,
   isAdmin,
   favoriteUsers,
   setFavoriteUsers,
@@ -1049,10 +1047,13 @@ const SwipeableCard = ({
     return () => clearTimeout(t);
   }, [dir]);
 
-  const name = getProfileName(user) || nameParts || getRoleLabel(resolvedRole);
-  const age = getProfileAge(user);
-  const title = `${name}${age ? `, ${age}` : ''}`;
+  const profileName = getProfileName(user);
   const roleLabel = getRoleLabel(resolvedRole);
+  const isGenericProfileRole = roleLabel === 'Profile';
+  const name = profileName || '';
+  const age = getProfileAge(user);
+  const title = [name, age].filter(Boolean).join(', ');
+  const shouldShowRoleBadge = !isGenericProfileRole;
   const locationInfo = getProfileLocation(user);
   const identityAndLocationKeys = ['name', 'surname', 'agencyName', 'companyName', 'agency', 'country', 'region', 'city', 'role', 'userRole'];
   const heroFields = getHeroFields(user, resolvedRole, { excludeKeys: identityAndLocationKeys });
@@ -1066,7 +1067,8 @@ const SwipeableCard = ({
     .filter(Boolean)
     .slice(0, 2)
     .map(part => part[0]?.toUpperCase())
-    .join('') || roleLabel.slice(0, 2).toUpperCase();
+    .join('');
+  const shouldShowHeroContent = Boolean(title || locationInfo || heroFields.length > 0);
   const handleTouchStart = e => {
     if (!e.touches || e.touches.length !== 1) return;
     const touch = e.touches[0];
@@ -1142,31 +1144,33 @@ const SwipeableCard = ({
           $clickable={!!activeHeroPhoto}
           role={activeHeroPhoto ? 'button' : undefined}
           tabIndex={activeHeroPhoto ? 0 : undefined}
-          aria-label={activeHeroPhoto ? `Open ${name} photo` : undefined}
+          aria-label={activeHeroPhoto ? `Open ${name || 'matching profile'} photo` : undefined}
           onClick={activeHeroPhoto ? openHeroViewer : undefined}
           onKeyDown={activeHeroPhoto ? handleHeroKeyDown : undefined}
         >
-          {!activeHeroPhoto && <ModernHeroFallbackMark>{initials}</ModernHeroFallbackMark>}
-          {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name} profile hero`} onError={() => setActiveHeroPhoto('')} />}
-          <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>
+          {!activeHeroPhoto && initials && <ModernHeroFallbackMark>{initials}</ModernHeroFallbackMark>}
+          {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name || 'Matching'} profile hero`} onError={() => setActiveHeroPhoto('')} />}
+          {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>}
         </ModernHero>
-        <ModernHeroContent>
-          <ModernHeroTitle>{title}</ModernHeroTitle>
-          {locationInfo && <ModernHeroLocation><FaMapMarkerAlt aria-hidden="true" />{locationInfo}</ModernHeroLocation>}
-          {heroFields.length > 0 && (
-            <ModernHeroFacts>
-              {heroFields.slice(0, 6).map(item => {
-                const fact = formatHeroFact(item);
-                return (
-                  <ModernFactPill key={`hero-${item.key}`}>
-                    <span className="fact-value">{fact.value}</span>
-                    <span className="fact-label">{fact.unit || item.label}</span>
-                  </ModernFactPill>
-                );
-              })}
-            </ModernHeroFacts>
-          )}
-        </ModernHeroContent>
+        {shouldShowHeroContent && (
+          <ModernHeroContent>
+            {title && <ModernHeroTitle>{title}</ModernHeroTitle>}
+            {locationInfo && <ModernHeroLocation><FaMapMarkerAlt aria-hidden="true" />{locationInfo}</ModernHeroLocation>}
+            {heroFields.length > 0 && (
+              <ModernHeroFacts>
+                {heroFields.slice(0, 6).map(item => {
+                  const fact = formatHeroFact(item);
+                  return (
+                    <ModernFactPill key={`hero-${item.key}`}>
+                      <span className="fact-value">{fact.value}</span>
+                      <span className="fact-label">{fact.unit || item.label}</span>
+                    </ModernFactPill>
+                  );
+                })}
+              </ModernHeroFacts>
+            )}
+          </ModernHeroContent>
+        )}
         {isAdmin && (
           <AdminToggle published={user.publish} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
         )}
@@ -3592,13 +3596,6 @@ const Matching = () => {
               const photo = photos[0];
               const role = getProfileRole(user);
               const isAgency = role === 'ag' || role === 'ip';
-              const nameParts = [
-                getCurrentValue(user.name),
-                getCurrentValue(user.surname),
-              ]
-                .filter(Boolean)
-                .map(v => String(v).trim())
-                .join(' ');
               return (
                 <CardContainer key={user.userId}>
                   <CardWrapper $role={role}>
@@ -3625,7 +3622,6 @@ const Matching = () => {
                       photo={photo}
                       role={role}
                       isAgency={isAgency}
-                      nameParts={nameParts}
                       isAdmin={isAdmin}
                       favoriteUsers={favoriteUsers}
                       setFavoriteUsers={setFavoriteUsers}

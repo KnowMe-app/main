@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { getProfileName } from './profileLayoutConfig';
 
 describe('Matching redesigned profile regressions', () => {
   const source = () => fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
@@ -18,12 +19,22 @@ describe('Matching redesigned profile regressions', () => {
   });
 
 
-  it('keeps Key details from repeating hero fields', () => {
+  it('builds matching profile names only from approved identity fields', () => {
     const matchingSource = source();
+    const layoutSource = fs.readFileSync(path.join(__dirname, 'profileLayoutConfig.js'), 'utf8');
 
-    expect(matchingSource).toContain('const bodyHeroFields = getQuickFacts(user, resolvedRole');
-    expect(matchingSource).toContain('const usedBodyFieldKeys = collectProfileFieldKeys(bodyHeroFields);');
-    expect(matchingSource).not.toContain('const bodyHeroFields = heroFields.slice(3);');
+    expect(getProfileName({ name: 'Anna', surname: 'Smith', nameWife: 'Olena', nameHusband: 'Petro' })).toBe('Anna Smith Olena Petro');
+    expect(getProfileName({ email: 'person@example.com', agencyName: 'Agency LLC', companyName: 'Company LLC', agency: 'Hidden Agency' })).toBe('person');
+    expect(getProfileName({ agencyName: 'Agency LLC', companyName: 'Company LLC', agency: 'Hidden Agency' })).toBe('');
+    expect(layoutSource).toContain('const name = [user?.name, user?.surname, user?.nameWife, user?.nameHusband]');
+    expect(layoutSource).toContain('return name || getEmailName(user);');
+    expect(layoutSource).not.toContain('agencyName || name');
+    expect(layoutSource).not.toContain('companyName');
+    expect(matchingSource).toContain("const isGenericProfileRole = roleLabel === 'Profile';");
+    expect(matchingSource).toContain('const shouldShowRoleBadge = !isGenericProfileRole;');
+    expect(matchingSource).toContain("const name = profileName || '';");
+    expect(matchingSource).toContain('{title && <ModernHeroTitle>{title}</ModernHeroTitle>}');
+    expect(matchingSource).toContain('{shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>}');
   });
 
   it('supports desktop next/previous navigation without reaction side effects', () => {
