@@ -91,7 +91,6 @@ import {
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
-import { getCurrentValue } from './getCurrentValue';
 import SearchBar from './SearchBar';
 import PhotoViewer from './PhotoViewer';
 import FilterPanel from './FilterPanel';
@@ -1004,7 +1003,6 @@ const SwipeableCard = ({
   photo,
   role,
   isAgency,
-  nameParts,
   isAdmin,
   favoriteUsers,
   setFavoriteUsers,
@@ -1049,7 +1047,7 @@ const SwipeableCard = ({
   const profileName = getProfileName(user);
   const roleLabel = getRoleLabel(resolvedRole);
   const isGenericProfileRole = roleLabel === 'Profile';
-  const name = profileName || nameParts || '';
+  const name = profileName || '';
   const age = getProfileAge(user);
   const title = [name, age].filter(Boolean).join(', ');
   const shouldShowRoleBadge = !isGenericProfileRole;
@@ -3592,13 +3590,6 @@ const Matching = () => {
               const photo = photos[0];
               const role = getProfileRole(user);
               const isAgency = role === 'ag' || role === 'ip';
-              const nameParts = [
-                getCurrentValue(user.name),
-                getCurrentValue(user.surname),
-              ]
-                .filter(Boolean)
-                .map(v => String(v).trim())
-                .join(' ');
               return (
                 <CardContainer key={user.userId}>
                   <CardWrapper $role={role}>
@@ -3625,7 +3616,6 @@ const Matching = () => {
                       photo={photo}
                       role={role}
                       isAgency={isAgency}
-                      nameParts={nameParts}
                       isAdmin={isAdmin}
                       favoriteUsers={favoriteUsers}
                       setFavoriteUsers={setFavoriteUsers}

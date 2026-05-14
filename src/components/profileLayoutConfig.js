@@ -40,13 +40,18 @@ export const getRoleLabel = role => {
   return 'Profile';
 };
 
+const getEmailName = user => {
+  const email = normalizeDisplayValue(user?.email);
+  if (!email) return '';
+  return email.split('@')[0].trim();
+};
+
 export const getProfileName = user => {
-  const agencyName = normalizeDisplayValue(user?.agencyName || user?.companyName || user?.agency);
-  const name = [user?.name, user?.surname]
+  const name = [user?.name, user?.surname, user?.nameWife, user?.nameHusband]
     .map(normalizeDisplayValue)
     .filter(Boolean)
     .join(' ');
-  return agencyName || name;
+  return name || getEmailName(user);
 };
 
 export const getProfileAge = user => {
