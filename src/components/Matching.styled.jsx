@@ -470,10 +470,11 @@ export const ThemeToggleScene = styled.span`
       ? `
         width: 13px;
         height: 13px;
-        left: 7px;
-        top: 7px;
+        left: 6px;
+        top: 5px;
+        z-index: 2;
         background: #ffd45c;
-        box-shadow: 0 0 0 4px rgba(255, 212, 92, 0.28);
+        box-shadow: 0 0 0 3px rgba(255, 212, 92, 0.24);
       `
       : `
         width: 15px;
@@ -491,13 +492,14 @@ export const ThemeToggleScene = styled.span`
     transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
     ${({ $themeMode }) => ($themeMode === 'light'
       ? `
-        width: 19px;
-        height: 9px;
-        right: 5px;
-        bottom: 8px;
+        width: 14px;
+        height: 7px;
+        right: 4px;
+        bottom: 5px;
+        z-index: 1;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.92);
-        box-shadow: -8px 0 0 -2px rgba(255, 255, 255, 0.9);
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: -5px 0 0 -2px rgba(255, 255, 255, 0.92);
       `
       : `
         width: 3px;
