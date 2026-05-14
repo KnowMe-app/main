@@ -53,4 +53,18 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('onNavigate(direction === \'left\' ? 1 : -1);');
     expect(matchingSource).not.toContain('swipedRef.current = true;\n    setDir(direction);\n    handleRemove');
   });
+
+  it('prefetches matching cards ahead and retries after exhaustion without page refresh', () => {
+    const matchingSource = source();
+
+    expect(matchingSource).toContain('const PREFETCH_BUFFER = 3;');
+    expect(matchingSource).toContain('const EXHAUSTED_RETRY_INTERVAL_MS = 15 * 1000;');
+    expect(matchingSource).toContain('refreshFromStartWhenExhausted = false');
+    expect(matchingSource).toContain('if ((!hasMore && !force) || loadingRef.current');
+    expect(matchingSource).toContain('const cardsAhead = filteredUsers.length - activeProfileIndex - 1;');
+    expect(matchingSource).toContain('if (cardsAhead > PREFETCH_BUFFER) return;');
+    expect(matchingSource).toContain('refreshFromStartWhenExhausted: true');
+    expect(matchingSource).toContain('window.setInterval(retryLoad, EXHAUSTED_RETRY_INTERVAL_MS)');
+  });
+
 });
