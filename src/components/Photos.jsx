@@ -166,10 +166,17 @@ export const Photos = ({ state, setState, collection }) => {
   };
 
   useEffect(() => {
+    console.log('useEffect triggered', {
+      userId: state.userId,
+      photos: state.photos,
+      photoValues,
+    });
     const load = async () => {
       if (state.userId) {
         try {
+          console.log('Fetching photos for user', state.userId);
           const urls = await getAllUserPhotos(state.userId, collection);
+          console.log('Fetched URLs', urls);
           const filteredUrls = filterOutMedicationPhotos(urls, state.userId);
           if (filteredUrls.length > 0) {
             const currentPhotos = normalizePhotosArray(state.photos);
@@ -188,10 +195,12 @@ export const Photos = ({ state, setState, collection }) => {
         const existingPhotos = Array.isArray(state.photos)
           ? state.photos
           : Object.values(state.photos || {});
+        console.log('Existing photos', existingPhotos);
         const converted = existingPhotos
           .map(convertDriveLinkToImage)
           .filter(Boolean);
         const filteredConverted = filterOutMedicationPhotos(converted, state.userId);
+        console.log('Converted photos', converted);
         const changed =
           filteredConverted.length !== existingPhotos.length ||
           filteredConverted.some((url, idx) => url !== existingPhotos[idx]);
@@ -209,6 +218,7 @@ export const Photos = ({ state, setState, collection }) => {
           )
           .map(([, value]) => convertDriveLinkToImage(value))
           .filter(Boolean);
+        console.log('Links from state', links);
 
         if (links.length) {
           commitPhotosUpdate(filterOutMedicationPhotos(links, state.userId));
