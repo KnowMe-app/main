@@ -1533,10 +1533,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // }, [state]);
 
   useEffect(() => {
-    console.log('state2!!!!!!!!!! :>> ', state);
-  }, [state]);
-
-  useEffect(() => {
     isEditingRef.current = !!state.userId;
   }, [state.userId]);
   const stateUserIdRef = useRef(state.userId || '');
