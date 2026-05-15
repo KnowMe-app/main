@@ -723,6 +723,7 @@ const SearchBar = ({
   enabledSearchKeys,
   searchOptions,
   searchHistoryLimit = 5,
+  suppressInitialSearchExecution = false,
 }) => {
   const activeSearchRequestRef = useRef(0);
   const [internalSearch, setInternalSearch] = useState(
@@ -909,7 +910,9 @@ const SearchBar = ({
     if (search) {
       const { key, value } = detectSearchParams(search);
       loadCachedResult(key, value);
-      writeData(search);
+      if (!suppressInitialSearchExecution) {
+        writeData(search);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

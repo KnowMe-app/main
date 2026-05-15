@@ -1707,11 +1707,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const hasSearchParam = params.has('search');
     const urlSearchValue = hasSearchParam ? params.get('search') || '' : null;
 
+    const shouldPreserveInitialEmptyUrlProfile =
+      !urlUserId &&
+      !hasSearchParam &&
+      stateUserIdRef.current &&
+      skipInitialEmptyUrlProfileClearRef.current;
+
     if (hasSearchParam) {
       setSearch(prev => (prev === urlSearchValue ? prev : urlSearchValue));
     } else if (urlUserId && canAccessAdd) {
       setSearch(prev => (prev ? prev : urlUserId));
-    } else if (!urlUserId) {
+    } else if (!urlUserId && !shouldPreserveInitialEmptyUrlProfile) {
       setSearch(prev => (prev ? '' : prev));
     }
 
@@ -1732,7 +1738,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
     if (!hasSearchParam && stateUserIdRef.current) {
-      if (skipInitialEmptyUrlProfileClearRef.current) {
+      if (shouldPreserveInitialEmptyUrlProfile) {
         skipInitialEmptyUrlProfileClearRef.current = false;
         setIsResolvingEditMode(false);
         return;
@@ -4428,6 +4434,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               enabledSearchKeys: effectiveEnabledSearchKeys,
             }}
             searchHistoryLimit={15}
+            suppressInitialSearchExecution={Boolean(
+              state.userId &&
+                search &&
+                String(search).trim() === String(state.userId).trim(),
+            )}
           />
           <SearchSettingsButton
             type="button"
