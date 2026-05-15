@@ -908,11 +908,6 @@ const SearchBar = ({
   useEffect(() => {
     if (search) {
       const { key, value } = detectSearchParams(search);
-      console.log('[SearchBar] Restored persisted search', {
-        raw: search,
-        detectedKey: key,
-        detectedValue: value,
-      });
       loadCachedResult(key, value);
       writeData(search);
     }
@@ -920,11 +915,6 @@ const SearchBar = ({
   }, []);
 
   const emitSearchLabel = (params, meta = {}) => {
-    console.log('[SearchBar] Search label applied', {
-      ...meta,
-      params,
-    });
-
     // Repeated [] search keeps a per-value create context for not-found
     // placeholders, so fallback labels (for example the final name search)
     // must not replace the parent add payload.
@@ -1250,13 +1240,6 @@ const SearchBar = ({
       requestId = null,
     } = options;
 
-    console.log('[SearchBar] Parser evaluation', {
-      platform,
-      raw: inputData,
-      trimmed: trimmedInput,
-      parsed: id,
-    });
-
     if (!id && platform === 'telegram' && allowUkTrigger) {
       const ukTrigger = parseUkTriggerQuery(trimmedInput);
       if (ukTrigger?.searchPair?.telegram) {
@@ -1494,9 +1477,6 @@ const SearchBar = ({
       onSearchExecuted(trimmed);
     }
 
-    if (typeof query === 'string') {
-      console.log('[SearchBar] Incoming query', { raw: rawQuery, trimmed });
-    }
     if (trimmed && !trimmed.startsWith('!') && !suppressHistory) {
       addToHistory(trimmed);
     }
