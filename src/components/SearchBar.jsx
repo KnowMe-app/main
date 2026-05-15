@@ -723,6 +723,7 @@ const SearchBar = ({
   enabledSearchKeys,
   searchOptions,
   searchHistoryLimit = 5,
+  suppressInitialSearchExecution = false,
 }) => {
   const activeSearchRequestRef = useRef(0);
   const [internalSearch, setInternalSearch] = useState(
@@ -908,23 +909,15 @@ const SearchBar = ({
   useEffect(() => {
     if (search) {
       const { key, value } = detectSearchParams(search);
-      console.log('[SearchBar] Restored persisted search', {
-        raw: search,
-        detectedKey: key,
-        detectedValue: value,
-      });
       loadCachedResult(key, value);
-      writeData(search);
+      if (!suppressInitialSearchExecution) {
+        writeData(search);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const emitSearchLabel = (params, meta = {}) => {
-    console.log('[SearchBar] Search label applied', {
-      ...meta,
-      params,
-    });
-
     // Repeated [] search keeps a per-value create context for not-found
     // placeholders, so fallback labels (for example the final name search)
     // must not replace the parent add payload.
@@ -1250,13 +1243,6 @@ const SearchBar = ({
       requestId = null,
     } = options;
 
-    console.log('[SearchBar] Parser evaluation', {
-      platform,
-      raw: inputData,
-      trimmed: trimmedInput,
-      parsed: id,
-    });
-
     if (!id && platform === 'telegram' && allowUkTrigger) {
       const ukTrigger = parseUkTriggerQuery(trimmedInput);
       if (ukTrigger?.searchPair?.telegram) {
@@ -1494,9 +1480,6 @@ const SearchBar = ({
       onSearchExecuted(trimmed);
     }
 
-    if (typeof query === 'string') {
-      console.log('[SearchBar] Incoming query', { raw: rawQuery, trimmed });
-    }
     if (trimmed && !trimmed.startsWith('!') && !suppressHistory) {
       addToHistory(trimmed);
     }
@@ -1505,11 +1488,6 @@ const SearchBar = ({
       const filtersKey = normalizeQueryKey(
         `${filterForload || 'all'}:${serializeQueryFilters(filters)}`,
       );
-      console.log('[SearchBar] Detected bulk command search', {
-        raw: trimmed,
-        command: term,
-        filtersKey,
-      });
       const cacheKey = `allUsers:${filtersKey}`;
       const queries = loadQueries();
       const entry = queries[cacheKey];
@@ -1565,11 +1543,6 @@ const SearchBar = ({
     if (repeatedValues.length > 0) {
       const repeatedPerfLabel = `[SearchPerf][repeat][total] ${trimmed}`;
       if (perfDebugEnabledRef.current) console.time(repeatedPerfLabel);
-      console.log('[SearchBar] Processing repeated search values', {
-        raw: trimmed,
-        values: repeatedValues,
-      });
-
       const collector = {
         requestId,
         results: {},
@@ -1881,11 +1854,6 @@ const SearchBar = ({
     }
 
     const nameTrim = rawQuery.trim();
-    console.log('[SearchBar] Defaulting to name search', {
-      raw: rawQuery,
-      cleaned: nameTrim,
-    });
-
     const hasCache = loadCachedResult('name', nameTrim, requestId);
     const freshCache = hasCache && isCacheFresh('name', nameTrim);
     emitSearchLabel({ name: nameTrim }, { mode: 'name', stage: 'default' });

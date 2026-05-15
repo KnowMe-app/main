@@ -735,7 +735,29 @@ const summarizeProfileCardForLog = card => {
   };
 };
 
+const PROFILE_RESTORE_DEBUG_STEPS = new Set([
+  'init-state:cache-hit',
+  'init-state:cache-miss-placeholder',
+  'url-sync:blocked-no-access',
+  'profile-data:cache-hit-hydrate-state',
+  'profile-data:cache-miss-fetch-backend-start',
+  'profile-data:backend-hit-update-cache-and-state',
+  'profile-data:backend-empty',
+  'profile-data:backend-error',
+  'previous-list:snapshot-save',
+  'previous-list:restore-start',
+  'previous-list:restore-no-snapshot-clear-state',
+  'previous-list:restore-users-from-cache',
+  'previous-list:restore-complete-clear-profile-state',
+  'add-user:start',
+  'add-user:created-profile',
+  'add-user:set-state-open-profile-form',
+  'add-user:finish',
+]);
+
 const logProfileRestoreStep = (step, payload = {}) => {
+  if (!PROFILE_RESTORE_DEBUG_STEPS.has(step)) return;
+
   console.log(PROFILE_RESTORE_LOG_PREFIX, step, {
     at: getProfileRestoreTimestamp(),
     ...payload,
@@ -1112,6 +1134,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const historyNavigationRef = useRef(false);
   const isEditingRef = useRef(false);
   const previousListStateRef = useRef(null);
+  const skipInitialEmptyUrlProfileClearRef = useRef(
+    initialAccess.canAccessAdd &&
+      !new URLSearchParams(location.search).has('userId') &&
+      !new URLSearchParams(location.search).has('search') &&
+      Boolean(localStorage.getItem(EDIT_PROFILE_USER_ID_KEY)),
+  );
 
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   const [filters, setFilters] = useState({});
@@ -1543,13 +1571,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // Видаляємо ключ з нового стану
       delete newState[fieldName];
 
-      // console.log('Видалили ключ з локального стану:', fieldName);
-      // console.log('newState:', newState);
 
       // Встановлюємо значення 'del_key' для видалення
       //  newState[fieldName] = 'del_key';
-
-      console.log(`Поле "${fieldName}" позначено для видалення`);
 
       handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
       return newState; // Повертаємо оновлений стан
@@ -1584,10 +1608,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     isEditingRef.current = !!state.userId;
   }, [state.userId]);
   const stateUserIdRef = useRef(state.userId || '');
+  const stateRef = useRef(state);
 
   useEffect(() => {
     stateUserIdRef.current = state.userId || '';
-  }, [state.userId]);
+    stateRef.current = state;
+  }, [state]);
 
   const [users, setUsers] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
@@ -1610,18 +1636,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [, setCacheCount] = useState(0);
   const [, setBackendCount] = useState(0);
   const [profileSource, setProfileSource] = useState('');
+  const profileSourceRef = useRef(profileSource);
   const [isResolvingEditMode, setIsResolvingEditMode] = useState(false);
-  const restoreLogSeqRef = useRef(0);
   const profileFetchRequestRef = useRef(0);
 
   useEffect(() => {
-    restoreLogSeqRef.current += 1;
-    logProfileRestoreStep('state-change', {
-      seq: restoreLogSeqRef.current,
-      profileSource,
-      state: summarizeProfileCardForLog(state),
-    });
-  }, [profileSource, state]);
+    profileSourceRef.current = profileSource;
+  }, [profileSource]);
 
   useEffect(() => {
     const enteringEditMode = Boolean(state.userId) && !isEditingRef.current;
@@ -1686,11 +1707,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const hasSearchParam = params.has('search');
     const urlSearchValue = hasSearchParam ? params.get('search') || '' : null;
 
+    const shouldPreserveInitialEmptyUrlProfile =
+      !urlUserId &&
+      !hasSearchParam &&
+      stateUserIdRef.current &&
+      skipInitialEmptyUrlProfileClearRef.current;
+
     if (hasSearchParam) {
       setSearch(prev => (prev === urlSearchValue ? prev : urlSearchValue));
     } else if (urlUserId && canAccessAdd) {
       setSearch(prev => (prev ? prev : urlUserId));
-    } else if (!urlUserId) {
+    } else if (!urlUserId && !shouldPreserveInitialEmptyUrlProfile) {
       setSearch(prev => (prev ? '' : prev));
     }
 
@@ -1700,22 +1727,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setIsResolvingEditMode(false);
         return;
       }
-      logProfileRestoreStep('url-sync:open-edit-mode', {
-        urlUserId,
-        currentStateUserId: stateUserIdRef.current || '',
-        willResolve: !stateUserIdRef.current || stateUserIdRef.current !== urlUserId,
-        locationSearch: location.search,
-      });
-      setIsResolvingEditMode(!stateUserIdRef.current || stateUserIdRef.current !== urlUserId);
-      setProfileSource('');
-      setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
+
+      const shouldResolveUrlUser = !stateUserIdRef.current || stateUserIdRef.current !== urlUserId;
+      setIsResolvingEditMode(shouldResolveUrlUser);
+
+      if (shouldResolveUrlUser) {
+        setProfileSource('');
+        setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
+      }
       return;
     }
     if (!hasSearchParam && stateUserIdRef.current) {
-      logProfileRestoreStep('url-sync:clear-edit-mode', {
-        previousStateUserId: stateUserIdRef.current,
-        locationSearch: location.search,
-      });
+      if (shouldPreserveInitialEmptyUrlProfile) {
+        skipInitialEmptyUrlProfileClearRef.current = false;
+        setIsResolvingEditMode(false);
+        return;
+      }
+
       setState({});
     }
     setIsResolvingEditMode(false);
@@ -1908,8 +1936,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   ]);
 
   useEffect(() => {
-    if (!state.userId) {
-      logProfileRestoreStep('profile-data:skip-no-user-id', { profileSource });
+    const currentState = stateRef.current || {};
+    const currentProfileSource = profileSourceRef.current || '';
+    const activeUserId = String(currentState.userId || '').trim();
+    if (!activeUserId) {
       return;
     }
 
@@ -1917,79 +1947,81 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     profileFetchRequestRef.current = requestId;
     logProfileRestoreStep('profile-data:effect-start', {
       requestId,
-      userId: state.userId,
-      profileSource,
-      stateKeysCount: Object.keys(state).length,
+      userId: activeUserId,
+      profileSource: currentProfileSource,
+      stateKeysCount: Object.keys(currentState).length,
     });
 
-    if (Object.keys(state).length > 1) {
-      if (!profileSource) {
+    if (Object.keys(currentState).length > 1) {
+      if (!currentProfileSource) {
         logProfileRestoreStep('profile-data:state-already-hydrated-set-cache-source', {
           requestId,
-          userId: state.userId,
-          state: summarizeProfileCardForLog(state),
+          userId: activeUserId,
+          state: summarizeProfileCardForLog(currentState),
         });
         setProfileSource('cache');
       } else {
         logProfileRestoreStep('profile-data:state-already-hydrated-skip', {
           requestId,
-          userId: state.userId,
-          profileSource,
-          state: summarizeProfileCardForLog(state),
+          userId: activeUserId,
+          profileSource: currentProfileSource,
+          state: summarizeProfileCardForLog(currentState),
         });
       }
       return;
     }
 
-    const cached = getCard(state.userId);
+    const cached = getCard(activeUserId);
     if (cached) {
       logProfileRestoreStep('profile-data:cache-hit-hydrate-state', {
         requestId,
-        userId: state.userId,
+        userId: activeUserId,
         cached: summarizeProfileCardForLog(cached),
       });
-      setState({ ...cached, userId: cached.userId || state.userId });
+      setState({ ...cached, userId: cached.userId || activeUserId });
       setProfileSource('cache');
     } else {
       logProfileRestoreStep('profile-data:cache-miss-fetch-backend-start', {
         requestId,
-        userId: state.userId,
+        userId: activeUserId,
       });
       setProfileSource('loading');
       (async () => {
         try {
-          const data = await fetchUserById(state.userId);
+          const data = await fetchUserById(activeUserId);
           if (data) {
             logProfileRestoreStep('profile-data:backend-hit-update-cache-and-state', {
               requestId,
-              userId: state.userId,
+              userId: activeUserId,
               backend: summarizeProfileCardForLog(data),
             });
-            updateCard(state.userId, data);
-            setState({ ...data, userId: data.userId || state.userId });
+            updateCard(activeUserId, data);
+            setState({ ...data, userId: data.userId || activeUserId });
           } else {
             logProfileRestoreStep('profile-data:backend-empty', {
               requestId,
-              userId: state.userId,
+              userId: activeUserId,
             });
           }
         } catch (error) {
           logProfileRestoreStep('profile-data:backend-error', {
             requestId,
-            userId: state.userId,
+            userId: activeUserId,
             message: error?.message || String(error),
           });
           toast.error(error.message);
         } finally {
           logProfileRestoreStep('profile-data:backend-finish-set-source', {
             requestId,
-            userId: state.userId,
+            userId: activeUserId,
           });
-          setProfileSource('backend');
+          if (profileFetchRequestRef.current === requestId) {
+            setProfileSource('backend');
+          }
         }
       })();
     }
-  }, [state, profileSource, setState]);
+  }, [state.userId, setState]);
 
   useEffect(() => {
     if (!state.userId) setProfileSource('');
@@ -2541,7 +2573,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const delConfirm = () => {
-    // console.log('state :>> ', state);
     const handleRemoveUser = async () => {
       try {
         setIsDeleting(true);
@@ -2560,7 +2591,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setState({});
         setShowInfoModal(null);
         setUserIdToDelete(null);
-        console.log(`User ${id} deleted.`);
         navigate('/add');
       } catch (error) {
         console.error('Error deleting user:', error);
@@ -2794,11 +2824,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
-    console.log('loadMoreUsers called with', {
-      filterForload,
-      lastKey,
-      currentFilters,
-    });
     const includeSpecialFutureDates = searchBarQueryActive;
     if (isEditingRef.current) return { count: 0, hasMore };
     const param = lastKey;
@@ -2838,18 +2863,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         dislikedUsers: dislikedUsersMap,
       },
     );
-    // console.log('res :>> ', res);
     // Перевіряємо, чи є користувачі у відповіді
     if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
-      // console.log('222 :>> ');
-      // console.log('res.users :>> ', res.users);
 
       // Використовуємо Object.entries для обробки res.users
       const newUsers = Object.entries(res.users)
         .filter(([id]) => !currentFilters.favorite?.favOnly || fav[id])
         .reduce((acc, [userId, user]) => {
         // Перевірка наявності поля userId, щоб уникнути помилок
-        // console.log('3333 :>> ');
         if (user.userId) {
           acc[user.userId] = user; // Додаємо користувача до об'єкта
         } else {
@@ -2869,8 +2890,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
       setHasMore(res.hasMore); // Оновлюємо hasMore
       const backendCount = Object.keys(newUsers).length;
-      console.log('loaded users count', backendCount);
-      console.log('next lastKey', res.lastKey);
       return { cacheCount: 0, backendCount, hasMore: res.hasMore };
     } else {
       setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
@@ -4415,6 +4434,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               enabledSearchKeys: effectiveEnabledSearchKeys,
             }}
             searchHistoryLimit={15}
+            suppressInitialSearchExecution={Boolean(
+              state.userId &&
+                search &&
+                String(search).trim() === String(state.userId).trim(),
+            )}
           />
           <SearchSettingsButton
             type="button"

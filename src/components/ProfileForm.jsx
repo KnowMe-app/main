@@ -139,24 +139,17 @@ const getProfileFormRestoreTimestamp = () => {
   return Date.now();
 };
 
-const summarizeProfileFormStateForLog = state => {
-  if (!state || typeof state !== 'object') {
-    return { hasState: false };
-  }
-
-  const keys = Object.keys(state);
-  return {
-    hasState: true,
-    userId: state.userId || '',
-    keysCount: keys.length,
-    keys,
-    cachedAt: state.cachedAt || null,
-    updatedAt: state.updatedAt || state.lastUpdated || null,
-    dataSource: state.__sourceCollection || state.dataSource || null,
-  };
-};
+const PROFILE_FORM_RESTORE_DEBUG_STEPS = new Set([
+  'admin-overlay-additions:load-success',
+  'admin-overlay-additions:load-error',
+  'editor-overlay:auto-apply-start',
+  'editor-overlay:auto-apply-replacements',
+  'editor-overlay:auto-apply-error',
+]);
 
 const logProfileFormRestoreStep = (step, payload = {}) => {
+  if (!PROFILE_FORM_RESTORE_DEBUG_STEPS.has(step)) return;
+
   console.log(PROFILE_FORM_RESTORE_LOG_PREFIX, step, {
     at: getProfileFormRestoreTimestamp(),
     ...payload,
@@ -828,38 +821,6 @@ export const ProfileForm = ({
   const searchKeyFileInputRef = useRef(null);
   const [localSearchKeyPayload, setLocalSearchKeyPayload] = useState(null);
   const autoAppliedOverlayForUserRef = useRef('');
-  const formRestoreRenderSeqRef = useRef(0);
-
-  useEffect(() => {
-    logProfileFormRestoreStep('mount', {
-      dataSource,
-      state: summarizeProfileFormStateForLog(state),
-      isAdmin,
-    });
-
-    return () => {
-      logProfileFormRestoreStep('unmount', {
-        dataSource,
-        userId: state?.userId || '',
-      });
-    };
-    // This intentionally logs only the component lifetime for one opened form.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    formRestoreRenderSeqRef.current += 1;
-    logProfileFormRestoreStep('props-change', {
-      seq: formRestoreRenderSeqRef.current,
-      dataSource,
-      isAdmin,
-      highlightedFieldsCount: highlightedFields.length,
-      deletedOverlayFieldsCount: deletedOverlayFields.length,
-      overlayFieldAdditionsCount: Object.keys(overlayFieldAdditions || {}).length,
-      state: summarizeProfileFormStateForLog(state),
-    });
-  }, [dataSource, deletedOverlayFields, highlightedFields, isAdmin, overlayFieldAdditions, state]);
-
   const addEmptyAdditionalFilter = useCallback(() => {
     const used = new Set(additionalRuleBuilder.map(rule => rule.key));
     const firstAvailable = ADDITIONAL_RULE_ORDER.find(key => !used.has(key)) || ADDITIONAL_RULE_ORDER[0];
@@ -1193,7 +1154,6 @@ export const ProfileForm = ({
         if (Array.isArray(lastSetDebug?.skippedFields) && lastSetDebug.skippedFields.includes('imt')) {
           toast('5/8 Skipped imt field');
         }
-        const filteredFields = Array.isArray(lastSetDebug?.filteredFields) ? lastSetDebug.filteredFields : [];
         toast(
           `Filtered set ready: payloadUsers=${payloadUsersCount}, finalAllowed=${finalAllowedCount}, buckets=${payloadBucketsCount}, records=${payloadRecordsCount}`
         );
@@ -1223,20 +1183,6 @@ export const ProfileForm = ({
         if (!hasSetPayload) {
           toast.error('STOP: payload empty before backend write');
         }
-        console.log('[searchKeySets debug]', {
-          selectedRules: lastSetDebug?.selectedRules,
-          allowedUserIdsCount: Number(lastSetDebug?.allowedUserIdsCount || 0),
-          finalAllowedCount,
-          payloadUsers: payloadUsersCount,
-          allowedSample: Array.isArray(lastSetDebug?.allowedSample) ? lastSetDebug.allowedSample.slice(0, 10) : [],
-          searchKeyFields,
-          skippedFields: Array.isArray(lastSetDebug?.skippedFields) ? lastSetDebug.skippedFields : [],
-          copiedByField,
-          copiedRecords: payloadRecordsCount,
-          copiedBuckets: payloadBucketsCount,
-          filteredFields,
-          backendRequests,
-        });
         if (indexResult && Number(indexResult.writesCount || 0) === 0 && Number(indexResult?.setKeys?.length || 0) === 0) {
           toast('searchKeySets не оновлено: не знайдено валідних правил.');
         }

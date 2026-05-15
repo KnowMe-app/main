@@ -482,12 +482,11 @@ const scheduleToast = request => {
 };
 
 const maybeLogConsoleSummary = stats => {
-  if (typeof console === 'undefined' || !console.table) return;
   const runtime = getRuntime();
   const now = Date.now();
   if (now - runtime.lastConsoleSummaryAt < CONSOLE_SUMMARY_DELAY_MS) return;
   runtime.lastConsoleSummaryAt = now;
-  stats.summary();
+  stats.summary({ log: false });
 };
 
 const makeRequestShell = ({ operation = 'get', source = '', path = 'unknown' } = {}) => ({
