@@ -1242,8 +1242,10 @@ const SwipeableCard = ({
   );
 };
 
-const INITIAL_LOAD = 6;
-const LOAD_MORE = 6;
+const INITIAL_LOAD = 2;
+const MATCHING_VISIBLE_BUFFER = 2;
+const MATCHING_REFILL_LIMIT = 1;
+const LOAD_MORE = 1;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 3;
 const SOURCE_BACKFILL_MAX_PAGES = 5;
 const SCROLL_Y_KEY = 'matchingScrollY';
@@ -1441,6 +1443,8 @@ const Matching = () => {
   };
   const handleRemove = id => {
     setUsers(prev => prev.filter(u => u.userId !== id));
+    setAdditionalNewUsers(prev => prev.filter(u => u.userId !== id));
+    setSharedReactionCandidateUsers(prev => prev.filter(u => u.userId !== id));
   };
   useEffect(() => {
     viewModeRef.current = viewMode;
@@ -3401,8 +3405,6 @@ const Matching = () => {
   });
   const renderedCards = filteredUsers;
   const renderedCardsLength = renderedCards.length;
-  const penultimateRenderedCard = renderedCardsLength >= 2 ? renderedCards[renderedCardsLength - 2] : null;
-  const penultimateRenderedCardUserId = penultimateRenderedCard?.userId || null;
 
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
   const activeProfile = filteredUsers[activeProfileIndex] || null;
@@ -3473,23 +3475,24 @@ const Matching = () => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (loadingRef.current || loading) return;
     if (!hasMore) return;
-    if (filteredUsers.length >= INITIAL_LOAD) return;
+    if (filteredUsers.length >= MATCHING_VISIBLE_BUFFER) return;
 
     loadMore({
       currentVisibleCount: filteredUsers.length,
-      targetVisibleCount: INITIAL_LOAD,
+      targetVisibleCount: MATCHING_VISIBLE_BUFFER,
+      limit: MATCHING_REFILL_LIMIT,
     });
   }, [filteredUsers.length, hasMore, loadMore, loading, viewMode]);
 
-  const penultimateLoadTriggerSignatureRef = useRef('');
-  const penultimateVisibilityLogSignatureRef = useRef('');
+  const lastCardLoadTriggerSignatureRef = useRef('');
+  const lastCardVisibilityLogSignatureRef = useRef('');
   useEffect(() => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
-    if (renderedCardsLength < 2) return;
+    if (renderedCardsLength < 1) return;
 
-    const triggerIndex = renderedCardsLength - 2;
+    const lastRenderedIndex = renderedCardsLength - 1;
     const activeRenderedIndex = activeProfileIndex;
-    if (activeRenderedIndex < triggerIndex) return;
+    if (activeRenderedIndex < lastRenderedIndex) return;
 
     const reactionPagination = reactionPaginationByType[viewMode] || buildEmptyReactionPagination();
     const sourceNextOffset = collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0
@@ -3503,6 +3506,8 @@ const Matching = () => {
     );
     const sourceHasMore = Boolean(hasMore);
     const loadingRefCurrent = Boolean(loadingRef.current);
+    const lastRenderedCard = renderedCards[lastRenderedIndex] || null;
+    const lastRenderedCardUserId = lastRenderedCard?.userId || null;
     const paginationSignature = stableAdditionalSignature({
       collectionSource,
       sourceCursorSignature,
@@ -3511,8 +3516,9 @@ const Matching = () => {
     const triggerSignature = stableAdditionalSignature({
       paginationSignature,
       renderedLength: renderedCardsLength,
-      triggerIndex,
-      triggerUserId: penultimateRenderedCardUserId || '',
+      activeRenderedIndex,
+      triggerIndex: lastRenderedIndex,
+      triggerUserId: lastRenderedCardUserId || '',
     });
     const visibilityLogSignature = [
       triggerSignature,
@@ -3520,12 +3526,13 @@ const Matching = () => {
       loadingRefCurrent || loading ? 'loading' : 'idle',
     ].join('::');
 
-    if (penultimateVisibilityLogSignatureRef.current !== visibilityLogSignature) {
-      penultimateVisibilityLogSignatureRef.current = visibilityLogSignature;
-      console.log('[Matching][penultimateCardVisible]', {
+    if (lastCardVisibilityLogSignatureRef.current !== visibilityLogSignature) {
+      lastCardVisibilityLogSignatureRef.current = visibilityLogSignature;
+      console.log('[Matching][lastCardActive]', {
         renderedLength: renderedCardsLength,
-        triggerIndex,
-        triggerUserId: penultimateRenderedCardUserId,
+        triggerIndex: lastRenderedIndex,
+        triggerUserId: lastRenderedCardUserId,
+        activeRenderedIndex,
         hasMore: sourceHasMore,
         loadingRefCurrent,
         sourceNextOffset,
@@ -3536,13 +3543,13 @@ const Matching = () => {
     }
 
     if (!sourceHasMore || loadingRefCurrent || loading) return;
-    if (penultimateLoadTriggerSignatureRef.current === triggerSignature) return;
-    penultimateLoadTriggerSignatureRef.current = triggerSignature;
+    if (lastCardLoadTriggerSignatureRef.current === triggerSignature) return;
+    lastCardLoadTriggerSignatureRef.current = triggerSignature;
 
     loadMore({
       currentVisibleCount: renderedCardsLength,
-      targetVisibleCount: renderedCardsLength + 1,
-      limit: 1,
+      targetVisibleCount: MATCHING_VISIBLE_BUFFER,
+      limit: MATCHING_REFILL_LIMIT,
     });
   }, [
     activeProfileIndex,
@@ -3553,12 +3560,11 @@ const Matching = () => {
     loadMore,
     loading,
     parsedAdditionalAccessRules.length,
-    penultimateRenderedCardUserId,
     reactionPaginationByType,
+    renderedCards,
     renderedCardsLength,
     viewMode,
   ]);
-
   useEffect(() => {
     setBackendDownloadToastsEnabled(downloadSizeToastsEnabled);
   }, [downloadSizeToastsEnabled]);
