@@ -129,6 +129,40 @@ const nestedIndentStyle = {
   marginLeft: '20px',
 };
 
+
+const PROFILE_FORM_RESTORE_LOG_PREFIX = '[ProfileRestore][ProfileForm]';
+
+const getProfileFormRestoreTimestamp = () => {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return Math.round(performance.now());
+  }
+  return Date.now();
+};
+
+const summarizeProfileFormStateForLog = state => {
+  if (!state || typeof state !== 'object') {
+    return { hasState: false };
+  }
+
+  const keys = Object.keys(state);
+  return {
+    hasState: true,
+    userId: state.userId || '',
+    keysCount: keys.length,
+    keys,
+    cachedAt: state.cachedAt || null,
+    updatedAt: state.updatedAt || state.lastUpdated || null,
+    dataSource: state.__sourceCollection || state.dataSource || null,
+  };
+};
+
+const logProfileFormRestoreStep = (step, payload = {}) => {
+  console.log(PROFILE_FORM_RESTORE_LOG_PREFIX, step, {
+    at: getProfileFormRestoreTimestamp(),
+    ...payload,
+  });
+};
+
 const ADDITIONAL_ACCESS_FIELD = 'additionalAccessRules';
 const PHENOTYPE_FIELDS = [
   'eyeColor',
@@ -769,6 +803,7 @@ export const ProfileForm = ({
   highlightedFields = [],
   deletedOverlayFields = [],
   isAdmin = false,
+  dataSource = '',
   overlayFieldAdditions = {},
   refreshOverlayForEditor,
 }) => {
@@ -793,6 +828,37 @@ export const ProfileForm = ({
   const searchKeyFileInputRef = useRef(null);
   const [localSearchKeyPayload, setLocalSearchKeyPayload] = useState(null);
   const autoAppliedOverlayForUserRef = useRef('');
+  const formRestoreRenderSeqRef = useRef(0);
+
+  useEffect(() => {
+    logProfileFormRestoreStep('mount', {
+      dataSource,
+      state: summarizeProfileFormStateForLog(state),
+      isAdmin,
+    });
+
+    return () => {
+      logProfileFormRestoreStep('unmount', {
+        dataSource,
+        userId: state?.userId || '',
+      });
+    };
+    // This intentionally logs only the component lifetime for one opened form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    formRestoreRenderSeqRef.current += 1;
+    logProfileFormRestoreStep('props-change', {
+      seq: formRestoreRenderSeqRef.current,
+      dataSource,
+      isAdmin,
+      highlightedFieldsCount: highlightedFields.length,
+      deletedOverlayFieldsCount: deletedOverlayFields.length,
+      overlayFieldAdditionsCount: Object.keys(overlayFieldAdditions || {}).length,
+      state: summarizeProfileFormStateForLog(state),
+    });
+  }, [dataSource, deletedOverlayFields, highlightedFields, isAdmin, overlayFieldAdditions, state]);
 
   const addEmptyAdditionalFilter = useCallback(() => {
     const used = new Set(additionalRuleBuilder.map(rule => rule.key));
@@ -1998,21 +2064,36 @@ export const ProfileForm = ({
 
     const loadOverlayFieldAdditions = async () => {
       if (!isAdmin) {
+        logProfileFormRestoreStep('admin-overlay-additions:skip-not-admin', {
+          userId: state?.userId || '',
+        });
         if (isMounted) setAutoOverlayFieldAdditions({});
         return;
       }
 
       if (!state?.userId) {
+        logProfileFormRestoreStep('admin-overlay-additions:skip-no-user-id');
         if (isMounted) setAutoOverlayFieldAdditions({});
         return;
       }
 
       try {
+        logProfileFormRestoreStep('admin-overlay-additions:load-start', {
+          userId: state.userId,
+        });
         const { result } = await readOverlayFieldAdditions(state.userId);
         if (!isMounted) return;
 
+        logProfileFormRestoreStep('admin-overlay-additions:load-success', {
+          userId: state.userId,
+          fieldsCount: Object.keys(result || {}).length,
+        });
         setAutoOverlayFieldAdditions(result);
-      } catch {
+      } catch (error) {
+        logProfileFormRestoreStep('admin-overlay-additions:load-error', {
+          userId: state?.userId || '',
+          message: error?.message || String(error),
+        });
         if (isMounted) {
           setAutoOverlayFieldAdditions({});
         }
@@ -2027,20 +2108,44 @@ export const ProfileForm = ({
   }, [isAdmin, readOverlayFieldAdditions, state?.userId]);
 
   useEffect(() => {
-    if (isAdmin) return;
-    if (!state?.userId) return;
-    if (autoAppliedOverlayForUserRef.current === state.userId) return;
+    if (isAdmin) {
+      logProfileFormRestoreStep('editor-overlay:auto-apply-skip-admin', {
+        userId: state?.userId || '',
+      });
+      return;
+    }
+    if (!state?.userId) {
+      logProfileFormRestoreStep('editor-overlay:auto-apply-skip-no-user-id');
+      return;
+    }
+    if (autoAppliedOverlayForUserRef.current === state.userId) {
+      logProfileFormRestoreStep('editor-overlay:auto-apply-skip-already-applied', {
+        userId: state.userId,
+      });
+      return;
+    }
 
     let cancelled = false;
 
     const applyOverlayOnMount = async () => {
       try {
+        logProfileFormRestoreStep('editor-overlay:auto-apply-start', {
+          userId: state.userId,
+        });
         const replacements = await collectEditorOverlayReplacements();
         if (cancelled) return;
 
+        logProfileFormRestoreStep('editor-overlay:auto-apply-replacements', {
+          userId: state.userId,
+          replacementsCount: Object.keys(replacements || {}).length,
+        });
         applyEditorOverlayReplacements(replacements);
         autoAppliedOverlayForUserRef.current = state.userId;
-      } catch {
+      } catch (error) {
+        logProfileFormRestoreStep('editor-overlay:auto-apply-error', {
+          userId: state?.userId || '',
+          message: error?.message || String(error),
+        });
         if (!cancelled) {
           autoAppliedOverlayForUserRef.current = state.userId;
         }

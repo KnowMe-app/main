@@ -708,6 +708,40 @@ const LocalIndexActions = styled.div`
   margin-top: 12px;
 `;
 
+
+const PROFILE_RESTORE_LOG_PREFIX = '[ProfileRestore]';
+
+const getProfileRestoreTimestamp = () => {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return Math.round(performance.now());
+  }
+  return Date.now();
+};
+
+const summarizeProfileCardForLog = card => {
+  if (!card || typeof card !== 'object') {
+    return { hasCard: false };
+  }
+
+  const keys = Object.keys(card);
+  return {
+    hasCard: true,
+    userId: card.userId || '',
+    keysCount: keys.length,
+    keys,
+    cachedAt: card.cachedAt || null,
+    updatedAt: card.updatedAt || card.lastUpdated || null,
+    dataSource: card.__sourceCollection || card.dataSource || null,
+  };
+};
+
+const logProfileRestoreStep = (step, payload = {}) => {
+  console.log(PROFILE_RESTORE_LOG_PREFIX, step, {
+    at: getProfileRestoreTimestamp(),
+    ...payload,
+  });
+};
+
 const EXCEL_COMMENTS_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 
 const extractSurnameAndName = fullName => {
@@ -1043,15 +1077,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       ? (restoredUserIdFromUrl || restoredUserIdFromCache)
       : '';
 
+    logProfileRestoreStep('init-state:resolve-user-id', {
+      restoredUserId,
+      restoredUserIdFromUrl,
+      restoredUserIdFromCache,
+      canAccessAdd: initialAccess.canAccessAdd,
+      locationSearch: location.search,
+    });
+
     if (!restoredUserId) {
+      logProfileRestoreStep('init-state:empty');
       return {};
     }
 
     const cachedCard = getCard(restoredUserId);
     if (cachedCard) {
+      logProfileRestoreStep('init-state:cache-hit', {
+        restoredUserId,
+        card: summarizeProfileCardForLog(cachedCard),
+      });
       return cachedCard;
     }
 
+    logProfileRestoreStep('init-state:cache-miss-placeholder', { restoredUserId });
     return { userId: restoredUserId };
   });
   const [, setHistoryVersion] = useState(0);
@@ -1533,10 +1581,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // }, [state]);
 
   useEffect(() => {
-    console.log('state2!!!!!!!!!! :>> ', state);
-  }, [state]);
-
-  useEffect(() => {
     isEditingRef.current = !!state.userId;
   }, [state.userId]);
   const stateUserIdRef = useRef(state.userId || '');
@@ -1567,6 +1611,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [, setBackendCount] = useState(0);
   const [profileSource, setProfileSource] = useState('');
   const [isResolvingEditMode, setIsResolvingEditMode] = useState(false);
+  const restoreLogSeqRef = useRef(0);
+  const profileFetchRequestRef = useRef(0);
+
+  useEffect(() => {
+    restoreLogSeqRef.current += 1;
+    logProfileRestoreStep('state-change', {
+      seq: restoreLogSeqRef.current,
+      profileSource,
+      state: summarizeProfileCardForLog(state),
+    });
+  }, [profileSource, state]);
 
   useEffect(() => {
     const enteringEditMode = Boolean(state.userId) && !isEditingRef.current;
@@ -1594,6 +1649,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       search,
       hasSearched,
     };
+
+    logProfileRestoreStep('previous-list:snapshot-save', {
+      openingUserId: state.userId,
+      userIdsCount: userIds.length,
+      currentFilter,
+      currentPage,
+      hasMore,
+      loadSortMode,
+      hasSearched,
+      search,
+    });
 
     previousListStateRef.current = snapshot;
     localStorage.setItem(PREVIOUS_LIST_STATE_KEY, JSON.stringify(snapshot));
@@ -1630,15 +1696,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (urlUserId) {
       if (!canAccessAdd) {
+        logProfileRestoreStep('url-sync:blocked-no-access', { urlUserId, locationSearch: location.search });
         setIsResolvingEditMode(false);
         return;
       }
+      logProfileRestoreStep('url-sync:open-edit-mode', {
+        urlUserId,
+        currentStateUserId: stateUserIdRef.current || '',
+        willResolve: !stateUserIdRef.current || stateUserIdRef.current !== urlUserId,
+        locationSearch: location.search,
+      });
       setIsResolvingEditMode(!stateUserIdRef.current || stateUserIdRef.current !== urlUserId);
       setProfileSource('');
       setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
       return;
     }
     if (!hasSearchParam && stateUserIdRef.current) {
+      logProfileRestoreStep('url-sync:clear-edit-mode', {
+        previousStateUserId: stateUserIdRef.current,
+        locationSearch: location.search,
+      });
       setState({});
     }
     setIsResolvingEditMode(false);
@@ -1659,6 +1736,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (activeUserId) {
       if (currentUserIdInUrl === activeUserId) return;
+      logProfileRestoreStep('url-sync:write-user-id', {
+        activeUserId,
+        previousUrlUserId: currentUserIdInUrl,
+        locationSearch: location.search,
+      });
       params.set('userId', activeUserId);
       navigate(
         { pathname: location.pathname, search: `?${params.toString()}` },
@@ -1668,6 +1750,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     if (!currentUserIdInUrl) return;
+    logProfileRestoreStep('url-sync:remove-user-id', {
+      previousUrlUserId: currentUserIdInUrl,
+      locationSearch: location.search,
+    });
     params.delete('userId');
     const nextSearch = params.toString();
     navigate(
@@ -1822,31 +1908,83 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   ]);
 
   useEffect(() => {
-    if (!state.userId) return;
+    if (!state.userId) {
+      logProfileRestoreStep('profile-data:skip-no-user-id', { profileSource });
+      return;
+    }
+
+    const requestId = profileFetchRequestRef.current + 1;
+    profileFetchRequestRef.current = requestId;
+    logProfileRestoreStep('profile-data:effect-start', {
+      requestId,
+      userId: state.userId,
+      profileSource,
+      stateKeysCount: Object.keys(state).length,
+    });
 
     if (Object.keys(state).length > 1) {
       if (!profileSource) {
+        logProfileRestoreStep('profile-data:state-already-hydrated-set-cache-source', {
+          requestId,
+          userId: state.userId,
+          state: summarizeProfileCardForLog(state),
+        });
         setProfileSource('cache');
+      } else {
+        logProfileRestoreStep('profile-data:state-already-hydrated-skip', {
+          requestId,
+          userId: state.userId,
+          profileSource,
+          state: summarizeProfileCardForLog(state),
+        });
       }
       return;
     }
 
     const cached = getCard(state.userId);
     if (cached) {
+      logProfileRestoreStep('profile-data:cache-hit-hydrate-state', {
+        requestId,
+        userId: state.userId,
+        cached: summarizeProfileCardForLog(cached),
+      });
       setState({ ...cached, userId: cached.userId || state.userId });
       setProfileSource('cache');
     } else {
+      logProfileRestoreStep('profile-data:cache-miss-fetch-backend-start', {
+        requestId,
+        userId: state.userId,
+      });
       setProfileSource('loading');
       (async () => {
         try {
           const data = await fetchUserById(state.userId);
           if (data) {
+            logProfileRestoreStep('profile-data:backend-hit-update-cache-and-state', {
+              requestId,
+              userId: state.userId,
+              backend: summarizeProfileCardForLog(data),
+            });
             updateCard(state.userId, data);
             setState({ ...data, userId: data.userId || state.userId });
+          } else {
+            logProfileRestoreStep('profile-data:backend-empty', {
+              requestId,
+              userId: state.userId,
+            });
           }
         } catch (error) {
+          logProfileRestoreStep('profile-data:backend-error', {
+            requestId,
+            userId: state.userId,
+            message: error?.message || String(error),
+          });
           toast.error(error.message);
         } finally {
+          logProfileRestoreStep('profile-data:backend-finish-set-source', {
+            requestId,
+            userId: state.userId,
+          });
           setProfileSource('backend');
         }
       })();
@@ -2336,6 +2474,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [adding, setAdding] = useState(false);
 
   const handleAddUser = async () => {
+    logProfileRestoreStep('add-user:start', {
+      search,
+      hasSearchKeyValuePair: Boolean(searchKeyValuePair),
+    });
     setAdding(true);
     try {
       const rawSearch = search || '';
@@ -2357,6 +2499,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         hasSearchText ? normalizedSearchKeyValuePair : null,
         rawSearch,
       );
+      logProfileRestoreStep('add-user:created-profile', {
+        newProfile: summarizeProfileCardForLog(newProfile),
+        hasSearchText,
+        normalizedSearchKeyValuePair,
+      });
       updateCachedUser(newProfile);
       cacheFetchedUsers(
         { [newProfile.userId]: newProfile },
@@ -2364,9 +2511,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         filters,
       );
       setUsers(prev => ({ ...prev, [newProfile.userId]: newProfile }));
+      logProfileRestoreStep('add-user:set-state-open-profile-form', {
+        userId: newProfile.userId,
+      });
       setState(newProfile);
       setUserNotFound(false);
     } finally {
+      logProfileRestoreStep('add-user:finish', { search });
       setAdding(false);
     }
   };
@@ -3983,6 +4134,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleBackToPreviousList = useCallback(() => {
+    logProfileRestoreStep('previous-list:restore-start', {
+      activeUserId: state?.userId || '',
+      hasMemorySnapshot: Boolean(previousListStateRef.current),
+      hasPersistedSnapshot: Boolean(localStorage.getItem(PREVIOUS_LIST_STATE_KEY)),
+      locationSearch: location.search,
+    });
+
     if (location.search.includes('userId=')) {
       navigate({ pathname: location.pathname, search: '' }, { replace: true });
     }
@@ -4002,18 +4160,34 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const snapshot = previousListStateRef.current || persisted;
 
     if (!snapshot) {
+      logProfileRestoreStep('previous-list:restore-no-snapshot-clear-state', {
+        activeUserId: state?.userId || '',
+      });
       setState({});
       return;
     }
 
+    const missingCachedUserIds = [];
     const restoredUsers = (snapshot.userIds || []).reduce((acc, userId) => {
       if (!userId) return acc;
       const cachedUser = getCard(userId);
       if (cachedUser) {
         acc[userId] = cachedUser;
+      } else {
+        missingCachedUserIds.push(userId);
       }
       return acc;
     }, {});
+
+    logProfileRestoreStep('previous-list:restore-users-from-cache', {
+      snapshotUserIdsCount: (snapshot.userIds || []).length,
+      restoredUsersCount: Object.keys(restoredUsers).length,
+      missingCachedUserIds,
+      currentFilter: snapshot.currentFilter || '',
+      currentPage: snapshot.currentPage || 1,
+      loadSortMode: snapshot.loadSortMode || 'SearchIdKeyOnly',
+      hasSearched: Boolean(snapshot.hasSearched),
+    });
 
     if (Object.keys(restoredUsers).length) {
       setUsers(restoredUsers);
@@ -4035,8 +4209,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLoadSortMode(snapshot.loadSortMode || 'SearchIdKeyOnly');
     setSearch(snapshot.search || '');
     setHasSearched(Boolean(snapshot.hasSearched) || Object.keys(restoredUsers).length > 0);
+    logProfileRestoreStep('previous-list:restore-complete-clear-profile-state', {
+      activeUserId: state?.userId || '',
+      restoredUsersCount: Object.keys(restoredUsers).length,
+    });
     setState({});
-  }, [location.pathname, location.search, navigate, setSearch, setState]);
+  }, [location.pathname, location.search, navigate, setSearch, setState, state?.userId]);
 
   useEffect(() => {
     if (!state?.userId) {
