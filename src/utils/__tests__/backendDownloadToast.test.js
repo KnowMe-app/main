@@ -71,6 +71,18 @@ describe('backendDownloadToast admin traffic tracker', () => {
     expect(toast.success).toHaveBeenCalled();
   });
 
+  it('does not print automatic console table summaries during tracking', () => {
+    const { tracker } = loadTracker();
+    window.__getBackendDownloadToastUid = () => ADMIN_UID;
+
+    tracker.recordAdminBackendTraffic(
+      { exists: () => true, val: () => ({ name: 'Admin payload' }) },
+      { operation: 'get', source: 'config', path: 'newUsers/user-id' },
+    );
+
+    expect(console.table).not.toHaveBeenCalled();
+  });
+
   it('collects stats while silent mode suppresses toast output', () => {
     const { tracker, toast } = loadTracker();
     window.__getBackendDownloadToastUid = () => ADMIN_UID;

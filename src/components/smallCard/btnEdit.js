@@ -14,7 +14,6 @@ export const btnEdit = (userData, setSearch, setState, style = {}, content = 'ed
       saveCard(userData);
       setIdsForQuery(cacheKey, [userData.userId]);
     } else {
-      console.log('Користувача не знайдено.');
     }
   };
 

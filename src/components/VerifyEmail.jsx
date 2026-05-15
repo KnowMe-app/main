@@ -29,13 +29,10 @@ margin-bottom: 20px;
                 localStorage.setItem('ownerId', user.uid);
                 try {
                   await sendEmailVerification(user);
-                  console.log('sendEmailVerification(user) :>> ',);
                   setIsCounting(true);
                 } catch (error) {
                   if (error.code === 'auth/too-many-requests') {
-                      console.log('Забагато запитів');
                   } else {
-                      console.log('Помилка надсилання підтвердження');
                   }
                 }
               } else {
@@ -46,7 +43,6 @@ margin-bottom: 20px;
               unsubscribe();
             };
           } catch (error) {
-            console.log('Error in UserRoleScreen :>> ', error);
           }
         };
       

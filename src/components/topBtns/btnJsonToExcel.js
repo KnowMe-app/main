@@ -17,7 +17,6 @@ const JsonToExcelButton = () => {
       try {
         const content = e.target.result;
         const data = JSON.parse(content);
-        console.log("JSON успішно завантажено:", data);
 
         // Перетворення структури JSON
         const transformedData = Object.keys(data).map((key) => ({
@@ -77,7 +76,6 @@ const JsonToExcelButton = () => {
   
     // Отримання всіх ключів у групованому порядку
     const allKeys = groupKeys(jsonData);
-    console.log("Унікальні ключі (колонки):", allKeys);
   
     // Формування таблиці з усіма ключами
     const excelData = jsonData.map((item) => {
@@ -93,7 +91,6 @@ const JsonToExcelButton = () => {
       return row;
     });
   
-    console.log("Підготовлені дані для Excel:", excelData);
   
     // Створення робочої книги
     try {
@@ -105,7 +102,6 @@ const JsonToExcelButton = () => {
       const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
       const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
       saveAs(blob, "data.xlsx");
-      console.log("Файл Excel успішно збережено!");
     } catch (error) {
       console.error("Помилка під час створення Excel:", error.message);
     }

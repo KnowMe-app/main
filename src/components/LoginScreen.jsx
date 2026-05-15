@@ -339,7 +339,6 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
         navigate('/my-profile');
       }
-      console.log('User signed in:', userCredential.user);
     } catch (error) {
       if (error.code === 'auth/wrong-password') {
         authNotifications.wrongPassword();
@@ -354,7 +353,6 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleRegistration = async email => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, state.password);
-      console.log('User registered in:', userCredential.user);
 
       const uploadedInfo = {
         email,

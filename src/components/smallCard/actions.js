@@ -175,7 +175,6 @@ export const handleChange = (
 
   if (setState) {
     invokeSetUsers(prevState => {
-      // console.log('prevState!!!!!!!!! :>> ', prevState);
       // Зроблено в основному для видалення юзера серед масиву карточок, а не з середини
 
       const keys = prevState && typeof prevState === 'object' && !Array.isArray(prevState)

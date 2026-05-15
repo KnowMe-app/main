@@ -45,7 +45,6 @@ export async function fetchUsersByLastLoginPaged(
   const target = startOffset + limit;
   const totalLimit = target + 1;
 
-  console.log('[fetchUsersByLastLoginPaged] startOffset', startOffset, 'limit', limit);
 
   const combined = [];
   const MAX_LOAD_DAYS = MAX_LOOKBACK_DAYS; // safety cap
@@ -60,7 +59,6 @@ export async function fetchUsersByLastLoginPaged(
     const dateStr = `${dd}.${mm}.${yy}`;
     // eslint-disable-next-line no-await-in-loop
     const chunk = await fetchDateFn(dateStr, totalLimit - combined.length);
-    console.log('[fetchUsersByLastLoginPaged] fetched', dateStr, 'count', chunk.length);
 
     if (chunk.length > 0) {
       const parse = str => {

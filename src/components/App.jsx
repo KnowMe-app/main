@@ -20,7 +20,6 @@ export const App = () => {
   const [canAccessAdd, setCanAccessAdd] = useState(false);
   const [canAccessMatching, setCanAccessMatching] = useState(false);
   const [isAccessResolved, setIsAccessResolved] = useState(false);
-  // console.log('isLoggedIn :>> ', isLoggedIn);
 
   const navigate = useNavigate();
   const location = useLocation();

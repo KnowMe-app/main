@@ -84,7 +84,6 @@ export const btnCompare = (
       currentVal = decodeURIComponent(currentVal);
     }
     const targetUserId = currentVal ? userIdNext : userIdCur;
-    console.log('Target User ID:', targetUserId);
   
     if (users[targetUserId]) {
       const updatedUsers = { ...users };
@@ -112,7 +111,6 @@ export const btnCompare = (
       setUsers(updatedUsers);
       handleSubmitAll(updatedTargetUser, 'overwrite');
   
-      console.log('Updated user data:', updatedTargetUser);
     } else {
       console.error(`User with ID ${targetUserId} not found`);
     }

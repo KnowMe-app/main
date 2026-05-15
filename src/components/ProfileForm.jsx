@@ -1157,20 +1157,6 @@ export const ProfileForm = ({
         if (!hasSetPayload) {
           toast.error('STOP: payload empty before backend write');
         }
-        console.log('[searchKeySets debug]', {
-          selectedRules: lastSetDebug?.selectedRules,
-          allowedUserIdsCount: Number(lastSetDebug?.allowedUserIdsCount || 0),
-          finalAllowedCount,
-          payloadUsers: payloadUsersCount,
-          allowedSample: Array.isArray(lastSetDebug?.allowedSample) ? lastSetDebug.allowedSample.slice(0, 10) : [],
-          searchKeyFields,
-          skippedFields: Array.isArray(lastSetDebug?.skippedFields) ? lastSetDebug.skippedFields : [],
-          copiedByField,
-          copiedRecords: payloadRecordsCount,
-          copiedBuckets: payloadBucketsCount,
-          filteredFields,
-          backendRequests,
-        });
         if (indexResult && Number(indexResult.writesCount || 0) === 0 && Number(indexResult?.setKeys?.length || 0) === 0) {
           toast('searchKeySets не оновлено: не знайдено валідних правил.');
         }

@@ -364,7 +364,6 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     publish: false,
   });
   const [focused, setFocused] = useState(null);
-  console.log('focused :>> ', focused);
   const navigate = useNavigate();
   const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
   const isAdmin = access.isAdmin;
@@ -382,7 +381,6 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
           // Успішний результат
           const latitude = position.coords.latitude;
           const longitude = position.coords.longitude;
-          console.log(`Latitude: ${latitude}, Longitude: ${longitude}`);
 
           fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`)
             .then(response => response.json())
@@ -392,7 +390,6 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
               const city = address.city || address.town || address.village || '';
               const state = address.state || '';
               const country = address.country || '';
-              console.log(`Street: ${street}, City: ${city}, State: ${state}, Country: ${country}`);
               setState(prevState => ({ ...prevState, city, street, state, country }));
             })
             .catch(error => console.error('Error:', error));
@@ -403,7 +400,6 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         }
       );
     } else {
-      console.log('Geolocation is not supported by this browser.');
     }
   }, []); // Порожній масив залежностей
 
@@ -455,9 +451,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
 
   // зберігаємо дані при завантаженні сторінки
   const fetchData = async user => {
-    // console.log('fetchData :>> ');
     // const user = auth.currentUser;
-    // console.log('user :>> ', user.uid);
     if (user && user.uid) {
       const data = await fetchUserData(user.uid);
       const existingData = data.existingData || {};
@@ -473,7 +467,6 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         return acc;
       }, {});
 
-      console.log('processedData :>> ', processedData);
       setState(prevState => ({
         ...prevState, // Зберегти попередні значення
         ...processedData,
@@ -487,11 +480,9 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     const unsubscribe = onAuthStateChanged(auth, user => {
       if (user) {
         localStorage.setItem('ownerId', user.uid);
-        console.log('User is logged in: ', user.uid);
         fetchData(user);
       } else {
         localStorage.removeItem('ownerId');
-        console.log('No user is logged in.');
       }
     });
 
@@ -516,7 +507,6 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   }, []);
 
   useEffect(() => {
-    // console.log('state.photos :>> ', state.photos);
     handleSubmit();
     // eslint-disable-next-line
   }, [state.publish, state.photos]);
@@ -620,7 +610,6 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         <Photos state={state} setState={setState} />
 
         {pickerFields.map(field => {
-          // console.log('field.options:', field.options);
 
           return (
             <PickerContainer>
@@ -645,11 +634,8 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
                     }}
                     onFocus={() => {
                       if (field.options === undefined) {
-                        console.log('field.options === undefined :>> ');
                         handleFocus(field.name);
                       } else if (state[field.name] !== '' && state[field.name] !== undefined) {
-                        console.log('state[field.name] :>> ', state[field.name]);
-                        console.log('field.options !== ');
                         handleFocus(field.name);
                       } else {
                         handleOpenModal(field.name);

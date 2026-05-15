@@ -372,7 +372,6 @@ export const saveToContact = data => {
     link.download = fileName;
     link.click();
 
-    console.log('Generated vCard:', contactVCard);
 
     window.URL.revokeObjectURL(url);
   }
@@ -472,7 +471,6 @@ export const saveToContactCsv = data => {
     link.download = fileName;
     link.click();
 
-    console.log('Generated CSV:', csvContent);
 
     window.URL.revokeObjectURL(url);
   }

@@ -804,17 +804,6 @@ export const buildNewUsersFilterSetIndex = async ({
       },
     });
 
-    console.log('[searchKeySets][debug] build result', {
-      setKey,
-      legacyRuleBucketWritesPaths: Object.keys(ruleBucketWrites),
-      payloadBucketsCount: debugBucketsCount,
-      filteredFields: debugFilteredFields,
-      bucketsCount: debugBucketsCount,
-      recordsCount: debugRecordsCount,
-      payloadUsers: payloadUserIds.size,
-      finalAllowedCount,
-      source: 'searchKeyFile+finalAllowedUserIds',
-    });
 
     if (payloadUserIds.size === 0 || debugRecordsCount === 0) {
       console.error('[searchKeySets] EMPTY PAYLOAD', {
@@ -847,13 +836,6 @@ export const buildNewUsersFilterSetIndex = async ({
       throw error;
     }
 
-    console.log('WRITE PAYLOAD:', {
-      setId: setKey,
-      hasPayload: !!filteredSearchKeySet,
-      fields: Object.keys(filteredSearchKeySet),
-      payloadUsers: payloadUserIds.size,
-      totalRecords: debugRecordsCount,
-    });
 
     debug.backendRequests.push({
       type: 'set',
@@ -870,7 +852,6 @@ export const buildNewUsersFilterSetIndex = async ({
       backendRequests: debug.backendRequests,
       setKey,
     };
-    console.log('backendRequests:', debug.backendRequests);
 
     const writesCountForSet = debugBucketsCount;
     bucketWritesCount += writesCountForSet;

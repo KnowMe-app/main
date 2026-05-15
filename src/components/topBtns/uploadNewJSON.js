@@ -104,20 +104,17 @@ export const UploadJson = () => {
         cleanedPhone = "38" + cleanedPhone;
       }
       if (!/\d/.test(cleanedPhone)) {
-        // console.log(`Невалідний номер (немає цифр): ${singlePhone}`);
         return null;
       }
 
        // Перевіряємо на довжину, якщо номер починається з 380 і має менше 11 символів
     if (cleanedPhone.startsWith("380") && cleanedPhone.length < 11) {
-      // console.log(`Невалідний номер: ${singlePhone}`); // Логування невалідного номера
       return null; // Повертаємо null, щоб видалити невалідний номер
     }
 
         // Фільтруємо номери, які є 101, 102, 103
         const invalidNumbers = ["101", "102", "103"];
         if (invalidNumbers.includes(cleanedPhone)) {
-          // console.log(`Невалідний номер (спеціальний): ${singlePhone}`);
           return null;
         }
 
@@ -131,23 +128,18 @@ export const UploadJson = () => {
               matches.forEach((match) => {
                 // Перевіряємо кожен знайдений номер
                 if (!repeatedDigitsPattern.test(match)) {
-                  // console.log(`Оригінальний номер: ${cleanedPhone}`);
-                  // console.log(`Оновлений номер: ${match}`);
                   // Зберігаємо або повертаємо оновлений номер
                   return match; // Зберігаємо перший валідний номер
                 } else {
-                  // console.log(`Невалідний витягнутий номер (5 і більше однакових цифр): ${match}`);
                 }
               });
             } else {
-              // console.log(`Невалідний номер (немає коректної послідовності "380"): ${cleanedPhone}`);
             }
             return null; // Якщо всі номери невалідні, повертаємо null
           }
 
            // Перевіряємо на довжину, якщо номер починається з 380 і має менше 11 символів
            if (cleanedPhone.length < 10) {
-            // console.log(`Невалідний короткий номер: ${singlePhone}`); // Логування невалідного номера
             return null; // Повертаємо null, щоб видалити невалідний номер
           }
 

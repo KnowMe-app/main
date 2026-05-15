@@ -219,7 +219,6 @@ export const UploadJson = () => {
       finalResult.myComments = myComments.join("; ");
     }
   
-    console.log("finalResult :>> ", finalResult);
     return finalResult;
   };
   

@@ -481,7 +481,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [missing, setMissing] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [hasAgreed, setHasAgreed] = useState(false);
-  console.log('focused :>> ', focused);
   const navigate = useNavigate();
   const currentUid = auth.currentUser?.uid;
   const access = resolveAccess({ uid: currentUid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
@@ -521,7 +520,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           // Успішний результат
           const latitude = position.coords.latitude;
           const longitude = position.coords.longitude;
-          console.log(`Latitude: ${latitude}, Longitude: ${longitude}`);
 
           fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`)
             .then(response => response.json())
@@ -531,7 +529,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               const city = address.city || address.town || address.village || '';
               const state = address.state || '';
               const country = address.country || '';
-              console.log(`Street: ${street}, City: ${city}, State: ${state}, Country: ${country}`);
               setState(prevState => ({ ...prevState, city, street, state, country }));
             })
             .catch(error => console.error('Error:', error));
@@ -542,7 +539,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
       );
     } else {
-      console.log('Geolocation is not supported by this browser.');
     }
   }, []); // Порожній масив залежностей
 
@@ -741,9 +737,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   // зберігаємо дані при завантаженні сторінки
   const fetchData = async user => {
-    // console.log('fetchData :>> ');
     // const user = auth.currentUser;
-    // console.log('user :>> ', user.uid);
     if (user && user.uid) {
       const data = await fetchUserData(user.uid);
       const existingData = data.existingData || {};
@@ -789,7 +783,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         );
       }
 
-      console.log('processedData :>> ', processedData);
       setState(prevState => ({
         ...prevState, // Зберегти попередні значення
         ...processedData,
@@ -805,13 +798,11 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setIsLoggedIn(true);
         localStorage.setItem('isLoggedIn', 'true');
         localStorage.setItem('ownerId', user.uid);
-        console.log('User is logged in: ', user.uid);
         fetchData(user);
       } else {
         setIsLoggedIn(false);
         localStorage.removeItem('isLoggedIn');
         localStorage.removeItem('ownerId');
-        console.log('No user is logged in.');
       }
     });
 
@@ -827,7 +818,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // Цей екран доступний і без авторизації
 
   useEffect(() => {
-    // console.log('state.photos :>> ', state.photos);
     handleSubmit();
     // eslint-disable-next-line
   }, [state.publish, state.photos]);
@@ -1024,7 +1014,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         {state.userId && <Photos state={state} setState={setState} />}
 
         {visiblePickerFields.map(field => {
-          // console.log('field.options:', field.options);
           const isPickerField = Array.isArray(field.options);
           const isCsectionField = field.name === 'csection';
 

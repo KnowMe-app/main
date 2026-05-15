@@ -2509,7 +2509,6 @@ const Matching = () => {
   );
 
   const loadInitial = React.useCallback(async () => {
-    console.log('[loadInitial] start');
     loadingRef.current = true;
     const startMode = viewModeRef.current;
     setLoading(true);
@@ -2610,7 +2609,6 @@ const Matching = () => {
 
       const { cards: cached } = await getCardsByList(defaultListKey);
       if (cached.length && viewModeRef.current === startMode) {
-        console.log('[loadInitial] using cache', cached.length);
         const filteredCached = cached.filter(
           u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
         );
@@ -2637,7 +2635,6 @@ const Matching = () => {
         }
       );
       if (viewModeRef.current !== startMode) return;
-      console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
       loadedIdsRef.current = new Set([
         ...loadedIdsRef.current,
         ...res.users.map(u => u.userId),
@@ -3011,11 +3008,9 @@ const Matching = () => {
   const loadMore = React.useCallback(async ({ targetVisibleCount = 0, currentVisibleCount = 0, limit = LOAD_MORE } = {}) => {
     const isReactionViewMode = viewMode === 'favorites' || viewMode === 'dislikes';
     if (!hasMore || loadingRef.current || (viewMode !== 'default' && !isReactionViewMode)) {
-      console.log('[loadMore] skip', { hasMore, loading: loadingRef.current, viewMode });
       return;
     }
     const requestedLimit = Math.max(1, Number(limit) || LOAD_MORE);
-    console.log('[loadMore] start', { lastKey, hasMore, requestedLimit });
     loadingRef.current = true;
     setLoading(true);
     const loadMoreVersion = additionalLoadMoreFetchVersionRef.current + 1;
@@ -3288,14 +3283,6 @@ const Matching = () => {
           ...collected.map(u => u.userId).filter(Boolean),
         ]);
         const res = await fetchChunk(remaining, cursor, dynamicExclude);
-        console.log('[loadMore] batch', {
-          requested: remaining,
-          received: res.users.length,
-          cursor,
-          nextCursor: res.lastKey,
-          hasMore: res.hasMore,
-          reachedSafetyCap: res.reachedSafetyCap,
-        });
 
         const unique = res.users.filter(
           u => u?.userId && !loadedIdsRef.current.has(u.userId)
@@ -3322,10 +3309,8 @@ const Matching = () => {
 
       const stoppedBySafetyCapWithMoreSource = canLoadMore && collected.length === 0;
       if (stoppedBySafetyCapWithMoreSource) {
-        console.log('[loadMore] source backfill safety cap reached; keeping hasMore true for next cycle');
         setHasMore(true);
       } else if (handleEmptyFetch({ users: collected, lastKey: cursor }, lastKey, setHasMore)) {
-        console.log('[loadMore] empty fetch, no more cards');
       } else {
         setHasMore(canLoadMore);
       }
@@ -3359,7 +3344,6 @@ const Matching = () => {
   ]);
 
   useEffect(() => {
-    console.log('[useEffect] calling loadInitial');
     reloadDefault();
   }, [reloadDefault]);
 
@@ -3522,17 +3506,6 @@ const Matching = () => {
 
     if (penultimateVisibilityLogSignatureRef.current !== visibilityLogSignature) {
       penultimateVisibilityLogSignatureRef.current = visibilityLogSignature;
-      console.log('[Matching][penultimateCardVisible]', {
-        renderedLength: renderedCardsLength,
-        triggerIndex,
-        triggerUserId: penultimateRenderedCardUserId,
-        hasMore: sourceHasMore,
-        loadingRefCurrent,
-        sourceNextOffset,
-        lastKey,
-        sourceCursor,
-        sourceCursorSignature,
-      });
     }
 
     if (!sourceHasMore || loadingRefCurrent || loading) return;

@@ -311,7 +311,6 @@ export const normalizePhoneState = currentState => {
       const [fullMatch, countryCode, areaCode, firstPart, secondPart, thirdPart] = match;
       formattedNumber = '';
   
-      console.log('fullMatch :>> ', fullMatch);
       // if (countryCode && countryCode.charAt(0) === '0') {
       formattedNumber += countryCode;
       // } else if (countryCode) {
@@ -375,7 +374,7 @@ export const normalizePhoneState = currentState => {
               if (age && (age > 90 || age < 15)) {
                 !option && alert(`Перевірте правильність введення дати, Вам ${age}?`);
                 formattedDate = '';
-              } else console.log('Формат дати вірний');
+              }
             }
           }
         }
@@ -482,7 +481,6 @@ export const normalizePhoneState = currentState => {
         try {
           const cleanFormula = formula.slice(0, -1);
   
-          console.log('Формула для обчислення:', cleanFormula);
   
           if (!cleanFormula) {
             throw new Error('Порожня формула');
@@ -495,7 +493,6 @@ export const normalizePhoneState = currentState => {
           }
   
           today.setDate(today.getDate() + result);
-          console.log('Нова дата:', today.toISOString().split('T')[0]); // Логування у форматі YYYY-MM-DD
           return today.toISOString().split('T')[0]; // Повертаємо у форматі YYYY-MM-DD
         } catch (error) {
           console.error('Помилка в обчисленні формули:', error.message);
@@ -575,7 +572,6 @@ export const formatDateToServer = (dateString) => {
     const isOperator = (token) => ['+', '-', '*', '/'].includes(token);
   
     const tokens = expression.match(/(\d+|\+|-|\*|\/)/g);
-    console.log('Токени формули:', tokens);
   
     if (!tokens) {
       throw new Error('Невірний вираз: порожній або некоректний ввід');
@@ -588,7 +584,6 @@ export const formatDateToServer = (dateString) => {
       const b = values.pop();
       const a = values.pop();
       const op = ops.pop();
-      console.log('Застосовуємо оператор:', op, '| Операнди:', a, b);
       if (a === undefined || b === undefined || !operators[op]) {
         throw new Error('Неповний вираз');
       }
@@ -596,16 +591,13 @@ export const formatDateToServer = (dateString) => {
     };
   
     tokens.forEach((token) => {
-      console.log('Обробка токена:', token);
       if (!isNaN(token)) {
         values.push(parseFloat(token));
-        console.log('Додавання числа в стек:', values);
       } else if (isOperator(token)) {
         while (ops.length && precedence[ops[ops.length - 1]] >= precedence[token]) {
           applyOperator();
         }
         ops.push(token);
-        console.log('Додавання оператора в стек:', ops);
       } else {
         throw new Error('Невірний токен');
       }
@@ -619,7 +611,6 @@ export const formatDateToServer = (dateString) => {
       throw new Error('Помилка обчислення: некоректний стек після обчислення');
     }
   
-    console.log('Результат обчислення:', values[0]);
     return values[0];
   };
   

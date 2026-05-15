@@ -6,7 +6,6 @@ export const btnMerge = async (users, setUsers, setDuplicates) => {
   const { mergedUsers, 
     // totalDuplicates 
   } = await mergeDuplicateUsers();
-  console.log('mergedUsers :>> ', mergedUsers);
 
   // setDuplicates(totalDuplicates);
 
@@ -78,13 +77,11 @@ export const btnMerge = async (users, setUsers, setDuplicates) => {
   //   usersToDelete.add(donorUser);
   // });
 
-  // console.log('usersToDelete:', usersToDelete);
 
   // // Видаляємо лише юзерів, які йдуть другим у кожній парі
   // usersToDelete.forEach(userId => {
   //   // delete updatedUsers[userId];
   // });
 
-  // console.log('Оновлений список користувачів:', updatedUsers);
   // setUsers(updatedUsers);
 };

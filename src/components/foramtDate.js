@@ -20,7 +20,6 @@ export const getCurrentDate = () => {
 };
 
 export const formatToLongDate = date => {
-  // console.log('date :>> ', date);
   // Перевіряємо, чи date не є undefined або null
   if (date === undefined || date === null || date === '') {
     return ''; // Повертаємо пустий рядок у випадку, якщо date === undefined або date === null
