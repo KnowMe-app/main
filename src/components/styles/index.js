@@ -9,6 +9,9 @@ export const layout = {
     height,
   },
 };
+console.log('height :>> ', height);
+console.log('width :>> ', width);
+
 export let resize;
 if (height > 1200) {
   resize = 1.6;
@@ -34,6 +37,7 @@ else {
   resize = 1;
 } // звичайний розмір
 
+console.log('resize :>> ', resize);
 
 export const deviceWidth = width;
 export const deviceHeight = height;
