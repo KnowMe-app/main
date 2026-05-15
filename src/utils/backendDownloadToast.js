@@ -3,6 +3,7 @@ import { isAdminUid } from './accessLevel';
 
 export const ENABLE_BACKEND_TRAFFIC_TOAST = true;
 export const BACKEND_TRAFFIC_SILENT_MODE = false;
+export const BACKEND_TRAFFIC_AUTO_CONSOLE_SUMMARY = false;
 export const BACKEND_DOWNLOAD_TOASTS_STORAGE_KEY = 'backendDownloadSizeToastsEnabled';
 export const BACKEND_TRAFFIC_TRACKING_TEST_UID = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
 const BACKEND_TRAFFIC_EXTRA_TRACKED_UIDS = [BACKEND_TRAFFIC_TRACKING_TEST_UID];
@@ -482,6 +483,7 @@ const scheduleToast = request => {
 };
 
 const maybeLogConsoleSummary = stats => {
+  if (!BACKEND_TRAFFIC_AUTO_CONSOLE_SUMMARY) return;
   if (typeof console === 'undefined' || !console.table) return;
   const runtime = getRuntime();
   const now = Date.now();

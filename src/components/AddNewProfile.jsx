@@ -1533,10 +1533,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // }, [state]);
 
   useEffect(() => {
-    console.log('state2!!!!!!!!!! :>> ', state);
-  }, [state]);
-
-  useEffect(() => {
     isEditingRef.current = !!state.userId;
   }, [state.userId]);
   const stateUserIdRef = useRef(state.userId || '');
@@ -1624,7 +1620,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setSearch(prev => (prev === urlSearchValue ? prev : urlSearchValue));
     } else if (urlUserId && canAccessAdd) {
       setSearch(prev => (prev ? prev : urlUserId));
-    } else if (!urlUserId) {
+    } else if (!urlUserId && !stateUserIdRef.current) {
       setSearch(prev => (prev ? '' : prev));
     }
 
@@ -1633,14 +1629,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setIsResolvingEditMode(false);
         return;
       }
-      setIsResolvingEditMode(!stateUserIdRef.current || stateUserIdRef.current !== urlUserId);
-      setProfileSource('');
-      setState(prev => (prev?.userId === urlUserId ? prev : { userId: urlUserId }));
+
+      const currentStateUserId = stateUserIdRef.current;
+      const shouldResolveUserId = !currentStateUserId || currentStateUserId !== urlUserId;
+      setIsResolvingEditMode(shouldResolveUserId);
+
+      if (shouldResolveUserId) {
+        setProfileSource('');
+        setState({ userId: urlUserId });
+      }
       return;
     }
-    if (!hasSearchParam && stateUserIdRef.current) {
-      setState({});
-    }
+
     setIsResolvingEditMode(false);
   }, [canAccessAdd, location.search, setSearch, setState]);
 
@@ -1831,26 +1831,46 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
-    const cached = getCard(state.userId);
+    const targetUserId = state.userId;
+    const cached = getCard(targetUserId);
     if (cached) {
-      setState({ ...cached, userId: cached.userId || state.userId });
+      setState(prev => {
+        if (prev?.userId !== targetUserId) return prev;
+        if (Object.keys(prev || {}).length > 1) return prev;
+        return { ...cached, userId: cached.userId || targetUserId };
+      });
       setProfileSource('cache');
-    } else {
-      setProfileSource('loading');
-      (async () => {
-        try {
-          const data = await fetchUserById(state.userId);
-          if (data) {
-            updateCard(state.userId, data);
-            setState({ ...data, userId: data.userId || state.userId });
-          }
-        } catch (error) {
+      return;
+    }
+
+    let cancelled = false;
+    setProfileSource('loading');
+
+    (async () => {
+      try {
+        const data = await fetchUserById(targetUserId);
+        if (cancelled || !data) return;
+
+        updateCard(targetUserId, data);
+        setState(prev => {
+          if (prev?.userId !== targetUserId) return prev;
+          if (Object.keys(prev || {}).length > 1) return prev;
+          return { ...data, userId: data.userId || targetUserId };
+        });
+      } catch (error) {
+        if (!cancelled) {
           toast.error(error.message);
-        } finally {
+        }
+      } finally {
+        if (!cancelled) {
           setProfileSource('backend');
         }
-      })();
-    }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [state, profileSource, setState]);
 
   useEffect(() => {
