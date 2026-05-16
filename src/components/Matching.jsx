@@ -162,7 +162,21 @@ import {
   shouldApplySharedReactionCandidateResult,
   uniqueTruthyReactionIds,
 } from 'utils/reactionPriority';
-import { collectFilteredMatchingSourceCards } from 'utils/matchingSourceBackfill';
+import {
+  applyMatchingUiFiltersToUsers,
+  buildMatchingIndexFilterGroups,
+  compareUsersByLastLogin2,
+  fetchAdditionalNewUsersBySearchIndex,
+  fetchFilteredMatchingSourceChunk,
+  fetchMatchingIndexedCandidates,
+  fetchNewUsersByIdsForMatching as fetchNewUsersByIdsForMatchingData,
+  getActiveMatchingFiltersDebug,
+  isAllowedIdForMatchingCollection,
+  isMatchingCardId,
+  isSameMatchingCursor,
+  isShortMatchingUserId,
+  isValidMatchingUserId,
+} from 'utils/matchingDataProvider';
 
 
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
@@ -297,16 +311,20 @@ const onValue = wrapAdminOnValue(firebaseOnValue, {
 });
 
 // Filter out users with invalid identifiers; Firebase push IDs are usually 20 chars.
-const isValidId = id => typeof id === 'string' && id.length >= 20;
-
-const isShortId = id => typeof id === 'string' && id.length > 0 && id.length < 20;
-const isMatchingCardId = id => isValidId(id) || isShortId(id);
-const isAllowedIdForCollection = (id, collection = 'users') =>
-  collection === 'newUsers' ? isShortId(id) : isValidId(id);
-const compareUsersByLastLogin2 = (a = {}, b = {}) =>
-  (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
+const isValidId = isValidMatchingUserId;
+const isShortId = isShortMatchingUserId;
+const isAllowedIdForCollection = isAllowedIdForMatchingCollection;
 
 const FETCH_USERS_BY_IDS_BATCH_SIZE = 100;
+const fetchNewUsersByIdsForMatching = (ids, batchSize = FETCH_USERS_BY_IDS_BATCH_SIZE) =>
+  fetchNewUsersByIdsForMatchingData({
+    ids,
+    batchSize,
+    get,
+    ref: refDb,
+    database,
+    getAllUserPhotos,
+  });
 
 const ADDITIONAL_SEARCH_KEY_SET_PROFILE_FIELDS = [
   'searchKeySetsOfExactUser',
@@ -427,378 +445,6 @@ async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserI
 
   return searchKeySetKeys;
 }
-
-const fetchNewUsersByIdsForMatching = async (ids, batchSize = FETCH_USERS_BY_IDS_BATCH_SIZE) => {
-  if (!Array.isArray(ids) || ids.length === 0) return [];
-
-  const uniqueIds = [...new Set(ids.filter(Boolean))];
-  const safeBatchSize = Math.max(1, Number(batchSize) || FETCH_USERS_BY_IDS_BATCH_SIZE);
-  const result = [];
-  let offset = 0;
-
-  while (offset < uniqueIds.length) {
-    const chunkIds = uniqueIds.slice(offset, offset + safeBatchSize);
-    const chunkSnapshots = await Promise.all(
-      chunkIds.map(async userId => {
-        const [snapshot, photos] = await Promise.all([
-          get(refDb(database, `newUsers/${userId}`)),
-          getAllUserPhotos(userId),
-        ]);
-        if (!snapshot.exists()) return null;
-        return {
-          userId,
-          ...(snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {}),
-          photos: Array.isArray(photos) ? photos : [],
-          __photosHydrated: true,
-          __sourceCollection: 'newUsers',
-        };
-      })
-    );
-
-    result.push(...chunkSnapshots.filter(Boolean));
-    offset += safeBatchSize;
-  }
-
-  return result;
-};
-
-const buildEmptyAdditionalSearchIndexResult = (reason, offset = 0) => ({
-  userIds: [],
-  users: [],
-  nextOffset: Math.max(0, Number(offset) || 0),
-  hasMore: false,
-  reason,
-});
-
-const fetchAdditionalNewUsersBySearchIndex = async ({
-  rawRules,
-  accessUserId,
-  searchKeySetKeys,
-  collectionSource = 'newUsers',
-  offset = 0,
-  limit = FETCH_USERS_BY_IDS_BATCH_SIZE,
-}) => {
-  const normalizedAccessUserId = String(accessUserId || '').trim();
-  const normalizedSearchKeySetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
-
-  const indexRequestDebugData = {
-    collectionSource,
-    accessUserId: normalizedAccessUserId,
-    rawRules,
-    searchKeySetsOfExactUser: searchKeySetKeys,
-    offset,
-    limit,
-  };
-
-  if (collectionSource === 'newUsers' && normalizedSearchKeySetKeys.length === 0) {
-    const reason = 'no searchKeySets data';
-    console.info('[Matching][additionalNewUsers] access scope empty', {
-      ...indexRequestDebugData,
-      reason,
-    });
-    debugAdditionalToast(normalizedAccessUserId, 'access scope empty', {
-      ...indexRequestDebugData,
-      reason,
-    });
-    return buildEmptyAdditionalSearchIndexResult(reason, offset);
-  }
-
-  console.info('[Matching][additionalNewUsers] getIndexedNewUsersIdsByRules request', indexRequestDebugData);
-  debugAdditionalToast(normalizedAccessUserId, 'before getIndexedNewUsersIdsByRules', indexRequestDebugData);
-
-  const indexed = await getIndexedNewUsersIdsByRules({
-    rawRules,
-    accessUserId: normalizedAccessUserId,
-    searchKeySetsOfExactUser: searchKeySetKeys,
-    fetchMissingBuckets: true,
-    requireSearchKeySetKeys: collectionSource === 'newUsers',
-    resultOffset: offset,
-    resultLimit: limit,
-    debugMatchingFlow: shouldDebugAdditionalMatching(normalizedAccessUserId),
-    debugToast: (message, data) => debugAdditionalToast(normalizedAccessUserId, message, data),
-  });
-
-  const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
-  console.info('[Matching][additionalNewUsers] indexedUserIdsCount', userIds.length);
-  logAdditionalMatchingDebug(normalizedAccessUserId, 'index response ids', {
-    fetchedIds: userIds,
-    indexedUserIds: userIds,
-    first10IndexedUserIds: userIds.slice(0, 10),
-    hasMore: Boolean(indexed?.hasMore),
-    nextOffset: Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : userIds.length,
-  });
-
-  const users = await fetchNewUsersByIdsForMatching(userIds);
-  console.info('[Matching][additionalNewUsers] fetchedUsersCount', users.length);
-  logAdditionalMatchingDebug(normalizedAccessUserId, 'newUsers fetch response', {
-    requestedIds: userIds,
-    fetchedUsers: users,
-    first10FetchedUserIds: users.map(user => user.userId).filter(Boolean).slice(0, 10),
-  });
-
-  if (userIds.length > 0 && users.length === 0) {
-    debugMissingNewUsersToast(normalizedAccessUserId, userIds.length);
-  }
-
-  return {
-    userIds,
-    users,
-    nextOffset: Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : userIds.length,
-    hasMore: Boolean(indexed?.hasMore),
-  };
-};
-
-const isSameCursor = (a, b) => {
-  if (!a && !b) return true;
-  if (!a || !b) return false;
-  return a.date === b.date && a.userId === b.userId;
-};
-
-const MATCHING_SEARCHKEY_FILTER_KEYS = ['userRole', 'maritalStatus', 'bloodGroup', 'rh', 'age'];
-
-const isFilterGroupActive = group =>
-  group && typeof group === 'object' && Object.values(group).some(v => !v);
-
-const resolveRoleCategoryFromSearchKey = (userId, roleIndexSets) => {
-  if (!userId || !roleIndexSets) return null;
-
-  if (roleIndexSets.ag?.has(userId)) return 'ag';
-  if (roleIndexSets.ip?.has(userId)) return 'ip';
-  if (roleIndexSets.ed?.has(userId)) return 'ed';
-  if (roleIndexSets['?']?.has(userId) || roleIndexSets.no?.has(userId)) return 'other';
-
-  return null;
-};
-
-const buildAllowedRoleIdsFromSearchKey = (roleFilters, roleIndexSets) => {
-  if (!roleFilters || !roleIndexSets) return null;
-
-  const allIndexedIds = new Set();
-  const allowedIds = new Set();
-
-  const includeBucket = bucket => {
-    const bucketSet = roleIndexSets?.[bucket];
-    if (!(bucketSet instanceof Set)) return;
-    bucketSet.forEach(id => {
-      allIndexedIds.add(id);
-      allowedIds.add(id);
-    });
-  };
-
-  const trackBucketOnly = bucket => {
-    const bucketSet = roleIndexSets?.[bucket];
-    if (!(bucketSet instanceof Set)) return;
-    bucketSet.forEach(id => allIndexedIds.add(id));
-  };
-
-  if (roleFilters.ag) includeBucket('ag');
-  else trackBucketOnly('ag');
-
-  if (roleFilters.ip) includeBucket('ip');
-  else trackBucketOnly('ip');
-
-  if (roleFilters.ed) includeBucket('ed');
-  else trackBucketOnly('ed');
-
-  if (roleFilters.other) {
-    includeBucket('?');
-    includeBucket('no');
-  } else {
-    trackBucketOnly('?');
-    trackBucketOnly('no');
-  }
-
-  return { allowedIds, allIndexedIds };
-};
-
-const toRoleCategory = (user, roleIndexSets = null) => {
-  const indexedCategory = resolveRoleCategoryFromSearchKey(user?.userId, roleIndexSets);
-  if (indexedCategory) return indexedCategory;
-
-  const normalizeRole = value => {
-    const normalized = String(value || '').trim().toLowerCase();
-    if (['ed', 'ag', 'ip', 'sm', 'cl'].includes(normalized)) return normalized;
-    if (!normalized) return 'no';
-    return '?';
-  };
-
-  const directRole = normalizeRole(user?.role);
-  const fallbackRole = normalizeRole(user?.userRole);
-
-  if (
-    user?.__sourceCollection === 'newUsers' &&
-    fallbackRole === 'no' &&
-    (directRole === 'no' || directRole === '?')
-  ) {
-    return 'ed';
-  }
-
-  const resolved = directRole !== 'no' && directRole !== '?' ? directRole : fallbackRole;
-
-  if (['ed', 'ag', 'ip'].includes(resolved)) return resolved;
-  return 'other';
-};
-
-const toMaritalStatusCategory = user => {
-  const raw = String(user?.maritalStatus || '').trim().toLowerCase();
-  if (!raw) return 'other';
-
-  const compact = raw.replace(/[.,;:!]/g, '').replace(/\s+/g, '');
-  const plusValues = new Set(['+', 'plus', 'yes', 'так', 'заміжня', 'замужем', 'одружена', 'одружений', 'married']);
-  const minusValues = new Set(['-', 'minus', 'no', 'ні', 'незаміжня', 'незамужем', 'неодружена', 'неодружений', 'single', 'unmarried']);
-
-  if (plusValues.has(compact)) return 'married';
-  if (minusValues.has(compact)) return 'unmarried';
-  return 'other';
-};
-
-const toBloodGroupCategory = user => {
-  const normalized = String(user?.blood || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '');
-
-  if (/^[1-4][+-]$/.test(normalized)) return normalized[0];
-  if (/^[1-4]$/.test(normalized)) return normalized;
-  return 'other';
-};
-
-const toRhCategory = user => {
-  const normalized = String(user?.blood || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '');
-
-  if (normalized.endsWith('+') || normalized === '+') return '+';
-  if (normalized.endsWith('-') || normalized === '-') return '-';
-  return 'other';
-};
-
-const toAgeCategory = user => {
-  const birth = String(user?.birth || '').trim();
-  const match = birth.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (!match) return 'other';
-
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
-  const birthDate = new Date(year, month - 1, day);
-  if (
-    Number.isNaN(birthDate.getTime()) ||
-    birthDate.getFullYear() !== year ||
-    birthDate.getMonth() !== month - 1 ||
-    birthDate.getDate() !== day
-  ) {
-    return 'other';
-  }
-
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-  const dayDiff = today.getDate() - birthDate.getDate();
-  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) age -= 1;
-
-  if (age <= 21) return 'le21';
-  if (age <= 25) return '22_25';
-  if (age <= 30) return '26_30';
-  if (age <= 35) return '31_35';
-  if (age <= 38) return '36_38';
-  if (age <= 41) return '39_41';
-  if (age >= 42) return '42_plus';
-  return 'other';
-};
-
-const getMatchingFiltersWithoutSearchKeyGroups = filters => {
-  const base = { ...(filters || {}) };
-  MATCHING_SEARCHKEY_FILTER_KEYS.forEach(key => {
-    delete base[key];
-  });
-  return base;
-};
-
-const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = null) => {
-  const activeFilters = filters || {};
-  const roleIndexFilterMeta = isFilterGroupActive(activeFilters.userRole)
-    ? buildAllowedRoleIdsFromSearchKey(activeFilters.userRole, roleIndexSets)
-    : null;
-
-  return users.filter(user => {
-    if (isFilterGroupActive(activeFilters.userRole)) {
-      if (roleIndexFilterMeta && user?.userId && roleIndexFilterMeta.allIndexedIds.has(user.userId)) {
-        if (!roleIndexFilterMeta.allowedIds.has(user.userId)) return false;
-      } else {
-      const category = toRoleCategory(user, roleIndexSets);
-      if (!activeFilters.userRole[category]) return false;
-      }
-    }
-
-    if (isFilterGroupActive(activeFilters.maritalStatus)) {
-      const category = toMaritalStatusCategory(user);
-      if (!activeFilters.maritalStatus[category]) return false;
-    }
-
-    if (isFilterGroupActive(activeFilters.bloodGroup)) {
-      const category = toBloodGroupCategory(user);
-      if (!activeFilters.bloodGroup[category]) return false;
-    }
-
-    if (isFilterGroupActive(activeFilters.rh)) {
-      const category = toRhCategory(user);
-      if (!activeFilters.rh[category]) return false;
-    }
-
-    if (isFilterGroupActive(activeFilters.age)) {
-      const category = toAgeCategory(user);
-      if (!activeFilters.age[category]) return false;
-    }
-
-    return true;
-  });
-};
-
-const applyMatchingUiFiltersToUsers = ({
-  users,
-  filters,
-  favoriteUsers,
-  dislikeUsers,
-  excludeReactionUsers = false,
-  roleIndexSets,
-  collectionSource,
-  viewMode = 'default',
-}) =>
-  applyMatchingSearchKeyFilters(
-    filterMain(
-      users.map(u => [u.userId, u]),
-      null,
-      getMatchingFiltersWithoutSearchKeyGroups(filters),
-      favoriteUsers,
-      dislikeUsers
-    )
-      .map(([, u]) => u)
-      .filter(u => (
-        !excludeReactionUsers ||
-        (!favoriteUsers[u.userId] && !dislikeUsers[u.userId])
-      )),
-    filters,
-    roleIndexSets
-  ).filter(u => (
-    viewMode === 'favorites' ||
-    viewMode === 'dislikes' ||
-    isAllowedIdForCollection(u.userId, collectionSource)
-  ));
-
-const getActiveMatchingFiltersDebug = filters => Object.entries(filters || {}).reduce((acc, [key, value]) => {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    const disabled = Object.entries(value)
-      .filter(([, enabled]) => !enabled)
-      .map(([filterKey]) => filterKey);
-    if (disabled.length) acc[key] = disabled;
-    return acc;
-  }
-
-  if (value) acc[key] = value;
-  return acc;
-}, {});
 
 const ResizableCommentInput = ({ value, onChange, onBlur, onClick, ...rest }) => {
   const ref = useRef(null);
@@ -2331,8 +1977,18 @@ const Matching = () => {
             accessUserId: ownerId,
             searchKeySetKeys: resolvedSearchKeySetKeys,
             collectionSource,
+            filters: filtersRef.current || {},
+            excludeIds: [
+              ...Object.keys(favoriteUsersRef.current),
+              ...Object.keys(dislikeUsersRef.current),
+            ],
             offset: nextOffset,
             limit: INITIAL_LOAD,
+            fetchNewUsersByIds: fetchNewUsersByIdsForMatching,
+            shouldDebugAdditionalMatching,
+            debugAdditionalToast,
+            logAdditionalMatchingDebug,
+            debugMissingNewUsersToast,
           });
 
           if (!isLatestAdditionalFetch()) {
@@ -2362,6 +2018,7 @@ const Matching = () => {
           visibleCount = applyMatchingUiFiltersToUsers({
             users: collected,
             filters: filtersRef.current || {},
+            filterMainFn: filterMain,
             favoriteUsers: favoriteUsersRef.current,
             dislikeUsers: dislikeUsersRef.current,
             excludeReactionUsers: true,
@@ -2429,59 +2086,24 @@ const Matching = () => {
       lastDate,
       exclude = new Set(),
       onPart
-    ) => {
-      if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
-        return {
-          users: [],
-          lastKey: lastDate ?? null,
-          hasMore: false,
-          sourceHasMore: false,
-          cursorAdvanced: false,
-          excludedCount: 0,
-          loadedPages: 0,
-        };
-      }
-
-      return collectFilteredMatchingSourceCards({
-        targetVisibleCount: limit,
-        initialCursor: lastDate,
-        exclude,
-        isSameCursor,
-        getSourceLimit: ({ remaining }) => remaining + exclude.size + 1,
-        fetchSourcePage: ({ limit: sourceLimit, cursor }) => (
-          collectionSource === 'newUsers'
-            ? fetchUsersByLastLogin2FromCollection('newUsers', sourceLimit, cursor)
-            : fetchUsersByLastLogin2(sourceLimit, cursor)
-        ),
-        filterSourceUsers: sourceUsers => {
-          const activeFilters = filtersRef.current || {};
-          return isAdmin
-            ? applyMatchingSearchKeyFilters(
-                filterMain(
-                  sourceUsers.map(u => [u.userId, u]),
-                  null,
-                  getMatchingFiltersWithoutSearchKeyGroups(activeFilters),
-                  favoriteUsersRef.current,
-                  dislikeUsersRef.current
-                ).map(([, u]) => u),
-                activeFilters,
-                roleIndexSets
-              ).filter(
-                u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
-              )
-            : sourceUsers.filter(
-                u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
-              );
-        },
-        hydrateUsersByIds: fetchUsersByIds,
-        decorateUser: user => ({
-          ...user,
-          __sourceCollection: collectionSource === 'newUsers' ? 'newUsers' : 'users',
-        }),
-        onPart,
-      });
-    },
-    [collectionSource, isAdmin, parsedAdditionalAccessRules.length, roleIndexSets]
+    ) => fetchFilteredMatchingSourceChunk({
+      targetVisibleCount: limit,
+      initialCursor: lastDate,
+      exclude,
+      collectionSource,
+      parsedAdditionalAccessRules,
+      filters: filtersRef.current || {},
+      isAdmin,
+      favoriteUsers: favoriteUsersRef.current,
+      dislikeUsers: dislikeUsersRef.current,
+      roleIndexSets,
+      filterMainFn: filterMain,
+      fetchUsersByLastLogin2,
+      fetchUsersByLastLogin2FromCollection,
+      hydrateUsersByIds: fetchUsersByIds,
+      onPart,
+    }),
+    [collectionSource, isAdmin, parsedAdditionalAccessRules, roleIndexSets]
   );
 
   const loadInitial = React.useCallback(async () => {
@@ -2584,6 +2206,37 @@ const Matching = () => {
         return;
       }
 
+      const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
+        filters: filtersRef.current || {},
+        collectionSource,
+      });
+      if (collectionSource === 'users' && activeIndexFilterGroups.length > 0) {
+        const indexed = await fetchMatchingIndexedCandidates({
+          collectionSource: 'users',
+          filters: filtersRef.current || {},
+          offset: 0,
+          limit: INITIAL_LOAD,
+          excludeIds: [...exclude],
+          hydrateUsersByIds: fetchUsersByIds,
+        });
+        if (viewModeRef.current !== startMode) return;
+        const indexedUsers = (indexed.users || []).filter(user => isAllowedIdForCollection(user.userId, collectionSource));
+        if (indexedUsers.length === 0 && !indexed.hasMore) {
+          console.warn('[Matching][indexedProvider] empty users index result; falling back to source pagination');
+        } else {
+          indexedUsers.forEach(user => updateCard(user.userId, user));
+          loadedIdsRef.current = new Set(indexedUsers.map(user => user.userId).filter(Boolean));
+          setUsers(indexedUsers);
+          setIdsForQuery(defaultListKey, indexedUsers.map(user => user.userId));
+          await loadCommentsFor(indexedUsers);
+          if (viewModeRef.current !== startMode) return;
+          setLastKey(indexed.nextOffset);
+          setHasMore(Boolean(indexed.hasMore));
+          setViewMode('default');
+          return;
+        }
+      }
+
       const { cards: cached } = await getCardsByList(defaultListKey);
       if (cached.length && viewModeRef.current === startMode) {
         console.log('[loadInitial] using cache', cached.length);
@@ -2654,6 +2307,16 @@ const Matching = () => {
       invalidateReactionAsyncWork();
       resetReactionPaginationState(currentMode);
       setUsers([]);
+      setLastKey(null);
+      setHasMore(true);
+      return;
+    }
+
+    if (currentMode === 'default') {
+      loadedIdsRef.current = new Set();
+      setUsers([]);
+      setAdditionalNewUsers([]);
+      setAdditionalNextOffset(0);
       setLastKey(null);
       setHasMore(true);
     }
@@ -2792,6 +2455,7 @@ const Matching = () => {
         return applyMatchingUiFiltersToUsers({
           users: scopedCandidates,
           filters: filtersRef.current || {},
+          filterMainFn: filterMain,
           favoriteUsers: favoriteUsersRef.current,
           dislikeUsers: dislikeUsersRef.current,
           excludeReactionUsers: false,
@@ -3200,8 +2864,15 @@ const Matching = () => {
             accessUserId: ownerId,
             searchKeySetKeys: resolvedSearchKeySetKeys,
             collectionSource,
+            filters: filtersRef.current || {},
+            excludeIds: [...baseExclude],
             offset: nextOffset,
             limit: requestedLimit,
+            fetchNewUsersByIds: fetchNewUsersByIdsForMatching,
+            shouldDebugAdditionalMatching,
+            debugAdditionalToast,
+            logAdditionalMatchingDebug,
+            debugMissingNewUsersToast,
           });
 
           if (!isLatestLoadMore()) {
@@ -3229,6 +2900,7 @@ const Matching = () => {
           visibleCount = applyMatchingUiFiltersToUsers({
             users: Array.from(candidateMap.values()),
             filters,
+            filterMainFn: filterMain,
             favoriteUsers: favoriteUsersRef.current,
             dislikeUsers: dislikeUsersRef.current,
             excludeReactionUsers: true,
@@ -3267,8 +2939,45 @@ const Matching = () => {
         return;
       }
 
+      const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
+        filters: filtersRef.current || {},
+        collectionSource,
+      });
+      if (collectionSource === 'users' && activeIndexFilterGroups.length > 0) {
+        const indexed = await fetchMatchingIndexedCandidates({
+          collectionSource: 'users',
+          filters: filtersRef.current || {},
+          offset: Number.isFinite(Number(lastKey)) ? Number(lastKey) : 0,
+          limit: requestedLimit,
+          excludeIds: [...baseExclude],
+          hydrateUsersByIds: fetchUsersByIds,
+        });
+        if (!isLatestLoadMore()) return;
+        const indexedUsers = (indexed.users || []).filter(
+          user => user?.userId && !loadedIdsRef.current.has(user.userId)
+        );
+        if (indexedUsers.length === 0 && !indexed.hasMore) {
+          console.warn('[Matching][indexedProvider] empty users index result; falling back to source pagination');
+        } else {
+          indexedUsers.forEach(user => updateCard(user.userId, user));
+          await loadCommentsFor(indexedUsers);
+          if (!isLatestLoadMore()) return;
+          indexedUsers.forEach(user => loadedIdsRef.current.add(user.userId));
+          setUsers(prev => {
+            const map = new Map(prev.map(user => [user.userId, user]));
+            indexedUsers.forEach(user => map.set(user.userId, user));
+            const result = Array.from(map.values());
+            setIdsForQuery(defaultListKey, result.map(user => user.userId));
+            return result;
+          });
+          setLastKey(indexed.nextOffset);
+          setHasMore(Boolean(indexed.hasMore));
+          return;
+        }
+      }
+
       const collected = [];
-      let cursor = lastKey;
+      let cursor = Number.isFinite(Number(lastKey)) ? null : lastKey;
       let canLoadMore = hasMore;
       let loadedChunkCalls = 0;
 
@@ -3307,7 +3016,7 @@ const Matching = () => {
           collected.push(...unique);
         }
 
-        const stuck = !res.lastKey || isSameCursor(res.lastKey, cursor);
+        const stuck = !res.lastKey || isSameMatchingCursor(res.lastKey, cursor);
         cursor = res.lastKey;
         canLoadMore = res.hasMore && !stuck;
       }
@@ -3395,6 +3104,7 @@ const Matching = () => {
   const filteredUsers = applyMatchingUiFiltersToUsers({
     users: visibleUsers,
     filters,
+    filterMainFn: filterMain,
     favoriteUsers,
     dislikeUsers,
     excludeReactionUsers: viewMode === 'default',

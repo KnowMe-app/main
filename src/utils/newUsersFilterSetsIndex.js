@@ -915,6 +915,8 @@ export const getIndexedNewUsersIdsByRules = async ({
   requireSearchKeySetKeys = true,
   resultOffset = 0,
   resultLimit = Number.POSITIVE_INFINITY,
+  additionalFilterBucketGroups = [],
+  excludedUserIds = [],
   debugMatchingFlow = false,
   debugToast,
 }) => {
@@ -1013,7 +1015,11 @@ export const getIndexedNewUsersIdsByRules = async ({
 
   const setEntries = ruleBucketEntries.flatMap(entry => {
     const setKeys = explicitSetKeys.length ? explicitSetKeys : [entry.defaultSetKey];
-    return [...new Set(setKeys.filter(Boolean))].map(setKey => ({ setKey, indexBuckets: entry.indexBuckets }));
+    return [...new Set(setKeys.filter(Boolean))].map(setKey => ({
+      setKey,
+      indexBuckets: entry.indexBuckets,
+      additionalFilterBucketGroups,
+    }));
   });
 
   if (!setEntries.length) {
@@ -1077,7 +1083,12 @@ export const getIndexedNewUsersIdsByRules = async ({
     let emptyBucketsForSet = 0;
     let missingBucketsForSet = 0;
 
-    for (const [indexName, values] of Object.entries(entry.indexBuckets)) {
+    const bucketGroups = [
+      ...Object.entries(entry.indexBuckets).map(([indexName, values]) => ({ indexName, values })),
+      ...(Array.isArray(entry.additionalFilterBucketGroups) ? entry.additionalFilterBucketGroups : []),
+    ];
+
+    for (const { indexName, values } of bucketGroups) {
       const idsForFilter = new Set();
 
       for (const value of values) {
@@ -1156,10 +1167,12 @@ export const getIndexedNewUsersIdsByRules = async ({
     });
   }
 
-  const finalUserIds = [...matchedUserIds];
+  const excludedUserIdsSet = new Set((Array.isArray(excludedUserIds) ? excludedUserIds : [...(excludedUserIds || [])]).filter(Boolean));
+  const finalUserIds = [...matchedUserIds].filter(userId => !excludedUserIdsSet.has(userId));
   emitDebug('final userIds before pagination', {
     userIds: finalUserIds,
     count: finalUserIds.length,
+    excludedCount: excludedUserIdsSet.size,
   });
 
   const pageUserIds = finalUserIds.slice(
