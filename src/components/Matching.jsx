@@ -107,6 +107,7 @@ import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
 import { handleEmptyFetch } from './loadMoreUtils';
+import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
 import {
   getHeroFields,
   getQuickFacts,
@@ -893,6 +894,7 @@ const INITIAL_LOAD = 5;
 const MATCHING_VISIBLE_BUFFER = 2;
 const MATCHING_REFILL_LIMIT = 5;
 const LOAD_MORE = 5;
+const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 5;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 3;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
@@ -2976,38 +2978,42 @@ const Matching = () => {
         collectionSource,
       });
       if (collectionSource === 'users' && activeIndexFilterGroups.length > 0) {
-        const indexed = await fetchMatchingIndexedCandidates({
-          collectionSource: 'users',
+        const indexedPage = await collectMatchingIndexedLoadMorePage({
+          requestedLimit,
+          initialOffset: Number(lastKey) || 0,
+          maxPages: MATCHING_INDEXED_LOAD_MORE_MAX_PAGES,
+          baseExclude,
+          loadedIds: loadedIdsRef.current,
           filters: filtersRef.current || {},
           viewMode,
           ownerId: getOwnerId(),
-          offset: Number.isFinite(Number(lastKey)) ? Number(lastKey) : 0,
-          limit: requestedLimit,
-          excludeIds: [...baseExclude],
+          fetchMatchingIndexedCandidates,
           hydrateUsersByIds: fetchUsersByIds,
+          isLatestLoadMore,
         });
-        if (!isLatestLoadMore()) return;
-        const indexedUsers = (indexed.users || []).filter(
-          user => user?.userId && !loadedIdsRef.current.has(user.userId)
-        );
-        if (indexedUsers.length === 0 && !indexed.hasMore) {
-          console.warn('[Matching][indexedProvider] empty users index result; falling back to source pagination');
-        } else {
-          indexedUsers.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
-          if (!isLatestLoadMore()) return;
-          indexedUsers.forEach(user => loadedIdsRef.current.add(user.userId));
-          setUsers(prev => {
-            const map = new Map(prev.map(user => [user.userId, user]));
-            indexedUsers.forEach(user => map.set(user.userId, user));
-            const result = Array.from(map.values());
-            setIdsForQuery(defaultListKey, result.map(user => user.userId));
-            return result;
+        if (indexedPage.stale) return;
+
+        if (indexedPage.cursorStuck) {
+          console.warn('[Matching][indexedProvider] stopped loadMore because indexed cursor did not move', {
+            finalIndexedOffset: indexedPage.finalOffset,
+            indexedPageCalls: indexedPage.pageCalls,
           });
-          void loadCommentsFor(indexedUsers);
-          setLastKey(indexed.nextOffset);
-          setHasMore(Boolean(indexed.hasMore));
-          return;
         }
+
+        indexedPage.collected.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
+        if (!isLatestLoadMore()) return;
+        indexedPage.collected.forEach(user => loadedIdsRef.current.add(user.userId));
+        setUsers(prev => {
+          const map = new Map(prev.map(user => [user.userId, user]));
+          indexedPage.collected.forEach(user => map.set(user.userId, user));
+          const result = Array.from(map.values());
+          setIdsForQuery(defaultListKey, result.map(user => user.userId));
+          return result;
+        });
+        void loadCommentsFor(indexedPage.collected);
+        setLastKey(indexedPage.finalOffset);
+        setHasMore(Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck));
+        return;
       }
 
       const collected = [];

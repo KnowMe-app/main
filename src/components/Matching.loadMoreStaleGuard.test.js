@@ -58,6 +58,22 @@ describe('Matching loadMore stale pagination guards', () => {
     expect(source).toContain(`finishLoadMoreIfLatest();`);
   });
 
+
+  it('keeps active users indexed filters from falling through to source pagination', () => {
+    const source = loadMoreSource();
+    const indexedBranchIndex = source.indexOf("if (collectionSource === 'users' && activeIndexFilterGroups.length > 0)");
+    const sourcePaginationIndex = source.indexOf('const collected = [];', indexedBranchIndex);
+    const indexedBranch = source.slice(indexedBranchIndex, sourcePaginationIndex);
+    const indexedReturnIndex = indexedBranch.lastIndexOf('return;');
+
+    expect(indexedBranchIndex).toBeGreaterThan(-1);
+    expect(sourcePaginationIndex).toBeGreaterThan(indexedBranchIndex);
+    expect(indexedBranch).toContain('collectMatchingIndexedLoadMorePage({');
+    expect(indexedBranch).toContain('setLastKey(indexedPage.finalOffset);');
+    expect(indexedBranch).toContain('setHasMore(Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck));');
+    expect(indexedReturnIndex).toBeGreaterThan(indexedBranch.indexOf('setHasMore(Boolean(indexedPage.finalHasMore'));
+  });
+
   it('does not clear loading state from stale requests after newer loadMore starts', () => {
     const source = loadMoreSource();
     const helperIndex = source.indexOf('const finishLoadMoreIfLatest = () => {');
