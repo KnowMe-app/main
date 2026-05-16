@@ -162,6 +162,7 @@ import {
   shouldApplySharedReactionCandidateResult,
   uniqueTruthyReactionIds,
 } from 'utils/reactionPriority';
+import { collectFilteredMatchingSourceCards } from 'utils/matchingSourceBackfill';
 
 
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
@@ -1247,7 +1248,6 @@ const MATCHING_VISIBLE_BUFFER = 2;
 const MATCHING_REFILL_LIMIT = 1;
 const LOAD_MORE = 1;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 3;
-const SOURCE_BACKFILL_MAX_PAGES = 5;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
 const COLLECTION_SOURCE_KEY = 'matchingCollectionSource';
@@ -2430,84 +2430,56 @@ const Matching = () => {
       exclude = new Set(),
       onPart
     ) => {
-      const collected = [];
-      let cursor = lastDate;
-      let hasMore = false;
-      let excludedCount = 0;
-      let prevCursor;
-      let loadedPages = 0;
-
-      while (collected.length < limit && loadedPages < SOURCE_BACKFILL_MAX_PAGES) {
-        loadedPages += 1;
-        if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
-          break;
-        }
-
-        const remaining = limit - collected.length;
-        const sourceRes =
-          collectionSource === 'newUsers'
-            ? await fetchUsersByLastLogin2FromCollection('newUsers', remaining + exclude.size + 1, cursor)
-            : await fetchUsersByLastLogin2(remaining + exclude.size + 1, cursor);
-
-        const activeFilters = filtersRef.current || {};
-        const filtered = isAdmin
-          ? applyMatchingSearchKeyFilters(
-              filterMain(
-                sourceRes.users.map(u => [u.userId, u]),
-                null,
-                getMatchingFiltersWithoutSearchKeyGroups(activeFilters),
-                favoriteUsersRef.current,
-                dislikeUsersRef.current
-              ).map(([, u]) => u),
-              activeFilters,
-              roleIndexSets
-            ).filter(
-              u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
-            )
-          : sourceRes.users.filter(
-              u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
-            );
-
-        excludedCount += sourceRes.users.length - filtered.length;
-        const slice = filtered.slice(0, remaining);
-        const ids = slice.map(user => user.userId);
-        const enrichedMap = await fetchUsersByIds(ids);
-        const validSlice = ids
-          .map(id => enrichedMap[id])
-          .filter(Boolean)
-          .map(user => ({
-            ...user,
-            __sourceCollection: collectionSource === 'newUsers' ? 'newUsers' : 'users',
-          }));
-
-        if (validSlice.length) {
-          collected.push(...validSlice);
-          if (onPart) await onPart(validSlice);
-        }
-
-        hasMore = sourceRes.hasMore;
-        prevCursor = cursor;
-        cursor = sourceRes.lastKey;
-
-        if (!sourceRes.hasMore || !sourceRes.lastKey || isSameCursor(prevCursor, cursor)) {
-          break;
-        }
+      if (collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0) {
+        return {
+          users: [],
+          lastKey: lastDate ?? null,
+          hasMore: false,
+          sourceHasMore: false,
+          cursorAdvanced: false,
+          excludedCount: 0,
+          loadedPages: 0,
+        };
       }
 
-      const reachedSafetyCap = Boolean(
-        hasMore &&
-        loadedPages >= SOURCE_BACKFILL_MAX_PAGES &&
-        collected.length < limit
-      );
-
-      return {
-        users: collected,
-        lastKey: cursor,
-        hasMore,
-        sourceHasMore: hasMore,
-        reachedSafetyCap,
-        excludedCount,
-      };
+      return collectFilteredMatchingSourceCards({
+        targetVisibleCount: limit,
+        initialCursor: lastDate,
+        exclude,
+        isSameCursor,
+        getSourceLimit: ({ remaining }) => remaining + exclude.size + 1,
+        fetchSourcePage: ({ limit: sourceLimit, cursor }) => (
+          collectionSource === 'newUsers'
+            ? fetchUsersByLastLogin2FromCollection('newUsers', sourceLimit, cursor)
+            : fetchUsersByLastLogin2(sourceLimit, cursor)
+        ),
+        filterSourceUsers: sourceUsers => {
+          const activeFilters = filtersRef.current || {};
+          return isAdmin
+            ? applyMatchingSearchKeyFilters(
+                filterMain(
+                  sourceUsers.map(u => [u.userId, u]),
+                  null,
+                  getMatchingFiltersWithoutSearchKeyGroups(activeFilters),
+                  favoriteUsersRef.current,
+                  dislikeUsersRef.current
+                ).map(([, u]) => u),
+                activeFilters,
+                roleIndexSets
+              ).filter(
+                u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
+              )
+            : sourceUsers.filter(
+                u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
+              );
+        },
+        hydrateUsersByIds: fetchUsersByIds,
+        decorateUser: user => ({
+          ...user,
+          __sourceCollection: collectionSource === 'newUsers' ? 'newUsers' : 'users',
+        }),
+        onPart,
+      });
     },
     [collectionSource, isAdmin, parsedAdditionalAccessRules.length, roleIndexSets]
   );
@@ -3018,8 +2990,9 @@ const Matching = () => {
       console.log('[loadMore] skip', { hasMore, loading: loadingRef.current, viewMode });
       return;
     }
-    const requestedLimit = Math.max(1, Number(limit) || LOAD_MORE);
-    console.log('[loadMore] start', { lastKey, hasMore, requestedLimit });
+    const visibleDeficit = Math.max(0, Number(targetVisibleCount) - Number(currentVisibleCount));
+    const requestedLimit = Math.max(1, Number(limit) || LOAD_MORE, visibleDeficit);
+    console.log('[loadMore] start', { lastKey, hasMore, requestedLimit, targetVisibleCount, currentVisibleCount });
     loadingRef.current = true;
     setLoading(true);
     const loadMoreVersion = additionalLoadMoreFetchVersionRef.current + 1;
@@ -3043,6 +3016,19 @@ const Matching = () => {
         currentCollectionSource: collectionSource,
       })
     );
+    const finishLoadMoreIfLatest = () => {
+      if (!isLatestLoadMore()) {
+        console.log('[loadMore] stale request finished after a newer request; keeping loading state for active request', {
+          loadMoreVersion,
+          latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current,
+          applyVersion,
+          latestApplyVersion: additionalMatchingApplyVersionRef.current,
+        });
+        return;
+      }
+      loadingRef.current = false;
+      setLoading(false);
+    };
     try {
       if (isReactionViewMode) {
         const reactionMap = viewMode === 'favorites'
@@ -3101,6 +3087,8 @@ const Matching = () => {
         page.users.forEach(user => {
           updateCard(user.userId, user);
         });
+        await loadCommentsFor(page.users);
+        if (!canApplyLoadMoreResult()) return;
         reactionLoadedIdsRef.current[viewMode] = loadedIds;
         loadedIdsRef.current = new Set(loadedIds);
         setUsers(prev => {
@@ -3109,7 +3097,6 @@ const Matching = () => {
           page.users.forEach(user => map.set(user.userId, user));
           return Array.from(map.values());
         });
-        await loadCommentsFor(page.users);
         const hasPendingSharedCandidates = hasPendingSharedReactionCandidates({
           reactionIds,
           sharedReactionIds,
@@ -3256,16 +3243,18 @@ const Matching = () => {
         if (!isLatestLoadMore()) return;
 
         collected.forEach(user => {
-          loadedIdsRef.current.add(user.userId);
           updateCard(user.userId, user);
+        });
+        await loadCommentsFor(collected);
+        if (!isLatestLoadMore()) return;
+        collected.forEach(user => {
+          loadedIdsRef.current.add(user.userId);
         });
         setAdditionalNewUsers(prev => {
           const map = new Map((shouldResetAdditionalPagination ? [] : prev).map(user => [user.userId, user]));
           collected.forEach(user => map.set(user.userId, user));
           return Array.from(map.values());
         });
-        await loadCommentsFor(collected);
-        if (!isLatestLoadMore()) return;
         setAdditionalNextOffset(nextOffset);
         setHasMore(canLoadMoreAdditional);
         logAdditionalMatchingDebug(ownerId, 'load more additional matching final cards', {
@@ -3292,20 +3281,29 @@ const Matching = () => {
           ...collected.map(u => u.userId).filter(Boolean),
         ]);
         const res = await fetchChunk(remaining, cursor, dynamicExclude);
+        if (!isLatestLoadMore()) {
+          console.log('[loadMore] ignored stale default batch result', {
+            loadMoreVersion,
+            latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current,
+            applyVersion,
+            latestApplyVersion: additionalMatchingApplyVersionRef.current,
+          });
+          return;
+        }
         console.log('[loadMore] batch', {
           requested: remaining,
           received: res.users.length,
           cursor,
           nextCursor: res.lastKey,
           hasMore: res.hasMore,
-          reachedSafetyCap: res.reachedSafetyCap,
+          sourceHasMore: res.sourceHasMore,
+          loadedPages: res.loadedPages,
         });
 
         const unique = res.users.filter(
           u => u?.userId && !loadedIdsRef.current.has(u.userId)
         );
         if (unique.length) {
-          unique.forEach(u => loadedIdsRef.current.add(u.userId));
           collected.push(...unique);
         }
 
@@ -3315,6 +3313,9 @@ const Matching = () => {
       }
 
       collected.forEach(u => updateCard(u.userId, u));
+      await loadCommentsFor(collected);
+      if (!isLatestLoadMore()) return;
+      collected.forEach(u => loadedIdsRef.current.add(u.userId));
       setUsers(prev => {
         const map = new Map(prev.map(u => [u.userId, u]));
         collected.forEach(u => map.set(u.userId, u));
@@ -3322,11 +3323,10 @@ const Matching = () => {
         setIdsForQuery(defaultListKey, result.map(u => u.userId));
         return result;
       });
-      await loadCommentsFor(collected);
 
-      const stoppedBySafetyCapWithMoreSource = canLoadMore && collected.length === 0;
-      if (stoppedBySafetyCapWithMoreSource) {
-        console.log('[loadMore] source backfill safety cap reached; keeping hasMore true for next cycle');
+      const sourceCanContinueWithoutVisibleCards = canLoadMore && collected.length === 0;
+      if (sourceCanContinueWithoutVisibleCards) {
+        console.log('[loadMore] source cursor advanced with more pages; keeping hasMore true for next cycle');
         setHasMore(true);
       } else if (handleEmptyFetch({ users: collected, lastKey: cursor }, lastKey, setHasMore)) {
         console.log('[loadMore] empty fetch, no more cards');
@@ -3335,8 +3335,7 @@ const Matching = () => {
       }
       setLastKey(cursor);
     } finally {
-      loadingRef.current = false;
-      setLoading(false);
+      finishLoadMoreIfLatest();
     }
   }, [
     additionalNewUsers,
