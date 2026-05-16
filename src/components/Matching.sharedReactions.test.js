@@ -24,8 +24,8 @@ describe('Matching shared reaction card UI', () => {
     const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
     const configSource = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
 
-    expect(matchingSource).toContain('getAllUserPhotos(userId)');
-    expect(matchingSource).toContain('photos: Array.isArray(photos) ? photos : []');
+    expect(matchingSource).toContain('missingUserIds.length ? fetchUsersByIds(missingUserIds)');
+    expect(matchingSource).toContain('missingNewUserIds.length ? fetchNewUsersByIdsForMatching(missingNewUserIds)');
     expect(configSource).toContain('getAllUserPhotos(id)');
     expect(configSource).toContain('photos: Array.isArray(photos) ? photos : []');
   });
@@ -37,7 +37,9 @@ describe('Matching shared reaction card UI', () => {
     expect(source).toContain("(collectionSource === 'newUsers' || hasAccessScopedNewUserReactionIds)");
     expect(source).toContain('currentPagination.accessSnapshotKey !== reactionAccessSnapshotKey');
     expect(source).toContain('if (didAccessSnapshotChange) return page.users;');
-    expect(source).toContain('const hasHydratedPhotoState = cachedPhotos.length > 0 || cached?.__photosHydrated === true;');
+    expect(source).toContain('const canUseCachedCard = cached && (');
+    expect(source).toContain('__fromCardCache: true');
+    expect(source).not.toContain('const hasHydratedPhotoState = cachedPhotos.length > 0 || cached?.__photosHydrated === true;');
   });
 
   it('guards stale default shared-candidate requests while allowing reaction tabs across collections', () => {

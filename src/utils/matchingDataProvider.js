@@ -1,5 +1,6 @@
 import { get, ref } from 'firebase/database';
 import { database } from 'components/config';
+import { getCard, getIndexIdsByQuery, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
 import { getIndexedNewUsersIdsByRules, normalizeSearchKeySetKeys } from './newUsersFilterSetsIndex';
 
@@ -144,12 +145,77 @@ const intersectIdSets = sets => {
     .sort((a, b) => a.localeCompare(b));
 };
 
+const normalizeSignatureValue = value => {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(normalizeSignatureValue).sort();
+  return Object.keys(value).sort().reduce((acc, key) => {
+    const normalized = normalizeSignatureValue(value[key]);
+    if (normalized !== undefined) acc[key] = normalized;
+    return acc;
+  }, {});
+};
+
+const buildRawRulesSignature = rawRules => String(rawRules || '').trim();
+
+export const buildMatchingIndexQueryKey = ({
+  collectionSource = 'users',
+  filters = {},
+  viewMode = 'default',
+  ownerId = '',
+  accessUserId = '',
+  rawRules = '',
+  searchKeySetKeys = [],
+  searchKeySetsOfExactUser = searchKeySetKeys,
+} = {}) => {
+  const relevantViewMode = viewMode === 'favorites' || viewMode === 'dislikes' ? viewMode : 'default';
+  return `matchingIndex:${serializeQueryFilters(normalizeSignatureValue({
+    collectionSource,
+    filters: normalizeSignatureValue(filters || {}),
+    viewMode: relevantViewMode,
+    ownerId: String(ownerId || accessUserId || '').trim(),
+    accessUserId: String(accessUserId || ownerId || '').trim(),
+    accessSnapshot: collectionSource === 'newUsers'
+      ? {
+          rawRulesSignature: buildRawRulesSignature(rawRules),
+          searchKeySetKeys: normalizeSearchKeySetKeys(searchKeySetKeys),
+          searchKeySetsOfExactUser: normalizeSearchKeySetKeys(searchKeySetsOfExactUser),
+        }
+      : null,
+  }))}`;
+};
+
+const isCachedCardCompatible = (card, collectionSource) => {
+  if (!card?.userId) return false;
+  const cachedSource = card.__sourceCollection || (card.userId.length < 20 ? 'newUsers' : 'users');
+  if (collectionSource === 'users') return cachedSource === 'users' || cachedSource === undefined;
+  if (collectionSource === 'newUsers') return cachedSource === 'newUsers';
+  return true;
+};
+
 const hydrateOrderedUsers = async ({ ids, hydrateUsersByIds, collectionSource }) => {
   if (!ids.length || typeof hydrateUsersByIds !== 'function') return [];
-  const hydrated = await hydrateUsersByIds(ids);
+  const cachedById = new Map();
+  const missingIds = [];
+  ids.forEach(id => {
+    const cached = getCard(id);
+    if (cached && isCachedCardCompatible(cached, collectionSource)) {
+      cachedById.set(id, {
+        ...cached,
+        userId: id,
+        __sourceCollection: cached.__sourceCollection || collectionSource,
+        __fromCardCache: true,
+      });
+    } else {
+      missingIds.push(id);
+    }
+  });
+
+  const hydrated = missingIds.length ? await hydrateUsersByIds(missingIds) : [];
   const map = Array.isArray(hydrated)
     ? new Map(hydrated.map(user => [user?.userId, user]).filter(([id]) => Boolean(id)))
     : new Map(Object.entries(hydrated || {}));
+  cachedById.forEach((user, id) => map.set(id, user));
 
   return ids
     .map(id => map.get(id))
@@ -159,6 +225,35 @@ const hydrateOrderedUsers = async ({ ids, hydrateUsersByIds, collectionSource })
 
 const normalizeOffset = value => Math.max(0, Number(value) || 0);
 const normalizeLimit = value => Math.max(1, Number(value) || 1);
+
+const sliceIndexedBaseIds = ({ ids = [], offset = 0, limit = 1, excludedSet = new Set() } = {}) => {
+  const safeOffset = normalizeOffset(offset);
+  const safeLimit = normalizeLimit(limit);
+  const pageIds = [];
+  let cursor = safeOffset;
+
+  while (cursor < ids.length && pageIds.length < safeLimit) {
+    const id = ids[cursor];
+    cursor += 1;
+    if (!id || excludedSet.has(id)) continue;
+    pageIds.push(id);
+  }
+
+  let hasMore = false;
+  for (let index = cursor; index < ids.length; index += 1) {
+    const id = ids[index];
+    if (id && !excludedSet.has(id)) {
+      hasMore = true;
+      break;
+    }
+  }
+
+  return {
+    pageIds,
+    nextOffset: cursor,
+    hasMore,
+  };
+};
 
 export const fetchMatchingIndexedCandidates = async ({
   collectionSource = 'users',
@@ -171,11 +266,50 @@ export const fetchMatchingIndexedCandidates = async ({
   excludeIds = [],
   hydrateUsersByIds,
   newUsersIndexReader = getIndexedNewUsersIdsByRules,
+  viewMode = 'default',
+  ownerId = '',
+  useIndexIdCache = true,
 } = {}) => {
   const filterGroups = buildMatchingIndexFilterGroups({ filters, collectionSource });
   const excludedSet = new Set((Array.isArray(excludeIds) ? excludeIds : [...(excludeIds || [])]).filter(Boolean));
   const safeOffset = normalizeOffset(offset);
   const safeLimit = normalizeLimit(limit);
+  const cacheKey = buildMatchingIndexQueryKey({
+    collectionSource,
+    filters,
+    viewMode,
+    ownerId,
+    accessUserId,
+    rawRules,
+    searchKeySetKeys,
+    searchKeySetsOfExactUser: searchKeySetKeys,
+  });
+
+  const readCachedPage = () => {
+    if (!useIndexIdCache) return null;
+    const cachedIds = getIndexIdsByQuery(cacheKey);
+    if (!Array.isArray(cachedIds)) return null;
+    const sliced = sliceIndexedBaseIds({ ids: cachedIds, offset: safeOffset, limit: safeLimit, excludedSet });
+    return {
+      allIds: cachedIds,
+      ...sliced,
+    };
+  };
+
+  const cachedPage = readCachedPage();
+  if (cachedPage) {
+    const users = await hydrateOrderedUsers({ ids: cachedPage.pageIds, hydrateUsersByIds, collectionSource });
+    return {
+      usedIndex: true,
+      usedIndexIdCache: true,
+      cacheKey,
+      userIds: cachedPage.pageIds,
+      users,
+      nextOffset: cachedPage.nextOffset,
+      hasMore: cachedPage.hasMore,
+      filterGroups,
+    };
+  }
 
   if (collectionSource === 'newUsers') {
     const indexed = await newUsersIndexReader({
@@ -184,19 +318,28 @@ export const fetchMatchingIndexedCandidates = async ({
       searchKeySetsOfExactUser: searchKeySetKeys,
       fetchMissingBuckets: true,
       requireSearchKeySetKeys: true,
-      resultOffset: safeOffset,
-      resultLimit: safeLimit,
+      resultOffset: 0,
+      resultLimit: Number.POSITIVE_INFINITY,
       additionalFilterBucketGroups: filterGroups,
-      excludedUserIds: [...excludedSet],
+      excludedUserIds: [],
     });
-    const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
+    const allUserIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
+    if (useIndexIdCache) setIndexIdsForQuery(cacheKey, allUserIds);
+    const { pageIds: userIds, nextOffset, hasMore } = sliceIndexedBaseIds({
+      ids: allUserIds,
+      offset: safeOffset,
+      limit: safeLimit,
+      excludedSet,
+    });
     const users = await hydrateOrderedUsers({ ids: userIds, hydrateUsersByIds, collectionSource });
     return {
       usedIndex: true,
+      usedIndexIdCache: false,
+      cacheKey,
       userIds,
       users,
-      nextOffset: Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : safeOffset + userIds.length,
-      hasMore: Boolean(indexed?.hasMore),
+      nextOffset,
+      hasMore,
       filterGroups,
       reason: indexed?.reason,
     };
@@ -209,17 +352,24 @@ export const fetchMatchingIndexedCandidates = async ({
   const idSets = await Promise.all(
     filterGroups.map(group => readBucketIds({ rootPath: MATCHING_USERS_INDEX_ROOT, ...group }))
   );
-  const allMatchingIds = (intersectIdSets(idSets) || []).filter(id => !excludedSet.has(id));
-  const pageIds = allMatchingIds.slice(safeOffset, safeOffset + safeLimit);
+  const allMatchingIds = intersectIdSets(idSets) || [];
+  if (useIndexIdCache) setIndexIdsForQuery(cacheKey, allMatchingIds);
+  const { pageIds, nextOffset, hasMore } = sliceIndexedBaseIds({
+    ids: allMatchingIds,
+    offset: safeOffset,
+    limit: safeLimit,
+    excludedSet,
+  });
   const users = await hydrateOrderedUsers({ ids: pageIds, hydrateUsersByIds, collectionSource: 'users' });
-  const nextOffset = safeOffset + pageIds.length;
 
   return {
     usedIndex: true,
+    usedIndexIdCache: false,
+    cacheKey,
     userIds: pageIds,
     users,
     nextOffset,
-    hasMore: nextOffset < allMatchingIds.length,
+    hasMore,
     filterGroups,
   };
 };
@@ -589,6 +739,7 @@ export const fetchAdditionalNewUsersBySearchIndex = async ({
     filters,
     rawRules,
     accessUserId: normalizedAccessUserId,
+    ownerId: normalizedAccessUserId,
     searchKeySetKeys,
     offset,
     limit,

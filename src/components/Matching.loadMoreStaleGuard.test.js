@@ -9,13 +9,16 @@ const loadMoreSource = () => {
 };
 
 describe('Matching loadMore stale pagination guards', () => {
-  it('guards reaction pagination writes after async comment loading', () => {
+  it('updates reaction cards before async comment loading while preserving stale guards', () => {
     const source = loadMoreSource();
 
-    expect(source).toContain(`await loadCommentsFor(page.users);
-        if (!canApplyLoadMoreResult()) return;
+    expect(source).toContain(`if (!canApplyLoadMoreResult()) return;
         reactionLoadedIdsRef.current[viewMode] = loadedIds;
         loadedIdsRef.current = new Set(loadedIds);`);
+    const setUsersIndex = source.indexOf('setUsers(prev => {\n          if (didAccessSnapshotChange) return page.users;');
+    const commentsIndex = source.indexOf('void loadCommentsFor(page.users);', setUsersIndex);
+    expect(setUsersIndex).toBeGreaterThan(-1);
+    expect(commentsIndex).toBeGreaterThan(setUsersIndex);
     expect(source).toContain(`setHasMore(nextHasMore);
         setLastKey(null);`);
   });
@@ -23,11 +26,14 @@ describe('Matching loadMore stale pagination guards', () => {
   it('guards additional newUsers offset, hasMore, lastKey, and loadedIdsRef writes', () => {
     const source = loadMoreSource();
 
-    expect(source).toContain(`await loadCommentsFor(collected);
-        if (!isLatestLoadMore()) return;
+    expect(source).toContain(`if (!isLatestLoadMore()) return;
         collected.forEach(user => {
           loadedIdsRef.current.add(user.userId);
         });`);
+    const setAdditionalIndex = source.indexOf('setAdditionalNewUsers(prev => {');
+    const commentsIndex = source.indexOf('void loadCommentsFor(collected);', setAdditionalIndex);
+    expect(setAdditionalIndex).toBeGreaterThan(-1);
+    expect(commentsIndex).toBeGreaterThan(setAdditionalIndex);
     expect(source).toContain(`setAdditionalNextOffset(nextOffset);
         setHasMore(canLoadMoreAdditional);`);
     expect(source).toContain(`setLastKey(null);
@@ -43,9 +49,12 @@ describe('Matching loadMore stale pagination guards', () => {
     expect(fetchIndex).toBeGreaterThan(-1);
     expect(staleGuardIndex).toBeGreaterThan(fetchIndex);
     expect(staleGuardIndex).toBeLessThan(uniqueIndex);
-    expect(source).toContain(`await loadCommentsFor(collected);
-      if (!isLatestLoadMore()) return;
+    expect(source).toContain(`if (!isLatestLoadMore()) return;
       collected.forEach(u => loadedIdsRef.current.add(u.userId));`);
+    const defaultSetUsersIndex = source.lastIndexOf('setUsers(prev => {');
+    const commentsIndex = source.indexOf('void loadCommentsFor(collected);', defaultSetUsersIndex);
+    expect(defaultSetUsersIndex).toBeGreaterThan(-1);
+    expect(commentsIndex).toBeGreaterThan(defaultSetUsersIndex);
     expect(source).toContain(`finishLoadMoreIfLatest();`);
   });
 

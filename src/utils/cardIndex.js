@@ -1,9 +1,11 @@
-import { CACHE_TTL_MS } from './cacheConstants';
+import { CACHE_TTL_MS, MATCHING_PERFORMANCE_CACHE_TTL_MS } from './cacheConstants';
 import { normalizeLastAction } from './normalizeLastAction';
 
 export const CARDS_KEY = 'cards';
 export const QUERIES_KEY = 'queries';
+export const INDEX_QUERIES_KEY = 'matchingIndexQueries';
 export const TTL_MS = CACHE_TTL_MS;
+export const MATCHING_INDEX_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 
 const toTimestamp = value => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -41,6 +43,8 @@ export const saveCards = cards => saveJson(CARDS_KEY, cards);
 
 export const loadQueries = () => loadJson(QUERIES_KEY);
 export const saveQueries = queries => saveJson(QUERIES_KEY, queries);
+export const loadIndexQueries = () => loadJson(INDEX_QUERIES_KEY);
+export const saveIndexQueries = queries => saveJson(INDEX_QUERIES_KEY, queries);
 
 const canonicalizeQueryValue = value => {
   if (value === undefined) {
@@ -179,6 +183,28 @@ export const setIdsForQuery = (queryKey, ids) => {
   const now = Date.now();
   queries[key] = { ids: ids.slice(), cachedAt: now, lastAction: now };
   saveQueries(queries);
+};
+
+export const getIndexIdsByQuery = (queryKey, ttlMs = MATCHING_INDEX_TTL_MS) => {
+  const key = normalizeQueryKey(queryKey);
+  const queries = loadIndexQueries();
+  const entry = queries[key];
+  const cachedAt = getEntryCacheTimestamp(entry);
+  if (!entry || !cachedAt) return null;
+  if (Date.now() - cachedAt > ttlMs) {
+    delete queries[key];
+    saveIndexQueries(queries);
+    return null;
+  }
+  return Array.isArray(entry.ids) ? entry.ids.slice() : [];
+};
+
+export const setIndexIdsForQuery = (queryKey, ids) => {
+  const key = normalizeQueryKey(queryKey);
+  const queries = loadIndexQueries();
+  const now = Date.now();
+  queries[key] = { ids: Array.isArray(ids) ? ids.slice() : [], cachedAt: now, lastAction: now };
+  saveIndexQueries(queries);
 };
 
 export const touchCardInQueries = cardId => {
