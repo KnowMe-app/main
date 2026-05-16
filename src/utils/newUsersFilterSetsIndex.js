@@ -57,6 +57,17 @@ const normalizePathSegment = value => {
 const normalizeSearchKeySetKey = value =>
   normalizePathSegment(String(value || '').trim().replace(/^\/?searchKeySets\//, ''));
 
+const getSearchKeySetInputIndex = (setKey, accessUserId = '') => {
+  const normalizedOwnerId = String(accessUserId || '').trim();
+  const normalizedSetKey = normalizeSearchKeySetKey(setKey);
+  const ownerPrefix = normalizedOwnerId ? `${normalizedOwnerId}${SET_KEY_INDEX_SEPARATOR}` : '';
+  if (!normalizedSetKey || !ownerPrefix || !normalizedSetKey.startsWith(ownerPrefix)) return null;
+
+  const rawIndex = normalizedSetKey.slice(ownerPrefix.length);
+  const numericIndex = Number(rawIndex);
+  return Number.isInteger(numericIndex) && numericIndex > 0 ? numericIndex : null;
+};
+
 export const normalizeSearchKeySetKeys = rawKeys => {
   const collect = value => {
     if (!value) return [];
@@ -1015,9 +1026,13 @@ export const getIndexedNewUsersIdsByRules = async ({
   });
 
   const setEntries = ruleBucketEntries.flatMap(entry => {
-    const setKeys = explicitSetKeys.length ? explicitSetKeys : [entry.defaultSetKey];
+    const setKeys = explicitSetKeys.length
+      ? explicitSetKeys.filter(setKey => getSearchKeySetInputIndex(setKey, normalizedAccessUserId) === entry.inputIndex)
+      : [entry.defaultSetKey];
+
     return [...new Set(setKeys.filter(Boolean))].map(setKey => ({
       setKey,
+      inputIndex: entry.inputIndex,
       indexBuckets: entry.indexBuckets,
       additionalFilterBucketGroups,
     }));
