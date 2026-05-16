@@ -7,6 +7,8 @@ import {
   TTL_MS,
   saveCard as indexSaveCard,
   getQueryEntry,
+  sanitizeMatchingCardForCache,
+  CARDS_CACHE_VERSION,
 } from './cardIndex';
 import { normalizeLastAction } from './normalizeLastAction';
 
@@ -108,7 +110,7 @@ const removeNestedValue = (current, segments, depth = 0) => {
 
 export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   const cards = loadCards();
-  const existing = cards[cardId] || {};
+  const existing = sanitizeMatchingCardForCache(cards[cardId] || {});
   const explicitRemovals = data && typeof data === 'object'
     ? Object.keys(data).filter(key => data[key] === null)
     : [];
@@ -120,13 +122,14 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
     .filter(key => key && key !== 'userId');
   const sanitizedData =
     data && typeof data === 'object'
-      ? Object.fromEntries(Object.entries(data).filter(([, value]) => value !== null))
+      ? sanitizeMatchingCardForCache(Object.fromEntries(Object.entries(data).filter(([, value]) => value !== null)))
       : data;
   let updatedCard = {
     ...existing,
     ...sanitizedData,
     userId: cardId,
     cachedAt: Date.now(),
+    cacheVersion: CARDS_CACHE_VERSION,
   };
   delete updatedCard.id;
   if (Object.prototype.hasOwnProperty.call(updatedCard, 'duplicate')) {
@@ -207,9 +210,10 @@ export const getCardsByList = async (listKey, remoteFetch) => {
           const { id: _, ...rest } = fresh;
           const now = Date.now();
           const card = {
-            ...rest,
+            ...sanitizeMatchingCardForCache(rest),
             userId: id,
             cachedAt: now,
+            cacheVersion: CARDS_CACHE_VERSION,
           };
           if (rest.lastAction !== undefined) {
             const normalized = normalizeLastAction(rest.lastAction);

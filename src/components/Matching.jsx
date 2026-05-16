@@ -67,6 +67,7 @@ import {
   fetchUsersByLastLogin2,
   fetchUserById,
   getAllUserPhotos,
+  lazyLoadProfilePhotos,
   fetchFavoriteUsers,
   fetchDislikeUsers,
   filterMain,
@@ -97,7 +98,7 @@ import PhotoViewer from './PhotoViewer';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
-import { normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard } from '../utils/cardIndex';
+import { incrementMatchingLoadStat, logMatchingLocalStorageCacheStats, normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard } from '../utils/cardIndex';
 import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
@@ -299,12 +300,14 @@ const debugMissingNewUsersToast = (accessUserId, indexedCount) => {
   logAdditionalMatchingDebug(accessUserId, 'missing fetched newUsers records', { indexedCount });
 };
 
-const get = (...args) =>
-  withAdminDownloadToast(firebaseGet(...args), {
+const get = (...args) => {
+  incrementMatchingLoadStat('rtdbReads');
+  return withAdminDownloadToast(firebaseGet(...args), {
     operation: 'get',
     source: 'Matching',
     path: args[0],
   });
+};
 
 const onValue = wrapAdminOnValue(firebaseOnValue, {
   operation: 'onValue',
@@ -894,8 +897,10 @@ const INITIAL_LOAD = 5;
 const MATCHING_VISIBLE_BUFFER = 2;
 const MATCHING_REFILL_LIMIT = 5;
 const LOAD_MORE = 5;
-const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 5;
-const ADDITIONAL_BACKFILL_MAX_PAGES = 3;
+const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
+const ADDITIONAL_BACKFILL_MAX_PAGES = 2;
+const MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS = 700;
+const MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS = 2;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
 const COLLECTION_SOURCE_KEY = 'matchingCollectionSource';
@@ -1018,6 +1023,7 @@ const Matching = () => {
   const [additionalNewUsers, setAdditionalNewUsers] = useState([]);
   const additionalNewUsersRef = useRef(additionalNewUsers);
   const [additionalNextOffset, setAdditionalNextOffset] = useState(0);
+  const [photoCacheByUserId, setPhotoCacheByUserId] = useState({});
   const [roleIndexSets] = useState(null);
   const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: currentAccessLevel });
   const isAdmin = access.isAdmin;
@@ -1039,6 +1045,9 @@ const Matching = () => {
   const additionalMatchingApplyVersionRef = useRef(0);
   const reactionLoadVersionRef = useRef(0);
   const sharedReactionCandidateLoadVersionRef = useRef(0);
+  const autoLoadMoreLastRunRef = useRef(0);
+  const autoLoadMoreSignatureRef = useRef('');
+  const emptyAutoLoadMoreAttemptsRef = useRef(0);
   const matchingProfileStateRef = useRef({
     ownerId: null,
     collectionSource,
@@ -1110,6 +1119,8 @@ const Matching = () => {
     setThemeMode(current => (current === 'light' ? 'dark' : 'light'));
   }, []);
   useEffect(() => {
+    emptyAutoLoadMoreAttemptsRef.current = 0;
+    autoLoadMoreSignatureRef.current = '';
     collectionSourceRef.current = collectionSource;
     localStorage.setItem(COLLECTION_SOURCE_KEY, collectionSource);
   }, [collectionSource]);
@@ -1121,6 +1132,10 @@ const Matching = () => {
       currentSearchKeySetKeys,
     };
   }, [collectionSource, currentAdditionalAccessRules, currentSearchKeySetKeys, ownerId]);
+  useEffect(() => {
+    logMatchingLocalStorageCacheStats('matching mount');
+  }, []);
+
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
     const handleScroll = () => {
@@ -1447,11 +1462,12 @@ const Matching = () => {
     }
   }, []);
 
-  const loadCommentsFor = React.useCallback(async (list, { force = false } = {}) => {
+  const loadCommentsFor = React.useCallback(async (list, { force = false, activeOnly = true } = {}) => {
     const owners = getMatchingMultiDataOwnerIds();
     const ownOwnerId = getOwnerId();
     if (!owners.length || !ownOwnerId) return;
-    const ids = Array.from(new Set((list || []).map(u => u?.userId).filter(Boolean)));
+    const sourceList = activeOnly ? (list || []).slice(0, 1) : (list || []);
+    const ids = Array.from(new Set(sourceList.map(u => u?.userId).filter(Boolean)));
     if (!ids.length) return;
 
     const requestContext = {
@@ -1602,7 +1618,8 @@ const Matching = () => {
             fetchMissingBuckets: true,
             requireSearchKeySetKeys: true,
             resultOffset: 0,
-            resultLimit: Number.POSITIVE_INFINITY,
+            resultLimit: newUserCandidateIds.length,
+            candidateUserIds: newUserCandidateIds,
             debugMatchingFlow: shouldDebugAdditionalMatching(viewerId),
             debugToast: (message, data) => debugAdditionalToast(viewerId, message, data),
           });
@@ -1638,7 +1655,7 @@ const Matching = () => {
     }
 
     if (userCandidateIds.length > 0) {
-      const usersMap = await fetchUsersByIds(userCandidateIds);
+      const usersMap = await fetchUsersByIds(userCandidateIds, { collectionSource: 'users' });
       if (!canApplySharedCandidateResult()) {
         return;
       }
@@ -2137,7 +2154,7 @@ const Matching = () => {
       filterMainFn: filterMain,
       fetchUsersByLastLogin2,
       fetchUsersByLastLogin2FromCollection,
-      hydrateUsersByIds: fetchUsersByIds,
+      hydrateUsersByIds: ids => fetchUsersByIds(ids, { collectionSource }),
       onPart,
     }),
     [collectionSource, isAdmin, parsedAdditionalAccessRules, roleIndexSets]
@@ -2256,7 +2273,7 @@ const Matching = () => {
           offset: 0,
           limit: INITIAL_LOAD,
           excludeIds: [...exclude],
-          hydrateUsersByIds: fetchUsersByIds,
+          hydrateUsersByIds: ids => fetchUsersByIds(ids, { collectionSource }),
         });
         if (viewModeRef.current !== startMode) return;
         const indexedUsers = (indexed.users || []).filter(user => isAllowedIdForCollection(user.userId, collectionSource));
@@ -2306,6 +2323,8 @@ const Matching = () => {
       );
       if (viewModeRef.current !== startMode) return;
       console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
+      const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
+      if (stats && typeof console.table === 'function') console.table([stats]);
       loadedIdsRef.current = new Set([
         ...loadedIdsRef.current,
         ...res.users.map(u => u.userId),
@@ -2330,6 +2349,8 @@ const Matching = () => {
   }, [collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, loadCommentsFor, parsedAdditionalAccessRules.length]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
+    emptyAutoLoadMoreAttemptsRef.current = 0;
+    autoLoadMoreSignatureRef.current = '';
     viewModeRef.current = 'default';
     invalidateReactionAsyncWork();
     resetReactionPaginationState();
@@ -2339,6 +2360,8 @@ const Matching = () => {
 
 
   const handleFiltersChange = React.useCallback(nextFilters => {
+    emptyAutoLoadMoreAttemptsRef.current = 0;
+    autoLoadMoreSignatureRef.current = '';
     filtersRef.current = nextFilters;
     setFilters(nextFilters);
     const currentMode = viewModeRef.current;
@@ -2401,7 +2424,7 @@ const Matching = () => {
     });
 
     const [usersMap, newUsersCards] = await Promise.all([
-      missingUserIds.length ? fetchUsersByIds(missingUserIds) : Promise.resolve({}),
+      missingUserIds.length ? fetchUsersByIds(missingUserIds, { collectionSource: 'users' }) : Promise.resolve({}),
       missingNewUserIds.length ? fetchNewUsersByIdsForMatching(missingNewUserIds) : Promise.resolve([]),
     ]);
 
@@ -2451,7 +2474,8 @@ const Matching = () => {
       fetchMissingBuckets: true,
       requireSearchKeySetKeys: true,
       resultOffset: 0,
-      resultLimit: Number.POSITIVE_INFINITY,
+      resultLimit: newUserReactionIds.length,
+      candidateUserIds: newUserReactionIds,
       debugMatchingFlow: shouldDebugAdditionalMatching(viewerId),
       debugToast: (message, data) => debugAdditionalToast(viewerId, message, data),
     });
@@ -2815,7 +2839,7 @@ const Matching = () => {
         }));
         setHasMore(nextHasMore);
         setLastKey(null);
-        return;
+        return page.users.length;
       }
 
       const baseExclude = new Set([
@@ -2970,7 +2994,7 @@ const Matching = () => {
           finalCardsCount: collected.length,
         });
         setLastKey(null);
-        return;
+        return collected.length;
       }
 
       const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
@@ -2988,7 +3012,7 @@ const Matching = () => {
           viewMode,
           ownerId: getOwnerId(),
           fetchMatchingIndexedCandidates,
-          hydrateUsersByIds: fetchUsersByIds,
+          hydrateUsersByIds: ids => fetchUsersByIds(ids, { collectionSource }),
           isLatestLoadMore,
         });
         if (indexedPage.stale) return;
@@ -2997,6 +3021,7 @@ const Matching = () => {
           console.warn('[Matching][indexedProvider] stopped loadMore because indexed cursor did not move', {
             finalIndexedOffset: indexedPage.finalOffset,
             indexedPageCalls: indexedPage.pageCalls,
+            stopReason: indexedPage.stopReason,
           });
         }
 
@@ -3013,7 +3038,7 @@ const Matching = () => {
         void loadCommentsFor(indexedPage.collected);
         setLastKey(indexedPage.finalOffset);
         setHasMore(Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck));
-        return;
+        return indexedPage.collected.length;
       }
 
       const collected = [];
@@ -3047,6 +3072,7 @@ const Matching = () => {
           hasMore: res.hasMore,
           sourceHasMore: res.sourceHasMore,
           loadedPages: res.loadedPages,
+          stopReason: res.stopReason,
         });
 
         const unique = res.users.filter(
@@ -3083,6 +3109,7 @@ const Matching = () => {
         setHasMore(canLoadMore);
       }
       setLastKey(cursor);
+      return collected.length;
     } finally {
       finishLoadMoreIfLatest();
     }
@@ -3158,6 +3185,53 @@ const Matching = () => {
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
   const activeProfile = filteredUsers[activeProfileIndex] || null;
 
+  const withLazyPhotos = React.useCallback(user => {
+    if (!user?.userId) return user;
+    const cachedPhotos = photoCacheByUserId[user.userId];
+    if (!cachedPhotos) return user;
+    return {
+      ...user,
+      photos: cachedPhotos,
+      __photosHydrated: true,
+    };
+  }, [photoCacheByUserId]);
+
+  const activeProfileWithLazyPhotos = withLazyPhotos(activeProfile);
+
+  useEffect(() => {
+    const candidates = [filteredUsers[activeProfileIndex], filteredUsers[activeProfileIndex + 1]]
+      .filter(user => user?.userId && !user.__photosHydrated && !photoCacheByUserId[user.userId]);
+    if (!candidates.length) return undefined;
+
+    let cancelled = false;
+    candidates.forEach(user => {
+      lazyLoadProfilePhotos(user.userId).then(photos => {
+        if (cancelled) return;
+        incrementMatchingLoadStat('photoLazyLoadProfiles');
+        setPhotoCacheByUserId(prev => ({
+          ...prev,
+          [user.userId]: Array.isArray(photos) ? photos : [],
+        }));
+        const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
+        if (stats && typeof console.table === 'function') console.table([stats]);
+      }).catch(() => {
+        if (!cancelled) {
+          setPhotoCacheByUserId(prev => ({ ...prev, [user.userId]: [] }));
+        }
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfileIndex, filteredUsers, photoCacheByUserId]);
+
+  useEffect(() => {
+    if (activeProfile?.userId) {
+      void loadCommentsFor([activeProfile], { activeOnly: true });
+    }
+  }, [activeProfile, loadCommentsFor]);
+
   useEffect(() => {
     setActiveProfileIndex(index => {
       if (filteredUsers.length === 0) return 0;
@@ -3220,18 +3294,49 @@ const Matching = () => {
     });
   }, [collectionSource, filteredUsers, filters, ownerId, parsedAdditionalAccessRules.length, visibleUsers]);
 
+  const runAutoLoadMore = React.useCallback((signature, payload) => {
+    if (emptyAutoLoadMoreAttemptsRef.current >= MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS) return;
+    if (autoLoadMoreSignatureRef.current === signature) return;
+    const now = Date.now();
+    if (now - autoLoadMoreLastRunRef.current < MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS) return;
+
+    autoLoadMoreSignatureRef.current = signature;
+    autoLoadMoreLastRunRef.current = now;
+    Promise.resolve(loadMore(payload)).then(addedCount => {
+      const visibleAdded = Math.max(0, Number(addedCount) || 0);
+      incrementMatchingLoadStat('visibleCardsAdded', visibleAdded);
+      if (visibleAdded > 0) {
+        emptyAutoLoadMoreAttemptsRef.current = 0;
+      } else {
+        emptyAutoLoadMoreAttemptsRef.current += 1;
+        incrementMatchingLoadStat('emptyLoadMoreAttempts');
+      }
+      const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
+      if (stats && typeof console.table === 'function') console.table([stats]);
+    });
+  }, [loadMore]);
+
   useEffect(() => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (loadingRef.current || loading) return;
     if (!hasMore) return;
     if (filteredUsers.length >= MATCHING_VISIBLE_BUFFER) return;
 
-    loadMore({
+    const signature = stableAdditionalSignature({
+      type: 'refill',
+      viewMode,
+      collectionSource,
+      length: filteredUsers.length,
+      lastKey,
+      additionalNextOffset,
+      filters,
+    });
+    runAutoLoadMore(signature, {
       currentVisibleCount: filteredUsers.length,
       targetVisibleCount: MATCHING_VISIBLE_BUFFER,
       limit: MATCHING_REFILL_LIMIT,
     });
-  }, [filteredUsers.length, hasMore, loadMore, loading, viewMode]);
+  }, [additionalNextOffset, collectionSource, filteredUsers.length, filters, hasMore, lastKey, loading, runAutoLoadMore, viewMode]);
 
   const lastCardLoadTriggerSignatureRef = useRef('');
   const lastCardVisibilityLogSignatureRef = useRef('');
@@ -3295,7 +3400,7 @@ const Matching = () => {
     if (lastCardLoadTriggerSignatureRef.current === triggerSignature) return;
     lastCardLoadTriggerSignatureRef.current = triggerSignature;
 
-    loadMore({
+    runAutoLoadMore(`last-card:${triggerSignature}`, {
       currentVisibleCount: renderedCardsLength,
       targetVisibleCount: MATCHING_VISIBLE_BUFFER,
       limit: MATCHING_REFILL_LIMIT,
@@ -3306,7 +3411,7 @@ const Matching = () => {
     collectionSource,
     hasMore,
     lastKey,
-    loadMore,
+    runAutoLoadMore,
     loading,
     parsedAdditionalAccessRules.length,
     reactionPaginationByType,
@@ -3475,8 +3580,8 @@ const Matching = () => {
           )}
 
           <Grid>
-            {activeProfile ? (() => {
-              const user = activeProfile;
+            {activeProfileWithLazyPhotos ? (() => {
+              const user = activeProfileWithLazyPhotos;
               const photos = getProfilePhotos(user);
               const photo = photos[0];
               const role = getProfileRole(user);

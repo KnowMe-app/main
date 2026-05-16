@@ -1,12 +1,12 @@
 import { getCacheKey } from 'hooks/cardsCache';
 import { updateCard, addCardToList, removeCardFromList } from './cardsStorage';
-import { setIdsForQuery, CARDS_KEY, QUERIES_KEY } from './cardIndex';
+import { setIdsForQuery, resetMatchingLocalStorageCache } from './cardIndex';
 
 export { getCacheKey };
 
 // Clears cached cards and queries from localStorage
 export const clearAllCardsCache = () => {
-  [CARDS_KEY, QUERIES_KEY].forEach(key => localStorage.removeItem(key));
+  resetMatchingLocalStorageCache('clearAllCardsCache');
 };
 
 let favoriteIds = {};
