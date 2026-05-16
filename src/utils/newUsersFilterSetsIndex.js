@@ -914,9 +914,10 @@ export const getIndexedNewUsersIdsByRules = async ({
   fetchMissingBuckets = false,
   requireSearchKeySetKeys = true,
   resultOffset = 0,
-  resultLimit = Number.POSITIVE_INFINITY,
+  resultLimit = 100,
   additionalFilterBucketGroups = [],
   excludedUserIds = [],
+  candidateUserIds = null,
   debugMatchingFlow = false,
   debugToast,
 }) => {
@@ -1075,7 +1076,7 @@ export const getIndexedNewUsersIdsByRules = async ({
   const numericResultLimit = Number(resultLimit);
   const safeResultLimit = Number.isFinite(numericResultLimit)
     ? Math.max(0, numericResultLimit)
-    : Number.POSITIVE_INFINITY;
+    : 100;
 
   for (const entry of setEntries) {
     const filterSets = [];
@@ -1168,16 +1169,22 @@ export const getIndexedNewUsersIdsByRules = async ({
   }
 
   const excludedUserIdsSet = new Set((Array.isArray(excludedUserIds) ? excludedUserIds : [...(excludedUserIds || [])]).filter(Boolean));
-  const finalUserIds = [...matchedUserIds].filter(userId => !excludedUserIdsSet.has(userId));
+  const candidateUserIdsSet = Array.isArray(candidateUserIds) || candidateUserIds instanceof Set
+    ? new Set((Array.isArray(candidateUserIds) ? candidateUserIds : [...candidateUserIds]).filter(Boolean))
+    : null;
+  const finalUserIds = [...matchedUserIds].filter(userId => (
+    !excludedUserIdsSet.has(userId) && (!candidateUserIdsSet || candidateUserIdsSet.has(userId))
+  ));
   emitDebug('final userIds before pagination', {
     userIds: finalUserIds,
     count: finalUserIds.length,
     excludedCount: excludedUserIdsSet.size,
+    candidateCount: candidateUserIdsSet?.size || 0,
   });
 
   const pageUserIds = finalUserIds.slice(
     safeResultOffset,
-    safeResultLimit === Number.POSITIVE_INFINITY ? undefined : safeResultOffset + safeResultLimit
+    safeResultOffset + safeResultLimit
   );
   const nextOffset = safeResultOffset + pageUserIds.length;
   const hasMore = nextOffset < finalUserIds.length;

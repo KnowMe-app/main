@@ -25,7 +25,7 @@ import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
-import { removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
+import { incrementMatchingLoadStat, removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getCacheKey } from '../utils/cache';
@@ -72,13 +72,15 @@ if (typeof window !== 'undefined') {
   window.__getBackendDownloadToastUid = getCurrentAdminUid;
 }
 
-const get = (...args) =>
-  withAdminDownloadToast(firebaseGet(...args), {
+const get = (...args) => {
+  incrementMatchingLoadStat('rtdbReads');
+  return withAdminDownloadToast(firebaseGet(...args), {
     getUid: getCurrentAdminUid,
     operation: 'get',
     source: 'config',
     path: args[0],
   });
+};
 
 const getDoc = (...args) =>
   withAdminDownloadToast(firebaseGetDoc(...args), {
@@ -96,21 +98,25 @@ const getDocs = (...args) =>
     path: args[0],
   });
 
-const listAll = (...args) =>
-  withAdminDownloadToast(firebaseListAll(...args), {
+const listAll = (...args) => {
+  incrementMatchingLoadStat('storageListAllCalls');
+  return withAdminDownloadToast(firebaseListAll(...args), {
     getUid: getCurrentAdminUid,
     operation: 'listAll',
     source: 'config',
     path: args[0],
   });
+};
 
-const getDownloadURL = (...args) =>
-  withAdminDownloadToast(firebaseGetDownloadURL(...args), {
+const getDownloadURL = (...args) => {
+  incrementMatchingLoadStat('storageDownloadUrlCalls');
+  return withAdminDownloadToast(firebaseGetDownloadURL(...args), {
     getUid: getCurrentAdminUid,
     operation: 'Storage URL metadata',
     source: 'config',
     path: args[0],
   });
+};
 
 export { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 
@@ -1034,6 +1040,7 @@ export const fetchUserComment = async (ownerId, cardId) => {
 
 export const fetchUserComments = async (ownerId, cardIds = []) => {
   try {
+    incrementMatchingLoadStat('commentsReads', Array.isArray(cardIds) ? cardIds.length : 0);
     const commentsRef = ref2(database, `multiData/comments/${ownerId}`);
     const snaps = await Promise.all(
       cardIds.map(cardId =>
@@ -1495,30 +1502,30 @@ export const renameFlowCategory = async ({ ownerId, fromGroupPath, toGroupPath }
   await remove(fromRef);
 };
 
-export const fetchUsersByIds = async ids => {
+export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
   try {
+    const source = collectionSource === 'users' || collectionSource === 'newUsers' ? collectionSource : null;
     const snaps = await Promise.all(
-      ids.map(id =>
-        Promise.all([
-          get(ref2(database, `newUsers/${id}`)),
-          get(ref2(database, `users/${id}`)),
-          getAllUserPhotos(id),
-        ]).then(([newSnap, userSnap, photos]) => {
-          const hasNewUser = newSnap.exists();
-          const hasUser = userSnap.exists();
-          if (!hasNewUser && !hasUser) return null;
-
+      ids.map(id => {
+        const readSources = source
+          ? [source]
+          : (String(id || '').length < 20 ? ['newUsers'] : ['users']);
+        return Promise.all(
+          readSources.map(sourceName => get(ref2(database, `${sourceName}/${id}`)).then(snapshot => [sourceName, snapshot]))
+        ).then(entries => {
+          const foundEntry = entries.find(([, snapshot]) => snapshot.exists());
+          if (!foundEntry) return null;
+          const [sourceName, snapshot] = foundEntry;
           const data = {
             userId: id,
-            ...(hasUser ? userSnap.val() : {}),
-            ...(hasNewUser ? newSnap.val() : {}),
-            photos: Array.isArray(photos) ? photos : [],
-            __photosHydrated: true,
-            __sourceCollection: hasNewUser ? 'newUsers' : 'users',
+            ...(snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {}),
+            photos: [],
+            __photosHydrated: false,
+            __sourceCollection: sourceName,
           };
           return [id, data];
-        })
-      )
+        });
+      })
     );
     const result = {};
     snaps.forEach(entry => {
@@ -1533,6 +1540,8 @@ export const fetchUsersByIds = async ids => {
     return {};
   }
 };
+
+export const lazyLoadProfilePhotos = async userId => getAllUserPhotos(userId);
 
 const addUserFromUsers = async (userId, users) => {
   const userSnap = await get(ref2(database, `users/${userId}`));

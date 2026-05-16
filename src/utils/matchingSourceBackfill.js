@@ -9,6 +9,7 @@ export const collectFilteredMatchingSourceCards = async ({
   isSameCursor = (a, b) => a === b,
   getSourceLimit,
   onPart,
+  maxPages = 2,
 }) => {
   const visibleTarget = Math.max(1, Number(targetVisibleCount) || 1);
   const collected = [];
@@ -17,9 +18,13 @@ export const collectFilteredMatchingSourceCards = async ({
   let cursorAdvanced = false;
   let excludedCount = 0;
   let loadedPages = 0;
+  let stopReason = '';
 
-  while (collected.length < visibleTarget && sourceHasMore) {
+  while (collected.length < visibleTarget && sourceHasMore && loadedPages < maxPages) {
     loadedPages += 1;
+    if (typeof window !== 'undefined' && window.matchingLoadStats) {
+      window.matchingLoadStats.backfillPages = (Number(window.matchingLoadStats.backfillPages) || 0) + 1;
+    }
     const remaining = visibleTarget - collected.length;
     const sourceLimit = getSourceLimit
       ? getSourceLimit({ remaining, exclude, collected, loadedPages })
@@ -63,10 +68,21 @@ export const collectFilteredMatchingSourceCards = async ({
     sourceHasMore = Boolean(sourceRes?.hasMore) && cursorAdvanced;
     cursor = nextCursor;
 
-    if (!sourceRes?.hasMore || !nextCursor || !cursorAdvanced) {
+    if (!sourceRes?.hasMore) {
+      stopReason = validSlice.length ? 'source_exhausted' : 'no_visible_cards_added';
+      break;
+    }
+    if (!nextCursor || !cursorAdvanced) {
+      stopReason = 'cursor_not_advanced';
+      break;
+    }
+    if (!validSlice.length) {
+      stopReason = 'no_visible_cards_added';
       break;
     }
   }
+
+  if (!stopReason && loadedPages >= maxPages && collected.length < visibleTarget) stopReason = 'max_pages_reached';
 
   return {
     users: collected,
@@ -76,5 +92,6 @@ export const collectFilteredMatchingSourceCards = async ({
     cursorAdvanced,
     excludedCount,
     loadedPages,
+    stopReason: stopReason || (collected.length ? 'target_reached' : 'no_visible_cards_added'),
   };
 };

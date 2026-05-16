@@ -18,9 +18,13 @@ export const collectMatchingIndexedLoadMorePage = async ({
   let finalHasMore = false;
   let cursorStuck = false;
   let pageCalls = 0;
+  let stopReason = '';
 
   while (collected.length < requestedLimit && pageCalls < maxPages) {
     pageCalls += 1;
+    if (typeof window !== 'undefined' && window.matchingLoadStats) {
+      window.matchingLoadStats.backfillPages = (Number(window.matchingLoadStats.backfillPages) || 0) + 1;
+    }
     const collectedUserIds = collected.map(user => user?.userId).filter(Boolean);
     const excludeIds = new Set([
       ...baseExclude,
@@ -62,11 +66,23 @@ export const collectMatchingIndexedLoadMorePage = async ({
     finalOffset = nextOffset;
     finalHasMore = lastHasMore;
 
-    if (!lastHasMore) break;
-    if (cursorStuck) break;
+    if (!indexedUsers.length) {
+      stopReason = indexed.userIds?.length ? 'no_visible_cards_added' : 'empty_index_page';
+      break;
+    }
+    if (!lastHasMore) {
+      stopReason = 'source_exhausted';
+      break;
+    }
+    if (cursorStuck) {
+      stopReason = 'cursor_not_advanced';
+      break;
+    }
 
     offset = nextOffset;
   }
+
+  if (!stopReason && pageCalls >= maxPages && collected.length < requestedLimit) stopReason = 'max_pages_reached';
 
   return {
     collected,
@@ -75,5 +91,6 @@ export const collectMatchingIndexedLoadMorePage = async ({
     cursorStuck,
     pageCalls,
     stale: false,
+    stopReason: stopReason || 'target_reached',
   };
 };

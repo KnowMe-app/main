@@ -286,7 +286,7 @@ export const fetchMatchingIndexedCandidates = async ({
   });
 
   const readCachedPage = () => {
-    if (!useIndexIdCache) return null;
+    if (!useIndexIdCache || collectionSource === 'newUsers') return null;
     const cachedIds = getIndexIdsByQuery(cacheKey);
     if (!Array.isArray(cachedIds)) return null;
     const sliced = sliceIndexedBaseIds({ ids: cachedIds, offset: safeOffset, limit: safeLimit, excludedSet });
@@ -318,19 +318,14 @@ export const fetchMatchingIndexedCandidates = async ({
       searchKeySetsOfExactUser: searchKeySetKeys,
       fetchMissingBuckets: true,
       requireSearchKeySetKeys: true,
-      resultOffset: 0,
-      resultLimit: Number.POSITIVE_INFINITY,
+      resultOffset: safeOffset,
+      resultLimit: safeLimit,
       additionalFilterBucketGroups: filterGroups,
-      excludedUserIds: [],
+      excludedUserIds: [...excludedSet],
     });
-    const allUserIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
-    if (useIndexIdCache) setIndexIdsForQuery(cacheKey, allUserIds);
-    const { pageIds: userIds, nextOffset, hasMore } = sliceIndexedBaseIds({
-      ids: allUserIds,
-      offset: safeOffset,
-      limit: safeLimit,
-      excludedSet,
-    });
+    const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
+    const nextOffset = Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : safeOffset + userIds.length;
+    const hasMore = Boolean(indexed?.hasMore);
     const users = await hydrateOrderedUsers({ ids: userIds, hydrateUsersByIds, collectionSource });
     return {
       usedIndex: true,
@@ -647,8 +642,8 @@ export const fetchNewUsersByIdsForMatching = async ({
   getAllUserPhotos,
 }) => {
   if (!Array.isArray(ids) || ids.length === 0) return [];
-  if (typeof get !== 'function' || typeof ref !== 'function' || !database || typeof getAllUserPhotos !== 'function') {
-    throw new Error('fetchNewUsersByIdsForMatching requires get, ref, database and getAllUserPhotos dependencies');
+  if (typeof get !== 'function' || typeof ref !== 'function' || !database) {
+    throw new Error('fetchNewUsersByIdsForMatching requires get, ref and database dependencies');
   }
 
   const uniqueIds = [...new Set(ids.filter(Boolean))];
@@ -660,16 +655,13 @@ export const fetchNewUsersByIdsForMatching = async ({
     const chunkIds = uniqueIds.slice(offset, offset + safeBatchSize);
     const chunkSnapshots = await Promise.all(
       chunkIds.map(async userId => {
-        const [snapshot, photos] = await Promise.all([
-          get(ref(database, `newUsers/${userId}`)),
-          getAllUserPhotos(userId),
-        ]);
+        const snapshot = await get(ref(database, `newUsers/${userId}`));
         if (!snapshot.exists()) return null;
         return {
           userId,
           ...(snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {}),
-          photos: Array.isArray(photos) ? photos : [],
-          __photosHydrated: true,
+          photos: [],
+          __photosHydrated: false,
           __sourceCollection: 'newUsers',
         };
       })

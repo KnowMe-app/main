@@ -7,6 +7,97 @@ export const INDEX_QUERIES_KEY = 'matchingIndexQueries';
 export const TTL_MS = CACHE_TTL_MS;
 export const MATCHING_INDEX_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 
+export const CARDS_CACHE_VERSION = 2;
+export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
+const MATCHING_LOCAL_STORAGE_KEYS = new Set([CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY]);
+const localJsonCache = new Map();
+const pendingSaveTimers = new Map();
+const pendingSaveValues = new Map();
+
+const getMatchingLoadStats = () => {
+  if (typeof window === 'undefined') return null;
+  if (!window.matchingLoadStats || typeof window.matchingLoadStats !== 'object') {
+    window.matchingLoadStats = {};
+  }
+  return window.matchingLoadStats;
+};
+
+export const incrementMatchingLoadStat = (key, amount = 1) => {
+  const stats = getMatchingLoadStats();
+  if (!stats || !key) return;
+  stats[key] = (Number(stats[key]) || 0) + amount;
+};
+
+const estimateMb = value => ((String(value || '').length * 2) / (1024 * 1024));
+
+const shouldGuardMatchingCacheKey = key => MATCHING_LOCAL_STORAGE_KEYS.has(key);
+
+const logMatchingCacheWarning = (message, rows = []) => {
+  console.warn(`[matchingCache] ${message}`, rows);
+  if (typeof console.table === 'function' && rows.length) {
+    console.table(rows);
+  }
+};
+
+export const getMatchingLocalStorageCacheStats = () => {
+  if (typeof localStorage === 'undefined') return [];
+  const keys = [CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY]
+    .concat(Object.keys(localStorage).filter(key => key.toLowerCase().includes('matching')));
+  return [...new Set(keys)].map(key => {
+    const value = localStorage.getItem(key) || '';
+    return {
+      key,
+      stringLength: value.length,
+      approxMb: Number(estimateMb(value).toFixed(3)),
+    };
+  });
+};
+
+export const logMatchingLocalStorageCacheStats = (reason = 'snapshot') => {
+  const rows = getMatchingLocalStorageCacheStats();
+  const stats = getMatchingLoadStats();
+  if (stats) {
+    const cardsRow = rows.find(row => row.key === CARDS_KEY);
+    stats.localStorageCacheSizeMb = cardsRow?.approxMb || 0;
+  }
+  console.info(`[matchingCache] localStorage ${reason}`, rows);
+  if (typeof console.table === 'function') console.table(rows);
+  return rows;
+};
+
+const resetMatchingStorageKey = key => {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore storage reset errors
+  }
+  localJsonCache.delete(key);
+  pendingSaveValues.delete(key);
+  const timer = pendingSaveTimers.get(key);
+  if (timer) clearTimeout(timer);
+  pendingSaveTimers.delete(key);
+};
+
+export const resetMatchingLocalStorageCache = (reason = 'manual') => {
+  const rows = getMatchingLocalStorageCacheStats();
+  [CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY].forEach(resetMatchingStorageKey);
+  logMatchingCacheWarning(`reset ${reason}`, rows);
+  return rows;
+};
+
+const unwrapVersionedCards = value => {
+  if (!value || typeof value !== 'object') return {};
+  if (value.__cacheVersion !== CARDS_CACHE_VERSION) return null;
+  return value.items && typeof value.items === 'object' ? value.items : {};
+};
+
+const wrapVersionedCards = cards => ({
+  __cacheVersion: CARDS_CACHE_VERSION,
+  cachedAt: Date.now(),
+  items: cards && typeof cards === 'object' ? cards : {},
+});
+
+
 const toTimestamp = value => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -23,23 +114,72 @@ const getEntryCacheTimestamp = entry => {
 };
 
 const loadJson = key => {
+  if (localJsonCache.has(key)) return localJsonCache.get(key);
   try {
-    return JSON.parse(localStorage.getItem(key)) || {};
+    incrementMatchingLoadStat('localStorageReads');
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      localJsonCache.set(key, {});
+      return {};
+    }
+    if (shouldGuardMatchingCacheKey(key) && raw.length > MATCHING_CACHE_MAX_CHARS) {
+      logMatchingCacheWarning(`skip oversized key ${key}`, [{ key, stringLength: raw.length, approxMb: Number(estimateMb(raw).toFixed(3)) }]);
+      resetMatchingStorageKey(key);
+      localJsonCache.set(key, {});
+      return {};
+    }
+    const parsed = JSON.parse(raw) || {};
+    localJsonCache.set(key, parsed);
+    return parsed;
   } catch {
+    if (shouldGuardMatchingCacheKey(key)) resetMatchingStorageKey(key);
+    localJsonCache.set(key, {});
     return {};
   }
 };
 
-const saveJson = (key, value) => {
+const flushSaveJson = key => {
+  const value = pendingSaveValues.get(key);
+  pendingSaveValues.delete(key);
+  pendingSaveTimers.delete(key);
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    const stringified = JSON.stringify(value);
+    if (shouldGuardMatchingCacheKey(key) && stringified.length > MATCHING_CACHE_MAX_CHARS) {
+      logMatchingCacheWarning(`skip writing oversized key ${key}`, [{ key, stringLength: stringified.length, approxMb: Number(estimateMb(stringified).toFixed(3)) }]);
+      resetMatchingStorageKey(key);
+      return;
+    }
+    incrementMatchingLoadStat('localStorageWrites');
+    localStorage.setItem(key, stringified);
   } catch {
     // ignore write errors
   }
 };
 
-export const loadCards = () => loadJson(CARDS_KEY);
-export const saveCards = cards => saveJson(CARDS_KEY, cards);
+const saveJson = (key, value, { debounceMs = 0 } = {}) => {
+  localJsonCache.set(key, value);
+  if (!debounceMs) {
+    pendingSaveValues.set(key, value);
+    flushSaveJson(key);
+    return;
+  }
+  pendingSaveValues.set(key, value);
+  const existingTimer = pendingSaveTimers.get(key);
+  if (existingTimer) clearTimeout(existingTimer);
+  pendingSaveTimers.set(key, setTimeout(() => flushSaveJson(key), debounceMs));
+};
+
+export const loadCards = () => {
+  const parsed = loadJson(CARDS_KEY);
+  const cards = unwrapVersionedCards(parsed);
+  if (cards === null) {
+    logMatchingCacheWarning('reset outdated cards cache', [{ key: CARDS_KEY, cacheVersion: parsed?.__cacheVersion || 'legacy' }]);
+    resetMatchingStorageKey(CARDS_KEY);
+    return {};
+  }
+  return cards;
+};
+export const saveCards = cards => saveJson(CARDS_KEY, wrapVersionedCards(cards), { debounceMs: 800 });
 
 export const loadQueries = () => loadJson(QUERIES_KEY);
 export const saveQueries = queries => saveJson(QUERIES_KEY, queries);
@@ -83,6 +223,27 @@ export const serializeQueryFilters = filters => {
   return JSON.stringify(canonical || {});
 };
 
+
+const HEAVY_CARD_CACHE_KEYS = new Set([
+  'photos',
+  'photoUrls',
+  'avatarUrls',
+  'medicationPhotos',
+  '__photosHydrated',
+  '__fromCardCache',
+  'duplicate',
+]);
+
+export const sanitizeMatchingCardForCache = card => {
+  if (!card || typeof card !== 'object') return card;
+  return Object.entries(card).reduce((acc, [key, value]) => {
+    if (HEAVY_CARD_CACHE_KEYS.has(key)) return acc;
+    if (key.startsWith('__') && key !== '__sourceCollection' && key !== '__matchingAccessAllowed') return acc;
+    acc[key] = value;
+    return acc;
+  }, {});
+};
+
 export const normalizeQueryKey = raw => {
   if (Array.isArray(raw)) {
     return raw.map(s => s.toLowerCase().trim()).sort().join(',');
@@ -111,17 +272,19 @@ export const saveCard = card => {
   const cards = loadCards();
   const existing = cards[card.userId] || {};
   const now = Date.now();
+  const sanitizedCard = sanitizeMatchingCardForCache(card);
   const merged = {
-    ...existing,
-    ...card,
+    ...sanitizeMatchingCardForCache(existing),
+    ...sanitizedCard,
     userId: card.userId,
     cachedAt: now,
+    cacheVersion: CARDS_CACHE_VERSION,
   };
   delete merged.id;
-  if (card.lastAction !== undefined) {
-    const normalized = normalizeLastAction(card.lastAction);
+  if (sanitizedCard.lastAction !== undefined) {
+    const normalized = normalizeLastAction(sanitizedCard.lastAction);
     merged.lastAction =
-      normalized !== undefined ? normalized : card.lastAction;
+      normalized !== undefined ? normalized : sanitizedCard.lastAction;
   }
   cards[card.userId] = merged;
   saveCards(cards);
