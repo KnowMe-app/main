@@ -314,13 +314,16 @@ export const loadReactionCardsPageRecords = async ({
       .filter(Boolean)
       .filter(user => user?.userId && !loadedIds.has(user.userId));
 
+    const idsProcessedOnPage = new Set(page.pageIds.filter(Boolean));
+    const idsLoadedBeforeFiltering = new Set(loadedIds);
     const filteredUsers = filterUsers(mappedUsers) || [];
     filteredUsers.forEach(user => {
-      if (collected.length < safeLimit && user?.userId && !loadedIds.has(user.userId)) {
-        loadedIds.add(user.userId);
+      if (collected.length < safeLimit && user?.userId && !idsLoadedBeforeFiltering.has(user.userId)) {
         collected.push(user);
       }
     });
+
+    idsProcessedOnPage.forEach(id => loadedIds.add(id));
 
     if (!page.hasMore) break;
   }
