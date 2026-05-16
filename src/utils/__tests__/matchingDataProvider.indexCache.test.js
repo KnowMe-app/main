@@ -110,3 +110,74 @@ describe('fetchMatchingIndexedCandidates card hydration cache', () => {
     expect(result.users[0].photos).toBeUndefined();
   });
 });
+
+describe('fetchMatchingIndexedCandidates newUsers pagination', () => {
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('keeps newUsers offsets on the unfiltered index cursor when excluding loaded ids', async () => {
+    const { fetchMatchingIndexedCandidates } = loadModule();
+    const baseIds = ['newA', 'newB', 'newC', 'newD', 'newE'];
+    const newUsersIndexReader = jest.fn(async ({ resultOffset = 0, resultLimit = 1, excludedUserIds = [] }) => {
+      const excludedSet = new Set(excludedUserIds);
+      const filteredIds = baseIds.filter(id => !excludedSet.has(id));
+      const userIds = filteredIds.slice(resultOffset, resultOffset + resultLimit);
+      return {
+        userIds,
+        nextOffset: resultOffset + userIds.length,
+        hasMore: resultOffset + userIds.length < filteredIds.length,
+      };
+    });
+    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
+
+    const result = await fetchMatchingIndexedCandidates({
+      collectionSource: 'newUsers',
+      rawRules: 'role is ag',
+      accessUserId: 'viewer-1',
+      searchKeySetKeys: ['viewer-1:set-1'],
+      offset: 2,
+      limit: 2,
+      excludeIds: ['newA', 'newB'],
+      hydrateUsersByIds,
+      newUsersIndexReader,
+    });
+
+    expect(newUsersIndexReader).toHaveBeenCalledWith(expect.not.objectContaining({
+      excludedUserIds: expect.anything(),
+    }));
+    expect(result.userIds).toEqual(['newC', 'newD']);
+    expect(result.nextOffset).toBe(4);
+    expect(result.hasMore).toBe(true);
+    expect(hydrateUsersByIds).toHaveBeenCalledWith(['newC', 'newD']);
+  });
+
+  it('filters explicitly excluded newUsers returned from the current cursor page without advancing the cursor twice', async () => {
+    const { fetchMatchingIndexedCandidates } = loadModule();
+    const newUsersIndexReader = jest.fn(async () => ({
+      userIds: ['newA', 'newB'],
+      nextOffset: 2,
+      hasMore: true,
+    }));
+    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
+
+    const result = await fetchMatchingIndexedCandidates({
+      collectionSource: 'newUsers',
+      rawRules: 'role is ag',
+      accessUserId: 'viewer-1',
+      searchKeySetKeys: ['viewer-1:set-1'],
+      offset: 0,
+      limit: 2,
+      excludeIds: ['newB'],
+      hydrateUsersByIds,
+      newUsersIndexReader,
+    });
+
+    expect(result.userIds).toEqual(['newA']);
+    expect(result.nextOffset).toBe(2);
+    expect(result.hasMore).toBe(true);
+    expect(hydrateUsersByIds).toHaveBeenCalledWith(['newA']);
+  });
+});

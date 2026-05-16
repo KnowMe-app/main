@@ -321,10 +321,10 @@ export const fetchMatchingIndexedCandidates = async ({
       resultOffset: safeOffset,
       resultLimit: safeLimit,
       additionalFilterBucketGroups: filterGroups,
-      excludedUserIds: [...excludedSet],
     });
-    const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
-    const nextOffset = Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : safeOffset + userIds.length;
+    const indexedUserIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
+    const userIds = indexedUserIds.filter(id => id && !excludedSet.has(id));
+    const nextOffset = Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : safeOffset + indexedUserIds.length;
     const hasMore = Boolean(indexed?.hasMore);
     const users = await hydrateOrderedUsers({ ids: userIds, hydrateUsersByIds, collectionSource });
     return {
