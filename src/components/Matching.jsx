@@ -889,10 +889,10 @@ const SwipeableCard = ({
   );
 };
 
-const INITIAL_LOAD = 2;
+const INITIAL_LOAD = 5;
 const MATCHING_VISIBLE_BUFFER = 2;
-const MATCHING_REFILL_LIMIT = 1;
-const LOAD_MORE = 1;
+const MATCHING_REFILL_LIMIT = 5;
+const LOAD_MORE = 5;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 3;
 const SCROLL_Y_KEY = 'matchingScrollY';
 const SEARCH_KEY = 'matchingSearchQuery';
@@ -1189,7 +1189,7 @@ const Matching = () => {
     setSharedReactionCandidateUsers([]);
     viewModeRef.current = 'search';
     setViewMode('search');
-    await loadCommentsFor(filtered);
+    void loadCommentsFor(filtered);
   };
 
   useEffect(() => {
@@ -1222,7 +1222,8 @@ const Matching = () => {
       ...users.map(u => u.userId),
       ...sharedReactionCandidateUsers.map(u => u.userId),
     ];
-    pruneComments(ids);
+    const ownOwnerId = getOwnerId();
+    if (ownOwnerId) pruneComments(ownOwnerId, ids);
     setComments(prev => {
       const map = {};
       ids.forEach(id => {
@@ -1444,38 +1445,71 @@ const Matching = () => {
     }
   }, []);
 
-  const loadCommentsFor = React.useCallback(async list => {
+  const loadCommentsFor = React.useCallback(async (list, { force = false } = {}) => {
     const owners = getMatchingMultiDataOwnerIds();
     const ownOwnerId = getOwnerId();
     if (!owners.length || !ownOwnerId) return;
-    const ids = Array.from(
-      new Set([...usersRef.current.map(u => u.userId), ...list.map(u => u.userId)])
+    const ids = Array.from(new Set((list || []).map(u => u?.userId).filter(Boolean)));
+    if (!ids.length) return;
+
+    const requestContext = {
+      viewMode: viewModeRef.current,
+      collectionSource: collectionSourceRef.current,
+      filtersSignature: stableAdditionalSignature(filtersRef.current || {}),
+      ownerId: ownOwnerId,
+      ownersSignature: stableAdditionalSignature(owners),
+    };
+    const canApplyCommentsResult = () => (
+      requestContext.viewMode === viewModeRef.current &&
+      requestContext.collectionSource === collectionSourceRef.current &&
+      requestContext.filtersSignature === stableAdditionalSignature(filtersRef.current || {}) &&
+      requestContext.ownerId === getOwnerId() &&
+      requestContext.ownersSignature === stableAdditionalSignature(getMatchingMultiDataOwnerIds())
     );
+
     const cache = loadComments();
     const fetchedEntries = await Promise.all(
-      owners.map(async owner => ({ owner, comments: await fetchUserComments(owner, ids) }))
+      owners.map(async owner => {
+        const ownerCache = cache[owner] || {};
+        const missingIds = force ? ids : ids.filter(id => !ownerCache[id]);
+        if (!missingIds.length) return { owner, comments: {}, requestedIds: [] };
+        return { owner, comments: await fetchUserComments(owner, missingIds), requestedIds: missingIds };
+      })
     );
-    const newStore = {};
+
+    const latestStore = loadComments();
+    const nextStore = { ...latestStore };
+    fetchedEntries.forEach(({ owner, comments: ownerComments = {}, requestedIds = [] }) => {
+      nextStore[owner] = { ...(nextStore[owner] || {}) };
+      requestedIds.forEach(id => {
+        const serverComments = ownerComments?.[id] || [];
+        const newestServer = [...serverComments].sort((a, b) => (b.lastAction || 0) - (a.lastAction || 0))[0];
+        const local = nextStore[owner][id];
+        if (shouldUseServerComment(newestServer, local)) {
+          nextStore[owner][id] = {
+            ...newestServer,
+            text: String(newestServer.text || ''),
+            lastAction: newestServer.lastAction || Date.now(),
+            cachedAt: Date.now(),
+          };
+        } else if (local) {
+          nextStore[owner][id] = { ...local, cachedAt: local.cachedAt || Date.now() };
+        } else {
+          nextStore[owner][id] = { text: '', lastAction: Date.now(), cachedAt: Date.now(), empty: true };
+        }
+      });
+    });
+
     const commentsMap = {};
     const sharedCommentsMap = {};
     ids.forEach(id => {
-      const ownEntry = fetchedEntries.find(entry => entry.owner === ownOwnerId);
-      const ownComments = ownEntry?.comments?.[id] || [];
-      const ownServer = [...ownComments].sort((a, b) => (b.lastAction || 0) - (a.lastAction || 0))[0];
-      const local = cache[id];
-      if (shouldUseServerComment(ownServer, local)) {
-        newStore[id] = ownServer;
-        commentsMap[id] = ownServer.text;
-      } else if (local) {
-        newStore[id] = local;
-        commentsMap[id] = local.text;
-      } else {
-        commentsMap[id] = '';
-      }
+      const ownEntry = nextStore?.[ownOwnerId]?.[id];
+      if (ownEntry && !ownEntry.empty) commentsMap[id] = ownEntry.text || '';
 
-      sharedCommentsMap[id] = fetchedEntries
-        .filter(entry => entry.owner !== ownOwnerId)
-        .flatMap(entry => entry.comments?.[id] || [])
+      sharedCommentsMap[id] = owners
+        .filter(owner => owner !== ownOwnerId)
+        .map(owner => nextStore?.[owner]?.[id])
+        .filter(entry => entry && !entry.empty)
         .sort((a, b) => (b.lastAction || 0) - (a.lastAction || 0))
         .map(comment => String(comment.text || '').trim())
         .filter(Boolean);
@@ -1494,15 +1528,16 @@ const Matching = () => {
           .map(([cardId]) => cardId)
       ),
     });
-    saveComments(newStore);
-    setComments(commentsMap);
-    setSharedComments(sharedCommentsMap);
+    saveComments(nextStore);
+    if (!canApplyCommentsResult()) return;
+    setComments(prev => ({ ...prev, ...commentsMap }));
+    setSharedComments(prev => ({ ...prev, ...sharedCommentsMap }));
   }, [getMatchingMultiDataOwnerIds]);
 
   useEffect(() => {
-    if (!users.length || !multiDataOwnerIds.length) return;
-    loadCommentsFor(users);
-  }, [loadCommentsFor, multiDataOwnerIds, users]);
+    if (!usersRef.current.length || !multiDataOwnerIds.length) return;
+    loadCommentsFor(usersRef.current);
+  }, [loadCommentsFor, multiDataOwnerIds]);
 
   const loadSharedReactionCandidates = React.useCallback(async () => {
     const viewerId = ownerId || getOwnerId();
@@ -1633,7 +1668,7 @@ const Matching = () => {
       loadedUsers,
       candidateIds,
     }));
-    await loadCommentsFor(loadedUsers);
+    void loadCommentsFor(loadedUsers);
 
     if (!canApplySharedCandidateResult()) {
       return;
@@ -2041,8 +2076,8 @@ const Matching = () => {
             loadedPages,
             visibleCount,
           });
-          collected.forEach(user => updateCard(user.userId, user));
-          await loadCommentsFor(collected);
+          collected.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
+          void loadCommentsFor(collected);
           const toastSignature = `${currentAdditionalAccessRules}::${nextOffset}${sourceHasMore ? '+' : ''}`;
           if (additionalRulesToastRef.current !== toastSignature) {
             toast(
@@ -2214,6 +2249,8 @@ const Matching = () => {
         const indexed = await fetchMatchingIndexedCandidates({
           collectionSource: 'users',
           filters: filtersRef.current || {},
+          viewMode: viewModeRef.current,
+          ownerId: getOwnerId(),
           offset: 0,
           limit: INITIAL_LOAD,
           excludeIds: [...exclude],
@@ -2224,11 +2261,11 @@ const Matching = () => {
         if (indexedUsers.length === 0 && !indexed.hasMore) {
           console.warn('[Matching][indexedProvider] empty users index result; falling back to source pagination');
         } else {
-          indexedUsers.forEach(user => updateCard(user.userId, user));
+          indexedUsers.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
           loadedIdsRef.current = new Set(indexedUsers.map(user => user.userId).filter(Boolean));
           setUsers(indexedUsers);
           setIdsForQuery(defaultListKey, indexedUsers.map(user => user.userId));
-          await loadCommentsFor(indexedUsers);
+          void loadCommentsFor(indexedUsers);
           if (viewModeRef.current !== startMode) return;
           setLastKey(indexed.nextOffset);
           setHasMore(Boolean(indexed.hasMore));
@@ -2246,7 +2283,7 @@ const Matching = () => {
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
         setUsers(filteredCached);
         setIdsForQuery(defaultListKey, filteredCached.map(u => u.userId));
-        await loadCommentsFor(filteredCached);
+        void loadCommentsFor(filteredCached);
         if (viewModeRef.current !== startMode) return;
         setViewMode('default');
         // continue to fetch latest data to refresh cache
@@ -2261,7 +2298,7 @@ const Matching = () => {
           if (unique.length) {
             unique.forEach(u => loadedIdsRef.current.add(u.userId));
             setUsers(prev => [...prev, ...unique]);
-            await loadCommentsFor(unique);
+            void loadCommentsFor(unique);
           }
         }
       );
@@ -2271,7 +2308,7 @@ const Matching = () => {
         ...loadedIdsRef.current,
         ...res.users.map(u => u.userId),
       ]);
-      res.users.forEach(u => updateCard(u.userId, u));
+      res.users.forEach(u => { if (!u.__fromCardCache) updateCard(u.userId, u); });
       setUsers(prev => {
         const map = new Map(prev.map(u => [u.userId, u]));
         res.users.forEach(u => map.set(u.userId, u));
@@ -2279,7 +2316,7 @@ const Matching = () => {
         setIdsForQuery(defaultListKey, result.map(u => u.userId));
         return result;
       });
-      await loadCommentsFor(res.users);
+      void loadCommentsFor(res.users);
       if (viewModeRef.current !== startMode) return;
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
@@ -2341,9 +2378,7 @@ const Matching = () => {
 
     uniqueIds.forEach(id => {
       const cached = getCard(id);
-      const cachedPhotos = Array.isArray(cached?.photos) ? cached.photos : [];
-      const hasHydratedPhotoState = cachedPhotos.length > 0 || cached?.__photosHydrated === true;
-      const canUseCachedCard = cached && hasHydratedPhotoState && (
+      const canUseCachedCard = cached && (
         cached.__sourceCollection ||
         cached.publish === true ||
         !isShortId(id)
@@ -2354,6 +2389,7 @@ const Matching = () => {
           ...cached,
           userId: id,
           __sourceCollection: cached.__sourceCollection || (isShortId(id) ? 'newUsers' : 'users'),
+          __fromCardCache: true,
         });
       } else if (isShortId(id)) {
         missingNewUserIds.push(id);
@@ -2568,7 +2604,7 @@ const Matching = () => {
       });
       if (!canApplyReactionLoad()) return;
 
-      page.users.forEach(user => updateCard(user.userId, user));
+      page.users.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
       if (isFavoritesMode) {
         cacheFavoriteUsers(Object.fromEntries(page.users.map(user => [user.userId, user])));
       } else {
@@ -2577,7 +2613,7 @@ const Matching = () => {
       reactionLoadedIdsRef.current[reactionType] = loadedIds;
       loadedIdsRef.current = new Set(page.users.map(user => user.userId));
       setUsers(page.users);
-      await loadCommentsFor(page.users);
+      void loadCommentsFor(page.users);
       if (!canApplyReactionLoad()) return;
       const hasPendingSharedCandidates = hasPendingSharedReactionCandidates({
         reactionIds,
@@ -2748,10 +2784,7 @@ const Matching = () => {
 
         if (!canApplyLoadMoreResult()) return;
 
-        page.users.forEach(user => {
-          updateCard(user.userId, user);
-        });
-        await loadCommentsFor(page.users);
+        page.users.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
         if (!canApplyLoadMoreResult()) return;
         reactionLoadedIdsRef.current[viewMode] = loadedIds;
         loadedIdsRef.current = new Set(loadedIds);
@@ -2761,6 +2794,7 @@ const Matching = () => {
           page.users.forEach(user => map.set(user.userId, user));
           return Array.from(map.values());
         });
+        void loadCommentsFor(page.users);
         const hasPendingSharedCandidates = hasPendingSharedReactionCandidates({
           reactionIds,
           sharedReactionIds,
@@ -2914,10 +2948,7 @@ const Matching = () => {
 
         if (!isLatestLoadMore()) return;
 
-        collected.forEach(user => {
-          updateCard(user.userId, user);
-        });
-        await loadCommentsFor(collected);
+        collected.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
         if (!isLatestLoadMore()) return;
         collected.forEach(user => {
           loadedIdsRef.current.add(user.userId);
@@ -2927,6 +2958,7 @@ const Matching = () => {
           collected.forEach(user => map.set(user.userId, user));
           return Array.from(map.values());
         });
+        void loadCommentsFor(collected);
         setAdditionalNextOffset(nextOffset);
         setHasMore(canLoadMoreAdditional);
         logAdditionalMatchingDebug(ownerId, 'load more additional matching final cards', {
@@ -2947,6 +2979,8 @@ const Matching = () => {
         const indexed = await fetchMatchingIndexedCandidates({
           collectionSource: 'users',
           filters: filtersRef.current || {},
+          viewMode,
+          ownerId: getOwnerId(),
           offset: Number.isFinite(Number(lastKey)) ? Number(lastKey) : 0,
           limit: requestedLimit,
           excludeIds: [...baseExclude],
@@ -2959,8 +2993,7 @@ const Matching = () => {
         if (indexedUsers.length === 0 && !indexed.hasMore) {
           console.warn('[Matching][indexedProvider] empty users index result; falling back to source pagination');
         } else {
-          indexedUsers.forEach(user => updateCard(user.userId, user));
-          await loadCommentsFor(indexedUsers);
+          indexedUsers.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
           if (!isLatestLoadMore()) return;
           indexedUsers.forEach(user => loadedIdsRef.current.add(user.userId));
           setUsers(prev => {
@@ -2970,6 +3003,7 @@ const Matching = () => {
             setIdsForQuery(defaultListKey, result.map(user => user.userId));
             return result;
           });
+          void loadCommentsFor(indexedUsers);
           setLastKey(indexed.nextOffset);
           setHasMore(Boolean(indexed.hasMore));
           return;
@@ -3021,8 +3055,7 @@ const Matching = () => {
         canLoadMore = res.hasMore && !stuck;
       }
 
-      collected.forEach(u => updateCard(u.userId, u));
-      await loadCommentsFor(collected);
+      collected.forEach(u => { if (!u.__fromCardCache) updateCard(u.userId, u); });
       if (!isLatestLoadMore()) return;
       collected.forEach(u => loadedIdsRef.current.add(u.userId));
       setUsers(prev => {
@@ -3032,6 +3065,7 @@ const Matching = () => {
         setIdsForQuery(defaultListKey, result.map(u => u.userId));
         return result;
       });
+      void loadCommentsFor(collected);
 
       const sourceCanContinueWithoutVisibleCards = canLoadMore && collected.length === 0;
       if (sourceCanContinueWithoutVisibleCards) {
@@ -3489,7 +3523,7 @@ const Matching = () => {
                         if (auth.currentUser) {
                           const text = comments[user.userId] || '';
                           const res = await setUserComment(user.userId, text, ownerId);
-                          setLocalComment(user.userId, text, res?.lastAction);
+                          setLocalComment(ownerId, user.userId, text, res?.lastAction);
                         }
                       }}
                       onAdminEdit={() => {
