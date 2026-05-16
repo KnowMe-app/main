@@ -588,24 +588,66 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
 
 const passthroughFilterMain = usersData => usersData;
 
+const isReactionViewMode = viewMode => viewMode === 'favorites' || viewMode === 'dislikes';
+
+const getFilterMainInputsForMatchingView = ({
+  filters,
+  favoriteUsers = {},
+  dislikeUsers = {},
+  viewMode = 'default',
+} = {}) => {
+  const filterMainFilters = getMatchingFiltersWithoutSearchKeyGroups(filters);
+
+  if (!isReactionViewMode(viewMode)) {
+    return {
+      filterMainFilters,
+      filterMainFavoriteUsers: favoriteUsers,
+      filterMainDislikeUsers: dislikeUsers,
+    };
+  }
+
+  // Reaction tabs already scope the candidate list by the selected reaction map.
+  // Do not let default-deck reaction filters (favorite.favOnly/reaction) or
+  // favorite/dislike maps remove the very cards the active tab is supposed to show.
+  const reactionSafeFilters = { ...filterMainFilters };
+  delete reactionSafeFilters.favorite;
+  delete reactionSafeFilters.reaction;
+  return {
+    filterMainFilters: reactionSafeFilters,
+    filterMainFavoriteUsers: {},
+    filterMainDislikeUsers: {},
+  };
+};
+
 export const applyMatchingUiFiltersToUsers = ({
   users,
   filters,
-  favoriteUsers,
-  dislikeUsers,
+  favoriteUsers = {},
+  dislikeUsers = {},
   excludeReactionUsers = false,
   roleIndexSets,
   collectionSource,
   viewMode = 'default',
   filterMainFn = passthroughFilterMain,
-}) =>
-  applyMatchingSearchKeyFilters(
+}) => {
+  const {
+    filterMainFilters,
+    filterMainFavoriteUsers,
+    filterMainDislikeUsers,
+  } = getFilterMainInputsForMatchingView({
+    filters,
+    favoriteUsers,
+    dislikeUsers,
+    viewMode,
+  });
+
+  return applyMatchingSearchKeyFilters(
     filterMainFn(
       users.map(u => [u.userId, u]),
       null,
-      getMatchingFiltersWithoutSearchKeyGroups(filters),
-      favoriteUsers,
-      dislikeUsers
+      filterMainFilters,
+      filterMainFavoriteUsers,
+      filterMainDislikeUsers
     )
       .map(([, u]) => u)
       .filter(u => (
@@ -615,10 +657,10 @@ export const applyMatchingUiFiltersToUsers = ({
     filters,
     roleIndexSets
   ).filter(u => (
-    viewMode === 'favorites' ||
-    viewMode === 'dislikes' ||
+    isReactionViewMode(viewMode) ||
     isAllowedIdForMatchingCollection(u.userId, collectionSource)
   ));
+};
 
 export const getActiveMatchingFiltersDebug = filters => Object.entries(filters || {}).reduce((acc, [key, value]) => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
