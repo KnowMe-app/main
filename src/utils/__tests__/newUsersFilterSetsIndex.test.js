@@ -77,6 +77,43 @@ describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
     );
   });
 
+  it('matches explicit searchKeySet keys to their rule input index for reaction candidates', async () => {
+    const { getIndexedNewUsersIdsByRules } = loadModule();
+    const viewerId = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
+    const rules = [
+      'role: ed',
+      'csection: cs0',
+      'userId: id',
+      'reaction: no',
+    ];
+    const existingBuckets = new Map([
+      [`searchKeySets/${viewerId}_3/userId/id`, { ID0001: true }],
+    ]);
+
+    mockFirebaseGet.mockImplementation(path => Promise.resolve(
+      existingBuckets.has(path)
+        ? makeSnapshot(true, existingBuckets.get(path))
+        : makeSnapshot(false)
+    ));
+
+    const result = await getIndexedNewUsersIdsByRules({
+      rawRules: rules,
+      accessUserId: viewerId,
+      searchKeySetKeys: [`${viewerId}_1`, `${viewerId}_2`, `${viewerId}_3`, `${viewerId}_4`],
+      candidateUserIds: ['ID0001'],
+      resultLimit: 1,
+    });
+
+    expect(result.userIds).toEqual(['ID0001']);
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_1/role/ed`);
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_2/csection/cs0`);
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_3/userId/id`);
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_4/reaction/no`);
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_1/userId/id`);
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_2/userId/id`);
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_4/userId/id`);
+  });
+
   it('returns empty and does not fallback to global searchKey when setKey buckets are absent', async () => {
     const { getIndexedNewUsersIdsByRules } = loadModule();
 
