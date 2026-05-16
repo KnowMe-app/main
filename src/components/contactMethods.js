@@ -63,6 +63,10 @@ export const buildYoutubeUrl = value => {
   if (hasProtocol(rawValue)) return rawValue;
 
   const normalizedValue = stripAt(rawValue).replace(/^\/+/, '');
+  if (/^(?:(?:m\.|www\.)?youtube\.com|youtu\.be)\//i.test(normalizedValue)) {
+    return normalizeExternalUrl(normalizedValue);
+  }
+
   if (/^(?:channel|c|user)\//i.test(normalizedValue)) {
     return `https://www.youtube.com/${normalizedValue}`;
   }

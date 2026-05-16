@@ -71,14 +71,32 @@ const normalizeLinkedInValue = baseValue => {
   );
 };
 
-const normalizeYoutubeValue = baseValue => {
-  const urlMatch = baseValue.match(/(?:youtube\.com\/(?:@|c\/|channel\/|user\/)?|youtu\.be\/)([^/?#]+)/i);
-  if (urlMatch?.[1]) return stripQueryHashAndSlashSuffix(urlMatch[1].replace(/^@/, ''));
+const normalizeYoutubePath = (rawPath, preserveRoutePrefixes = true) => {
+  const [pathBeforeQuery] = String(rawPath || '').split(/[?#]/);
+  const pathSegments = pathBeforeQuery.split('/').filter(Boolean);
 
-  return normalizeLabeledContactValue(
-    baseValue,
-    /(?:^|[^A-Za-z0-9_])(?:youtube|youtu\.?be|yt|ютуб)\s*:?\s*@?([A-Za-z0-9._-]+)/i,
+  if (!pathSegments.length) return '';
+
+  const [firstSegment, secondSegment] = pathSegments;
+  const lowerFirstSegment = firstSegment.toLowerCase();
+
+  if (preserveRoutePrefixes && ['channel', 'c', 'user'].includes(lowerFirstSegment) && secondSegment) {
+    return `${lowerFirstSegment}/${secondSegment.replace(/^@/, '')}`;
+  }
+
+  return firstSegment.replace(/^@/, '');
+};
+
+const normalizeYoutubeValue = baseValue => {
+  const urlMatch = baseValue.match(/(?:https?:\/\/)?(?:m\.|www\.)?(?:(youtube\.com)\/|(?:youtu\.be)\/)([^\s]+)/i);
+  if (urlMatch?.[2]) return normalizeYoutubePath(urlMatch[2], Boolean(urlMatch[1]));
+
+  const labelMatch = baseValue.match(
+    /(?:^|[^A-Za-z0-9_])(?:youtube|youtu\.?be|yt|ютуб)\s*:?\s*@?([A-Za-z0-9._-]+(?:\/(?:[A-Za-z0-9._-]+))?)/i,
   );
+  if (labelMatch?.[1]) return normalizeYoutubePath(labelMatch[1]);
+
+  return null;
 };
 
 const normalizeSocialSearchValue = (searchKey, baseValue) => {

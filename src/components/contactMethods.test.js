@@ -40,6 +40,15 @@ describe('contactMethods', () => {
     ]);
   });
 
+  it('preserves scheme-less YouTube URLs instead of treating the domain as a handle', () => {
+    expect(getContactEntries({ youtube: 'www.youtube.com/channel/UC4LwxzuzRqwSpa1A64eziDQ' })).toEqual([
+      expect.objectContaining({
+        key: 'youtube',
+        href: 'https://www.youtube.com/channel/UC4LwxzuzRqwSpa1A64eziDQ',
+      }),
+    ]);
+  });
+
   it('keeps all previously supported social and link contacts', () => {
     const user = {
       facebook: 'fb-page',
