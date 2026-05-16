@@ -24,10 +24,22 @@ describe('resolvePpTechnicalInputTarget', () => {
       value: 'tgblawyers',
     });
   });
+
+  it('preserves YouTube channel URLs as channel paths with case-sensitive ids', () => {
+    expect(resolvePpTechnicalInputTarget('https://www.youtube.com/channel/UC4LwxzuzRqwSpa1A64eziDQ')).toEqual({
+      fieldName: 'youtube',
+      value: 'channel/UC4LwxzuzRqwSpa1A64eziDQ',
+    });
+  });
 });
 
 describe('inputUpdateValue twitter normalization', () => {
   it('lowercases twitter handles in regular twitter fields too', () => {
     expect(inputUpdateValue('@TGBlawyers', { name: 'twitter' })).toBe('tgblawyers');
+  });
+
+  it('keeps YouTube channel paths and channel id casing in regular youtube fields too', () => {
+    expect(inputUpdateValue('https://www.youtube.com/channel/UC4LwxzuzRqwSpa1A64eziDQ', { name: 'youtube' }))
+      .toBe('channel/UC4LwxzuzRqwSpa1A64eziDQ');
   });
 });

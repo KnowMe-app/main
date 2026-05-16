@@ -57,6 +57,19 @@ export const buildTwitterUrl = value => {
   return `https://x.com/${stripAt(rawValue)}`;
 };
 
+export const buildYoutubeUrl = value => {
+  const rawValue = String(value ?? '').trim();
+  if (!rawValue) return '';
+  if (hasProtocol(rawValue)) return rawValue;
+
+  const normalizedValue = stripAt(rawValue).replace(/^\/+/, '');
+  if (/^(?:channel|c|user)\//i.test(normalizedValue)) {
+    return `https://www.youtube.com/${normalizedValue}`;
+  }
+
+  return `https://www.youtube.com/@${normalizedValue}`;
+};
+
 export const CONTACT_LINK_BUILDERS = {
   phone: value => `tel:${compactPhone(value)}`,
   email: value => `mailto:${String(value || '').trim()}`,
@@ -68,7 +81,7 @@ export const CONTACT_LINK_BUILDERS = {
   tiktok: value => buildPlatformUrl(value, 'www.tiktok.com', '@'),
   vk: value => buildPlatformUrl(value, 'vk.com'),
   linkedin: buildLinkedinUrl,
-  youtube: value => buildPlatformUrl(value, 'www.youtube.com', '@'),
+  youtube: buildYoutubeUrl,
   twitter: buildTwitterUrl,
   website: normalizeExternalUrl,
   otherLink: normalizeExternalUrl,
