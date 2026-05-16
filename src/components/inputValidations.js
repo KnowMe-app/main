@@ -201,16 +201,16 @@ export const formatEmail = email => {
     const lowerFirstSegment = firstSegment.toLowerCase();
 
     if (['channel', 'c', 'user'].includes(lowerFirstSegment) && secondSegment) {
-      return secondSegment.replace(/^@/, '');
+      return `${lowerFirstSegment}/${secondSegment.replace(/^@/, '')}`;
     }
 
-    return firstSegment.replace(/^@/, '');
+    return firstSegment.replace(/^@/, '').toLowerCase();
   };
 
   export const formatYoutube = value => {
     const normalized = String(value ?? '').trim().replace(/\s/g, '');
 
-    return extractYoutubeIdentifier(normalized).toLowerCase();
+    return extractYoutubeIdentifier(normalized);
   };
 
   export const formatOther = value => {

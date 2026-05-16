@@ -47,6 +47,23 @@ const normalizeTwitterStorageValue = value =>
     .replace(/^@/, '')
     .toLowerCase();
 
+const normalizeYoutubeStorageValue = value => {
+  const normalized = stripUrlSuffix(value);
+  if (!normalized) return '';
+
+  const segments = normalized.split('/').filter(Boolean);
+  if (!segments.length) return '';
+
+  const [firstSegment, secondSegment] = segments;
+  const lowerFirstSegment = firstSegment.toLowerCase();
+
+  if (['channel', 'c', 'user'].includes(lowerFirstSegment) && secondSegment) {
+    return `${lowerFirstSegment}/${secondSegment.replace(/^@/, '')}`;
+  }
+
+  return firstSegment.replace(/^@/, '').toLowerCase();
+};
+
 export const resolvePpTechnicalInputSocialTarget = rawValue => {
   const trimmed = String(rawValue || '').trim();
   if (!trimmed) return null;
@@ -56,7 +73,7 @@ export const resolvePpTechnicalInputSocialTarget = rawValue => {
     { fieldName: 'facebook', pattern: /(?:https?:\/\/)?(?:www\.)?(?:facebook\.com|fb\.com)\/([^/?#]+)/i, useRawValue: true },
     { fieldName: 'tiktok', pattern: /(?:https?:\/\/)?(?:www\.)?tiktok\.com\/([^/?#]+)/i },
     { fieldName: 'linkedin', pattern: /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/([^?#]+)/i, normalizeValue: normalizeLinkedinStorageValue },
-    { fieldName: 'youtube', pattern: /(?:https?:\/\/)?(?:m\.|www\.)?(?:(?:youtube\.com)\/(?:@|c\/|channel\/|user\/)?|(?:youtu\.be)\/)([^/?#]+)/i },
+    { fieldName: 'youtube', pattern: /(?:https?:\/\/)?(?:m\.|www\.)?(?:(?:youtube\.com)\/|(?:youtu\.be)\/)(@?[^?#]+|(?:c|channel|user)\/[^?#]+)/i, normalizeValue: normalizeYoutubeStorageValue },
     { fieldName: 'twitter', pattern: /(?:https?:\/\/)?(?:www\.)?(?:twitter\.com|x\.com)\/@?([^/?#]+)/i, normalizeValue: normalizeTwitterStorageValue },
     { fieldName: 'telegram', pattern: /(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me|telegram\.dog)\/([^/?#]+)/i },
   ];
