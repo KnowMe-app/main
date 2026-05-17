@@ -341,6 +341,17 @@ const onValue = wrapAdminOnValue(firebaseOnValue, {
 const isValidId = isValidMatchingUserId;
 const isShortId = isShortMatchingUserId;
 const isAllowedIdForCollection = isAllowedIdForMatchingCollection;
+const NEW_USERS_USER_ID_PREFIXES = ['-O', 'AA', 'AB', 'VK', 'ID'];
+const isLikelyNewUsersUserId = id => {
+  const value = String(id || '').trim();
+  return Boolean(value) && (
+    isShortId(value) ||
+    NEW_USERS_USER_ID_PREFIXES.some(prefix => value.startsWith(prefix))
+  );
+};
+const getPreferredReactionSources = id => (
+  isLikelyNewUsersUserId(id) ? ['newUsers', 'users'] : ['users', 'newUsers']
+);
 
 const FETCH_USERS_BY_IDS_BATCH_SIZE = 100;
 const fetchNewUsersByIdsForMatching = (ids, batchSize = FETCH_USERS_BY_IDS_BATCH_SIZE) =>
@@ -1060,6 +1071,7 @@ const Matching = () => {
     favorites: new Set(),
     dislikes: new Set(),
   });
+  const reactionSourceByIdRef = useRef({});
   const additionalRulesToastRef = useRef('');
   const additionalProfileCacheRef = useRef(null);
   const additionalProfileRequestVersionRef = useRef(0);
@@ -1587,177 +1599,7 @@ const Matching = () => {
     loadCommentsFor(usersRef.current);
   }, [loadCommentsFor, multiDataOwnerIds]);
 
-  const loadSharedReactionCandidates = React.useCallback(async () => {
-    const viewerId = ownerId || getOwnerId();
-    const requestVersion = sharedReactionCandidateLoadVersionRef.current + 1;
-    sharedReactionCandidateLoadVersionRef.current = requestVersion;
-    const requestViewMode = viewMode;
-    const requestCollectionSource = collectionSource;
-    const canApplySharedCandidateResult = () => shouldApplySharedReactionCandidateResult({
-      requestVersion,
-      currentVersion: sharedReactionCandidateLoadVersionRef.current,
-      requestViewMode,
-      currentViewMode: viewModeRef.current,
-      requestCollectionSource,
-      currentCollectionSource: collectionSourceRef.current,
-    });
 
-    if (!['default', 'favorites', 'dislikes'].includes(requestViewMode)) {
-      setSharedReactionCandidateUsers([]);
-      return;
-    }
-
-    const candidateIds = [...new Set(sharedReactionIds.filter(Boolean))];
-    debugSharedReactionsLog(viewerId, 'shared reaction ids found for candidate pool', {
-      sharedReactionIds: summarizeIdsForDebug(candidateIds),
-      collectionSource,
-    });
-
-    if (!viewerId || candidateIds.length === 0) {
-      if (canApplySharedCandidateResult()) {
-        setSharedReactionCandidateUsers([]);
-      }
-      return;
-    }
-
-    const filteredInvalidIds = candidateIds.filter(id => !isMatchingCardId(id));
-    const filteredByCollectionIds = [];
-    const filteredByAccessIds = [];
-    const userCandidateIds = candidateIds.filter(isValidId);
-    const newUserCandidateIds = candidateIds.filter(isShortId);
-    let allowedNewUserIds = [];
-    let indexedAllowedNewUserIds = null;
-
-    if (newUserCandidateIds.length > 0) {
-      if (parsedAdditionalAccessRules.length > 0) {
-        const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(currentSearchKeySetKeys, viewerId)
-          ? currentSearchKeySetKeys
-          : await resolveAdditionalSearchKeySetKeysForMatching(null, viewerId);
-
-        if (!canApplySharedCandidateResult()) {
-          return;
-        }
-
-        if (resolvedSearchKeySetKeys.length === 0) {
-          filteredByAccessIds.push(...newUserCandidateIds);
-        } else {
-          const indexed = await getIndexedNewUsersIdsByRules({
-            rawRules: currentAdditionalAccessRules,
-            accessUserId: viewerId,
-            searchKeySetsOfExactUser: resolvedSearchKeySetKeys,
-            fetchMissingBuckets: true,
-            requireSearchKeySetKeys: true,
-            resultOffset: 0,
-            resultLimit: newUserCandidateIds.length,
-            candidateUserIds: newUserCandidateIds,
-            debugMatchingFlow: shouldDebugAdditionalMatching(viewerId),
-            debugToast: (message, data) => debugAdditionalToast(viewerId, message, data),
-          });
-          if (!canApplySharedCandidateResult()) {
-            return;
-          }
-          indexedAllowedNewUserIds = new Set(Array.isArray(indexed?.userIds) ? indexed.userIds : []);
-          allowedNewUserIds = newUserCandidateIds.filter(id => indexedAllowedNewUserIds.has(id));
-          filteredByAccessIds.push(...newUserCandidateIds.filter(id => !indexedAllowedNewUserIds.has(id)));
-        }
-      } else {
-        allowedNewUserIds = newUserCandidateIds;
-      }
-    }
-
-    const loadedUsers = [];
-    if (!canApplySharedCandidateResult()) {
-      return;
-    }
-
-    if (allowedNewUserIds.length > 0) {
-      const newUsersCards = await fetchNewUsersByIdsForMatching(allowedNewUserIds);
-      if (!canApplySharedCandidateResult()) {
-        return;
-      }
-      loadedUsers.push(
-        ...newUsersCards.map(user => ({
-          ...user,
-          __sourceCollection: 'newUsers',
-          __matchingAccessAllowed: parsedAdditionalAccessRules.length > 0,
-        }))
-      );
-    }
-
-    if (userCandidateIds.length > 0) {
-      const usersMap = await fetchUsersByIds(userCandidateIds, { collectionSource: 'users' });
-      if (!canApplySharedCandidateResult()) {
-        return;
-      }
-      loadedUsers.push(
-        ...userCandidateIds
-          .map(id => usersMap[id])
-          .filter(Boolean)
-          .map(user => ({ ...user, __sourceCollection: 'users' }))
-          .filter(user => canShowMatchingUser(user, { isAdmin }))
-      );
-    }
-
-    const loadedIds = new Set(loadedUsers.map(user => user.userId).filter(Boolean));
-    const missingAllowedIds = [
-      ...userCandidateIds,
-      ...allowedNewUserIds,
-    ].filter(id => !loadedIds.has(id));
-
-    if (!canApplySharedCandidateResult()) {
-      return;
-    }
-
-    loadedUsers.forEach(user => {
-      const { __matchingAccessAllowed, ...cacheUser } = user;
-      updateCard(user.userId, cacheUser);
-    });
-    setSharedReactionCandidateUsers(prev => mergeSharedReactionCandidateUsers({
-      currentUsers: prev,
-      loadedUsers,
-      candidateIds,
-    }));
-    void loadCommentsFor(loadedUsers);
-
-    if (!canApplySharedCandidateResult()) {
-      return;
-    }
-
-    debugSharedReactionsLog(viewerId, 'shared reaction candidate pool resolved', {
-      sharedReactionIds: summarizeIdsForDebug(candidateIds),
-      addedToCandidatePool: summarizeIdsForDebug(loadedUsers.map(user => user.userId)),
-      foundCollections: loadedUsers.map(user => ({
-        userId: user.userId,
-        collection: user.__sourceCollection || (isShortId(user.userId) ? 'newUsers' : 'users'),
-      })),
-      filteredInvalidIds: summarizeIdsForDebug(filteredInvalidIds),
-      filteredByCollectionIds: summarizeIdsForDebug(filteredByCollectionIds),
-      filteredByAccessOrSearchKeySets: summarizeIdsForDebug(filteredByAccessIds),
-      missingAllowedCards: summarizeIdsForDebug(missingAllowedIds),
-      allowedBySearchKeySetsCount: indexedAllowedNewUserIds ? indexedAllowedNewUserIds.size : null,
-      id0001SelfCheck: {
-        sharedReactionIdFound: candidateIds.includes(DEBUG_SHARED_NEW_USER_ID),
-        allowedBySearchKeySets: allowedNewUserIds.includes(DEBUG_SHARED_NEW_USER_ID),
-        filteredByAccessOrSearchKeySets: filteredByAccessIds.includes(DEBUG_SHARED_NEW_USER_ID),
-        foundInCollection: loadedUsers.find(user => user.userId === DEBUG_SHARED_NEW_USER_ID)?.__sourceCollection || null,
-        addedToCandidatePool: loadedIds.has(DEBUG_SHARED_NEW_USER_ID),
-      },
-    });
-  }, [
-    collectionSource,
-    currentAdditionalAccessRules,
-    currentSearchKeySetKeys,
-    loadCommentsFor,
-    ownerId,
-    isAdmin,
-    parsedAdditionalAccessRules.length,
-    sharedReactionIds,
-    viewMode,
-  ]);
-
-  useEffect(() => {
-    loadSharedReactionCandidates();
-  }, [loadSharedReactionCandidates]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
@@ -2396,11 +2238,10 @@ const Matching = () => {
     setFilters(nextFilters);
     const currentMode = viewModeRef.current;
     if (currentMode === 'favorites' || currentMode === 'dislikes') {
-      invalidateReactionAsyncWork();
-      resetReactionPaginationState(currentMode);
-      setUsers([]);
-      setLastKey(null);
-      setHasMore(true);
+      debugReactionFlowLog('handleFiltersChange:ignored-for-reaction-tab', {
+        viewMode: currentMode,
+        ignoredFilters: getActiveMatchingFiltersDebug(nextFilters || {}),
+      });
       return;
     }
 
@@ -2412,7 +2253,7 @@ const Matching = () => {
       setLastKey(null);
       setHasMore(true);
     }
-  }, [invalidateReactionAsyncWork, resetReactionPaginationState]);
+  }, []);
 
   const resetFiltersAndCache = React.useCallback(() => {
     const debugMatchingCache = isAdmin || shouldDebugAdditionalMatching(ownerId);
@@ -2457,42 +2298,161 @@ const Matching = () => {
     toast.success('Фільтри та кеш скинуто');
   }, [invalidateReactionAsyncWork, isAdmin, loadInitial, ownerId, resetReactionPaginationState]);
 
+  const classifyReactionIdsBySource = React.useCallback(async ids => {
+    const uniqueIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
+    const classifications = {};
+    const userReactionIds = [];
+    const newUserReactionIds = [];
+    const unclassifiedIds = [];
+
+    debugReactionFlowLog('classifyReactionIdsBySource:start', {
+      fullReactionIds: summarizeIdsForDebug(uniqueIds),
+      fullReactionIdsCount: uniqueIds.length,
+    });
+
+    await Promise.all(uniqueIds.map(async id => {
+      const preferredSources = getPreferredReactionSources(id);
+      const attempts = [];
+      let found = null;
+
+      for (const sourceName of preferredSources) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const snapshot = await get(refDb(database, `${sourceName}/${id}`));
+          const exists = snapshot.exists();
+          attempts.push({ source: sourceName, exists });
+          if (exists && !found) {
+            found = { source: sourceName };
+            break;
+          }
+        } catch (error) {
+          attempts.push({ source: sourceName, exists: false, error: error?.message || String(error) });
+        }
+      }
+
+      const source = found?.source || null;
+      classifications[id] = {
+        source,
+        preferredSources,
+        attempts,
+        reason: source ? `found-in-${source}` : 'missing-in-users-and-newUsers',
+      };
+
+      if (source === 'users') userReactionIds.push(id);
+      else if (source === 'newUsers') newUserReactionIds.push(id);
+      else unclassifiedIds.push(id);
+
+      debugReactionFlowLog('classifyReactionIdsBySource:id', {
+        id,
+        source,
+        preferredSources,
+        attempts,
+        reason: classifications[id].reason,
+      });
+    }));
+
+    const classifiedTotal = userReactionIds.length + newUserReactionIds.length + unclassifiedIds.length;
+    debugReactionFlowLog('classifyReactionIdsBySource:result', {
+      fullReactionIds: summarizeIdsForDebug(uniqueIds),
+      userReactionIds: summarizeIdsForDebug(userReactionIds),
+      newUserReactionIds: summarizeIdsForDebug(newUserReactionIds),
+      unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
+      counts: {
+        fullReactionIds: uniqueIds.length,
+        userReactionIds: userReactionIds.length,
+        newUserReactionIds: newUserReactionIds.length,
+        unclassifiedIds: unclassifiedIds.length,
+        classifiedTotal,
+        integrityOk: classifiedTotal === uniqueIds.length,
+      },
+      classifications,
+    });
+
+    if (classifiedTotal !== uniqueIds.length) {
+      console.error('[Matching][reactions] reaction ID classification integrity failed', {
+        fullReactionIds: uniqueIds,
+        userReactionIds,
+        newUserReactionIds,
+        unclassifiedIds,
+        classifications,
+      });
+    }
+
+    reactionSourceByIdRef.current = {
+      ...reactionSourceByIdRef.current,
+      ...Object.fromEntries(
+        Object.entries(classifications).map(([id, classification]) => [id, classification.source])
+      ),
+    };
+
+    return {
+      fullReactionIds: uniqueIds,
+      userReactionIds,
+      newUserReactionIds,
+      unclassifiedIds,
+      classifications,
+    };
+  }, []);
+
   const fetchReactionCardsByIds = React.useCallback(async ids => {
-    const uniqueIds = [...new Set((ids || []).filter(Boolean))];
-    const usersIds = uniqueIds.filter(isValidId);
-    const newUsersIds = uniqueIds.filter(isShortId);
+    const uniqueIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
+    const sourceById = reactionSourceByIdRef.current || {};
     const cachedEntries = new Map();
-    const missingUserIds = [];
-    const missingNewUserIds = [];
+    const missingBySource = {
+      users: [],
+      newUsers: [],
+    };
+    const unknownSourceIds = [];
 
     debugReactionFlowLog('fetchReactionCardsByIds:start', {
       ids: uniqueIds,
-      usersIds,
-      newUsersIds,
+      sourceById: Object.fromEntries(uniqueIds.map(id => [id, sourceById[id] || null])),
       viewMode: viewModeRef.current,
     });
 
     uniqueIds.forEach(id => {
       const cached = getCard(id);
-      const canUseCachedCard = cached && (
-        cached.__sourceCollection ||
-        cached.publish === true ||
-        !isShortId(id)
-      );
+      let source = sourceById[id];
+      if (!source && (cached?.__sourceCollection === 'users' || cached?.__sourceCollection === 'newUsers')) {
+        source = cached.__sourceCollection;
+        reactionSourceByIdRef.current = {
+          ...reactionSourceByIdRef.current,
+          [id]: source,
+        };
+      }
+      const canUseCachedCard = cached && (!source || !cached.__sourceCollection || cached.__sourceCollection === source);
 
       if (canUseCachedCard) {
         cachedEntries.set(id, {
           ...cached,
           userId: id,
-          __sourceCollection: cached.__sourceCollection || (isShortId(id) ? 'newUsers' : 'users'),
+          __sourceCollection: cached.__sourceCollection || source || getPreferredReactionSources(id)[0],
           __fromCardCache: true,
         });
-      } else if (isShortId(id)) {
-        missingNewUserIds.push(id);
-      } else if (isValidId(id)) {
-        missingUserIds.push(id);
+      } else if (source === 'users' || source === 'newUsers') {
+        missingBySource[source].push(id);
+      } else {
+        unknownSourceIds.push(id);
       }
     });
+
+    if (unknownSourceIds.length > 0) {
+      debugReactionFlowLog('fetchReactionCardsByIds:unknown-source-classification', {
+        unknownSourceIds: summarizeIdsForDebug(unknownSourceIds),
+      });
+      const classification = await classifyReactionIdsBySource(unknownSourceIds);
+      classification.userReactionIds.forEach(id => missingBySource.users.push(id));
+      classification.newUserReactionIds.forEach(id => missingBySource.newUsers.push(id));
+      if (classification.unclassifiedIds.length > 0) {
+        debugReactionFlowLog('fetchReactionCardsByIds:missing-unclassified-ids', {
+          missingIds: summarizeIdsForDebug(classification.unclassifiedIds),
+          classifications: classification.classifications,
+        });
+      }
+    }
+
+    const missingUserIds = [...new Set(missingBySource.users.filter(id => !cachedEntries.has(id)))];
+    const missingNewUserIds = [...new Set(missingBySource.newUsers.filter(id => !cachedEntries.has(id)))];
 
     debugReactionFlowLog('fetchReactionCardsByIds:request-backend', {
       requestedIds: uniqueIds,
@@ -2509,19 +2469,20 @@ const Matching = () => {
     debugReactionFlowLog('fetchReactionCardsByIds:backend-returned', {
       usersMapIds: Object.keys(usersMap || {}),
       newUsersCardIds: (newUsersCards || []).map(card => card.userId).filter(Boolean),
+      missingUsersIds: missingUserIds.filter(id => !usersMap?.[id]),
+      missingNewUsersIds: missingNewUserIds.filter(id => !(newUsersCards || []).some(card => card.userId === id)),
     });
 
     const result = {};
-    usersIds.forEach(id => {
-      const user = cachedEntries.get(id) || usersMap?.[id];
-      if (user) {
-        result[id] = { ...user, userId: id, __sourceCollection: 'users' };
-      }
-    });
-    newUsersIds.forEach(id => {
-      const user = cachedEntries.get(id) || newUsersCards.find(card => card.userId === id);
-      if (user) {
-        result[id] = { ...user, userId: id, __sourceCollection: 'newUsers' };
+    uniqueIds.forEach(id => {
+      const source = reactionSourceByIdRef.current?.[id];
+      const cached = cachedEntries.get(id);
+      const fetchedUser = usersMap?.[id];
+      const fetchedNewUser = (newUsersCards || []).find(card => card.userId === id);
+      const user = cached || (source === 'newUsers' ? fetchedNewUser : fetchedUser);
+
+      if (user && (source === 'users' || source === 'newUsers')) {
+        result[id] = { ...user, userId: id, __sourceCollection: source };
       }
     });
 
@@ -2533,37 +2494,61 @@ const Matching = () => {
     });
 
     return result;
-  }, []);
+  }, [classifyReactionIdsBySource]);
 
   const getAccessibleReactionIds = React.useCallback(async (reactionIds, accessSnapshot = {}) => {
-    const uniqueIds = [...new Set((reactionIds || []).filter(Boolean))];
-    const userReactionIds = uniqueIds.filter(isValidId);
-    const newUserReactionIds = uniqueIds.filter(isShortId);
-    debugReactionFlowLog('getAccessibleReactionIds:start', {
-      inputIds: uniqueIds,
+    const uniqueIds = [...new Set((reactionIds || []).map(id => String(id || '').trim()).filter(Boolean))];
+    const {
       userReactionIds,
       newUserReactionIds,
+      unclassifiedIds,
+      classifications,
+    } = await classifyReactionIdsBySource(uniqueIds);
+
+    debugReactionFlowLog('getAccessibleReactionIds:start', {
+      inputIds: summarizeIdsForDebug(uniqueIds),
+      userReactionIds: summarizeIdsForDebug(userReactionIds),
+      newUserReactionIds: summarizeIdsForDebug(newUserReactionIds),
+      unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
+      classifications,
       viewMode: viewModeRef.current,
       collectionSource: accessSnapshot.collectionSource,
     });
+
+    if (unclassifiedIds.length > 0) {
+      debugReactionFlowLog('getAccessibleReactionIds:missing-unclassified-ids', {
+        unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
+        classifications: Object.fromEntries(unclassifiedIds.map(id => [id, classifications[id]])),
+      });
+    }
+
     if (newUserReactionIds.length === 0) {
-      debugReactionFlowLog('getAccessibleReactionIds:users-only-result', { reactionIds: userReactionIds });
-      return userReactionIds;
+      debugReactionFlowLog('getAccessibleReactionIds:users-only-result', {
+        reactionIds: summarizeIdsForDebug(userReactionIds),
+        unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
+      });
+      return uniqueIds.filter(id => userReactionIds.includes(id));
     }
 
     const rawRulesForRequest = accessSnapshot.rawRules ?? currentAdditionalAccessRules;
     const parsedRulesForRequest = parseAdditionalAccessRuleGroups(rawRulesForRequest);
     if (parsedRulesForRequest.length === 0) {
-      const resultIds = uniqueIds.filter(isMatchingCardId);
-      debugReactionFlowLog('getAccessibleReactionIds:no-rules-result', { reactionIds: resultIds });
+      const resultIds = uniqueIds.filter(id => userReactionIds.includes(id) || newUserReactionIds.includes(id));
+      debugReactionFlowLog('getAccessibleReactionIds:no-rules-result', {
+        reactionIds: summarizeIdsForDebug(resultIds),
+        unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
+      });
       return resultIds;
     }
 
     const searchKeySetsForRequest = accessSnapshot.searchKeySetsOfExactUser ?? currentSearchKeySetKeys;
     const viewerId = accessSnapshot.accessUserId || ownerId || getOwnerId();
     if (!viewerId) {
-      debugReactionFlowLog('getAccessibleReactionIds:no-viewer-result', { reactionIds: userReactionIds });
-      return userReactionIds;
+      debugReactionFlowLog('getAccessibleReactionIds:no-viewer-result', {
+        reactionIds: summarizeIdsForDebug(userReactionIds),
+        blockedNewUserReactionIds: summarizeIdsForDebug(newUserReactionIds),
+      });
+      return uniqueIds.filter(id => userReactionIds.includes(id));
     }
 
     const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(searchKeySetsForRequest, viewerId)
@@ -2573,14 +2558,15 @@ const Matching = () => {
     if (!resolvedSearchKeySetKeys.length) {
       debugReactionFlowLog('getAccessibleReactionIds:no-search-key-sets-result', {
         viewerId,
-        reactionIds: userReactionIds,
+        reactionIds: summarizeIdsForDebug(userReactionIds),
+        blockedNewUserReactionIds: summarizeIdsForDebug(newUserReactionIds),
       });
-      return userReactionIds;
+      return uniqueIds.filter(id => userReactionIds.includes(id));
     }
 
     debugReactionFlowLog('getAccessibleReactionIds:index-request', {
       viewerId,
-      candidateUserIds: newUserReactionIds,
+      candidateUserIds: summarizeIdsForDebug(newUserReactionIds),
       searchKeySetKeysCount: resolvedSearchKeySetKeys.length,
     });
 
@@ -2598,18 +2584,145 @@ const Matching = () => {
     });
     const allowedIds = new Set(Array.isArray(indexed?.userIds) ? indexed.userIds : []);
     const allowedNewUserReactionIds = newUserReactionIds.filter(id => allowedIds.has(id));
+    const blockedNewUserReactionIds = newUserReactionIds.filter(id => !allowedIds.has(id));
     const resultIds = uniqueIds.filter(id => userReactionIds.includes(id) || allowedNewUserReactionIds.includes(id));
     debugReactionFlowLog('getAccessibleReactionIds:index-result', {
-      indexedIds: Array.from(allowedIds),
-      allowedNewUserReactionIds,
-      reactionIds: resultIds,
+      indexedIds: summarizeIdsForDebug(Array.from(allowedIds)),
+      allowedNewUserReactionIds: summarizeIdsForDebug(allowedNewUserReactionIds),
+      blockedNewUserReactionIds: summarizeIdsForDebug(blockedNewUserReactionIds),
+      unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
+      reactionIds: summarizeIdsForDebug(resultIds),
     });
     return resultIds;
   }, [
+    classifyReactionIdsBySource,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
     ownerId,
   ]);
+
+  const loadSharedReactionCandidates = React.useCallback(async () => {
+    const viewerId = ownerId || getOwnerId();
+    const requestVersion = sharedReactionCandidateLoadVersionRef.current + 1;
+    sharedReactionCandidateLoadVersionRef.current = requestVersion;
+    const requestViewMode = viewMode;
+    const requestCollectionSource = collectionSource;
+    const canApplySharedCandidateResult = () => shouldApplySharedReactionCandidateResult({
+      requestVersion,
+      currentVersion: sharedReactionCandidateLoadVersionRef.current,
+      requestViewMode,
+      currentViewMode: viewModeRef.current,
+      requestCollectionSource,
+      currentCollectionSource: collectionSourceRef.current,
+    });
+
+    if (!['default', 'favorites', 'dislikes'].includes(requestViewMode)) {
+      setSharedReactionCandidateUsers([]);
+      return;
+    }
+
+    const candidateIds = [...new Set(sharedReactionIds.filter(Boolean))];
+    debugSharedReactionsLog(viewerId, 'shared reaction ids found for candidate pool', {
+      sharedReactionIds: summarizeIdsForDebug(candidateIds),
+      collectionSource,
+    });
+
+    if (!viewerId || candidateIds.length === 0) {
+      if (canApplySharedCandidateResult()) {
+        setSharedReactionCandidateUsers([]);
+      }
+      return;
+    }
+
+    const reactionAccessSnapshot = {
+      accessUserId: viewerId,
+      collectionSource,
+      rawRules: currentAdditionalAccessRules,
+      searchKeySetsOfExactUser: currentSearchKeySetKeys,
+    };
+    const accessibleCandidateIds = await getAccessibleReactionIds(candidateIds, reactionAccessSnapshot);
+    if (!canApplySharedCandidateResult()) {
+      return;
+    }
+
+    const recordsById = accessibleCandidateIds.length > 0
+      ? await fetchReactionCardsByIds(accessibleCandidateIds)
+      : {};
+    if (!canApplySharedCandidateResult()) {
+      return;
+    }
+
+    const loadedUsers = accessibleCandidateIds
+      .map(id => recordsById?.[id])
+      .filter(Boolean)
+      .filter(user => canShowMatchingUser(user, { isAdmin }))
+      .map(user => ({
+        ...user,
+        ...(user.__sourceCollection === 'newUsers' ? { __matchingAccessAllowed: true } : {}),
+      }));
+    const loadedIds = new Set(loadedUsers.map(user => user.userId).filter(Boolean));
+    const filteredInvalidIds = candidateIds.filter(id => !reactionSourceByIdRef.current?.[id]);
+    const filteredByCollectionIds = [];
+    const filteredByAccessIds = candidateIds.filter(id => !accessibleCandidateIds.includes(id) && reactionSourceByIdRef.current?.[id] === 'newUsers');
+    const missingAllowedIds = accessibleCandidateIds.filter(id => !loadedIds.has(id));
+    const allowedNewUserIds = accessibleCandidateIds.filter(id => reactionSourceByIdRef.current?.[id] === 'newUsers');
+    const indexedAllowedNewUserIds = new Set(allowedNewUserIds);
+
+    if (!canApplySharedCandidateResult()) {
+      return;
+    }
+
+    loadedUsers.forEach(user => {
+      const { __matchingAccessAllowed, ...cacheUser } = user;
+      updateCard(user.userId, cacheUser);
+    });
+    setSharedReactionCandidateUsers(prev => mergeSharedReactionCandidateUsers({
+      currentUsers: prev,
+      loadedUsers,
+      candidateIds,
+    }));
+    void loadCommentsFor(loadedUsers);
+
+    if (!canApplySharedCandidateResult()) {
+      return;
+    }
+
+    debugSharedReactionsLog(viewerId, 'shared reaction candidate pool resolved', {
+      sharedReactionIds: summarizeIdsForDebug(candidateIds),
+      addedToCandidatePool: summarizeIdsForDebug(loadedUsers.map(user => user.userId)),
+      foundCollections: loadedUsers.map(user => ({
+        userId: user.userId,
+        collection: user.__sourceCollection || (isShortId(user.userId) ? 'newUsers' : 'users'),
+      })),
+      filteredInvalidIds: summarizeIdsForDebug(filteredInvalidIds),
+      filteredByCollectionIds: summarizeIdsForDebug(filteredByCollectionIds),
+      filteredByAccessOrSearchKeySets: summarizeIdsForDebug(filteredByAccessIds),
+      missingAllowedCards: summarizeIdsForDebug(missingAllowedIds),
+      allowedBySearchKeySetsCount: indexedAllowedNewUserIds ? indexedAllowedNewUserIds.size : null,
+      id0001SelfCheck: {
+        sharedReactionIdFound: candidateIds.includes(DEBUG_SHARED_NEW_USER_ID),
+        allowedBySearchKeySets: allowedNewUserIds.includes(DEBUG_SHARED_NEW_USER_ID),
+        filteredByAccessOrSearchKeySets: filteredByAccessIds.includes(DEBUG_SHARED_NEW_USER_ID),
+        foundInCollection: loadedUsers.find(user => user.userId === DEBUG_SHARED_NEW_USER_ID)?.__sourceCollection || null,
+        addedToCandidatePool: loadedIds.has(DEBUG_SHARED_NEW_USER_ID),
+      },
+    });
+  }, [
+    collectionSource,
+    currentAdditionalAccessRules,
+    currentSearchKeySetKeys,
+    fetchReactionCardsByIds,
+    getAccessibleReactionIds,
+    loadCommentsFor,
+    ownerId,
+    isAdmin,
+    sharedReactionIds,
+    viewMode,
+  ]);
+
+  useEffect(() => {
+    loadSharedReactionCandidates();
+  }, [loadSharedReactionCandidates]);
 
   const loadReactionCardsPage = React.useCallback(async ({
     reactionIds,
@@ -2662,27 +2775,14 @@ const Matching = () => {
           filters: getActiveMatchingFiltersDebug(filtersRef.current || {}),
         });
 
-        const uiFilteredUsers = applyMatchingUiFiltersToUsers({
-          users: scopedCandidates,
-          filters: filtersRef.current || {},
-          filterMainFn: filterMain,
-          favoriteUsers: favoriteUsersRef.current,
-          dislikeUsers: dislikeUsersRef.current,
-          excludeReactionUsers: false,
-          roleIndexSets,
-          collectionSource,
+        debugReactionFlowLog('loadReactionCardsPage:reaction-tabs-skip-ui-filters', {
           viewMode: viewModeRef.current,
+          users: summarizeUsersForReactionDebug(scopedCandidates),
+          ignoredFilters: getActiveMatchingFiltersDebug(filtersRef.current || {}),
+          ignoredFilterTypes: ['userRole', 'age', 'blood', 'reaction', 'favOnly', 'collectionSource'],
         });
 
-        debugReactionFlowLog('loadReactionCardsPage:after-applyMatchingUiFiltersToUsers', {
-          viewMode: viewModeRef.current,
-          users: summarizeUsersForReactionDebug(uiFilteredUsers),
-          filteredOutByUiIds: scopedCandidates
-            .map(user => user.userId)
-            .filter(id => !uiFilteredUsers.some(user => user.userId === id)),
-        });
-
-        return uiFilteredUsers;
+        return scopedCandidates;
       },
       debugLog: (stage, payload) => debugReactionFlowLog(`loadReactionCardsPageRecords:${stage}`, {
         viewMode: viewModeRef.current,
@@ -2707,7 +2807,6 @@ const Matching = () => {
     collectionSource,
     fetchReactionCardsByIds,
     isAdmin,
-    roleIndexSets,
   ]);
 
   const loadReactionCards = async reactionType => {
@@ -3002,13 +3101,13 @@ const Matching = () => {
           targetVisibleCount,
           currentVisibleCount,
         });
-        const hasAccessScopedNewUserReactionIds = [
+        const hasAccessScopedNewUsersUserIds = [
           ...reactionMapIds,
           ...(currentPagination.ids || []),
-        ].some(isShortId);
+        ].some(id => reactionSourceByIdRef.current?.[id] === 'newUsers' || isLikelyNewUsersUserId(id));
         const shouldRefreshReactionIds = Boolean(
           parsedAdditionalAccessRules.length > 0 &&
-          (collectionSource === 'newUsers' || hasAccessScopedNewUserReactionIds)
+          (collectionSource === 'newUsers' || hasAccessScopedNewUsersUserIds)
         );
         const freshProfileCache = shouldRefreshReactionIds
           ? await ensureFreshAdditionalMatchingProfile({
