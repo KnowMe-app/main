@@ -99,6 +99,11 @@ import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
 import { incrementMatchingLoadStat, logMatchingLocalStorageCacheStats, normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard } from '../utils/cardIndex';
+import {
+  cleanupMatchingLocalStorageCache,
+  clearMatchingLocalStorageCache,
+  logMatchingLocalStorageDebugStats,
+} from '../utils/searchKeyCache';
 import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
@@ -1151,8 +1156,15 @@ const Matching = () => {
     };
   }, [collectionSource, currentAdditionalAccessRules, currentSearchKeySetKeys, ownerId]);
   useEffect(() => {
-    logMatchingLocalStorageCacheStats('matching mount');
-  }, []);
+    const debugMatchingCache = isAdmin || shouldDebugAdditionalMatching(ownerId);
+    const cleanupStats = cleanupMatchingLocalStorageCache({ debug: debugMatchingCache });
+
+    if (debugMatchingCache) {
+      logMatchingLocalStorageCacheStats('matching mount');
+      logMatchingLocalStorageDebugStats('matching mount');
+      console.info('[Matching cache] cleanup summary:', cleanupStats);
+    }
+  }, [isAdmin, ownerId]);
 
   useEffect(() => {
     window.history.scrollRestoration = 'manual';
@@ -2403,13 +2415,47 @@ const Matching = () => {
   }, [invalidateReactionAsyncWork, resetReactionPaginationState]);
 
   const resetFiltersAndCache = React.useCallback(() => {
+    const debugMatchingCache = isAdmin || shouldDebugAdditionalMatching(ownerId);
+    const removedLocalStorageKeys = clearMatchingLocalStorageCache({ debug: debugMatchingCache });
     localStorage.removeItem('matchingFilters');
     localStorage.removeItem(SEARCH_KEY);
     clearAllCardsCache();
+
+    emptyAutoLoadMoreAttemptsRef.current = 0;
+    autoLoadMoreSignatureRef.current = '';
+    loadingRef.current = false;
+    loadedIdsRef.current = new Set();
+    additionalRulesToastRef.current = '';
+    additionalProfileCacheRef.current = null;
+    additionalProfileRequestVersionRef.current += 1;
+    additionalMatchingFetchVersionRef.current += 1;
+    additionalLoadMoreFetchVersionRef.current += 1;
+    additionalMatchingApplyVersionRef.current += 1;
+    invalidateReactionAsyncWork();
+    resetReactionPaginationState();
+    filtersRef.current = {};
+    viewModeRef.current = 'default';
+    setFilters({});
+    setUsers([]);
+    setAdditionalNewUsers([]);
+    setAdditionalNextOffset(0);
+    setSharedReactionIds([]);
+    setSharedReactionCandidateUsers([]);
+    setPhotoCacheByUserId({});
+    setLastKey(null);
+    setHasMore(true);
+    setLoading(false);
+    setViewMode('default');
     setFilterResetToken(prev => prev + 1);
-    reloadDefault();
+
+    if (debugMatchingCache) {
+      console.info('[Matching cache] reset removed keys:', removedLocalStorageKeys);
+      logMatchingLocalStorageDebugStats('after reset');
+    }
+
+    loadInitial();
     toast.success('Фільтри та кеш скинуто');
-  }, [reloadDefault]);
+  }, [invalidateReactionAsyncWork, isAdmin, loadInitial, ownerId, resetReactionPaginationState]);
 
   const fetchReactionCardsByIds = React.useCallback(async ids => {
     const uniqueIds = [...new Set((ids || []).filter(Boolean))];
