@@ -137,7 +137,7 @@ describe('canShowMatchingUser', () => {
 });
 
 describe('mergeMatchingCandidateUsers', () => {
-  it('does not inject unpublished users cards from shared reactions for non-admin viewers', () => {
+  it('does not inject shared reaction cards into the default users deck for non-admin viewers', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
 
     const result = mergeMatchingCandidateUsers({
@@ -151,10 +151,10 @@ describe('mergeMatchingCandidateUsers', () => {
       collectionSource: 'users',
     });
 
-    expect(result.map(user => user.userId)).toEqual(['publishedBase', 'publishedShared']);
+    expect(result.map(user => user.userId)).toEqual(['publishedBase']);
   });
 
-  it('keeps an allowed shared ID0001 newUsers candidate after searchKeySets access filtering', () => {
+  it('does not inject shared ID0001 newUsers candidates into the default deck', () => {
     const { mergeMatchingCandidateUsers } = require('../reactionPriority');
 
     const result = mergeMatchingCandidateUsers({
@@ -171,7 +171,7 @@ describe('mergeMatchingCandidateUsers', () => {
       hasAdditionalAccessRules: true,
     });
 
-    expect(result.map(user => user.userId)).toEqual(['ID0001']);
+    expect(result.map(user => user.userId)).toEqual([]);
   });
 
   it('does not inject a shared ID0001 newUsers candidate without searchKeySets access', () => {
@@ -188,6 +188,64 @@ describe('mergeMatchingCandidateUsers', () => {
     });
 
     expect(result).toEqual([]);
+  });
+
+  it('renders published base users in the default users deck with empty filters', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+
+    const result = mergeMatchingCandidateUsers({
+      users: [
+        { userId: 'publishedBase', publish: true, __sourceCollection: 'users' },
+        { userId: 'unpublishedBase', publish: false, __sourceCollection: 'users' },
+      ],
+      sharedReactionCandidateUsers: [{ userId: 'sharedFavorite', publish: true, __sourceCollection: 'users' }],
+      isAdmin: false,
+      viewMode: 'default',
+      collectionSource: 'users',
+      favoriteUsers: {},
+      dislikeUsers: {},
+    });
+
+    expect(result.map(user => user.userId)).toEqual(['publishedBase']);
+  });
+
+  it('keeps default users deck isolated from source-aware shared reaction candidates', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+
+    const result = mergeMatchingCandidateUsers({
+      users: [{ userId: 'normalUser', publish: true, __sourceCollection: 'users' }],
+      sharedReactionCandidateUsers: [
+        { userId: 'sharedFavorite', publish: true, __sourceCollection: 'users' },
+        { userId: 'ID0001', __sourceCollection: 'newUsers', __matchingAccessAllowed: true },
+      ],
+      isAdmin: false,
+      viewMode: 'default',
+      collectionSource: 'users',
+      favoriteUsers: {},
+      dislikeUsers: {},
+      hasAdditionalAccessRules: true,
+    });
+
+    expect(result.map(user => user.userId)).toEqual(['normalUser']);
+  });
+
+  it('keeps normal default users visible when shared reaction candidates exist', () => {
+    const { mergeMatchingCandidateUsers } = require('../reactionPriority');
+
+    const result = mergeMatchingCandidateUsers({
+      users: [
+        { userId: 'normalA', publish: true, __sourceCollection: 'users' },
+        { userId: 'normalB', publish: true, __sourceCollection: 'users' },
+      ],
+      sharedReactionCandidateUsers: [{ userId: 'sharedDislike', publish: true, __sourceCollection: 'users' }],
+      isAdmin: false,
+      viewMode: 'default',
+      collectionSource: 'users',
+      favoriteUsers: {},
+      dislikeUsers: { sharedDislike: true },
+    });
+
+    expect(result.map(user => user.userId)).toEqual(['normalA', 'normalB']);
   });
 
 

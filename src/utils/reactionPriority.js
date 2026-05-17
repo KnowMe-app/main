@@ -148,6 +148,8 @@ export const mergeMatchingCandidateUsers = ({
   favoriteUsers = ownFavoriteUsers,
   dislikeUsers = ownDislikeUsers,
 } = {}) => {
+  const isDefaultMode = viewMode === 'default';
+  const isDefaultUsersDeck = isDefaultMode && collectionSource === 'users';
   let baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin }));
 
   const allowedBySetKey = new Set(additionalNewUsers.map(user => user.userId).filter(Boolean));
@@ -161,15 +163,23 @@ export const mergeMatchingCandidateUsers = ({
     canShowMatchingUser(user, { isAdmin }) && isAllowedNewUsersCandidate(user)
   );
 
-  if (hasAdditionalAccessRules) {
+  if (hasAdditionalAccessRules && !isDefaultUsersDeck) {
     baseUsers = baseUsers.filter(isAllowedNewUsersCandidate);
   }
 
-  const shouldInjectAdditionalCards =
-    viewMode === 'default' &&
-    collectionSource === 'newUsers' &&
-    hasAdditionalAccessRules &&
-    additionalNewUsers.length > 0;
+  if (isDefaultMode) {
+    const defaultCandidates = collectionSource === 'newUsers' && hasAdditionalAccessRules
+      ? [
+        ...baseUsers,
+        ...additionalNewUsers.filter(user => user?.userId && canInjectCandidate(user)),
+      ]
+      : baseUsers;
+    const byId = new Map(defaultCandidates.map(user => [user.userId, user]));
+
+    return Array.from(byId.values()).filter(
+      user => user?.userId && !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
+    );
+  }
 
   const byId = new Map(baseUsers.map(user => [user.userId, user]));
   const injectCandidate = user => {
@@ -183,10 +193,6 @@ export const mergeMatchingCandidateUsers = ({
     }
   };
 
-  if (shouldInjectAdditionalCards) {
-    additionalNewUsers.forEach(injectCandidate);
-  }
-
   sharedReactionCandidateUsers.forEach(injectCandidate);
 
   const mergedUsers = Array.from(byId.values()).filter(canInjectCandidate);
@@ -199,12 +205,6 @@ export const mergeMatchingCandidateUsers = ({
   if (viewMode === 'dislikes') {
     return mergedUsers.filter(
       user => Boolean(dislikeUsers[user.userId]) && !favoriteUsers[user.userId]
-    );
-  }
-
-  if (viewMode === 'default') {
-    return mergedUsers.filter(
-      user => !favoriteUsers[user.userId] && !dislikeUsers[user.userId]
     );
   }
 

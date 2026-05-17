@@ -14,7 +14,7 @@ describe('Matching shared reaction card UI', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
     expect(source).toContain('const fetchReactionCardsByIds = React.useCallback');
-    expect(source).toContain('missingUserIds.length ? fetchUsersByIds(missingUserIds)');
+    expect(source).toContain("missingUserIds.length ? fetchUsersByIds(missingUserIds, { collectionSource: 'users' })");
     expect(source).toContain('missingNewUserIds.length ? fetchNewUsersByIdsForMatching(missingNewUserIds)');
     expect(source).not.toContain('const usersMap = await fetchUsersByIds(page.pageIds);');
   });
@@ -24,17 +24,17 @@ describe('Matching shared reaction card UI', () => {
     const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
     const configSource = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
 
-    expect(matchingSource).toContain('missingUserIds.length ? fetchUsersByIds(missingUserIds)');
+    expect(matchingSource).toContain("missingUserIds.length ? fetchUsersByIds(missingUserIds, { collectionSource: 'users' })");
     expect(matchingSource).toContain('missingNewUserIds.length ? fetchNewUsersByIdsForMatching(missingNewUserIds)');
-    expect(configSource).toContain('getAllUserPhotos(id)');
-    expect(configSource).toContain('photos: Array.isArray(photos) ? photos : []');
+    expect(configSource).toContain('getAllUserPhotos(userId)');
+    expect(configSource).toContain('photos,');
   });
 
   it('refreshes mixed users/newUsers reaction pagination when access scope changes in users mode', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
-    expect(source).toContain('const hasAccessScopedNewUserReactionIds = [');
-    expect(source).toContain("(collectionSource === 'newUsers' || hasAccessScopedNewUserReactionIds)");
+    expect(source).toContain('const hasAccessScopedNewUsersUserIds = [');
+    expect(source).toContain("(collectionSource === 'newUsers' || hasAccessScopedNewUsersUserIds)");
     expect(source).toContain('currentPagination.accessSnapshotKey !== reactionAccessSnapshotKey');
     expect(source).toContain('if (didAccessSnapshotChange) return page.users;');
     expect(source).toContain('const canUseCachedCard = cached && (');

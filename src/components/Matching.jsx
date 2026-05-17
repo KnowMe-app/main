@@ -2621,6 +2621,16 @@ const Matching = () => {
       return;
     }
 
+    if (requestViewMode === 'default' && requestCollectionSource === 'users') {
+      if (canApplySharedCandidateResult()) {
+        setSharedReactionCandidateUsers([]);
+      }
+      debugSharedReactionsLog(viewerId, 'skipped shared reaction candidate hydration for default users deck', {
+        collectionSource: requestCollectionSource,
+      });
+      return;
+    }
+
     const candidateIds = [...new Set(sharedReactionIds.filter(Boolean))];
     debugSharedReactionsLog(viewerId, 'shared reaction ids found for candidate pool', {
       sharedReactionIds: summarizeIdsForDebug(candidateIds),
