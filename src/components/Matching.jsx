@@ -294,6 +294,24 @@ const debugSharedReactionsLog = (viewerId, message, data = {}) => {
   console.info('[Matching][sharedReactions debug]', message, data);
 };
 
+const summarizeUsersForReactionDebug = (users, limit = 25) => ({
+  count: (users || []).length,
+  ids: (users || []).map(user => user?.userId).filter(Boolean).slice(0, limit),
+  sources: (users || []).slice(0, limit).map(user => ({
+    userId: user?.userId,
+    source: user?.__sourceCollection,
+    publish: user?.publish,
+    matchingAccessAllowed: user?.__matchingAccessAllowed,
+    fromCardCache: user?.__fromCardCache,
+  })),
+});
+
+const summarizeReactionMapForDebug = map => summarizeIdsForDebug(Object.keys(normalizeReactionMap(map)));
+
+const debugReactionFlowLog = (stage, data = {}) => {
+  console.info('[Matching][reactionDebug]', stage, data);
+};
+
 const debugMissingNewUsersToast = (accessUserId, indexedCount) => {
   if (!shouldDebugAdditionalMatching(accessUserId) || indexedCount <= 0) return;
 
@@ -2401,6 +2419,13 @@ const Matching = () => {
     const missingUserIds = [];
     const missingNewUserIds = [];
 
+    debugReactionFlowLog('fetchReactionCardsByIds:start', {
+      ids: uniqueIds,
+      usersIds,
+      newUsersIds,
+      viewMode: viewModeRef.current,
+    });
+
     uniqueIds.forEach(id => {
       const cached = getCard(id);
       const canUseCachedCard = cached && (
@@ -2423,10 +2448,22 @@ const Matching = () => {
       }
     });
 
+    debugReactionFlowLog('fetchReactionCardsByIds:request-backend', {
+      requestedIds: uniqueIds,
+      cacheHitIds: Array.from(cachedEntries.keys()),
+      missingUserIds,
+      missingNewUserIds,
+    });
+
     const [usersMap, newUsersCards] = await Promise.all([
       missingUserIds.length ? fetchUsersByIds(missingUserIds, { collectionSource: 'users' }) : Promise.resolve({}),
       missingNewUserIds.length ? fetchNewUsersByIdsForMatching(missingNewUserIds) : Promise.resolve([]),
     ]);
+
+    debugReactionFlowLog('fetchReactionCardsByIds:backend-returned', {
+      usersMapIds: Object.keys(usersMap || {}),
+      newUsersCardIds: (newUsersCards || []).map(card => card.userId).filter(Boolean),
+    });
 
     const result = {};
     usersIds.forEach(id => {
@@ -2442,6 +2479,13 @@ const Matching = () => {
       }
     });
 
+    debugReactionFlowLog('fetchReactionCardsByIds:result', {
+      requestedIds: uniqueIds,
+      returnedIds: Object.keys(result),
+      missingResultIds: uniqueIds.filter(id => !result[id]),
+      users: summarizeUsersForReactionDebug(Object.values(result)),
+    });
+
     return result;
   }, []);
 
@@ -2449,23 +2493,50 @@ const Matching = () => {
     const uniqueIds = [...new Set((reactionIds || []).filter(Boolean))];
     const userReactionIds = uniqueIds.filter(isValidId);
     const newUserReactionIds = uniqueIds.filter(isShortId);
-    if (newUserReactionIds.length === 0) return userReactionIds;
+    debugReactionFlowLog('getAccessibleReactionIds:start', {
+      inputIds: uniqueIds,
+      userReactionIds,
+      newUserReactionIds,
+      viewMode: viewModeRef.current,
+      collectionSource: accessSnapshot.collectionSource,
+    });
+    if (newUserReactionIds.length === 0) {
+      debugReactionFlowLog('getAccessibleReactionIds:users-only-result', { reactionIds: userReactionIds });
+      return userReactionIds;
+    }
 
     const rawRulesForRequest = accessSnapshot.rawRules ?? currentAdditionalAccessRules;
     const parsedRulesForRequest = parseAdditionalAccessRuleGroups(rawRulesForRequest);
     if (parsedRulesForRequest.length === 0) {
-      return uniqueIds.filter(isMatchingCardId);
+      const resultIds = uniqueIds.filter(isMatchingCardId);
+      debugReactionFlowLog('getAccessibleReactionIds:no-rules-result', { reactionIds: resultIds });
+      return resultIds;
     }
 
     const searchKeySetsForRequest = accessSnapshot.searchKeySetsOfExactUser ?? currentSearchKeySetKeys;
     const viewerId = accessSnapshot.accessUserId || ownerId || getOwnerId();
-    if (!viewerId) return userReactionIds;
+    if (!viewerId) {
+      debugReactionFlowLog('getAccessibleReactionIds:no-viewer-result', { reactionIds: userReactionIds });
+      return userReactionIds;
+    }
 
     const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(searchKeySetsForRequest, viewerId)
       ? searchKeySetsForRequest
       : await resolveAdditionalSearchKeySetKeysForMatching(null, viewerId);
 
-    if (!resolvedSearchKeySetKeys.length) return userReactionIds;
+    if (!resolvedSearchKeySetKeys.length) {
+      debugReactionFlowLog('getAccessibleReactionIds:no-search-key-sets-result', {
+        viewerId,
+        reactionIds: userReactionIds,
+      });
+      return userReactionIds;
+    }
+
+    debugReactionFlowLog('getAccessibleReactionIds:index-request', {
+      viewerId,
+      candidateUserIds: newUserReactionIds,
+      searchKeySetKeysCount: resolvedSearchKeySetKeys.length,
+    });
 
     const indexed = await getIndexedNewUsersIdsByRules({
       rawRules: rawRulesForRequest,
@@ -2481,7 +2552,13 @@ const Matching = () => {
     });
     const allowedIds = new Set(Array.isArray(indexed?.userIds) ? indexed.userIds : []);
     const allowedNewUserReactionIds = newUserReactionIds.filter(id => allowedIds.has(id));
-    return uniqueIds.filter(id => userReactionIds.includes(id) || allowedNewUserReactionIds.includes(id));
+    const resultIds = uniqueIds.filter(id => userReactionIds.includes(id) || allowedNewUserReactionIds.includes(id));
+    debugReactionFlowLog('getAccessibleReactionIds:index-result', {
+      indexedIds: Array.from(allowedIds),
+      allowedNewUserReactionIds,
+      reactionIds: resultIds,
+    });
+    return resultIds;
   }, [
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
@@ -2496,6 +2573,16 @@ const Matching = () => {
     loadedIds = new Set(),
   }) => {
     const activeReactionMap = normalizeReactionMap(reactionMap);
+    debugReactionFlowLog('loadReactionCardsPage:start', {
+      viewMode: viewModeRef.current,
+      reactionIds: summarizeIdsForDebug(reactionIds),
+      reactionMap: summarizeReactionMapForDebug(reactionMap),
+      offset,
+      limit,
+      loadedIds: summarizeIdsForDebug(Array.from(loadedIds || [])),
+      filters: getActiveMatchingFiltersDebug(filtersRef.current || {}),
+      collectionSource,
+    });
     const page = await loadReactionCardsPageRecords({
       reactionIds,
       offset,
@@ -2508,13 +2595,28 @@ const Matching = () => {
         ...(user.__sourceCollection === 'newUsers' ? { __matchingAccessAllowed: true } : {}),
       }),
       filterUsers: candidates => {
+        debugReactionFlowLog('loadReactionCardsPage:filterUsers-input', {
+          viewMode: viewModeRef.current,
+          candidates: summarizeUsersForReactionDebug(candidates),
+          activeReactionIds: summarizeReactionMapForDebug(activeReactionMap),
+          loadedIds: summarizeIdsForDebug(Array.from(loadedIds || [])),
+        });
         const scopedCandidates = candidates
           .filter(user => activeReactionMap[user.userId])
           .filter(user => isMatchingCardId(user.userId))
           .filter(user => canShowMatchingUser(user, { isAdmin }))
           .filter(user => !loadedIds.has(user.userId));
 
-        return applyMatchingUiFiltersToUsers({
+        debugReactionFlowLog('loadReactionCardsPage:scopedCandidates-before-ui-filters', {
+          viewMode: viewModeRef.current,
+          scopedCandidates: summarizeUsersForReactionDebug(scopedCandidates),
+          filteredOutBeforeUiIds: candidates
+            .map(user => user.userId)
+            .filter(id => !scopedCandidates.some(user => user.userId === id)),
+          filters: getActiveMatchingFiltersDebug(filtersRef.current || {}),
+        });
+
+        const uiFilteredUsers = applyMatchingUiFiltersToUsers({
           users: scopedCandidates,
           filters: filtersRef.current || {},
           filterMainFn: filterMain,
@@ -2525,12 +2627,35 @@ const Matching = () => {
           collectionSource,
           viewMode: viewModeRef.current,
         });
+
+        debugReactionFlowLog('loadReactionCardsPage:after-applyMatchingUiFiltersToUsers', {
+          viewMode: viewModeRef.current,
+          users: summarizeUsersForReactionDebug(uiFilteredUsers),
+          filteredOutByUiIds: scopedCandidates
+            .map(user => user.userId)
+            .filter(id => !uiFilteredUsers.some(user => user.userId === id)),
+        });
+
+        return uiFilteredUsers;
       },
+      debugLog: (stage, payload) => debugReactionFlowLog(`loadReactionCardsPageRecords:${stage}`, {
+        viewMode: viewModeRef.current,
+        ...payload,
+      }),
+    });
+
+    const sortedUsers = page.users.sort(compareUsersByLastLogin2);
+    debugReactionFlowLog('loadReactionCardsPage:result', {
+      viewMode: viewModeRef.current,
+      users: summarizeUsersForReactionDebug(sortedUsers),
+      nextOffset: page.nextOffset,
+      hasMore: page.hasMore,
+      loadedIds: summarizeIdsForDebug(Array.from(loadedIds || [])),
     });
 
     return {
       ...page,
-      users: page.users.sort(compareUsersByLastLogin2),
+      users: sortedUsers,
     };
   }, [
     collectionSource,
@@ -2562,9 +2687,20 @@ const Matching = () => {
     setHasMore(false);
     resetReactionPaginationState(reactionType);
 
+    debugReactionFlowLog('loadReactionCards:start', {
+      reactionType,
+      reactionLoadVersion,
+      requestCollectionSource,
+      ownerId,
+      currentOwnerId: getOwnerId(),
+      filters: getActiveMatchingFiltersDebug(filtersRef.current || {}),
+    });
+
     try {
       const owners = await waitForOwnerId();
+      debugReactionFlowLog('loadReactionCards:owners', { reactionType, owners });
       if (!owners.length) {
+        debugReactionFlowLog('loadReactionCards:no-owners', { reactionType });
         setHasMore(false);
         return;
       }
@@ -2576,6 +2712,13 @@ const Matching = () => {
         onWarning: warning => debugSharedReactionsLog(getOwnerId(), 'reaction snapshot unavailable while loading reaction cards', warning, warning.error),
       });
       const ownOwnerId = getOwnerId();
+      debugReactionFlowLog('loadReactionCards:snapshots-loaded', {
+        reactionType,
+        owners,
+        ownOwnerId,
+        favoriteSnapshotCounts: Object.fromEntries(owners.map(owner => [owner, Object.keys(normalizeReactionMap(favoriteSnapshots[owner])).length])),
+        dislikeSnapshotCounts: Object.fromEntries(owners.map(owner => [owner, Object.keys(normalizeReactionMap(dislikeSnapshots[owner])).length])),
+      });
       const { favorites: favMap, dislikes: disMap } = resolvePrioritizedReactionMaps({
         ownerIds: owners,
         ownOwnerId,
@@ -2608,6 +2751,15 @@ const Matching = () => {
       const reactionMap = isFavoritesMode ? favMap : disMap;
       const listKey = isFavoritesMode ? 'favorite' : 'dislike';
       const fullReactionIds = Object.keys(reactionMap);
+      debugReactionFlowLog('loadReactionCards:fullReactionIds', {
+        reactionType,
+        fullReactionIds: summarizeIdsForDebug(fullReactionIds),
+        favoritesMap: summarizeReactionMapForDebug(favMap),
+        dislikesMap: summarizeReactionMapForDebug(disMap),
+        ownFavorites: summarizeReactionMapForDebug(ownFavorites),
+        ownDislikes: summarizeReactionMapForDebug(ownDislikes),
+        sharedReactionIds: summarizeIdsForDebug(nextSharedReactionIds),
+      });
       const reactionAccessSnapshot = {
         accessUserId: ownerId || getOwnerId(),
         collectionSource,
@@ -2616,7 +2768,16 @@ const Matching = () => {
       };
       const reactionAccessSnapshotKey = buildAdditionalAccessSnapshotKey(reactionAccessSnapshot);
       const reactionIds = await getAccessibleReactionIds(fullReactionIds, reactionAccessSnapshot);
-      if (!canApplyReactionLoad()) return;
+      debugReactionFlowLog('loadReactionCards:accessibleReactionIds', {
+        reactionType,
+        reactionIds: summarizeIdsForDebug(reactionIds),
+        removedByAccessIds: fullReactionIds.filter(id => !reactionIds.includes(id)),
+        reactionAccessSnapshotKey,
+      });
+      if (!canApplyReactionLoad()) {
+        debugReactionFlowLog('loadReactionCards:stale-after-access', { reactionType, reactionLoadVersion });
+        return;
+      }
       setIdsForQuery(listKey, reactionIds);
       if (isFavoritesMode) setFavoriteIds(favMap);
 
@@ -2628,7 +2789,17 @@ const Matching = () => {
         limit: INITIAL_LOAD,
         loadedIds,
       });
-      if (!canApplyReactionLoad()) return;
+      debugReactionFlowLog('loadReactionCards:page-loaded', {
+        reactionType,
+        users: summarizeUsersForReactionDebug(page.users),
+        nextOffset: page.nextOffset,
+        pageHasMore: page.hasMore,
+        loadedIds: summarizeIdsForDebug(Array.from(loadedIds)),
+      });
+      if (!canApplyReactionLoad()) {
+        debugReactionFlowLog('loadReactionCards:stale-after-page', { reactionType, reactionLoadVersion });
+        return;
+      }
 
       page.users.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
       if (isFavoritesMode) {
@@ -2648,6 +2819,15 @@ const Matching = () => {
         reactionMap,
       });
       const nextHasMore = page.hasMore || hasPendingSharedCandidates;
+      debugReactionFlowLog('loadReactionCards:hasMore-result', {
+        reactionType,
+        pageHasMore: page.hasMore,
+        hasPendingSharedCandidates,
+        nextHasMore,
+        nextOffset: page.nextOffset,
+        loadedIds: summarizeIdsForDebug(Array.from(loadedIds)),
+        reactionIds: summarizeIdsForDebug(reactionIds),
+      });
       setReactionPaginationByType(prev => ({
         ...prev,
         [reactionType]: {
@@ -2659,6 +2839,12 @@ const Matching = () => {
       }));
       setHasMore(nextHasMore);
     } finally {
+      debugReactionFlowLog('loadReactionCards:finish', {
+        reactionType,
+        reactionLoadVersion,
+        viewMode: viewModeRef.current,
+        loadingBeforeFinish: loadingRef.current,
+      });
       loadingRef.current = false;
       setLoading(false);
     }
@@ -2762,6 +2948,14 @@ const Matching = () => {
           : dislikeUsersRef.current;
         const currentPagination = reactionPaginationByType[viewMode] || buildEmptyReactionPagination();
         const reactionMapIds = Object.keys(reactionMap);
+        debugReactionFlowLog('loadMore:reaction-start', {
+          viewMode,
+          reactionMap: summarizeReactionMapForDebug(reactionMap),
+          currentPagination,
+          requestedLimit,
+          targetVisibleCount,
+          currentVisibleCount,
+        });
         const hasAccessScopedNewUserReactionIds = [
           ...reactionMapIds,
           ...(currentPagination.ids || []),
@@ -2794,6 +2988,13 @@ const Matching = () => {
         const reactionIds = shouldRefreshReactionIds || currentPagination.ids.length === 0
           ? await getAccessibleReactionIds(reactionMapIds, reactionAccessSnapshot)
           : currentPagination.ids;
+        debugReactionFlowLog('loadMore:reactionIds', {
+          viewMode,
+          reactionIds: summarizeIdsForDebug(reactionIds),
+          didAccessSnapshotChange,
+          shouldRefreshReactionIds,
+          reactionAccessSnapshotKey,
+        });
 
         if (!canApplyLoadMoreResult()) return;
 
@@ -2806,6 +3007,13 @@ const Matching = () => {
           offset: didAccessSnapshotChange || currentPagination.ids.length === 0 ? 0 : currentPagination.nextOffset,
           limit: requestedLimit,
           loadedIds,
+        });
+        debugReactionFlowLog('loadMore:reaction-page-loaded', {
+          viewMode,
+          users: summarizeUsersForReactionDebug(page.users),
+          nextOffset: page.nextOffset,
+          pageHasMore: page.hasMore,
+          loadedIds: summarizeIdsForDebug(Array.from(loadedIds)),
         });
 
         if (!canApplyLoadMoreResult()) return;
@@ -2828,6 +3036,15 @@ const Matching = () => {
           reactionMap,
         });
         const nextHasMore = page.hasMore || hasPendingSharedCandidates;
+        debugReactionFlowLog('loadMore:reaction-hasMore-result', {
+          viewMode,
+          pageHasMore: page.hasMore,
+          hasPendingSharedCandidates,
+          nextHasMore,
+          nextOffset: page.nextOffset,
+          loadedIds: summarizeIdsForDebug(Array.from(loadedIds)),
+          reactionIds: summarizeIdsForDebug(reactionIds),
+        });
         setReactionPaginationByType(prev => ({
           ...prev,
           [viewMode]: {
@@ -3181,6 +3398,43 @@ const Matching = () => {
   });
   const renderedCards = filteredUsers;
   const renderedCardsLength = renderedCards.length;
+
+  useEffect(() => {
+    if (viewMode !== 'favorites' && viewMode !== 'dislikes') return;
+
+    debugReactionFlowLog('render:visible-filtered-rendered', {
+      viewMode,
+      loading,
+      loadingRef: loadingRef.current,
+      hasMore,
+      collectionSource,
+      users: summarizeUsersForReactionDebug(users),
+      additionalNewUsers: summarizeUsersForReactionDebug(additionalNewUsers),
+      sharedReactionCandidateUsers: summarizeUsersForReactionDebug(sharedReactionCandidateUsers),
+      visibleUsers: summarizeUsersForReactionDebug(visibleUsers),
+      filteredUsers: summarizeUsersForReactionDebug(filteredUsers),
+      renderedCards: summarizeUsersForReactionDebug(renderedCards),
+      filters: getActiveMatchingFiltersDebug(filters),
+      favoriteUsers: summarizeReactionMapForDebug(favoriteUsers),
+      dislikeUsers: summarizeReactionMapForDebug(dislikeUsers),
+      reactionPagination: reactionPaginationByType[viewMode],
+    });
+  }, [
+    additionalNewUsers,
+    collectionSource,
+    dislikeUsers,
+    favoriteUsers,
+    filteredUsers,
+    filters,
+    hasMore,
+    loading,
+    reactionPaginationByType,
+    renderedCards,
+    sharedReactionCandidateUsers,
+    users,
+    viewMode,
+    visibleUsers,
+  ]);
 
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
   const activeProfile = filteredUsers[activeProfileIndex] || null;
