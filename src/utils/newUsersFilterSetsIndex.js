@@ -173,6 +173,24 @@ const countRecords = tree => Object.values(tree || {}).reduce((total, fieldMap) 
   }, 0);
 }, 0);
 
+const doesSearchKeySetTreeContainUserId = (tree, userId) => {
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId || !tree || typeof tree !== 'object') return false;
+
+  const stack = [tree];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current || typeof current !== 'object') continue;
+    if (Object.prototype.hasOwnProperty.call(current, normalizedUserId)) return true;
+
+    Object.values(current).forEach(value => {
+      if (value && typeof value === 'object') stack.push(value);
+    });
+  }
+
+  return false;
+};
+
 const intersectUserIdSets = userIdSets => {
   const sets = (Array.isArray(userIdSets) ? userIdSets : [])
     .filter(setValue => setValue instanceof Set);
@@ -1175,6 +1193,76 @@ export const getIndexedNewUsersIdsByRules = async ({
       });
   }
 
+  const candidateUserIdsSet = Array.isArray(candidateUserIds) || candidateUserIds instanceof Set
+    ? new Set((Array.isArray(candidateUserIds) ? candidateUserIds : [...candidateUserIds]).filter(Boolean))
+    : null;
+
+  if (candidateUserIdsSet?.size > 0 && explicitSetKeys.length > 0) {
+    const missingCandidateIds = new Set([...candidateUserIdsSet].filter(userId => !matchedUserIds.has(userId)));
+    const membershipPaths = [];
+    const membershipRootPaths = [];
+
+    for (const setKey of explicitSetKeys) {
+      if (missingCandidateIds.size === 0) break;
+
+      const cachedUserIdBucket = setsMap?.[setKey]?.userId?.id;
+      const membershipBucket = cachedUserIdBucket && typeof cachedUserIdBucket === 'object'
+        ? cachedUserIdBucket
+        : null;
+      let bucketValue = membershipBucket;
+
+      if (!bucketValue) {
+        const path = `${SEARCH_KEY_SETS_ROOT}/${setKey}/userId/id`;
+        membershipPaths.push(path);
+        resultPaths.push(path);
+        emitDebug('reading candidate membership path', { path, setKey, candidateCount: missingCandidateIds.size });
+
+        // eslint-disable-next-line no-await-in-loop
+        const payload = await readBucketPayload(path);
+        bucketValue = payload?.exists && payload.value && typeof payload.value === 'object'
+          ? payload.value
+          : {};
+
+        if (!setsMap[setKey]) setsMap[setKey] = {};
+        if (!setsMap[setKey].userId) setsMap[setKey].userId = {};
+        setsMap[setKey].userId.id = bucketValue;
+      }
+
+      [...missingCandidateIds].forEach(userId => {
+        if (!Object.prototype.hasOwnProperty.call(bucketValue || {}, userId)) return;
+        matchedUserIds.add(userId);
+        missingCandidateIds.delete(userId);
+      });
+
+      if (missingCandidateIds.size > 0) {
+        const path = `${SEARCH_KEY_SETS_ROOT}/${setKey}`;
+        membershipRootPaths.push(path);
+        resultPaths.push(path);
+        emitDebug('reading candidate membership root path', { path, setKey, candidateCount: missingCandidateIds.size });
+
+        // eslint-disable-next-line no-await-in-loop
+        const payload = await readBucketPayload(path);
+        const setTree = payload?.exists && payload.value && typeof payload.value === 'object'
+          ? payload.value
+          : {};
+
+        [...missingCandidateIds].forEach(userId => {
+          if (!doesSearchKeySetTreeContainUserId(setTree, userId)) return;
+          matchedUserIds.add(userId);
+          missingCandidateIds.delete(userId);
+        });
+      }
+    }
+
+    emitDebug('candidate membership result', {
+      candidateCount: candidateUserIdsSet.size,
+      matchedCandidateCount: [...candidateUserIdsSet].filter(userId => matchedUserIds.has(userId)).length,
+      missingCandidateIds: [...missingCandidateIds],
+      membershipPaths,
+      membershipRootPaths,
+    });
+  }
+
   if (matchedUserIds.size === 0) {
     emitAccessScopeEmpty('access scope empty', {
       accessUserId: normalizedAccessUserId,
@@ -1184,9 +1272,6 @@ export const getIndexedNewUsersIdsByRules = async ({
   }
 
   const excludedUserIdsSet = new Set((Array.isArray(excludedUserIds) ? excludedUserIds : [...(excludedUserIds || [])]).filter(Boolean));
-  const candidateUserIdsSet = Array.isArray(candidateUserIds) || candidateUserIds instanceof Set
-    ? new Set((Array.isArray(candidateUserIds) ? candidateUserIds : [...candidateUserIds]).filter(Boolean))
-    : null;
   const finalUserIds = [...matchedUserIds].filter(userId => (
     !excludedUserIdsSet.has(userId) && (!candidateUserIdsSet || candidateUserIdsSet.has(userId))
   ));
