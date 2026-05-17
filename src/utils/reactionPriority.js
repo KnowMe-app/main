@@ -280,15 +280,24 @@ export const loadReactionCardsPageRecords = async ({
   fetchUsersByIds,
   mapUser = user => user,
   filterUsers = users => users,
+  debugLog = null,
 } = {}) => {
   if (typeof fetchUsersByIds !== 'function') {
     throw new TypeError('fetchUsersByIds is required');
   }
 
+  const logDebug = typeof debugLog === 'function' ? debugLog : () => {};
   const collected = [];
   let nextOffset = Math.max(0, Number(offset) || 0);
   let hasMore = false;
   const safeLimit = Math.max(0, Number(limit) || 0);
+
+  logDebug('records:start', {
+    reactionIdsCount: reactionIds.length,
+    offset: nextOffset,
+    limit: safeLimit,
+    loadedIdsCount: loadedIds.size,
+  });
 
   while (collected.length < safeLimit && nextOffset < reactionIds.length) {
     const page = buildReactionCardsPage({
@@ -300,6 +309,14 @@ export const loadReactionCardsPageRecords = async ({
 
     nextOffset = page.nextOffset;
     hasMore = page.hasMore;
+    logDebug('records:page-built', {
+      pageIds: page.pageIds,
+      nextOffset: page.nextOffset,
+      pageHasMore: page.hasMore,
+      total: page.total,
+      collectedCount: collected.length,
+      loadedIdsCount: loadedIds.size,
+    });
     if (page.pageIds.length === 0) {
       if (!page.hasMore) break;
       continue;
@@ -307,6 +324,11 @@ export const loadReactionCardsPageRecords = async ({
 
     // eslint-disable-next-line no-await-in-loop
     const usersMap = await fetchUsersByIds(page.pageIds);
+    logDebug('records:fetch-returned', {
+      requestedIds: page.pageIds,
+      returnedIds: Object.keys(usersMap || {}),
+      missingIds: page.pageIds.filter(id => !usersMap?.[id]),
+    });
     const mappedUsers = page.pageIds
       .map(id => usersMap?.[id])
       .filter(Boolean)
@@ -314,21 +336,52 @@ export const loadReactionCardsPageRecords = async ({
       .filter(Boolean)
       .filter(user => user?.userId && !loadedIds.has(user.userId));
 
+    logDebug('records:mapped-users', {
+      mappedIds: mappedUsers.map(user => user.userId),
+      mappedCount: mappedUsers.length,
+      skippedAlreadyLoadedIds: page.pageIds.filter(id => loadedIds.has(id)),
+    });
+
+    const idsProcessedOnPage = new Set(page.pageIds.filter(Boolean));
+    const idsLoadedBeforeFiltering = new Set(loadedIds);
     const filteredUsers = filterUsers(mappedUsers) || [];
+    logDebug('records:filter-returned', {
+      beforeFilterIds: mappedUsers.map(user => user.userId),
+      afterFilterIds: filteredUsers.map(user => user.userId),
+      filteredOutIds: mappedUsers
+        .map(user => user.userId)
+        .filter(id => !filteredUsers.some(user => user.userId === id)),
+    });
     filteredUsers.forEach(user => {
-      if (collected.length < safeLimit && user?.userId && !loadedIds.has(user.userId)) {
-        loadedIds.add(user.userId);
+      if (collected.length < safeLimit && user?.userId && !idsLoadedBeforeFiltering.has(user.userId)) {
         collected.push(user);
       }
+    });
+
+    idsProcessedOnPage.forEach(id => loadedIds.add(id));
+    logDebug('records:page-processed', {
+      processedIds: Array.from(idsProcessedOnPage),
+      collectedIds: collected.map(user => user.userId),
+      loadedIdsCount: loadedIds.size,
+      nextOffset,
+      pageHasMore: page.hasMore,
     });
 
     if (!page.hasMore) break;
   }
 
+  const finalHasMore = hasMore || reactionIds.slice(nextOffset).some(id => id && !loadedIds.has(id));
+  logDebug('records:finish', {
+    collectedIds: collected.map(user => user.userId),
+    nextOffset,
+    loadedIdsCount: loadedIds.size,
+    finalHasMore,
+  });
+
   return {
     users: collected,
     nextOffset,
-    hasMore: hasMore || reactionIds.slice(nextOffset).some(id => id && !loadedIds.has(id)),
+    hasMore: finalHasMore,
   };
 };
 
