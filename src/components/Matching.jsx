@@ -187,6 +187,8 @@ import {
 
 
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
+const MATCHING_LOG_MODE_TEST_USER_ID = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
+const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_NEW_USER_ID = 'ID0001';
 const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
@@ -195,7 +197,78 @@ const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: f
 const MATCHING_REACTION_IDLE_STYLE = { background: 'rgba(247, 147, 30, 0.95)' };
 
 const shouldDebugAdditionalMatching = (...ids) =>
-  ids.some(id => String(id || '').trim() === DEBUG_ADDITIONAL_MATCHING_USER_ID);
+  ids.some(id => {
+    const normalizedId = String(id || '').trim();
+    return normalizedId === DEBUG_ADDITIONAL_MATCHING_USER_ID || normalizedId === MATCHING_LOG_MODE_TEST_USER_ID;
+  });
+
+const getStoredMatchingDebugLogMode = () => {
+  if (typeof localStorage === 'undefined') return 'console';
+  return localStorage.getItem(MATCHING_DEBUG_LOG_MODE_KEY) === 'file' ? 'file' : 'console';
+};
+
+const isMatchingDebugFileMode = () => {
+  if (typeof window === 'undefined') return false;
+  return window.__MATCHING_DEBUG_LOG_MODE === 'file';
+};
+
+const getMatchingDebugLogsStore = () => {
+  if (typeof window === 'undefined') return null;
+  if (!Array.isArray(window.__MATCHING_DEBUG_LOGS)) {
+    window.__MATCHING_DEBUG_LOGS = [];
+  }
+  return window.__MATCHING_DEBUG_LOGS;
+};
+
+const downloadMatchingDebugLogs = ({ reason = 'manual' } = {}) => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  const logs = getMatchingDebugLogsStore() || [];
+  const now = new Date();
+  const pad = value => String(value).padStart(2, '0');
+  const fileStamp = [
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+  ].join('-') + `-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const body = {
+    userAgent: window.navigator?.userAgent || '',
+    url: window.location?.href || '',
+    timestamp: now.toISOString(),
+    testUserId: MATCHING_LOG_MODE_TEST_USER_ID,
+    logMode: window.__MATCHING_DEBUG_LOG_MODE || 'console',
+    reason,
+    logs,
+  };
+  const blob = new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `matching-debug-${fileStamp}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+  return true;
+};
+
+const writeMatchingDebugLog = (stage, data = {}, errors = null) => {
+  const store = getMatchingDebugLogsStore();
+  if (!store) return;
+  store.push({
+    timestamp: new Date().toISOString(),
+    stage,
+    payload: data,
+    errors: errors
+      ? {
+          message: errors.message || String(errors),
+          stack: errors.stack || undefined,
+          ...(errors && typeof errors === 'object' ? errors : {}),
+        }
+      : null,
+  });
+  if (store.length > ADDITIONAL_MATCHING_LOG_LIMIT) {
+    store.splice(0, store.length - ADDITIONAL_MATCHING_LOG_LIMIT);
+  }
+};
 
 const getAdditionalMatchingLogsStore = () => {
   if (typeof window === 'undefined') return null;
@@ -277,6 +350,12 @@ const debugAdditionalToast = (accessUserId, message, data = {}) => {
     .map(([key, value]) => `${key}: ${formatDebugToastValue(value)}`)
     .join(', ');
 
+  if (isMatchingDebugFileMode()) {
+    writeMatchingDebugLog(`additionalMatching:${message}`, { ...data, compact });
+    logAdditionalMatchingDebug(accessUserId, message, data);
+    return;
+  }
+
   console.info('[ADD newUsers debug]', message, data, compact);
   logAdditionalMatchingDebug(accessUserId, message, data);
 };
@@ -296,6 +375,10 @@ const countTruthyReactionEntries = maps =>
 
 const debugSharedReactionsLog = (viewerId, message, data = {}) => {
   if (!shouldDebugAdditionalMatching(viewerId)) return;
+  if (isMatchingDebugFileMode()) {
+    writeMatchingDebugLog(`sharedReactions:${message}`, data);
+    return;
+  }
   console.info('[Matching][sharedReactions debug]', message, data);
 };
 
@@ -314,6 +397,10 @@ const summarizeUsersForReactionDebug = (users, limit = 25) => ({
 const summarizeReactionMapForDebug = map => summarizeIdsForDebug(Object.keys(normalizeReactionMap(map)));
 
 const debugReactionFlowLog = (stage, data = {}) => {
+  if (isMatchingDebugFileMode()) {
+    writeMatchingDebugLog(`reactionDebug:${stage}`, data);
+    return;
+  }
   console.info('[Matching][reactionDebug]', stage, data);
 };
 
@@ -1029,6 +1116,8 @@ const Matching = () => {
   const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
   const ownDislikeUsersRef = useRef(ownDislikeUsers);
   const [viewMode, setViewMode] = useState('default');
+  const [activeProfileIndex, setActiveProfileIndex] = useState(0);
+  const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
   const [themeMode, setThemeMode] = useState(getStoredMatchingTheme);
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
@@ -1212,7 +1301,7 @@ const Matching = () => {
     const ids = multiDataOwnerIds.length ? multiDataOwnerIds : [fallbackOwnerId];
     return [...new Set(ids.filter(Boolean))];
   }, [multiDataOwnerIds]);
-  const waitForOwnerId = () =>
+  const waitForOwnerId = React.useCallback(() =>
     new Promise(resolve => {
       const check = () => {
         const ids = getMatchingMultiDataOwnerIds();
@@ -1223,7 +1312,7 @@ const Matching = () => {
         }
       };
       check();
-    });
+    }), [getMatchingMultiDataOwnerIds]);
 
   const togglePublish = async user => {
     if (!isAdmin) return;
@@ -2235,10 +2324,11 @@ const Matching = () => {
   const reloadDefault = React.useCallback(() => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
-    viewModeRef.current = 'default';
     invalidateReactionAsyncWork();
-    resetReactionPaginationState();
+    viewModeRef.current = 'default';
     setViewMode('default');
+    setActiveProfileIndex(0);
+    resetReactionPaginationState();
     loadInitial();
   }, [invalidateReactionAsyncWork, loadInitial, resetReactionPaginationState]);
 
@@ -2856,9 +2946,13 @@ const Matching = () => {
     isAdmin,
   ]);
 
-  const loadReactionCards = async reactionType => {
+  const loadReactionCards = React.useCallback(async reactionType => {
     const isFavoritesMode = reactionType === 'favorites';
+    loadInitialVersionRef.current += 1;
+    additionalLoadMoreFetchVersionRef.current += 1;
+    additionalMatchingApplyVersionRef.current += 1;
     reactionLoadVersionRef.current += 1;
+    sharedReactionCandidateLoadVersionRef.current += 1;
     const reactionLoadVersion = reactionLoadVersionRef.current;
     const requestCollectionSource = collectionSource;
     const canApplyReactionLoad = () => shouldApplyReactionPageResult({
@@ -2871,6 +2965,7 @@ const Matching = () => {
     });
     viewModeRef.current = reactionType;
     setViewMode(reactionType);
+    setActiveProfileIndex(0);
     loadingRef.current = true;
     setLoading(true);
     setUsers([]);
@@ -3040,11 +3135,70 @@ const Matching = () => {
       loadingRef.current = false;
       setLoading(false);
     }
-  };
+  }, [
+    collectionSource,
+    currentAdditionalAccessRules,
+    currentSearchKeySetKeys,
+    getAccessibleReactionIds,
+    loadCommentsFor,
+    loadReactionCardsPage,
+    ownerId,
+    resetReactionPaginationState,
+    waitForOwnerId,
+  ]);
 
-  const loadFavoriteCards = () => loadReactionCards('favorites');
+  const switchMatchingMode = React.useCallback((nextMode) => {
+    if (nextMode === 'favorites' || nextMode === 'dislikes') {
+      loadInitialVersionRef.current += 1;
+      additionalLoadMoreFetchVersionRef.current += 1;
+      additionalMatchingApplyVersionRef.current += 1;
+      reactionLoadVersionRef.current += 1;
+      sharedReactionCandidateLoadVersionRef.current += 1;
+      loadingRef.current = false;
+      setActiveProfileIndex(0);
+      setUsers([]);
+      setSharedReactionCandidateUsers([]);
+      resetReactionPaginationState(nextMode);
+      viewModeRef.current = nextMode;
+      setViewMode(nextMode);
+      void loadReactionCards(nextMode);
+      return;
+    }
 
-  const loadDislikeCards = () => loadReactionCards('dislikes');
+    if (nextMode === 'default') {
+      reloadDefault();
+    }
+  }, [loadReactionCards, reloadDefault, resetReactionPaginationState]);
+
+  const switchCollectionSource = React.useCallback((nextSource) => {
+    if (nextSource !== 'users' && nextSource !== 'newUsers') return;
+    if (nextSource === collectionSourceRef.current) return;
+
+    loadInitialVersionRef.current += 1;
+    reactionLoadVersionRef.current += 1;
+    sharedReactionCandidateLoadVersionRef.current += 1;
+    additionalLoadMoreFetchVersionRef.current += 1;
+    additionalMatchingApplyVersionRef.current += 1;
+    emptyAutoLoadMoreAttemptsRef.current = 0;
+    autoLoadMoreSignatureRef.current = '';
+    loadingRef.current = false;
+    setLoading(false);
+    setActiveProfileIndex(0);
+    resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
+    resetReactionPaginationState();
+    setSharedReactionCandidateUsers([]);
+    collectionSourceRef.current = nextSource;
+    setCollectionSource(nextSource);
+
+    if (viewModeRef.current !== 'favorites' && viewModeRef.current !== 'dislikes') {
+      viewModeRef.current = 'default';
+      setViewMode('default');
+    }
+  }, [resetAdditionalMatchingState, resetReactionPaginationState]);
+
+  const loadFavoriteCards = () => switchMatchingMode('favorites');
+
+  const loadDislikeCards = () => switchMatchingMode('dislikes');
 
   const searchUsers = async params => {
     const [key, value] = Object.entries(params)[0] || [];
@@ -3547,8 +3701,26 @@ const Matching = () => {
   ]);
 
   useEffect(() => {
+    if (viewModeRef.current === 'favorites' || viewModeRef.current === 'dislikes') return;
     reloadDefault();
-  }, [reloadDefault]);
+    // reloadDefault is intentionally not a dependency: mode/source switches call explicit handlers,
+    // while reaction-state changes must not retrigger the default deck loader.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const previousCollectionSourceForReloadRef = useRef(collectionSource);
+  useEffect(() => {
+    if (previousCollectionSourceForReloadRef.current === collectionSource) return;
+    previousCollectionSourceForReloadRef.current = collectionSource;
+
+    setActiveProfileIndex(0);
+    if (viewModeRef.current === 'favorites' || viewModeRef.current === 'dislikes') {
+      void loadReactionCards(viewModeRef.current);
+      return;
+    }
+
+    reloadDefault();
+  }, [collectionSource, loadReactionCards, reloadDefault]);
 
   const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
     users,
@@ -3627,7 +3799,6 @@ const Matching = () => {
     visibleUsers,
   ]);
 
-  const [activeProfileIndex, setActiveProfileIndex] = useState(0);
   const activeProfile = filteredUsers[activeProfileIndex] || null;
 
   const withLazyPhotos = React.useCallback(user => {
@@ -3683,6 +3854,15 @@ const Matching = () => {
       return Math.min(index, filteredUsers.length - 1);
     });
   }, [filteredUsers.length]);
+
+  useEffect(() => {
+    setActiveProfileIndex(0);
+  }, [
+    collectionSource,
+    reactionPaginationByType.favorites.ids,
+    reactionPaginationByType.dislikes.ids,
+    viewMode,
+  ]);
 
   const navigateActiveProfile = React.useCallback((step) => {
     setActiveProfileIndex(index => {
@@ -3868,11 +4048,41 @@ const Matching = () => {
     setBackendDownloadToastsEnabled(downloadSizeToastsEnabled);
   }, [downloadSizeToastsEnabled]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__MATCHING_DEBUG_LOG_MODE = matchingDebugLogMode;
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(MATCHING_DEBUG_LOG_MODE_KEY, matchingDebugLogMode);
+    }
+  }, [matchingDebugLogMode]);
+
   const handleDownloadSizeToastsToggle = () => {
     setDownloadSizeToastsEnabled(prev => !prev);
   };
 
+  const handleMatchingDebugLogModeToggle = () => {
+    setMatchingDebugLogMode(prev => {
+      const nextMode = prev === 'file' ? 'console' : 'file';
+      if (nextMode === 'file') {
+        if (typeof window !== 'undefined') {
+          window.__MATCHING_DEBUG_LOGS = [];
+          window.__MATCHING_DEBUG_LOG_MODE = 'file';
+        }
+        writeMatchingDebugLog('logMode:enabled-file', { ownerId, viewMode: viewModeRef.current, collectionSource: collectionSourceRef.current });
+        toast.success('Логи Matching пишуться у файл. Натисни ще раз, щоб завантажити файл.');
+      } else {
+        writeMatchingDebugLog('logMode:disabled-file', { ownerId, viewMode: viewModeRef.current, collectionSource: collectionSourceRef.current });
+        downloadMatchingDebugLogs({ reason: 'toggle-to-console' });
+        if (typeof window !== 'undefined') window.__MATCHING_DEBUG_LOG_MODE = 'console';
+        toast.success('Файл логів Matching завантажено. Консольні логи увімкнено.');
+      }
+      return nextMode;
+    });
+  };
+
   const showBackendTrafficToggle = ownerId === BACKEND_TRAFFIC_TRACKING_TEST_UID;
+  const showMatchingDebugLogModeToggle = ownerId === MATCHING_LOG_MODE_TEST_USER_ID;
 
   const dotsMenu = () => (
     <>
@@ -3913,13 +4123,7 @@ const Matching = () => {
               name="matchingCollectionSource"
               value="users"
               checked={collectionSource === 'users'}
-              onChange={e => {
-                invalidateReactionAsyncWork();
-                resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
-                resetReactionPaginationState();
-                collectionSourceRef.current = e.target.value;
-                setCollectionSource(e.target.value);
-              }}
+              onChange={e => switchCollectionSource(e.target.value)}
             />
             Основна (users)
           </CollectionSourceLabel>
@@ -3929,13 +4133,7 @@ const Matching = () => {
               name="matchingCollectionSource"
               value="newUsers"
               checked={collectionSource === 'newUsers'}
-              onChange={e => {
-                invalidateReactionAsyncWork();
-                resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
-                resetReactionPaginationState();
-                collectionSourceRef.current = e.target.value;
-                setCollectionSource(e.target.value);
-              }}
+              onChange={e => switchCollectionSource(e.target.value)}
             />
             Додаткова (newUsers)
           </CollectionSourceLabel>
@@ -4013,6 +4211,27 @@ const Matching = () => {
                 >
                   📦
                   <BackendTrafficToggleStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</BackendTrafficToggleStatus>
+                </BackendTrafficToggleButton>
+              )}
+              {showMatchingDebugLogModeToggle && (
+                <BackendTrafficToggleButton
+                  type="button"
+                  $active={matchingDebugLogMode === 'file'}
+                  aria-pressed={matchingDebugLogMode === 'file'}
+                  title={
+                    matchingDebugLogMode === 'file'
+                      ? 'Завантажити файл логів Matching і повернути логи в консоль'
+                      : 'Писати логи Matching у файл замість консолі'
+                  }
+                  aria-label={
+                    matchingDebugLogMode === 'file'
+                      ? 'Завантажити файл логів Matching і повернути логи в консоль'
+                      : 'Писати логи Matching у файл замість консолі'
+                  }
+                  onClick={handleMatchingDebugLogModeToggle}
+                >
+                  🧾
+                  <BackendTrafficToggleStatus>{matchingDebugLogMode === 'file' ? 'FILE' : 'LOG'}</BackendTrafficToggleStatus>
                 </BackendTrafficToggleButton>
               )}
               <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
