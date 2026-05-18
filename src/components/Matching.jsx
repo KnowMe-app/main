@@ -147,7 +147,7 @@ import {
   parseAdditionalAccessRuleGroups,
 } from 'utils/additionalAccessRules';
 import {
-  getIndexedNewUsersIdsByRules,
+  checkReactionNewUsersMembership,
   normalizeSearchKeySetKeys,
 } from 'utils/newUsersFilterSetsIndex';
 import {
@@ -1072,6 +1072,9 @@ const Matching = () => {
     dislikes: new Set(),
   });
   const reactionSourceByIdRef = useRef({});
+  const reactionClassificationRequestsRef = useRef(new Map());
+  const reactionAccessRequestsRef = useRef(new Map());
+  const loadInitialVersionRef = useRef(0);
   const additionalRulesToastRef = useRef('');
   const additionalProfileCacheRef = useRef(null);
   const additionalProfileRequestVersionRef = useRef(0);
@@ -2033,9 +2036,16 @@ const Matching = () => {
   );
 
   const loadInitial = React.useCallback(async () => {
-    console.log('[loadInitial] start');
+    if (loadingRef.current) {
+      console.info('[loadInitial] skip overlapping request', { viewMode: viewModeRef.current });
+      return;
+    }
+    const loadInitialVersion = loadInitialVersionRef.current + 1;
+    loadInitialVersionRef.current = loadInitialVersion;
+    debugReactionFlowLog('loadInitial:start', { viewMode: viewModeRef.current, collectionSource });
     loadingRef.current = true;
     const startMode = viewModeRef.current;
+    const canApplyInitialLoad = () => loadInitialVersion === loadInitialVersionRef.current && viewModeRef.current === startMode;
     setLoading(true);
     if (startMode !== 'default') {
       loadingRef.current = false;
@@ -2147,7 +2157,7 @@ const Matching = () => {
           excludeIds: [...exclude],
           hydrateUsersByIds: ids => fetchUsersByIds(ids, { collectionSource }),
         });
-        if (viewModeRef.current !== startMode) return;
+        if (!canApplyInitialLoad()) return;
         const indexedUsers = (indexed.users || []).filter(user => isAllowedIdForCollection(user.userId, collectionSource));
         if (indexedUsers.length === 0 && !indexed.hasMore) {
           console.warn('[Matching][indexedProvider] empty users index result; falling back to source pagination');
@@ -2157,7 +2167,7 @@ const Matching = () => {
           setUsers(indexedUsers);
           setIdsForQuery(defaultListKey, indexedUsers.map(user => user.userId));
           void loadCommentsFor(indexedUsers);
-          if (viewModeRef.current !== startMode) return;
+          if (!canApplyInitialLoad()) return;
           setLastKey(indexed.nextOffset);
           setHasMore(Boolean(indexed.hasMore));
           setViewMode('default');
@@ -2175,7 +2185,7 @@ const Matching = () => {
         setUsers(filteredCached);
         setIdsForQuery(defaultListKey, filteredCached.map(u => u.userId));
         void loadCommentsFor(filteredCached);
-        if (viewModeRef.current !== startMode) return;
+        if (!canApplyInitialLoad()) return;
         setViewMode('default');
         // continue to fetch latest data to refresh cache
       }
@@ -2184,7 +2194,7 @@ const Matching = () => {
         undefined,
         exclude,
         async part => {
-          if (viewModeRef.current !== startMode) return;
+          if (!canApplyInitialLoad()) return;
           const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
           if (unique.length) {
             unique.forEach(u => loadedIdsRef.current.add(u.userId));
@@ -2193,7 +2203,7 @@ const Matching = () => {
           }
         }
       );
-      if (viewModeRef.current !== startMode) return;
+      if (!canApplyInitialLoad()) return;
       console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
       const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
       if (stats && typeof console.table === 'function') console.table([stats]);
@@ -2210,13 +2220,15 @@ const Matching = () => {
         return result;
       });
       void loadCommentsFor(res.users);
-      if (viewModeRef.current !== startMode) return;
+      if (!canApplyInitialLoad()) return;
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
       setViewMode('default');
     } finally {
-      loadingRef.current = false;
-      setLoading(false);
+      if (loadInitialVersion === loadInitialVersionRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
   }, [collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, loadCommentsFor, parsedAdditionalAccessRules.length]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
@@ -2300,98 +2312,101 @@ const Matching = () => {
 
   const classifyReactionIdsBySource = React.useCallback(async ids => {
     const uniqueIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
-    const classifications = {};
-    const userReactionIds = [];
-    const newUserReactionIds = [];
-    const unclassifiedIds = [];
+    const requestKey = uniqueIds.slice().sort().join('|');
+    if (reactionClassificationRequestsRef.current.has(requestKey)) {
+      debugReactionFlowLog('classifyReactionIdsBySource:dedupe-hit', { ids: summarizeIdsForDebug(uniqueIds) });
+      return reactionClassificationRequestsRef.current.get(requestKey);
+    }
 
-    debugReactionFlowLog('classifyReactionIdsBySource:start', {
-      fullReactionIds: summarizeIdsForDebug(uniqueIds),
-      fullReactionIdsCount: uniqueIds.length,
-    });
+    const requestPromise = (async () => {
+      const classifications = {};
 
-    await Promise.all(uniqueIds.map(async id => {
-      const preferredSources = getPreferredReactionSources(id);
-      const attempts = [];
-      let found = null;
+      debugReactionFlowLog('classifyReactionIdsBySource:start', {
+        fullReactionIds: summarizeIdsForDebug(uniqueIds),
+        fullReactionIdsCount: uniqueIds.length,
+      });
 
-      for (const sourceName of preferredSources) {
-        try {
-          // eslint-disable-next-line no-await-in-loop
-          const snapshot = await get(refDb(database, `${sourceName}/${id}`));
-          const exists = snapshot.exists();
-          attempts.push({ source: sourceName, exists });
-          if (exists && !found) {
-            found = { source: sourceName };
-            break;
+      await Promise.all(uniqueIds.map(async id => {
+        const preferredSources = getPreferredReactionSources(id);
+        const attempts = [];
+        let found = null;
+
+        for (const sourceName of preferredSources) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const snapshot = await get(refDb(database, `${sourceName}/${id}`));
+            const exists = snapshot.exists();
+            attempts.push({ source: sourceName, exists });
+            if (exists && !found) {
+              found = { source: sourceName };
+              break;
+            }
+          } catch (error) {
+            attempts.push({ source: sourceName, exists: false, error: error?.message || String(error) });
           }
-        } catch (error) {
-          attempts.push({ source: sourceName, exists: false, error: error?.message || String(error) });
         }
+
+        const source = found?.source || null;
+        classifications[id] = {
+          source,
+          preferredSources,
+          attempts,
+          reason: source ? `found-in-${source}` : 'missing-in-users-and-newUsers',
+        };
+      }));
+
+      const userReactionIds = uniqueIds.filter(id => classifications[id]?.source === 'users');
+      const newUserReactionIds = uniqueIds.filter(id => classifications[id]?.source === 'newUsers');
+      const unclassifiedIds = uniqueIds.filter(id => !classifications[id]?.source);
+      const classifiedTotal = userReactionIds.length + newUserReactionIds.length + unclassifiedIds.length;
+      debugReactionFlowLog('classifyReactionIdsBySource:result', {
+        fullReactionIds: summarizeIdsForDebug(uniqueIds),
+        userReactionIds: summarizeIdsForDebug(userReactionIds),
+        newUserReactionIds: summarizeIdsForDebug(newUserReactionIds),
+        unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
+        counts: {
+          fullReactionIds: uniqueIds.length,
+          userReactionIds: userReactionIds.length,
+          newUserReactionIds: newUserReactionIds.length,
+          unclassifiedIds: unclassifiedIds.length,
+          classifiedTotal,
+          integrityOk: classifiedTotal === uniqueIds.length,
+        },
+        sourceCounts: Object.fromEntries(['users', 'newUsers', 'unclassified'].map(sourceName => [
+          sourceName,
+          sourceName === 'unclassified' ? unclassifiedIds.length : uniqueIds.filter(id => classifications[id]?.source === sourceName).length,
+        ])),
+      });
+
+      if (classifiedTotal !== uniqueIds.length) {
+        console.error('[Matching][reactions] reaction ID classification integrity failed', {
+          fullReactionIds: uniqueIds,
+          userReactionIds,
+          newUserReactionIds,
+          unclassifiedIds,
+        });
       }
 
-      const source = found?.source || null;
-      classifications[id] = {
-        source,
-        preferredSources,
-        attempts,
-        reason: source ? `found-in-${source}` : 'missing-in-users-and-newUsers',
+      reactionSourceByIdRef.current = {
+        ...reactionSourceByIdRef.current,
+        ...Object.fromEntries(
+          Object.entries(classifications).map(([id, classification]) => [id, classification.source])
+        ),
       };
 
-      if (source === 'users') userReactionIds.push(id);
-      else if (source === 'newUsers') newUserReactionIds.push(id);
-      else unclassifiedIds.push(id);
-
-      debugReactionFlowLog('classifyReactionIdsBySource:id', {
-        id,
-        source,
-        preferredSources,
-        attempts,
-        reason: classifications[id].reason,
-      });
-    }));
-
-    const classifiedTotal = userReactionIds.length + newUserReactionIds.length + unclassifiedIds.length;
-    debugReactionFlowLog('classifyReactionIdsBySource:result', {
-      fullReactionIds: summarizeIdsForDebug(uniqueIds),
-      userReactionIds: summarizeIdsForDebug(userReactionIds),
-      newUserReactionIds: summarizeIdsForDebug(newUserReactionIds),
-      unclassifiedIds: summarizeIdsForDebug(unclassifiedIds),
-      counts: {
-        fullReactionIds: uniqueIds.length,
-        userReactionIds: userReactionIds.length,
-        newUserReactionIds: newUserReactionIds.length,
-        unclassifiedIds: unclassifiedIds.length,
-        classifiedTotal,
-        integrityOk: classifiedTotal === uniqueIds.length,
-      },
-      classifications,
-    });
-
-    if (classifiedTotal !== uniqueIds.length) {
-      console.error('[Matching][reactions] reaction ID classification integrity failed', {
+      return {
         fullReactionIds: uniqueIds,
         userReactionIds,
         newUserReactionIds,
         unclassifiedIds,
         classifications,
-      });
-    }
+      };
+    })().finally(() => {
+      reactionClassificationRequestsRef.current.delete(requestKey);
+    });
 
-    reactionSourceByIdRef.current = {
-      ...reactionSourceByIdRef.current,
-      ...Object.fromEntries(
-        Object.entries(classifications).map(([id, classification]) => [id, classification.source])
-      ),
-    };
-
-    return {
-      fullReactionIds: uniqueIds,
-      userReactionIds,
-      newUserReactionIds,
-      unclassifiedIds,
-      classifications,
-    };
+    reactionClassificationRequestsRef.current.set(requestKey, requestPromise);
+    return requestPromise;
   }, []);
 
   const fetchReactionCardsByIds = React.useCallback(async ids => {
@@ -2405,8 +2420,13 @@ const Matching = () => {
     const unknownSourceIds = [];
 
     debugReactionFlowLog('fetchReactionCardsByIds:start', {
-      ids: uniqueIds,
-      sourceById: Object.fromEntries(uniqueIds.map(id => [id, sourceById[id] || null])),
+      ids: summarizeIdsForDebug(uniqueIds),
+      sourceCounts: Object.fromEntries(['users', 'newUsers', 'unknown'].map(sourceName => [
+        sourceName,
+        sourceName === 'unknown'
+          ? uniqueIds.filter(id => !sourceById[id]).length
+          : uniqueIds.filter(id => sourceById[id] === sourceName).length,
+      ])),
       viewMode: viewModeRef.current,
     });
 
@@ -2455,10 +2475,10 @@ const Matching = () => {
     const missingNewUserIds = [...new Set(missingBySource.newUsers.filter(id => !cachedEntries.has(id)))];
 
     debugReactionFlowLog('fetchReactionCardsByIds:request-backend', {
-      requestedIds: uniqueIds,
-      cacheHitIds: Array.from(cachedEntries.keys()),
-      missingUserIds,
-      missingNewUserIds,
+      requestedIds: summarizeIdsForDebug(uniqueIds),
+      cacheHitIds: summarizeIdsForDebug(Array.from(cachedEntries.keys())),
+      missingUserIds: summarizeIdsForDebug(missingUserIds),
+      missingNewUserIds: summarizeIdsForDebug(missingNewUserIds),
     });
 
     const [usersMap, newUsersCards] = await Promise.all([
@@ -2467,10 +2487,10 @@ const Matching = () => {
     ]);
 
     debugReactionFlowLog('fetchReactionCardsByIds:backend-returned', {
-      usersMapIds: Object.keys(usersMap || {}),
-      newUsersCardIds: (newUsersCards || []).map(card => card.userId).filter(Boolean),
-      missingUsersIds: missingUserIds.filter(id => !usersMap?.[id]),
-      missingNewUsersIds: missingNewUserIds.filter(id => !(newUsersCards || []).some(card => card.userId === id)),
+      usersMapIds: summarizeIdsForDebug(Object.keys(usersMap || {})),
+      newUsersCardIds: summarizeIdsForDebug((newUsersCards || []).map(card => card.userId).filter(Boolean)),
+      missingUsersIds: summarizeIdsForDebug(missingUserIds.filter(id => !usersMap?.[id])),
+      missingNewUsersIds: summarizeIdsForDebug(missingNewUserIds.filter(id => !(newUsersCards || []).some(card => card.userId === id))),
     });
 
     const result = {};
@@ -2487,9 +2507,9 @@ const Matching = () => {
     });
 
     debugReactionFlowLog('fetchReactionCardsByIds:result', {
-      requestedIds: uniqueIds,
-      returnedIds: Object.keys(result),
-      missingResultIds: uniqueIds.filter(id => !result[id]),
+      requestedIds: summarizeIdsForDebug(uniqueIds),
+      returnedIds: summarizeIdsForDebug(Object.keys(result)),
+      missingResultIds: summarizeIdsForDebug(uniqueIds.filter(id => !result[id])),
       users: summarizeUsersForReactionDebug(Object.values(result)),
     });
 
@@ -2498,6 +2518,19 @@ const Matching = () => {
 
   const getAccessibleReactionIds = React.useCallback(async (reactionIds, accessSnapshot = {}) => {
     const uniqueIds = [...new Set((reactionIds || []).map(id => String(id || '').trim()).filter(Boolean))];
+    const accessRequestKey = stableAdditionalSignature({
+      ids: uniqueIds.slice().sort(),
+      accessUserId: accessSnapshot.accessUserId || ownerId || getOwnerId(),
+      collectionSource: accessSnapshot.collectionSource || collectionSourceRef.current,
+      rawRules: accessSnapshot.rawRules ?? currentAdditionalAccessRules,
+      searchKeySetsOfExactUser: accessSnapshot.searchKeySetsOfExactUser ?? currentSearchKeySetKeys,
+    });
+    if (reactionAccessRequestsRef.current.has(accessRequestKey)) {
+      debugReactionFlowLog('getAccessibleReactionIds:dedupe-hit', { inputIds: summarizeIdsForDebug(uniqueIds) });
+      return reactionAccessRequestsRef.current.get(accessRequestKey);
+    }
+
+    const accessPromise = (async () => {
     const {
       userReactionIds,
       newUserReactionIds,
@@ -2570,15 +2603,9 @@ const Matching = () => {
       searchKeySetKeysCount: resolvedSearchKeySetKeys.length,
     });
 
-    const indexed = await getIndexedNewUsersIdsByRules({
-      rawRules: rawRulesForRequest,
-      accessUserId: viewerId,
-      searchKeySetsOfExactUser: resolvedSearchKeySetKeys,
-      fetchMissingBuckets: true,
-      requireSearchKeySetKeys: true,
-      resultOffset: 0,
-      resultLimit: newUserReactionIds.length,
+    const indexed = await checkReactionNewUsersMembership({
       candidateUserIds: newUserReactionIds,
+      searchKeySetKeys: resolvedSearchKeySetKeys,
       debugMatchingFlow: shouldDebugAdditionalMatching(viewerId),
       debugToast: (message, data) => debugAdditionalToast(viewerId, message, data),
     });
@@ -2594,6 +2621,12 @@ const Matching = () => {
       reactionIds: summarizeIdsForDebug(resultIds),
     });
     return resultIds;
+    })().finally(() => {
+      reactionAccessRequestsRef.current.delete(accessRequestKey);
+    });
+
+    reactionAccessRequestsRef.current.set(accessRequestKey, accessPromise);
+    return accessPromise;
   }, [
     classifyReactionIdsBySource,
     currentAdditionalAccessRules,
@@ -2621,11 +2654,11 @@ const Matching = () => {
       return;
     }
 
-    if (requestViewMode === 'default' && requestCollectionSource === 'users') {
+    if (requestViewMode === 'default') {
       if (canApplySharedCandidateResult()) {
         setSharedReactionCandidateUsers([]);
       }
-      debugSharedReactionsLog(viewerId, 'skipped shared reaction candidate hydration for default users deck', {
+      debugSharedReactionsLog(viewerId, 'skipped shared reaction candidate hydration for default deck', {
         collectionSource: requestCollectionSource,
       });
       return;
@@ -2731,6 +2764,10 @@ const Matching = () => {
   ]);
 
   useEffect(() => {
+    if (viewModeRef.current === 'default') {
+      setSharedReactionCandidateUsers([]);
+      return;
+    }
     loadSharedReactionCandidates();
   }, [loadSharedReactionCandidates]);
 
@@ -3510,7 +3547,6 @@ const Matching = () => {
   ]);
 
   useEffect(() => {
-    console.log('[useEffect] calling loadInitial');
     reloadDefault();
   }, [reloadDefault]);
 
