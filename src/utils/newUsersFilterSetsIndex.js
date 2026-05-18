@@ -173,24 +173,6 @@ const countRecords = tree => Object.values(tree || {}).reduce((total, fieldMap) 
   }, 0);
 }, 0);
 
-const doesSearchKeySetTreeContainUserId = (tree, userId) => {
-  const normalizedUserId = String(userId || '').trim();
-  if (!normalizedUserId || !tree || typeof tree !== 'object') return false;
-
-  const stack = [tree];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current || typeof current !== 'object') continue;
-    if (Object.prototype.hasOwnProperty.call(current, normalizedUserId)) return true;
-
-    Object.values(current).forEach(value => {
-      if (value && typeof value === 'object') stack.push(value);
-    });
-  }
-
-  return false;
-};
-
 const intersectUserIdSets = userIdSets => {
   const sets = (Array.isArray(userIdSets) ? userIdSets : [])
     .filter(setValue => setValue instanceof Set);
@@ -935,6 +917,106 @@ export const buildNewUsersFilterSetIndex = async ({
   };
 };
 
+export const checkReactionNewUsersMembership = async ({
+  candidateUserIds,
+  searchKeySetKeys,
+  debugMatchingFlow = false,
+  debugToast,
+}) => {
+  const normalizedCandidateIds = [
+    ...new Set(
+      (Array.isArray(candidateUserIds) ? candidateUserIds : [...(candidateUserIds || [])])
+        .map(userId => String(userId || '').trim())
+        .filter(Boolean)
+    ),
+  ];
+  const normalizedSetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
+  const emitDebug = (message, data = {}) => {
+    if (!debugMatchingFlow) return;
+
+    console.info('[checkReactionNewUsersMembership]', message, data);
+    if (typeof debugToast === 'function') {
+      debugToast(`reactionMembership: ${message}`, data);
+    }
+  };
+
+  if (!normalizedCandidateIds.length || !normalizedSetKeys.length) {
+    emitDebug('skip empty input', {
+      candidateCount: normalizedCandidateIds.length,
+      setKeysCount: normalizedSetKeys.length,
+    });
+    return { userIds: [], setKeys: normalizedSetKeys, readPaths: [], checkedCount: 0 };
+  }
+
+  const allowedIds = new Set();
+  const readPaths = [];
+  const membershipChecks = [];
+
+  normalizedSetKeys.forEach(setKey => {
+    normalizedCandidateIds.forEach(candidateId => {
+      if (allowedIds.has(candidateId)) return;
+      const path = `${SEARCH_KEY_SETS_ROOT}/${setKey}/userId/id/${normalizePathSegment(candidateId)}`;
+      readPaths.push(path);
+      membershipChecks.push({ setKey, candidateId, path });
+    });
+  });
+
+  emitDebug('start direct membership check', {
+    candidateCount: normalizedCandidateIds.length,
+    setKeysCount: normalizedSetKeys.length,
+    plannedReads: membershipChecks.length,
+  });
+
+  const concurrency = 20;
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, membershipChecks.length) }, async () => {
+    while (cursor < membershipChecks.length) {
+      const check = membershipChecks[cursor];
+      cursor += 1;
+      if (allowedIds.has(check.candidateId)) continue;
+
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const payload = await getCachedSearchKeyPayload(check.path, async () => {
+          const snapshot = await get(ref(database, check.path));
+          return {
+            exists: snapshot.exists(),
+            value: snapshot.exists() ? snapshot.val() : null,
+          };
+        });
+        if (payload?.exists) {
+          allowedIds.add(check.candidateId);
+        }
+      } catch (error) {
+        console.warn('[checkReactionNewUsersMembership] direct membership read failed; treating candidate as blocked', {
+          path: check.path,
+          setKey: check.setKey,
+          candidateId: check.candidateId,
+          error: error?.message || String(error),
+        });
+      }
+    }
+  });
+
+  await Promise.all(workers);
+
+  const userIds = normalizedCandidateIds.filter(candidateId => allowedIds.has(candidateId));
+  emitDebug('direct membership result', {
+    candidateCount: normalizedCandidateIds.length,
+    allowedCount: userIds.length,
+    blockedCount: normalizedCandidateIds.length - userIds.length,
+    setKeysCount: normalizedSetKeys.length,
+    readCount: readPaths.length,
+  });
+
+  return {
+    userIds,
+    setKeys: normalizedSetKeys,
+    readPaths,
+    checkedCount: membershipChecks.length,
+  };
+};
+
 export const getIndexedNewUsersIdsByRules = async ({
   rawRules,
   accessUserId,
@@ -1200,7 +1282,6 @@ export const getIndexedNewUsersIdsByRules = async ({
   if (candidateUserIdsSet?.size > 0 && explicitSetKeys.length > 0) {
     const missingCandidateIds = new Set([...candidateUserIdsSet].filter(userId => !matchedUserIds.has(userId)));
     const membershipPaths = [];
-    const membershipRootPaths = [];
 
     for (const setKey of explicitSetKeys) {
       if (missingCandidateIds.size === 0) break;
@@ -1235,21 +1316,10 @@ export const getIndexedNewUsersIdsByRules = async ({
       });
 
       if (missingCandidateIds.size > 0) {
-        const path = `${SEARCH_KEY_SETS_ROOT}/${setKey}`;
-        membershipRootPaths.push(path);
-        resultPaths.push(path);
-        emitDebug('reading candidate membership root path', { path, setKey, candidateCount: missingCandidateIds.size });
-
-        // eslint-disable-next-line no-await-in-loop
-        const payload = await readBucketPayload(path);
-        const setTree = payload?.exists && payload.value && typeof payload.value === 'object'
-          ? payload.value
-          : {};
-
-        [...missingCandidateIds].forEach(userId => {
-          if (!doesSearchKeySetTreeContainUserId(setTree, userId)) return;
-          matchedUserIds.add(userId);
-          missingCandidateIds.delete(userId);
+        emitDebug('skipping candidate membership root fallback', {
+          setKey,
+          candidateCount: missingCandidateIds.size,
+          skippedPath: `${SEARCH_KEY_SETS_ROOT}/${setKey}`,
         });
       }
     }
@@ -1259,7 +1329,6 @@ export const getIndexedNewUsersIdsByRules = async ({
       matchedCandidateCount: [...candidateUserIdsSet].filter(userId => matchedUserIds.has(userId)).length,
       missingCandidateIds: [...missingCandidateIds],
       membershipPaths,
-      membershipRootPaths,
     });
   }
 
