@@ -1,4 +1,4 @@
-import { get as firebaseGet, ref, remove, set, update } from 'firebase/database';
+import { endAt, get as firebaseGet, orderByKey, query, ref, remove, set, startAt, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 
 import {
@@ -36,6 +36,8 @@ export const SEARCH_KEY_SETS_ROOT = 'searchKeySets';
 const SET_KEY_INDEX_SEPARATOR = '_';
 export const INVALID_SETKEY_OWNER_PREFIX = 'INVALID_SETKEY_OWNER_PREFIX';
 const FORBIDDEN_RTDB_SEGMENT_CHARS = ['.', '#', '$', '/', '[', ']'];
+const LARGE_AGE_RANGE_IDS_WARNING_THRESHOLD = 2000;
+
 const SEARCH_KEY_SET_KEYS_OBJECT_FIELDS = [
   'searchKeySetsOfExactUser',
   'searchKeySetKeys',
@@ -56,6 +58,16 @@ const normalizePathSegment = value => {
 
 const normalizeSearchKeySetKey = value =>
   normalizePathSegment(String(value || '').trim().replace(/^\/?searchKeySets\//, ''));
+
+const inFlightRangeQueries = new Map();
+
+const isAgeBucket = value => /^d_\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+
+const getAgeRangeBounds = values => {
+  const dates = [...new Set((Array.isArray(values) ? values : []).map(v => String(v || '').trim()).filter(isAgeBucket))].sort();
+  if (!dates.length) return null;
+  return { startKey: dates[0], endKey: dates[dates.length - 1] };
+};
 
 const getSearchKeySetInputIndex = (setKey, accessUserId = '') => {
   const normalizedOwnerId = String(accessUserId || '').trim();
@@ -1184,6 +1196,29 @@ export const getIndexedNewUsersIdsByRules = async ({
     }
   };
 
+  const readAgeRangePayload = async ({ setKey, startKey, endKey }) => {
+    const basePath = `${SEARCH_KEY_SETS_ROOT}/${setKey}/age`;
+    const rangeCachePath = `${basePath}|startAt=${startKey}|endAt=${endKey}`;
+    const cached = peekCachedSearchKeyPayload(rangeCachePath);
+    if (cached && typeof cached.exists === 'boolean') return cached;
+
+    if (inFlightRangeQueries.has(rangeCachePath)) return inFlightRangeQueries.get(rangeCachePath);
+
+    const promise = getCachedSearchKeyPayload(rangeCachePath, async () => {
+      const ageRef = ref(database, basePath);
+      const snapshot = await get(query(ageRef, orderByKey(), startAt(startKey), endAt(endKey)));
+      return {
+        exists: snapshot.exists(),
+        value: snapshot.exists() ? snapshot.val() || {} : null,
+      };
+    }).finally(() => {
+      inFlightRangeQueries.delete(rangeCachePath);
+    });
+
+    inFlightRangeQueries.set(rangeCachePath, promise);
+    return promise;
+  };
+
   const setsMap = {};
   const resultPaths = [];
   const matchedUserIds = new Set();
@@ -1202,12 +1237,71 @@ export const getIndexedNewUsersIdsByRules = async ({
     const bucketGroups = [
       ...Object.entries(entry.indexBuckets).map(([indexName, values]) => ({ indexName, values })),
       ...(Array.isArray(entry.additionalFilterBucketGroups) ? entry.additionalFilterBucketGroups : []),
-    ];
+    ].filter(group => {
+      const normalizedValues = Array.isArray(group?.values) ? group.values.filter(Boolean) : [];
+      if (normalizedValues.length > 0) return true;
+      emitDebug('additionalMatching: indexed filter skipped because inactive', {
+        setKey: entry.setKey,
+        indexName: group?.indexName,
+        stage: 'before_bucket_generation',
+      });
+      return false;
+    });
 
     for (const { indexName, values } of bucketGroups) {
+      const normalizedValues = Array.isArray(values) ? values.filter(Boolean) : [];
       const idsForFilter = new Set();
+      const ageRange = indexName === 'age' ? getAgeRangeBounds(normalizedValues) : null;
+      if (indexName === 'age' && !ageRange) {
+        emitDebug('additionalMatching: age filter skipped because inactive', { setKey: entry.setKey });
+        continue;
+      }
 
-      for (const value of values) {
+      if (indexName === 'age' && ageRange) {
+        const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/age`;
+        resultPaths.push(`${path}|startAt=${ageRange.startKey}|endAt=${ageRange.endKey}`);
+        emitDebug('additionalMatching: age DOB range lookup', {
+          setKey: entry.setKey,
+          path,
+          startAt: ageRange.startKey,
+          endAt: ageRange.endKey,
+        });
+        // eslint-disable-next-line no-await-in-loop
+        const queryStartAtMs = Date.now();
+        const payload = await readAgeRangePayload({ setKey: entry.setKey, startKey: ageRange.startKey, endKey: ageRange.endKey });
+        const queryDurationMs = Date.now() - queryStartAtMs;
+        const flattenStartAtMs = Date.now();
+        const rangeValue = payload?.exists && payload.value && typeof payload.value === 'object' ? payload.value : {};
+        const dateBuckets = Object.entries(rangeValue);
+        if (payload?.exists) existingBucketsForSet += 1; else missingBucketsForSet += 1;
+        dateBuckets.forEach(([dateKey, bucket]) => {
+          if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
+          if (!setsMap[entry.setKey].age) setsMap[entry.setKey].age = {};
+          setsMap[entry.setKey].age[dateKey] = bucket;
+          Object.keys(bucket || {}).forEach(userId => userId && idsForFilter.add(userId));
+        });
+        const flattenDurationMs = Date.now() - flattenStartAtMs;
+        const idsBeforePreciseFilter = idsForFilter.size;
+        if (idsBeforePreciseFilter > LARGE_AGE_RANGE_IDS_WARNING_THRESHOLD) {
+          console.warn('additionalMatching: unusually large DOB range result', {
+            setKey: entry.setKey,
+            startAt: ageRange.startKey,
+            endAt: ageRange.endKey,
+            idsBeforePreciseFilter,
+          });
+        }
+        emitDebug('additionalMatching: age DOB range lookup metrics', {
+          setKey: entry.setKey,
+          startAt: ageRange.startKey,
+          endAt: ageRange.endKey,
+          queryStartAt: queryStartAtMs,
+          queryDurationMs,
+          flattenDurationMs,
+          preciseFilterDurationMs: null,
+          idsBeforePreciseFilter,
+          idsAfterPreciseFilter: null,
+        });
+      } else for (const value of normalizedValues) {
         const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}/${value}`;
         resultPaths.push(path);
         emitDebug('reading Firebase path', { path, setKey: entry.setKey, indexName, value });
@@ -1226,23 +1320,11 @@ export const getIndexedNewUsersIdsByRules = async ({
           missingBucketsForSet += 1;
         }
 
-        emitDebug('ids count from bucket', {
-          path,
-          setKey: entry.setKey,
-          indexName,
-          value,
-          idsCount: bucketIdsCount,
-        });
-
         if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
         if (!setsMap[entry.setKey][indexName]) setsMap[entry.setKey][indexName] = {};
         setsMap[entry.setKey][indexName][value] = bucketValue;
 
-        Object.keys(bucketValue)
-          .sort((a, b) => a.localeCompare(b))
-          .forEach(userId => {
-            if (userId) idsForFilter.add(userId);
-          });
+        Object.keys(bucketValue).sort((a, b) => a.localeCompare(b)).forEach(userId => { if (userId) idsForFilter.add(userId); });
       }
 
       // OR between bucket values for the same indexName, AND between different indexName fields.

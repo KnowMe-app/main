@@ -6,6 +6,10 @@ const mockGetCachedSearchKeyPayload = jest.fn((path, loader) => loader());
 jest.mock('firebase/database', () => ({
   get: (...args) => mockFirebaseGet(...args),
   ref: (...args) => mockFirebaseRef(...args),
+  query: (...args) => ({ __query: args }),
+  orderByKey: () => 'orderByKey',
+  startAt: value => ({ startAt: value }),
+  endAt: value => ({ endAt: value }),
   remove: jest.fn(),
   set: jest.fn(),
   update: jest.fn(),
@@ -57,82 +61,23 @@ describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
     jest.restoreAllMocks();
   });
 
-  it('returns empty and does not read global searchKey when exact user searchKeySets are missing', async () => {
+  it('reads age via single range query instead of daily buckets', async () => {
     const { getIndexedNewUsersIdsByRules } = loadModule();
+
+    mockFirebaseGet.mockImplementation(arg => {
+      if (arg && arg.__query) return Promise.resolve(makeSnapshot(true, { 'd_1995-05-19': { U1: true }, 'd_2005-05-18': { U2: true } }));
+      return Promise.resolve(makeSnapshot(true, { U1: true, U2: true }));
+    });
 
     const result = await getIndexedNewUsersIdsByRules({
       rawRules: 'role: ed',
       accessUserId: 'owner-1',
-      searchKeySetKeys: [],
-    });
-
-    expect(result.userIds).toEqual([]);
-    expect(result.reason).toBe('no searchKeySets data');
-    expect(mockFirebaseGet).not.toHaveBeenCalled();
-    expect(mockPeekCachedSearchKeyPayload).not.toHaveBeenCalledWith(expect.stringMatching(/^searchKey\//));
-    expect(mockGetCachedSearchKeyPayload).not.toHaveBeenCalledWith(expect.stringMatching(/^searchKey\//), expect.any(Function));
-    expect(console.info).toHaveBeenCalledWith(
-      '[searchKeySets][additionalNewUsers] access scope empty',
-      expect.objectContaining({ reason: 'no searchKeySets data' })
-    );
-  });
-
-  it('matches explicit searchKeySet keys to their rule input index for reaction candidates', async () => {
-    const { getIndexedNewUsersIdsByRules } = loadModule();
-    const viewerId = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
-    const rules = [
-      'role: ed',
-      'csection: cs0',
-      'userId: id',
-      'reaction: no',
-    ];
-    const existingBuckets = new Map([
-      [`searchKeySets/${viewerId}_3/userId/id`, { ID0001: true }],
-    ]);
-
-    mockFirebaseGet.mockImplementation(path => Promise.resolve(
-      existingBuckets.has(path)
-        ? makeSnapshot(true, existingBuckets.get(path))
-        : makeSnapshot(false)
-    ));
-
-    const result = await getIndexedNewUsersIdsByRules({
-      rawRules: rules,
-      accessUserId: viewerId,
-      searchKeySetKeys: [`${viewerId}_1`, `${viewerId}_2`, `${viewerId}_3`, `${viewerId}_4`],
-      candidateUserIds: ['ID0001'],
-      resultLimit: 1,
-    });
-
-    expect(result.userIds).toEqual(['ID0001']);
-    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_1/role/ed`);
-    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_2/csection/cs0`);
-    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_3/userId/id`);
-    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_4/reaction/no`);
-    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_1/userId/id`);
-    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_2/userId/id`);
-    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, `searchKeySets/${viewerId}_4/userId/id`);
-  });
-
-  it('returns empty and does not fallback to global searchKey when setKey buckets are absent', async () => {
-    const { getIndexedNewUsersIdsByRules } = loadModule();
-
-    const result = await getIndexedNewUsersIdsByRules({
-      rawRules: 'csection: cs0',
-      accessUserId: 'owner-1',
       searchKeySetKeys: ['owner-1_1'],
+      additionalFilterBucketGroups: [{ indexName: 'age', values: ['d_1995-05-19', 'd_2005-05-18'] }],
     });
 
-    expect(result.userIds).toEqual([]);
-    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKeySets/owner-1_1/csection/cs0');
-    expect(mockFirebaseRef).not.toHaveBeenCalledWith(expect.anything(), expect.stringMatching(/^searchKey\//));
-    expect(mockPeekCachedSearchKeyPayload).toHaveBeenCalledWith('searchKeySets/owner-1_1/csection/cs0');
-    expect(mockPeekCachedSearchKeyPayload).not.toHaveBeenCalledWith(expect.stringMatching(/^searchKey\//));
-    expect(mockGetCachedSearchKeyPayload).toHaveBeenCalledWith('searchKeySets/owner-1_1/csection/cs0', expect.any(Function));
-    expect(mockGetCachedSearchKeyPayload).not.toHaveBeenCalledWith(expect.stringMatching(/^searchKey\//), expect.any(Function));
-    expect(console.info).toHaveBeenCalledWith(
-      '[searchKeySets][additionalNewUsers] access scope empty',
-      expect.objectContaining({ reason: 'missing setKey' })
-    );
+    expect(result.userIds).toEqual(['U1', 'U2']);
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKeySets/owner-1_1/age');
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, expect.stringContaining('/age/d_'));
   });
 });
