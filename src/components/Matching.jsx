@@ -269,6 +269,32 @@ const writeMatchingDebugLog = (stage, data = {}, errors = null) => {
   }
 };
 
+const buildLoadMoreDebugPayload = ({
+  ownerId,
+  viewMode,
+  collectionSource,
+  loadedIdsCount = 0,
+  visibleUsersCount = 0,
+  hasMore = false,
+  lastKey = null,
+  requestVersion = null,
+  loadingState = false,
+  loadingRefState = false,
+  extra = {},
+} = {}) => ({
+  ownerId: ownerId || null,
+  viewMode: viewMode || null,
+  collectionSource: collectionSource || null,
+  loadedIdsCount: Number(loadedIdsCount) || 0,
+  visibleUsersCount: Number(visibleUsersCount) || 0,
+  hasMore: Boolean(hasMore),
+  lastKey: lastKey ?? null,
+  requestVersion: requestVersion ?? null,
+  loadingState: Boolean(loadingState),
+  loadingMoreRef: Boolean(loadingRefState),
+  ...extra,
+});
+
 const getAdditionalMatchingLogsStore = () => {
   if (typeof window === 'undefined') return null;
   if (!Array.isArray(window.__ADDITIONAL_MATCHING_LOGS)) {
@@ -1047,6 +1073,7 @@ const SwipeableCard = ({
 const INITIAL_LOAD = 5;
 const MATCHING_VISIBLE_BUFFER = 2;
 const MATCHING_REFILL_LIMIT = 5;
+const MATCHING_MAX_PAGES_PER_LOAD = 3;
 const LOAD_MORE = 5;
 const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
 const ADDITIONAL_BACKFILL_MAX_PAGES = 2;
@@ -3349,8 +3376,36 @@ const Matching = () => {
 
   const loadMore = React.useCallback(async ({ targetVisibleCount = 0, currentVisibleCount = 0, limit = LOAD_MORE } = {}) => {
     const isReactionViewMode = viewMode === 'favorites' || viewMode === 'dislikes';
-    if (!hasMore || loadingRef.current || (viewMode !== 'default' && !isReactionViewMode)) {
-      console.log('[loadMore] skip', { hasMore, loading: loadingRef.current, viewMode });
+    const commonDebug = {
+      ownerId: getOwnerId(),
+      viewMode,
+      collectionSource,
+      loadedIdsCount: loadedIdsRef.current.size,
+      visibleUsersCount: Number(usersRef.current?.length || 0),
+      hasMore,
+      lastKey,
+      loadingState: loading,
+      loadingRefState: loadingRef.current,
+      extra: {
+        targetVisibleCount,
+        currentVisibleCount,
+        requestedLimitInput: limit,
+      },
+    };
+    writeMatchingDebugLog('loadMore:start', buildLoadMoreDebugPayload(commonDebug));
+    if (!hasMore) {
+      writeMatchingDebugLog('loadMore:blocked:noHasMore', buildLoadMoreDebugPayload(commonDebug));
+      return;
+    }
+    if (loadingRef.current) {
+      writeMatchingDebugLog('loadMore:blocked:alreadyLoading', buildLoadMoreDebugPayload(commonDebug));
+      return;
+    }
+    if (viewMode !== 'default' && !isReactionViewMode) {
+      writeMatchingDebugLog('loadMore:blocked:staleRequest', buildLoadMoreDebugPayload({
+        ...commonDebug,
+        extra: { ...commonDebug.extra, reason: 'unsupported-view-mode' },
+      }));
       return;
     }
     const visibleDeficit = Math.max(0, Number(targetVisibleCount) - Number(currentVisibleCount));
@@ -3713,8 +3768,14 @@ const Matching = () => {
       let cursor = Number.isFinite(Number(lastKey)) ? null : lastKey;
       let canLoadMore = hasMore;
       let loadedChunkCalls = 0;
+      let stopReason = '';
+      writeMatchingDebugLog('loadMore:fetch:start', buildLoadMoreDebugPayload({
+        ...commonDebug,
+        requestVersion: applyVersion,
+        extra: { requestedLimit, cursor },
+      }));
 
-      while (collected.length < requestedLimit && canLoadMore && loadedChunkCalls < 1) {
+      while (collected.length < requestedLimit && canLoadMore && loadedChunkCalls < MATCHING_MAX_PAGES_PER_LOAD) {
         loadedChunkCalls += 1;
         const remaining = requestedLimit - collected.length;
         const dynamicExclude = new Set([
@@ -3724,6 +3785,11 @@ const Matching = () => {
         ]);
         const res = await fetchChunk(remaining, cursor, dynamicExclude);
         if (!isLatestLoadMore()) {
+          writeMatchingDebugLog('loadMore:blocked:staleRequest', buildLoadMoreDebugPayload({
+            ...commonDebug,
+            requestVersion: applyVersion,
+            extra: { loadMoreVersion, latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current },
+          }));
           console.log('[loadMore] ignored stale default batch result', {
             loadMoreVersion,
             latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current,
@@ -3732,6 +3798,21 @@ const Matching = () => {
           });
           return;
         }
+        writeMatchingDebugLog('loadMore:fetch:result', buildLoadMoreDebugPayload({
+          ...commonDebug,
+          requestVersion: applyVersion,
+          lastKey: res.lastKey,
+          extra: {
+            sourceCardsCount: res.sourceCardsCount || 0,
+            filteredCardsCount: res.filteredCardsCount || 0,
+            emittedCardsCount: res.emittedCardsCount || 0,
+            loadedPages: res.loadedPages || 0,
+            stopReason: res.stopReason || '',
+            sourceHasMore: Boolean(res.sourceHasMore),
+            hasMore: Boolean(res.hasMore),
+            fetchedCount: Array.isArray(res.users) ? res.users.length : 0,
+          },
+        }));
         console.log('[loadMore] batch', {
           requested: remaining,
           received: res.users.length,
@@ -3770,8 +3851,16 @@ const Matching = () => {
         }
 
         const stuck = !res.lastKey || isSameMatchingCursor(res.lastKey, cursor);
+        if (stuck && !res.lastKey) stopReason = 'no-cursor';
+        if (stuck && res.lastKey && isSameMatchingCursor(res.lastKey, cursor)) stopReason = 'cursor-not-advanced';
+        if (!res.hasMore && !stopReason) stopReason = res.stopReason || 'source-has-no-more';
         cursor = res.lastKey;
         canLoadMore = res.hasMore && !stuck;
+      }
+      if (!stopReason) {
+        if (collected.length >= requestedLimit) stopReason = 'requested-visible-reached';
+        else if (!canLoadMore) stopReason = 'hasMore-false';
+        else if (loadedChunkCalls >= MATCHING_MAX_PAGES_PER_LOAD) stopReason = 'max-pages-reached';
       }
 
       collected.forEach(u => { if (!u.__fromCardCache) updateCard(u.userId, u); });
@@ -3796,7 +3885,42 @@ const Matching = () => {
         setHasMore(canLoadMore);
       }
       setLastKey(cursor);
+      writeMatchingDebugLog('loadMore:emit', buildLoadMoreDebugPayload({
+        ...commonDebug,
+        requestVersion: applyVersion,
+        lastKey: cursor,
+        hasMore: canLoadMore,
+        extra: {
+          emittedCardsCount: collected.length,
+          loadedChunkCalls,
+          stopReason,
+        },
+      }));
+      matchingLastCardsDebugStatsRef.current = {
+        ...matchingLastCardsDebugStatsRef.current,
+        stage: 'loadMore',
+        stopReason: stopReason || 'completed',
+        loadedPages: loadedChunkCalls,
+        visibleReturnedCount: collected.length,
+        hasMore: Boolean(canLoadMore),
+        timestamp: new Date().toISOString(),
+      };
+      writeMatchingDebugLog('loadMore:completed', buildLoadMoreDebugPayload({
+        ...commonDebug,
+        requestVersion: applyVersion,
+        lastKey: cursor,
+        hasMore: canLoadMore,
+        extra: { stopReason, loadedChunkCalls, emittedCardsCount: collected.length },
+      }));
       return collected.length;
+    } catch (error) {
+      writeMatchingDebugLog('loadMore:error', buildLoadMoreDebugPayload({
+        ...commonDebug,
+        extra: {
+          message: error?.message || String(error),
+        },
+      }), error);
+      throw error;
     } finally {
       finishLoadMoreIfLatest();
     }
@@ -3812,6 +3936,7 @@ const Matching = () => {
     filters,
     getAccessibleReactionIds,
     hasMore,
+    loading,
     lastKey,
     loadCommentsFor,
     ownerId,
