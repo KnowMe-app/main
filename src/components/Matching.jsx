@@ -1183,6 +1183,21 @@ const Matching = () => {
   const sharedReactionCandidateLoadVersionRef = useRef(0);
   const autoLoadMoreLastRunRef = useRef(0);
   const autoLoadMoreSignatureRef = useRef('');
+  const matchingLastCardsDebugStatsRef = useRef({
+    sourceCardsCount: 0,
+    filteredCardsCount: 0,
+    emittedCardsCount: 0,
+    filteredOutCount: 0,
+    visibleReturnedCount: 0,
+    excludedCount: 0,
+    loadedPages: 0,
+    stopReason: '',
+    hasMore: false,
+    sourceHasMore: false,
+    requestedVisible: 0,
+    stage: 'none',
+    timestamp: '',
+  });
   const emptyAutoLoadMoreAttemptsRef = useRef(0);
   const matchingProfileStateRef = useRef({
     ownerId: null,
@@ -2343,7 +2358,7 @@ const Matching = () => {
       );
       if (!canApplyInitialLoad()) return;
       console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
-      writeMatchingDebugLog('cards:loadInitial-summary', {
+      const loadInitialStats = {
         requestedVisible: INITIAL_LOAD,
         sourceCardsCount: Number(res.sourceCardsCount || 0),
         filteredCardsCount: Number(res.filteredCardsCount || 0),
@@ -2354,7 +2369,14 @@ const Matching = () => {
         loadedPages: Number(res.loadedPages || 0),
         stopReason: res.stopReason || '',
         hasMore: Boolean(res.hasMore),
-      });
+        sourceHasMore: Boolean(res.sourceHasMore),
+      };
+      matchingLastCardsDebugStatsRef.current = {
+        ...loadInitialStats,
+        stage: 'loadInitial',
+        timestamp: new Date().toISOString(),
+      };
+      writeMatchingDebugLog('cards:loadInitial-summary', loadInitialStats);
       const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
       if (stats && typeof console.table === 'function') console.table([stats]);
       loadedIdsRef.current = new Set([
@@ -3697,7 +3719,7 @@ const Matching = () => {
           loadedPages: res.loadedPages,
           stopReason: res.stopReason,
         });
-        writeMatchingDebugLog('cards:loadMore-batch-summary', {
+        const loadMoreStats = {
           requestedVisible: remaining,
           sourceCardsCount: Number(res.sourceCardsCount || 0),
           filteredCardsCount: Number(res.filteredCardsCount || 0),
@@ -3709,7 +3731,13 @@ const Matching = () => {
           stopReason: res.stopReason || '',
           hasMore: Boolean(res.hasMore),
           sourceHasMore: Boolean(res.sourceHasMore),
-        });
+        };
+        matchingLastCardsDebugStatsRef.current = {
+          ...loadMoreStats,
+          stage: 'loadMore',
+          timestamp: new Date().toISOString(),
+        };
+        writeMatchingDebugLog('cards:loadMore-batch-summary', loadMoreStats);
 
         const unique = res.users.filter(
           u => u?.userId && !loadedIdsRef.current.has(u.userId)
@@ -4176,6 +4204,17 @@ const Matching = () => {
     setDownloadSizeToastsEnabled(prev => !prev);
   };
 
+  const buildCardsDebugSnapshot = () => ({
+    ownerId,
+    viewMode: viewModeRef.current,
+    collectionSource: collectionSourceRef.current,
+    currentlyRenderedCards: Array.isArray(usersRef.current) ? usersRef.current.length : 0,
+    currentlyLoadedIds: loadedIdsRef.current?.size || 0,
+    hasMore,
+    lastKey,
+    lastBatchStats: matchingLastCardsDebugStatsRef.current,
+  });
+
   const handleMatchingDebugLogModeToggle = () => {
     setMatchingDebugLogMode(prev => {
       const nextMode = prev === 'file' ? 'console' : 'file';
@@ -4184,10 +4223,11 @@ const Matching = () => {
           window.__MATCHING_DEBUG_LOGS = [];
           window.__MATCHING_DEBUG_LOG_MODE = 'file';
         }
-        writeMatchingDebugLog('logMode:enabled-file', { ownerId, viewMode: viewModeRef.current, collectionSource: collectionSourceRef.current });
+        writeMatchingDebugLog('logMode:enabled-file', buildCardsDebugSnapshot());
         toast.success('Логи Matching пишуться у файл. Натисни ще раз, щоб завантажити файл.');
       } else {
-        writeMatchingDebugLog('logMode:disabled-file', { ownerId, viewMode: viewModeRef.current, collectionSource: collectionSourceRef.current });
+        writeMatchingDebugLog('cards:snapshot-before-download', buildCardsDebugSnapshot());
+        writeMatchingDebugLog('logMode:disabled-file', buildCardsDebugSnapshot());
         downloadMatchingDebugLogs({ reason: 'toggle-to-console' });
         if (typeof window !== 'undefined') window.__MATCHING_DEBUG_LOG_MODE = 'console';
         toast.success('Файл логів Matching завантажено. Консольні логи увімкнено.');
