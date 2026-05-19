@@ -188,6 +188,7 @@ import {
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
 const MATCHING_LOG_MODE_TEST_USER_ID = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
 const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
+const MATCHING_DEBUG_VERSION = 'autoload-diagnostics-v2';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_NEW_USER_ID = 'ID0001';
 const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
@@ -230,6 +231,7 @@ const downloadMatchingDebugLogs = ({ reason = 'manual' } = {}) => {
     pad(now.getDate()),
   ].join('-') + `-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
   const body = {
+    matchingDebugVersion: MATCHING_DEBUG_VERSION,
     userAgent: window.navigator?.userAgent || '',
     url: window.location?.href || '',
     timestamp: now.toISOString(),
@@ -255,7 +257,10 @@ const writeMatchingDebugLog = (stage, data = {}, errors = null) => {
   store.push({
     timestamp: new Date().toISOString(),
     stage,
-    payload: data,
+    payload: {
+      matchingDebugVersion: MATCHING_DEBUG_VERSION,
+      ...data,
+    },
     errors: errors
       ? {
           message: errors.message || String(errors),
@@ -2249,6 +2254,7 @@ const Matching = () => {
   );
 
   const loadInitial = React.useCallback(async () => {
+    writeMatchingDebugLog('initialLoad:start', { ownerId: getOwnerId(), viewMode: viewModeRef.current, collectionSource, currentlyRenderedCards: Array.isArray(usersRef.current) ? usersRef.current.length : 0, currentlyLoadedIds: loadedIdsRef.current?.size || 0, hasMore, lastKey });
     if (loadingRef.current) {
       console.info('[loadInitial] skip overlapping request', { viewMode: viewModeRef.current });
       return;
@@ -2456,6 +2462,17 @@ const Matching = () => {
       setLastKey(res.lastKey);
       setHasMore(res.hasMore);
       setViewMode('default');
+      writeMatchingDebugLog('initialLoad:completed', {
+        ownerId: getOwnerId(),
+        viewMode: viewModeRef.current,
+        collectionSource,
+        currentlyRenderedCards: Array.isArray(usersRef.current) ? usersRef.current.length : 0,
+        currentlyLoadedIds: loadedIdsRef.current?.size || 0,
+        hasMore: Boolean(res?.hasMore),
+        lastKey: res?.lastKey ?? null,
+        visibleReturnedCount: Number(res?.users?.length || 0),
+        sourceHasMore: Boolean(res?.sourceHasMore),
+      });
     } finally {
       if (loadInitialVersion === loadInitialVersionRef.current) {
         loadingRef.current = false;
@@ -4244,6 +4261,7 @@ const Matching = () => {
 
   const runAutoLoadMore = React.useCallback((signature, payload) => {
     const commonDebug = {
+      matchingDebugVersion: MATCHING_DEBUG_VERSION,
       signature,
       payload,
       hasMore: hasMoreRef.current,
@@ -4289,6 +4307,17 @@ const Matching = () => {
   }, [loadMore]);
 
   useEffect(() => {
+    writeMatchingDebugLog('autoLoadEffect:evaluated', {
+      ownerId,
+      viewMode,
+      collectionSource,
+      filteredUsersLength: filteredUsers.length,
+      hasMore,
+      loading,
+      loadingRefCurrent: loadingRef.current,
+      lastKey,
+      additionalNextOffset,
+    });
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (loadingRef.current || loadingStateRef.current) {
       console.log('[Matching][refillEffect] blocked', { stopReason: 'blocked-loading', loadingRefCurrent: loadingRef.current, loading });
@@ -4324,6 +4353,9 @@ const Matching = () => {
   }, [additionalNextOffset, collectionSource, filteredUsers.length, filters, hasMore, lastKey, loading, runAutoLoadMore, viewMode]);
 
   const lastCardLoadTriggerSignatureRef = useRef('');
+  useEffect(() => {
+    writeMatchingDebugLog('lastCardObserver:mounted', { ownerId, viewMode: viewModeRef.current, collectionSource: collectionSourceRef.current });
+  }, []);
   const lastCardVisibilityLogSignatureRef = useRef('');
   useEffect(() => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
@@ -4421,6 +4453,30 @@ const Matching = () => {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      if (!Array.isArray(window.__MATCHING_DEBUG_LOGS)) window.__MATCHING_DEBUG_LOGS = [];
+      window.__MATCHING_DEBUG_LOG_MODE = matchingDebugLogMode;
+    }
+    writeMatchingDebugLog('matching:mounted', {
+      ownerId,
+      initialLogMode: matchingDebugLogMode,
+      url: typeof window !== 'undefined' ? window.location?.href || '' : '',
+    });
+    writeMatchingDebugLog('matching:debug-build-active', {
+      matchingDebugVersion: MATCHING_DEBUG_VERSION,
+      initialLogMode: matchingDebugLogMode,
+    });
+  }, []);
+
+  useEffect(() => {
+    writeMatchingDebugLog('loadMore:function-ready', {
+      ownerId,
+      viewMode: viewModeRef.current,
+      collectionSource: collectionSourceRef.current,
+    });
+  }, [loadMore, ownerId]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
       window.__MATCHING_DEBUG_LOG_MODE = matchingDebugLogMode;
     }
     if (typeof localStorage !== 'undefined') {
@@ -4501,7 +4557,6 @@ const Matching = () => {
       const nextMode = prev === 'file' ? 'console' : 'file';
       if (nextMode === 'file') {
         if (typeof window !== 'undefined') {
-          window.__MATCHING_DEBUG_LOGS = [];
           window.__MATCHING_DEBUG_LOG_MODE = 'file';
         }
         writeMatchingDebugLog('logMode:enabled-file', buildCardsDebugSnapshot());
