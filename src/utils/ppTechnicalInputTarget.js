@@ -70,6 +70,7 @@ export const resolvePpTechnicalInputSocialTarget = rawValue => {
 
   const socialUrlMatchers = [
     { fieldName: 'instagram', pattern: /(?:https?:\/\/)?(?:www\.)?instagram\.com\/([^/?#]+)/i },
+    { fieldName: 'ameblo', pattern: /(?:https?:\/\/)?(?:www\.)?ameblo\.jp\/([^/?#]+)/i },
     { fieldName: 'facebook', pattern: /(?:https?:\/\/)?(?:www\.)?(?:facebook\.com|fb\.com)\/([^/?#]+)/i, useRawValue: true },
     { fieldName: 'tiktok', pattern: /(?:https?:\/\/)?(?:www\.)?tiktok\.com\/([^/?#]+)/i },
     { fieldName: 'linkedin', pattern: /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/([^?#]+)/i, normalizeValue: normalizeLinkedinStorageValue },

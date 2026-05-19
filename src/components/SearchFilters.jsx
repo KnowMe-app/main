@@ -264,6 +264,7 @@ export const SearchFilters = ({
         options: [
           { val: 'vk', label: <span style={contactIconStyle} title="VK"><FaVk /></span> },
           { val: 'instagram', label: <span style={contactIconStyle} title="Instagram"><FaInstagram /></span> },
+          { val: 'ameblo', label: <span style={contactIconStyle} title="Ameblo">AB</span> },
           { val: 'facebook', label: <span style={contactIconStyle} title="Facebook"><FaFacebookF /></span> },
           { val: 'phone', label: <span style={contactIconStyle} title="Телефон"><FaPhoneVolume /></span> },
           { val: 'telegram', label: <span style={contactIconStyle} title="Telegram"><FaTelegramPlane /></span> },
