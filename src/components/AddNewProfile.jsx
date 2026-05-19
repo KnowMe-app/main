@@ -501,6 +501,33 @@ const SortModeContainer = styled.div`
   border-radius: 10px;
 `;
 
+const LoadControlsContainer = styled.div`
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const LoadControlsHeader = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+`;
+
+const GearButton = styled(Button)`
+  width: 30px;
+  padding: 0;
+  font-size: 15px;
+`;
+
+const LoadOptionsPopover = styled.div`
+  width: 100%;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 8px;
+`;
+
 const SortModeTitle = styled.span`
   font-size: 10px;
   font-weight: 700;
@@ -1633,6 +1660,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState('');
   const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY);
+  const [isLoadOptionsOpen, setIsLoadOptionsOpen] = useState(false);
   const [loadRequestId, setLoadRequestId] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
   const [dateOffset21, setDateOffset21] = useState(0);
@@ -4740,61 +4768,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             {userNotFound && hasSearched && (
               <p style={{ textAlign: 'center', color: 'black' }}>No result</p>
             )}
-            <SortModeContainer>
-              <SortModeTitle>Сортування</SortModeTitle>
-              <SortModeLabel>
-                <input
-                  type="radio"
-                  name="load-sort-mode"
-                  value={LOAD_SORT_MODES.GIT}
-                  checked={loadSortMode === LOAD_SORT_MODES.GIT}
-                  onChange={event => handleLoadSortModeChange(event.target.value)}
-                />
-                GIT
-              </SortModeLabel>
-              <SortModeLabel>
-                <input
-                  type="radio"
-                  name="load-sort-mode"
-                  value={LOAD_SORT_MODES.LAST_ACTION}
-                  checked={loadSortMode === LOAD_SORT_MODES.LAST_ACTION}
-                  onChange={event => handleLoadSortModeChange(event.target.value)}
-                />
-                LA
-              </SortModeLabel>
-              <LastAction2SortModeButton
-                SortModeLabel={SortModeLabel}
-                loadSortMode={loadSortMode}
-                onChange={handleLoadSortModeChange}
-              />
-              <SortModeLabel>
-                <input
-                  type="radio"
-                  name="load-sort-mode"
-                  value={LOAD_SORT_MODES.NO_GIT}
-                  checked={loadSortMode === LOAD_SORT_MODES.NO_GIT}
-                  onChange={event => handleLoadSortModeChange(event.target.value)}
-                />
-                NoGIT
-              </SortModeLabel>
-              <SortModeLabel>
-                <input
-                  type="radio"
-                  name="load-sort-mode"
-                  value={LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
-                  checked={loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
-                  onChange={event => handleLoadSortModeChange(event.target.value)}
-                />
-                NoGIT+IdKey
-              </SortModeLabel>
-            </SortModeContainer>
-            <FilterPanel
-              key={filterStorageKey}
-              onChange={handleFilterChange}
-              storageKey={filterStorageKey}
-              bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
-              allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'lastAction', 'getInTouch'] : undefined}
-            />
             <ButtonsContainer>
               {userNotFound && (
                 <Button onClick={handleAddUser} disabled={adding}>
@@ -4820,9 +4793,81 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   {getSurnameLabel(user)}
                 </Button>
               ))}
-              <Button onClick={handleLoadUsers} {...createLongPressHandlers('Завантажує список анкет за поточними фільтрами')}>
-                Load
-              </Button>
+              <LoadControlsContainer>
+                <LoadControlsHeader>
+                  <Button onClick={handleLoadUsers} {...createLongPressHandlers('Завантажує список анкет за поточними фільтрами')}>
+                    Load
+                  </Button>
+                  <GearButton
+                    type="button"
+                    onClick={() => setIsLoadOptionsOpen(prev => !prev)}
+                    aria-label="Показати налаштування load"
+                    aria-expanded={isLoadOptionsOpen}
+                    title="Налаштування load"
+                  >
+                    ⚙
+                  </GearButton>
+                </LoadControlsHeader>
+                {isLoadOptionsOpen && (
+                  <LoadOptionsPopover>
+                    <SortModeContainer>
+                      <SortModeTitle>Сортування</SortModeTitle>
+                      <SortModeLabel>
+                        <input
+                          type="radio"
+                          name="load-sort-mode"
+                          value={LOAD_SORT_MODES.GIT}
+                          checked={loadSortMode === LOAD_SORT_MODES.GIT}
+                          onChange={event => handleLoadSortModeChange(event.target.value)}
+                        />
+                        GIT
+                      </SortModeLabel>
+                      <SortModeLabel>
+                        <input
+                          type="radio"
+                          name="load-sort-mode"
+                          value={LOAD_SORT_MODES.LAST_ACTION}
+                          checked={loadSortMode === LOAD_SORT_MODES.LAST_ACTION}
+                          onChange={event => handleLoadSortModeChange(event.target.value)}
+                        />
+                        LA
+                      </SortModeLabel>
+                      <LastAction2SortModeButton
+                        SortModeLabel={SortModeLabel}
+                        loadSortMode={loadSortMode}
+                        onChange={handleLoadSortModeChange}
+                      />
+                      <SortModeLabel>
+                        <input
+                          type="radio"
+                          name="load-sort-mode"
+                          value={LOAD_SORT_MODES.NO_GIT}
+                          checked={loadSortMode === LOAD_SORT_MODES.NO_GIT}
+                          onChange={event => handleLoadSortModeChange(event.target.value)}
+                        />
+                        NoGIT
+                      </SortModeLabel>
+                      <SortModeLabel>
+                        <input
+                          type="radio"
+                          name="load-sort-mode"
+                          value={LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
+                          checked={loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
+                          onChange={event => handleLoadSortModeChange(event.target.value)}
+                        />
+                        NoGIT+IdKey
+                      </SortModeLabel>
+                    </SortModeContainer>
+                    <FilterPanel
+                      key={filterStorageKey}
+                      onChange={handleFilterChange}
+                      storageKey={filterStorageKey}
+                      bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
+                      allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'lastAction', 'getInTouch'] : undefined}
+                    />
+                  </LoadOptionsPopover>
+                )}
+              </LoadControlsContainer>
               <Button
                 onClick={() => {
                   setCurrentFilter('FAVORITE');
