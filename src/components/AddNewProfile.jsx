@@ -476,6 +476,8 @@ const Button = styled.button`
   }
 `;
 
+const LONG_PRESS_MS = 600;
+
 const ButtonsContainer = styled.div`
   display: flex;
   flex-wrap: wrap;
@@ -3956,6 +3958,74 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, [pendingLocalNewUsersData, pendingLocalUsersData, pendingLocalIndexTypes, runLocalSearchIndexesWithCollections]);
 
+  const buildFullKeySetFromCollections = useCallback(() => {
+    if (!pendingLocalUsersData || !pendingLocalNewUsersData) {
+      toast.error('Спочатку оберіть обидва локальні файли: users.json і newUsers.json');
+      return;
+    }
+
+    const keySet = new Set();
+    const addKeysDeep = (value, parentKey = '') => {
+      if (Array.isArray(value)) {
+        if (parentKey) keySet.add(parentKey);
+        value.forEach(item => addKeysDeep(item, parentKey ? `${parentKey}[]` : '[]'));
+        return;
+      }
+
+      if (value && typeof value === 'object') {
+        Object.entries(value).forEach(([key, nestedValue]) => {
+          const path = parentKey ? `${parentKey}.${key}` : key;
+          keySet.add(path);
+          addKeysDeep(nestedValue, path);
+        });
+      }
+    };
+
+    [pendingLocalUsersData, pendingLocalNewUsersData].forEach(collection => {
+      Object.values(collection || {}).forEach(card => addKeysDeep(card));
+    });
+
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const keys = Array.from(keySet).sort((a, b) => a.localeCompare(b, 'uk'));
+    downloadJsonFile(`full-card-keys-${stamp}.json`, {
+      createdAt: new Date().toISOString(),
+      totalKeys: keys.length,
+      keys,
+    });
+    toast.success(`Згенеровано файл з повним набором ключів (${keys.length})`);
+  }, [downloadJsonFile, pendingLocalNewUsersData, pendingLocalUsersData]);
+
+  const longPressTimerRef = useRef(null);
+  const showButtonHint = useCallback(helpText => {
+    if (!helpText) return;
+    toast(helpText, { icon: 'ℹ️', duration: 3500 });
+  }, []);
+
+  const createLongPressHandlers = useCallback(
+    helpText => ({
+      onContextMenu: event => {
+        event.preventDefault();
+        showButtonHint(helpText);
+      },
+      onTouchStart: () => {
+        longPressTimerRef.current = setTimeout(() => showButtonHint(helpText), LONG_PRESS_MS);
+      },
+      onTouchEnd: () => {
+        if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      },
+      onMouseDown: () => {
+        longPressTimerRef.current = setTimeout(() => showButtonHint(helpText), LONG_PRESS_MS);
+      },
+      onMouseUp: () => {
+        if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      },
+      onMouseLeave: () => {
+        if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      },
+    }),
+    [showButtonHint],
+  );
+
   const runSelectedIndexes = async () => {
     const selectedIndexTypes = SEARCH_KEY_INDEX_OPTIONS.filter(option => selectedSearchKeyIndexes[option.key]).map(
       option => option.key,
@@ -4735,8 +4805,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   )}
                 </Button>
               )}
-              <Button onClick={handleInfo}>Info</Button>
-              <Button onClick={handleClearCache}>ClearCache</Button>
+              <Button onClick={handleInfo} {...createLongPressHandlers('Показує кількість завантажених карток')}>
+                Info
+              </Button>
+              <Button onClick={handleClearCache} {...createLongPressHandlers('Очищає локальний кеш карток')}>
+                ClearCache
+              </Button>
               {stimulationScheduleProfiles.map(user => (
                 <Button
                   key={`schedule-${user.userId}`}
@@ -4746,7 +4820,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   {getSurnameLabel(user)}
                 </Button>
               ))}
-              <Button onClick={handleLoadUsers}>Load</Button>
+              <Button onClick={handleLoadUsers} {...createLongPressHandlers('Завантажує список анкет за поточними фільтрами')}>
+                Load
+              </Button>
               <Button
                 onClick={() => {
                   setCurrentFilter('FAVORITE');
@@ -4776,20 +4852,27 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   </Button>
                 </>
               )}
-              {<Button onClick={searchDuplicates}>DPL</Button>}
+              {<Button onClick={searchDuplicates} {...createLongPressHandlers('Шукає дублікати карток')}>DPL</Button>}
               {
                 <Button
                   onClick={() => {
                     btnMerge(users, setUsers, setDuplicates);
                   }}
+                  {...createLongPressHandlers('Об’єднує знайдені дублікати в локальному списку')}
                 >
                   Merg
                 </Button>
               }
               {btnExportUsers(exportFilteredUsers)}
               {btnExportUsersCsv(exportFilteredUsersCsv)}
-              <Button onClick={saveAllContacts}> S_All</Button>
-              <Button onClick={saveFilteredContactsVcf}> saveVCF</Button>
+              <Button onClick={saveAllContacts} {...createLongPressHandlers('Експортує всі контакти')}>
+                {' '}
+                S_All
+              </Button>
+              <Button onClick={saveFilteredContactsVcf} {...createLongPressHandlers('Експортує контакти у формат VCF')}>
+                {' '}
+                saveVCF
+              </Button>
               <input
                 ref={excelImportInputRef}
                 type="file"
@@ -4801,6 +4884,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 onClick={() => excelImportInputRef.current?.click()}
                 disabled={isExcelImporting}
                 title="Імпорт Excel в 3 JSON"
+                {...createLongPressHandlers('Імпортує Excel і конвертує в JSON формати')}
               >
                 {isExcelImporting ? '...' : 'XLSX'}
               </Button>
@@ -4947,6 +5031,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </button>
               <button type="button" onClick={handleApplyLocalIndexing}>
                 4) Побудувати і скачати JSON індекси searchId/searchKey
+              </button>
+              <button type="button" onClick={buildFullKeySetFromCollections}>
+                5) Сформувати JSON з повним набором ключів карток
               </button>
               <button type="button" onClick={() => setShowLocalIndexModal(false)}>
                 Скасувати
