@@ -3392,16 +3392,38 @@ const Matching = () => {
         requestedLimitInput: limit,
       },
     };
+    const markBlockedLoadMore = (stopReason, details = {}) => {
+      const blockedStats = {
+        ...matchingLastCardsDebugStatsRef.current,
+        stage: 'loadMore-blocked',
+        stopReason,
+        hasMore: Boolean(hasMore),
+        sourceHasMore: Boolean(hasMore),
+        requestedVisible: Number(targetVisibleCount) || 0,
+        timestamp: new Date().toISOString(),
+      };
+      matchingLastCardsDebugStatsRef.current = blockedStats;
+      writeMatchingDebugLog('cards:loadMore-blocked-summary', {
+        ...blockedStats,
+        ownerId: getOwnerId(),
+        viewMode,
+        collectionSource,
+        details,
+      });
+    };
     writeMatchingDebugLog('loadMore:start', buildLoadMoreDebugPayload(commonDebug));
     if (!hasMore) {
+      markBlockedLoadMore('blocked-no-hasMore', { guard: 'hasMore === false' });
       writeMatchingDebugLog('loadMore:blocked:noHasMore', buildLoadMoreDebugPayload(commonDebug));
       return;
     }
     if (loadingRef.current) {
+      markBlockedLoadMore('blocked-loading-ref-true', { guard: 'loadingRef.current === true' });
       writeMatchingDebugLog('loadMore:blocked:alreadyLoading', buildLoadMoreDebugPayload(commonDebug));
       return;
     }
     if (viewMode !== 'default' && !isReactionViewMode) {
+      markBlockedLoadMore('blocked-unsupported-view-mode', { guard: 'viewMode guard', viewMode });
       writeMatchingDebugLog('loadMore:blocked:staleRequest', buildLoadMoreDebugPayload({
         ...commonDebug,
         extra: { ...commonDebug.extra, reason: 'unsupported-view-mode' },
@@ -4211,11 +4233,35 @@ const Matching = () => {
   }, [collectionSource, filteredUsers, filters, ownerId, parsedAdditionalAccessRules.length, visibleUsers]);
 
   const runAutoLoadMore = React.useCallback((signature, payload) => {
-    if (emptyAutoLoadMoreAttemptsRef.current >= MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS) return;
-    if (autoLoadMoreSignatureRef.current === signature) return;
+    const commonDebug = {
+      signature,
+      payload,
+      hasMore,
+      loading,
+      loadingRefCurrent: loadingRef.current,
+      emptyAttempts: emptyAutoLoadMoreAttemptsRef.current,
+      maxEmptyAttempts: MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS,
+    };
+    if (emptyAutoLoadMoreAttemptsRef.current >= MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS) {
+      console.log('[Matching][autoLoadMore] blocked', { ...commonDebug, stopReason: 'blocked-max-empty-attempts' });
+      return;
+    }
+    if (autoLoadMoreSignatureRef.current === signature) {
+      console.log('[Matching][autoLoadMore] blocked', { ...commonDebug, stopReason: 'blocked-duplicate-signature' });
+      return;
+    }
     const now = Date.now();
-    if (now - autoLoadMoreLastRunRef.current < MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS) return;
+    if (now - autoLoadMoreLastRunRef.current < MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS) {
+      console.log('[Matching][autoLoadMore] blocked', {
+        ...commonDebug,
+        cooldownMs: MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS,
+        elapsedMs: now - autoLoadMoreLastRunRef.current,
+        stopReason: 'blocked-cooldown',
+      });
+      return;
+    }
 
+    console.log('[Matching][autoLoadMore] trigger', commonDebug);
     autoLoadMoreSignatureRef.current = signature;
     autoLoadMoreLastRunRef.current = now;
     Promise.resolve(loadMore(payload)).then(addedCount => {
@@ -4234,9 +4280,22 @@ const Matching = () => {
 
   useEffect(() => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
-    if (loadingRef.current || loading) return;
-    if (!hasMore) return;
-    if (filteredUsers.length >= MATCHING_VISIBLE_BUFFER) return;
+    if (loadingRef.current || loading) {
+      console.log('[Matching][refillEffect] blocked', { stopReason: 'blocked-loading', loadingRefCurrent: loadingRef.current, loading });
+      return;
+    }
+    if (!hasMore) {
+      console.log('[Matching][refillEffect] blocked', { stopReason: 'blocked-no-hasMore' });
+      return;
+    }
+    if (filteredUsers.length >= MATCHING_VISIBLE_BUFFER) {
+      console.log('[Matching][refillEffect] blocked', {
+        stopReason: 'blocked-visible-buffer-satisfied',
+        filteredLength: filteredUsers.length,
+        visibleBuffer: MATCHING_VISIBLE_BUFFER,
+      });
+      return;
+    }
 
     const signature = stableAdditionalSignature({
       type: 'refill',
@@ -4312,8 +4371,19 @@ const Matching = () => {
       });
     }
 
-    if (!sourceHasMore || loadingRefCurrent || loading) return;
-    if (lastCardLoadTriggerSignatureRef.current === triggerSignature) return;
+    if (!sourceHasMore || loadingRefCurrent || loading) {
+      console.log('[Matching][lastCardTrigger] blocked', {
+        stopReason: !sourceHasMore ? 'blocked-no-hasMore' : 'blocked-loading',
+        sourceHasMore,
+        loadingRefCurrent,
+        loading,
+      });
+      return;
+    }
+    if (lastCardLoadTriggerSignatureRef.current === triggerSignature) {
+      console.log('[Matching][lastCardTrigger] blocked', { stopReason: 'blocked-duplicate-trigger-signature', triggerSignature });
+      return;
+    }
     lastCardLoadTriggerSignatureRef.current = triggerSignature;
 
     runAutoLoadMore(`last-card:${triggerSignature}`, {
