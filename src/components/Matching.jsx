@@ -1220,6 +1220,10 @@ const Matching = () => {
     favorites: buildEmptyReactionPagination(),
     dislikes: buildEmptyReactionPagination(),
   });
+  const [reactionPipelineReadyByType, setReactionPipelineReadyByType] = useState({
+    favorites: false,
+    dislikes: false,
+  });
   const favoriteUsersRef = useRef(favoriteUsers);
   const dislikeUsersRef = useRef(dislikeUsers);
   const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
@@ -1332,6 +1336,7 @@ const Matching = () => {
   const resetReactionPaginationState = React.useCallback((reactionType = null) => {
     if (reactionType === 'favorites' || reactionType === 'dislikes') {
       reactionLoadedIdsRef.current[reactionType] = new Set();
+      setReactionPipelineReadyByType(prev => ({ ...prev, [reactionType]: false }));
       setReactionPaginationByType(prev => ({
         ...prev,
         [reactionType]: buildEmptyReactionPagination(),
@@ -1343,6 +1348,10 @@ const Matching = () => {
       favorites: new Set(),
       dislikes: new Set(),
     };
+    setReactionPipelineReadyByType({
+      favorites: false,
+      dislikes: false,
+    });
     setReactionPaginationByType({
       favorites: buildEmptyReactionPagination(),
       dislikes: buildEmptyReactionPagination(),
@@ -3197,7 +3206,7 @@ const Matching = () => {
     setUsers([]);
     setSharedReactionCandidateUsers([]);
     setLastKey(null);
-    setHasMore(false);
+    setHasMore(true);
     resetReactionPaginationState(reactionType);
 
     debugReactionFlowLog('loadReactionCards:start', {
@@ -3281,22 +3290,56 @@ const Matching = () => {
       };
       const reactionAccessSnapshotKey = buildAdditionalAccessSnapshotKey(reactionAccessSnapshot);
       const reactionIds = await getAccessibleReactionIds(fullReactionIds, reactionAccessSnapshot);
+      const classifiedReaction = await classifyReactionIdsBySource(reactionIds);
+      const safeReactionIds = [...new Set([
+        ...classifiedReaction.userReactionIds,
+        ...classifiedReaction.newUserReactionIds,
+      ])];
       debugReactionFlowLog('loadReactionCards:accessibleReactionIds', {
         reactionType,
         reactionIds: summarizeIdsForDebug(reactionIds),
+        accessibleReactionIdsCount: reactionIds.length,
+        safeReactionIdsCount: safeReactionIds.length,
+        paginationInitialized: false,
+        reactionPipelineReady: false,
+        unclassifiedIds: summarizeIdsForDebug(classifiedReaction.unclassifiedIds),
         removedByAccessIds: fullReactionIds.filter(id => !reactionIds.includes(id)),
         reactionAccessSnapshotKey,
       });
+      if (classifiedReaction.unclassifiedIds.length > 0) {
+        debugReactionFlowLog('loadReactionCards:unclassified-excluded', {
+          reactionType,
+          unclassifiedIds: summarizeIdsForDebug(classifiedReaction.unclassifiedIds),
+          count: classifiedReaction.unclassifiedIds.length,
+        });
+      }
       if (!canApplyReactionLoad()) {
         debugReactionFlowLog('loadReactionCards:stale-after-access', { reactionType, reactionLoadVersion });
         return;
       }
-      setIdsForQuery(listKey, reactionIds);
+      setReactionPaginationByType(prev => ({
+        ...prev,
+        [reactionType]: {
+          ids: safeReactionIds,
+          nextOffset: 0,
+          hasMore: safeReactionIds.length > 0,
+          accessSnapshotKey: reactionAccessSnapshotKey,
+        },
+      }));
+      setReactionPipelineReadyByType(prev => ({ ...prev, [reactionType]: true }));
+      setHasMore(safeReactionIds.length > 0);
+      debugReactionFlowLog('loadReactionCards:pipeline-ready', {
+        reactionType,
+        reactionPipelineReady: true,
+        paginationInitialized: true,
+        paginationIdsCount: safeReactionIds.length,
+      });
+      setIdsForQuery(listKey, safeReactionIds);
       if (isFavoritesMode) setFavoriteIds(favMap);
 
       const loadedIds = new Set();
       const page = await loadReactionCardsPage({
-        reactionIds,
+        reactionIds: safeReactionIds,
         reactionMap,
         offset: 0,
         limit: INITIAL_LOAD,
@@ -3326,7 +3369,7 @@ const Matching = () => {
       void loadCommentsFor(page.users);
       if (!canApplyReactionLoad()) return;
       const hasPendingSharedCandidates = hasPendingSharedReactionCandidates({
-        reactionIds,
+        reactionIds: safeReactionIds,
         sharedReactionIds: nextSharedReactionIds,
         loadedIds,
         reactionMap,
@@ -3339,12 +3382,12 @@ const Matching = () => {
         nextHasMore,
         nextOffset: page.nextOffset,
         loadedIds: summarizeIdsForDebug(Array.from(loadedIds)),
-        reactionIds: summarizeIdsForDebug(reactionIds),
+        reactionIds: summarizeIdsForDebug(safeReactionIds),
       });
       setReactionPaginationByType(prev => ({
         ...prev,
         [reactionType]: {
-          ids: reactionIds,
+          ids: safeReactionIds,
           nextOffset: page.nextOffset,
           hasMore: nextHasMore,
           accessSnapshotKey: reactionAccessSnapshotKey,
@@ -3365,6 +3408,7 @@ const Matching = () => {
     collectionSource,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
+    classifyReactionIdsBySource,
     getAccessibleReactionIds,
     loadCommentsFor,
     loadReactionCardsPage,
@@ -3568,16 +3612,27 @@ const Matching = () => {
         const reactionMap = viewMode === 'favorites'
           ? favoriteUsersRef.current
           : dislikeUsersRef.current;
+        const reactionPipelineReady = reactionPipelineReadyByType[viewMode];
         const currentPagination = reactionPaginationByType[viewMode] || buildEmptyReactionPagination();
         const reactionMapIds = Object.keys(reactionMap);
         debugReactionFlowLog('loadMore:reaction-start', {
           viewMode,
+          reactionPipelineReady,
+          paginationInitialized: Boolean(currentPagination.ids.length || currentPagination.accessSnapshotKey),
+          paginationIdsCount: currentPagination.ids.length,
           reactionMap: summarizeReactionMapForDebug(reactionMap),
           currentPagination,
           requestedLimit,
           targetVisibleCount,
           currentVisibleCount,
         });
+        if (!reactionPipelineReady) {
+          debugReactionFlowLog('loadMore:reaction-skipped', {
+            viewMode,
+            loadReactionCardsPageSkippedReason: 'pipeline-not-ready',
+          });
+          return 0;
+        }
         const hasAccessScopedNewUsersUserIds = [
           ...reactionMapIds,
           ...(currentPagination.ids || []),
@@ -3610,12 +3665,20 @@ const Matching = () => {
         const reactionIds = shouldRefreshReactionIds || currentPagination.ids.length === 0
           ? await getAccessibleReactionIds(reactionMapIds, reactionAccessSnapshot)
           : currentPagination.ids;
+        const classifiedReaction = await classifyReactionIdsBySource(reactionIds);
+        const safeReactionIds = [...new Set([
+          ...classifiedReaction.userReactionIds,
+          ...classifiedReaction.newUserReactionIds,
+        ])];
         debugReactionFlowLog('loadMore:reactionIds', {
           viewMode,
-          reactionIds: summarizeIdsForDebug(reactionIds),
+          reactionIds: summarizeIdsForDebug(safeReactionIds),
+          accessibleReactionIdsCount: reactionIds.length,
+          paginationIdsCount: currentPagination.ids.length,
           didAccessSnapshotChange,
           shouldRefreshReactionIds,
           reactionAccessSnapshotKey,
+          unclassifiedIds: summarizeIdsForDebug(classifiedReaction.unclassifiedIds),
         });
 
         if (!canApplyLoadMoreResult()) return;
@@ -3624,7 +3687,7 @@ const Matching = () => {
           ? new Set()
           : (reactionLoadedIdsRef.current[viewMode] || new Set());
         const page = await loadReactionCardsPage({
-          reactionIds,
+          reactionIds: safeReactionIds,
           reactionMap,
           offset: didAccessSnapshotChange || currentPagination.ids.length === 0 ? 0 : currentPagination.nextOffset,
           limit: requestedLimit,
@@ -3652,7 +3715,7 @@ const Matching = () => {
         });
         void loadCommentsFor(page.users);
         const hasPendingSharedCandidates = hasPendingSharedReactionCandidates({
-          reactionIds,
+          reactionIds: safeReactionIds,
           sharedReactionIds,
           loadedIds,
           reactionMap,
@@ -3665,12 +3728,12 @@ const Matching = () => {
           nextHasMore,
           nextOffset: page.nextOffset,
           loadedIds: summarizeIdsForDebug(Array.from(loadedIds)),
-          reactionIds: summarizeIdsForDebug(reactionIds),
+          reactionIds: summarizeIdsForDebug(safeReactionIds),
         });
         setReactionPaginationByType(prev => ({
           ...prev,
           [viewMode]: {
-            ids: reactionIds,
+            ids: safeReactionIds,
             nextOffset: page.nextOffset,
             hasMore: nextHasMore,
             accessSnapshotKey: reactionAccessSnapshotKey,
@@ -4050,6 +4113,7 @@ const Matching = () => {
     defaultListKey,
     fetchChunk,
     filters,
+    classifyReactionIdsBySource,
     getAccessibleReactionIds,
     hasMore,
     loading,
@@ -4058,6 +4122,7 @@ const Matching = () => {
     ownerId,
     loadReactionCardsPage,
     reactionPaginationByType,
+    reactionPipelineReadyByType,
     resetAdditionalMatchingState,
     parsedAdditionalAccessRules.length,
     roleIndexSets,
@@ -4385,13 +4450,32 @@ const Matching = () => {
       lastKey,
       additionalNextOffset,
     });
-    if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
+      if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
+    const isReactionMode = viewMode === 'favorites' || viewMode === 'dislikes';
+    const reactionPipelineReady = isReactionMode ? Boolean(reactionPipelineReadyByType[viewMode]) : true;
+    const reactionPagination = isReactionMode ? (reactionPaginationByType[viewMode] || buildEmptyReactionPagination()) : buildEmptyReactionPagination();
+    const paginationInitialized = !isReactionMode || reactionPagination.ids.length > 0 || reactionPagination.accessSnapshotKey !== '';
+    if (isReactionMode && !reactionPipelineReady) {
+      console.log('[Matching][refillEffect] blocked', {
+        refillBlockedReason: 'reaction-pipeline-not-ready',
+        reactionPipelineReady,
+        paginationInitialized,
+        paginationIdsCount: reactionPagination.ids.length,
+      });
+      return;
+    }
     if (loadingRef.current || loadingStateRef.current) {
-      console.log('[Matching][refillEffect] blocked', { stopReason: 'blocked-loading', loadingRefCurrent: loadingRef.current, loading });
+      console.log('[Matching][refillEffect] blocked', {
+        refillBlockedReason: 'blocked-loading',
+        loadingRefCurrent: loadingRef.current,
+        loading,
+        reactionPipelineReady,
+        paginationInitialized,
+      });
       return;
     }
     if (!hasMore) {
-      console.log('[Matching][refillEffect] blocked', { stopReason: 'blocked-no-hasMore' });
+      console.log('[Matching][refillEffect] blocked', { refillBlockedReason: 'blocked-no-hasMore', reactionPipelineReady, paginationInitialized });
       return;
     }
     if (filteredUsers.length >= MATCHING_VISIBLE_BUFFER) {
@@ -4417,7 +4501,7 @@ const Matching = () => {
       targetVisibleCount: MATCHING_VISIBLE_BUFFER,
       limit: MATCHING_REFILL_LIMIT,
     });
-  }, [additionalNextOffset, collectionSource, filteredUsers.length, filters, hasMore, lastKey, loading, ownerId, runAutoLoadMore, viewMode]);
+  }, [additionalNextOffset, collectionSource, filteredUsers.length, filters, hasMore, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, runAutoLoadMore, viewMode]);
 
   const lastCardLoadTriggerSignatureRef = useRef('');
   useEffect(() => {
