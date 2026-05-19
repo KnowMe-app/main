@@ -710,6 +710,7 @@ const LocalIndexActions = styled.div`
 
 
 const PROFILE_RESTORE_LOG_PREFIX = '[ProfileRestore]';
+const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
 
 const getProfileRestoreTimestamp = () => {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -907,6 +908,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
   const [isExcelImporting, setIsExcelImporting] = useState(false);
   const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
+  const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(() => (
+    typeof localStorage !== 'undefined' && localStorage.getItem(MATCHING_DEBUG_LOG_MODE_KEY) === 'file'
+      ? 'file'
+      : 'console'
+  ));
   const excelImportInputRef = useRef(null);
   const [showSearchKeyIndexPanel, setShowSearchKeyIndexPanel] = useState(false);
   const [showLocalIndexModal, setShowLocalIndexModal] = useState(false);
@@ -4073,6 +4079,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleDownloadSizeToastsToggle = () => {
     setDownloadSizeToastsEnabled(prev => !prev);
   };
+  const handleMatchingDebugLogModeToggle = () => {
+    setMatchingDebugLogMode(prev => {
+      const nextMode = prev === 'file' ? 'console' : 'file';
+      if (typeof window !== 'undefined') {
+        window.__MATCHING_DEBUG_LOG_MODE = nextMode;
+        if (nextMode === 'file') window.__MATCHING_DEBUG_LOGS = [];
+      }
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(MATCHING_DEBUG_LOG_MODE_KEY, nextMode);
+      }
+      toast.success(nextMode === 'file' ? 'Режим file-логів Matching увімкнено.' : 'Режим console-логів Matching увімкнено.');
+      return nextMode;
+    });
+  };
 
   const fieldsToRender = getFieldsToRender(state);
 
@@ -4382,6 +4402,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               📦
               <DownloadSizeToastStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</DownloadSizeToastStatus>
             </DownloadSizeToastToggleButton>
+            {isAdmin && (
+              <DownloadSizeToastToggleButton
+                type="button"
+                $active={matchingDebugLogMode === 'file'}
+                aria-pressed={matchingDebugLogMode === 'file'}
+                title={matchingDebugLogMode === 'file' ? 'Перемкнути логи Matching у консоль' : 'Перемкнути логи Matching у файл'}
+                aria-label={matchingDebugLogMode === 'file' ? 'Перемкнути логи Matching у консоль' : 'Перемкнути логи Matching у файл'}
+                onClick={handleMatchingDebugLogModeToggle}
+              >
+                🧾
+                <DownloadSizeToastStatus>{matchingDebugLogMode === 'file' ? 'FILE' : 'LOG'}</DownloadSizeToastStatus>
+              </DownloadSizeToastToggleButton>
+            )}
             <DotsButton
               onClick={() => {
                 setShowInfoModal('dotsMenu');
