@@ -3,6 +3,7 @@ const TRIGGER_PATTERN = /^(ук)\s*(см|ір|ip|до|агент)\s*(.*)$/i;
 const CONTACT_PREFIX_ALIASES = {
   telegram: ['tg', 'telegram', 'телеграм'],
   instagram: ['ig', 'inst', 'instagram', 'інста', 'інстаграм'],
+  ameblo: ['ameblo', 'амебло'],
   facebook: ['fb', 'facebook', 'фб', 'фейсбук'],
   tiktok: ['tt', 'tiktok', 'тік ток', 'тікток'],
   linkedin: ['linkedin', 'лінкедін'],
@@ -12,6 +13,7 @@ const CONTACT_PREFIX_ALIASES = {
 
 const CONTACT_DOMAINS = [
   { type: 'instagram', pattern: /(?:https?:\/\/)?(?:www\.)?instagram\.com\//i },
+  { type: 'ameblo', pattern: /(?:https?:\/\/)?(?:www\.)?ameblo\.jp\//i },
   { type: 'facebook', pattern: /(?:https?:\/\/)?(?:www\.)?facebook\.com\//i },
   { type: 'facebook', pattern: /(?:https?:\/\/)?(?:www\.)?fb\.com\//i },
   { type: 'tiktok', pattern: /(?:https?:\/\/)?(?:www\.)?tiktok\.com\//i },

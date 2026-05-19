@@ -980,6 +980,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         { key: 'phone', label: 'phone', supportsSearchId: true, supportsEqualTo: true },
         { key: 'telegram', label: 'telegram', supportsSearchId: true, supportsEqualTo: true },
         { key: 'instagram', label: 'instagram', supportsSearchId: true, supportsEqualTo: true },
+        { key: 'ameblo', label: 'ameblo', supportsSearchId: true, supportsEqualTo: true },
         { key: 'facebook', label: 'facebook', supportsSearchId: true, supportsEqualTo: true },
         { key: 'email', label: 'email', supportsSearchId: true, supportsEqualTo: true },
         { key: 'vk', label: 'vk', supportsSearchId: true, supportsEqualTo: true },
@@ -1012,7 +1013,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     'partialUserId',
     ...SEARCH_KEY_OPTIONS.map(option => option.key),
   ];
-  const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'instagram', 'facebook', 'email', 'vk', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other'];
+  const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'instagram', 'ameblo', 'facebook', 'email', 'vk', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other'];
 
   const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
     (acc, option) => {
@@ -1276,7 +1277,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
-    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'userId'];
+    const contacts = ['instagram', 'ameblo', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'userId'];
     const ppTechnicalInputFields = ['name', 'surname', ...contacts];
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
