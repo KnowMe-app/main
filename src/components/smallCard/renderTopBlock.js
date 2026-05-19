@@ -835,7 +835,7 @@ const TopBlock = ({
       </div>
       <div style={contactsSectionStyle}>
         {fieldContacts(cardData)}
-        {renderOverlayEntries(['phone', 'phone2', 'phone3', 'telegram', 'email', 'facebook', 'instagram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'vk'])}
+        {renderOverlayEntries(['phone', 'phone2', 'phone3', 'telegram', 'email', 'facebook', 'instagram', 'ameblo', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'vk'])}
       </div>
       <div style={commentsSectionStyle}>
         {fieldWriter(cardData, setUsers, setState, submitOptions)}

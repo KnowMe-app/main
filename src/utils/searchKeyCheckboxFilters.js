@@ -3,6 +3,7 @@ const SEARCH_ID_CHECKBOX_KEYS = getSearchIdIndexedFields();
 
 const EQUAL_TO_INDEX_KEYS = [
   'instagram',
+  'ameblo',
   'facebook',
   'email',
   'phone',

@@ -183,7 +183,7 @@ export const ADDITIONAL_ACCESS_FILTER_OPTIONS = {
   maritalStatus: ['+', '-', '?', 'no'],
   imt: ['le28', '29_31', '32_35', '36_plus', '?', 'no'],
   role: ['ed', 'sm', 'ag', 'ip', 'cl', '?', 'no'],
-  contact: ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email', 'twitter'],
+  contact: ['vk', 'instagram', 'ameblo', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email', 'twitter'],
   userId: ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'],
   reaction: ['past', 'future', '99', '?', 'no'],
   height: ['lt163', '163_176', '177_180', '181_plus', '?', 'no'],
@@ -277,7 +277,7 @@ const toMetricBucket = (value, ranges) => {
 };
 
 const toContactBuckets = user => {
-  const keys = ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email', 'twitter'];
+  const keys = ['vk', 'instagram', 'ameblo', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email', 'twitter'];
   return keys.filter(key => String(user?.[key] || '').trim() !== '');
 };
 
