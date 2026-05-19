@@ -1212,6 +1212,16 @@ const Matching = () => {
     [currentAdditionalAccessRules]
   );
   const loadingRef = useRef(false);
+  const hasMoreRef = useRef(hasMore);
+  const loadingStateRef = useRef(loading);
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
+
+  useEffect(() => {
+    loadingStateRef.current = loading;
+  }, [loading]);
   const loadedIdsRef = useRef(new Set());
   const reactionLoadedIdsRef = useRef({
     favorites: new Set(),
@@ -3412,7 +3422,7 @@ const Matching = () => {
       });
     };
     writeMatchingDebugLog('loadMore:start', buildLoadMoreDebugPayload(commonDebug));
-    if (!hasMore) {
+    if (!hasMoreRef.current) {
       markBlockedLoadMore('blocked-no-hasMore', { guard: 'hasMore === false' });
       writeMatchingDebugLog('loadMore:blocked:noHasMore', buildLoadMoreDebugPayload(commonDebug));
       return;
@@ -4236,8 +4246,8 @@ const Matching = () => {
     const commonDebug = {
       signature,
       payload,
-      hasMore,
-      loading,
+      hasMore: hasMoreRef.current,
+      loading: loadingStateRef.current,
       loadingRefCurrent: loadingRef.current,
       emptyAttempts: emptyAutoLoadMoreAttemptsRef.current,
       maxEmptyAttempts: MATCHING_MAX_EMPTY_AUTO_LOAD_MORE_ATTEMPTS,
@@ -4276,11 +4286,11 @@ const Matching = () => {
       const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
       if (stats && typeof console.table === 'function') console.table([stats]);
     });
-  }, [hasMore, loadMore, loading]);
+  }, [loadMore]);
 
   useEffect(() => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
-    if (loadingRef.current || loading) {
+    if (loadingRef.current || loadingStateRef.current) {
       console.log('[Matching][refillEffect] blocked', { stopReason: 'blocked-loading', loadingRefCurrent: loadingRef.current, loading });
       return;
     }
