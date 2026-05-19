@@ -1916,20 +1916,28 @@ const Matching = () => {
       };
 
       const unsubFav = onValue(favRef, snap => {
+        const viewerId = getOwnerId();
+        const isDebugViewer = shouldDebugAdditionalMatching(viewerId);
         favoriteSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
         loadedFavoriteOwnerIds.add(effectiveOwnerId);
-        debugSharedReactionsLog(getOwnerId(), 'loaded favorites snapshot for ownerId', {
+        debugSharedReactionsLog(viewerId, 'loaded favorites snapshot for ownerId', {
           ownerId: effectiveOwnerId,
-          loadedReactionCount: Object.keys(normalizeReactionMap(favoriteSnapshots[effectiveOwnerId])).length,
+          ...(isDebugViewer ? {
+            loadedReactionCount: Object.keys(normalizeReactionMap(favoriteSnapshots[effectiveOwnerId])).length,
+          } : {}),
         });
         applyPrioritizedReactionMaps();
       }, error => markOwnerSnapshotLoaded(favoriteSnapshots, loadedFavoriteOwnerIds, 'favorites', error));
       const unsubDis = onValue(disRef, snap => {
+        const viewerId = getOwnerId();
+        const isDebugViewer = shouldDebugAdditionalMatching(viewerId);
         dislikeSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
         loadedDislikeOwnerIds.add(effectiveOwnerId);
-        debugSharedReactionsLog(getOwnerId(), 'loaded dislikes snapshot for ownerId', {
+        debugSharedReactionsLog(viewerId, 'loaded dislikes snapshot for ownerId', {
           ownerId: effectiveOwnerId,
-          loadedReactionCount: Object.keys(normalizeReactionMap(dislikeSnapshots[effectiveOwnerId])).length,
+          ...(isDebugViewer ? {
+            loadedReactionCount: Object.keys(normalizeReactionMap(dislikeSnapshots[effectiveOwnerId])).length,
+          } : {}),
         });
         applyPrioritizedReactionMaps();
       }, error => markOwnerSnapshotLoaded(dislikeSnapshots, loadedDislikeOwnerIds, 'dislikes', error));
