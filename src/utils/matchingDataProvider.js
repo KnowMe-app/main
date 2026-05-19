@@ -298,6 +298,13 @@ export const fetchMatchingIndexedCandidates = async ({
 
   const cachedPage = readCachedPage();
   if (cachedPage) {
+    console.info('[Matching][indexedProvider] cache hit', {
+      cacheKey,
+      idsCount: cachedPage.allIds?.length || 0,
+      pageIdsCount: cachedPage.pageIds?.length || 0,
+      offset: safeOffset,
+      limit: safeLimit,
+    });
     const users = await hydrateOrderedUsers({ ids: cachedPage.pageIds, hydrateUsersByIds, collectionSource });
     return {
       usedIndex: true,
@@ -310,6 +317,12 @@ export const fetchMatchingIndexedCandidates = async ({
       filterGroups,
     };
   }
+  console.info('[Matching][indexedProvider] cache miss', {
+    cacheKey,
+    collectionSource,
+    offset: safeOffset,
+    limit: safeLimit,
+  });
 
   if (collectionSource === 'newUsers') {
     const indexed = await newUsersIndexReader({

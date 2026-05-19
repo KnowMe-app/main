@@ -98,10 +98,9 @@ import PhotoViewer from './PhotoViewer';
 import FilterPanel from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
-import { incrementMatchingLoadStat, logMatchingLocalStorageCacheStats, normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard } from '../utils/cardIndex';
+import { incrementMatchingLoadStat, logMatchingLocalStorageCacheStats, normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard, clearMatchingCache } from '../utils/cardIndex';
 import {
   cleanupMatchingLocalStorageCache,
-  clearMatchingLocalStorageCache,
   logMatchingLocalStorageDebugStats,
 } from '../utils/searchKeyCache';
 import { getCardsByList, updateCard } from '../utils/cardsStorage';
@@ -2409,10 +2408,9 @@ const Matching = () => {
 
   const resetFiltersAndCache = React.useCallback(() => {
     const debugMatchingCache = isAdmin || shouldDebugAdditionalMatching(ownerId);
-    const removedLocalStorageKeys = clearMatchingLocalStorageCache({ debug: debugMatchingCache });
+    const removedLocalStorageKeys = clearMatchingCache('matching reset filters and cache');
     localStorage.removeItem('matchingFilters');
     localStorage.removeItem(SEARCH_KEY);
-    clearAllCardsCache();
 
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';

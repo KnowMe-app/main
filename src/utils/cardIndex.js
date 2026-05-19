@@ -9,6 +9,7 @@ export const MATCHING_INDEX_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 
 export const CARDS_CACHE_VERSION = 2;
 export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
+export const MATCHING_QUERY_MAX_IDS = 2000;
 const MATCHING_LOCAL_STORAGE_KEYS = new Set([CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY]);
 const localJsonCache = new Map();
 const pendingSaveTimers = new Map();
@@ -29,6 +30,7 @@ export const incrementMatchingLoadStat = (key, amount = 1) => {
 };
 
 const estimateMb = value => ((String(value || '').length * 2) / (1024 * 1024));
+const toApproxMb = value => Number(estimateMb(value).toFixed(3));
 
 const shouldGuardMatchingCacheKey = key => MATCHING_LOCAL_STORAGE_KEYS.has(key);
 
@@ -37,6 +39,10 @@ const logMatchingCacheWarning = (message, rows = []) => {
   if (typeof console.table === 'function' && rows.length) {
     console.table(rows);
   }
+};
+
+const logMatchingCacheDebug = (message, payload = {}) => {
+  console.info(`[matchingCache] ${message}`, payload);
 };
 
 export const getMatchingLocalStorageCacheStats = () => {
@@ -66,6 +72,8 @@ export const logMatchingLocalStorageCacheStats = (reason = 'snapshot') => {
 };
 
 const resetMatchingStorageKey = key => {
+  const hadPendingTimer = pendingSaveTimers.has(key);
+  const hadPendingValue = pendingSaveValues.has(key);
   try {
     localStorage.removeItem(key);
   } catch {
@@ -76,12 +84,28 @@ const resetMatchingStorageKey = key => {
   const timer = pendingSaveTimers.get(key);
   if (timer) clearTimeout(timer);
   pendingSaveTimers.delete(key);
+  return hadPendingTimer || hadPendingValue;
 };
 
 export const resetMatchingLocalStorageCache = (reason = 'manual') => {
+  const keysToReset = [CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY];
+  logMatchingCacheDebug('clearMatchingCache started', { reason, keys: keysToReset });
   const rows = getMatchingLocalStorageCacheStats();
-  [CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY].forEach(resetMatchingStorageKey);
+  const cancelledPendingWritesForKeys = [];
+  keysToReset.forEach(key => {
+    if (resetMatchingStorageKey(key)) cancelledPendingWritesForKeys.push(key);
+  });
+  logMatchingCacheDebug('pending writes cancelled', {
+    reason,
+    count: cancelledPendingWritesForKeys.length,
+    keys: cancelledPendingWritesForKeys,
+  });
+  logMatchingCacheDebug('keys removed', {
+    reason,
+    keys: keysToReset,
+  });
   logMatchingCacheWarning(`reset ${reason}`, rows);
+  logMatchingCacheDebug('clearMatchingCache completed', { reason, removedKeysCount: keysToReset.length });
   return rows;
 };
 
@@ -123,7 +147,7 @@ const loadJson = key => {
       return {};
     }
     if (shouldGuardMatchingCacheKey(key) && raw.length > MATCHING_CACHE_MAX_CHARS) {
-      logMatchingCacheWarning(`skip oversized key ${key}`, [{ key, stringLength: raw.length, approxMb: Number(estimateMb(raw).toFixed(3)) }]);
+      logMatchingCacheWarning(`skip oversized key ${key}`, [{ key, stringLength: raw.length, approxMb: toApproxMb(raw), reason: 'max chars exceeded' }]);
       resetMatchingStorageKey(key);
       localJsonCache.set(key, {});
       return {};
@@ -145,7 +169,7 @@ const flushSaveJson = key => {
   try {
     const stringified = JSON.stringify(value);
     if (shouldGuardMatchingCacheKey(key) && stringified.length > MATCHING_CACHE_MAX_CHARS) {
-      logMatchingCacheWarning(`skip writing oversized key ${key}`, [{ key, stringLength: stringified.length, approxMb: Number(estimateMb(stringified).toFixed(3)) }]);
+      logMatchingCacheWarning(`skip writing oversized key ${key}`, [{ key, stringLength: stringified.length, approxMb: toApproxMb(stringified), reason: 'max chars exceeded on write' }]);
       resetMatchingStorageKey(key);
       return;
     }
@@ -182,9 +206,9 @@ export const loadCards = () => {
 export const saveCards = cards => saveJson(CARDS_KEY, wrapVersionedCards(cards), { debounceMs: 800 });
 
 export const loadQueries = () => loadJson(QUERIES_KEY);
-export const saveQueries = queries => saveJson(QUERIES_KEY, queries);
 export const loadIndexQueries = () => loadJson(INDEX_QUERIES_KEY);
-export const saveIndexQueries = queries => saveJson(INDEX_QUERIES_KEY, queries);
+export const saveQueries = queries => saveJson(QUERIES_KEY, queries, { debounceMs: 300 });
+export const saveIndexQueries = queries => saveJson(INDEX_QUERIES_KEY, queries, { debounceMs: 300 });
 
 const canonicalizeQueryValue = value => {
   if (value === undefined) {
@@ -337,6 +361,15 @@ export const getIdsByQuery = queryKey => {
     saveQueries(queries);
     return [];
   }
+  if (ids.length > MATCHING_QUERY_MAX_IDS) {
+    const key = normalizeQueryKey(queryKey);
+    const queries = loadQueries();
+    delete queries[key];
+    saveQueries(queries);
+    logMatchingCacheWarning('reset oversized query ids list', [{ key, idsCount: ids.length, maxIds: MATCHING_QUERY_MAX_IDS, reason: 'ids limit exceeded' }]);
+    return [];
+  }
+  logMatchingCacheDebug('query ids cache hit', { key: normalizeQueryKey(queryKey), idsCount: ids.length });
   return ids;
 };
 
@@ -344,8 +377,10 @@ export const setIdsForQuery = (queryKey, ids) => {
   const key = normalizeQueryKey(queryKey);
   const queries = loadQueries();
   const now = Date.now();
-  queries[key] = { ids: ids.slice(), cachedAt: now, lastAction: now };
+  const nextIds = Array.isArray(ids) ? ids.slice(0, MATCHING_QUERY_MAX_IDS) : [];
+  queries[key] = { ids: nextIds, cachedAt: now, lastAction: now };
   saveQueries(queries);
+  logMatchingCacheDebug('query ids cache save', { key, idsCount: nextIds.length });
 };
 
 export const getIndexIdsByQuery = (queryKey, ttlMs = MATCHING_INDEX_TTL_MS) => {
@@ -353,22 +388,38 @@ export const getIndexIdsByQuery = (queryKey, ttlMs = MATCHING_INDEX_TTL_MS) => {
   const queries = loadIndexQueries();
   const entry = queries[key];
   const cachedAt = getEntryCacheTimestamp(entry);
-  if (!entry || !cachedAt) return null;
+  if (!entry || !cachedAt) {
+    logMatchingCacheDebug('index ids cache miss', { key });
+    return null;
+  }
   if (Date.now() - cachedAt > ttlMs) {
     delete queries[key];
     saveIndexQueries(queries);
+    logMatchingCacheDebug('index ids cache miss', { key, reason: 'ttl expired' });
     return null;
   }
-  return Array.isArray(entry.ids) ? entry.ids.slice() : [];
+  const ids = Array.isArray(entry.ids) ? entry.ids.slice() : [];
+  if (ids.length > MATCHING_QUERY_MAX_IDS) {
+    delete queries[key];
+    saveIndexQueries(queries);
+    logMatchingCacheWarning('reset oversized matchingIndex ids list', [{ key, idsCount: ids.length, maxIds: MATCHING_QUERY_MAX_IDS, reason: 'ids limit exceeded' }]);
+    return null;
+  }
+  logMatchingCacheDebug('index ids cache hit', { key, idsCount: ids.length });
+  return ids;
 };
 
 export const setIndexIdsForQuery = (queryKey, ids) => {
   const key = normalizeQueryKey(queryKey);
   const queries = loadIndexQueries();
   const now = Date.now();
-  queries[key] = { ids: Array.isArray(ids) ? ids.slice() : [], cachedAt: now, lastAction: now };
+  const nextIds = Array.isArray(ids) ? ids.slice(0, MATCHING_QUERY_MAX_IDS) : [];
+  queries[key] = { ids: nextIds, cachedAt: now, lastAction: now };
   saveIndexQueries(queries);
+  logMatchingCacheDebug('index ids cache save', { key, idsCount: nextIds.length });
 };
+
+export const clearMatchingCache = (reason = 'manual') => resetMatchingLocalStorageCache(reason);
 
 export const touchCardInQueries = cardId => {
   const queries = loadQueries();
