@@ -491,6 +491,53 @@ const getPreferredReactionSources = id => (
   isLikelyNewUsersUserId(id) ? ['newUsers', 'users'] : ['users', 'newUsers']
 );
 
+const sanitizeCardForBackend = card => {
+  if (!card || typeof card !== 'object') return card;
+  const blockedPrefixes = ['__', '_cache', '_debug', '_local'];
+  return Object.fromEntries(
+    Object.entries(card).filter(([key]) => {
+      if (key === 'collectionSource') return false;
+      return !blockedPrefixes.some(prefix => key.startsWith(prefix));
+    })
+  );
+};
+
+
+const hasRenderableMatchingProfilePayload = card => {
+  if (!card || typeof card !== 'object') return false;
+  const hasName = Boolean(String(card.name || card.displayName || '').trim());
+  const hasPhoto = Boolean(card.photoURL || card.photo || card.avatar || card.mainPhoto);
+  const hasPhotosArray = Array.isArray(card.photos) && card.photos.length > 0;
+  const hasAbout = Boolean(String(card.about || card.bio || '').trim());
+  return hasName || hasPhoto || hasPhotosArray || hasAbout;
+};
+
+const getReactionCardSource = (card, fallbackId = '') => {
+  const source = card?.__sourceCollection || card?.collectionSource;
+  if (source === 'users' || source === 'newUsers') return source;
+  return isShortId(card?.userId || card?.id || fallbackId) ? 'newUsers' : 'users';
+};
+
+const normalizeReactionCard = (card, id, sourceHint) => {
+  if (!card || typeof card !== 'object') return null;
+  const normalizedId = String(card.userId || card.id || id || '').trim();
+  if (!normalizedId) return null;
+  const source = sourceHint || getReactionCardSource(card, normalizedId);
+  return {
+    ...card,
+    userId: normalizedId,
+    id: card.id || normalizedId,
+    __sourceCollection: source,
+  };
+};
+
+const isValidCachedReactionCard = (card, id, sourceHint) => {
+  const normalized = normalizeReactionCard(card, id, sourceHint);
+  if (!normalized) return false;
+  const source = normalized.__sourceCollection;
+  if (source !== 'users' && source !== 'newUsers') return false;
+  return hasRenderableMatchingProfilePayload(normalized);
+};
 const canShowReactionTabCard = (card, { isAdmin = false } = {}) => {
   if (!card?.userId) return false;
   const source = card.__sourceCollection || (isShortId(card.userId) ? 'newUsers' : 'users');
@@ -1173,6 +1220,10 @@ const Matching = () => {
     favorites: buildEmptyReactionPagination(),
     dislikes: buildEmptyReactionPagination(),
   });
+  const [reactionPipelineReadyByType, setReactionPipelineReadyByType] = useState({
+    favorites: false,
+    dislikes: false,
+  });
   const favoriteUsersRef = useRef(favoriteUsers);
   const dislikeUsersRef = useRef(dislikeUsers);
   const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
@@ -1285,6 +1336,7 @@ const Matching = () => {
   const resetReactionPaginationState = React.useCallback((reactionType = null) => {
     if (reactionType === 'favorites' || reactionType === 'dislikes') {
       reactionLoadedIdsRef.current[reactionType] = new Set();
+      setReactionPipelineReadyByType(prev => ({ ...prev, [reactionType]: false }));
       setReactionPaginationByType(prev => ({
         ...prev,
         [reactionType]: buildEmptyReactionPagination(),
@@ -1296,6 +1348,10 @@ const Matching = () => {
       favorites: new Set(),
       dislikes: new Set(),
     };
+    setReactionPipelineReadyByType({
+      favorites: false,
+      dislikes: false,
+    });
     setReactionPaginationByType({
       favorites: buildEmptyReactionPagination(),
       dislikes: buildEmptyReactionPagination(),
@@ -1412,8 +1468,9 @@ const Matching = () => {
       )
     );
     try {
-      await updateDataInRealtimeDB(user.userId, { publish: newValue }, 'update');
-      await updateDataInFiresoreDB(user.userId, { publish: newValue }, 'update');
+      const backendPayload = sanitizeCardForBackend({ publish: newValue });
+      await updateDataInRealtimeDB(user.userId, backendPayload, 'update');
+      await updateDataInFiresoreDB(user.userId, backendPayload, 'update');
     } catch (err) {
       console.error('Failed to toggle publish', err);
     }
@@ -1866,7 +1923,7 @@ const Matching = () => {
       }
 
       const { todayDash } = getCurrentDate();
-      updateDataInNewUsersRTDB(user.uid, { lastLogin2: todayDash }, 'update');
+      updateDataInNewUsersRTDB(user.uid, sanitizeCardForBackend({ lastLogin2: todayDash }), 'update');
 
     });
 
@@ -2479,7 +2536,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, loadCommentsFor, parsedAdditionalAccessRules.length]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, lastKey, loadCommentsFor, parsedAdditionalAccessRules.length]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
@@ -2662,6 +2719,7 @@ const Matching = () => {
     const uniqueIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
     const sourceById = reactionSourceByIdRef.current || {};
     const cachedEntries = new Map();
+    const invalidCacheHitIds = [];
     const missingBySource = {
       users: [],
       newUsers: [],
@@ -2684,24 +2742,29 @@ const Matching = () => {
       let source = sourceById[id];
       if (!source && (cached?.__sourceCollection === 'users' || cached?.__sourceCollection === 'newUsers')) {
         source = cached.__sourceCollection;
-        reactionSourceByIdRef.current = {
-          ...reactionSourceByIdRef.current,
-          [id]: source,
-        };
       }
-      const canUseCachedCard = cached && (!source || !cached.__sourceCollection || cached.__sourceCollection === source);
+      const normalizedCached = normalizeReactionCard(cached, id, source || undefined);
+      const canUseCachedCard = isValidCachedReactionCard(normalizedCached, id, source || undefined)
+        && (!source || normalizedCached.__sourceCollection === source);
 
       if (canUseCachedCard) {
+        const resolvedSource = normalizedCached.__sourceCollection;
+        reactionSourceByIdRef.current = {
+          ...reactionSourceByIdRef.current,
+          [id]: resolvedSource,
+        };
         cachedEntries.set(id, {
-          ...cached,
-          userId: id,
-          __sourceCollection: cached.__sourceCollection || source || getPreferredReactionSources(id)[0],
+          ...normalizedCached,
           __fromCardCache: true,
         });
-      } else if (source === 'users' || source === 'newUsers') {
-        missingBySource[source].push(id);
       } else {
-        unknownSourceIds.push(id);
+        if (cached) invalidCacheHitIds.push(id);
+        const fallbackSource = source || getPreferredReactionSources(id)[0];
+        if (fallbackSource === 'users' || fallbackSource === 'newUsers') {
+          missingBySource[fallbackSource].push(id);
+        } else {
+          unknownSourceIds.push(id);
+        }
       }
     });
 
@@ -2725,7 +2788,12 @@ const Matching = () => {
 
     debugReactionFlowLog('fetchReactionCardsByIds:request-backend', {
       requestedIds: summarizeIdsForDebug(uniqueIds),
-      cacheHitIds: summarizeIdsForDebug(Array.from(cachedEntries.keys())),
+      requestedIdsCount: uniqueIds.length,
+      validCacheHitIds: summarizeIdsForDebug(Array.from(cachedEntries.keys())),
+      validCacheHitIdsCount: cachedEntries.size,
+      invalidCacheHitIds: summarizeIdsForDebug(invalidCacheHitIds),
+      invalidCacheHitIdsCount: invalidCacheHitIds.length,
+      backendFetchIdsCount: missingUserIds.length + missingNewUserIds.length,
       missingUserIds: summarizeIdsForDebug(missingUserIds),
       missingNewUserIds: summarizeIdsForDebug(missingNewUserIds),
     });
@@ -2742,21 +2810,29 @@ const Matching = () => {
       missingNewUsersIds: summarizeIdsForDebug(missingNewUserIds.filter(id => !(newUsersCards || []).some(card => card.userId === id))),
     });
 
+    const fetchedNewUsersMap = Object.fromEntries((newUsersCards || []).map(card => [String(card?.userId || '').trim(), card]).filter(([id]) => Boolean(id)));
     const result = {};
     uniqueIds.forEach(id => {
-      const source = reactionSourceByIdRef.current?.[id];
+      const source = reactionSourceByIdRef.current?.[id] || sourceById[id] || getPreferredReactionSources(id)[0];
       const cached = cachedEntries.get(id);
       const fetchedUser = usersMap?.[id];
-      const fetchedNewUser = (newUsersCards || []).find(card => card.userId === id);
-      const user = cached || (source === 'newUsers' ? fetchedNewUser : fetchedUser);
+      const fetchedNewUser = fetchedNewUsersMap[id];
+      const selectedUser = cached || (source === 'newUsers' ? fetchedNewUser : fetchedUser) || fetchedUser || fetchedNewUser;
+      const normalizedUser = normalizeReactionCard(selectedUser, id, source);
 
-      if (user && (source === 'users' || source === 'newUsers')) {
-        result[id] = { ...user, userId: id, __sourceCollection: source };
+      if (normalizedUser && isValidCachedReactionCard(normalizedUser, id, source)) {
+        reactionSourceByIdRef.current = {
+          ...reactionSourceByIdRef.current,
+          [id]: normalizedUser.__sourceCollection,
+        };
+        result[id] = normalizedUser;
       }
     });
 
     debugReactionFlowLog('fetchReactionCardsByIds:result', {
       requestedIds: summarizeIdsForDebug(uniqueIds),
+      finalReturnedCardsCount: Object.keys(result).length,
+      finalReturnedIds: summarizeIdsForDebug(Object.keys(result)),
       returnedIds: summarizeIdsForDebug(Object.keys(result)),
       missingResultIds: summarizeIdsForDebug(uniqueIds.filter(id => !result[id])),
       users: summarizeUsersForReactionDebug(Object.values(result)),
@@ -3130,7 +3206,7 @@ const Matching = () => {
     setUsers([]);
     setSharedReactionCandidateUsers([]);
     setLastKey(null);
-    setHasMore(false);
+    setHasMore(true);
     resetReactionPaginationState(reactionType);
 
     debugReactionFlowLog('loadReactionCards:start', {
@@ -3214,22 +3290,56 @@ const Matching = () => {
       };
       const reactionAccessSnapshotKey = buildAdditionalAccessSnapshotKey(reactionAccessSnapshot);
       const reactionIds = await getAccessibleReactionIds(fullReactionIds, reactionAccessSnapshot);
+      const classifiedReaction = await classifyReactionIdsBySource(reactionIds);
+      const safeReactionIds = [...new Set([
+        ...classifiedReaction.userReactionIds,
+        ...classifiedReaction.newUserReactionIds,
+      ])];
       debugReactionFlowLog('loadReactionCards:accessibleReactionIds', {
         reactionType,
         reactionIds: summarizeIdsForDebug(reactionIds),
+        accessibleReactionIdsCount: reactionIds.length,
+        safeReactionIdsCount: safeReactionIds.length,
+        paginationInitialized: false,
+        reactionPipelineReady: false,
+        unclassifiedIds: summarizeIdsForDebug(classifiedReaction.unclassifiedIds),
         removedByAccessIds: fullReactionIds.filter(id => !reactionIds.includes(id)),
         reactionAccessSnapshotKey,
       });
+      if (classifiedReaction.unclassifiedIds.length > 0) {
+        debugReactionFlowLog('loadReactionCards:unclassified-excluded', {
+          reactionType,
+          unclassifiedIds: summarizeIdsForDebug(classifiedReaction.unclassifiedIds),
+          count: classifiedReaction.unclassifiedIds.length,
+        });
+      }
       if (!canApplyReactionLoad()) {
         debugReactionFlowLog('loadReactionCards:stale-after-access', { reactionType, reactionLoadVersion });
         return;
       }
-      setIdsForQuery(listKey, reactionIds);
+      setReactionPaginationByType(prev => ({
+        ...prev,
+        [reactionType]: {
+          ids: safeReactionIds,
+          nextOffset: 0,
+          hasMore: safeReactionIds.length > 0,
+          accessSnapshotKey: reactionAccessSnapshotKey,
+        },
+      }));
+      setReactionPipelineReadyByType(prev => ({ ...prev, [reactionType]: true }));
+      setHasMore(safeReactionIds.length > 0);
+      debugReactionFlowLog('loadReactionCards:pipeline-ready', {
+        reactionType,
+        reactionPipelineReady: true,
+        paginationInitialized: true,
+        paginationIdsCount: safeReactionIds.length,
+      });
+      setIdsForQuery(listKey, safeReactionIds);
       if (isFavoritesMode) setFavoriteIds(favMap);
 
       const loadedIds = new Set();
       const page = await loadReactionCardsPage({
-        reactionIds,
+        reactionIds: safeReactionIds,
         reactionMap,
         offset: 0,
         limit: INITIAL_LOAD,
@@ -3259,7 +3369,7 @@ const Matching = () => {
       void loadCommentsFor(page.users);
       if (!canApplyReactionLoad()) return;
       const hasPendingSharedCandidates = hasPendingSharedReactionCandidates({
-        reactionIds,
+        reactionIds: safeReactionIds,
         sharedReactionIds: nextSharedReactionIds,
         loadedIds,
         reactionMap,
@@ -3272,12 +3382,12 @@ const Matching = () => {
         nextHasMore,
         nextOffset: page.nextOffset,
         loadedIds: summarizeIdsForDebug(Array.from(loadedIds)),
-        reactionIds: summarizeIdsForDebug(reactionIds),
+        reactionIds: summarizeIdsForDebug(safeReactionIds),
       });
       setReactionPaginationByType(prev => ({
         ...prev,
         [reactionType]: {
-          ids: reactionIds,
+          ids: safeReactionIds,
           nextOffset: page.nextOffset,
           hasMore: nextHasMore,
           accessSnapshotKey: reactionAccessSnapshotKey,
@@ -3298,6 +3408,7 @@ const Matching = () => {
     collectionSource,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
+    classifyReactionIdsBySource,
     getAccessibleReactionIds,
     loadCommentsFor,
     loadReactionCardsPage,
@@ -3501,16 +3612,27 @@ const Matching = () => {
         const reactionMap = viewMode === 'favorites'
           ? favoriteUsersRef.current
           : dislikeUsersRef.current;
+        const reactionPipelineReady = reactionPipelineReadyByType[viewMode];
         const currentPagination = reactionPaginationByType[viewMode] || buildEmptyReactionPagination();
         const reactionMapIds = Object.keys(reactionMap);
         debugReactionFlowLog('loadMore:reaction-start', {
           viewMode,
+          reactionPipelineReady,
+          paginationInitialized: Boolean(currentPagination.ids.length || currentPagination.accessSnapshotKey),
+          paginationIdsCount: currentPagination.ids.length,
           reactionMap: summarizeReactionMapForDebug(reactionMap),
           currentPagination,
           requestedLimit,
           targetVisibleCount,
           currentVisibleCount,
         });
+        if (!reactionPipelineReady) {
+          debugReactionFlowLog('loadMore:reaction-skipped', {
+            viewMode,
+            loadReactionCardsPageSkippedReason: 'pipeline-not-ready',
+          });
+          return 0;
+        }
         const hasAccessScopedNewUsersUserIds = [
           ...reactionMapIds,
           ...(currentPagination.ids || []),
@@ -3543,12 +3665,20 @@ const Matching = () => {
         const reactionIds = shouldRefreshReactionIds || currentPagination.ids.length === 0
           ? await getAccessibleReactionIds(reactionMapIds, reactionAccessSnapshot)
           : currentPagination.ids;
+        const classifiedReaction = await classifyReactionIdsBySource(reactionIds);
+        const safeReactionIds = [...new Set([
+          ...classifiedReaction.userReactionIds,
+          ...classifiedReaction.newUserReactionIds,
+        ])];
         debugReactionFlowLog('loadMore:reactionIds', {
           viewMode,
-          reactionIds: summarizeIdsForDebug(reactionIds),
+          reactionIds: summarizeIdsForDebug(safeReactionIds),
+          accessibleReactionIdsCount: reactionIds.length,
+          paginationIdsCount: currentPagination.ids.length,
           didAccessSnapshotChange,
           shouldRefreshReactionIds,
           reactionAccessSnapshotKey,
+          unclassifiedIds: summarizeIdsForDebug(classifiedReaction.unclassifiedIds),
         });
 
         if (!canApplyLoadMoreResult()) return;
@@ -3557,7 +3687,7 @@ const Matching = () => {
           ? new Set()
           : (reactionLoadedIdsRef.current[viewMode] || new Set());
         const page = await loadReactionCardsPage({
-          reactionIds,
+          reactionIds: safeReactionIds,
           reactionMap,
           offset: didAccessSnapshotChange || currentPagination.ids.length === 0 ? 0 : currentPagination.nextOffset,
           limit: requestedLimit,
@@ -3585,7 +3715,7 @@ const Matching = () => {
         });
         void loadCommentsFor(page.users);
         const hasPendingSharedCandidates = hasPendingSharedReactionCandidates({
-          reactionIds,
+          reactionIds: safeReactionIds,
           sharedReactionIds,
           loadedIds,
           reactionMap,
@@ -3598,12 +3728,12 @@ const Matching = () => {
           nextHasMore,
           nextOffset: page.nextOffset,
           loadedIds: summarizeIdsForDebug(Array.from(loadedIds)),
-          reactionIds: summarizeIdsForDebug(reactionIds),
+          reactionIds: summarizeIdsForDebug(safeReactionIds),
         });
         setReactionPaginationByType(prev => ({
           ...prev,
           [viewMode]: {
-            ids: reactionIds,
+            ids: safeReactionIds,
             nextOffset: page.nextOffset,
             hasMore: nextHasMore,
             accessSnapshotKey: reactionAccessSnapshotKey,
@@ -3983,6 +4113,7 @@ const Matching = () => {
     defaultListKey,
     fetchChunk,
     filters,
+    classifyReactionIdsBySource,
     getAccessibleReactionIds,
     hasMore,
     loading,
@@ -3991,6 +4122,7 @@ const Matching = () => {
     ownerId,
     loadReactionCardsPage,
     reactionPaginationByType,
+    reactionPipelineReadyByType,
     resetAdditionalMatchingState,
     parsedAdditionalAccessRules.length,
     roleIndexSets,
@@ -4318,13 +4450,32 @@ const Matching = () => {
       lastKey,
       additionalNextOffset,
     });
-    if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
+      if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
+    const isReactionMode = viewMode === 'favorites' || viewMode === 'dislikes';
+    const reactionPipelineReady = isReactionMode ? Boolean(reactionPipelineReadyByType[viewMode]) : true;
+    const reactionPagination = isReactionMode ? (reactionPaginationByType[viewMode] || buildEmptyReactionPagination()) : buildEmptyReactionPagination();
+    const paginationInitialized = !isReactionMode || reactionPagination.ids.length > 0 || reactionPagination.accessSnapshotKey !== '';
+    if (isReactionMode && !reactionPipelineReady) {
+      console.log('[Matching][refillEffect] blocked', {
+        refillBlockedReason: 'reaction-pipeline-not-ready',
+        reactionPipelineReady,
+        paginationInitialized,
+        paginationIdsCount: reactionPagination.ids.length,
+      });
+      return;
+    }
     if (loadingRef.current || loadingStateRef.current) {
-      console.log('[Matching][refillEffect] blocked', { stopReason: 'blocked-loading', loadingRefCurrent: loadingRef.current, loading });
+      console.log('[Matching][refillEffect] blocked', {
+        refillBlockedReason: 'blocked-loading',
+        loadingRefCurrent: loadingRef.current,
+        loading,
+        reactionPipelineReady,
+        paginationInitialized,
+      });
       return;
     }
     if (!hasMore) {
-      console.log('[Matching][refillEffect] blocked', { stopReason: 'blocked-no-hasMore' });
+      console.log('[Matching][refillEffect] blocked', { refillBlockedReason: 'blocked-no-hasMore', reactionPipelineReady, paginationInitialized });
       return;
     }
     if (filteredUsers.length >= MATCHING_VISIBLE_BUFFER) {
@@ -4350,12 +4501,12 @@ const Matching = () => {
       targetVisibleCount: MATCHING_VISIBLE_BUFFER,
       limit: MATCHING_REFILL_LIMIT,
     });
-  }, [additionalNextOffset, collectionSource, filteredUsers.length, filters, hasMore, lastKey, loading, runAutoLoadMore, viewMode]);
+  }, [additionalNextOffset, collectionSource, filteredUsers.length, filters, hasMore, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, runAutoLoadMore, viewMode]);
 
   const lastCardLoadTriggerSignatureRef = useRef('');
   useEffect(() => {
     writeMatchingDebugLog('lastCardObserver:mounted', { ownerId, viewMode: viewModeRef.current, collectionSource: collectionSourceRef.current });
-  }, []);
+  }, [ownerId]);
   const lastCardVisibilityLogSignatureRef = useRef('');
   useEffect(() => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
@@ -4465,7 +4616,7 @@ const Matching = () => {
       matchingDebugVersion: MATCHING_DEBUG_VERSION,
       initialLogMode: matchingDebugLogMode,
     });
-  }, []);
+  }, [matchingDebugLogMode, ownerId]);
 
   useEffect(() => {
     writeMatchingDebugLog('loadMore:function-ready', {
