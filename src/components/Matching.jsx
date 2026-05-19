@@ -2343,6 +2343,18 @@ const Matching = () => {
       );
       if (!canApplyInitialLoad()) return;
       console.log('[loadInitial] initial loaded', res.users.length, 'hasMore', res.hasMore);
+      writeMatchingDebugLog('cards:loadInitial-summary', {
+        requestedVisible: INITIAL_LOAD,
+        sourceCardsCount: Number(res.sourceCardsCount || 0),
+        filteredCardsCount: Number(res.filteredCardsCount || 0),
+        emittedCardsCount: Number(res.emittedCardsCount || 0),
+        filteredOutCount: Math.max(0, Number(res.sourceCardsCount || 0) - Number(res.filteredCardsCount || 0)),
+        visibleReturnedCount: Number(res.users?.length || 0),
+        excludedCount: Number(res.excludedCount || 0),
+        loadedPages: Number(res.loadedPages || 0),
+        stopReason: res.stopReason || '',
+        hasMore: Boolean(res.hasMore),
+      });
       const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
       if (stats && typeof console.table === 'function') console.table([stats]);
       loadedIdsRef.current = new Set([
@@ -3685,6 +3697,19 @@ const Matching = () => {
           loadedPages: res.loadedPages,
           stopReason: res.stopReason,
         });
+        writeMatchingDebugLog('cards:loadMore-batch-summary', {
+          requestedVisible: remaining,
+          sourceCardsCount: Number(res.sourceCardsCount || 0),
+          filteredCardsCount: Number(res.filteredCardsCount || 0),
+          emittedCardsCount: Number(res.emittedCardsCount || 0),
+          filteredOutCount: Math.max(0, Number(res.sourceCardsCount || 0) - Number(res.filteredCardsCount || 0)),
+          visibleReturnedCount: Number(res.users?.length || 0),
+          excludedCount: Number(res.excludedCount || 0),
+          loadedPages: Number(res.loadedPages || 0),
+          stopReason: res.stopReason || '',
+          hasMore: Boolean(res.hasMore),
+          sourceHasMore: Boolean(res.sourceHasMore),
+        });
 
         const unique = res.users.filter(
           u => u?.userId && !loadedIdsRef.current.has(u.userId)
@@ -4172,7 +4197,7 @@ const Matching = () => {
   };
 
   const showBackendTrafficToggle = ownerId === BACKEND_TRAFFIC_TRACKING_TEST_UID;
-  const showMatchingDebugLogModeToggle = ownerId === MATCHING_LOG_MODE_TEST_USER_ID;
+  const showMatchingDebugLogModeToggle = isAdmin || ownerId === MATCHING_LOG_MODE_TEST_USER_ID;
 
   const dotsMenu = () => (
     <>

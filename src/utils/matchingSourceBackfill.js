@@ -19,6 +19,9 @@ export const collectFilteredMatchingSourceCards = async ({
   let excludedCount = 0;
   let loadedPages = 0;
   let stopReason = '';
+  let sourceCardsCount = 0;
+  let filteredCardsCount = 0;
+  let emittedCardsCount = 0;
 
   while (collected.length < visibleTarget && sourceHasMore && loadedPages < maxPages) {
     loadedPages += 1;
@@ -41,6 +44,8 @@ export const collectFilteredMatchingSourceCards = async ({
 
     const sourceUsers = Array.isArray(sourceRes?.users) ? sourceRes.users : [];
     const filtered = filterSourceUsers(sourceUsers, { exclude, collected, remaining });
+    sourceCardsCount += sourceUsers.length;
+    filteredCardsCount += filtered.length;
     excludedCount += sourceUsers.length - filtered.length;
 
     const slice = filtered.slice(0, remaining);
@@ -55,6 +60,7 @@ export const collectFilteredMatchingSourceCards = async ({
       .map(decorateUser);
 
     if (validSlice.length) {
+      emittedCardsCount += validSlice.length;
       collected.push(...validSlice);
       if (onPart) {
         // eslint-disable-next-line no-await-in-loop
@@ -91,6 +97,9 @@ export const collectFilteredMatchingSourceCards = async ({
     sourceHasMore,
     cursorAdvanced,
     excludedCount,
+    sourceCardsCount,
+    filteredCardsCount,
+    emittedCardsCount,
     loadedPages,
     stopReason: stopReason || (collected.length ? 'target_reached' : 'no_visible_cards_added'),
   };
