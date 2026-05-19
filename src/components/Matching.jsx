@@ -1729,10 +1729,12 @@ const Matching = () => {
             localStorage.setItem('accessLevel', accessLevel);
             localStorage.setItem('additionalAccessRules', additionalAccessRules);
             localStorage.setItem('additionalSearchKeySetKeys', searchKeySetKeys.join(','));
-            const accessOwnerIds = parseMultiDataAccessUserIds(profile?.[MULTI_DATA_ACCESS_FIELD]);
+            const rawMultiDataAccessUserIds = profile?.[MULTI_DATA_ACCESS_FIELD];
+            const accessOwnerIds = parseMultiDataAccessUserIds(rawMultiDataAccessUserIds);
             const resolvedOwnerIds = resolveMatchingMultiDataOwnerIds({ viewerId: user.uid, profile });
             debugSharedReactionsLog(user.uid, 'ownerIds read from multiDataAccessUserIds', {
-              multiDataAccessUserIds: accessOwnerIds,
+              rawMultiDataAccessUserIds,
+              sharedOwnerIds: accessOwnerIds,
               ownerIds: resolvedOwnerIds,
               paths: accessOwnerIds.map(sharedOwnerId => ({
                 favorites: `multiData/favorites/${sharedOwnerId}`,
@@ -1830,10 +1832,26 @@ const Matching = () => {
         favorites,
         dislikes,
       });
+      const sharedFavoriteIds = uniqueTruthyReactionIds(
+        sharedOwnerIds.map(sharedOwnerId => favoriteSnapshots[sharedOwnerId])
+      );
+      const sharedDislikeIds = uniqueTruthyReactionIds(
+        sharedOwnerIds.map(sharedOwnerId => dislikeSnapshots[sharedOwnerId])
+      );
       debugSharedReactionsLog(ownOwnerId, 'priority merge applied for shared reactions', {
         ownerIds,
         availableOwnerIds,
         sharedOwnerIds,
+        loadedReactionCountByOwnerId: sharedOwnerIds.reduce((acc, sharedOwnerId) => {
+          const ownerFavoritesCount = Object.keys(normalizeReactionMap(favoriteSnapshots[sharedOwnerId])).length;
+          const ownerDislikesCount = Object.keys(normalizeReactionMap(dislikeSnapshots[sharedOwnerId])).length;
+          acc[sharedOwnerId] = {
+            favorites: ownerFavoritesCount,
+            dislikes: ownerDislikesCount,
+            total: ownerFavoritesCount + ownerDislikesCount,
+          };
+          return acc;
+        }, {}),
         sharedFavoritesFound: countTruthyReactionEntries(
           sharedOwnerIds.map(sharedOwnerId => favoriteSnapshots[sharedOwnerId])
         ),
@@ -1849,6 +1867,12 @@ const Matching = () => {
         sharedReactionIdsFound: summarizeIdsForDebug(nextSharedReactionIds),
         ownFavoritesFound: Object.keys(ownFavorites).length,
         ownDislikesFound: Object.keys(ownDislikes).length,
+        finalMergedSharedFavoritesCount: sharedFavoriteIds.length,
+        finalMergedSharedDislikesCount: sharedDislikeIds.length,
+        finalMergedSharedReactionCount: new Set([
+          ...sharedFavoriteIds,
+          ...sharedDislikeIds,
+        ]).size,
         appliedFavorites: summarizeIdsForDebug(Object.keys(favorites)),
         appliedDislikes: summarizeIdsForDebug(Object.keys(dislikes)),
         id0001SelfCheck: {
@@ -1894,11 +1918,19 @@ const Matching = () => {
       const unsubFav = onValue(favRef, snap => {
         favoriteSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
         loadedFavoriteOwnerIds.add(effectiveOwnerId);
+        debugSharedReactionsLog(getOwnerId(), 'loaded favorites snapshot for ownerId', {
+          ownerId: effectiveOwnerId,
+          loadedReactionCount: Object.keys(normalizeReactionMap(favoriteSnapshots[effectiveOwnerId])).length,
+        });
         applyPrioritizedReactionMaps();
       }, error => markOwnerSnapshotLoaded(favoriteSnapshots, loadedFavoriteOwnerIds, 'favorites', error));
       const unsubDis = onValue(disRef, snap => {
         dislikeSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
         loadedDislikeOwnerIds.add(effectiveOwnerId);
+        debugSharedReactionsLog(getOwnerId(), 'loaded dislikes snapshot for ownerId', {
+          ownerId: effectiveOwnerId,
+          loadedReactionCount: Object.keys(normalizeReactionMap(dislikeSnapshots[effectiveOwnerId])).length,
+        });
         applyPrioritizedReactionMaps();
       }, error => markOwnerSnapshotLoaded(dislikeSnapshots, loadedDislikeOwnerIds, 'dislikes', error));
 
