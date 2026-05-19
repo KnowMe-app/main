@@ -5,6 +5,7 @@ import { encodeKey } from './searchIndexCandidates';
 
 export const SEARCH_ID_INDEXED_FIELDS = new Set([
   'instagram',
+  'ameblo',
   'facebook',
   'email',
   'phone',
@@ -42,6 +43,7 @@ export const getSearchIdPrefixes = searchIdPrefixes => {
 const SOCIAL_SEARCH_KEYS = new Set([
   'telegram',
   'instagram',
+  'ameblo',
   'facebook',
   'tiktok',
   'linkedin',

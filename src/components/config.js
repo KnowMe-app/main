@@ -3121,7 +3121,7 @@ const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
 };
 
 const MARITAL_STATUS_SEARCH_KEY_BUCKETS = ['+', '-', '?', 'no'];
-const CONTACT_SEARCH_KEY_BUCKETS = ['vk', 'instagram', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email', 'twitter', 'line', 'otherLink'];
+const CONTACT_SEARCH_KEY_BUCKETS = ['vk', 'instagram', 'ameblo', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email', 'twitter', 'line', 'otherLink'];
 const ROLE_SEARCH_KEY_BUCKETS = ['ed', 'sm', 'ag', 'ip', 'pp', 'cl', '?', 'no'];
 const USER_ID_SEARCH_KEY_BUCKETS = ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'];
 const IMT_SEARCH_KEY_BUCKETS = ['le28', '29_31', '32_35', '36_plus', '?', 'no'];
@@ -4840,6 +4840,7 @@ const getContactIndexSet = data => {
   const contactSet = new Set();
   if (hasContactValue(data.vk)) contactSet.add('vk');
   if (hasContactValue(data.instagram)) contactSet.add('instagram');
+  if (hasContactValue(data.ameblo)) contactSet.add('ameblo');
   if (hasContactValue(data.facebook)) contactSet.add('facebook');
   if (hasContactValue(data.phone)) contactSet.add('phone');
   if (hasTelegramNonUk(data.telegram)) contactSet.add('telegram');

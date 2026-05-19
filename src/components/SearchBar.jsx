@@ -151,6 +151,22 @@ const parseFacebookId = url => {
   return null;
 };
 
+
+const parseAmebloId = input => {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const amebloRegex = /ameblo\.jp\/([^/?#]+)/i;
+  const amebloMatch = trimmed.match(amebloRegex);
+  if (amebloMatch?.[1]) return amebloMatch[1];
+
+  const labeledRegex = /(?:^|[^A-Za-z0-9Ѐ-ӿ_])(ameblo|амебло)[:\s]+([A-Za-z0-9._-]+)/i;
+  const labeledMatch = trimmed.match(labeledRegex);
+  if (labeledMatch?.[2]) return labeledMatch[2];
+
+  return null;
+};
 const parseInstagramId = input => {
   if (typeof input === 'string' && input.includes('instagram')) {
     const instagramRegex = /instagram\.com\/(?:p\/|stories\/|explore\/)?([^/?#]+)/;
@@ -322,6 +338,7 @@ const detectHttpSocialSearch = input => {
 
   const socialParsers = [
     { platform: 'instagram', hostPattern: /(?:^|\.)instagram\.com$/i, parser: parseInstagramId },
+    { platform: 'ameblo', hostPattern: /(?:^|\.)ameblo\.jp$/i, parser: parseAmebloId },
     { platform: 'facebook', hostPattern: /(?:^|\.)facebook\.com$/i, parser: parseFacebookId },
     { platform: 'telegram', hostPattern: /(?:^|\.)t\.me$/i, parser: parseTelegramId },
     { platform: 'telegram', hostPattern: /(?:^|\.)telegram\.me$/i, parser: parseTelegramId },
@@ -359,6 +376,7 @@ const inferSearchIdPrefix = input => {
 
   const prefixedParsers = [
     ['instagram', parseInstagramId],
+    ['ameblo', parseAmebloId],
     ['facebook', parseFacebookId],
     ['telegram', parseTelegramId],
     ['tiktok', parseTikTokLink],
@@ -551,6 +569,7 @@ const EQUAL_TO_SEARCH_PARSERS = {
   userId: parseUserId,
   facebook: parseFacebookId,
   instagram: parseInstagramId,
+  ameblo: parseAmebloId,
   telegram: parseTelegramId,
   email: parseEmail,
   tiktok: parseTikTokLink,
@@ -673,6 +692,7 @@ export const detectSearchParamsByQueryContent = query => {
   const parsers = [
     ['facebook', parseFacebookId],
     ['instagram', parseInstagramId],
+    ['ameblo', parseAmebloId],
     ['telegram', parseTelegramId],
     ['userId', parseUserId],
     ['email', parseEmail],
@@ -1814,6 +1834,10 @@ const SearchBar = ({
     if (
       isSearchEnabled('instagram') &&
       await processUserSearch('instagram', parseInstagramId, rawQuery, { requestId })
+    ) return;
+    if (
+      isSearchEnabled('ameblo') &&
+      await processUserSearch('ameblo', parseAmebloId, rawQuery, { requestId })
     ) return;
     if (
       isSearchEnabled('telegram') &&
