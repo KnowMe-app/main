@@ -342,6 +342,27 @@ const formatDebugToastValue = value => {
   return String(value);
 };
 
+const serializeConsoleArg = value => {
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+    };
+  }
+  if (typeof value === 'undefined') return 'undefined';
+  if (typeof value === 'function') return `[Function ${value.name || 'anonymous'}]`;
+  if (typeof value === 'bigint') return value.toString();
+  if (value && typeof value === 'object') {
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch (error) {
+      return String(value);
+    }
+  }
+  return value;
+};
+
 const debugAdditionalToast = (accessUserId, message, data = {}) => {
   if (!shouldDebugAdditionalMatching(accessUserId)) return;
 
@@ -1183,6 +1204,8 @@ const Matching = () => {
   const sharedReactionCandidateLoadVersionRef = useRef(0);
   const autoLoadMoreLastRunRef = useRef(0);
   const autoLoadMoreSignatureRef = useRef('');
+  const originalConsoleMethodsRef = useRef(null);
+  const consoleInterceptEnabledRef = useRef(false);
   const matchingLastCardsDebugStatsRef = useRef({
     sourceCardsCount: 0,
     filteredCardsCount: 0,
@@ -4199,6 +4222,59 @@ const Matching = () => {
       localStorage.setItem(MATCHING_DEBUG_LOG_MODE_KEY, matchingDebugLogMode);
     }
   }, [matchingDebugLogMode]);
+
+  useEffect(() => {
+    if (typeof console === 'undefined') return undefined;
+
+    const enableIntercept = () => {
+      if (consoleInterceptEnabledRef.current) return;
+      const methods = ['log', 'info', 'warn', 'error', 'debug'];
+      originalConsoleMethodsRef.current = methods.reduce((acc, methodName) => {
+        acc[methodName] = console[methodName]?.bind(console);
+        return acc;
+      }, {});
+
+      methods.forEach(methodName => {
+        const originalMethod = originalConsoleMethodsRef.current?.[methodName];
+        if (typeof originalMethod !== 'function') return;
+        console[methodName] = (...args) => {
+          if (isMatchingDebugFileMode()) {
+            writeMatchingDebugLog(`console:${methodName}`, {
+              ownerId,
+              viewMode: viewModeRef.current,
+              collectionSource: collectionSourceRef.current,
+              args: args.map(serializeConsoleArg),
+            });
+          }
+          originalMethod(...args);
+        };
+      });
+      consoleInterceptEnabledRef.current = true;
+    };
+
+    const disableIntercept = () => {
+      if (!consoleInterceptEnabledRef.current) return;
+      const methods = ['log', 'info', 'warn', 'error', 'debug'];
+      methods.forEach(methodName => {
+        const originalMethod = originalConsoleMethodsRef.current?.[methodName];
+        if (typeof originalMethod === 'function') {
+          console[methodName] = originalMethod;
+        }
+      });
+      originalConsoleMethodsRef.current = null;
+      consoleInterceptEnabledRef.current = false;
+    };
+
+    if (matchingDebugLogMode === 'file') {
+      enableIntercept();
+    } else {
+      disableIntercept();
+    }
+
+    return () => {
+      disableIntercept();
+    };
+  }, [matchingDebugLogMode, ownerId]);
 
   const handleDownloadSizeToastsToggle = () => {
     setDownloadSizeToastsEnabled(prev => !prev);
