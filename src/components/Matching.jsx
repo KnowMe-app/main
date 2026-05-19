@@ -440,6 +440,16 @@ const getPreferredReactionSources = id => (
   isLikelyNewUsersUserId(id) ? ['newUsers', 'users'] : ['users', 'newUsers']
 );
 
+const canShowReactionTabCard = (card, { isAdmin = false } = {}) => {
+  if (!card?.userId) return false;
+  const source = card.__sourceCollection || (isShortId(card.userId) ? 'newUsers' : 'users');
+  if (source === 'newUsers') {
+    return card.__matchingAccessAllowed !== false;
+  }
+  if (isAdmin) return true;
+  return card.publish !== false;
+};
+
 const FETCH_USERS_BY_IDS_BATCH_SIZE = 100;
 const fetchNewUsersByIdsForMatching = (ids, batchSize = FETCH_USERS_BY_IDS_BATCH_SIZE) =>
   fetchNewUsersByIdsForMatchingData({
@@ -2900,7 +2910,7 @@ const Matching = () => {
         const scopedCandidates = candidates
           .filter(user => activeReactionMap[user.userId])
           .filter(user => isMatchingCardId(user.userId))
-          .filter(user => canShowMatchingUser(user, { isAdmin }))
+          .filter(user => canShowReactionTabCard(user, { isAdmin }))
           .filter(user => !loadedIds.has(user.userId));
 
         debugReactionFlowLog('loadReactionCardsPage:scopedCandidates-before-ui-filters', {
@@ -3748,7 +3758,46 @@ const Matching = () => {
     collectionSource,
   ]);
 
-  const filteredUsers = applyMatchingUiFiltersToUsers({
+  const reactionTabUsers = useMemo(() => {
+    if (viewMode !== 'favorites' && viewMode !== 'dislikes') return [];
+
+    const reactionMap = viewMode === 'favorites' ? favoriteUsers : dislikeUsers;
+    const reactionIds = Object.keys(normalizeReactionMap(reactionMap));
+    if (!reactionIds.length) return [];
+
+    const candidateUsersById = new Map();
+    [
+      ...users,
+      ...additionalNewUsers,
+      ...sharedReactionCandidateUsers,
+    ].forEach(user => {
+      if (!user?.userId || candidateUsersById.has(user.userId)) return;
+      candidateUsersById.set(user.userId, user);
+    });
+
+    const uniqueIds = new Set();
+    return reactionIds
+      .map(id => candidateUsersById.get(id))
+      .filter(card => Boolean(card))
+      .filter(card => {
+        if (!card?.userId || uniqueIds.has(card.userId)) return false;
+        if (!canShowReactionTabCard(card, { isAdmin })) return false;
+        uniqueIds.add(card.userId);
+        return true;
+      });
+  }, [
+    additionalNewUsers,
+    dislikeUsers,
+    favoriteUsers,
+    isAdmin,
+    sharedReactionCandidateUsers,
+    users,
+    viewMode,
+  ]);
+
+  const filteredUsers = (viewMode === 'favorites' || viewMode === 'dislikes')
+    ? reactionTabUsers
+    : applyMatchingUiFiltersToUsers({
     users: visibleUsers,
     filters,
     filterMainFn: filterMain,
@@ -3771,9 +3820,11 @@ const Matching = () => {
       loadingRef: loadingRef.current,
       hasMore,
       collectionSource,
+      reactionIds: summarizeIdsForDebug(Object.keys(normalizeReactionMap(viewMode === 'favorites' ? favoriteUsers : dislikeUsers))),
       users: summarizeUsersForReactionDebug(users),
       additionalNewUsers: summarizeUsersForReactionDebug(additionalNewUsers),
       sharedReactionCandidateUsers: summarizeUsersForReactionDebug(sharedReactionCandidateUsers),
+      reactionTabUsers: summarizeUsersForReactionDebug(reactionTabUsers),
       visibleUsers: summarizeUsersForReactionDebug(visibleUsers),
       filteredUsers: summarizeUsersForReactionDebug(filteredUsers),
       renderedCards: summarizeUsersForReactionDebug(renderedCards),
@@ -3788,6 +3839,7 @@ const Matching = () => {
     dislikeUsers,
     favoriteUsers,
     filteredUsers,
+    reactionTabUsers,
     filters,
     hasMore,
     loading,
