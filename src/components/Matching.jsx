@@ -1832,8 +1832,12 @@ const Matching = () => {
         favorites,
         dislikes,
       });
-      const sharedFavoritesMap = mergeReactionMaps(sharedOwnerIds.map(sharedOwnerId => favoriteSnapshots[sharedOwnerId]));
-      const sharedDislikesMap = mergeReactionMaps(sharedOwnerIds.map(sharedOwnerId => dislikeSnapshots[sharedOwnerId]));
+      const sharedFavoriteIds = uniqueTruthyReactionIds(
+        sharedOwnerIds.map(sharedOwnerId => favoriteSnapshots[sharedOwnerId])
+      );
+      const sharedDislikeIds = uniqueTruthyReactionIds(
+        sharedOwnerIds.map(sharedOwnerId => dislikeSnapshots[sharedOwnerId])
+      );
       debugSharedReactionsLog(ownOwnerId, 'priority merge applied for shared reactions', {
         ownerIds,
         availableOwnerIds,
@@ -1863,11 +1867,11 @@ const Matching = () => {
         sharedReactionIdsFound: summarizeIdsForDebug(nextSharedReactionIds),
         ownFavoritesFound: Object.keys(ownFavorites).length,
         ownDislikesFound: Object.keys(ownDislikes).length,
-        finalMergedSharedFavoritesCount: Object.keys(sharedFavoritesMap).length,
-        finalMergedSharedDislikesCount: Object.keys(sharedDislikesMap).length,
+        finalMergedSharedFavoritesCount: sharedFavoriteIds.length,
+        finalMergedSharedDislikesCount: sharedDislikeIds.length,
         finalMergedSharedReactionCount: new Set([
-          ...Object.keys(sharedFavoritesMap),
-          ...Object.keys(sharedDislikesMap),
+          ...sharedFavoriteIds,
+          ...sharedDislikeIds,
         ]).size,
         appliedFavorites: summarizeIdsForDebug(Object.keys(favorites)),
         appliedDislikes: summarizeIdsForDebug(Object.keys(dislikes)),
