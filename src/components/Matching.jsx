@@ -4276,7 +4276,7 @@ const Matching = () => {
       const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
       if (stats && typeof console.table === 'function') console.table([stats]);
     });
-  }, [loadMore]);
+  }, [hasMore, loadMore, loading]);
 
   useEffect(() => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
