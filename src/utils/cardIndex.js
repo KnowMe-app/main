@@ -10,6 +10,7 @@ export const MATCHING_INDEX_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 export const CARDS_CACHE_VERSION = 2;
 export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
 export const MATCHING_QUERY_MAX_IDS = 2000;
+export const MATCHING_INDEX_CACHE_VERSION = 1;
 const MATCHING_LOCAL_STORAGE_KEYS = new Set([CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY]);
 const localJsonCache = new Map();
 const pendingSaveTimers = new Map();
@@ -88,7 +89,14 @@ const resetMatchingStorageKey = key => {
 };
 
 export const resetMatchingLocalStorageCache = (reason = 'manual') => {
-  const keysToReset = [CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY];
+  const dynamicKeysToReset = typeof localStorage === 'undefined'
+    ? []
+    : Object.keys(localStorage).filter(key => {
+      const normalized = String(key || '');
+      const lower = normalized.toLowerCase();
+      return lower.includes('matchingindex') || lower.startsWith('searchkey:') || lower.includes('searchkeysets');
+    });
+  const keysToReset = [...new Set([CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY, ...dynamicKeysToReset])];
   logMatchingCacheDebug('clearMatchingCache started', { reason, keys: keysToReset });
   const rows = getMatchingLocalStorageCacheStats();
   const cancelledPendingWritesForKeys = [];
@@ -383,7 +391,12 @@ export const setIdsForQuery = (queryKey, ids) => {
   logMatchingCacheDebug('query ids cache save', { key, idsCount: nextIds.length });
 };
 
-export const getIndexIdsByQuery = (queryKey, ttlMs = MATCHING_INDEX_TTL_MS) => {
+export const getIndexIdsByQuery = (queryKey, options = {}) => {
+  const {
+    ttlMs = MATCHING_INDEX_TTL_MS,
+    requiredComplete = true,
+    expectedMeta = null,
+  } = options || {};
   const key = normalizeQueryKey(queryKey);
   const queries = loadIndexQueries();
   const entry = queries[key];
@@ -398,6 +411,21 @@ export const getIndexIdsByQuery = (queryKey, ttlMs = MATCHING_INDEX_TTL_MS) => {
     logMatchingCacheDebug('index ids cache miss', { key, reason: 'ttl expired' });
     return null;
   }
+  if (requiredComplete && entry.complete !== true) {
+    logMatchingCacheDebug('index ids cache miss', { key, reason: 'incomplete-cache-entry' });
+    return null;
+  }
+  if (entry.cacheVersion !== MATCHING_INDEX_CACHE_VERSION) {
+    logMatchingCacheDebug('index ids cache miss', { key, reason: 'cache-version-mismatch', cacheVersion: entry.cacheVersion });
+    return null;
+  }
+  if (expectedMeta && typeof expectedMeta === 'object') {
+    const mismatch = Object.keys(expectedMeta).some(metaKey => (entry?.meta?.[metaKey] ?? null) !== (expectedMeta?.[metaKey] ?? null));
+    if (mismatch) {
+      logMatchingCacheDebug('index ids cache miss', { key, reason: 'meta-mismatch' });
+      return null;
+    }
+  }
   const ids = Array.isArray(entry.ids) ? entry.ids.slice() : [];
   if (ids.length > MATCHING_QUERY_MAX_IDS) {
     delete queries[key];
@@ -406,17 +434,18 @@ export const getIndexIdsByQuery = (queryKey, ttlMs = MATCHING_INDEX_TTL_MS) => {
     return null;
   }
   logMatchingCacheDebug('index ids cache hit', { key, idsCount: ids.length });
-  return ids;
+  return { ids, meta: entry.meta || null, complete: entry.complete === true, cacheVersion: entry.cacheVersion };
 };
 
-export const setIndexIdsForQuery = (queryKey, ids) => {
+export const setIndexIdsForQuery = (queryKey, ids, options = {}) => {
+  const { complete = false, meta = null, cacheVersion = MATCHING_INDEX_CACHE_VERSION } = options || {};
   const key = normalizeQueryKey(queryKey);
   const queries = loadIndexQueries();
   const now = Date.now();
   const nextIds = Array.isArray(ids) ? ids.slice(0, MATCHING_QUERY_MAX_IDS) : [];
-  queries[key] = { ids: nextIds, cachedAt: now, lastAction: now };
+  queries[key] = { ids: nextIds, cachedAt: now, lastAction: now, complete: complete === true, meta: meta && typeof meta === 'object' ? meta : null, cacheVersion };
   saveIndexQueries(queries);
-  logMatchingCacheDebug('index ids cache save', { key, idsCount: nextIds.length });
+  logMatchingCacheDebug('index ids cache save', { key, idsCount: nextIds.length, complete: complete === true });
 };
 
 export const clearMatchingCache = (reason = 'manual') => resetMatchingLocalStorageCache(reason);

@@ -1,6 +1,6 @@
 import { get, ref } from 'firebase/database';
 import { database } from 'components/config';
-import { getCard, getIndexIdsByQuery, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
+import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
 import { getIndexedNewUsersIdsByRules, normalizeSearchKeySetKeys } from './newUsersFilterSetsIndex';
 
@@ -158,6 +158,14 @@ const normalizeSignatureValue = value => {
 
 const buildRawRulesSignature = rawRules => String(rawRules || '').trim();
 
+
+const buildMatchingIndexCacheMeta = ({ filterSignature = '', collectionSource = 'users', ownerId = '', accessUserId = '' } = {}) => ({
+  filterSignature: String(filterSignature || ''),
+  collectionSource: String(collectionSource || 'users'),
+  ownerId: String(ownerId || ''),
+  accessUserId: String(accessUserId || ''),
+});
+
 export const buildMatchingIndexQueryKey = ({
   collectionSource = 'users',
   filters = {},
@@ -274,6 +282,13 @@ export const fetchMatchingIndexedCandidates = async ({
   const excludedSet = new Set((Array.isArray(excludeIds) ? excludeIds : [...(excludeIds || [])]).filter(Boolean));
   const safeOffset = normalizeOffset(offset);
   const safeLimit = normalizeLimit(limit);
+  const filterSignature = serializeQueryFilters(normalizeSignatureValue(filters || {}));
+  const cacheMeta = buildMatchingIndexCacheMeta({
+    filterSignature,
+    collectionSource,
+    ownerId: String(ownerId || '').trim(),
+    accessUserId: String(accessUserId || '').trim(),
+  });
   const cacheKey = buildMatchingIndexQueryKey({
     collectionSource,
     filters,
@@ -287,11 +302,14 @@ export const fetchMatchingIndexedCandidates = async ({
 
   const readCachedPage = () => {
     if (!useIndexIdCache || collectionSource === 'newUsers') return null;
-    const cachedIds = getIndexIdsByQuery(cacheKey);
-    if (!Array.isArray(cachedIds)) return null;
-    const sliced = sliceIndexedBaseIds({ ids: cachedIds, offset: safeOffset, limit: safeLimit, excludedSet });
+    const cached = getIndexIdsByQuery(cacheKey, {
+      requiredComplete: true,
+      expectedMeta: cacheMeta,
+    });
+    if (!cached || !Array.isArray(cached.ids)) return null;
+    const sliced = sliceIndexedBaseIds({ ids: cached.ids, offset: safeOffset, limit: safeLimit, excludedSet });
     return {
-      allIds: cachedIds,
+      allIds: cached.ids,
       ...sliced,
     };
   };
@@ -361,7 +379,13 @@ export const fetchMatchingIndexedCandidates = async ({
     filterGroups.map(group => readBucketIds({ rootPath: MATCHING_USERS_INDEX_ROOT, ...group }))
   );
   const allMatchingIds = intersectIdSets(idSets) || [];
-  if (useIndexIdCache) setIndexIdsForQuery(cacheKey, allMatchingIds);
+  if (useIndexIdCache) {
+    setIndexIdsForQuery(cacheKey, allMatchingIds, {
+      complete: true,
+      cacheVersion: MATCHING_INDEX_CACHE_VERSION,
+      meta: cacheMeta,
+    });
+  }
   const { pageIds, nextOffset, hasMore } = sliceIndexedBaseIds({
     ids: allMatchingIds,
     offset: safeOffset,
