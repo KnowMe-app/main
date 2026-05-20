@@ -190,6 +190,7 @@ const MATCHING_LOG_MODE_TEST_USER_ID = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
 const MATCHING_DATA_SOURCE_TEST_USER_ID = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
 const MATCHING_DATA_SOURCE_MODE_KEY = 'matchingDataSourceMode';
 const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
+const MATCHING_DEBUG_SHOW_ALL_INDEXED_CARDS_KEY = 'matchingDebugShowAllIndexedCards';
 const MATCHING_DEBUG_VERSION = 'autoload-diagnostics-v2';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_NEW_USER_ID = 'ID0001';
@@ -212,6 +213,11 @@ const getStoredMatchingDebugLogMode = () => {
 const getStoredMatchingDataSourceMode = () => {
   if (typeof localStorage === 'undefined') return 'localFirst';
   return localStorage.getItem(MATCHING_DATA_SOURCE_MODE_KEY) === 'backend' ? 'backend' : 'localFirst';
+};
+
+const getStoredDebugShowAllIndexedCards = () => {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem(MATCHING_DEBUG_SHOW_ALL_INDEXED_CARDS_KEY) === 'true';
 };
 
 const isMatchingDebugFileMode = () => {
@@ -911,6 +917,8 @@ const SwipeableCard = ({
   onCommentChange,
   onCommentBlur,
   onAdminEdit,
+  debugRejectReasons = [],
+  showDebugRejectReasons = false,
 }) => {
   const resolvedRole = getProfileRole(user) || role;
   const photos = getProfilePhotos(user);
@@ -1039,6 +1047,12 @@ const SwipeableCard = ({
           {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name || 'Matching'} profile hero`} onError={() => setActiveHeroPhoto('')} />}
           {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>}
         </ModernHero>
+        {showDebugRejectReasons && Array.isArray(debugRejectReasons) && debugRejectReasons.length > 0 && (
+          <div style={{ margin: '10px 14px 0', padding: '8px 10px', borderRadius: 10, background: '#5a1325', color: '#fff', fontSize: 12, fontWeight: 700 }}>
+            <div>DEBUG: normally hidden</div>
+            <div style={{ marginTop: 4, fontWeight: 600 }}>Reason: {debugRejectReasons.join(', ')}</div>
+          </div>
+        )}
         {shouldShowHeroContent && (
           <ModernHeroContent>
             {title && <ModernHeroTitle>{title}</ModernHeroTitle>}
@@ -1238,6 +1252,7 @@ const Matching = () => {
   const [viewMode, setViewMode] = useState('default');
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
   const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
+  const [debugShowAllIndexedCards, setDebugShowAllIndexedCards] = useState(getStoredDebugShowAllIndexedCards);
   const [matchingDataSourceMode, setMatchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
   const [themeMode, setThemeMode] = useState(getStoredMatchingTheme);
   const viewModeRef = useRef(viewMode);
@@ -1271,6 +1286,7 @@ const Matching = () => {
   const [roleIndexSets] = useState(null);
   const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: currentAccessLevel });
   const isAdmin = access.isAdmin;
+  const isIndexedDebugTestUser = String(auth.currentUser?.uid || ownerId || '').trim() === MATCHING_LOG_MODE_TEST_USER_ID;
   const parsedAdditionalAccessRules = useMemo(
     () => parseAdditionalAccessRuleGroups(currentAdditionalAccessRules),
     [currentAdditionalAccessRules]
@@ -4307,6 +4323,8 @@ const Matching = () => {
 
   const filteredUsers = (viewMode === 'favorites' || viewMode === 'dislikes')
     ? reactionTabUsers
+    : (debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users')
+      ? visibleUsers
     : applyMatchingUiFiltersToUsers({
     users: visibleUsers,
     filters,
@@ -4320,6 +4338,32 @@ const Matching = () => {
   });
   const renderedCards = filteredUsers;
   const renderedCardsLength = renderedCards.length;
+  const debugHiddenStats = useMemo(() => {
+    if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return null;
+    const visibleSet = new Set(applyMatchingUiFiltersToUsers({
+      users: visibleUsers,
+      filters,
+      filterMainFn: filterMain,
+      favoriteUsers,
+      dislikeUsers,
+      excludeReactionUsers: viewMode === 'default',
+      roleIndexSets,
+      collectionSource,
+      viewMode,
+    }).map(card => card?.userId).filter(Boolean));
+    const normallyHidden = filteredUsers.filter(card => card?.userId && !visibleSet.has(card.userId));
+    return {
+      indexedIdsTotal: visibleUsers.length,
+      displayedCardsTotal: filteredUsers.length,
+      normallyVisibleCardsTotal: visibleSet.size,
+      normallyHiddenCardsTotal: normallyHidden.length,
+    };
+  }, [collectionSource, debugShowAllIndexedCards, dislikeUsers, favoriteUsers, filteredUsers, filters, isIndexedDebugTestUser, roleIndexSets, viewMode, visibleUsers]);
+
+  useEffect(() => {
+    if (!debugHiddenStats) return;
+    console.info('[Matching][debugShowAllIndexedCardsEnabled]', debugHiddenStats);
+  }, [debugHiddenStats]);
 
   useEffect(() => {
     if (viewMode !== 'favorites' && viewMode !== 'dislikes') return;
@@ -5041,6 +5085,24 @@ const Matching = () => {
                   </BackendTrafficToggleStatus>
                 </BackendTrafficToggleButton>
               )}
+              {isIndexedDebugTestUser && (
+                <BackendTrafficToggleButton
+                  type="button"
+                  $active={debugShowAllIndexedCards}
+                  aria-pressed={debugShowAllIndexedCards}
+                  title="Show all indexed cards"
+                  aria-label="Show all indexed cards"
+                  onClick={() => {
+                    const next = !debugShowAllIndexedCards;
+                    setDebugShowAllIndexedCards(next);
+                    localStorage.setItem(MATCHING_DEBUG_SHOW_ALL_INDEXED_CARDS_KEY, next ? 'true' : 'false');
+                    console.info('[Matching][debugShowAllIndexedCardsChanged]', { enabled: next });
+                  }}
+                >
+                  🪲
+                  <BackendTrafficToggleStatus>{debugShowAllIndexedCards ? 'ALL' : 'NORMAL'}</BackendTrafficToggleStatus>
+                </BackendTrafficToggleButton>
+              )}
               <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
             </TopActions>
           </HeaderContainer>
@@ -5112,6 +5174,10 @@ const Matching = () => {
                         saveScrollPosition();
                         navigate(`/edit/${user.userId}`, { state: user });
                       }}
+                      showDebugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser}
+                      debugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser && !canShowMatchingUser(user, { isAdmin })
+                        ? ['blocked_by_ui_filter']
+                        : []}
                     />
                   </CardWrapper>
                 </CardContainer>
