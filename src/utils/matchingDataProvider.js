@@ -159,34 +159,6 @@ const normalizeSignatureValue = value => {
 const buildRawRulesSignature = rawRules => String(rawRules || '').trim();
 
 
-
-const hasAnyActiveFilters = group => Boolean(group && typeof group === 'object' && Object.values(group).some(value => value === true));
-
-const isOnlyRoleAgFilterActive = filters => {
-  const roleGroup = filters?.userRole || filters?.role || {};
-  const roleActive = hasActiveFilterGroup(roleGroup);
-  if (!roleActive) return false;
-  const roleSelected = selectedFilterKeys(roleGroup);
-  if (!(roleSelected.length === 1 && roleSelected[0] === 'ag')) return false;
-  return ![
-    filters?.maritalStatus,
-    filters?.bloodGroup,
-    filters?.rh,
-    filters?.age,
-    filters?.imt,
-    filters?.height,
-    filters?.weight,
-    filters?.country,
-  ].some(hasAnyActiveFilters);
-};
-
-const readUsersRoleAgIds = async () => {
-  const sourcePath = `${MATCHING_USERS_INDEX_ROOT}/role/ag`;
-  const snapshot = await get(ref(database, sourcePath));
-  const ids = snapshot.exists() ? collectIdsFromValue(snapshot.val()) : [];
-  return { ids, sourcePath };
-};
-
 const buildMatchingIndexCacheMeta = ({ filterSignature = '', collectionSource = 'users', ownerId = '', accessUserId = '' } = {}) => ({
   filterSignature: String(filterSignature || ''),
   collectionSource: String(collectionSource || 'users'),
@@ -406,27 +378,10 @@ export const fetchMatchingIndexedCandidates = async ({
   const idSets = await Promise.all(
     filterGroups.map(group => readBucketIds({ rootPath: MATCHING_USERS_INDEX_ROOT, ...group }))
   );
-  const roleAgSourceMode = collectionSource === 'users' && isOnlyRoleAgFilterActive(filters);
-  const agSource = roleAgSourceMode ? await readUsersRoleAgIds() : { ids: [], sourcePath: `${MATCHING_USERS_INDEX_ROOT}/role/ag` };
-  const intersectedIds = intersectIdSets(idSets) || [];
-  const allMatchingIds = roleAgSourceMode ? agSource.ids.slice().sort((a, b) => a.localeCompare(b)) : intersectedIds;
-  const indexedIdsComplete = !roleAgSourceMode || allMatchingIds.length >= agSource.ids.length;
-  const unprocessedAgIdsCount = roleAgSourceMode ? Math.max(0, agSource.ids.length - safeOffset) : 0;
-  const hasMoreReason = roleAgSourceMode
-    ? (safeOffset < agSource.ids.length ? 'ag-index-has-unprocessed-ids' : 'ag-index-exhausted')
-    : 'intersected-filter-groups';
-  console.info('[Matching][indexedProvider] users/ag diagnostics', {
-    sourcePath: agSource.sourcePath,
-    firebaseAgIndexCount: agSource.ids.length,
-    indexedIdsCount: allMatchingIds.length,
-    indexedIdsComplete,
-    unprocessedAgIdsCount,
-    hasMoreReason,
-    roleAgSourceMode,
-  });
+  const allMatchingIds = intersectIdSets(idSets) || [];
   if (useIndexIdCache) {
     setIndexIdsForQuery(cacheKey, allMatchingIds, {
-      complete: indexedIdsComplete,
+      complete: true,
       cacheVersion: MATCHING_INDEX_CACHE_VERSION,
       meta: cacheMeta,
     });
@@ -439,7 +394,6 @@ export const fetchMatchingIndexedCandidates = async ({
   });
   const users = await hydrateOrderedUsers({ ids: pageIds, hydrateUsersByIds, collectionSource: 'users' });
 
-  const effectiveHasMore = roleAgSourceMode ? nextOffset < agSource.ids.length : hasMore;
   return {
     usedIndex: true,
     usedIndexIdCache: false,
@@ -447,14 +401,8 @@ export const fetchMatchingIndexedCandidates = async ({
     userIds: pageIds,
     users,
     nextOffset,
-    hasMore: effectiveHasMore,
+    hasMore,
     filterGroups,
-    firebaseAgIndexCount: agSource.ids.length,
-    indexedIdsCount: allMatchingIds.length,
-    indexedIdsComplete,
-    unprocessedAgIdsCount: roleAgSourceMode ? Math.max(0, agSource.ids.length - nextOffset) : 0,
-    sourcePath: agSource.sourcePath,
-    hasMoreReason,
   };
 };
 
