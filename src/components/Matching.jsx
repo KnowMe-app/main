@@ -4139,6 +4139,7 @@ const Matching = () => {
     } finally {
       finishLoadMoreIfLatest();
       lastCardInFlightTriggerSignatureRef.current = '';
+      lastCardLoadTriggerSignatureRef.current = '';
     }
   }, [
     additionalNewUsers,
@@ -4553,6 +4554,7 @@ const Matching = () => {
   useEffect(() => {
     if (loading) return;
     lastCardInFlightTriggerSignatureRef.current = '';
+    lastCardLoadTriggerSignatureRef.current = '';
   }, [loading]);
 
   useEffect(() => {
@@ -4635,7 +4637,7 @@ const Matching = () => {
       return;
     }
 
-    if (inFlightTriggerSignature && inFlightTriggerSignature === triggerSignature) {
+    if (loadingRefCurrent && inFlightTriggerSignature && inFlightTriggerSignature === triggerSignature) {
       console.log('[Matching][lastCardTrigger] blocked', {
         stopReason: 'blocked-duplicate-trigger-signature',
         previousTriggerSignature,
