@@ -4157,6 +4157,7 @@ const Matching = () => {
     parsedAdditionalAccessRules.length,
     roleIndexSets,
     sharedReactionIds,
+    renderedCardsLength,
     viewMode,
   ]);
 
