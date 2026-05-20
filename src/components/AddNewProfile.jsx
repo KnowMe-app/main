@@ -1486,8 +1486,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setState({});
       setIsLoggedIn(false);
       setShowInfoModal(false);
-      navigate('/my-profile');
       await signOut(auth);
+      navigate('/my-profile');
     } catch (error) {
       console.error('Error signing out:', error);
     }

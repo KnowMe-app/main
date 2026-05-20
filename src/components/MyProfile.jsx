@@ -578,8 +578,8 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setState(initialProfileState);
       setIsLoggedIn(false);
       setShowInfoModal(false);
-      navigate('/my-profile');
       await signOut(auth);
+      navigate('/my-profile');
     } catch (error) {
       console.error('Error signing out:', error);
     }
@@ -873,7 +873,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const [showInfoModal, setShowInfoModal] = useState(false);
-  const isSessionActive = Boolean(isLoggedIn || auth.currentUser || state.userId);
+  const isSessionActive = Boolean(isLoggedIn || auth.currentUser);
 
   useEffect(() => {
     const logged = localStorage.getItem('isLoggedIn');
