@@ -4337,6 +4337,76 @@ const Matching = () => {
     viewMode,
   });
   const renderedCards = filteredUsers;
+  const debugFilterPipelineDiagnostics = useMemo(() => {
+    const batchId = `${viewMode}:${collectionSource}:${Date.now()}`;
+    const cardsByUserId = new Map();
+    const filteredOut = [];
+    const filteredOutByReason = {};
+    const addFilteredOut = ({ userId, stage, reason, details = {}, card = null }) => {
+      const key = `${userId || 'missing'}::${stage}::${reason}`;
+      if (cardsByUserId.has(key)) return;
+      cardsByUserId.set(key, true);
+      filteredOut.push({
+        userId: userId || null,
+        collectionSource: card?.__sourceCollection || collectionSource,
+        stage,
+        reason,
+        details,
+      });
+      filteredOutByReason[reason] = (filteredOutByReason[reason] || 0) + 1;
+    };
+
+    const beforeFiltering = Array.isArray(visibleUsers) ? visibleUsers : [];
+    const validUsers = beforeFiltering.filter(card => {
+      if (!card?.userId) {
+        addFilteredOut({ userId: card?.userId, stage: 'safetyGuards', reason: 'missing_user_id', details: { card } });
+        return false;
+      }
+      return true;
+    });
+    const uniqueUsers = [];
+    const seen = new Set();
+    validUsers.forEach(card => {
+      if (seen.has(card.userId)) {
+        addFilteredOut({ userId: card.userId, stage: 'duplicateGuard', reason: 'duplicate_user_id', details: {} });
+        return;
+      }
+      seen.add(card.userId);
+      uniqueUsers.push(card);
+    });
+    const finalVisibleSet = new Set(filteredUsers.map(card => card?.userId).filter(Boolean));
+    uniqueUsers.forEach(card => {
+      if (!finalVisibleSet.has(card.userId)) {
+        addFilteredOut({
+          userId: card.userId,
+          stage: 'applyMatchingUiFiltersToUsers',
+          reason: 'excluded_by_ui_filter',
+          details: {
+            failedFilters: ['ui'],
+            activeFilters: getActiveMatchingFiltersDebug(filters),
+            cardValues: {
+              age: card?.birth,
+              blood: card?.blood,
+              role: card?.role,
+              maritalStatus: card?.maritalStatus,
+            },
+          },
+          card,
+        });
+      }
+    });
+
+    return {
+      batchId,
+      beforeFilteringCount: beforeFiltering.length,
+      afterSafetyGuardsCount: validUsers.length,
+      afterDuplicateGuardCount: uniqueUsers.length,
+      finalVisibleCount: filteredUsers.length,
+      filteredOutCount: filteredOut.length,
+      filteredOutByReason,
+      filteredOutCards: filteredOut,
+    };
+  }, [collectionSource, filteredUsers, filters, viewMode, visibleUsers]);
   const renderedCardsLength = renderedCards.length;
   const debugHiddenStats = useMemo(() => {
     if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return null;
@@ -4364,6 +4434,44 @@ const Matching = () => {
     if (!debugHiddenStats) return;
     console.info('[Matching][debugShowAllIndexedCardsEnabled]', debugHiddenStats);
   }, [debugHiddenStats]);
+
+  useEffect(() => {
+    writeMatchingDebugLog('matching:filterPipelineSummary', {
+      collectionSource,
+      viewMode,
+      ownerId,
+      batchId: debugFilterPipelineDiagnostics.batchId,
+      indexedIdsCount: visibleUsers.length,
+      fetchedCardsCount: visibleUsers.length,
+      beforeFilteringCount: debugFilterPipelineDiagnostics.beforeFilteringCount,
+      afterSafetyGuardsCount: debugFilterPipelineDiagnostics.afterSafetyGuardsCount,
+      afterPublishGuardCount: debugFilterPipelineDiagnostics.afterSafetyGuardsCount,
+      afterAccessGuardCount: debugFilterPipelineDiagnostics.afterSafetyGuardsCount,
+      afterDuplicateGuardCount: debugFilterPipelineDiagnostics.afterDuplicateGuardCount,
+      afterUiFiltersCount: debugFilterPipelineDiagnostics.finalVisibleCount,
+      finalVisibleCount: debugFilterPipelineDiagnostics.finalVisibleCount,
+      filteredOutCount: debugFilterPipelineDiagnostics.filteredOutCount,
+      filteredOutByReason: debugFilterPipelineDiagnostics.filteredOutByReason,
+    });
+    writeMatchingDebugLog('matching:filteredOutCards', {
+      batchId: debugFilterPipelineDiagnostics.batchId,
+      count: debugFilterPipelineDiagnostics.filteredOutCards.length,
+      cards: debugFilterPipelineDiagnostics.filteredOutCards.slice(0, 50),
+      truncated: debugFilterPipelineDiagnostics.filteredOutCards.length > 50,
+    });
+    if (visibleUsers.length !== filteredUsers.length && filteredUsers.length > visibleUsers.length) {
+      writeMatchingDebugLog('matching:visibleFilteredMismatch', {
+        visibleUsersCount: visibleUsers.length,
+        filteredUsersLength: filteredUsers.length,
+        loadedIdsCount: loadedIdsRef.current?.size || 0,
+        currentlyRenderedCards: renderedCardsLength,
+        viewMode,
+        collectionSource,
+        lastKey,
+        hasMore,
+      });
+    }
+  }, [collectionSource, debugFilterPipelineDiagnostics, filteredUsers.length, hasMore, lastKey, ownerId, renderedCardsLength, viewMode, visibleUsers.length]);
 
   useEffect(() => {
     if (viewMode !== 'favorites' && viewMode !== 'dislikes') return;
@@ -5090,8 +5198,8 @@ const Matching = () => {
                   type="button"
                   $active={debugShowAllIndexedCards}
                   aria-pressed={debugShowAllIndexedCards}
-                  title="Show all indexed cards"
-                  aria-label="Show all indexed cards"
+                  title="Show filtered cards"
+                  aria-label="Show filtered cards"
                   onClick={() => {
                     const next = !debugShowAllIndexedCards;
                     setDebugShowAllIndexedCards(next);
