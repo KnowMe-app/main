@@ -1315,6 +1315,7 @@ const Matching = () => {
     timestamp: '',
   });
   const emptyAutoLoadMoreAttemptsRef = useRef(0);
+  const lastCardLoadTriggerSignatureRef = useRef('');
   const matchingProfileStateRef = useRef({
     ownerId: null,
     collectionSource,
@@ -1393,6 +1394,7 @@ const Matching = () => {
   useEffect(() => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
+    lastCardLoadTriggerSignatureRef.current = '';
     collectionSourceRef.current = collectionSource;
     localStorage.setItem(COLLECTION_SOURCE_KEY, collectionSource);
   }, [collectionSource]);
@@ -1773,9 +1775,7 @@ const Matching = () => {
         if (!missingIds.length) return { owner, comments: {}, requestedIds: [] };
         return { owner, comments: await fetchUserComments(owner, missingIds), requestedIds: missingIds };
       })
-    );
-
-    const latestStore = loadComments();
+    );    const latestStore = loadComments();
     const nextStore = { ...latestStore };
     fetchedEntries.forEach(({ owner, comments: ownerComments = {}, requestedIds = [] }) => {
       nextStore[owner] = { ...(nextStore[owner] || {}) };
@@ -2316,12 +2316,14 @@ const Matching = () => {
       console.info('[loadInitial] skip overlapping request', { viewMode: viewModeRef.current });
       return;
     }
+    const requestFiltersSignature = stableAdditionalSignature(filtersRef.current || {});
     const loadInitialVersion = loadInitialVersionRef.current + 1;
     loadInitialVersionRef.current = loadInitialVersion;
     debugReactionFlowLog('loadInitial:start', { viewMode: viewModeRef.current, collectionSource });
     loadingRef.current = true;
     const startMode = viewModeRef.current;
     const canApplyInitialLoad = () => loadInitialVersion === loadInitialVersionRef.current && viewModeRef.current === startMode;
+    const canApplyInitialLoadWithFilters = () => canApplyInitialLoad() && requestFiltersSignature === stableAdditionalSignature(filtersRef.current || {});
     setLoading(true);
     if (startMode !== 'default') {
       loadingRef.current = false;
@@ -2433,7 +2435,7 @@ const Matching = () => {
           excludeIds: [...exclude],
           hydrateUsersByIds: ids => fetchUsersByIds(ids, { collectionSource }),
         });
-        if (!canApplyInitialLoad()) return;
+        if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
         const indexedUsers = (indexed.users || []).filter(user => isAllowedIdForCollection(user.userId, collectionSource));
         if (indexedUsers.length === 0 && !indexed.hasMore) {
           console.warn('[Matching][indexedProvider] empty users index result; falling back to source pagination');
@@ -2443,7 +2445,7 @@ const Matching = () => {
           setUsers(indexedUsers);
           setIdsForQuery(defaultListKey, indexedUsers.map(user => user.userId));
           void loadCommentsFor(indexedUsers);
-          if (!canApplyInitialLoad()) return;
+          if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
           setLastKey(indexed.nextOffset);
           setHasMore(Boolean(indexed.hasMore));
           setViewMode('default');
@@ -2461,7 +2463,7 @@ const Matching = () => {
         setUsers(filteredCached);
         setIdsForQuery(defaultListKey, filteredCached.map(u => u.userId));
         void loadCommentsFor(filteredCached);
-        if (!canApplyInitialLoad()) return;
+        if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
         setViewMode('default');
         // continue to fetch latest data to refresh cache
       }
@@ -2470,7 +2472,7 @@ const Matching = () => {
         undefined,
         exclude,
         async part => {
-          if (!canApplyInitialLoad()) return;
+          if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
           const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
           if (unique.length) {
             unique.forEach(u => loadedIdsRef.current.add(u.userId));
@@ -2541,6 +2543,7 @@ const Matching = () => {
   const reloadDefault = React.useCallback(() => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
+    lastCardLoadTriggerSignatureRef.current = '';
     invalidateReactionAsyncWork();
     viewModeRef.current = 'default';
     setViewMode('default');
@@ -2553,6 +2556,7 @@ const Matching = () => {
   const handleFiltersChange = React.useCallback(nextFilters => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
+    lastCardLoadTriggerSignatureRef.current = '';
     filtersRef.current = nextFilters;
     setFilters(nextFilters);
     const currentMode = viewModeRef.current;
@@ -2582,6 +2586,7 @@ const Matching = () => {
 
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
+    lastCardLoadTriggerSignatureRef.current = '';
     loadingRef.current = false;
     loadedIdsRef.current = new Set();
     additionalRulesToastRef.current = '';
@@ -3451,6 +3456,7 @@ const Matching = () => {
     additionalMatchingApplyVersionRef.current += 1;
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
+    lastCardLoadTriggerSignatureRef.current = '';
     loadingRef.current = false;
     setLoading(false);
     setActiveProfileIndex(0);
@@ -3579,6 +3585,7 @@ const Matching = () => {
     additionalMatchingApplyVersionRef.current = applyVersion;
     const requestCollectionSource = collectionSource;
     const requestViewMode = viewMode;
+    const requestFiltersSignature = stableAdditionalSignature(filtersRef.current || {});
     const isLatestLoadMore = () => (
       loadMoreVersion === additionalLoadMoreFetchVersionRef.current &&
       applyVersion === additionalMatchingApplyVersionRef.current
@@ -3594,6 +3601,15 @@ const Matching = () => {
         currentCollectionSource: collectionSource,
       })
     );
+    const canApplyLoadMoreResultWithFilters = () => canApplyLoadMoreResult() && requestFiltersSignature === stableAdditionalSignature(filtersRef.current || {});
+    const logStaleLoadMoreResultIgnored = (stage, details = {}) => {
+      console.log('[Matching] staleLoadMoreResultIgnored', {
+        stage,
+        requestFiltersSignature,
+        currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}),
+        ...details,
+      });
+    };
     const finishLoadMoreIfLatest = () => {
       if (!isLatestLoadMore()) {
         console.log('[loadMore] stale request finished after a newer request; keeping loading state for active request', {
@@ -3648,7 +3664,7 @@ const Matching = () => {
           })
           : null;
 
-        if (!canApplyLoadMoreResult()) return;
+        if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('reaction-branch'); return; }
 
         const reactionAccessSnapshot = {
           accessUserId: ownerId || getOwnerId(),
@@ -3681,7 +3697,7 @@ const Matching = () => {
           unclassifiedIds: summarizeIdsForDebug(classifiedReaction.unclassifiedIds),
         });
 
-        if (!canApplyLoadMoreResult()) return;
+        if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('reaction-branch'); return; }
 
         const loadedIds = didAccessSnapshotChange
           ? new Set()
@@ -3701,10 +3717,10 @@ const Matching = () => {
           loadedIds: summarizeIdsForDebug(Array.from(loadedIds)),
         });
 
-        if (!canApplyLoadMoreResult()) return;
+        if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('reaction-branch'); return; }
 
         page.users.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
-        if (!canApplyLoadMoreResult()) return;
+        if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('reaction-branch'); return; }
         reactionLoadedIdsRef.current[viewMode] = loadedIds;
         loadedIdsRef.current = new Set(loadedIds);
         setUsers(prev => {
@@ -3754,6 +3770,7 @@ const Matching = () => {
           accessUserId: ownerId,
           reason: 'load-more-additional-newUsers',
         });
+        if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('additional-profile'); return; }
         if (!isLatestLoadMore()) {
           logAdditionalMatchingDebug(ownerId, 'ignored stale load more additional profile result', {
             loadMoreVersion,
@@ -3837,6 +3854,7 @@ const Matching = () => {
             debugMissingNewUsersToast,
           });
 
+          if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('additional-page', { fetchedIds: loaded?.userIds || [] }); return; }
           if (!isLatestLoadMore()) {
             logAdditionalMatchingDebug(ownerId, 'ignored stale load more additional page result', {
               loadMoreVersion,
@@ -3915,9 +3933,9 @@ const Matching = () => {
           ownerId: getOwnerId(),
           fetchMatchingIndexedCandidates,
           hydrateUsersByIds: ids => fetchUsersByIds(ids, { collectionSource }),
-          isLatestLoadMore,
+          isLatestLoadMore: canApplyLoadMoreResultWithFilters,
         });
-        if (indexedPage.stale) return;
+        if (indexedPage.stale) { logStaleLoadMoreResultIgnored('indexed-collect', { reason: indexedPage.staleReason || 'stale' }); return; }
 
         if (indexedPage.cursorStuck) {
           console.warn('[Matching][indexedProvider] stopped loadMore because indexed cursor did not move', {
@@ -3927,6 +3945,18 @@ const Matching = () => {
           });
         }
 
+        const visibleAfterAppend = renderedCardsLength + indexedPage.collected.length;
+        console.log('[Matching][indexedProvider] loadMore diagnostics', {
+          indexedIdsCount: indexedPage.indexedIdsCount,
+          paginationInputIdsCount: indexedPage.paginationInputIdsCount,
+          pageIdsCount: indexedPage.pageIdsCount,
+          fetchedCardsCount: indexedPage.fetchedCardsCount,
+          safetyFilteredOutCount: indexedPage.safetyFilteredOutCount,
+          appendedCardsCount: indexedPage.collected.length,
+          visibleCardsAfterAppend: visibleAfterAppend,
+          hasMoreAfterAppend: Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck),
+          refillBlockedReason: '',
+        });
         indexedPage.collected.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
         if (!isLatestLoadMore()) return;
         indexedPage.collected.forEach(user => loadedIdsRef.current.add(user.userId));
@@ -4127,6 +4157,7 @@ const Matching = () => {
     parsedAdditionalAccessRules.length,
     roleIndexSets,
     sharedReactionIds,
+    renderedCardsLength,
     viewMode,
   ]);
 
@@ -4406,12 +4437,13 @@ const Matching = () => {
       console.log('[Matching][autoLoadMore] blocked', { ...commonDebug, stopReason: 'blocked-max-empty-attempts' });
       return;
     }
-    if (autoLoadMoreSignatureRef.current === signature) {
+    const forceRefillBecauseVisibleBufferLow = Boolean(payload?.targetVisibleCount > payload?.currentVisibleCount && hasMoreRef.current);
+    if (autoLoadMoreSignatureRef.current === signature && !forceRefillBecauseVisibleBufferLow) {
       console.log('[Matching][autoLoadMore] blocked', { ...commonDebug, stopReason: 'blocked-duplicate-signature' });
       return;
     }
     const now = Date.now();
-    if (now - autoLoadMoreLastRunRef.current < MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS) {
+    if (now - autoLoadMoreLastRunRef.current < MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS && !forceRefillBecauseVisibleBufferLow) {
       console.log('[Matching][autoLoadMore] blocked', {
         ...commonDebug,
         cooldownMs: MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS,
@@ -4421,6 +4453,9 @@ const Matching = () => {
       return;
     }
 
+    if (forceRefillBecauseVisibleBufferLow) {
+      console.log('[Matching][autoLoadMore] forceRefillBecauseVisibleBufferLow', { ...commonDebug, refillBlockedReason: 'forceRefillBecauseVisibleBufferLow' });
+    }
     console.log('[Matching][autoLoadMore] trigger', commonDebug);
     autoLoadMoreSignatureRef.current = signature;
     autoLoadMoreLastRunRef.current = now;
@@ -4495,6 +4530,8 @@ const Matching = () => {
       lastKey,
       additionalNextOffset,
       filters,
+      filtersSignature: stableAdditionalSignature(filters),
+      loadedIdsCount: loadedIdsRef.current?.size || 0,
     });
     runAutoLoadMore(signature, {
       currentVisibleCount: filteredUsers.length,
@@ -4503,7 +4540,6 @@ const Matching = () => {
     });
   }, [additionalNextOffset, collectionSource, filteredUsers.length, filters, hasMore, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, runAutoLoadMore, viewMode]);
 
-  const lastCardLoadTriggerSignatureRef = useRef('');
   useEffect(() => {
     writeMatchingDebugLog('lastCardObserver:mounted', { ownerId, viewMode: viewModeRef.current, collectionSource: collectionSourceRef.current });
   }, [ownerId]);
@@ -4541,6 +4577,9 @@ const Matching = () => {
       activeRenderedIndex,
       triggerIndex: lastRenderedIndex,
       triggerUserId: lastRenderedCardUserId || '',
+      filtersSignature: stableAdditionalSignature(filtersRef.current || {}),
+      loadedIdsCount: loadedIdsRef.current?.size || 0,
+      source: collectionSource,
     });
     const visibilityLogSignature = [
       triggerSignature,

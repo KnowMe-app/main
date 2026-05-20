@@ -19,6 +19,11 @@ export const collectMatchingIndexedLoadMorePage = async ({
   let cursorStuck = false;
   let pageCalls = 0;
   let stopReason = '';
+  let indexedIdsCount = 0;
+  let paginationInputIdsCount = 0;
+  let pageIdsCount = 0;
+  let fetchedCardsCount = 0;
+  let safetyFilteredOutCount = 0;
 
   while (collected.length < requestedLimit && pageCalls < maxPages) {
     pageCalls += 1;
@@ -49,12 +54,19 @@ export const collectMatchingIndexedLoadMorePage = async ({
         cursorStuck,
         pageCalls,
         stale: true,
+        staleReason: 'loadMore-stale-or-filter-changed',
       };
     }
+
+    indexedIdsCount += Array.isArray(indexed.userIds) ? indexed.userIds.length : 0;
+    paginationInputIdsCount += Array.isArray(indexed.paginationInputIds) ? indexed.paginationInputIds.length : 0;
+    pageIdsCount += Array.isArray(indexed.pageIds) ? indexed.pageIds.length : 0;
+    fetchedCardsCount += Array.isArray(indexed.users) ? indexed.users.length : 0;
 
     const indexedUsers = (indexed.users || []).filter(
       user => user?.userId && !loadedIds.has(user.userId) && !collectedIds.has(user.userId)
     );
+    safetyFilteredOutCount += Math.max(0, (Array.isArray(indexed.users) ? indexed.users.length : 0) - indexedUsers.length);
     indexedUsers.forEach(user => {
       collected.push(user);
       collectedIds.add(user.userId);
@@ -92,5 +104,10 @@ export const collectMatchingIndexedLoadMorePage = async ({
     pageCalls,
     stale: false,
     stopReason: stopReason || 'target_reached',
+    indexedIdsCount,
+    paginationInputIdsCount,
+    pageIdsCount,
+    fetchedCardsCount,
+    safetyFilteredOutCount,
   };
 };
