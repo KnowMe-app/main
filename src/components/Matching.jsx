@@ -187,6 +187,8 @@ import {
 
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
 const MATCHING_LOG_MODE_TEST_USER_ID = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
+const MATCHING_DATA_SOURCE_TEST_USER_ID = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
+const MATCHING_DATA_SOURCE_MODE_KEY = 'matchingDataSourceMode';
 const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
 const MATCHING_DEBUG_VERSION = 'autoload-diagnostics-v2';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
@@ -205,6 +207,11 @@ const shouldDebugAdditionalMatching = (...ids) =>
 const getStoredMatchingDebugLogMode = () => {
   if (typeof localStorage === 'undefined') return 'console';
   return localStorage.getItem(MATCHING_DEBUG_LOG_MODE_KEY) === 'file' ? 'file' : 'console';
+};
+
+const getStoredMatchingDataSourceMode = () => {
+  if (typeof localStorage === 'undefined') return 'localFirst';
+  return localStorage.getItem(MATCHING_DATA_SOURCE_MODE_KEY) === 'backend' ? 'backend' : 'localFirst';
 };
 
 const isMatchingDebugFileMode = () => {
@@ -1231,6 +1238,7 @@ const Matching = () => {
   const [viewMode, setViewMode] = useState('default');
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
   const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
+  const [matchingDataSourceMode, setMatchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
   const [themeMode, setThemeMode] = useState(getStoredMatchingTheme);
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
@@ -2426,7 +2434,15 @@ const Matching = () => {
         filters: filtersRef.current || {},
         collectionSource,
       });
+      const isBackendOnlyMode = matchingDataSourceMode === 'backend';
       if (collectionSource === 'users' && activeIndexFilterGroups.length > 0) {
+        if (isBackendOnlyMode) {
+          writeMatchingDebugLog('matchingBackendOnlyModeUsed', {
+            mode: matchingDataSourceMode,
+            collectionSource,
+            stage: 'indexed-candidates',
+          });
+        }
         const indexed = await fetchMatchingIndexedCandidates({
           collectionSource: 'users',
           filters: filtersRef.current || {},
@@ -2436,6 +2452,7 @@ const Matching = () => {
           limit: INITIAL_LOAD,
           excludeIds: [...exclude],
           hydrateUsersByIds: ids => fetchUsersByIds(ids, { collectionSource }),
+          useIndexIdCache: !isBackendOnlyMode,
         });
         if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
         const indexedUsers = (indexed.users || []).filter(user => isAllowedIdForCollection(user.userId, collectionSource));
@@ -2455,8 +2472,37 @@ const Matching = () => {
         }
       }
 
-      const { cards: cached } = await getCardsByList(defaultListKey);
+      let cached = [];
+      if (!isBackendOnlyMode) {
+        writeMatchingDebugLog('matchingLocalFirstAttempt', {
+          mode: matchingDataSourceMode,
+          collectionSource,
+          cacheKey: defaultListKey,
+          viewMode: viewModeRef.current,
+        });
+        try {
+          const cacheResult = await getCardsByList(defaultListKey);
+          cached = Array.isArray(cacheResult?.cards) ? cacheResult.cards : [];
+        } catch (error) {
+          writeMatchingDebugLog('matchingLocalCacheRejected', { reason: 'invalid_json', cacheKey: defaultListKey });
+          cached = [];
+        }
+        if (!cached.length) {
+          writeMatchingDebugLog('matchingLocalCacheRejected', { reason: 'missing', cacheKey: defaultListKey });
+        }
+      } else {
+        writeMatchingDebugLog('matchingBackendOnlyModeUsed', {
+          mode: matchingDataSourceMode,
+          collectionSource,
+          stage: 'default-list-cache-read-skipped',
+        });
+      }
       if (cached.length && viewModeRef.current === startMode) {
+        writeMatchingDebugLog('matchingLocalCacheUsed', {
+          cacheKey: defaultListKey,
+          cardsCount: cached.length,
+          mode: matchingDataSourceMode,
+        });
         console.log('[loadInitial] using cache', cached.length);
         const filteredCached = cached.filter(
           u => isAllowedIdForCollection(u.userId, collectionSource) && !exclude.has(u.userId)
@@ -2468,6 +2514,12 @@ const Matching = () => {
         if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
         setViewMode('default');
         // continue to fetch latest data to refresh cache
+      } else if (!isBackendOnlyMode) {
+        writeMatchingDebugLog('matchingBackendFallbackUsed', {
+          mode: matchingDataSourceMode,
+          cacheKey: defaultListKey,
+          reason: 'missing',
+        });
       }
       const res = await fetchChunk(
         INITIAL_LOAD,
@@ -2540,7 +2592,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, lastKey, loadCommentsFor, parsedAdditionalAccessRules.length]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [collectionSource, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, lastKey, loadCommentsFor, matchingDataSourceMode, parsedAdditionalAccessRules.length]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
@@ -4720,6 +4772,15 @@ const Matching = () => {
   }, [matchingDebugLogMode]);
 
   useEffect(() => {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(MATCHING_DATA_SOURCE_MODE_KEY, matchingDataSourceMode);
+    writeMatchingDebugLog('matchingDataSourceModeChanged', {
+      ownerId,
+      mode: matchingDataSourceMode,
+    });
+  }, [matchingDataSourceMode, ownerId]);
+
+  useEffect(() => {
     if (typeof console === 'undefined') return undefined;
 
     const enableIntercept = () => {
@@ -4807,8 +4868,13 @@ const Matching = () => {
     });
   };
 
+  const handleMatchingDataSourceModeToggle = () => {
+    setMatchingDataSourceMode(prev => (prev === 'backend' ? 'localFirst' : 'backend'));
+  };
+
   const showBackendTrafficToggle = ownerId === BACKEND_TRAFFIC_TRACKING_TEST_UID;
   const showMatchingDebugLogModeToggle = isAdmin || ownerId === MATCHING_LOG_MODE_TEST_USER_ID;
+  const showMatchingDataSourceModeToggle = ownerId === MATCHING_DATA_SOURCE_TEST_USER_ID;
 
   const dotsMenu = () => (
     <>
@@ -4958,6 +5024,21 @@ const Matching = () => {
                 >
                   🧾
                   <BackendTrafficToggleStatus>{matchingDebugLogMode === 'file' ? 'FILE' : 'LOG'}</BackendTrafficToggleStatus>
+                </BackendTrafficToggleButton>
+              )}
+              {showMatchingDataSourceModeToggle && (
+                <BackendTrafficToggleButton
+                  type="button"
+                  $active={matchingDataSourceMode === 'backend'}
+                  aria-pressed={matchingDataSourceMode === 'backend'}
+                  title={matchingDataSourceMode === 'backend' ? 'Backend only' : 'Local first'}
+                  aria-label={matchingDataSourceMode === 'backend' ? 'Backend only' : 'Local first'}
+                  onClick={handleMatchingDataSourceModeToggle}
+                >
+                  🧪
+                  <BackendTrafficToggleStatus>
+                    {matchingDataSourceMode === 'backend' ? 'Backend only' : 'Local first'}
+                  </BackendTrafficToggleStatus>
                 </BackendTrafficToggleButton>
               )}
               <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
