@@ -1316,6 +1316,7 @@ const Matching = () => {
   });
   const emptyAutoLoadMoreAttemptsRef = useRef(0);
   const lastCardLoadTriggerSignatureRef = useRef('');
+  const lastCardInFlightTriggerSignatureRef = useRef('');
   const matchingProfileStateRef = useRef({
     ownerId: null,
     collectionSource,
@@ -1395,6 +1396,7 @@ const Matching = () => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
     lastCardLoadTriggerSignatureRef.current = '';
+    lastCardInFlightTriggerSignatureRef.current = '';
     collectionSourceRef.current = collectionSource;
     localStorage.setItem(COLLECTION_SOURCE_KEY, collectionSource);
   }, [collectionSource]);
@@ -2544,6 +2546,7 @@ const Matching = () => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
     lastCardLoadTriggerSignatureRef.current = '';
+    lastCardInFlightTriggerSignatureRef.current = '';
     invalidateReactionAsyncWork();
     viewModeRef.current = 'default';
     setViewMode('default');
@@ -2557,6 +2560,7 @@ const Matching = () => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
     lastCardLoadTriggerSignatureRef.current = '';
+    lastCardInFlightTriggerSignatureRef.current = '';
     filtersRef.current = nextFilters;
     setFilters(nextFilters);
     const currentMode = viewModeRef.current;
@@ -2587,6 +2591,7 @@ const Matching = () => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
     lastCardLoadTriggerSignatureRef.current = '';
+    lastCardInFlightTriggerSignatureRef.current = '';
     loadingRef.current = false;
     loadedIdsRef.current = new Set();
     additionalRulesToastRef.current = '';
@@ -3457,6 +3462,7 @@ const Matching = () => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
     lastCardLoadTriggerSignatureRef.current = '';
+    lastCardInFlightTriggerSignatureRef.current = '';
     loadingRef.current = false;
     setLoading(false);
     setActiveProfileIndex(0);
@@ -4132,6 +4138,7 @@ const Matching = () => {
       throw error;
     } finally {
       finishLoadMoreIfLatest();
+      lastCardInFlightTriggerSignatureRef.current = '';
     }
   }, [
     additionalNewUsers,
@@ -4544,6 +4551,14 @@ const Matching = () => {
   }, [ownerId]);
   const lastCardVisibilityLogSignatureRef = useRef('');
   useEffect(() => {
+    if (loading) return;
+    lastCardInFlightTriggerSignatureRef.current = '';
+  }, [loading]);
+
+  useEffect(() => {
+    lastCardLoadTriggerSignatureRef.current = '';
+  }, [lastKey, renderedCardsLength, loadedIdsRef.current?.size]);
+  useEffect(() => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (renderedCardsLength < 1) return;
 
@@ -4602,20 +4617,49 @@ const Matching = () => {
       });
     }
 
+    const previousTriggerSignature = lastCardLoadTriggerSignatureRef.current || null;
+    const inFlightTriggerSignature = lastCardInFlightTriggerSignatureRef.current || null;
+
     if (!sourceHasMore || loadingRefCurrent || loading) {
       console.log('[Matching][lastCardTrigger] blocked', {
         stopReason: !sourceHasMore ? 'blocked-no-hasMore' : 'blocked-loading',
-        sourceHasMore,
-        loadingRefCurrent,
+        previousTriggerSignature,
+        currentTriggerSignature: triggerSignature,
+        hasMore: sourceHasMore,
+        loadingMoreRef: loadingRefCurrent,
         loading,
+        lastKey,
+        renderedLength: renderedCardsLength,
+        loadedIdsCount: loadedIdsRef.current?.size || 0,
       });
       return;
     }
-    if (lastCardLoadTriggerSignatureRef.current === triggerSignature) {
-      console.log('[Matching][lastCardTrigger] blocked', { stopReason: 'blocked-duplicate-trigger-signature', triggerSignature });
+
+    if (inFlightTriggerSignature && inFlightTriggerSignature === triggerSignature) {
+      console.log('[Matching][lastCardTrigger] blocked', {
+        stopReason: 'blocked-duplicate-trigger-signature',
+        previousTriggerSignature,
+        currentTriggerSignature: triggerSignature,
+        hasMore: sourceHasMore,
+        loadingMoreRef: loadingRefCurrent,
+        lastKey,
+        renderedLength: renderedCardsLength,
+        loadedIdsCount: loadedIdsRef.current?.size || 0,
+      });
       return;
     }
+
     lastCardLoadTriggerSignatureRef.current = triggerSignature;
+    lastCardInFlightTriggerSignatureRef.current = triggerSignature;
+    console.log('[Matching][lastCardTrigger] allowed', {
+      previousTriggerSignature,
+      currentTriggerSignature: triggerSignature,
+      hasMore: sourceHasMore,
+      loadingMoreRef: loadingRefCurrent,
+      lastKey,
+      renderedLength: renderedCardsLength,
+      loadedIdsCount: loadedIdsRef.current?.size || 0,
+    });
 
     runAutoLoadMore(`last-card:${triggerSignature}`, {
       currentVisibleCount: renderedCardsLength,
