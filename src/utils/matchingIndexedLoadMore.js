@@ -78,10 +78,6 @@ export const collectMatchingIndexedLoadMorePage = async ({
     finalOffset = nextOffset;
     finalHasMore = lastHasMore;
 
-    if (!indexedUsers.length) {
-      stopReason = indexed.userIds?.length ? 'no_visible_cards_added' : 'empty_index_page';
-      break;
-    }
     if (!lastHasMore) {
       stopReason = 'source_exhausted';
       break;
@@ -89,6 +85,12 @@ export const collectMatchingIndexedLoadMorePage = async ({
     if (cursorStuck) {
       stopReason = 'cursor_not_advanced';
       break;
+    }
+
+    if (!indexedUsers.length) {
+      stopReason = indexed.userIds?.length ? 'no_visible_cards_added_continue' : 'empty_index_page_continue';
+      offset = nextOffset;
+      continue;
     }
 
     offset = nextOffset;
