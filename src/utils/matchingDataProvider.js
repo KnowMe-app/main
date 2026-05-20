@@ -654,25 +654,24 @@ export const applyMatchingUiFiltersToUsers = ({
     viewMode,
   });
 
-  return applyMatchingSearchKeyFilters(
-    filterMainFn(
-      users.map(u => [u.userId, u]),
-      null,
-      filterMainFilters,
-      filterMainFavoriteUsers,
-      filterMainDislikeUsers
-    )
-      .map(([, u]) => u)
-      .filter(u => (
-        !excludeReactionUsers ||
-        (!favoriteUsers[u.userId] && !dislikeUsers[u.userId])
-      )),
-    filters,
-    roleIndexSets
-  ).filter(u => (
-    isReactionViewMode(viewMode) ||
-    isAllowedIdForMatchingCollection(u.userId, collectionSource)
-  ));
+  const baseUsers = filterMainFn(
+    users.map(u => [u.userId, u]),
+    null,
+    filterMainFilters,
+    filterMainFavoriteUsers,
+    filterMainDislikeUsers
+  )
+    .map(([, u]) => u)
+    .filter(u => (
+      !excludeReactionUsers ||
+      (!favoriteUsers[u.userId] && !dislikeUsers[u.userId])
+    ))
+    .filter(u => (
+      isReactionViewMode(viewMode) ||
+      isAllowedIdForMatchingCollection(u.userId, collectionSource)
+    ));
+
+  return baseUsers;
 };
 
 export const getActiveMatchingFiltersDebug = filters => Object.entries(filters || {}).reduce((acc, [key, value]) => {
