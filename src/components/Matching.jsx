@@ -3945,7 +3945,7 @@ const Matching = () => {
           });
         }
 
-        const visibleAfterAppend = renderedCardsLength + indexedPage.collected.length;
+        const visibleAfterAppend = Number(usersRef.current?.length || 0) + indexedPage.collected.length;
         console.log('[Matching][indexedProvider] loadMore diagnostics', {
           indexedIdsCount: indexedPage.indexedIdsCount,
           paginationInputIdsCount: indexedPage.paginationInputIdsCount,
