@@ -4337,6 +4337,101 @@ const Matching = () => {
     viewMode,
   });
   const renderedCards = filteredUsers;
+  const debugFilterPipelineDiagnostics = useMemo(() => {
+    const batchId = `${viewMode}:${collectionSource}:${Date.now()}`;
+    const loadedIds = Array.from(loadedIdsRef.current || []).filter(Boolean);
+    const loadedIdsSet = new Set(loadedIds);
+    const renderedIds = filteredUsers.map(card => card?.userId).filter(Boolean);
+    const renderedIdsSet = new Set(renderedIds);
+    const visibleCardIds = visibleUsers.map(card => card?.userId).filter(Boolean);
+    const visibleCardIdsSet = new Set(visibleCardIds);
+    const loadedPool = [...users, ...additionalNewUsers, ...sharedReactionCandidateUsers];
+    const cardById = new Map();
+    loadedPool.forEach(card => {
+      if (card?.userId && !cardById.has(card.userId)) cardById.set(card.userId, card);
+    });
+
+    const roleFilters = filters?.userRole && typeof filters.userRole === 'object' ? filters.userRole : {};
+    const activeUserRoleFilters = Object.entries(roleFilters)
+      .filter(([, enabled]) => Boolean(enabled))
+      .map(([role]) => role);
+    const hasUserRoleFilter = activeUserRoleFilters.length > 0;
+
+    const filteredOutByReason = {};
+    const filteredOutCards = [];
+    const seenKeys = new Set();
+    const pushFiltered = ({ userId, stage, reason, details = {}, card }) => {
+      const key = `${userId || 'missing'}::${stage}::${reason}`;
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+      filteredOutByReason[reason] = (filteredOutByReason[reason] || 0) + 1;
+      filteredOutCards.push({
+        userId: userId || null,
+        collectionSource: card?.__sourceCollection || collectionSource,
+        stage,
+        reason,
+        details,
+      });
+    };
+
+    const missingFromRendered = [];
+    loadedIds.forEach(userId => {
+      if (renderedIdsSet.has(userId)) return;
+      const card = cardById.get(userId) || null;
+      const cardRole = card ? getProfileRole(card) : null;
+      let possibleReason = 'unknown_final_render_exclusion';
+
+      if (!card) {
+        possibleReason = 'unknown_final_render_exclusion';
+      } else if (!card.publish && card.__sourceCollection !== 'newUsers') {
+        possibleReason = 'publish_false';
+      } else if (!canShowMatchingUser(card, { isAdmin })) {
+        possibleReason = 'hidden';
+      } else if (hasUserRoleFilter && cardRole && !activeUserRoleFilters.includes(cardRole)) {
+        possibleReason = 'excluded_by_userRole_filter';
+      } else if (!visibleCardIdsSet.has(userId)) {
+        possibleReason = 'excluded_by_ui_filter';
+      }
+
+      const details = {
+        cardRole,
+        pub: card?.publish,
+        activeUserRoleFilters,
+      };
+      if (possibleReason === 'excluded_by_userRole_filter') {
+        details.failedFilters = ['userRole'];
+      }
+      pushFiltered({
+        userId,
+        stage: 'final_render_diff',
+        reason: possibleReason,
+        details,
+        card,
+      });
+      missingFromRendered.push({
+        userId,
+        detectedAt: 'final_render_diff',
+        possibleReason,
+        cardRole,
+        pub: card?.publish,
+        collectionSource: card?.__sourceCollection || collectionSource,
+      });
+    });
+
+    return {
+      batchId,
+      loadedIdsCount: loadedIds.length,
+      loadedCardsCount: cardById.size,
+      visibleCardIdsCount: visibleCardIds.length,
+      filteredUsersLength: filteredUsers.length,
+      renderedCardsCount: renderedCards.length,
+      renderedIdsCount: renderedIds.length,
+      missingFromRenderedCount: missingFromRendered.length,
+      missingFromRendered,
+      filteredOutByReason,
+      filteredOutCards,
+    };
+  }, [additionalNewUsers, collectionSource, filteredUsers, filters, isAdmin, renderedCards.length, sharedReactionCandidateUsers, users, viewMode, visibleUsers]);
   const renderedCardsLength = renderedCards.length;
   const debugHiddenStats = useMemo(() => {
     if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return null;
@@ -4364,6 +4459,50 @@ const Matching = () => {
     if (!debugHiddenStats) return;
     console.info('[Matching][debugShowAllIndexedCardsEnabled]', debugHiddenStats);
   }, [debugHiddenStats]);
+
+  useEffect(() => {
+    writeMatchingDebugLog('matching:filterPipelineSummary', {
+      collectionSource,
+      viewMode,
+      ownerId,
+      batchId: debugFilterPipelineDiagnostics.batchId,
+      pageIdsCount: matchingLastCardsDebugStatsRef.current?.sourceCardsCount || 0,
+      fetchedPageCardsCount: matchingLastCardsDebugStatsRef.current?.emittedCardsCount || 0,
+      pageCardsAfterFiltersCount: matchingLastCardsDebugStatsRef.current?.filteredCardsCount || 0,
+      totalLoadedIdsCount: debugFilterPipelineDiagnostics.loadedIdsCount,
+      totalLoadedCardsCount: debugFilterPipelineDiagnostics.loadedCardsCount,
+      totalFilteredUsersLength: debugFilterPipelineDiagnostics.filteredUsersLength,
+      totalRenderedLength: debugFilterPipelineDiagnostics.renderedCardsCount,
+      visibleCardIdsCount: debugFilterPipelineDiagnostics.visibleCardIdsCount,
+      missingFromRenderedCount: debugFilterPipelineDiagnostics.missingFromRenderedCount,
+      filteredOutByReason: debugFilterPipelineDiagnostics.filteredOutByReason,
+    });
+    writeMatchingDebugLog('matching:filteredOutCards', {
+      batchId: debugFilterPipelineDiagnostics.batchId,
+      count: debugFilterPipelineDiagnostics.filteredOutCards.length,
+      cards: debugFilterPipelineDiagnostics.filteredOutCards.slice(0, 50),
+      truncated: debugFilterPipelineDiagnostics.filteredOutCards.length > 50,
+    });
+    writeMatchingDebugLog('matching:finalRenderedDiff', {
+      loadedIdsCount: debugFilterPipelineDiagnostics.loadedIdsCount,
+      renderedIdsCount: debugFilterPipelineDiagnostics.renderedIdsCount,
+      missingFromRenderedCount: debugFilterPipelineDiagnostics.missingFromRenderedCount,
+      missingFromRendered: debugFilterPipelineDiagnostics.missingFromRendered.slice(0, 50),
+      truncated: debugFilterPipelineDiagnostics.missingFromRendered.length > 50,
+    });
+    if (debugFilterPipelineDiagnostics.loadedIdsCount !== renderedCardsLength) {
+      writeMatchingDebugLog('matching:loadedRenderedMismatch', {
+        loadedIdsCount: debugFilterPipelineDiagnostics.loadedIdsCount,
+        renderedLength: renderedCardsLength,
+        missingCount: Math.max(0, debugFilterPipelineDiagnostics.loadedIdsCount - renderedCardsLength),
+        viewMode,
+        collectionSource,
+        filtersSignature: JSON.stringify(getActiveMatchingFiltersDebug(filters)),
+        hasMore,
+        lastKey,
+      });
+    }
+  }, [collectionSource, debugFilterPipelineDiagnostics, filteredUsers.length, hasMore, lastKey, ownerId, renderedCardsLength, viewMode, visibleUsers.length]);
 
   useEffect(() => {
     if (viewMode !== 'favorites' && viewMode !== 'dislikes') return;
@@ -5090,8 +5229,8 @@ const Matching = () => {
                   type="button"
                   $active={debugShowAllIndexedCards}
                   aria-pressed={debugShowAllIndexedCards}
-                  title="Show all indexed cards"
-                  aria-label="Show all indexed cards"
+                  title="Show filtered cards"
+                  aria-label="Show filtered cards"
                   onClick={() => {
                     const next = !debugShowAllIndexedCards;
                     setDebugShowAllIndexedCards(next);
