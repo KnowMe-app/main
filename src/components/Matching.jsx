@@ -1321,6 +1321,7 @@ const Matching = () => {
   const sharedReactionCandidateLoadVersionRef = useRef(0);
   const autoLoadMoreLastRunRef = useRef(0);
   const autoLoadMoreSignatureRef = useRef('');
+  const autoLoadMoreCooldownRetryTimerRef = useRef(null);
   const originalConsoleMethodsRef = useRef(null);
   const consoleInterceptEnabledRef = useRef(false);
   const matchingLastCardsDebugStatsRef = useRef({
@@ -4684,16 +4685,29 @@ const Matching = () => {
       return;
     }
     const now = Date.now();
-    if (now - autoLoadMoreLastRunRef.current < MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS && !forceRefillBecauseVisibleBufferLow) {
+    const elapsedMs = now - autoLoadMoreLastRunRef.current;
+    if (elapsedMs < MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS && !forceRefillBecauseVisibleBufferLow) {
+      const retryAfterMs = Math.max(0, MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS - elapsedMs);
       console.log('[Matching][autoLoadMore] blocked', {
         ...commonDebug,
         cooldownMs: MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS,
-        elapsedMs: now - autoLoadMoreLastRunRef.current,
+        elapsedMs,
+        retryAfterMs,
         stopReason: 'blocked-cooldown',
       });
+      if (!autoLoadMoreCooldownRetryTimerRef.current && hasMoreRef.current) {
+        autoLoadMoreCooldownRetryTimerRef.current = setTimeout(() => {
+          autoLoadMoreCooldownRetryTimerRef.current = null;
+          runAutoLoadMore(signature, payload);
+        }, retryAfterMs);
+      }
       return;
     }
 
+    if (autoLoadMoreCooldownRetryTimerRef.current) {
+      clearTimeout(autoLoadMoreCooldownRetryTimerRef.current);
+      autoLoadMoreCooldownRetryTimerRef.current = null;
+    }
     if (forceRefillBecauseVisibleBufferLow) {
       console.log('[Matching][autoLoadMore] forceRefillBecauseVisibleBufferLow', { ...commonDebug, refillBlockedReason: 'forceRefillBecauseVisibleBufferLow' });
     }
@@ -4754,11 +4768,39 @@ const Matching = () => {
       console.log('[Matching][refillEffect] blocked', { refillBlockedReason: 'blocked-no-hasMore', reactionPipelineReady, paginationInitialized });
       return;
     }
-    if (filteredUsers.length >= MATCHING_VISIBLE_BUFFER) {
+    const renderedLength = renderedCardsLength;
+    const filteredLength = filteredUsers.length;
+    const loadedIdsCount = loadedIdsRef.current?.size || 0;
+    const missingFromRenderedCount = Math.max(0, loadedIdsCount - renderedLength);
+    const filteredOutCount = Math.max(0, loadedIdsCount - filteredLength);
+    const loadedRenderedMismatch = missingFromRenderedCount > 0;
+    const targetVisibleCount = viewMode === 'default' ? INITIAL_LOAD : MATCHING_VISIBLE_BUFFER;
+    const enoughVisibleCards = filteredLength >= targetVisibleCount;
+    const shouldRefill = !enoughVisibleCards || (hasMore && (loadedRenderedMismatch || filteredOutCount >= MATCHING_VISIBLE_BUFFER));
+    const blockedReason = shouldRefill ? '' : 'blocked-visible-buffer-satisfied';
+
+    writeMatchingDebugLog('matching:refillDecision', {
+      renderedLength,
+      filteredLength,
+      loadedIdsCount,
+      missingFromRenderedCount,
+      hasMore,
+      lastKey,
+      visibleBuffer: MATCHING_VISIBLE_BUFFER,
+      targetVisibleCount,
+      shouldRefill,
+      blockedReason,
+    });
+
+    if (!shouldRefill) {
       console.log('[Matching][refillEffect] blocked', {
-        stopReason: 'blocked-visible-buffer-satisfied',
-        filteredLength: filteredUsers.length,
+        stopReason: blockedReason,
+        filteredLength,
+        renderedLength,
+        loadedIdsCount,
+        missingFromRenderedCount,
         visibleBuffer: MATCHING_VISIBLE_BUFFER,
+        targetVisibleCount,
       });
       return;
     }
@@ -4775,11 +4817,11 @@ const Matching = () => {
       loadedIdsCount: loadedIdsRef.current?.size || 0,
     });
     runAutoLoadMore(signature, {
-      currentVisibleCount: filteredUsers.length,
-      targetVisibleCount: MATCHING_VISIBLE_BUFFER,
+      currentVisibleCount: filteredLength,
+      targetVisibleCount,
       limit: MATCHING_REFILL_LIMIT,
     });
-  }, [additionalNextOffset, collectionSource, filteredUsers.length, filters, hasMore, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, runAutoLoadMore, viewMode]);
+  }, [additionalNextOffset, collectionSource, filteredUsers.length, filters, hasMore, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, renderedCardsLength, runAutoLoadMore, viewMode]);
 
   useEffect(() => {
     writeMatchingDebugLog('lastCardObserver:mounted', { ownerId, viewMode: viewModeRef.current, collectionSource: collectionSourceRef.current });
@@ -4790,6 +4832,13 @@ const Matching = () => {
     lastCardInFlightTriggerSignatureRef.current = '';
     lastCardLoadTriggerSignatureRef.current = '';
   }, [loading]);
+
+  useEffect(() => () => {
+    if (autoLoadMoreCooldownRetryTimerRef.current) {
+      clearTimeout(autoLoadMoreCooldownRetryTimerRef.current);
+      autoLoadMoreCooldownRetryTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     lastCardLoadTriggerSignatureRef.current = '';
