@@ -4339,74 +4339,99 @@ const Matching = () => {
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
     const batchId = `${viewMode}:${collectionSource}:${Date.now()}`;
-    const cardsByUserId = new Map();
-    const filteredOut = [];
+    const loadedIds = Array.from(loadedIdsRef.current || []).filter(Boolean);
+    const loadedIdsSet = new Set(loadedIds);
+    const renderedIds = filteredUsers.map(card => card?.userId).filter(Boolean);
+    const renderedIdsSet = new Set(renderedIds);
+    const visibleCardIds = visibleUsers.map(card => card?.userId).filter(Boolean);
+    const visibleCardIdsSet = new Set(visibleCardIds);
+    const loadedPool = [...users, ...additionalNewUsers, ...sharedReactionCandidateUsers];
+    const cardById = new Map();
+    loadedPool.forEach(card => {
+      if (card?.userId && !cardById.has(card.userId)) cardById.set(card.userId, card);
+    });
+
+    const roleFilters = filters?.userRole && typeof filters.userRole === 'object' ? filters.userRole : {};
+    const activeUserRoleFilters = Object.entries(roleFilters)
+      .filter(([, enabled]) => Boolean(enabled))
+      .map(([role]) => role);
+    const hasUserRoleFilter = activeUserRoleFilters.length > 0;
+
     const filteredOutByReason = {};
-    const addFilteredOut = ({ userId, stage, reason, details = {}, card = null }) => {
+    const filteredOutCards = [];
+    const seenKeys = new Set();
+    const pushFiltered = ({ userId, stage, reason, details = {}, card }) => {
       const key = `${userId || 'missing'}::${stage}::${reason}`;
-      if (cardsByUserId.has(key)) return;
-      cardsByUserId.set(key, true);
-      filteredOut.push({
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+      filteredOutByReason[reason] = (filteredOutByReason[reason] || 0) + 1;
+      filteredOutCards.push({
         userId: userId || null,
         collectionSource: card?.__sourceCollection || collectionSource,
         stage,
         reason,
         details,
       });
-      filteredOutByReason[reason] = (filteredOutByReason[reason] || 0) + 1;
     };
 
-    const beforeFiltering = Array.isArray(visibleUsers) ? visibleUsers : [];
-    const validUsers = beforeFiltering.filter(card => {
-      if (!card?.userId) {
-        addFilteredOut({ userId: card?.userId, stage: 'safetyGuards', reason: 'missing_user_id', details: { card } });
-        return false;
+    const missingFromRendered = [];
+    loadedIds.forEach(userId => {
+      if (renderedIdsSet.has(userId)) return;
+      const card = cardById.get(userId) || null;
+      const cardRole = card ? getProfileRole(card) : null;
+      let possibleReason = 'unknown_final_render_exclusion';
+
+      if (!card) {
+        possibleReason = 'unknown_final_render_exclusion';
+      } else if (!card.publish && card.__sourceCollection !== 'newUsers') {
+        possibleReason = 'publish_false';
+      } else if (!canShowMatchingUser(card, { isAdmin })) {
+        possibleReason = 'hidden';
+      } else if (hasUserRoleFilter && cardRole && !activeUserRoleFilters.includes(cardRole)) {
+        possibleReason = 'excluded_by_userRole_filter';
+      } else if (!visibleCardIdsSet.has(userId)) {
+        possibleReason = 'excluded_by_ui_filter';
       }
-      return true;
-    });
-    const uniqueUsers = [];
-    const seen = new Set();
-    validUsers.forEach(card => {
-      if (seen.has(card.userId)) {
-        addFilteredOut({ userId: card.userId, stage: 'duplicateGuard', reason: 'duplicate_user_id', details: {} });
-        return;
+
+      const details = {
+        cardRole,
+        pub: card?.publish,
+        activeUserRoleFilters,
+      };
+      if (possibleReason === 'excluded_by_userRole_filter') {
+        details.failedFilters = ['userRole'];
       }
-      seen.add(card.userId);
-      uniqueUsers.push(card);
-    });
-    const finalVisibleSet = new Set(filteredUsers.map(card => card?.userId).filter(Boolean));
-    uniqueUsers.forEach(card => {
-      if (!finalVisibleSet.has(card.userId)) {
-        addFilteredOut({
-          userId: card.userId,
-          stage: 'applyMatchingUiFiltersToUsers',
-          reason: 'excluded_by_ui_filter',
-          details: {
-            failedFilters: ['ui'],
-            activeFilters: getActiveMatchingFiltersDebug(filters),
-            cardValues: {
-              age: card?.birth,
-              blood: card?.blood,
-              role: card?.role,
-              maritalStatus: card?.maritalStatus,
-            },
-          },
-          card,
-        });
-      }
+      pushFiltered({
+        userId,
+        stage: 'final_render_diff',
+        reason: possibleReason,
+        details,
+        card,
+      });
+      missingFromRendered.push({
+        userId,
+        detectedAt: 'final_render_diff',
+        possibleReason,
+        cardRole,
+        pub: card?.publish,
+        collectionSource: card?.__sourceCollection || collectionSource,
+      });
     });
 
     return {
       batchId,
-      beforeFilteringCount: beforeFiltering.length,
-      afterSafetyGuardsCount: validUsers.length,
-      afterDuplicateGuardCount: uniqueUsers.length,
-      finalVisibleCount: filteredUsers.length,
-      filteredOutCount: filteredOut.length,
+      loadedIdsCount: loadedIds.length,
+      loadedCardsCount: cardById.size,
+      visibleCardIdsCount: visibleCardIds.length,
+      filteredUsersLength: filteredUsers.length,
+      renderedCardsCount: renderedCards.length,
+      renderedIdsCount: renderedIds.length,
+      missingFromRenderedCount: missingFromRendered.length,
+      missingFromRendered,
       filteredOutByReason,
-      filteredOutCards: filteredOut,
+      filteredOutCards,
     };
-  }, [collectionSource, filteredUsers, filters, viewMode, visibleUsers]);
+  }, [additionalNewUsers, collectionSource, filteredUsers, filters, isAdmin, renderedCards.length, sharedReactionCandidateUsers, users, viewMode, visibleUsers]);
   const renderedCardsLength = renderedCards.length;
   const debugHiddenStats = useMemo(() => {
     if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return null;
@@ -4441,16 +4466,15 @@ const Matching = () => {
       viewMode,
       ownerId,
       batchId: debugFilterPipelineDiagnostics.batchId,
-      indexedIdsCount: visibleUsers.length,
-      fetchedCardsCount: visibleUsers.length,
-      beforeFilteringCount: debugFilterPipelineDiagnostics.beforeFilteringCount,
-      afterSafetyGuardsCount: debugFilterPipelineDiagnostics.afterSafetyGuardsCount,
-      afterPublishGuardCount: debugFilterPipelineDiagnostics.afterSafetyGuardsCount,
-      afterAccessGuardCount: debugFilterPipelineDiagnostics.afterSafetyGuardsCount,
-      afterDuplicateGuardCount: debugFilterPipelineDiagnostics.afterDuplicateGuardCount,
-      afterUiFiltersCount: debugFilterPipelineDiagnostics.finalVisibleCount,
-      finalVisibleCount: debugFilterPipelineDiagnostics.finalVisibleCount,
-      filteredOutCount: debugFilterPipelineDiagnostics.filteredOutCount,
+      pageIdsCount: matchingLastCardsDebugStatsRef.current?.sourceCardsCount || 0,
+      fetchedPageCardsCount: matchingLastCardsDebugStatsRef.current?.emittedCardsCount || 0,
+      pageCardsAfterFiltersCount: matchingLastCardsDebugStatsRef.current?.filteredCardsCount || 0,
+      totalLoadedIdsCount: debugFilterPipelineDiagnostics.loadedIdsCount,
+      totalLoadedCardsCount: debugFilterPipelineDiagnostics.loadedCardsCount,
+      totalFilteredUsersLength: debugFilterPipelineDiagnostics.filteredUsersLength,
+      totalRenderedLength: debugFilterPipelineDiagnostics.renderedCardsCount,
+      visibleCardIdsCount: debugFilterPipelineDiagnostics.visibleCardIdsCount,
+      missingFromRenderedCount: debugFilterPipelineDiagnostics.missingFromRenderedCount,
       filteredOutByReason: debugFilterPipelineDiagnostics.filteredOutByReason,
     });
     writeMatchingDebugLog('matching:filteredOutCards', {
@@ -4459,16 +4483,23 @@ const Matching = () => {
       cards: debugFilterPipelineDiagnostics.filteredOutCards.slice(0, 50),
       truncated: debugFilterPipelineDiagnostics.filteredOutCards.length > 50,
     });
-    if (visibleUsers.length !== filteredUsers.length && filteredUsers.length > visibleUsers.length) {
-      writeMatchingDebugLog('matching:visibleFilteredMismatch', {
-        visibleUsersCount: visibleUsers.length,
-        filteredUsersLength: filteredUsers.length,
-        loadedIdsCount: loadedIdsRef.current?.size || 0,
-        currentlyRenderedCards: renderedCardsLength,
+    writeMatchingDebugLog('matching:finalRenderedDiff', {
+      loadedIdsCount: debugFilterPipelineDiagnostics.loadedIdsCount,
+      renderedIdsCount: debugFilterPipelineDiagnostics.renderedIdsCount,
+      missingFromRenderedCount: debugFilterPipelineDiagnostics.missingFromRenderedCount,
+      missingFromRendered: debugFilterPipelineDiagnostics.missingFromRendered.slice(0, 50),
+      truncated: debugFilterPipelineDiagnostics.missingFromRendered.length > 50,
+    });
+    if (debugFilterPipelineDiagnostics.loadedIdsCount !== renderedCardsLength) {
+      writeMatchingDebugLog('matching:loadedRenderedMismatch', {
+        loadedIdsCount: debugFilterPipelineDiagnostics.loadedIdsCount,
+        renderedLength: renderedCardsLength,
+        missingCount: Math.max(0, debugFilterPipelineDiagnostics.loadedIdsCount - renderedCardsLength),
         viewMode,
         collectionSource,
-        lastKey,
+        filtersSignature: JSON.stringify(getActiveMatchingFiltersDebug(filters)),
         hasMore,
+        lastKey,
       });
     }
   }, [collectionSource, debugFilterPipelineDiagnostics, filteredUsers.length, hasMore, lastKey, ownerId, renderedCardsLength, viewMode, visibleUsers.length]);
