@@ -4483,8 +4483,19 @@ const Matching = () => {
           roleIndexSets,
         });
         const uiFailedFilters = detectUiFailedFiltersForCard(card);
-        details.failedFilters = uiFailedFilters.length > 0 ? uiFailedFilters : searchKeyDebug.failedFilters;
+        const resolvedFailedFilters = Array.from(new Set([
+          ...(Array.isArray(uiFailedFilters) ? uiFailedFilters : []),
+          ...(Array.isArray(searchKeyDebug.failedFilters) ? searchKeyDebug.failedFilters : []),
+        ].filter(Boolean)));
+        details.failedFilters = resolvedFailedFilters;
         details.searchKeyChecks = searchKeyDebug.checks;
+        details.searchKeyFailedFilters = Array.isArray(searchKeyDebug.failedFilters) ? searchKeyDebug.failedFilters : [];
+        details.uiFailedFilters = Array.isArray(uiFailedFilters) ? uiFailedFilters : [];
+        details.failedFilterGroupsBySource = {
+          ui: details.uiFailedFilters,
+          searchKey: details.searchKeyFailedFilters,
+          merged: details.failedFilters,
+        };
         details.exactReason = details.failedFilters.length > 0
           ? `ui_filter_failed:${details.failedFilters.join('|')}`
           : 'ui_filter_failed:unknown_group';
