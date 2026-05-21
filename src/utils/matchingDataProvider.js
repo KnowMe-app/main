@@ -38,12 +38,30 @@ const selectedFilterKeys = group => {
     .map(([key]) => key);
 };
 
+const getFilterGroupDebugState = (groupName, group) => {
+  const normalizedGroup = group && typeof group === 'object' ? group : {};
+  const entries = Object.entries(normalizedGroup);
+  const selectedValues = entries.filter(([, enabled]) => Boolean(enabled)).map(([key]) => key);
+  const allSelected = entries.length > 0 && entries.every(([, enabled]) => Boolean(enabled));
+  const groupActive = hasActiveFilterGroup(normalizedGroup);
+  return {
+    groupName,
+    selectedValues,
+    allSelected,
+    groupActive,
+  };
+};
+
 const unique = values => [...new Set((values || []).filter(Boolean))];
 
-const addGroup = (groups, indexName, values) => {
+const addGroup = (groups, indexName, values, debug = {}) => {
   const normalizedValues = unique(values.map(value => String(value || '').trim()).filter(Boolean));
   if (!indexName || normalizedValues.length === 0) return;
-  groups.push({ indexName, values: normalizedValues });
+  groups.push({
+    indexName,
+    values: normalizedValues,
+    ...debug,
+  });
 };
 
 const buildRoleBuckets = (filters, collectionSource) => {
@@ -112,10 +130,45 @@ const buildAgeBuckets = filters => {
 
 export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource = 'users' } = {}) => {
   const groups = [];
-  addGroup(groups, 'role', buildRoleBuckets(filters, collectionSource));
-  addGroup(groups, 'maritalStatus', buildMaritalStatusBuckets(filters));
-  addGroup(groups, 'blood', buildBloodBuckets(filters));
-  addGroup(groups, 'age', buildAgeBuckets(filters));
+  addGroup(
+    groups,
+    'role',
+    buildRoleBuckets(filters, collectionSource),
+    {
+      source: 'searchKey/users',
+      ...getFilterGroupDebugState('userRole', filters?.userRole || filters?.role),
+    }
+  );
+  addGroup(
+    groups,
+    'maritalStatus',
+    buildMaritalStatusBuckets(filters),
+    {
+      source: 'searchKey/users',
+      ...getFilterGroupDebugState('maritalStatus', filters?.maritalStatus),
+    }
+  );
+  addGroup(
+    groups,
+    'blood',
+    buildBloodBuckets(filters),
+    {
+      source: 'searchKey/users',
+      ...getFilterGroupDebugState('bloodGroup+rh', {
+        ...(filters?.bloodGroup || {}),
+        ...(filters?.rh ? Object.fromEntries(Object.entries(filters.rh).map(([key, value]) => [`rh:${key}`, value])) : {}),
+      }),
+    }
+  );
+  addGroup(
+    groups,
+    'age',
+    buildAgeBuckets(filters),
+    {
+      source: 'searchKey/users',
+      ...getFilterGroupDebugState('age', filters?.age),
+    }
+  );
   return groups;
 };
 
@@ -684,7 +737,14 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
       details.fromIndex = true;
       details.allowedByIndex = pass;
     }
-    checks.userRole = details;
+    checks.userRole = {
+      ...details,
+      groupName: 'userRole',
+      selectedValues: active,
+      allSelected: false,
+      groupActive: true,
+      source: 'searchKey/users',
+    };
     if (!pass) failedFilters.push('userRole');
   }
 
@@ -692,7 +752,9 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
     const category = toMaritalStatusCategory(user);
     const active = getActiveGroupFilterKeys(filters.maritalStatus);
     const pass = Boolean(filters.maritalStatus?.[category]);
-    checks.maritalStatus = { active, category, pass };
+    checks.maritalStatus = {
+      active, category, pass, groupName: 'maritalStatus', selectedValues: active, allSelected: false, groupActive: true, source: 'searchKey/users',
+    };
     if (!pass) failedFilters.push('maritalStatus');
   }
 
@@ -700,7 +762,9 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
     const category = toBloodGroupCategory(user);
     const active = getActiveGroupFilterKeys(filters.bloodGroup);
     const pass = Boolean(filters.bloodGroup?.[category]);
-    checks.bloodGroup = { active, category, pass };
+    checks.bloodGroup = {
+      active, category, pass, groupName: 'bloodGroup', selectedValues: active, allSelected: false, groupActive: true, source: 'searchKey/users',
+    };
     if (!pass) failedFilters.push('bloodGroup');
   }
 
@@ -708,7 +772,9 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
     const category = toRhCategory(user);
     const active = getActiveGroupFilterKeys(filters.rh);
     const pass = Boolean(filters.rh?.[category]);
-    checks.rh = { active, category, pass };
+    checks.rh = {
+      active, category, pass, groupName: 'rh', selectedValues: active, allSelected: false, groupActive: true, source: 'searchKey/users',
+    };
     if (!pass) failedFilters.push('rh');
   }
 
@@ -716,7 +782,9 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
     const category = toAgeCategory(user);
     const active = getActiveGroupFilterKeys(filters.age);
     const pass = Boolean(filters.age?.[category]);
-    checks.age = { active, category, pass };
+    checks.age = {
+      active, category, pass, groupName: 'age', selectedValues: active, allSelected: false, groupActive: true, source: 'searchKey/users',
+    };
     if (!pass) failedFilters.push('age');
   }
 

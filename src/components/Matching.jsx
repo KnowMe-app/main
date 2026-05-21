@@ -4433,6 +4433,9 @@ const Matching = () => {
         });
         details.failedFilters = searchKeyDebug.failedFilters;
         details.searchKeyChecks = searchKeyDebug.checks;
+        details.exactReason = searchKeyDebug.failedFilters.length > 0
+          ? `ui_filter_failed:${searchKeyDebug.failedFilters.join('|')}`
+          : 'ui_filter_failed:unknown_group';
       }
       pushFiltered({
         userId,
