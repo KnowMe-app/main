@@ -4501,7 +4501,7 @@ const Matching = () => {
         lastKey,
       });
     }
-  }, [collectionSource, debugFilterPipelineDiagnostics, filteredUsers.length, hasMore, lastKey, ownerId, renderedCardsLength, viewMode, visibleUsers.length]);
+  }, [collectionSource, debugFilterPipelineDiagnostics, filteredUsers.length, filters, hasMore, lastKey, ownerId, renderedCardsLength, viewMode, visibleUsers.length]);
 
   useEffect(() => {
     if (viewMode !== 'favorites' && viewMode !== 'dislikes') return;
