@@ -1000,6 +1000,7 @@ const SwipeableCard = ({
     `excludedAtStage=${diagnostics.excludedAtStage || '-'}`,
     `excludedReason=${diagnostics.excludedReason || '-'}`,
     `excludedFunction=${diagnostics.excludedFunction || '-'}`,
+    `excludedCondition=${diagnostics.excludedCondition || '-'}`,
     `exactReason=${diagnostics.exactReason || '-'}`,
     `uiFailedFilters=${Array.isArray(diagnostics.uiFailedFilters) && diagnostics.uiFailedFilters.length ? diagnostics.uiFailedFilters.join('|') : '-'}`,
     `searchKeyFailedFilters=${Array.isArray(diagnostics.searchKeyFailedFilters) && diagnostics.searchKeyFailedFilters.length ? diagnostics.searchKeyFailedFilters.join('|') : '-'}`,
@@ -4497,10 +4498,12 @@ const Matching = () => {
         activeUserRoleFilters,
         excludedBy: null,
         excludedFunction: null,
+        excludedCondition: null,
       };
       if (possibleReason === 'excluded_by_userRole_filter') {
         details.excludedBy = 'userRole';
         details.excludedFunction = 'getProfileRole + activeUserRoleFilters.includes';
+        details.excludedCondition = `hasUserRoleFilter && cardRole && !activeUserRoleFilters.includes(cardRole) [cardRole=${cardRole || '-'}; active=${activeUserRoleFilters.join('|') || '-'}]`;
         details.failedFilters = ['userRole'];
         details.exactReason = 'ui_filter_failed:userRole';
       } else if (possibleReason === 'excluded_by_ui_filter') {
@@ -4527,17 +4530,27 @@ const Matching = () => {
         details.excludedFunction = details.uiFailedFilters.length > 0
           ? 'applyMatchingUiFiltersToUsers'
           : (details.searchKeyFailedFilters.length > 0 ? 'getMatchingSearchKeyFilterDebugForUser' : 'unknown');
+        const firstFailedFilter = details.failedFilters[0] || null;
+        const firstFailedSearchKeyCheck = firstFailedFilter && searchKeyDebug.checks?.[firstFailedFilter]
+          ? searchKeyDebug.checks[firstFailedFilter]
+          : null;
+        details.excludedCondition = firstFailedFilter
+          ? `${firstFailedFilter}: selected=${(firstFailedSearchKeyCheck?.active || []).join('|') || '-'}; cardCategory=${firstFailedSearchKeyCheck?.category || '-'}; pass=${firstFailedSearchKeyCheck?.pass ? 'yes' : 'no'}; source=${firstFailedSearchKeyCheck?.source || '-'}; predicate=Boolean(filters.${firstFailedFilter}?.[category])`
+          : 'No specific failed filter resolved';
         details.exactReason = details.failedFilters.length > 0
           ? `ui_filter_failed:${details.failedFilters.join('|')}`
           : 'ui_filter_failed:unknown_group';
       } else if (possibleReason === 'hidden') {
         details.excludedFunction = 'canShowMatchingUser';
+        details.excludedCondition = 'canShowMatchingUser(card, { isAdmin }) === false';
         details.exactReason = 'visibility_guard:hidden';
       } else if (possibleReason === 'publish_false') {
         details.excludedFunction = 'publish_flag_check';
+        details.excludedCondition = '!card.publish && card.__sourceCollection !== newUsers';
         details.exactReason = 'publish_false';
       } else if (possibleReason === 'unknown_final_render_exclusion') {
         details.excludedFunction = 'final_render_diff';
+        details.excludedCondition = 'Card id exists in loadedIdsRef, but absent in final renderedIds';
         details.exactReason = 'unknown_final_render_exclusion';
       }
       pushFiltered({
@@ -4599,6 +4612,7 @@ const Matching = () => {
         excludedAtStage: filteredOutDetailsByUserId.get(userId)?.stage || null,
         excludedReason: filteredOutDetailsByUserId.get(userId)?.reason || null,
         excludedFunction: filteredOutDetailsByUserId.get(userId)?.details?.excludedFunction || null,
+        excludedCondition: filteredOutDetailsByUserId.get(userId)?.details?.excludedCondition || null,
         exactReason: filteredOutDetailsByUserId.get(userId)?.details?.exactReason || null,
         uiFailedFilters: filteredOutDetailsByUserId.get(userId)?.details?.uiFailedFilters || [],
         searchKeyFailedFilters: filteredOutDetailsByUserId.get(userId)?.details?.searchKeyFailedFilters || [],
