@@ -919,6 +919,7 @@ const SwipeableCard = ({
   onAdminEdit,
   debugRejectReasons = [],
   showDebugRejectReasons = false,
+  debugFilteredOutReason = '',
 }) => {
   const resolvedRole = getProfileRole(user) || role;
   const photos = getProfilePhotos(user);
@@ -1031,6 +1032,7 @@ const SwipeableCard = ({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       $activeProfile
+      style={debugFilteredOutReason ? { opacity: 0.58, filter: 'grayscale(0.85)' } : undefined}
     >
       <ModernProfileShell>
         <ModernProfileScroll>
@@ -1047,10 +1049,10 @@ const SwipeableCard = ({
           {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name || 'Matching'} profile hero`} onError={() => setActiveHeroPhoto('')} />}
           {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>}
         </ModernHero>
-        {showDebugRejectReasons && Array.isArray(debugRejectReasons) && debugRejectReasons.length > 0 && (
+        {(debugFilteredOutReason || (showDebugRejectReasons && Array.isArray(debugRejectReasons) && debugRejectReasons.length > 0)) && (
           <div style={{ margin: '10px 14px 0', padding: '8px 10px', borderRadius: 10, background: '#5a1325', color: '#fff', fontSize: 12, fontWeight: 700 }}>
-            <div>DEBUG: normally hidden</div>
-            <div style={{ marginTop: 4, fontWeight: 600 }}>Reason: {debugRejectReasons.join(', ')}</div>
+            <div>{debugFilteredOutReason ? `Filtered: ${debugFilteredOutReason}` : 'DEBUG: normally hidden'}</div>
+            {!debugFilteredOutReason && <div style={{ marginTop: 4, fontWeight: 600 }}>Reason: {debugRejectReasons.join(', ')}</div>}
           </div>
         )}
         {shouldShowHeroContent && (
@@ -4325,7 +4327,7 @@ const Matching = () => {
   const filteredUsers = (viewMode === 'favorites' || viewMode === 'dislikes')
     ? reactionTabUsers
     : (debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users')
-      ? visibleUsers
+      ? users
     : applyMatchingUiFiltersToUsers({
     users: visibleUsers,
     filters,
@@ -4433,6 +4435,15 @@ const Matching = () => {
     };
   }, [additionalNewUsers, collectionSource, filteredUsers, filters, isAdmin, renderedCards.length, sharedReactionCandidateUsers, users, viewMode, visibleUsers]);
   const renderedCardsLength = renderedCards.length;
+  const debugFilteredOutReasonById = useMemo(() => {
+    if (!(debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users')) return new Map();
+    const map = new Map();
+    (debugFilterPipelineDiagnostics.filteredOutCards || []).forEach(item => {
+      if (!item?.userId || map.has(item.userId)) return;
+      map.set(item.userId, item.reason || 'unknown_final_render_exclusion');
+    });
+    return map;
+  }, [collectionSource, debugFilterPipelineDiagnostics.filteredOutCards, debugShowAllIndexedCards, isIndexedDebugTestUser]);
   const debugHiddenStats = useMemo(() => {
     if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return null;
     const visibleSet = new Set(applyMatchingUiFiltersToUsers({
@@ -4446,14 +4457,14 @@ const Matching = () => {
       collectionSource,
       viewMode,
     }).map(card => card?.userId).filter(Boolean));
-    const normallyHidden = filteredUsers.filter(card => card?.userId && !visibleSet.has(card.userId));
+    const normallyHidden = renderedCards.filter(card => card?.userId && !visibleSet.has(card.userId));
     return {
-      indexedIdsTotal: visibleUsers.length,
-      displayedCardsTotal: filteredUsers.length,
+      indexedIdsTotal: renderedCards.length,
+      displayedCardsTotal: renderedCards.length,
       normallyVisibleCardsTotal: visibleSet.size,
       normallyHiddenCardsTotal: normallyHidden.length,
     };
-  }, [collectionSource, debugShowAllIndexedCards, dislikeUsers, favoriteUsers, filteredUsers, filters, isIndexedDebugTestUser, roleIndexSets, viewMode, visibleUsers]);
+  }, [collectionSource, debugShowAllIndexedCards, dislikeUsers, favoriteUsers, filters, isIndexedDebugTestUser, renderedCards, roleIndexSets, viewMode, visibleUsers]);
 
   useEffect(() => {
     if (!debugHiddenStats) return;
@@ -5362,6 +5373,7 @@ const Matching = () => {
                         navigate(`/edit/${user.userId}`, { state: user });
                       }}
                       showDebugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser}
+                      debugFilteredOutReason={debugFilteredOutReasonById.get(user?.userId) || ''}
                       debugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser && !canShowMatchingUser(user, { isAdmin })
                         ? ['blocked_by_ui_filter']
                         : []}
