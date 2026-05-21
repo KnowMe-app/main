@@ -920,6 +920,7 @@ const SwipeableCard = ({
   debugRejectReasons = [],
   showDebugRejectReasons = false,
   debugFilteredOutReason = '',
+  debugUiFilterSummary = '',
 }) => {
   const resolvedRole = getProfileRole(user) || role;
   const photos = getProfilePhotos(user);
@@ -971,7 +972,7 @@ const SwipeableCard = ({
     ? `Filtered: ${debugFilteredOutReason}`
     : (debugReasons.length > 0 ? 'DEBUG: normally hidden' : '');
   const debugReasonHint = debugReasonText === 'blocked_by_ui_filter'
-    ? 'Картка прихована активними UI-фільтрами'
+    ? `Картка прихована активними UI-фільтрами${debugUiFilterSummary ? `: ${debugUiFilterSummary}` : ''}`
     : '';
   const debugContext = [
     user?.userId ? `userId=${user.userId}` : '',
@@ -5392,6 +5393,21 @@ const Matching = () => {
                       debugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser && !canShowMatchingUser(user, { isAdmin })
                         ? ['blocked_by_ui_filter']
                         : []}
+                      debugUiFilterSummary={Object.entries(filters || {})
+                        .filter(([, value]) => (
+                          Array.isArray(value)
+                            ? value.length > 0
+                            : typeof value === 'boolean'
+                              ? value
+                              : String(value || '').trim() !== ''
+                        ))
+                        .map(([key, value]) => {
+                          if (Array.isArray(value)) return `${key}=${value.join('|')}`;
+                          if (typeof value === 'boolean') return `${key}=true`;
+                          return `${key}=${String(value).trim()}`;
+                        })
+                        .slice(0, 5)
+                        .join(', ')}
                     />
                   </CardWrapper>
                 </CardContainer>
