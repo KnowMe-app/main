@@ -61,9 +61,9 @@ const defaultsAdd = {
 
 const defaultsMatching = {
   userRole: { ed: true, ag: false, ip: false, other: false },
-  maritalStatus: { married: true, unmarried: true, other: true, empty: true },
-  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: true },
-  rh: { '+': true, '-': true, other: true, empty: true },
+  maritalStatus: { married: true, unmarried: true, other: true },
+  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true },
+  rh: { '+': true, '-': true, other: true },
   age: {
     le25: true,
     '26_30': true,
@@ -83,7 +83,11 @@ const defaultsMatching = {
 };
 
 const normalizeFilterGroup = (value, defaults) => {
-  return typeof value === 'object' && value !== null ? { ...defaults, ...value } : { ...defaults };
+  if (!value || typeof value !== 'object') return { ...defaults };
+  return Object.keys(defaults).reduce((acc, key) => {
+    acc[key] = value[key] !== undefined ? value[key] : defaults[key];
+    return acc;
+  }, {});
 };
 
 const FilterPanel = ({
