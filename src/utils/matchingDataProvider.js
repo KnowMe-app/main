@@ -624,14 +624,38 @@ const toAgeCategory = user => {
   const dayDiff = today.getDate() - birthDate.getDate();
   if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) age -= 1;
 
-  if (age <= 21) return 'le21';
-  if (age <= 25) return '22_25';
+  if (age <= 25) return 'le25';
   if (age <= 30) return '26_30';
-  if (age <= 35) return '31_35';
-  if (age <= 38) return '36_38';
-  if (age <= 41) return '39_41';
-  if (age >= 42) return '42_plus';
+  if (age <= 33) return '31_33';
+  if (age <= 36) return '34_36';
+  if (age >= 37) return '37_plus';
   return 'other';
+};
+
+const toBmiCategory = user => {
+  const directNumericBmi = Number(
+    String(user?.bmi ?? user?.imt ?? '')
+      .replace(',', '.')
+      .trim()
+  );
+
+  let bmi = Number.isFinite(directNumericBmi) && directNumericBmi > 0
+    ? directNumericBmi
+    : null;
+
+  if (bmi === null) {
+    const height = Number(String(user?.height || '').replace(',', '.').trim());
+    const weight = Number(String(user?.weight || '').replace(',', '.').trim());
+    if (Number.isFinite(height) && Number.isFinite(weight) && height > 0 && weight > 0) {
+      bmi = weight / Math.pow(height / 100, 2);
+    }
+  }
+
+  if (!Number.isFinite(bmi) || bmi <= 0) return 'other';
+  if (bmi < 18.5) return 'lt18_5';
+  if (bmi <= 24.9) return '18_5_24_9';
+  if (bmi <= 29.9) return '25_29_9';
+  return '30_plus';
 };
 
 export const getMatchingFiltersWithoutSearchKeyGroups = filters => {
@@ -676,6 +700,10 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
     if (isMatchingFilterGroupActive(activeFilters.age)) {
       const category = toAgeCategory(user);
       if (!activeFilters.age[category]) return false;
+    }
+    if (isMatchingFilterGroupActive(activeFilters.bmi)) {
+      const category = toBmiCategory(user);
+      if (!activeFilters.bmi[category]) return false;
     }
 
     return true;
@@ -787,6 +815,16 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
     if (!pass) failedFilters.push('age');
   }
 
+  if (isMatchingFilterGroupActive(filters.bmi)) {
+    const category = toBmiCategory(user);
+    const active = getActiveGroupFilterKeys(filters.bmi);
+    const pass = Boolean(filters.bmi?.[category]);
+    checks.bmi = {
+      active, category, pass, ...getFilterGroupDebugState('bmi', filters.bmi), source: 'searchKey/users',
+    };
+    if (!pass) failedFilters.push('bmi');
+  }
+
   return {
     failedFilters,
     checks,
@@ -856,6 +894,9 @@ export const applyMatchingUiFiltersToUsers = ({
     filterMainDislikeUsers
   )
     .map(([, u]) => u)
+    .filter(u => (
+      u?.__sourceCollection === 'newUsers' || u?.publish !== false
+    ))
     .filter(u => (
       !excludeReactionUsers ||
       (!favoriteUsers[u.userId] && !dislikeUsers[u.userId])
