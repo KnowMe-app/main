@@ -4517,6 +4517,42 @@ const Matching = () => {
       });
     });
 
+    const hiddenByUiFilterSet = new Set(
+      missingFromRendered
+        .filter(item => item?.possibleReason === 'excluded_by_ui_filter')
+        .map(item => item.userId)
+        .filter(Boolean)
+    );
+    const failedFiltersByUserId = new Map(
+      filteredOutCards
+        .filter(item => item?.reason === 'excluded_by_ui_filter' && item?.userId)
+        .map(item => [item.userId, item?.details?.failedFilters || []])
+    );
+
+    const allDebugIds = Array.from(new Set([
+      ...loadedIds,
+      ...renderedIds,
+      ...visibleCardIds,
+      ...Array.from(cardById.keys()),
+    ].filter(Boolean)));
+
+    const cardsDebug = allDebugIds.map(userId => {
+      const card = cardById.get(userId) || null;
+      const cardRole = card ? getProfileRole(card) : null;
+      return {
+        userId,
+        role: cardRole,
+        userRole: card?.userRole || null,
+        __sourceCollection: card?.__sourceCollection || null,
+        collectionSource,
+        inFilteredUsers: renderedIdsSet.has(userId),
+        inRenderedUsers: renderedIdsSet.has(userId),
+        inVisibleCardIds: visibleCardIdsSet.has(userId),
+        hiddenByUiFilter: hiddenByUiFilterSet.has(userId),
+        failedFilters: failedFiltersByUserId.get(userId) || [],
+      };
+    });
+
     return {
       batchId,
       loadedIdsCount: loadedIds.length,
@@ -4527,6 +4563,7 @@ const Matching = () => {
       renderedIdsCount: renderedIds.length,
       missingFromRenderedCount: missingFromRendered.length,
       missingFromRendered,
+      cardsDebug,
       filteredOutByReason,
       filteredOutCards,
     };
