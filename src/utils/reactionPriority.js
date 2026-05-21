@@ -3,6 +3,24 @@ const isTruthyReactionValue = value => {
   return Boolean(value);
 };
 
+export const normalizePublish = value => {
+  if (value === true) return true;
+  if (value === false) return false;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (value == null || value === '') return false;
+
+  if (Array.isArray(value)) {
+    return value.some(item => item === true || item === 'true');
+  }
+
+  if (typeof value === 'object') {
+    return Object.values(value).some(item => item === true || item === 'true');
+  }
+
+  return Boolean(value);
+};
+
 export const normalizeReactionMap = map => {
   if (!map || typeof map !== 'object') return {};
   return Object.fromEntries(
@@ -83,6 +101,8 @@ export const resolvePrioritizedReactionMaps = ({
 
 export const getCanShowMatchingUserDebug = (user, { isAdmin = false } = {}) => {
   const userId = String(user?.userId || '').trim();
+  const rawPublish = user?.publish;
+  const normalizedPublish = normalizePublish(rawPublish);
   if (!userId) {
     return {
       canShow: false,
@@ -138,24 +158,28 @@ export const getCanShowMatchingUserDebug = (user, { isAdmin = false } = {}) => {
     };
   }
 
-  if (user?.publish !== true) {
+  if (!normalizedPublish && !isAdmin) {
     return {
       canShow: false,
       excludedFunction: 'canShowMatchingUser',
-      excludedCondition: 'user.publish === false && !isAdmin',
-      exactReason: `users_publish_false_for_non_admin:publish=${user?.publish},isAdmin=${isAdmin},userId=${userId}`,
+      excludedCondition: '!normalizedPublish && !isAdmin',
+      exactReason: `users_publish_false_for_non_admin: rawPublish=${JSON.stringify(rawPublish)}, normalizedPublish=${normalizedPublish}, isAdmin=${isAdmin}, userId=${userId}`,
       excludedAtStage: 'final render guard',
       reasonCode: 'users_publish_false_for_non_admin',
+      rawPublish,
+      normalizedPublish,
     };
   }
 
   return {
     canShow: true,
     excludedFunction: 'canShowMatchingUser',
-    excludedCondition: 'user.publish === true',
-    exactReason: `users_publish_true:userId=${userId},publish=${user?.publish}`,
+    excludedCondition: 'publish check passed',
+    exactReason: `publish check passed: rawPublish=${JSON.stringify(rawPublish)}, normalizedPublish=${normalizedPublish}, userId=${userId}`,
     excludedAtStage: 'final render guard',
     reasonCode: 'allowed_users_publish_true',
+    rawPublish,
+    normalizedPublish,
   };
 };
 
