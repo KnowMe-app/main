@@ -987,6 +987,9 @@ const SwipeableCard = ({
     typeof user?.__matchingAccessAllowed === 'boolean' ? `matchingAccess=${user.__matchingAccessAllowed ? 'allowed' : 'blocked'}` : '',
   ].filter(Boolean).join(' · ');
   const diagnostics = debugCardDiagnostics && typeof debugCardDiagnostics === 'object' ? debugCardDiagnostics : null;
+  const matchingDebugTrace = diagnostics?.__matchingDebugTrace && typeof diagnostics.__matchingDebugTrace === 'object'
+    ? diagnostics.__matchingDebugTrace
+    : null;
   const debugDiagnosticsRows = diagnostics ? [
     `role=${diagnostics.role || '-'}`,
     `userRole=${diagnostics.userRole || '-'}`,
@@ -1096,6 +1099,17 @@ const SwipeableCard = ({
             {debugReasonHint && <div style={{ marginTop: 4, fontWeight: 500 }}>Hint: {debugReasonHint}</div>}
             {debugFailedFiltersHint && <div style={{ marginTop: 4, fontWeight: 500 }}>Filters: {debugFailedFiltersHint}</div>}
             {debugContext && <div style={{ marginTop: 4, opacity: 0.9, fontWeight: 500 }}>Context: {debugContext}</div>}
+            {matchingDebugTrace && (
+              <>
+                <div style={{ marginTop: 4, fontWeight: 600 }}>Function: {matchingDebugTrace.excludedByFunction || '-'}</div>
+                <div style={{ marginTop: 2, fontWeight: 600 }}>Condition: {matchingDebugTrace.excludedCondition || '-'}</div>
+                <div style={{ marginTop: 2, fontWeight: 600 }}>Exact reason: {matchingDebugTrace.exactReason || '-'}</div>
+                <div style={{ marginTop: 2, fontWeight: 600 }}>Stage: {matchingDebugTrace.excludedAtStage || '-'}</div>
+                <div style={{ marginTop: 2, fontWeight: 600 }}>Failed filters: {Array.isArray(matchingDebugTrace.failedFilters) && matchingDebugTrace.failedFilters.length ? matchingDebugTrace.failedFilters.join('|') : '-'}</div>
+                <div style={{ marginTop: 2, fontWeight: 600 }}>Active filters: {matchingDebugTrace.activeFiltersSnapshot || '-'}</div>
+                <div style={{ marginTop: 2, fontWeight: 600 }}>Card values: {matchingDebugTrace.cardValuesSnapshot || '-'}</div>
+              </>
+            )}
             {debugDiagnosticsRows.map(row => (
               <div key={row} style={{ marginTop: 2, opacity: 0.92, fontWeight: 500 }}>Diag: {row}</div>
             ))}
@@ -4537,9 +4551,26 @@ const Matching = () => {
         details.excludedCondition = firstFailedFilter
           ? `${firstFailedFilter}: selected=${(firstFailedSearchKeyCheck?.active || []).join('|') || '-'}; cardCategory=${firstFailedSearchKeyCheck?.category || '-'}; pass=${firstFailedSearchKeyCheck?.pass ? 'yes' : 'no'}; source=${firstFailedSearchKeyCheck?.source || '-'}; predicate=Boolean(filters.${firstFailedFilter}?.[category])`
           : 'No specific failed filter resolved';
-        details.exactReason = details.failedFilters.length > 0
-          ? `ui_filter_failed:${details.failedFilters.join('|')}`
-          : 'ui_filter_failed:unknown_group';
+        const hasUiEvidence = details.uiFailedFilters.length > 0
+          && details.failedFilters.length > 0
+          && details.excludedFunction
+          && details.excludedCondition;
+        if (!hasUiEvidence) {
+          possibleReason = 'unknown_filter_block';
+          details.excludedBy = 'unknown';
+          details.excludedFunction = details.excludedFunction || 'unknown';
+          details.excludedCondition = details.excludedCondition || 'ui filter blocked but no exact failed condition resolved';
+          details.exactReason = 'unknown_filter_block';
+          console.warn('[Matching][debugTrace] blocked_by_ui_filter rejected due to incomplete trace', {
+            userId,
+            uiFailedFilters: details.uiFailedFilters,
+            failedFilters: details.failedFilters,
+            excludedFunction: details.excludedFunction,
+            excludedCondition: details.excludedCondition,
+          });
+        } else {
+          details.exactReason = `ui_filter_failed:${details.failedFilters.join('|')}`;
+        }
       } else if (possibleReason === 'hidden') {
         details.excludedFunction = 'canShowMatchingUser';
         details.excludedCondition = 'canShowMatchingUser(card, { isAdmin }) === false';
@@ -4553,6 +4584,18 @@ const Matching = () => {
         details.excludedCondition = 'Card id exists in loadedIdsRef, but absent in final renderedIds';
         details.exactReason = 'unknown_final_render_exclusion';
       }
+      details.__matchingDebugTrace = {
+        finalReason: possibleReason,
+        excludedAtStage: 'final_render_diff',
+        excludedByFunction: details.excludedFunction || null,
+        excludedCondition: details.excludedCondition || null,
+        exactReason: details.exactReason || null,
+        failedFilters: details.failedFilters || [],
+        uiFailedFilters: details.uiFailedFilters || [],
+        searchKeyFailedFilters: details.searchKeyFailedFilters || [],
+        activeFiltersSnapshot: getMatchingUiFilterDebugSummary(filters),
+        cardValuesSnapshot: `userId=${card?.userId || userId || '-'}; role=${cardRole || '-'}; userRole=${card?.userRole || '-'}; publish=${card?.publish === false ? 'false' : 'true'}`,
+      };
       pushFiltered({
         userId,
         stage: 'final_render_diff',
@@ -4616,6 +4659,7 @@ const Matching = () => {
         exactReason: filteredOutDetailsByUserId.get(userId)?.details?.exactReason || null,
         uiFailedFilters: filteredOutDetailsByUserId.get(userId)?.details?.uiFailedFilters || [],
         searchKeyFailedFilters: filteredOutDetailsByUserId.get(userId)?.details?.searchKeyFailedFilters || [],
+        __matchingDebugTrace: filteredOutDetailsByUserId.get(userId)?.details?.__matchingDebugTrace || null,
       };
     });
 
