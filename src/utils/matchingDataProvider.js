@@ -629,6 +629,103 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
   });
 };
 
+const getActiveGroupFilterKeys = group => (
+  Object.entries(group || {})
+    .filter(([, enabled]) => Boolean(enabled))
+    .map(([key]) => key)
+);
+
+export const getMatchingUiFilterDebugSummary = filters => Object.entries(filters || {})
+  .flatMap(([key, value]) => {
+    if (Array.isArray(value)) {
+      const active = value.filter(item => String(item || '').trim() !== '');
+      return active.length > 0 ? [`${key}=[${active.join('|')}]`] : [];
+    }
+
+    if (value && typeof value === 'object') {
+      const active = getActiveGroupFilterKeys(value);
+      return active.length > 0 ? [`${key}=[${active.join('|')}]`] : [];
+    }
+
+    if (typeof value === 'boolean') {
+      return value ? [`${key}=true`] : [];
+    }
+
+    const normalized = String(value || '').trim();
+    return normalized ? [`${key}=${normalized}`] : [];
+  })
+  .slice(0, 10)
+  .join(', ');
+
+export const getMatchingSearchKeyFilterDebugForUser = ({
+  user,
+  filters = {},
+  roleIndexSets = null,
+} = {}) => {
+  const failedFilters = [];
+  const checks = {};
+  const roleFilterMeta = isMatchingFilterGroupActive(filters.userRole)
+    ? buildAllowedRoleIdsFromSearchKey(filters.userRole, roleIndexSets)
+    : null;
+
+  if (isMatchingFilterGroupActive(filters.userRole)) {
+    const active = getActiveGroupFilterKeys(filters.userRole);
+    let category = toRoleCategory(user, roleIndexSets);
+    let pass = Boolean(filters.userRole?.[category]);
+    const details = {
+      active,
+      category,
+      pass,
+      fromIndex: false,
+    };
+    if (roleFilterMeta && user?.userId && roleFilterMeta.allIndexedIds.has(user.userId)) {
+      pass = roleFilterMeta.allowedIds.has(user.userId);
+      details.pass = pass;
+      details.fromIndex = true;
+      details.allowedByIndex = pass;
+    }
+    checks.userRole = details;
+    if (!pass) failedFilters.push('userRole');
+  }
+
+  if (isMatchingFilterGroupActive(filters.maritalStatus)) {
+    const category = toMaritalStatusCategory(user);
+    const active = getActiveGroupFilterKeys(filters.maritalStatus);
+    const pass = Boolean(filters.maritalStatus?.[category]);
+    checks.maritalStatus = { active, category, pass };
+    if (!pass) failedFilters.push('maritalStatus');
+  }
+
+  if (isMatchingFilterGroupActive(filters.bloodGroup)) {
+    const category = toBloodGroupCategory(user);
+    const active = getActiveGroupFilterKeys(filters.bloodGroup);
+    const pass = Boolean(filters.bloodGroup?.[category]);
+    checks.bloodGroup = { active, category, pass };
+    if (!pass) failedFilters.push('bloodGroup');
+  }
+
+  if (isMatchingFilterGroupActive(filters.rh)) {
+    const category = toRhCategory(user);
+    const active = getActiveGroupFilterKeys(filters.rh);
+    const pass = Boolean(filters.rh?.[category]);
+    checks.rh = { active, category, pass };
+    if (!pass) failedFilters.push('rh');
+  }
+
+  if (isMatchingFilterGroupActive(filters.age)) {
+    const category = toAgeCategory(user);
+    const active = getActiveGroupFilterKeys(filters.age);
+    const pass = Boolean(filters.age?.[category]);
+    checks.age = { active, category, pass };
+    if (!pass) failedFilters.push('age');
+  }
+
+  return {
+    failedFilters,
+    checks,
+  };
+};
+
 const passthroughFilterMain = usersData => usersData;
 
 const isReactionViewMode = viewMode => viewMode === 'favorites' || viewMode === 'dislikes';
