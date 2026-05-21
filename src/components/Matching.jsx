@@ -4464,7 +4464,7 @@ const Matching = () => {
       filteredOutByReason,
       filteredOutCards,
     };
-  }, [additionalNewUsers, collectionSource, filteredUsers, filters, isAdmin, renderedCards.length, sharedReactionCandidateUsers, users, viewMode, visibleUsers]);
+  }, [additionalNewUsers, collectionSource, filteredUsers, filters, isAdmin, renderedCards.length, roleIndexSets, sharedReactionCandidateUsers, users, viewMode, visibleUsers]);
   const renderedCardsLength = renderedCards.length;
   const debugFilteredOutReasonById = useMemo(() => {
     if (!(debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users')) return new Map();
