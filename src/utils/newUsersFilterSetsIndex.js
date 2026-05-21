@@ -1238,11 +1238,31 @@ export const getIndexedNewUsersIdsByRules = async ({
       ...Object.entries(entry.indexBuckets).map(([indexName, values]) => ({ indexName, values })),
       ...(Array.isArray(entry.additionalFilterBucketGroups) ? entry.additionalFilterBucketGroups : []),
     ].filter(group => {
+      if (group && typeof group === 'object' && Object.prototype.hasOwnProperty.call(group, 'groupActive')) {
+        if (!group.groupActive || group.allSelected) {
+          emitDebug('additionalMatching: indexed filter skipped because neutral/inactive', {
+            setKey: entry.setKey,
+            indexName: group?.indexName,
+            groupName: group?.groupName || group?.indexName || '',
+            selectedValues: Array.isArray(group?.selectedValues) ? group.selectedValues : [],
+            allSelected: Boolean(group?.allSelected),
+            groupActive: Boolean(group?.groupActive),
+            source: group?.source || 'searchKeySets/keySet',
+            reason: 'all options selected or group inactive',
+          });
+          return false;
+        }
+      }
       const normalizedValues = Array.isArray(group?.values) ? group.values.filter(Boolean) : [];
       if (normalizedValues.length > 0) return true;
       emitDebug('additionalMatching: indexed filter skipped because inactive', {
         setKey: entry.setKey,
         indexName: group?.indexName,
+        groupName: group?.groupName || group?.indexName || '',
+        selectedValues: Array.isArray(group?.selectedValues) ? group.selectedValues : [],
+        allSelected: Boolean(group?.allSelected),
+        groupActive: Boolean(group?.groupActive),
+        source: group?.source || 'searchKeySets/keySet',
         stage: 'before_bucket_generation',
       });
       return false;
