@@ -4340,7 +4340,6 @@ const Matching = () => {
   const debugFilterPipelineDiagnostics = useMemo(() => {
     const batchId = `${viewMode}:${collectionSource}:${Date.now()}`;
     const loadedIds = Array.from(loadedIdsRef.current || []).filter(Boolean);
-    const loadedIdsSet = new Set(loadedIds);
     const renderedIds = filteredUsers.map(card => card?.userId).filter(Boolean);
     const renderedIdsSet = new Set(renderedIds);
     const visibleCardIds = visibleUsers.map(card => card?.userId).filter(Boolean);
@@ -4532,8 +4531,8 @@ const Matching = () => {
     dislikeUsers,
     favoriteUsers,
     filteredUsers,
-    reactionTabUsers,
     filters,
+    reactionTabUsers,
     hasMore,
     loading,
     reactionPaginationByType,
