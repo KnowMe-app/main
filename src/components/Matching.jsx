@@ -996,6 +996,13 @@ const SwipeableCard = ({
     `inFiltered=${diagnostics.inFilteredUsers ? 'yes' : 'no'}`,
     `hiddenByUiFilter=${diagnostics.hiddenByUiFilter ? 'yes' : 'no'}`,
     `failedFilters=${Array.isArray(diagnostics.failedFilters) && diagnostics.failedFilters.length ? diagnostics.failedFilters.join('|') : '-'}`,
+    `excludedBy=${diagnostics.excludedBy || '-'}`,
+    `excludedAtStage=${diagnostics.excludedAtStage || '-'}`,
+    `excludedReason=${diagnostics.excludedReason || '-'}`,
+    `excludedFunction=${diagnostics.excludedFunction || '-'}`,
+    `exactReason=${diagnostics.exactReason || '-'}`,
+    `uiFailedFilters=${Array.isArray(diagnostics.uiFailedFilters) && diagnostics.uiFailedFilters.length ? diagnostics.uiFailedFilters.join('|') : '-'}`,
+    `searchKeyFailedFilters=${Array.isArray(diagnostics.searchKeyFailedFilters) && diagnostics.searchKeyFailedFilters.length ? diagnostics.searchKeyFailedFilters.join('|') : '-'}`,
   ] : [];
   const handleTouchStart = e => {
     if (!e.touches || e.touches.length !== 1) return;
@@ -4488,9 +4495,14 @@ const Matching = () => {
         cardRole,
         pub: card?.publish,
         activeUserRoleFilters,
+        excludedBy: null,
+        excludedFunction: null,
       };
       if (possibleReason === 'excluded_by_userRole_filter') {
+        details.excludedBy = 'userRole';
+        details.excludedFunction = 'getProfileRole + activeUserRoleFilters.includes';
         details.failedFilters = ['userRole'];
+        details.exactReason = 'ui_filter_failed:userRole';
       } else if (possibleReason === 'excluded_by_ui_filter') {
         const searchKeyDebug = getMatchingSearchKeyFilterDebugForUser({
           user: card,
@@ -4511,9 +4523,22 @@ const Matching = () => {
           searchKey: details.searchKeyFailedFilters,
           merged: details.failedFilters,
         };
+        details.excludedBy = details.failedFilters.length > 0 ? details.failedFilters[0] : 'unknown';
+        details.excludedFunction = details.uiFailedFilters.length > 0
+          ? 'applyMatchingUiFiltersToUsers'
+          : (details.searchKeyFailedFilters.length > 0 ? 'getMatchingSearchKeyFilterDebugForUser' : 'unknown');
         details.exactReason = details.failedFilters.length > 0
           ? `ui_filter_failed:${details.failedFilters.join('|')}`
           : 'ui_filter_failed:unknown_group';
+      } else if (possibleReason === 'hidden') {
+        details.excludedFunction = 'canShowMatchingUser';
+        details.exactReason = 'visibility_guard:hidden';
+      } else if (possibleReason === 'publish_false') {
+        details.excludedFunction = 'publish_flag_check';
+        details.exactReason = 'publish_false';
+      } else if (possibleReason === 'unknown_final_render_exclusion') {
+        details.excludedFunction = 'final_render_diff';
+        details.exactReason = 'unknown_final_render_exclusion';
       }
       pushFiltered({
         userId,
@@ -4543,6 +4568,11 @@ const Matching = () => {
         .filter(item => item?.reason === 'excluded_by_ui_filter' && item?.userId)
         .map(item => [item.userId, item?.details?.failedFilters || []])
     );
+    const filteredOutDetailsByUserId = new Map(
+      filteredOutCards
+        .filter(item => item?.userId)
+        .map(item => [item.userId, item])
+    );
 
     const allDebugIds = Array.from(new Set([
       ...loadedIds,
@@ -4565,6 +4595,13 @@ const Matching = () => {
         inVisibleCardIds: visibleCardIdsSet.has(userId),
         hiddenByUiFilter: hiddenByUiFilterSet.has(userId),
         failedFilters: failedFiltersByUserId.get(userId) || [],
+        excludedBy: filteredOutDetailsByUserId.get(userId)?.details?.excludedBy || null,
+        excludedAtStage: filteredOutDetailsByUserId.get(userId)?.stage || null,
+        excludedReason: filteredOutDetailsByUserId.get(userId)?.reason || null,
+        excludedFunction: filteredOutDetailsByUserId.get(userId)?.details?.excludedFunction || null,
+        exactReason: filteredOutDetailsByUserId.get(userId)?.details?.exactReason || null,
+        uiFailedFilters: filteredOutDetailsByUserId.get(userId)?.details?.uiFailedFilters || [],
+        searchKeyFailedFilters: filteredOutDetailsByUserId.get(userId)?.details?.searchKeyFailedFilters || [],
       };
     });
 
