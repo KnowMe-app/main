@@ -924,6 +924,7 @@ const SwipeableCard = ({
   debugFilteredOutReason = '',
   debugUiFilterSummary = '',
   debugUiFilterFailedFilters = '',
+  debugCardDiagnostics = null,
 }) => {
   const resolvedRole = getProfileRole(user) || role;
   const photos = getProfilePhotos(user);
@@ -985,6 +986,17 @@ const SwipeableCard = ({
     user?.__sourceCollection ? `source=${user.__sourceCollection}` : '',
     typeof user?.__matchingAccessAllowed === 'boolean' ? `matchingAccess=${user.__matchingAccessAllowed ? 'allowed' : 'blocked'}` : '',
   ].filter(Boolean).join(' · ');
+  const diagnostics = debugCardDiagnostics && typeof debugCardDiagnostics === 'object' ? debugCardDiagnostics : null;
+  const debugDiagnosticsRows = diagnostics ? [
+    `role=${diagnostics.role || '-'}`,
+    `userRole=${diagnostics.userRole || '-'}`,
+    `cardSource=${diagnostics.__sourceCollection || '-'}`,
+    `deckSource=${diagnostics.collectionSource || '-'}`,
+    `inVisible=${diagnostics.inVisibleCardIds ? 'yes' : 'no'}`,
+    `inFiltered=${diagnostics.inFilteredUsers ? 'yes' : 'no'}`,
+    `hiddenByUiFilter=${diagnostics.hiddenByUiFilter ? 'yes' : 'no'}`,
+    `failedFilters=${Array.isArray(diagnostics.failedFilters) && diagnostics.failedFilters.length ? diagnostics.failedFilters.join('|') : '-'}`,
+  ] : [];
   const handleTouchStart = e => {
     if (!e.touches || e.touches.length !== 1) return;
     const touch = e.touches[0];
@@ -1076,6 +1088,9 @@ const SwipeableCard = ({
             {debugReasonHint && <div style={{ marginTop: 4, fontWeight: 500 }}>Hint: {debugReasonHint}</div>}
             {debugFailedFiltersHint && <div style={{ marginTop: 4, fontWeight: 500 }}>Filters: {debugFailedFiltersHint}</div>}
             {debugContext && <div style={{ marginTop: 4, opacity: 0.9, fontWeight: 500 }}>Context: {debugContext}</div>}
+            {debugDiagnosticsRows.map(row => (
+              <div key={row} style={{ marginTop: 2, opacity: 0.92, fontWeight: 500 }}>Diag: {row}</div>
+            ))}
           </div>
         )}
         {shouldShowHeroContent && (
@@ -4517,6 +4532,42 @@ const Matching = () => {
       });
     });
 
+    const hiddenByUiFilterSet = new Set(
+      missingFromRendered
+        .filter(item => item?.possibleReason === 'excluded_by_ui_filter')
+        .map(item => item.userId)
+        .filter(Boolean)
+    );
+    const failedFiltersByUserId = new Map(
+      filteredOutCards
+        .filter(item => item?.reason === 'excluded_by_ui_filter' && item?.userId)
+        .map(item => [item.userId, item?.details?.failedFilters || []])
+    );
+
+    const allDebugIds = Array.from(new Set([
+      ...loadedIds,
+      ...renderedIds,
+      ...visibleCardIds,
+      ...Array.from(cardById.keys()),
+    ].filter(Boolean)));
+
+    const cardsDebug = allDebugIds.map(userId => {
+      const card = cardById.get(userId) || null;
+      const cardRole = card ? getProfileRole(card) : null;
+      return {
+        userId,
+        role: cardRole,
+        userRole: card?.userRole || null,
+        __sourceCollection: card?.__sourceCollection || null,
+        collectionSource,
+        inFilteredUsers: renderedIdsSet.has(userId),
+        inRenderedUsers: renderedIdsSet.has(userId),
+        inVisibleCardIds: visibleCardIdsSet.has(userId),
+        hiddenByUiFilter: hiddenByUiFilterSet.has(userId),
+        failedFilters: failedFiltersByUserId.get(userId) || [],
+      };
+    });
+
     return {
       batchId,
       loadedIdsCount: loadedIds.length,
@@ -4527,6 +4578,7 @@ const Matching = () => {
       renderedIdsCount: renderedIds.length,
       missingFromRenderedCount: missingFromRendered.length,
       missingFromRendered,
+      cardsDebug,
       filteredOutByReason,
       filteredOutCards,
     };
@@ -4565,6 +4617,15 @@ const Matching = () => {
     });
     return map;
   }, [collectionSource, debugFilterPipelineDiagnostics.filteredOutCards, debugShowAllIndexedCards, isIndexedDebugTestUser]);
+  const debugCardDiagnosticsById = useMemo(() => {
+    if (!(debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users')) return new Map();
+    const map = new Map();
+    (debugFilterPipelineDiagnostics.cardsDebug || []).forEach(item => {
+      if (!item?.userId || map.has(item.userId)) return;
+      map.set(item.userId, item);
+    });
+    return map;
+  }, [collectionSource, debugFilterPipelineDiagnostics.cardsDebug, debugShowAllIndexedCards, isIndexedDebugTestUser]);
   const debugHiddenStats = useMemo(() => {
     if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return null;
     const visibleSet = new Set(applyMatchingUiFiltersToUsers({
@@ -5500,6 +5561,7 @@ const Matching = () => {
                         : []}
                       debugUiFilterSummary={getMatchingUiFilterDebugSummary(filters)}
                       debugUiFilterFailedFilters={debugUiFilterFailedFiltersById.get(user?.userId) || ''}
+                      debugCardDiagnostics={debugCardDiagnosticsById.get(user?.userId) || null}
                     />
                   </CardWrapper>
                 </CardContainer>
