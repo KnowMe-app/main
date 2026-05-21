@@ -177,6 +177,8 @@ import {
   fetchMatchingIndexedCandidates,
   fetchNewUsersByIdsForMatching as fetchNewUsersByIdsForMatchingData,
   getActiveMatchingFiltersDebug,
+  getMatchingSearchKeyFilterDebugForUser,
+  getMatchingUiFilterDebugSummary,
   isAllowedIdForMatchingCollection,
   isMatchingCardId,
   isSameMatchingCursor,
@@ -921,6 +923,7 @@ const SwipeableCard = ({
   showDebugRejectReasons = false,
   debugFilteredOutReason = '',
   debugUiFilterSummary = '',
+  debugUiFilterFailedFilters = '',
 }) => {
   const resolvedRole = getProfileRole(user) || role;
   const photos = getProfilePhotos(user);
@@ -973,6 +976,9 @@ const SwipeableCard = ({
     : (debugReasons.length > 0 ? 'DEBUG: normally hidden' : '');
   const debugReasonHint = debugReasonText === 'blocked_by_ui_filter'
     ? `Картка прихована активними UI-фільтрами${debugUiFilterSummary ? `: ${debugUiFilterSummary}` : ''}`
+    : '';
+  const debugFailedFiltersHint = debugUiFilterFailedFilters
+    ? `Blocked by: ${debugUiFilterFailedFilters}`
     : '';
   const debugContext = [
     user?.userId ? `userId=${user.userId}` : '',
@@ -1068,6 +1074,7 @@ const SwipeableCard = ({
             {debugReasonLabel && <div>{debugReasonLabel}</div>}
             {debugReasonText && <div style={{ marginTop: 4, fontWeight: 600 }}>Reason: {debugReasonText}</div>}
             {debugReasonHint && <div style={{ marginTop: 4, fontWeight: 500 }}>Hint: {debugReasonHint}</div>}
+            {debugFailedFiltersHint && <div style={{ marginTop: 4, fontWeight: 500 }}>Filters: {debugFailedFiltersHint}</div>}
             {debugContext && <div style={{ marginTop: 4, opacity: 0.9, fontWeight: 500 }}>Context: {debugContext}</div>}
           </div>
         )}
@@ -4418,6 +4425,14 @@ const Matching = () => {
       };
       if (possibleReason === 'excluded_by_userRole_filter') {
         details.failedFilters = ['userRole'];
+      } else if (possibleReason === 'excluded_by_ui_filter') {
+        const searchKeyDebug = getMatchingSearchKeyFilterDebugForUser({
+          user: card,
+          filters,
+          roleIndexSets,
+        });
+        details.failedFilters = searchKeyDebug.failedFilters;
+        details.searchKeyChecks = searchKeyDebug.checks;
       }
       pushFiltered({
         userId,
@@ -4449,7 +4464,7 @@ const Matching = () => {
       filteredOutByReason,
       filteredOutCards,
     };
-  }, [additionalNewUsers, collectionSource, filteredUsers, filters, isAdmin, renderedCards.length, sharedReactionCandidateUsers, users, viewMode, visibleUsers]);
+  }, [additionalNewUsers, collectionSource, filteredUsers, filters, isAdmin, renderedCards.length, roleIndexSets, sharedReactionCandidateUsers, users, viewMode, visibleUsers]);
   const renderedCardsLength = renderedCards.length;
   const debugFilteredOutReasonById = useMemo(() => {
     if (!(debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users')) return new Map();
@@ -4457,6 +4472,16 @@ const Matching = () => {
     (debugFilterPipelineDiagnostics.filteredOutCards || []).forEach(item => {
       if (!item?.userId || map.has(item.userId)) return;
       map.set(item.userId, item.reason || 'unknown_final_render_exclusion');
+    });
+    return map;
+  }, [collectionSource, debugFilterPipelineDiagnostics.filteredOutCards, debugShowAllIndexedCards, isIndexedDebugTestUser]);
+  const debugUiFilterFailedFiltersById = useMemo(() => {
+    if (!(debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users')) return new Map();
+    const map = new Map();
+    (debugFilterPipelineDiagnostics.filteredOutCards || []).forEach(item => {
+      if (!item?.userId || map.has(item.userId)) return;
+      const failed = Array.isArray(item?.details?.failedFilters) ? item.details.failedFilters.filter(Boolean) : [];
+      if (failed.length > 0) map.set(item.userId, failed.join(', '));
     });
     return map;
   }, [collectionSource, debugFilterPipelineDiagnostics.filteredOutCards, debugShowAllIndexedCards, isIndexedDebugTestUser]);
@@ -5393,21 +5418,8 @@ const Matching = () => {
                       debugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser && !canShowMatchingUser(user, { isAdmin })
                         ? ['blocked_by_ui_filter']
                         : []}
-                      debugUiFilterSummary={Object.entries(filters || {})
-                        .filter(([, value]) => (
-                          Array.isArray(value)
-                            ? value.length > 0
-                            : typeof value === 'boolean'
-                              ? value
-                              : String(value || '').trim() !== ''
-                        ))
-                        .map(([key, value]) => {
-                          if (Array.isArray(value)) return `${key}=${value.join('|')}`;
-                          if (typeof value === 'boolean') return `${key}=true`;
-                          return `${key}=${String(value).trim()}`;
-                        })
-                        .slice(0, 5)
-                        .join(', ')}
+                      debugUiFilterSummary={getMatchingUiFilterDebugSummary(filters)}
+                      debugUiFilterFailedFilters={debugUiFilterFailedFiltersById.get(user?.userId) || ''}
                     />
                   </CardWrapper>
                 </CardContainer>
