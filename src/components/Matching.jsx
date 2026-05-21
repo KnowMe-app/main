@@ -4533,16 +4533,17 @@ const Matching = () => {
     });
 
     const hiddenByUiFilterSet = new Set(
-      missingFromRendered
-        .filter(item => item?.possibleReason === 'excluded_by_ui_filter')
-        .map(item => item.userId)
+      Array.from(new Set([...loadedIds, ...renderedIds, ...visibleCardIds]))
         .filter(Boolean)
+        .filter(userId => renderedIdsSet.has(userId) && !visibleCardIdsSet.has(userId))
     );
-    const failedFiltersByUserId = new Map(
-      filteredOutCards
-        .filter(item => item?.reason === 'excluded_by_ui_filter' && item?.userId)
-        .map(item => [item.userId, item?.details?.failedFilters || []])
-    );
+    const failedFiltersByUserId = new Map();
+    filteredOutCards
+      .filter(item => item?.reason === 'excluded_by_ui_filter' && item?.userId)
+      .forEach(item => {
+        if (failedFiltersByUserId.has(item.userId)) return;
+        failedFiltersByUserId.set(item.userId, item?.details?.failedFilters || []);
+      });
 
     const allDebugIds = Array.from(new Set([
       ...loadedIds,
@@ -5556,7 +5557,7 @@ const Matching = () => {
                       }}
                       showDebugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser}
                       debugFilteredOutReason={debugFilteredOutReasonById.get(user?.userId) || ''}
-                      debugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser && !canShowMatchingUser(user, { isAdmin })
+                      debugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser && debugFilteredOutReasonById.get(user?.userId) === 'excluded_by_ui_filter'
                         ? ['blocked_by_ui_filter']
                         : []}
                       debugUiFilterSummary={getMatchingUiFilterDebugSummary(filters)}
