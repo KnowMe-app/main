@@ -157,6 +157,7 @@ import {
 import {
   buildSharedReactionCandidateIds,
   canShowMatchingUser,
+  getCanShowMatchingUserDebug,
   mergeMatchingCandidateUsers,
   mergeSharedReactionCandidateUsers,
   loadReactionCardsPageRecords,
@@ -1099,6 +1100,14 @@ const SwipeableCard = ({
             {debugReasonHint && <div style={{ marginTop: 4, fontWeight: 500 }}>Hint: {debugReasonHint}</div>}
             {debugFailedFiltersHint && <div style={{ marginTop: 4, fontWeight: 500 }}>Filters: {debugFailedFiltersHint}</div>}
             {debugContext && <div style={{ marginTop: 4, opacity: 0.9, fontWeight: 500 }}>Context: {debugContext}</div>}
+            {diagnostics && (
+              <>
+                <div style={{ marginTop: 4, fontWeight: 600 }}>Function: {diagnostics.excludedFunction || '-'}</div>
+                <div style={{ marginTop: 2, fontWeight: 600 }}>Condition: {diagnostics.excludedCondition || '-'}</div>
+                <div style={{ marginTop: 2, fontWeight: 600 }}>Exact reason: {diagnostics.exactReason || '-'}</div>
+                <div style={{ marginTop: 2, fontWeight: 600 }}>Stage: {diagnostics.excludedAtStage || '-'}</div>
+              </>
+            )}
             {matchingDebugTrace && (
               <>
                 <div style={{ marginTop: 4, fontWeight: 600 }}>Function: {matchingDebugTrace.excludedByFunction || '-'}</div>
@@ -4572,9 +4581,10 @@ const Matching = () => {
           details.exactReason = `ui_filter_failed:${details.failedFilters.join('|')}`;
         }
       } else if (possibleReason === 'hidden') {
-        details.excludedFunction = 'canShowMatchingUser';
-        details.excludedCondition = 'canShowMatchingUser(card, { isAdmin }) === false';
-        details.exactReason = 'visibility_guard:hidden';
+        const canShowDebug = getCanShowMatchingUserDebug(card, { isAdmin });
+        details.excludedFunction = canShowDebug.excludedFunction || 'canShowMatchingUser';
+        details.excludedCondition = canShowDebug.excludedCondition || 'canShowMatchingUser(card, { isAdmin }) === false';
+        details.exactReason = canShowDebug.exactReason || 'visibility_guard:hidden';
       } else if (possibleReason === 'publish_false') {
         details.excludedFunction = 'publish_flag_check';
         details.excludedCondition = '!card.publish && card.__sourceCollection !== newUsers';
@@ -5650,13 +5660,30 @@ const Matching = () => {
                         navigate(`/edit/${user.userId}`, { state: user });
                       }}
                       showDebugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser}
-                      debugFilteredOutReason={debugFilteredOutReasonById.get(user?.userId) || ''}
-                      debugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser && !canShowMatchingUser(user, { isAdmin })
-                        ? ['blocked_by_ui_filter']
-                        : []}
+                      debugFilteredOutReason={(() => {
+                        const canShowDebug = getCanShowMatchingUserDebug(user, { isAdmin });
+                        const reasonFromPipeline = debugFilteredOutReasonById.get(user?.userId) || '';
+                        if (!canShowDebug.canShow) return 'blocked_by_canShowMatchingUser';
+                        if (reasonFromPipeline === 'excluded_by_ui_filter') {
+                          const failedFilters = debugUiFilterFailedFiltersById.get(user?.userId) || '';
+                          return failedFilters ? 'blocked_by_ui_filter' : 'blocked_by_final_render_guard';
+                        }
+                        return reasonFromPipeline;
+                      })()}
+                      debugRejectReasons={[]}
                       debugUiFilterSummary={getMatchingUiFilterDebugSummary(filters)}
                       debugUiFilterFailedFilters={debugUiFilterFailedFiltersById.get(user?.userId) || ''}
-                      debugCardDiagnostics={debugCardDiagnosticsById.get(user?.userId) || null}
+                      debugCardDiagnostics={(() => {
+                        const oldDiagnostics = debugCardDiagnosticsById.get(user?.userId) || null;
+                        const canShowDebug = getCanShowMatchingUserDebug(user, { isAdmin });
+                        return {
+                          ...(oldDiagnostics && typeof oldDiagnostics === 'object' ? oldDiagnostics : {}),
+                          excludedFunction: canShowDebug.excludedFunction,
+                          excludedCondition: canShowDebug.excludedCondition,
+                          exactReason: canShowDebug.exactReason,
+                          excludedAtStage: canShowDebug.excludedAtStage,
+                        };
+                      })()}
                     />
                   </CardWrapper>
                 </CardContainer>
