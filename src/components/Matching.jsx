@@ -920,6 +920,7 @@ const SwipeableCard = ({
   debugRejectReasons = [],
   showDebugRejectReasons = false,
   debugFilteredOutReason = '',
+  debugUiFilterSummary = '',
 }) => {
   const resolvedRole = getProfileRole(user) || role;
   const photos = getProfilePhotos(user);
@@ -965,6 +966,19 @@ const SwipeableCard = ({
     .map(part => part[0]?.toUpperCase())
     .join('');
   const shouldShowHeroContent = Boolean(title || locationInfo || heroFields.length > 0);
+  const debugReasons = Array.isArray(debugRejectReasons) ? debugRejectReasons.filter(Boolean) : [];
+  const debugReasonText = debugFilteredOutReason || (debugReasons.length > 0 ? debugReasons.join(', ') : '');
+  const debugReasonLabel = debugFilteredOutReason
+    ? `Filtered: ${debugFilteredOutReason}`
+    : (debugReasons.length > 0 ? 'DEBUG: normally hidden' : '');
+  const debugReasonHint = debugReasonText === 'blocked_by_ui_filter'
+    ? `Картка прихована активними UI-фільтрами${debugUiFilterSummary ? `: ${debugUiFilterSummary}` : ''}`
+    : '';
+  const debugContext = [
+    user?.userId ? `userId=${user.userId}` : '',
+    user?.__sourceCollection ? `source=${user.__sourceCollection}` : '',
+    typeof user?.__matchingAccessAllowed === 'boolean' ? `matchingAccess=${user.__matchingAccessAllowed ? 'allowed' : 'blocked'}` : '',
+  ].filter(Boolean).join(' · ');
   const handleTouchStart = e => {
     if (!e.touches || e.touches.length !== 1) return;
     const touch = e.touches[0];
@@ -1049,10 +1063,12 @@ const SwipeableCard = ({
           {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name || 'Matching'} profile hero`} onError={() => setActiveHeroPhoto('')} />}
           {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleLabel}</ModernRoleBadge>}
         </ModernHero>
-        {(debugFilteredOutReason || (showDebugRejectReasons && Array.isArray(debugRejectReasons) && debugRejectReasons.length > 0)) && (
+        {(debugFilteredOutReason || (showDebugRejectReasons && debugReasons.length > 0)) && (
           <div style={{ margin: '10px 14px 0', padding: '8px 10px', borderRadius: 10, background: '#5a1325', color: '#fff', fontSize: 12, fontWeight: 700 }}>
-            <div>{debugFilteredOutReason ? `Filtered: ${debugFilteredOutReason}` : 'DEBUG: normally hidden'}</div>
-            {!debugFilteredOutReason && <div style={{ marginTop: 4, fontWeight: 600 }}>Reason: {debugRejectReasons.join(', ')}</div>}
+            {debugReasonLabel && <div>{debugReasonLabel}</div>}
+            {debugReasonText && <div style={{ marginTop: 4, fontWeight: 600 }}>Reason: {debugReasonText}</div>}
+            {debugReasonHint && <div style={{ marginTop: 4, fontWeight: 500 }}>Hint: {debugReasonHint}</div>}
+            {debugContext && <div style={{ marginTop: 4, opacity: 0.9, fontWeight: 500 }}>Context: {debugContext}</div>}
           </div>
         )}
         {shouldShowHeroContent && (
@@ -5377,6 +5393,21 @@ const Matching = () => {
                       debugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser && !canShowMatchingUser(user, { isAdmin })
                         ? ['blocked_by_ui_filter']
                         : []}
+                      debugUiFilterSummary={Object.entries(filters || {})
+                        .filter(([, value]) => (
+                          Array.isArray(value)
+                            ? value.length > 0
+                            : typeof value === 'boolean'
+                              ? value
+                              : String(value || '').trim() !== ''
+                        ))
+                        .map(([key, value]) => {
+                          if (Array.isArray(value)) return `${key}=${value.join('|')}`;
+                          if (typeof value === 'boolean') return `${key}=true`;
+                          return `${key}=${String(value).trim()}`;
+                        })
+                        .slice(0, 5)
+                        .join(', ')}
                     />
                   </CardWrapper>
                 </CardContainer>
