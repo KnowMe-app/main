@@ -81,10 +81,87 @@ export const resolvePrioritizedReactionMaps = ({
 };
 
 
-export const canShowMatchingUser = (user, { isAdmin = false } = {}) => {
-  if (isAdmin) return true;
-  return user?.__sourceCollection === 'newUsers' || user?.publish === true;
+export const getCanShowMatchingUserDebug = (user, { isAdmin = false } = {}) => {
+  const userId = String(user?.userId || '').trim();
+  if (!userId) {
+    return {
+      canShow: false,
+      excludedFunction: 'canShowMatchingUser',
+      excludedCondition: '!user?.userId',
+      exactReason: `no_userId:userId=${user?.userId ?? 'undefined'}`,
+      excludedAtStage: 'final render guard',
+      reasonCode: 'no_userId',
+    };
+  }
+
+  if (isAdmin) {
+    return {
+      canShow: true,
+      excludedFunction: 'canShowMatchingUser',
+      excludedCondition: 'isAdmin === true',
+      exactReason: `isAdmin=true,userId=${userId}`,
+      excludedAtStage: 'final render guard',
+      reasonCode: 'allowed_admin',
+    };
+  }
+
+  if (user?.__sourceCollection === 'newUsers' && user?.__matchingAccessAllowed === false) {
+    return {
+      canShow: false,
+      excludedFunction: 'canShowMatchingUser',
+      excludedCondition: 'user.__sourceCollection === "newUsers" && user.__matchingAccessAllowed === false',
+      exactReason: `newUsers_matchingAccessAllowed_false:userId=${userId},source=${user?.__sourceCollection},matchingAccessAllowed=${user?.__matchingAccessAllowed}`,
+      excludedAtStage: 'final render guard',
+      reasonCode: 'newUsers_matchingAccessAllowed_false',
+    };
+  }
+
+  if (user?.__sourceCollection !== 'newUsers' && user?.__sourceCollection !== 'users' && typeof user?.__sourceCollection !== 'undefined') {
+    return {
+      canShow: false,
+      excludedFunction: 'canShowMatchingUser',
+      excludedCondition: 'user.__sourceCollection is neither "users" nor "newUsers"',
+      exactReason: `invalid_collection_source:userId=${userId},source=${user?.__sourceCollection}`,
+      excludedAtStage: 'final render guard',
+      reasonCode: 'invalid_collection_source',
+    };
+  }
+
+  if (user?.__sourceCollection === 'newUsers') {
+    return {
+      canShow: true,
+      excludedFunction: 'canShowMatchingUser',
+      excludedCondition: 'user.__sourceCollection === "newUsers"',
+      exactReason: `newUsers_source_allowed:userId=${userId}`,
+      excludedAtStage: 'final render guard',
+      reasonCode: 'allowed_newUsers_source',
+    };
+  }
+
+  if (user?.publish !== true) {
+    return {
+      canShow: false,
+      excludedFunction: 'canShowMatchingUser',
+      excludedCondition: 'user.publish === false && !isAdmin',
+      exactReason: `users_publish_false_for_non_admin:publish=${user?.publish},isAdmin=${isAdmin},userId=${userId}`,
+      excludedAtStage: 'final render guard',
+      reasonCode: 'users_publish_false_for_non_admin',
+    };
+  }
+
+  return {
+    canShow: true,
+    excludedFunction: 'canShowMatchingUser',
+    excludedCondition: 'user.publish === true',
+    exactReason: `users_publish_true:userId=${userId},publish=${user?.publish}`,
+    excludedAtStage: 'final render guard',
+    reasonCode: 'allowed_users_publish_true',
+  };
 };
+
+export const canShowMatchingUser = (user, options = {}) => (
+  getCanShowMatchingUserDebug(user, options).canShow
+);
 
 const SHARED_REACTION_CANDIDATE_VIEW_MODES = new Set(['default', 'favorites', 'dislikes']);
 
