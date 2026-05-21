@@ -4366,7 +4366,17 @@ const Matching = () => {
     ? reactionTabUsers
     : (debugShowAllIndexedCards && isIndexedDebugTestUser && collectionSource === 'users')
       ? users
-      : visibleUsers;
+    : applyMatchingUiFiltersToUsers({
+    users: visibleUsers,
+    filters,
+    filterMainFn: filterMain,
+    favoriteUsers,
+    dislikeUsers,
+    excludeReactionUsers: viewMode === 'default',
+    roleIndexSets,
+    collectionSource,
+    viewMode,
+  });
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
     const isGroupNeutralOrInactive = value => (
