@@ -696,6 +696,7 @@ export const getMatchingUiFilterDebugSummary = filters => Object.entries(filters
     }
 
     if (value && typeof value === 'object') {
+      if (!isMatchingFilterGroupActive(value)) return [];
       const active = getActiveGroupFilterKeys(value);
       return active.length > 0 ? [`${key}=[${active.join('|')}]`] : [];
     }
@@ -737,12 +738,10 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
       details.fromIndex = true;
       details.allowedByIndex = pass;
     }
+    const groupState = getFilterGroupDebugState('userRole', filters.userRole);
     checks.userRole = {
       ...details,
-      groupName: 'userRole',
-      selectedValues: active,
-      allSelected: false,
-      groupActive: true,
+      ...groupState,
       source: 'searchKey/users',
     };
     if (!pass) failedFilters.push('userRole');
@@ -753,7 +752,7 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
     const active = getActiveGroupFilterKeys(filters.maritalStatus);
     const pass = Boolean(filters.maritalStatus?.[category]);
     checks.maritalStatus = {
-      active, category, pass, groupName: 'maritalStatus', selectedValues: active, allSelected: false, groupActive: true, source: 'searchKey/users',
+      active, category, pass, ...getFilterGroupDebugState('maritalStatus', filters.maritalStatus), source: 'searchKey/users',
     };
     if (!pass) failedFilters.push('maritalStatus');
   }
@@ -763,7 +762,7 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
     const active = getActiveGroupFilterKeys(filters.bloodGroup);
     const pass = Boolean(filters.bloodGroup?.[category]);
     checks.bloodGroup = {
-      active, category, pass, groupName: 'bloodGroup', selectedValues: active, allSelected: false, groupActive: true, source: 'searchKey/users',
+      active, category, pass, ...getFilterGroupDebugState('bloodGroup', filters.bloodGroup), source: 'searchKey/users',
     };
     if (!pass) failedFilters.push('bloodGroup');
   }
@@ -773,7 +772,7 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
     const active = getActiveGroupFilterKeys(filters.rh);
     const pass = Boolean(filters.rh?.[category]);
     checks.rh = {
-      active, category, pass, groupName: 'rh', selectedValues: active, allSelected: false, groupActive: true, source: 'searchKey/users',
+      active, category, pass, ...getFilterGroupDebugState('rh', filters.rh), source: 'searchKey/users',
     };
     if (!pass) failedFilters.push('rh');
   }
@@ -783,7 +782,7 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
     const active = getActiveGroupFilterKeys(filters.age);
     const pass = Boolean(filters.age?.[category]);
     checks.age = {
-      active, category, pass, groupName: 'age', selectedValues: active, allSelected: false, groupActive: true, source: 'searchKey/users',
+      active, category, pass, ...getFilterGroupDebugState('age', filters.age), source: 'searchKey/users',
     };
     if (!pass) failedFilters.push('age');
   }

@@ -4364,6 +4364,57 @@ const Matching = () => {
   });
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
+    const isGroupNeutralOrInactive = value => (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      !Object.values(value).some(flag => flag === false)
+    );
+    const buildNeutralGroup = value => (
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.keys(value).reduce((acc, key) => ({ ...acc, [key]: true }), {})
+        : value
+    );
+    const detectUiFailedFiltersForCard = card => {
+      if (!card?.userId) return [];
+      const baseCandidate = [card];
+      const baselineVisible = applyMatchingUiFiltersToUsers({
+        users: baseCandidate,
+        filters,
+        filterMainFn: filterMain,
+        favoriteUsers,
+        dislikeUsers,
+        excludeReactionUsers: viewMode === 'default',
+        roleIndexSets,
+        collectionSource,
+        viewMode,
+      }).length > 0;
+      if (baselineVisible) return [];
+
+      const groupKeys = Object.entries(filters || {})
+        .filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value))
+        .filter(([, value]) => !isGroupNeutralOrInactive(value))
+        .map(([key]) => key);
+
+      return groupKeys.filter(groupKey => {
+        const relaxedFilters = {
+          ...(filters || {}),
+          [groupKey]: buildNeutralGroup(filters?.[groupKey]),
+        };
+        return applyMatchingUiFiltersToUsers({
+          users: baseCandidate,
+          filters: relaxedFilters,
+          filterMainFn: filterMain,
+          favoriteUsers,
+          dislikeUsers,
+          excludeReactionUsers: viewMode === 'default',
+          roleIndexSets,
+          collectionSource,
+          viewMode,
+        }).length > 0;
+      });
+    };
+
     const batchId = `${viewMode}:${collectionSource}:${Date.now()}`;
     const loadedIds = Array.from(loadedIdsRef.current || []).filter(Boolean);
     const renderedIds = filteredUsers.map(card => card?.userId).filter(Boolean);
@@ -4431,10 +4482,11 @@ const Matching = () => {
           filters,
           roleIndexSets,
         });
-        details.failedFilters = searchKeyDebug.failedFilters;
+        const uiFailedFilters = detectUiFailedFiltersForCard(card);
+        details.failedFilters = uiFailedFilters.length > 0 ? uiFailedFilters : searchKeyDebug.failedFilters;
         details.searchKeyChecks = searchKeyDebug.checks;
-        details.exactReason = searchKeyDebug.failedFilters.length > 0
-          ? `ui_filter_failed:${searchKeyDebug.failedFilters.join('|')}`
+        details.exactReason = details.failedFilters.length > 0
+          ? `ui_filter_failed:${details.failedFilters.join('|')}`
           : 'ui_filter_failed:unknown_group';
       }
       pushFiltered({
