@@ -1086,7 +1086,10 @@ export const ProfileForm = ({
             rawRules: '',
             accessUserId,
             matchedUserIdsBySetKey: {},
-            searchKeyFile: localSearchKeyPayload,
+            searchKeyFile:
+              localSearchKeyPayload && typeof localSearchKeyPayload === 'object'
+                ? localSearchKeyPayload
+                : {},
           });
           toast('searchKeySets очищено: additional access rules видалено.');
           Promise.resolve(handleSubmit(payload, overwrite, delCondition)).catch(error => {
@@ -1258,7 +1261,36 @@ export const ProfileForm = ({
   };
 
   const removeAdditionalRule = index => {
-    setAdditionalRuleBuilder(prev => prev.filter((_, ruleIndex) => ruleIndex !== index));
+    const nextBuilder = additionalRuleBuilder.filter((_, ruleIndex) => ruleIndex !== index);
+    const nextRulesText = buildAdditionalRulesTextFromBuilder(nextBuilder);
+
+    setAdditionalRuleBuilder(
+      nextBuilder.length > 0
+        ? nextBuilder
+        : [{ key: ADDITIONAL_RULE_ORDER[0], allowedValues: new Set() }]
+    );
+
+    setState(prevState => {
+      const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
+      const updated = { ...prevState };
+
+      if (Array.isArray(currentValue)) {
+        const nextValue = currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? nextRulesText : item));
+        if (nextValue.every(item => !String(item || '').trim())) {
+          delete updated[ADDITIONAL_ACCESS_FIELD];
+        } else {
+          updated[ADDITIONAL_ACCESS_FIELD] = nextValue;
+        }
+      } else if (nextRulesText.trim()) {
+        updated[ADDITIONAL_ACCESS_FIELD] = nextRulesText;
+      } else {
+        delete updated[ADDITIONAL_ACCESS_FIELD];
+      }
+
+      submitWithNormalization(updated, 'overwrite', nextRulesText.trim() ? undefined : { [ADDITIONAL_ACCESS_FIELD]: currentValue });
+      return updated;
+    });
+
   };
 
   const handleRemoveAdditionalAccessRuleInput = useCallback((removeIndex = null, action = 'clear') => {
