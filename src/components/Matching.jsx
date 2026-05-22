@@ -925,7 +925,22 @@ const SwipeableCard = ({
   const title = [name, age].filter(Boolean).join(', ');
   const shouldShowRoleBadge = !isGenericProfileRole;
   const locationInfo = getProfileLocation(user);
-  const identityAndLocationKeys = ['name', 'surname', 'agencyName', 'companyName', 'agency', 'country', 'region', 'city', 'role', 'userRole'];
+  const identityAndLocationKeys = [
+    'name',
+    'surname',
+    'agencyName',
+    'companyName',
+    'agency',
+    'country',
+    'region',
+    'city',
+    'role',
+    'userRole',
+    'cSection',
+    'csection',
+    'c_section',
+    'cesareanSection',
+  ];
   const heroFields = getHeroFields(user, resolvedRole, { excludeKeys: identityAndLocationKeys });
   const usedSummaryFieldKeys = collectProfileFieldKeys(heroFields);
   const bodyHeroFields = getQuickFacts(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys] });
