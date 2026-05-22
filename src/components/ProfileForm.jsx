@@ -1086,7 +1086,10 @@ export const ProfileForm = ({
             rawRules: '',
             accessUserId,
             matchedUserIdsBySetKey: {},
-            searchKeyFile: localSearchKeyPayload,
+            searchKeyFile:
+              localSearchKeyPayload && typeof localSearchKeyPayload === 'object'
+                ? localSearchKeyPayload
+                : {},
           });
           toast('searchKeySets очищено: additional access rules видалено.');
           Promise.resolve(handleSubmit(payload, overwrite, delCondition)).catch(error => {
@@ -1288,9 +1291,6 @@ export const ProfileForm = ({
       return updated;
     });
 
-    Promise.resolve(indexAdditionalRulesForUser(nextRulesText)).catch(error => {
-      console.error('Failed to reindex additional access rules after removing filter', error);
-    });
   };
 
   const handleRemoveAdditionalAccessRuleInput = useCallback((removeIndex = null, action = 'clear') => {
@@ -3182,7 +3182,7 @@ const InputField = styled.input`
   outline: none;
   flex: 1;
   align-items: center;
-  border-radius: 0;
+  border-radius: ${uiTokens.radius.sm};
   padding-left: ${({ fieldName, value }) => {
     if (fieldName === 'phone') return '20px';
     if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok' || fieldName === 'twitter') return '25px';
