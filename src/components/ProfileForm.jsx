@@ -3165,8 +3165,8 @@ const InputDiv = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 8px 0;
-  padding: 12px 0 10px;
+  margin: 6px 0;
+  padding: 8px 0;
   background-color: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
     if ($isOverlaySuggestion) return uiTokens.colors.cardBg;
     if ($isDeletedOverlay) return uiTokens.colors.mutedBg;
@@ -3196,7 +3196,7 @@ const FieldMainRow = styled.div`
   display: flex;
   align-items: center;
   width: 100%;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: nowrap;
 `;
 
@@ -3229,7 +3229,7 @@ const InputField = styled.input`
   background: transparent;
   font-size: ${uiTokens.typography.fontSizeMd};
   font-weight: 500;
-  line-height: 1.45;
+  line-height: 1.35;
   &::placeholder {
     color: transparent;
   }
@@ -3275,7 +3275,6 @@ const Hint = styled.label`
   }};
   display: flex;
   align-items: center;
-  top: 12px;
   transition: all 0.2s ease;
   color: ${uiTokens.colors.textSecondary};
   pointer-events: none;
@@ -3283,7 +3282,7 @@ const Hint = styled.label`
   align-items: center;
   gap: 6px;
   font-size: ${uiTokens.typography.fontSizeMd};
-  line-height: 1.35;
+  line-height: 1.25;
   ${({ isActive }) =>
     isActive &&
     css`
@@ -3294,8 +3293,8 @@ const Hint = styled.label`
 const Placeholder = styled.label`
   position: absolute;
   padding-left: 10px;
-  top: 7px;
-  transform: none;
+  top: 0;
+  transform: translateY(-100%);
   transition: all 0.2s ease;
   color: ${uiTokens.colors.textSecondary};
   pointer-events: none;
@@ -3303,13 +3302,12 @@ const Placeholder = styled.label`
   align-items: center;
   gap: 8px;
   font-size: ${uiTokens.typography.fontSizeSm};
-  line-height: 1.2;
   ${({ isActive }) =>
     isActive &&
     css`
       left: 10px;
-      top: 7px;
-      transform: none;
+      top: 0;
+      transform: translateY(-100%);
       font-size: ${uiTokens.typography.fontSizeSm};
       color: ${uiTokens.colors.accent};
     `}
@@ -3335,8 +3333,6 @@ const InputFieldContainer = styled.div`
     }};
     position: absolute;
     left: 10px;
-    top: 50%;
-    transform: translateY(-50%);
     display: flex;
     align-items: center;
     color: ${({ value }) => (value ? uiTokens.colors.textPrimary : uiTokens.colors.textSecondary)};
