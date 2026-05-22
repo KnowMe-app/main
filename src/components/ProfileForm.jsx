@@ -1273,11 +1273,15 @@ export const ProfileForm = ({
     setState(prevState => {
       const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
       const updated = { ...prevState };
+      let shouldDeleteAdditionalAccessField = false;
 
       if (Array.isArray(currentValue)) {
-        const nextValue = currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? nextRulesText : item));
+        const nextValue = currentValue.map((item, idx) =>
+          idx === activeAdditionalRuleInputIndex ? nextRulesText : item
+        );
         if (nextValue.every(item => !String(item || '').trim())) {
           delete updated[ADDITIONAL_ACCESS_FIELD];
+          shouldDeleteAdditionalAccessField = true;
         } else {
           updated[ADDITIONAL_ACCESS_FIELD] = nextValue;
         }
@@ -1285,9 +1289,13 @@ export const ProfileForm = ({
         updated[ADDITIONAL_ACCESS_FIELD] = nextRulesText;
       } else {
         delete updated[ADDITIONAL_ACCESS_FIELD];
+        shouldDeleteAdditionalAccessField = true;
       }
 
-      submitWithNormalization(updated, 'overwrite', nextRulesText.trim() ? undefined : { [ADDITIONAL_ACCESS_FIELD]: currentValue });
+      const delCondition = shouldDeleteAdditionalAccessField
+        ? { [ADDITIONAL_ACCESS_FIELD]: currentValue }
+        : undefined;
+      submitWithNormalization(updated, 'overwrite', delCondition);
       return updated;
     });
 
