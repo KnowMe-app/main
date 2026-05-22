@@ -369,3 +369,40 @@ export const UnderlinedInput = styled.input`
   width: 9.5ch; // Точний розмір для дати формату 01.01.2022
   text-align: center; // Вирівнювання тексту
 `;
+
+
+export const uiTokens = {
+  colors: {
+    pageBg: '#f4f6fb',
+    cardBg: '#ffffff',
+    textPrimary: '#1f2937',
+    textSecondary: '#6b7280',
+    border: '#d7deea',
+    borderFocus: '#2f6df6',
+    accent: '#2f6df6',
+    danger: '#e53935',
+    mutedBg: '#eef2f8',
+  },
+  radius: {
+    sm: '8px',
+    md: '12px',
+    lg: '14px',
+    xl: '18px',
+  },
+  spacing: {
+    xs: '6px',
+    sm: '10px',
+    md: '14px',
+    lg: '18px',
+    xl: '24px',
+  },
+  shadow: {
+    card: '0 12px 30px rgba(15, 23, 42, 0.08)',
+    focus: '0 0 0 3px rgba(47, 109, 246, 0.16)',
+  },
+  typography: {
+    fontSizeSm: '12px',
+    fontSizeMd: '14px',
+    fontSizeLg: '16px',
+  },
+};
