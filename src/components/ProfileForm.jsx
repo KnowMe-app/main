@@ -1241,7 +1241,7 @@ export const ProfileForm = ({
       const details = error?.message || String(error);
       toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
     });
-  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, handleSubmit, localSearchKeyPayload, state?.userId]);
+  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, handleSubmit, localSearchKeyPayload, state]);
 
   const handleAddCustomField = () => {
     if (!customField.key) return;
