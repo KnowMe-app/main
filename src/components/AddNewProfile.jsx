@@ -48,7 +48,7 @@ import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 
 import InfoModal from './InfoModal';
 import { VerifyEmail } from './VerifyEmail';
 
-import { color, coloredCard } from './styles';
+import { color, coloredCard, uiTokens } from './styles';
 //import { formatPhoneNumber } from './inputValidations';
 import { UsersList } from './UsersList';
 import {
@@ -150,13 +150,13 @@ const Container = styled.div`
   justify-content: center;
   align-items: center;
   padding: 5px;
-  background-color: #f5f5f5;
+  background-color: ${uiTokens.colors.pageBg};
 
   @media (max-width: 768px) {
     // Медіа-запит для пристроїв з шириною екрану до 768px
     padding: 10px;
   }
-  /* max-width: 450px; */
+  /* max-width: 560px; */
 
   /* maxWidth:  */
   /* height: 100vh; */
@@ -284,17 +284,17 @@ const MatchingMiniMeta = styled.div`
 `;
 
 const InnerContainer = styled.div`
-  max-width: 450px;
+  max-width: 560px;
   width: 100%;
   box-sizing: border-box;
   background-color: #f0f0f0;
-  padding: 20px;
+  padding: 16px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
 
   @media (max-width: 768px) {
     // Медіа-запит для пристроїв з шириною екрану до 768px
-    background-color: #f5f5f5;
+    background-color: ${uiTokens.colors.pageBg};
     box-shadow: 0 4px 8px #f5f5f5;
     border-radius: 0;
     padding: 0;
