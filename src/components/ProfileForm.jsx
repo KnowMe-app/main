@@ -803,6 +803,8 @@ export const ProfileForm = ({
   const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
+  const additionalAccessRulesRef = useRef(null);
+  const multiDataAccessUserIdsRef = useRef(null);
   const [customField, setCustomField] = useState({ key: '', value: '' });
   const [collection, setCollection] = useState('newUsers');
   const [selectedField, setSelectedField] = useState(null);
@@ -1691,6 +1693,8 @@ export const ProfileForm = ({
 
   const autoResizeMyComment = useAutoResize(textareaRef, state.myComment);
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
+  const autoResizeAdditionalAccessRules = useAutoResize(additionalAccessRulesRef, state[ADDITIONAL_ACCESS_FIELD]);
+  const autoResizeMultiDataAccessUserIds = useAutoResize(multiDataAccessUserIdsRef, state[MULTI_DATA_ACCESS_FIELD]);
 
   const priorityOrder = [
     'birth',
@@ -2469,8 +2473,8 @@ ${entries.join('\n')}`;
                     <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
                       <InputField
                         fieldName={`${field.name}-${idx}`}
-                        as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
-                        ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
+                        as={(field.name === 'moreInfo_main' || field.name === 'myComment' || field.name === ADDITIONAL_ACCESS_FIELD || field.name === MULTI_DATA_ACCESS_FIELD) && 'textarea'}
+                        ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : field.name === ADDITIONAL_ACCESS_FIELD ? additionalAccessRulesRef : field.name === MULTI_DATA_ACCESS_FIELD ? multiDataAccessUserIdsRef : null}
                         inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                         name={`${field.name}-${idx}`}
                         value={value || ''}
@@ -2489,6 +2493,12 @@ ${entries.join('\n')}`;
                           }
                           if (field.name === 'moreInfo_main') {
                             autoResizeMoreInfo(e.target);
+                          }
+                          if (field.name === ADDITIONAL_ACCESS_FIELD) {
+                            autoResizeAdditionalAccessRules(e.target);
+                          }
+                          if (field.name === MULTI_DATA_ACCESS_FIELD) {
+                            autoResizeMultiDataAccessUserIds(e.target);
                           }
                           const updatedValue =
                             field.name === 'telegram'
@@ -2565,6 +2575,8 @@ ${entries.join('\n')}`;
                     <>
                       <InputField
                         fieldName={field.name}
+                        as="textarea"
+                        ref={additionalAccessRulesRef}
                         name={field.name}
                         value={displayValue}
                         placeholder={ADDITIONAL_ACCESS_TEMPLATE}
@@ -2579,8 +2591,8 @@ ${entries.join('\n')}`;
                   ) : (
                   <InputField
                     fieldName={field.name}
-                    as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
-                    ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
+                    as={(field.name === 'moreInfo_main' || field.name === 'myComment' || field.name === ADDITIONAL_ACCESS_FIELD || field.name === MULTI_DATA_ACCESS_FIELD) && 'textarea'}
+                    ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : field.name === ADDITIONAL_ACCESS_FIELD ? additionalAccessRulesRef : field.name === MULTI_DATA_ACCESS_FIELD ? multiDataAccessUserIdsRef : null}
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={displayValue}
@@ -2621,6 +2633,12 @@ ${entries.join('\n')}`;
                             }
                             if (field.name === 'moreInfo_main') {
                               autoResizeMoreInfo(e.target);
+                            }
+                            if (field.name === ADDITIONAL_ACCESS_FIELD) {
+                              autoResizeAdditionalAccessRules(e.target);
+                            }
+                            if (field.name === MULTI_DATA_ACCESS_FIELD) {
+                              autoResizeMultiDataAccessUserIds(e.target);
                             }
                             let value = e?.target?.value;
                             if (field.name === 'publish') {
