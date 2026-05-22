@@ -190,7 +190,6 @@ import {
 
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
 const MATCHING_LOG_MODE_TEST_USER_ID = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
-const MATCHING_DATA_SOURCE_TEST_USER_ID = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
 const MATCHING_DATA_SOURCE_MODE_KEY = 'matchingDataSourceMode';
 const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
 const MATCHING_DEBUG_SHOW_ALL_INDEXED_CARDS_KEY = 'matchingDebugShowAllIndexedCards';
@@ -234,37 +233,6 @@ const getMatchingDebugLogsStore = () => {
     window.__MATCHING_DEBUG_LOGS = [];
   }
   return window.__MATCHING_DEBUG_LOGS;
-};
-
-const downloadMatchingDebugLogs = ({ reason = 'manual' } = {}) => {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
-  const logs = getMatchingDebugLogsStore() || [];
-  const now = new Date();
-  const pad = value => String(value).padStart(2, '0');
-  const fileStamp = [
-    now.getFullYear(),
-    pad(now.getMonth() + 1),
-    pad(now.getDate()),
-  ].join('-') + `-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-  const body = {
-    matchingDebugVersion: MATCHING_DEBUG_VERSION,
-    userAgent: window.navigator?.userAgent || '',
-    url: window.location?.href || '',
-    timestamp: now.toISOString(),
-    testUserId: MATCHING_LOG_MODE_TEST_USER_ID,
-    logMode: window.__MATCHING_DEBUG_LOG_MODE || 'console',
-    reason,
-    logs,
-  };
-  const blob = new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `matching-debug-${fileStamp}.json`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(link.href);
-  return true;
 };
 
 const writeMatchingDebugLog = (stage, data = {}, errors = null) => {
@@ -1322,9 +1290,9 @@ const Matching = () => {
   const ownDislikeUsersRef = useRef(ownDislikeUsers);
   const [viewMode, setViewMode] = useState('default');
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
-  const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
+  const [matchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
   const [debugShowAllIndexedCards, setDebugShowAllIndexedCards] = useState(getStoredDebugShowAllIndexedCards);
-  const [matchingDataSourceMode, setMatchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
+  const [matchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
   const [themeMode, setThemeMode] = useState(getStoredMatchingTheme);
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
