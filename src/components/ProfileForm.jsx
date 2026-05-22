@@ -71,6 +71,14 @@ const getImtAllowedUserIdsFromSearchKey = (searchKeyPayload, imtValues) => {
   }));
 };
 
+const DYNAMIC_FIELD_LABELS = {
+  additionalAccessRules: 'Додаткові правила',
+  multiDataAccessUserIds: 'Доступ (userId-и)',
+  accessLevel: 'Рівень доступу',
+  searchKey: 'SearchKey',
+  writer: 'Редактор',
+};
+
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
     key =>
@@ -86,7 +94,7 @@ export const getFieldsToRender = state => {
     ...additionalFields.map(key => ({
       name: key,
       placeholder: key,
-      ukrainianHint: key,
+      ukrainianHint: DYNAMIC_FIELD_LABELS[key] || key,
     })),
   ];
 };
@@ -3155,18 +3163,25 @@ const PickerContainer = styled.div`
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: transparent;
+  background-color: #f0f0f0;
   box-sizing: border-box;
   width: 100%;
-  margin-bottom: 2px;
+  padding: 0 12px;
+  border-bottom: 1px solid #e8e8e8;
+
+  @media (max-width: 768px) {
+    background-color: #f5f5f5;
+    padding: 0 8px;
+  }
 `;
 
 const InputDiv = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 6px 0;
-  padding: 8px 0;
+  margin-top: 22px;
+  margin-bottom: 4px;
+  padding: 10px 84px 10px 10px;
   background-color: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
     if ($isOverlaySuggestion) return uiTokens.colors.cardBg;
     if ($isDeletedOverlay) return uiTokens.colors.mutedBg;
@@ -3176,13 +3191,14 @@ const InputDiv = styled.div`
     if ($isDeletedOverlay) return `1px solid ${uiTokens.colors.danger}`;
     if ($isOverlaySuggestion) return `1px solid ${uiTokens.colors.borderFocus}`;
     if ($isHighlighted) return `1px solid ${uiTokens.colors.borderFocus}`;
-    return `1px solid ${uiTokens.colors.border}`;
+    return `1px solid #ddd`;
   }};
-  border-radius: 0;
+  border-radius: 8px;
   box-sizing: border-box;
   flex: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? '1 1 0' : '1 1 auto')};
   width: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? 'auto' : '100%')};
   min-width: 0;
+  min-height: 44px;
   height: auto;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 
@@ -3301,14 +3317,15 @@ const Placeholder = styled.label`
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: ${uiTokens.typography.fontSizeSm};
+  font-size: 11px;
+  white-space: nowrap;
   ${({ isActive }) =>
     isActive &&
     css`
-      left: 10px;
+      left: 0;
       top: 0;
       transform: translateY(-100%);
-      font-size: ${uiTokens.typography.fontSizeSm};
+      font-size: 11px;
       color: ${uiTokens.colors.accent};
     `}
 `;
@@ -3750,16 +3767,17 @@ const KeyValueRow = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 6px 0;
-  padding: 8px 0;
+  margin-top: 22px;
+  margin-bottom: 4px;
+  padding: 10px 84px 10px 10px;
   background-color: ${({ $isDeletedOverlay }) =>
     $isDeletedOverlay ? uiTokens.colors.mutedBg : uiTokens.colors.cardBg};
   border-bottom: ${({ $isHighlighted, $isDeletedOverlay }) => {
     if ($isDeletedOverlay) return `1px solid ${uiTokens.colors.danger}`;
     if ($isHighlighted) return `1px solid ${uiTokens.colors.borderFocus}`;
-    return `1px solid ${uiTokens.colors.border}`;
+    return `1px solid #ddd`;
   }};
-  border-radius: 0;
+  border-radius: 8px;
   box-sizing: border-box;
   width: 100%;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
@@ -3793,33 +3811,47 @@ const ButtonGroup = styled.div`
 `;
 
 const Button = styled.button`
-  min-width: 34px;
-  height: 34px;
-  min-height: 34px;
-  padding: 0 8px;
-  border: 1px solid rgba(255, 140, 0, 0.35);
-  background: linear-gradient(135deg, #ffb347 0%, #ff9800 100%);
-  color: #fff;
-  border-radius: 999px;
+  width: 35px;
+  min-width: 35px;
+  height: 35px;
+  min-height: 35px;
+  padding: 3px;
+  border: none;
+  background-color: ${color.accent5};
+  color: white;
+  border-radius: 50%;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 300;
   line-height: 1;
-  flex: 0 0 auto;
-  transition: filter 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
-  margin-right: 0;
-  white-space: nowrap;
+  flex: 0 0 35px;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
 
   &:hover {
-    filter: brightness(1.04);
-    box-shadow: 0 3px 8px rgba(255, 140, 0, 0.22);
+    background-color: ${color.accent};
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   }
 
   &:active {
-    transform: scale(0.98);
+    transform: scale(0.96);
   }
 `;
 
-const OverlayDebugButton = styled(Button)`
-  margin-top: 12px;
+const OverlayDebugButton = styled.button`
+  margin: 12px 12px 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #666;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover {
+    background: #e4e4e4;
+  }
 `;

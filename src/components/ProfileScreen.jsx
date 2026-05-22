@@ -37,15 +37,17 @@ const Container = styled.div`
 const InnerContainer = styled.div`
   max-width: 450px;
   width: 90%;
-  background-color: #f0f0f0;
-  padding: 20px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
+  background-color: #fafafa;
+  padding: 20px 0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
 
   @media (max-width: 768px) { // Медіа-запит для пристроїв з шириною екрану до 768px
     background-color: #f5f5f5;
-    box-shadow: 0 4px 8px #f5f5f5;
+    box-shadow: none;
     border-radius: 0;
+    width: 100%;
+    padding: 12px 0 24px;
   }
 `;
 

@@ -301,13 +301,13 @@ export const pickerFields = [
 export const pickerFieldsExtended = [
   { name: 'userId', placeholder: 'userId', svg: 'user', ukrainianHint: 'Id' },
   { name: 'role', placeholder: 'см/до/смдо/агент', svg: 'user', ukrainianHint: 'СМДО?' },
-  { name: 'myComment', placeholder: 'коментар', svg: 'user', ukrainianHint: 'Коментра' },
+  { name: 'myComment', placeholder: 'коментар', svg: 'user', ukrainianHint: 'Коментар' },
   { name: 'getInTouch', placeholder: '30.01.2025', svg: 'user', ukrainianHint: 'Коли звернутись' },
   { name: 'lastAction', placeholder: '-', svg: 'user', ukrainianHint: 'Останні зміни' },
   { name: 'lastLogin2', placeholder: '-', svg: 'user', ukrainianHint: 'Останній логін' },
   { name: 'publish', placeholder: 'false', svg: 'user', ukrainianHint: 'Анкета опублікована' },
   { name: 'fathersname', placeholder: 'По-батькові', svg: 'user', ukrainianHint: 'По-батькові' },
-  { name: 'otherLink', placeholder: 'www', svg: 'user', ukrainianHint: 'Лінк' },
+  { name: 'otherLink', placeholder: 'www', svg: 'user', ukrainianHint: 'Посилання' },
 
   // { name: 'name', placeholder: 'Ваше ім’я', svg: 'user', ukrainianHint: 'Ім’я' },
   // { name: 'surname', placeholder: 'Ваше призіище', svg: 'user', ukrainianHint: 'Прізвище'},
