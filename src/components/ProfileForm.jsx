@@ -486,6 +486,14 @@ const additionalRulesTextToInputs = raw => {
   return text.split(/\r?\n\s*\r?\n+/);
 };
 
+const normalizeAdditionalRulesValueForCompare = raw => {
+  const inputs = additionalRulesTextToInputs(raw)
+    .map(item => String(item || '').trim())
+    .filter(Boolean);
+
+  return inputs.join('\n\n');
+};
+
 
 const sanitizeOverlayValue = value => {
   if (Array.isArray(value)) {
@@ -1075,8 +1083,12 @@ export const ProfileForm = ({
         : nextState;
     try {
       const rawRules = payload?.[ADDITIONAL_ACCESS_FIELD];
+      const previousRulesValue = state?.[ADDITIONAL_ACCESS_FIELD];
+      const nextRulesSignature = normalizeAdditionalRulesValueForCompare(rawRules);
+      const previousRulesSignature = normalizeAdditionalRulesValueForCompare(previousRulesValue);
+      const additionalRulesRemovedExplicitly = Boolean(delCondition?.[ADDITIONAL_ACCESS_FIELD] !== undefined);
       const shouldReindexAfterAdditionalRulesChange =
-        rawRules !== undefined || Boolean(delCondition?.[ADDITIONAL_ACCESS_FIELD] !== undefined);
+        additionalRulesRemovedExplicitly || nextRulesSignature !== previousRulesSignature;
       if (shouldReindexAfterAdditionalRulesChange) {
         const accessUserId = String(payload?.userId || state?.userId || '').trim();
         const hasAnyAdditionalRules =
