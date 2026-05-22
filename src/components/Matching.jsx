@@ -5366,44 +5366,7 @@ const Matching = () => {
     setDownloadSizeToastsEnabled(prev => !prev);
   };
 
-  const buildCardsDebugSnapshot = () => ({
-    ownerId,
-    viewMode: viewModeRef.current,
-    collectionSource: collectionSourceRef.current,
-    currentlyRenderedCards: Array.isArray(usersRef.current) ? usersRef.current.length : 0,
-    currentlyLoadedIds: loadedIdsRef.current?.size || 0,
-    hasMore,
-    lastKey,
-    lastBatchStats: matchingLastCardsDebugStatsRef.current,
-  });
-
-  const handleMatchingDebugLogModeToggle = () => {
-    setMatchingDebugLogMode(prev => {
-      const nextMode = prev === 'file' ? 'console' : 'file';
-      if (nextMode === 'file') {
-        if (typeof window !== 'undefined') {
-          window.__MATCHING_DEBUG_LOG_MODE = 'file';
-        }
-        writeMatchingDebugLog('logMode:enabled-file', buildCardsDebugSnapshot());
-        toast.success('Логи Matching пишуться у файл. Натисни ще раз, щоб завантажити файл.');
-      } else {
-        writeMatchingDebugLog('cards:snapshot-before-download', buildCardsDebugSnapshot());
-        writeMatchingDebugLog('logMode:disabled-file', buildCardsDebugSnapshot());
-        downloadMatchingDebugLogs({ reason: 'toggle-to-console' });
-        if (typeof window !== 'undefined') window.__MATCHING_DEBUG_LOG_MODE = 'console';
-        toast.success('Файл логів Matching завантажено. Консольні логи увімкнено.');
-      }
-      return nextMode;
-    });
-  };
-
-  const handleMatchingDataSourceModeToggle = () => {
-    setMatchingDataSourceMode(prev => (prev === 'backend' ? 'localFirst' : 'backend'));
-  };
-
   const showBackendTrafficToggle = ownerId === BACKEND_TRAFFIC_TRACKING_TEST_UID;
-  const showMatchingDebugLogModeToggle = isAdmin || ownerId === MATCHING_LOG_MODE_TEST_USER_ID;
-  const showMatchingDataSourceModeToggle = ownerId === MATCHING_DATA_SOURCE_TEST_USER_ID;
 
   const dotsMenu = () => (
     <>
@@ -5532,42 +5495,6 @@ const Matching = () => {
                 >
                   📦
                   <BackendTrafficToggleStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</BackendTrafficToggleStatus>
-                </BackendTrafficToggleButton>
-              )}
-              {showMatchingDebugLogModeToggle && (
-                <BackendTrafficToggleButton
-                  type="button"
-                  $active={matchingDebugLogMode === 'file'}
-                  aria-pressed={matchingDebugLogMode === 'file'}
-                  title={
-                    matchingDebugLogMode === 'file'
-                      ? 'Завантажити файл логів Matching і повернути логи в консоль'
-                      : 'Писати логи Matching у файл замість консолі'
-                  }
-                  aria-label={
-                    matchingDebugLogMode === 'file'
-                      ? 'Завантажити файл логів Matching і повернути логи в консоль'
-                      : 'Писати логи Matching у файл замість консолі'
-                  }
-                  onClick={handleMatchingDebugLogModeToggle}
-                >
-                  🧾
-                  <BackendTrafficToggleStatus>{matchingDebugLogMode === 'file' ? 'FILE' : 'LOG'}</BackendTrafficToggleStatus>
-                </BackendTrafficToggleButton>
-              )}
-              {showMatchingDataSourceModeToggle && (
-                <BackendTrafficToggleButton
-                  type="button"
-                  $active={matchingDataSourceMode === 'backend'}
-                  aria-pressed={matchingDataSourceMode === 'backend'}
-                  title={matchingDataSourceMode === 'backend' ? 'Backend only' : 'Local first'}
-                  aria-label={matchingDataSourceMode === 'backend' ? 'Backend only' : 'Local first'}
-                  onClick={handleMatchingDataSourceModeToggle}
-                >
-                  🧪
-                  <BackendTrafficToggleStatus>
-                    {matchingDataSourceMode === 'backend' ? 'Backend only' : 'Local first'}
-                  </BackendTrafficToggleStatus>
                 </BackendTrafficToggleButton>
               )}
               {isIndexedDebugTestUser && (
