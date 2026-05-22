@@ -3085,10 +3085,10 @@ const FormPage = styled.div`
 
 const FormCard = styled.div`
   background: ${uiTokens.colors.cardBg};
-  border: 1px solid ${uiTokens.colors.border};
+  border: none;
   border-radius: ${uiTokens.radius.xl};
-  box-shadow: ${uiTokens.shadow.card};
-  padding: ${uiTokens.spacing.lg};
+  box-shadow: none;
+  padding: 6px 0;
   display: flex;
   flex-direction: column;
   gap: ${uiTokens.spacing.xs};
@@ -3135,20 +3135,20 @@ const InputDiv = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 6px 0;
-  padding: 12px 10px;
+  margin: 4px 0;
+  padding: 6px 0;
   background-color: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
     if ($isOverlaySuggestion) return uiTokens.colors.cardBg;
     if ($isDeletedOverlay) return uiTokens.colors.mutedBg;
     return uiTokens.colors.cardBg;
   }};
-  border: ${({ $isHighlighted, $isDeletedOverlay, $isOverlaySuggestion }) => {
+  border-bottom: ${({ $isHighlighted, $isDeletedOverlay, $isOverlaySuggestion }) => {
     if ($isDeletedOverlay) return `1px solid ${uiTokens.colors.danger}`;
     if ($isOverlaySuggestion) return `1px solid ${uiTokens.colors.borderFocus}`;
     if ($isHighlighted) return `1px solid ${uiTokens.colors.borderFocus}`;
     return `1px solid ${uiTokens.colors.border}`;
   }};
-  border-radius: ${uiTokens.radius.md};
+  border-radius: 0;
   box-sizing: border-box;
   flex: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? '1 1 0' : '1 1 auto')};
   width: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? 'auto' : '100%')};
@@ -3157,8 +3157,8 @@ const InputDiv = styled.div`
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 
   &:focus-within {
-    border-color: ${uiTokens.colors.borderFocus};
-    box-shadow: ${uiTokens.shadow.focus};
+    border-bottom-color: ${uiTokens.colors.borderFocus};
+    box-shadow: none;
   }
 `;
 
@@ -3197,7 +3197,7 @@ const InputField = styled.input`
   height: 100%;
   resize: vertical;
   background: transparent;
-  font-size: ${uiTokens.typography.fontSizeLg};
+  font-size: ${uiTokens.typography.fontSizeMd};
   line-height: 1.35;
   &::placeholder {
     color: transparent;
@@ -3250,7 +3250,7 @@ const Hint = styled.label`
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: ${uiTokens.typography.fontSizeLg};
+  font-size: ${uiTokens.typography.fontSizeMd};
   line-height: 1.25;
   ${({ isActive }) =>
     isActive &&
@@ -3346,10 +3346,10 @@ const ClearButton = styled.button`
   font-size: 18px;
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 999px;
   &:hover {
     color: ${uiTokens.colors.textPrimary};
-    background: ${uiTokens.colors.mutedBg};
+    background: rgba(255, 140, 0, 0.12);
   }
 `;
 
@@ -3707,10 +3707,10 @@ const DelKeyValueBTN = styled.button`
   font-size: 18px;
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 999px;
   &:hover {
     color: ${uiTokens.colors.textPrimary};
-    background: ${uiTokens.colors.mutedBg};
+    background: rgba(229, 57, 53, 0.12);
   }
 `;
 
@@ -3718,23 +3718,23 @@ const KeyValueRow = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 6px 0;
-  padding: 12px 10px;
+  margin: 4px 0;
+  padding: 6px 0;
   background-color: ${({ $isDeletedOverlay }) =>
     $isDeletedOverlay ? uiTokens.colors.mutedBg : uiTokens.colors.cardBg};
-  border: ${({ $isHighlighted, $isDeletedOverlay }) => {
+  border-bottom: ${({ $isHighlighted, $isDeletedOverlay }) => {
     if ($isDeletedOverlay) return `1px solid ${uiTokens.colors.danger}`;
     if ($isHighlighted) return `1px solid ${uiTokens.colors.borderFocus}`;
     return `1px solid ${uiTokens.colors.border}`;
   }};
-  border-radius: ${uiTokens.radius.md};
+  border-radius: 0;
   box-sizing: border-box;
   width: 100%;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 
   &:focus-within {
-    border-color: ${uiTokens.colors.borderFocus};
-    box-shadow: ${uiTokens.shadow.focus};
+    border-bottom-color: ${uiTokens.colors.borderFocus};
+    box-shadow: none;
   }
 `;
 
@@ -3766,18 +3766,18 @@ const Button = styled.button`
   height: 36px;
   min-height: 36px;
   padding: 3px;
-  border: none;
-  background-color: ${uiTokens.colors.accent};
+  border: 1px solid rgba(255, 140, 0, 0.45);
+  background: linear-gradient(135deg, #ffb347 0%, #ff8c00 100%);
   color: white;
-  border-radius: ${uiTokens.radius.md};
+  border-radius: 999px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 15px;
   flex: 0 0 36px;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
   margin-right: 0;
   &:hover {
-    background-color: ${color.accent};
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    filter: brightness(1.05);
+    box-shadow: 0 6px 14px rgba(255, 140, 0, 0.25);
   }
   &:active {
     transform: scale(0.98);
