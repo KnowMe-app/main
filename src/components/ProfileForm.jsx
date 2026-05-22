@@ -3135,8 +3135,8 @@ const InputDiv = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 4px 0;
-  padding: 6px 0;
+  margin: 6px 0;
+  padding: 8px 0;
   background-color: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
     if ($isOverlaySuggestion) return uiTokens.colors.cardBg;
     if ($isDeletedOverlay) return uiTokens.colors.mutedBg;
@@ -3198,6 +3198,7 @@ const InputField = styled.input`
   resize: vertical;
   background: transparent;
   font-size: ${uiTokens.typography.fontSizeMd};
+  font-weight: 500;
   line-height: 1.35;
   &::placeholder {
     color: transparent;
@@ -3343,9 +3344,9 @@ const ClearButton = styled.button`
   border: none;
   cursor: pointer;
   color: ${uiTokens.colors.textSecondary};
-  font-size: 18px;
-  width: 36px;
-  height: 36px;
+  font-size: 16px;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
   &:hover {
     color: ${uiTokens.colors.textPrimary};
@@ -3704,9 +3705,10 @@ const DelKeyValueBTN = styled.button`
   border: none;
   cursor: pointer;
   color: ${uiTokens.colors.danger};
-  font-size: 18px;
-  width: 36px;
-  height: 36px;
+  font-size: 14px;
+  font-weight: 500;
+  width: 34px;
+  height: 32px;
   border-radius: 999px;
   &:hover {
     color: ${uiTokens.colors.textPrimary};
@@ -3718,8 +3720,8 @@ const KeyValueRow = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 4px 0;
-  padding: 6px 0;
+  margin: 6px 0;
+  padding: 8px 0;
   background-color: ${({ $isDeletedOverlay }) =>
     $isDeletedOverlay ? uiTokens.colors.mutedBg : uiTokens.colors.cardBg};
   border-bottom: ${({ $isHighlighted, $isDeletedOverlay }) => {
@@ -3754,31 +3756,35 @@ const Colon = styled.span`
 
 const ButtonGroup = styled.div`
   display: flex;
-  gap: 8px;
+  gap: 6px;
   margin-left: 0;
   box-sizing: border-box;
   flex-shrink: 0;
 `;
 
 const Button = styled.button`
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  min-height: 36px;
-  padding: 3px;
-  border: 1px solid rgba(255, 140, 0, 0.45);
-  background: linear-gradient(135deg, #ffb347 0%, #ff8c00 100%);
-  color: white;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 140, 0, 0.35);
+  background: linear-gradient(135deg, #ffb347 0%, #ff9800 100%);
+  color: #fff;
   border-radius: 999px;
   cursor: pointer;
-  font-size: 15px;
-  flex: 0 0 36px;
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  flex: 0 0 auto;
+  transition: filter 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
   margin-right: 0;
+  white-space: nowrap;
+
   &:hover {
-    filter: brightness(1.05);
-    box-shadow: 0 6px 14px rgba(255, 140, 0, 0.25);
+    filter: brightness(1.04);
+    box-shadow: 0 3px 8px rgba(255, 140, 0, 0.22);
   }
+
   &:active {
     transform: scale(0.98);
   }
