@@ -6,7 +6,7 @@ import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 import Photos from './Photos';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
-import { color, OrangeBtn } from './styles';
+import { color, OrangeBtn, uiTokens } from './styles';
 import { pickerFieldsExtended as pickerFields } from './formFields';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import {
@@ -2406,7 +2406,8 @@ ${entries.join('\n')}`;
   };
 
   return (
-    <>
+    <FormPage>
+      <FormCard>
       {state.userId && (
         <div
           id={state.userId}
@@ -3054,6 +3055,8 @@ ${entries.join('\n')}`;
         </AdditionalRulesOverlay>
       )}
 
+      </FormCard>
+
       {showInfoModal && (
         <InfoModal
           onClose={handleCloseModal}
@@ -3065,57 +3068,98 @@ ${entries.join('\n')}`;
           text={showInfoModal}
         />
       )}
-    </>
+    </FormPage>
   );
 };
 
+
+const FormPage = styled.div`
+  background: transparent;
+  padding: 12px 0;
+  width: 100%;
+
+  @media (max-width: 768px) {
+    padding: 8px 0;
+  }
+`;
+
+const FormCard = styled.div`
+  background: ${uiTokens.colors.cardBg};
+  border: 1px solid ${uiTokens.colors.border};
+  border-radius: ${uiTokens.radius.xl};
+  box-shadow: ${uiTokens.shadow.card};
+  padding: ${uiTokens.spacing.lg};
+  display: flex;
+  flex-direction: column;
+  gap: ${uiTokens.spacing.xs};
+
+  @media (max-width: 768px) {
+    padding: 12px;
+    border-radius: ${uiTokens.radius.lg};
+  }
+`;
+
+
 const PhotosBlock = styled.div`
   position: relative;
-  max-width: 400px;
+  max-width: 420px;
   margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 `;
 
 const CollectionToggle = styled.select`
-  position: absolute;
-  top: 0;
-  right: 0;
+  align-self: flex-end;
+  border: 1px solid ${uiTokens.colors.border};
+  border-radius: 999px;
+  padding: 6px 28px 6px 10px;
+  font-size: ${uiTokens.typography.fontSizeSm};
+  background: ${uiTokens.colors.cardBg};
+  color: ${uiTokens.colors.textPrimary};
 `;
 
 const PickerContainer = styled.div`
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: #f0f0f0;
+  background-color: transparent;
   box-sizing: border-box;
   width: 100%;
-  @media (max-width: 768px) {
-    background-color: #f5f5f5;
-  }
+  margin-bottom: 2px;
 `;
 
 const InputDiv = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 10px 0;
-  padding: 10px;
+  margin: 6px 0;
+  padding: 12px 10px;
   background-color: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
-    if ($isOverlaySuggestion) return '#fff';
-    if ($isDeletedOverlay) return '#f7f7f7';
-    return '#fff';
+    if ($isOverlaySuggestion) return uiTokens.colors.cardBg;
+    if ($isDeletedOverlay) return uiTokens.colors.mutedBg;
+    return uiTokens.colors.cardBg;
   }};
   border: ${({ $isHighlighted, $isDeletedOverlay, $isOverlaySuggestion }) => {
-    if ($isDeletedOverlay) return '2px solid #e53935';
-    if ($isOverlaySuggestion) return '1px solid #2f6df6';
-    if ($isHighlighted) return '2px solid #2f6df6';
-    return '1px solid #ccc';
+    if ($isDeletedOverlay) return `1px solid ${uiTokens.colors.danger}`;
+    if ($isOverlaySuggestion) return `1px solid ${uiTokens.colors.borderFocus}`;
+    if ($isHighlighted) return `1px solid ${uiTokens.colors.borderFocus}`;
+    return `1px solid ${uiTokens.colors.border}`;
   }};
-  border-radius: 5px;
+  border-radius: ${uiTokens.radius.md};
   box-sizing: border-box;
   flex: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? '1 1 0' : '1 1 auto')};
   width: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? 'auto' : '100%')};
   min-width: 0;
   height: auto;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+
+  &:focus-within {
+    border-color: ${uiTokens.colors.borderFocus};
+    box-shadow: ${uiTokens.shadow.focus};
+  }
 `;
 
 const FieldMainRow = styled.div`
@@ -3138,7 +3182,7 @@ const InputField = styled.input`
   outline: none;
   flex: 1;
   align-items: center;
-  border-radius: 0;
+  border-radius: ${uiTokens.radius.sm};
   padding-left: ${({ fieldName, value }) => {
     if (fieldName === 'phone') return '20px';
     if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok' || fieldName === 'twitter') return '25px';
@@ -3149,9 +3193,12 @@ const InputField = styled.input`
   max-width: 100%;
   min-width: 0;
   pointer-events: auto;
-  color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? '#8f8f8f' : '#000')};
+  color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? uiTokens.colors.textSecondary : uiTokens.colors.textPrimary)};
   height: 100%;
   resize: vertical;
+  background: transparent;
+  font-size: ${uiTokens.typography.fontSizeLg};
+  line-height: 1.35;
   &::placeholder {
     color: transparent;
   }
@@ -3171,8 +3218,9 @@ const AccessLevelSelect = styled.select`
   background: transparent;
   min-height: 100%;
   height: 100%;
-  color: ${({ value }) => (value ? '#000' : 'gray')};
+  color: ${({ value }) => (value ? uiTokens.colors.textPrimary : uiTokens.colors.textSecondary)};
   cursor: pointer;
+  font-size: ${uiTokens.typography.fontSizeMd};
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -3182,7 +3230,7 @@ const AccessLevelSelect = styled.select`
   background-size: 10px 6px;
 
   option[value=''] {
-    color: gray;
+    color: ${uiTokens.colors.textSecondary};
   }
 `;
 
@@ -3196,12 +3244,14 @@ const Hint = styled.label`
   }};
   display: flex;
   align-items: center;
-  transition: all 0.3s ease;
-  color: gray;
+  transition: all 0.2s ease;
+  color: ${uiTokens.colors.textSecondary};
   pointer-events: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  font-size: ${uiTokens.typography.fontSizeLg};
+  line-height: 1.25;
   ${({ isActive }) =>
     isActive &&
     css`
@@ -3214,21 +3264,21 @@ const Placeholder = styled.label`
   padding-left: 10px;
   top: 0;
   transform: translateY(-100%);
-  transition: all 0.3s ease;
-  color: gray;
+  transition: all 0.2s ease;
+  color: ${uiTokens.colors.textSecondary};
   pointer-events: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: ${uiTokens.typography.fontSizeSm};
   ${({ isActive }) =>
     isActive &&
     css`
       left: 10px;
       top: 0;
       transform: translateY(-100%);
-      font-size: 12px;
-      color: orange;
+      font-size: ${uiTokens.typography.fontSizeSm};
+      color: ${uiTokens.colors.accent};
     `}
 `;
 
@@ -3254,7 +3304,7 @@ const InputFieldContainer = styled.div`
     left: 10px;
     display: flex;
     align-items: center;
-    color: ${({ value }) => (value ? '#000' : 'gray')};
+    color: ${({ value }) => (value ? uiTokens.colors.textPrimary : uiTokens.colors.textSecondary)};
     font-size: 16px;
     text-align: center;
   }
@@ -3292,12 +3342,14 @@ const ClearButton = styled.button`
   background: none;
   border: none;
   cursor: pointer;
-  color: gray;
+  color: ${uiTokens.colors.textSecondary};
   font-size: 18px;
-  width: 35px;
-  height: 35px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   &:hover {
-    color: black;
+    color: ${uiTokens.colors.textPrimary};
+    background: ${uiTokens.colors.mutedBg};
   }
 `;
 
@@ -3651,12 +3703,14 @@ const DelKeyValueBTN = styled.button`
   background: none;
   border: none;
   cursor: pointer;
-  color: red;
+  color: ${uiTokens.colors.danger};
   font-size: 18px;
-  width: 35px;
-  height: 35px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   &:hover {
-    color: black;
+    color: ${uiTokens.colors.textPrimary};
+    background: ${uiTokens.colors.mutedBg};
   }
 `;
 
@@ -3664,17 +3718,24 @@ const KeyValueRow = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 10px 0;
-  padding: 10px;
-  background-color: ${({ $isDeletedOverlay }) => ($isDeletedOverlay ? '#f7f7f7' : '#fff')};
+  margin: 6px 0;
+  padding: 12px 10px;
+  background-color: ${({ $isDeletedOverlay }) =>
+    $isDeletedOverlay ? uiTokens.colors.mutedBg : uiTokens.colors.cardBg};
   border: ${({ $isHighlighted, $isDeletedOverlay }) => {
-    if ($isDeletedOverlay) return '2px solid #e53935';
-    if ($isHighlighted) return '2px solid #2f6df6';
-    return '1px solid #ccc';
+    if ($isDeletedOverlay) return `1px solid ${uiTokens.colors.danger}`;
+    if ($isHighlighted) return `1px solid ${uiTokens.colors.borderFocus}`;
+    return `1px solid ${uiTokens.colors.border}`;
   }};
-  border-radius: 5px;
+  border-radius: ${uiTokens.radius.md};
   box-sizing: border-box;
   width: 100%;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+
+  &:focus-within {
+    border-color: ${uiTokens.colors.borderFocus};
+    box-shadow: ${uiTokens.shadow.focus};
+  }
 `;
 
 const CustomInput = styled.input`
@@ -3696,23 +3757,24 @@ const ButtonGroup = styled.div`
   gap: 8px;
   margin-left: 0;
   box-sizing: border-box;
+  flex-shrink: 0;
 `;
 
 const Button = styled.button`
-  width: 35px;
-  min-width: 35px;
-  height: 35px;
-  min-height: 35px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
   padding: 3px;
   border: none;
-  background-color: ${color.accent5};
+  background-color: ${uiTokens.colors.accent};
   color: white;
-  border-radius: 50px;
+  border-radius: ${uiTokens.radius.md};
   cursor: pointer;
   font-size: 12px;
-  flex: 0 0 35px;
+  flex: 0 0 36px;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
-  margin-right: 10px;
+  margin-right: 0;
   &:hover {
     background-color: ${color.accent};
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);

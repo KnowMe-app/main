@@ -42,9 +42,9 @@ const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px;
+  padding: 16px;
   box-sizing: border-box;
-  max-width: 450px;
+  max-width: 560px;
   width: 100%;
   margin: 0 auto;
 `;
