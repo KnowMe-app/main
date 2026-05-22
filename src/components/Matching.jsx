@@ -5377,7 +5377,7 @@ const Matching = () => {
               checked={collectionSource === 'users'}
               onChange={e => switchCollectionSource(e.target.value)}
             />
-            Основна (users)
+            Основний список
           </CollectionSourceLabel>
           <CollectionSourceLabel>
             <input
@@ -5387,7 +5387,7 @@ const Matching = () => {
               checked={collectionSource === 'newUsers'}
               onChange={e => switchCollectionSource(e.target.value)}
             />
-            Додаткова (newUsers)
+            Додатковий список
           </CollectionSourceLabel>
         </CollectionSourceWrap>
         <FilterPanel
