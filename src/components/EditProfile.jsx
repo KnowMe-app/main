@@ -15,7 +15,7 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { ProfileForm } from './ProfileForm';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
-import { coloredCard, uiTokens } from './styles';
+import { coloredCard } from './styles';
 import { updateCachedUser } from '../utils/cache';
 import { getCard } from '../utils/cardIndex';
 import {
