@@ -3085,10 +3085,10 @@ const FormPage = styled.div`
 
 const FormCard = styled.div`
   background: ${uiTokens.colors.cardBg};
-  border: none;
+  border: 1px solid rgba(234, 223, 206, 0.55);
   border-radius: ${uiTokens.radius.xl};
-  box-shadow: none;
-  padding: 6px 0;
+  box-shadow: 0 10px 24px rgba(20, 24, 32, 0.04);
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
   gap: ${uiTokens.spacing.xs};
@@ -3116,7 +3116,9 @@ const CollectionToggle = styled.select`
   border: 1px solid ${uiTokens.colors.border};
   border-radius: 999px;
   padding: 6px 28px 6px 10px;
-  font-size: ${uiTokens.typography.fontSizeSm};
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
   background: ${uiTokens.colors.cardBg};
   color: ${uiTokens.colors.textPrimary};
 `;
@@ -3128,15 +3130,15 @@ const PickerContainer = styled.div`
   background-color: transparent;
   box-sizing: border-box;
   width: 100%;
-  margin-bottom: 2px;
+  margin-bottom: 6px;
 `;
 
 const InputDiv = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 6px 0;
-  padding: 8px 0;
+  margin: 4px 0;
+  padding: 10px 0 8px;
   background-color: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
     if ($isOverlaySuggestion) return uiTokens.colors.cardBg;
     if ($isDeletedOverlay) return uiTokens.colors.mutedBg;
@@ -3148,7 +3150,7 @@ const InputDiv = styled.div`
     if ($isHighlighted) return `1px solid ${uiTokens.colors.borderFocus}`;
     return `1px solid ${uiTokens.colors.border}`;
   }};
-  border-radius: 0;
+  border-radius: 10px;
   box-sizing: border-box;
   flex: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? '1 1 0' : '1 1 auto')};
   width: ${({ $isOverlaySuggestion }) => ($isOverlaySuggestion ? 'auto' : '100%')};
@@ -3158,7 +3160,7 @@ const InputDiv = styled.div`
 
   &:focus-within {
     border-bottom-color: ${uiTokens.colors.borderFocus};
-    box-shadow: none;
+    box-shadow: 0 4px 14px rgba(255, 140, 0, 0.1);
   }
 `;
 
@@ -3197,9 +3199,10 @@ const InputField = styled.input`
   height: 100%;
   resize: vertical;
   background: transparent;
-  font-size: ${uiTokens.typography.fontSizeMd};
+  font-size: ${uiTokens.typography.fontSizeLg};
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
   &::placeholder {
     color: transparent;
   }
@@ -3210,7 +3213,7 @@ const AccessLevelSelect = styled.select`
   outline: none;
   flex: 1;
   align-items: center;
-  border-radius: 0;
+  border-radius: 10px;
   max-width: 100%;
   min-width: 0;
   width: 100%;
@@ -3237,6 +3240,9 @@ const AccessLevelSelect = styled.select`
 
 const Hint = styled.label`
   position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
   padding-left: ${({ fieldName }) => {
     if (fieldName === 'phone') return '20px';
     if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram' || fieldName === 'tiktok' || fieldName === 'twitter') return '25px';
@@ -3251,8 +3257,8 @@ const Hint = styled.label`
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: ${uiTokens.typography.fontSizeMd};
-  line-height: 1.25;
+  font-size: ${uiTokens.typography.fontSizeLg};
+  line-height: 1.4;
   ${({ isActive }) =>
     isActive &&
     css`
@@ -3264,21 +3270,25 @@ const Placeholder = styled.label`
   position: absolute;
   padding-left: 10px;
   top: 0;
-  transform: translateY(-100%);
+  transform: translateY(-108%);
   transition: all 0.2s ease;
   color: ${uiTokens.colors.textSecondary};
   pointer-events: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: ${uiTokens.typography.fontSizeSm};
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
   ${({ isActive }) =>
     isActive &&
     css`
       left: 10px;
       top: 0;
       transform: translateY(-100%);
-      font-size: ${uiTokens.typography.fontSizeSm};
+      font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
       color: ${uiTokens.colors.accent};
     `}
 `;
@@ -3324,13 +3334,15 @@ const SearchIdBackendButton = styled.button`
   cursor: pointer;
   color: ${color.accent};
   font-size: 16px;
-  width: 35px;
-  height: 35px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
   padding: 0;
   z-index: 1;
 
   &:hover {
     color: ${color.iconActive};
+    background: rgba(255, 140, 0, 0.12);
   }
 `;
 
@@ -3344,9 +3356,9 @@ const ClearButton = styled.button`
   border: none;
   cursor: pointer;
   color: ${uiTokens.colors.textSecondary};
-  font-size: 16px;
-  width: 32px;
-  height: 32px;
+  font-size: 18px;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   &:hover {
     color: ${uiTokens.colors.textPrimary};
@@ -3697,7 +3709,7 @@ const SearchKeySourceActions = styled.div`
 
 const DelKeyValueBTN = styled.button`
   position: absolute;
-  right: 45px;
+  right: 46px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3705,10 +3717,10 @@ const DelKeyValueBTN = styled.button`
   border: none;
   cursor: pointer;
   color: ${uiTokens.colors.danger};
-  font-size: 14px;
-  font-weight: 500;
-  width: 34px;
-  height: 32px;
+  font-size: 13px;
+  font-weight: 600;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   &:hover {
     color: ${uiTokens.colors.textPrimary};
@@ -3720,8 +3732,8 @@ const KeyValueRow = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 6px 0;
-  padding: 8px 0;
+  margin: 8px 0 4px;
+  padding: 10px 0;
   background-color: ${({ $isDeletedOverlay }) =>
     $isDeletedOverlay ? uiTokens.colors.mutedBg : uiTokens.colors.cardBg};
   border-bottom: ${({ $isHighlighted, $isDeletedOverlay }) => {
@@ -3729,14 +3741,14 @@ const KeyValueRow = styled.div`
     if ($isHighlighted) return `1px solid ${uiTokens.colors.borderFocus}`;
     return `1px solid ${uiTokens.colors.border}`;
   }};
-  border-radius: 0;
+  border-radius: 10px;
   box-sizing: border-box;
   width: 100%;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 
   &:focus-within {
     border-bottom-color: ${uiTokens.colors.borderFocus};
-    box-shadow: none;
+    box-shadow: 0 4px 14px rgba(255, 140, 0, 0.1);
   }
 `;
 
@@ -3763,9 +3775,9 @@ const ButtonGroup = styled.div`
 `;
 
 const Button = styled.button`
-  min-width: 34px;
-  height: 34px;
-  min-height: 34px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
   padding: 0 8px;
   border: 1px solid rgba(255, 140, 0, 0.35);
   background: linear-gradient(135deg, #ffb347 0%, #ff9800 100%);
