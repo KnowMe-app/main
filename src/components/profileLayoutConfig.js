@@ -208,7 +208,6 @@ const sectionConfig = {
     ] },
     { title: 'Donation experience', fields: [
       field('experience', 'Previous donation'), field('donationCount', 'Donation count'), field('donationsCount', 'Donations'),
-      field('cSection', 'C-section', user => user?.cSection || user?.csection || user?.c_section || user?.cesareanSection, ['cSection', 'csection', 'c_section', 'cesareanSection']),
     ] },
   ],
   ip: [
