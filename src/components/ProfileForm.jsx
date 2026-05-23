@@ -1753,13 +1753,13 @@ export const ProfileForm = ({
   ];
 
   const accessLevelOptions = [
-    { value: '', label: 'access level' },
-    { value: 'matching:view', label: 'matching view' },
-    { value: 'matching:view&write', label: 'matching view and write' },
-    { value: 'add:view', label: 'add view' },
-    { value: 'add:view&write', label: 'add view and write' },
-    { value: 'add+matching:view', label: 'add and matching view' },
-    { value: 'add+matching:view&write', label: 'add and matching view and write' },
+    { value: '', label: 'рівень доступу' },
+    { value: 'matching:view', label: 'перегляд matching' },
+    { value: 'matching:view&write', label: 'перегляд і редагування matching' },
+    { value: 'add:view', label: 'перегляд add' },
+    { value: 'add:view&write', label: 'перегляд і редагування add' },
+    { value: 'add+matching:view', label: 'перегляд add і matching' },
+    { value: 'add+matching:view&write', label: 'перегляд і редагування add та matching' },
   ];
 
   const fieldsToRender = getFieldsToRender(state);
@@ -1768,7 +1768,7 @@ export const ProfileForm = ({
     let next = fieldsToRender;
 
     if (canManageAccessLevel && !next.some(field => field.name === 'accessLevel')) {
-      next = [...next, { name: 'accessLevel', placeholder: 'access level', ukrainianHint: 'рівень доступу' }];
+      next = [...next, { name: 'accessLevel', placeholder: 'рівень доступу', ukrainian: 'рівень доступу', ukrainianHint: 'рівень доступу' }];
     }
 
     if (canManageAccessLevel && !next.some(field => field.name === ADDITIONAL_ACCESS_FIELD)) {
