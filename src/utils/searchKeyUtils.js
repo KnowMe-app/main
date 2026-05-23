@@ -63,6 +63,12 @@ const normalizeLabeledContactValue = (baseValue, labelPattern) => {
   return stripQueryHashAndSlashSuffix(labelMatch[1].replace(/^@/, ''));
 };
 
+const normalizeSocialHandleFromUrlOrLabel = ({ baseValue, domainPattern, labelPattern }) => {
+  const urlMatch = baseValue.match(domainPattern);
+  if (urlMatch?.[1]) return stripQueryHashAndSlashSuffix(urlMatch[1].replace(/^@/, ''));
+  return normalizeLabeledContactValue(baseValue, labelPattern);
+};
+
 const normalizeLinkedInValue = baseValue => {
   const urlMatch = baseValue.match(/linkedin\.com\/(?:in|company)\/([^/?#]+)/i);
   if (urlMatch?.[1]) return stripQueryHashAndSlashSuffix(urlMatch[1]);
@@ -101,15 +107,23 @@ const normalizeYoutubeValue = baseValue => {
   return null;
 };
 
-const normalizeAmebloValue = baseValue => {
-  const urlMatch = baseValue.match(/ameblo\.jp\/([^/?#\s]+)/i);
-  if (urlMatch?.[1]) return stripQueryHashAndSlashSuffix(urlMatch[1]);
+const normalizeInstagramValue = baseValue => normalizeSocialHandleFromUrlOrLabel({
+  baseValue,
+  domainPattern: /instagram\.com\/([^/?#\s]+)/i,
+  labelPattern: /(?:^|[^A-Za-z0-9_])(?:instagram|insta|інста|інстаграм)\s*:?\s*@?([A-Za-z0-9._-]+)/i,
+});
 
-  return normalizeLabeledContactValue(
-    baseValue,
-    /(?:^|[^A-Za-z0-9_])(?:ameblo|амебло)\s*:?\s*@?([A-Za-z0-9._-]+)/i,
-  );
-};
+const normalizeFacebookValue = baseValue => normalizeSocialHandleFromUrlOrLabel({
+  baseValue,
+  domainPattern: /(?:facebook|fb)\.com\/([^/?#\s]+)/i,
+  labelPattern: /(?:^|[^A-Za-z0-9_])(?:facebook|fb|фейсбук|фб)\s*:?\s*@?([A-Za-z0-9._-]+)/i,
+});
+
+const normalizeAmebloValue = baseValue => normalizeSocialHandleFromUrlOrLabel({
+  baseValue,
+  domainPattern: /ameblo\.jp\/([^/?#\s]+)/i,
+  labelPattern: /(?:^|[^A-Za-z0-9_])(?:ameblo|амебло)\s*:?\s*@?([A-Za-z0-9._-]+)/i,
+});
 
 const normalizeSocialSearchValue = (searchKey, baseValue) => {
   const parsedTrigger = parseUkTriggerQuery(baseValue);
@@ -123,6 +137,14 @@ const normalizeSocialSearchValue = (searchKey, baseValue) => {
 
   if (searchKey === 'youtube') {
     return normalizeYoutubeValue(baseValue) || baseValue.replace(/\s+/g, ' ');
+  }
+
+  if (searchKey === 'instagram') {
+    return normalizeInstagramValue(baseValue) || baseValue.replace(/\s+/g, ' ');
+  }
+
+  if (searchKey === 'facebook') {
+    return normalizeFacebookValue(baseValue) || baseValue.replace(/\s+/g, ' ');
   }
 
   if (searchKey === 'ameblo') {
@@ -144,6 +166,20 @@ export const normalizeSearchIdInput = (searchKey, rawValue) => {
   }
 
   return baseValue.replace(/\s+/g, ' ');
+};
+
+export const normalizeExactSearchIdInput = (rawValue, searchIdPrefixes) => {
+  const baseValue = String(rawValue || '').trim();
+  if (!baseValue) return '';
+
+  const normalizedPrefixes = getSearchIdPrefixes(searchIdPrefixes);
+  if (normalizedPrefixes.length !== 1) {
+    return baseValue.replace(/\s+/g, ' ');
+  }
+
+  const [onlyPrefix] = normalizedPrefixes;
+  const normalizedValue = normalizeSearchIdInput(onlyPrefix, baseValue);
+  return normalizedValue || baseValue.replace(/\s+/g, ' ');
 };
 
 const normalizePhoneSearchIdValue = rawValue => normalizePhoneValue(rawValue);
@@ -237,9 +273,12 @@ export const buildSearchIdRecordKey = searchedValue => {
   return `${searchKey}_${encodeKey(normalizedSearchValue).toLowerCase()}`;
 };
 
-export const makeSearchKeyValue = searchedValue => {
+export const makeSearchKeyValue = (searchedValue, options = {}) => {
+  const { searchIdPrefixes } = options;
   const [searchKey, searchValue] = Object.entries(searchedValue)[0];
-  const normalizedSearchValue = normalizeSearchIdInput(searchKey, searchValue);
+  const normalizedSearchValue = searchKey === 'searchId'
+    ? normalizeExactSearchIdInput(searchValue, searchIdPrefixes)
+    : normalizeSearchIdInput(searchKey, searchValue);
   const modifiedSearchValue = encodeKey(normalizedSearchValue);
   const searchIdKey = buildSearchIdRecordKey({ [searchKey]: searchValue });
 
