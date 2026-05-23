@@ -130,6 +130,9 @@ const nestedIndentStyle = {
 };
 
 
+const resolveFieldNameBase = fieldName => String(fieldName || '').replace(/-\d+$/, '');
+
+
 const PROFILE_FORM_RESTORE_LOG_PREFIX = '[ProfileRestore][ProfileForm]';
 
 const getProfileFormRestoreTimestamp = () => {
@@ -3214,10 +3217,11 @@ const InputField = styled.input`
   align-items: center;
   border-radius: ${uiTokens.radius.sm};
   padding-left: ${({ fieldName, value }) => {
-    if (fieldName === 'phone') return '20px';
-    if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok' || fieldName === 'twitter') return '25px';
-    if (fieldName === 'facebook') return /^\d+$/.test(value) ? '20px' : '25px';
-    if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' ? '23px' : '10px';
+    const baseFieldName = resolveFieldNameBase(fieldName);
+    if (baseFieldName === 'phone') return '20px';
+    if (baseFieldName === 'telegram' || baseFieldName === 'instagram' || baseFieldName === 'tiktok' || baseFieldName === 'twitter') return '25px';
+    if (baseFieldName === 'facebook') return /^\d+$/.test(value) ? '20px' : '25px';
+    if (baseFieldName === 'vk') return /^\d+$/.test(value) || value === '' ? '23px' : '10px';
     return '10px';
   }};
   max-width: 100%;
@@ -3230,6 +3234,17 @@ const InputField = styled.input`
   font-size: ${uiTokens.typography.fontSizeMd};
   font-weight: 500;
   line-height: 1.35;
+  ${({ as, fieldName }) => {
+    const baseFieldName = resolveFieldNameBase(fieldName);
+    if (as === 'textarea' && (baseFieldName === ADDITIONAL_ACCESS_FIELD || baseFieldName === MULTI_DATA_ACCESS_FIELD)) {
+      return css`
+        min-height: 40px;
+        max-height: 120px;
+        resize: vertical;
+      `;
+    }
+    return null;
+  }}
   &::placeholder {
     color: transparent;
   }
@@ -3268,9 +3283,10 @@ const AccessLevelSelect = styled.select`
 const Hint = styled.label`
   position: absolute;
   padding-left: ${({ fieldName }) => {
-    if (fieldName === 'phone') return '20px';
-    if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram' || fieldName === 'tiktok' || fieldName === 'twitter') return '25px';
-    if (fieldName === 'vk') return '23px';
+    const baseFieldName = resolveFieldNameBase(fieldName);
+    if (baseFieldName === 'phone') return '20px';
+    if (baseFieldName === 'telegram' || baseFieldName === 'facebook' || baseFieldName === 'instagram' || baseFieldName === 'tiktok' || baseFieldName === 'twitter') return '25px';
+    if (baseFieldName === 'vk') return '23px';
     return '10px';
   }};
   display: flex;
@@ -3325,10 +3341,11 @@ const InputFieldContainer = styled.div`
   height: auto;
   &::before {
     content: ${({ fieldName, value }) => {
-      if (fieldName === 'phone') return "'+'";
-      if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok' || fieldName === 'twitter') return "'@'";
-      if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
-      if (fieldName === 'vk') return /^\d+$/.test(value) || value === '' || value === undefined ? "'id'" : "''";
+      const baseFieldName = resolveFieldNameBase(fieldName);
+      if (baseFieldName === 'phone') return "'+'";
+      if (baseFieldName === 'telegram' || baseFieldName === 'instagram' || baseFieldName === 'tiktok' || baseFieldName === 'twitter') return "'@'";
+      if (baseFieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
+      if (baseFieldName === 'vk') return /^\d+$/.test(value) || value === '' || value === undefined ? "'id'" : "''";
       return "''";
     }};
     position: absolute;
