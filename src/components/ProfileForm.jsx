@@ -91,6 +91,22 @@ export const getFieldsToRender = state => {
   ];
 };
 
+const PROFILE_FORM_FIELDS_TO_HIDE = new Set(['getInTouch']);
+
+const PROFILE_FORM_LABELS = {
+  lastLogin: 'Останній логін',
+  lastLogin2: 'Останній логін',
+  publish: 'Опубліковано',
+  vk: 'VK',
+  clothingSize: 'Розмір одягу',
+};
+
+const getFieldDisplayLabel = field => {
+  const fieldName = resolveFieldNameBase(field?.name);
+  return field?.ukrainian || PROFILE_FORM_LABELS[fieldName] || field?.ukrainianHint || field?.placeholder || fieldName;
+};
+
+
 const removeButtonStyle = {
   width: '20px',
   height: '20px',
@@ -1777,7 +1793,7 @@ export const ProfileForm = ({
       ];
     }
 
-    return next;
+    return next.filter(field => !PROFILE_FORM_FIELDS_TO_HIDE.has(resolveFieldNameBase(field?.name)));
   })();
 
 
@@ -2564,7 +2580,7 @@ ${entries.join('\n')}`;
                     {field.name !== 'accessLevel' && (
                       <>
                         <Hint fieldName={field.name} isActive={value}>
-                          {field.ukrainian || field.placeholder}
+                          {getFieldDisplayLabel(field)}
                         </Hint>
                         <Placeholder isActive={value}>{field.ukrainianHint}</Placeholder>
                       </>
@@ -2758,7 +2774,7 @@ ${entries.join('\n')}`;
                 {field.name !== 'accessLevel' && (
                   <>
                     <Hint fieldName={field.name} isActive={state[field.name]}>
-                      {field.ukrainian || field.placeholder}
+                      {getFieldDisplayLabel(field)}
                     </Hint>
                     <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
                   </>
@@ -2911,7 +2927,7 @@ ${entries.join('\n')}`;
                     </ClearButton>
                   </InputFieldContainer>
                   <Hint fieldName={field.name} isActive={entry.value}>
-                    {field.ukrainian || field.placeholder}
+                    {getFieldDisplayLabel(field)}
                   </Hint>
                   <Placeholder isActive={entry.value}>{field.ukrainianHint}</Placeholder>
                 </InputDiv>
