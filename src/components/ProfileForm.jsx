@@ -2484,7 +2484,13 @@ ${entries.join('\n')}`;
               {Array.isArray(state[field.name]) ? (
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
                 {state[field.name].map((value, idx) => (
-                  <InputDiv key={`${field.name}-${idx}`} $isHighlighted={highlightedFields.includes(field.name)} $isDeletedOverlay={deletedOverlayFields.includes(field.name)}>
+                  <InputDiv
+                    key={`${field.name}-${idx}`}
+                    $isHighlighted={highlightedFields.includes(field.name)}
+                    $isDeletedOverlay={deletedOverlayFields.includes(field.name)}
+                    $isArrayValueItem
+                    $isFirstArrayValueItem={idx === 0}
+                  >
                     <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
                       <InputField
                         fieldName={`${field.name}-${idx}`}
@@ -3187,6 +3193,8 @@ const InputDiv = styled.div`
   min-width: 0;
   height: auto;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  margin-top: ${({ $isArrayValueItem, $isFirstArrayValueItem }) =>
+    $isArrayValueItem && !$isFirstArrayValueItem ? '16px' : '6px'};
 
   &:focus-within {
     border-bottom-color: ${uiTokens.colors.borderFocus};
