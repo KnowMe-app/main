@@ -1651,7 +1651,7 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
 
 export const searchUsersOnly = async (searchedValue, options = {}) => {
   const { searchIdPrefixes } = options;
-  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
+  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
     ? { includeVariants: false, includePrefixMatches: true, includeAdaptedPhoneVariant: true }
@@ -2200,7 +2200,7 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
     allowTelegramPrefixMatches = false,
   } = options;
   if (isDev) console.log('fetchNewUsersCollectionInRTDB → searchedValue:', searchedValue);
-  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue);
+  const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
     ? { includeVariants: false, includePrefixMatches: true, includeAdaptedPhoneVariant: true }
