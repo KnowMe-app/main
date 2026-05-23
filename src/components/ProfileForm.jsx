@@ -91,6 +91,22 @@ export const getFieldsToRender = state => {
   ];
 };
 
+const PROFILE_FORM_FIELDS_TO_HIDE = new Set(['getInTouch']);
+
+const PROFILE_FORM_LABELS = {
+  lastLogin: 'Останній логін',
+  lastLogin2: 'Останній логін',
+  publish: 'Опубліковано',
+  vk: 'VK',
+  clothingSize: 'Розмір одягу',
+};
+
+const getFieldDisplayLabel = field => {
+  const fieldName = resolveFieldNameBase(field?.name);
+  return field?.ukrainian || PROFILE_FORM_LABELS[fieldName] || field?.ukrainianHint || field?.placeholder || fieldName;
+};
+
+
 const removeButtonStyle = {
   width: '20px',
   height: '20px',
@@ -1737,13 +1753,13 @@ export const ProfileForm = ({
   ];
 
   const accessLevelOptions = [
-    { value: '', label: 'access level' },
-    { value: 'matching:view', label: 'matching view' },
-    { value: 'matching:view&write', label: 'matching view and write' },
-    { value: 'add:view', label: 'add view' },
-    { value: 'add:view&write', label: 'add view and write' },
-    { value: 'add+matching:view', label: 'add and matching view' },
-    { value: 'add+matching:view&write', label: 'add and matching view and write' },
+    { value: '', label: 'рівень доступу' },
+    { value: 'matching:view', label: 'перегляд matching' },
+    { value: 'matching:view&write', label: 'перегляд і редагування matching' },
+    { value: 'add:view', label: 'перегляд add' },
+    { value: 'add:view&write', label: 'перегляд і редагування add' },
+    { value: 'add+matching:view', label: 'перегляд add і matching' },
+    { value: 'add+matching:view&write', label: 'перегляд і редагування add та matching' },
   ];
 
   const fieldsToRender = getFieldsToRender(state);
@@ -1752,7 +1768,7 @@ export const ProfileForm = ({
     let next = fieldsToRender;
 
     if (canManageAccessLevel && !next.some(field => field.name === 'accessLevel')) {
-      next = [...next, { name: 'accessLevel', placeholder: 'access level', ukrainianHint: 'рівень доступу' }];
+      next = [...next, { name: 'accessLevel', placeholder: 'рівень доступу', ukrainian: 'рівень доступу', ukrainianHint: 'рівень доступу' }];
     }
 
     if (canManageAccessLevel && !next.some(field => field.name === ADDITIONAL_ACCESS_FIELD)) {
@@ -1777,7 +1793,7 @@ export const ProfileForm = ({
       ];
     }
 
-    return next;
+    return next.filter(field => !PROFILE_FORM_FIELDS_TO_HIDE.has(resolveFieldNameBase(field?.name)));
   })();
 
 
@@ -2564,7 +2580,7 @@ ${entries.join('\n')}`;
                     {field.name !== 'accessLevel' && (
                       <>
                         <Hint fieldName={field.name} isActive={value}>
-                          {field.ukrainian || field.placeholder}
+                          {getFieldDisplayLabel(field)}
                         </Hint>
                         <Placeholder isActive={value}>{field.ukrainianHint}</Placeholder>
                       </>
@@ -2758,7 +2774,7 @@ ${entries.join('\n')}`;
                 {field.name !== 'accessLevel' && (
                   <>
                     <Hint fieldName={field.name} isActive={state[field.name]}>
-                      {field.ukrainian || field.placeholder}
+                      {getFieldDisplayLabel(field)}
                     </Hint>
                     <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
                   </>
@@ -2911,7 +2927,7 @@ ${entries.join('\n')}`;
                     </ClearButton>
                   </InputFieldContainer>
                   <Hint fieldName={field.name} isActive={entry.value}>
-                    {field.ukrainian || field.placeholder}
+                    {getFieldDisplayLabel(field)}
                   </Hint>
                   <Placeholder isActive={entry.value}>{field.ukrainianHint}</Placeholder>
                 </InputDiv>
