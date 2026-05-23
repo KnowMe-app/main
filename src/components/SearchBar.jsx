@@ -161,7 +161,7 @@ const parseAmebloId = input => {
   const amebloMatch = trimmed.match(amebloRegex);
   if (amebloMatch?.[1]) return amebloMatch[1];
 
-  const labeledRegex = /(?:^|[^A-Za-z0-9Ѐ-ӿ_])(ameblo|амебло)[:\s]+([A-Za-z0-9._-]+)/i;
+  const labeledRegex = /(?:^|[^A-Za-z0-9Ѐ-ӿ_])(ameblo|амебло)(?:\s*:\s*|\s+)([A-Za-z0-9][A-Za-z0-9._-]*)/i;
   const labeledMatch = trimmed.match(labeledRegex);
   if (labeledMatch?.[2]) return labeledMatch[2];
 
