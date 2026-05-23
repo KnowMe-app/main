@@ -2488,8 +2488,8 @@ ${entries.join('\n')}`;
                     <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
                       <InputField
                         fieldName={`${field.name}-${idx}`}
-                        as={(field.name === 'moreInfo_main' || field.name === 'myComment' || field.name === ADDITIONAL_ACCESS_FIELD || field.name === MULTI_DATA_ACCESS_FIELD) && 'textarea'}
-                        ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : field.name === ADDITIONAL_ACCESS_FIELD ? additionalAccessRulesRef : field.name === MULTI_DATA_ACCESS_FIELD ? multiDataAccessUserIdsRef : null}
+                        as={(field.name === 'moreInfo_main' || field.name === 'myComment' || field.name === MULTI_DATA_ACCESS_FIELD) && 'textarea'}
+                        ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : field.name === MULTI_DATA_ACCESS_FIELD ? multiDataAccessUserIdsRef : null}
                         inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                         name={`${field.name}-${idx}`}
                         value={value || ''}
@@ -2590,7 +2590,6 @@ ${entries.join('\n')}`;
                     <>
                       <InputField
                         fieldName={field.name}
-                        as="textarea"
                         ref={additionalAccessRulesRef}
                         name={field.name}
                         value={displayValue}
@@ -2606,8 +2605,8 @@ ${entries.join('\n')}`;
                   ) : (
                   <InputField
                     fieldName={field.name}
-                    as={(field.name === 'moreInfo_main' || field.name === 'myComment' || field.name === ADDITIONAL_ACCESS_FIELD || field.name === MULTI_DATA_ACCESS_FIELD) && 'textarea'}
-                    ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : field.name === ADDITIONAL_ACCESS_FIELD ? additionalAccessRulesRef : field.name === MULTI_DATA_ACCESS_FIELD ? multiDataAccessUserIdsRef : null}
+                    as={(field.name === 'moreInfo_main' || field.name === 'myComment' || field.name === MULTI_DATA_ACCESS_FIELD) && 'textarea'}
+                    ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : field.name === MULTI_DATA_ACCESS_FIELD ? multiDataAccessUserIdsRef : null}
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={displayValue}
