@@ -2819,6 +2819,7 @@ ${entries.join('\n')}`;
               field.options.length === 2 ? (
                 <ButtonGroup>
                   <Button
+                    $compactText
                     type="button"
                     onClick={() => {
                       if (!state.myComment?.trim()) {
@@ -2837,6 +2838,7 @@ ${entries.join('\n')}`;
                     Так
                   </Button>
                   <Button
+                    $compactText
                     type="button"
                     onClick={() => {
                       if (!state.myComment?.trim()) {
@@ -2855,6 +2857,7 @@ ${entries.join('\n')}`;
                     Ні
                   </Button>
                   <Button
+                    $compactText
                     type="button"
                     onClick={() => {
                       if (!state.myComment?.trim()) {
@@ -3429,7 +3432,7 @@ const AdditionalRulesModal = styled.div`
   }
 
   small {
-    font-size: 12px;
+    font-size: ${({ $compactText }) => ($compactText ? "10px" : "12px")};
     color: #6b7f9a;
   }
 `;
@@ -3659,7 +3662,7 @@ const AdditionalRulePreview = styled.textarea`
 const AdditionalCardsTitle = styled.h4`
   margin-top: 12px;
   margin-bottom: 6px;
-  font-size: 12px;
+  font-size: ${({ $compactText }) => ($compactText ? "10px" : "12px")};
   font-weight: 500;
   color: #6b7f9a;
   letter-spacing: 0.3px;
@@ -3815,7 +3818,7 @@ const Button = styled.button`
   color: #fff;
   border-radius: 999px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: ${({ $compactText }) => ($compactText ? "10px" : "12px")};
   font-weight: 500;
   line-height: 1;
   flex: 0 0 auto;
