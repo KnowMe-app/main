@@ -3283,13 +3283,7 @@ const AccessLevelSelect = styled.select`
 
 const Hint = styled.label`
   position: absolute;
-  padding-left: ${({ fieldName }) => {
-    const baseFieldName = resolveFieldNameBase(fieldName);
-    if (baseFieldName === 'phone') return '20px';
-    if (baseFieldName === 'telegram' || baseFieldName === 'facebook' || baseFieldName === 'instagram' || baseFieldName === 'tiktok' || baseFieldName === 'twitter') return '25px';
-    if (baseFieldName === 'vk') return '23px';
-    return '10px';
-  }};
+  padding-left: 10px;
   display: flex;
   align-items: center;
   top: 0;
