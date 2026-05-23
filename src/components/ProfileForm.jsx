@@ -2484,7 +2484,12 @@ ${entries.join('\n')}`;
               {Array.isArray(state[field.name]) ? (
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexWrap: 'wrap' }}>
                 {state[field.name].map((value, idx) => (
-                  <InputDiv key={`${field.name}-${idx}`} $isHighlighted={highlightedFields.includes(field.name)} $isDeletedOverlay={deletedOverlayFields.includes(field.name)}>
+                  <InputDiv
+                    key={`${field.name}-${idx}`}
+                    $isHighlighted={highlightedFields.includes(field.name)}
+                    $isDeletedOverlay={deletedOverlayFields.includes(field.name)}
+                    $isArrayItem
+                  >
                     <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
                       <InputField
                         fieldName={`${field.name}-${idx}`}
@@ -3167,8 +3172,9 @@ const InputDiv = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 6px 0;
-  padding: 6px 0;
+  margin: ${({ $isArrayItem }) => ($isArrayItem ? '10px 0' : '6px 0')};
+  padding: ${({ $isArrayItem }) => ($isArrayItem ? '10px 0 8px' : '6px 0')};
+  min-height: ${({ $isArrayItem }) => ($isArrayItem ? '44px' : 'auto')};
   background-color: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
     if ($isOverlaySuggestion) return uiTokens.colors.cardBg;
     if ($isDeletedOverlay) return uiTokens.colors.mutedBg;
