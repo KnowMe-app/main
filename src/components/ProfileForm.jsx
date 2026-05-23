@@ -3169,7 +3169,7 @@ const InputDiv = styled.div`
   align-items: center;
   position: relative;
   margin: 6px 0;
-  padding: 8px 0;
+  padding: 6px 0;
   background-color: ${({ $isDeletedOverlay, $isOverlaySuggestion }) => {
     if ($isOverlaySuggestion) return uiTokens.colors.cardBg;
     if ($isDeletedOverlay) return uiTokens.colors.mutedBg;
@@ -3234,12 +3234,13 @@ const InputField = styled.input`
   font-size: ${uiTokens.typography.fontSizeMd};
   font-weight: 500;
   line-height: 1.35;
+  padding-top: 2px;
   ${({ as, fieldName }) => {
     const baseFieldName = resolveFieldNameBase(fieldName);
     if (as === 'textarea' && (baseFieldName === ADDITIONAL_ACCESS_FIELD || baseFieldName === MULTI_DATA_ACCESS_FIELD)) {
       return css`
-        min-height: 40px;
-        max-height: 120px;
+        min-height: 28px;
+        max-height: 84px;
         resize: vertical;
       `;
     }
@@ -3291,42 +3292,20 @@ const Hint = styled.label`
   }};
   display: flex;
   align-items: center;
-  transition: all 0.2s ease;
-  color: ${uiTokens.colors.textSecondary};
+  top: 0;
+  transform: translateY(-100%);
+  transition: color 0.2s ease;
+  color: ${({ isActive }) => (isActive ? uiTokens.colors.accent : uiTokens.colors.textSecondary)};
   pointer-events: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: ${uiTokens.typography.fontSizeMd};
+  font-size: ${uiTokens.typography.fontSizeSm};
   line-height: 1.25;
-  ${({ isActive }) =>
-    isActive &&
-    css`
-      display: none;
-    `}
 `;
 
 const Placeholder = styled.label`
-  position: absolute;
-  padding-left: 10px;
-  top: 0;
-  transform: translateY(-100%);
-  transition: all 0.2s ease;
-  color: ${uiTokens.colors.textSecondary};
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: ${uiTokens.typography.fontSizeSm};
-  ${({ isActive }) =>
-    isActive &&
-    css`
-      left: 10px;
-      top: 0;
-      transform: translateY(-100%);
-      font-size: ${uiTokens.typography.fontSizeSm};
-      color: ${uiTokens.colors.accent};
-    `}
+  display: none;
 `;
 
 const InputFieldContainer = styled.div`
