@@ -16,7 +16,7 @@ export const inputFieldsEdRowOpu = [
 
 
 export const faceShapeOptions = [
-  { placeholder: 'Oval', ukrainian: 'овальне' },
+  { placeholder: 'Oval', ukrainian: 'Овальне' },
   { placeholder: 'Round', ukrainian: 'Кругле' },
   { placeholder: 'Square', ukrainian: 'Квадратне' },
   { placeholder: 'Rectangle', ukrainian: 'Прямокутне' },
@@ -28,7 +28,7 @@ export const faceShapeOptions = [
 ];
 
 export const noseShapeOptions = [
-  { placeholder: 'Straight', ukrainian: 'прямий' },
+  { placeholder: 'Straight', ukrainian: 'Прямий' },
   { placeholder: 'Aquiline', ukrainian: 'Орлиний' },
   { placeholder: 'Crooked', ukrainian: 'Кирпатий' },
   { placeholder: 'Roman', ukrainian: 'Римський' },
@@ -39,15 +39,15 @@ export const noseShapeOptions = [
 ];
 
 export const lipsShapeOptions = [
-  { placeholder: 'Full', ukrainian: 'повні' },
+  { placeholder: 'Full', ukrainian: 'Повні' },
   { placeholder: 'Thin', ukrainian: 'Тонкі' },
   { placeholder: 'Wide', ukrainian: 'Широкі' },
   { placeholder: 'Plump', ukrainian: 'Пишні' },
 ];
 
 export const chinShapeOptions = [
-  { placeholder: 'Oval', ukrainian: 'овальне' },
-  { placeholder: 'Pointed', ukrainian: 'підборіддя' },
+  { placeholder: 'Oval', ukrainian: 'Овальне' },
+  { placeholder: 'Pointed', ukrainian: 'Гостре' },
   { placeholder: 'Round', ukrainian: 'Кругле' },
   { placeholder: 'Square', ukrainian: 'Квадратне' },
   { placeholder: 'Double', ukrainian: 'Подвійне' },
@@ -150,9 +150,9 @@ export const csectionOptions = [
 
 export const pickerFields = [
 
-  { name: 'name', placeholder: 'Ваше ім’я', svg: 'user', ukrainianHint: 'Ім’я' },
-  { name: 'surname', placeholder: 'Ваше прізвище', svg: 'user', ukrainianHint: 'Прізвище'},
-  { name: 'email', placeholder: 'Електронна пошта', svg: 'mail', ukrainianHint:'E-mail'},
+  { name: 'name', placeholder: 'Ваше ім’я', svg: 'user', ukrainianHint: 'ім’я' },
+  { name: 'surname', placeholder: 'Ваше прізвище', svg: 'user', ukrainianHint: 'прізвище'},
+  { name: 'email', placeholder: 'Електронна пошта', svg: 'mail', ukrainianHint:'e-mail'},
   { name: 'phone', placeholder: '380', svg: 'phone', ukrainianHint:'Номер телефону в форматі +380'},
   { name: 'telegram', placeholder: '@username', svg: 'telegram-plane', ukrainian: 'телеграм', ukrainianHint:'телеграм' },
   { name: 'facebook', placeholder: 'facebook.com/username', svg: 'facebook-f', ukrainian: 'фейсбук', ukrainianHint:'фейсбук' },
