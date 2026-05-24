@@ -145,7 +145,7 @@ const InputField = styled.input`
 
   /* Додати placeholder стилі для роботи з лейблом */
   &::placeholder {
-    color: #9a9a9a;
+    color: transparent; /* Ховаємо текст placeholder */
   }
 `;
 
@@ -165,7 +165,7 @@ const Hint = styled.label`
   align-items: center;
 
   transition: all 0.3s ease;
-  color: #6f6f6f;
+  color: gray;
   pointer-events: none;
   display: flex;
   align-items: center; /* Вирівнює по вертикалі */
@@ -445,37 +445,6 @@ const ButtonGroup = styled.div`
   margin-left: 8px;
   /* width: 100%;  */
   box-sizing: border-box; 
-`;
-
-
-const SectionTitle = styled.div`
-  margin: 24px 0 10px;
-  padding: 0 4px;
-  font-size: 15px;
-  font-weight: 700;
-  color: #333;
-  letter-spacing: 0.2px;
-`;
-
-const SectionDivider = styled.div`
-  height: 1px;
-  background: rgba(0, 0, 0, 0.06);
-  margin: 20px 0 8px;
-`;
-
-const FieldHelpText = styled.div`
-  margin: 4px 0 10px;
-  padding-left: 4px;
-  font-size: 12px;
-  line-height: 1.35;
-  color: #8a8a8a;
-`;
-
-const CharacterCounter = styled.div`
-  margin: 4px 0 10px;
-  text-align: right;
-  font-size: 11px;
-  color: #8a8a8a;
 `;
 
 const Button = styled.button`
@@ -885,12 +854,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     'moreInfo_main',
   ]);
   const visiblePickerFields = pickerFields.filter(field => isDonorRole || visibleNonDonorFields.has(field.name));
-
-  const fieldsWithSections = visiblePickerFields.map((field, index, arr) => ({
-    ...field,
-    showSectionTitle: Boolean(field.section) && field.section !== arr[index - 1]?.section,
-  }));
-
   // const [state, setState] = useState({ eyeColor: '', hairColor: '' });
 
   const handleOpenModal = fieldName => {
@@ -1062,19 +1025,12 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         )}
         {state.userId && <Photos state={state} setState={setState} />}
 
-        {fieldsWithSections.map(field => {
+        {visiblePickerFields.map(field => {
           // console.log('field.options:', field.options);
           const isPickerField = Array.isArray(field.options);
           const isCsectionField = field.name === 'csection';
 
           return (
-            <React.Fragment key={field.name}>
-            {field.showSectionTitle && (
-              <>
-                {field.section !== fieldsWithSections[0]?.section && <SectionDivider />}
-                <SectionTitle>{field.section}</SectionTitle>
-              </>
-            )}
             <PickerContainer>
               <InputDiv key={field.name}>
                 <InputFieldContainer fieldName={field.name} value={state[field.name]}>
@@ -1112,14 +1068,12 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       setShowInfoModal('pickerOptions');
                     }}
                     // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
-                    placeholder={field.displayPlaceholder || field.ukrainian || field.placeholder || ''}
-                    maxLength={field.name === 'moreInfo_main' ? field.maxLength || 300 : undefined}
                     onBlur={() => handleBlur(field.name)}
                   />
                   {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
                 </InputFieldContainer>
 
-                <Hint fieldName={field.name} isActive={state[field.name]}>{field.displayPlaceholder || field.ukrainian || field.placeholder || ''}</Hint>
+                <Hint fieldName={field.name} isActive={state[field.name]}>{field.ukrainian || field.placeholder}</Hint>
                 <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
               </InputDiv>
               {Array.isArray(field.options) && field.options.length === 2 && (
@@ -1167,11 +1121,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </ButtonGroup>
               )}
             </PickerContainer>
-            {field.helpText && <FieldHelpText>{field.helpText}</FieldHelpText>}
-            {field.name === 'moreInfo_main' && (
-              <CharacterCounter>{String(state[field.name] || '').length}/{field.maxLength || 300}</CharacterCounter>
-            )}
-          </React.Fragment>
           );
         })}
         {!state.publish && (
