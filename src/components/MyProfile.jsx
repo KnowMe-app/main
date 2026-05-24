@@ -811,6 +811,8 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setIsLoggedIn(false);
         localStorage.removeItem('isLoggedIn');
         localStorage.removeItem('ownerId');
+        localStorage.removeItem('myProfileDraft');
+        setState(initialProfileState);
         console.log('No user is logged in.');
       }
     });

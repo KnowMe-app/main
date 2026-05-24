@@ -1482,6 +1482,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     try {
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
+      localStorage.removeItem('myProfileDraft');
       localStorage.removeItem('ownerId');
       setState({});
       setIsLoggedIn(false);
