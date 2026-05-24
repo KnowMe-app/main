@@ -9,7 +9,13 @@ import {
   updateDataInRealtimeDB,
   updateDataInNewUsersRTDB,
 } from './config';
-import { pickerFields } from './formFields';
+import {
+  pickerFields,
+  getFieldHint,
+  getFieldLabel,
+  getOptionLabel,
+  getOptionValue,
+} from './formFields';
 import {
   onAuthStateChanged,
   signOut,
@@ -899,7 +905,8 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleSelectOption = option => {
     if (selectedField) {
-      const newValue = option.placeholder === 'Clear' ? '' : option.placeholder;
+      const optionValue = getOptionValue(option);
+      const newValue = optionValue === 'Clear' ? '' : optionValue;
       setState(prevState => {
         const newState = { ...prevState, [selectedField]: newValue };
         handleSubmit(newState);
@@ -1073,8 +1080,8 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
                 </InputFieldContainer>
 
-                <Hint fieldName={field.name} isActive={state[field.name]}>{field.ukrainian || field.placeholder}</Hint>
-                <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                <Hint fieldName={field.name} isActive={state[field.name]}>{getFieldLabel(field)}</Hint>
+                <Placeholder isActive={state[field.name]}>{getFieldHint(field)}</Placeholder>
               </InputDiv>
               {Array.isArray(field.options) && field.options.length === 2 && (
                 <ButtonGroup>
@@ -1108,14 +1115,14 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 <ButtonGroup>
                   {field.options.map(option => (
                     <Button
-                      key={`${field.name}-${option.placeholder}`}
+                      key={`${field.name}-${getOptionValue(option)}`}
                       type="button"
                       onClick={() => {
-                        setState(prevState => ({ ...prevState, [field.name]: option.placeholder }));
+                        setState(prevState => ({ ...prevState, [field.name]: getOptionValue(option) }));
                         handleBlur(field.name);
                       }}
                     >
-                      {option.ukrainian || option.placeholder}
+                      {getOptionLabel(option)}
                     </Button>
                   ))}
                 </ButtonGroup>
