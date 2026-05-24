@@ -656,13 +656,13 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
                         setShowInfoModal('pickerOptions');
                       }
                     }}
-                    // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
+                    placeholder={field.ukrainianHint || field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
                     onBlur={() => handleBlur(field.name)}
                   />
                   {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
                 </InputFieldContainer>
 
-                <Hint fieldName={field.name} isActive={state[field.name]}>{field.ukrainian || field.placeholder}</Hint>
+                <Hint fieldName={field.name} isActive={state[field.name]}>{field.ukrainian || field.ukrainianHint || field.placeholder}</Hint>
                 <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
               </InputDiv>
               {Array.isArray(field.options) && field.name !== 'education' && field.options.length === 2 && (
