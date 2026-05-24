@@ -9,7 +9,6 @@ import { useAutoResize } from '../hooks/useAutoResize';
 import { color, OrangeBtn, uiTokens } from './styles';
 import {
   pickerFieldsExtended as pickerFields,
-  getFieldHint,
   getFieldLabel,
   getFieldPlaceholder,
   getOptionLabel,
