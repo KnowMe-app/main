@@ -852,6 +852,16 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     'moreInfo_main',
   ]);
   const visiblePickerFields = pickerFields.filter(field => isDonorRole || visibleNonDonorFields.has(field.name));
+  const myProfileCustomOrder = ['maritalStatus', 'ownKids', 'csection', 'lastDelivery', 'deliveryDate', 'experience', 'reward'];
+  const orderedPickerFields = [...visiblePickerFields].sort((a, b) => {
+    const aIndex = myProfileCustomOrder.indexOf(a.name);
+    const bIndex = myProfileCustomOrder.indexOf(b.name);
+
+    if (aIndex === -1 && bIndex === -1) return 0;
+    if (aIndex === -1) return 1;
+    if (bIndex === -1) return -1;
+    return aIndex - bIndex;
+  });
   // const [state, setState] = useState({ eyeColor: '', hairColor: '' });
 
   const handleOpenModal = fieldName => {
@@ -1023,7 +1033,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         )}
         {state.userId && <Photos state={state} setState={setState} />}
 
-        {visiblePickerFields.map(field => {
+        {orderedPickerFields.map(field => {
           // console.log('field.options:', field.options);
           const isPickerField = Array.isArray(field.options);
           const isCsectionField = field.name === 'csection';
