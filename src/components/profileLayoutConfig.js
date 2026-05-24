@@ -27,6 +27,8 @@ export const getProfileRole = user => {
   if (['ed', 'egg donor', 'egg_donor'].includes(role)) return 'ed';
   if (['ag', 'agency'].includes(role)) return 'ag';
   if (['ip', 'intended parents', 'intended_parent'].includes(role)) return 'ip';
+  if (['pp'].includes(role)) return 'pp';
+  if (['cl', 'client'].includes(role)) return 'cl';
   if (user?.__sourceCollection === 'newUsers' && !role) return 'ed';
   return 'other';
 };
@@ -170,6 +172,16 @@ const heroFields = {
     field('services', 'Services'),
     field('profession', 'Specialization'),
   ],
+  pp: [
+    field('country', 'Country'),
+    field('city', 'City'),
+    field('services', 'Services'),
+  ],
+  cl: [
+    field('country', 'Country'),
+    field('city', 'City'),
+    field('services', 'Services'),
+  ],
   other: [field('country', 'Country'), field('city', 'City'), field('role', 'Role')],
 };
 
@@ -190,6 +202,18 @@ const quickFacts = {
     field('city', 'City'),
     field('services', 'Services'),
     field('profession', 'Specialization'),
+  ],
+  pp: [
+    field('country', 'Country'),
+    field('city', 'City'),
+    field('services', 'Services'),
+    field('programInterest', 'Program interest'),
+  ],
+  cl: [
+    field('country', 'Country'),
+    field('city', 'City'),
+    field('services', 'Services'),
+    field('programInterest', 'Program interest'),
   ],
   other: [field('country', 'Country'), field('city', 'City'), field('profession', 'Profession')],
 };
@@ -221,6 +245,28 @@ const sectionConfig = {
     { title: 'Agency details', fields: [
       field('agencyName', 'Agency name'), field('country', 'Country'), field('city', 'City'), field('services', 'Services'),
       field('profession', 'Specialization'),
+    ] },
+  ],
+  pp: [
+    { title: 'Main information', fields: [
+      field('country', 'Country'),
+      field('city', 'City'),
+      field('region', 'Region'),
+      field('programInterest', 'Program interest'),
+      field('lookingFor', 'Looking for'),
+      field('budget', 'Budget'),
+      field('services', 'Services'),
+    ] },
+  ],
+  cl: [
+    { title: 'Main information', fields: [
+      field('country', 'Country'),
+      field('city', 'City'),
+      field('region', 'Region'),
+      field('programInterest', 'Program interest'),
+      field('lookingFor', 'Looking for'),
+      field('budget', 'Budget'),
+      field('services', 'Services'),
     ] },
   ],
   other: [

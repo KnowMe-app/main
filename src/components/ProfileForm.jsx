@@ -251,6 +251,12 @@ const HIDDEN_FOR_CL_PP_FIELDS = new Set([
   ...ANTHROPOMETRY_FIELDS,
   ...REPRODUCTIVE_FIELDS,
   ...MEDICAL_LIFESTYLE_FIELDS,
+  'profession',
+  'education',
+  'maritalStatus',
+  'blood',
+  'bloodGroup',
+  'rh',
 ]);
 const SEARCH_ID_INDEXED_FIELDS = new Set([
   'instagram',
