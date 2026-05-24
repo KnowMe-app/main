@@ -470,42 +470,6 @@ const Button = styled.button`
   }
 `;
 
-const CharCounter = styled.div`
-  width: 100%;
-  text-align: right;
-  margin-top: -6px;
-  margin-bottom: 6px;
-  font-size: 12px;
-  color: #8a8a8a;
-`;
-
-const myProfileFieldCopyOverrides = {
-  birth: {
-    ukrainianHint: 'Дата народження',
-  },
-  csection: {
-    ukrainianHint: 'Кесарів розтин',
-  },
-  experience: {
-    ukrainianHint: 'Кількість попередніх донацій',
-  },
-  glasses: {
-    ukrainianHint: 'Окуляри або лінзи',
-  },
-  maritalStatus: {
-    ukrainianHint: 'Сімейний стан',
-  },
-  moreInfo_main: {
-    ukrainianHint: 'Про себе',
-    placeholder: 'Коротко розкажіть про себе, досвід, інтереси або важливі деталі',
-  },
-};
-
-const getMyProfileFieldCopy = field => ({
-  ...field,
-  ...(myProfileFieldCopyOverrides[field.name] || {}),
-});
-
 const initialProfileState = pickerFields.reduce(
   (acc, field) => ({ ...acc, [field.name]: '' }),
   { password: '', userId: '', publish: false }
@@ -1070,10 +1034,8 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         {state.userId && <Photos state={state} setState={setState} />}
 
         {orderedPickerFields.map(field => {
-          const displayField = getMyProfileFieldCopy(field);
-          const moreInfoLength = String(state.moreInfo_main || '').length;
           // console.log('field.options:', field.options);
-          const isPickerField = Array.isArray(displayField.options);
+          const isPickerField = Array.isArray(field.options);
           const isCsectionField = field.name === 'csection';
 
           return (
@@ -1084,7 +1046,6 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     fieldName={field.name}
                     as={field.name === 'moreInfo_main' && 'textarea'}
                     ref={field.name === 'moreInfo_main' ? moreInfoRef : null}
-                    maxLength={field.name === 'moreInfo_main' ? 300 : undefined}
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     value={state[field.name]}
@@ -1092,7 +1053,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     onChange={e => {
                       const value = e?.target?.value;
                       field.name === 'moreInfo_main' && autoResizeMoreInfo(e.target);
-                      const updatedValue = inputUpdateValue(value, displayField)
+                      const updatedValue = inputUpdateValue(value, field)
                       // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
                       setState(prevState => ({ ...prevState, [field.name]: updatedValue }));
                       // } else {
@@ -1120,10 +1081,9 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
                 </InputFieldContainer>
 
-                <Hint fieldName={field.name} isActive={state[field.name]}>{displayField.ukrainian || displayField.placeholder}</Hint>
-                <Placeholder isActive={state[field.name]}>{displayField.ukrainianHint}</Placeholder>
+                <Hint fieldName={field.name} isActive={state[field.name]}>{field.ukrainian || field.placeholder}</Hint>
+                <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
               </InputDiv>
-              {field.name === 'moreInfo_main' && <CharCounter>{moreInfoLength} / 300</CharCounter>}
               {Array.isArray(field.options) && field.options.length === 2 && (
                 <ButtonGroup>
                   <Button
