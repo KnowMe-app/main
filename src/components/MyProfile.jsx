@@ -1080,7 +1080,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </InputFieldContainer>
 
                 <Hint fieldName={field.name} isActive={state[field.name]}>{getFieldLabel(field)}</Hint>
-                <Placeholder isActive={state[field.name]}>{getFieldLabel(field)}</Placeholder>
+                <Placeholder isActive={state[field.name]}>{field.hint || field.ukrainianHint || getFieldLabel(field)}</Placeholder>
               </InputDiv>
               {Array.isArray(field.options) && field.options.length === 2 && (
                 <ButtonGroup>
