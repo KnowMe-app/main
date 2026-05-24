@@ -7,7 +7,14 @@ import Photos from './Photos';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { color, OrangeBtn, uiTokens } from './styles';
-import { pickerFieldsExtended as pickerFields } from './formFields';
+import {
+  pickerFieldsExtended as pickerFields,
+  getFieldHint,
+  getFieldLabel,
+  getFieldPlaceholder,
+  getOptionLabel,
+  getOptionValue,
+} from './formFields';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import {
   formatDateToDisplay,
@@ -103,7 +110,7 @@ const PROFILE_FORM_LABELS = {
 
 const getFieldDisplayLabel = field => {
   const fieldName = resolveFieldNameBase(field?.name);
-  return field?.ukrainian || PROFILE_FORM_LABELS[fieldName] || field?.ukrainianHint || field?.placeholder || fieldName;
+  return getFieldLabel(field) || PROFILE_FORM_LABELS[fieldName] || getFieldPlaceholder(field) || fieldName;
 };
 
 
@@ -2358,7 +2365,8 @@ ${entries.join('\n')}`;
       return;
     }
 
-    const newValue = option.placeholder === 'Clear' ? '' : option.placeholder;
+    const optionValue = getOptionValue(option);
+    const newValue = optionValue === 'Clear' ? '' : optionValue;
     setState(prevState => {
       const newState = { ...prevState, [selectedField]: newValue };
       submitWithNormalization(newState, 'overwrite');
@@ -2588,7 +2596,7 @@ ${entries.join('\n')}`;
                         <Hint fieldName={field.name} isActive={value}>
                           {getFieldDisplayLabel(field)}
                         </Hint>
-                        <Placeholder isActive={value}>{field.ukrainianHint}</Placeholder>
+                        <Placeholder isActive={value}>{getFieldDisplayLabel(field)}</Placeholder>
                       </>
                     )}
                   </InputDiv>
@@ -2782,7 +2790,7 @@ ${entries.join('\n')}`;
                     <Hint fieldName={field.name} isActive={state[field.name]}>
                       {getFieldDisplayLabel(field)}
                     </Hint>
-                    <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                    <Placeholder isActive={state[field.name]}>{getFieldDisplayLabel(field)}</Placeholder>
                   </>
                 )}
               </InputDiv>
@@ -2887,7 +2895,7 @@ ${entries.join('\n')}`;
                 <ButtonGroup>
                   {field.options.map(option => (
                     <Button
-                      key={`${field.name}-${option.placeholder}`}
+                      key={`${field.name}-${getOptionValue(option)}`}
                       type="button"
                       onClick={() => {
                         if (!state.myComment?.trim()) {
@@ -2896,17 +2904,17 @@ ${entries.join('\n')}`;
                         setState(prevState => {
                           const newState = {
                             ...prevState,
-                            [field.name]: option.placeholder,
+                            [field.name]: getOptionValue(option),
                           };
                           submitWithNormalization(newState, 'overwrite');
-                          if (option.placeholder === 'Other') {
+                          if (getOptionValue(option) === 'Other') {
                             handleBlur(field.name);
                           }
                           return newState;
                         });
                       }}
                     >
-                      {option.ukrainian || option.placeholder}
+                      {getOptionLabel(option)}
                     </Button>
                   ))}
                 </ButtonGroup>
@@ -2938,7 +2946,7 @@ ${entries.join('\n')}`;
                   <Hint fieldName={field.name} isActive={entry.value}>
                     {getFieldDisplayLabel(field)}
                   </Hint>
-                  <Placeholder isActive={entry.value}>{field.ukrainianHint}</Placeholder>
+                  <Placeholder isActive={entry.value}>{getFieldDisplayLabel(field)}</Placeholder>
                 </InputDiv>
                 <Button type="button" onClick={() => handleOverlayApply(field.name, entry)}>
                   ОК
