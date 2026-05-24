@@ -104,6 +104,32 @@ const PickerContainer = styled.div`
   }
 `;
 
+const ProfileSectionHeader = styled.div`
+  margin: ${({ $isFirst }) => ($isFirst ? '8px 0 14px' : '30px 0 14px')};
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(255, 143, 0, 0.22);
+  }
+`;
+
+const ProfileSectionTitle = styled.div`
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 143, 0, 0.1);
+  color: #d67800;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+`;
+
 const InputDiv = styled.div`
   display: flex;
   align-items: center;
@@ -854,6 +880,10 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     'moreInfo_main',
   ]);
   const visiblePickerFields = pickerFields.filter(field => isDonorRole || visibleNonDonorFields.has(field.name));
+  const fieldsWithSections = visiblePickerFields.map((field, index, arr) => ({
+    ...field,
+    showSectionTitle: field.section && field.section !== arr[index - 1]?.section,
+  }));
   // const [state, setState] = useState({ eyeColor: '', hairColor: '' });
 
   const handleOpenModal = fieldName => {
@@ -1025,13 +1055,19 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         )}
         {state.userId && <Photos state={state} setState={setState} />}
 
-        {visiblePickerFields.map(field => {
+        {fieldsWithSections.map((field, index) => {
           // console.log('field.options:', field.options);
           const isPickerField = Array.isArray(field.options);
           const isCsectionField = field.name === 'csection';
 
           return (
-            <PickerContainer>
+            <React.Fragment key={field.name}>
+              {field.showSectionTitle && (
+                <ProfileSectionHeader $isFirst={index === 0}>
+                  <ProfileSectionTitle>{field.section}</ProfileSectionTitle>
+                </ProfileSectionHeader>
+              )}
+              <PickerContainer>
               <InputDiv key={field.name}>
                 <InputFieldContainer fieldName={field.name} value={state[field.name]}>
                   <InputField
@@ -1121,6 +1157,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </ButtonGroup>
               )}
             </PickerContainer>
+            </React.Fragment>
           );
         })}
         {!state.publish && (
