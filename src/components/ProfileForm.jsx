@@ -2596,7 +2596,7 @@ ${entries.join('\n')}`;
                         <Hint fieldName={field.name} isActive={value}>
                           {getFieldDisplayLabel(field)}
                         </Hint>
-                        <Placeholder isActive={value}>{getFieldHint(field)}</Placeholder>
+                        <Placeholder isActive={value}>{getFieldDisplayLabel(field)}</Placeholder>
                       </>
                     )}
                   </InputDiv>
@@ -2790,7 +2790,7 @@ ${entries.join('\n')}`;
                     <Hint fieldName={field.name} isActive={state[field.name]}>
                       {getFieldDisplayLabel(field)}
                     </Hint>
-                    <Placeholder isActive={state[field.name]}>{getFieldHint(field)}</Placeholder>
+                    <Placeholder isActive={state[field.name]}>{getFieldDisplayLabel(field)}</Placeholder>
                   </>
                 )}
               </InputDiv>
@@ -2946,7 +2946,7 @@ ${entries.join('\n')}`;
                   <Hint fieldName={field.name} isActive={entry.value}>
                     {getFieldDisplayLabel(field)}
                   </Hint>
-                  <Placeholder isActive={entry.value}>{getFieldHint(field)}</Placeholder>
+                  <Placeholder isActive={entry.value}>{getFieldDisplayLabel(field)}</Placeholder>
                 </InputDiv>
                 <Button type="button" onClick={() => handleOverlayApply(field.name, entry)}>
                   ОК
