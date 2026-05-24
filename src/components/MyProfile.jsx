@@ -11,7 +11,6 @@ import {
 } from './config';
 import {
   pickerFields,
-  getFieldHint,
   getFieldLabel,
   getOptionLabel,
   getOptionValue,
