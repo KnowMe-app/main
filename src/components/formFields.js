@@ -167,7 +167,7 @@ export const pickerFields = [
   { name: 'twitter', placeholder: '@username', svg: 'no', ukrainian: 'твітер / x', ukrainianHint:'твітер / x' },
   { name: 'linkedin', placeholder: 'linkedin.com/in/username', svg: 'no', ukrainian: 'лінкедін', ukrainianHint:'лінкедін' },
   { name: 'youtube', placeholder: 'youtube.com/@channel', svg: 'no', ukrainian: 'ютуб', ukrainianHint:'ютуб' },
-  { name: 'vk', placeholder: '0107655', hint: '0107655', svg: 'vk', ukrainian: 'вконтакті', ukrainianHint:'вконтакті' },
+  { name: 'vk', placeholder: '0107655', hint: '0107655', svg: 'vk', ukrainian: '', ukrainianHint:'' },
 
   // медичне
   { name: 'blood', placeholder: '3+', hint: 'група крові та резус / 3+', svg: 'no', ukrainianHint: 'група крові та резус / 3+'  },
