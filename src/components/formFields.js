@@ -160,14 +160,14 @@ export const pickerFields = [
   // контакти
   { name: 'email', placeholder: 'name@example.com', svg: 'mail', ukrainianHint:'e-mail'},
   { name: 'phone', placeholder: '+380 67 123 45 67', svg: 'phone', ukrainianHint:'номер телефону'},
-  { name: 'telegram', placeholder: '@username або t.me/username', svg: 'telegram-plane', ukrainian: 'телеграм', ukrainianHint:'телеграм' },
-  { name: 'facebook', placeholder: 'facebook.com/username', svg: 'facebook-f', ukrainian: 'фейсбук', ukrainianHint:'фейсбук' },
-  { name: 'instagram', placeholder: '@username', svg: 'instagram', ukrainian: 'інстаграм', ukrainianHint:'інстаграм' },
-  { name: 'tiktok', placeholder: '@username', svg: 'tiktok', ukrainian: 'тікток', ukrainianHint:'тікток' },
-  { name: 'twitter', placeholder: '@username', svg: 'no', ukrainian: 'твітер / x', ukrainianHint:'твітер / x' },
-  { name: 'linkedin', placeholder: 'linkedin.com/in/username', svg: 'no', ukrainian: 'лінкедін', ukrainianHint:'лінкедін' },
-  { name: 'youtube', placeholder: 'youtube.com/@channel', svg: 'no', ukrainian: 'ютуб', ukrainianHint:'ютуб' },
-  { name: 'vk', placeholder: '0107655', hint: '0107655', svg: 'vk', ukrainian: '', ukrainianHint:'' },
+  { name: 'telegram', placeholder: 'username', svg: 'telegram-plane', ukrainian: 'телеграм', ukrainianHint:'телеграм' },
+  { name: 'facebook', placeholder: 'username', svg: 'facebook-f', ukrainian: 'фейсбук', ukrainianHint:'фейсбук' },
+  { name: 'instagram', placeholder: 'username', svg: 'instagram', ukrainian: 'інстаграм', ukrainianHint:'інстаграм' },
+  { name: 'tiktok', placeholder: 'username', svg: 'tiktok', ukrainian: 'тікток', ukrainianHint:'тікток' },
+  { name: 'twitter', placeholder: 'username', svg: 'no', ukrainian: 'твітер / x', ukrainianHint:'твітер / x' },
+  { name: 'linkedin', placeholder: 'username', svg: 'no', ukrainian: 'лінкедін', ukrainianHint:'лінкедін' },
+  { name: 'youtube', placeholder: 'username', svg: 'no', ukrainian: 'ютуб', ukrainianHint:'ютуб' },
+  { name: 'vk', placeholder: 'username', hint: 'username', svg: 'vk', ukrainian: '', ukrainianHint:'' },
 
   // медичне
   { name: 'blood', placeholder: '3+', hint: 'група крові та резус / 3+', svg: 'no', ukrainianHint: 'група крові та резус / 3+'  },
@@ -317,8 +317,8 @@ export const pickerFieldsExtended = [
   // { name: 'email', placeholder: 'Електронна пошта', svg: 'mail', ukrainianHint:'E-mail'},
   // { name: 'phone', placeholder: '380', svg: 'phone', ukrainianHint:'номер телефону в форматі +380'},
   // { name: 'telegram', placeholder: '@username', svg: 'telegram-plane', ukrainian: 'телеграм', ukrainianHint:'телеграм' },
-  // { name: 'facebook', placeholder: 'facebook.com/username', svg: 'facebook-f', ukrainian: 'фейсбук', ukrainianHint:'фейсбук' },
-  // { name: 'instagram', placeholder: '@username', svg: 'instagram', ukrainian: 'інстаграм', ukrainianHint:'інстаграм' },
+  // { name: 'facebook', placeholder: 'username', svg: 'facebook-f', ukrainian: 'фейсбук', ukrainianHint:'фейсбук' },
+  // { name: 'instagram', placeholder: 'username', svg: 'instagram', ukrainian: 'інстаграм', ukrainianHint:'інстаграм' },
   
   ...pickerFields,
 
