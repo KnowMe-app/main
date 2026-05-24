@@ -208,6 +208,25 @@ const Placeholder = styled.label`
   `}
 `;
 
+
+const CharacterCounter = styled.div`
+  margin-top: 4px;
+  padding-right: 4px;
+  text-align: right;
+  font-size: 11px;
+  color: ${({ count }) => {
+    if (count >= 290) return '#ffb347';
+    if (count >= 250) return 'rgba(255,255,255,0.65)';
+    return 'rgba(255,255,255,0.45)';
+  }};
+  line-height: 1.2;
+  width: 100%;
+  pointer-events: none;
+  @media (max-width: 768px) {
+    padding-right: 6px;
+  }
+`;
+
 const StatusMessage = styled.div`
   color: ${({ published }) => (published ? 'green' : 'red')};
   font-weight: bold;
@@ -1040,6 +1059,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     ref={field.name === 'moreInfo_main' ? moreInfoRef : null}
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
+                    maxLength={field.maxLength}
                     value={state[field.name]}
                     readOnly={isPickerField && !isCsectionField}
                     onChange={e => {
@@ -1072,6 +1092,11 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   />
                   {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
                 </InputFieldContainer>
+                {field.name === 'moreInfo_main' && (
+                  <CharacterCounter count={state[field.name]?.length || 0}>
+                    {(state[field.name] || '').length}/{field.maxLength || 300}
+                  </CharacterCounter>
+                )}
 
                 <Hint fieldName={field.name} isActive={state[field.name]}>{field.ukrainian || field.placeholder}</Hint>
                 <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>

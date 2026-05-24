@@ -295,6 +295,7 @@ export const pickerFields = [
     hint: 'extra info',
     svg: 'no',
     width: '100%',
+    maxLength: 300,
     ukrainian: 'Більше про себе... (макс 300 символів)',
     ukrainianHint: 'додаткова інформація',
   },
