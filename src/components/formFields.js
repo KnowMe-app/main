@@ -152,15 +152,15 @@ export const pickerFields = [
   // Основна інформація
   { name: 'name', placeholder: 'Ваше ім’я', displayPlaceholder: 'Ваше ім’я', svg: 'user', ukrainianHint: 'Ім’я', section: 'Основна інформація' },
   { name: 'surname', placeholder: 'Ваше прізвище', displayPlaceholder: 'Ваше прізвище', svg: 'user', ukrainianHint: 'Прізвище', section: 'Основна інформація' },
-  { name: 'birth', placeholder: 'дд.мм.рррр', displayPlaceholder: 'дд.мм.рррр', hint: 'DOB', svg: 'no', width: '33%', ukrainianHint: 'Дата народження', helpText: 'Формат: день.місяць.рік', section: 'Основна інформація' },
+  { name: 'birth', placeholder: 'дд.мм.рррр', displayPlaceholder: 'дд.мм.рррр', hint: 'DOB', svg: 'no', width: '33%', ukrainianHint: 'Дата народження', section: 'Основна інформація' },
   { name: 'country', placeholder: 'україна', displayPlaceholder: 'Наприклад: Україна', hint: 'country', svg: 'no', width: '33%', ukrainian: 'країна', ukrainianHint: 'Країна проживання', section: 'Основна інформація' },
   { name: 'region', placeholder: 'київська', displayPlaceholder: 'Наприклад: Київська область', hint: 'region', svg: 'no', width: '33%', ukrainian: 'область', ukrainianHint: 'Область', section: 'Основна інформація' },
   { name: 'city', placeholder: 'буча', displayPlaceholder: 'Наприклад: Київ', hint: 'city', svg: 'no', width: '33%', ukrainian: 'місто', ukrainianHint: 'Місто', section: 'Основна інформація' },
 
   // Контакти
-  { name: 'phone', placeholder: '+380 67 123 45 67', displayPlaceholder: '+380 67 123 45 67', svg: 'phone', ukrainianHint: 'Номер телефону', helpText: 'Вкажіть номер у міжнародному форматі.', section: 'Контакти' },
+  { name: 'phone', placeholder: '+380 67 123 45 67', displayPlaceholder: '+380 67 123 45 67', svg: 'phone', ukrainianHint: 'Номер телефону', section: 'Контакти' },
   { name: 'email', placeholder: 'name@example.com', displayPlaceholder: 'name@example.com', svg: 'mail', ukrainianHint: 'Email', section: 'Контакти' },
-  { name: 'telegram', placeholder: '@username або t.me/username', displayPlaceholder: '@username або t.me/username', svg: 'telegram-plane', ukrainian: 'телеграм', ukrainianHint: 'Telegram', helpText: 'Можна вказати username або посилання.', section: 'Контакти' },
+  { name: 'telegram', placeholder: '@username або t.me/username', displayPlaceholder: '@username або t.me/username', svg: 'telegram-plane', ukrainian: 'телеграм', ukrainianHint: 'Telegram', section: 'Контакти' },
   { name: 'instagram', placeholder: '@username', displayPlaceholder: '@username', svg: 'instagram', ukrainian: 'інстаграм', ukrainianHint: 'Instagram', section: 'Контакти' },
   { name: 'facebook', placeholder: 'facebook.com/username', displayPlaceholder: 'facebook.com/username', svg: 'facebook-f', ukrainian: 'фейсбук', ukrainianHint: 'Facebook', section: 'Контакти' },
   { name: 'tiktok', placeholder: '@username', displayPlaceholder: '@username', svg: 'tiktok', ukrainian: 'тікток', ukrainianHint: 'TikTok', section: 'Контакти' },
@@ -171,18 +171,18 @@ export const pickerFields = [
 
   // Сім’я та досвід
   { name: 'maritalStatus', placeholder: 'Оберіть варіант', displayPlaceholder: 'Оберіть або впишіть сімейний стан', hint: 'officially married', svg: 'no', width: '33%', options: yesNoOptions, ukrainian: 'сімейний стан', ukrainianHint: 'Сімейний стан', section: 'Сім’я та досвід' },
-  { name: 'ownKids', placeholder: '1', displayPlaceholder: 'Наприклад: 1', hint: 'own kids', svg: 'no', ukrainian: 'кількість пологів', ukrainianHint: 'Кількість пологів', helpText: 'Вкажіть кількість пологів, а не кількість дітей.', section: 'Сім’я та досвід' },
-  { name: 'lastDelivery', placeholder: 'дд.мм.рррр', displayPlaceholder: 'дд.мм.рррр', hint: 'last delivery', svg: 'no', width: '33%', ukrainianHint: 'Дата останніх пологів', helpText: 'Якщо пологів не було, залиште поле порожнім або вкажіть “Ні”.', section: 'Сім’я та досвід' },
-  { name: 'csection', placeholder: 'Оберіть: Ні / 1 / 2', displayPlaceholder: 'Оберіть: Ні / 1 / 2', hint: 'c-section', svg: 'no', width: '33%', options: csectionOptions, ukrainianHint: 'Кесарів розтин', helpText: 'Вкажіть, чи був кесарів розтин і скільки разів.', section: 'Сім’я та досвід' },
-  { name: 'experience', placeholder: '2', displayPlaceholder: 'Наприклад: 0, 1 або 2', hint: 'donatin exp?', svg: 'no', width: '33%', ukrainianHint: 'Кількість попередніх донацій', helpText: 'Скільки разів уже були донації ооцитів.', section: 'Сім’я та досвід' },
+  { name: 'ownKids', placeholder: '1', displayPlaceholder: 'Наприклад: 1', hint: 'own kids', svg: 'no', ukrainian: 'кількість пологів', ukrainianHint: 'Кількість пологів', section: 'Сім’я та досвід' },
+  { name: 'lastDelivery', placeholder: 'дд.мм.рррр', displayPlaceholder: 'дд.мм.рррр', hint: 'last delivery', svg: 'no', width: '33%', ukrainianHint: 'Дата останніх пологів', section: 'Сім’я та досвід' },
+  { name: 'csection', placeholder: 'Оберіть: Ні / 1 / 2', displayPlaceholder: 'Оберіть: Ні / 1 / 2', hint: 'c-section', svg: 'no', width: '33%', options: csectionOptions, ukrainianHint: 'Кесарів розтин', section: 'Сім’я та досвід' },
+  { name: 'experience', placeholder: '2', displayPlaceholder: 'Наприклад: 0, 1 або 2', hint: 'donatin exp?', svg: 'no', width: '33%', ukrainianHint: 'Кількість попередніх донацій', section: 'Сім’я та досвід' },
   { name: 'twinsInFamily', placeholder: '-', displayPlaceholder: 'Оберіть: Так / Ні / Інше', hint: 'Twins in the family?', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'Чи були двійнята в родині?', section: 'Сім’я та досвід' },
 
   // Медична інформація
-  { name: 'blood', placeholder: '3+', displayPlaceholder: 'Наприклад: 3+', hint: 'група крові та резус / 3+', svg: 'no', ukrainianHint: 'Група крові та резус', helpText: 'Наприклад: 1+, 2-, 3+, 4-.', section: 'Медична інформація' },
-  { name: 'allergy', placeholder: 'пеніцилін', displayPlaceholder: 'Наприклад: пеніцилін або Ні', hint: 'Allergy', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'Алергії', helpText: 'Якщо алергій немає, оберіть “Ні” або впишіть “Ні”.', section: 'Медична інформація' },
-  { name: 'chronicDiseases', placeholder: '-', displayPlaceholder: 'Наприклад: астма або Ні', hint: 'Chronic diseases', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'Хронічні захворювання', helpText: 'Якщо хронічних захворювань немає, оберіть “Ні”.', section: 'Медична інформація' },
-  { name: 'surgeries', placeholder: 'апендицит у 2021', displayPlaceholder: 'Наприклад: апендицит у 2021 або Ні', hint: 'surgeries', svg: 'no', width: '33%', options: yesNoOptions, ukrainian: 'перенесені операції', ukrainianHint: 'Перенесені операції', helpText: 'Вкажіть важливі перенесені операції або оберіть “Ні”.', section: 'Медична інформація' },
-  { name: 'glasses', placeholder: '-2.5', displayPlaceholder: 'Наприклад: -2.5 або Ні', hint: 'glasses', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'Окуляри / зір', helpText: 'Можна вказати діоптрії або обрати “Ні”.', section: 'Медична інформація' },
+  { name: 'blood', placeholder: '3+', displayPlaceholder: 'Наприклад: 3+', hint: 'група крові та резус / 3+', svg: 'no', ukrainianHint: 'Група крові та резус', section: 'Медична інформація' },
+  { name: 'allergy', placeholder: 'пеніцилін', displayPlaceholder: 'Наприклад: пеніцилін або Ні', hint: 'Allergy', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'Алергії', section: 'Медична інформація' },
+  { name: 'chronicDiseases', placeholder: '-', displayPlaceholder: 'Наприклад: астма або Ні', hint: 'Chronic diseases', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'Хронічні захворювання', section: 'Медична інформація' },
+  { name: 'surgeries', placeholder: 'апендицит у 2021', displayPlaceholder: 'Наприклад: апендицит у 2021 або Ні', hint: 'surgeries', svg: 'no', width: '33%', options: yesNoOptions, ukrainian: 'перенесені операції', ukrainianHint: 'Перенесені операції', section: 'Медична інформація' },
+  { name: 'glasses', placeholder: '-2.5', displayPlaceholder: 'Наприклад: -2.5 або Ні', hint: 'glasses', svg: 'no', width: '33%', options: yesNoOptions, ukrainianHint: 'Окуляри / зір', section: 'Медична інформація' },
 
   // Параметри
   { name: 'height', placeholder: '168', displayPlaceholder: 'Наприклад: 168', hint: 'cm', svg: 'no', ukrainian: 'зріст', ukrainianHint: 'Зріст, см', section: 'Параметри' },
@@ -213,8 +213,8 @@ export const pickerFields = [
   { name: 'profession', placeholder: 'Лікар', displayPlaceholder: 'Наприклад: вчитель, менеджер, лікар', hint: 'profession', svg: 'no', width: '33%', ukrainian: 'професія', ukrainianHint: 'Професія', section: 'Освіта та робота' },
 
   // Додаткова інформація
-  { name: 'reward', placeholder: '500', displayPlaceholder: 'Наприклад: 500', hint: '$ reward', svg: 'no', ukrainianHint: 'Бажана винагорода, $', helpText: 'Сума, яку ви хотіли б отримати за участь у програмі.', section: 'Додаткова інформація' },
-  { name: 'moreInfo_main', placeholder: 'Більше про себе... (макс 300 символів)', displayPlaceholder: 'Коротко про себе, інтереси, характер або спосіб життя', hint: 'extra info', svg: 'no', width: '100%', ukrainian: 'Більше про себе... (макс 300 символів)', ukrainianHint: 'Про себе', helpText: 'До 300 символів. Напишіть коротко про себе.', maxLength: 300, section: 'Додаткова інформація' },
+  { name: 'reward', placeholder: '500', displayPlaceholder: 'Наприклад: 500', hint: '$ reward', svg: 'no', ukrainianHint: 'Бажана винагорода, $', section: 'Додаткова інформація' },
+  { name: 'moreInfo_main', placeholder: 'Більше про себе... (макс 300 символів)', displayPlaceholder: 'Коротко про себе, інтереси, характер або спосіб життя', hint: 'extra info', svg: 'no', width: '100%', ukrainian: 'Більше про себе... (макс 300 символів)', ukrainianHint: 'Про себе', maxLength: 300, section: 'Додаткова інформація' },
 
 ];
 
