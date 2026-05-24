@@ -92,7 +92,7 @@ export const getFieldsToRender = state => {
     ...additionalFields.map(key => ({
       name: key,
       placeholder: key,
-      ukrainianHint: key,
+      ukrainianHint: PROFILE_FORM_LABELS[key] || key,
     })),
   ];
 };
@@ -109,7 +109,8 @@ const PROFILE_FORM_LABELS = {
 
 const getFieldDisplayLabel = field => {
   const fieldName = resolveFieldNameBase(field?.name);
-  return getFieldLabel(field) || PROFILE_FORM_LABELS[fieldName] || getFieldPlaceholder(field) || fieldName;
+
+  return PROFILE_FORM_LABELS[fieldName] || getFieldLabel(field) || getFieldPlaceholder(field) || fieldName;
 };
 
 

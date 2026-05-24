@@ -7,8 +7,14 @@ export const inputFields = [
   
 ];
 
-export const getFieldLabel = field =>
-  field?.label ?? field?.ukrainianHint ?? field?.ukrainian ?? field?.hint ?? field?.name ?? '';
+const hasDisplayText = value => typeof value === 'string' ? value.trim() !== '' : value != null;
+
+export const getFieldLabel = field => {
+  const candidates = [field?.label, field?.ukrainianHint, field?.ukrainian, field?.hint, field?.name];
+  const firstValue = candidates.find(hasDisplayText);
+
+  return firstValue ?? '';
+};
 
 export const getFieldPlaceholder = field => field?.placeholder ?? '';
 

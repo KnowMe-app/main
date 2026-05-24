@@ -663,7 +663,7 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
                 </InputFieldContainer>
 
                 <Hint fieldName={field.name} isActive={state[field.name]}>{field.ukrainian || field.placeholder}</Hint>
-                <Placeholder isActive={state[field.name]}>{field.ukrainianHint}</Placeholder>
+                <Placeholder isActive={state[field.name]}>{field.ukrainianHint || field.label || field.ukrainian || field.placeholder}</Placeholder>
               </InputDiv>
               {Array.isArray(field.options) && field.name !== 'education' && field.options.length === 2 && (
                 <ButtonGroup>
