@@ -374,11 +374,8 @@ const InputFieldContainer = styled.div`
   &::before {
     content: ${({ fieldName, value }) => {
   if (fieldName === 'phone') return "'+'";
-  const hasAtPrefix = typeof value === 'string' && value.trim().startsWith('@');
-  if (fieldName === 'telegram' || fieldName === 'instagram' || fieldName === 'tiktok' || fieldName === 'twitter') {
-    return hasAtPrefix ? "''" : "'@'";
-  }
-  if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : hasAtPrefix ? "''" : "'@'";
+  if (fieldName === 'telegram' || fieldName === 'instagram'|| fieldName === 'tiktok') return "'@'";
+  if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
   if (fieldName === 'vk') return (/^\d+$/.test(value) || value === '' || value === undefined) ? "'id'" : "''";
   return "''";
 }};
@@ -452,21 +449,27 @@ const ButtonGroup = styled.div`
 
 
 const SectionTitle = styled.div`
-  margin: 26px 0 12px;
-  padding: 0 2px;
-  font-size: 19px;
-  font-weight: 800;
-  line-height: 1.2;
-  color: #1f2328;
-  letter-spacing: 0.1px;
+  margin: 24px 0 10px;
+  padding: 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #333;
+  letter-spacing: 0.2px;
 `;
 
 const SectionDivider = styled.div`
   height: 1px;
-  background: linear-gradient(to right, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.04));
-  margin: 22px 0 10px;
+  background: rgba(0, 0, 0, 0.06);
+  margin: 20px 0 8px;
 `;
 
+const FieldHelpText = styled.div`
+  margin: 4px 0 10px;
+  padding-left: 4px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #8a8a8a;
+`;
 
 const CharacterCounter = styled.div`
   margin: 4px 0 10px;
@@ -1164,6 +1167,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </ButtonGroup>
               )}
             </PickerContainer>
+            {field.helpText && <FieldHelpText>{field.helpText}</FieldHelpText>}
             {field.name === 'moreInfo_main' && (
               <CharacterCounter>{String(state[field.name] || '').length}/{field.maxLength || 300}</CharacterCounter>
             )}
