@@ -110,7 +110,13 @@ const PROFILE_FORM_LABELS = {
 const getFieldDisplayLabel = field => {
   const fieldName = resolveFieldNameBase(field?.name);
 
-  return PROFILE_FORM_LABELS[fieldName] || getFieldLabel(field) || getFieldPlaceholder(field) || fieldName;
+  return PROFILE_FORM_LABELS[fieldName] || getFieldLabel(field) || fieldName;
+};
+
+const getFieldPlaceholderText = field => {
+  const fieldName = resolveFieldNameBase(field?.name);
+
+  return getFieldPlaceholder(field) || PROFILE_FORM_LABELS[fieldName] || getFieldLabel(field) || fieldName;
 };
 
 
@@ -2596,7 +2602,7 @@ ${entries.join('\n')}`;
                         <Hint fieldName={field.name} isActive={value}>
                           {getFieldDisplayLabel(field)}
                         </Hint>
-                        <Placeholder isActive={value}>{getFieldDisplayLabel(field)}</Placeholder>
+                        <Placeholder isActive={value}>{getFieldPlaceholderText(field)}</Placeholder>
                       </>
                     )}
                   </InputDiv>
@@ -2790,7 +2796,7 @@ ${entries.join('\n')}`;
                     <Hint fieldName={field.name} isActive={state[field.name]}>
                       {getFieldDisplayLabel(field)}
                     </Hint>
-                    <Placeholder isActive={state[field.name]}>{getFieldDisplayLabel(field)}</Placeholder>
+                    <Placeholder isActive={state[field.name]}>{getFieldPlaceholderText(field)}</Placeholder>
                   </>
                 )}
               </InputDiv>
