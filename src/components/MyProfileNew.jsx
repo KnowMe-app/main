@@ -113,6 +113,8 @@ export const MyProfileNew = () => {
   const [activeTab, setActiveTab] = useState('personal');
   const [customOptionMode, setCustomOptionMode] = useState({});
   const sectionRefs = useRef({});
+  const tabsRef = useRef(null);
+  const tabRefs = useRef({});
   const isManualScrollRef = useRef(false);
   const latestFetchUidRef = useRef('');
 
@@ -223,6 +225,16 @@ export const MyProfileNew = () => {
     return () => observer.disconnect();
   }, []);
 
+
+  useEffect(() => {
+    const tabsEl = tabsRef.current;
+    const activeTabEl = tabRefs.current[activeTab];
+
+    if (!tabsEl || !activeTabEl) return;
+
+    activeTabEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [activeTab]);
+
   const save = async () => {
     if (!userId) return;
     const { existingData } = await fetchUserData(userId);
@@ -319,11 +331,12 @@ export const MyProfileNew = () => {
       </div>
     </ProgressWrap>
 
-      <Tabs>
+      <Tabs ref={tabsRef}>
         {sections.map(s => {
           const info = sectionProgress[s.key] || {};
           return <Tab
             key={s.key}
+            ref={node => { tabRefs.current[s.key] = node; }}
             active={activeTab === s.key}
             complete={Boolean(info.complete)}
             type="button"
