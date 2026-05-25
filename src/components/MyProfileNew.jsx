@@ -202,43 +202,45 @@ export const MyProfileNew = () => {
     return <Field key={name}>
       <Label>{getFieldLabel(field)}</Label>
       {Array.isArray(field.options) && field.options.length > 0 ? (
-        <ChipRow>
-          {field.options.map(option => {
-            const optionValue = getOptionValue(option);
-            const selected = String(val) === String(optionValue);
-            return <Chip
-              key={`${name}-${optionValue}`}
-              selected={selected}
-              onClick={() => setState(prev => ({ ...prev, [name]: optionValue }))}
-              type="button"
-            >
-              {getOptionLabel(option)}
-            </Chip>;
-          })}
-          {isAppearanceField ? (
-            <Chip
-              key={`${name}-custom-option`}
-              selected={customSelected}
-              onClick={() => {
-                if (!customSelected) {
-                  setState(prev => ({ ...prev, [name]: '' }));
-                }
-              }}
-              type="button"
-            >
-              Свій варіант
-            </Chip>
-          ) : null}
-        </ChipRow>
-        {isAppearanceField && customSelected ? (
-          <CustomOptionWrap>
+        <>
+          <ChipRow>
+            {field.options.map(option => {
+              const optionValue = getOptionValue(option);
+              const selected = String(val) === String(optionValue);
+              return <Chip
+                key={`${name}-${optionValue}`}
+                selected={selected}
+                onClick={() => setState(prev => ({ ...prev, [name]: optionValue }))}
+                type="button"
+              >
+                {getOptionLabel(option)}
+              </Chip>;
+            })}
+            {isAppearanceField ? (
+              <Chip
+                key={`${name}-custom-option`}
+                selected={customSelected}
+                onClick={() => {
+                  if (!customSelected) {
+                    setState(prev => ({ ...prev, [name]: '' }));
+                  }
+                }}
+                type="button"
+              >
+                Свій варіант
+              </Chip>
+            ) : null}
+          </ChipRow>
+          {isAppearanceField && customSelected ? (
+            <CustomOptionWrap>
               <Input
-              value={val}
-              placeholder="Введіть свій варіант"
-              onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
-            />
-          </CustomOptionWrap>
-        ) : null}
+                value={val}
+                placeholder="Введіть свій варіант"
+                onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
+              />
+            </CustomOptionWrap>
+          ) : null}
+        </>
       ) : isTextArea ? (
         <TextArea value={val} placeholder={getFieldPlaceholder(field)} onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))} />
       ) : (
