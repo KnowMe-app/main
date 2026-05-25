@@ -4,6 +4,7 @@ import { auth, fetchUserData, updateDataInFiresoreDB, updateDataInRealtimeDB } f
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged } from 'firebase/auth';
+import Photos from './Photos';
 
 const Page = styled.div`
   --accent: #E8791A;
@@ -80,9 +81,18 @@ const PhotoSection = styled.div`
 `;
 const AvatarRing = styled.div`position:relative;flex-shrink:0;`;
 const AvatarImg = styled.div`
-  width:72px;height:72px;border-radius:50%;
-  background: linear-gradient(135deg, #FFE0B2, #FFCC80);
-  display:flex;align-items:center;justify-content:center;font-size:28px;
+  width:72px;
+  height:72px;
+  border-radius:50%;
+  background: ${({ $photo }) =>
+    $photo
+      ? `center / cover no-repeat url(${$photo})`
+      : 'linear-gradient(135deg, #FFE0B2, #FFCC80)'};
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:28px;
+  overflow:hidden;
 `;
 const AvatarBadge = styled.div`
   position:absolute;bottom:0;right:0;width:22px;height:22px;border-radius:50%;
@@ -92,7 +102,6 @@ const PhotoBtn = styled.button`
   margin-left:auto;padding:8px 16px;background:var(--accent-light);color:var(--accent);
   border-radius:8px;font-size:13px;font-weight:600;border:none;
 `;
-
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
 
@@ -189,6 +198,8 @@ export const MyProfileNew = () => {
     await updateDataInRealtimeDB(userId, uploadedInfo);
     await updateDataInFiresoreDB(userId, uploadedInfo, 'check', { password: true });
   };
+
+  const mainProfilePhoto = Array.isArray(state.photos) && state.photos.length > 0 ? state.photos[0] : '';
 
   const renderField = (name) => {
     const field = fieldsMap.get(name);
@@ -289,15 +300,17 @@ export const MyProfileNew = () => {
 
     <PhotoSection>
       <AvatarRing>
-        <AvatarImg>🧑</AvatarImg>
+        <AvatarImg $photo={mainProfilePhoto}>{mainProfilePhoto ? '' : '🧑'}</AvatarImg>
         <AvatarBadge>+</AvatarBadge>
       </AvatarRing>
       <div>
         <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>Фото профілю</h4>
         <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото.<br />Перше — головне.</p>
       </div>
-      <PhotoBtn type="button">Додати</PhotoBtn>
+      <PhotoBtn type="button">{mainProfilePhoto ? 'Змінити' : 'Додати'}</PhotoBtn>
     </PhotoSection>
+
+    <Photos state={{ ...state, userId }} setState={setState} />
 
     {sections.map(section => (
       <Card key={section.key} ref={node => { sectionRefs.current[section.key] = node; }}>
