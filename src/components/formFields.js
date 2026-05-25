@@ -240,15 +240,15 @@ export const pickerFields = [
 ];
 
 export const pickerFieldsExtended = [
-  { name: 'userId', label: 'ID користувача', placeholder: 'id123456', svg: 'user', ukrainian: 'id користувача', ukrainianHint: 'id користувача' },
-  { name: 'role', label: 'Роль', placeholder: 'см / до / смдо / агент', svg: 'user', ukrainian: 'роль', ukrainianHint: 'роль користувача' },
-  { name: 'myComment', label: 'Коментар', placeholder: 'внутрішній коментар', svg: 'user', ukrainian: 'коментар', ukrainianHint: 'коментар' },
-  { name: 'getInTouch', label: 'Коли звернутись', placeholder: '30.01.2025', svg: 'user', ukrainian: 'коли звернутись', ukrainianHint: 'коли звернутись' },
-  { name: 'lastAction', label: 'Останні зміни', placeholder: '-', svg: 'user', ukrainian: 'останні зміни', ukrainianHint: 'останні зміни' },
-  { name: 'lastLogin2', label: 'Останній логін', placeholder: '-', svg: 'user', ukrainian: 'останній логін', ukrainianHint: 'останній логін' },
-  { name: 'publish', label: 'Опубліковано', placeholder: 'false', svg: 'user', ukrainian: 'опубліковано', ukrainianHint: 'анкета опублікована' },
-  { name: 'fathersname', label: 'По батькові', placeholder: 'по батькові', svg: 'user', ukrainian: 'по батькові', ukrainianHint: 'по батькові' },
-  { name: 'otherLink', label: 'Додатковий лінк', placeholder: 'https://example.com', svg: 'user', ukrainian: 'додатковий лінк', ukrainianHint: 'додатковий лінк' },
+  { name: 'userId', placeholder: 'id123456', svg: 'user', ukrainian: 'id користувача', ukrainianHint: 'id користувача' },
+  { name: 'role', placeholder: 'см / до / смдо / агент', svg: 'user', ukrainian: 'роль', ukrainianHint: 'роль користувача' },
+  { name: 'myComment', placeholder: 'внутрішній коментар', svg: 'user', ukrainian: 'коментар', ukrainianHint: 'коментар' },
+  { name: 'getInTouch', placeholder: '30.01.2025', svg: 'user', ukrainian: 'коли звернутись', ukrainianHint: 'коли звернутись' },
+  { name: 'lastAction', placeholder: '-', svg: 'user', ukrainian: 'останні зміни', ukrainianHint: 'останні зміни' },
+  { name: 'lastLogin2', placeholder: '-', svg: 'user', ukrainian: 'останній логін', ukrainianHint: 'останній логін' },
+  { name: 'publish', placeholder: 'false', svg: 'user', ukrainian: 'опубліковано', ukrainianHint: 'анкета опублікована' },
+  { name: 'fathersname', placeholder: 'по батькові', svg: 'user', ukrainian: 'по батькові', ukrainianHint: 'по батькові' },
+  { name: 'otherLink', placeholder: 'https://example.com', svg: 'user', ukrainian: 'додатковий лінк', ukrainianHint: 'додатковий лінк' },
 
   // { name: 'name', placeholder: 'Ваше ім’я', svg: 'user', ukrainianHint: 'Ім’я' },
   // { name: 'surname', placeholder: 'Ваше призіище', svg: 'user', ukrainianHint: 'Прізвище'},
