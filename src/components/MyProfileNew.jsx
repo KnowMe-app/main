@@ -21,12 +21,6 @@ const Page = styled.div`
   color: var(--text);
   min-height: 100vh;
 `;
-const CompareBanner = styled.div`
-  background: linear-gradient(135deg, #1A1A1A 0%, #2D2D2D 100%);
-  color: #fff;
-  text-align: center;
-  padding: 20px;
-`;
 const Topbar = styled.div`
   background: var(--card);
   border-bottom: 1px solid var(--border);
@@ -289,11 +283,6 @@ export const MyProfileNew = () => {
   };
 
   return <Page>
-    <CompareBanner>
-      <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: 22, marginBottom: 6 }}>Редизайн <span style={{ color: '#F5A24B', fontStyle: 'italic' }}>анкети</span></h2>
-      <p style={{ color: '#aaa', fontSize: 12 }}>Пропозиції покращення UI/UX</p>
-    </CompareBanner>
-
     <StickyHeader>
       <Topbar>
         <div style={{ fontFamily: 'Playfair Display, serif', fontSize: 18 }}>Know<span style={{ color: '#E8791A', fontStyle: 'italic' }}>Me</span></div>
