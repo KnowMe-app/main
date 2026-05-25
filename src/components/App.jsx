@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Route, Routes, useLocation, useNavigate  } from 'react-router-dom';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { MyProfile } from './MyProfile';
+import { MyProfileNew } from './MyProfileNew';
 import { LoginScreen } from './LoginScreen';
 import { SubmitForm } from './SubmitForm';
 import { AddNewProfile } from './AddNewProfile';
@@ -83,6 +84,7 @@ export const App = () => {
       <Route path="/login" element={<LoginScreen isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />
       <Route path="/submit" element={<SubmitForm />} />
       <Route path="/my-profile"  element={<MyProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn}/>} />
+      <Route path="/my-profile-new" element={<MyProfileNew />} />
       {canAccessAdd && <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
       {canAccessMatching && <Route path="/matching" element={<Matching />} />}
       {isAdmin && <Route path="/edit/:userId" element={<EditProfile />} />}
