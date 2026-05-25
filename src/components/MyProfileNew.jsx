@@ -94,6 +94,7 @@ const PhotoBtn = styled.button`
 `;
 
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
+const CustomOptionWrap = styled.div`margin-top:10px;`;
 
 const sections = [
   { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'birth', 'country', 'region', 'city', 'email', 'maritalStatus'] },
@@ -177,6 +178,9 @@ export const MyProfileNew = () => {
     if (!field) return null;
     const val = state[name] || '';
     const isTextArea = name === 'moreInfo_main';
+    const isAppearanceField = sections.find(section => section.key === 'appearance')?.fields.includes(name);
+    const optionValues = Array.isArray(field.options) ? field.options.map(getOptionValue).map(String) : [];
+    const customSelected = isAppearanceField && String(val).trim() !== '' && !optionValues.includes(String(val));
 
     return <Field key={name}>
       <Label>{getFieldLabel(field)}</Label>
@@ -194,7 +198,30 @@ export const MyProfileNew = () => {
               {getOptionLabel(option)}
             </Chip>;
           })}
+          {isAppearanceField ? (
+            <Chip
+              key={`${name}-custom-option`}
+              selected={customSelected}
+              onClick={() => {
+                if (!customSelected) {
+                  setState(prev => ({ ...prev, [name]: '' }));
+                }
+              }}
+              type="button"
+            >
+              Свій варіант
+            </Chip>
+          ) : null}
         </ChipRow>
+        {isAppearanceField && customSelected ? (
+          <CustomOptionWrap>
+              <Input
+              value={val}
+              placeholder="Введіть свій варіант"
+              onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
+            />
+          </CustomOptionWrap>
+        ) : null}
       ) : isTextArea ? (
         <TextArea value={val} placeholder={getFieldPlaceholder(field)} onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))} />
       ) : (
