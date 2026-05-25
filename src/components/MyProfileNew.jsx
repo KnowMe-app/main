@@ -102,6 +102,7 @@ export const MyProfileNew = () => {
   const [state, setState] = useState({});
   const [userId, setUserId] = useState('');
   const [activeTab, setActiveTab] = useState('personal');
+  const [customOptionMode, setCustomOptionMode] = useState({});
   const sectionRefs = useRef({});
   const isManualScrollRef = useRef(false);
   const latestFetchUidRef = useRef('');
@@ -230,7 +231,8 @@ export const MyProfileNew = () => {
     const isTextArea = name === 'moreInfo_main';
     const isAppearanceField = sections.find(section => section.key === 'appearance')?.fields.includes(name);
     const optionValues = Array.isArray(field.options) ? field.options.map(getOptionValue).map(String) : [];
-    const customSelected = isAppearanceField && String(val).trim() !== '' && !optionValues.includes(String(val));
+    const customSelected = isAppearanceField
+      && (Boolean(customOptionMode[name]) || (String(val).trim() !== '' && !optionValues.includes(String(val))));
 
     return <Field key={name}>
       <Label>{getFieldLabel(field)}</Label>
@@ -243,7 +245,10 @@ export const MyProfileNew = () => {
               return <Chip
                 key={`${name}-${optionValue}`}
                 selected={selected}
-                onClick={() => setState(prev => ({ ...prev, [name]: optionValue }))}
+                onClick={() => {
+                  setCustomOptionMode(prev => ({ ...prev, [name]: false }));
+                  setState(prev => ({ ...prev, [name]: optionValue }));
+                }}
                 type="button"
               >
                 {getOptionLabel(option)}
@@ -254,6 +259,7 @@ export const MyProfileNew = () => {
                 key={`${name}-custom-option`}
                 selected={customSelected}
                 onClick={() => {
+                  setCustomOptionMode(prev => ({ ...prev, [name]: true }));
                   if (!customSelected) {
                     setState(prev => ({ ...prev, [name]: '' }));
                   }
