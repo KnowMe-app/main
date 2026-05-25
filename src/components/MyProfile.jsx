@@ -13,6 +13,7 @@ import {
   pickerFields,
   getFieldLabel,
   getFieldPlaceholder,
+  getFieldHint,
   getOptionLabel,
   getOptionValue,
 } from './formFields';
@@ -214,6 +215,15 @@ const Placeholder = styled.label`
   `}
 `;
 
+
+const FieldHintText = styled.div`
+  width: 100%;
+  margin-top: -6px;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  color: #8a8a8a;
+  font-size: 12px;
+`;
 const StatusMessage = styled.div`
   color: ${({ published }) => (published ? 'green' : 'red')};
   font-weight: bold;
@@ -1080,9 +1090,10 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
                 </InputFieldContainer>
 
-                <Hint fieldName={field.name} isActive={state[field.name]}>{getFieldLabel(field)}</Hint>
-                <Placeholder isActive={state[field.name]}>{getFieldPlaceholder(field)}</Placeholder>
+                <Hint fieldName={field.name} isActive={state[field.name]}>{getFieldPlaceholder(field)}</Hint>
+                <Placeholder isActive={state[field.name]}>{getFieldLabel(field)}</Placeholder>
               </InputDiv>
+              {getFieldHint(field) && <FieldHintText>{getFieldHint(field)}</FieldHintText>}
               {Array.isArray(field.options) && field.options.length === 2 && (
                 <ButtonGroup>
                   <Button
