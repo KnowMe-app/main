@@ -24,7 +24,7 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
       
       if (Array.isArray(existingData[field])) {
         console.log('ExistingData на сервері є масивом');
-        if (overwrite && [state[field]].length === 1) {
+        if (overwrite && !Array.isArray(state[field])) {
           console.log('Якщо масив має лише одне значення, зберігаємо його як ключ-значення');
           uploadedInfo[field] = state[field];
         } else if (Array.isArray(state[field])) {
@@ -43,7 +43,7 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
         }else if (overwrite && state[field]===''&& !Array.isArray(existingData[field])){
         console.log('Якщо це не масиви', state[field], existingData[field]);
         uploadedInfo[field] = '';
-      } else if (overwrite && !Array.isArray(state[field]==='') && !Array.isArray(existingData[field])){
+      } else if (overwrite && state[field] !== '' && !Array.isArray(state[field]) && !Array.isArray(existingData[field])){
         console.log('Якщо ЕxistingData не масив та state не масив і його треба перезаписати', state[field], existingData[field]);
         uploadedInfo[field] = state[field];
       } else if (existingData[field]===''){
