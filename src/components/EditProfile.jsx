@@ -530,16 +530,41 @@ const EditProfile = () => {
 
   const handleClear = (fieldName, idx) => {
     setState(prev => {
-      const isArray = Array.isArray(prev[fieldName]);
       const newState = { ...prev };
       let removedValue;
+      const hasIndex = Number.isInteger(idx);
+      const currentValue = prev[fieldName];
+
+      if (hasIndex) {
+        const sourceArray = Array.isArray(currentValue)
+          ? currentValue
+          : (currentValue !== undefined && currentValue !== null ? [currentValue] : []);
+
+        const filtered = sourceArray.filter((_, i) => i !== idx);
+        removedValue = sourceArray[idx];
+
+        if (filtered.length > 1) {
+          newState[fieldName] = filtered;
+        } else if (filtered.length === 1) {
+          newState[fieldName] = filtered[0];
+        } else {
+          // Для видалення конкретного елемента через "хрестик" не видаляємо весь ключ,
+          // щоб уникнути втрати поля в RTDB/overlay потоці.
+          newState[fieldName] = '';
+        }
+
+        handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
+        return newState;
+      }
+
+      const isArray = Array.isArray(currentValue);
 
       if (isArray) {
-        const filtered = prev[fieldName].filter((_, i) => i !== idx);
-        removedValue = prev[fieldName][idx];
+        const filtered = currentValue.filter((_, i) => i !== idx);
+        removedValue = currentValue[idx];
 
         if (filtered.length === 0 || (filtered.length === 1 && filtered[0] === '')) {
-          const deletedValue = prev[fieldName];
+          const deletedValue = currentValue;
           delete newState[fieldName];
           if (isAdmin) {
             removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
@@ -550,8 +575,8 @@ const EditProfile = () => {
           newState[fieldName] = filtered;
         }
       } else {
-        removedValue = prev[fieldName];
-        const deletedValue = prev[fieldName];
+        removedValue = currentValue;
+        const deletedValue = currentValue;
         delete newState[fieldName];
         if (isAdmin) {
           removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
