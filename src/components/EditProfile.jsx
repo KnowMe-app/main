@@ -553,7 +553,7 @@ const EditProfile = () => {
           newState[fieldName] = '';
         }
 
-        handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
+        handleSubmit(newState, 'overwrite');
         return newState;
       }
 
