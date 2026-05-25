@@ -186,10 +186,9 @@ export const pickerFields = [
   { name: 'twitter', label: 'X / Twitter', ukrainian: 'X / Twitter', placeholder: 'username', svg: 'no' },
   { name: 'linkedin', label: 'LinkedIn', ukrainian: 'LinkedIn', placeholder: 'username', svg: 'no' },
   { name: 'youtube', label: 'YouTube', ukrainian: 'YouTube', placeholder: 'username', svg: 'no' },
-  { name: 'vk', label: 'VK', ukrainian: 'VK', placeholder: 'username', svg: 'vk' },
+  { name: 'vk', label: 'VK', ukrainian: 'VK', placeholder: '123456789', svg: 'vk' },
 
   // медичне
-  { name: 'blood', label: 'Група крові та резус', ukrainian: 'Група крові та резус', placeholder: '3+', svg: 'no' },
   { name: 'ownKids', label: 'Кількість пологів', ukrainian: 'Кількість пологів', placeholder: '1', svg: 'no' },
   { name: 'lastDelivery', label: 'Останні пологи', ukrainian: 'Останні пологи', placeholder: 'дд.мм.рррр', ukrainianHint: 'Коли були останні пологи', svg: 'no', width: '33%' },
   {
@@ -207,8 +206,10 @@ export const pickerFields = [
   { name: 'chronicDiseases', label: 'Хронічні захворювання', ukrainian: 'Хронічні захворювання', placeholder: 'відсутні', svg: 'no', width: '33%', options: yesNoOptions },
 
   // фізичні
+  { name: 'maritalStatus', label: 'Чи перебуваєте в офіційному шлюбі', ukrainian: 'Чи перебуваєте в офіційному шлюбі', placeholder: 'Так / Ні / Інше', svg: 'no', width: '33%', options: yesNoOptions },
   { name: 'height', label: 'Зріст (см)', ukrainian: 'Зріст (см)', placeholder: '168', ukrainianHint: 'У сантиметрах', svg: 'no' },
   { name: 'weight', label: 'Вага (кг)', ukrainian: 'Вага (кг)', placeholder: '58', ukrainianHint: 'У кілограмах', svg: 'no' },
+  { name: 'blood', label: 'Група крові та резус', ukrainian: 'Група крові та резус', placeholder: '3+', svg: 'no' },
   { name: 'clothingSize', label: 'Розмір одягу', ukrainian: 'Розмір одягу', placeholder: '38-40', svg: 'no', width: '33%' },
   { name: 'shoeSize', label: 'Розмір взуття', ukrainian: 'Розмір взуття', placeholder: '38', svg: 'no', width: '33%' },
   { name: 'breastSize', label: 'Розмір грудей', ukrainian: 'Розмір грудей', placeholder: '75B', svg: 'no', width: '33%' },
@@ -231,7 +232,6 @@ export const pickerFields = [
   { name: 'hobbies', label: 'Хобі', ukrainian: 'Хобі', placeholder: 'читання', svg: 'no', width: '33%', options: yesNoOptions },
 
   // додатково
-  { name: 'maritalStatus', label: 'Сімейний стан', ukrainian: 'Сімейний стан', placeholder: 'Так / Ні / Інше', svg: 'no', width: '33%', options: yesNoOptions },
   { name: 'education', label: 'Освіта', ukrainian: 'Освіта', placeholder: 'Вища освіта', svg: 'no', width: '33%', options: educationOptions, modalOptions: educationModalOptions },
   { name: 'profession', label: 'Професія', ukrainian: 'Професія', placeholder: 'Лікар', svg: 'no', width: '33%' },
   { name: 'twinsInFamily', label: 'Чи були двійнята в родині?', ukrainian: 'Чи були двійнята в родині?', placeholder: 'Так / Ні / Інше', svg: 'no', width: '33%', options: yesNoOptions },
