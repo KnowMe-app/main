@@ -104,7 +104,7 @@ const HiddenFileInput = styled.input`
   display: none; /* Ховаємо справжній input */
 `;
 
-export const Photos = ({ state, setState, collection }) => {
+export const Photos = ({ state, setState, collection, hideFirstPhoto = false, uploadInputId = 'file-upload' }) => {
   const [viewerIndex, setViewerIndex] = useState(null);
   const photoKeys = Object.keys(state).filter(
     k => k.toLowerCase().startsWith('photo') && k !== 'photos'
@@ -295,36 +295,41 @@ export const Photos = ({ state, setState, collection }) => {
     setViewerIndex(index);
   };
 
+  const allPhotos = Array.isArray(state.photos) ? state.photos : [];
+  const displayedPhotos = hideFirstPhoto ? allPhotos.slice(1) : allPhotos;
+  const canUploadMore = allPhotos.length < 9;
+
   return (
     <Container>
       <PhotosWrapper>
-        {state.photos && state.photos.length > 0 ? (
+        {displayedPhotos.length > 0 ? (
           <PhotosWrapper>
-            {state.photos.map((url, index) => (
-              <PhotoItem key={index}>
+            {displayedPhotos.map((url, index) => {
+              const actualIndex = hideFirstPhoto ? index + 1 : index;
+              return <PhotoItem key={`${url}-${actualIndex}`}>
                 <PhotoImage
                   src={url}
-                  alt={`user avatar ${index}`}
-                  onClick={() => handlePhotoClick(url, index)}
+                  alt={`user avatar ${actualIndex}`}
+                  onClick={() => handlePhotoClick(url, actualIndex)}
                   onError={e => {
                     console.error('Image failed to load', url, e);
                     e.target.onerror = null;
                     e.target.src = '/logo192.png';
                   }}
                 />
-                <DeleteButton onClick={() => handleDeletePhoto(index)}>×</DeleteButton>
+                <DeleteButton onClick={() => handleDeletePhoto(actualIndex)}>×</DeleteButton>
               </PhotoItem>
-            ))}
+            })}
           </PhotosWrapper>
         ) : (
           <NoPhotosText>Додайте свої фото, максимум 9 шт</NoPhotosText>
         )}
       </PhotosWrapper>
-     {((state.photos && state.photos.length < 9) || (!state.photos)) && <UploadButtonWrapper>
-        <UploadButtonLabel htmlFor="file-upload">
+      {canUploadMore && <UploadButtonWrapper>
+        <UploadButtonLabel htmlFor={uploadInputId}>
           Додати фото
           <HiddenFileInput
-            id="file-upload"
+            id={uploadInputId}
             type="file"
             multiple
             accept="image/*"
