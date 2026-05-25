@@ -11,8 +11,6 @@ import {
 } from './config';
 import {
   pickerFields,
-  getFieldLabel,
-  getFieldPlaceholder,
   getOptionLabel,
   getOptionValue,
 } from './formFields';
@@ -213,6 +211,7 @@ const Placeholder = styled.label`
   color: orange;
   `}
 `;
+
 
 const StatusMessage = styled.div`
   color: ${({ published }) => (published ? 'green' : 'red')};
@@ -1080,8 +1079,8 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
                 </InputFieldContainer>
 
-                <Hint fieldName={field.name} isActive={state[field.name]}>{getFieldLabel(field)}</Hint>
-                <Placeholder isActive={state[field.name]}>{getFieldPlaceholder(field)}</Placeholder>
+                <Hint fieldName={field.name} isActive={state[field.name]}>{field?.placeholder ?? ''}</Hint>
+                <Placeholder isActive={state[field.name]}>{field?.ukrainian ?? ''}</Placeholder>
               </InputDiv>
               {Array.isArray(field.options) && field.options.length === 2 && (
                 <ButtonGroup>
