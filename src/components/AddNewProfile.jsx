@@ -1581,17 +1581,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (isArray) {
         const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
         removedValue = prevState[fieldName][idx];
+        const normalizedFilteredArray = filteredArray.filter(
+          value => !(typeof value === 'string' && value.trim() === '')
+        );
 
-        if (filteredArray.length === 0) {
+        if (normalizedFilteredArray.length === 0) {
           delete newState[fieldName];
-        } else if (filteredArray.length === 1) {
-          newState[fieldName] = filteredArray[0];
+          removedPayload = { [fieldName]: prevState[fieldName] };
+        } else if (normalizedFilteredArray.length === 1) {
+          newState[fieldName] = normalizedFilteredArray[0];
+          removedPayload = { [fieldName]: removedValue };
         } else {
-          newState[fieldName] = filteredArray;
+          newState[fieldName] = normalizedFilteredArray;
+          removedPayload = { [fieldName]: removedValue };
         }
-
-        // Для масивів не передаємо removedMap, щоб не тригерити backend-видалення всього ключа.
-        removedPayload = undefined;
       } else {
         removedValue = prevState[fieldName];
         delete newState[fieldName];
