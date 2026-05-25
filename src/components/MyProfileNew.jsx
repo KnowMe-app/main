@@ -258,7 +258,10 @@ export const MyProfileNew = () => {
                 selected={selected}
                 onClick={() => {
                   setCustomOptionMode(prev => ({ ...prev, [name]: false }));
-                  setState(prev => ({ ...prev, [name]: optionValue }));
+                  setState(prev => {
+                    const isSelected = String(prev[name] || '') === String(optionValue);
+                    return { ...prev, [name]: isSelected ? '' : optionValue };
+                  });
                 }}
                 type="button"
               >
