@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { auth, fetchUserData, updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
+import { onAuthStateChanged } from 'firebase/auth';
 
 const Page = styled.div`
   --accent: #E8791A;
@@ -108,11 +109,30 @@ export const MyProfileNew = () => {
   const [activeTab, setActiveTab] = useState('personal');
   const sectionRefs = useRef({});
 
+  const normalizeProfileData = (data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
+    if (key === 'password') {
+      return acc;
+    }
+
+    if (key === 'photos' && Array.isArray(value)) {
+      acc[key] = value;
+      return acc;
+    }
+
+    acc[key] = Array.isArray(value) ? value[value.length - 1] : value;
+    return acc;
+  }, {});
+
   useEffect(() => {
-    const uid = auth.currentUser?.uid || localStorage.getItem('ownerId') || '';
-    if (!uid) return;
-    setUserId(uid);
-    fetchUserData(uid).then(({ existingData }) => setState(existingData || {}));
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      const uid = user?.uid || localStorage.getItem('ownerId') || '';
+      if (!uid) return;
+      setUserId(uid);
+      const { existingData } = await fetchUserData(uid);
+      setState(normalizeProfileData(existingData || {}));
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
@@ -145,7 +165,9 @@ export const MyProfileNew = () => {
   const save = async () => {
     if (!userId) return;
     const { existingData } = await fetchUserData(userId);
-    const uploadedInfo = makeUploadedInfo(existingData, state);
+    const { password: _password, ...profileData } = state;
+    const uploadedInfo = makeUploadedInfo(existingData, profileData);
+    delete uploadedInfo.password;
     await updateDataInRealtimeDB(userId, uploadedInfo);
     await updateDataInFiresoreDB(userId, uploadedInfo, 'check');
   };
