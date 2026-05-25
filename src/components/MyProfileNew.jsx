@@ -109,6 +109,7 @@ export const MyProfileNew = () => {
   const [userId, setUserId] = useState('');
   const [activeTab, setActiveTab] = useState('personal');
   const sectionRefs = useRef({});
+  const latestFetchUidRef = useRef('');
 
   const normalizeProfileData = (data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
     if (key === 'password') {
@@ -120,20 +121,36 @@ export const MyProfileNew = () => {
       return acc;
     }
 
-    acc[key] = Array.isArray(value) ? value[value.length - 1] : value;
+    if (Array.isArray(value)) {
+      acc[key] = value.length > 0 ? value[value.length - 1] : '';
+      return acc;
+    }
+
+    acc[key] = value;
     return acc;
   }, {});
 
   useEffect(() => {
+    let isMounted = true;
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       const uid = user?.uid || localStorage.getItem('ownerId') || '';
       if (!uid) return;
+      latestFetchUidRef.current = uid;
       setUserId(uid);
       const { existingData } = await fetchUserData(uid);
+
+      if (!isMounted || latestFetchUidRef.current !== uid) {
+        return;
+      }
+
       setState(normalizeProfileData(existingData || {}));
     });
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
@@ -170,7 +187,7 @@ export const MyProfileNew = () => {
     const uploadedInfo = makeUploadedInfo(existingData, profileData);
     delete uploadedInfo.password;
     await updateDataInRealtimeDB(userId, uploadedInfo);
-    await updateDataInFiresoreDB(userId, uploadedInfo, 'check');
+    await updateDataInFiresoreDB(userId, uploadedInfo, 'check', { password: true });
   };
 
   const renderField = (name) => {
