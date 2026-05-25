@@ -61,6 +61,32 @@ const Chip = styled.button`
   background: ${({ selected }) => (selected ? 'var(--accent-light)' : 'var(--card)')}; color: ${({ selected }) => (selected ? 'var(--accent)' : 'var(--muted)')};
 `;
 const SubmitWrap = styled.div`padding:20px;`;
+const PhotoSection = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0 20px 20px;
+  padding: 18px;
+  background: var(--card);
+  border-radius: var(--radius);
+  border: 1.5px dashed var(--border);
+  box-shadow: var(--shadow);
+`;
+const AvatarRing = styled.div`position:relative;flex-shrink:0;`;
+const AvatarImg = styled.div`
+  width:72px;height:72px;border-radius:50%;
+  background: linear-gradient(135deg, #FFE0B2, #FFCC80);
+  display:flex;align-items:center;justify-content:center;font-size:28px;
+`;
+const AvatarBadge = styled.div`
+  position:absolute;bottom:0;right:0;width:22px;height:22px;border-radius:50%;
+  background: var(--accent);border:2px solid #fff;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;
+`;
+const PhotoBtn = styled.button`
+  margin-left:auto;padding:8px 16px;background:var(--accent-light);color:var(--accent);
+  border-radius:8px;font-size:13px;font-weight:600;border:none;
+`;
+
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 
 const sections = [
@@ -153,6 +179,18 @@ export const MyProfileNew = () => {
     <Tabs>
       {sections.map(s => <Tab key={s.key} active={activeTab === s.key} type="button" onClick={() => setActiveTab(s.key)}>{s.title}</Tab>)}
     </Tabs>
+
+    <PhotoSection>
+      <AvatarRing>
+        <AvatarImg>🧑</AvatarImg>
+        <AvatarBadge>+</AvatarBadge>
+      </AvatarRing>
+      <div>
+        <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>Фото профілю</h4>
+        <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото.<br />Перше — головне.</p>
+      </div>
+      <PhotoBtn type="button">Додати</PhotoBtn>
+    </PhotoSection>
 
     {sections.map(section => (
       <Card key={section.key} style={{ display: activeTab === section.key ? 'block' : 'none' }}>
