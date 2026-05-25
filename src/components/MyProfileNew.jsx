@@ -109,6 +109,7 @@ export const MyProfileNew = () => {
   const [userId, setUserId] = useState('');
   const [activeTab, setActiveTab] = useState('personal');
   const sectionRefs = useRef({});
+  const isManualScrollRef = useRef(false);
   const latestFetchUidRef = useRef('');
 
   const normalizeProfileData = (data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
@@ -177,8 +178,46 @@ export const MyProfileNew = () => {
     setActiveTab(sectionKey);
     const sectionEl = sectionRefs.current[sectionKey];
     if (!sectionEl) return;
+    isManualScrollRef.current = true;
     sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.setTimeout(() => {
+      isManualScrollRef.current = false;
+    }, 500);
   };
+
+  useEffect(() => {
+    const entries = sections
+      .map(section => ({ key: section.key, node: sectionRefs.current[section.key] }))
+      .filter(item => Boolean(item.node));
+
+    if (entries.length === 0) return undefined;
+
+    const observer = new IntersectionObserver(
+      (observerEntries) => {
+        if (isManualScrollRef.current) return;
+
+        const visible = observerEntries
+          .filter(entry => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+
+        if (visible.length === 0) return;
+
+        const current = entries.find(item => item.node === visible[0].target);
+        if (current?.key) {
+          setActiveTab(prev => (prev === current.key ? prev : current.key));
+        }
+      },
+      {
+        root: null,
+        rootMargin: '-110px 0px -45% 0px',
+        threshold: [0.15, 0.3, 0.5, 0.7],
+      },
+    );
+
+    entries.forEach(item => observer.observe(item.node));
+
+    return () => observer.disconnect();
+  }, []);
 
   const save = async () => {
     if (!userId) return;
