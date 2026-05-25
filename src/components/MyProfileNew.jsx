@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { auth, fetchUserData, updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
@@ -32,16 +32,21 @@ const Topbar = styled.div`
   padding: 14px 20px;
   display: flex;
   justify-content: space-between;
+`;
+const StickyHeader = styled.div`
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 30;
+  background: var(--card);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
 `;
 const ProgressWrap = styled.div`padding: 16px 20px 0;`;
 const Tabs = styled.div`padding:14px 20px;display:flex;gap:8px;overflow:auto;`;
 const Tab = styled.button`
   flex-shrink: 0; padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 500;
-  border: 1.5px solid var(--border); background: ${({ active }) => (active ? 'var(--accent)' : 'var(--card)')};
-  color: ${({ active }) => (active ? '#fff' : 'var(--muted)')};
+  border: 1.5px solid ${({ complete, active }) => (complete ? '#2E9B55' : active ? 'var(--accent)' : 'var(--border)')};
+  background: ${({ active, complete }) => (active ? 'var(--accent)' : complete ? '#EBF8EF' : 'var(--card)')};
+  color: ${({ active, complete }) => (active ? '#fff' : complete ? '#2E9B55' : 'var(--muted)')};
 `;
 const Card = styled.div`margin:0 20px 16px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;`;
 const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
@@ -101,6 +106,7 @@ export const MyProfileNew = () => {
   const [state, setState] = useState({});
   const [userId, setUserId] = useState('');
   const [activeTab, setActiveTab] = useState('personal');
+  const sectionRefs = useRef({});
 
   useEffect(() => {
     const uid = auth.currentUser?.uid || localStorage.getItem('ownerId') || '';
@@ -115,6 +121,26 @@ export const MyProfileNew = () => {
     const filled = keys.filter(name => String(state[name] || '').trim() !== '').length;
     return Math.round((filled / keys.length) * 100);
   }, [state]);
+
+
+  const sectionProgress = useMemo(() => sections.reduce((acc, section) => {
+    const filled = section.fields.filter(name => String(state[name] || '').trim() !== '').length;
+    const total = section.fields.length;
+    acc[section.key] = {
+      filled,
+      total,
+      complete: total > 0 && filled === total,
+      progress: total > 0 ? Math.round((filled / total) * 100) : 0,
+    };
+    return acc;
+  }, {}), [state]);
+
+  const scrollToSection = (sectionKey) => {
+    setActiveTab(sectionKey);
+    const sectionEl = sectionRefs.current[sectionKey];
+    if (!sectionEl) return;
+    sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const save = async () => {
     if (!userId) return;
@@ -161,12 +187,13 @@ export const MyProfileNew = () => {
       <p style={{ color: '#aaa', fontSize: 12 }}>Пропозиції покращення UI/UX</p>
     </CompareBanner>
 
-    <Topbar>
-      <div style={{ fontFamily: 'Playfair Display, serif', fontSize: 18 }}>Know<span style={{ color: '#E8791A', fontStyle: 'italic' }}>Me</span></div>
-      <div style={{ fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 99, background: '#FEE9E9', color: '#D44' }}>● Прихована</div>
-    </Topbar>
+    <StickyHeader>
+      <Topbar>
+        <div style={{ fontFamily: 'Playfair Display, serif', fontSize: 18 }}>Know<span style={{ color: '#E8791A', fontStyle: 'italic' }}>Me</span></div>
+        <div style={{ fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 99, background: '#FEE9E9', color: '#D44' }}>● Прихована</div>
+      </Topbar>
 
-    <ProgressWrap>
+      <ProgressWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>Заповнено анкету</span>
         <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>{filledPct}%</span>
@@ -176,9 +203,21 @@ export const MyProfileNew = () => {
       </div>
     </ProgressWrap>
 
-    <Tabs>
-      {sections.map(s => <Tab key={s.key} active={activeTab === s.key} type="button" onClick={() => setActiveTab(s.key)}>{s.title}</Tab>)}
-    </Tabs>
+      <Tabs>
+        {sections.map(s => {
+          const info = sectionProgress[s.key] || {};
+          return <Tab
+            key={s.key}
+            active={activeTab === s.key}
+            complete={Boolean(info.complete)}
+            type="button"
+            onClick={() => scrollToSection(s.key)}
+          >
+            {s.title}
+          </Tab>;
+        })}
+      </Tabs>
+    </StickyHeader>
 
     <PhotoSection>
       <AvatarRing>
@@ -193,11 +232,13 @@ export const MyProfileNew = () => {
     </PhotoSection>
 
     {sections.map(section => (
-      <Card key={section.key} style={{ display: activeTab === section.key ? 'block' : 'none' }}>
+      <Card key={section.key} ref={node => { sectionRefs.current[section.key] = node; }}>
         <Header>
           <div>{section.title.split(' ')[0]}</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{section.title.replace(/^\S+\s/, '')}</div>
-          <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', background: 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>{section.fields.length} полів</div>
+          <div style={{ marginLeft: 'auto', fontSize: 11, color: sectionProgress[section.key]?.complete ? '#2E9B55' : 'var(--muted)', background: sectionProgress[section.key]?.complete ? '#EBF8EF' : 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>
+            {sectionProgress[section.key]?.filled || 0}/{sectionProgress[section.key]?.total || section.fields.length}
+          </div>
         </Header>
         <FieldGroup>{section.fields.map(renderField)}</FieldGroup>
       </Card>
