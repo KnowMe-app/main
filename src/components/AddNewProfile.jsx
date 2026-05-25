@@ -1576,24 +1576,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const isArray = Array.isArray(prevState[fieldName]);
       const newState = { ...prevState };
       let removedValue;
+      let removedPayload;
 
       if (isArray) {
         const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
         removedValue = prevState[fieldName][idx];
 
-        if (filteredArray.length === 0 || (filteredArray.length === 1 && filteredArray[0] === '')) {
+        if (filteredArray.length === 0) {
           delete newState[fieldName];
         } else if (filteredArray.length === 1) {
           newState[fieldName] = filteredArray[0];
         } else {
           newState[fieldName] = filteredArray;
         }
+
+        // Для масивів не передаємо removedMap, щоб не тригерити backend-видалення всього ключа.
+        removedPayload = undefined;
       } else {
         removedValue = prevState[fieldName];
         delete newState[fieldName];
+        removedPayload = { [fieldName]: removedValue };
       }
 
-      handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
+      handleSubmit(newState, 'overwrite', removedPayload);
       return newState;
     });
   };

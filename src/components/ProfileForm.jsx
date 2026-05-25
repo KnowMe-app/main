@@ -2439,9 +2439,17 @@ ${entries.join('\n')}`;
     if (!normalizedPath) return false;
 
     if (!normalizedPath.includes('.')) {
+      const rootValue = state?.[normalizedPath];
       if (normalizedPath === ADDITIONAL_ACCESS_FIELD) {
         handleRemoveAdditionalAccessRuleInput(null, 'del');
         return true;
+      }
+      if (Array.isArray(rootValue)) {
+        const removeIndex = rootValue.length - 1;
+        if (removeIndex >= 0) {
+          handleClear(normalizedPath, removeIndex);
+          return true;
+        }
       }
       handleDelKeyValue(normalizedPath);
       return true;
