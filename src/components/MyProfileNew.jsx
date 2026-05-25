@@ -88,9 +88,35 @@ const AvatarImg = styled.div`
   font-size:28px;
   overflow:hidden;
 `;
-const AvatarBadge = styled.div`
-  position:absolute;bottom:0;right:0;width:22px;height:22px;border-radius:50%;
-  background: var(--accent);border:2px solid #fff;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;
+const AvatarActionBtn = styled.button`
+  position:absolute;
+  border:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#fff;
+  cursor:pointer;
+`;
+const AvatarAddBtn = styled(AvatarActionBtn)`
+  bottom:0;
+  right:0;
+  width:22px;
+  height:22px;
+  border-radius:50%;
+  background: var(--accent);
+  border:2px solid #fff;
+  font-size:11px;
+`;
+const AvatarDeleteBtn = styled(AvatarActionBtn)`
+  top:-2px;
+  right:-2px;
+  width:20px;
+  height:20px;
+  border-radius:50%;
+  background:#d44;
+  border:2px solid #fff;
+  font-size:14px;
+  line-height:1;
 `;
 const PhotoBtn = styled.button`
   margin-left:auto;padding:8px 16px;background:var(--accent-light);color:var(--accent);
@@ -246,6 +272,30 @@ export const MyProfileNew = () => {
   };
 
   const mainProfilePhoto = Array.isArray(state.photos) && state.photos.length > 0 ? state.photos[0] : '';
+  const uploadInputId = 'my-profile-new-photo-upload';
+
+  const openPhotoUpload = () => {
+    const input = document.getElementById(uploadInputId);
+    if (input) {
+      input.click();
+    }
+  };
+
+  const removeMainPhoto = () => {
+    setState(prevState => {
+      if (!Array.isArray(prevState.photos) || prevState.photos.length === 0) {
+        return prevState;
+      }
+
+      const nextPhotos = prevState.photos.slice(1);
+      if (nextPhotos.length === 0) {
+        const { photos, ...rest } = prevState;
+        return rest;
+      }
+
+      return { ...prevState, photos: nextPhotos };
+    });
+  };
 
   const renderField = (name) => {
     const field = fieldsMap.get(name);
@@ -351,16 +401,21 @@ export const MyProfileNew = () => {
     <PhotoSection>
       <AvatarRing>
         <AvatarImg $photo={mainProfilePhoto}>{mainProfilePhoto ? '' : '🧑'}</AvatarImg>
-        <AvatarBadge>+</AvatarBadge>
+        <AvatarAddBtn type="button" onClick={openPhotoUpload} aria-label="Додати фото профілю">+</AvatarAddBtn>
+        {mainProfilePhoto ? (
+          <AvatarDeleteBtn type="button" onClick={removeMainPhoto} aria-label="Видалити головне фото">
+            ×
+          </AvatarDeleteBtn>
+        ) : null}
       </AvatarRing>
       <div>
         <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>Фото профілю</h4>
         <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото.<br />Перше — головне.</p>
       </div>
-      <PhotoBtn type="button">{mainProfilePhoto ? 'Змінити' : 'Додати'}</PhotoBtn>
+      <PhotoBtn type="button" onClick={openPhotoUpload}>{mainProfilePhoto ? 'Змінити' : 'Додати'}</PhotoBtn>
     </PhotoSection>
 
-    <Photos state={{ ...state, userId }} setState={setState} />
+    <Photos state={{ ...state, userId }} setState={setState} hideFirstPhoto uploadInputId={uploadInputId} />
 
     {sections.map(section => (
       <Card key={section.key} ref={node => { sectionRefs.current[section.key] = node; }}>
