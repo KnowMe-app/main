@@ -125,11 +125,14 @@ const PhotoManagerModal = styled.div`
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 1200;
+  z-index: 900;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  opacity: ${({ $open }) => ($open ? 1 : 0)};
+  visibility: ${({ $open }) => ($open ? 'visible' : 'hidden')};
+  pointer-events: ${({ $open }) => ($open ? 'auto' : 'none')};
 `;
 const PhotoManagerCard = styled.div`
   width: min(640px, 100%);
@@ -478,8 +481,10 @@ export const MyProfileNew = () => {
       </Card>
     ))}
 
-    {isPhotoManagerOpen ? (
-      <PhotoManagerModal onClick={e => { if (e.target === e.currentTarget) setIsPhotoManagerOpen(false); }}>
+    <PhotoManagerModal
+      $open={isPhotoManagerOpen}
+      onClick={e => { if (e.target === e.currentTarget) setIsPhotoManagerOpen(false); }}
+    >
         <PhotoManagerCard>
           <PhotoManagerHeader>
             <div>Керування фотографіями</div>
@@ -488,11 +493,15 @@ export const MyProfileNew = () => {
             </IconPlainBtn>
           </PhotoManagerHeader>
           <div style={{ padding: '12px 8px 18px' }}>
-            <Photos state={{ ...state, userId }} setState={setState} hideFirstPhoto uploadInputId={uploadInputId} />
+            <Photos
+              state={{ ...state, userId }}
+              setState={setState}
+              hideFirstPhoto={Array.isArray(state.photos) && state.photos.length > 1}
+              uploadInputId={uploadInputId}
+            />
           </div>
         </PhotoManagerCard>
       </PhotoManagerModal>
-    ) : null}
 
     <SubmitWrap>
       <SubmitBtn type="button" onClick={save}>Опублікувати анкету</SubmitBtn>
