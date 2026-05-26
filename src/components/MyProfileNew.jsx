@@ -43,6 +43,7 @@ const StickyHeader = styled.div`
   background: var(--card);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
 `;
+const STICKY_HEADER_OFFSET = 150;
 const ProgressWrap = styled.div`padding: 16px 20px 0;`;
 const Tabs = styled.div`padding:14px 20px;display:flex;gap:8px;overflow:auto;`;
 const Tab = styled.button`
@@ -244,7 +245,11 @@ export const MyProfileNew = () => {
     const sectionEl = sectionRefs.current[sectionKey];
     if (!sectionEl) return;
     isManualScrollRef.current = true;
-    sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    const sectionTop = sectionEl.getBoundingClientRect().top + window.scrollY;
+    const targetTop = Math.max(0, sectionTop - STICKY_HEADER_OFFSET);
+    window.scrollTo({ top: targetTop, behavior: 'smooth' });
+
     window.setTimeout(() => {
       isManualScrollRef.current = false;
     }, 500);
@@ -274,7 +279,7 @@ export const MyProfileNew = () => {
       },
       {
         root: null,
-        rootMargin: '-110px 0px -45% 0px',
+        rootMargin: `-${STICKY_HEADER_OFFSET}px 0px -45% 0px`,
         threshold: [0.15, 0.3, 0.5, 0.7],
       },
     );
