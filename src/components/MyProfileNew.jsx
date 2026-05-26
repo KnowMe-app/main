@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { auth, fetchUserData, updateDataInFiresoreDB, updateDataInRealtimeDB } from './config';
+import {
+  auth,
+  fetchUserData,
+  updateDataInFiresoreDB,
+  updateDataInNewUsersRTDB,
+  updateDataInRealtimeDB,
+} from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -267,8 +273,41 @@ export const MyProfileNew = () => {
     const { password: _password, ...profileData } = state;
     const uploadedInfo = makeUploadedInfo(existingData, profileData);
     delete uploadedInfo.password;
-    await updateDataInRealtimeDB(userId, uploadedInfo);
-    await updateDataInFiresoreDB(userId, uploadedInfo, 'check', { password: true });
+
+    const isPermissionDeniedError = error => {
+      const code = String(error?.code || '').toLowerCase();
+      const message = String(error?.message || '').toLowerCase();
+      return code.includes('permission-denied') || code.includes('permission_denied') || message.includes('permission_denied');
+    };
+
+    const persistUserWithFallback = async (targetUserId, nextUploadedInfo, firestoreCondition = 'update') => {
+      let shouldWriteFullProfileToNewUsers = false;
+
+      try {
+        await updateDataInRealtimeDB(targetUserId, nextUploadedInfo, firestoreCondition === 'set' ? undefined : 'update');
+      } catch (error) {
+        if (!isPermissionDeniedError(error)) {
+          throw error;
+        }
+        shouldWriteFullProfileToNewUsers = true;
+        console.warn('No write access to users/$uid, fallback to newUsers.');
+      }
+
+      try {
+        await updateDataInFiresoreDB(targetUserId, nextUploadedInfo, firestoreCondition);
+      } catch (error) {
+        shouldWriteFullProfileToNewUsers = true;
+        console.warn('Firestore write failed, fallback to newUsers.', error);
+      }
+
+      await updateDataInNewUsersRTDB(
+        targetUserId,
+        shouldWriteFullProfileToNewUsers ? nextUploadedInfo : { lastLogin2: nextUploadedInfo.lastLogin2 },
+        'update'
+      );
+    };
+
+    await persistUserWithFallback(userId, uploadedInfo, 'check');
   };
 
   const mainProfilePhoto = Array.isArray(state.photos) && state.photos.length > 0 ? state.photos[0] : '';
