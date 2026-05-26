@@ -1590,10 +1590,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           removedPayload = { [fieldName]: prevState[fieldName] };
         } else if (normalizedFilteredArray.length === 1) {
           newState[fieldName] = normalizedFilteredArray[0];
-          removedPayload = { [fieldName]: removedValue };
         } else {
           newState[fieldName] = normalizedFilteredArray;
-          removedPayload = { [fieldName]: removedValue };
         }
       } else {
         removedValue = prevState[fieldName];
