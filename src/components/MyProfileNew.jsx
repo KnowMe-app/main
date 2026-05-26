@@ -302,47 +302,50 @@ export const MyProfileNew = () => {
     activeTabEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }, [activeTab]);
 
-  const save = async () => {
+  const isPermissionDeniedError = error => {
+    const code = String(error?.code || '').toLowerCase();
+    const message = String(error?.message || '').toLowerCase();
+    return code.includes('permission-denied') || code.includes('permission_denied') || message.includes('permission_denied');
+  };
+
+  const persistUserWithFallback = async (targetUserId, nextUploadedInfo, firestoreCondition = 'update') => {
+    let shouldWriteFullProfileToNewUsers = false;
+
+    try {
+      await updateDataInRealtimeDB(targetUserId, nextUploadedInfo, firestoreCondition === 'update' ? 'update' : undefined);
+    } catch (error) {
+      if (!isPermissionDeniedError(error)) {
+        throw error;
+      }
+      shouldWriteFullProfileToNewUsers = true;
+      console.warn('No write access to users/$uid, fallback to newUsers.');
+    }
+
+    try {
+      await updateDataInFiresoreDB(targetUserId, nextUploadedInfo, firestoreCondition);
+    } catch (error) {
+      shouldWriteFullProfileToNewUsers = true;
+      console.warn('Firestore write failed, fallback to newUsers.', error);
+    }
+
+    await updateDataInNewUsersRTDB(
+      targetUserId,
+      shouldWriteFullProfileToNewUsers ? nextUploadedInfo : { lastLogin2: nextUploadedInfo.lastLogin2 },
+      'update'
+    );
+  };
+
+  const saveState = async (nextState) => {
     if (!userId) return;
     const { existingData } = await fetchUserData(userId);
-    const { password: _password, ...profileData } = state;
+    const { password: _password, ...profileData } = nextState;
     const uploadedInfo = makeUploadedInfo(existingData, profileData);
     delete uploadedInfo.password;
-
-    const isPermissionDeniedError = error => {
-      const code = String(error?.code || '').toLowerCase();
-      const message = String(error?.message || '').toLowerCase();
-      return code.includes('permission-denied') || code.includes('permission_denied') || message.includes('permission_denied');
-    };
-
-    const persistUserWithFallback = async (targetUserId, nextUploadedInfo, firestoreCondition = 'update') => {
-      let shouldWriteFullProfileToNewUsers = false;
-
-      try {
-        await updateDataInRealtimeDB(targetUserId, nextUploadedInfo, firestoreCondition === 'update' ? 'update' : undefined);
-      } catch (error) {
-        if (!isPermissionDeniedError(error)) {
-          throw error;
-        }
-        shouldWriteFullProfileToNewUsers = true;
-        console.warn('No write access to users/$uid, fallback to newUsers.');
-      }
-
-      try {
-        await updateDataInFiresoreDB(targetUserId, nextUploadedInfo, firestoreCondition);
-      } catch (error) {
-        shouldWriteFullProfileToNewUsers = true;
-        console.warn('Firestore write failed, fallback to newUsers.', error);
-      }
-
-      await updateDataInNewUsersRTDB(
-        targetUserId,
-        shouldWriteFullProfileToNewUsers ? nextUploadedInfo : { lastLogin2: nextUploadedInfo.lastLogin2 },
-        'update'
-      );
-    };
-
     await persistUserWithFallback(userId, uploadedInfo, 'check');
+  };
+
+  const save = async () => {
+    await saveState(state);
   };
 
   const mainProfilePhoto = Array.isArray(state.photos) && state.photos.length > 0 ? state.photos[0] : '';
@@ -373,7 +376,9 @@ export const MyProfileNew = () => {
                   setCustomOptionMode(prev => ({ ...prev, [name]: false }));
                   setState(prev => {
                     const isSelected = String(prev[name] || '') === String(optionValue);
-                    return { ...prev, [name]: isSelected ? '' : optionValue };
+                    const nextState = { ...prev, [name]: isSelected ? '' : optionValue };
+                    saveState(nextState);
+                    return nextState;
                   });
                 }}
                 type="button"
@@ -388,7 +393,11 @@ export const MyProfileNew = () => {
                 onClick={() => {
                   setCustomOptionMode(prev => ({ ...prev, [name]: true }));
                   if (!customSelected) {
-                    setState(prev => ({ ...prev, [name]: '' }));
+                    setState(prev => {
+                      const nextState = { ...prev, [name]: '' };
+                      saveState(nextState);
+                      return nextState;
+                    });
                   }
                 }}
                 type="button"
@@ -403,14 +412,25 @@ export const MyProfileNew = () => {
                 value={val}
                 placeholder="Введіть свій варіант"
                 onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
+                onBlur={e => saveState({ ...state, [name]: e.target.value })}
               />
             </CustomOptionWrap>
           ) : null}
         </>
       ) : isTextArea ? (
-        <TextArea value={val} placeholder={getFieldPlaceholder(field)} onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))} />
+        <TextArea
+          value={val}
+          placeholder={getFieldPlaceholder(field)}
+          onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
+          onBlur={e => saveState({ ...state, [name]: e.target.value })}
+        />
       ) : (
-        <Input value={val} placeholder={getFieldPlaceholder(field)} onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))} />
+        <Input
+          value={val}
+          placeholder={getFieldPlaceholder(field)}
+          onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
+          onBlur={e => saveState({ ...state, [name]: e.target.value })}
+        />
       )}
     </Field>;
   };
