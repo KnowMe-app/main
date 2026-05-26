@@ -280,30 +280,34 @@ export const MyProfileNew = () => {
       return code.includes('permission-denied') || code.includes('permission_denied') || message.includes('permission_denied');
     };
 
-    let shouldWriteFullProfileToNewUsers = false;
+    const persistUserWithFallback = async (targetUserId, nextUploadedInfo, firestoreCondition = 'update') => {
+      let shouldWriteFullProfileToNewUsers = false;
 
-    try {
-      await updateDataInRealtimeDB(userId, uploadedInfo, 'update');
-    } catch (error) {
-      if (!isPermissionDeniedError(error)) {
-        throw error;
+      try {
+        await updateDataInRealtimeDB(targetUserId, nextUploadedInfo, firestoreCondition === 'set' ? undefined : 'update');
+      } catch (error) {
+        if (!isPermissionDeniedError(error)) {
+          throw error;
+        }
+        shouldWriteFullProfileToNewUsers = true;
+        console.warn('No write access to users/$uid, fallback to newUsers.');
       }
-      shouldWriteFullProfileToNewUsers = true;
-      console.warn('No write access to users/$uid, fallback to newUsers.');
-    }
 
-    try {
-      await updateDataInFiresoreDB(userId, uploadedInfo, 'check', { password: true });
-    } catch (error) {
-      shouldWriteFullProfileToNewUsers = true;
-      console.warn('Firestore write failed, fallback to newUsers.', error);
-    }
+      try {
+        await updateDataInFiresoreDB(targetUserId, nextUploadedInfo, firestoreCondition);
+      } catch (error) {
+        shouldWriteFullProfileToNewUsers = true;
+        console.warn('Firestore write failed, fallback to newUsers.', error);
+      }
 
-    await updateDataInNewUsersRTDB(
-      userId,
-      shouldWriteFullProfileToNewUsers ? uploadedInfo : { lastLogin2: uploadedInfo.lastLogin2 },
-      'update'
-    );
+      await updateDataInNewUsersRTDB(
+        targetUserId,
+        shouldWriteFullProfileToNewUsers ? nextUploadedInfo : { lastLogin2: nextUploadedInfo.lastLogin2 },
+        'update'
+      );
+    };
+
+    await persistUserWithFallback(userId, uploadedInfo, 'check');
   };
 
   const mainProfilePhoto = Array.isArray(state.photos) && state.photos.length > 0 ? state.photos[0] : '';
