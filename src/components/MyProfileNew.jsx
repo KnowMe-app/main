@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { FiEdit2, FiX } from 'react-icons/fi';
 import styled from 'styled-components';
 import {
   auth,
@@ -113,23 +114,48 @@ const AvatarAddBtn = styled(AvatarActionBtn)`
   border:2px solid #fff;
   font-size:11px;
 `;
-const AvatarDeleteBtn = styled(AvatarActionBtn)`
-  top:-2px;
-  right:-2px;
-  width:20px;
-  height:20px;
-  border-radius:50%;
-  background:#d44;
-  border:2px solid #fff;
-  font-size:14px;
-  line-height:1;
-`;
 const PhotoBtn = styled.button`
   margin-left:auto;padding:8px 16px;background:var(--accent-light);color:var(--accent);
   border-radius:8px;font-size:13px;font-weight:600;border:none;
 `;
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
+const PhotoManagerModal = styled.div`
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+`;
+const PhotoManagerCard = styled.div`
+  width: min(640px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+`;
+const PhotoManagerHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+`;
+const IconPlainBtn = styled.button`
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
 
 const sections = [
   { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'birth', 'country', 'region', 'city', 'email', 'maritalStatus'] },
@@ -144,6 +170,7 @@ export const MyProfileNew = () => {
   const [userId, setUserId] = useState('');
   const [activeTab, setActiveTab] = useState('personal');
   const [customOptionMode, setCustomOptionMode] = useState({});
+  const [isPhotoManagerOpen, setIsPhotoManagerOpen] = useState(false);
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const tabRefs = useRef({});
@@ -313,29 +340,6 @@ export const MyProfileNew = () => {
   const mainProfilePhoto = Array.isArray(state.photos) && state.photos.length > 0 ? state.photos[0] : '';
   const uploadInputId = 'my-profile-new-photo-upload';
 
-  const openPhotoUpload = () => {
-    const input = document.getElementById(uploadInputId);
-    if (input) {
-      input.click();
-    }
-  };
-
-  const removeMainPhoto = () => {
-    setState(prevState => {
-      if (!Array.isArray(prevState.photos) || prevState.photos.length === 0) {
-        return prevState;
-      }
-
-      const nextPhotos = prevState.photos.slice(1);
-      if (nextPhotos.length === 0) {
-        const { photos, ...rest } = prevState;
-        return rest;
-      }
-
-      return { ...prevState, photos: nextPhotos };
-    });
-  };
-
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
@@ -440,21 +444,21 @@ export const MyProfileNew = () => {
     <PhotoSection>
       <AvatarRing>
         <AvatarImg $photo={mainProfilePhoto}>{mainProfilePhoto ? '' : '🧑'}</AvatarImg>
-        <AvatarAddBtn type="button" onClick={openPhotoUpload} aria-label="Додати фото профілю">+</AvatarAddBtn>
-        {mainProfilePhoto ? (
-          <AvatarDeleteBtn type="button" onClick={removeMainPhoto} aria-label="Видалити головне фото">
-            ×
-          </AvatarDeleteBtn>
-        ) : null}
+        <AvatarAddBtn
+          type="button"
+          onClick={() => setIsPhotoManagerOpen(true)}
+          aria-label={mainProfilePhoto ? 'Редагувати фото профілю' : 'Додати фото профілю'}
+        >
+          {mainProfilePhoto ? <FiEdit2 size={12} /> : '+'}
+        </AvatarAddBtn>
       </AvatarRing>
       <div>
         <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>Фото профілю</h4>
         <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото.<br />Перше — головне.</p>
       </div>
-      <PhotoBtn type="button" onClick={openPhotoUpload}>{mainProfilePhoto ? 'Змінити' : 'Додати'}</PhotoBtn>
+      <PhotoBtn type="button" onClick={() => setIsPhotoManagerOpen(true)}>{mainProfilePhoto ? 'Редагувати фото' : 'Додати фото'}</PhotoBtn>
     </PhotoSection>
 
-    <Photos state={{ ...state, userId }} setState={setState} hideFirstPhoto uploadInputId={uploadInputId} />
 
     {sections.map(section => (
       <Card key={section.key} ref={node => { sectionRefs.current[section.key] = node; }}>
@@ -468,6 +472,22 @@ export const MyProfileNew = () => {
         <FieldGroup>{section.fields.map(renderField)}</FieldGroup>
       </Card>
     ))}
+
+    {isPhotoManagerOpen ? (
+      <PhotoManagerModal onClick={e => { if (e.target === e.currentTarget) setIsPhotoManagerOpen(false); }}>
+        <PhotoManagerCard>
+          <PhotoManagerHeader>
+            <div>Керування фотографіями</div>
+            <IconPlainBtn type="button" onClick={() => setIsPhotoManagerOpen(false)} aria-label="Закрити">
+              <FiX size={18} />
+            </IconPlainBtn>
+          </PhotoManagerHeader>
+          <div style={{ padding: '12px 8px 18px' }}>
+            <Photos state={{ ...state, userId }} setState={setState} hideFirstPhoto uploadInputId={uploadInputId} />
+          </div>
+        </PhotoManagerCard>
+      </PhotoManagerModal>
+    ) : null}
 
     <SubmitWrap>
       <SubmitBtn type="button" onClick={save}>Опублікувати анкету</SubmitBtn>
