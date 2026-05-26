@@ -311,7 +311,7 @@ export const MyProfileNew = () => {
       let shouldWriteFullProfileToNewUsers = false;
 
       try {
-        await updateDataInRealtimeDB(targetUserId, nextUploadedInfo, firestoreCondition === 'set' ? undefined : 'update');
+        await updateDataInRealtimeDB(targetUserId, nextUploadedInfo, firestoreCondition === 'update' ? 'update' : undefined);
       } catch (error) {
         if (!isPermissionDeniedError(error)) {
           throw error;
