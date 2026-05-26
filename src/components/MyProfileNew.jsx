@@ -180,6 +180,7 @@ export const MyProfileNew = () => {
   const tabRefs = useRef({});
   const isManualScrollRef = useRef(false);
   const latestFetchUidRef = useRef('');
+  const saveQueueRef = useRef(Promise.resolve());
 
   const normalizeProfileData = (data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
     if (key === 'password') {
@@ -335,13 +336,26 @@ export const MyProfileNew = () => {
     );
   };
 
-  const saveState = async (nextState) => {
-    if (!userId) return;
-    const { existingData } = await fetchUserData(userId);
-    const { password: _password, ...profileData } = nextState;
-    const uploadedInfo = makeUploadedInfo(existingData, profileData);
-    delete uploadedInfo.password;
-    await persistUserWithFallback(userId, uploadedInfo, 'check');
+  const saveState = (nextState) => {
+    if (!userId) return Promise.resolve();
+
+    saveQueueRef.current = saveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const { existingData } = await fetchUserData(userId);
+        const { password: _password, ...profileData } = nextState;
+        const uploadedInfo = makeUploadedInfo(existingData, profileData);
+        delete uploadedInfo.password;
+        await persistUserWithFallback(userId, uploadedInfo, 'check');
+      });
+
+    return saveQueueRef.current;
+  };
+
+  const triggerAutosave = (nextState) => {
+    saveState(nextState).catch(error => {
+      console.warn('Autosave failed in MyProfileNew.', error);
+    });
   };
 
   const save = async () => {
@@ -374,12 +388,10 @@ export const MyProfileNew = () => {
                 selected={selected}
                 onClick={() => {
                   setCustomOptionMode(prev => ({ ...prev, [name]: false }));
-                  setState(prev => {
-                    const isSelected = String(prev[name] || '') === String(optionValue);
-                    const nextState = { ...prev, [name]: isSelected ? '' : optionValue };
-                    saveState(nextState);
-                    return nextState;
-                  });
+                  const isSelected = String(state[name] || '') === String(optionValue);
+                  const nextState = { ...state, [name]: isSelected ? '' : optionValue };
+                  setState(nextState);
+                  triggerAutosave(nextState);
                 }}
                 type="button"
               >
@@ -393,11 +405,7 @@ export const MyProfileNew = () => {
                 onClick={() => {
                   setCustomOptionMode(prev => ({ ...prev, [name]: true }));
                   if (!customSelected) {
-                    setState(prev => {
-                      const nextState = { ...prev, [name]: '' };
-                      saveState(nextState);
-                      return nextState;
-                    });
+                    setState(prev => ({ ...prev, [name]: '' }));
                   }
                 }}
                 type="button"
@@ -412,7 +420,7 @@ export const MyProfileNew = () => {
                 value={val}
                 placeholder="Введіть свій варіант"
                 onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
-                onBlur={e => saveState({ ...state, [name]: e.target.value })}
+                onBlur={e => triggerAutosave({ ...state, [name]: e.target.value })}
               />
             </CustomOptionWrap>
           ) : null}
@@ -422,14 +430,14 @@ export const MyProfileNew = () => {
           value={val}
           placeholder={getFieldPlaceholder(field)}
           onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
-          onBlur={e => saveState({ ...state, [name]: e.target.value })}
+          onBlur={e => triggerAutosave({ ...state, [name]: e.target.value })}
         />
       ) : (
         <Input
           value={val}
           placeholder={getFieldPlaceholder(field)}
           onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
-          onBlur={e => saveState({ ...state, [name]: e.target.value })}
+          onBlur={e => triggerAutosave({ ...state, [name]: e.target.value })}
         />
       )}
     </Field>;
