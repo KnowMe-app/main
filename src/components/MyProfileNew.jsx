@@ -242,7 +242,7 @@ export const MyProfileNew = () => {
       isMounted = false;
       unsubscribe();
     };
-  }, []);
+  }, [visibleSections]);
 
 
 
@@ -287,7 +287,7 @@ export const MyProfileNew = () => {
     const keys = visibleSections.flatMap(s => s.fields);
     const filled = keys.filter(name => String(state[name] || '').trim() !== '').length;
     return Math.round((filled / keys.length) * 100);
-  }, [state]);
+  }, [state, visibleSections]);
 
 
   const sectionProgress = useMemo(() => visibleSections.reduce((acc, section) => {
@@ -349,7 +349,7 @@ export const MyProfileNew = () => {
     entries.forEach(item => observer.observe(item.node));
 
     return () => observer.disconnect();
-  }, []);
+  }, [visibleSections]);
 
 
   useEffect(() => {
