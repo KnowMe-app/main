@@ -2777,25 +2777,16 @@ ${entries.join('\n')}`;
                           handleRemoveAdditionalAccessRuleInput(null, 'clear');
                           return;
                         }
-                        handleClear(field.name);
-                      }}
-                    >
-                      &times;
-                    </ClearButton>
-                  )}
-                  {field.name !== 'lastAction' && state[field.name] && (
-                    <DelKeyValueBTN
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => {
-                        if (field.name === ADDITIONAL_ACCESS_FIELD) {
-                          handleRemoveAdditionalAccessRuleInput(null, 'del');
+                        const fieldValue = state[field.name];
+                        if (Array.isArray(fieldValue)) {
+                          handleClear(field.name);
                           return;
                         }
                         handleDelKeyValue(field.name);
                       }}
                     >
-                      del
-                    </DelKeyValueBTN>
+                      &times;
+                    </ClearButton>
                   )}
                 </InputFieldContainer>
 
@@ -3766,27 +3757,6 @@ const SearchKeySourceActions = styled.div`
         background: rgba(255, 255, 255, 0.1);
       }
     }
-  }
-`;
-
-const DelKeyValueBTN = styled.button`
-  position: absolute;
-  right: 45px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: ${uiTokens.colors.danger};
-  font-size: 14px;
-  font-weight: 500;
-  width: 34px;
-  height: 32px;
-  border-radius: 999px;
-  &:hover {
-    color: ${uiTokens.colors.textPrimary};
-    background: rgba(229, 57, 53, 0.12);
   }
 `;
 
