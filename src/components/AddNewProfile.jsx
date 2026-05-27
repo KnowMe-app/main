@@ -1394,8 +1394,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const cleanedState = Object.fromEntries(
           Object.entries(syncedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
         );
+        if (delCondition) {
+          Object.keys(delCondition).forEach(key => {
+            if (key !== 'userId') {
+              delete cleanedState[key];
+            }
+          });
+        }
 
-        const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
+        const sanitizedExistingData = { ...(existingData || {}) };
+        if (delCondition) {
+          Object.keys(delCondition).forEach(key => {
+            if (key !== 'userId') {
+              delete sanitizedExistingData[key];
+            }
+          });
+        }
+
+        const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
         if (delCondition) {
           Object.keys(delCondition).forEach(key => {
             uploadedInfo[key] = null;

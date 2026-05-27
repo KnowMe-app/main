@@ -1,4 +1,43 @@
 export const makeUploadedInfo = (existingData, state, overwrite) => {
+  const isPlainObject = value =>
+    Object.prototype.toString.call(value) === '[object Object]';
+
+  const stableNormalize = value => {
+    if (Array.isArray(value)) {
+      return value.map(item => stableNormalize(item));
+    }
+
+    if (isPlainObject(value)) {
+      return Object.keys(value)
+        .sort()
+        .reduce((acc, key) => {
+          acc[key] = stableNormalize(value[key]);
+          return acc;
+        }, {});
+    }
+
+    return value;
+  };
+
+  const isDeepEqual = (left, right) =>
+    JSON.stringify(stableNormalize(left)) === JSON.stringify(stableNormalize(right));
+
+  const hasValueInArray = (arr, value) =>
+    Array.isArray(arr) && arr.some(item => isDeepEqual(item, value));
+
+  const dedupeArrayDeep = arr => {
+    if (!Array.isArray(arr)) return arr;
+
+    const result = [];
+    arr.forEach(item => {
+      if (!hasValueInArray(result, item)) {
+        result.push(item);
+      }
+    });
+
+    return result;
+  };
+
   let uploadedInfo = { ...existingData };
 
   for (const field in state) {
@@ -27,18 +66,26 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
         if (overwrite && !Array.isArray(state[field])) {
           console.log('Якщо масив має лише одне значення, зберігаємо його як ключ-значення');
           uploadedInfo[field] = state[field];
+        } else if (!Array.isArray(state[field]) && state[field] === '') {
+          const hasEmptyValueInExistingArray = existingData[field].some(item => isDeepEqual(item, ''));
+          if (hasEmptyValueInExistingArray) {
+            console.log('Видалили значення з поля-масиву, залишаємо пустий рядок');
+            uploadedInfo[field] = '';
+          } else {
+            console.log('Порожнє значення для поля-масиву без історичного empty — пропускаємо оновлення');
+          }
         } else if (Array.isArray(state[field])) {
           if (field === 'photos') {
             uploadedInfo[field] = [...state[field]];
           } else {
             console.log('Розпилюємо стейт');
-            uploadedInfo[field] = [...state[field]];
+            uploadedInfo[field] = dedupeArrayDeep([...state[field]]);
           }
         } else {
             console.log('Ключ є, записуємо / перезаписуємо як останній елемент масиву');
-            const updatedField = existingData[field].filter(item => item !== state[field]);
+            const updatedField = existingData[field].filter(item => !isDeepEqual(item, state[field]));
             updatedField.push(state[field]);
-            uploadedInfo[field] = updatedField;
+            uploadedInfo[field] = dedupeArrayDeep(updatedField);
           }
         }else if (overwrite && state[field]===''&& !Array.isArray(existingData[field])){
         console.log('Якщо це не масиви', state[field], existingData[field]);
@@ -54,8 +101,8 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
         uploadedInfo[field] = [existingData[field], state[field]];
       } else {
         console.log('ЕxistingData це не масив, а стейт це масив, дописуємо нові значення в масив', uploadedInfo.name);
-        const updatedField = state[field].filter(item => item !== existingData[field]);
-        uploadedInfo[field] = [existingData[field], ...updatedField]
+        const updatedField = state[field].filter(item => !isDeepEqual(item, existingData[field]));
+        uploadedInfo[field] = dedupeArrayDeep([existingData[field], ...updatedField]);
       }
     } else if (!existingData?.hasOwnProperty(field) && state[field] !== '') {
       if (field === 'postpone') {
