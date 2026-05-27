@@ -390,7 +390,15 @@ const EditProfile = () => {
     } else if (updatedState?.userId) {
       const existingData = await fetchUserById(updatedState.userId) || {};
       await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState, delCondition);
-      await updateDataInNewUsersRTDB(updatedState.userId, updatedState, 'update', true);
+      const payloadForNewUsers = { ...updatedState };
+      if (delCondition) {
+        Object.keys(delCondition).forEach(key => {
+          if (key !== 'userId') {
+            payloadForNewUsers[key] = null;
+          }
+        });
+      }
+      await updateDataInNewUsersRTDB(updatedState.userId, payloadForNewUsers, 'update', true);
     }
 
     try {
