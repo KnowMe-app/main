@@ -968,6 +968,7 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
           <>
             <SubmitButton onClick={() => navigate('/my-profile')}>my profile</SubmitButton>
+            <SubmitButton onClick={() => navigate('/my-profile-new')}>my profile new</SubmitButton>
             {(isAdmin || access.canAccessAdd) && <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>}
             {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>}
           </>
