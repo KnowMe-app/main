@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FiEdit2, FiX } from 'react-icons/fi';
 import styled from 'styled-components';
 import {
@@ -10,8 +11,12 @@ import {
 } from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Photos from './Photos';
+import { VerifyEmail } from './VerifyEmail';
+import InfoModal from './InfoModal';
+import { useAccess } from './AccessContext';
+import { ExitButton, SubmitButton } from './MyProfile';
 
 const Page = styled.div`
   --accent: #E8791A;
@@ -151,6 +156,13 @@ const PhotoManagerHeader = styled.div`
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 `;
+
+const DotsButton = styled.button`
+  display:flex;align-items:center;justify-content:center;
+  width:34px;height:34px;border-radius:8px;border:1px solid var(--border);
+  background:var(--card);cursor:pointer;font-size:22px;line-height:1;color:var(--muted);
+`;
+
 const IconPlainBtn = styled.button`
   background: transparent;
   border: none;
@@ -169,8 +181,16 @@ const sections = [
   { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main'] },
 ];
 
+const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','vk','country','region','city','moreInfo_main']);
+
+
 export const MyProfileNew = () => {
   const [state, setState] = useState({});
+  const navigate = useNavigate();
+  const access = useAccess();
+  const isAdmin = access.isAdmin;
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [userId, setUserId] = useState('');
   const [activeTab, setActiveTab] = useState('personal');
   const [customOptionMode, setCustomOptionMode] = useState({});
@@ -224,15 +244,53 @@ export const MyProfileNew = () => {
     };
   }, []);
 
+
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async user => {
+      setIsEmailVerified(Boolean(user?.emailVerified));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleExit = async () => {
+    await signOut(auth);
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('ownerId');
+    navigate('/');
+  };
+
+  const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
+  const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
+  const visibleSections = sections
+    .map(section => ({ ...section, fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)) }))
+    .filter(section => section.fields.length > 0);
+
+  const dotsMenu = () => (
+    <>
+      {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
+        <>
+          <SubmitButton onClick={() => navigate('/my-profile')}>my profile</SubmitButton>
+          <SubmitButton onClick={() => navigate('/my-profile-new')}>my profile new</SubmitButton>
+          {(isAdmin || access.canAccessAdd) && <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>}
+          {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>}
+        </>
+      )}
+      {isAdmin && <SubmitButton onClick={() => navigate('/flow')}>flow</SubmitButton>}
+      {!isEmailVerified && <VerifyEmail />}
+      <ExitButton onClick={handleExit}>exit</ExitButton>
+    </>
+  );
+
   const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
   const filledPct = useMemo(() => {
-    const keys = sections.flatMap(s => s.fields);
+    const keys = visibleSections.flatMap(s => s.fields);
     const filled = keys.filter(name => String(state[name] || '').trim() !== '').length;
     return Math.round((filled / keys.length) * 100);
   }, [state]);
 
 
-  const sectionProgress = useMemo(() => sections.reduce((acc, section) => {
+  const sectionProgress = useMemo(() => visibleSections.reduce((acc, section) => {
     const filled = section.fields.filter(name => String(state[name] || '').trim() !== '').length;
     const total = section.fields.length;
     acc[section.key] = {
@@ -242,7 +300,7 @@ export const MyProfileNew = () => {
       progress: total > 0 ? Math.round((filled / total) * 100) : 0,
     };
     return acc;
-  }, {}), [state]);
+  }, {}), [state, visibleSections]);
 
   const scrollToSection = (sectionKey) => {
     setActiveTab(sectionKey);
@@ -260,7 +318,7 @@ export const MyProfileNew = () => {
   };
 
   useEffect(() => {
-    const entries = sections
+    const entries = visibleSections
       .map(section => ({ key: section.key, node: sectionRefs.current[section.key] }))
       .filter(item => Boolean(item.node));
 
@@ -447,7 +505,10 @@ export const MyProfileNew = () => {
     <StickyHeader>
       <Topbar>
         <div style={{ fontFamily: 'Playfair Display, serif', fontSize: 18 }}>Know<span style={{ color: '#E8791A', fontStyle: 'italic' }}>Me</span></div>
-        <div style={{ fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 99, background: '#FEE9E9', color: '#D44' }}>● Прихована</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 99, background: '#FEE9E9', color: '#D44' }}>● Прихована</div>
+          <DotsButton type='button' onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
+        </div>
       </Topbar>
 
       <ProgressWrap>
@@ -461,7 +522,7 @@ export const MyProfileNew = () => {
     </ProgressWrap>
 
       <Tabs ref={tabsRef}>
-        {sections.map(s => {
+        {visibleSections.map(s => {
           const info = sectionProgress[s.key] || {};
           return <Tab
             key={s.key}
@@ -496,7 +557,7 @@ export const MyProfileNew = () => {
     </PhotoSection>
 
 
-    {sections.map(section => (
+    {visibleSections.map(section => (
       <Card key={section.key} ref={node => { sectionRefs.current[section.key] = node; }}>
         <Header>
           <div>{section.title.split(' ')[0]}</div>
@@ -530,6 +591,14 @@ export const MyProfileNew = () => {
           </div>
         </PhotoManagerCard>
       </PhotoManagerModal>
+
+    {showInfoModal && (
+      <InfoModal
+        onClose={() => setShowInfoModal(false)}
+        text={showInfoModal}
+        Context={dotsMenu}
+      />
+    )}
 
     <SubmitWrap>
       <SubmitBtn type="button" onClick={save}>Опублікувати анкету</SubmitBtn>
