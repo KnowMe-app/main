@@ -558,7 +558,11 @@ const EditProfile = () => {
           delete newState[fieldName];
         }
 
-        handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
+        const delCondition = Object.prototype.hasOwnProperty.call(newState, fieldName)
+          ? undefined
+          : { [fieldName]: removedValue };
+
+        handleSubmit(newState, 'overwrite', delCondition);
         return newState;
       }
 
@@ -588,7 +592,11 @@ const EditProfile = () => {
         }
       }
 
-      handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
+      const delCondition = Object.prototype.hasOwnProperty.call(newState, fieldName)
+        ? undefined
+        : { [fieldName]: removedValue };
+
+      handleSubmit(newState, 'overwrite', delCondition);
       return newState;
     });
   };
