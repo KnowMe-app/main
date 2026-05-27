@@ -353,6 +353,13 @@ const EditProfile = () => {
       const cleanedState = Object.fromEntries(
         Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
       );
+      if (delCondition) {
+        Object.keys(delCondition).forEach(key => {
+          if (key !== 'userId') {
+            delete cleanedState[key];
+          }
+        });
+      }
 
       const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
       if (delCondition) {
