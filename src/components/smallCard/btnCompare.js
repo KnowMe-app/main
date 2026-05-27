@@ -18,7 +18,6 @@ export const btnCompare = (
     'bodyType',
     'lastAction',
     'clothingSize',
-    'deviceHeight',
     'education',
     'experience',
     'eyeColor',

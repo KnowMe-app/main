@@ -41,14 +41,15 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
   let uploadedInfo = { ...existingData };
 
   for (const field in state) {
+    if (field.startsWith('device')) {
+      continue;
+    }
+
     if (
       field === 'lastAction' ||
       field === 'loadingCounter' ||
       field === 'lastLogin' ||
       field === 'lastLogin2' ||
-      field === 'deviceResize' ||
-      field === 'deviceHeight' ||
-      field === 'deviceWidth' ||
       field === 'modifiedUser'||
       field === 'saved_age' || field === 'saved_height' || field === 'saved_weight' || field === 'saved_reward'|| field === 'saved_eyeColor' || field === 'saved_blood' || field === 'saved_country'
     ) {

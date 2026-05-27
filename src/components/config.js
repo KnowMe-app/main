@@ -5661,7 +5661,6 @@ export const mergeDuplicateUsers = async () => {
       'bodyType',
       'lastAction',
       'clothingSize',
-      'deviceHeight',
       'education',
       'experience',
       'eyeColor',
