@@ -66,6 +66,9 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
         if (overwrite && !Array.isArray(state[field])) {
           console.log('Якщо масив має лише одне значення, зберігаємо його як ключ-значення');
           uploadedInfo[field] = state[field];
+        } else if (!Array.isArray(state[field]) && state[field] === '') {
+          console.log('Видалили значення з поля-масиву, залишаємо пустий рядок');
+          uploadedInfo[field] = '';
         } else if (Array.isArray(state[field])) {
           if (field === 'photos') {
             uploadedInfo[field] = [...state[field]];
