@@ -178,7 +178,7 @@ export const pickerFields = [
 
   // контакти
   { name: 'email', label: 'Email', ukrainian: 'Email', placeholder: 'name@example.com', svg: 'mail' },
-  { name: 'phone', label: 'Телефон', ukrainian: 'Телефон', placeholder: '+380 67 123 45 67', ukrainianHint: 'Номер у міжнародному форматі', svg: 'phone' },
+  { name: 'phone', label: 'Телефон', ukrainian: 'Телефон', placeholder: '380 67 123 45 67', ukrainianHint: 'Номер у міжнародному форматі', svg: 'phone' },
   { name: 'telegram', label: 'Telegram', ukrainian: 'Telegram', placeholder: 'username', svg: 'telegram-plane' },
   { name: 'facebook', label: 'Facebook', ukrainian: 'Facebook', placeholder: 'username', svg: 'facebook-f' },
   { name: 'instagram', label: 'Instagram', ukrainian: 'Instagram', placeholder: 'username', svg: 'instagram' },
