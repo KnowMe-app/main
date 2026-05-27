@@ -11,7 +11,7 @@ const get = (...args) =>
   });
 
 const EDITS_ROOT = 'multiData/edits';
-const TECHNICAL_FIELD_NAMES = new Set(['lastAction', 'cachedAt']);
+const TECHNICAL_FIELD_NAMES = new Set(['lastAction', 'cachedAt', 'cacheVersion']);
 
 const isPlainObject = value => value && typeof value === 'object' && !Array.isArray(value);
 
