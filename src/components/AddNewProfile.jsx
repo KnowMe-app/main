@@ -3539,15 +3539,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const favIds = getFavorites();
 
-    const favUsers = await fetchFavoriteUsersData(owner);
-    Object.entries(favUsers).forEach(([id, user]) => {
-      favIds[id] = true;
-      if (id && !loaded[id]) {
-        loaded[id] = user;
-        backendCount += 1;
-      }
-    });
-
     const normalizedFavs = Object.fromEntries(
       Object.entries(favIds).filter(([, value]) => value),
     );
