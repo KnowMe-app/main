@@ -3538,6 +3538,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }, {});
 
     const favIds = getFavorites();
+    const favoriteQueryIds = getIdsByQuery('favorite');
+
+    favoriteQueryIds.forEach(id => {
+      if (id) {
+        favIds[id] = true;
+      }
+    });
 
     const normalizedFavs = Object.fromEntries(
       Object.entries(favIds).filter(([, value]) => value),
