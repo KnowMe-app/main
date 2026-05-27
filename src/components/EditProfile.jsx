@@ -103,7 +103,7 @@ const sanitizeOverlayValue = value => {
 };
 
 const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
-const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction']);
+const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction', 'cacheVersion']);
 
 
 const resolveOverlayIncomingValue = change => {
@@ -353,6 +353,7 @@ const EditProfile = () => {
       const cleanedState = Object.fromEntries(
         Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
       );
+      delete cleanedState.cacheVersion;
       if (delCondition) {
         Object.keys(delCondition).forEach(key => {
           if (key !== 'userId') {
@@ -378,6 +379,7 @@ const EditProfile = () => {
           [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
         )
       );
+      delete cleanedStateForNewUsers.cacheVersion;
       if (delCondition) {
         Object.keys(delCondition).forEach(key => {
           if (key !== 'userId') {
@@ -484,6 +486,7 @@ const EditProfile = () => {
       ...updatedState,
       ...(formattedLastDelivery ? { lastDelivery: formattedLastDelivery } : {}),
     };
+    delete syncedState.cacheVersion;
     setIsSyncing(true);
     try {
       const serverData = await remoteUpdate({
@@ -635,6 +638,7 @@ const EditProfile = () => {
       const cleanedState = Object.fromEntries(
         Object.entries(mergedCard).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
       );
+      delete cleanedState.cacheVersion;
       await updateDataInRealtimeDB(mergedCard.userId, cleanedState, 'update');
       await updateDataInFiresoreDB(mergedCard.userId, cleanedState, 'check');
       const cleanedStateForNewUsers = Object.fromEntries(
@@ -642,13 +646,16 @@ const EditProfile = () => {
           [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
         )
       );
+      delete cleanedStateForNewUsers.cacheVersion;
       await updateDataInNewUsersRTDB(mergedCard.userId, cleanedStateForNewUsers, 'update', true);
       return;
     }
 
     const existingData = await fetchUserById(mergedCard.userId) || {};
     await syncUserSearchIdIndex(mergedCard.userId, existingData, mergedCard);
-    await updateDataInNewUsersRTDB(mergedCard.userId, mergedCard, 'update', true);
+    const sanitizedMergedCard = { ...mergedCard };
+    delete sanitizedMergedCard.cacheVersion;
+    await updateDataInNewUsersRTDB(mergedCard.userId, sanitizedMergedCard, 'update', true);
   };
 
   const effectiveCycleStatus = getEffectiveCycleStatus(state);

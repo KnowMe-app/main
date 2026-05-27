@@ -544,7 +544,7 @@ const sanitizeOverlayValue = value => {
 };
 
 const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
-const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction']);
+const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction', 'cacheVersion']);
 const resolveOverlayIncomingValue = change => {
   if (!change || typeof change !== 'object') return undefined;
 
