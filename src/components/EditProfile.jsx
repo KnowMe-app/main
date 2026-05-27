@@ -552,7 +552,7 @@ const EditProfile = () => {
 
         if (filtered.length > 1) {
           newState[fieldName] = filtered;
-        } else if (filtered.length === 1) {
+        } else if (filtered.length === 1 && filtered[0] !== '') {
           newState[fieldName] = filtered[0];
         } else {
           delete newState[fieldName];
