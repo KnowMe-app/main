@@ -1394,8 +1394,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const cleanedState = Object.fromEntries(
           Object.entries(syncedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
         );
+        if (delCondition) {
+          Object.keys(delCondition).forEach(key => {
+            if (key !== 'userId') {
+              delete cleanedState[key];
+            }
+          });
+        }
 
-        const uploadedInfo = makeUploadedInfo(existingData, cleanedState, overwrite);
+        const sanitizedExistingData = { ...(existingData || {}) };
+        if (delCondition) {
+          Object.keys(delCondition).forEach(key => {
+            if (key !== 'userId') {
+              delete sanitizedExistingData[key];
+            }
+          });
+        }
+
+        const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
         if (delCondition) {
           Object.keys(delCondition).forEach(key => {
             uploadedInfo[key] = null;
@@ -1574,33 +1590,35 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleClear = (fieldName, idx) => {
     setState(prevState => {
       const isArray = Array.isArray(prevState[fieldName]);
+      const applyDelLikeRemoval = deletedValue => {
+        const nextState = { ...prevState };
+        delete nextState[fieldName];
+        handleSubmit(nextState, 'overwrite', { [fieldName]: deletedValue });
+        return nextState;
+      };
+
       const newState = { ...prevState };
-      let removedValue;
-      let removedPayload;
 
       if (isArray) {
         const filteredArray = prevState[fieldName].filter((_, i) => i !== idx);
-        removedValue = prevState[fieldName][idx];
+        const removedValue = prevState[fieldName][idx];
         const normalizedFilteredArray = filteredArray.filter(
           value => !(typeof value === 'string' && value.trim() === '')
         );
 
         if (normalizedFilteredArray.length === 0) {
-          delete newState[fieldName];
-          removedPayload = { [fieldName]: prevState[fieldName] };
+          return applyDelLikeRemoval(removedValue);
         } else if (normalizedFilteredArray.length === 1) {
           newState[fieldName] = normalizedFilteredArray[0];
         } else {
           newState[fieldName] = normalizedFilteredArray;
         }
+        handleSubmit(newState, 'overwrite');
+        return newState;
       } else {
-        removedValue = prevState[fieldName];
-        delete newState[fieldName];
-        removedPayload = { [fieldName]: removedValue };
+        const removedValue = prevState[fieldName];
+        return applyDelLikeRemoval(removedValue);
       }
-
-      handleSubmit(newState, 'overwrite', removedPayload);
-      return newState;
     });
   };
 
