@@ -555,12 +555,10 @@ const EditProfile = () => {
         } else if (filtered.length === 1) {
           newState[fieldName] = filtered[0];
         } else {
-          // Для видалення конкретного елемента через "хрестик" не видаляємо весь ключ,
-          // щоб уникнути втрати поля в RTDB/overlay потоці.
-          newState[fieldName] = '';
+          delete newState[fieldName];
         }
 
-        handleSubmit(newState, 'overwrite');
+        handleSubmit(newState, 'overwrite', { [fieldName]: removedValue });
         return newState;
       }
 
