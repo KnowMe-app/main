@@ -2777,14 +2777,6 @@ ${entries.join('\n')}`;
                           handleRemoveAdditionalAccessRuleInput(null, 'clear');
                           return;
                         }
-                        const fieldValue = state[field.name];
-                        if (Array.isArray(fieldValue)) {
-                          const removeIndex = fieldValue.length - 1;
-                          if (removeIndex >= 0) {
-                            handleClear(field.name, removeIndex);
-                          }
-                          return;
-                        }
                         handleClear(field.name);
                       }}
                     >
