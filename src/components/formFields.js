@@ -1,6 +1,7 @@
 export const yesNoOptions = [
   { placeholder: 'No', ukrainian: 'Ні' },
   { placeholder: 'Yes', ukrainian: 'Так' },
+  { placeholder: 'Custom', ukrainian: 'Свій варіант', value: 'Свій варіант' },
 ];
 
 export const inputFields = [
