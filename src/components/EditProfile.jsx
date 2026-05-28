@@ -7,7 +7,6 @@ import {
   updateDataInNewUsersRTDB,
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
-  removeKeyFromFirebase,
   syncUserSearchIdIndex,
   auth,
 } from './config';
@@ -584,11 +583,7 @@ const EditProfile = () => {
         removedValue = currentValue[idx];
 
         if (filtered.length === 0 || (filtered.length === 1 && filtered[0] === '')) {
-          const deletedValue = currentValue;
           delete newState[fieldName];
-          if (isAdmin) {
-            removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
-          }
         } else if (filtered.length === 1) {
           newState[fieldName] = filtered[0];
         } else {
@@ -596,11 +591,7 @@ const EditProfile = () => {
         }
       } else {
         removedValue = currentValue;
-        const deletedValue = currentValue;
         delete newState[fieldName];
-        if (isAdmin) {
-          removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
-        }
       }
 
       const delCondition = Object.prototype.hasOwnProperty.call(newState, fieldName)
@@ -617,9 +608,6 @@ const EditProfile = () => {
       const newState = { ...prev };
       const deletedValue = newState[fieldName];
       delete newState[fieldName];
-      if (isAdmin) {
-        removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
-      }
       handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
       return newState;
     });
