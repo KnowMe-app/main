@@ -429,7 +429,13 @@ export const MyProfileNew = () => {
     const isTextArea = name === 'moreInfo_main';
     const isAppearanceField = sections.find(section => section.key === 'appearance')?.fields.includes(name);
     const optionValues = Array.isArray(field.options) ? field.options.map(getOptionValue).map(String) : [];
-    const customSelected = isAppearanceField
+    const optionLabels = Array.isArray(field.options) ? field.options.map(getOptionLabel).map(String) : [];
+    const isYesNoField = optionValues.includes('No')
+      && optionValues.includes('Yes')
+      && optionLabels.includes('Ні')
+      && optionLabels.includes('Так');
+    const canUseCustomOption = isAppearanceField || isYesNoField;
+    const customSelected = canUseCustomOption
       && (Boolean(customOptionMode[name]) || (String(val).trim() !== '' && !optionValues.includes(String(val))));
 
     return <Field key={name}>
@@ -455,7 +461,7 @@ export const MyProfileNew = () => {
                 {getOptionLabel(option)}
               </Chip>;
             })}
-            {isAppearanceField ? (
+            {canUseCustomOption ? (
               <Chip
                 key={`${name}-custom-option`}
                 selected={customSelected}
@@ -471,7 +477,7 @@ export const MyProfileNew = () => {
               </Chip>
             ) : null}
           </ChipRow>
-          {isAppearanceField && customSelected ? (
+          {canUseCustomOption && customSelected ? (
             <CustomOptionWrap>
               <Input
                 value={val}
