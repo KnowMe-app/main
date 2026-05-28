@@ -15,7 +15,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Photos from './Photos';
 import { VerifyEmail } from './VerifyEmail';
 import InfoModal from './InfoModal';
-import { useAccess } from './AccessContext';
+import { resolveAccess } from 'utils/accessLevel';
 import { ExitButton, SubmitButton } from './MyProfile';
 
 const Page = styled.div`
@@ -187,7 +187,8 @@ const visibleNonDonorFields = new Set(['name','surname','email','phone','telegra
 export const MyProfileNew = () => {
   const [state, setState] = useState({});
   const navigate = useNavigate();
-  const access = useAccess();
+  const currentUid = auth.currentUser?.uid || localStorage.getItem('ownerId') || '';
+  const access = resolveAccess({ uid: currentUid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
   const isAdmin = access.isAdmin;
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [isEmailVerified, setIsEmailVerified] = useState(false);
