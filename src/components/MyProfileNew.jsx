@@ -11,6 +11,7 @@ import {
 } from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
+import { inputUpdateValue } from './inputUpdatedValue';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Photos from './Photos';
 import { VerifyEmail } from './VerifyEmail';
@@ -202,6 +203,12 @@ export const MyProfileNew = () => {
   const isManualScrollRef = useRef(false);
   const latestFetchUidRef = useRef('');
   const saveQueueRef = useRef(Promise.resolve());
+  const stateRef = useRef(state);
+  const editedFieldsRef = useRef(new Set());
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const normalizeProfileData = (data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
     if (key === 'password') {
@@ -221,6 +228,51 @@ export const MyProfileNew = () => {
     acc[key] = value;
     return acc;
   }, {});
+
+  const mergeLoadedProfileData = (loadedData, uid) => {
+    setState(prevState => {
+      const protectedFields = editedFieldsRef.current;
+      const nextState = { ...loadedData, userId: uid };
+
+      protectedFields.forEach(fieldName => {
+        if (Object.prototype.hasOwnProperty.call(prevState, fieldName)) {
+          nextState[fieldName] = prevState[fieldName];
+        }
+      });
+
+      stateRef.current = nextState;
+      return nextState;
+    });
+  };
+
+  const updateFieldValue = (name, value, field) => {
+    const updatedValue = inputUpdateValue(value, field);
+    editedFieldsRef.current.add(name);
+
+    setState(prevState => {
+      const nextState = {
+        ...prevState,
+        [name]: updatedValue,
+      };
+
+      stateRef.current = nextState;
+      return nextState;
+    });
+  };
+
+  const saveFieldValue = (name, value, field) => {
+    const updatedValue = inputUpdateValue(value, field);
+    editedFieldsRef.current.add(name);
+
+    const nextState = {
+      ...stateRef.current,
+      [name]: updatedValue,
+    };
+
+    stateRef.current = nextState;
+    setState(nextState);
+    triggerAutosave(nextState);
+  };
 
   const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
   const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
@@ -242,7 +294,7 @@ export const MyProfileNew = () => {
         return;
       }
 
-      setState(normalizeProfileData(existingData || {}));
+      mergeLoadedProfileData(normalizeProfileData(existingData || {}), uid);
     });
 
     return () => {
@@ -446,7 +498,9 @@ export const MyProfileNew = () => {
                 onClick={() => {
                   setCustomOptionMode(prev => ({ ...prev, [name]: false }));
                   const isSelected = String(state[name] || '') === String(optionValue);
-                  const nextState = { ...state, [name]: isSelected ? '' : optionValue };
+                  const nextState = { ...stateRef.current, [name]: isSelected ? '' : optionValue };
+                  editedFieldsRef.current.add(name);
+                  stateRef.current = nextState;
                   setState(nextState);
                   triggerAutosave(nextState);
                 }}
@@ -462,7 +516,7 @@ export const MyProfileNew = () => {
                 onClick={() => {
                   setCustomOptionMode(prev => ({ ...prev, [name]: true }));
                   if (!customSelected) {
-                    setState(prev => ({ ...prev, [name]: '' }));
+                    updateFieldValue(name, '', field);
                   }
                 }}
                 type="button"
@@ -476,8 +530,8 @@ export const MyProfileNew = () => {
               <Input
                 value={val}
                 placeholder="Введіть свій варіант"
-                onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
-                onBlur={e => triggerAutosave({ ...state, [name]: e.target.value })}
+                onChange={e => updateFieldValue(name, e.target.value, field)}
+                onBlur={e => saveFieldValue(name, e.target.value, field)}
               />
             </CustomOptionWrap>
           ) : null}
@@ -486,15 +540,15 @@ export const MyProfileNew = () => {
         <TextArea
           value={val}
           placeholder={getFieldPlaceholder(field)}
-          onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
-          onBlur={e => triggerAutosave({ ...state, [name]: e.target.value })}
+          onChange={e => updateFieldValue(name, e.target.value, field)}
+          onBlur={e => saveFieldValue(name, e.target.value, field)}
         />
       ) : (
         <Input
           value={val}
           placeholder={getFieldPlaceholder(field)}
-          onChange={e => setState(prev => ({ ...prev, [name]: e.target.value }))}
-          onBlur={e => triggerAutosave({ ...state, [name]: e.target.value })}
+          onChange={e => updateFieldValue(name, e.target.value, field)}
+          onBlur={e => saveFieldValue(name, e.target.value, field)}
         />
       )}
     </Field>;
