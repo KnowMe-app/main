@@ -948,8 +948,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [pendingLocalIndexTypes, setPendingLocalIndexTypes] = useState([]);
   const [pendingLocalUsersData, setPendingLocalUsersData] = useState(null);
   const [pendingLocalNewUsersData, setPendingLocalNewUsersData] = useState(null);
+  const [exportDataSource, setExportDataSource] = useState('server');
+  const [localExportUsersData, setLocalExportUsersData] = useState(null);
+  const [localExportNewUsersData, setLocalExportNewUsersData] = useState(null);
   const localUsersFileInputRef = useRef(null);
   const localNewUsersFileInputRef = useRef(null);
+  const localExportUsersFileInputRef = useRef(null);
+  const localExportNewUsersFileInputRef = useRef(null);
   const [selectedIndexJobs, setSelectedIndexJobs] = useState(() => {
     const storedRaw = localStorage.getItem(INDEX_SELECTION_STORAGE_KEY);
     if (!storedRaw) return defaultSelectedIndexJobs;
@@ -3460,63 +3465,95 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const exportFilteredUsers = async () => {
-    const noFilters = !filters || Object.values(filters).every(value => value === 'off');
-
     let fav = favoriteUsersData;
     if (filters.favorite?.favOnly && Object.keys(fav).length === 0) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
     }
 
-    const allUsers = noFilters
-      ? await fetchAllUsersFromRTDB()
-      : await fetchAllFilteredUsers(undefined, filters, fav, {
-          includeSpecialFutureDates: true,
-          dislikedUsers: dislikeUsersData,
-        });
+    const allUsers = await getExportContactsBySource(filters, fav);
+    if (!allUsers) return;
 
     saveToContact(allUsers);
   };
 
-  const exportFilteredUsersCsv = async () => {
-    const noFilters = !filters || Object.values(filters).every(value => value === 'off');
+  const getMergedUsersFromLocalExportCollections = useCallback(() => {
+    if (!localExportUsersData || !localExportNewUsersData) return null;
+    const usersData = localExportUsersData || {};
+    const newUsersData = localExportNewUsersData || {};
+    const allUserIds = new Set([...Object.keys(newUsersData), ...Object.keys(usersData)]);
+    const allUsersArray = Array.from(allUserIds).map(userId => {
+      const newUserRaw = newUsersData[userId] || {};
+      return [
+        userId,
+        {
+          userId,
+          ...newUserRaw,
+          ...(usersData[userId] || {}),
+        },
+      ];
+    });
+    return Object.fromEntries(allUsersArray);
+  }, [localExportNewUsersData, localExportUsersData]);
 
+  const getExportContactsBySource = useCallback(async (filtersToApply, favoriteUsersMap) => {
+    const noFilters = !filtersToApply || Object.values(filtersToApply).every(value => value === 'off');
+
+    if (exportDataSource === 'local') {
+      const localMergedUsers = getMergedUsersFromLocalExportCollections();
+      if (!localMergedUsers) {
+        toast.error('Оберіть локальні users.json та newUsers.json для експорту');
+        return null;
+      }
+
+      if (noFilters) return localMergedUsers;
+
+      const filteredUsers = filterMain(
+        Object.entries(localMergedUsers),
+        undefined,
+        filtersToApply,
+        favoriteUsersMap,
+        dislikeUsersData,
+      );
+      return Object.fromEntries(filteredUsers);
+    }
+
+    return noFilters
+      ? fetchAllUsersFromRTDB()
+      : fetchAllFilteredUsers(undefined, filtersToApply, favoriteUsersMap, {
+          includeSpecialFutureDates: true,
+          dislikedUsers: dislikeUsersData,
+        });
+  }, [dislikeUsersData, exportDataSource, getMergedUsersFromLocalExportCollections]);
+
+  const exportFilteredUsersCsv = async () => {
     let fav = favoriteUsersData;
     if (filters.favorite?.favOnly && Object.keys(fav).length === 0) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
     }
 
-    const allUsers = noFilters
-      ? await fetchAllUsersFromRTDB()
-      : await fetchAllFilteredUsers(undefined, filters, fav, {
-          includeSpecialFutureDates: true,
-          dislikedUsers: dislikeUsersData,
-        });
+    const allUsers = await getExportContactsBySource(filters, fav);
+    if (!allUsers) return;
 
     saveToContactCsv(allUsers);
   };
 
   const saveAllContacts = async () => {
-    const res = await fetchAllUsersFromRTDB();
+    const res = await getExportContactsBySource({}, favoriteUsersData);
+    if (!res) return;
     saveToContact(res);
   };
 
   const saveFilteredContactsVcf = async () => {
-    const noFilters = !filters || Object.values(filters).every(value => value === 'off');
-
     let fav = favoriteUsersData;
     if (filters.favorite?.favOnly && Object.keys(fav).length === 0) {
       fav = await fetchFavoriteUsers(auth.currentUser.uid);
       setFavoriteUsersData(fav);
     }
 
-    const allUsers = noFilters
-      ? await fetchAllUsersFromRTDB()
-      : await fetchAllFilteredUsers(undefined, filters, fav, {
-          includeSpecialFutureDates: true,
-          dislikedUsers: dislikeUsersData,
-        });
+    const allUsers = await getExportContactsBySource(filters, fav);
+    if (!allUsers) return;
 
     saveToContact(allUsers);
   };
@@ -3984,6 +4021,40 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setPendingLocalNewUsersData(parsed);
       }
       toast.success(`Файл ${collection}.json прочитано`);
+    } catch (error) {
+      toast.error(`Не вдалося прочитати ${collection}.json: ${error?.message || 'невідома помилка'}`);
+    }
+  }, []);
+
+  const handlePickUsersFileForLocalExport = useCallback(() => {
+    if (localExportUsersFileInputRef.current) {
+      localExportUsersFileInputRef.current.value = '';
+      localExportUsersFileInputRef.current.click();
+    }
+  }, []);
+
+  const handlePickNewUsersFileForLocalExport = useCallback(() => {
+    if (localExportNewUsersFileInputRef.current) {
+      localExportNewUsersFileInputRef.current.value = '';
+      localExportNewUsersFileInputRef.current.click();
+    }
+  }, []);
+
+  const handleLocalExportCollectionFileSelected = useCallback(async (event, collection) => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!parsed || typeof parsed !== 'object') {
+        toast.error(`Некоректний JSON для ${collection}`);
+        return;
+      }
+      if (collection === 'users') {
+        setLocalExportUsersData(parsed);
+      } else {
+        setLocalExportNewUsersData(parsed);
+      }
+      toast.success(`Локальний файл для експорту ${collection}.json прочитано`);
     } catch (error) {
       toast.error(`Не вдалося прочитати ${collection}.json: ${error?.message || 'невідома помилка'}`);
     }
@@ -4922,6 +4993,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </>
               )}
               {<Button onClick={searchDuplicates} {...createLongPressHandlers('Шукає дублікати карток')}>DPL</Button>}
+              <Button
+                onClick={() => setExportDataSource(prev => (prev === 'local' ? 'server' : 'local'))}
+                {...createLongPressHandlers('Перемикає джерело експорту: сервер або локальні users/newUsers JSON')}
+              >
+                {exportDataSource === 'local' ? 'SRC:Local' : 'SRC:Server'}
+              </Button>
+              {exportDataSource === 'local' && (
+                <>
+                  <Button onClick={handlePickUsersFileForLocalExport}>
+                    users.json {localExportUsersData ? '✅' : ''}
+                  </Button>
+                  <Button onClick={handlePickNewUsersFileForLocalExport}>
+                    newUsers.json {localExportNewUsersData ? '✅' : ''}
+                  </Button>
+                </>
+              )}
               {
                 <Button
                   onClick={() => {
@@ -4948,6 +5035,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 accept=".xls,.xlsx"
                 style={{ display: 'none' }}
                 onChange={handleExcelProfilesUpload}
+              />
+              <input
+                ref={localExportUsersFileInputRef}
+                type="file"
+                accept="application/json,.json"
+                style={{ display: 'none' }}
+                onChange={event => handleLocalExportCollectionFileSelected(event, 'users')}
+              />
+              <input
+                ref={localExportNewUsersFileInputRef}
+                type="file"
+                accept="application/json,.json"
+                style={{ display: 'none' }}
+                onChange={event => handleLocalExportCollectionFileSelected(event, 'newUsers')}
               />
               <Button
                 onClick={() => excelImportInputRef.current?.click()}
