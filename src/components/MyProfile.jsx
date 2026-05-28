@@ -1077,7 +1077,15 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
                     onBlur={() => handleBlur(field.name)}
                   />
-                  {state[field.name] && <ClearButton onClick={() => handleClear(field.name)}>&times; {/* HTML-символ для хрестика */}</ClearButton>}
+                  {state[field.name] && (
+                    <ClearButton
+                      type="button"
+                      onMouseDown={event => event.preventDefault()}
+                      onClick={() => handleClear(field.name)}
+                    >
+                      &times; {/* HTML-символ для хрестика */}
+                    </ClearButton>
+                  )}
                 </InputFieldContainer>
 
                 <Hint fieldName={field.name} isActive={state[field.name]}>{field?.placeholder ?? ''}</Hint>
