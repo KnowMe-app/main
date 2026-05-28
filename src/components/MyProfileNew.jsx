@@ -222,6 +222,12 @@ export const MyProfileNew = () => {
     return acc;
   }, {});
 
+  const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
+  const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
+  const visibleSections = sections
+    .map(section => ({ ...section, fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)) }))
+    .filter(section => section.fields.length > 0);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -245,8 +251,6 @@ export const MyProfileNew = () => {
     };
   }, [visibleSections]);
 
-
-
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
       setIsEmailVerified(Boolean(user?.emailVerified));
@@ -260,12 +264,6 @@ export const MyProfileNew = () => {
     localStorage.removeItem('ownerId');
     navigate('/');
   };
-
-  const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
-  const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
-  const visibleSections = sections
-    .map(section => ({ ...section, fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)) }))
-    .filter(section => section.fields.length > 0);
 
   const dotsMenu = () => (
     <>
