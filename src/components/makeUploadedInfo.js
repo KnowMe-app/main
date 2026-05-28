@@ -61,20 +61,11 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
       // Дублікати пропускаємо
       existingData[field] !== state[field]
     ) {
-      
       if (Array.isArray(existingData[field])) {
         console.log('ExistingData на сервері є масивом');
         if (overwrite && !Array.isArray(state[field])) {
           console.log('Якщо масив має лише одне значення, зберігаємо його як ключ-значення');
           uploadedInfo[field] = state[field];
-        } else if (!Array.isArray(state[field]) && state[field] === '') {
-          const hasEmptyValueInExistingArray = existingData[field].some(item => isDeepEqual(item, ''));
-          if (hasEmptyValueInExistingArray) {
-            console.log('Видалили значення з поля-масиву, залишаємо пустий рядок');
-            uploadedInfo[field] = '';
-          } else {
-            console.log('Порожнє значення для поля-масиву без історичного empty — пропускаємо оновлення');
-          }
         } else if (Array.isArray(state[field])) {
           if (field === 'photos') {
             uploadedInfo[field] = [...state[field]];
