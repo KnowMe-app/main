@@ -599,7 +599,11 @@ const EditProfile = () => {
         const deletedValue = currentValue;
         delete newState[fieldName];
         if (isAdmin) {
-          removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
+          removeKeyFromFirebase(fieldName, deletedValue, prev.userId).catch(error => {
+            console.error('Scalar field delete failed', error);
+            toast.error('Не вдалося видалити поле');
+          });
+          return newState;
         }
       }
 
@@ -617,6 +621,13 @@ const EditProfile = () => {
       const newState = { ...prev };
       const deletedValue = newState[fieldName];
       delete newState[fieldName];
+      if (isAdmin && !Array.isArray(deletedValue)) {
+        removeKeyFromFirebase(fieldName, deletedValue, prev.userId).catch(error => {
+          console.error('Scalar field delete failed', error);
+          toast.error('Не вдалося видалити поле');
+        });
+        return newState;
+      }
       if (isAdmin) {
         removeKeyFromFirebase(fieldName, deletedValue, prev.userId);
       }
