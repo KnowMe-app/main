@@ -64,48 +64,11 @@ const FieldGroup = styled.div`padding:0 18px;`;
 const Field = styled.div`padding:14px 0;border-bottom:1px solid var(--border); &:last-child{border-bottom:none;}`;
 const Label = styled.div`font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px;`;
 const Input = styled.input`
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  background: var(--bg);
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 38px 10px 14px;
-  outline: none;
+  width: 100%; background: var(--bg); border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 14px; outline: none;
   &:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(232, 121, 26, .12); }
 `;
 const TextArea = styled.textarea`
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  background: var(--bg);
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 38px 10px 14px;
-  outline: none;
-  min-height: 90px;
-`;
-const FieldControl = styled.div`
-  position: relative;
-  width: 100%;
-  min-width: 0;
-`;
-const ClearFieldButton = styled.button`
-  position: absolute;
-  top: 50%;
-  right: 8px;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
+  width: 100%; background: var(--bg); border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 14px; outline: none; min-height: 90px;
 `;
 const ChipRow = styled.div`display:flex;flex-wrap:wrap;gap:6px;`;
 const Chip = styled.button`
@@ -309,10 +272,6 @@ export const MyProfileNew = () => {
     stateRef.current = nextState;
     setState(nextState);
     triggerAutosave(nextState);
-  };
-
-  const clearFieldValue = (name, field) => {
-    saveFieldValue(name, '', field);
   };
 
   const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
@@ -574,65 +533,29 @@ export const MyProfileNew = () => {
           </ChipRow>
           {canUseCustomOption && customSelected ? (
             <CustomOptionWrap>
-              <FieldControl>
-                <Input
-                  value={val}
-                  placeholder="Введіть свій варіант"
-                  onChange={e => updateFieldValue(name, e.target.value, field)}
-                  onBlur={e => saveFieldValue(name, e.target.value, field)}
-                />
-                {val ? (
-                  <ClearFieldButton
-                    type="button"
-                    onMouseDown={event => event.preventDefault()}
-                    onClick={() => clearFieldValue(name, field)}
-                    aria-label="Очистити поле"
-                  >
-                    <FiX size={16} />
-                  </ClearFieldButton>
-                ) : null}
-              </FieldControl>
+              <Input
+                value={val}
+                placeholder="Введіть свій варіант"
+                onChange={e => updateFieldValue(name, e.target.value, field)}
+                onBlur={e => saveFieldValue(name, e.target.value, field)}
+              />
             </CustomOptionWrap>
           ) : null}
         </>
       ) : isTextArea ? (
-        <FieldControl>
-          <TextArea
-            value={val}
-            placeholder={getFieldPlaceholder(field)}
-            onChange={e => updateFieldValue(name, e.target.value, field)}
-            onBlur={e => saveFieldValue(name, e.target.value, field)}
-          />
-          {val ? (
-            <ClearFieldButton
-              type="button"
-              onMouseDown={event => event.preventDefault()}
-              onClick={() => clearFieldValue(name, field)}
-              aria-label="Очистити поле"
-            >
-              <FiX size={16} />
-            </ClearFieldButton>
-          ) : null}
-        </FieldControl>
+        <TextArea
+          value={val}
+          placeholder={getFieldPlaceholder(field)}
+          onChange={e => updateFieldValue(name, e.target.value, field)}
+          onBlur={e => saveFieldValue(name, e.target.value, field)}
+        />
       ) : (
-        <FieldControl>
-          <Input
-            value={val}
-            placeholder={getFieldPlaceholder(field)}
-            onChange={e => updateFieldValue(name, e.target.value, field)}
-            onBlur={e => saveFieldValue(name, e.target.value, field)}
-          />
-          {val ? (
-            <ClearFieldButton
-              type="button"
-              onMouseDown={event => event.preventDefault()}
-              onClick={() => clearFieldValue(name, field)}
-              aria-label="Очистити поле"
-            >
-              <FiX size={16} />
-            </ClearFieldButton>
-          ) : null}
-        </FieldControl>
+        <Input
+          value={val}
+          placeholder={getFieldPlaceholder(field)}
+          onChange={e => updateFieldValue(name, e.target.value, field)}
+          onBlur={e => saveFieldValue(name, e.target.value, field)}
+        />
       )}
     </Field>;
   };

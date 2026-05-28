@@ -61,11 +61,7 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
       // Дублікати пропускаємо
       existingData[field] !== state[field]
     ) {
-      if (state[field] === '') {
-        uploadedInfo[field] = '';
-        continue;
-      }
-
+      
       if (Array.isArray(existingData[field])) {
         console.log('ExistingData на сервері є масивом');
         if (overwrite && !Array.isArray(state[field])) {
