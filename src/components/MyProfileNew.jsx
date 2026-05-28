@@ -249,7 +249,7 @@ export const MyProfileNew = () => {
       isMounted = false;
       unsubscribe();
     };
-  }, [visibleSections]);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
