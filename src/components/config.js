@@ -4607,13 +4607,23 @@ const getSelectedFilterKeys = filterMap => {
     .map(([key]) => key);
 };
 
-const createSimpleSearchKeyGroup = ({ filterSettings, filterName, indexName, buckets, isAllowedByFilters }) => {
+const createPointCheckSearchKeyGroup = ({
+  filterSettings,
+  filterName,
+  indexName,
+  buckets,
+  isAllowedByFilters,
+}) => {
   if (!hasExplicitFilterSelection(filterSettings?.[filterName])) return null;
-  const selectedBuckets = (buckets || []).filter(bucket => isAllowedByFilters(bucket, filterSettings));
+  const selectedBuckets = (buckets || [])
+    .filter(bucket => isAllowedByFilters(bucket, filterSettings))
+    .map(String);
+
   return {
     key: filterName,
     indexName,
     buckets: selectedBuckets,
+    supportsPointCheck: true,
     readIds: ({ debugLog }) => readSearchKeyBucketsForGroup({ indexName, buckets: selectedBuckets, debugLog }),
   };
 };
@@ -4728,7 +4738,7 @@ const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = 
     if (group) groups.push(group);
   };
 
-  addGroup(createSimpleSearchKeyGroup({
+  addGroup(createPointCheckSearchKeyGroup({
     filterSettings,
     filterName: 'maritalStatus',
     indexName: MARITAL_STATUS_SEARCH_KEY_INDEX,
@@ -4736,7 +4746,7 @@ const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = 
     isAllowedByFilters: isMaritalStatusBucketAllowedByFilters,
   }));
 
-  addGroup(createSimpleSearchKeyGroup({
+  addGroup(createPointCheckSearchKeyGroup({
     filterSettings,
     filterName: 'csection',
     indexName: CSECTION_SEARCH_KEY_INDEX,
@@ -4759,11 +4769,12 @@ const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = 
       key: 'blood',
       indexName: BLOOD_SEARCH_KEY_INDEX,
       buckets: bloodBuckets,
+      supportsPointCheck: true,
       readIds: ({ debugLog }) => readSearchKeyBucketsForGroup({ indexName: BLOOD_SEARCH_KEY_INDEX, buckets: bloodBuckets, debugLog }),
     });
   }
 
-  addGroup(createSimpleSearchKeyGroup({
+  addGroup(createPointCheckSearchKeyGroup({
     filterSettings,
     filterName: 'userId',
     indexName: USER_ID_SEARCH_KEY_INDEX,
@@ -4771,7 +4782,7 @@ const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = 
     isAllowedByFilters: isUserIdBucketAllowedByFilters,
   }));
 
-  addGroup(createSimpleSearchKeyGroup({
+  addGroup(createPointCheckSearchKeyGroup({
     filterSettings,
     filterName: 'role',
     indexName: ROLE_SEARCH_KEY_INDEX,
@@ -4802,11 +4813,12 @@ const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = 
       key: 'imt',
       indexName: IMT_SEARCH_KEY_INDEX,
       buckets: getSelectedFilterKeys(filterSettings.imt) || [],
+      supportsPointCheck: true,
       readIds: () => collectImtIdsByFilters(filterSettings.imt, SEARCH_KEY_INDEXED_ROOT_PATHS),
     });
   }
 
-  addGroup(createSimpleSearchKeyGroup({
+  addGroup(createPointCheckSearchKeyGroup({
     filterSettings,
     filterName: 'contact',
     indexName: CONTACT_SEARCH_KEY_INDEX,
@@ -4848,10 +4860,70 @@ const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = 
   return groups;
 };
 
-const filterIdsBySearchKeyGroups = (ids = [], groups = []) => {
-  if (!groups.length) return ids;
+const hasSearchKeyPointMembership = async ({
+  userId,
+  group,
+  rootPaths = SEARCH_KEY_INDEXED_ROOT_PATHS,
+}) => {
+  const normalizedUserId = String(userId || '').trim();
+  const buckets = [...new Set((group?.buckets || []).map(String).filter(Boolean))];
+  if (!normalizedUserId || !group?.indexName || buckets.length === 0) return false;
 
-  return ids.filter(id => groups.every(group => group.ids?.has(id)));
+  const checks = [];
+  rootPaths.forEach(rootPath => {
+    buckets.forEach(bucket => {
+      checks.push(
+        get(ref2(database, `${rootPath}/${group.indexName}/${bucket}/${normalizedUserId}`))
+      );
+    });
+  });
+
+  const snapshots = await Promise.all(checks);
+  return snapshots.some(snapshot => snapshot.exists() && snapshot.val() !== false);
+};
+
+const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog = null }) => {
+  const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
+  const pointGroups = (groups || []).filter(group => group?.supportsPointCheck);
+  if (!pointGroups.length || uniqueIds.length === 0) return uniqueIds;
+
+  if (pointGroups.some(group => !(group?.buckets || []).length)) {
+    if (typeof debugLog === 'function') {
+      debugLog('pointMembership:emptySelectedBuckets', {
+        groups: pointGroups
+          .filter(group => !(group?.buckets || []).length)
+          .map(group => ({ key: group.key, indexName: group.indexName })),
+      });
+    }
+    return [];
+  }
+
+  const matchedIds = [];
+
+  for (const userId of uniqueIds) {
+    // eslint-disable-next-line no-await-in-loop
+    const checks = await Promise.all(
+      pointGroups.map(group => hasSearchKeyPointMembership({ userId, group }))
+    );
+    if (checks.every(Boolean)) matchedIds.push(userId);
+  }
+
+  if (typeof debugLog === 'function') {
+    debugLog('pointMembership:filteredCandidateIds', {
+      inputIdsCount: uniqueIds.length,
+      outputIdsCount: matchedIds.length,
+      groups: pointGroups.map(group => ({
+        key: group.key,
+        indexName: group.indexName,
+        bucketsCount: (group.buckets || []).length,
+        bucketsSample: (group.buckets || []).slice(0, 20),
+      })),
+      inputIdsSample: uniqueIds.slice(0, 10),
+      outputIdsSample: matchedIds.slice(0, 10),
+    });
+  }
+
+  return matchedIds;
 };
 
 const summarizeSearchKeyFilterSettingsForLog = filterSettings => ({
@@ -4902,42 +4974,32 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     });
 
     if (activeSearchKeyGroups.length > 0) {
-      const groupResults = await Promise.all(
-        activeSearchKeyGroups.map(async group => {
-          const ids = await group.readIds({ debugLog });
-          debugLog('groupBucketRead', {
-            group: group.indexName,
-            filterGroup: group.key,
-            bucketsCount: (group.buckets || []).length,
-            bucketsSample: (group.buckets || []).slice(0, 20),
-            totalGroupIdsCount: ids?.size || 0,
-            idsSample: [...(ids || new Set())].slice(0, 10),
-            source: 'indexedSearchKeyGroupCollector',
-          });
-          return { ...group, ids };
-        })
-      );
+      const pointCheckGroups = activeSearchKeyGroups.filter(group => group.supportsPointCheck);
+      const deferredGroups = activeSearchKeyGroups.filter(group => !group.supportsPointCheck);
 
       debugLog('indexedSearchKeyGroups', {
-        count: groupResults.length,
-        groups: groupResults.map(group => ({
+        count: activeSearchKeyGroups.length,
+        pointCheckCount: pointCheckGroups.length,
+        deferredCount: deferredGroups.length,
+        source: 'indexedGetInTouchPointMembership',
+        groups: activeSearchKeyGroups.map(group => ({
           key: group.key,
           indexName: group.indexName,
           bucketsCount: (group.buckets || []).length,
-          idsCount: group.ids?.size || 0,
-          idsSample: [...(group.ids || new Set())].slice(0, 10),
+          bucketsSample: (group.buckets || []).slice(0, 20),
+          supportsPointCheck: Boolean(group.supportsPointCheck),
         })),
       });
 
-      if (groupResults.some(group => !group.ids?.size)) {
+      if (pointCheckGroups.some(group => !(group.buckets || []).length)) {
         debugLog('return', {
           collectedUsersCount: 0,
           loadedIdsCount: 0,
           lastKey: null,
           hasMore: false,
           batches,
-          source: 'indexedGetInTouchIntersection',
-          zeroReason: 'one of active indexed filters has no ids',
+          source: 'indexedGetInTouchPointMembership',
+          zeroReason: 'one of active point-check filters has no selected buckets',
         });
 
         return {
@@ -4972,7 +5034,11 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
         const pageIds = (candidatePage.ids || []).filter(id => id && !loadedIds.includes(id));
         loadedIds.push(...pageIds);
 
-        const candidateIds = filterIdsBySearchKeyGroups(pageIds, groupResults);
+        const candidateIds = await filterIdsBySearchKeyPointGroups({
+          ids: pageIds,
+          groups: pointCheckGroups,
+          debugLog,
+        });
         debugLog('indexedGetInTouch:candidatePage', {
           batch: batches,
           nextCursor: cursor,
@@ -4999,7 +5065,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
         debugLog('fetchUsersByIds:before', {
           idsCount: candidateIds.length,
           idsSample: candidateIds.slice(0, 10),
-          source: 'indexedGetInTouchIntersection',
+          source: 'indexedGetInTouchPointMembership',
         });
 
         // eslint-disable-next-line no-await-in-loop
@@ -5009,7 +5075,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
         debugLog('fetchUsersByIds:after', {
           fetchedCount: candidateUsersEntries.length,
           fetchedIdsSample: candidateUsersEntries.map(([id, user]) => user?.userId || id).slice(0, 10),
-          source: 'indexedGetInTouchIntersection',
+          source: 'indexedGetInTouchPointMembership',
         });
 
         const filteredEntries = filterMain(
@@ -5033,7 +5099,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
           collectedUsersCount: Object.keys(collectedUsers).length,
           removedCount: candidateUsersEntries.length - filteredEntries.length,
           filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
-          source: 'indexedGetInTouchIntersection',
+          source: 'indexedGetInTouchPointMembership',
           zeroReason: filteredEntries.length === 0
             ? candidateUsersEntries.length === 0
               ? 'fetchUsersByIds returned 0 users from indexed getInTouch page'
@@ -5059,7 +5125,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
         hasMore: reachedBatchLimit ? false : hasMore,
         batches,
         reachedBatchLimit,
-        source: 'indexedGetInTouchIntersection',
+        source: 'indexedGetInTouchPointMembership',
       });
 
       return {
