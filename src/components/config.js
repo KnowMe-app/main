@@ -4427,7 +4427,7 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
 };
 
 const SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE = 45;
-const SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE = 4;
+const SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE = 25;
 
 const getTodaySearchKeyDateBucket = () => {
   const today = new Date();
@@ -4848,20 +4848,10 @@ const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = 
   return groups;
 };
 
-const intersectSearchKeyGroupIds = groupResults => {
-  if (!groupResults.length) return [];
-  const [firstGroup, ...restGroups] = groupResults
-    .map(group => ({ ...group, ids: group.ids || new Set() }))
-    .sort((a, b) => a.ids.size - b.ids.size);
+const filterIdsBySearchKeyGroups = (ids = [], groups = []) => {
+  if (!groups.length) return ids;
 
-  const intersection = new Set(firstGroup.ids);
-  restGroups.forEach(group => {
-    [...intersection].forEach(id => {
-      if (!group.ids.has(id)) intersection.delete(id);
-    });
-  });
-
-  return [...intersection].sort((a, b) => a.localeCompare(b));
+  return ids.filter(id => groups.every(group => group.ids?.has(id)));
 };
 
 const summarizeSearchKeyFilterSettingsForLog = filterSettings => ({
@@ -4939,86 +4929,143 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
         })),
       });
 
-      const intersectedCandidateIds = intersectSearchKeyGroupIds(groupResults);
-      const numericOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
+      if (groupResults.some(group => !group.ids?.size)) {
+        debugLog('return', {
+          collectedUsersCount: 0,
+          loadedIdsCount: 0,
+          lastKey: null,
+          hasMore: false,
+          batches,
+          source: 'indexedGetInTouchIntersection',
+          zeroReason: 'one of active indexed filters has no ids',
+        });
 
-      debugLog('intersectedCandidateIds', {
-        count: intersectedCandidateIds.length,
-        sample: intersectedCandidateIds.slice(0, 20),
-        offset: numericOffset,
-        targetLimit,
-      });
+        return {
+          users: collectedUsers,
+          lastKey: null,
+          hasMore: false,
+          loadedIds,
+        };
+      }
 
-      loadedIds.push(...intersectedCandidateIds);
+      while (Object.keys(collectedUsers).length < targetLimit && hasMore && batches < SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE) {
+        debugLog('indexedGetInTouch:loop:start', {
+          batch: batches + 1,
+          cursorBefore: cursor,
+          collectedUsersCount: Object.keys(collectedUsers).length,
+          loadedIdsCount: loadedIds.length,
+          hasMore,
+        });
 
-      debugLog('fetchUsersByIds:before', {
-        idsCount: intersectedCandidateIds.length,
-        idsSample: intersectedCandidateIds.slice(0, 10),
-        source: 'indexedSearchKeyIntersection',
-      });
+        batches += 1;
+        // Беремо наступну невелику сторінку userId з getInTouch,
+        // перетинаємо її з активними індексними фільтрами і лише тоді тягнемо повні анкети.
+        // eslint-disable-next-line no-await-in-loop
+        const candidatePage = await collectSearchKeyGetInTouchCandidateIds({
+          cursor,
+          limit: targetLimit,
+        });
 
-      const candidateUsers = await fetchUsersByIds(intersectedCandidateIds);
-      const candidateUsersEntries = Object.entries(candidateUsers || {});
+        cursor = candidatePage.nextCursor;
+        hasMore = Boolean(candidatePage.hasMore);
 
-      debugLog('fetchUsersByIds:after', {
-        fetchedCount: candidateUsersEntries.length,
-        fetchedIdsSample: candidateUsersEntries.map(([id, user]) => user?.userId || id).slice(0, 10),
-        source: 'indexedSearchKeyIntersection',
-      });
+        const pageIds = (candidatePage.ids || []).filter(id => id && !loadedIds.includes(id));
+        loadedIds.push(...pageIds);
 
-      debugLog('filterMain:before', {
-        beforeCount: candidateUsersEntries.length,
-        filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
-        source: 'indexedSearchKeyIntersection',
-      });
+        const candidateIds = filterIdsBySearchKeyGroups(pageIds, groupResults);
+        debugLog('indexedGetInTouch:candidatePage', {
+          batch: batches,
+          nextCursor: cursor,
+          hasMore,
+          pageIdsCount: pageIds.length,
+          pageIdsSample: pageIds.slice(0, 10),
+          candidateIdsCount: candidateIds.length,
+          candidateIdsSample: candidateIds.slice(0, 10),
+        });
 
-      const filteredEntries = filterMain(
-        candidateUsersEntries,
-        'DATE2.1',
-        filterSettings,
-        favoritesMap,
-        dislikedMap,
-      );
+        if (candidateIds.length === 0) {
+          debugLog('indexedGetInTouch:loop:end', {
+            batch: batches,
+            reason: hasMore ? 'page ids did not match active indexed filters, continue' : 'no matching ids and no more pages',
+            collectedUsersCount: Object.keys(collectedUsers).length,
+            loadedIdsCount: loadedIds.length,
+            cursor,
+            hasMore,
+          });
+          if (!hasMore) break;
+          continue;
+        }
 
-      const paginatedEntries = filteredEntries.slice(numericOffset, numericOffset + targetLimit);
-      paginatedEntries.forEach(([id, user]) => {
-        const userId = user?.userId || id;
-        if (!userId || collectedUsers[userId]) return;
-        collectedUsers[userId] = { ...user, userId };
-      });
+        debugLog('fetchUsersByIds:before', {
+          idsCount: candidateIds.length,
+          idsSample: candidateIds.slice(0, 10),
+          source: 'indexedGetInTouchIntersection',
+        });
 
-      const nextOffset = numericOffset + paginatedEntries.length;
-      hasMore = nextOffset < filteredEntries.length;
-      cursor = hasMore ? nextOffset : null;
+        // eslint-disable-next-line no-await-in-loop
+        const candidateUsers = await fetchUsersByIds(candidateIds);
+        const candidateUsersEntries = Object.entries(candidateUsers || {});
 
-      debugLog('filterMain:after', {
-        beforeCount: candidateUsersEntries.length,
-        afterCount: filteredEntries.length,
-        removedCount: candidateUsersEntries.length - filteredEntries.length,
-        paginatedCount: paginatedEntries.length,
-        nextOffset,
-        filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
-        source: 'indexedSearchKeyIntersection',
-        zeroReason: filteredEntries.length === 0
-          ? candidateUsersEntries.length === 0
-            ? 'fetchUsersByIds returned 0 users from indexed searchKey intersection'
-            : 'filterMain removed all indexed searchKey users'
-          : null,
-      });
+        debugLog('fetchUsersByIds:after', {
+          fetchedCount: candidateUsersEntries.length,
+          fetchedIdsSample: candidateUsersEntries.map(([id, user]) => user?.userId || id).slice(0, 10),
+          source: 'indexedGetInTouchIntersection',
+        });
+
+        const filteredEntries = filterMain(
+          candidateUsersEntries,
+          'DATE2.1',
+          filterSettings,
+          favoritesMap,
+          dislikedMap,
+        );
+
+        filteredEntries.forEach(([id, user]) => {
+          const userId = user?.userId || id;
+          if (!userId || collectedUsers[userId]) return;
+          if (Object.keys(collectedUsers).length >= targetLimit) return;
+          collectedUsers[userId] = { ...user, userId };
+        });
+
+        debugLog('filterMain:after', {
+          beforeCount: candidateUsersEntries.length,
+          afterCount: filteredEntries.length,
+          collectedUsersCount: Object.keys(collectedUsers).length,
+          removedCount: candidateUsersEntries.length - filteredEntries.length,
+          filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
+          source: 'indexedGetInTouchIntersection',
+          zeroReason: filteredEntries.length === 0
+            ? candidateUsersEntries.length === 0
+              ? 'fetchUsersByIds returned 0 users from indexed getInTouch page'
+              : 'filterMain removed all indexed getInTouch users'
+            : null,
+        });
+
+        debugLog('indexedGetInTouch:loop:end', {
+          batch: batches,
+          collectedUsersCount: Object.keys(collectedUsers).length,
+          loadedIdsCount: loadedIds.length,
+          cursor,
+          hasMore,
+        });
+      }
+
+      const reachedBatchLimit = batches >= SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE && Object.keys(collectedUsers).length === 0;
 
       debugLog('return', {
         collectedUsersCount: Object.keys(collectedUsers).length,
         loadedIdsCount: loadedIds.length,
-        lastKey: cursor,
-        hasMore,
+        lastKey: reachedBatchLimit ? null : cursor,
+        hasMore: reachedBatchLimit ? false : hasMore,
         batches,
-        source: 'indexedSearchKeyIntersection',
+        reachedBatchLimit,
+        source: 'indexedGetInTouchIntersection',
       });
 
       return {
         users: collectedUsers,
-        lastKey: cursor,
-        hasMore,
+        lastKey: reachedBatchLimit ? null : cursor,
+        hasMore: reachedBatchLimit ? false : hasMore,
         loadedIds,
       };
     }
