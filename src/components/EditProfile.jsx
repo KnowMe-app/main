@@ -104,6 +104,28 @@ const sanitizeOverlayValue = value => {
 const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
 const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction', 'cacheVersion']);
 
+const DEBUG_PROFILE_SAVE = true;
+
+const debugProfileSave = (step, data = {}) => {
+  const isAllowedMode =
+    process.env.NODE_ENV === 'development' ||
+    process.env.NODE_ENV === 'test' ||
+    isAdminUid(auth.currentUser?.uid);
+
+  if (!DEBUG_PROFILE_SAVE || !isAllowedMode) return;
+
+  console.groupCollapsed(
+    `%c[ProfileSaveDebug] ${step}`,
+    'color:#8b5cf6;font-weight:bold;'
+  );
+  console.log({
+    time: new Date().toISOString(),
+    ...data,
+  });
+  console.trace('[ProfileSaveDebug trace]');
+  console.groupEnd();
+};
+
 
 const resolveOverlayIncomingValue = change => {
   if (!change || typeof change !== 'object') return undefined;
@@ -380,6 +402,17 @@ const EditProfile = () => {
         });
       }
 
+      debugProfileSave('remoteUpdate:start', {
+        overwrite,
+        delCondition,
+        cleanedStateWatched: {
+          surname: cleanedState?.surname,
+          name: cleanedState?.name,
+          phone: cleanedState?.phone,
+          email: cleanedState?.email,
+        },
+      });
+
       const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
       if (delCondition) {
         Object.keys(delCondition).forEach(key => {
@@ -389,8 +422,27 @@ const EditProfile = () => {
         });
       }
 
+      debugProfileSave('remoteUpdate:payload-before-backend', {
+        delCondition,
+        uploadedInfoWatched: {
+          surname: uploadedInfo?.surname,
+          name: uploadedInfo?.name,
+          phone: uploadedInfo?.phone,
+          email: uploadedInfo?.email,
+        },
+        uploadedInfoHasSurname: Object.prototype.hasOwnProperty.call(uploadedInfo, 'surname'),
+        fullPayload: uploadedInfo,
+      });
+
       await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
       await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
+
+      debugProfileSave('remoteUpdate:success', {
+        delCondition,
+        uploadedInfoWatched: {
+          surname: uploadedInfo?.surname,
+        },
+      });
 
       const cleanedStateForNewUsers = Object.fromEntries(
         Object.entries(updatedState).filter(([key]) =>
@@ -483,7 +535,22 @@ const EditProfile = () => {
     refreshOverlays();
   }, [userId, refreshOverlays, currentUid, isAdmin, location.key]);
 
-  const handleSubmit = async (newState, overwrite, delCondition) => {
+  const handleSubmit = async (newState, overwrite, delCondition, submitSource) => {
+    const submitState = newState || state || {};
+
+    debugProfileSave('handleSubmit:start', {
+      submitSource,
+      overwrite,
+      delCondition,
+      keys: Object.keys(submitState),
+      watchedValues: {
+        surname: submitState?.surname,
+        name: submitState?.name,
+        phone: submitState?.phone,
+        email: submitState?.email,
+      },
+    });
+
     const now = Date.now();
     const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
     const updatedState = { ...baseState, lastAction: now };
@@ -553,18 +620,42 @@ const EditProfile = () => {
     await refreshOverlays();
   };
 
-  const handleBlur = async fieldName => {
+  const handleBlur = async name => {
+    const baseFieldName = String(name || '').replace(/-\d+$/, '');
+
+    debugProfileSave('handleBlur:start', {
+      fieldName: baseFieldName,
+      rawNameFromBlur: name,
+      baseFieldName,
+      valueInState: state?.[baseFieldName],
+    });
+
     const normalizedState = normalizePhoneState(state);
     if (normalizedState !== state) {
       setState(normalizedState);
     }
-    await handleSubmit(normalizedState);
-    if (!isAdmin || !fieldName) return;
-    if (focusedField && focusedField !== fieldName) return;
-    await acceptFocusedFieldChanges(fieldName);
+
+    debugProfileSave('handleBlur:submit', {
+      submitSource: 'handleBlur',
+      rawNameFromBlur: name,
+      baseFieldName,
+      submittedValue: normalizedState?.[baseFieldName],
+      fullFieldExists: Object.prototype.hasOwnProperty.call(normalizedState || {}, baseFieldName),
+    });
+
+    await handleSubmit(normalizedState, undefined, undefined, 'handleBlur');
+    if (!isAdmin || !baseFieldName) return;
+    if (focusedField && focusedField !== baseFieldName) return;
+    await acceptFocusedFieldChanges(baseFieldName);
   };
 
   const handleClear = (fieldName, idx) => {
+    debugProfileSave('handleClear:start', {
+      fieldName,
+      idx,
+      prevValue: state?.[fieldName],
+    });
+
     const hasIndex = Number.isInteger(idx);
 
     if (!hasIndex) {
@@ -596,7 +687,23 @@ const EditProfile = () => {
           ? undefined
           : { [fieldName]: removedValue };
 
-        handleSubmit(newState, 'overwrite', delCondition);
+        debugProfileSave('handleClear:computed', {
+          fieldName,
+          idx,
+          newValue: newState?.[fieldName],
+          hasKeyInNewState: Object.prototype.hasOwnProperty.call(newState, fieldName),
+          delCondition,
+        });
+
+        debugProfileSave('handleClear:submit', {
+          fieldName,
+          idx,
+          submitSource: 'handleClear',
+          submittedValue: newState?.[fieldName],
+          delCondition,
+        });
+
+        handleSubmit(newState, 'overwrite', delCondition, 'handleClear');
         return newState;
       }
 
@@ -622,7 +729,23 @@ const EditProfile = () => {
         ? undefined
         : { [fieldName]: removedValue };
 
-      const submitPromise = handleSubmit(newState, 'overwrite', delCondition);
+      debugProfileSave('handleClear:computed', {
+        fieldName,
+        idx,
+        newValue: newState?.[fieldName],
+        hasKeyInNewState: Object.prototype.hasOwnProperty.call(newState, fieldName),
+        delCondition,
+      });
+
+      debugProfileSave('handleClear:submit', {
+        fieldName,
+        idx,
+        submitSource: 'handleClear',
+        submittedValue: newState?.[fieldName],
+        delCondition,
+      });
+
+      const submitPromise = handleSubmit(newState, 'overwrite', delCondition, 'handleClear');
       clearDeletingFieldAfterSubmit(fieldName, submitPromise);
       return newState;
     });
