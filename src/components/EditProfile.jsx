@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import styled from 'styled-components';
@@ -297,6 +297,25 @@ const EditProfile = () => {
     setIsOverlayResolved(true);
   }, [userId, currentUid, isAdmin]);
 
+  const deletingFieldsRef = useRef(new Set());
+
+  const clearDeletingFieldAfterSubmit = useCallback((fieldName, submitPromise) => {
+    Promise.resolve(submitPromise)
+      .finally(() => {
+        const clearDeletingField = () => {
+          deletingFieldsRef.current.delete(fieldName);
+        };
+
+        if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+          window.requestAnimationFrame(() => window.setTimeout(clearDeletingField, 0));
+          return;
+        }
+
+        setTimeout(clearDeletingField, 0);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleOpenMedications = useCallback(
     user => {
       if (!user?.userId) return;
@@ -546,10 +565,15 @@ const EditProfile = () => {
   };
 
   const handleClear = (fieldName, idx) => {
+    const hasIndex = Number.isInteger(idx);
+
+    if (!hasIndex) {
+      deletingFieldsRef.current.add(fieldName);
+    }
+
     setState(prev => {
       const newState = { ...prev };
       let removedValue;
-      const hasIndex = Number.isInteger(idx);
       const currentValue = prev[fieldName];
 
       if (hasIndex) {
@@ -598,7 +622,8 @@ const EditProfile = () => {
         ? undefined
         : { [fieldName]: removedValue };
 
-      handleSubmit(newState, 'overwrite', delCondition);
+      const submitPromise = handleSubmit(newState, 'overwrite', delCondition);
+      clearDeletingFieldAfterSubmit(fieldName, submitPromise);
       return newState;
     });
   };
@@ -760,6 +785,7 @@ const EditProfile = () => {
           refreshOverlayForEditor={refreshOverlays}
           overlayDebugData={pendingOverlays}
           overlayDebugError={overlayReadError}
+          deletingFieldsRef={deletingFieldsRef}
         />
       )}
 
