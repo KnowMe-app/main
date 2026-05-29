@@ -1,4 +1,4 @@
-export const makeUploadedInfo = (existingData, state, overwrite, deletionOptions = {}) => {
+export const makeUploadedInfo = (existingData, state, overwrite) => {
   const isPlainObject = value =>
     Object.prototype.toString.call(value) === '[object Object]';
 
@@ -22,28 +22,6 @@ export const makeUploadedInfo = (existingData, state, overwrite, deletionOptions
   const isDeepEqual = (left, right) =>
     JSON.stringify(stableNormalize(left)) === JSON.stringify(stableNormalize(right));
 
-  const getDeletionKeys = value => {
-    if (!value) return [];
-
-    if (Array.isArray(value)) {
-      return value.map(key => String(key)).filter(Boolean);
-    }
-
-    if (isPlainObject(value)) {
-      return Object.keys(value).filter(Boolean);
-    }
-
-    return [];
-  };
-
-  const deletedKeys = new Set([
-    ...getDeletionKeys(deletionOptions),
-    ...getDeletionKeys(deletionOptions?.removeKeys),
-    ...getDeletionKeys(deletionOptions?.deletedKeys),
-    ...getDeletionKeys(state?.removeKeys),
-    ...getDeletionKeys(state?.deletedKeys),
-  ]);
-
   const hasValueInArray = (arr, value) =>
     Array.isArray(arr) && arr.some(item => isDeepEqual(item, value));
 
@@ -63,11 +41,6 @@ export const makeUploadedInfo = (existingData, state, overwrite, deletionOptions
   let uploadedInfo = { ...existingData };
 
   for (const field in state) {
-    if (field === 'removeKeys' || field === 'deletedKeys' || deletedKeys.has(field)) {
-      delete uploadedInfo[field];
-      continue;
-    }
-
     if (field.startsWith('device')) {
       continue;
     }
@@ -132,9 +105,5 @@ export const makeUploadedInfo = (existingData, state, overwrite, deletionOptions
       // console.log('Такого ключа на сервері не існує, створюємо, записуємо перше значення:', uploadedInfo[field]);
     }
   }
-  deletedKeys.forEach(key => {
-    delete uploadedInfo[key];
-  });
-
   return uploadedInfo;
 };
