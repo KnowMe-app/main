@@ -298,12 +298,6 @@ const EditProfile = () => {
   }, [userId, currentUid, isAdmin]);
 
   const deletingFieldsRef = useRef(new Set());
-  const deletedFieldsTombstoneRef = useRef(new Set());
-
-  const clearDeletedFieldTombstone = useCallback(fieldName => {
-    if (!fieldName) return;
-    deletedFieldsTombstoneRef.current.delete(fieldName);
-  }, []);
 
   const clearDeletingFieldAfterSubmit = useCallback((fieldName, submitPromise) => {
     Promise.resolve(submitPromise)
@@ -386,9 +380,7 @@ const EditProfile = () => {
         });
       }
 
-      const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite, {
-        deletedKeys: delCondition,
-      });
+      const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
       if (delCondition) {
         Object.keys(delCondition).forEach(key => {
           if (key !== 'userId') {
@@ -493,19 +485,7 @@ const EditProfile = () => {
 
   const handleSubmit = async (newState, overwrite, delCondition) => {
     const now = Date.now();
-    const tombstoneKeys = Array.from(deletedFieldsTombstoneRef.current);
-    const stripTombstones = (obj, { keepDelConditionKeys = true } = {}) => {
-      const copy = { ...obj };
-      tombstoneKeys.forEach(key => {
-        if (!keepDelConditionKeys || !delCondition?.[key]) {
-          delete copy[key];
-        }
-      });
-      return copy;
-    };
-    const baseState = normalizePhoneState(
-      stripTombstones(newState ? { ...newState } : { ...state })
-    );
+    const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
     const updatedState = { ...baseState, lastAction: now };
 
     if (!isAdmin && currentUid) {
@@ -539,9 +519,8 @@ const EditProfile = () => {
           lastAction: serverLast,
           lastDelivery: formatDateToDisplay(serverData.lastDelivery),
         };
-        const safeServerData = stripTombstones(formattedServerData, { keepDelConditionKeys: false });
-        updateCachedUser(safeServerData);
-        setState(safeServerData);
+        updateCachedUser(formattedServerData);
+        setState(formattedServerData);
       }
     } finally {
       setIsSyncing(false);
@@ -611,7 +590,6 @@ const EditProfile = () => {
           newState[fieldName] = filtered[0];
         } else {
           delete newState[fieldName];
-          deletedFieldsTombstoneRef.current.add(fieldName);
         }
 
         const delCondition = Object.prototype.hasOwnProperty.call(newState, fieldName)
@@ -630,7 +608,6 @@ const EditProfile = () => {
 
         if (filtered.length === 0 || (filtered.length === 1 && filtered[0] === '')) {
           delete newState[fieldName];
-          deletedFieldsTombstoneRef.current.add(fieldName);
         } else if (filtered.length === 1) {
           newState[fieldName] = filtered[0];
         } else {
@@ -639,7 +616,6 @@ const EditProfile = () => {
       } else {
         removedValue = currentValue;
         delete newState[fieldName];
-        deletedFieldsTombstoneRef.current.add(fieldName);
       }
 
       const delCondition = Object.prototype.hasOwnProperty.call(newState, fieldName)
@@ -657,7 +633,6 @@ const EditProfile = () => {
       const newState = { ...prev };
       const deletedValue = newState[fieldName];
       delete newState[fieldName];
-      deletedFieldsTombstoneRef.current.add(fieldName);
       handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
       return newState;
     });
@@ -811,7 +786,6 @@ const EditProfile = () => {
           overlayDebugData={pendingOverlays}
           overlayDebugError={overlayReadError}
           deletingFieldsRef={deletingFieldsRef}
-          clearDeletedFieldTombstone={clearDeletedFieldTombstone}
         />
       )}
 
