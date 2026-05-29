@@ -847,6 +847,7 @@ export const ProfileForm = ({
   refreshOverlayForEditor,
 }) => {
   const canManageAccessLevel = isAdmin;
+  const preventInputBlurOnClear = e => e.preventDefault();
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
   const additionalAccessRulesRef = useRef(null);
@@ -2591,7 +2592,7 @@ ${entries.join('\n')}`;
                       {(value || value === '') && (
                           <ClearButton
                           type="button"
-                          onMouseDown={e => e.preventDefault()}
+                          onMouseDown={preventInputBlurOnClear}
                           onClick={() => {
                             if (field.name === ADDITIONAL_ACCESS_FIELD) {
                               handleRemoveAdditionalAccessRuleInput(idx, 'clear');
@@ -2771,7 +2772,7 @@ ${entries.join('\n')}`;
                   {field.name !== 'lastAction' && state[field.name] && (
                     <ClearButton
                       type="button"
-                      onMouseDown={e => e.preventDefault()}
+                      onMouseDown={preventInputBlurOnClear}
                       onClick={() => {
                         if (field.name === ADDITIONAL_ACCESS_FIELD) {
                           handleRemoveAdditionalAccessRuleInput(null, 'clear');
@@ -2937,7 +2938,7 @@ ${entries.join('\n')}`;
                     />
                     <ClearButton
                       type="button"
-                      onMouseDown={e => e.preventDefault()}
+                      onMouseDown={preventInputBlurOnClear}
                       onClick={() => handleOverlayDismiss(field.name, entry)}
                     >
                       &times;
