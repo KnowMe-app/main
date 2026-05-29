@@ -1,4 +1,4 @@
-export const makeUploadedInfo = (existingData, state, overwrite, options = {}) => {
+export const makeUploadedInfo = (existingData, state, overwrite) => {
   const isPlainObject = value =>
     Object.prototype.toString.call(value) === '[object Object]';
 
@@ -38,12 +38,7 @@ export const makeUploadedInfo = (existingData, state, overwrite, options = {}) =
     return result;
   };
 
-  const deletedKeys = Object.keys(options.deletedKeys || {});
   let uploadedInfo = { ...existingData };
-
-  deletedKeys.forEach(key => {
-    delete uploadedInfo[key];
-  });
 
   for (const field in state) {
     if (field.startsWith('device')) {
@@ -110,10 +105,5 @@ export const makeUploadedInfo = (existingData, state, overwrite, options = {}) =
       // console.log('Такого ключа на сервері не існує, створюємо, записуємо перше значення:', uploadedInfo[field]);
     }
   }
-
-  deletedKeys.forEach(key => {
-    uploadedInfo[key] = null;
-  });
-
   return uploadedInfo;
 };
