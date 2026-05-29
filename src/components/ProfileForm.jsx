@@ -845,6 +845,7 @@ export const ProfileForm = ({
   dataSource = '',
   overlayFieldAdditions = {},
   refreshOverlayForEditor,
+  deletingFieldsRef,
 }) => {
   const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
@@ -2591,6 +2592,18 @@ ${entries.join('\n')}`;
                       {(value || value === '') && (
                           <ClearButton
                           type="button"
+                          onPointerDownCapture={e => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onTouchStartCapture={e => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onMouseDownCapture={e => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
                           onMouseDown={e => e.preventDefault()}
                           onClick={() => {
                             if (field.name === ADDITIONAL_ACCESS_FIELD) {
@@ -2718,6 +2731,8 @@ ${entries.join('\n')}`;
                             }));
                           },
                           onBlur: () => {
+                            if (deletingFieldsRef?.current?.has(field.name)) return;
+
                             if (field.name === 'myComment' && !state.myComment?.trim()) {
                               handleDelKeyValue('myComment');
                               return;
@@ -2771,6 +2786,18 @@ ${entries.join('\n')}`;
                   {field.name !== 'lastAction' && state[field.name] && (
                     <ClearButton
                       type="button"
+                      onPointerDownCapture={e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onTouchStartCapture={e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onMouseDownCapture={e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => {
                         if (field.name === ADDITIONAL_ACCESS_FIELD) {
