@@ -4415,8 +4415,8 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
   return payload;
 };
 
-const SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE = 370;
-const SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE = 24;
+const SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE = 45;
+const SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE = 4;
 
 const getTodaySearchKeyDateBucket = () => {
   const today = new Date();
@@ -4529,6 +4529,9 @@ const collectSearchKeyGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZ
   if (!bucket) {
     hasMore = false;
     nextCursor = null;
+  } else if (ids.length === 0 && lookups >= SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE) {
+    hasMore = false;
+    nextCursor = null;
   } else if (ids.length < limit && lookups >= SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE) {
     hasMore = true;
   } else if (!nextCursor) {
@@ -4590,10 +4593,12 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     });
   }
 
+  const reachedBatchLimit = batches >= SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE && Object.keys(collectedUsers).length === 0;
+
   return {
     users: collectedUsers,
-    lastKey: cursor,
-    hasMore,
+    lastKey: reachedBatchLimit ? null : cursor,
+    hasMore: reachedBatchLimit ? false : hasMore,
     loadedIds,
   };
 };
@@ -5009,8 +5014,11 @@ export const filterMain = (
   favoriteUsers = {},
   dislikedUsers = {},
 ) => {
-  const isPartialFilterActive = group =>
-    Boolean(group) && Object.values(group).some(value => !value);
+  const isPartialFilterActive = group => {
+    if (!group || typeof group !== 'object') return false;
+    const values = Object.values(group);
+    return values.some(value => value === false) && values.some(value => value === true);
+  };
   const hasCsectionFilter = isPartialFilterActive(filterSettings.csection);
   const hasUserRoleFilter = isPartialFilterActive(filterSettings.userRole);
   const hasRoleFilter = !hasUserRoleFilter && isPartialFilterActive(filterSettings.role);
