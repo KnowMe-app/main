@@ -143,35 +143,19 @@ const normalizeEditorOverlayFields = fields => {
   }, {});
 };
 
-const removeKeysFromCardState = (cardState, removeKeys = []) => {
-  if (!cardState || typeof cardState !== 'object') {
-    return cardState;
-  }
-
-  const cleanedState = { ...cardState };
-  removeKeys
-    .map(key => String(key || '').trim())
-    .filter(key => key && key !== 'userId')
-    .forEach(key => {
-      delete cleanedState[key];
-    });
-
-  return cleanedState;
-};
-
-const mergeCardStatePreservingKnownFields = (prevState, nextCardState, removeKeys = []) => {
+const mergeCardStatePreservingKnownFields = (prevState, nextCardState) => {
   if (!nextCardState || typeof nextCardState !== 'object') {
-    return removeKeysFromCardState(prevState || nextCardState, removeKeys);
+    return prevState || nextCardState;
   }
 
   if (!prevState || typeof prevState !== 'object') {
-    return removeKeysFromCardState(nextCardState, removeKeys);
+    return nextCardState;
   }
 
-  return removeKeysFromCardState({
+  return {
     ...prevState,
     ...nextCardState,
-  }, removeKeys);
+  };
 };
 
 const getCanonicalCardFromCache = cardUserId => {
@@ -202,7 +186,7 @@ const EditProfile = () => {
   const [isOverlayResolved, setIsOverlayResolved] = useState(isAdminUid(auth.currentUser?.uid));
 
 
-  const refreshOverlays = useCallback(async (removeKeys = []) => {
+  const refreshOverlays = useCallback(async () => {
     if (!userId) return;
 
     if (!isAdmin && currentUid) {
@@ -269,9 +253,7 @@ const EditProfile = () => {
       lastDelivery: formatDateToDisplay(cardForEditor?.lastDelivery),
     };
 
-    setState(prevState =>
-      mergeCardStatePreservingKnownFields(prevState, normalizedIncomingState, removeKeys)
-    );
+    setState(prevState => mergeCardStatePreservingKnownFields(prevState, normalizedIncomingState));
 
     const visibleOverlays = overlays;
 
@@ -518,13 +500,12 @@ const EditProfile = () => {
           lastAction: serverLast,
           lastDelivery: formatDateToDisplay(serverData.lastDelivery),
         };
-        const cleanedServerData = removeKeysFromCardState(formattedServerData, removeKeys);
-        updateCachedUser(cleanedServerData, { removeKeys });
-        setState(cleanedServerData);
+        updateCachedUser(formattedServerData);
+        setState(formattedServerData);
       }
     } finally {
       setIsSyncing(false);
-      await refreshOverlays(removeKeys);
+      await refreshOverlays();
     }
   };
 
