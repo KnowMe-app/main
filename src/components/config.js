@@ -4552,6 +4552,318 @@ const collectSearchKeyGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZ
   return { ids, nextCursor, hasMore };
 };
 
+
+const SEARCH_KEY_INDEXED_ROOT_PATHS = [SEARCH_KEY_INDEX_ROOT, SEARCH_KEY_USERS_INDEX_ROOT];
+
+const collectIdsFromSearchKeyBucketSnapshot = (snapshot, idSet) => {
+  if (!snapshot.exists()) return;
+  Object.keys(snapshot.val() || {}).forEach(userId => {
+    if (userId) idSet.add(userId);
+  });
+};
+
+const readSearchKeyBucketsForGroup = async ({ indexName, buckets = [], rootPaths = SEARCH_KEY_INDEXED_ROOT_PATHS, debugLog = null }) => {
+  const uniqueBuckets = [...new Set((buckets || []).filter(bucket => bucket !== undefined && bucket !== null && String(bucket).trim()).map(String))];
+  const ids = new Set();
+
+  if (!indexName || uniqueBuckets.length === 0) {
+    return ids;
+  }
+
+  const reads = [];
+  rootPaths.forEach(rootPath => {
+    uniqueBuckets.forEach(bucket => {
+      reads.push({
+        rootPath,
+        bucket,
+        promise: get(ref2(database, `${rootPath}/${indexName}/${bucket}`)),
+      });
+    });
+  });
+
+  const snapshots = await Promise.all(reads.map(read => read.promise));
+  snapshots.forEach((snapshot, index) => {
+    const beforeCount = ids.size;
+    collectIdsFromSearchKeyBucketSnapshot(snapshot, ids);
+    if (typeof debugLog === 'function') {
+      debugLog('groupBucketRead', {
+        group: indexName,
+        rootPath: reads[index].rootPath,
+        bucket: reads[index].bucket,
+        exists: snapshot.exists(),
+        addedCount: ids.size - beforeCount,
+        totalGroupIdsCount: ids.size,
+      });
+    }
+  });
+
+  return ids;
+};
+
+const getSelectedFilterKeys = filterMap => {
+  if (!hasExplicitFilterSelection(filterMap)) return null;
+  return Object.entries(filterMap || {})
+    .filter(([, enabled]) => Boolean(enabled))
+    .map(([key]) => key);
+};
+
+const createSimpleSearchKeyGroup = ({ filterSettings, filterName, indexName, buckets, isAllowedByFilters }) => {
+  if (!hasExplicitFilterSelection(filterSettings?.[filterName])) return null;
+  const selectedBuckets = (buckets || []).filter(bucket => isAllowedByFilters(bucket, filterSettings));
+  return {
+    key: filterName,
+    indexName,
+    buckets: selectedBuckets,
+    readIds: ({ debugLog }) => readSearchKeyBucketsForGroup({ indexName, buckets: selectedBuckets, debugLog }),
+  };
+};
+
+const getWeightFilterBucket = weightValue => {
+  if (!Number.isFinite(weightValue) || weightValue <= 0) return null;
+  if (weightValue < 55) return 'lt55';
+  if (weightValue <= 69) return '55_69';
+  if (weightValue <= 84) return '70_84';
+  return '85_plus';
+};
+
+const collectWeightIdsByFilters = async (weightFilters, rootPaths = SEARCH_KEY_INDEXED_ROOT_PATHS) => {
+  const shouldApplyWeight = hasExplicitFilterSelection(weightFilters);
+  if (!shouldApplyWeight) return null;
+
+  const selectedBuckets = Object.entries(weightFilters || {})
+    .filter(([, enabled]) => enabled)
+    .map(([bucket]) => bucket);
+
+  if (selectedBuckets.length === 0) return new Set();
+
+  const selectedSet = new Set(selectedBuckets);
+  const weightIds = new Set();
+  const snapshots = await Promise.all(
+    rootPaths.map(rootPath => get(ref2(database, `${rootPath}/${WEIGHT_SEARCH_KEY_INDEX}`)))
+  );
+
+  snapshots.forEach(snapshot => {
+    if (!snapshot.exists()) return;
+
+    Object.entries(snapshot.val() || {}).forEach(([storedWeight, usersMap]) => {
+      const parsedWeight = Number.parseFloat(String(storedWeight || '').replace(',', '.'));
+      let bucket = getWeightFilterBucket(parsedWeight);
+      if (!bucket && storedWeight === '?') bucket = 'other';
+      if (!bucket && storedWeight === 'no') bucket = 'no';
+      if (!bucket || !selectedSet.has(bucket)) return;
+      Object.keys(usersMap || {}).forEach(userId => {
+        if (userId) weightIds.add(userId);
+      });
+    });
+  });
+
+  return weightIds;
+};
+
+const collectLastActionIdsByFilters = async (lastActionFilters, rootPaths = SEARCH_KEY_INDEXED_ROOT_PATHS) => {
+  const shouldApplyLastAction = hasExplicitFilterSelection(lastActionFilters);
+  if (!shouldApplyLastAction) return null;
+
+  const selected = key => Boolean(lastActionFilters?.[key]);
+  const lastActionIds = new Set();
+  const requests = [];
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  const addRangeRequest = (daysBack, rootPath) => {
+    const startDate = new Date(todayStart);
+    startDate.setDate(todayStart.getDate() - daysBack);
+    requests.push(
+      get(
+        query(
+          ref2(database, `${rootPath}/${LAST_ACTION_SEARCH_KEY_INDEX}`),
+          orderByKey(),
+          startAt(`${AGE_DATE_PREFIX}${toIsoDate(startDate)}`),
+          endAt(`${AGE_DATE_PREFIX}${toIsoDate(todayStart)}`)
+        )
+      )
+    );
+  };
+
+  rootPaths.forEach(rootPath => {
+    if (selected('today')) addRangeRequest(0, rootPath);
+    if (selected('yesterday')) {
+      const yesterday = new Date(todayStart);
+      yesterday.setDate(todayStart.getDate() - 1);
+      requests.push(
+        get(
+          query(
+            ref2(database, `${rootPath}/${LAST_ACTION_SEARCH_KEY_INDEX}`),
+            orderByKey(),
+            startAt(`${AGE_DATE_PREFIX}${toIsoDate(yesterday)}`),
+            endAt(`${AGE_DATE_PREFIX}${toIsoDate(yesterday)}`)
+          )
+        )
+      );
+    }
+    if (selected('last3days')) addRangeRequest(3, rootPath);
+    if (selected('last7days')) addRangeRequest(7, rootPath);
+    if (selected('last14days')) addRangeRequest(14, rootPath);
+    if (selected('last30days')) addRangeRequest(30, rootPath);
+    if (selected('no')) requests.push(get(ref2(database, `${rootPath}/${LAST_ACTION_SEARCH_KEY_INDEX}/no`)));
+    if (selected('?')) requests.push(get(ref2(database, `${rootPath}/${LAST_ACTION_SEARCH_KEY_INDEX}/?`)));
+  });
+
+  const snapshots = await Promise.all(requests);
+  snapshots.forEach(snapshot => {
+    if (!snapshot.exists()) return;
+    if (snapshot.key === LAST_ACTION_SEARCH_KEY_INDEX) {
+      snapshot.forEach(bucketSnapshot => collectIdsFromSearchKeyBucketSnapshot(bucketSnapshot, lastActionIds));
+      return;
+    }
+    collectIdsFromSearchKeyBucketSnapshot(snapshot, lastActionIds);
+  });
+
+  return lastActionIds;
+};
+
+const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = {}, dislikedMap = {} } = {}) => {
+  const groups = [];
+  const addGroup = group => {
+    if (group) groups.push(group);
+  };
+
+  addGroup(createSimpleSearchKeyGroup({
+    filterSettings,
+    filterName: 'maritalStatus',
+    indexName: MARITAL_STATUS_SEARCH_KEY_INDEX,
+    buckets: MARITAL_STATUS_SEARCH_KEY_BUCKETS,
+    isAllowedByFilters: isMaritalStatusBucketAllowedByFilters,
+  }));
+
+  addGroup(createSimpleSearchKeyGroup({
+    filterSettings,
+    filterName: 'csection',
+    indexName: CSECTION_SEARCH_KEY_INDEX,
+    buckets: ['cs2plus', 'cs1', 'cs0', 'no', 'other'],
+    isAllowedByFilters: (bucket, settings) => Boolean(settings?.csection?.[bucket]),
+  }));
+
+  if (hasExplicitFilterSelection(filterSettings?.age)) {
+    groups.push({
+      key: 'age',
+      indexName: AGE_SEARCH_KEY_INDEX,
+      buckets: getSelectedFilterKeys(filterSettings.age) || [],
+      readIds: () => collectAgeIdsByFilters(filterSettings.age, SEARCH_KEY_INDEXED_ROOT_PATHS),
+    });
+  }
+
+  if (hasExplicitFilterSelection(filterSettings?.bloodGroup) || hasExplicitFilterSelection(filterSettings?.rh)) {
+    const bloodBuckets = BLOOD_SEARCH_KEY_BUCKETS.filter(bucket => isBucketAllowedByFilters(bucket, filterSettings));
+    groups.push({
+      key: 'blood',
+      indexName: BLOOD_SEARCH_KEY_INDEX,
+      buckets: bloodBuckets,
+      readIds: ({ debugLog }) => readSearchKeyBucketsForGroup({ indexName: BLOOD_SEARCH_KEY_INDEX, buckets: bloodBuckets, debugLog }),
+    });
+  }
+
+  addGroup(createSimpleSearchKeyGroup({
+    filterSettings,
+    filterName: 'userId',
+    indexName: USER_ID_SEARCH_KEY_INDEX,
+    buckets: USER_ID_SEARCH_KEY_BUCKETS,
+    isAllowedByFilters: isUserIdBucketAllowedByFilters,
+  }));
+
+  addGroup(createSimpleSearchKeyGroup({
+    filterSettings,
+    filterName: 'role',
+    indexName: ROLE_SEARCH_KEY_INDEX,
+    buckets: ROLE_SEARCH_KEY_BUCKETS,
+    isAllowedByFilters: isRoleBucketAllowedByFilters,
+  }));
+
+  if (hasExplicitFilterSelection(filterSettings?.weight)) {
+    groups.push({
+      key: 'weight',
+      indexName: WEIGHT_SEARCH_KEY_INDEX,
+      buckets: getSelectedFilterKeys(filterSettings.weight) || [],
+      readIds: () => collectWeightIdsByFilters(filterSettings.weight, SEARCH_KEY_INDEXED_ROOT_PATHS),
+    });
+  }
+
+  if (hasExplicitFilterSelection(filterSettings?.height)) {
+    groups.push({
+      key: 'height',
+      indexName: HEIGHT_SEARCH_KEY_INDEX,
+      buckets: getSelectedFilterKeys(filterSettings.height) || [],
+      readIds: () => collectHeightIdsByFilters(filterSettings.height, SEARCH_KEY_INDEXED_ROOT_PATHS),
+    });
+  }
+
+  if (hasExplicitFilterSelection(filterSettings?.imt)) {
+    groups.push({
+      key: 'imt',
+      indexName: IMT_SEARCH_KEY_INDEX,
+      buckets: getSelectedFilterKeys(filterSettings.imt) || [],
+      readIds: () => collectImtIdsByFilters(filterSettings.imt, SEARCH_KEY_INDEXED_ROOT_PATHS),
+    });
+  }
+
+  addGroup(createSimpleSearchKeyGroup({
+    filterSettings,
+    filterName: 'contact',
+    indexName: CONTACT_SEARCH_KEY_INDEX,
+    buckets: CONTACT_SEARCH_KEY_BUCKETS,
+    isAllowedByFilters: isContactBucketAllowedByFilters,
+  }));
+
+  if (hasExplicitFilterSelection(filterSettings?.fields)) {
+    groups.push({
+      key: 'fields',
+      indexName: FIELD_COUNT_SEARCH_KEY_INDEX,
+      buckets: getSelectedFilterKeys(filterSettings.fields) || [],
+      readIds: () => collectFieldCountIdsByFilters(filterSettings.fields, SEARCH_KEY_INDEXED_ROOT_PATHS),
+    });
+  }
+
+  if (hasExplicitFilterSelection(filterSettings?.lastAction)) {
+    groups.push({
+      key: 'lastAction',
+      indexName: LAST_ACTION_SEARCH_KEY_INDEX,
+      buckets: getSelectedFilterKeys(filterSettings.lastAction) || [],
+      readIds: () => collectLastActionIdsByFilters(filterSettings.lastAction, SEARCH_KEY_INDEXED_ROOT_PATHS),
+    });
+  }
+
+  if (hasExplicitFilterSelection(filterSettings?.reaction)) {
+    groups.push({
+      key: 'reaction',
+      indexName: REACTION_SEARCH_KEY_INDEX,
+      buckets: getSelectedFilterKeys(filterSettings.reaction) || [],
+      readIds: () => collectReactionIdsByFilters(
+        filterSettings.reaction,
+        { favoritesMap, dislikedMap },
+        SEARCH_KEY_INDEXED_ROOT_PATHS,
+      ),
+    });
+  }
+
+  return groups;
+};
+
+const intersectSearchKeyGroupIds = groupResults => {
+  if (!groupResults.length) return [];
+  const [firstGroup, ...restGroups] = groupResults
+    .map(group => ({ ...group, ids: group.ids || new Set() }))
+    .sort((a, b) => a.ids.size - b.ids.size);
+
+  const intersection = new Set(firstGroup.ids);
+  restGroups.forEach(group => {
+    [...intersection].forEach(id => {
+      if (!group.ids.has(id)) intersection.delete(id);
+    });
+  });
+
+  return [...intersection].sort((a, b) => a.localeCompare(b));
+};
+
 const summarizeSearchKeyFilterSettingsForLog = filterSettings => ({
   keys: filterSettings && typeof filterSettings === 'object' ? Object.keys(filterSettings) : [],
   favoriteOnly: Boolean(filterSettings?.favorite?.favOnly),
@@ -4587,6 +4899,129 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
       targetLimit,
       filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
     });
+
+    const activeSearchKeyGroups = buildActiveSearchKeyFilterGroups(filterSettings, { favoritesMap, dislikedMap });
+    debugLog('activeSearchKeyGroups', {
+      count: activeSearchKeyGroups.length,
+      groups: activeSearchKeyGroups.map(group => ({
+        key: group.key,
+        indexName: group.indexName,
+        bucketsCount: (group.buckets || []).length,
+        bucketsSample: (group.buckets || []).slice(0, 20),
+      })),
+    });
+
+    if (activeSearchKeyGroups.length > 0) {
+      const groupResults = await Promise.all(
+        activeSearchKeyGroups.map(async group => {
+          const ids = await group.readIds({ debugLog });
+          debugLog('groupBucketRead', {
+            group: group.indexName,
+            filterGroup: group.key,
+            bucketsCount: (group.buckets || []).length,
+            bucketsSample: (group.buckets || []).slice(0, 20),
+            totalGroupIdsCount: ids?.size || 0,
+            idsSample: [...(ids || new Set())].slice(0, 10),
+            source: 'indexedSearchKeyGroupCollector',
+          });
+          return { ...group, ids };
+        })
+      );
+
+      debugLog('indexedSearchKeyGroups', {
+        count: groupResults.length,
+        groups: groupResults.map(group => ({
+          key: group.key,
+          indexName: group.indexName,
+          bucketsCount: (group.buckets || []).length,
+          idsCount: group.ids?.size || 0,
+          idsSample: [...(group.ids || new Set())].slice(0, 10),
+        })),
+      });
+
+      const intersectedCandidateIds = intersectSearchKeyGroupIds(groupResults);
+      const numericOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
+
+      debugLog('intersectedCandidateIds', {
+        count: intersectedCandidateIds.length,
+        sample: intersectedCandidateIds.slice(0, 20),
+        offset: numericOffset,
+        targetLimit,
+      });
+
+      loadedIds.push(...intersectedCandidateIds);
+
+      debugLog('fetchUsersByIds:before', {
+        idsCount: intersectedCandidateIds.length,
+        idsSample: intersectedCandidateIds.slice(0, 10),
+        source: 'indexedSearchKeyIntersection',
+      });
+
+      const candidateUsers = await fetchUsersByIds(intersectedCandidateIds);
+      const candidateUsersEntries = Object.entries(candidateUsers || {});
+
+      debugLog('fetchUsersByIds:after', {
+        fetchedCount: candidateUsersEntries.length,
+        fetchedIdsSample: candidateUsersEntries.map(([id, user]) => user?.userId || id).slice(0, 10),
+        source: 'indexedSearchKeyIntersection',
+      });
+
+      debugLog('filterMain:before', {
+        beforeCount: candidateUsersEntries.length,
+        filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
+        source: 'indexedSearchKeyIntersection',
+      });
+
+      const filteredEntries = filterMain(
+        candidateUsersEntries,
+        'DATE2.1',
+        filterSettings,
+        favoritesMap,
+        dislikedMap,
+      );
+
+      const paginatedEntries = filteredEntries.slice(numericOffset, numericOffset + targetLimit);
+      paginatedEntries.forEach(([id, user]) => {
+        const userId = user?.userId || id;
+        if (!userId || collectedUsers[userId]) return;
+        collectedUsers[userId] = { ...user, userId };
+      });
+
+      const nextOffset = numericOffset + paginatedEntries.length;
+      hasMore = nextOffset < filteredEntries.length;
+      cursor = hasMore ? nextOffset : null;
+
+      debugLog('filterMain:after', {
+        beforeCount: candidateUsersEntries.length,
+        afterCount: filteredEntries.length,
+        removedCount: candidateUsersEntries.length - filteredEntries.length,
+        paginatedCount: paginatedEntries.length,
+        nextOffset,
+        filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
+        source: 'indexedSearchKeyIntersection',
+        zeroReason: filteredEntries.length === 0
+          ? candidateUsersEntries.length === 0
+            ? 'fetchUsersByIds returned 0 users from indexed searchKey intersection'
+            : 'filterMain removed all indexed searchKey users'
+          : null,
+      });
+
+      debugLog('return', {
+        collectedUsersCount: Object.keys(collectedUsers).length,
+        loadedIdsCount: loadedIds.length,
+        lastKey: cursor,
+        hasMore,
+        batches,
+        source: 'indexedSearchKeyIntersection',
+      });
+
+      return {
+        users: collectedUsers,
+        lastKey: cursor,
+        hasMore,
+        loadedIds,
+      };
+    }
 
     while (Object.keys(collectedUsers).length < targetLimit && hasMore && batches < SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE) {
       debugLog('loop:start', {
