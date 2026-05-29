@@ -846,6 +846,7 @@ export const ProfileForm = ({
   overlayFieldAdditions = {},
   refreshOverlayForEditor,
   deletingFieldsRef,
+  clearDeletedFieldTombstone,
 }) => {
   const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
@@ -2367,6 +2368,7 @@ ${entries.join('\n')}`;
   };
 
   const handleSelectOption = option => {
+    clearDeletedFieldTombstone?.(selectedField);
     if (!selectedField) {
       handleCloseModal();
       return;
@@ -2566,6 +2568,7 @@ ${entries.join('\n')}`;
                           if (field.name === MULTI_DATA_ACCESS_FIELD) {
                             autoResizeMultiDataAccessUserIds(e.target);
                           }
+                          clearDeletedFieldTombstone?.(field.name);
                           const updatedValue =
                             field.name === 'telegram'
                               ? e?.target?.value
@@ -2575,7 +2578,10 @@ ${entries.join('\n')}`;
                             [field.name]: prevState[field.name].map((item, i) => (i === idx ? updatedValue : item)),
                           }));
                         }}
-                        onBlur={() => handleBlur(`${field.name}-${idx}`)}
+                        onBlur={() => {
+                          if (deletingFieldsRef?.current?.has(field.name)) return;
+                          handleBlur(`${field.name}-${idx}`);
+                        }}
                       />
                       {canOpenSearchIdBackendShortcut(field.name, value) && (
                         <SearchIdBackendButton
@@ -2610,6 +2616,7 @@ ${entries.join('\n')}`;
                               handleRemoveAdditionalAccessRuleInput(idx, 'clear');
                               return;
                             }
+                            deletingFieldsRef?.current?.add(field.name);
                             handleClear(field.name, idx);
                           }}
                         >
@@ -2638,6 +2645,7 @@ ${entries.join('\n')}`;
                       value={state[field.name] || ''}
                       onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
                       onChange={e => {
+                        clearDeletedFieldTombstone?.(field.name);
                         const value = e.target.value;
                         setState(prevState => ({ ...prevState, [field.name]: value }));
                       }}
@@ -2705,6 +2713,7 @@ ${entries.join('\n')}`;
                       ? { readOnly: true }
                       : {
                           onChange: e => {
+                            clearDeletedFieldTombstone?.(field.name);
                             if (field.name === 'myComment') {
                               autoResizeMyComment(e.target);
                             }
@@ -2804,6 +2813,7 @@ ${entries.join('\n')}`;
                           handleRemoveAdditionalAccessRuleInput(null, 'clear');
                           return;
                         }
+                        deletingFieldsRef?.current?.add(field.name);
                         handleClear(field.name);
                       }}
                     >
@@ -2838,6 +2848,7 @@ ${entries.join('\n')}`;
                     marginLeft: 0,
                   }}
                   onClick={() => {
+                    clearDeletedFieldTombstone?.(field.name);
                     if (!state.myComment?.trim()) {
                       handleDelKeyValue('myComment');
                     }
@@ -2863,6 +2874,7 @@ ${entries.join('\n')}`;
                     $compactText
                     type="button"
                     onClick={() => {
+                      clearDeletedFieldTombstone?.(field.name);
                       if (!state.myComment?.trim()) {
                         handleDelKeyValue('myComment');
                       }
@@ -2882,6 +2894,7 @@ ${entries.join('\n')}`;
                     $compactText
                     type="button"
                     onClick={() => {
+                      clearDeletedFieldTombstone?.(field.name);
                       if (!state.myComment?.trim()) {
                         handleDelKeyValue('myComment');
                       }
@@ -2901,6 +2914,7 @@ ${entries.join('\n')}`;
                     $compactText
                     type="button"
                     onClick={() => {
+                      clearDeletedFieldTombstone?.(field.name);
                       if (!state.myComment?.trim()) {
                         handleDelKeyValue('myComment');
                       }
@@ -2925,6 +2939,7 @@ ${entries.join('\n')}`;
                       key={`${field.name}-${getOptionValue(option)}`}
                       type="button"
                       onClick={() => {
+                        clearDeletedFieldTombstone?.(field.name);
                         if (!state.myComment?.trim()) {
                           handleDelKeyValue('myComment');
                         }
