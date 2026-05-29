@@ -4998,7 +4998,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       onChange={handleFilterChange}
                       storageKey={filterStorageKey}
                       bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode}
-                      allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'lastAction', 'getInTouch'] : undefined}
+                      allowedFilterNames={searchIdAndSearchKeyOnlyMode ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'getInTouch'] : undefined}
                     />
                   </LoadOptionsPopover>
                 )}
