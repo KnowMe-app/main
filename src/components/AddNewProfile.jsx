@@ -740,6 +740,25 @@ const LocalIndexActions = styled.div`
 
 const PROFILE_RESTORE_LOG_PREFIX = '[ProfileRestore]';
 const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
+const LOAD_DEBUG_LOG_PREFIX = '[AddNewProfileLoad]';
+const LOAD_DEBUG_LOG_MAX_ENTRIES = 1000;
+
+const countObjectKeys = value =>
+  value && typeof value === 'object' ? Object.keys(value).length : 0;
+
+const summarizeLoadFiltersForLog = filters => ({
+  keys: filters && typeof filters === 'object' ? Object.keys(filters) : [],
+  favoriteOnly: Boolean(filters?.favorite?.favOnly),
+  reaction: filters?.reaction || null,
+  raw: filters || {},
+});
+
+const countLoadFilterDrop = (acc, reason) => {
+  if (!reason) return acc;
+  acc[reason] = (acc[reason] || 0) + 1;
+  return acc;
+};
+
 
 const getProfileRestoreTimestamp = () => {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -1198,6 +1217,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const filtersRef = useRef(filters);
   const skipNextReloadRef = useRef(false);
   const searchKeyCoverageRef = useRef({});
+  const loadDebugLogsRef = useRef([]);
   const hasInitializedFiltersRef = useRef(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState(null);
@@ -1220,6 +1240,28 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
+  }, []);
+
+  const appendLoadDebugLog = useCallback((step, payload = {}) => {
+    const entry = {
+      id: loadDebugLogsRef.current.length + 1,
+      timestamp: new Date().toISOString(),
+      at: getProfileRestoreTimestamp(),
+      step,
+      ...payload,
+    };
+
+    loadDebugLogsRef.current = [
+      ...loadDebugLogsRef.current,
+      entry,
+    ].slice(-LOAD_DEBUG_LOG_MAX_ENTRIES);
+
+    if (typeof window !== 'undefined') {
+      window.__ADD_NEW_PROFILE_LOAD_DEBUG_LOGS = loadDebugLogsRef.current;
+    }
+
+    console.log(LOAD_DEBUG_LOG_PREFIX, step, entry);
+    return entry;
   }, []);
 
   const downloadMatchingDebugLogs = useCallback(() => {
@@ -1735,6 +1777,47 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const profileSourceRef = useRef(profileSource);
   const [isResolvingEditMode, setIsResolvingEditMode] = useState(false);
   const profileFetchRequestRef = useRef(0);
+
+  const downloadLoadDebugLogs = useCallback(() => {
+    const logs = loadDebugLogsRef.current || [];
+
+    downloadJsonFile(`load-debug-${buildJsonDownloadStamp()}.json`, {
+      userAgent: typeof window !== 'undefined' ? window.navigator?.userAgent || '' : '',
+      url: typeof window !== 'undefined' ? window.location?.href || '' : '',
+      timestamp: new Date().toISOString(),
+      currentFilter,
+      loadSortMode,
+      search,
+      searchBarQueryActive,
+      hasMore,
+      lastKey,
+      lastKey21,
+      dateOffset2,
+      dateOffset21,
+      dateOffsetLA,
+      usersCount: countObjectKeys(users),
+      filters: summarizeLoadFiltersForLog(filters),
+      logsCount: logs.length,
+      logs,
+    });
+
+    toast.success(`Load log збережено (${logs.length})`);
+    return logs.length;
+  }, [
+    currentFilter,
+    dateOffset2,
+    dateOffset21,
+    dateOffsetLA,
+    downloadJsonFile,
+    filters,
+    hasMore,
+    lastKey,
+    lastKey21,
+    loadSortMode,
+    search,
+    searchBarQueryActive,
+    users,
+  ]);
 
   useEffect(() => {
     profileSourceRef.current = profileSource;
@@ -2456,9 +2539,30 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     if (skipNextReloadRef.current) {
+      appendLoadDebugLog('reload-effect:skip-next-reload', {
+        currentFilter,
+        loadSortMode,
+        search,
+        filters: summarizeLoadFiltersForLog(filters),
+      });
       skipNextReloadRef.current = false;
       return;
     }
+
+    appendLoadDebugLog('reload-effect:start', {
+      currentFilter,
+      loadSortMode,
+      search,
+      searchBarQueryActive,
+      filters: summarizeLoadFiltersForLog(filters),
+      previousUsersCount: countObjectKeys(users),
+      hasMore,
+      lastKey,
+      lastKey21,
+      dateOffset2,
+      dateOffset21,
+      dateOffsetLA,
+    });
 
     setUsers({});
     setLastKey(null);
@@ -2471,6 +2575,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setDateOffset21(0);
 
     if (!currentFilter) {
+      appendLoadDebugLog('reload-effect:stop-empty-current-filter', {
+        reason: 'currentFilter is empty, load is not started',
+      });
       setSearchLoading(false);
       setHasSearched(false);
       return;
@@ -2480,6 +2587,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setHasSearched(true);
 
     if (currentFilter === 'DATE2') {
+      appendLoadDebugLog('reload-effect:branch', { branch: 'DATE2', loader: 'loadMoreUsers2' });
       loadMoreUsers2()
         .then(({ cacheCount, backendCount }) => {
           setCacheCount(cacheCount);
@@ -2490,10 +2598,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     if (currentFilter === 'DATE2.1') {
+      appendLoadDebugLog('reload-effect:branch', {
+        branch: 'DATE2.1',
+        searchIdAndSearchKeyOnlyMode,
+      });
       const queryKey = buildQueryKey('DATE2.1', filters, search);
       const ids = getIdsByQuery(queryKey);
       const cachedCards = ids.map(id => getCard(id)).filter(Boolean);
       if (cachedCards.length > 0 || (ids.length === 0 && searchKeyCoverageRef.current[serializeQueryFilters(filters)])) {
+        appendLoadDebugLog('date2.1:cache-hit-or-covered', {
+          queryKey,
+          idsCount: ids.length,
+          cachedCardsCount: cachedCards.length,
+          coverage: Boolean(searchKeyCoverageRef.current[serializeQueryFilters(filters)]),
+          zeroReason: cachedCards.length === 0 ? 'searchKeyCoverage says backend already fully loaded for these filters' : null,
+        });
         const cachedUsers = cachedCards.reduce((acc, user) => {
           acc[user.userId] = user;
           return acc;
@@ -2524,6 +2643,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             return acc;
           }, {});
           const derivedIds = Object.keys(derivedUsers);
+          appendLoadDebugLog('date2.1:derived-from-base-cache', {
+            baseKey,
+            baseIdsCount: baseIds.length,
+            baseCardsCount: baseCards.length,
+            derivedIdsCount: derivedIds.length,
+            zeroReason: derivedIds.length === 0 ? 'filterMain removed all users from covered base cache' : null,
+          });
           setIdsForQuery(queryKey, derivedIds);
           setUsers(derivedUsers);
           setCacheCount(derivedIds.length);
@@ -2546,6 +2672,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
     if (currentFilter === 'LAST_ACTION') {
+      appendLoadDebugLog('reload-effect:branch', { branch: 'LAST_ACTION', loader: 'loadMoreUsersLastAction' });
       loadMoreUsersLastAction()
         .then(({ cacheCount, backendCount }) => {
           setCacheCount(cacheCount);
@@ -2556,6 +2683,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     if (currentFilter === LAST_ACTION2_FILTER) {
+      appendLoadDebugLog('reload-effect:branch', { branch: LAST_ACTION2_FILTER, loader: 'loadMoreUsersLastAction2' });
       loadMoreUsersLastAction2()
         .then(({ cacheCount, backendCount }) => {
           setCacheCount(cacheCount);
@@ -2566,11 +2694,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     if (currentFilter === 'FAVORITE') {
+      appendLoadDebugLog('reload-effect:branch', { branch: 'FAVORITE', loader: 'loadFavoriteUsers' });
       loadFavoriteUsers().finally(() => setSearchLoading(false));
       return;
     }
 
     if (currentFilter === 'CYCLE_FAVORITE') {
+      appendLoadDebugLog('reload-effect:branch', { branch: 'CYCLE_FAVORITE', loader: 'loadCycleFavorites' });
       loadCycleFavorites().finally(() => setSearchLoading(false));
       return;
     }
@@ -2579,6 +2709,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const ids = getIdsByQuery(queryKey);
     const cards = ids.map(id => getCard(id)).filter(Boolean);
     if (cards.length > 0) {
+      appendLoadDebugLog('generic:query-cache-hit', {
+        queryKey,
+        idsCount: ids.length,
+        cardsCount: cards.length,
+      });
       const cachedUsers = cards.reduce((acc, u) => {
         acc[u.userId] = u;
         return acc;
@@ -2588,6 +2723,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setBackendCount(0);
       setSearchLoading(false);
     } else {
+      appendLoadDebugLog('generic:query-cache-miss', {
+        queryKey,
+        idsCount: ids.length,
+        cardsCount: cards.length,
+        loader: 'loadMoreUsers',
+      });
       loadMoreUsers(currentFilter)
         .then(({ cacheCount, backendCount }) => {
           setCacheCount(cacheCount);
@@ -2922,7 +3063,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const loadMoreUsers = async (filterForload, currentFilters = filters) => {
     const includeSpecialFutureDates = searchBarQueryActive;
-    if (isEditingRef.current) return { count: 0, hasMore };
+    appendLoadDebugLog('loadMoreUsers:start', {
+      filterForload,
+      param: lastKey,
+      includeSpecialFutureDates,
+      filters: summarizeLoadFiltersForLog(currentFilters),
+      hasMore,
+    });
+    if (isEditingRef.current) {
+      appendLoadDebugLog('loadMoreUsers:return-zero', {
+        reason: 'isEditingRef.current is true',
+        filterForload,
+      });
+      return { count: 0, hasMore };
+    }
     const param = lastKey;
     let favRaw = getFavorites();
     let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
@@ -2950,6 +3104,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setFavoriteUsersData(fav);
       syncFavorites(fav);
     }
+    appendLoadDebugLog('loadMoreUsers:maps-ready', {
+      favoritesCount: countObjectKeys(fav),
+      dislikesCount: countObjectKeys(dislikedUsersMap),
+      favoriteOnly: Boolean(currentFilters.favorite?.favOnly),
+      hasExplicitReactionSelection,
+    });
+
     const res = await fetchPaginatedNewUsers(
       param,
       filterForload,
@@ -2960,12 +3121,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         dislikedUsers: dislikedUsersMap,
       },
     );
+    const rawUsersEntries = res && typeof res.users === 'object' ? Object.entries(res.users) : [];
+    appendLoadDebugLog('loadMoreUsers:backend-response', {
+      hasResponse: Boolean(res),
+      rawUsersCount: rawUsersEntries.length,
+      lastKey: res?.lastKey ?? null,
+      hasMore: Boolean(res?.hasMore),
+      zeroReason: rawUsersEntries.length === 0 ? 'backend returned empty res.users' : null,
+    });
+
     // Перевіряємо, чи є користувачі у відповіді
-    if (res && typeof res.users === 'object' && Object.keys(res.users).length > 0) {
+    if (rawUsersEntries.length > 0) {
+      const dropReasons = {};
 
       // Використовуємо Object.entries для обробки res.users
-      const newUsers = Object.entries(res.users)
-        .filter(([id]) => !currentFilters.favorite?.favOnly || fav[id])
+      const newUsers = rawUsersEntries
+        .filter(([id]) => {
+          const keep = !currentFilters.favorite?.favOnly || fav[id];
+          if (!keep) countLoadFilterDrop(dropReasons, 'favoriteOnly');
+          return keep;
+        })
         .reduce((acc, [userId, user]) => {
         // Перевірка наявності поля userId, щоб уникнути помилок
         if (user.userId) {
@@ -2987,9 +3162,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
       setHasMore(res.hasMore); // Оновлюємо hasMore
       const backendCount = Object.keys(newUsers).length;
+      appendLoadDebugLog('loadMoreUsers:result', {
+        rawUsersCount: rawUsersEntries.length,
+        backendCount,
+        dropReasons,
+        nextLastKey: res.lastKey ?? null,
+        hasMore: Boolean(res.hasMore),
+        zeroReason: backendCount === 0 ? 'all backend users were removed by current filters' : null,
+      });
       return { cacheCount: 0, backendCount, hasMore: res.hasMore };
     } else {
       setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
+      appendLoadDebugLog('loadMoreUsers:return-zero', {
+        reason: 'backend response has no users',
+        filterForload,
+        param,
+        hasResponse: Boolean(res),
+        lastKey: res?.lastKey ?? null,
+        hasMore: Boolean(res?.hasMore),
+      });
       return { cacheCount: 0, backendCount: 0, hasMore: false };
     }
   };
@@ -3011,6 +3202,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsersSearchKey = async (currentFilters = filters) => {
+    appendLoadDebugLog('loadMoreUsersSearchKey:start', {
+      offset: lastKey21 ?? dateOffset21,
+      limit: PAGE_SIZE,
+      filters: summarizeLoadFiltersForLog(currentFilters),
+      hasMore,
+    });
     let favRaw = getFavorites();
     let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
     let dislikedUsersMap = Object.fromEntries(
@@ -3039,12 +3236,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     if (isSingleReactionSelection(currentFilters?.reaction, 'dislike')) {
+      appendLoadDebugLog('loadMoreUsersSearchKey:delegate-disliked-cards', {
+        reason: 'single dislike reaction selection',
+      });
       return showDislikedCards();
     }
 
     if (isEditingRef.current) {
+      appendLoadDebugLog('loadMoreUsersSearchKey:return-zero', {
+        reason: 'isEditingRef.current is true',
+      });
       return { cacheCount: 0, backendCount: 0, hasMore };
     }
+
+    appendLoadDebugLog('loadMoreUsersSearchKey:maps-ready', {
+      favoritesCount: countObjectKeys(fav),
+      dislikesCount: countObjectKeys(dislikedUsersMap),
+      favoriteOnly: Boolean(currentFilters.favorite?.favOnly),
+      hasExplicitReactionSelection,
+    });
 
     const res = await fetchUsersBySearchKeyBloodPaged({
       filterSettings: currentFilters,
@@ -3054,11 +3264,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       dislikedMap: dislikedUsersMap,
     });
 
-    const normalizedUsers = Object.entries(res?.users || {}).reduce((acc, [id, user]) => {
+    const searchKeyRawEntries = Object.entries(res?.users || {});
+    const searchKeyDropReasons = {};
+    appendLoadDebugLog('loadMoreUsersSearchKey:backend-response', {
+      rawUsersCount: searchKeyRawEntries.length,
+      lastKey: res?.lastKey ?? null,
+      hasMore: Boolean(res?.hasMore),
+      zeroReason: searchKeyRawEntries.length === 0 ? 'searchKey backend returned empty users' : null,
+    });
+
+    const normalizedUsers = searchKeyRawEntries.reduce((acc, [id, user]) => {
       const targetId = user?.userId || id;
-      if (!targetId || !user) return acc;
-      if (currentFilters.favorite?.favOnly && !fav[targetId]) return acc;
-      if (!passesReactionFilter(user, currentFilters?.reaction, fav, dislikedUsersMap)) return acc;
+      if (!targetId || !user) {
+        countLoadFilterDrop(searchKeyDropReasons, 'invalidUser');
+        return acc;
+      }
+      if (currentFilters.favorite?.favOnly && !fav[targetId]) {
+        countLoadFilterDrop(searchKeyDropReasons, 'favoriteOnly');
+        return acc;
+      }
+      if (!passesReactionFilter(user, currentFilters?.reaction, fav, dislikedUsersMap)) {
+        countLoadFilterDrop(searchKeyDropReasons, 'reaction');
+        return acc;
+      }
       acc[targetId] = { ...user, userId: targetId };
       return acc;
     }, {});
@@ -3073,6 +3301,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setIdsForQuery(queryKey, [...new Set([...existingIds, ...Object.keys(normalizedUsers)])]);
 
     const backendCount = Object.keys(normalizedUsers).length;
+    appendLoadDebugLog('loadMoreUsersSearchKey:result', {
+      rawUsersCount: searchKeyRawEntries.length,
+      backendCount,
+      dropReasons: searchKeyDropReasons,
+      nextLastKey: res?.lastKey ?? null,
+      hasMore: Boolean(res?.hasMore),
+      zeroReason: backendCount === 0
+        ? searchKeyRawEntries.length === 0
+          ? 'backend returned 0 users'
+          : 'all searchKey backend users were removed by filters'
+        : null,
+    });
     setLastKey21(res?.lastKey ?? null);
     setDateOffset21(prev => prev + backendCount);
     setHasMore(Boolean(res?.hasMore));
@@ -3092,6 +3332,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       queryMode = 'DATE2',
     } = {},
   ) => {
+    appendLoadDebugLog('loadMoreUsers2Base:start', {
+      queryMode,
+      validateGetInTouchDate,
+      useDateByDateBackendFetch,
+      dateOffset2,
+      dateOffset21,
+      lastKey21,
+      hasMore,
+      filters: summarizeLoadFiltersForLog(currentFilters),
+    });
     let favRaw = getFavorites();
     let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
     let dislikedUsersMap = Object.fromEntries(
@@ -3119,8 +3369,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       syncFavorites(fav);
     }
 
-    if (isEditingRef.current)
+    if (isEditingRef.current) {
+      appendLoadDebugLog('loadMoreUsers2Base:return-zero', {
+        queryMode,
+        reason: 'isEditingRef.current is true',
+      });
       return { cacheCount: 0, backendCount: 0, hasMore };
+    }
+
+    appendLoadDebugLog('loadMoreUsers2Base:maps-ready', {
+      queryMode,
+      favoritesCount: countObjectKeys(fav),
+      dislikesCount: countObjectKeys(dislikedUsersMap),
+      favoriteOnly: Boolean(currentFilters.favorite?.favOnly),
+      hasExplicitReactionSelection,
+    });
+
 
     const { cards: cachedArr, fromCache } = await getLoad2Cards(
       currentFilters,
@@ -3137,17 +3401,44 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
       return !/^\d{4}-\d{2}-\d{2}$/.test(d) || d <= today;
     };
-    const filteredArr = cachedArr.filter(
-      u =>
-        (!validateGetInTouchDate || isValid(u.getInTouch)) &&
-        (!currentFilters.favorite?.favOnly || fav[u.userId]) &&
-        passesReactionFilter(u, currentFilters?.reaction, fav, dislikedUsersMap),
-    );
+    const cacheDropReasons = {};
+    const filteredArr = cachedArr.filter(u => {
+      if (validateGetInTouchDate && !isValid(u.getInTouch)) {
+        countLoadFilterDrop(cacheDropReasons, 'getInTouch');
+        return false;
+      }
+      if (currentFilters.favorite?.favOnly && !fav[u.userId]) {
+        countLoadFilterDrop(cacheDropReasons, 'favoriteOnly');
+        return false;
+      }
+      if (!passesReactionFilter(u, currentFilters?.reaction, fav, dislikedUsersMap)) {
+        countLoadFilterDrop(cacheDropReasons, 'reaction');
+        return false;
+      }
+      return true;
+    });
 
     let offset = useDateByDateBackendFetch ? dateOffset2 : dateOffset21;
+    appendLoadDebugLog('loadMoreUsers2Base:cache-filtered', {
+      queryMode,
+      fromCache,
+      cachedCount: cachedArr.length,
+      filteredCount: filteredArr.length,
+      offset,
+      pageSize: PAGE_SIZE,
+      dropReasons: cacheDropReasons,
+      zeroReason: filteredArr.length === 0 && cachedArr.length > 0 ? 'cache users were removed by filters' : null,
+    });
     const loadedIds = [];
 
     const slice = filteredArr.slice(offset, offset + PAGE_SIZE);
+    appendLoadDebugLog('loadMoreUsers2Base:cache-slice', {
+      queryMode,
+      offset,
+      sliceCount: slice.length,
+      filteredCount: filteredArr.length,
+      zeroReason: slice.length === 0 && filteredArr.length > 0 ? 'offset is outside filtered cache range' : null,
+    });
     if (slice.length > 0) {
       const cachedUsers = slice.reduce((acc, u) => {
         acc[u.userId] = u;
@@ -3167,6 +3458,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (!more && slice.length < PAGE_SIZE) {
       if (useDateByDateBackendFetch) {
+        appendLoadDebugLog('loadMoreUsers2Base:backend-fetch-filtered-page:start', {
+          queryMode,
+          offset,
+          reason: 'cache does not have enough users for requested page',
+        });
         const res = await fetchFilteredUsersByPage(
           offset,
           undefined,
@@ -3188,25 +3484,51 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           },
         );
 
-        if (res && Object.keys(res.users).length > 0) {
-          const normalizedUsers = Object.entries(res.users).reduce((acc, [userId, user]) => {
+        const backendEntries = Object.entries(res?.users || {});
+        appendLoadDebugLog('loadMoreUsers2Base:backend-fetch-filtered-page:response', {
+          queryMode,
+          rawUsersCount: backendEntries.length,
+          lastKey: res?.lastKey ?? null,
+          hasMore: Boolean(res?.hasMore),
+          zeroReason: backendEntries.length === 0 ? 'fetchFilteredUsersByPage returned empty users' : null,
+        });
+
+        if (backendEntries.length > 0) {
+          const normalizedUsers = backendEntries.reduce((acc, [userId, user]) => {
             const targetId = user.userId || userId;
             acc[targetId] = { ...user, userId: targetId };
             return acc;
           }, {});
 
+          const backendDropReasons = {};
           const filteredUsers = Object.fromEntries(
             Object.entries(normalizedUsers).filter(([, user]) => {
-              if (currentFilters.favorite?.favOnly && !fav[user.userId]) return false;
-              if (validateGetInTouchDate && !isValid(user.getInTouch)) return false;
-              return passesReactionFilter(
+              if (currentFilters.favorite?.favOnly && !fav[user.userId]) {
+                countLoadFilterDrop(backendDropReasons, 'favoriteOnly');
+                return false;
+              }
+              if (validateGetInTouchDate && !isValid(user.getInTouch)) {
+                countLoadFilterDrop(backendDropReasons, 'getInTouch');
+                return false;
+              }
+              const keepByReaction = passesReactionFilter(
                 user,
                 currentFilters?.reaction,
                 fav,
                 dislikedUsersMap,
               );
+              if (!keepByReaction) countLoadFilterDrop(backendDropReasons, 'reaction');
+              return keepByReaction;
             }),
           );
+
+          appendLoadDebugLog('loadMoreUsers2Base:backend-fetch-filtered-page:filtered', {
+            queryMode,
+            rawUsersCount: backendEntries.length,
+            filteredCount: countObjectKeys(filteredUsers),
+            dropReasons: backendDropReasons,
+            zeroReason: countObjectKeys(filteredUsers) === 0 ? 'all fetchFilteredUsersByPage users were removed by filters' : null,
+          });
 
           cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
           if (!isEditingRef.current) {
@@ -3225,6 +3547,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         let backendHasMore = true;
 
         while (loadedForPage < PAGE_SIZE && backendHasMore) {
+          appendLoadDebugLog('loadMoreUsers2Base:backend-loop:start', {
+            queryMode,
+            nextKey,
+            loadedForPage,
+            pageSize: PAGE_SIZE,
+          });
           const res = await fetchPaginatedNewUsers(
             nextKey,
             'DATE3',
@@ -3237,31 +3565,62 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           );
 
           if (!res || !res.users) {
+            appendLoadDebugLog('loadMoreUsers2Base:backend-loop:empty-response', {
+              queryMode,
+              nextKey,
+              hasResponse: Boolean(res),
+              responseLastKey: res?.lastKey ?? null,
+            });
             backendHasMore = false;
             nextKey = res?.lastKey ?? null;
             break;
           }
 
-          const normalizedUsers = Object.entries(res.users).reduce((acc, [userId, user]) => {
+          const loopBackendEntries = Object.entries(res.users);
+          appendLoadDebugLog('loadMoreUsers2Base:backend-loop:response', {
+            queryMode,
+            rawUsersCount: loopBackendEntries.length,
+            responseLastKey: res.lastKey ?? null,
+            responseHasMore: Boolean(res.hasMore),
+          });
+
+          const normalizedUsers = loopBackendEntries.reduce((acc, [userId, user]) => {
             const targetId = user.userId || userId;
             acc[targetId] = { ...user, userId: targetId };
             return acc;
           }, {});
 
+          const loopDropReasons = {};
           const filteredUsers = Object.fromEntries(
             Object.entries(normalizedUsers).filter(([, user]) => {
-              if (currentFilters.favorite?.favOnly && !fav[user.userId]) return false;
-              if (validateGetInTouchDate && !isValid(user.getInTouch)) return false;
-              return passesReactionFilter(
+              if (currentFilters.favorite?.favOnly && !fav[user.userId]) {
+                countLoadFilterDrop(loopDropReasons, 'favoriteOnly');
+                return false;
+              }
+              if (validateGetInTouchDate && !isValid(user.getInTouch)) {
+                countLoadFilterDrop(loopDropReasons, 'getInTouch');
+                return false;
+              }
+              const keepByReaction = passesReactionFilter(
                 user,
                 currentFilters?.reaction,
                 fav,
                 dislikedUsersMap,
               );
+              if (!keepByReaction) countLoadFilterDrop(loopDropReasons, 'reaction');
+              return keepByReaction;
             }),
           );
 
           const filteredIds = Object.keys(filteredUsers);
+          appendLoadDebugLog('loadMoreUsers2Base:backend-loop:filtered', {
+            queryMode,
+            rawUsersCount: loopBackendEntries.length,
+            filteredCount: filteredIds.length,
+            dropReasons: loopDropReasons,
+            zeroReason: filteredIds.length === 0 ? 'all fetchPaginatedNewUsers DATE3 users were removed by filters' : null,
+          });
+
 
           if (filteredIds.length > 0) {
             cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
@@ -3289,6 +3648,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setDateOffset21(offset);
     }
     setHasMore(more);
+    appendLoadDebugLog('loadMoreUsers2Base:result', {
+      queryMode,
+      cacheCount,
+      backendCount,
+      loadedIdsCount: loadedIds.length,
+      offset,
+      hasMore: more,
+      zeroReason: loadedIds.length === 0
+        ? 'cache slice and backend fetch produced no accepted users'
+        : null,
+    });
     const queryKey = buildQueryKey(queryMode, currentFilters, search);
     const existingIds = getIdsByQuery(queryKey);
     setIdsForQuery(queryKey, [...new Set([...existingIds, ...loadedIds])]);
@@ -3296,6 +3666,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsersLastAction = async (currentFilters = filters) => {
+    appendLoadDebugLog('loadMoreUsersLastAction:start', {
+      dateOffsetLA,
+      hasMore,
+      filters: summarizeLoadFiltersForLog(currentFilters),
+    });
     let favRaw = getFavorites();
     let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
     let dislikedUsersMap = Object.fromEntries(
@@ -3323,8 +3698,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       syncFavorites(fav);
     }
 
-    if (isEditingRef.current)
+    if (isEditingRef.current) {
+      appendLoadDebugLog('loadMoreUsersLastAction:return-zero', {
+        reason: 'isEditingRef.current is true',
+      });
       return { cacheCount: 0, backendCount: 0, hasMore };
+    }
+
+    appendLoadDebugLog('loadMoreUsersLastAction:maps-ready', {
+      favoritesCount: countObjectKeys(fav),
+      dislikesCount: countObjectKeys(dislikedUsersMap),
+      favoriteOnly: Boolean(currentFilters.favorite?.favOnly),
+      hasExplicitReactionSelection,
+    });
+
 
     const { cards: cachedArr, fromCache } = await getLoad2Cards(
       currentFilters,
@@ -3338,6 +3725,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     let backendCount = 0;
 
     const slice = sortedCachedArr.slice(dateOffsetLA, dateOffsetLA + PAGE_SIZE);
+    appendLoadDebugLog('loadMoreUsersLastAction:cache-slice', {
+      fromCache,
+      cachedCount: cachedArr.length,
+      sortedCachedCount: sortedCachedArr.length,
+      dateOffsetLA,
+      sliceCount: slice.length,
+      zeroReason: slice.length === 0 && sortedCachedArr.length > 0 ? 'dateOffsetLA is outside sorted cache range' : null,
+    });
     if (slice.length > 0) {
       const cachedUsers = slice.reduce((acc, user) => {
         acc[user.userId] = user;
@@ -3357,6 +3752,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const nextOffset = dateOffsetLA + slice.length;
       setDateOffsetLA(nextOffset);
       setHasMore(hasCachedMore);
+      appendLoadDebugLog('loadMoreUsersLastAction:result-from-cache', {
+        cacheCount,
+        backendCount,
+        hasMore: hasCachedMore,
+        nextOffset,
+      });
       return { cacheCount, backendCount, hasMore: hasCachedMore };
     }
 
@@ -3406,6 +3807,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         dateOffset = nextCursor;
         hasMoreLA = Boolean(rawBatch?.hasMore);
 
+        appendLoadDebugLog('loadMoreUsersLastAction:checkbox-batch', {
+          rawUsersCount: rawEntries.length,
+          filteredCount: filteredEntries.length,
+          hasMore: hasMoreLA,
+          cursor,
+          dateOffset,
+          lastKey: rawBatch?.lastKey ?? null,
+          visibleCount: Object.keys(collected).length,
+          zeroReason: rawEntries.length > 0 && filteredEntries.length === 0 ? 'filterMain removed LAST_ACTION batch' : null,
+        });
         const debugMessage = `[LA][checkbox] raw=${rawEntries.length}, filtered=${filteredEntries.length}, next=${hasMoreLA}, cursor=${cursor}, dateOffset=${dateOffset}, lastKey=${rawBatch?.lastKey ?? 'n/a'}, visible=${Object.keys(collected).length}`;
         console.info(debugMessage);
         toast(debugMessage, { duration: 1800 });
@@ -3438,6 +3849,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           filterMain
         );
 
+    const lastActionRawCount = countObjectKeys(res?.users);
+    appendLoadDebugLog('loadMoreUsersLastAction:backend-response', {
+      hasCheckboxFilters,
+      backendOffset,
+      rawUsersCount: lastActionRawCount,
+      lastKey: res?.lastKey ?? null,
+      dateOffsetLA: res?.dateOffsetLA ?? null,
+      hasMore: Boolean(res?.hasMore),
+      zeroReason: lastActionRawCount === 0 ? 'LAST_ACTION backend returned empty users' : null,
+    });
+
     if (res && Object.keys(res.users || {}).length > 0) {
       const filteredUsers = currentFilters.favorite?.favOnly
         ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
@@ -3450,10 +3872,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setDateOffsetLA(nextOffset);
       setHasMore(res.hasMore);
       backendCount += Object.keys(filteredUsers).length;
+      appendLoadDebugLog('loadMoreUsersLastAction:result', {
+        rawUsersCount: lastActionRawCount,
+        filteredCount: countObjectKeys(filteredUsers),
+        cacheCount,
+        backendCount,
+        hasMore: Boolean(res.hasMore),
+        zeroReason: countObjectKeys(filteredUsers) === 0 ? 'favoriteOnly removed all LAST_ACTION users' : null,
+      });
       return { cacheCount, backendCount, hasMore: res.hasMore };
     }
 
     setHasMore(false);
+    appendLoadDebugLog('loadMoreUsersLastAction:return-zero', {
+      reason: 'cache and backend produced no users',
+      sliceCount: slice.length,
+      backendOffset,
+      lastActionRawCount,
+    });
     if (slice.length > 0) {
       setDateOffsetLA(prev => prev + slice.length);
     }
@@ -4402,6 +4838,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setIsDuplicateView(false);
 
     const nextFilter = resolveFilterByLoadSortMode(loadSortMode);
+    appendLoadDebugLog('manual-load:click', {
+      nextFilter,
+      loadSortMode,
+      search,
+      filters: summarizeLoadFiltersForLog(filters),
+      previousUsersCount: countObjectKeys(users),
+    });
     setCurrentFilter(nextFilter);
     setLoadRequestId(prev => prev + 1);
   };
@@ -4941,6 +5384,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     title="Налаштування load"
                   >
                     ⚙
+                  </GearButton>
+                  <GearButton
+                    type="button"
+                    onClick={downloadLoadDebugLogs}
+                    aria-label="Зберегти load debug log у файл"
+                    title="Зберегти load debug log у файл"
+                  >
+                    🧾
                   </GearButton>
                 </LoadControlsHeader>
                 {isLoadOptionsOpen && (
