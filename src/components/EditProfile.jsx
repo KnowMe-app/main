@@ -298,7 +298,6 @@ const EditProfile = () => {
   }, [userId, currentUid, isAdmin]);
 
   const deletingFieldsRef = useRef(new Set());
-  const submitQueueRef = useRef(Promise.resolve());
 
   const clearDeletingFieldAfterSubmit = useCallback((fieldName, submitPromise) => {
     Promise.resolve(submitPromise)
@@ -529,13 +528,6 @@ const EditProfile = () => {
     }
   };
 
-  const enqueueSubmit = (newState, overwrite, delCondition) => {
-    submitQueueRef.current = submitQueueRef.current
-      .catch(() => {})
-      .then(() => handleSubmit(newState, overwrite, delCondition));
-    return submitQueueRef.current;
-  };
-
   const handleFieldFocus = fieldName => {
     if (!fieldName) return;
     setFocusedField(fieldName);
@@ -604,7 +596,7 @@ const EditProfile = () => {
           ? undefined
           : { [fieldName]: removedValue };
 
-        enqueueSubmit(newState, 'overwrite', delCondition);
+        handleSubmit(newState, 'overwrite', delCondition);
         return newState;
       }
 
@@ -630,7 +622,7 @@ const EditProfile = () => {
         ? undefined
         : { [fieldName]: removedValue };
 
-      const submitPromise = enqueueSubmit(newState, 'overwrite', delCondition);
+      const submitPromise = handleSubmit(newState, 'overwrite', delCondition);
       clearDeletingFieldAfterSubmit(fieldName, submitPromise);
       return newState;
     });
@@ -641,7 +633,7 @@ const EditProfile = () => {
       const newState = { ...prev };
       const deletedValue = newState[fieldName];
       delete newState[fieldName];
-      enqueueSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
+      handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
       return newState;
     });
   };
