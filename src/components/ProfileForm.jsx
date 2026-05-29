@@ -851,6 +851,7 @@ export const ProfileForm = ({
   const moreInfoRef = useRef(null);
   const additionalAccessRulesRef = useRef(null);
   const multiDataAccessUserIdsRef = useRef(null);
+  const skipNextScalarClearBlurRef = useRef(null);
   const [customField, setCustomField] = useState({ key: '', value: '' });
   const [collection, setCollection] = useState('newUsers');
   const [selectedField, setSelectedField] = useState(null);
@@ -1113,6 +1114,24 @@ export const ProfileForm = ({
 
     return matchedByInputIndex;
   }, [localSearchKeyPayload]);
+
+  const markScalarClearBlurSkip = useCallback(fieldName => {
+    if (!fieldName || Array.isArray(state?.[fieldName])) return;
+
+    skipNextScalarClearBlurRef.current = fieldName;
+    window.setTimeout(() => {
+      if (skipNextScalarClearBlurRef.current === fieldName) {
+        skipNextScalarClearBlurRef.current = null;
+      }
+    }, 300);
+  }, [state]);
+
+  const shouldSkipScalarClearBlur = useCallback(fieldName => {
+    if (skipNextScalarClearBlurRef.current !== fieldName) return false;
+
+    skipNextScalarClearBlurRef.current = null;
+    return true;
+  }, []);
 
   const submitWithNormalization = useCallback(async (nextState, overwrite, delCondition, options = {}) => {
     const payload =
@@ -2718,6 +2737,10 @@ ${entries.join('\n')}`;
                             }));
                           },
                           onBlur: () => {
+                            if (shouldSkipScalarClearBlur(field.name)) {
+                              return;
+                            }
+
                             if (field.name === 'myComment' && !state.myComment?.trim()) {
                               handleDelKeyValue('myComment');
                               return;
@@ -2771,7 +2794,11 @@ ${entries.join('\n')}`;
                   {field.name !== 'lastAction' && state[field.name] && (
                     <ClearButton
                       type="button"
-                      onMouseDown={e => e.preventDefault()}
+                      onPointerDown={() => markScalarClearBlurSkip(field.name)}
+                      onMouseDown={e => {
+                        markScalarClearBlurSkip(field.name);
+                        e.preventDefault();
+                      }}
                       onClick={() => {
                         if (field.name === ADDITIONAL_ACCESS_FIELD) {
                           handleRemoveAdditionalAccessRuleInput(null, 'clear');
