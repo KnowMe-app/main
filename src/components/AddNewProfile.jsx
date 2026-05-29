@@ -3019,7 +3019,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const res = await fetchUsersBySearchKeyBloodPaged({
       filterSettings: currentFilters,
-      offset: dateOffset21,
+      offset: lastKey21 ?? dateOffset21,
       limit: PAGE_SIZE,
       favoritesMap: fav,
       dislikedMap: dislikedUsersMap,
@@ -3043,10 +3043,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const existingIds = getIdsByQuery(queryKey);
     setIdsForQuery(queryKey, [...new Set([...existingIds, ...Object.keys(normalizedUsers)])]);
 
-    setDateOffset21(res?.lastKey ?? dateOffset21);
-    setHasMore(Boolean(res?.hasMore));
-
     const backendCount = Object.keys(normalizedUsers).length;
+    setLastKey21(res?.lastKey ?? null);
+    setDateOffset21(prev => prev + backendCount);
+    setHasMore(Boolean(res?.hasMore));
     const filtersKey = serializeQueryFilters(currentFilters);
     if (res?.hasMore === false) {
       searchKeyCoverageRef.current[filtersKey] = true;
