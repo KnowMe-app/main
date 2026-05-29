@@ -4541,66 +4541,175 @@ const collectSearchKeyGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZ
   return { ids, nextCursor, hasMore };
 };
 
+const summarizeSearchKeyFilterSettingsForLog = filterSettings => ({
+  keys: filterSettings && typeof filterSettings === 'object' ? Object.keys(filterSettings) : [],
+  favoriteOnly: Boolean(filterSettings?.favorite?.favOnly),
+  reaction: filterSettings?.reaction || null,
+  raw: filterSettings || {},
+});
+
 export const fetchUsersBySearchKeyBloodPaged = async ({
   filterSettings = {},
   offset = 0,
   limit = PAGE_SIZE,
   favoritesMap = {},
   dislikedMap = {},
+  debug = null,
 } = {}) => {
-  const targetLimit = Math.max(1, Number(limit) || PAGE_SIZE);
-  const collectedUsers = {};
-  const loadedIds = [];
-  let cursor = offset;
-  let hasMore = true;
-  let batches = 0;
+  const debugLog = (step, payload = {}) => {
+    if (typeof debug === 'function') {
+      debug(`fetchUsersBySearchKeyBloodPaged:${step}`, payload);
+    }
+  };
 
-  while (Object.keys(collectedUsers).length < targetLimit && hasMore && batches < SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE) {
-    batches += 1;
-    // Беремо маленьку сторінку userId з getInTouch bucket-ів від сьогодні назад,
-    // а не викачуємо великі searchKey buckets перед пагінацією.
-    // eslint-disable-next-line no-await-in-loop
-    const candidatePage = await collectSearchKeyGetInTouchCandidateIds({
-      cursor,
-      limit: targetLimit,
+  try {
+    const targetLimit = Math.max(1, Number(limit) || PAGE_SIZE);
+    const collectedUsers = {};
+    const loadedIds = [];
+    let cursor = offset;
+    let hasMore = true;
+    let batches = 0;
+
+    debugLog('start', {
+      offset,
+      limit,
+      targetLimit,
+      filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
     });
 
-    cursor = candidatePage.nextCursor;
-    hasMore = Boolean(candidatePage.hasMore);
+    while (Object.keys(collectedUsers).length < targetLimit && hasMore && batches < SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE) {
+      debugLog('loop:start', {
+        batch: batches + 1,
+        cursorBefore: cursor,
+        collectedUsersCount: Object.keys(collectedUsers).length,
+        loadedIdsCount: loadedIds.length,
+        hasMore,
+      });
 
-    const candidateIds = (candidatePage.ids || []).filter(id => id && !loadedIds.includes(id));
-    if (candidateIds.length === 0) {
-      if (!hasMore) break;
-      continue;
+      batches += 1;
+      // Беремо маленьку сторінку userId з getInTouch bucket-ів від сьогодні назад,
+      // а не викачуємо великі searchKey buckets перед пагінацією.
+      // eslint-disable-next-line no-await-in-loop
+      const candidatePage = await collectSearchKeyGetInTouchCandidateIds({
+        cursor,
+        limit: targetLimit,
+      });
+
+      debugLog('candidatePage:response', {
+        cursorBefore: cursor,
+        nextCursor: candidatePage.nextCursor,
+        hasMore: Boolean(candidatePage.hasMore),
+        idsCount: (candidatePage.ids || []).length,
+        idsSample: (candidatePage.ids || []).slice(0, 10),
+      });
+
+      cursor = candidatePage.nextCursor;
+      hasMore = Boolean(candidatePage.hasMore);
+
+      const candidateIds = (candidatePage.ids || []).filter(id => id && !loadedIds.includes(id));
+      debugLog('candidateIds:normalized', {
+        candidateIdsCount: candidateIds.length,
+        candidateIdsSample: candidateIds.slice(0, 10),
+        loadedIdsCountBeforePush: loadedIds.length,
+      });
+
+      if (candidateIds.length === 0) {
+        debugLog('loop:end', {
+          batch: batches,
+          reason: hasMore ? 'empty candidateIds, continue' : 'empty candidateIds and no more pages',
+          collectedUsersCount: Object.keys(collectedUsers).length,
+          loadedIdsCount: loadedIds.length,
+          cursor,
+          hasMore,
+        });
+        if (!hasMore) break;
+        continue;
+      }
+
+      loadedIds.push(...candidateIds);
+
+      debugLog('fetchUsersByIds:before', {
+        idsCount: candidateIds.length,
+        idsSample: candidateIds.slice(0, 10),
+      });
+
+      // eslint-disable-next-line no-await-in-loop
+      const candidateUsers = await fetchUsersByIds(candidateIds);
+      const candidateUsersEntries = Object.entries(candidateUsers || {});
+
+      debugLog('fetchUsersByIds:after', {
+        fetchedCount: candidateUsersEntries.length,
+        fetchedIdsSample: candidateUsersEntries.map(([id, user]) => user?.userId || id).slice(0, 10),
+      });
+
+      debugLog('filterMain:before', {
+        beforeCount: candidateUsersEntries.length,
+        filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
+      });
+
+      const filteredEntries = filterMain(
+        candidateUsersEntries,
+        'DATE2.1',
+        filterSettings,
+        favoritesMap,
+        dislikedMap,
+      );
+
+      debugLog('filterMain:after', {
+        beforeCount: candidateUsersEntries.length,
+        afterCount: filteredEntries.length,
+        removedCount: candidateUsersEntries.length - filteredEntries.length,
+        filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
+        zeroReason: filteredEntries.length === 0
+          ? candidateUsersEntries.length === 0
+            ? 'fetchUsersByIds returned 0 users'
+            : 'filterMain removed all fetched users'
+          : null,
+      });
+
+      filteredEntries.forEach(([id, user]) => {
+        const userId = user?.userId || id;
+        if (!userId || collectedUsers[userId]) return;
+        collectedUsers[userId] = { ...user, userId };
+      });
+
+      debugLog('loop:end', {
+        batch: batches,
+        collectedUsersCount: Object.keys(collectedUsers).length,
+        loadedIdsCount: loadedIds.length,
+        cursor,
+        hasMore,
+      });
     }
 
-    loadedIds.push(...candidateIds);
+    const reachedBatchLimit = batches >= SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE && Object.keys(collectedUsers).length === 0;
 
-    // eslint-disable-next-line no-await-in-loop
-    const candidateUsers = await fetchUsersByIds(candidateIds);
-    const filteredEntries = filterMain(
-      Object.entries(candidateUsers || {}),
-      'DATE2.1',
-      filterSettings,
-      favoritesMap,
-      dislikedMap,
-    );
-
-    filteredEntries.forEach(([id, user]) => {
-      const userId = user?.userId || id;
-      if (!userId || collectedUsers[userId]) return;
-      collectedUsers[userId] = { ...user, userId };
+    debugLog('return', {
+      collectedUsersCount: Object.keys(collectedUsers).length,
+      loadedIdsCount: loadedIds.length,
+      lastKey: reachedBatchLimit ? null : cursor,
+      hasMore: reachedBatchLimit ? false : hasMore,
+      batches,
+      reachedBatchLimit,
     });
+
+    return {
+      users: collectedUsers,
+      lastKey: reachedBatchLimit ? null : cursor,
+      hasMore: reachedBatchLimit ? false : hasMore,
+      loadedIds,
+    };
+  } catch (error) {
+    debugLog('error', {
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+      name: error?.name || null,
+      offset,
+      limit,
+      filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
+    });
+    throw error;
   }
-
-  const reachedBatchLimit = batches >= SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE && Object.keys(collectedUsers).length === 0;
-
-  return {
-    users: collectedUsers,
-    lastKey: reachedBatchLimit ? null : cursor,
-    hasMore: reachedBatchLimit ? false : hasMore,
-    loadedIds,
-  };
 };
 
 // export const updateSearchId = async (searchKey, searchValue, userId, action) => {

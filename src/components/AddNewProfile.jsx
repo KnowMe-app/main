@@ -3256,13 +3256,57 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       hasExplicitReactionSelection,
     });
 
-    const res = await fetchUsersBySearchKeyBloodPaged({
-      filterSettings: currentFilters,
-      offset: lastKey21 ?? dateOffset21,
-      limit: PAGE_SIZE,
-      favoritesMap: fav,
-      dislikedMap: dislikedUsersMap,
+    const fetchOffset = lastKey21 ?? dateOffset21;
+    const fetchLimit = PAGE_SIZE;
+    const filtersKey = serializeQueryFilters(currentFilters);
+    let res;
+
+    appendLoadDebugLog('loadMoreUsersSearchKey:before-fetchUsersBySearchKeyBloodPaged', {
+      offset: fetchOffset,
+      limit: fetchLimit,
+      hasMore,
+      filters: summarizeLoadFiltersForLog(currentFilters),
+      filtersKey,
+      search,
+      dateOffset21,
+      lastKey21,
     });
+
+    try {
+      res = await fetchUsersBySearchKeyBloodPaged({
+        filterSettings: currentFilters,
+        offset: fetchOffset,
+        limit: fetchLimit,
+        favoritesMap: fav,
+        dislikedMap: dislikedUsersMap,
+        debug: (step, payload) => appendLoadDebugLog(step, payload),
+      });
+
+      const responseUsers = res?.users || {};
+      const responseUserIds = Object.entries(responseUsers).map(([id, user]) => user?.userId || id);
+      appendLoadDebugLog('loadMoreUsersSearchKey:after-fetchUsersBySearchKeyBloodPaged', {
+        hasResponse: Boolean(res),
+        rawUsersCount: Object.keys(responseUsers).length,
+        usersCount: Object.keys(responseUsers).length,
+        loadedIdsCount: Array.isArray(res?.loadedIds) ? res.loadedIds.length : 0,
+        loadedIdsSample: Array.isArray(res?.loadedIds) ? res.loadedIds.slice(0, 10) : [],
+        usersIdsSample: responseUserIds.slice(0, 10),
+        lastKey: res?.lastKey ?? null,
+        hasMore: Boolean(res?.hasMore),
+        fullResponseKeys: res && typeof res === 'object' ? Object.keys(res) : [],
+      });
+    } catch (error) {
+      appendLoadDebugLog('loadMoreUsersSearchKey:error-fetchUsersBySearchKeyBloodPaged', {
+        message: error?.message || String(error),
+        stack: error?.stack || null,
+        name: error?.name || null,
+        filters: summarizeLoadFiltersForLog(currentFilters),
+        currentFilters: summarizeLoadFiltersForLog(currentFilters),
+        offset: fetchOffset,
+        limit: fetchLimit,
+      });
+      throw error;
+    }
 
     const searchKeyRawEntries = Object.entries(res?.users || {});
     const searchKeyDropReasons = {};
@@ -3316,7 +3360,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLastKey21(res?.lastKey ?? null);
     setDateOffset21(prev => prev + backendCount);
     setHasMore(Boolean(res?.hasMore));
-    const filtersKey = serializeQueryFilters(currentFilters);
     if (res?.hasMore === false) {
       searchKeyCoverageRef.current[filtersKey] = true;
     }
