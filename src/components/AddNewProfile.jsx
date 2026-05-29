@@ -748,6 +748,17 @@ const getProfileRestoreTimestamp = () => {
   return Date.now();
 };
 
+const buildJsonDownloadStamp = () => {
+  const now = new Date();
+  const pad = value => String(value).padStart(2, '0');
+
+  return [
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+  ].join('-') + `-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+};
+
 const summarizeProfileCardForLog = card => {
   if (!card || typeof card !== 'object') {
     return { hasCard: false };
@@ -1210,6 +1221,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
   }, []);
+
+  const downloadMatchingDebugLogs = useCallback(() => {
+    if (typeof window === 'undefined') return 0;
+
+    const logs = Array.isArray(window.__MATCHING_DEBUG_LOGS)
+      ? window.__MATCHING_DEBUG_LOGS
+      : [];
+
+    downloadJsonFile(`matching-debug-${buildJsonDownloadStamp()}.json`, {
+      userAgent: window.navigator?.userAgent || '',
+      url: window.location?.href || '',
+      timestamp: new Date().toISOString(),
+      logsCount: logs.length,
+      logs,
+    });
+
+    return logs.length;
+  }, [downloadJsonFile]);
 
   const handleExcelProfilesUpload = useCallback(
     async event => {
@@ -4274,18 +4303,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setDownloadSizeToastsEnabled(prev => !prev);
   };
   const handleMatchingDebugLogModeToggle = () => {
-    setMatchingDebugLogMode(prev => {
-      const nextMode = prev === 'file' ? 'console' : 'file';
-      if (typeof window !== 'undefined') {
-        window.__MATCHING_DEBUG_LOG_MODE = nextMode;
-        if (nextMode === 'file') window.__MATCHING_DEBUG_LOGS = [];
-      }
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(MATCHING_DEBUG_LOG_MODE_KEY, nextMode);
-      }
-      toast.success(nextMode === 'file' ? 'Режим file-логів Matching увімкнено.' : 'Режим console-логів Matching увімкнено.');
-      return nextMode;
-    });
+    const nextMode = matchingDebugLogMode === 'file' ? 'console' : 'file';
+    const downloadedLogsCount = matchingDebugLogMode === 'file'
+      ? downloadMatchingDebugLogs()
+      : null;
+
+    if (typeof window !== 'undefined') {
+      window.__MATCHING_DEBUG_LOG_MODE = nextMode;
+      if (nextMode === 'file') window.__MATCHING_DEBUG_LOGS = [];
+      window.dispatchEvent(new CustomEvent('matchingDebugLogModeChange', {
+        detail: { mode: nextMode },
+      }));
+    }
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(MATCHING_DEBUG_LOG_MODE_KEY, nextMode);
+    }
+
+    setMatchingDebugLogMode(nextMode);
+    toast.success(
+      nextMode === 'file'
+        ? 'Режим file-логів Matching увімкнено.'
+        : `Режим console-логів Matching увімкнено. Log-файл завантажено (${downloadedLogsCount || 0}).`
+    );
   };
 
   const fieldsToRender = getFieldsToRender(state);
