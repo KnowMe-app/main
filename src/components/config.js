@@ -4607,6 +4607,13 @@ const getSelectedFilterKeys = filterMap => {
     .map(([key]) => key);
 };
 
+const getSelectedImtSearchKeyBuckets = imtFilters => {
+  const selectedBuckets = getSelectedFilterKeys(imtFilters);
+  if (!selectedBuckets) return null;
+
+  return selectedBuckets.map(bucket => (bucket === 'other' ? '?' : bucket));
+};
+
 const createPointCheckSearchKeyGroup = ({
   filterSettings,
   filterName,
@@ -4812,7 +4819,7 @@ const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = 
     groups.push({
       key: 'imt',
       indexName: IMT_SEARCH_KEY_INDEX,
-      buckets: getSelectedFilterKeys(filterSettings.imt) || [],
+      buckets: getSelectedImtSearchKeyBuckets(filterSettings.imt) || [],
       supportsPointCheck: true,
       readIds: () => collectImtIdsByFilters(filterSettings.imt, SEARCH_KEY_INDEXED_ROOT_PATHS),
     });
