@@ -1305,7 +1305,7 @@ const Matching = () => {
   const ownDislikeUsersRef = useRef(ownDislikeUsers);
   const [viewMode, setViewMode] = useState('default');
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
-  const [matchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
+  const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
   const [debugShowAllIndexedCards, setDebugShowAllIndexedCards] = useState(getStoredDebugShowAllIndexedCards);
   const [matchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
   const [themeMode, setThemeMode] = useState(getStoredMatchingTheme);
@@ -5282,6 +5282,28 @@ const Matching = () => {
       localStorage.setItem(MATCHING_DEBUG_LOG_MODE_KEY, matchingDebugLogMode);
     }
   }, [matchingDebugLogMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleMatchingDebugLogModeChange = event => {
+      const nextMode = event?.detail?.mode === 'file' ? 'file' : 'console';
+      setMatchingDebugLogMode(nextMode);
+    };
+
+    const handleMatchingDebugLogModeStorage = event => {
+      if (event.key !== MATCHING_DEBUG_LOG_MODE_KEY) return;
+      setMatchingDebugLogMode(event.newValue === 'file' ? 'file' : 'console');
+    };
+
+    window.addEventListener('matchingDebugLogModeChange', handleMatchingDebugLogModeChange);
+    window.addEventListener('storage', handleMatchingDebugLogModeStorage);
+
+    return () => {
+      window.removeEventListener('matchingDebugLogModeChange', handleMatchingDebugLogModeChange);
+      window.removeEventListener('storage', handleMatchingDebugLogModeStorage);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof localStorage === 'undefined') return;
