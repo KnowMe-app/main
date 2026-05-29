@@ -48,14 +48,14 @@ const defaultsAdd = {
   },
   reaction: { ...REACTION_FILTER_DEFAULTS },
   lastAction: {
-    today: false,
-    yesterday: false,
-    last3days: false,
-    last7days: false,
-    last14days: false,
-    last30days: false,
-    no: false,
-    '?': false,
+    today: true,
+    yesterday: true,
+    last3days: true,
+    last7days: true,
+    last14days: true,
+    last30days: true,
+    no: true,
+    '?': true,
   },
 };
 
