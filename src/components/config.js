@@ -4234,6 +4234,17 @@ export const createGetInTouchSearchKeyIndexInCollection = async (collection, onP
   );
 };
 
+const SEARCH_KEY_INDEX_TYPE_ALIASES = {
+  imtHeightWeight: SEARCH_KEY_INDEX_TYPES.imtHeightWeight,
+  fieldCount: SEARCH_KEY_INDEX_TYPES.fieldCount,
+};
+
+const normalizeSearchKeyIndexType = indexType =>
+  SEARCH_KEY_INDEX_TYPE_ALIASES[indexType] || indexType;
+
+const normalizeSearchKeyIndexTypes = indexTypes =>
+  [...new Set((indexTypes || []).map(normalizeSearchKeyIndexType))];
+
 const SEARCH_KEY_INDEX_BUILDERS = {
   [SEARCH_KEY_INDEX_TYPES.blood]: createSearchKeyIndexInCollection,
   [SEARCH_KEY_INDEX_TYPES.maritalStatus]: createMaritalStatusSearchKeyIndexInCollection,
@@ -4252,7 +4263,7 @@ const SEARCH_KEY_INDEX_BUILDERS = {
 export const createSelectedSearchKeyIndexesInCollection = async (collection, indexTypes = [], onProgress, options = {}) => {
   if (!collection || !Array.isArray(indexTypes) || indexTypes.length === 0) return;
 
-  const uniqueIndexTypes = [...new Set(indexTypes)].filter(indexType => SEARCH_KEY_INDEX_BUILDERS[indexType]);
+  const uniqueIndexTypes = normalizeSearchKeyIndexTypes(indexTypes).filter(indexType => SEARCH_KEY_INDEX_BUILDERS[indexType]);
   if (!uniqueIndexTypes.length) return;
 
   const usersData = await loadCollectionWithIndexCache(collection, {
@@ -4374,7 +4385,7 @@ const resolveSearchKeyValuesByIndexType = (indexType, userId, userData) => {
 };
 
 export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexTypes = []) => {
-  const uniqueIndexTypes = [...new Set(indexTypes)].filter(indexType => Boolean(SEARCH_KEY_INDEX_BUILDERS[indexType]));
+  const uniqueIndexTypes = normalizeSearchKeyIndexTypes(indexTypes).filter(indexType => Boolean(SEARCH_KEY_INDEX_BUILDERS[indexType]));
   if (!uniqueIndexTypes.length) return {};
 
   const payload = {};
