@@ -361,7 +361,7 @@ const EditProfile = () => {
         });
       }
 
-      const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite, { deletedKeys: delCondition });
+      const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
       if (delCondition) {
         Object.keys(delCondition).forEach(key => {
           if (key !== 'userId') {
