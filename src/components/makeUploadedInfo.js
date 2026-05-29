@@ -1,4 +1,20 @@
 export const makeUploadedInfo = (existingData, state, overwrite) => {
+  console.log('[ProfileSaveDebug] makeUploadedInfo:start', {
+    overwrite,
+    existingWatched: {
+      surname: existingData?.surname,
+      name: existingData?.name,
+      phone: existingData?.phone,
+      email: existingData?.email,
+    },
+    stateWatched: {
+      surname: state?.surname,
+      name: state?.name,
+      phone: state?.phone,
+      email: state?.email,
+    },
+  });
+
   const isPlainObject = value =>
     Object.prototype.toString.call(value) === '[object Object]';
 
@@ -105,5 +121,16 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
       // console.log('Такого ключа на сервері не існує, створюємо, записуємо перше значення:', uploadedInfo[field]);
     }
   }
+  console.log('[ProfileSaveDebug] makeUploadedInfo:return', {
+    uploadedWatched: {
+      surname: uploadedInfo?.surname,
+      name: uploadedInfo?.name,
+      phone: uploadedInfo?.phone,
+      email: uploadedInfo?.email,
+    },
+    uploadedHasSurname: Object.prototype.hasOwnProperty.call(uploadedInfo, 'surname'),
+    uploadedInfo,
+  });
+
   return uploadedInfo;
 };
