@@ -3065,6 +3065,7 @@ const getCsectionIndexSet = data => {
   return normalizeSearchKeyIndexValues(data.csection, normalizeSingleCsectionIndexValue);
 };
 
+/* eslint-disable no-unused-vars -- legacy searchKey bucket collectors are kept for existing index code paths. */
 const BLOOD_SEARCH_KEY_BUCKETS = ['1+', '1-', '1', '2+', '2-', '2', '3+', '3-', '3', '4+', '4-', '4', '+', '-', '?', 'no'];
 
 const getBloodBucketMeta = bucket => {
@@ -3645,6 +3646,7 @@ const collectReactionIdsByFilters = async (
 
   return reactionIds;
 };
+/* eslint-enable no-unused-vars */
 
 const resolveSearchKeyLeafPath = (rootPath, indexName, value, userId) => {
   const safeRootPath = rootPath || SEARCH_KEY_INDEX_ROOT;
@@ -4413,6 +4415,129 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
   return payload;
 };
 
+const SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE = 370;
+const SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE = 24;
+
+const getTodaySearchKeyDateBucket = () => {
+  const today = new Date();
+  return `${AGE_DATE_PREFIX}${toIsoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()))}`;
+};
+
+const getPreviousSearchKeyDateBucket = bucket => {
+  const normalized = String(bucket || '').trim();
+  const datePart = normalized.startsWith(AGE_DATE_PREFIX)
+    ? normalized.slice(AGE_DATE_PREFIX.length)
+    : normalized;
+  const parsed = parseLastActionDate(datePart);
+  if (parsed.status !== 'valid') return null;
+  const previous = new Date(parsed.date.getFullYear(), parsed.date.getMonth(), parsed.date.getDate() - 1);
+  return `${AGE_DATE_PREFIX}${toIsoDate(previous)}`;
+};
+
+const normalizeSearchKeyGetInTouchCursor = cursor => {
+  if (!cursor) return { bucket: getTodaySearchKeyDateBucket(), userId: '' };
+  if (typeof cursor === 'number') return { bucket: getTodaySearchKeyDateBucket(), userId: '' };
+  const normalized = String(cursor || '').trim();
+  if (!normalized || normalized === '0') return { bucket: getTodaySearchKeyDateBucket(), userId: '' };
+
+  try {
+    const parsed = JSON.parse(normalized);
+    if (parsed?.bucket) {
+      return {
+        bucket: String(parsed.bucket),
+        userId: parsed.userId ? String(parsed.userId) : '',
+      };
+    }
+  } catch {
+    // Старі значення курсора можуть бути простим bucket key.
+  }
+
+  return normalized.startsWith(AGE_DATE_PREFIX)
+    ? { bucket: normalized, userId: '' }
+    : { bucket: getTodaySearchKeyDateBucket(), userId: normalized };
+};
+
+const serializeSearchKeyGetInTouchCursor = ({ bucket, userId }) => JSON.stringify({ bucket, userId: userId || '' });
+
+const readSearchKeyGetInTouchBucketIds = async ({ bucket, afterUserId = '', limit = PAGE_SIZE }) => {
+  const readLimit = Math.max(limit * 2 + 1, limit + 1);
+  const snapshots = await Promise.all(
+    [SEARCH_KEY_INDEX_ROOT, SEARCH_KEY_USERS_INDEX_ROOT].map(rootPath => {
+      const bucketRef = ref2(database, `${rootPath}/${GET_IN_TOUCH_SEARCH_KEY_INDEX}/${bucket}`);
+      const bucketQuery = afterUserId
+        ? query(bucketRef, orderByKey(), startAfter(afterUserId), limitToFirst(readLimit))
+        : query(bucketRef, orderByKey(), limitToFirst(readLimit));
+      return get(bucketQuery);
+    })
+  );
+
+  const ids = new Set();
+  let reachedReadLimit = false;
+  snapshots.forEach(snapshot => {
+    if (!snapshot.exists()) return;
+    let snapshotCount = 0;
+    snapshot.forEach(child => {
+      snapshotCount += 1;
+      if (child.key) ids.add(child.key);
+    });
+    if (snapshotCount >= readLimit) reachedReadLimit = true;
+  });
+
+  const sortedIds = [...ids].sort((a, b) => a.localeCompare(b));
+  return {
+    ids: sortedIds.slice(0, limit),
+    bucketHasMore: reachedReadLimit || sortedIds.length > limit,
+  };
+};
+
+const collectSearchKeyGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZE }) => {
+  let { bucket, userId } = normalizeSearchKeyGetInTouchCursor(cursor);
+  const ids = [];
+  const seen = new Set();
+  let lookups = 0;
+  let hasMore = true;
+  let nextCursor = null;
+
+  while (ids.length < limit && bucket && lookups < SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE) {
+    lookups += 1;
+    // eslint-disable-next-line no-await-in-loop
+    const bucketResult = await readSearchKeyGetInTouchBucketIds({
+      bucket,
+      afterUserId: userId,
+      limit: limit - ids.length,
+    });
+
+    bucketResult.ids.forEach(id => {
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      ids.push(id);
+    });
+
+    if (bucketResult.bucketHasMore && bucketResult.ids.length > 0) {
+      nextCursor = serializeSearchKeyGetInTouchCursor({
+        bucket,
+        userId: bucketResult.ids[bucketResult.ids.length - 1],
+      });
+      break;
+    }
+
+    bucket = getPreviousSearchKeyDateBucket(bucket);
+    userId = '';
+    nextCursor = bucket ? serializeSearchKeyGetInTouchCursor({ bucket, userId: '' }) : null;
+  }
+
+  if (!bucket) {
+    hasMore = false;
+    nextCursor = null;
+  } else if (ids.length < limit && lookups >= SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE) {
+    hasMore = true;
+  } else if (!nextCursor) {
+    hasMore = false;
+  }
+
+  return { ids, nextCursor, hasMore };
+};
+
 export const fetchUsersBySearchKeyBloodPaged = async ({
   filterSettings = {},
   offset = 0,
@@ -4420,147 +4545,56 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   favoritesMap = {},
   dislikedMap = {},
 } = {}) => {
-  const searchKeyRoots = [SEARCH_KEY_INDEX_ROOT, SEARCH_KEY_USERS_INDEX_ROOT];
-  const filteredBuckets = BLOOD_SEARCH_KEY_BUCKETS.filter(bucket => isBucketAllowedByFilters(bucket, filterSettings));
-  const filteredMaritalStatusBuckets = MARITAL_STATUS_SEARCH_KEY_BUCKETS.filter(bucket =>
-    isMaritalStatusBucketAllowedByFilters(bucket, filterSettings)
-  );
-  const filteredContactBuckets = CONTACT_SEARCH_KEY_BUCKETS.filter(bucket =>
-    isContactBucketAllowedByFilters(bucket, filterSettings)
-  );
-  const filteredRoleBuckets = ROLE_SEARCH_KEY_BUCKETS.filter(bucket => isRoleBucketAllowedByFilters(bucket, filterSettings));
-  const filteredUserIdBuckets = USER_ID_SEARCH_KEY_BUCKETS.filter(bucket =>
-    isUserIdBucketAllowedByFilters(bucket, filterSettings)
-  );
-  const filteredImtBuckets = IMT_SEARCH_KEY_BUCKETS.filter(bucket => {
-    const imtFilters = filterSettings?.imt;
-    const shouldApplyImt = hasExplicitFilterSelection(imtFilters);
-    if (!shouldApplyImt) return true;
-    const filterKey = bucket === '?' ? 'other' : bucket;
-    return Boolean(imtFilters?.[filterKey]);
-  });
-  const ageUserIds = await collectAgeIdsByFilters(filterSettings?.age, searchKeyRoots);
-  const imtUserIds = await collectImtIdsByFilters(filterSettings?.imt, searchKeyRoots);
-  const heightUserIds = await collectHeightIdsByFilters(filterSettings?.height, searchKeyRoots);
-  const fieldCountUserIds = await collectFieldCountIdsByFilters(filterSettings?.fields, searchKeyRoots);
-  const reactionUserIds = await collectReactionIdsByFilters(filterSettings?.reaction, {
-    favoritesMap,
-    dislikedMap,
-  }, searchKeyRoots);
+  const targetLimit = Math.max(1, Number(limit) || PAGE_SIZE);
+  const collectedUsers = {};
+  const loadedIds = [];
+  let cursor = offset;
+  let hasMore = true;
+  let batches = 0;
 
-  const [bucketSnapshots, maritalStatusSnapshots, contactSnapshots, roleSnapshots, userIdSnapshots, imtSnapshots] = await Promise.all([
-    Promise.all(
-      searchKeyRoots.flatMap(rootPath =>
-        filteredBuckets.map(bucket => get(ref2(database, `${rootPath}/${BLOOD_SEARCH_KEY_INDEX}/${bucket}`)))
-      )
-    ),
-    Promise.all(
-      searchKeyRoots.flatMap(rootPath =>
-        filteredMaritalStatusBuckets.map(bucket =>
-          get(ref2(database, `${rootPath}/${MARITAL_STATUS_SEARCH_KEY_INDEX}/${bucket}`))
-        )
-      )
-    ),
-    Promise.all(
-      searchKeyRoots.flatMap(rootPath =>
-        filteredContactBuckets.map(bucket =>
-          get(ref2(database, `${rootPath}/${CONTACT_SEARCH_KEY_INDEX}/${bucket}`))
-        )
-      )
-    ),
-    Promise.all(
-      searchKeyRoots.flatMap(rootPath =>
-        filteredRoleBuckets.map(bucket =>
-          get(ref2(database, `${rootPath}/${ROLE_SEARCH_KEY_INDEX}/${bucket}`))
-        )
-      )
-    ),
-    Promise.all(
-      searchKeyRoots.flatMap(rootPath =>
-        filteredUserIdBuckets.map(bucket =>
-          get(ref2(database, `${rootPath}/${USER_ID_SEARCH_KEY_INDEX}/${bucket}`))
-        )
-      )
-    ),
-    Promise.all(
-      searchKeyRoots.flatMap(rootPath =>
-        filteredImtBuckets.map(bucket =>
-          get(ref2(database, `${rootPath}/${IMT_SEARCH_KEY_INDEX}/${bucket}`))
-        )
-      )
-    ),
-  ]);
-
-  const collectIdsFromSnapshots = snapshots => {
-    const ids = new Set();
-    snapshots.forEach(snapshot => {
-      if (!snapshot.exists()) return;
-      Object.keys(snapshot.val() || {}).forEach(id => {
-        if (!id) return;
-        ids.add(id);
-      });
+  while (Object.keys(collectedUsers).length < targetLimit && hasMore && batches < SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE) {
+    batches += 1;
+    // Беремо маленьку сторінку userId з getInTouch bucket-ів від сьогодні назад,
+    // а не викачуємо великі searchKey buckets перед пагінацією.
+    // eslint-disable-next-line no-await-in-loop
+    const candidatePage = await collectSearchKeyGetInTouchCandidateIds({
+      cursor,
+      limit: targetLimit,
     });
-    return ids;
-  };
 
-  const bloodUserIds = collectIdsFromSnapshots(bucketSnapshots);
-  const maritalStatusUserIds = collectIdsFromSnapshots(maritalStatusSnapshots);
-  const contactUserIds = collectIdsFromSnapshots(contactSnapshots);
-  const roleUserIds = collectIdsFromSnapshots(roleSnapshots);
-  const userIdUserIds = collectIdsFromSnapshots(userIdSnapshots);
-  const indexedImtUserIds = collectIdsFromSnapshots(imtSnapshots);
-  const shouldApplyMaritalStatusFilter = hasExplicitFilterSelection(filterSettings?.maritalStatus);
-  const shouldApplyContactFilter = hasExplicitFilterSelection(filterSettings?.contact);
-  const shouldApplyRoleFilter = hasExplicitFilterSelection(filterSettings?.role);
-  const shouldApplyUserIdFilter = hasExplicitFilterSelection(filterSettings?.userId);
-  const shouldApplyAgeFilter = ageUserIds instanceof Set;
-  const shouldApplyImtFilter = imtUserIds instanceof Set;
-  const shouldApplyHeightFilter = heightUserIds instanceof Set;
-  const shouldApplyFieldCountFilter = fieldCountUserIds instanceof Set;
-  const shouldApplyReactionFilter = reactionUserIds instanceof Set;
+    cursor = candidatePage.nextCursor;
+    hasMore = Boolean(candidatePage.hasMore);
 
-  let finalIds = [...bloodUserIds];
-  if (shouldApplyMaritalStatusFilter) {
-    finalIds = finalIds.filter(id => maritalStatusUserIds.has(id));
-  }
-  if (shouldApplyContactFilter) {
-    finalIds = finalIds.filter(id => contactUserIds.has(id));
-  }
-  if (shouldApplyRoleFilter) {
-    finalIds = finalIds.filter(id => roleUserIds.has(id));
-  }
-  if (shouldApplyUserIdFilter) {
-    finalIds = finalIds.filter(id => userIdUserIds.has(id));
-  }
-  if (shouldApplyAgeFilter) {
-    finalIds = finalIds.filter(id => ageUserIds.has(id));
-  }
-  if (shouldApplyImtFilter) {
-    finalIds = finalIds.filter(id => imtUserIds.has(id));
-  } else if (hasExplicitFilterSelection(filterSettings?.imt)) {
-    finalIds = finalIds.filter(id => indexedImtUserIds.has(id));
-  }
-  if (shouldApplyHeightFilter) {
-    finalIds = finalIds.filter(id => heightUserIds.has(id));
-  }
-  if (shouldApplyFieldCountFilter) {
-    finalIds = finalIds.filter(id => fieldCountUserIds.has(id));
-  }
-  if (shouldApplyReactionFilter) {
-    finalIds = finalIds.filter(id => reactionUserIds.has(id));
-  }
+    const candidateIds = (candidatePage.ids || []).filter(id => id && !loadedIds.includes(id));
+    if (candidateIds.length === 0) {
+      if (!hasMore) break;
+      continue;
+    }
 
-  const sortedIds = [...finalIds].sort((a, b) => a.localeCompare(b));
-  const pageIds = sortedIds.slice(offset, offset + limit);
-  const users = await fetchUsersByIds(pageIds);
-  const nextOffset = offset + pageIds.length;
-  const hasMore = nextOffset < sortedIds.length;
+    loadedIds.push(...candidateIds);
+
+    // eslint-disable-next-line no-await-in-loop
+    const candidateUsers = await fetchUsersByIds(candidateIds);
+    const filteredEntries = filterMain(
+      Object.entries(candidateUsers || {}),
+      'DATE2.1',
+      filterSettings,
+      favoritesMap,
+      dislikedMap,
+    );
+
+    filteredEntries.forEach(([id, user]) => {
+      const userId = user?.userId || id;
+      if (!userId || collectedUsers[userId]) return;
+      collectedUsers[userId] = { ...user, userId };
+    });
+  }
 
   return {
-    users,
-    lastKey: nextOffset,
+    users: collectedUsers,
+    lastKey: cursor,
     hasMore,
-    loadedIds: pageIds,
+    loadedIds,
   };
 };
 
@@ -4927,6 +4961,32 @@ const isFavoriteUser = (userId, favorites) => {
   return !!favorites[userId];
 };
 
+const isLastActionAllowedByFilters = (rawLastAction, lastActionFilters = {}) => {
+  const selectedKeys = Object.entries(lastActionFilters)
+    .filter(([, enabled]) => Boolean(enabled))
+    .map(([key]) => key);
+  if (selectedKeys.length === 0) return true;
+
+  const parsed = parseLastActionDate(rawLastAction);
+  if (parsed.status === 'empty') return Boolean(lastActionFilters.no);
+  if (parsed.status === 'invalid') return Boolean(lastActionFilters['?']);
+
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const actionStart = new Date(parsed.date.getFullYear(), parsed.date.getMonth(), parsed.date.getDate());
+  const diffDays = Math.floor((todayStart.getTime() - actionStart.getTime()) / (24 * 60 * 60 * 1000));
+  if (diffDays < 0) return false;
+
+  return (
+    (lastActionFilters.today && diffDays === 0) ||
+    (lastActionFilters.yesterday && diffDays === 1) ||
+    (lastActionFilters.last3days && diffDays <= 3) ||
+    (lastActionFilters.last7days && diffDays <= 7) ||
+    (lastActionFilters.last14days && diffDays <= 14) ||
+    (lastActionFilters.last30days && diffDays <= 30)
+  );
+};
+
 // Фільтр за віком
 const filterByAge = (value, ageLimit = 30) => {
   // Якщо дата народження відсутня або не є рядком, пропускаємо користувача
@@ -4966,6 +5026,7 @@ export const filterMain = (
   const hasUserIdFilter = isPartialFilterActive(filterSettings.userId);
   const hasFieldsFilter = isPartialFilterActive(filterSettings.fields);
   const hasCommentLengthFilter = isPartialFilterActive(filterSettings.commentLength);
+  const hasLastActionFilter = isPartialFilterActive(filterSettings.lastAction);
   const hasReactionFilter = isPartialFilterActive(filterSettings.reaction);
   const isFavoriteOnlyFilter = Boolean(filterSettings.favorite?.favOnly);
   const allowedContacts = hasContactFilter
@@ -5075,6 +5136,10 @@ export const filterMain = (
     if (hasCommentLengthFilter) {
       const cat = getCommentLengthCategory(value.myComment);
       if (!filterSettings.commentLength[cat]) return false;
+    }
+
+    if (hasLastActionFilter && !isLastActionAllowedByFilters(value.lastAction, filterSettings.lastAction)) {
+      return false;
     }
 
     if (isFavoriteOnlyFilter && !isFavoriteUser(userId, favoriteUsers)) {
