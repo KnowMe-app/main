@@ -14,33 +14,34 @@ import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
 
 const Container = styled.div`
-  padding-bottom: 10px;
-  max-width: 400px;
-
   display: flex;
   flex-direction: column;
   justify-content: center;
-  align-items: center;
-  padding-bottom: 10px;
-  max-width: 400px;
+  align-items: ${({ $compact }) => ($compact ? 'stretch' : 'center')};
+  padding-bottom: ${({ $compact }) => ($compact ? 0 : '10px')};
+  max-width: ${({ $compact }) => ($compact ? '100%' : '400px')};
   width: 100%; /* Це забезпечує адаптивну ширину */
   margin: 0 auto; /* Центрує контейнер по горизонталі */
+  min-width: 0;
 `;
 
 const PhotosWrapper = styled.div`
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center; /* Вирівнювання фото по центру */
-  gap: 10px; /* Відстань між фото */
+  flex-wrap: ${({ $compact }) => ($compact ? 'nowrap' : 'wrap')};
+  justify-content: ${({ $compact }) => ($compact ? 'flex-start' : 'center')};
+  gap: ${({ $compact }) => ($compact ? '12px' : '10px')};
+  overflow-x: ${({ $compact }) => ($compact ? 'auto' : 'visible')};
+  padding: ${({ $compact }) => ($compact ? '4px 4px 8px' : 0)};
 `;
 
 const PhotoItem = styled.div`
-  width: 100px;
-  height: 100px;
+  width: ${({ $compact }) => ($compact ? '72px' : '100px')};
+  height: ${({ $compact }) => ($compact ? '72px' : '100px')};
   position: relative;
-  border: 3px solid;
-  border-image: linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet) 1;
-  border-radius: 5px;
+  flex-shrink: 0;
+  border: ${({ $compact }) => ($compact ? 'none' : '3px solid')};
+  border-image: ${({ $compact }) => ($compact ? 'none' : 'linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet) 1')};
+  border-radius: ${({ $compact }) => ($compact ? '50%' : '5px')};
 `;
 
 const PhotoImage = styled.img`
@@ -48,22 +49,27 @@ const PhotoImage = styled.img`
   width: 100%;
   height: 100%;
   display: block;
+  border-radius: ${({ $compact }) => ($compact ? '50%' : 0)};
+  cursor: pointer;
 `;
 
 const DeleteButton = styled.button`
   position: absolute;
-  top: 5px;
-  right: 5px;
-  background-color: red;
-  color: white;
-  border: none;
+  top: ${({ $compact }) => ($compact ? '-3px' : '5px')};
+  right: ${({ $compact }) => ($compact ? '-3px' : '5px')};
+  background-color: ${({ $compact }) => ($compact ? '#fff' : 'red')};
+  color: ${({ $compact }) => ($compact ? '#7A7A72' : 'white')};
+  border: ${({ $compact }) => ($compact ? '1px solid #E8E8E2' : 'none')};
   border-radius: 50%;
   width: 20px;
   height: 20px;
+  padding: 0;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 16px;
+  line-height: 1;
 `;
 
 const NoPhotosText = styled.p`
@@ -74,19 +80,27 @@ const NoPhotosText = styled.p`
 const UploadButtonWrapper = styled.div`
   display: flex;
   justify-content: center;
-  margin-top: 20px;
+  margin-top: ${({ $compact }) => ($compact ? 0 : '20px')};
+  flex-shrink: 0;
 `;
 
 const UploadButtonLabel = styled.label`
-  display: inline-block;
-  padding: 10px 20px;
-  background-color: ${color.accent5};
-  color: white;
-  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: ${({ $compact }) => ($compact ? '72px' : 'auto')};
+  height: ${({ $compact }) => ($compact ? '72px' : 'auto')};
+  box-sizing: border-box;
+  padding: ${({ $compact }) => ($compact ? 0 : '10px 20px')};
+  background-color: ${({ $compact }) => ($compact ? '#FFF0E0' : color.accent5)};
+  color: ${({ $compact }) => ($compact ? '#E8791A' : 'white')};
+  border: ${({ $compact }) => ($compact ? '1.5px dashed #F5A24B' : 'none')};
+  border-radius: ${({ $compact }) => ($compact ? '50%' : '5px')};
   cursor: pointer;
   text-align: center;
-  font-size: 16px;
+  font-size: ${({ $compact }) => ($compact ? '30px' : '16px')};
   font-weight: bold;
+  flex-shrink: 0;
 
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
 
@@ -104,7 +118,7 @@ const HiddenFileInput = styled.input`
   display: none; /* Ховаємо справжній input */
 `;
 
-export const Photos = ({ state, setState, collection, hideFirstPhoto = false, uploadInputId = 'file-upload' }) => {
+export const Photos = ({ state, setState, collection, hideFirstPhoto = false, uploadInputId = 'file-upload', compact = false, maxPhotos = 9 }) => {
   const [viewerIndex, setViewerIndex] = useState(null);
   const photoKeys = Object.keys(state).filter(
     k => k.toLowerCase().startsWith('photo') && k !== 'photos'
@@ -268,12 +282,17 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
   };
 
   const addPhoto = async event => {
-    const photoArray = Array.from(event.target.files);
+    const currentPhotos = Array.isArray(state.photos) ? state.photos : [];
+    const availableSlots = Math.max(maxPhotos - currentPhotos.length, 0);
+    const photoArray = Array.from(event.target.files).slice(0, availableSlots);
+    event.target.value = '';
+    if (photoArray.length === 0) return;
+
     try {
       const newUrls = await Promise.all(
         photoArray.map(photo => getUrlofUploadedAvatar(photo, state.userId))
       );
-      const updatedPhotos = [...(state.photos || []), ...newUrls];
+      const updatedPhotos = [...currentPhotos, ...newUrls];
       commitPhotosUpdate(updatedPhotos);
 
       await savePhotoList(updatedPhotos);
@@ -297,46 +316,60 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
 
   const allPhotos = Array.isArray(state.photos) ? state.photos : [];
   const displayedPhotos = hideFirstPhoto ? allPhotos.slice(1) : allPhotos;
-  const canUploadMore = allPhotos.length < 9;
+  const canUploadMore = allPhotos.length < maxPhotos;
+
+  const uploadButton = canUploadMore && (
+    <UploadButtonWrapper $compact={compact}>
+      <UploadButtonLabel
+        $compact={compact}
+        htmlFor={uploadInputId}
+        aria-label="Додати фото"
+      >
+        {compact ? '+' : 'Додати фото'}
+        <HiddenFileInput
+          id={uploadInputId}
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={addPhoto}
+        />
+      </UploadButtonLabel>
+    </UploadButtonWrapper>
+  );
 
   return (
-    <Container>
-      <PhotosWrapper>
-        {displayedPhotos.length > 0 ? (
-          <PhotosWrapper>
-            {displayedPhotos.map((url, index) => {
-              const actualIndex = hideFirstPhoto ? index + 1 : index;
-              return <PhotoItem key={`${url}-${actualIndex}`}>
-                <PhotoImage
-                  src={url}
-                  alt={`user avatar ${actualIndex}`}
-                  onClick={() => handlePhotoClick(url, actualIndex)}
-                  onError={e => {
-                    console.error('Image failed to load', url, e);
-                    e.target.onerror = null;
-                    e.target.src = '/logo192.png';
-                  }}
-                />
-                <DeleteButton onClick={() => handleDeletePhoto(actualIndex)}>×</DeleteButton>
-              </PhotoItem>
-            })}
-          </PhotosWrapper>
-        ) : (
-          <NoPhotosText>Додайте свої фото, максимум 9 шт</NoPhotosText>
-        )}
+    <Container $compact={compact}>
+      <PhotosWrapper $compact={compact}>
+        {displayedPhotos.map((url, index) => {
+          const actualIndex = hideFirstPhoto ? index + 1 : index;
+          return <PhotoItem $compact={compact} key={`${url}-${actualIndex}`}>
+            <PhotoImage
+              $compact={compact}
+              src={url}
+              alt={`Фото профілю ${actualIndex + 1}`}
+              onClick={() => handlePhotoClick(url, actualIndex)}
+              onError={e => {
+                console.error('Image failed to load', url, e);
+                e.target.onerror = null;
+                e.target.src = '/logo192.png';
+              }}
+            />
+            <DeleteButton
+              $compact={compact}
+              type="button"
+              onClick={() => handleDeletePhoto(actualIndex)}
+              aria-label={`Видалити фото ${actualIndex + 1}`}
+            >
+              ×
+            </DeleteButton>
+          </PhotoItem>;
+        })}
+        {compact && uploadButton}
       </PhotosWrapper>
-      {canUploadMore && <UploadButtonWrapper>
-        <UploadButtonLabel htmlFor={uploadInputId}>
-          Додати фото
-          <HiddenFileInput
-            id={uploadInputId}
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={addPhoto}
-          />
-        </UploadButtonLabel>
-      </UploadButtonWrapper>}
+      {!compact && displayedPhotos.length === 0 && (
+        <NoPhotosText>Додайте свої фото, максимум {maxPhotos} шт</NoPhotosText>
+      )}
+      {!compact && uploadButton}
       {viewerIndex !== null && (
         <PhotoViewer
           photos={state.photos}
