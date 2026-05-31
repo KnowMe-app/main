@@ -593,10 +593,7 @@ export const MyProfileNew = () => {
     </StickyHeader>
 
     <PhotoSection>
-      <div>
-        <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>Фото профілю</h4>
-        <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото.<br />Перше — головне.</p>
-      </div>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото. Перше — головне</p>
       <Photos
         state={{ ...state, userId }}
         setState={setState}
