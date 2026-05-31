@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiEdit2, FiX } from 'react-icons/fi';
+import { FiX } from 'react-icons/fi';
 import styled from 'styled-components';
 import {
   auth,
@@ -115,100 +115,22 @@ const Chip = styled.button`
 const SubmitWrap = styled.div`padding:20px;`;
 const PhotoSection = styled.div`
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 12px;
   margin: 0 20px 20px;
   padding: 18px;
   background: var(--card);
   border-radius: var(--radius);
   border: 1.5px dashed var(--border);
   box-shadow: var(--shadow);
-`;
-const AvatarRing = styled.div`position:relative;flex-shrink:0;`;
-const AvatarImg = styled.div`
-  width:72px;
-  height:72px;
-  border-radius:50%;
-  background: ${({ $photo }) =>
-    $photo
-      ? `center / cover no-repeat url(${$photo})`
-      : 'linear-gradient(135deg, #FFE0B2, #FFCC80)'};
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-size:28px;
-  overflow:hidden;
-`;
-const AvatarActionBtn = styled.button`
-  position:absolute;
-  border:none;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  color:#fff;
-  cursor:pointer;
-`;
-const AvatarAddBtn = styled(AvatarActionBtn)`
-  bottom:0;
-  right:0;
-  width:22px;
-  height:22px;
-  border-radius:50%;
-  background: var(--accent);
-  border:2px solid #fff;
-  font-size:11px;
-`;
-const PhotoBtn = styled.button`
-  margin-left:auto;padding:8px 16px;background:var(--accent-light);color:var(--accent);
-  border-radius:8px;font-size:13px;font-weight:600;border:none;
+  min-width: 0;
 `;
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
-const PhotoManagerModal = styled.div`
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  z-index: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  opacity: ${({ $open }) => ($open ? 1 : 0)};
-  visibility: ${({ $open }) => ($open ? 'visible' : 'hidden')};
-  pointer-events: ${({ $open }) => ($open ? 'auto' : 'none')};
-`;
-const PhotoManagerCard = styled.div`
-  width: min(640px, 100%);
-  max-height: 88vh;
-  overflow: auto;
-  background: var(--card);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  border: 1px solid var(--border);
-`;
-const PhotoManagerHeader = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-`;
-
 const DotsButton = styled.button`
   display:flex;align-items:center;justify-content:center;
   width:34px;height:34px;border-radius:8px;border:1px solid var(--border);
   background:var(--card);cursor:pointer;font-size:22px;line-height:1;color:var(--muted);
-`;
-
-const IconPlainBtn = styled.button`
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 `;
 
 const sections = [
@@ -233,7 +155,6 @@ export const MyProfileNew = () => {
   const [userId, setUserId] = useState('');
   const [activeTab, setActiveTab] = useState('personal');
   const [customOptionMode, setCustomOptionMode] = useState({});
-  const [isPhotoManagerOpen, setIsPhotoManagerOpen] = useState(false);
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const tabRefs = useRef({});
@@ -512,9 +433,6 @@ export const MyProfileNew = () => {
     await saveState(state);
   };
 
-  const mainProfilePhoto = Array.isArray(state.photos) && state.photos.length > 0 ? state.photos[0] : '';
-  const uploadInputId = 'my-profile-new-photo-upload';
-
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
@@ -675,21 +593,17 @@ export const MyProfileNew = () => {
     </StickyHeader>
 
     <PhotoSection>
-      <AvatarRing>
-        <AvatarImg $photo={mainProfilePhoto}>{mainProfilePhoto ? '' : '🧑'}</AvatarImg>
-        <AvatarAddBtn
-          type="button"
-          onClick={() => setIsPhotoManagerOpen(true)}
-          aria-label={mainProfilePhoto ? 'Редагувати фото профілю' : 'Додати фото профілю'}
-        >
-          {mainProfilePhoto ? <FiEdit2 size={12} /> : '+'}
-        </AvatarAddBtn>
-      </AvatarRing>
       <div>
         <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>Фото профілю</h4>
         <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото.<br />Перше — головне.</p>
       </div>
-      <PhotoBtn type="button" onClick={() => setIsPhotoManagerOpen(true)}>{mainProfilePhoto ? 'Редагувати фото' : 'Додати фото'}</PhotoBtn>
+      <Photos
+        state={{ ...state, userId }}
+        setState={setState}
+        uploadInputId="my-profile-new-photo-upload"
+        compact
+        maxPhotos={5}
+      />
     </PhotoSection>
 
 
@@ -706,27 +620,7 @@ export const MyProfileNew = () => {
       </Card>
     ))}
 
-    <PhotoManagerModal
-      $open={isPhotoManagerOpen}
-      onClick={e => { if (e.target === e.currentTarget) setIsPhotoManagerOpen(false); }}
-    >
-        <PhotoManagerCard>
-          <PhotoManagerHeader>
-            <div>Керування фотографіями</div>
-            <IconPlainBtn type="button" onClick={() => setIsPhotoManagerOpen(false)} aria-label="Закрити">
-              <FiX size={18} />
-            </IconPlainBtn>
-          </PhotoManagerHeader>
-          <div style={{ padding: '12px 8px 18px' }}>
-            <Photos
-              state={{ ...state, userId }}
-              setState={setState}
-              hideFirstPhoto={Array.isArray(state.photos) && state.photos.length > 1}
-              uploadInputId={uploadInputId}
-            />
-          </div>
-        </PhotoManagerCard>
-      </PhotoManagerModal>
+
 
     {showInfoModal && (
       <InfoModal
