@@ -92,25 +92,29 @@ const UploadButtonLabel = styled.label`
   height: ${({ $compact }) => ($compact ? '72px' : 'auto')};
   box-sizing: border-box;
   padding: ${({ $compact }) => ($compact ? 0 : '10px 20px')};
-  background-color: ${({ $compact }) => ($compact ? '#FFF0E0' : color.accent5)};
+  background: ${({ $compact }) => ($compact ? 'linear-gradient(145deg, #FFFDF9 0%, #FFF1E2 100%)' : color.accent5)};
   color: ${({ $compact }) => ($compact ? '#E8791A' : 'white')};
-  border: ${({ $compact }) => ($compact ? '1.5px dashed #F5A24B' : 'none')};
+  border: ${({ $compact }) => ($compact ? '2px dashed #F5A24B' : 'none')};
   border-radius: ${({ $compact }) => ($compact ? '50%' : '5px')};
+  box-shadow: ${({ $compact }) => ($compact ? '0 4px 12px rgba(232, 121, 26, 0.14), inset 0 0 0 4px #FFF8F0' : 'none')};
   cursor: pointer;
   text-align: center;
-  font-size: ${({ $compact }) => ($compact ? '30px' : '16px')};
-  font-weight: bold;
+  font-size: ${({ $compact }) => ($compact ? '32px' : '16px')};
+  font-weight: ${({ $compact }) => ($compact ? 500 : 'bold')};
+  line-height: 1;
   flex-shrink: 0;
 
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
 
   &:hover {
-    background-color: ${color.accent}; 
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); 
+    background: ${({ $compact }) => ($compact ? 'linear-gradient(145deg, #FFF8F0 0%, #FFE4C7 100%)' : color.accent)};
+    border-color: ${({ $compact }) => ($compact ? '#E8791A' : 'transparent')};
+    box-shadow: ${({ $compact }) => ($compact ? '0 6px 16px rgba(232, 121, 26, 0.22), inset 0 0 0 4px #FFF8F0' : '0 4px 12px rgba(0, 0, 0, 0.1)')};
+    transform: translateY(-1px);
   }
 
   &:active {
-    transform: scale(0.98); 
+    transform: scale(0.96);
   }
 `;
 
