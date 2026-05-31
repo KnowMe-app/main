@@ -445,7 +445,7 @@ export const MyProfileNew = () => {
       && optionValues.includes('Yes')
       && optionLabels.includes('Ні')
       && optionLabels.includes('Так');
-    const canUseCustomOption = isAppearanceField || isYesNoField;
+    const canUseCustomOption = isAppearanceField || isYesNoField || name === 'csection';
     const customSelected = canUseCustomOption
       && (Boolean(customOptionMode[name]) || (String(val).trim() !== '' && !optionValues.includes(String(val))));
 
