@@ -3345,19 +3345,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         countLoadFilterDrop(searchKeyDropReasons, 'invalidUser');
         return acc;
       }
-      const normalizedUser = { ...user, userId: targetId };
-      if (filterMain(
-        [[targetId, normalizedUser]],
-        'DATE2.1',
-        currentFilters,
-        fav,
-        dislikedUsersMap,
-        { requireCurrentOrPastGetInTouch: true },
-      ).length === 0) {
-        countLoadFilterDrop(searchKeyDropReasons, 'filterMain');
-        return acc;
-      }
-      acc[targetId] = normalizedUser;
+      // fetchUsersBySearchKeyBloodPaged вже повертає картки після filterMain.
+      // Не запускаємо повторно ту саму перевірку для кожної картки у UI.
+      acc[targetId] = { ...user, userId: targetId };
       return acc;
     }, {});
 
