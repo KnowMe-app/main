@@ -4633,6 +4633,7 @@ const createPointCheckSearchKeyGroup = ({
     key: filterName,
     indexName,
     buckets: selectedBuckets,
+    allBuckets: (buckets || []).map(String),
     supportsPointCheck: true,
     readIds: ({ debugLog }) => readSearchKeyBucketsForGroup({ indexName, buckets: selectedBuckets, debugLog }),
   };
@@ -4779,6 +4780,7 @@ const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = 
       key: 'blood',
       indexName: BLOOD_SEARCH_KEY_INDEX,
       buckets: bloodBuckets,
+      allBuckets: BLOOD_SEARCH_KEY_BUCKETS,
       supportsPointCheck: true,
       readIds: ({ debugLog }) => readSearchKeyBucketsForGroup({ indexName: BLOOD_SEARCH_KEY_INDEX, buckets: bloodBuckets, debugLog }),
     });
@@ -4823,6 +4825,7 @@ const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = 
       key: 'imt',
       indexName: IMT_SEARCH_KEY_INDEX,
       buckets: getSelectedImtSearchKeyBuckets(filterSettings.imt) || [],
+      allBuckets: IMT_SEARCH_KEY_BUCKETS,
       supportsPointCheck: true,
       readIds: () => collectImtIdsByFilters(filterSettings.imt, SEARCH_KEY_INDEXED_ROOT_PATHS),
     });
@@ -4870,26 +4873,46 @@ const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = 
   return groups;
 };
 
+const readSearchKeyPointMembershipBuckets = async ({
+  userId,
+  group,
+  buckets,
+  rootPaths = SEARCH_KEY_INDEXED_ROOT_PATHS,
+}) => {
+  const normalizedUserId = String(userId || '').trim();
+  const normalizedBuckets = [...new Set((buckets || []).map(String).filter(Boolean))];
+  if (!normalizedUserId || !group?.indexName || normalizedBuckets.length === 0) return [];
+
+  const checks = [];
+  rootPaths.forEach(rootPath => {
+    normalizedBuckets.forEach(bucket => {
+      checks.push({
+        bucket,
+        promise: get(ref2(database, `${rootPath}/${group.indexName}/${bucket}/${normalizedUserId}`)),
+      });
+    });
+  });
+
+  const snapshots = await Promise.all(checks.map(check => check.promise));
+  return [...new Set(checks
+    .filter((check, index) => snapshots[index].exists() && snapshots[index].val() !== false)
+    .map(check => check.bucket))];
+};
+
 const hasSearchKeyPointMembership = async ({
   userId,
   group,
   rootPaths = SEARCH_KEY_INDEXED_ROOT_PATHS,
 }) => {
-  const normalizedUserId = String(userId || '').trim();
-  const buckets = [...new Set((group?.buckets || []).map(String).filter(Boolean))];
-  if (!normalizedUserId || !group?.indexName || buckets.length === 0) return false;
+  const allowedBuckets = [...new Set((group?.buckets || []).map(String).filter(Boolean))];
+  const matchedBuckets = await readSearchKeyPointMembershipBuckets({ userId, group, buckets: allowedBuckets, rootPaths });
+  if (matchedBuckets.length > 0) {
+    return { passed: true, matchedBuckets, userBuckets: matchedBuckets };
+  }
 
-  const checks = [];
-  rootPaths.forEach(rootPath => {
-    buckets.forEach(bucket => {
-      checks.push(
-        get(ref2(database, `${rootPath}/${group.indexName}/${bucket}/${normalizedUserId}`))
-      );
-    });
-  });
-
-  const snapshots = await Promise.all(checks);
-  return snapshots.some(snapshot => snapshot.exists() && snapshot.val() !== false);
+  const diagnosticBuckets = [...new Set([...(group?.allBuckets || []), ...allowedBuckets])];
+  const userBuckets = await readSearchKeyPointMembershipBuckets({ userId, group, buckets: diagnosticBuckets, rootPaths });
+  return { passed: false, matchedBuckets: [], userBuckets };
 };
 
 const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog = null }) => {
@@ -4918,9 +4941,36 @@ const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog
     const batchMatches = await Promise.all(
       idBatch.map(async userId => {
         const checks = await Promise.all(
-          pointGroups.map(group => hasSearchKeyPointMembership({ userId, group }))
+          pointGroups.map(async group => ({
+            group,
+            result: await hasSearchKeyPointMembership({ userId, group }),
+          }))
         );
-        return checks.every(Boolean) ? userId : null;
+        const rejectedChecks = checks.filter(check => !check.result.passed);
+        if (typeof debugLog === 'function') {
+          if (rejectedChecks.length > 0) {
+            rejectedChecks.forEach(({ group, result }) => {
+              debugLog('pointMembership:reject', {
+                userId,
+                group: group.key,
+                indexName: group.indexName,
+                userBucket: result.userBuckets.length === 1 ? result.userBuckets[0] : result.userBuckets,
+                allowedBuckets: group.buckets || [],
+                reason: result.userBuckets.length > 0 ? 'bucket mismatch' : 'user bucket not found in searchKey index',
+              });
+            });
+          } else {
+            debugLog('pointMembership:accept', {
+              userId,
+              matchedGroups: checks.map(({ group, result }) => ({
+                group: group.key,
+                indexName: group.indexName,
+                userBucket: result.matchedBuckets.length === 1 ? result.matchedBuckets[0] : result.matchedBuckets,
+              })),
+            });
+          }
+        }
+        return rejectedChecks.length === 0 ? userId : null;
       })
     );
     matchedIds.push(...batchMatches.filter(Boolean));
@@ -4972,6 +5022,13 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     let cursor = offset;
     let hasMore = true;
     let batches = 0;
+    const filterSummary = {
+      pageIdsCount: 0,
+      pointMembershipRejected: 0,
+      filterMainRejected: 0,
+      accepted: 0,
+    };
+    const logFilterSummary = () => debugLog('filterSummary', filterSummary);
 
     debugLog('start', {
       offset,
@@ -4989,6 +5046,18 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
         bucketsCount: (group.buckets || []).length,
         bucketsSample: (group.buckets || []).slice(0, 20),
       })),
+    });
+    debugLog('searchKeyBucketDiagnostics', {
+      groups: activeSearchKeyGroups.map(group => ({
+        group: group.key,
+        indexName: group.indexName,
+        allowedBuckets: group.buckets || [],
+        knownIndexedBuckets: group.allBuckets || group.buckets || [],
+      })),
+      normalizationNotes: {
+        maritalStatus: { married: '+', unmarried: '-', empty: 'no', unknown: '?' },
+        bloodRh: { plus: '+', minus: '-', empty: 'no', unknown: '?' },
+      },
     });
 
     if (activeSearchKeyGroups.length > 0) {
@@ -5010,6 +5079,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
       });
 
       if (pointCheckGroups.some(group => !(group.buckets || []).length)) {
+        logFilterSummary();
         debugLog('return', {
           collectedUsersCount: 0,
           loadedIdsCount: 0,
@@ -5051,12 +5121,14 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
 
         const pageIds = (candidatePage.ids || []).filter(id => id && !loadedIds.includes(id));
         loadedIds.push(...pageIds);
+        filterSummary.pageIdsCount += pageIds.length;
 
         const candidateIds = await filterIdsBySearchKeyPointGroups({
           ids: pageIds,
           groups: pointCheckGroups,
           debugLog,
         });
+        filterSummary.pointMembershipRejected += pageIds.length - candidateIds.length;
         debugLog('indexedGetInTouch:candidatePage', {
           batch: batches,
           nextCursor: cursor,
@@ -5102,7 +5174,10 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
           filterSettings,
           favoritesMap,
           dislikedMap,
+          { debugLog },
         );
+        filterSummary.filterMainRejected += candidateUsersEntries.length - filteredEntries.length;
+        filterSummary.accepted += filteredEntries.length;
 
         filteredEntries.forEach(([id, user]) => {
           const userId = user?.userId || id;
@@ -5136,6 +5211,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
 
       const reachedBatchLimit = batches >= SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE && Object.keys(collectedUsers).length === 0;
 
+      logFilterSummary();
       debugLog('return', {
         collectedUsersCount: Object.keys(collectedUsers).length,
         loadedIdsCount: loadedIds.length,
@@ -5189,6 +5265,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
         candidateIdsSample: candidateIds.slice(0, 10),
         loadedIdsCountBeforePush: loadedIds.length,
       });
+      filterSummary.pageIdsCount += candidateIds.length;
 
       if (candidateIds.length === 0) {
         debugLog('loop:end', {
@@ -5230,7 +5307,10 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
         filterSettings,
         favoritesMap,
         dislikedMap,
+        { debugLog },
       );
+      filterSummary.filterMainRejected += candidateUsersEntries.length - filteredEntries.length;
+      filterSummary.accepted += filteredEntries.length;
 
       debugLog('filterMain:after', {
         beforeCount: candidateUsersEntries.length,
@@ -5261,6 +5341,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
 
     const reachedBatchLimit = batches >= SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE && Object.keys(collectedUsers).length === 0;
 
+    logFilterSummary();
     debugLog('return', {
       collectedUsersCount: Object.keys(collectedUsers).length,
       loadedIdsCount: loadedIds.length,
@@ -5699,12 +5780,17 @@ export const filterMain = (
   filterSettings = {},
   favoriteUsers = {},
   dislikedUsers = {},
+  options = {},
 ) => {
+  const debugLog = typeof options?.debugLog === 'function' ? options.debugLog : null;
   const isPartialFilterActive = group => {
     if (!group || typeof group !== 'object') return false;
     const values = Object.values(group);
     return values.some(value => value === false) && values.some(value => value === true);
   };
+  const getExpectedFilterKeys = group => Object.entries(group || {})
+    .filter(([, isAllowed]) => Boolean(isAllowed))
+    .map(([key]) => key);
   const hasCsectionFilter = isPartialFilterActive(filterSettings.csection);
   const hasUserRoleFilter = isPartialFilterActive(filterSettings.userRole);
   const hasRoleFilter = !hasUserRoleFilter && isPartialFilterActive(filterSettings.role);
@@ -5723,59 +5809,59 @@ export const filterMain = (
   const hasLastActionFilter = isPartialFilterActive(filterSettings.lastAction);
   const hasReactionFilter = isPartialFilterActive(filterSettings.reaction);
   const isFavoriteOnlyFilter = Boolean(filterSettings.favorite?.favOnly);
-  const allowedContacts = hasContactFilter
-    ? Object.entries(filterSettings.contact)
-        .filter(([, isAllowed]) => isAllowed)
-        .map(([key]) => key)
-    : [];
+  const allowedContacts = hasContactFilter ? getExpectedFilterKeys(filterSettings.contact) : [];
 
   const filteredUsers = usersData.filter(([key, value]) => {
     const userId = value.userId || key;
+    const reasons = {};
+    const addCheck = (name, passed, userValue, expected) => {
+      reasons[name] = {
+        passed: Boolean(passed),
+        ...(userValue !== undefined ? { userValue } : {}),
+        ...(expected !== undefined ? { expected } : {}),
+      };
+    };
+
     if (filterForload === 'ED') {
-      if (!filterByUserRole(value)) return false;
-      if (!filterByUserIdLength(userId)) return false;
-      if (!filterByAge(value, 30)) return false;
+      addCheck('edUserRole', filterByUserRole(value), value.userRole || value.role || null, 'not ag/ip/Конкурент/Агент');
+      addCheck('edUserIdLength', filterByUserIdLength(userId), userId, '<= 25');
+      addCheck('edAge', filterByAge(value, 30), value.birth || null, '<= 30');
     }
 
     if (hasCsectionFilter) {
       const cat = categorizeCsection(value.csection);
-      if (!filterSettings.csection[cat]) return false;
+      addCheck('csection', filterSettings.csection[cat], cat, getExpectedFilterKeys(filterSettings.csection));
     }
 
     if (hasUserRoleFilter) {
       const cat = getUserRoleCategory(value);
-      if (!filterSettings.userRole[cat]) return false;
+      addCheck('userRole', filterSettings.userRole[cat], cat, getExpectedFilterKeys(filterSettings.userRole));
     } else if (hasRoleFilter) {
       const cat = getRoleCategory(value);
-      if (!filterSettings.role[cat]) return false;
+      addCheck('role', filterSettings.role[cat], cat, getExpectedFilterKeys(filterSettings.role));
     }
 
     if (hasMaritalStatusFilter) {
       const cat = getMaritalStatusCategory(value);
-      if (!filterSettings.maritalStatus[cat]) return false;
+      addCheck('maritalStatus', filterSettings.maritalStatus[cat], value.maritalStatus ?? null, getExpectedFilterKeys(filterSettings.maritalStatus));
     }
 
     if (hasBloodGroupFilter) {
       const cat = getBloodGroupCategory(value);
-      if (!filterSettings.bloodGroup[cat]) return false;
+      addCheck('blood', filterSettings.bloodGroup[cat], value.blood ?? null, getExpectedFilterKeys(filterSettings.bloodGroup));
     }
 
     if (hasRhFilter) {
       const cat = getRhCategory(value);
-      if (!filterSettings.rh[cat]) return false;
+      addCheck('rh', filterSettings.rh[cat], cat, getExpectedFilterKeys(filterSettings.rh));
     }
 
     if (hasAgeFilter) {
       const cat = getAgeCategory(value);
-      if (Object.prototype.hasOwnProperty.call(filterSettings.age, '37_plus')) {
-        if (cat === '37_42' || cat === '43_plus') {
-          if (!filterSettings.age['37_plus']) return false;
-        } else {
-          if (!filterSettings.age[cat]) return false;
-        }
-      } else {
-        if (!filterSettings.age[cat]) return false;
-      }
+      const filterCat = Object.prototype.hasOwnProperty.call(filterSettings.age, '37_plus') && (cat === '37_42' || cat === '43_plus')
+        ? '37_plus'
+        : cat;
+      addCheck('age', filterSettings.age[filterCat], cat, getExpectedFilterKeys(filterSettings.age));
     }
 
     if (hasContactFilter) {
@@ -5794,58 +5880,62 @@ export const filterMain = (
         line: hasContactValue(value.line),
         otherLink: hasContactValue(value.otherLink),
       };
-      if (!allowedContacts.some(contactKey => contactMap[contactKey])) return false;
+      addCheck('contact', allowedContacts.some(contactKey => contactMap[contactKey]), contactMap, allowedContacts);
     }
 
     if (hasBmiFilter) {
       const cat = getBmiCategory(value);
-      if (!filterSettings.bmi[cat]) return false;
+      addCheck('bmi', filterSettings.bmi[cat], cat, getExpectedFilterKeys(filterSettings.bmi));
     }
 
     if (hasImtFilter) {
       const cat = getImtCategory(value);
-      if (!filterSettings.imt[cat]) return false;
+      addCheck('imt', filterSettings.imt[cat], cat, getExpectedFilterKeys(filterSettings.imt));
     }
 
     if (hasHeightFilter) {
       const cat = getHeightCategory(value);
-      if (!filterSettings.height[cat]) return false;
+      addCheck('height', filterSettings.height[cat], cat, getExpectedFilterKeys(filterSettings.height));
     }
 
     if (hasCountryFilter) {
       const cat = getCountryCategory(value);
-      if (!filterSettings.country[cat]) return false;
+      addCheck('country', filterSettings.country[cat], value.country ?? null, getExpectedFilterKeys(filterSettings.country));
     }
 
     if (hasUserIdFilter) {
       const cat = getUserIdCategory(userId);
-      if (!filterSettings.userId[cat]) return false;
+      addCheck('userId', filterSettings.userId[cat], cat, getExpectedFilterKeys(filterSettings.userId));
     }
 
     if (hasFieldsFilter) {
       const cat = getFieldCountCategory(value);
-      if (!filterSettings.fields[cat]) return false;
+      addCheck('fields', filterSettings.fields[cat], cat, getExpectedFilterKeys(filterSettings.fields));
     }
 
     if (hasCommentLengthFilter) {
       const cat = getCommentLengthCategory(value.myComment);
-      if (!filterSettings.commentLength[cat]) return false;
+      addCheck('commentLength', filterSettings.commentLength[cat], cat, getExpectedFilterKeys(filterSettings.commentLength));
     }
 
-    if (hasLastActionFilter && !isLastActionAllowedByFilters(value.lastAction, filterSettings.lastAction)) {
-      return false;
+    if (hasLastActionFilter) {
+      addCheck('lastAction', isLastActionAllowedByFilters(value.lastAction, filterSettings.lastAction), value.lastAction ?? null, getExpectedFilterKeys(filterSettings.lastAction));
     }
 
-    if (isFavoriteOnlyFilter && !isFavoriteUser(userId, favoriteUsers)) {
-      return false;
+    if (isFavoriteOnlyFilter) {
+      addCheck('favorite', isFavoriteUser(userId, favoriteUsers), isFavoriteUser(userId, favoriteUsers), true);
     }
 
     if (hasReactionFilter) {
       const reactionCategory = getReactionCategory(value, favoriteUsers, dislikedUsers);
-      if (!filterSettings.reaction[reactionCategory]) return false;
+      addCheck('reaction', filterSettings.reaction[reactionCategory], reactionCategory, getExpectedFilterKeys(filterSettings.reaction));
     }
 
-    return true;
+    const passed = Object.values(reasons).every(reason => reason.passed);
+    if (debugLog) {
+      debugLog(passed ? 'filterMain:accept' : 'filterMain:reject', passed ? { userId } : { userId, reasons });
+    }
+    return passed;
   });
 
   return filteredUsers;
