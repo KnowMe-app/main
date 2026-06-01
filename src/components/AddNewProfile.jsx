@@ -2056,10 +2056,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           return acc;
         }, {});
 
-        const queryKey = normalizeQueryKey(
-          `date2.1:${search || ''}:${serializeQueryFilters(nextValue)}`,
-        );
-        setIdsForQuery(queryKey, Object.keys(filteredUsers));
         skipNextReloadRef.current = true;
         filtersRef.current = nextValue;
         setFilters(nextValue);
@@ -2105,7 +2101,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     dislikeUsersData,
     favoriteUsersData,
     loadSortMode,
-    search,
     setCurrentPage,
     setFilters,
     setHasSearched,
@@ -2625,7 +2620,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           coverage: Boolean(searchKeyCoverageRef.current[serializeQueryFilters(filters)]),
           zeroReason: cachedUserIds.length === 0 ? 'filterMain removed all users from cached query' : null,
         });
-        setIdsForQuery(queryKey, cachedUserIds);
         setUsers(cachedUsers);
         setCacheCount(cachedUserIds.length);
         setBackendCount(0);
@@ -3341,15 +3335,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         countLoadFilterDrop(searchKeyDropReasons, 'invalidUser');
         return acc;
       }
-      if (currentFilters.favorite?.favOnly && !fav[targetId]) {
-        countLoadFilterDrop(searchKeyDropReasons, 'favoriteOnly');
+      const normalizedUser = { ...user, userId: targetId };
+      if (filterMain(
+        [[targetId, normalizedUser]],
+        'DATE2.1',
+        currentFilters,
+        fav,
+        dislikedUsersMap,
+      ).length === 0) {
+        countLoadFilterDrop(searchKeyDropReasons, 'filterMain');
         return acc;
       }
-      if (!passesReactionFilter(user, currentFilters?.reaction, fav, dislikedUsersMap)) {
-        countLoadFilterDrop(searchKeyDropReasons, 'reaction');
-        return acc;
-      }
-      acc[targetId] = { ...user, userId: targetId };
+      acc[targetId] = normalizedUser;
       return acc;
     }, {});
 
@@ -3965,7 +3962,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     let backendLoaded = 0;
 
     while (more && loaded < needed) {
-      const { cacheCount, backendCount, hasMore: nextMore } =
+      const { cacheCount, backendCount, hasMore: nextMore, ignored } =
         currentFilter === 'DATE2'
           ? await loadMoreUsers2()
           : currentFilter === 'DATE2.1'
@@ -3977,6 +3974,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           : currentFilter === LAST_ACTION2_FILTER
           ? await loadMoreUsersLastAction2()
           : await loadMoreUsers(currentFilter);
+      if (ignored) return;
       cacheLoaded += cacheCount;
       backendLoaded += backendCount;
       loaded += cacheCount + backendCount;
