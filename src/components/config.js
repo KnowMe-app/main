@@ -4427,7 +4427,7 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
 };
 
 const SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE = 45;
-const SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY = 4;
+const SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY = 12;
 const SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE = 25;
 
 const getTodaySearchKeyDateBucket = () => {
@@ -4903,6 +4903,7 @@ const hasSearchKeyPointMembership = async ({
   userId,
   group,
   rootPaths = SEARCH_KEY_INDEXED_ROOT_PATHS,
+  collectDiagnostics = false,
 }) => {
   const allowedBuckets = [...new Set((group?.buckets || []).map(String).filter(Boolean))];
   const matchedBuckets = await readSearchKeyPointMembershipBuckets({ userId, group, buckets: allowedBuckets, rootPaths });
@@ -4910,12 +4911,16 @@ const hasSearchKeyPointMembership = async ({
     return { passed: true, matchedBuckets, userBuckets: matchedBuckets };
   }
 
+  if (!collectDiagnostics) {
+    return { passed: false, matchedBuckets: [], userBuckets: [] };
+  }
+
   const diagnosticBuckets = [...new Set([...(group?.allBuckets || []), ...allowedBuckets])];
   const userBuckets = await readSearchKeyPointMembershipBuckets({ userId, group, buckets: diagnosticBuckets, rootPaths });
   return { passed: false, matchedBuckets: [], userBuckets };
 };
 
-const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog = null }) => {
+const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog = null, collectDiagnostics = false }) => {
   const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
   const pointGroups = (groups || []).filter(group => group?.supportsPointCheck);
   if (!pointGroups.length || uniqueIds.length === 0) return uniqueIds;
@@ -4940,12 +4945,15 @@ const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog
     // eslint-disable-next-line no-await-in-loop
     const batchMatches = await Promise.all(
       idBatch.map(async userId => {
-        const checks = await Promise.all(
-          pointGroups.map(async group => ({
-            group,
-            result: await hasSearchKeyPointMembership({ userId, group }),
-          }))
-        );
+        const checks = [];
+        for (const group of pointGroups) {
+          // У звичайному режимі припиняємо точкові Firebase-запити після першого false.
+          // Повний перелік причин потрібен лише для явно ввімкненої діагностики.
+          // eslint-disable-next-line no-await-in-loop
+          const result = await hasSearchKeyPointMembership({ userId, group, collectDiagnostics });
+          checks.push({ group, result });
+          if (!result.passed && !collectDiagnostics) break;
+        }
         const rejectedChecks = checks.filter(check => !check.result.passed);
         if (typeof debugLog === 'function') {
           if (rejectedChecks.length > 0) {
@@ -5128,6 +5136,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
           ids: pageIds,
           groups: pointCheckGroups,
           debugLog,
+          collectDiagnostics: typeof debug === 'function',
         });
         filterSummary.pointMembershipRejected += pageIds.length - candidateIds.length;
         debugLog('indexedGetInTouch:candidatePage', {
