@@ -4427,9 +4427,6 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
 };
 
 const SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE = 45;
-// Залишаємо сумісну назву для старих гілок, але читаємо лише один день за раз:
-// lookahead > 1 пропускав кандидатів під час пагінації між getInTouch bucket-ами.
-const SEARCH_KEY_GET_IN_TOUCH_LOOKAHEAD_DAYS = 1;
 const SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY = 4;
 const SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE = 25;
 
@@ -4514,7 +4511,8 @@ const collectSearchKeyGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZ
   let nextCursor = null;
 
   while (ids.length < limit && bucket && lookups < SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE) {
-    lookups += SEARCH_KEY_GET_IN_TOUCH_LOOKAHEAD_DAYS;
+    // Читаємо лише поточний bucket: паралельний lookahead між датами порушує послідовність курсора.
+    lookups += 1;
     // eslint-disable-next-line no-await-in-loop
     const bucketResult = await readSearchKeyGetInTouchBucketIds({
       bucket,
