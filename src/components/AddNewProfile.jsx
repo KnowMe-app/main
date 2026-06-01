@@ -3284,6 +3284,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         favoritesMap: fav,
         dislikedMap: dislikedUsersMap,
         debug: (step, payload) => appendLoadDebugLog(step, payload),
+        onProgress: partial => {
+          if (filtersKey !== serializeQueryFilters(filtersRef.current)) return;
+          cacheFetchedUsers(partial, cacheLoad2Users, currentFilters);
+          if (!isEditingRef.current) {
+            setUsers(prev => mergeWithoutOverwrite(prev, partial));
+          }
+        },
       });
 
       const responseUsers = res?.users || {};

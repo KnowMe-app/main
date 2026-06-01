@@ -5008,6 +5008,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
   favoritesMap = {},
   dislikedMap = {},
   debug = null,
+  onProgress = null,
 } = {}) => {
   const debugLog = (step, payload = {}) => {
     if (typeof debug === 'function') {
@@ -5185,6 +5186,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
           if (Object.keys(collectedUsers).length >= targetLimit) return;
           collectedUsers[userId] = { ...user, userId };
         });
+        if (typeof onProgress === 'function') onProgress({ ...collectedUsers });
 
         debugLog('filterMain:after', {
           beforeCount: candidateUsersEntries.length,
@@ -5329,6 +5331,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
         if (!userId || collectedUsers[userId]) return;
         collectedUsers[userId] = { ...user, userId };
       });
+      if (typeof onProgress === 'function') onProgress({ ...collectedUsers });
 
       debugLog('loop:end', {
         batch: batches,
