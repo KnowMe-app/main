@@ -4427,7 +4427,7 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
 };
 
 const SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE = 45;
-const SEARCH_KEY_GET_IN_TOUCH_LOOKAHEAD_DAYS = 7;
+const SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY = 4;
 const SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE = 25;
 
 const getTodaySearchKeyDateBucket = () => {
@@ -4928,17 +4928,23 @@ const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog
     return [];
   }
 
-  // Кожен userId перевіряється незалежно через точні true/false посилання.
-  // Запускаємо ці мережеві перевірки паралельно, а не чекаємо Firebase послідовно для кожного кандидата.
-  const membershipResults = await Promise.all(
-    uniqueIds.map(async userId => {
-      const checks = await Promise.all(
-        pointGroups.map(group => hasSearchKeyPointMembership({ userId, group }))
-      );
-      return checks.every(Boolean) ? userId : null;
-    })
-  );
-  const matchedIds = membershipResults.filter(Boolean);
+  const matchedIds = [];
+
+  // Точкові true/false перевірки незалежні, але запускаємо їх малими порціями:
+  // це швидше за повністю послідовний цикл і не перевантажує Firebase великим сплеском запитів.
+  for (let start = 0; start < uniqueIds.length; start += SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY) {
+    const idBatch = uniqueIds.slice(start, start + SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY);
+    // eslint-disable-next-line no-await-in-loop
+    const batchMatches = await Promise.all(
+      idBatch.map(async userId => {
+        const checks = await Promise.all(
+          pointGroups.map(group => hasSearchKeyPointMembership({ userId, group }))
+        );
+        return checks.every(Boolean) ? userId : null;
+      })
+    );
+    matchedIds.push(...batchMatches.filter(Boolean));
+  }
 
   if (typeof debugLog === 'function') {
     debugLog('pointMembership:filteredCandidateIds', {
