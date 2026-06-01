@@ -89,7 +89,7 @@ import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { btnExportUsers } from './topBtns/btnExportUsers';
 import { btnExportUsersCsv } from './topBtns/btnExportUsersCsv';
 import { btnMerge } from './smallCard/btnMerge';
-import FilterPanel from './FilterPanel';
+import FilterPanel, { getInitialFilters } from './FilterPanel';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
@@ -1213,7 +1213,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   );
 
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
-  const [filters, setFilters] = useState({});
+  const [filters, setFilters] = useState(() => getInitialFilters({ storageKey: 'addFilters' }));
   const filtersRef = useRef(filters);
   const skipNextReloadRef = useRef(false);
   const searchKeyCoverageRef = useRef({});

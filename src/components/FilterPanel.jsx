@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { SearchFilters } from './SearchFilters';
 import { REACTION_FILTER_DEFAULTS } from 'utils/reactionCategory';
 
@@ -90,6 +90,35 @@ const normalizeFilterGroup = (value, defaults) => {
   }, {});
 };
 
+export const getDefaultFilters = ({ mode = 'default', nonAdminAllActive = false } = {}) => {
+  if (mode !== 'matching') return defaultsAdd;
+  if (!nonAdminAllActive) return defaultsMatching;
+  return {
+    ...defaultsMatching,
+    userRole: { ed: true, ag: true, ip: true, other: true },
+  };
+};
+
+export const getFilterStorageKey = ({ mode = 'default', storageKey } = {}) =>
+  storageKey || (mode === 'matching' ? 'matchingFilters' : 'userFilters');
+
+export const getInitialFilters = ({ mode = 'default', storageKey, nonAdminAllActive = false } = {}) => {
+  const defaultFilters = getDefaultFilters({ mode, nonAdminAllActive });
+  const stored = localStorage.getItem(getFilterStorageKey({ mode, storageKey }));
+  if (!stored) return { ...defaultFilters };
+  try {
+    const parsed = JSON.parse(stored);
+    const result = {};
+    for (const key of Object.keys(defaultFilters)) {
+      const savedKey = parsed[key] !== undefined ? key : key === 'userRole' ? 'role' : key;
+      result[key] = normalizeFilterGroup(parsed[savedKey], defaultFilters[key]);
+    }
+    return result;
+  } catch {
+    return { ...defaultFilters };
+  }
+};
+
 const FilterPanel = ({
   onChange,
   hideUserId = false,
@@ -101,44 +130,38 @@ const FilterPanel = ({
   allowedFilterNames,
   bloodSearchKeyMode = false,
 }) => {
-  const defaultFilters = useMemo(() => {
-    if (mode !== 'matching') return defaultsAdd;
-    if (!nonAdminAllActive) return defaultsMatching;
-    return {
-      ...defaultsMatching,
-      userRole: { ed: true, ag: true, ip: true, other: true },
-    };
-  }, [mode, nonAdminAllActive]);
-  const storageKey = customKey || (mode === 'matching' ? 'matchingFilters' : 'userFilters');
+  const defaultFilters = useMemo(
+    () => getDefaultFilters({ mode, nonAdminAllActive }),
+    [mode, nonAdminAllActive],
+  );
+  const storageKey = getFilterStorageKey({ mode, storageKey: customKey });
 
-  const getInitialFilters = () => {
-    const stored = localStorage.getItem(storageKey);
-    if (!stored) return { ...defaultFilters };
-    try {
-      const parsed = JSON.parse(stored);
-      const result = {};
-      for (const key of Object.keys(defaultFilters)) {
-        const savedKey = parsed[key] !== undefined ? key : key === 'userRole' ? 'role' : key;
-        result[key] = normalizeFilterGroup(parsed[savedKey], defaultFilters[key]);
-      }
-      return result;
-    } catch {
-      return { ...defaultFilters };
-    }
-  };
-
-  const [filters, setFilters] = useState(getInitialFilters);
+  const [filters, setFilters] = useState(() =>
+    getInitialFilters({ mode, storageKey, nonAdminAllActive }),
+  );
   const onChangeRef = useRef(onChange);
+  const lastNotifiedFiltersRef = useRef();
   const prevResetTokenRef = useRef(resetToken);
 
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
 
+  const notifyFiltersChange = useCallback(nextFilters => {
+    if (lastNotifiedFiltersRef.current === nextFilters) return;
+    lastNotifiedFiltersRef.current = nextFilters;
+    if (onChangeRef.current) onChangeRef.current(nextFilters);
+  }, []);
+
+  const handleFiltersChange = useCallback(nextFilters => {
+    setFilters(nextFilters);
+    notifyFiltersChange(nextFilters);
+  }, [notifyFiltersChange]);
+
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(filters));
-    if (onChangeRef.current) onChangeRef.current(filters);
-  }, [filters, storageKey]);
+    notifyFiltersChange(filters);
+  }, [filters, notifyFiltersChange, storageKey]);
 
   useEffect(() => {
     if (prevResetTokenRef.current === resetToken) return;
@@ -149,7 +172,7 @@ const FilterPanel = ({
   return (
     <SearchFilters
       filters={filters}
-      onChange={setFilters}
+      onChange={handleFiltersChange}
       hideUserId={hideUserId}
       hideCommentLength={hideCommentLength}
       mode={mode}
