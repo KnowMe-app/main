@@ -4511,31 +4511,53 @@ const collectSearchKeyGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZ
   let nextCursor = null;
 
   while (ids.length < limit && bucket && lookups < SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE) {
-    lookups += 1;
-    // eslint-disable-next-line no-await-in-loop
-    const bucketResult = await readSearchKeyGetInTouchBucketIds({
-      bucket,
-      afterUserId: userId,
-      limit: limit - ids.length,
-    });
+    const bucketWindow = [];
+    let windowBucket = bucket;
+    let windowUserId = userId;
 
-    bucketResult.ids.forEach(id => {
-      if (!id || seen.has(id)) return;
-      seen.add(id);
-      ids.push(id);
-    });
-
-    if (bucketResult.bucketHasMore && bucketResult.ids.length > 0) {
-      nextCursor = serializeSearchKeyGetInTouchCursor({
-        bucket,
-        userId: bucketResult.ids[bucketResult.ids.length - 1],
-      });
-      break;
+    while (
+      windowBucket &&
+      bucketWindow.length < SEARCH_KEY_GET_IN_TOUCH_LOOKAHEAD_DAYS &&
+      lookups + bucketWindow.length < SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE
+    ) {
+      bucketWindow.push({ bucket: windowBucket, afterUserId: windowUserId });
+      windowBucket = getPreviousSearchKeyDateBucket(windowBucket);
+      windowUserId = '';
     }
 
-    bucket = getPreviousSearchKeyDateBucket(bucket);
-    userId = '';
-    nextCursor = bucket ? serializeSearchKeyGetInTouchCursor({ bucket, userId: '' }) : null;
+    // Читаємо сусідні дні паралельно: це прибирає послідовне очікування Firebase
+    // на кожному порожньому або малому getInTouch bucket-і.
+    // eslint-disable-next-line no-await-in-loop
+    const bucketResults = await Promise.all(
+      bucketWindow.map(({ bucket: bucketKey, afterUserId }) =>
+        readSearchKeyGetInTouchBucketIds({ bucket: bucketKey, afterUserId, limit })
+      )
+    );
+
+    for (let index = 0; index < bucketWindow.length && ids.length < limit; index += 1) {
+      lookups += 1;
+      const currentBucket = bucketWindow[index].bucket;
+      const bucketResult = bucketResults[index];
+      const remaining = limit - ids.length;
+      const pageIds = bucketResult.ids.slice(0, remaining);
+
+      pageIds.forEach(id => {
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        ids.push(id);
+      });
+
+      if ((bucketResult.bucketHasMore || bucketResult.ids.length > remaining) && pageIds.length > 0) {
+        bucket = currentBucket;
+        userId = pageIds[pageIds.length - 1];
+        nextCursor = serializeSearchKeyGetInTouchCursor({ bucket, userId });
+        break;
+      }
+
+      bucket = getPreviousSearchKeyDateBucket(currentBucket);
+      userId = '';
+      nextCursor = bucket ? serializeSearchKeyGetInTouchCursor({ bucket, userId: '' }) : null;
+    }
   }
 
   if (!bucket) {
