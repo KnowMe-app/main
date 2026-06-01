@@ -4522,23 +4522,39 @@ const collectSearchKeyGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZ
       limit: limit - ids.length,
     });
 
-    bucketResult.ids.forEach(id => {
-      if (!id || seen.has(id)) return;
-      seen.add(id);
-      ids.push(id);
-    });
+    // Читаємо сусідні дні паралельно: це прибирає послідовне очікування Firebase
+    // на кожному порожньому або малому getInTouch bucket-і.
+    // eslint-disable-next-line no-await-in-loop
+    const bucketResults = await Promise.all(
+      bucketWindow.map(({ bucket: bucketKey, afterUserId }) =>
+        readSearchKeyGetInTouchBucketIds({ bucket: bucketKey, afterUserId, limit })
+      )
+    );
 
-    if (bucketResult.bucketHasMore && bucketResult.ids.length > 0) {
-      nextCursor = serializeSearchKeyGetInTouchCursor({
-        bucket,
-        userId: bucketResult.ids[bucketResult.ids.length - 1],
+    for (let index = 0; index < bucketWindow.length && ids.length < limit; index += 1) {
+      lookups += 1;
+      const currentBucket = bucketWindow[index].bucket;
+      const bucketResult = bucketResults[index];
+      const remaining = limit - ids.length;
+      const pageIds = bucketResult.ids.slice(0, remaining);
+
+      pageIds.forEach(id => {
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        ids.push(id);
       });
-      break;
-    }
 
-    bucket = getPreviousSearchKeyDateBucket(bucket);
-    userId = '';
-    nextCursor = bucket ? serializeSearchKeyGetInTouchCursor({ bucket, userId: '' }) : null;
+      if ((bucketResult.bucketHasMore || bucketResult.ids.length > remaining) && pageIds.length > 0) {
+        bucket = currentBucket;
+        userId = pageIds[pageIds.length - 1];
+        nextCursor = serializeSearchKeyGetInTouchCursor({ bucket, userId });
+        break;
+      }
+
+      bucket = getPreviousSearchKeyDateBucket(currentBucket);
+      userId = '';
+      nextCursor = bucket ? serializeSearchKeyGetInTouchCursor({ bucket, userId: '' }) : null;
+    }
   }
 
   if (!bucket) {
