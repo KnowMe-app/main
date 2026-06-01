@@ -107,6 +107,14 @@ const getTodayAtMidnight = () => {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 };
 
+export const isGetInTouchDateOnOrBeforeToday = value => {
+  const normalized = normalizeGetInTouch(value);
+  if (!isValidGetInTouchDate(normalized)) return false;
+
+  const getInTouchDate = parseGetInTouchDate(normalized);
+  return Boolean(getInTouchDate && getInTouchDate <= getTodayAtMidnight());
+};
+
 export const getReactionCategory = (user, favorites = {}, dislikes = {}) => {
   if (!user || typeof user !== 'object') {
     return REACTION_FILTER_KEYS.NONE;

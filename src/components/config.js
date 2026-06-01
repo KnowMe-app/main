@@ -29,7 +29,7 @@ import { incrementMatchingLoadStat, removeCard, setIdsForQuery, normalizeQueryKe
 import { updateCard } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getCacheKey } from '../utils/cache';
-import { getReactionCategory } from 'utils/reactionCategory';
+import { getReactionCategory, isGetInTouchDateOnOrBeforeToday } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
 import { getSubmittedSearchIndexKeys } from '../utils/searchIndexSync';
 import {
@@ -5175,7 +5175,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
           filterSettings,
           favoritesMap,
           dislikedMap,
-          { debugLog },
+          { debugLog, requireCurrentOrPastGetInTouch: true },
         );
         filterSummary.filterMainRejected += candidateUsersEntries.length - filteredEntries.length;
         filterSummary.accepted += filteredEntries.length;
@@ -5309,7 +5309,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
         filterSettings,
         favoritesMap,
         dislikedMap,
-        { debugLog },
+        { debugLog, requireCurrentOrPastGetInTouch: true },
       );
       filterSummary.filterMainRejected += candidateUsersEntries.length - filteredEntries.length;
       filterSummary.accepted += filteredEntries.length;
@@ -5786,6 +5786,7 @@ export const filterMain = (
   options = {},
 ) => {
   const debugLog = typeof options?.debugLog === 'function' ? options.debugLog : null;
+  const requireCurrentOrPastGetInTouch = Boolean(options?.requireCurrentOrPastGetInTouch);
   const isPartialFilterActive = group => {
     if (!group || typeof group !== 'object') return false;
     const values = Object.values(group);
@@ -5927,6 +5928,10 @@ export const filterMain = (
 
     if (isFavoriteOnlyFilter) {
       addCheck('favorite', isFavoriteUser(userId, favoriteUsers), isFavoriteUser(userId, favoriteUsers), true);
+    }
+
+    if (requireCurrentOrPastGetInTouch) {
+      addCheck('getInTouch', isGetInTouchDateOnOrBeforeToday(value.getInTouch), value.getInTouch ?? null, '<= today');
     }
 
     if (hasReactionFilter) {
