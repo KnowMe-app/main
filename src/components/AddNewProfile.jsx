@@ -2606,19 +2606,28 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const ids = getIdsByQuery(queryKey);
       const cachedCards = ids.map(id => getCard(id)).filter(Boolean);
       if (cachedCards.length > 0 || (ids.length === 0 && searchKeyCoverageRef.current[serializeQueryFilters(filters)])) {
+        const cachedUsers = filterMain(
+          cachedCards.map(user => [user.userId, user]),
+          'DATE2.1',
+          filters,
+          favoriteUsersData,
+          dislikeUsersData,
+        ).reduce((acc, [, user]) => {
+          acc[user.userId] = user;
+          return acc;
+        }, {});
+        const cachedUserIds = Object.keys(cachedUsers);
         appendLoadDebugLog('date2.1:cache-hit-or-covered', {
           queryKey,
           idsCount: ids.length,
           cachedCardsCount: cachedCards.length,
+          filteredCachedCardsCount: cachedUserIds.length,
           coverage: Boolean(searchKeyCoverageRef.current[serializeQueryFilters(filters)]),
-          zeroReason: cachedCards.length === 0 ? 'searchKeyCoverage says backend already fully loaded for these filters' : null,
+          zeroReason: cachedUserIds.length === 0 ? 'filterMain removed all users from cached query' : null,
         });
-        const cachedUsers = cachedCards.reduce((acc, user) => {
-          acc[user.userId] = user;
-          return acc;
-        }, {});
+        setIdsForQuery(queryKey, cachedUserIds);
         setUsers(cachedUsers);
-        setCacheCount(cachedCards.length);
+        setCacheCount(cachedUserIds.length);
         setBackendCount(0);
         setSearchLoading(false);
         setHasMore(false);
@@ -2664,7 +2673,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         ? loadMoreUsersSearchKey()
         : loadMoreUsers21();
       loadPromise
-        .then(({ cacheCount, backendCount }) => {
+        .then(({ cacheCount, backendCount, ignored }) => {
+          if (ignored) return;
           setCacheCount(cacheCount);
           setBackendCount(backendCount);
         })
@@ -3306,6 +3316,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         limit: fetchLimit,
       });
       throw error;
+    }
+
+    if (filtersKey !== serializeQueryFilters(filtersRef.current)) {
+      appendLoadDebugLog('loadMoreUsersSearchKey:ignore-stale-response', {
+        requestFiltersKey: filtersKey,
+        activeFiltersKey: serializeQueryFilters(filtersRef.current),
+      });
+      return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
     }
 
     const searchKeyRawEntries = Object.entries(res?.users || {});
