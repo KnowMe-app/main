@@ -2027,7 +2027,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
-    const isSearchKeyMode = loadSortMode === 'SEARCH_ID_KEY_ONLY';
+    const isSearchKeyMode = loadSortMode === 'SearchIdKeyOnly';
     const canInstantlyFilterInSearchKeyMode =
       isSearchKeyMode && currentFilter === 'DATE2.1' && Object.keys(users || {}).length > 0;
 
@@ -2049,6 +2049,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           nextValue,
           favoriteUsersData,
           dislikeUsersData,
+          { requireCurrentOrPastGetInTouch: isSearchKeyMode },
         ).reduce((acc, [, user]) => {
           if (user?.userId) {
             acc[user.userId] = user;
@@ -2607,6 +2608,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           filters,
           favoriteUsersData,
           dislikeUsersData,
+          { requireCurrentOrPastGetInTouch: searchIdAndSearchKeyOnlyMode },
         ).reduce((acc, [, user]) => {
           acc[user.userId] = user;
           return acc;
@@ -2641,6 +2643,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             filters,
             favoriteUsersData,
             dislikeUsersData,
+            { requireCurrentOrPastGetInTouch: true },
           ).reduce((acc, [, user]) => {
             acc[user.userId] = user;
             return acc;
@@ -3349,6 +3352,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         currentFilters,
         fav,
         dislikedUsersMap,
+        { requireCurrentOrPastGetInTouch: true },
       ).length === 0) {
         countLoadFilterDrop(searchKeyDropReasons, 'filterMain');
         return acc;
