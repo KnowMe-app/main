@@ -4922,7 +4922,10 @@ const hasSearchKeyPointMembership = async ({
 
 const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog = null, collectDiagnostics = false }) => {
   const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
-  const pointGroups = (groups || []).filter(group => group?.supportsPointCheck);
+  const pointGroups = (groups || [])
+    .filter(group => group?.supportsPointCheck)
+    // Спочатку перевіряємо найвужчі фільтри: вони частіше відсікають картку раніше.
+    .sort((a, b) => (a?.buckets || []).length - (b?.buckets || []).length);
   if (!pointGroups.length || uniqueIds.length === 0) return uniqueIds;
 
   if (pointGroups.some(group => !(group?.buckets || []).length)) {
@@ -4938,22 +4941,20 @@ const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog
 
   const matchedIds = [];
 
-  // Точкові true/false перевірки незалежні, але запускаємо їх малими порціями:
-  // це швидше за повністю послідовний цикл і не перевантажує Firebase великим сплеском запитів.
+  // Різні userId перевіряємо паралельно малими порціями, але фільтри однієї картки — послідовно.
+  // Після першого false не запускаємо зайві Firebase-запити для решти груп цієї картки.
   for (let start = 0; start < uniqueIds.length; start += SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY) {
     const idBatch = uniqueIds.slice(start, start + SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY);
     // eslint-disable-next-line no-await-in-loop
     const batchMatches = await Promise.all(
       idBatch.map(async userId => {
-        // Всі групи перевіряємо паралельно: час відповіді = max(груп) замість sum(груп).
-        const results = await Promise.all(
-          pointGroups.map(group => hasSearchKeyPointMembership({ userId, group, collectDiagnostics }))
-        );
-        const checks = pointGroups.map((group, i) => ({ group, result: results[i] }));
-        const rejectedChecks = checks.filter(check => !check.result.passed);
-        if (typeof debugLog === 'function') {
-          if (rejectedChecks.length > 0) {
-            rejectedChecks.forEach(({ group, result }) => {
+        const checks = [];
+        for (const group of pointGroups) {
+          // eslint-disable-next-line no-await-in-loop
+          const result = await hasSearchKeyPointMembership({ userId, group, collectDiagnostics });
+          checks.push({ group, result });
+          if (!result.passed) {
+            if (typeof debugLog === 'function') {
               debugLog('pointMembership:reject', {
                 userId,
                 group: group.key,
@@ -4962,19 +4963,22 @@ const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog
                 allowedBuckets: group.buckets || [],
                 reason: result.userBuckets.length > 0 ? 'bucket mismatch' : 'user bucket not found in searchKey index',
               });
-            });
-          } else {
-            debugLog('pointMembership:accept', {
-              userId,
-              matchedGroups: checks.map(({ group, result }) => ({
-                group: group.key,
-                indexName: group.indexName,
-                userBucket: result.matchedBuckets.length === 1 ? result.matchedBuckets[0] : result.matchedBuckets,
-              })),
-            });
+            }
+            return null;
           }
         }
-        return rejectedChecks.length === 0 ? userId : null;
+
+        if (typeof debugLog === 'function') {
+          debugLog('pointMembership:accept', {
+            userId,
+            matchedGroups: checks.map(({ group, result }) => ({
+              group: group.key,
+              indexName: group.indexName,
+              userBucket: result.matchedBuckets.length === 1 ? result.matchedBuckets[0] : result.matchedBuckets,
+            })),
+          });
+        }
+        return userId;
       })
     );
     matchedIds.push(...batchMatches.filter(Boolean));
@@ -5132,7 +5136,8 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
           ids: pageIds,
           groups: pointCheckGroups,
           debugLog,
-          collectDiagnostics: typeof debug === 'function',
+          // Детальні повторні читання bucket-ів лишаємо вимкненими у звичайній видачі.
+          collectDiagnostics: false,
         });
         filterSummary.pointMembershipRejected += pageIds.length - candidateIds.length;
         debugLog('indexedGetInTouch:candidatePage', {
@@ -5180,7 +5185,8 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
           filterSettings,
           favoritesMap,
           dislikedMap,
-          { debugLog, requireCurrentOrPastGetInTouch: true },
+          // Без per-card debug filterMain завершується одразу після першого false.
+          { requireCurrentOrPastGetInTouch: true },
         );
         filterSummary.filterMainRejected += candidateUsersEntries.length - filteredEntries.length;
         filterSummary.accepted += filteredEntries.length;
@@ -5314,7 +5320,8 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
         filterSettings,
         favoritesMap,
         dislikedMap,
-        { debugLog, requireCurrentOrPastGetInTouch: true },
+        // Без per-card debug filterMain завершується одразу після першого false.
+        { requireCurrentOrPastGetInTouch: true },
       );
       filterSummary.filterMainRejected += candidateUsersEntries.length - filteredEntries.length;
       filterSummary.accepted += filteredEntries.length;
