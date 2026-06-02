@@ -25,7 +25,7 @@ import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { getCurrentDate } from './foramtDate';
 import toast from 'react-hot-toast';
-import { incrementMatchingLoadStat, removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
+import { getCard, incrementMatchingLoadStat, removeCard, setIdsForQuery, normalizeQueryKey } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getCacheKey } from '../utils/cache';
@@ -1505,8 +1505,21 @@ export const renameFlowCategory = async ({ ownerId, fromGroupPath, toGroupPath }
 export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
   try {
     const source = collectionSource === 'users' || collectionSource === 'newUsers' ? collectionSource : null;
+    const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
+    const result = {};
+    const missingIds = [];
+
+    uniqueIds.forEach(id => {
+      const cached = getCard(id);
+      if (cached && (!source || cached.__sourceCollection === source)) {
+        result[id] = cached;
+      } else {
+        missingIds.push(id);
+      }
+    });
+
     const snaps = await Promise.all(
-      ids.map(id => {
+      missingIds.map(id => {
         const readSources = source
           ? [source]
           : (String(id || '').length < 20 ? ['newUsers'] : ['users']);
@@ -1523,11 +1536,10 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
             __photosHydrated: false,
             __sourceCollection: sourceName,
           };
-          return [id, data];
+          return [id, updateCard(id, data)];
         });
       })
     );
-    const result = {};
     snaps.forEach(entry => {
       if (entry) {
         const [id, data] = entry;
