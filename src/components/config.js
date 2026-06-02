@@ -4749,7 +4749,7 @@ const collectLastActionIdsByFilters = async (lastActionFilters, rootPaths = SEAR
   return lastActionIds;
 };
 
-const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = {}, dislikedMap = {} } = {}) => {
+export const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favoritesMap = {}, dislikedMap = {} } = {}) => {
   const groups = [];
   const addGroup = group => {
     if (group) groups.push(group);
@@ -4934,15 +4934,15 @@ const getProfileBloodDebug = profile => {
 
 const toSingleBucketOrList = buckets => buckets.length === 1 ? buckets[0] : buckets;
 
-const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog = null, collectDiagnostics = false }) => {
+export const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog = null, collectDiagnostics = false, collectBloodDiagnostics = true }) => {
   const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
   const pointGroups = (groups || [])
     .filter(group => group?.supportsPointCheck)
-    // Blood перевіряємо першим, щоб summary охоплював кожну картку вхідної сторінки.
-    // Решту фільтрів лишаємо у порядку від найвужчого: вони частіше відсікають картку раніше.
+    // Для старого режиму blood перевіряємо першим, щоб diagnostics охоплював усю вхідну сторінку.
+    // Нові режими можуть вимкнути blood diagnostics і перевіряти групи від найвужчої.
     .sort((a, b) => {
-      if (a?.key === 'blood') return -1;
-      if (b?.key === 'blood') return 1;
+      if (collectBloodDiagnostics && a?.key === 'blood') return -1;
+      if (collectBloodDiagnostics && b?.key === 'blood') return 1;
       return (a?.buckets || []).length - (b?.buckets || []).length;
     });
   if (!pointGroups.length || uniqueIds.length === 0) return uniqueIds;
@@ -4959,7 +4959,7 @@ const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog
   }
 
   const matchedIds = [];
-  const bloodGroup = pointGroups.find(group => group?.key === 'blood');
+  const bloodGroup = collectBloodDiagnostics ? pointGroups.find(group => group?.key === 'blood') : null;
   const bloodSummary = bloodGroup
     ? {
         inputIdsCount: uniqueIds.length,
@@ -4985,7 +4985,7 @@ const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog
       idBatch.map(async userId => {
         const checks = [];
         for (const group of pointGroups) {
-          const shouldCollectDiagnostics = collectDiagnostics || group.key === 'blood';
+          const shouldCollectDiagnostics = collectDiagnostics || (collectBloodDiagnostics && group.key === 'blood');
           // eslint-disable-next-line no-await-in-loop
           const result = await hasSearchKeyPointMembership({ userId, group, collectDiagnostics: shouldCollectDiagnostics });
           checks.push({ group, result });
@@ -5095,7 +5095,7 @@ const summarizeSearchKeyFilterSettingsForLog = filterSettings => ({
   raw: filterSettings || {},
 });
 
-export const fetchUsersBySearchKeyBloodPaged = async ({
+export const fetchUsersBySearchKeyPaged = async ({
   filterSettings = {},
   offset = 0,
   limit = PAGE_SIZE,
@@ -5106,7 +5106,7 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
 } = {}) => {
   const debugLog = (step, payload = {}) => {
     if (typeof debug === 'function') {
-      debug(`fetchUsersBySearchKeyBloodPaged:${step}`, payload);
+      debug(`fetchUsersBySearchKeyPaged:${step}`, payload);
     }
   };
 
@@ -5470,6 +5470,12 @@ export const fetchUsersBySearchKeyBloodPaged = async ({
     throw error;
   }
 };
+
+// Старе ім'я зберігаємо як сумісний alias: loader уже обробляє всі searchKey-групи, а не лише blood.
+export const fetchUsersBySearchKeyBloodPaged = options => fetchUsersBySearchKeyPaged(options);
+
+// За відсутності активних searchKey-груп цей самий loader читає default-list у порядку getInTouch.
+export const fetchUsersByDefaultGetInTouchPaged = options => fetchUsersBySearchKeyPaged(options);
 
 // export const updateSearchId = async (searchKey, searchValue, userId, action) => {
 //   console.log('searchKey!!!!!!!!! :>> ', searchKey);
@@ -6056,7 +6062,7 @@ const isValidDate = date => {
 };
 
 // Сортування
-const sortUsers = (
+export const sortUsers = (
   filteredUsers,
   { includeSpecialFutureDates = false, skipGetInTouchFilter = false } = {},
 ) => {

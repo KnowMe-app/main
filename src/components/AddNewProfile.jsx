@@ -39,6 +39,7 @@ import {
   buildSearchKeyIndexPayloadFromCollections,
   fetchUsersBySearchKeyBloodPaged,
 } from './config';
+import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -907,6 +908,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const LOAD_SORT_MODES = {
     GIT: 'GIT',
+    GIT_NEW: 'GITnew',
     LAST_ACTION: 'LA',
     LAST_ACTION2: LAST_ACTION2_SORT_MODE,
     NO_GIT: 'NoGIT',
@@ -1760,7 +1762,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState('');
-  const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY);
+  const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.GIT_NEW);
   const [isLoadOptionsOpen, setIsLoadOptionsOpen] = useState(false);
   const [loadRequestId, setLoadRequestId] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
@@ -2240,6 +2242,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return 'LAST_ACTION';
       case LOAD_SORT_MODES.LAST_ACTION2:
         return LAST_ACTION2_FILTER;
+      case LOAD_SORT_MODES.GIT_NEW:
+        return 'GITnew';
       case LOAD_SORT_MODES.NO_GIT:
       case LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY:
         return 'DATE2.1';
@@ -2256,7 +2260,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       ? LAST_ACTION2_FILTER_STORAGE_KEY
       : 'addFilters';
 
-  const searchIdAndSearchKeyOnlyMode = loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY;
+  const gitNewMode = loadSortMode === LOAD_SORT_MODES.GIT_NEW;
+  const searchIdAndSearchKeyOnlyMode = loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY || gitNewMode;
 
   const effectiveEnabledSearchKeys = searchIdAndSearchKeyOnlyMode
     ? {
@@ -2586,6 +2591,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       appendLoadDebugLog('reload-effect:branch', { branch: 'DATE2', loader: 'loadMoreUsers2' });
       loadMoreUsers2()
         .then(({ cacheCount, backendCount }) => {
+          setCacheCount(cacheCount);
+          setBackendCount(backendCount);
+        })
+        .finally(() => setSearchLoading(false));
+      return;
+    }
+
+    if (currentFilter === 'GITnew') {
+      appendLoadDebugLog('reload-effect:branch', { branch: 'GITnew', loader: 'loadMoreUsersGitNew' });
+      loadMoreUsersGitNew()
+        .then(({ cacheCount, backendCount, ignored }) => {
+          if (ignored) return;
           setCacheCount(cacheCount);
           setBackendCount(backendCount);
         })
@@ -3206,6 +3223,47 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       useDateByDateBackendFetch: false,
       queryMode: 'DATE2.1',
     });
+  };
+
+  const loadMoreUsersGitNew = async (currentFilters = filters) => {
+    const filtersKey = serializeQueryFilters(currentFilters);
+    const queryKey = buildQueryKey('GITnew', currentFilters, search);
+    const cachedCandidateIds = getIdsByQuery(queryKey);
+    appendLoadDebugLog('loadMoreUsersGitNew:start', {
+      offset: lastKey21 ?? dateOffset21,
+      limit: PAGE_SIZE,
+      cachedCandidateIdsCount: cachedCandidateIds.length,
+      filters: summarizeLoadFiltersForLog(currentFilters),
+    });
+    const res = await fetchUsersBySearchKeyGitNewPaged({
+      filterSettings: currentFilters,
+      offset: lastKey21 ?? dateOffset21,
+      limit: PAGE_SIZE,
+      favoritesMap: favoriteUsersData,
+      dislikedMap: dislikeUsersData,
+      candidateIds: cachedCandidateIds.length > PAGE_SIZE ? cachedCandidateIds : null,
+      debug: (step, payload) => appendLoadDebugLog(step, payload),
+    });
+    if (filtersKey !== serializeQueryFilters(filtersRef.current)) {
+      return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
+    }
+    const normalizedUsers = res?.users || {};
+    cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
+    if (!isEditingRef.current) setUsers(prev => mergeWithoutOverwrite(prev, normalizedUsers));
+    const candidateIds = Array.isArray(res?.candidateIds) ? res.candidateIds : [];
+    if (candidateIds.length > PAGE_SIZE) setIdsForQuery(queryKey, candidateIds);
+    const backendCount = Object.keys(normalizedUsers).length;
+    setLastKey21(res?.lastKey ?? null);
+    setDateOffset21(res?.lastKey ?? 0);
+    setHasMore(Boolean(res?.hasMore));
+    appendLoadDebugLog('loadMoreUsersGitNew:result', {
+      backendCount,
+      cachedCandidateIdsCount: cachedCandidateIds.length,
+      candidateIdsCount: candidateIds.length,
+      nextLastKey: res?.lastKey ?? null,
+      hasMore: Boolean(res?.hasMore),
+    });
+    return { cacheCount: cachedCandidateIds.length ? backendCount : 0, backendCount: cachedCandidateIds.length ? 0 : backendCount, hasMore: Boolean(res?.hasMore) };
   };
 
   const loadMoreUsersSearchKey = async (currentFilters = filters) => {
@@ -3966,6 +4024,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const { cacheCount, backendCount, hasMore: nextMore, ignored } =
         currentFilter === 'DATE2'
           ? await loadMoreUsers2()
+          : currentFilter === 'GITnew'
+          ? await loadMoreUsersGitNew()
           : currentFilter === 'DATE2.1'
           ? searchIdAndSearchKeyOnlyMode
             ? await loadMoreUsersSearchKey()
@@ -4961,7 +5021,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       missingCachedUserIds,
       currentFilter: snapshot.currentFilter || '',
       currentPage: snapshot.currentPage || 1,
-      loadSortMode: snapshot.loadSortMode || 'SearchIdKeyOnly',
+      loadSortMode: snapshot.loadSortMode || 'GITnew',
       hasSearched: Boolean(snapshot.hasSearched),
     });
 
@@ -4982,7 +5042,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (snapshot.la2State) {
       la2StateRef.current = restoreLA2State(snapshot.la2State);
     }
-    setLoadSortMode(snapshot.loadSortMode || 'SearchIdKeyOnly');
+    setLoadSortMode(snapshot.loadSortMode || 'GITnew');
     setSearch(snapshot.search || '');
     setHasSearched(Boolean(snapshot.hasSearched) || Object.keys(restoredUsers).length > 0);
     logProfileRestoreStep('previous-list:restore-complete-clear-profile-state', {
@@ -5467,6 +5527,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                           onChange={event => handleLoadSortModeChange(event.target.value)}
                         />
                         GIT
+                      </SortModeLabel>
+                      <SortModeLabel>
+                        <input
+                          type="radio"
+                          name="load-sort-mode"
+                          value={LOAD_SORT_MODES.GIT_NEW}
+                          checked={loadSortMode === LOAD_SORT_MODES.GIT_NEW}
+                          onChange={event => handleLoadSortModeChange(event.target.value)}
+                        />
+                        GITnew
                       </SortModeLabel>
                       <SortModeLabel>
                         <input
