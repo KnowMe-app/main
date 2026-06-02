@@ -3114,8 +3114,14 @@ const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
 
   const shouldApplyBloodGroup = hasExplicitFilterSelection(bloodGroupFilters);
   const shouldApplyRh = hasExplicitFilterSelection(rhFilters);
+  const allKnownBloodGroupsAllowed = ['1', '2', '3', '4'].every(group => Boolean(bloodGroupFilters?.[group]));
+  const isRhOnlyBucket = bucket === '+' || bucket === '-';
 
-  const bloodGroupAllowed = shouldApplyBloodGroup ? Boolean(bloodGroupFilters?.[bloodGroup]) : true;
+  // Окремий bucket "+"/"-" означає відомий резус без вказаної групи крові.
+  // Дозволяємо його для повного набору груп, але не розширюємо ним вибір однієї конкретної групи.
+  const bloodGroupAllowed = shouldApplyBloodGroup
+    ? Boolean(bloodGroupFilters?.[bloodGroup]) || (isRhOnlyBucket && allKnownBloodGroupsAllowed)
+    : true;
   const rhAllowed = shouldApplyRh ? Boolean(rhFilters?.[rh]) : true;
 
   return bloodGroupAllowed && rhAllowed;
@@ -4906,26 +4912,39 @@ const hasSearchKeyPointMembership = async ({
   collectDiagnostics = false,
 }) => {
   const allowedBuckets = [...new Set((group?.buckets || []).map(String).filter(Boolean))];
+
+  if (collectDiagnostics) {
+    const diagnosticBuckets = [...new Set([...(group?.allBuckets || []), ...allowedBuckets])];
+    const userBuckets = await readSearchKeyPointMembershipBuckets({ userId, group, buckets: diagnosticBuckets, rootPaths });
+    const allowedBucketSet = new Set(allowedBuckets);
+    const matchedBuckets = userBuckets.filter(bucket => allowedBucketSet.has(bucket));
+    return { passed: matchedBuckets.length > 0, matchedBuckets, userBuckets };
+  }
+
   const matchedBuckets = await readSearchKeyPointMembershipBuckets({ userId, group, buckets: allowedBuckets, rootPaths });
-  if (matchedBuckets.length > 0) {
-    return { passed: true, matchedBuckets, userBuckets: matchedBuckets };
-  }
-
-  if (!collectDiagnostics) {
-    return { passed: false, matchedBuckets: [], userBuckets: [] };
-  }
-
-  const diagnosticBuckets = [...new Set([...(group?.allBuckets || []), ...allowedBuckets])];
-  const userBuckets = await readSearchKeyPointMembershipBuckets({ userId, group, buckets: diagnosticBuckets, rootPaths });
-  return { passed: false, matchedBuckets: [], userBuckets };
+  return { passed: matchedBuckets.length > 0, matchedBuckets, userBuckets: matchedBuckets };
 };
+
+const getProfileBloodDebug = profile => {
+  const profileBlood = profile?.blood ?? `${profile?.bloodGroup || ''}${profile?.rh || ''}`;
+  const expectedBucketFromProfile = normalizeBloodIndexValue(profileBlood);
+  const { bloodGroup: profileBloodGroup, rh: profileRh } = getBloodBucketMeta(expectedBucketFromProfile);
+  return { profileBloodGroup, profileRh, expectedBucketFromProfile };
+};
+
+const toSingleBucketOrList = buckets => buckets.length === 1 ? buckets[0] : buckets;
 
 const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog = null, collectDiagnostics = false }) => {
   const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
   const pointGroups = (groups || [])
     .filter(group => group?.supportsPointCheck)
-    // Спочатку перевіряємо найвужчі фільтри: вони частіше відсікають картку раніше.
-    .sort((a, b) => (a?.buckets || []).length - (b?.buckets || []).length);
+    // Blood перевіряємо першим, щоб summary охоплював кожну картку вхідної сторінки.
+    // Решту фільтрів лишаємо у порядку від найвужчого: вони частіше відсікають картку раніше.
+    .sort((a, b) => {
+      if (a?.key === 'blood') return -1;
+      if (b?.key === 'blood') return 1;
+      return (a?.buckets || []).length - (b?.buckets || []).length;
+    });
   if (!pointGroups.length || uniqueIds.length === 0) return uniqueIds;
 
   if (pointGroups.some(group => !(group?.buckets || []).length)) {
@@ -4940,27 +4959,93 @@ const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog
   }
 
   const matchedIds = [];
+  const bloodGroup = pointGroups.find(group => group?.key === 'blood');
+  const bloodSummary = bloodGroup
+    ? {
+        inputIdsCount: uniqueIds.length,
+        acceptedCount: 0,
+        rejectedCount: 0,
+        rejectedByBucketNotFoundCount: 0,
+        rejectedByDisallowedBucketCount: 0,
+        allowedBuckets: bloodGroup.buckets || [],
+        sampleAccepted: [],
+        sampleRejected: [],
+      }
+    : null;
 
   // Різні userId перевіряємо паралельно малими порціями, але фільтри однієї картки — послідовно.
   // Після першого false не запускаємо зайві Firebase-запити для решти груп цієї картки.
   for (let start = 0; start < uniqueIds.length; start += SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY) {
     const idBatch = uniqueIds.slice(start, start + SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY);
+    // Профілі потрібні для consistency-перевірки blood index; читаємо їх один раз на batch.
+    // eslint-disable-next-line no-await-in-loop
+    const profilesById = bloodGroup ? await fetchUsersByIds(idBatch) : {};
     // eslint-disable-next-line no-await-in-loop
     const batchMatches = await Promise.all(
       idBatch.map(async userId => {
         const checks = [];
         for (const group of pointGroups) {
+          const shouldCollectDiagnostics = collectDiagnostics || group.key === 'blood';
           // eslint-disable-next-line no-await-in-loop
-          const result = await hasSearchKeyPointMembership({ userId, group, collectDiagnostics });
+          const result = await hasSearchKeyPointMembership({ userId, group, collectDiagnostics: shouldCollectDiagnostics });
           checks.push({ group, result });
+
+          if (group.key === 'blood') {
+            const profileDebug = getProfileBloodDebug(profilesById[userId]);
+            const actualBucket = toSingleBucketOrList(result.userBuckets);
+            const hasConsistentSingleBucket = result.userBuckets.length === 1
+              && result.userBuckets[0] === profileDebug.expectedBucketFromProfile;
+
+            if (!hasConsistentSingleBucket && typeof debugLog === 'function') {
+              debugLog('blood:profileIndexMismatch', {
+                userId,
+                ...profileDebug,
+                actualBucket,
+                foundBuckets: result.userBuckets,
+              });
+            }
+
+            if (result.passed) {
+              bloodSummary.acceptedCount += 1;
+              if (bloodSummary.sampleAccepted.length < 10) {
+                bloodSummary.sampleAccepted.push({ userId, actualBucket, ...profileDebug });
+              }
+            } else {
+              const reason = result.userBuckets.length > 0
+                ? 'disallowed bucket'
+                : 'user bucket not found in searchKey index';
+              bloodSummary.rejectedCount += 1;
+              if (result.userBuckets.length > 0) bloodSummary.rejectedByDisallowedBucketCount += 1;
+              else bloodSummary.rejectedByBucketNotFoundCount += 1;
+              if (bloodSummary.sampleRejected.length < 10) {
+                bloodSummary.sampleRejected.push({
+                  userId,
+                  group: 'blood',
+                  expectedAllowedBuckets: bloodGroup.buckets || [],
+                  foundBuckets: result.userBuckets,
+                  ...profileDebug,
+                  reason,
+                });
+              }
+            }
+          }
+
           if (!result.passed) {
             if (typeof debugLog === 'function') {
+              const profileDebug = group.key === 'blood' ? getProfileBloodDebug(profilesById[userId]) : {};
               debugLog('pointMembership:reject', {
                 userId,
                 group: group.key,
                 indexName: group.indexName,
-                userBucket: result.userBuckets.length === 1 ? result.userBuckets[0] : result.userBuckets,
+                userBucket: toSingleBucketOrList(result.userBuckets),
                 allowedBuckets: group.buckets || [],
+                ...(group.key === 'blood'
+                  ? {
+                      expectedAllowedBuckets: group.buckets || [],
+                      foundBuckets: result.userBuckets,
+                      ...profileDebug,
+                    }
+                  : {}),
                 reason: result.userBuckets.length > 0 ? 'bucket mismatch' : 'user bucket not found in searchKey index',
               });
             }
@@ -4974,7 +5059,7 @@ const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog
             matchedGroups: checks.map(({ group, result }) => ({
               group: group.key,
               indexName: group.indexName,
-              userBucket: result.matchedBuckets.length === 1 ? result.matchedBuckets[0] : result.matchedBuckets,
+              userBucket: toSingleBucketOrList(result.matchedBuckets),
             })),
           });
         }
@@ -4985,6 +5070,7 @@ const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], debugLog
   }
 
   if (typeof debugLog === 'function') {
+    if (bloodSummary) debugLog('blood:filterSummary', bloodSummary);
     debugLog('pointMembership:filteredCandidateIds', {
       inputIdsCount: uniqueIds.length,
       outputIdsCount: matchedIds.length,
