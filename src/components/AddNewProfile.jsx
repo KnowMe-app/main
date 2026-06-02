@@ -3227,12 +3227,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const loadMoreUsersGitNew = async (currentFilters = filters) => {
     const filtersKey = serializeQueryFilters(currentFilters);
-    const queryKey = buildQueryKey('GITnew', currentFilters, search);
-    const cachedCandidateIds = getIdsByQuery(queryKey);
     appendLoadDebugLog('loadMoreUsersGitNew:start', {
-      offset: lastKey21 ?? dateOffset21,
+      cursor: lastKey21 ?? dateOffset21,
       limit: PAGE_SIZE,
-      cachedCandidateIdsCount: cachedCandidateIds.length,
       filters: summarizeLoadFiltersForLog(currentFilters),
     });
     const res = await fetchUsersBySearchKeyGitNewPaged({
@@ -3241,7 +3238,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       limit: PAGE_SIZE,
       favoritesMap: favoriteUsersData,
       dislikedMap: dislikeUsersData,
-      candidateIds: cachedCandidateIds.length > PAGE_SIZE ? cachedCandidateIds : null,
       debug: (step, payload) => appendLoadDebugLog(step, payload),
     });
     if (filtersKey !== serializeQueryFilters(filtersRef.current)) {
@@ -3250,20 +3246,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const normalizedUsers = res?.users || {};
     cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
     if (!isEditingRef.current) setUsers(prev => mergeWithoutOverwrite(prev, normalizedUsers));
-    const candidateIds = Array.isArray(res?.candidateIds) ? res.candidateIds : [];
-    if (candidateIds.length > PAGE_SIZE) setIdsForQuery(queryKey, candidateIds);
     const backendCount = Object.keys(normalizedUsers).length;
     setLastKey21(res?.lastKey ?? null);
     setDateOffset21(res?.lastKey ?? 0);
     setHasMore(Boolean(res?.hasMore));
     appendLoadDebugLog('loadMoreUsersGitNew:result', {
       backendCount,
-      cachedCandidateIdsCount: cachedCandidateIds.length,
-      candidateIdsCount: candidateIds.length,
-      nextLastKey: res?.lastKey ?? null,
+      loadedIdsCount: Array.isArray(res?.loadedIds) ? res.loadedIds.length : 0,
+      nextCursor: res?.lastKey ?? null,
       hasMore: Boolean(res?.hasMore),
     });
-    return { cacheCount: cachedCandidateIds.length ? backendCount : 0, backendCount: cachedCandidateIds.length ? 0 : backendCount, hasMore: Boolean(res?.hasMore) };
+    return { cacheCount: 0, backendCount, hasMore: Boolean(res?.hasMore) };
   };
 
   const loadMoreUsersSearchKey = async (currentFilters = filters) => {
