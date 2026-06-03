@@ -760,6 +760,24 @@ const countLoadFilterDrop = (acc, reason) => {
   return acc;
 };
 
+const appendGitNewUsersToQuery = (queryKey, usersObj = {}) => {
+  const normalizedUsers = usersObj && typeof usersObj === 'object' ? usersObj : {};
+  const existingIds = getIdsByQuery(queryKey);
+  const nextIds = [...existingIds];
+
+  Object.entries(normalizedUsers).forEach(([id, user]) => {
+    const userId = user?.userId || id;
+    if (!userId) return;
+    if (!nextIds.includes(userId)) nextIds.push(userId);
+  });
+
+  if (nextIds.length !== existingIds.length) {
+    setIdsForQuery(queryKey, nextIds);
+  }
+
+  return normalizedUsers;
+};
+
 
 const getProfileRestoreTimestamp = () => {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -1775,6 +1793,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [dislikeUsersData, setDislikeUsersData] = useState(initialDis);
   const [, setCacheCount] = useState(0);
   const [, setBackendCount] = useState(0);
+  const gitNewPendingLoadsRef = useRef({});
   const [profileSource, setProfileSource] = useState('');
   const profileSourceRef = useRef(profileSource);
   const [isResolvingEditMode, setIsResolvingEditMode] = useState(false);
@@ -2605,6 +2624,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           if (ignored) return;
           setCacheCount(cacheCount);
           setBackendCount(backendCount);
+          ensureGitNewLoadedCount(PAGE_SIZE * 3, filters).catch(error => {
+            appendLoadDebugLog('reload-effect:gitNew-prefetch-error', {
+              message: error?.message || String(error),
+            });
+          });
         })
         .finally(() => setSearchLoading(false));
       return;
@@ -3225,38 +3249,108 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
   };
 
-  const loadMoreUsersGitNew = async (currentFilters = filters) => {
+  const loadMoreUsersGitNew = async (currentFilters = filters, { targetLoadedCount = PAGE_SIZE, background = false } = {}) => {
     const filtersKey = serializeQueryFilters(currentFilters);
+    const activeFiltersKey = () => serializeQueryFilters(filtersRef.current);
+    const queryKey = buildQueryKey('GITnew', currentFilters, search);
+    const requestedCount = Math.max(PAGE_SIZE, Number(targetLoadedCount) || PAGE_SIZE);
+    const cachedIds = getIdsByQuery(queryKey);
+    const cachedCards = cachedIds.map(id => getCard(id)).filter(Boolean);
+
+    if (cachedCards.length >= requestedCount || (!hasMore && cachedCards.length > 0)) {
+      const cachedUsers = cachedCards.slice(0, requestedCount).reduce((acc, user) => {
+        acc[user.userId] = user;
+        return acc;
+      }, {});
+      if (!isEditingRef.current) setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
+      appendLoadDebugLog('loadMoreUsersGitNew:query-cache-hit', {
+        queryKey,
+        cachedIdsCount: cachedIds.length,
+        cachedCardsCount: cachedCards.length,
+        requestedCount,
+        hasMore,
+      });
+      return {
+        cacheCount: Object.keys(cachedUsers).length,
+        backendCount: 0,
+        hasMore,
+      };
+    }
+
+    if (gitNewPendingLoadsRef.current[queryKey]) {
+      appendLoadDebugLog('loadMoreUsersGitNew:reuse-pending', {
+        queryKey,
+        requestedCount,
+        cachedIdsCount: cachedIds.length,
+      });
+      return gitNewPendingLoadsRef.current[queryKey];
+    }
+
+    const cursor = lastKey21 ?? dateOffset21;
+    const beforeIds = getIdsByQuery(queryKey);
     appendLoadDebugLog('loadMoreUsersGitNew:start', {
-      cursor: lastKey21 ?? dateOffset21,
+      queryKey,
+      cursor,
       limit: PAGE_SIZE,
+      requestedCount,
+      background,
+      cachedIdsCount: beforeIds.length,
       filters: summarizeLoadFiltersForLog(currentFilters),
     });
-    const res = await fetchUsersBySearchKeyGitNewPaged({
+
+    gitNewPendingLoadsRef.current[queryKey] = fetchUsersBySearchKeyGitNewPaged({
       filterSettings: currentFilters,
-      offset: lastKey21 ?? dateOffset21,
+      offset: cursor,
       limit: PAGE_SIZE,
       favoritesMap: favoriteUsersData,
       dislikedMap: dislikeUsersData,
       debug: (step, payload) => appendLoadDebugLog(step, payload),
-    });
-    if (filtersKey !== serializeQueryFilters(filtersRef.current)) {
-      return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
-    }
-    const normalizedUsers = res?.users || {};
-    cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
-    if (!isEditingRef.current) setUsers(prev => mergeWithoutOverwrite(prev, normalizedUsers));
-    const backendCount = Object.keys(normalizedUsers).length;
-    setLastKey21(res?.lastKey ?? null);
-    setDateOffset21(res?.lastKey ?? 0);
-    setHasMore(Boolean(res?.hasMore));
-    appendLoadDebugLog('loadMoreUsersGitNew:result', {
-      backendCount,
-      loadedIdsCount: Array.isArray(res?.loadedIds) ? res.loadedIds.length : 0,
-      nextCursor: res?.lastKey ?? null,
-      hasMore: Boolean(res?.hasMore),
-    });
-    return { cacheCount: 0, backendCount, hasMore: Boolean(res?.hasMore) };
+      onProgress: partialUsers => {
+        if (filtersKey !== activeFiltersKey()) return;
+        const normalizedPartialUsers = appendGitNewUsersToQuery(queryKey, partialUsers);
+        cacheFetchedUsers(normalizedPartialUsers, cacheLoad2Users, currentFilters);
+        if (!isEditingRef.current) {
+          setUsers(prev => mergeWithoutOverwrite(prev, normalizedPartialUsers));
+        }
+        appendLoadDebugLog('loadMoreUsersGitNew:progress', {
+          queryKey,
+          partialCount: countObjectKeys(normalizedPartialUsers),
+          queryIdsCount: getIdsByQuery(queryKey).length,
+          requestedCount,
+        });
+      },
+    })
+      .then(res => {
+        if (filtersKey !== activeFiltersKey()) {
+          return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
+        }
+
+        const normalizedUsers = appendGitNewUsersToQuery(queryKey, res?.users || {});
+        cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
+        if (!isEditingRef.current) setUsers(prev => mergeWithoutOverwrite(prev, normalizedUsers));
+
+        const afterIds = getIdsByQuery(queryKey);
+        const backendCount = Math.max(0, afterIds.length - beforeIds.length);
+        setLastKey21(res?.lastKey ?? null);
+        setDateOffset21(res?.lastKey ?? 0);
+        setHasMore(Boolean(res?.hasMore));
+        appendLoadDebugLog('loadMoreUsersGitNew:result', {
+          queryKey,
+          backendCount,
+          usersCount: countObjectKeys(normalizedUsers),
+          queryIdsCount: afterIds.length,
+          loadedIdsCount: Array.isArray(res?.loadedIds) ? res.loadedIds.length : 0,
+          nextCursor: res?.lastKey ?? null,
+          hasMore: Boolean(res?.hasMore),
+          background,
+        });
+        return { cacheCount: 0, backendCount, hasMore: Boolean(res?.hasMore) };
+      })
+      .finally(() => {
+        delete gitNewPendingLoadsRef.current[queryKey];
+      });
+
+    return gitNewPendingLoadsRef.current[queryKey];
   };
 
   const loadMoreUsersSearchKey = async (currentFilters = filters) => {
@@ -4006,12 +4100,56 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return { cacheCount, backendCount, hasMore: false };
   };
 
+  const getGitNewQueryCardsCount = (currentFilters = filters) => {
+    const queryKey = buildQueryKey('GITnew', currentFilters, search);
+    return getIdsByQuery(queryKey).map(id => getCard(id)).filter(Boolean).length;
+  };
+
+  const ensureGitNewLoadedCount = async (needed, currentFilters = filters) => {
+    let more = hasMore;
+    let previousCardsCount = getGitNewQueryCardsCount(currentFilters);
+
+    while (more && previousCardsCount < needed) {
+      const result = await loadMoreUsersGitNew(currentFilters, { targetLoadedCount: needed, background: true });
+      if (result?.ignored) return result;
+
+      const nextCardsCount = getGitNewQueryCardsCount(currentFilters);
+      more = Boolean(result?.hasMore);
+      if (nextCardsCount <= previousCardsCount) break;
+      previousCardsCount = nextCardsCount;
+    }
+
+    return { hasMore: more };
+  };
+
   const handlePageChange = async page => {
     const needed = page * PAGE_SIZE;
     let loaded = Object.keys(users).length;
     let more = hasMore;
     let cacheLoaded = 0;
     let backendLoaded = 0;
+
+    if (currentFilter === 'GITnew') {
+      setCurrentPage(page);
+      setCacheCount(0);
+      setBackendCount(0);
+      if (more && loaded < needed) {
+        ensureGitNewLoadedCount(needed, filters)
+          .then(({ ignored } = {}) => {
+            if (!ignored) {
+              appendLoadDebugLog('handlePageChange:gitNew-background-loaded', { page, needed });
+            }
+          })
+          .catch(error => {
+            appendLoadDebugLog('handlePageChange:gitNew-background-error', {
+              page,
+              needed,
+              message: error?.message || String(error),
+            });
+          });
+      }
+      return;
+    }
 
     while (more && loaded < needed) {
       const { cacheCount, backendCount, hasMore: nextMore, ignored } =
