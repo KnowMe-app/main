@@ -4447,6 +4447,8 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
 const SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE = 45;
 const SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY = 12;
 const SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE = 25;
+const SEARCH_KEY_BROAD_POINT_CHECK_MIN_BUCKETS = 3;
+const SEARCH_KEY_BROAD_POINT_CHECK_RATIO = 0.65;
 
 const getTodaySearchKeyDateBucket = () => {
   const today = new Date();
@@ -4891,6 +4893,16 @@ export const buildActiveSearchKeyFilterGroups = (filterSettings = {}, { favorite
   return groups;
 };
 
+const isBroadSearchKeyPointGroup = group => {
+  const allowedCount = (group?.buckets || []).length;
+  const allCount = (group?.allBuckets || []).length;
+
+  if (!group?.supportsPointCheck || allCount < SEARCH_KEY_BROAD_POINT_CHECK_MIN_BUCKETS) return false;
+  if (allowedCount <= 1 || allowedCount >= allCount) return false;
+
+  return allowedCount / allCount >= SEARCH_KEY_BROAD_POINT_CHECK_RATIO;
+};
+
 const readSearchKeyPointMembershipBuckets = async ({
   userId,
   group,
@@ -5168,20 +5180,31 @@ export const fetchUsersBySearchKeyPaged = async ({
     });
 
     if (activeSearchKeyGroups.length > 0) {
-      const pointCheckGroups = activeSearchKeyGroups.filter(group => group.supportsPointCheck);
-      const deferredGroups = activeSearchKeyGroups.filter(group => !group.supportsPointCheck);
+      const broadPointCheckGroups = activeSearchKeyGroups
+        .filter(group => group.supportsPointCheck && isBroadSearchKeyPointGroup(group));
+      const pointCheckGroups = activeSearchKeyGroups
+        .filter(group => group.supportsPointCheck && !isBroadSearchKeyPointGroup(group));
+      const deferredGroups = activeSearchKeyGroups
+        .filter(group => !group.supportsPointCheck || isBroadSearchKeyPointGroup(group));
 
       debugLog('indexedSearchKeyGroups', {
         count: activeSearchKeyGroups.length,
         pointCheckCount: pointCheckGroups.length,
+        broadDeferredPointCheckCount: broadPointCheckGroups.length,
         deferredCount: deferredGroups.length,
         source: 'indexedGetInTouchPointMembership',
+        broadDeferRule: {
+          minBuckets: SEARCH_KEY_BROAD_POINT_CHECK_MIN_BUCKETS,
+          ratio: SEARCH_KEY_BROAD_POINT_CHECK_RATIO,
+        },
         groups: activeSearchKeyGroups.map(group => ({
           key: group.key,
           indexName: group.indexName,
           bucketsCount: (group.buckets || []).length,
+          allBucketsCount: (group.allBuckets || []).length,
           bucketsSample: (group.buckets || []).slice(0, 20),
           supportsPointCheck: Boolean(group.supportsPointCheck),
+          deferredBecauseBroad: broadPointCheckGroups.includes(group),
         })),
       });
 
