@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiX } from 'react-icons/fi';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import {
   auth,
   fetchUserData,
@@ -146,6 +146,30 @@ const DotsButton = styled.button`
 const AuthCard = styled(Card)`
   margin-top: 18px;
 `;
+const hintPulse = keyframes`
+  0%, 100% { transform: translateX(0) scale(1); }
+  25% { transform: translateX(-2px) scale(1.02); }
+  50% { transform: translateX(2px) scale(1.03); }
+  75% { transform: translateX(-1px) scale(1.02); }
+`;
+const StatusBadge = styled.button`
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 99px;
+  background: #FEE9E9;
+  color: #D44;
+  cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
+`;
+const HighlightableLabel = styled(Label)`
+  display: inline-block;
+  ${({ $active }) => $active && `
+    color: var(--accent);
+    animation: ${hintPulse} .45s ease-in-out;
+  `}
+`;
+
 const AuthIntro = styled.p`
   margin: 0;
   font-size: 12px;
@@ -209,18 +233,13 @@ const TermsButton = styled.button`
 `;
 const AuthActionButton = styled(SubmitBtn)`
   margin-top: 4px;
-`;
-const AuthStatus = styled.div`
-  margin-top: 10px;
-  padding: 9px 12px;
-  border-radius: 10px;
-  background: #EBF8EF;
-  color: #2E9B55;
-  font-size: 12px;
-  font-weight: 600;
+  ${({ $active }) => $active && `
+    animation: ${hintPulse} .45s ease-in-out;
+    box-shadow: 0 0 0 4px rgba(232, 121, 26, .16);
+  `}
 `;
 
-const sections = [
+const baseSections = [
   { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'birth', 'country', 'region', 'city', 'maritalStatus'] },
   { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'ownKids', 'lastDelivery', 'csection', 'reward'] },
   { key: 'appearance', title: '✨ Зовнішність', fields: ['eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race'] },
@@ -232,7 +251,19 @@ const visibleNonDonorFields = new Set(['name','surname','email','phone','telegra
 
 
 export const MyProfileNew = () => {
-  const [state, setState] = useState({});
+  const [state, setState] = useState(() => {
+    const savedDraft = localStorage.getItem('myProfileDraft');
+    if (!savedDraft) return {};
+
+    try {
+      const parsedDraft = JSON.parse(savedDraft);
+      return { ...parsedDraft, password: '' };
+    } catch (error) {
+      console.warn('Failed to load MyProfileNew draft.', error);
+      localStorage.removeItem('myProfileDraft');
+      return {};
+    }
+  });
   const navigate = useNavigate();
   const currentUid = auth.currentUser?.uid || localStorage.getItem('ownerId') || '';
   const access = resolveAccess({ uid: currentUid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
@@ -245,6 +276,7 @@ export const MyProfileNew = () => {
   const [missing, setMissing] = useState({});
   const [hasAgreed, setHasAgreed] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [authHintStep, setAuthHintStep] = useState('');
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const tabRefs = useRef({});
@@ -253,10 +285,23 @@ export const MyProfileNew = () => {
   const saveQueueRef = useRef(Promise.resolve());
   const stateRef = useRef(state);
   const editedFieldsRef = useRef(new Set());
+  const authHintTimersRef = useRef([]);
 
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+
+  useEffect(() => {
+    if (userId || state.userId) return;
+
+    const { password: _password, ...draftState } = state;
+    localStorage.setItem('myProfileDraft', JSON.stringify(draftState));
+  }, [state, userId]);
+
+  useEffect(() => () => {
+    authHintTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
+  }, []);
 
   const normalizeProfileData = (data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
     if (key === 'password') {
@@ -328,6 +373,16 @@ export const MyProfileNew = () => {
 
   const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
   const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
+  const isProfileAccessConfirmed = Boolean(userId || state.userId);
+  const sections = useMemo(() => baseSections.map(section => {
+    if (section.key !== 'personal' || !isProfileAccessConfirmed || section.fields.includes('email')) {
+      return section;
+    }
+
+    const fields = [...section.fields];
+    fields.splice(2, 0, 'email');
+    return { ...section, fields };
+  }), [isProfileAccessConfirmed]);
   const visibleSections = sections
     .map(section => ({ ...section, fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)) }))
     .filter(section => section.fields.length > 0);
@@ -470,6 +525,18 @@ export const MyProfileNew = () => {
     activeTabEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }, [activeTab]);
 
+  const handleAuthBadgeClick = () => {
+    if (isProfileAccessConfirmed) return;
+
+    authHintTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
+    const sequence = ['email', 'password', 'submit'];
+    setAuthHintStep('');
+    authHintTimersRef.current = sequence.flatMap((step, index) => ([
+      window.setTimeout(() => setAuthHintStep(step), 60 + index * 520),
+      window.setTimeout(() => setAuthHintStep(''), 460 + index * 520),
+    ]));
+  };
+
   const isValidEmail = email => {
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailPattern.test(email);
@@ -538,10 +605,12 @@ export const MyProfileNew = () => {
       const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
       let userCredential;
       let uploadedInfo;
+      const { password: _password, userId: _userId, ...draftProfileData } = stateRef.current;
 
       if (methods.length > 0) {
         userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, state.password);
         uploadedInfo = {
+          ...draftProfileData,
           email: normalizedEmail,
           areTermsConfirmed: todayDays,
           lastLogin: todayDays,
@@ -554,6 +623,7 @@ export const MyProfileNew = () => {
         userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, state.password);
         await sendEmailVerification(userCredential.user);
         uploadedInfo = {
+          ...draftProfileData,
           email: normalizedEmail,
           areTermsConfirmed: todayDays,
           registrationDate: todayDays,
@@ -747,7 +817,9 @@ export const MyProfileNew = () => {
       <Topbar>
         <div style={{ fontFamily: 'Playfair Display, serif', fontSize: 18 }}>Know<span style={{ color: '#E8791A', fontStyle: 'italic' }}>Me</span></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 99, background: '#FEE9E9', color: '#D44' }}>● Прихована</div>
+          <StatusBadge type="button" $clickable={!isProfileAccessConfirmed} onClick={handleAuthBadgeClick}>
+            ● {isProfileAccessConfirmed ? 'Прихована' : 'Логін не відбувся'}
+          </StatusBadge>
           <DotsButton type='button' onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
         </div>
       </Topbar>
@@ -779,7 +851,7 @@ export const MyProfileNew = () => {
       </Tabs>
     </StickyHeader>
 
-    <AuthCard>
+    {!isProfileAccessConfirmed && <AuthCard>
       <Header>
         <div>🔐</div>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Доступ до анкети</div>
@@ -791,7 +863,7 @@ export const MyProfileNew = () => {
           </AuthIntro>
         </Field>
         <AuthField missing={missing.email}>
-          <Label>Email</Label>
+          <HighlightableLabel $active={authHintStep === 'email'}>Email</HighlightableLabel>
           <FieldControl>
             <Input
               type="email"
@@ -830,7 +902,7 @@ export const MyProfileNew = () => {
           </FieldControl>
         </AuthField>
         <AuthField missing={missing.password}>
-          <Label>Password</Label>
+          <HighlightableLabel $active={authHintStep === 'password'}>Password</HighlightableLabel>
           <FieldControl>
             <Input
               type={showPassword ? 'text' : 'password'}
@@ -865,10 +937,9 @@ export const MyProfileNew = () => {
             <TermsButton type="button" onClick={() => navigate('/policy')}>Умови</TermsButton>
           </TermsText>
         </TermsRow>
-        <AuthActionButton type="button" onClick={handleAuthConfirm}>Підтвердити і продовжити</AuthActionButton>
-        {userId && state.areTermsConfirmed ? <AuthStatus>Вхід підтверджено, можна заповнювати анкету та додавати фото.</AuthStatus> : null}
+        <AuthActionButton type="button" $active={authHintStep === 'submit'} onClick={handleAuthConfirm}>Підтвердити і продовжити</AuthActionButton>
       </FieldGroup>
-    </AuthCard>
+    </AuthCard>}
 
     <PhotoSection>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото. Перше — головне</p>
