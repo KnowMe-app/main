@@ -63,6 +63,8 @@ const StickyHeader = styled.div`
 `;
 const FALLBACK_STICKY_HEADER_OFFSET = 112;
 const STICKY_HEADER_EXTRA_GAP = 8;
+const SCROLL_ACTIVE_SECTION_GAP = 16;
+const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
 const ProgressWrap = styled.div`padding: 16px 20px 0;`;
 const Tabs = styled.div`padding:14px 20px;display:flex;gap:8px;overflow:auto;`;
 const Tab = styled.button`
@@ -317,6 +319,8 @@ export const MyProfileNew = () => {
   const tabsRef = useRef(null);
   const tabRefs = useRef({});
   const isManualScrollRef = useRef(false);
+  const programmaticScrollTimeoutRef = useRef(null);
+  const scrollFrameRef = useRef(null);
   const latestFetchUidRef = useRef('');
   const saveQueueRef = useRef(Promise.resolve());
   const stateRef = useRef(state);
@@ -372,12 +376,25 @@ export const MyProfileNew = () => {
   useLayoutEffect(() => {
     const updateStickyHeaderOffset = () => {
       const headerHeight = stickyHeaderRef.current?.getBoundingClientRect().height || FALLBACK_STICKY_HEADER_OFFSET;
-      setStickyHeaderOffset(Math.ceil(headerHeight + STICKY_HEADER_EXTRA_GAP));
+      const nextOffset = Math.ceil(headerHeight + STICKY_HEADER_EXTRA_GAP);
+      setStickyHeaderOffset(prevOffset => (prevOffset === nextOffset ? prevOffset : nextOffset));
     };
 
     updateStickyHeaderOffset();
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined' && stickyHeaderRef.current
+      ? new ResizeObserver(updateStickyHeaderOffset)
+      : null;
+
+    if (resizeObserver && stickyHeaderRef.current) {
+      resizeObserver.observe(stickyHeaderRef.current);
+    }
+
     window.addEventListener('resize', updateStickyHeaderOffset);
-    return () => window.removeEventListener('resize', updateStickyHeaderOffset);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateStickyHeaderOffset);
+    };
   }, []);
 
 
@@ -390,6 +407,12 @@ export const MyProfileNew = () => {
 
   useEffect(() => () => {
     authHintTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
+    if (programmaticScrollTimeoutRef.current) {
+      window.clearTimeout(programmaticScrollTimeoutRef.current);
+    }
+    if (scrollFrameRef.current) {
+      window.cancelAnimationFrame(scrollFrameRef.current);
+    }
   }, []);
 
   const normalizeProfileData = (data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
@@ -474,9 +497,9 @@ export const MyProfileNew = () => {
     fields.splice(2, 0, 'email');
     return { ...section, fields };
   }), [isProfileAccessConfirmed]);
-  const visibleSections = sections
+  const visibleSections = useMemo(() => sections
     .map(section => ({ ...section, fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)) }))
-    .filter(section => section.fields.length > 0);
+    .filter(section => section.fields.length > 0), [isDonorRole, sections]);
   const firstSectionKey = visibleSections[0]?.key || 'personal';
   const navSections = useMemo(() => [
     ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
@@ -579,54 +602,92 @@ export const MyProfileNew = () => {
   }, {}), [state, visibleSections]);
 
 
-  const scrollToSection = (sectionKey) => {
-    setActiveTab(sectionKey);
+  const getSectionEntries = useCallback(() => navSections
+    .map(section => ({ key: section.key, node: sectionRefs.current[section.key] }))
+    .filter(item => Boolean(item.node)), [navSections]);
+
+  const getSectionTargetTop = useCallback((sectionEl) => {
+    const sectionTop = sectionEl.getBoundingClientRect().top + window.scrollY;
+    return Math.max(0, Math.round(sectionTop - stickyHeaderOffset));
+  }, [stickyHeaderOffset]);
+
+  const getActiveSectionKeyByScroll = useCallback(() => {
+    const entries = getSectionEntries();
+    if (entries.length === 0) return '';
+
+    const activationLine = window.scrollY + stickyHeaderOffset + SCROLL_ACTIVE_SECTION_GAP;
+    let activeKey = entries[0].key;
+
+    entries.forEach(({ key, node }) => {
+      const sectionTop = node.getBoundingClientRect().top + window.scrollY;
+      if (sectionTop <= activationLine) {
+        activeKey = key;
+      }
+    });
+
+    return activeKey;
+  }, [getSectionEntries, stickyHeaderOffset]);
+
+  const finishProgrammaticScroll = useCallback(() => {
+    isManualScrollRef.current = false;
+    if (programmaticScrollTimeoutRef.current) {
+      window.clearTimeout(programmaticScrollTimeoutRef.current);
+      programmaticScrollTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scrollToSection = useCallback((sectionKey) => {
     const sectionEl = sectionRefs.current[sectionKey];
+    setActiveTab(sectionKey);
     if (!sectionEl) return;
+
     isManualScrollRef.current = true;
 
-    const sectionTop = sectionEl.getBoundingClientRect().top + window.scrollY;
-    const targetTop = Math.max(0, sectionTop - stickyHeaderOffset);
+    if (programmaticScrollTimeoutRef.current) {
+      window.clearTimeout(programmaticScrollTimeoutRef.current);
+    }
+
+    const targetTop = getSectionTargetTop(sectionEl);
     window.scrollTo({ top: targetTop, behavior: 'smooth' });
 
-    window.setTimeout(() => {
-      isManualScrollRef.current = false;
-    }, 500);
-  };
+    programmaticScrollTimeoutRef.current = window.setTimeout(() => {
+      finishProgrammaticScroll();
+    }, PROGRAMMATIC_SCROLL_FALLBACK_MS);
+  }, [finishProgrammaticScroll, getSectionTargetTop]);
 
   useEffect(() => {
-    const entries = navSections
-      .map(section => ({ key: section.key, node: sectionRefs.current[section.key] }))
-      .filter(item => Boolean(item.node));
+    const handleScroll = () => {
+      if (scrollFrameRef.current) return;
 
-    if (entries.length === 0 || typeof IntersectionObserver === 'undefined') return undefined;
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        scrollFrameRef.current = null;
 
-    const observer = new IntersectionObserver(
-      (observerEntries) => {
-        if (isManualScrollRef.current) return;
-
-        const visible = observerEntries
-          .filter(entry => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-
-        if (visible.length === 0) return;
-
-        const current = entries.find(item => item.node === visible[0].target);
-        if (current?.key) {
-          setActiveTab(prev => (prev === current.key ? prev : current.key));
+        if (isManualScrollRef.current) {
+          const activeSectionEl = sectionRefs.current[activeTab];
+          if (activeSectionEl && Math.abs(window.scrollY - getSectionTargetTop(activeSectionEl)) <= 2) {
+            finishProgrammaticScroll();
+          }
+          return;
         }
-      },
-      {
-        root: null,
-        rootMargin: `-${stickyHeaderOffset}px 0px -45% 0px`,
-        threshold: [0.15, 0.3, 0.5, 0.7],
-      },
-    );
 
-    entries.forEach(item => observer.observe(item.node));
+        const nextActiveKey = getActiveSectionKeyByScroll();
+        if (nextActiveKey) {
+          setActiveTab(prev => (prev === nextActiveKey ? prev : nextActiveKey));
+        }
+      });
+    };
 
-    return () => observer.disconnect();
-  }, [navSections, stickyHeaderOffset]);
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (scrollFrameRef.current) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+    };
+  }, [activeTab, finishProgrammaticScroll, getActiveSectionKeyByScroll, getSectionTargetTop]);
 
 
   useEffect(() => {
@@ -641,7 +702,14 @@ export const MyProfileNew = () => {
 
     if (!tabsEl || !activeTabEl) return;
 
-    activeTabEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    const tabsRect = tabsEl.getBoundingClientRect();
+    const activeTabRect = activeTabEl.getBoundingClientRect();
+    const targetLeft = tabsEl.scrollLeft
+      + activeTabRect.left
+      - tabsRect.left
+      - ((tabsRect.width - activeTabRect.width) / 2);
+
+    tabsEl.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
   }, [activeTab]);
 
   const handleAuthBadgeClick = () => {
