@@ -398,15 +398,11 @@ export const MyProfileNew = () => {
     .map(section => ({ ...section, fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)) }))
     .filter(section => section.fields.length > 0);
   const firstSectionKey = visibleSections[0]?.key || 'personal';
-  const navSections = useMemo(() => {
-    const [firstSection, ...restSections] = visibleSections;
-    return [
-      ...(firstSection ? [firstSection] : []),
-      { key: 'photo', title: '📷 Фото', fields: ['photos'], isVirtual: true },
-      ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
-      ...restSections,
-    ];
-  }, [isProfileAccessConfirmed, visibleSections]);
+  const navSections = useMemo(() => [
+    ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
+    { key: 'photo', title: '📷 Фото', fields: ['photos'], isVirtual: true },
+    ...visibleSections,
+  ], [isProfileAccessConfirmed, visibleSections]);
 
   useEffect(() => {
     let isMounted = true;
