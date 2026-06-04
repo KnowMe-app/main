@@ -59,7 +59,7 @@ const StickyHeader = styled.div`
   background: var(--card);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
 `;
-const STICKY_HEADER_OFFSET = 150;
+const STICKY_HEADER_OFFSET = 190;
 const ProgressWrap = styled.div`padding: 16px 20px 0;`;
 const Tabs = styled.div`padding:14px 20px;display:flex;gap:8px;overflow:auto;`;
 const Tab = styled.button`
@@ -68,7 +68,7 @@ const Tab = styled.button`
   background: ${({ $active, $complete }) => ($active ? 'var(--accent)' : $complete ? '#EBF8EF' : 'var(--card)')};
   color: ${({ $active, $complete }) => ($active ? '#fff' : $complete ? '#2E9B55' : 'var(--muted)')};
 `;
-const Card = styled.div`margin:0 20px 16px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;`;
+const Card = styled.div`margin:0 20px 16px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;scroll-margin-top:${STICKY_HEADER_OFFSET}px;`;
 const FirstContentCard = styled(Card)`margin-top: 18px;`;
 const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
 const FieldGroup = styled.div`padding:0 18px;`;
@@ -135,6 +135,7 @@ const PhotoSection = styled.div`
   border: 1.5px dashed var(--border);
   box-shadow: var(--shadow);
   min-width: 0;
+  scroll-margin-top: ${STICKY_HEADER_OFFSET}px;
 `;
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
@@ -483,6 +484,7 @@ export const MyProfileNew = () => {
     return acc;
   }, {}), [state, visibleSections]);
 
+
   const scrollToSection = (sectionKey) => {
     setActiveTab(sectionKey);
     const sectionEl = sectionRefs.current[sectionKey];
@@ -600,7 +602,9 @@ export const MyProfileNew = () => {
   };
 
   const handleAuthConfirm = async () => {
-    const normalizedEmail = String(state.email || '').trim();
+    const currentState = stateRef.current || {};
+    const normalizedEmail = String(currentState.email || '').trim();
+    const password = String(currentState.password || '');
     const miss = {};
 
     if (!normalizedEmail) {
@@ -611,7 +615,7 @@ export const MyProfileNew = () => {
       authNotifications.invalidEmail();
     }
 
-    if (!state.password) {
+    if (!password.trim()) {
       miss.password = true;
       authNotifications.passwordRequired();
     }
@@ -633,7 +637,7 @@ export const MyProfileNew = () => {
       const { password: _password, userId: _userId, ...draftProfileData } = stateRef.current;
 
       if (methods.length > 0) {
-        userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, state.password);
+        userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
         uploadedInfo = {
           ...draftProfileData,
           email: normalizedEmail,
@@ -645,7 +649,7 @@ export const MyProfileNew = () => {
         };
         await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'update');
       } else {
-        userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, state.password);
+        userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
         await sendEmailVerification(userCredential.user);
         uploadedInfo = {
           ...draftProfileData,
@@ -676,10 +680,20 @@ export const MyProfileNew = () => {
       stateRef.current = nextState;
       setState(nextState);
     } catch (error) {
-      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+      const errorCode = String(error?.code || '');
+
+      if (errorCode === 'auth/wrong-password' || errorCode === 'auth/invalid-credential') {
+        setMissing(prev => ({ ...prev, password: true }));
         authNotifications.wrongPassword();
+      } else if (errorCode === 'auth/invalid-email') {
+        setMissing(prev => ({ ...prev, email: true }));
+        authNotifications.invalidEmail();
+      } else if (errorCode === 'auth/weak-password') {
+        setMissing(prev => ({ ...prev, password: true }));
+        authNotifications.weakPassword();
       } else {
         console.error('auth error', error);
+        authNotifications.genericAuthError();
       }
     }
   };
@@ -867,7 +881,7 @@ export const MyProfileNew = () => {
           <StatusBadge type="button" $clickable={!isProfileAccessConfirmed} onClick={handleAuthBadgeClick}>
             ● {isProfileAccessConfirmed ? 'Прихована' : 'Логін не відбувся'}
           </StatusBadge>
-          <DotsButton type='button' onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
+          {isProfileAccessConfirmed && <DotsButton type='button' onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>}
         </div>
       </Topbar>
 
