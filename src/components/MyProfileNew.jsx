@@ -688,7 +688,7 @@ export const MyProfileNew = () => {
     }
   };
 
-  const saveState = (nextState) => {
+  const saveState = (nextState, { directFields = [] } = {}) => {
     const targetUserId = userId || nextState?.userId || stateRef.current.userId;
     if (!targetUserId) return Promise.resolve();
 
@@ -697,9 +697,15 @@ export const MyProfileNew = () => {
       .then(async () => {
         const { existingData } = await fetchUserData(targetUserId);
         const { password: _password, ...profileData } = nextState;
-        const uploadedInfo = makeUploadedInfo(existingData, {
+        const normalizedProfileData = {
           ...profileData,
           userRole: profileData.userRole || 'ed',
+        };
+        const uploadedInfo = makeUploadedInfo(existingData, normalizedProfileData);
+        directFields.forEach(field => {
+          if (Object.prototype.hasOwnProperty.call(normalizedProfileData, field)) {
+            uploadedInfo[field] = normalizedProfileData[field];
+          }
         });
         delete uploadedInfo.password;
         await persistUserWithFallback(targetUserId, uploadedInfo, 'check');
@@ -727,7 +733,7 @@ export const MyProfileNew = () => {
     setState(nextState);
 
     try {
-      await saveState(nextState);
+      await saveState(nextState, { directFields: ['publish'] });
       localStorage.removeItem('myProfileDraft');
     } catch (error) {
       console.error('publish error', error);
