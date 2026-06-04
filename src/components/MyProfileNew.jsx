@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiX } from 'react-icons/fi';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
@@ -28,6 +28,7 @@ import { resolveAccess } from 'utils/accessLevel';
 import { getCurrentDate } from './foramtDate';
 import { authNotifications } from './authNotifications';
 import { ExitButton, SubmitButton } from './MyProfile';
+import toast from 'react-hot-toast';
 
 const Page = styled.div`
   --accent: #E8791A;
@@ -44,6 +45,7 @@ const Page = styled.div`
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  --sticky-header-offset: 112px;
 `;
 const Topbar = styled.div`
   background: var(--card);
@@ -59,7 +61,8 @@ const StickyHeader = styled.div`
   background: var(--card);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
 `;
-const STICKY_HEADER_OFFSET = 190;
+const FALLBACK_STICKY_HEADER_OFFSET = 112;
+const STICKY_HEADER_EXTRA_GAP = 8;
 const ProgressWrap = styled.div`padding: 16px 20px 0;`;
 const Tabs = styled.div`padding:14px 20px;display:flex;gap:8px;overflow:auto;`;
 const Tab = styled.button`
@@ -68,7 +71,14 @@ const Tab = styled.button`
   background: ${({ $active, $complete }) => ($active ? 'var(--accent)' : $complete ? '#EBF8EF' : 'var(--card)')};
   color: ${({ $active, $complete }) => ($active ? '#fff' : $complete ? '#2E9B55' : 'var(--muted)')};
 `;
-const Card = styled.div`margin:0 20px 16px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;scroll-margin-top:${STICKY_HEADER_OFFSET}px;`;
+const Card = styled.div`
+  margin: 0 20px 16px;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  scroll-margin-top: var(--sticky-header-offset);
+`;
 const FirstContentCard = styled(Card)`margin-top: 18px;`;
 const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
 const FieldGroup = styled.div`padding:0 18px;`;
@@ -84,6 +94,10 @@ const Input = styled.input`
   padding: 10px 38px 10px 14px;
   outline: none;
   &:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(232, 121, 26, .12); }
+  ${({ $missing }) => $missing && `
+    border-color: #D44;
+    box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
+  `}
 `;
 const TextArea = styled.textarea`
   width: 100%;
@@ -95,6 +109,10 @@ const TextArea = styled.textarea`
   padding: 10px 38px 10px 14px;
   outline: none;
   min-height: 90px;
+  ${({ $missing }) => $missing && `
+    border-color: #D44;
+    box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
+  `}
 `;
 const FieldControl = styled.div`
   position: relative;
@@ -122,6 +140,10 @@ const ChipRow = styled.div`display:flex;flex-wrap:wrap;gap:6px;`;
 const Chip = styled.button`
   padding: 6px 13px; border-radius: 99px; font-size: 13px; border: 1.5px solid ${({ selected }) => (selected ? 'var(--accent)' : 'var(--border)')};
   background: ${({ selected }) => (selected ? 'var(--accent-light)' : 'var(--card)')}; color: ${({ selected }) => (selected ? 'var(--accent)' : 'var(--muted)')};
+  ${({ $missing }) => $missing && `
+    border-color: #D44;
+    box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
+  `}
 `;
 const SubmitWrap = styled.div`padding:20px;`;
 const PhotoSection = styled.div`
@@ -135,7 +157,7 @@ const PhotoSection = styled.div`
   border: 1.5px dashed var(--border);
   box-shadow: var(--shadow);
   min-width: 0;
-  scroll-margin-top: ${STICKY_HEADER_OFFSET}px;
+  scroll-margin-top: var(--sticky-header-offset);
 `;
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
@@ -289,6 +311,8 @@ export const MyProfileNew = () => {
   const [hasAgreed, setHasAgreed] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [authHintStep, setAuthHintStep] = useState('');
+  const [stickyHeaderOffset, setStickyHeaderOffset] = useState(FALLBACK_STICKY_HEADER_OFFSET);
+  const stickyHeaderRef = useRef(null);
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const tabRefs = useRef({});
@@ -302,6 +326,59 @@ export const MyProfileNew = () => {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  const readLocalDraft = useCallback(() => {
+    const savedDraft = localStorage.getItem('myProfileDraft');
+    if (!savedDraft) return null;
+
+    try {
+      const parsedDraft = JSON.parse(savedDraft);
+      return { ...parsedDraft, password: '' };
+    } catch (error) {
+      console.warn('Failed to load MyProfileNew draft.', error);
+      localStorage.removeItem('myProfileDraft');
+      return null;
+    }
+  }, []);
+
+  const restoreLocalDraft = useCallback(() => {
+    if (userId || stateRef.current.userId) return;
+
+    const localDraft = readLocalDraft();
+    if (!localDraft) return;
+
+    setState(prevState => {
+      if (prevState.userId) return prevState;
+      const nextState = { ...prevState, ...localDraft, password: prevState.password || '' };
+      stateRef.current = nextState;
+      return nextState;
+    });
+  }, [readLocalDraft, userId]);
+
+  useEffect(() => {
+    restoreLocalDraft();
+  }, [restoreLocalDraft]);
+
+  useEffect(() => {
+    window.addEventListener('focus', restoreLocalDraft);
+    window.addEventListener('pageshow', restoreLocalDraft);
+
+    return () => {
+      window.removeEventListener('focus', restoreLocalDraft);
+      window.removeEventListener('pageshow', restoreLocalDraft);
+    };
+  }, [restoreLocalDraft]);
+
+  useLayoutEffect(() => {
+    const updateStickyHeaderOffset = () => {
+      const headerHeight = stickyHeaderRef.current?.getBoundingClientRect().height || FALLBACK_STICKY_HEADER_OFFSET;
+      setStickyHeaderOffset(Math.ceil(headerHeight + STICKY_HEADER_EXTRA_GAP));
+    };
+
+    updateStickyHeaderOffset();
+    window.addEventListener('resize', updateStickyHeaderOffset);
+    return () => window.removeEventListener('resize', updateStickyHeaderOffset);
+  }, []);
 
 
   useEffect(() => {
@@ -353,6 +430,7 @@ export const MyProfileNew = () => {
   const updateFieldValue = (name, value, field) => {
     const updatedValue = inputUpdateValue(value, field);
     editedFieldsRef.current.add(name);
+    setMissing(prev => ({ ...prev, [name]: false }));
 
     setState(prevState => {
       const nextState = {
@@ -368,6 +446,7 @@ export const MyProfileNew = () => {
   const saveFieldValue = (name, value, field) => {
     const updatedValue = inputUpdateValue(value, field);
     editedFieldsRef.current.add(name);
+    setMissing(prev => ({ ...prev, [name]: false }));
 
     const nextState = {
       ...stateRef.current,
@@ -410,23 +489,38 @@ export const MyProfileNew = () => {
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       const uid = user?.uid || localStorage.getItem('ownerId') || '';
-      if (!uid) return;
-      latestFetchUidRef.current = uid;
-      setUserId(uid);
-      const { existingData } = await fetchUserData(uid);
-
-      if (!isMounted || latestFetchUidRef.current !== uid) {
+      if (!uid) {
+        setUserId('');
+        restoreLocalDraft();
         return;
       }
 
-      mergeLoadedProfileData(normalizeProfileData(existingData || {}), uid);
+      latestFetchUidRef.current = uid;
+      setUserId(uid);
+
+      try {
+        const { existingData } = await fetchUserData(uid);
+
+        if (!isMounted || latestFetchUidRef.current !== uid) {
+          return;
+        }
+
+        mergeLoadedProfileData(normalizeProfileData(existingData || {}), uid);
+      } catch (error) {
+        console.warn('Failed to load MyProfileNew profile data.', error);
+        if (!isMounted || latestFetchUidRef.current !== uid) {
+          return;
+        }
+        setUserId('');
+        restoreLocalDraft();
+      }
     });
 
     return () => {
       isMounted = false;
       unsubscribe();
     };
-  }, []);
+  }, [restoreLocalDraft]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
@@ -492,7 +586,7 @@ export const MyProfileNew = () => {
     isManualScrollRef.current = true;
 
     const sectionTop = sectionEl.getBoundingClientRect().top + window.scrollY;
-    const targetTop = Math.max(0, sectionTop - STICKY_HEADER_OFFSET);
+    const targetTop = Math.max(0, sectionTop - stickyHeaderOffset);
     window.scrollTo({ top: targetTop, behavior: 'smooth' });
 
     window.setTimeout(() => {
@@ -524,7 +618,7 @@ export const MyProfileNew = () => {
       },
       {
         root: null,
-        rootMargin: `-${STICKY_HEADER_OFFSET}px 0px -45% 0px`,
+        rootMargin: `-${stickyHeaderOffset}px 0px -45% 0px`,
         threshold: [0.15, 0.3, 0.5, 0.7],
       },
     );
@@ -532,7 +626,7 @@ export const MyProfileNew = () => {
     entries.forEach(item => observer.observe(item.node));
 
     return () => observer.disconnect();
-  }, [navSections]);
+  }, [navSections, stickyHeaderOffset]);
 
 
   useEffect(() => {
@@ -730,12 +824,40 @@ export const MyProfileNew = () => {
     });
   };
 
+  const getSectionKeyByField = fieldName => visibleSections.find(section => section.fields.includes(fieldName))?.key || 'personal';
+
+  const validateRequiredProfileFields = () => {
+    const currentState = stateRef.current || {};
+    const miss = {};
+    const missingFieldNames = visibleSections
+      .flatMap(section => section.fields)
+      .filter(fieldName => String(currentState[fieldName] || '').trim() === '');
+
+    missingFieldNames.forEach(fieldName => {
+      miss[fieldName] = true;
+    });
+
+    setMissing(prev => ({ ...prev, ...miss }));
+
+    if (!missingFieldNames.length) return true;
+
+    const firstMissingField = missingFieldNames[0];
+    const firstMissingFieldLabel = getFieldLabel(fieldsMap.get(firstMissingField)) || firstMissingField;
+    toast.error(`Заповніть обов’язкове поле: ${firstMissingFieldLabel}`);
+    scrollToSection(getSectionKeyByField(firstMissingField));
+    return false;
+  };
+
   const publishProfile = async () => {
     if (!isProfileAccessConfirmed) {
       await handleAuthConfirm();
       if (!stateRef.current.userId && !userId) {
         return;
       }
+    }
+
+    if (!validateRequiredProfileFields()) {
+      return;
     }
 
     const nextState = { ...stateRef.current, publish: true };
@@ -745,9 +867,10 @@ export const MyProfileNew = () => {
     try {
       await saveState(nextState, { directFields: ['publish'] });
       localStorage.removeItem('myProfileDraft');
+      toast.success('Анкету опубліковано');
     } catch (error) {
       console.error('publish error', error);
-      throw error;
+      toast.error('Не вдалося опублікувати анкету. Спробуйте ще раз');
     }
   };
 
@@ -778,11 +901,13 @@ export const MyProfileNew = () => {
               return <Chip
                 key={`${name}-${optionValue}`}
                 selected={selected}
+                $missing={missing[name]}
                 onClick={() => {
                   setCustomOptionMode(prev => ({ ...prev, [name]: false }));
                   const isSelected = String(state[name] || '') === String(optionValue);
                   const nextState = { ...stateRef.current, [name]: isSelected ? '' : optionValue };
                   editedFieldsRef.current.add(name);
+                  setMissing(prev => ({ ...prev, [name]: false }));
                   stateRef.current = nextState;
                   setState(nextState);
                   triggerAutosave(nextState);
@@ -813,6 +938,7 @@ export const MyProfileNew = () => {
               <FieldControl>
                 <Input
                   value={val}
+                  $missing={missing[name]}
                   placeholder="Введіть свій варіант"
                   onChange={e => updateFieldValue(name, e.target.value, field)}
                   onBlur={e => saveFieldValue(name, e.target.value, field)}
@@ -835,6 +961,7 @@ export const MyProfileNew = () => {
         <FieldControl>
           <TextArea
             value={val}
+            $missing={missing[name]}
             placeholder={getFieldPlaceholder(field)}
             onChange={e => updateFieldValue(name, e.target.value, field)}
             onBlur={e => saveFieldValue(name, e.target.value, field)}
@@ -854,6 +981,7 @@ export const MyProfileNew = () => {
         <FieldControl>
           <Input
             value={val}
+            $missing={missing[name]}
             placeholder={getFieldPlaceholder(field)}
             onChange={e => updateFieldValue(name, e.target.value, field)}
             onBlur={e => saveFieldValue(name, e.target.value, field)}
@@ -873,8 +1001,8 @@ export const MyProfileNew = () => {
     </Field>;
   };
 
-  return <Page>
-    <StickyHeader>
+  return <Page style={{ '--sticky-header-offset': `${stickyHeaderOffset}px` }}>
+    <StickyHeader ref={stickyHeaderRef}>
       <Topbar>
         <div style={{ fontFamily: 'Playfair Display, serif', fontSize: 18 }}>Know<span style={{ color: '#E8791A', fontStyle: 'italic' }}>Me</span></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1013,7 +1141,13 @@ export const MyProfileNew = () => {
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото. Перше — головне</p>
       <Photos
         state={{ ...state, userId }}
-        setState={setState}
+        setState={next => {
+          setState(prevState => {
+            const nextState = typeof next === 'function' ? next(prevState) : next;
+            stateRef.current = nextState;
+            return nextState;
+          });
+        }}
         uploadInputId="my-profile-new-photo-upload"
         compact
         maxPhotos={5}
