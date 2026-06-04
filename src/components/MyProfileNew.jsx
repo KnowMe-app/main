@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiX } from 'react-icons/fi';
+import { FaEye, FaEyeSlash } from 'react-icons/fa';
 import styled from 'styled-components';
 import {
   auth,
@@ -12,11 +13,20 @@ import {
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { inputUpdateValue } from './inputUpdatedValue';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
+  onAuthStateChanged,
+  sendEmailVerification,
+  signInWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth';
 import Photos from './Photos';
 import { VerifyEmail } from './VerifyEmail';
 import InfoModal from './InfoModal';
 import { resolveAccess } from 'utils/accessLevel';
+import { getCurrentDate } from './foramtDate';
+import { authNotifications } from './authNotifications';
 import { ExitButton, SubmitButton } from './MyProfile';
 
 const Page = styled.div`
@@ -133,8 +143,85 @@ const DotsButton = styled.button`
   background:var(--card);cursor:pointer;font-size:22px;line-height:1;color:var(--muted);
 `;
 
+const AuthCard = styled(Card)`
+  margin-top: 18px;
+`;
+const AuthIntro = styled.p`
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+`;
+const AuthField = styled(Field)`
+  ${({ missing }) => missing && `
+    ${Input} {
+      border-color: #D44;
+      box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
+    }
+  `}
+`;
+const PasswordToggleButton = styled.button`
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text);
+  }
+`;
+const TermsRow = styled.div`
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 0;
+`;
+const TermsCheckbox = styled.input`
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+`;
+const TermsText = styled.div`
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+`;
+const TermsButton = styled.button`
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+`;
+const AuthActionButton = styled(SubmitBtn)`
+  margin-top: 4px;
+`;
+const AuthStatus = styled.div`
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: #EBF8EF;
+  color: #2E9B55;
+  font-size: 12px;
+  font-weight: 600;
+`;
+
 const sections = [
-  { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'birth', 'country', 'region', 'city', 'email', 'maritalStatus'] },
+  { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'birth', 'country', 'region', 'city', 'maritalStatus'] },
   { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'ownKids', 'lastDelivery', 'csection', 'reward'] },
   { key: 'appearance', title: '✨ Зовнішність', fields: ['eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race'] },
   { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'vk'] },
@@ -155,6 +242,9 @@ export const MyProfileNew = () => {
   const [userId, setUserId] = useState('');
   const [activeTab, setActiveTab] = useState('personal');
   const [customOptionMode, setCustomOptionMode] = useState({});
+  const [missing, setMissing] = useState({});
+  const [hasAgreed, setHasAgreed] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const tabRefs = useRef({});
@@ -190,7 +280,7 @@ export const MyProfileNew = () => {
   const mergeLoadedProfileData = (loadedData, uid) => {
     setState(prevState => {
       const protectedFields = editedFieldsRef.current;
-      const nextState = { ...loadedData, userId: uid };
+      const nextState = { userRole: 'ed', ...loadedData, userId: uid };
 
       protectedFields.forEach(fieldName => {
         if (Object.prototype.hasOwnProperty.call(prevState, fieldName)) {
@@ -271,6 +361,12 @@ export const MyProfileNew = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (state.areTermsConfirmed && !hasAgreed) {
+      setHasAgreed(true);
+    }
+  }, [state.areTermsConfirmed, hasAgreed]);
 
   const handleExit = async () => {
     await signOut(auth);
@@ -374,6 +470,11 @@ export const MyProfileNew = () => {
     activeTabEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }, [activeTab]);
 
+  const isValidEmail = email => {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailPattern.test(email);
+  };
+
   const isPermissionDeniedError = error => {
     const code = String(error?.code || '').toLowerCase();
     const message = String(error?.message || '').toLowerCase();
@@ -407,6 +508,89 @@ export const MyProfileNew = () => {
     );
   };
 
+  const handleAuthConfirm = async () => {
+    const normalizedEmail = String(state.email || '').trim();
+    const miss = {};
+
+    if (!normalizedEmail) {
+      miss.email = true;
+      authNotifications.emailRequired();
+    } else if (!isValidEmail(normalizedEmail)) {
+      miss.email = true;
+      authNotifications.invalidEmail();
+    }
+
+    if (!state.password) {
+      miss.password = true;
+      authNotifications.passwordRequired();
+    }
+
+    if (!hasAgreed) {
+      authNotifications.termsRequired();
+    }
+
+    setMissing(miss);
+
+    if (Object.keys(miss).length || !hasAgreed) return;
+
+    try {
+      const { todayDays, todayDash } = getCurrentDate();
+      const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
+      let userCredential;
+      let uploadedInfo;
+
+      if (methods.length > 0) {
+        userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, state.password);
+        uploadedInfo = {
+          email: normalizedEmail,
+          areTermsConfirmed: todayDays,
+          lastLogin: todayDays,
+          lastLogin2: todayDash,
+          userId: userCredential.user.uid,
+          userRole: 'ed',
+        };
+        await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'update');
+      } else {
+        userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, state.password);
+        await sendEmailVerification(userCredential.user);
+        uploadedInfo = {
+          email: normalizedEmail,
+          areTermsConfirmed: todayDays,
+          registrationDate: todayDays,
+          lastLogin: todayDays,
+          lastLogin2: todayDash,
+          userId: userCredential.user.uid,
+          userRole: 'ed',
+        };
+        await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'set');
+      }
+
+      localStorage.setItem('isLoggedIn', 'true');
+      localStorage.setItem('userEmail', normalizedEmail);
+      localStorage.setItem('ownerId', userCredential.user.uid);
+      localStorage.removeItem('myProfileDraft');
+
+      setHasAgreed(true);
+      setUserId(userCredential.user.uid);
+      setMissing({});
+      setState(prevState => {
+        const nextState = {
+          ...prevState,
+          ...uploadedInfo,
+          password: prevState.password,
+        };
+        stateRef.current = nextState;
+        return nextState;
+      });
+    } catch (error) {
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        authNotifications.wrongPassword();
+      } else {
+        console.error('auth error', error);
+      }
+    }
+  };
+
   const saveState = (nextState) => {
     if (!userId) return Promise.resolve();
 
@@ -415,7 +599,10 @@ export const MyProfileNew = () => {
       .then(async () => {
         const { existingData } = await fetchUserData(userId);
         const { password: _password, ...profileData } = nextState;
-        const uploadedInfo = makeUploadedInfo(existingData, profileData);
+        const uploadedInfo = makeUploadedInfo(existingData, {
+          ...profileData,
+          userRole: profileData.userRole || 'ed',
+        });
         delete uploadedInfo.password;
         await persistUserWithFallback(userId, uploadedInfo, 'check');
       });
@@ -591,6 +778,97 @@ export const MyProfileNew = () => {
         })}
       </Tabs>
     </StickyHeader>
+
+    <AuthCard>
+      <Header>
+        <div>🔐</div>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Доступ до анкети</div>
+      </Header>
+      <FieldGroup>
+        <Field>
+          <AuthIntro>
+            Введіть email і пароль, щоб продовжити заповнення анкети. Якщо акаунт уже існує — ми виконаємо вхід, якщо ні — створимо профіль донора.
+          </AuthIntro>
+        </Field>
+        <AuthField missing={missing.email}>
+          <Label>Email</Label>
+          <FieldControl>
+            <Input
+              type="email"
+              name="email"
+              value={state.email || ''}
+              placeholder="Введіть емейл"
+              autoComplete="email"
+              onChange={e => {
+                const value = e.target.value;
+                editedFieldsRef.current.add('email');
+                setMissing(prev => ({ ...prev, email: false }));
+                setState(prevState => {
+                  const nextState = { ...prevState, email: value };
+                  stateRef.current = nextState;
+                  return nextState;
+                });
+              }}
+            />
+            {state.email ? (
+              <ClearFieldButton
+                type="button"
+                onMouseDown={event => event.preventDefault()}
+                onClick={() => {
+                  editedFieldsRef.current.add('email');
+                  setState(prevState => {
+                    const nextState = { ...prevState, email: '' };
+                    stateRef.current = nextState;
+                    return nextState;
+                  });
+                }}
+                aria-label="Очистити email"
+              >
+                <FiX size={16} />
+              </ClearFieldButton>
+            ) : null}
+          </FieldControl>
+        </AuthField>
+        <AuthField missing={missing.password}>
+          <Label>Password</Label>
+          <FieldControl>
+            <Input
+              type={showPassword ? 'text' : 'password'}
+              name="password"
+              value={state.password || ''}
+              placeholder="Придумайте / введіть пароль"
+              autoComplete="new-password"
+              onChange={e => {
+                const value = e.target.value;
+                setMissing(prev => ({ ...prev, password: false }));
+                setState(prevState => {
+                  const nextState = { ...prevState, password: value };
+                  stateRef.current = nextState;
+                  return nextState;
+                });
+              }}
+            />
+            <PasswordToggleButton type="button" onClick={() => setShowPassword(prev => !prev)} aria-label={showPassword ? 'Приховати пароль' : 'Показати пароль'}>
+              {showPassword ? <FaEyeSlash /> : <FaEye />}
+            </PasswordToggleButton>
+          </FieldControl>
+        </AuthField>
+        <TermsRow>
+          <TermsCheckbox
+            id="my-profile-new-terms"
+            type="checkbox"
+            checked={hasAgreed}
+            onChange={e => setHasAgreed(e.target.checked)}
+          />
+          <TermsText>
+            <label htmlFor="my-profile-new-terms">Я підтверджую згоду з умовами програми. </label>
+            <TermsButton type="button" onClick={() => navigate('/policy')}>Умови</TermsButton>
+          </TermsText>
+        </TermsRow>
+        <AuthActionButton type="button" onClick={handleAuthConfirm}>Підтвердити і продовжити</AuthActionButton>
+        {userId && state.areTermsConfirmed ? <AuthStatus>Вхід підтверджено, можна заповнювати анкету та додавати фото.</AuthStatus> : null}
+      </FieldGroup>
+    </AuthCard>
 
     <PhotoSection>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото. Перше — головне</p>
