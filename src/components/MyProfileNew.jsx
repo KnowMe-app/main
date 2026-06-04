@@ -64,11 +64,12 @@ const ProgressWrap = styled.div`padding: 16px 20px 0;`;
 const Tabs = styled.div`padding:14px 20px;display:flex;gap:8px;overflow:auto;`;
 const Tab = styled.button`
   flex-shrink: 0; padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 500;
-  border: 1.5px solid ${({ complete, active }) => (complete ? '#2E9B55' : active ? 'var(--accent)' : 'var(--border)')};
-  background: ${({ active, complete }) => (active ? 'var(--accent)' : complete ? '#EBF8EF' : 'var(--card)')};
-  color: ${({ active, complete }) => (active ? '#fff' : complete ? '#2E9B55' : 'var(--muted)')};
+  border: 1.5px solid ${({ $complete, $active }) => ($complete ? '#2E9B55' : $active ? 'var(--accent)' : 'var(--border)')};
+  background: ${({ $active, $complete }) => ($active ? 'var(--accent)' : $complete ? '#EBF8EF' : 'var(--card)')};
+  color: ${({ $active, $complete }) => ($active ? '#fff' : $complete ? '#2E9B55' : 'var(--muted)')};
 `;
 const Card = styled.div`margin:0 20px 16px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;`;
+const FirstContentCard = styled(Card)`margin-top: 18px;`;
 const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
 const FieldGroup = styled.div`padding:0 18px;`;
 const Field = styled.div`padding:14px 0;border-bottom:1px solid var(--border); &:last-child{border-bottom:none;}`;
@@ -143,9 +144,7 @@ const DotsButton = styled.button`
   background:var(--card);cursor:pointer;font-size:22px;line-height:1;color:var(--muted);
 `;
 
-const AuthCard = styled(Card)`
-  margin-top: 18px;
-`;
+const AuthCard = styled(FirstContentCard)``;
 const hintPulse = keyframes`
   0%, 100% { transform: translateX(0) scale(1); }
   25% { transform: translateX(-2px) scale(1.02); }
@@ -177,7 +176,7 @@ const AuthIntro = styled.p`
   color: var(--muted);
 `;
 const AuthField = styled(Field)`
-  ${({ missing }) => missing && `
+  ${({ $missing }) => $missing && `
     ${Input} {
       border-color: #D44;
       box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
@@ -210,6 +209,14 @@ const TermsRow = styled.div`
   align-items: flex-start;
   gap: 10px;
   padding: 14px 0;
+  border-radius: 12px;
+  ${({ $missing, $active }) => ($missing || $active) && `
+    margin: 8px 0;
+    padding: 14px 12px;
+    background: rgba(221, 68, 68, .06);
+    box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
+    animation: ${hintPulse} .45s ease-in-out;
+  `}
 `;
 const TermsCheckbox = styled.input`
   width: 18px;
@@ -217,6 +224,10 @@ const TermsCheckbox = styled.input`
   margin-top: 2px;
   accent-color: var(--accent);
   flex-shrink: 0;
+  ${({ $missing, $active }) => ($missing || $active) && `
+    outline: 2px solid #D44;
+    outline-offset: 2px;
+  `}
 `;
 const TermsText = styled.div`
   font-size: 13px;
@@ -232,7 +243,7 @@ const TermsButton = styled.button`
   cursor: pointer;
 `;
 const AuthActionButton = styled(SubmitBtn)`
-  margin-top: 4px;
+  margin: 4px 0 20px;
   ${({ $active }) => $active && `
     animation: ${hintPulse} .45s ease-in-out;
     box-shadow: 0 0 0 4px rgba(232, 121, 26, .16);
@@ -271,7 +282,7 @@ export const MyProfileNew = () => {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [userId, setUserId] = useState('');
-  const [activeTab, setActiveTab] = useState('personal');
+  const [activeTab, setActiveTab] = useState('auth');
   const [customOptionMode, setCustomOptionMode] = useState({});
   const [missing, setMissing] = useState({});
   const [hasAgreed, setHasAgreed] = useState(false);
@@ -386,6 +397,16 @@ export const MyProfileNew = () => {
   const visibleSections = sections
     .map(section => ({ ...section, fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)) }))
     .filter(section => section.fields.length > 0);
+  const firstSectionKey = visibleSections[0]?.key || 'personal';
+  const navSections = useMemo(() => {
+    const [firstSection, ...restSections] = visibleSections;
+    return [
+      ...(firstSection ? [firstSection] : []),
+      { key: 'photo', title: '📷 Фото', fields: ['photos'], isVirtual: true },
+      ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
+      ...restSections,
+    ];
+  }, [isProfileAccessConfirmed, visibleSections]);
 
   useEffect(() => {
     let isMounted = true;
@@ -482,11 +503,11 @@ export const MyProfileNew = () => {
   };
 
   useEffect(() => {
-    const entries = visibleSections
+    const entries = navSections
       .map(section => ({ key: section.key, node: sectionRefs.current[section.key] }))
       .filter(item => Boolean(item.node));
 
-    if (entries.length === 0) return undefined;
+    if (entries.length === 0 || typeof IntersectionObserver === 'undefined') return undefined;
 
     const observer = new IntersectionObserver(
       (observerEntries) => {
@@ -513,7 +534,13 @@ export const MyProfileNew = () => {
     entries.forEach(item => observer.observe(item.node));
 
     return () => observer.disconnect();
-  }, [visibleSections]);
+  }, [navSections]);
+
+
+  useEffect(() => {
+    if (navSections.some(section => section.key === activeTab)) return;
+    setActiveTab(firstSectionKey);
+  }, [activeTab, firstSectionKey, navSections]);
 
 
   useEffect(() => {
@@ -529,7 +556,8 @@ export const MyProfileNew = () => {
     if (isProfileAccessConfirmed) return;
 
     authHintTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
-    const sequence = ['email', 'password', 'submit'];
+    scrollToSection('auth');
+    const sequence = ['email', 'password', 'terms', 'submit'];
     setAuthHintStep('');
     authHintTimersRef.current = sequence.flatMap((step, index) => ([
       window.setTimeout(() => setAuthHintStep(step), 60 + index * 520),
@@ -593,12 +621,13 @@ export const MyProfileNew = () => {
     }
 
     if (!hasAgreed) {
+      miss.terms = true;
       authNotifications.termsRequired();
     }
 
     setMissing(miss);
 
-    if (Object.keys(miss).length || !hasAgreed) return;
+    if (Object.keys(miss).length) return;
 
     try {
       const { todayDays, todayDash } = getCurrentDate();
@@ -643,15 +672,13 @@ export const MyProfileNew = () => {
       setHasAgreed(true);
       setUserId(userCredential.user.uid);
       setMissing({});
-      setState(prevState => {
-        const nextState = {
-          ...prevState,
-          ...uploadedInfo,
-          password: prevState.password,
-        };
-        stateRef.current = nextState;
-        return nextState;
-      });
+      const nextState = {
+        ...stateRef.current,
+        ...uploadedInfo,
+        password: stateRef.current.password,
+      };
+      stateRef.current = nextState;
+      setState(nextState);
     } catch (error) {
       if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         authNotifications.wrongPassword();
@@ -662,19 +689,20 @@ export const MyProfileNew = () => {
   };
 
   const saveState = (nextState) => {
-    if (!userId) return Promise.resolve();
+    const targetUserId = userId || nextState?.userId || stateRef.current.userId;
+    if (!targetUserId) return Promise.resolve();
 
     saveQueueRef.current = saveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
-        const { existingData } = await fetchUserData(userId);
+        const { existingData } = await fetchUserData(targetUserId);
         const { password: _password, ...profileData } = nextState;
         const uploadedInfo = makeUploadedInfo(existingData, {
           ...profileData,
           userRole: profileData.userRole || 'ed',
         });
         delete uploadedInfo.password;
-        await persistUserWithFallback(userId, uploadedInfo, 'check');
+        await persistUserWithFallback(targetUserId, uploadedInfo, 'check');
       });
 
     return saveQueueRef.current;
@@ -686,8 +714,25 @@ export const MyProfileNew = () => {
     });
   };
 
-  const save = async () => {
-    await saveState(state);
+  const publishProfile = async () => {
+    if (!isProfileAccessConfirmed) {
+      await handleAuthConfirm();
+      if (!stateRef.current.userId && !userId) {
+        return;
+      }
+    }
+
+    const nextState = { ...stateRef.current, publish: true };
+    stateRef.current = nextState;
+    setState(nextState);
+
+    try {
+      await saveState(nextState);
+      localStorage.removeItem('myProfileDraft');
+    } catch (error) {
+      console.error('publish error', error);
+      throw error;
+    }
   };
 
   const renderField = (name) => {
@@ -835,13 +880,15 @@ export const MyProfileNew = () => {
     </ProgressWrap>
 
       <Tabs ref={tabsRef}>
-        {visibleSections.map(s => {
-          const info = sectionProgress[s.key] || {};
+        {navSections.map(s => {
+          const info = s.key === 'photo'
+            ? { complete: Array.isArray(state.photos) && state.photos.length > 0 }
+            : sectionProgress[s.key] || {};
           return <Tab
             key={s.key}
             ref={node => { tabRefs.current[s.key] = node; }}
-            active={activeTab === s.key}
-            complete={Boolean(info.complete)}
+            $active={activeTab === s.key}
+            $complete={Boolean(info.complete)}
             type="button"
             onClick={() => scrollToSection(s.key)}
           >
@@ -851,7 +898,7 @@ export const MyProfileNew = () => {
       </Tabs>
     </StickyHeader>
 
-    {!isProfileAccessConfirmed && <AuthCard>
+    {!isProfileAccessConfirmed && <AuthCard ref={node => { sectionRefs.current.auth = node; }}>
       <Header>
         <div>🔐</div>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Доступ до анкети</div>
@@ -862,7 +909,7 @@ export const MyProfileNew = () => {
             Введіть email і пароль, щоб продовжити заповнення анкети. Якщо акаунт уже існує — ми виконаємо вхід, якщо ні — створимо профіль донора.
           </AuthIntro>
         </Field>
-        <AuthField missing={missing.email}>
+        <AuthField $missing={missing.email}>
           <HighlightableLabel $active={authHintStep === 'email'}>Email</HighlightableLabel>
           <FieldControl>
             <Input
@@ -901,7 +948,7 @@ export const MyProfileNew = () => {
             ) : null}
           </FieldControl>
         </AuthField>
-        <AuthField missing={missing.password}>
+        <AuthField $missing={missing.password}>
           <HighlightableLabel $active={authHintStep === 'password'}>Password</HighlightableLabel>
           <FieldControl>
             <Input
@@ -925,12 +972,17 @@ export const MyProfileNew = () => {
             </PasswordToggleButton>
           </FieldControl>
         </AuthField>
-        <TermsRow>
+        <TermsRow $missing={missing.terms} $active={authHintStep === 'terms'}>
           <TermsCheckbox
             id="my-profile-new-terms"
             type="checkbox"
             checked={hasAgreed}
-            onChange={e => setHasAgreed(e.target.checked)}
+            $missing={missing.terms}
+            $active={authHintStep === 'terms'}
+            onChange={e => {
+              setHasAgreed(e.target.checked);
+              setMissing(prev => ({ ...prev, terms: false }));
+            }}
           />
           <TermsText>
             <label htmlFor="my-profile-new-terms">Я підтверджую згоду з умовами програми. </label>
@@ -941,7 +993,7 @@ export const MyProfileNew = () => {
       </FieldGroup>
     </AuthCard>}
 
-    <PhotoSection>
+    <PhotoSection ref={node => { sectionRefs.current.photo = node; }}>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото. Перше — головне</p>
       <Photos
         state={{ ...state, userId }}
@@ -953,8 +1005,10 @@ export const MyProfileNew = () => {
     </PhotoSection>
 
 
-    {visibleSections.map(section => (
-      <Card key={section.key} ref={node => { sectionRefs.current[section.key] = node; }}>
+    {visibleSections.map(section => {
+      const SectionCard = !isProfileAccessConfirmed && section.key === firstSectionKey ? FirstContentCard : Card;
+      return (
+      <SectionCard key={section.key} ref={node => { sectionRefs.current[section.key] = node; }}>
         <Header>
           <div>{section.title.split(' ')[0]}</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{section.title.replace(/^\S+\s/, '')}</div>
@@ -963,8 +1017,9 @@ export const MyProfileNew = () => {
           </div>
         </Header>
         <FieldGroup>{section.fields.map(renderField)}</FieldGroup>
-      </Card>
-    ))}
+      </SectionCard>
+      );
+    })}
 
 
 
@@ -977,7 +1032,7 @@ export const MyProfileNew = () => {
     )}
 
     <SubmitWrap>
-      <SubmitBtn type="button" onClick={save}>Опублікувати анкету</SubmitBtn>
+      <SubmitBtn type="button" onClick={publishProfile}>Опублікувати анкету</SubmitBtn>
       <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>Анкету можна приховати або видалити будь-коли в налаштуваннях профілю.</p>
     </SubmitWrap>
   </Page>;
