@@ -760,6 +760,58 @@ const countLoadFilterDrop = (acc, reason) => {
   return acc;
 };
 
+const isFutureGetInTouchDate = value => {
+  const normalized = String(value ?? '').trim();
+  if (['', '2099-99-99', '9999-99-99', '99.99.2099', '99.99.9999'].includes(normalized)) return false;
+
+  const today = new Date().toISOString().split('T')[0];
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized > today;
+
+  const dottedMatch = normalized.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!dottedMatch) return false;
+
+  const [, day, month, year] = dottedMatch;
+  return `${year}-${month}-${day}` > today;
+};
+
+const removeUserIdFromQuery = (queryKey, userId) => {
+  if (!queryKey || !userId) return false;
+
+  const existingIds = getIdsByQuery(queryKey);
+  const nextIds = existingIds.filter(id => id !== userId);
+  if (nextIds.length === existingIds.length) return false;
+
+  setIdsForQuery(queryKey, nextIds);
+  return true;
+};
+
+const filterGitNewVisibleUsers = (queryKey, usersObj = {}) => {
+  const normalizedUsers = usersObj && typeof usersObj === 'object' ? usersObj : {};
+  const droppedIds = [];
+
+  const visibleUsers = Object.entries(normalizedUsers).reduce((acc, [id, user]) => {
+    const userId = user?.userId || id;
+    if (!userId) return acc;
+
+    if (isFutureGetInTouchDate(user?.getInTouch)) {
+      droppedIds.push(userId);
+      return acc;
+    }
+
+    acc[userId] = { ...user, userId };
+    return acc;
+  }, {});
+
+  if (droppedIds.length > 0) {
+    const droppedSet = new Set(droppedIds);
+    const existingIds = getIdsByQuery(queryKey);
+    const nextIds = existingIds.filter(id => !droppedSet.has(id));
+    if (nextIds.length !== existingIds.length) setIdsForQuery(queryKey, nextIds);
+  }
+
+  return { visibleUsers, droppedIds };
+};
+
 const appendGitNewUsersToQuery = (queryKey, usersObj = {}) => {
   const normalizedUsers = usersObj && typeof usersObj === 'object' ? usersObj : {};
   const existingIds = getIdsByQuery(queryKey);
@@ -1400,6 +1452,40 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
   };
 
+  const hideFutureGitNewCardAndLoadNext = submittedState => {
+    const userId = submittedState?.userId;
+    if (currentFilter !== 'GITnew' || !userId || !isFutureGetInTouchDate(submittedState.getInTouch)) {
+      return false;
+    }
+
+    const queryKey = buildQueryKey('GITnew', filters, search);
+    removeUserIdFromQuery(queryKey, userId);
+    setUsers(prevUsers => {
+      if (!prevUsers || !prevUsers[userId]) return prevUsers;
+      const { [userId]: _hiddenUser, ...restUsers } = prevUsers;
+      return restUsers;
+    });
+
+    appendLoadDebugLog('handleSubmit:gitNew-hide-future-getInTouch', {
+      queryKey,
+      userId,
+      getInTouch: submittedState.getInTouch,
+      currentPage,
+    });
+
+    ensureGitNewLoadedCount(Math.max(PAGE_SIZE, currentPage * PAGE_SIZE), filters, {
+      forceVisibleUpdate: true,
+    }).catch(error => {
+      appendLoadDebugLog('handleSubmit:gitNew-load-next-error', {
+        queryKey,
+        userId,
+        message: error?.message || String(error),
+      });
+    });
+
+    return true;
+  };
+
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
     const contacts = ['instagram', 'ameblo', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'userId'];
@@ -1446,7 +1532,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const removeKeys = delCondition ? Object.keys(delCondition) : [];
       updateCachedUser(syncedState, { removeKeys });
       cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
-      setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
+      const gitNewCardHidden = hideFutureGitNewCardAndLoadNext(syncedState);
+      if (!gitNewCardHidden) {
+        setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
+      }
 
       let existingData = null;
       if (syncedState?.userId) {
@@ -1577,7 +1666,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             cacheLoad2Users,
             filters,
           );
-          setUsers(prev => ({ ...prev, [formattedServer.userId]: formattedServer }));
+          const serverGitNewCardHidden = hideFutureGitNewCardAndLoadNext(formattedServer);
+          if (!serverGitNewCardHidden) {
+            setUsers(prev => ({ ...prev, [formattedServer.userId]: formattedServer }));
+          }
           setState(formattedServer);
         }
       } catch {
@@ -3249,26 +3341,37 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
   };
 
-  const loadMoreUsersGitNew = async (currentFilters = filters, { targetLoadedCount = PAGE_SIZE, background = false } = {}) => {
+  const loadMoreUsersGitNew = async (currentFilters = filters, { targetLoadedCount = PAGE_SIZE, background = false, forceVisibleUpdate = false } = {}) => {
     const filtersKey = serializeQueryFilters(currentFilters);
     const activeFiltersKey = () => serializeQueryFilters(filtersRef.current);
     const queryKey = buildQueryKey('GITnew', currentFilters, search);
     const requestedCount = Math.max(PAGE_SIZE, Number(targetLoadedCount) || PAGE_SIZE);
     const cachedIds = getIdsByQuery(queryKey);
     const cachedCards = cachedIds.map(id => getCard(id)).filter(Boolean);
+    const { visibleUsers: visibleCachedCards, droppedIds: droppedCachedIds } = filterGitNewVisibleUsers(
+      queryKey,
+      cachedCards.reduce((acc, user) => {
+        if (user?.userId) acc[user.userId] = user;
+        return acc;
+      }, {}),
+    );
+    const visibleCachedUsers = Object.values(visibleCachedCards);
 
-    if (cachedCards.length >= requestedCount || (!hasMore && cachedCards.length > 0)) {
-      const cachedUsers = cachedCards.slice(0, requestedCount).reduce((acc, user) => {
+    if (visibleCachedUsers.length >= requestedCount || (!hasMore && visibleCachedUsers.length > 0)) {
+      const cachedUsers = visibleCachedUsers.slice(0, requestedCount).reduce((acc, user) => {
         acc[user.userId] = user;
         return acc;
       }, {});
-      if (!isEditingRef.current) setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
+      if (!isEditingRef.current || forceVisibleUpdate) setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       appendLoadDebugLog('loadMoreUsersGitNew:query-cache-hit', {
         queryKey,
         cachedIdsCount: cachedIds.length,
         cachedCardsCount: cachedCards.length,
+        visibleCachedCardsCount: visibleCachedUsers.length,
+        droppedFutureGetInTouchCount: droppedCachedIds.length,
         requestedCount,
         hasMore,
+        forceVisibleUpdate,
       });
       return {
         cacheCount: Object.keys(cachedUsers).length,
@@ -3282,8 +3385,28 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         queryKey,
         requestedCount,
         cachedIdsCount: cachedIds.length,
+        forceVisibleUpdate,
       });
-      return gitNewPendingLoadsRef.current[queryKey];
+
+      if (!forceVisibleUpdate) return gitNewPendingLoadsRef.current[queryKey];
+
+      return gitNewPendingLoadsRef.current[queryKey].then(result => {
+        const pendingIds = getIdsByQuery(queryKey);
+        const pendingCards = pendingIds.map(id => getCard(id)).filter(Boolean);
+        const { visibleUsers } = filterGitNewVisibleUsers(
+          queryKey,
+          pendingCards.reduce((acc, user) => {
+            if (user?.userId) acc[user.userId] = user;
+            return acc;
+          }, {}),
+        );
+        const visibleSlice = Object.values(visibleUsers).slice(0, requestedCount).reduce((acc, user) => {
+          acc[user.userId] = user;
+          return acc;
+        }, {});
+        setUsers(prev => mergeWithoutOverwrite(prev, visibleSlice));
+        return result;
+      });
     }
 
     const cursor = lastKey21 ?? dateOffset21;
@@ -3294,6 +3417,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       limit: PAGE_SIZE,
       requestedCount,
       background,
+      forceVisibleUpdate,
       cachedIdsCount: beforeIds.length,
       filters: summarizeLoadFiltersForLog(currentFilters),
     });
@@ -3308,15 +3432,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       onProgress: partialUsers => {
         if (filtersKey !== activeFiltersKey()) return;
         const normalizedPartialUsers = appendGitNewUsersToQuery(queryKey, partialUsers);
-        cacheFetchedUsers(normalizedPartialUsers, cacheLoad2Users, currentFilters);
-        if (!isEditingRef.current) {
-          setUsers(prev => mergeWithoutOverwrite(prev, normalizedPartialUsers));
+        const { visibleUsers: visiblePartialUsers, droppedIds: droppedPartialIds } = filterGitNewVisibleUsers(
+          queryKey,
+          normalizedPartialUsers,
+        );
+        cacheFetchedUsers(visiblePartialUsers, cacheLoad2Users, currentFilters);
+        if (!isEditingRef.current || forceVisibleUpdate) {
+          setUsers(prev => mergeWithoutOverwrite(prev, visiblePartialUsers));
         }
         appendLoadDebugLog('loadMoreUsersGitNew:progress', {
           queryKey,
-          partialCount: countObjectKeys(normalizedPartialUsers),
+          partialCount: countObjectKeys(visiblePartialUsers),
+          droppedFutureGetInTouchCount: droppedPartialIds.length,
           queryIdsCount: getIdsByQuery(queryKey).length,
           requestedCount,
+          forceVisibleUpdate,
         });
       },
     })
@@ -3326,8 +3456,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
 
         const normalizedUsers = appendGitNewUsersToQuery(queryKey, res?.users || {});
-        cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
-        if (!isEditingRef.current) setUsers(prev => mergeWithoutOverwrite(prev, normalizedUsers));
+        const { visibleUsers, droppedIds } = filterGitNewVisibleUsers(queryKey, normalizedUsers);
+        cacheFetchedUsers(visibleUsers, cacheLoad2Users, currentFilters);
+        if (!isEditingRef.current || forceVisibleUpdate) setUsers(prev => mergeWithoutOverwrite(prev, visibleUsers));
 
         const afterIds = getIdsByQuery(queryKey);
         const backendCount = Math.max(0, afterIds.length - beforeIds.length);
@@ -3337,12 +3468,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         appendLoadDebugLog('loadMoreUsersGitNew:result', {
           queryKey,
           backendCount,
-          usersCount: countObjectKeys(normalizedUsers),
+          usersCount: countObjectKeys(visibleUsers),
+          droppedFutureGetInTouchCount: droppedIds.length,
           queryIdsCount: afterIds.length,
           loadedIdsCount: Array.isArray(res?.loadedIds) ? res.loadedIds.length : 0,
           nextCursor: res?.lastKey ?? null,
           hasMore: Boolean(res?.hasMore),
           background,
+          forceVisibleUpdate,
         });
         return { cacheCount: 0, backendCount, hasMore: Boolean(res?.hasMore) };
       })
@@ -4102,15 +4235,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const getGitNewQueryCardsCount = (currentFilters = filters) => {
     const queryKey = buildQueryKey('GITnew', currentFilters, search);
-    return getIdsByQuery(queryKey).map(id => getCard(id)).filter(Boolean).length;
+    const cards = getIdsByQuery(queryKey).map(id => getCard(id)).filter(Boolean);
+    const { visibleUsers } = filterGitNewVisibleUsers(
+      queryKey,
+      cards.reduce((acc, user) => {
+        if (user?.userId) acc[user.userId] = user;
+        return acc;
+      }, {}),
+    );
+
+    return Object.keys(visibleUsers).length;
   };
 
-  const ensureGitNewLoadedCount = async (needed, currentFilters = filters) => {
+  const ensureGitNewLoadedCount = async (needed, currentFilters = filters, options = {}) => {
     let more = hasMore;
     let previousCardsCount = getGitNewQueryCardsCount(currentFilters);
 
     while (more && previousCardsCount < needed) {
-      const result = await loadMoreUsersGitNew(currentFilters, { targetLoadedCount: needed, background: true });
+      const result = await loadMoreUsersGitNew(currentFilters, { targetLoadedCount: needed, background: true, ...options });
       if (result?.ignored) return result;
 
       const nextCardsCount = getGitNewQueryCardsCount(currentFilters);
