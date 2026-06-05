@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { useNavigate } from 'react-router-dom';
 import { FiX } from 'react-icons/fi';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
-import styled, { keyframes } from 'styled-components';
+import styled, { css, keyframes } from 'styled-components';
 import {
   auth,
   fetchUserData,
@@ -186,7 +186,7 @@ const StatusBadge = styled.button`
 `;
 const HighlightableLabel = styled(Label)`
   display: inline-block;
-  ${({ $active }) => $active && `
+  ${({ $active }) => $active && css`
     color: var(--accent);
     animation: ${hintPulse} .45s ease-in-out;
   `}
@@ -233,7 +233,7 @@ const TermsRow = styled.div`
   gap: 10px;
   padding: 14px 0;
   border-radius: 12px;
-  ${({ $missing, $active }) => ($missing || $active) && `
+  ${({ $missing, $active }) => ($missing || $active) && css`
     margin: 8px 0;
     padding: 14px 12px;
     background: rgba(221, 68, 68, .06);
@@ -267,7 +267,7 @@ const TermsButton = styled.button`
 `;
 const AuthActionButton = styled(SubmitBtn)`
   margin: 4px 0 20px;
-  ${({ $active }) => $active && `
+  ${({ $active }) => $active && css`
     animation: ${hintPulse} .45s ease-in-out;
     box-shadow: 0 0 0 4px rgba(232, 121, 26, .16);
   `}
