@@ -282,24 +282,40 @@ const baseSections = [
 ];
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','vk','country','region','city','moreInfo_main']);
+const MY_PROFILE_DRAFT_STORAGE_KEY = 'myProfileDraft';
 
+const readMyProfileDraft = () => {
+  const savedDraft = localStorage.getItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+  if (!savedDraft) return null;
+
+  try {
+    const parsedDraft = JSON.parse(savedDraft);
+    if (!parsedDraft || typeof parsedDraft !== 'object' || Array.isArray(parsedDraft)) {
+      return null;
+    }
+
+    const { password: _password, userId: _userId, publish: _publish, ...draftFields } = parsedDraft;
+    return { ...draftFields, password: '' };
+  } catch (error) {
+    console.warn('Failed to load MyProfileNew draft.', error);
+    localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+    return null;
+  }
+};
+
+const buildMyProfileDraft = profileState => {
+  const { password: _password, userId: _userId, publish: _publish, ...draftState } = profileState || {};
+  return draftState;
+};
+
+const getStoredAuthenticatedOwnerId = () => (
+  localStorage.getItem('isLoggedIn') === 'true' ? localStorage.getItem('ownerId') || '' : ''
+);
 
 export const MyProfileNew = () => {
-  const [state, setState] = useState(() => {
-    const savedDraft = localStorage.getItem('myProfileDraft');
-    if (!savedDraft) return {};
-
-    try {
-      const parsedDraft = JSON.parse(savedDraft);
-      return { ...parsedDraft, password: '' };
-    } catch (error) {
-      console.warn('Failed to load MyProfileNew draft.', error);
-      localStorage.removeItem('myProfileDraft');
-      return {};
-    }
-  });
+  const [state, setState] = useState(() => readMyProfileDraft() || {});
   const navigate = useNavigate();
-  const currentUid = auth.currentUser?.uid || localStorage.getItem('ownerId') || '';
+  const currentUid = auth.currentUser?.uid || getStoredAuthenticatedOwnerId();
   const access = resolveAccess({ uid: currentUid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
   const isAdmin = access.isAdmin;
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -327,24 +343,10 @@ export const MyProfileNew = () => {
     stateRef.current = state;
   }, [state]);
 
-  const readLocalDraft = useCallback(() => {
-    const savedDraft = localStorage.getItem('myProfileDraft');
-    if (!savedDraft) return null;
-
-    try {
-      const parsedDraft = JSON.parse(savedDraft);
-      return { ...parsedDraft, password: '' };
-    } catch (error) {
-      console.warn('Failed to load MyProfileNew draft.', error);
-      localStorage.removeItem('myProfileDraft');
-      return null;
-    }
-  }, []);
-
   const restoreLocalDraft = useCallback(() => {
     if (userId || stateRef.current.userId) return;
 
-    const localDraft = readLocalDraft();
+    const localDraft = readMyProfileDraft();
     if (!localDraft) return;
 
     setState(prevState => {
@@ -353,7 +355,7 @@ export const MyProfileNew = () => {
       stateRef.current = nextState;
       return nextState;
     });
-  }, [readLocalDraft, userId]);
+  }, [userId]);
 
   useEffect(() => {
     restoreLocalDraft();
@@ -384,8 +386,7 @@ export const MyProfileNew = () => {
   useEffect(() => {
     if (userId || state.userId) return;
 
-    const { password: _password, ...draftState } = state;
-    localStorage.setItem('myProfileDraft', JSON.stringify(draftState));
+    localStorage.setItem(MY_PROFILE_DRAFT_STORAGE_KEY, JSON.stringify(buildMyProfileDraft(state)));
   }, [state, userId]);
 
   useEffect(() => () => {
@@ -488,13 +489,15 @@ export const MyProfileNew = () => {
     let isMounted = true;
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      const uid = user?.uid || localStorage.getItem('ownerId') || '';
-      if (!uid) {
+      if (!user?.uid) {
+        localStorage.removeItem('isLoggedIn');
+        localStorage.removeItem('ownerId');
         setUserId('');
         restoreLocalDraft();
         return;
       }
 
+      const uid = user.uid;
       latestFetchUidRef.current = uid;
       setUserId(uid);
 
@@ -761,7 +764,7 @@ export const MyProfileNew = () => {
       localStorage.setItem('isLoggedIn', 'true');
       localStorage.setItem('userEmail', normalizedEmail);
       localStorage.setItem('ownerId', userCredential.user.uid);
-      localStorage.removeItem('myProfileDraft');
+      localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
 
       setHasAgreed(true);
       setUserId(userCredential.user.uid);
@@ -866,7 +869,7 @@ export const MyProfileNew = () => {
 
     try {
       await saveState(nextState, { directFields: ['publish'] });
-      localStorage.removeItem('myProfileDraft');
+      localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
       toast.success('Анкету опубліковано');
     } catch (error) {
       console.error('publish error', error);
