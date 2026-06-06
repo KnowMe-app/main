@@ -828,6 +828,7 @@ const PROFILE_RESTORE_LOG_PREFIX = '[ProfileRestore]';
 const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
 const LOAD_DEBUG_LOG_PREFIX = '[AddNewProfileLoad]';
 const CONTACT_EXPORT_LOG_PREFIX = '[ContactsExport]';
+const CONTACT_EXPORT_DEBUG_USER_ID = '-Ots_t0kim8mWxe7BT_P';
 const LOAD_DEBUG_LOG_MAX_ENTRIES = 1000;
 
 const countObjectKeys = value =>
@@ -4459,13 +4460,45 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (!loadedUsers) return null;
 
     const loadedEntries = Object.entries(loadedUsers);
+    const targetExportDecision = {
+      userId: CONTACT_EXPORT_DEBUG_USER_ID,
+      seenInSource: false,
+      filterDecision: null,
+    };
     const filteredEntries = filterMain(
       loadedEntries,
       undefined,
       filtersToApply || {},
       favoriteUsersMap,
       dislikeUsersData,
+      {
+        debugUserId: CONTACT_EXPORT_DEBUG_USER_ID,
+        debugLog: (step, payload = {}) => {
+          if (payload.userId !== CONTACT_EXPORT_DEBUG_USER_ID) return;
+          const getPassed = filterName => (
+            payload.reasons && Object.prototype.hasOwnProperty.call(payload.reasons, filterName)
+              ? payload.reasons[filterName].passed
+              : null
+          );
+
+          targetExportDecision.seenInSource = true;
+          targetExportDecision.filterDecision = {
+            step,
+            userId: payload.userId,
+            role: payload.role,
+            userRole: payload.userRole,
+            passedRoleFilter: getPassed('role') ?? getPassed('userRole'),
+            passedContactFilter: getPassed('contact'),
+            passedUserIdFilter: getPassed('userId'),
+            reasons: payload.reasons || {},
+          };
+        },
+      },
     );
+    const includedTargetEntry = filteredEntries.find(
+      ([id, user]) => id === CONTACT_EXPORT_DEBUG_USER_ID || user?.userId === CONTACT_EXPORT_DEBUG_USER_ID
+    );
+    targetExportDecision.includedInExport = Boolean(includedTargetEntry);
 
     const debugInfo = {
       source,
@@ -4475,6 +4508,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       truncatedTo5000: false,
       filesWillBeSplit: filteredEntries.length > 5000,
       filters: filtersToApply || {},
+      targetExportDecision,
     };
 
     console.log(CONTACT_EXPORT_LOG_PREFIX, debugInfo);

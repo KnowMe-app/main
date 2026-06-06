@@ -5703,19 +5703,17 @@ const filterByUserIdLength = userId => {
 
 const categorizeCsection = val => normalizeCsectionIndexValue(val);
 
+const normalizeSingleFilterValue = value => String(value ?? '').trim().toLowerCase();
+
 const getRoleCategory = value => {
-  const role = (value.role || value.userRole || '').toString().trim().toLowerCase();
-  if (!role) return 'other';
-  if (['ed'].includes(role)) return 'ed';
-  if (['sm'].includes(role)) return 'sm';
-  if (role === 'ag') return 'ag';
-  if (role === 'ip') return 'ip';
-  if (role === 'cl') return 'cl';
+  const role = normalizeSingleFilterValue(value.role || value.userRole);
+  if (!role) return 'empty';
+  if (['ed', 'sm', 'ag', 'ip', 'pp', 'cl'].includes(role)) return role;
   return 'other';
 };
 
 const getUserRoleCategory = value => {
-  const role = (value.userRole || '').toString().trim().toLowerCase();
+  const role = normalizeSingleFilterValue(value.userRole);
   if (!role) return 'other';
   if (role === 'ed') return 'ed';
   if (role === 'ag') return 'ag';
@@ -5724,21 +5722,22 @@ const getUserRoleCategory = value => {
 };
 
 const getMaritalStatusCategory = value => {
-  if (!value.maritalStatus || typeof value.maritalStatus !== 'string') return 'other';
-  const m = value.maritalStatus.trim().toLowerCase();
+  const m = normalizeSingleFilterValue(value.maritalStatus);
+  if (!m) return 'empty';
   if (['yes', 'так', '+', 'married', 'одружена', 'заміжня'].includes(m)) return 'married';
   if (['no', 'ні', '-', 'unmarried', 'single', 'незаміжня'].includes(m)) return 'unmarried';
   return 'other';
 };
 
 const getBloodGroupCategory = value => {
-  const b = (value.blood || '').toString().trim().toLowerCase().replace(/\s+/g, '');
+  const b = normalizeSingleFilterValue(value.blood).replace(/\s+/g, '');
+  if (!b) return 'empty';
   if (/^[1234]/.test(b)) return b[0];
   return 'other';
 };
 
 const getRhCategory = value => {
-  const b = (value.blood || '').toString().trim().toLowerCase().replace(/\s+/g, '');
+  const b = normalizeSingleFilterValue(value.blood).replace(/\s+/g, '');
   if (b.endsWith('+') || b === '+') return '+';
   if (b.endsWith('-') || b === '-') return '-';
   if (/^[1-4]$/.test(b)) return 'empty';
@@ -5747,9 +5746,10 @@ const getRhCategory = value => {
 };
 
 const getAgeCategory = value => {
-  if (!value.birth || typeof value.birth !== 'string') return 'other';
+  if (!value.birth || typeof value.birth !== 'string' || !value.birth.trim()) return 'empty';
   const birthParts = value.birth.split('.');
   const birthYear = parseInt(birthParts[2], 10);
+  if (!Number.isFinite(birthYear)) return 'other';
   const currentYear = new Date().getFullYear();
   const age = currentYear - birthYear;
   if (age <= 25) return 'le25';
@@ -5824,12 +5824,10 @@ const getImtCategory = value => {
 };
 
 const getHeightCategory = value => {
-  const parsedHeight = Number.parseFloat(
-    String(value?.height ?? '')
-      .trim()
-      .replace(',', '.')
-  );
-  return getHeightFilterBucket(parsedHeight);
+  const rawHeight = String(value?.height ?? '').trim();
+  if (!rawHeight) return 'no';
+  const parsedHeight = Number.parseFloat(rawHeight.replace(',', '.'));
+  return getHeightFilterBucket(parsedHeight) || 'other';
 };
 
 const getCountryCategory = value => {
@@ -5847,6 +5845,7 @@ const getUserIdCategory = userId => {
   if (id.startsWith('vk')) return 'vk';
   if (id.startsWith('aa')) return 'aa';
   if (id.startsWith('ab')) return 'ab';
+  if (id.startsWith('id')) return 'id';
   if (id.length > 20) return 'long';
   if (id.length > 8 && id.length <= 20) return 'mid';
   return 'other';
@@ -5956,6 +5955,7 @@ export const filterMain = (
 
   const filteredUsers = usersData.filter(([key, value]) => {
     const userId = value.userId || key;
+    const shouldDebugUser = Boolean(debugLog && (!options?.debugUserId || options.debugUserId === userId));
     const reasons = {};
     const addCheck = (name, passed, userValue, expected) => {
       const p = Boolean(passed);
@@ -5968,37 +5968,37 @@ export const filterMain = (
     };
 
     if (filterForload === 'ED') {
-      if (!addCheck('edUserRole', filterByUserRole(value), value.userRole || value.role || null, 'not ag/ip/Конкурент/Агент') && !debugLog) return false;
-      if (!addCheck('edUserIdLength', filterByUserIdLength(userId), userId, '<= 25') && !debugLog) return false;
-      if (!addCheck('edAge', filterByAge(value, 30), value.birth || null, '<= 30') && !debugLog) return false;
+      if (!addCheck('edUserRole', filterByUserRole(value), value.userRole || value.role || null, 'not ag/ip/Конкурент/Агент') && !shouldDebugUser) return false;
+      if (!addCheck('edUserIdLength', filterByUserIdLength(userId), userId, '<= 25') && !shouldDebugUser) return false;
+      if (!addCheck('edAge', filterByAge(value, 30), value.birth || null, '<= 30') && !shouldDebugUser) return false;
     }
 
     if (hasCsectionFilter) {
       const cat = categorizeCsection(value.csection);
-      if (!addCheck('csection', filterSettings.csection[cat], cat, getExpectedFilterKeys(filterSettings.csection)) && !debugLog) return false;
+      if (!addCheck('csection', filterSettings.csection[cat], cat, getExpectedFilterKeys(filterSettings.csection)) && !shouldDebugUser) return false;
     }
 
     if (hasUserRoleFilter) {
       const cat = getUserRoleCategory(value);
-      if (!addCheck('userRole', filterSettings.userRole[cat], cat, getExpectedFilterKeys(filterSettings.userRole)) && !debugLog) return false;
+      if (!addCheck('userRole', filterSettings.userRole[cat], cat, getExpectedFilterKeys(filterSettings.userRole)) && !shouldDebugUser) return false;
     } else if (hasRoleFilter) {
       const cat = getRoleCategory(value);
-      if (!addCheck('role', filterSettings.role[cat], cat, getExpectedFilterKeys(filterSettings.role)) && !debugLog) return false;
+      if (!addCheck('role', filterSettings.role[cat], cat, getExpectedFilterKeys(filterSettings.role)) && !shouldDebugUser) return false;
     }
 
     if (hasMaritalStatusFilter) {
       const cat = getMaritalStatusCategory(value);
-      if (!addCheck('maritalStatus', filterSettings.maritalStatus[cat], value.maritalStatus ?? null, getExpectedFilterKeys(filterSettings.maritalStatus)) && !debugLog) return false;
+      if (!addCheck('maritalStatus', filterSettings.maritalStatus[cat], value.maritalStatus ?? null, getExpectedFilterKeys(filterSettings.maritalStatus)) && !shouldDebugUser) return false;
     }
 
     if (hasBloodGroupFilter) {
       const cat = getBloodGroupCategory(value);
-      if (!addCheck('blood', filterSettings.bloodGroup[cat], value.blood ?? null, getExpectedFilterKeys(filterSettings.bloodGroup)) && !debugLog) return false;
+      if (!addCheck('blood', filterSettings.bloodGroup[cat], value.blood ?? null, getExpectedFilterKeys(filterSettings.bloodGroup)) && !shouldDebugUser) return false;
     }
 
     if (hasRhFilter) {
       const cat = getRhCategory(value);
-      if (!addCheck('rh', filterSettings.rh[cat], cat, getExpectedFilterKeys(filterSettings.rh)) && !debugLog) return false;
+      if (!addCheck('rh', filterSettings.rh[cat], cat, getExpectedFilterKeys(filterSettings.rh)) && !shouldDebugUser) return false;
     }
 
     if (hasAgeFilter) {
@@ -6006,13 +6006,14 @@ export const filterMain = (
       const filterCat = Object.prototype.hasOwnProperty.call(filterSettings.age, '37_plus') && (cat === '37_42' || cat === '43_plus')
         ? '37_plus'
         : cat;
-      if (!addCheck('age', filterSettings.age[filterCat], cat, getExpectedFilterKeys(filterSettings.age)) && !debugLog) return false;
+      if (!addCheck('age', filterSettings.age[filterCat], cat, getExpectedFilterKeys(filterSettings.age)) && !shouldDebugUser) return false;
     }
 
     if (hasContactFilter) {
       const contactMap = {
         vk: hasContactValue(value.vk),
         instagram: hasContactValue(value.instagram),
+        ameblo: hasContactValue(value.ameblo),
         facebook: hasContactValue(value.facebook),
         phone: hasContactValue(value.phone),
         telegram: hasTelegramNonUk(value.telegram),
@@ -6025,64 +6026,69 @@ export const filterMain = (
         line: hasContactValue(value.line),
         otherLink: hasContactValue(value.otherLink),
       };
-      if (!addCheck('contact', allowedContacts.some(contactKey => contactMap[contactKey]), contactMap, allowedContacts) && !debugLog) return false;
+      if (!addCheck('contact', allowedContacts.some(contactKey => contactMap[contactKey]), contactMap, allowedContacts) && !shouldDebugUser) return false;
     }
 
     if (hasBmiFilter) {
       const cat = getBmiCategory(value);
-      if (!addCheck('bmi', filterSettings.bmi[cat], cat, getExpectedFilterKeys(filterSettings.bmi)) && !debugLog) return false;
+      if (!addCheck('bmi', filterSettings.bmi[cat], cat, getExpectedFilterKeys(filterSettings.bmi)) && !shouldDebugUser) return false;
     }
 
     if (hasImtFilter) {
       const cat = getImtCategory(value);
-      if (!addCheck('imt', filterSettings.imt[cat], cat, getExpectedFilterKeys(filterSettings.imt)) && !debugLog) return false;
+      if (!addCheck('imt', filterSettings.imt[cat], cat, getExpectedFilterKeys(filterSettings.imt)) && !shouldDebugUser) return false;
     }
 
     if (hasHeightFilter) {
       const cat = getHeightCategory(value);
-      if (!addCheck('height', filterSettings.height[cat], cat, getExpectedFilterKeys(filterSettings.height)) && !debugLog) return false;
+      if (!addCheck('height', filterSettings.height[cat], cat, getExpectedFilterKeys(filterSettings.height)) && !shouldDebugUser) return false;
     }
 
     if (hasCountryFilter) {
       const cat = getCountryCategory(value);
-      if (!addCheck('country', filterSettings.country[cat], value.country ?? null, getExpectedFilterKeys(filterSettings.country)) && !debugLog) return false;
+      if (!addCheck('country', filterSettings.country[cat], value.country ?? null, getExpectedFilterKeys(filterSettings.country)) && !shouldDebugUser) return false;
     }
 
     if (hasUserIdFilter) {
       const cat = getUserIdCategory(userId);
-      if (!addCheck('userId', filterSettings.userId[cat], cat, getExpectedFilterKeys(filterSettings.userId)) && !debugLog) return false;
+      if (!addCheck('userId', filterSettings.userId[cat], cat, getExpectedFilterKeys(filterSettings.userId)) && !shouldDebugUser) return false;
     }
 
     if (hasFieldsFilter) {
       const cat = getFieldCountCategory(value);
-      if (!addCheck('fields', filterSettings.fields[cat], cat, getExpectedFilterKeys(filterSettings.fields)) && !debugLog) return false;
+      if (!addCheck('fields', filterSettings.fields[cat], cat, getExpectedFilterKeys(filterSettings.fields)) && !shouldDebugUser) return false;
     }
 
     if (hasCommentLengthFilter) {
       const cat = getCommentLengthCategory(value.myComment);
-      if (!addCheck('commentLength', filterSettings.commentLength[cat], cat, getExpectedFilterKeys(filterSettings.commentLength)) && !debugLog) return false;
+      if (!addCheck('commentLength', filterSettings.commentLength[cat], cat, getExpectedFilterKeys(filterSettings.commentLength)) && !shouldDebugUser) return false;
     }
 
     if (hasLastActionFilter) {
-      if (!addCheck('lastAction', isLastActionAllowedByFilters(value.lastAction, filterSettings.lastAction), value.lastAction ?? null, getExpectedFilterKeys(filterSettings.lastAction)) && !debugLog) return false;
+      if (!addCheck('lastAction', isLastActionAllowedByFilters(value.lastAction, filterSettings.lastAction), value.lastAction ?? null, getExpectedFilterKeys(filterSettings.lastAction)) && !shouldDebugUser) return false;
     }
 
     if (isFavoriteOnlyFilter) {
-      if (!addCheck('favorite', isFavoriteUser(userId, favoriteUsers), isFavoriteUser(userId, favoriteUsers), true) && !debugLog) return false;
+      if (!addCheck('favorite', isFavoriteUser(userId, favoriteUsers), isFavoriteUser(userId, favoriteUsers), true) && !shouldDebugUser) return false;
     }
 
     if (requireCurrentOrPastGetInTouch) {
-      if (!addCheck('getInTouch', isGetInTouchDateOnOrBeforeToday(value.getInTouch), value.getInTouch ?? null, '<= today') && !debugLog) return false;
+      if (!addCheck('getInTouch', isGetInTouchDateOnOrBeforeToday(value.getInTouch), value.getInTouch ?? null, '<= today') && !shouldDebugUser) return false;
     }
 
     if (hasReactionFilter) {
       const reactionCategory = getReactionCategory(value, favoriteUsers, dislikedUsers);
-      if (!addCheck('reaction', filterSettings.reaction[reactionCategory], reactionCategory, getExpectedFilterKeys(filterSettings.reaction)) && !debugLog) return false;
+      if (!addCheck('reaction', filterSettings.reaction[reactionCategory], reactionCategory, getExpectedFilterKeys(filterSettings.reaction)) && !shouldDebugUser) return false;
     }
 
     const passed = Object.values(reasons).every(reason => reason.passed);
-    if (debugLog) {
-      debugLog(passed ? 'filterMain:accept' : 'filterMain:reject', passed ? { userId } : { userId, reasons });
+    if (shouldDebugUser) {
+      debugLog(passed ? 'filterMain:accept' : 'filterMain:reject', {
+        userId,
+        role: value.role ?? null,
+        userRole: value.userRole ?? null,
+        reasons,
+      });
     }
     return passed;
   });
