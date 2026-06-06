@@ -394,6 +394,50 @@ const SEARCH_ID_PREFIX_KEYS = [...SEARCH_ID_INDEXED_FIELDS];
 
 const SEARCH_ID_SCOPED_PLATFORMS = new Set(SEARCH_ID_PREFIX_KEYS);
 
+const CONTACT_SEARCH_LABEL_KEYS = new Set([
+  'instagram',
+  'ameblo',
+  'facebook',
+  'telegram',
+  'email',
+  'tiktok',
+  'linkedin',
+  'youtube',
+  'twitter',
+  'line',
+  'otherLink',
+  'phone',
+  'vk',
+  'other',
+]);
+
+const WEAK_FALLBACK_SEARCH_LABEL_KEYS = new Set(['name', 'surname']);
+
+const getFirstSearchParamKey = params => {
+  if (!params || typeof params !== 'object') return null;
+  return Object.keys(params).find(key => {
+    const value = params[key];
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== undefined && value !== null && String(value).trim() !== '';
+  }) || null;
+};
+
+const resolveSearchParamValue = (params, key) => {
+  if (!params || !key) return '';
+  const value = params[key];
+  return Array.isArray(value) ? String(value[0] || '').trim() : String(value || '').trim();
+};
+
+const resolveSearchLabelKey = label => label?.key || getFirstSearchParamKey(label?.params);
+
+const resolveDetectedContactParams = rawSearch => {
+  const trimmed = String(rawSearch || '').trim();
+  if (!trimmed) return null;
+
+  const detectedParams = detectSearchParams(trimmed);
+  return CONTACT_SEARCH_LABEL_KEYS.has(detectedParams?.key) ? detectedParams : null;
+};
+
 const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
   const configuredPrefixes = Array.isArray(searchOptions?.searchIdPrefixes)
     ? [...new Set(
@@ -762,6 +806,11 @@ const SearchBar = ({
 
 
   const repeatedSearchCollectorRef = useRef(null);
+  const lastEmittedSearchLabelRef = useRef(null);
+
+  useEffect(() => {
+    lastEmittedSearchLabelRef.current = null;
+  }, [search]);
 
   const collectSearchOutput = (output, requestId = null) => {
     const collector = repeatedSearchCollectorRef.current;
@@ -936,6 +985,21 @@ const SearchBar = ({
     // must not replace the parent add payload.
     if (repeatedSearchCollectorRef.current) return;
 
+    const nextKey = getFirstSearchParamKey(params);
+    const detectedContactParams = resolveDetectedContactParams(search);
+    const previousKey = resolveSearchLabelKey(lastEmittedSearchLabelRef.current);
+    const nextValue = resolveSearchParamValue(params, nextKey);
+    const rawSearch = String(search || '').trim();
+    const isWeakEqualToFallbackForContact =
+      meta?.mode === 'equalToAllCards' &&
+      WEAK_FALLBACK_SEARCH_LABEL_KEYS.has(nextKey) &&
+      CONTACT_SEARCH_LABEL_KEYS.has(detectedContactParams?.key) &&
+      (previousKey === 'searchId' || previousKey === detectedContactParams.key) &&
+      nextValue === rawSearch;
+
+    if (isWeakEqualToFallbackForContact) return;
+
+    lastEmittedSearchLabelRef.current = { params, key: nextKey };
     onSearchKey && onSearchKey(params);
   };
 

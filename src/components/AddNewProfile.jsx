@@ -144,7 +144,6 @@ const onValue = wrapAdminOnValue(firebaseOnValue, {
   source: 'AddNewProfile',
 });
 
-
 const getLocalStorageCardsDebugSnapshot = () => {
   if (typeof localStorage === 'undefined') return {};
   try {
