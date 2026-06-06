@@ -62,7 +62,8 @@ const StickyHeader = styled.div`
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
 `;
 const FALLBACK_STICKY_HEADER_OFFSET = 112;
-const STICKY_HEADER_EXTRA_GAP = 8;
+const CONTENT_SECTION_TOP_GAP = 18;
+const STICKY_HEADER_EXTRA_GAP = CONTENT_SECTION_TOP_GAP;
 const SCROLL_ACTIVE_SECTION_GAP = 16;
 const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
 const ProgressWrap = styled.div`padding: 16px 20px 0;`;
@@ -81,7 +82,7 @@ const Card = styled.div`
   overflow: hidden;
   scroll-margin-top: var(--sticky-header-offset);
 `;
-const FirstContentCard = styled(Card)`margin-top: 18px;`;
+const FirstContentCard = styled(Card)`margin-top: ${CONTENT_SECTION_TOP_GAP}px;`;
 const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
 const FieldGroup = styled.div`padding:0 18px;`;
 const Field = styled.div`padding:14px 0;border-bottom:1px solid var(--border); &:last-child{border-bottom:none;}`;
@@ -152,7 +153,7 @@ const PhotoSection = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin: 0 20px 20px;
+  margin: ${({ $isFirstContent }) => ($isFirstContent ? `${CONTENT_SECTION_TOP_GAP}px` : '0')} 20px 20px;
   padding: 18px;
   background: var(--card);
   border-radius: var(--radius);
@@ -1208,7 +1209,7 @@ export const MyProfileNew = () => {
       </FieldGroup>
     </AuthCard>}
 
-    <PhotoSection ref={node => { sectionRefs.current.photo = node; }}>
+    <PhotoSection ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото. Перше — головне</p>
       <Photos
         state={{ ...state, userId }}
