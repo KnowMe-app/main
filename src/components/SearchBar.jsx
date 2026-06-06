@@ -1645,9 +1645,17 @@ const SearchBar = ({
       })
     ) return;
 
+    const shouldContinueAfterSearchIdMiss =
+      isSearchEnabled('equalToAllCards') || isSearchEnabled('searchKey');
+
     if (
       isSearchEnabled('searchId') &&
-      await processUserSearch('searchId', parseSearchIdExact, rawQuery, { requestId })
+      await processUserSearch('searchId', parseSearchIdExact, rawQuery, {
+        // Якщо користувач випадково лишив searchId увімкненим, miss не має
+        // блокувати інші явно вибрані джерела пошуку, зокрема equalTo lastAction.
+        continueOnMiss: shouldContinueAfterSearchIdMiss,
+        requestId,
+      })
     ) return;
 
     if (isSearchEnabled('searchKey')) {
