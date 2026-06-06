@@ -153,10 +153,49 @@ const isMarried = value => {
   return ['yes', 'так', '+', 'married', 'одружена', 'заміжня', 'замужем'].includes(normalized);
 };
 
+const normalizeNumericValue = value => {
+  if (Array.isArray(value)) {
+    const parsed = value.map(normalizeNumericValue).find(number => Number.isFinite(number));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  const normalized = String(value ?? '')
+    .trim()
+    .replace(',', '.')
+    .match(/\d+(?:\.\d+)?/);
+
+  if (!normalized) return null;
+
+  const number = Number.parseFloat(normalized[0]);
+  return Number.isFinite(number) ? number : null;
+};
+
+const calculateImt = user => {
+  const directImt = normalizeNumericValue(user.imt ?? user.bmi);
+  if (Number.isFinite(directImt)) return directImt;
+
+  const height = normalizeNumericValue(user.height);
+  const weight = normalizeNumericValue(user.weight);
+  if (!height || !weight) return null;
+
+  const heightInMeters = height > 3 ? height / 100 : height;
+  if (heightInMeters <= 0) return null;
+
+  const imt = weight / (heightInMeters * heightInMeters);
+  return Number.isFinite(imt) ? imt : null;
+};
+
+const getImtMarker = user => {
+  const imt = calculateImt(user);
+  if (!Number.isFinite(imt) || imt <= 28) return '';
+  return `імт${imt.toFixed(1)}`;
+};
+
 const getContactNameMarkers = user => [
   calculateAge(user.birth),
   hasNegativeRh(user.blood) ? 'рк-' : '',
   getCsectionMarker(user.csection),
+  getImtMarker(user),
   isMarried(user.maritalStatus) ? 'заміжня' : '',
 ].filter(Boolean);
 
@@ -168,11 +207,13 @@ const getContactName = user => {
 
   const names = Array.isArray(user.name) ? user.name : [user.name];
   const surnames = Array.isArray(user.surname) ? user.surname : [user.surname];
+  const fathersNames = Array.isArray(user.fathersname) ? user.fathersname : [user.fathersname];
 
   const fullNameParts = [
     ...cleanedNameParts(names),
-    ...cleanedNameParts(surnames),
     ...getContactNameMarkers(user),
+    ...cleanedNameParts(surnames),
+    ...cleanedNameParts(fathersNames),
   ];
   const fullName = fullNameParts.join(' ').trim();
 
