@@ -1253,6 +1253,7 @@ const SearchBar = ({
       allowFallback = true,
       allowUkTrigger = false,
       continueOnMiss = false,
+      deferNotFoundOnMiss = false,
       requestId = null,
     } = options;
 
@@ -1456,7 +1457,9 @@ const SearchBar = ({
             source: 'other-fallback-default',
           });
         }
-        applyUserNotFound(true, requestId);
+        if (!deferNotFoundOnMiss) {
+          applyUserNotFound(true, requestId);
+        }
         return !continueOnMiss;
       } else {
         applyUserNotFound(false, requestId);
@@ -1648,17 +1651,25 @@ const SearchBar = ({
     const shouldContinueAfterSearchIdMiss =
       isSearchEnabled('equalToAllCards') || isSearchEnabled('searchKey');
 
-    if (
-      isSearchEnabled('searchId') &&
-      await processUserSearch('searchId', parseSearchIdExact, rawQuery, {
+    let continuedAfterSearchIdMiss = false;
+
+    if (isSearchEnabled('searchId')) {
+      const searchIdHandled = await processUserSearch('searchId', parseSearchIdExact, rawQuery, {
         // Якщо користувач випадково лишив searchId увімкненим, miss не має
         // блокувати інші явно вибрані джерела пошуку, зокрема equalTo lastAction.
         continueOnMiss: shouldContinueAfterSearchIdMiss,
+        deferNotFoundOnMiss: shouldContinueAfterSearchIdMiss,
         requestId,
-      })
-    ) return;
+      });
+      if (isStaleRequest()) return;
+      if (searchIdHandled) return;
+      continuedAfterSearchIdMiss = shouldContinueAfterSearchIdMiss;
+    }
+
+    let triedSearchIdFallbackSource = false;
 
     if (isSearchEnabled('searchKey')) {
+      triedSearchIdFallbackSource = triedSearchIdFallbackSource || continuedAfterSearchIdMiss;
       const searchKeyResult = await runSearchKeyBucketSearch(rawQuery, isStaleRequest);
       if (isStaleRequest()) return;
       if (searchKeyResult.found) {
@@ -1670,6 +1681,7 @@ const SearchBar = ({
     }
 
     if (isSearchEnabled('equalToAllCards')) {
+      triedSearchIdFallbackSource = triedSearchIdFallbackSource || continuedAfterSearchIdMiss;
       const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
       const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
         ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
@@ -1689,6 +1701,7 @@ const SearchBar = ({
       for (const equalToKey of primaryEqualToKeys) {
         const candidates = getParsedCandidatesForKey(equalToKey, rawQuery);
         for (const parsedValue of candidates) {
+          if (isStaleRequest()) return;
           const queryParams = { [equalToKey]: parsedValue };
           emitSearchLabel(queryParams, {
             mode: 'equalToAllCards',
@@ -1742,6 +1755,7 @@ const SearchBar = ({
         for (const equalToKey of fallbackEqualToKeys) {
           const candidates = getParsedCandidatesForKey(equalToKey, rawQuery);
           for (const parsedValue of candidates) {
+            if (isStaleRequest()) return;
             const queryParams = { [equalToKey]: parsedValue };
             emitSearchLabel(queryParams, {
               mode: 'equalToAllCards',
@@ -1820,6 +1834,13 @@ const SearchBar = ({
 
         return;
       }
+    }
+
+    if (triedSearchIdFallbackSource) {
+      applyUserNotFound(true, requestId);
+      applyState({}, requestId);
+      applyUsers({}, requestId);
+      return;
     }
 
 
