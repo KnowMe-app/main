@@ -145,6 +145,24 @@ const onValue = wrapAdminOnValue(firebaseOnValue, {
   source: 'AddNewProfile',
 });
 
+
+const getLocalStorageCardsDebugSnapshot = () => {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    return JSON.parse(localStorage.getItem('cards') || '[]');
+  } catch (error) {
+    return {
+      parseError: error?.message || String(error),
+      raw: localStorage.getItem('cards'),
+    };
+  }
+};
+
+const logRenderSource = (source, card) => {
+  if (!card?.userId) return;
+  console.log('[RENDER SOURCE]', source, card.userId, card.getInTouch);
+};
+
 const Container = styled.div`
   display: flex;
   flex-direction: column;
@@ -1574,6 +1592,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
       }
 
+      console.log('[SAVE] userId:', syncedState.userId);
+
       if (syncedState?.userId?.length > 20) {
 
         const cleanedState = Object.fromEntries(
@@ -1604,6 +1624,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
 
         if (!makeIndex) {
+          console.log('[SAVE] payload to firebase:', uploadedInfo);
           await Promise.all([
             updateDataInRealtimeDB(syncedState.userId, uploadedInfo, 'update'),
             updateDataInFiresoreDB(syncedState.userId, uploadedInfo, 'check', delCondition),
@@ -1623,6 +1644,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           });
         }
 
+        console.log('[SAVE] payload to firebase:', cleanedStateForNewUsers);
         await updateDataInNewUsersRTDB(
           syncedState.userId,
           cleanedStateForNewUsers,
@@ -1630,7 +1652,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         );
       } else {
         if (newState) {
-          const newStateWithDelivery = { ...newState };
+          const newStateWithDelivery = { ...syncedState };
 
           if (formattedLastDelivery) {
             newStateWithDelivery.lastDelivery = formattedLastDelivery;
@@ -1642,39 +1664,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               newStateWithDelivery[key] = null;
             });
           }
+          console.log('[SAVE] payload to firebase:', newStateWithDelivery);
           await updateDataInNewUsersRTDB(
             syncedState.userId,
             newStateWithDelivery,
             'update'
           );
         } else {
+          console.log('[SAVE] payload to firebase:', syncedState);
           await updateDataInNewUsersRTDB(syncedState.userId, syncedState, 'update');
         }
       }
-      try {
-        const serverData = await fetchUserById(syncedState.userId);
-        const serverLast = normalizeLastAction(serverData?.lastAction);
-        if (serverLast && serverLast > syncedState.lastAction) {
-          const formattedServer = {
-            ...serverData,
-            lastAction: serverLast,
-            lastDelivery: formatDateToDisplay(serverData.lastDelivery),
-          };
-          updateCachedUser(formattedServer);
-          cacheFetchedUsers(
-            { [formattedServer.userId]: formattedServer },
-            cacheLoad2Users,
-            filters,
-          );
-          const serverGitNewCardHidden = hideFutureGitNewCardAndLoadNext(formattedServer);
-          if (!serverGitNewCardHidden) {
-            setUsers(prev => ({ ...prev, [formattedServer.userId]: formattedServer }));
-          }
-          setState(formattedServer);
-        }
-      } catch {
-        // ignore fetch errors
-      }
+      console.log('[LS cards before]', getLocalStorageCardsDebugSnapshot());
+      updateCachedUser(syncedState, { removeKeys });
+      cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
+      console.log('[LS cards after]', getLocalStorageCardsDebugSnapshot());
     } catch (submitError) {
       const details = submitError?.message || String(submitError);
       console.error('Submit failed', submitError);
@@ -2247,6 +2251,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           userId: activeUserId,
           state: summarizeProfileCardForLog(currentState),
         });
+        logRenderSource('state', currentState);
         setProfileSource('cache');
       } else {
         logProfileRestoreStep('profile-data:state-already-hydrated-skip', {
@@ -2255,6 +2260,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           profileSource: currentProfileSource,
           state: summarizeProfileCardForLog(currentState),
         });
+        logRenderSource(currentProfileSource || 'state', currentState);
       }
       return;
     }
@@ -2266,7 +2272,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         userId: activeUserId,
         cached: summarizeProfileCardForLog(cached),
       });
-      setState({ ...cached, userId: cached.userId || activeUserId });
+      const cachedProfile = { ...cached, userId: cached.userId || activeUserId };
+      logRenderSource('cache', cachedProfile);
+      setState(cachedProfile);
       setProfileSource('cache');
     } else {
       logProfileRestoreStep('profile-data:cache-miss-fetch-backend-start', {
@@ -2284,7 +2292,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               backend: summarizeProfileCardForLog(data),
             });
             updateCard(activeUserId, data);
-            setState({ ...data, userId: data.userId || activeUserId });
+            const backendProfile = { ...data, userId: data.userId || activeUserId };
+            logRenderSource('backend', backendProfile);
+            setState(backendProfile);
           } else {
             logProfileRestoreStep('profile-data:backend-empty', {
               requestId,

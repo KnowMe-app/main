@@ -8,7 +8,7 @@ export const cacheLoad2Users = (usersObj, filters = {}) => {
   const listKey = buildLoad2Key(filters);
   const existing = loadCards();
   Object.entries(usersObj).forEach(([id, data]) => {
-    const merged = existing[id] ? { ...data, ...existing[id] } : data;
+    const merged = existing[id] ? { ...existing[id], ...data } : data;
     updateCard(id, merged);
     addCardToList(id, listKey);
   });
