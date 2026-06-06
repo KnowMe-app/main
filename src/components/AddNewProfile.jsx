@@ -70,6 +70,8 @@ import {
   setIdsForQuery,
   getIdsByQuery,
   getCard,
+  getCardsByIds,
+  loadCards,
   normalizeQueryKey,
   serializeQueryFilters,
 } from 'utils/cardIndex';
@@ -144,9 +146,9 @@ const onValue = wrapAdminOnValue(firebaseOnValue, {
 
 
 const getLocalStorageCardsDebugSnapshot = () => {
-  if (typeof localStorage === 'undefined') return [];
+  if (typeof localStorage === 'undefined') return {};
   try {
-    return JSON.parse(localStorage.getItem('cards') || '[]');
+    return loadCards();
   } catch (error) {
     return {
       parseError: error?.message || String(error),
@@ -1612,14 +1614,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return;
       }
 
-      // Optimistically update local cache and UI state before syncing with server
-      setState(syncedState);
+      // Optimistically update the only full-card cache and UI state before syncing with server.
       const removeKeys = delCondition ? Object.keys(delCondition) : [];
-      updateCachedUser(syncedState, { removeKeys });
-      cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
-      const gitNewCardHidden = hideFutureGitNewCardAndLoadNext(syncedState);
+      const optimisticCard = updateCachedUser(syncedState, { removeKeys }) || syncedState;
+      setState(optimisticCard);
+      cacheFetchedUsers({ [syncedState.userId]: optimisticCard }, cacheLoad2Users, filters);
+      const gitNewCardHidden = hideFutureGitNewCardAndLoadNext(optimisticCard);
       if (!gitNewCardHidden) {
-        setUsers(prev => ({ ...prev, [syncedState.userId]: syncedState }));
+        setUsers(prev => ({ ...prev, [syncedState.userId]: optimisticCard }));
       }
 
       let existingData = null;
@@ -1743,8 +1745,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
       }
       console.log('[LS cards before]', getLocalStorageCardsDebugSnapshot());
-      updateCachedUser(syncedState, { removeKeys });
-      cacheFetchedUsers({ [syncedState.userId]: syncedState }, cacheLoad2Users, filters);
+      const savedCachedCard = updateCachedUser(syncedState, { removeKeys }) || syncedState;
+      cacheFetchedUsers({ [syncedState.userId]: savedCachedCard }, cacheLoad2Users, filters);
+      setState(savedCachedCard);
+      setUsers(prev => {
+        if (!prev || !Object.prototype.hasOwnProperty.call(prev, syncedState.userId)) {
+          return prev;
+        }
+        return { ...prev, [syncedState.userId]: savedCachedCard };
+      });
       console.log('[LS cards after]', getLocalStorageCardsDebugSnapshot());
     } catch (submitError) {
       const details = submitError?.message || String(submitError);
@@ -2469,8 +2478,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   const isDateInRange = dateStr => {
-    const dates = Object.values(users)
-      .map(u => u.getInTouch)
+    const currentCardsById = loadCards();
+    const dates = Object.keys(users || {})
+      .map(id => (currentCardsById[id] || users[id])?.getInTouch)
       .filter(d => dateRegex.test(d));
     if (dates.length === 0) return true;
     dates.sort();
@@ -5263,6 +5273,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     : currentFilter !== 'FAVORITE' && currentFilter !== 'CYCLE_FAVORITE';
   const getSortedIds = () => {
     const ids = Object.keys(users);
+    const currentCardsById = loadCards();
+    const getVisibleCard = id => currentCardsById[id] || users[id] || {};
     if (isDuplicateView || currentFilter === 'CYCLE_FAVORITE') {
       return ids;
     }
@@ -5274,8 +5286,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (currentFilter === 'LAST_ACTION') {
       return ids.sort((a, b) => {
-        const left = normalizeLastAction(users[a]?.lastAction) || 0;
-        const right = normalizeLastAction(users[b]?.lastAction) || 0;
+        const left = normalizeLastAction(getVisibleCard(a)?.lastAction) || 0;
+        const right = normalizeLastAction(getVisibleCard(b)?.lastAction) || 0;
         return right - left;
       });
     }
@@ -5283,27 +5295,56 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const reactionSortDirection = getSearchKeyReactionSortDirection(filters?.reaction);
     if (reactionSortDirection) {
       return ids.sort((a, b) => {
-        const left = users[a]?.getInTouch || '';
-        const right = users[b]?.getInTouch || '';
+        const left = getVisibleCard(a)?.getInTouch || '';
+        const right = getVisibleCard(b)?.getInTouch || '';
         return reactionSortDirection === 'desc'
           ? right.localeCompare(left)
           : left.localeCompare(right);
       });
     }
 
-    return ids.sort((a, b) => compareUsersByGetInTouch(users[a] || {}, users[b] || {}));
+    return ids.sort((a, b) => compareUsersByGetInTouch(getVisibleCard(a), getVisibleCard(b)));
   };
 
   const sortedIds = getSortedIds();
-  const loadedPages = Math.ceil(sortedIds.length / PAGE_SIZE) || 1;
+  const {
+    cardsById: renderCardsById,
+    queryIds: sortedQueryIds,
+    visibleCards: sortedCardsFromCache,
+  } = getCardsByIds(sortedIds);
+  const filterRenderCards = cards => {
+    if (isDuplicateView) return cards;
+
+    return filterMain(
+      cards.map(card => [card.userId, card]),
+      currentFilter,
+      filters,
+      favoriteUsersData,
+      dislikeUsersData,
+      { requireCurrentOrPastGetInTouch: searchIdAndSearchKeyOnlyMode && currentFilter === 'DATE2.1' },
+    ).map(([, card]) => card);
+  };
+  const renderVisibleCards = filterRenderCards(sortedCardsFromCache);
+  const renderVisibleIds = renderVisibleCards.map(card => card.userId);
+  const loadedPages = Math.ceil(renderVisibleIds.length / PAGE_SIZE) || 1;
   const totalPages = shouldPaginate ? Math.max(loadedPages, hasMore ? currentPage + 1 : currentPage) : 1;
   const displayedUserIds = shouldPaginate
-    ? sortedIds.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
-    : sortedIds;
-  const paginatedUsers = displayedUserIds.reduce((acc, id) => {
-    acc[id] = users[id];
+    ? renderVisibleIds.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+    : renderVisibleIds;
+  const { visibleCards: paginatedVisibleCards } = getCardsByIds(displayedUserIds);
+  const paginatedUsers = paginatedVisibleCards.reduce((acc, card) => {
+    acc[card.userId] = card;
     return acc;
   }, {});
+
+  console.log('[CACHE] cards source:', renderCardsById);
+  console.log('[QUERIES] ids:', sortedQueryIds);
+  console.log('[RENDER] visible cards:', paginatedVisibleCards.map(c => ({
+    userId: c.userId,
+    getInTouch: c.getInTouch,
+    lastAction: c.lastAction,
+    cachedAt: c.cachedAt,
+  })));
 
   const handleLoadUsers = () => {
     setUsers({});

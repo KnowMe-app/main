@@ -23,7 +23,7 @@ export const updateCachedUser = (
   user,
   { removeFavorite = false, removeKeys = [] } = {},
 ) => {
-  updateCard(user.userId, user, undefined, removeKeys);
+  const updatedCard = updateCard(user.userId, user, undefined, removeKeys);
   addCardToList(user.userId, 'load2');
   const shouldFav = isFavorite(user.userId);
 
@@ -32,4 +32,6 @@ export const updateCachedUser = (
   } else if (shouldFav) {
     addCardToList(user.userId, 'favorite');
   }
+
+  return updatedCard;
 };
