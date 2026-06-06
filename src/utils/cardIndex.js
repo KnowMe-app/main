@@ -288,8 +288,7 @@ export const normalizeQueryKey = raw => {
   return String(raw || '').toLowerCase().trim();
 };
 
-export const getCard = id => {
-  const cards = loadCards();
+const normalizeCachedCard = (cards, id) => {
   const card = cards[id];
   if (!card) return null;
   const cachedAt = toTimestamp(card.cachedAt);
@@ -298,11 +297,40 @@ export const getCard = id => {
   if (!cachedAt && lastAction) {
     const updated = { ...card, cachedAt: lastAction };
     cards[id] = updated;
-    saveCards(cards);
     return updated;
   }
   return card;
 };
+
+export const getCard = id => {
+  const cards = loadCards();
+  const card = normalizeCachedCard(cards, id);
+  if (card && card !== cards[id]) {
+    saveCards(cards);
+  }
+  return card;
+};
+
+export const getCardsByIds = ids => {
+  const cards = loadCards();
+  let changed = false;
+  const queryIds = Array.isArray(ids) ? ids.filter(Boolean).map(String) : [];
+  const visibleCards = queryIds
+    .map(id => {
+      const before = cards[id];
+      const card = normalizeCachedCard(cards, id);
+      if (card && card !== before) changed = true;
+      return card;
+    })
+    .filter(Boolean);
+
+  if (changed) {
+    saveCards(cards);
+  }
+
+  return { cardsById: cards, queryIds, visibleCards };
+};
+
 
 export const saveCard = card => {
   if (!card || !card.userId) return;
@@ -324,7 +352,8 @@ export const saveCard = card => {
       normalized !== undefined ? normalized : sanitizedCard.lastAction;
   }
   cards[card.userId] = merged;
-  saveCards(cards);
+  saveCards(cards, { immediate: true });
+  return merged;
 };
 
 export const getQueryEntry = queryKey => {
