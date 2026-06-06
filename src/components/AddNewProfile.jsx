@@ -1138,6 +1138,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [pendingLocalUsersData, setPendingLocalUsersData] = useState(null);
   const [pendingLocalNewUsersData, setPendingLocalNewUsersData] = useState(null);
   const [exportDataSource, setExportDataSource] = useState('server');
+  const [exportOnlyPhonesStartingWith38, setExportOnlyPhonesStartingWith38] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [localExportUsersData, setLocalExportUsersData] = useState(null);
   const [localExportNewUsersData, setLocalExportNewUsersData] = useState(null);
@@ -4442,6 +4443,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return Object.fromEntries(allUsersArray);
   }, [localExportNewUsersData, localExportUsersData]);
 
+  const hasPhoneStartingWith38 = useCallback(user => {
+    const phones = Array.isArray(user?.phone) ? user.phone : [user?.phone];
+
+    return phones.some(phone => {
+      const normalizedPhone = String(phone || '')
+        .trim()
+        .replace(/^\+/, '')
+        .replace(/[\s()-]/g, '');
+
+      return normalizedPhone.startsWith('38');
+    });
+  }, []);
+
   const getExportContactsBySource = useCallback(async (filtersToApply, favoriteUsersMap) => {
     const source = exportDataSource === 'local' ? 'local' : 'backend';
     let loadedUsers = null;
@@ -4495,26 +4509,42 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         },
       },
     );
-    const includedTargetEntry = filteredEntries.find(
+    const entriesAfterSpecialFilters = exportOnlyPhonesStartingWith38
+      ? filteredEntries.filter(([, user]) => hasPhoneStartingWith38(user))
+      : filteredEntries;
+    const includedTargetEntry = entriesAfterSpecialFilters.find(
       ([id, user]) => id === CONTACT_EXPORT_DEBUG_USER_ID || user?.userId === CONTACT_EXPORT_DEBUG_USER_ID
     );
     targetExportDecision.includedInExport = Boolean(includedTargetEntry);
+    targetExportDecision.passedPhone38Filter = exportOnlyPhonesStartingWith38
+      ? Boolean(includedTargetEntry)
+      : null;
 
     const debugInfo = {
       source,
       totalLoaded: loadedEntries.length,
       afterFilters: filteredEntries.length,
-      finalExportedCount: filteredEntries.length,
+      afterPhone38Filter: entriesAfterSpecialFilters.length,
+      finalExportedCount: entriesAfterSpecialFilters.length,
       truncatedTo5000: false,
-      filesWillBeSplit: filteredEntries.length > 5000,
+      filesWillBeSplit: entriesAfterSpecialFilters.length > 5000,
+      specialFilters: {
+        phoneStartsWith38: exportOnlyPhonesStartingWith38,
+      },
       filters: filtersToApply || {},
       targetExportDecision,
     };
 
     console.log(CONTACT_EXPORT_LOG_PREFIX, debugInfo);
 
-    return Object.fromEntries(filteredEntries);
-  }, [dislikeUsersData, exportDataSource, getMergedUsersFromLocalExportCollections]);
+    return Object.fromEntries(entriesAfterSpecialFilters);
+  }, [
+    dislikeUsersData,
+    exportDataSource,
+    exportOnlyPhonesStartingWith38,
+    getMergedUsersFromLocalExportCollections,
+    hasPhoneStartingWith38,
+  ]);
 
   const exportFilteredUsersCsv = async () => {
     let fav = favoriteUsersData;
@@ -6261,6 +6291,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   </button>
                 </LocalIndexActions>
               )}
+            </SaveModalSection>
+
+            <SaveModalSection>
+              <SaveModalSectionTitle>Спеціальні фільтри</SaveModalSectionTitle>
+              <SaveModalRadioRow>
+                <input
+                  type="checkbox"
+                  checked={exportOnlyPhonesStartingWith38}
+                  onChange={event => setExportOnlyPhonesStartingWith38(event.target.checked)}
+                />
+                <span>
+                  Тільки телефони з 38
+                  <SaveModalComment>Додатково залишає в експорті лише картки, у яких хоча б один номер телефону після очищення починається з 38.</SaveModalComment>
+                </span>
+              </SaveModalRadioRow>
             </SaveModalSection>
 
             <SaveModalSection>
