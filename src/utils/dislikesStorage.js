@@ -47,7 +47,7 @@ export const syncDislikes = remoteDislikes => {
 export const cacheDislikedUsers = usersObj => {
   const existing = loadCards();
   Object.entries(usersObj).forEach(([id, data]) => {
-    const merged = existing[id] ? { ...data, ...existing[id] } : data;
+    const merged = existing[id] ? { ...existing[id], ...data } : data;
     updateCard(id, merged);
     addCardToList(id, DISLIKE_LIST_KEY);
   });

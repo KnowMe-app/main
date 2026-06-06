@@ -41,7 +41,7 @@ export const syncFavorites = remoteFavs => {
 export const cacheFavoriteUsers = usersObj => {
   const existing = loadCards();
   Object.entries(usersObj).forEach(([id, data]) => {
-    const merged = existing[id] ? { ...data, ...existing[id] } : data;
+    const merged = existing[id] ? { ...existing[id], ...data } : data;
     updateCard(id, merged);
     addCardToList(id, FAVORITE_LIST_KEY);
   });

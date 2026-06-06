@@ -190,14 +190,18 @@ const flushSaveJson = key => {
 
 const saveJson = (key, value, { debounceMs = 0 } = {}) => {
   localJsonCache.set(key, value);
+  const existingTimer = pendingSaveTimers.get(key);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    pendingSaveTimers.delete(key);
+  }
+
+  pendingSaveValues.set(key, value);
   if (!debounceMs) {
-    pendingSaveValues.set(key, value);
     flushSaveJson(key);
     return;
   }
-  pendingSaveValues.set(key, value);
-  const existingTimer = pendingSaveTimers.get(key);
-  if (existingTimer) clearTimeout(existingTimer);
+
   pendingSaveTimers.set(key, setTimeout(() => flushSaveJson(key), debounceMs));
 };
 
@@ -211,7 +215,8 @@ export const loadCards = () => {
   }
   return cards;
 };
-export const saveCards = cards => saveJson(CARDS_KEY, wrapVersionedCards(cards), { debounceMs: 800 });
+export const saveCards = (cards, { immediate = false } = {}) =>
+  saveJson(CARDS_KEY, wrapVersionedCards(cards), { debounceMs: immediate ? 0 : 800 });
 
 export const loadQueries = () => loadJson(QUERIES_KEY);
 export const loadIndexQueries = () => loadJson(INDEX_QUERIES_KEY);

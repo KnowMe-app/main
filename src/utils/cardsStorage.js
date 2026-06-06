@@ -151,7 +151,7 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   });
 
   cards[cardId] = updatedCard;
-  saveCards(cards);
+  saveCards(cards, { immediate: true });
   touchCardInQueries(cardId);
   if (typeof remoteSave === 'function') {
     const { lastAction, cachedAt, cacheVersion, ...toSend } = updatedCard;
