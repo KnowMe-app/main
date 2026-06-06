@@ -70,6 +70,93 @@ const cleanedNameParts = arr =>
     .map(part => String(part).trim())
     .filter(part => part.toLowerCase() !== 'агент');
 
+const parseBirthDate = value => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const dottedMatch = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  const isoMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const day = dottedMatch ? Number(dottedMatch[1]) : isoMatch ? Number(isoMatch[3]) : null;
+  const month = dottedMatch ? Number(dottedMatch[2]) : isoMatch ? Number(isoMatch[2]) : null;
+  const year = dottedMatch ? Number(dottedMatch[3]) : isoMatch ? Number(isoMatch[1]) : null;
+
+  if (!day || !month || !year) return null;
+
+  const date = new Date(year, month - 1, day);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+};
+
+const calculateAge = birth => {
+  const birthDate = parseBirthDate(birth);
+  if (!birthDate) return '';
+
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  const dayDiff = today.getDate() - birthDate.getDate();
+  if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) age -= 1;
+
+  return Number.isFinite(age) && age >= 0 ? String(age) : '';
+};
+
+const hasNegativeRh = blood => {
+  const normalized = String(blood || '').trim().toLowerCase().replace(/\s+/g, '');
+  return normalized.endsWith('-') || normalized === '-';
+};
+
+const isCsectionDate = value => /^(\d{1,2}\.\d{1,2}\.\d{4}|\d{4}-\d{1,2}-\d{1,2})$/.test(String(value || '').trim());
+
+const getCsectionMarker = value => {
+  if (Array.isArray(value)) {
+    const items = value.map(item => String(item || '').trim()).filter(Boolean);
+    if (!items.length) return '';
+
+    const numericCounts = items
+      .filter(item => /^\d+$/.test(item))
+      .map(item => Number.parseInt(item, 10))
+      .filter(count => count > 0);
+
+    if (numericCounts.length) return `кс${Math.max(...numericCounts)}`;
+    return `кс${items.length}`;
+  }
+
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw || ['не було', 'no', 'ні', '-', '0', 'false', 'cs0'].includes(raw)) return '';
+  if (isCsectionDate(raw)) return 'кс1';
+  if (raw === '++') return 'кс2';
+  if (raw === '+++') return 'кс3';
+
+  const match = raw.match(/(?:^|\b)([1-9]\d*)(?:\b|$)/);
+  if (match) {
+    const count = Number.parseInt(match[1], 10);
+    return count > 0 ? `кс${count}` : '';
+  }
+
+  if (['+', 'plus', 'yes', 'так', 'було', 'кс', 'cs1'].includes(raw)) return 'кс1';
+  return '';
+};
+
+const isMarried = value => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ['yes', 'так', '+', 'married', 'одружена', 'заміжня', 'замужем'].includes(normalized);
+};
+
+const getContactNameMarkers = user => [
+  calculateAge(user.birth),
+  hasNegativeRh(user.blood) ? 'рк-' : '',
+  getCsectionMarker(user.csection),
+  isMarried(user.maritalStatus) ? 'заміжня' : '',
+].filter(Boolean);
+
 const getContactName = user => {
   const prefix = getPrefix(user);
   const phones = Array.isArray(user.phone) ? user.phone : [user.phone];
@@ -77,14 +164,11 @@ const getContactName = user => {
 
   const names = Array.isArray(user.name) ? user.name : [user.name];
   const surnames = Array.isArray(user.surname) ? user.surname : [user.surname];
-  const fathersnames = Array.isArray(user.fathersname)
-    ? user.fathersname
-    : [user.fathersname];
 
   const fullNameParts = [
-    ...cleanedNameParts(surnames),
     ...cleanedNameParts(names),
-    ...cleanedNameParts(fathersnames),
+    ...cleanedNameParts(surnames),
+    ...getContactNameMarkers(user),
   ];
   const fullName = fullNameParts.join(' ').trim();
 
@@ -336,8 +420,8 @@ export const isSingleUserPayload = data =>
   );
 
 export const saveToContact = data => {
-  // Limit each exported file to no more than 8000 contacts
-  const CHUNK_SIZE = 8000;
+  // Максимум 5000 контактів у кожному файлі; кількість файлів не обмежуємо.
+  const CHUNK_SIZE = 5000;
   let usersList = [];
   let baseName = 'contacts';
 
@@ -431,7 +515,7 @@ export const makeCsvRow = user => {
 };
 
 export const saveToContactCsv = data => {
-  const CHUNK_SIZE = 8000;
+  const CHUNK_SIZE = 5000;
   let usersList = [];
   let baseName = 'contacts';
 
