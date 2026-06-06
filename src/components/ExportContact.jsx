@@ -6,6 +6,9 @@ const hasEmoji = value => /[\p{Extended_Pictographic}]/u.test(value);
 const hasNonAscii = value => /[^\x20-\x7E]/.test(value);
 const hasWhitespace = value => /\s/.test(value);
 
+export const normalizeContactPhoneForExport = value =>
+  String(value ?? '').replace(/\s+/g, '');
+
 const normalizeTelegramHandle = value => {
   if (!value) return '';
   const trimmed = String(value).trim();
@@ -159,7 +162,8 @@ const getContactNameMarkers = user => [
 
 const getContactName = user => {
   const prefix = getPrefix(user);
-  const phones = Array.isArray(user.phone) ? user.phone : [user.phone];
+  const phones = (Array.isArray(user.phone) ? user.phone : [user.phone])
+    .map(normalizeContactPhoneForExport);
   const firstPhone = phones.find(phone => phone);
 
   const names = Array.isArray(user.name) ? user.name : [user.name];
@@ -328,7 +332,8 @@ export const makeVCard = user => {
   safeAddLine(lines, 'VERSION:3.0');
 
   const finalName = getContactName(user);
-  const phones = Array.isArray(user.phone) ? user.phone : [user.phone];
+  const phones = (Array.isArray(user.phone) ? user.phone : [user.phone])
+    .map(normalizeContactPhoneForExport);
 
   safeAddLine(lines, `FN;CHARSET=UTF-8:${escapeTextValue(finalName)}`);
   safeAddLine(lines, `N;CHARSET=UTF-8:${escapeTextValue(finalName)};;;;`);
@@ -336,7 +341,7 @@ export const makeVCard = user => {
   // Обробка телефонів
   phones.forEach(phone => {
     if (phone) {
-      safeAddLine(lines, `TEL;TYPE=CELL:+${String(phone).trim()}`);
+      safeAddLine(lines, `TEL;TYPE=CELL:+${phone}`);
     }
   });
 
@@ -478,7 +483,8 @@ const stringifyList = list =>
     .join('; ');
 
 export const makeCsvRow = user => {
-  const phones = Array.isArray(user.phone) ? user.phone : [user.phone];
+  const phones = (Array.isArray(user.phone) ? user.phone : [user.phone])
+    .map(normalizeContactPhoneForExport);
   const emails = Array.isArray(user.email) ? user.email : [user.email];
   const addresses = Array.isArray(user.address) ? user.address : [user.address];
   const roles = Array.isArray(user.userRole) ? user.userRole : [user.userRole];

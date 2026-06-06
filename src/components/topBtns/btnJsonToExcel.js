@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import { normalizeContactPhoneForExport } from "components/ExportContact";
 
 const JsonToExcelButton = () => {
   const [jsonData, setJsonData] = useState([]);
@@ -85,9 +86,11 @@ const JsonToExcelButton = () => {
       allKeys.forEach((key) => {
         const [field, index] = key.match(/(\D+)(\d*)/).slice(1, 3); // Розбиваємо ключ на основну частину та індекс
         if (Array.isArray(item[field])) {
-          row[key] = item[field][index - 1] || ""; // Дістаємо відповідний елемент масиву
+          const value = item[field][index - 1] || ""; // Дістаємо відповідний елемент масиву
+          row[key] = field === "phone" ? normalizeContactPhoneForExport(value) : value;
         } else {
-          row[key] = index === "1" ? item[field] || "" : ""; // Якщо є індекс > 1, залишаємо пустим
+          const value = index === "1" ? item[field] || "" : ""; // Якщо є індекс > 1, залишаємо пустим
+          row[key] = field === "phone" ? normalizeContactPhoneForExport(value) : value;
         }
       });
       return row;
