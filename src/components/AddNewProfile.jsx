@@ -144,53 +144,6 @@ const onValue = wrapAdminOnValue(firebaseOnValue, {
   source: 'AddNewProfile',
 });
 
-const DETECTED_CONTACT_SEARCH_KEYS = new Set([
-  'instagram',
-  'ameblo',
-  'facebook',
-  'telegram',
-  'email',
-  'tiktok',
-  'linkedin',
-  'youtube',
-  'twitter',
-  'line',
-  'otherLink',
-  'phone',
-  'vk',
-  'other',
-]);
-
-const CONTACT_URL_HOST_PATTERN = new RegExp(
-  '\\b(?:instagram\\.com|ameblo\\.jp|facebook\\.com|fb\\.com|t\\.me|' +
-    'telegram\\.me|tiktok\\.com|linkedin\\.com|youtube\\.com|youtu\\.be|' +
-    'twitter\\.com|x\\.com|vk\\.com|vkontakte\\.ru)\\b',
-  'i',
-);
-
-const getSingleSearchPairKey = searchPair => {
-  if (!searchPair || typeof searchPair !== 'object') return null;
-  return Object.keys(searchPair).find(key => {
-    const value = searchPair[key];
-    if (Array.isArray(value)) return value.length > 0;
-    return value !== undefined && value !== null && String(value).trim() !== '';
-  }) || null;
-};
-
-const shouldPreferDetectedContactPair = (rawSearch, detectedSearchParams, searchKeyValuePair) => {
-  if (!detectedSearchParams?.key || !detectedSearchParams?.value) return false;
-  if (!DETECTED_CONTACT_SEARCH_KEYS.has(detectedSearchParams.key)) return false;
-
-  const trimmedRawSearch = String(rawSearch || '').trim();
-  if (!trimmedRawSearch) return false;
-
-  const hasStrongContactSignal =
-    /^https?:\/\//i.test(trimmedRawSearch) || CONTACT_URL_HOST_PATTERN.test(trimmedRawSearch);
-  if (!hasStrongContactSignal) return false;
-
-  const currentKey = getSingleSearchPairKey(searchKeyValuePair);
-  return !currentKey || currentKey === 'searchId' || currentKey !== detectedSearchParams.key;
-};
 
 const getLocalStorageCardsDebugSnapshot = () => {
   if (typeof localStorage === 'undefined') return {};
@@ -3032,8 +2985,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         : null;
 
       const normalizedSearchKeyValuePair =
-        shouldPreferDetectedContactPair(rawSearch, detectedSearchParams, searchKeyValuePair) ||
-        (searchKeyValuePair?.searchId && detectedSearchParams?.key && detectedSearchParams?.value)
+        searchKeyValuePair?.searchId && detectedSearchParams?.key && detectedSearchParams?.value
           ? { [detectedSearchParams.key]: detectedSearchParams.value }
           : searchKeyValuePair;
 
