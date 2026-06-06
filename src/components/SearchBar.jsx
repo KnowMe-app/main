@@ -990,14 +990,16 @@ const SearchBar = ({
     const previousKey = resolveSearchLabelKey(lastEmittedSearchLabelRef.current);
     const nextValue = resolveSearchParamValue(params, nextKey);
     const rawSearch = String(search || '').trim();
-    const isWeakEqualToFallbackForContact =
-      meta?.mode === 'equalToAllCards' &&
+    const isWeakFallbackForContact =
       WEAK_FALLBACK_SEARCH_LABEL_KEYS.has(nextKey) &&
       CONTACT_SEARCH_LABEL_KEYS.has(detectedContactParams?.key) &&
-      (previousKey === 'searchId' || previousKey === detectedContactParams.key) &&
-      nextValue === rawSearch;
+      (
+        nextValue === rawSearch ||
+        previousKey === 'searchId' ||
+        previousKey === detectedContactParams.key
+      );
 
-    if (isWeakEqualToFallbackForContact) return;
+    if (isWeakFallbackForContact) return;
 
     lastEmittedSearchLabelRef.current = { params, key: nextKey };
     onSearchKey && onSearchKey(params);

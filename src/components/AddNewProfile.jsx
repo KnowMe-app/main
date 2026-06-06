@@ -2983,8 +2983,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         ? detectSearchParams(rawSearch)
         : null;
 
-      const normalizedSearchKeyValuePair =
-        searchKeyValuePair?.searchId && detectedSearchParams?.key && detectedSearchParams?.value
+      const shouldUseDetectedContactParams =
+        CONTACT_SEARCH_KEYS.includes(detectedSearchParams?.key) &&
+        detectedSearchParams?.value;
+      const normalizedSearchKeyValuePair = shouldUseDetectedContactParams
+        ? { [detectedSearchParams.key]: detectedSearchParams.value }
+        : searchKeyValuePair?.searchId && detectedSearchParams?.key && detectedSearchParams?.value
           ? { [detectedSearchParams.key]: detectedSearchParams.value }
           : searchKeyValuePair;
 
