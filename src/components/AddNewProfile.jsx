@@ -11,7 +11,6 @@ import {
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
   fetchPaginatedNewUsers,
-  fetchAllFilteredUsers,
   fetchFavoriteUsers,
   fetchFavoriteUsersData,
   fetchDislikeUsers,
@@ -87,8 +86,6 @@ import StimulationSchedule from './StimulationSchedule';
 import { ReactComponent as BabyIcon } from 'assets/icons/baby.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 // import { UploadJson } from './topBtns/uploadNewJSON';
-import { btnExportUsers } from './topBtns/btnExportUsers';
-import { btnExportUsersCsv } from './topBtns/btnExportUsersCsv';
 import { btnMerge } from './smallCard/btnMerge';
 import FilterPanel, { getInitialFilters } from './FilterPanel';
 import SearchBar, { detectSearchParams } from './SearchBar';
@@ -756,10 +753,79 @@ const LocalIndexActions = styled.div`
   margin-top: 12px;
 `;
 
+const SaveModalTitle = styled.h3`
+  margin: 0 0 8px;
+`;
+
+const SaveModalHint = styled.p`
+  margin: 0 0 12px;
+  color: #555;
+  font-size: 13px;
+`;
+
+const SaveModalSection = styled.div`
+  padding: 10px 0;
+  border-top: 1px solid #eee;
+`;
+
+const SaveModalSectionTitle = styled.div`
+  margin-bottom: 8px;
+  font-weight: 700;
+  color: #333;
+`;
+
+const SaveModalRadioRow = styled.label`
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+  cursor: pointer;
+`;
+
+const SaveModalComment = styled.span`
+  display: block;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.35;
+`;
+
+const SaveModalActions = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const SaveModalActionButton = styled.button`
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ffd39a;
+  border-radius: 8px;
+  background: #fff8ef;
+  color: #5d3b00;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: #fff3e0;
+    border-color: #ff8c00;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const SaveModalActionTitle = styled.strong`
+  display: block;
+  margin-bottom: 3px;
+`;
+
 
 const PROFILE_RESTORE_LOG_PREFIX = '[ProfileRestore]';
 const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
 const LOAD_DEBUG_LOG_PREFIX = '[AddNewProfileLoad]';
+const CONTACT_EXPORT_LOG_PREFIX = '[ContactsExport]';
 const LOAD_DEBUG_LOG_MAX_ENTRIES = 1000;
 
 const countObjectKeys = value =>
@@ -1069,6 +1135,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [pendingLocalUsersData, setPendingLocalUsersData] = useState(null);
   const [pendingLocalNewUsersData, setPendingLocalNewUsersData] = useState(null);
   const [exportDataSource, setExportDataSource] = useState('server');
+  const [showSaveModal, setShowSaveModal] = useState(false);
   const [localExportUsersData, setLocalExportUsersData] = useState(null);
   const [localExportNewUsersData, setLocalExportNewUsersData] = useState(null);
   const localUsersFileInputRef = useRef(null);
@@ -4365,33 +4432,44 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [localExportNewUsersData, localExportUsersData]);
 
   const getExportContactsBySource = useCallback(async (filtersToApply, favoriteUsersMap) => {
-    const noFilters = !filtersToApply || Object.values(filtersToApply).every(value => value === 'off');
+    const source = exportDataSource === 'local' ? 'local' : 'backend';
+    let loadedUsers = null;
 
-    if (exportDataSource === 'local') {
-      const localMergedUsers = getMergedUsersFromLocalExportCollections();
-      if (!localMergedUsers) {
+    if (source === 'local') {
+      loadedUsers = getMergedUsersFromLocalExportCollections();
+      if (!loadedUsers) {
         toast.error('Оберіть локальні users.json та newUsers.json для експорту');
         return null;
       }
-
-      if (noFilters) return localMergedUsers;
-
-      const filteredUsers = filterMain(
-        Object.entries(localMergedUsers),
-        undefined,
-        filtersToApply,
-        favoriteUsersMap,
-        dislikeUsersData,
-      );
-      return Object.fromEntries(filteredUsers);
+    } else {
+      // Backend export навмисно читає RTDB напряму й не бере дані з Local Storage.
+      loadedUsers = await fetchAllUsersFromRTDB();
     }
 
-    return noFilters
-      ? fetchAllUsersFromRTDB()
-      : fetchAllFilteredUsers(undefined, filtersToApply, favoriteUsersMap, {
-          includeSpecialFutureDates: true,
-          dislikedUsers: dislikeUsersData,
-        });
+    if (!loadedUsers) return null;
+
+    const loadedEntries = Object.entries(loadedUsers);
+    const filteredEntries = filterMain(
+      loadedEntries,
+      undefined,
+      filtersToApply || {},
+      favoriteUsersMap,
+      dislikeUsersData,
+    );
+
+    const debugInfo = {
+      source,
+      totalLoaded: loadedEntries.length,
+      afterFilters: filteredEntries.length,
+      finalExportedCount: filteredEntries.length,
+      truncatedTo5000: false,
+      filesWillBeSplit: filteredEntries.length > 5000,
+      filters: filtersToApply || {},
+    };
+
+    console.log(CONTACT_EXPORT_LOG_PREFIX, debugInfo);
+
+    return Object.fromEntries(filteredEntries);
   }, [dislikeUsersData, exportDataSource, getMergedUsersFromLocalExportCollections]);
 
   const exportFilteredUsersCsv = async () => {
@@ -5898,21 +5976,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               )}
               {<Button onClick={searchDuplicates} {...createLongPressHandlers('Шукає дублікати карток')}>DPL</Button>}
               <Button
-                onClick={() => setExportDataSource(prev => (prev === 'local' ? 'server' : 'local'))}
-                {...createLongPressHandlers('Перемикає джерело експорту: сервер або локальні users/newUsers JSON')}
+                onClick={() => setShowSaveModal(true)}
+                {...createLongPressHandlers('Відкриває меню з варіантами збереження контактів')}
               >
-                {exportDataSource === 'local' ? 'SRC:Local' : 'SRC:Server'}
+                Save
               </Button>
-              {exportDataSource === 'local' && (
-                <>
-                  <Button onClick={handlePickUsersFileForLocalExport}>
-                    users.json {localExportUsersData ? '✅' : ''}
-                  </Button>
-                  <Button onClick={handlePickNewUsersFileForLocalExport}>
-                    newUsers.json {localExportNewUsersData ? '✅' : ''}
-                  </Button>
-                </>
-              )}
               {
                 <Button
                   onClick={() => {
@@ -5923,16 +5991,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   Merg
                 </Button>
               }
-              {btnExportUsers(exportFilteredUsers)}
-              {btnExportUsersCsv(exportFilteredUsersCsv)}
-              <Button onClick={saveAllContacts} {...createLongPressHandlers('Експортує всі контакти')}>
-                {' '}
-                S_All
-              </Button>
-              <Button onClick={saveFilteredContactsVcf} {...createLongPressHandlers('Експортує контакти у формат VCF')}>
-                {' '}
-                saveVCF
-              </Button>
               <input
                 ref={excelImportInputRef}
                 type="file"
@@ -6087,6 +6145,76 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           CompareCards={compareCards}
           MoreActions={moreActions}
         />
+      )}
+      {showSaveModal && (
+        <LocalIndexOverlay onClick={() => setShowSaveModal(false)}>
+          <LocalIndexModal onClick={event => event.stopPropagation()}>
+            <SaveModalTitle>Save контакти</SaveModalTitle>
+            <SaveModalHint>Оберіть джерело, додаткові обмеження та формат файлу.</SaveModalHint>
+
+            <SaveModalSection>
+              <SaveModalSectionTitle>Джерело даних</SaveModalSectionTitle>
+              <SaveModalRadioRow>
+                <input
+                  type="radio"
+                  checked={exportDataSource !== 'local'}
+                  onChange={() => setExportDataSource('server')}
+                />
+                <span>
+                  Backend
+                  <SaveModalComment>Читає всю актуальну колекцію users + newUsers напряму з Firebase/Realtime Database, без Local Storage.</SaveModalComment>
+                </span>
+              </SaveModalRadioRow>
+              <SaveModalRadioRow>
+                <input
+                  type="radio"
+                  checked={exportDataSource === 'local'}
+                  onChange={() => setExportDataSource('local')}
+                />
+                <span>
+                  Local files
+                  <SaveModalComment>Бере дані з обраних локальних JSON-файлів users та newUsers і мержить їх по userId.</SaveModalComment>
+                </span>
+              </SaveModalRadioRow>
+              {exportDataSource === 'local' && (
+                <LocalIndexActions>
+                  <button type="button" onClick={handlePickUsersFileForLocalExport}>
+                    Обрати users.json {localExportUsersData ? '✅' : ''}
+                  </button>
+                  <button type="button" onClick={handlePickNewUsersFileForLocalExport}>
+                    Обрати newUsers.json {localExportNewUsersData ? '✅' : ''}
+                  </button>
+                </LocalIndexActions>
+              )}
+            </SaveModalSection>
+
+            <SaveModalSection>
+              <SaveModalSectionTitle>Варіанти збереження</SaveModalSectionTitle>
+              <SaveModalActions>
+                <SaveModalActionButton type="button" onClick={exportFilteredUsers}>
+                  <SaveModalActionTitle>VCF з активними фільтрами</SaveModalActionTitle>
+                  <SaveModalComment>Основний експорт контактів: бере всю вибрану колекцію, застосовує вже активні чекбокси панелі фільтрів і ділить файли максимум по 5000 контактів.</SaveModalComment>
+                </SaveModalActionButton>
+                <SaveModalActionButton type="button" onClick={exportFilteredUsersCsv}>
+                  <SaveModalActionTitle>CSV з активними фільтрами</SaveModalActionTitle>
+                  <SaveModalComment>Ті самі дані, але у CSV для таблиць; також ділиться на файли максимум по 5000 рядків контактів.</SaveModalComment>
+                </SaveModalActionButton>
+                <SaveModalActionButton type="button" onClick={saveAllContacts}>
+                  <SaveModalActionTitle>VCF вся колекція</SaveModalActionTitle>
+                  <SaveModalComment>Ігнорує активні фільтри панелі й експортує всю вибрану backend/local колекцію.</SaveModalComment>
+                </SaveModalActionButton>
+                <SaveModalActionButton type="button" onClick={saveFilteredContactsVcf}>
+                  <SaveModalActionTitle>VCF дубль поточного фільтрованого експорту</SaveModalActionTitle>
+                  <SaveModalComment>Збережено для сумісності зі старою кнопкою saveVCF; використовує ту саму логіку, що VCF з активними фільтрами.</SaveModalComment>
+                </SaveModalActionButton>
+                <SaveModalActionButton type="button" onClick={() => setShowSaveModal(false)}>
+                  <SaveModalActionTitle>Закрити</SaveModalActionTitle>
+                  <SaveModalComment>Не створює файл і повертає до AddNewProfile.</SaveModalComment>
+                </SaveModalActionButton>
+              </SaveModalActions>
+            </SaveModalSection>
+          </LocalIndexModal>
+        </LocalIndexOverlay>
       )}
       {showLocalIndexModal && (
         <LocalIndexOverlay onClick={() => setShowLocalIndexModal(false)}>
