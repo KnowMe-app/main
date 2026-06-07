@@ -2365,9 +2365,22 @@ const removeUndefined = obj => {
   return obj;
 };
 
-const transientUserDataKeys = ['__sourceCollection', '__photosHydrated'];
+const transientUserDataKeys = [
+  '__sourceCollection',
+  '__photosHydrated',
+  'cachedAt',
+  'cacheVersion',
+  'cashVersion',
+  'cash version',
+  'localVersion',
+  'localUpdatedAt',
+  'source',
+  '__profileSnapshotVersion',
+  '__profileSnapshotSource',
+  '__profileSnapshotUpdatedAt',
+];
 
-const stripTransientUserDataFields = (payload, { markForRealtimeDeletion = false } = {}) => {
+const stripTransientUserDataFields = payload => {
   const cleaned = removeUndefined(payload);
   if (typeof cleaned !== 'object' || cleaned === null || Array.isArray(cleaned)) {
     return cleaned;
@@ -2376,9 +2389,6 @@ const stripTransientUserDataFields = (payload, { markForRealtimeDeletion = false
   const nextPayload = { ...cleaned };
   transientUserDataKeys.forEach(key => {
     delete nextPayload[key];
-    if (markForRealtimeDeletion) {
-      nextPayload[key] = null;
-    }
   });
 
   return nextPayload;

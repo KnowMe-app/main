@@ -833,7 +833,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
 
 export const ProfileForm = ({
   state,
-  setState,
+  setState: setExternalState,
   handleBlur,
   handleSubmit,
   handleClear,
@@ -847,6 +847,32 @@ export const ProfileForm = ({
   refreshOverlayForEditor,
   deletingFieldsRef,
 }) => {
+  const latestProfileDraftRef = useRef(state || {});
+  const profileFormVersionRef = useRef(0);
+  useEffect(() => {
+    latestProfileDraftRef.current = state || {};
+  }, [state]);
+  const setState = useCallback((updater, debug = {}) => {
+    setExternalState(prevState => {
+      const nextState = typeof updater === 'function' ? updater(prevState) : updater;
+      const changed = nextState !== prevState;
+      if (changed) {
+        profileFormVersionRef.current += 1;
+        latestProfileDraftRef.current = nextState || {};
+      }
+      console.log('[ProfileSnapshotDebug][ProfileForm]', {
+        source: debug.source || 'userChange',
+        caller: debug.caller || 'ProfileForm.setState',
+        timestamp: new Date().toISOString(),
+        at: getProfileFormRestoreTimestamp(),
+        version: profileFormVersionRef.current,
+        applied: changed,
+        reason: changed ? debug.reason || 'local-draft-updated' : debug.reason || 'unchanged',
+        userId: nextState?.userId || prevState?.userId || '',
+      });
+      return nextState;
+    });
+  }, [setExternalState]);
   const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
@@ -2761,20 +2787,23 @@ ${entries.join('\n')}`;
                             }));
                           },
                           onBlur: () => {
+                            const latestDraft = latestProfileDraftRef.current || state || {};
                             console.log('[ProfileSaveDebug] ProfileForm scalar input blur', {
                               fieldName: field.name,
-                              value: state?.[field.name],
+                              value: latestDraft?.[field.name],
+                              source: 'blur',
+                              version: profileFormVersionRef.current,
                             });
 
                             if (deletingFieldsRef?.current?.has(field.name)) return;
 
-                            if (field.name === 'myComment' && !state.myComment?.trim()) {
+                            if (field.name === 'myComment' && !latestDraft.myComment?.trim()) {
                               handleDelKeyValue('myComment');
                               return;
                             }
 
                             if (field.name === 'getInTouch') {
-                              const raw = state.getInTouch;
+                              const raw = latestDraft.getInTouch;
                               const trimmed = typeof raw === 'string' ? raw.trim() : raw;
 
                               if (!trimmed) {
@@ -2784,21 +2813,25 @@ ${entries.join('\n')}`;
                             }
 
                             const needsSocialCleanup = ['facebook', 'instagram', 'twitter'].includes(field.name);
-                            const rawValue = state[field.name];
+                            const rawValue = latestDraft[field.name];
                             const normalizedValue = needsSocialCleanup && rawValue != null
                               ? inputUpdateValue(rawValue, field)
                               : rawValue;
 
                             const nextState =
                               normalizedValue === rawValue
-                                ? state
+                                ? latestDraft
                                 : {
-                                    ...state,
+                                    ...latestDraft,
                                     [field.name]: normalizedValue,
                                   };
 
                             if (normalizedValue !== rawValue) {
-                              setState(nextState);
+                              setState(nextState, {
+                                source: 'blur',
+                                caller: 'ProfileForm.scalarInput.onBlur',
+                                reason: 'normalized-latest-draft',
+                              });
                             }
 
                             submitWithNormalization(nextState, 'overwrite');
