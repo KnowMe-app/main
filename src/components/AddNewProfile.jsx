@@ -1095,6 +1095,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const SEARCH_KEY = 'addSearchQuery';
   const SEARCH_OPTIONS_STORAGE_KEY = 'addSearchOptions';
+  const SEARCH_RESULT_FILTERS_STORAGE_KEY = 'addSearchResultFiltersEnabled';
   const INDEX_SELECTION_STORAGE_KEY = 'addIndexSelectionOptions';
   const EDIT_PROFILE_USER_ID_KEY = 'addNewProfileEditUserId';
   const PREVIOUS_LIST_STATE_KEY = 'addNewProfilePreviousListState';
@@ -1192,6 +1193,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       title: 'Пошук по ID',
       options: [
         { key: 'searchId', label: 'searchId (точний)' },
+        { key: 'useResultFilters', label: 'фільтри', isFilterToggle: true },
         { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
         { key: 'searchKey', label: 'searchKey bucket/date' },
         { key: 'partialUserId', label: 'userId (частковий збіг)' },
@@ -1268,6 +1270,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   });
 
   const [showSearchOptions, setShowSearchOptions] = useState(false);
+  const [useSearchResultFilters, setUseSearchResultFilters] = useState(() => {
+    const storedRaw = localStorage.getItem(SEARCH_RESULT_FILTERS_STORAGE_KEY);
+    return storedRaw === null ? true : storedRaw !== 'false';
+  });
 
   const selectedSearchIdPrefixes = SEARCH_KEY_OPTIONS
     .filter(option => option.supportsSearchId && enabledSearchKeys[option.key])
@@ -1287,6 +1293,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleSearchScopeChange = (key, disabled = false) => {
     if (disabled) return;
+    if (key === 'useResultFilters') {
+      setUseSearchResultFilters(prev => !prev);
+      return;
+    }
     setEnabledSearchKeys(prev => ({
       ...prev,
       [key]: !prev[key],
@@ -1311,6 +1321,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     localStorage.setItem(SEARCH_OPTIONS_STORAGE_KEY, JSON.stringify(enabledSearchKeys));
   }, [enabledSearchKeys]);
+
+  useEffect(() => {
+    localStorage.setItem(SEARCH_RESULT_FILTERS_STORAGE_KEY, String(useSearchResultFilters));
+  }, [SEARCH_RESULT_FILTERS_STORAGE_KEY, useSearchResultFilters]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -5516,6 +5530,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
   const filterRenderCards = cards => {
     if (isDuplicateView) return cards;
+    if (searchBarQueryActive && !useSearchResultFilters) return cards;
 
     return filterMain(
       cards.map(card => [card.userId, card]),
@@ -6004,12 +6019,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                           {hasDateOptions && isFirstDateOption && <SearchScopeDivider />}
                           <ScopeChip
                             type="button"
-                            $active={Boolean(enabledSearchKeys[option.key])}
-                            aria-pressed={Boolean(enabledSearchKeys[option.key])}
+                            $active={option.isFilterToggle ? useSearchResultFilters : Boolean(enabledSearchKeys[option.key])}
+                            aria-pressed={option.isFilterToggle ? useSearchResultFilters : Boolean(enabledSearchKeys[option.key])}
                             disabled={disabled}
                             onClick={() => handleSearchScopeChange(option.key, disabled)}
                           >
-                            {option.label}
+                            {option.isFilterToggle
+                              ? `фільтри ${useSearchResultFilters ? 'ON' : 'OFF'}`
+                              : option.label}
                           </ScopeChip>
                         </React.Fragment>
                       );
@@ -6130,7 +6147,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 {searchLoading ? (
                   <span className="spinner" />
                 ) : (
-                  Object.keys(users || {}).length
+                  renderVisibleIds.length
                 )}{' '}
                 карток.
               </p>
