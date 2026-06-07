@@ -26,6 +26,7 @@ import {
   deleteCommentByOwner,
 } from '../config';
 import { updateCard, clearCardCache } from 'utils/cardsStorage';
+import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isAdminUid } from 'utils/accessLevel';
@@ -627,13 +628,65 @@ const TopBlock = ({
       toast.error('Режим редагування недоступний у цьому контексті');
       return;
     }
-    const authorCard = await fetchUserById(authorId);
-    if (!authorCard) {
-      toast.error('Картку автора не знайдено');
-      return;
-    }
     setSearch(authorId);
-    setState(authorCard);
+    const cachedAuthorCard = getCard(authorId);
+    setState(cachedAuthorCard || { userId: authorId }, {
+      source: cachedAuthorCard ? 'localStorage' : 'userChange',
+      caller: 'renderTopBlock.openAuthorCardForEdit',
+      reason: 'open-author-local-first',
+    });
+  };
+
+  const refreshCardFromBackend = async () => {
+    let fresh = null;
+    let toastFn = toast.error;
+    let toastMsg = 'Не вдалося завантажити дані';
+    try {
+      fresh = await fetchUserById(cardData.userId);
+      if (fresh) {
+        clearCardCache(cardData.userId);
+        updateCard(cardData.userId, fresh);
+        const backendCard = { ...fresh, userId: cardData.userId };
+
+        if (setUsers) {
+          setUsers(prev => {
+            if (Array.isArray(prev)) {
+              return prev.map(u => (u.userId === cardData.userId ? backendCard : u));
+            }
+            if (typeof prev === 'object' && prev !== null) {
+              return { ...prev, [cardData.userId]: backendCard };
+            }
+            return prev;
+          });
+        }
+
+        if (setState && !isFromListOfUsers) {
+          setState(backendCard, {
+            source: 'backend',
+            caller: 'renderTopBlock.detailsRefreshButton',
+            reason: 'manual-backend-refresh',
+          });
+        }
+
+        console.log('[ProfileSnapshotDebug][renderTopBlock]', {
+          source: 'backend',
+          caller: 'details-refresh-button',
+          userId: cardData.userId,
+          fieldsCount: Object.keys(backendCard).length,
+          applied: true,
+          timestamp: new Date().toISOString(),
+        });
+        toastFn = toast.success;
+        toastMsg = `Дані завантажено з бекенду (${Object.keys(backendCard).length} полів)`;
+      } else {
+        toastMsg = 'Свіжі дані відсутні';
+      }
+    } catch (error) {
+      console.error(error);
+      toastMsg = error.message || 'Не вдалося завантажити дані';
+    } finally {
+      toastFn(toastMsg);
+    }
   };
 
   const cardRole = cardData.role || cardData.userRole;
@@ -839,7 +892,12 @@ const TopBlock = ({
       </div>
       <div style={commentsSectionStyle}>
         {fieldWriter(cardData, setUsers, setState, submitOptions)}
-        <FieldComment userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />
+        <FieldComment
+          userData={cardData}
+          setUsers={setUsers}
+          setState={setState}
+          submitOptions={submitOptions}
+        />
         {multiDataComments.map(comment => (
           <div key={comment.commentId || `${comment.authorId}-${comment.text}`} style={multiCommentRowStyle}>
             <button
@@ -968,60 +1026,21 @@ const TopBlock = ({
         onClick={async e => {
           e.stopPropagation();
           const details = document.getElementById(cardData.userId);
-          const toggleDetails = () => {
+          const showDetails = () => {
             if (details) {
-              const isHidden = details.style.display === 'none';
-              details.style.display = isHidden ? 'block' : 'none';
-              details.style.marginTop = isHidden ? '8px' : '0';
-              if (isHidden) {
-                const bg = getParentBackground(details);
-                details.style.color = getContrastColor(bg);
-              }
+              details.style.display = 'block';
+              details.style.marginTop = '8px';
+              const bg = getParentBackground(details);
+              details.style.color = getContrastColor(bg);
             }
           };
 
-          toggleDetails();
-
-          let fresh = null;
-          let toastFn = toast.error;
-          let toastMsg = 'Не вдалося завантажити дані';
-          try {
-            fresh = await fetchUserById(cardData.userId);
-            if (fresh) {
-              clearCardCache(cardData.userId);
-              const updated = updateCard(cardData.userId, fresh);
-
-              if (setUsers) {
-                setUsers(prev => {
-                  if (Array.isArray(prev)) {
-                    return prev.map(u => (u.userId === cardData.userId ? updated : u));
-                  }
-                  if (typeof prev === 'object' && prev !== null) {
-                    return { ...prev, [cardData.userId]: updated };
-                  }
-                  return prev;
-                });
-              }
-
-              if (setState && !isFromListOfUsers) {
-                setState(prev => ({ ...prev, ...updated }));
-              }
-
-              toastFn = toast.success;
-              toastMsg = 'Дані завантажено з бекенду';
-            } else {
-              toastMsg = 'Свіжі дані відсутні';
-            }
-          } catch (error) {
-            console.error(error);
-            toastMsg = error.message || 'Не вдалося завантажити дані';
-          } finally {
-            toastFn(toastMsg);
-          }
+          showDetails();
+          await refreshCardFromBackend();
         }}
         style={detailsToggleStyle}
-        title="Оновити дані з бекенду"
-        aria-label="Оновити дані з бекенду"
+        title="Оновити дані з бекенду та показати всі поля"
+        aria-label="Оновити дані з бекенду та показати всі поля"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M4 12a8 8 0 0 1 14.93-4H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

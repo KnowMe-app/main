@@ -1322,7 +1322,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     );
   }, [INDEX_SELECTION_STORAGE_KEY, selectedIndexJobs, selectedSearchKeyIndexes]);
 
-  const [state, setState] = useState(() => {
+  const [state, setRawState] = useState(() => {
     const params = new URLSearchParams(location.search);
     const restoredUserIdFromUrl = params.get('userId') || '';
     const restoredUserIdFromCache = localStorage.getItem(EDIT_PROFILE_USER_ID_KEY) || '';
@@ -1355,6 +1355,46 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     logProfileRestoreStep('init-state:cache-miss-placeholder', { restoredUserId });
     return { userId: restoredUserId };
   });
+  const profileSnapshotVersionRef = useRef(0);
+  const profileSaveRequestRef = useRef(0);
+  const profileFetchRequestRef = useRef(0);
+  const backendInitialLoadUserIdsRef = useRef(new Set());
+  const latestProfileSnapshotRef = useRef(state);
+  const logProfileSnapshotUpdate = useCallback((source, payload = {}) => {
+    const entry = {
+      source,
+      timestamp: new Date().toISOString(),
+      at: getProfileRestoreTimestamp(),
+      version: profileSnapshotVersionRef.current,
+      ...payload,
+    };
+    console.log('[ProfileSnapshotDebug][AddNewProfile]', entry);
+    return entry;
+  }, []);
+  const setState = useCallback((updater, debug = {}) => {
+    setRawState(prevState => {
+      const nextState = typeof updater === 'function' ? updater(prevState) : updater;
+      const prevUserId = String(prevState?.userId || '');
+      const nextUserId = String(nextState?.userId || '');
+      const changed = nextState !== prevState;
+
+      if (changed) {
+        profileSnapshotVersionRef.current += 1;
+        latestProfileSnapshotRef.current = nextState || {};
+      }
+
+      logProfileSnapshotUpdate(debug.source || 'setState', {
+        caller: debug.caller || 'AddNewProfile.setState',
+        applied: changed,
+        reason: changed ? debug.reason || 'local-snapshot-updated' : debug.reason || 'unchanged',
+        prevUserId,
+        nextUserId,
+        keysCount: nextState && typeof nextState === 'object' ? Object.keys(nextState).length : 0,
+      });
+
+      return nextState;
+    });
+  }, [logProfileSnapshotUpdate]);
   const [, setHistoryVersion] = useState(0);
   const editHistoryRef = useRef({
     userId: null,
@@ -1583,6 +1623,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const now = Date.now();
     const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
     const updatedState = { ...baseState, lastAction: now };
+    const saveRequestId = profileSaveRequestRef.current + 1;
+    profileSaveRequestRef.current = saveRequestId;
 
     const formattedLastDelivery = formatDateToServer(
       formatDateAndFormula(updatedState.lastDelivery)
@@ -1618,7 +1660,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // Optimistically update the only full-card cache and UI state before syncing with server.
       const removeKeys = delCondition ? Object.keys(delCondition) : [];
       const optimisticCard = updateCachedUser(syncedState, { removeKeys }) || syncedState;
-      setState(optimisticCard);
+      const localSaveVersion = profileSnapshotVersionRef.current + 1;
+      setState(optimisticCard, {
+        source: 'userChange',
+        caller: 'handleSubmit:optimistic-update',
+        reason: 'optimistic-local-save-start',
+      });
+      logProfileSnapshotUpdate('saveResponse', {
+        caller: 'handleSubmit:start',
+        requestId: saveRequestId,
+        userId: syncedState.userId,
+        applied: true,
+        reason: 'background-save-started-local-is-source-of-truth',
+      });
       cacheFetchedUsers({ [syncedState.userId]: optimisticCard }, cacheLoad2Users, filters);
       const gitNewCardHidden = hideFutureGitNewCardAndLoadNext(optimisticCard);
       if (!gitNewCardHidden) {
@@ -1746,9 +1800,33 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
       }
       console.log('[LS cards before]', getLocalStorageCardsDebugSnapshot());
+      const currentUserId = String((latestProfileSnapshotRef.current || {}).userId || '');
+      const isStaleSaveResponse =
+        profileSaveRequestRef.current !== saveRequestId ||
+        profileSnapshotVersionRef.current !== localSaveVersion ||
+        currentUserId !== String(syncedState.userId || '');
+
+      if (isStaleSaveResponse) {
+        logProfileSnapshotUpdate('saveResponse', {
+          caller: 'handleSubmit:finish',
+          requestId: saveRequestId,
+          userId: syncedState.userId,
+          localSaveVersion,
+          currentVersion: profileSnapshotVersionRef.current,
+          currentUserId,
+          applied: false,
+          reason: 'stale-save-response-local-snapshot-is-newer',
+        });
+        return;
+      }
+
       const savedCachedCard = updateCachedUser(syncedState, { removeKeys }) || syncedState;
       cacheFetchedUsers({ [syncedState.userId]: savedCachedCard }, cacheLoad2Users, filters);
-      setState(savedCachedCard);
+      setState(savedCachedCard, {
+        source: 'saveResponse',
+        caller: 'handleSubmit:finish',
+        reason: 'background-save-confirmed-current-snapshot',
+      });
       setUsers(prev => {
         if (!prev || !Object.prototype.hasOwnProperty.call(prev, syncedState.userId)) {
           return prev;
@@ -1943,6 +2021,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     stateUserIdRef.current = state.userId || '';
     stateRef.current = state;
+    latestProfileSnapshotRef.current = state;
   }, [state]);
 
   const [users, setUsers] = useState({});
@@ -1970,7 +2049,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [profileSource, setProfileSource] = useState('');
   const profileSourceRef = useRef(profileSource);
   const [isResolvingEditMode, setIsResolvingEditMode] = useState(false);
-  const profileFetchRequestRef = useRef(0);
 
   const downloadLoadDebugLogs = useCallback(() => {
     const logs = loadDebugLogsRef.current || [];
@@ -2314,6 +2392,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const requestId = profileFetchRequestRef.current + 1;
     profileFetchRequestRef.current = requestId;
+    const startedVersion = profileSnapshotVersionRef.current;
     logProfileRestoreStep('profile-data:effect-start', {
       requestId,
       userId: activeUserId,
@@ -2351,18 +2430,57 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       });
       const cachedProfile = { ...cached, userId: cached.userId || activeUserId };
       logRenderSource('cache', cachedProfile);
-      setState(cachedProfile);
+      setState(cachedProfile, {
+        source: 'localStorage',
+        caller: 'profile-data:cache-hit-hydrate-state',
+        reason: 'initial-hydration-from-local-cache',
+      });
       setProfileSource('cache');
     } else {
+      if (backendInitialLoadUserIdsRef.current.has(activeUserId)) {
+        logProfileSnapshotUpdate('backend', {
+          caller: 'profile-data:cache-miss-fetch-backend-start',
+          requestId,
+          userId: activeUserId,
+          applied: false,
+          reason: 'backend-initial-load-already-attempted',
+        });
+        setProfileSource('local');
+        return;
+      }
+      backendInitialLoadUserIdsRef.current.add(activeUserId);
       logProfileRestoreStep('profile-data:cache-miss-fetch-backend-start', {
         requestId,
         userId: activeUserId,
+        startedVersion,
       });
       setProfileSource('loading');
       (async () => {
         try {
           const data = await fetchUserById(activeUserId);
           if (data) {
+            const latestState = latestProfileSnapshotRef.current || {};
+            const latestUserId = String(latestState.userId || '').trim();
+            const isStaleResponse =
+              profileFetchRequestRef.current !== requestId ||
+              latestUserId !== activeUserId ||
+              profileSnapshotVersionRef.current !== startedVersion ||
+              Object.keys(latestState).length > 1;
+
+            if (isStaleResponse) {
+              logProfileSnapshotUpdate('backend', {
+                caller: 'profile-data:backend-hit-update-cache-and-state',
+                requestId,
+                userId: activeUserId,
+                startedVersion,
+                currentVersion: profileSnapshotVersionRef.current,
+                latestUserId,
+                applied: false,
+                reason: 'stale-backend-response-local-snapshot-is-newer',
+              });
+              return;
+            }
+
             logProfileRestoreStep('profile-data:backend-hit-update-cache-and-state', {
               requestId,
               userId: activeUserId,
@@ -2371,7 +2489,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             updateCard(activeUserId, data);
             const backendProfile = { ...data, userId: data.userId || activeUserId };
             logRenderSource('backend', backendProfile);
-            setState(backendProfile);
+            setState(backendProfile, {
+              source: 'backend',
+              caller: 'profile-data:backend-hit-update-cache-and-state',
+              reason: 'initial-hydration-from-backend',
+            });
           } else {
             logProfileRestoreStep('profile-data:backend-empty', {
               requestId,
@@ -2390,13 +2512,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             requestId,
             userId: activeUserId,
           });
-          if (profileFetchRequestRef.current === requestId) {
+          if (profileFetchRequestRef.current === requestId && profileSnapshotVersionRef.current === startedVersion) {
             setProfileSource('backend');
           }
         }
       })();
     }
-  }, [state.userId, setState]);
+  }, [logProfileSnapshotUpdate, state.userId, setState]);
 
   useEffect(() => {
     if (!state.userId) setProfileSource('');
@@ -2652,23 +2774,16 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const cacheKey = getCacheKey('search', normalizeQueryKey(`userId=${id}`));
       setIdsForQuery(cacheKey, [id]);
 
-      try {
-        const fresh = await fetchUserById(id);
-        if (fresh) {
-          updateCard(id, fresh);
-          setState(fresh);
-          return;
-        }
-      } catch (error) {
-        console.error('Failed to fetch profile for stimulation shortcut', error);
-      }
-
       const fallback =
         (typeof userData === 'object' && userData?.userId ? userData : null) ||
         getCard(id) ||
         { userId: id };
       saveCard(fallback);
-      setState(fallback);
+      setState(fallback, {
+        source: getCard(id) ? 'localStorage' : 'userChange',
+        caller: 'handleOpenScheduleProfile',
+        reason: 'open-profile-local-first',
+      });
     },
     [setSearch, setState],
   );
@@ -4918,7 +5033,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         window.removeEventListener('popstate', handlePopState);
       };
     }
-  }, [isDuplicateView, state.userId]);
+  }, [isDuplicateView, setState, state.userId]);
 
   const searchDuplicates = async () => {
     const { cards: cached } = await getDplCards();
