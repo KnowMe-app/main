@@ -1562,12 +1562,24 @@ const Matching = () => {
   const applySearchResults = async res => {
     const arr = Array.isArray(res) ? res : Object.values(res || {});
     const filtered = arr.filter(u => isValidId(u?.userId));
+
+    loadInitialVersionRef.current += 1;
+    additionalLoadMoreFetchVersionRef.current += 1;
+    additionalMatchingApplyVersionRef.current += 1;
+    loadingRef.current = false;
+    loadingStateRef.current = false;
+    hasMoreRef.current = false;
+    viewModeRef.current = 'search';
+
     setUsers(filtered);
+    loadedIdsRef.current = new Set(filtered.map(u => u.userId).filter(Boolean));
+    setAdditionalNewUsers([]);
+    setAdditionalNextOffset(0);
     setHasMore(false);
     setLastKey(null);
+    setLoading(false);
     invalidateReactionAsyncWork();
     setSharedReactionCandidateUsers([]);
-    viewModeRef.current = 'search';
     setViewMode('search');
     void loadCommentsFor(filtered);
   };
@@ -4087,7 +4099,12 @@ const Matching = () => {
           refillBlockedReason: '',
         });
         indexedPage.collected.forEach(user => { if (!user.__fromCardCache) updateCard(user.userId, user); });
-        if (!isLatestLoadMore()) return;
+        if (!canApplyLoadMoreResultWithFilters()) {
+          logStaleLoadMoreResultIgnored('indexed-page-apply', {
+            fetchedIds: indexedPage.collected.map(user => user.userId).filter(Boolean),
+          });
+          return;
+        }
         indexedPage.collected.forEach(user => loadedIdsRef.current.add(user.userId));
         setUsers(prev => {
           const map = new Map(prev.map(user => [user.userId, user]));
@@ -4202,7 +4219,12 @@ const Matching = () => {
       }
 
       collected.forEach(u => { if (!u.__fromCardCache) updateCard(u.userId, u); });
-      if (!isLatestLoadMore()) return;
+      if (!canApplyLoadMoreResultWithFilters()) {
+        logStaleLoadMoreResultIgnored('default-source-apply', {
+          fetchedIds: collected.map(u => u.userId).filter(Boolean),
+        });
+        return;
+      }
       collected.forEach(u => loadedIdsRef.current.add(u.userId));
       setUsers(prev => {
         const map = new Map(prev.map(u => [u.userId, u]));
