@@ -30,6 +30,7 @@ import {
   addStimulationShortcutId,
   removeStimulationShortcutId,
   replaceStimulationShortcutIds,
+  fetchStimulationShortcutIds,
   filterMain,
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
@@ -94,12 +95,11 @@ import SearchBar, { detectSearchParams } from './SearchBar';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import { PAGE_SIZE, database } from './config';
-import { get as firebaseGet, onValue as firebaseOnValue, push, ref } from 'firebase/database';
+import { get as firebaseGet, push, ref } from 'firebase/database';
 import {
   getBackendDownloadToastsEnabled,
   setBackendDownloadToastsEnabled,
   withAdminDownloadToast,
-  wrapAdminOnValue,
 } from 'utils/backendDownloadToast';
 // import JsonToExcelButton from './topBtns/btnJsonToExcel';
 // import { aiHandler } from './aiHandler';
@@ -139,11 +139,6 @@ const get = (...args) =>
     path: args[0],
   });
 
-const onValue = wrapAdminOnValue(firebaseOnValue, {
-  operation: 'onValue',
-  source: 'AddNewProfile',
-});
-
 const getLocalStorageCardsDebugSnapshot = () => {
   if (typeof localStorage === 'undefined') return {};
   try {
@@ -160,6 +155,11 @@ const logRenderSource = (source, card) => {
   if (!card?.userId) return;
   console.log('[RENDER SOURCE]', source, card.userId, card.getInTouch);
 };
+
+const normalizeTruthyMap = value =>
+  Object.fromEntries(
+    Object.entries(value || {}).filter(([, item]) => Boolean(item)),
+  );
 
 const Container = styled.div`
   display: flex;
@@ -2824,50 +2824,54 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setFavoriteIds(initialFav);
   }, [initialFav]);
 
+  const loadStimulationShortcutsOnce = useCallback(async () => {
+    if (!ownerId) return [];
+
+    const ids = await fetchStimulationShortcutIds(ownerId);
+    if (!isMountedRef.current) return ids;
+
+    setStoredStimulationShortcutIds(ids);
+    setStimulationShortcutIdsState(ids);
+    refreshStimulationShortcuts(ids);
+    return ids;
+  }, [ownerId, refreshStimulationShortcuts, isMountedRef]);
+
+  const loadFavoriteIdsOnce = useCallback(async (targetOwnerId = ownerId) => {
+    if (!targetOwnerId) return {};
+
+    const favorites = await fetchFavoriteUsers(targetOwnerId);
+    const normalizedFavorites = normalizeTruthyMap(favorites);
+    if (!isMountedRef.current) return normalizedFavorites;
+
+    setFavoriteUsersData(normalizedFavorites);
+    syncFavorites(normalizedFavorites);
+    setFavoriteIds(normalizedFavorites);
+    return normalizedFavorites;
+  }, [ownerId, isMountedRef]);
+
+  const loadDislikeIdsOnce = useCallback(async (targetOwnerId = ownerId) => {
+    if (!targetOwnerId) return {};
+
+    const dislikes = await fetchDislikeUsers(targetOwnerId);
+    const normalizedDislikes = normalizeTruthyMap(dislikes);
+    if (!isMountedRef.current) return normalizedDislikes;
+
+    setDislikeUsersData(normalizedDislikes);
+    syncDislikes(normalizedDislikes);
+    return normalizedDislikes;
+  }, [ownerId, isMountedRef]);
+
   useEffect(() => {
-    if (!ownerId) return;
-
-    const shortcutsRef = ref(database, `multiData/stimulationShortcuts/${ownerId}`);
-    const unsubscribe = onValue(shortcutsRef, snapshot => {
-      const data = snapshot.exists() ? snapshot.val() : {};
-      const ids = Object.keys(data).filter(Boolean);
-      setStoredStimulationShortcutIds(ids);
-      setStimulationShortcutIdsState(ids);
-      refreshStimulationShortcuts(ids);
-    });
-
-    return () => unsubscribe();
-  }, [ownerId, refreshStimulationShortcuts]);
+    loadStimulationShortcutsOnce();
+  }, [loadStimulationShortcutsOnce]);
 
   useEffect(() => {
-    if (!ownerId) return;
-
-    const favRef = ref(database, `multiData/favorites/${ownerId}`);
-    const unsubscribe = onValue(favRef, snap => {
-      const data = snap.exists() ? snap.val() : {};
-      const normalizedFavorites = Object.fromEntries(
-        Object.entries(data || {}).filter(([, value]) => value),
-      );
-      setFavoriteUsersData(normalizedFavorites);
-      syncFavorites(normalizedFavorites);
-      setFavoriteIds(normalizedFavorites);
-    });
-
-    return () => unsubscribe();
-  }, [ownerId]);
+    loadFavoriteIdsOnce();
+  }, [loadFavoriteIdsOnce]);
 
   useEffect(() => {
-    if (!ownerId) return;
-
-    const disRef = ref(database, `multiData/dislikes/${ownerId}`);
-    const unsubscribe = onValue(disRef, snap => {
-      const data = snap.exists() ? snap.val() : {};
-      setDislikeUsersData(data);
-      syncDislikes(data);
-    });
-
-    return () => unsubscribe();
-  }, [ownerId]);
+    loadDislikeIdsOnce();
+  }, [loadDislikeIdsOnce]);
 
   useEffect(() => {
     if (skipNextReloadRef.current) {
@@ -4729,6 +4733,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const owner = auth.currentUser?.uid;
     if (!owner) return null;
 
+    await loadFavoriteIdsOnce(owner);
+
     const { cards: cachedArr, fromCache } = await getFavoriteCards(
       id => fetchUserById(id),
     );
@@ -4763,7 +4769,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setIdsForQuery('favorite', Object.keys(normalizedFavs));
 
     return { loaded, normalizedFavs, cacheCount, backendCount };
-  }, [cacheFetchedUsers, setFavoriteUsersData]);
+  }, [cacheFetchedUsers, loadFavoriteIdsOnce, setFavoriteUsersData]);
 
   const resetReactionUsersState = useCallback(() => {
     setUsers({});
@@ -4857,6 +4863,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const owner = auth.currentUser?.uid;
     if (!owner) return null;
 
+    await loadDislikeIdsOnce(owner);
+
     const { cards: cachedArr, fromCache } = await getDislikedCards(
       id => fetchUserById(id),
     );
@@ -4891,7 +4899,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setIdsForQuery('dislike', Object.keys(normalizedDislikes));
 
     return { loaded, normalizedDislikes, cacheCount, backendCount };
-  }, [cacheFetchedUsers, setDislikeUsersData]);
+  }, [cacheFetchedUsers, loadDislikeIdsOnce, setDislikeUsersData]);
 
   const isSingleReactionSelection = useCallback((reactionFilters, targetKey) => {
     if (!reactionFilters || typeof reactionFilters !== 'object') return false;
