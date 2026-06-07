@@ -2936,6 +2936,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           if (ignored) return;
           setCacheCount(cacheCount);
           setBackendCount(backendCount);
+
+          const loadedFromCacheOnly = Number(backendCount) === 0 && Number(cacheCount) >= PAGE_SIZE;
+          if (loadedFromCacheOnly) {
+            appendLoadDebugLog('reload-effect:gitNew-prefetch-skipped', {
+              reason: 'first page already loaded from cache',
+              cacheCount,
+              backendCount,
+              threshold: PAGE_SIZE,
+            });
+            return;
+          }
+
           ensureGitNewLoadedCount(PAGE_SIZE * 3, filters).catch(error => {
             appendLoadDebugLog('reload-effect:gitNew-prefetch-error', {
               message: error?.message || String(error),
