@@ -1418,6 +1418,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const skipNextReloadRef = useRef(false);
   const searchKeyCoverageRef = useRef({});
   const loadDebugLogsRef = useRef([]);
+  const renderCacheHydrationIdsRef = useRef(new Set());
   const hasInitializedFiltersRef = useRef(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState(null);
@@ -5496,6 +5497,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     queryIds: sortedQueryIds,
     visibleCards: sortedCardsFromCache,
   } = getCardsByIds(sortedIds);
+  const sortedCachedCardsById = sortedCardsFromCache.reduce((acc, card) => {
+    if (card?.userId) acc[card.userId] = card;
+    return acc;
+  }, {});
+  const getRenderCardById = id => {
+    const cachedCard = sortedCachedCardsById[id];
+    const currentUser = users[id];
+    const mergedCard = currentUser
+      ? {
+        ...(cachedCard || {}),
+        ...currentUser,
+        userId: currentUser.userId || cachedCard?.userId || id,
+      }
+      : cachedCard;
+
+    return mergedCard?.userId ? mergedCard : null;
+  };
   const filterRenderCards = cards => {
     if (isDuplicateView) return cards;
 
@@ -5508,7 +5526,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       { requireCurrentOrPastGetInTouch: searchIdAndSearchKeyOnlyMode && currentFilter === 'DATE2.1' },
     ).map(([, card]) => card);
   };
-  const renderVisibleCards = filterRenderCards(sortedCardsFromCache);
+  const renderSourceCards = sortedIds
+    .map(getRenderCardById)
+    .filter(Boolean);
+  const renderVisibleCards = filterRenderCards(renderSourceCards);
   const renderVisibleIds = renderVisibleCards.map(card => card.userId);
   const loadedPages = Math.ceil(renderVisibleIds.length / PAGE_SIZE) || 1;
   const totalPages = shouldPaginate ? Math.max(loadedPages, hasMore ? currentPage + 1 : currentPage) : 1;
@@ -5520,28 +5541,81 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     acc[card.userId] = card;
     return acc;
   }, {});
+  const displayedUserIdsKey = displayedUserIds.join('|');
   const paginatedUsers = displayedUserIds.reduce((acc, id) => {
     const cachedCard = cachedPaginatedUsers[id];
     const currentUser = users[id];
+    const fallbackCard = renderVisibleCards.find(card => card.userId === id);
     const mergedCard = currentUser
       ? {
-        ...(cachedCard || {}),
+        ...(fallbackCard || cachedCard || {}),
         ...currentUser,
-        userId: currentUser.userId || cachedCard?.userId || id,
+        userId: currentUser.userId || fallbackCard?.userId || cachedCard?.userId || id,
       }
-      : cachedCard;
+      : fallbackCard || cachedCard;
 
     if (mergedCard) acc[id] = mergedCard;
     return acc;
   }, {});
 
+  useEffect(() => {
+    const idsToHydrate = displayedUserIdsKey.split('|').filter(id => {
+      if (!id) return false;
+      if (getCard(id)) return false;
+      return !renderCacheHydrationIdsRef.current.has(id);
+    });
+
+    if (idsToHydrate.length === 0) return undefined;
+
+    let cancelled = false;
+    idsToHydrate.forEach(id => renderCacheHydrationIdsRef.current.add(id));
+
+    Promise.all(
+      idsToHydrate.map(async id => {
+        const fresh = await fetchUserById(id);
+        if (!fresh) return null;
+
+        const hydratedCard = updateCachedUser({ ...fresh, userId: id }) || { ...fresh, userId: id };
+        return [id, hydratedCard];
+      }),
+    )
+      .then(entries => {
+        if (cancelled) return;
+
+        const hydratedUsers = entries.reduce((acc, entry) => {
+          if (!entry) return acc;
+          const [id, card] = entry;
+          if (card?.userId) acc[id] = card;
+          return acc;
+        }, {});
+
+        if (Object.keys(hydratedUsers).length > 0) {
+          setUsers(prev => ({ ...prev, ...hydratedUsers }));
+        }
+      })
+      .catch(error => {
+        console.error('[RENDER] failed to hydrate missing cache cards', {
+          ids: idsToHydrate,
+          message: error?.message || String(error),
+        });
+      })
+      .finally(() => {
+        idsToHydrate.forEach(id => renderCacheHydrationIdsRef.current.delete(id));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [displayedUserIdsKey]);
+
   console.log('[CACHE] cards source:', renderCardsById);
   console.log('[QUERIES] ids:', sortedQueryIds);
-  console.log('[RENDER] visible cards:', paginatedVisibleCards.map(c => ({
+  console.log('[RENDER] visible cards:', Object.values(paginatedUsers).map(c => ({
     userId: c.userId,
     getInTouch: c.getInTouch,
     lastAction: c.lastAction,
     cachedAt: c.cachedAt,
+    fromRenderFallback: !cachedPaginatedUsers[c.userId],
   })));
 
   const handleLoadUsers = () => {
