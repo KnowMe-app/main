@@ -2495,12 +2495,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               reason: 'initial-hydration-from-backend',
             });
           } else {
+            backendInitialLoadUserIdsRef.current.delete(activeUserId);
             logProfileRestoreStep('profile-data:backend-empty', {
               requestId,
               userId: activeUserId,
             });
           }
         } catch (error) {
+          backendInitialLoadUserIdsRef.current.delete(activeUserId);
           logProfileRestoreStep('profile-data:backend-error', {
             requestId,
             userId: activeUserId,
