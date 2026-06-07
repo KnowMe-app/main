@@ -5516,8 +5516,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     ? renderVisibleIds.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
     : renderVisibleIds;
   const { visibleCards: paginatedVisibleCards } = getCardsByIds(displayedUserIds);
-  const paginatedUsers = paginatedVisibleCards.reduce((acc, card) => {
+  const cachedPaginatedUsers = paginatedVisibleCards.reduce((acc, card) => {
     acc[card.userId] = card;
+    return acc;
+  }, {});
+  const paginatedUsers = displayedUserIds.reduce((acc, id) => {
+    const cachedCard = cachedPaginatedUsers[id];
+    const currentUser = users[id];
+    const mergedCard = currentUser
+      ? {
+        ...(cachedCard || {}),
+        ...currentUser,
+        userId: currentUser.userId || cachedCard?.userId || id,
+      }
+      : cachedCard;
+
+    if (mergedCard) acc[id] = mergedCard;
     return acc;
   }, {});
 
