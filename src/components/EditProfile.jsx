@@ -846,25 +846,15 @@ const EditProfile = () => {
         <TopBlockSkeleton />
       ) : (
         <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-          {renderTopBlock(
-            state,
-            () => {},
-            () => {},
+          {renderTopBlock({
+            userData: state,
+            setUsers: () => {},
+            setShowInfoModal: () => {},
             setState,
-            () => {},
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            handleOpenMedications,
-            undefined,
-            null,
-            null,
+            setUserIdToDelete: () => {},
+            onOpenMedications: handleOpenMedications,
             overlayFieldAdditions,
-          )}
+          })}
         </div>
       )}
       {shouldShowSchedule && state && (

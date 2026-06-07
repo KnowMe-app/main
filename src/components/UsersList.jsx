@@ -37,13 +37,13 @@ const UserCard = ({
   return (
     <div>
       <div style={{ ...coloredCard(role), marginBottom: '8px' }}>
-        {renderTopBlock(
+        {renderTopBlock({
           userData,
           setUsers,
           setShowInfoModal,
           setState,
           setUserIdToDelete,
-          true,
+          isFromListOfUsers: true,
           favoriteUsers,
           setFavoriteUsers,
           dislikeUsers,
@@ -52,9 +52,8 @@ const UserCard = ({
           isDateInRange,
           onOpenMedications,
           setSearch,
-          null,
-          actions
-        )}
+          additionalActions: actions,
+        })}
       </div>
       {shouldShowSchedule && (
         <div style={{ ...coloredCard(role), marginBottom: '8px' }}>

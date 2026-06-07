@@ -5935,22 +5935,21 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         {isResolvingEditMode ? null : state.userId ? (
           <>
             <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-              {renderTopBlock(
-                state,
+              {renderTopBlock({
+                userData: state,
                 setUsers,
                 setShowInfoModal,
                 setState,
                 setUserIdToDelete,
-                false,
-                favoriteUsersData,
-                setFavoriteUsersData,
-                dislikeUsersData,
-                setDislikeUsersData,
+                isFromListOfUsers: false,
+                favoriteUsers: favoriteUsersData,
+                setFavoriteUsers: setFavoriteUsersData,
+                dislikeUsers: dislikeUsersData,
+                setDislikeUsers: setDislikeUsersData,
                 currentFilter,
                 isDateInRange,
-                openMedicationsModal,
-                null,
-                {
+                onOpenMedications: openMedicationsModal,
+                topBlueAction: {
                   onClick: handleBackToPreviousList,
                   title: 'Назад до попереднього списку',
                   ariaLabel: 'Назад до попереднього списку',
@@ -5973,10 +5972,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     </svg>
                   ),
                 },
-                null,
-                {},
-                handleTopBlockSubmitHistorySnapshot,
-              )}
+                overlayFieldAdditions: {},
+                onSubmitHistorySnapshot: handleTopBlockSubmitHistorySnapshot,
+              })}
             </div>
             {shouldShowSchedule && state && (
               <div style={{ ...coloredCard(), marginBottom: '8px' }}>

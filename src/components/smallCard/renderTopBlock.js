@@ -1051,7 +1051,7 @@ const TopBlock = ({
   );
 };
 
-export const renderTopBlock = (
+export const renderTopBlock = ({
   userData,
   setUsers,
   setShowInfoModal,
@@ -1069,8 +1069,8 @@ export const renderTopBlock = (
   topBlueAction = null,
   additionalActions = null,
   overlayFieldAdditions = {},
-  onSubmitHistorySnapshot = null
-) => (
+  onSubmitHistorySnapshot = null,
+}) => (
   <TopBlock
     userData={userData}
     setUsers={setUsers}
