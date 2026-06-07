@@ -323,6 +323,26 @@ const parseUserId = input => {
   return null;
 };
 
+export const parsePartialUserIdPrefix = input => {
+  const parsedUserId = parseUserId(input);
+  if (parsedUserId) return parsedUserId;
+
+  if (typeof input !== 'string') return null;
+  const candidate = input.trim();
+  if (!candidate) return null;
+
+  // RTDB keys cannot contain these characters, and the partial userId mode
+  // searches by the beginning of the users/newUsers catalog key exactly as typed.
+  if (/[.#$[\]/\s]/.test(candidate)) return null;
+
+  const normalizedPhone = candidate.replace(/[+\s()-]/g, '');
+  if (/^(?:0|380)\d{9}$/.test(normalizedPhone)) return null;
+
+  if (/^[A-Za-z0-9_-]{3,}$/.test(candidate)) return candidate;
+
+  return null;
+};
+
 const detectHttpSocialSearch = input => {
   if (typeof input !== 'string') return null;
 
@@ -1202,11 +1222,11 @@ const SearchBar = ({
   };
 
   const runPartialUserIdSearch = async (rawQuery, isStaleRequest, resultMap = {}) => {
-    const parsedUserId = parseUserId(rawQuery);
-    if (!parsedUserId) return { found: false, results: resultMap };
+    const userIdPrefix = parsePartialUserIdPrefix(rawQuery);
+    if (!userIdPrefix) return { found: false, results: resultMap };
 
     const partialResult = await cachedSearch(
-      { userId: parsedUserId },
+      { userId: userIdPrefix },
       { forcePartialUserIdSearch: true },
     );
     if (isStaleRequest()) return { found: false, results: resultMap };
