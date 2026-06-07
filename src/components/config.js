@@ -2380,7 +2380,8 @@ const transientUserDataKeys = [
   '__profileSnapshotUpdatedAt',
 ];
 
-const stripTransientUserDataFields = payload => {
+const stripTransientUserDataFields = (payload, options = {}) => {
+  const { markForRealtimeDeletion = false } = options;
   const cleaned = removeUndefined(payload);
   if (typeof cleaned !== 'object' || cleaned === null || Array.isArray(cleaned)) {
     return cleaned;
@@ -2389,6 +2390,9 @@ const stripTransientUserDataFields = payload => {
   const nextPayload = { ...cleaned };
   transientUserDataKeys.forEach(key => {
     delete nextPayload[key];
+    if (markForRealtimeDeletion) {
+      nextPayload[key] = null;
+    }
   });
 
   return nextPayload;
