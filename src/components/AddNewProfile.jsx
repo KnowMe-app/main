@@ -4555,8 +4555,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         userId,
         {
           userId,
-          ...newUserRaw,
           ...(usersData[userId] || {}),
+          ...newUserRaw,
         },
       ];
     });

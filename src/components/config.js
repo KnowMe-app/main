@@ -1511,7 +1511,9 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
 
     uniqueIds.forEach(id => {
       const cached = getCard(id);
-      if (cached && (!source || cached.__sourceCollection === source)) {
+      if (cached && source && cached.__sourceCollection === source) {
+        result[id] = cached;
+      } else if (cached && !source && cached.__sourceCollection === 'newUsers') {
         result[id] = cached;
       } else {
         missingIds.push(id);
@@ -1520,21 +1522,28 @@ export const fetchUsersByIds = async (ids, { collectionSource } = {}) => {
 
     const snaps = await Promise.all(
       missingIds.map(id => {
-        const readSources = source
-          ? [source]
-          : (String(id || '').length < 20 ? ['newUsers'] : ['users']);
+        const readSources = source ? [source] : ['users', 'newUsers'];
         return Promise.all(
           readSources.map(sourceName => get(ref2(database, `${sourceName}/${id}`)).then(snapshot => [sourceName, snapshot]))
         ).then(entries => {
-          const foundEntry = entries.find(([, snapshot]) => snapshot.exists());
-          if (!foundEntry) return null;
-          const [sourceName, snapshot] = foundEntry;
+          const dataBySource = Object.fromEntries(
+            entries
+              .filter(([, snapshot]) => snapshot.exists())
+              .map(([sourceName, snapshot]) => [
+                sourceName,
+                snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {},
+              ])
+          );
+          const hasUser = Object.prototype.hasOwnProperty.call(dataBySource, 'users');
+          const hasNewUser = Object.prototype.hasOwnProperty.call(dataBySource, 'newUsers');
+          if (!hasUser && !hasNewUser) return null;
           const data = {
             userId: id,
-            ...(snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {}),
+            ...(hasUser ? dataBySource.users : {}),
+            ...(hasNewUser ? dataBySource.newUsers : {}),
             photos: [],
             __photosHydrated: false,
-            __sourceCollection: sourceName,
+            __sourceCollection: hasNewUser ? 'newUsers' : 'users',
           };
           return [id, updateCard(id, data)];
         });
@@ -1565,8 +1574,8 @@ const addUserFromUsers = async (userId, users) => {
   if (userSnap.exists() || newUserSnap.exists()) {
     users[userId] = {
       userId,
-      ...newUserData,
       ...userData,
+      ...newUserData,
     };
   }
 };
@@ -6917,8 +6926,8 @@ export const fetchAllFilteredUsers = async (
         userId,
         {
           userId,
-          ...newUserRaw,
           ...(usersData[userId] || {}),
+          ...newUserRaw,
         },
       ];
     });
@@ -6958,8 +6967,8 @@ export const fetchAllUsersFromRTDB = async () => {
         userId,
         {
           userId,
-          ...newUserRaw,
           ...(usersData[userId] || {}),
+          ...newUserRaw,
         },
       ];
     });
