@@ -495,10 +495,6 @@ const CustomRateHint = styled.span`
   line-height: 1.35;
 `;
 
-const InlineCustomRateLabel = styled(Label)`
-  flex: 0 1 160px;
-`;
-
 const normalizeCategoryPath = value =>
   String(value || '')
     .trim()
@@ -1042,9 +1038,6 @@ export const FlowManager = ({ ownerId }) => {
   const [customUsdRate, setCustomUsdRate] = useState('');
   const [customUsdRateDraft, setCustomUsdRateDraft] = useState('');
   const [isCustomUsdRateFocused, setIsCustomUsdRateFocused] = useState(false);
-  const [entryCustomUsdRate, setEntryCustomUsdRate] = useState('');
-  const [entryCustomUsdRateDraft, setEntryCustomUsdRateDraft] = useState('');
-  const [isEntryCustomUsdRateFocused, setIsEntryCustomUsdRateFocused] = useState(false);
   const menuRef = useRef(null);
   const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
@@ -1244,11 +1237,7 @@ export const FlowManager = ({ ownerId }) => {
         if (typeof parsed.entryInput === 'string') {
           setEntryInput(parsed.entryInput);
         }
-        if (parsed.entryCustomUsdRate !== undefined) {
-          const formattedEntryRate = formatCustomUsdRate(parsed.entryCustomUsdRate);
-          setEntryCustomUsdRate(formattedEntryRate);
-          setEntryCustomUsdRateDraft(formattedEntryRate);
-        } else {
+        if (typeof parsed.entryInput !== 'string') {
           const restoredDate = parsed.dateYmd ? formatDisplayDate(parsed.dateYmd) : formatDisplayDate(todayYmd());
           const restoredAmount = typeof parsed.amount === 'string' ? parsed.amount : '';
           const restoredDescription = typeof parsed.description === 'string' ? parsed.description : '';
@@ -1326,7 +1315,6 @@ export const FlowManager = ({ ownerId }) => {
         JSON.stringify({
           dateYmd,
           entryInput,
-          entryCustomUsdRate,
           selectedCategory: selectedCategoryPath,
           localCategories,
         })
@@ -1334,7 +1322,7 @@ export const FlowManager = ({ ownerId }) => {
     } catch (error) {
       console.error('Unable to persist flow draft into localStorage', error);
     }
-  }, [dateYmd, entryCustomUsdRate, entryInput, localCategories, ownerId, selectedCategoryPath]);
+  }, [dateYmd, entryInput, localCategories, ownerId, selectedCategoryPath]);
 
   useEffect(() => {
     if (!ownerId) return;
@@ -1495,7 +1483,7 @@ export const FlowManager = ({ ownerId }) => {
     }
   };
 
-  const handleSave = async ({ silentValidation = false, entryCustomUsdRateOverride, rawText } = {}) => {
+  const handleSave = async ({ silentValidation = false, rawText } = {}) => {
     const normalizedCategory = normalizeCategoryPath(selectedCategoryPath) || DEFAULT_FLOW_CATEGORY;
     const saveText = rawText ?? entryInput;
     const effectiveFallbackDate = resolveFlowFallbackDate(saveText, dateYmd);
@@ -1512,20 +1500,16 @@ export const FlowManager = ({ ownerId }) => {
       return;
     }
 
-    const entryRateForSave = formatCustomUsdRate(entryCustomUsdRateOverride ?? entryCustomUsdRate);
-    const effectiveCustomUsdRate = entryRateForSave || customUsdRate;
-
     try {
       await Promise.all(
         parsedEntries.map(entry => {
-          const inlineCustomUsdRate = formatCustomUsdRate(entry.customUsdRate);
-          const rowCustomUsdRate = inlineCustomUsdRate || entryRateForSave;
+          const rowCustomUsdRate = formatCustomUsdRate(entry.customUsdRate);
           return saveFlowEntry({
             ownerId,
             ...entry,
             exchangeRates,
             exchangeRateMode,
-            customUsdRate: rowCustomUsdRate || effectiveCustomUsdRate,
+            customUsdRate: rowCustomUsdRate || customUsdRate,
             rowCustomUsdRate,
           });
         })
@@ -1536,8 +1520,6 @@ export const FlowManager = ({ ownerId }) => {
       setSelectedGroup(selectedPath.group);
       setSelectedSubgroup(selectedPath.subgroup);
       setEntryInput('');
-      setEntryCustomUsdRate('');
-      setEntryCustomUsdRateDraft('');
       toast.success(
         parsedEntries.length === 1
           ? 'Flow збережено'
@@ -2034,8 +2016,6 @@ export const FlowManager = ({ ownerId }) => {
                 title="Очистити"
                 onClick={() => {
                   setEntryInput('');
-                  setEntryCustomUsdRate('');
-                  setEntryCustomUsdRateDraft('');
                   entryInputRef.current?.focus();
                 }}
               >
@@ -2044,31 +2024,6 @@ export const FlowManager = ({ ownerId }) => {
             )}
           </EntryInputWrap>
         </Label>
-        <InlineCustomRateLabel>
-          Власний курс для цього інпуту
-          <Input
-            type="text"
-            inputMode="decimal"
-            value={
-              isEntryCustomUsdRateFocused
-                ? entryCustomUsdRateDraft
-                : formatCustomUsdRateDisplay(entryCustomUsdRate)
-            }
-            onFocus={() => {
-              setIsEntryCustomUsdRateFocused(true);
-              setEntryCustomUsdRateDraft(formatCustomUsdRate(entryCustomUsdRate));
-            }}
-            onChange={e => setEntryCustomUsdRateDraft(e.target.value)}
-            onBlur={() => {
-              const formattedRate = formatCustomUsdRate(entryCustomUsdRateDraft);
-              setEntryCustomUsdRate(formattedRate);
-              setEntryCustomUsdRateDraft(formattedRate);
-              setIsEntryCustomUsdRateFocused(false);
-              handleSave({ silentValidation: true, entryCustomUsdRateOverride: formattedRate });
-            }}
-            placeholder="напр. 40.5"
-          />
-        </InlineCustomRateLabel>
       </Row>
 
       <EventsList>
