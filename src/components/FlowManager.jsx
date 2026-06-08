@@ -760,9 +760,11 @@ export const parseFlowEntryLine = (line, fallbackDate = '') => {
   if (!amountParts) return null;
 
   const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
-  const parsedDate = match[1] ? parseDisplayDate(match[1], fallbackYear) : fallbackDate;
-  const parsedAmount = normalizeFlowAmount(match[2] || '');
-  const { text: descriptionWithoutCustomRate, customUsdRate } = extractCustomUsdRateFromText(match[3] || '');
+  const parsedDate = lineMatch[1] ? parseDisplayDate(lineMatch[1], fallbackYear) : fallbackDate;
+  const parsedAmount = normalizeFlowAmount(amountParts.amountRaw || '');
+  const { text: descriptionWithoutCustomRate, customUsdRate } = extractCustomUsdRateFromText(
+    amountParts.description || ''
+  );
   const parsedDescription = sanitizeEntryKeyChunk(descriptionWithoutCustomRate);
 
   if (!parsedDate || !parsedAmount) return null;
@@ -909,8 +911,7 @@ export const flattenFlowEntriesFromBackend = flowNode => {
 
     const slashSeparated = normalizedRawAmount
       .split('/')
-      .map(item => String(item || '').trim())
-      .filter(Boolean);
+      .map(item => String(item || '').trim());
 
     if (slashSeparated.length >= 2) {
       const [amountUah = '', amountUsd = '', amountEur = '', customUsdRate = ''] = slashSeparated;
@@ -1275,9 +1276,8 @@ export const FlowManager = ({ ownerId }) => {
       flowRows
         .filter(row => {
           if (!FLOW_DATE_YMD_REGEX.test(String(row.date || ''))) return false;
-          if (exchangeRateMode === 'nbu') return true;
-          const hasStoredFx = toAmountNumber(row.amountUsd) > 0 || toAmountNumber(row.amountEur) > 0;
-          return !hasStoredFx;
+          const hasStoredFx = hasStoredFlowAmount(row.amountUsd) || hasStoredFlowAmount(row.amountEur);
+          return exchangeRateMode === 'nbu' || !hasStoredFx;
         })
         .map(row => row.date)
         .filter(date => !historicalRatesByDate[date])
@@ -1300,13 +1300,16 @@ export const FlowManager = ({ ownerId }) => {
       );
       if (cancelled) return;
       setHistoricalRatesByDate(prev => {
+        let didChange = false;
         const next = { ...prev };
         resolvedRates.forEach(([date, rates]) => {
-          if (rates?.usd || rates?.eur) {
-            next[date] = rates;
+          const nextRates = rates?.usd || rates?.eur ? rates : { unavailable: true };
+          if (JSON.stringify(prev[date]) !== JSON.stringify(nextRates)) {
+            next[date] = nextRates;
+            didChange = true;
           }
         });
-        return next;
+        return didChange ? next : prev;
       });
     })();
 
@@ -1492,11 +1495,12 @@ export const FlowManager = ({ ownerId }) => {
     }
   };
 
-  const handleSave = async ({ silentValidation = false, entryCustomUsdRateOverride } = {}) => {
+  const handleSave = async ({ silentValidation = false, entryCustomUsdRateOverride, rawText } = {}) => {
     const normalizedCategory = normalizeCategoryPath(selectedCategoryPath) || DEFAULT_FLOW_CATEGORY;
-    const effectiveFallbackDate = resolveFlowFallbackDate(rawText, dateYmd);
+    const saveText = rawText ?? entryInput;
+    const effectiveFallbackDate = resolveFlowFallbackDate(saveText, dateYmd);
     const parsedEntries = parseFlowEntriesByDatesAndGroups({
-      rawText,
+      rawText: saveText,
       fallbackDate: effectiveFallbackDate,
       defaultGroup: normalizedCategory,
     });
@@ -1748,6 +1752,7 @@ export const FlowManager = ({ ownerId }) => {
       <TopControls>
         <TopActionBtn
           type="button"
+          onMouseDown={e => e.preventDefault()}
           onClick={() => setIsExchangeModalOpen(true)}
           aria-label="Обрати курс Flow"
           title={`Курс Flow: ${getFlowExchangeRateModeLabel(exchangeRateMode)}`}
