@@ -11,6 +11,7 @@ import {
   fetchFlowData,
   fetchMonobankUahExchangeRates,
   fetchNbuUahExchangeRatesByDate,
+  resolveFlowExchangeRatesForMode,
   saveFlowEntry,
   updateFlowEntry,
 } from './config';
@@ -438,6 +439,65 @@ const ConfirmRowPreview = styled.div`
   word-break: break-word;
 `;
 
+const ExchangeModalTitle = styled.div`
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 10px;
+`;
+
+const ExchangeOptions = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const ExchangeOption = styled.label`
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid ${({ $selected }) => ($selected ? '#2f7bff' : '#e5e5e5')};
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  background: ${({ $selected }) => ($selected ? '#edf4ff' : '#fff')};
+`;
+
+const ExchangeOptionText = styled.span`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+`;
+
+const ExchangeOptionTitle = styled.span`
+  font-size: 13px;
+  font-weight: 700;
+  color: #222;
+`;
+
+const ExchangeOptionDescription = styled.span`
+  font-size: 12px;
+  color: #666;
+  line-height: 1.35;
+`;
+
+const CustomRateBlock = styled.div`
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`;
+
+const CustomRateHint = styled.span`
+  font-size: 12px;
+  color: #666;
+  line-height: 1.35;
+`;
+
+const InlineCustomRateLabel = styled(Label)`
+  flex: 0 1 160px;
+`;
+
 const normalizeCategoryPath = value =>
   String(value || '')
     .trim()
@@ -530,9 +590,94 @@ const formatCurrencyValue = value => {
   return value.toFixed(2).replace(/\.?0+$/, '');
 };
 
+const normalizeCustomUsdRate = value => {
+  const parsed = Number(String(value || '').trim().replace(',', '.'));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const formatCustomUsdRate = value => {
+  const normalizedRate = normalizeCustomUsdRate(value);
+  return normalizedRate ? formatCurrencyValue(normalizedRate) : '';
+};
+
+const formatCustomUsdRateDisplay = value => {
+  const formattedRate = formatCustomUsdRate(value);
+  return formattedRate ? `1 $ = ${formattedRate} грн` : '';
+};
+
+const extractCustomUsdRateFromText = value => {
+  const rawText = String(value || '').trim();
+  if (!rawText) return { text: '', customUsdRate: '' };
+
+  const patterns = [
+    /(?:^|\s)(?:курс|rate|usd|дол(?:ар|арів)?|\$)\s*[:=]?\s*(\d+(?:[.,]\d+)?)(?:\s*(?:грн|uah))?\s*$/iu,
+    /(?:^|\s)1?\s*\$\s*=?\s*(\d+(?:[.,]\d+)?)(?:\s*(?:грн|uah))?\s*$/iu,
+    /(?:^|\s)(\d+(?:[.,]\d+)?)\s*(?:грн|uah)?\s*\/\s*\$\s*$/iu,
+  ];
+
+  for (const pattern of patterns) {
+    const match = rawText.match(pattern);
+    const formattedRate = formatCustomUsdRate(match?.[1]);
+    if (formattedRate) {
+      return {
+        text: rawText.slice(0, match.index).trim(),
+        customUsdRate: formattedRate,
+      };
+    }
+  }
+
+  return { text: rawText, customUsdRate: '' };
+};
+
 const formatGroupTitle = groupPath => {
   const { group, subgroup } = splitCategoryPath(groupPath);
   return subgroup ? `${group}, ${subgroup}` : group;
+};
+
+const getFlowRatesForRow = ({
+  row,
+  exchangeRateMode,
+  exchangeRates,
+  historicalRatesByDate,
+  customUsdRate,
+}) => {
+  const baseRates =
+    exchangeRateMode === 'nbu'
+      ? historicalRatesByDate[row.date] || null
+      : resolveFlowExchangeRatesForMode(exchangeRates, exchangeRateMode);
+  const normalizedCustomUsdRate = normalizeCustomUsdRate(row.customUsdRate) || normalizeCustomUsdRate(customUsdRate);
+  if (!normalizedCustomUsdRate) return baseRates;
+
+  return {
+    ...(baseRates || {}),
+    usd: normalizedCustomUsdRate,
+    customUsdRate: normalizedCustomUsdRate,
+  };
+};
+
+const calculateFlowRowCurrencyAmount = ({
+  row,
+  currency = 'usd',
+  exchangeRateMode,
+  exchangeRates,
+  historicalRatesByDate,
+  customUsdRate,
+}) => {
+  const amountUah = toAmountNumber(row.amount);
+  const rates = getFlowRatesForRow({
+    row,
+    exchangeRateMode,
+    exchangeRates,
+    historicalRatesByDate,
+    customUsdRate,
+  });
+  const rate = Number(rates?.[currency]);
+  if (Number.isFinite(amountUah) && Number.isFinite(rate) && rate > 0) {
+    return amountUah / rate;
+  }
+
+  const storedAmount = toAmountNumber(currency === 'eur' ? row.amountEur : row.amountUsd);
+  return storedAmount > 0 ? storedAmount : 0;
 };
 
 export const parseFlowEntryLine = (line, fallbackDate = '') => {
@@ -555,13 +700,15 @@ export const parseFlowEntryLine = (line, fallbackDate = '') => {
   const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
   const parsedDate = match[1] ? parseDisplayDate(match[1], fallbackYear) : fallbackDate;
   const parsedAmount = normalizeFlowAmount(match[2] || '');
-  const parsedDescription = sanitizeEntryKeyChunk(match[3] || '');
+  const { text: descriptionWithoutCustomRate, customUsdRate } = extractCustomUsdRateFromText(match[3] || '');
+  const parsedDescription = sanitizeEntryKeyChunk(descriptionWithoutCustomRate);
 
   if (!parsedDate || !parsedAmount) return null;
   return {
     date: parsedDate,
     amount: parsedAmount,
     description: parsedDescription,
+    customUsdRate,
   };
 };
 
@@ -635,8 +782,58 @@ const sanitizeEntryKeyChunk = value =>
     .trim();
 
 const DEFAULT_FLOW_CATEGORY = 'general';
+const DEFAULT_FLOW_EXCHANGE_RATE_MODE = 'current';
+const FLOW_EXCHANGE_RATE_OPTIONS = [
+  {
+    value: 'current',
+    label: 'Поточний',
+    description: 'Поточний доступний курс Monobank (за замовчуванням).',
+  },
+  {
+    value: 'nbu',
+    label: 'НБУ',
+    description: 'Офіційний курс НБУ для дати кожного рядка.',
+  },
+  {
+    value: 'sell',
+    label: 'Продаж',
+    description: 'Курс продажу валюти, якщо він доступний у джерелі.',
+  },
+  {
+    value: 'buy',
+    label: 'Купівля',
+    description: 'Курс купівлі валюти, якщо він доступний у джерелі.',
+  },
+  {
+    value: 'average',
+    label: 'Середній',
+    description: 'Середній між курсом купівлі та продажу або крос-курс.',
+  },
+  {
+    value: 'interbank',
+    label: 'Міжбанк',
+    description: 'Крос/середній курс як найближчий доступний еквівалент міжбанку.',
+  },
+  {
+    value: 'highest',
+    label: 'Найвищий',
+    description: 'Найвищий із доступних поточних курсів.',
+  },
+  {
+    value: 'lowest',
+    label: 'Найнижчий',
+    description: 'Найнижчий із доступних поточних курсів.',
+  },
+];
+const FLOW_EXCHANGE_RATE_MODE_VALUES = FLOW_EXCHANGE_RATE_OPTIONS.map(option => option.value);
+const getValidFlowExchangeRateMode = value =>
+  FLOW_EXCHANGE_RATE_MODE_VALUES.includes(value) ? value : DEFAULT_FLOW_EXCHANGE_RATE_MODE;
+const getFlowExchangeRateModeLabel = value =>
+  FLOW_EXCHANGE_RATE_OPTIONS.find(option => option.value === value)?.label || 'Поточний';
 const flowDraftStorageKey = ownerId => `flow-draft:${ownerId || 'anon'}`;
 const flowLastCategoryStorageKey = ownerId => `flow-last-category:${ownerId || 'anon'}`;
+const flowExchangeRateModeStorageKey = ownerId => `flow-exchange-rate-mode:${ownerId || 'anon'}`;
+const flowCustomUsdRateStorageKey = ownerId => `flow-custom-usd-rate:${ownerId || 'anon'}`;
 
 export const flattenFlowEntriesFromBackend = flowNode => {
   if (!flowNode || typeof flowNode !== 'object') return [];
@@ -645,7 +842,7 @@ export const flattenFlowEntriesFromBackend = flowNode => {
   const parseAmountTriplet = rawAmount => {
     const normalizedRawAmount = String(rawAmount || '').trim();
     if (!normalizedRawAmount) {
-      return { amountUah: '', amountUsd: '', amountEur: '' };
+      return { amountUah: '', amountUsd: '', amountEur: '', customUsdRate: '' };
     }
 
     const slashSeparated = normalizedRawAmount
@@ -654,8 +851,8 @@ export const flattenFlowEntriesFromBackend = flowNode => {
       .filter(Boolean);
 
     if (slashSeparated.length >= 2) {
-      const [amountUah = '', amountUsd = '', amountEur = ''] = slashSeparated;
-      return { amountUah, amountUsd, amountEur };
+      const [amountUah = '', amountUsd = '', amountEur = '', customUsdRate = ''] = slashSeparated;
+      return { amountUah, amountUsd, amountEur, customUsdRate };
     }
 
     const spaceSeparated = normalizedRawAmount
@@ -664,33 +861,39 @@ export const flattenFlowEntriesFromBackend = flowNode => {
       .filter(Boolean);
 
     if (spaceSeparated.length >= 3) {
-      const [amountUah = '', amountUsd = '', amountEur = ''] = spaceSeparated;
-      return { amountUah, amountUsd, amountEur };
+      const [amountUah = '', amountUsd = '', amountEur = '', customUsdRate = ''] = spaceSeparated;
+      return { amountUah, amountUsd, amountEur, customUsdRate };
     }
 
-    return { amountUah: normalizedRawAmount, amountUsd: '', amountEur: '' };
+    return { amountUah: normalizedRawAmount, amountUsd: '', amountEur: '', customUsdRate: '' };
   };
 
   const parseEntryValue = value => {
     if (typeof value === 'string') {
       const [amount = '', ...rest] = String(value || '').split('_');
-      const { amountUah, amountUsd, amountEur } = parseAmountTriplet(amount);
+      const { amountUah, amountUsd, amountEur, customUsdRate } = parseAmountTriplet(amount);
       return {
         amount: amountUah,
         amountUsd,
         amountEur,
+        customUsdRate,
         description: rest.join('_'),
       };
     }
 
     if (value && typeof value === 'object') {
       const rawAmount = value.amount ?? value.sum ?? value.value ?? '';
-      const { amountUah, amountUsd: amountUsdFromAmount, amountEur: amountEurFromAmount } =
-        parseAmountTriplet(rawAmount);
+      const {
+        amountUah,
+        amountUsd: amountUsdFromAmount,
+        amountEur: amountEurFromAmount,
+        customUsdRate: customUsdRateFromAmount,
+      } = parseAmountTriplet(rawAmount);
       return {
         amount: amountUah,
         amountUsd: value.amountUsd ?? value.usd ?? amountUsdFromAmount,
         amountEur: value.amountEur ?? value.eur ?? amountEurFromAmount,
+        customUsdRate: value.customUsdRate ?? value.usdRate ?? customUsdRateFromAmount,
         description: value.description ?? value.comment ?? value.note ?? '',
       };
     }
@@ -699,6 +902,7 @@ export const flattenFlowEntriesFromBackend = flowNode => {
       amount: '',
       amountUsd: '',
       amountEur: '',
+      customUsdRate: '',
       description: '',
     };
   };
@@ -723,6 +927,7 @@ export const flattenFlowEntriesFromBackend = flowNode => {
               amount: normalizedAmount,
               amountUsd: normalizeFlowAmount(parsed.amountUsd),
               amountEur: normalizeFlowAmount(parsed.amountEur),
+              customUsdRate: formatCustomUsdRate(parsed.customUsdRate),
               description: sanitizeEntryKeyChunk(parsed.description),
             };
           })
@@ -769,10 +974,19 @@ export const FlowManager = ({ ownerId }) => {
   const [renamingCategory, setRenamingCategory] = useState({ source: '', draft: '' });
   const [exchangeRates, setExchangeRates] = useState(null);
   const [historicalRatesByDate, setHistoricalRatesByDate] = useState({});
+  const [exchangeRateMode, setExchangeRateMode] = useState(DEFAULT_FLOW_EXCHANGE_RATE_MODE);
+  const [isExchangeModalOpen, setIsExchangeModalOpen] = useState(false);
+  const [customUsdRate, setCustomUsdRate] = useState('');
+  const [customUsdRateDraft, setCustomUsdRateDraft] = useState('');
+  const [isCustomUsdRateFocused, setIsCustomUsdRateFocused] = useState(false);
+  const [entryCustomUsdRate, setEntryCustomUsdRate] = useState('');
+  const [entryCustomUsdRateDraft, setEntryCustomUsdRateDraft] = useState('');
+  const [isEntryCustomUsdRateFocused, setIsEntryCustomUsdRateFocused] = useState(false);
   const menuRef = useRef(null);
   const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
   const subCategoryInputRef = useRef(null);
+  const entryRowRef = useRef(null);
   useAutoResize(entryInputRef, entryInput);
 
   const flowRows = useMemo(() => flattenFlowEntriesFromBackend(flowData), [flowData]);
@@ -826,28 +1040,28 @@ export const FlowManager = ({ ownerId }) => {
           acc[group] = { uah: 0, usd: 0, eur: 0 };
         }
         const amountUah = toAmountNumber(row.amount);
-        const amountUsdStored = toAmountNumber(row.amountUsd);
-        const amountEurStored = toAmountNumber(row.amountEur);
-        const historicalRates =
-          FLOW_DATE_YMD_REGEX.test(String(row.date || '')) ? historicalRatesByDate[row.date] : null;
-        const amountUsdDerived =
-          amountUsdStored > 0
-            ? amountUsdStored
-            : Number.isFinite(amountUah) && Number.isFinite(historicalRates?.usd) && historicalRates.usd > 0
-              ? amountUah / historicalRates.usd
-              : 0;
-        const amountEurDerived =
-          amountEurStored > 0
-            ? amountEurStored
-            : Number.isFinite(amountUah) && Number.isFinite(historicalRates?.eur) && historicalRates.eur > 0
-              ? amountUah / historicalRates.eur
-              : 0;
+        const amountUsdDerived = calculateFlowRowCurrencyAmount({
+          row,
+          currency: 'usd',
+          exchangeRateMode,
+          exchangeRates,
+          historicalRatesByDate,
+          customUsdRate,
+        });
+        const amountEurDerived = calculateFlowRowCurrencyAmount({
+          row,
+          currency: 'eur',
+          exchangeRateMode,
+          exchangeRates,
+          historicalRatesByDate,
+          customUsdRate,
+        });
         acc[group].uah += amountUah;
         acc[group].usd += amountUsdDerived;
         acc[group].eur += amountEurDerived;
         return acc;
       }, {}),
-    [flowRows, historicalRatesByDate]
+    [customUsdRate, exchangeRateMode, exchangeRates, flowRows, historicalRatesByDate]
   );
   const sortedFlowRows = useMemo(() => sortRowsByGroupAndDate(flowRows), [flowRows]);
   const groupedFlowRows = useMemo(
@@ -903,6 +1117,54 @@ export const FlowManager = ({ ownerId }) => {
   useEffect(() => {
     if (!ownerId) return;
     try {
+      const savedMode = localStorage.getItem(flowExchangeRateModeStorageKey(ownerId));
+      setExchangeRateMode(getValidFlowExchangeRateMode(savedMode));
+    } catch (error) {
+      console.error('Unable to restore flow exchange rate mode from localStorage', error);
+      setExchangeRateMode(DEFAULT_FLOW_EXCHANGE_RATE_MODE);
+    }
+  }, [ownerId]);
+
+  useEffect(() => {
+    if (!ownerId) return;
+    try {
+      localStorage.setItem(flowExchangeRateModeStorageKey(ownerId), exchangeRateMode);
+    } catch (error) {
+      console.error('Unable to persist flow exchange rate mode into localStorage', error);
+    }
+  }, [exchangeRateMode, ownerId]);
+
+  useEffect(() => {
+    if (!ownerId) return;
+    try {
+      const savedRate = localStorage.getItem(flowCustomUsdRateStorageKey(ownerId));
+      const formattedRate = formatCustomUsdRate(savedRate);
+      setCustomUsdRate(formattedRate);
+      setCustomUsdRateDraft(formattedRate);
+    } catch (error) {
+      console.error('Unable to restore custom Flow USD rate from localStorage', error);
+      setCustomUsdRate('');
+      setCustomUsdRateDraft('');
+    }
+  }, [ownerId]);
+
+  useEffect(() => {
+    if (!ownerId) return;
+    try {
+      const formattedRate = formatCustomUsdRate(customUsdRate);
+      if (formattedRate) {
+        localStorage.setItem(flowCustomUsdRateStorageKey(ownerId), formattedRate);
+      } else {
+        localStorage.removeItem(flowCustomUsdRateStorageKey(ownerId));
+      }
+    } catch (error) {
+      console.error('Unable to persist custom Flow USD rate into localStorage', error);
+    }
+  }, [customUsdRate, ownerId]);
+
+  useEffect(() => {
+    if (!ownerId) return;
+    try {
       const lastCategoryRaw = localStorage.getItem(flowLastCategoryStorageKey(ownerId));
       const lastCategory = normalizeCategoryPath(lastCategoryRaw);
       if (lastCategory) {
@@ -918,6 +1180,11 @@ export const FlowManager = ({ ownerId }) => {
         if (parsed.dateYmd) setDateYmd(parsed.dateYmd);
         if (typeof parsed.entryInput === 'string') {
           setEntryInput(parsed.entryInput);
+        }
+        if (parsed.entryCustomUsdRate !== undefined) {
+          const formattedEntryRate = formatCustomUsdRate(parsed.entryCustomUsdRate);
+          setEntryCustomUsdRate(formattedEntryRate);
+          setEntryCustomUsdRateDraft(formattedEntryRate);
         } else {
           const restoredDate = parsed.dateYmd ? formatDisplayDate(parsed.dateYmd) : formatDisplayDate(todayYmd());
           const restoredAmount = typeof parsed.amount === 'string' ? parsed.amount : '';
@@ -945,8 +1212,10 @@ export const FlowManager = ({ ownerId }) => {
     const datesMissingRates = [...new Set(
       flowRows
         .filter(row => {
+          if (!FLOW_DATE_YMD_REGEX.test(String(row.date || ''))) return false;
+          if (exchangeRateMode === 'nbu') return true;
           const hasStoredFx = toAmountNumber(row.amountUsd) > 0 || toAmountNumber(row.amountEur) > 0;
-          return !hasStoredFx && FLOW_DATE_YMD_REGEX.test(String(row.date || ''));
+          return !hasStoredFx;
         })
         .map(row => row.date)
         .filter(date => !historicalRatesByDate[date])
@@ -982,7 +1251,7 @@ export const FlowManager = ({ ownerId }) => {
     return () => {
       cancelled = true;
     };
-  }, [flowRows, historicalRatesByDate]);
+  }, [exchangeRateMode, flowRows, historicalRatesByDate]);
 
   useEffect(() => {
     if (!ownerId) return;
@@ -992,6 +1261,7 @@ export const FlowManager = ({ ownerId }) => {
         JSON.stringify({
           dateYmd,
           entryInput,
+          entryCustomUsdRate,
           selectedCategory: selectedCategoryPath,
           localCategories,
         })
@@ -999,7 +1269,7 @@ export const FlowManager = ({ ownerId }) => {
     } catch (error) {
       console.error('Unable to persist flow draft into localStorage', error);
     }
-  }, [dateYmd, entryInput, localCategories, ownerId, selectedCategoryPath]);
+  }, [dateYmd, entryCustomUsdRate, entryInput, localCategories, ownerId, selectedCategoryPath]);
 
   useEffect(() => {
     if (!ownerId) return;
@@ -1160,7 +1430,7 @@ export const FlowManager = ({ ownerId }) => {
     }
   };
 
-  const handleSave = async ({ silentValidation = false } = {}) => {
+  const handleSave = async ({ silentValidation = false, entryCustomUsdRateOverride } = {}) => {
     const normalizedCategory = normalizeCategoryPath(selectedCategoryPath) || DEFAULT_FLOW_CATEGORY;
     const effectiveFallbackDate = resolveFlowFallbackDate(entryInput, dateYmd);
     const parsedEntries = parseFlowEntriesByDatesAndGroups({
@@ -1176,9 +1446,23 @@ export const FlowManager = ({ ownerId }) => {
       return;
     }
 
+    const entryRateForSave = formatCustomUsdRate(entryCustomUsdRateOverride ?? entryCustomUsdRate);
+    const effectiveCustomUsdRate = entryRateForSave || customUsdRate;
+
     try {
       await Promise.all(
-        parsedEntries.map(entry => saveFlowEntry({ ownerId, ...entry, exchangeRates }))
+        parsedEntries.map(entry => {
+          const inlineCustomUsdRate = formatCustomUsdRate(entry.customUsdRate);
+          const rowCustomUsdRate = inlineCustomUsdRate || entryRateForSave;
+          return saveFlowEntry({
+            ownerId,
+            ...entry,
+            exchangeRates,
+            exchangeRateMode,
+            customUsdRate: rowCustomUsdRate || effectiveCustomUsdRate,
+            rowCustomUsdRate,
+          });
+        })
       );
       const lastEntry = parsedEntries[parsedEntries.length - 1];
       setDateYmd(lastEntry.date);
@@ -1186,6 +1470,8 @@ export const FlowManager = ({ ownerId }) => {
       setSelectedGroup(selectedPath.group);
       setSelectedSubgroup(selectedPath.subgroup);
       setEntryInput('');
+      setEntryCustomUsdRate('');
+      setEntryCustomUsdRateDraft('');
       toast.success(
         parsedEntries.length === 1
           ? 'Flow збережено'
@@ -1286,8 +1572,10 @@ export const FlowManager = ({ ownerId }) => {
   const beginEdit = (row, idx) => {
     const key = getRowKey(row, idx);
     setEditingKey(key);
+    const formattedRowRate = formatCustomUsdRate(row.customUsdRate);
+    const baseLine = `${formatDisplayDate(row.date)} ${row.amount} ${row.description}`.trim();
     setEditingDraft({
-      line: `${formatDisplayDate(row.date)} ${row.amount} ${row.description}`.trim(),
+      line: formattedRowRate ? `${baseLine} курс ${formattedRowRate}` : baseLine,
     });
   };
 
@@ -1301,20 +1589,21 @@ export const FlowManager = ({ ownerId }) => {
     const rowKey = getRowKey(row, idx);
     if (editingKey !== rowKey) return;
 
-    const match = String(editingDraft.line || '')
-      .trim()
-      .match(/^(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
-    if (!match) {
-      toast.error('Формат редагування: дд.мм або дд.мм.рррр 100 опис');
+    const parsedLine = parseFlowEntryLine(editingDraft.line, row.date);
+    if (!parsedLine) {
+      toast.error('Формат редагування: дд.мм або дд.мм.рррр 100 опис курс 40.5');
       return;
     }
-    const parsedDate = parseDisplayDate(match[1], new Date().getFullYear());
-    const nextAmount = normalizeFlowAmount(match[2] || '');
-    const nextDescription = sanitizeEntryKeyChunk(match[3] || '');
+    const parsedDate = parsedLine.date;
+    const nextAmount = normalizeFlowAmount(parsedLine.amount || '');
+    const nextDescription = sanitizeEntryKeyChunk(parsedLine.description || '');
     if (!parsedDate || !nextAmount) {
       toast.error('Для редагування потрібні валідні дата і сума');
       return;
     }
+
+    const rowCustomUsdRate = formatCustomUsdRate(parsedLine.customUsdRate);
+    const effectiveCustomUsdRate = rowCustomUsdRate || customUsdRate;
 
     try {
       await updateFlowEntry({
@@ -1330,7 +1619,12 @@ export const FlowManager = ({ ownerId }) => {
           date: parsedDate,
           amount: nextAmount,
           description: nextDescription,
+          customUsdRate: rowCustomUsdRate,
         },
+        exchangeRates,
+        exchangeRateMode,
+        customUsdRate: effectiveCustomUsdRate,
+        rowCustomUsdRate,
       });
       toast.success('Запис оновлено');
       cancelEdit();
@@ -1371,7 +1665,12 @@ export const FlowManager = ({ ownerId }) => {
           date: row.date,
           amount: row.amount,
           description: row.description,
+          customUsdRate: row.customUsdRate,
         },
+        exchangeRates,
+        exchangeRateMode,
+        customUsdRate: row.customUsdRate || customUsdRate,
+        rowCustomUsdRate: row.customUsdRate,
       });
       setLocalCategories(prev => (prev.includes(nextCategory) ? prev : [...prev, nextCategory]));
       toast.success(`Платіж перенесено в групу "${nextCategory}"`);
@@ -1385,6 +1684,15 @@ export const FlowManager = ({ ownerId }) => {
   return (
     <Wrap>
       <TopControls>
+        <TopActionBtn
+          type="button"
+          onClick={() => setIsExchangeModalOpen(true)}
+          aria-label="Обрати курс Flow"
+          title={`Курс Flow: ${getFlowExchangeRateModeLabel(exchangeRateMode)}`}
+          $bg="#198754"
+        >
+          $
+        </TopActionBtn>
         <CopyBtn
           type="button"
           onClick={handleCopyToClipboard}
@@ -1615,7 +1923,7 @@ export const FlowManager = ({ ownerId }) => {
 
       <Divider />
 
-      <Row>
+      <Row ref={entryRowRef}>
         <Label>
           Дата + сума + опис (підтримка груп і дат у кілька рядків)
           <EntryInputWrap>
@@ -1641,7 +1949,8 @@ export const FlowManager = ({ ownerId }) => {
                   categoryInputRef.current?.focus();
                 }
               }}
-              onBlur={() => {
+              onBlur={e => {
+                if (entryRowRef.current?.contains(e.relatedTarget)) return;
                 handleSave({ silentValidation: true });
               }}
               placeholder={'Заголовок\n20.01.2026 100 кава'}
@@ -1654,6 +1963,8 @@ export const FlowManager = ({ ownerId }) => {
                 title="Очистити"
                 onClick={() => {
                   setEntryInput('');
+                  setEntryCustomUsdRate('');
+                  setEntryCustomUsdRateDraft('');
                   entryInputRef.current?.focus();
                 }}
               >
@@ -1662,6 +1973,31 @@ export const FlowManager = ({ ownerId }) => {
             )}
           </EntryInputWrap>
         </Label>
+        <InlineCustomRateLabel>
+          Власний курс для цього інпуту
+          <Input
+            type="text"
+            inputMode="decimal"
+            value={
+              isEntryCustomUsdRateFocused
+                ? entryCustomUsdRateDraft
+                : formatCustomUsdRateDisplay(entryCustomUsdRate)
+            }
+            onFocus={() => {
+              setIsEntryCustomUsdRateFocused(true);
+              setEntryCustomUsdRateDraft(formatCustomUsdRate(entryCustomUsdRate));
+            }}
+            onChange={e => setEntryCustomUsdRateDraft(e.target.value)}
+            onBlur={() => {
+              const formattedRate = formatCustomUsdRate(entryCustomUsdRateDraft);
+              setEntryCustomUsdRate(formattedRate);
+              setEntryCustomUsdRateDraft(formattedRate);
+              setIsEntryCustomUsdRateFocused(false);
+              handleSave({ silentValidation: true, entryCustomUsdRateOverride: formattedRate });
+            }}
+            placeholder="напр. 40.5"
+          />
+        </InlineCustomRateLabel>
       </Row>
 
       <EventsList>
@@ -1699,8 +2035,11 @@ export const FlowManager = ({ ownerId }) => {
                           autoFocus
                           style={{ width: '100%', minWidth: 0, fontSize: 12, padding: 4 }}
                           value={editingDraft.line}
-                          onChange={e => setEditingDraft({ line: e.target.value })}
-                          onBlur={() => saveEditedRow(row, idx)}
+                          onChange={e => setEditingDraft(prev => ({ ...prev, line: e.target.value }))}
+                          onBlur={e => {
+                            if (e.currentTarget.parentElement?.contains(e.relatedTarget)) return;
+                            saveEditedRow(row, idx);
+                          }}
                           onKeyDown={e => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
@@ -1718,7 +2057,20 @@ export const FlowManager = ({ ownerId }) => {
                       </EditInline>
                     ) : (
                       <>
-                        <EventText>{formatDisplayDate(row.date)} {row.amount} {row.description}</EventText>
+                        <EventText>
+                          {formatDisplayDate(row.date)} {row.amount} {row.description}
+                          {(() => {
+                            const amountUsd = calculateFlowRowCurrencyAmount({
+                              row,
+                              currency: 'usd',
+                              exchangeRateMode,
+                              exchangeRates,
+                              historicalRatesByDate,
+                              customUsdRate,
+                            });
+                            return amountUsd > 0 ? ` / ${formatCurrencyValue(amountUsd)} $` : '';
+                          })()}
+                        </EventText>
                         <ChangeCategoryBtn
                           type="button"
                           aria-label="change-row-category"
@@ -1752,6 +2104,64 @@ export const FlowManager = ({ ownerId }) => {
       </EventsList>
 
       {loading && <small>Завантаження...</small>}
+
+      {isExchangeModalOpen && (
+        <ConfirmBackdrop onClick={() => setIsExchangeModalOpen(false)}>
+          <ConfirmCard onClick={e => e.stopPropagation()}>
+            <ExchangeModalTitle>Курс для розрахунків Flow</ExchangeModalTitle>
+            <ExchangeOptions>
+              {FLOW_EXCHANGE_RATE_OPTIONS.map(option => (
+                <ExchangeOption key={option.value} $selected={exchangeRateMode === option.value}>
+                  <input
+                    type="radio"
+                    name="flow-exchange-rate-mode"
+                    value={option.value}
+                    checked={exchangeRateMode === option.value}
+                    onChange={e => setExchangeRateMode(getValidFlowExchangeRateMode(e.target.value))}
+                  />
+                  <ExchangeOptionText>
+                    <ExchangeOptionTitle>{option.label}</ExchangeOptionTitle>
+                    <ExchangeOptionDescription>{option.description}</ExchangeOptionDescription>
+                  </ExchangeOptionText>
+                </ExchangeOption>
+              ))}
+            </ExchangeOptions>
+            <CustomRateBlock>
+              <Label>
+                Власний курс USD/UAH
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={
+                    isCustomUsdRateFocused
+                      ? customUsdRateDraft
+                      : formatCustomUsdRateDisplay(customUsdRate)
+                  }
+                  onFocus={() => {
+                    setIsCustomUsdRateFocused(true);
+                    setCustomUsdRateDraft(formatCustomUsdRate(customUsdRate));
+                  }}
+                  onChange={e => setCustomUsdRateDraft(e.target.value)}
+                  onBlur={() => {
+                    const formattedRate = formatCustomUsdRate(customUsdRateDraft);
+                    setCustomUsdRate(formattedRate);
+                    setCustomUsdRateDraft(formattedRate);
+                    setIsCustomUsdRateFocused(false);
+                  }}
+                  placeholder="напр. 40.5"
+                />
+              </Label>
+              <CustomRateHint>
+                Якщо власний курс збережений, розрахунки в нижній таблиці використовують саме його для долара.
+                Якщо поле порожнє — використовується обраний загальний курс.
+              </CustomRateHint>
+            </CustomRateBlock>
+            <ConfirmActions>
+              <ActionBtn type="button" onClick={() => setIsExchangeModalOpen(false)}>Закрити</ActionBtn>
+            </ConfirmActions>
+          </ConfirmCard>
+        </ConfirmBackdrop>
+      )}
 
       {confirmState.type && (
         <ConfirmBackdrop onClick={closeConfirm}>

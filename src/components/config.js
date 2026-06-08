@@ -1170,7 +1170,7 @@ const NBU_ARCHIVE_API_URL = 'https://bank.gov.ua/NBUStatService/v1/statdirectory
 const UAH_CURRENCY_CODE = 980;
 const USD_CURRENCY_CODE = 840;
 const EUR_CURRENCY_CODE = 978;
-const FLOW_MONOBANK_CACHE_KEY = 'flow:monobank-uah-rates:v1';
+const FLOW_MONOBANK_CACHE_KEY = 'flow:monobank-uah-rates:v2';
 const FLOW_NBU_DAILY_CACHE_PREFIX = 'flow:nbu-uah-rates:';
 const FLOW_MONOBANK_CACHE_TTL_MS = 60 * 60 * 1000;
 
@@ -1211,20 +1211,53 @@ const isValidFlowDateYmd = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || '
 const toNbuDateParam = dateYmd => String(dateYmd || '').replace(/-/g, '');
 const getFlowDailyRatesCacheKey = dateYmd => `${FLOW_NBU_DAILY_CACHE_PREFIX}${dateYmd}`;
 
-const parseMonobankPairRate = pair => {
+const parseMonobankPairRates = pair => {
   if (!pair || typeof pair !== 'object') return null;
   const cross = Number(pair.rateCross);
-  if (Number.isFinite(cross) && cross > 0) return { value: cross, source: 'cross' };
-
   const buy = Number(pair.rateBuy);
   const sell = Number(pair.rateSell);
-  if (Number.isFinite(buy) && buy > 0 && Number.isFinite(sell) && sell > 0) {
-    return { value: (buy + sell) / 2, source: 'mid' };
+  const result = {};
+
+  if (Number.isFinite(cross) && cross > 0) {
+    result.cross = cross;
+  }
+  if (Number.isFinite(buy) && buy > 0) {
+    result.buy = buy;
+  }
+  if (Number.isFinite(sell) && sell > 0) {
+    result.sell = sell;
+  }
+  if (Number.isFinite(result.buy) && Number.isFinite(result.sell)) {
+    result.mid = (result.buy + result.sell) / 2;
+  } else if (Number.isFinite(result.cross)) {
+    result.mid = result.cross;
+  } else if (Number.isFinite(result.sell)) {
+    result.mid = result.sell;
+  } else if (Number.isFinite(result.buy)) {
+    result.mid = result.buy;
   }
 
-  if (Number.isFinite(sell) && sell > 0) return { value: sell, source: 'sell' };
-  if (Number.isFinite(buy) && buy > 0) return { value: buy, source: 'buy' };
+  if (!Number.isFinite(result.mid)) return null;
+  return result;
+};
+
+const resolvePreferredMonobankRate = rates => {
+  if (!rates) return null;
+  if (Number.isFinite(rates.cross) && rates.cross > 0) return { value: rates.cross, source: 'cross' };
+  if (Number.isFinite(rates.mid) && rates.mid > 0) return { value: rates.mid, source: 'mid' };
+  if (Number.isFinite(rates.sell) && rates.sell > 0) return { value: rates.sell, source: 'sell' };
+  if (Number.isFinite(rates.buy) && rates.buy > 0) return { value: rates.buy, source: 'buy' };
   return null;
+};
+
+const invertMonobankRates = rates => {
+  if (!rates) return null;
+  return Object.entries(rates).reduce((acc, [key, value]) => {
+    if (Number.isFinite(value) && value > 0) {
+      acc[key] = 1 / value;
+    }
+    return acc;
+  }, {});
 };
 
 const parseMonobankPairDate = pair => {
@@ -1237,24 +1270,28 @@ const findMonobankRateToUah = (pairs, sourceCode) => {
   const directPair = pairs.find(
     pair => Number(pair?.currencyCodeA) === sourceCode && Number(pair?.currencyCodeB) === UAH_CURRENCY_CODE
   );
-  const directRate = parseMonobankPairRate(directPair);
+  const directRates = parseMonobankPairRates(directPair);
+  const directRate = resolvePreferredMonobankRate(directRates);
   if (Number.isFinite(directRate?.value) && directRate.value > 0) {
     return {
       value: directRate.value,
       source: directRate.source,
       pairDate: parseMonobankPairDate(directPair),
+      rates: directRates,
     };
   }
 
   const reversePair = pairs.find(
     pair => Number(pair?.currencyCodeA) === UAH_CURRENCY_CODE && Number(pair?.currencyCodeB) === sourceCode
   );
-  const reverseRate = parseMonobankPairRate(reversePair);
+  const reverseRates = invertMonobankRates(parseMonobankPairRates(reversePair));
+  const reverseRate = resolvePreferredMonobankRate(reverseRates);
   if (Number.isFinite(reverseRate?.value) && reverseRate.value > 0) {
     return {
-      value: 1 / reverseRate.value,
+      value: reverseRate.value,
       source: reverseRate.source === 'mid' ? 'mid-inverted' : `${reverseRate.source}-inverted`,
       pairDate: parseMonobankPairDate(reversePair),
+      rates: reverseRates,
     };
   }
 
@@ -1278,6 +1315,8 @@ export const fetchMonobankUahExchangeRates = async () => {
       rateDate: cached.rateDate || cached.fetchedAt || new Date(cached.cachedAtMs).toISOString(),
       provider: 'monobank',
       rateType: cached.rateType || 'mid',
+      usdRates: cached.usdRates || null,
+      eurRates: cached.eurRates || null,
       cache: 'localStorage',
     };
   }
@@ -1308,6 +1347,8 @@ export const fetchMonobankUahExchangeRates = async () => {
     rateDate,
     provider: 'monobank',
     rateType: `${usdRate.source}/${eurRate.source}`,
+    usdRates: usdRate.rates,
+    eurRates: eurRate.rates,
     cache: 'network',
   };
 
@@ -1389,6 +1430,84 @@ export const fetchNbuUahExchangeRatesByDate = async dateYmd => {
   return result;
 };
 
+
+const isUsableFlowRate = value => Number.isFinite(value) && value > 0;
+
+const normalizeFlowCustomUsdRate = value => {
+  const parsed = Number(String(value || '').trim().replace(',', '.'));
+  return isUsableFlowRate(parsed) ? parsed : null;
+};
+
+const applyFlowCustomUsdRate = (rates, customUsdRate) => {
+  const normalizedCustomUsdRate = normalizeFlowCustomUsdRate(customUsdRate);
+  if (!normalizedCustomUsdRate) return rates || null;
+  return {
+    ...(rates || {}),
+    usd: normalizedCustomUsdRate,
+    customUsdRate: normalizedCustomUsdRate,
+  };
+};
+
+const getRateVariantsForCurrency = (rates, currencyKey) => {
+  if (!rates || typeof rates !== 'object') return [];
+  const variants = [];
+  const direct = Number(rates[currencyKey]);
+  if (isUsableFlowRate(direct)) variants.push({ value: direct, source: 'default' });
+
+  const detailedRates = rates[`${currencyKey}Rates`];
+  if (detailedRates && typeof detailedRates === 'object') {
+    ['buy', 'sell', 'mid', 'cross'].forEach(source => {
+      const value = Number(detailedRates[source]);
+      if (isUsableFlowRate(value)) variants.push({ value, source });
+    });
+  }
+
+  return variants;
+};
+
+const selectRateVariant = (rates, currencyKey, exchangeRateMode = 'current') => {
+  const variants = getRateVariantsForCurrency(rates, currencyKey);
+  if (variants.length === 0) return null;
+  const mode = String(exchangeRateMode || 'current');
+  const bySource = source => variants.find(item => item.source === source)?.value;
+
+  if (mode === 'buy') return bySource('buy') || bySource('mid') || variants[0].value;
+  if (mode === 'sell') return bySource('sell') || bySource('mid') || variants[0].value;
+  if (mode === 'average' || mode === 'interbank') {
+    return bySource('cross') || bySource('mid') || variants[0].value;
+  }
+  if (mode === 'highest') return Math.max(...variants.map(item => item.value));
+  if (mode === 'lowest') return Math.min(...variants.map(item => item.value));
+
+  return variants[0].value;
+};
+
+export const resolveFlowExchangeRatesForMode = (rates, exchangeRateMode = 'current') => {
+  if (!rates || typeof rates !== 'object') return null;
+  const usd = selectRateVariant(rates, 'usd', exchangeRateMode);
+  const eur = selectRateVariant(rates, 'eur', exchangeRateMode);
+  if (!isUsableFlowRate(usd) && !isUsableFlowRate(eur)) return null;
+  return {
+    ...rates,
+    usd,
+    eur,
+    selectedRateMode: exchangeRateMode || 'current',
+  };
+};
+
+export const fetchFlowExchangeRatesForMode = async ({
+  date,
+  exchangeRateMode = 'current',
+  exchangeRates,
+  customUsdRate,
+} = {}) => {
+  const fallbackRates = resolveFlowExchangeRatesForMode(exchangeRates, exchangeRateMode) || exchangeRates || null;
+  if (exchangeRateMode === 'nbu' && isValidFlowDateYmd(date)) {
+    return applyFlowCustomUsdRate(await fetchNbuUahExchangeRatesByDate(date), customUsdRate);
+  }
+  return applyFlowCustomUsdRate(fallbackRates, customUsdRate);
+};
+
 const formatFlowStoredCurrencyAmount = value => {
   const normalized = normalizeFlowStoredAmount(value);
   const asNumber = Number(normalized);
@@ -1396,18 +1515,37 @@ const formatFlowStoredCurrencyAmount = value => {
   return asNumber.toFixed(2);
 };
 
-export const saveFlowEntry = async ({ ownerId, groupPath, date, amount, description = '', exchangeRates }) => {
+export const saveFlowEntry = async ({
+  ownerId,
+  groupPath,
+  date,
+  amount,
+  description = '',
+  exchangeRates,
+  exchangeRateMode = 'current',
+  customUsdRate,
+  rowCustomUsdRate,
+}) => {
   if (!ownerId || !groupPath || !date || !amount) return;
   const datePath = buildFlowDatePath({ groupPath, date });
   if (!datePath) return;
   const normalizedAmountUah = normalizeFlowStoredAmount(amount);
   const amountUahNumber = Number(normalizedAmountUah);
-  let effectiveRates = exchangeRates;
-  if (Number.isFinite(amountUahNumber) && isValidFlowDateYmd(date)) {
+  let effectiveRates = applyFlowCustomUsdRate(
+    resolveFlowExchangeRatesForMode(exchangeRates, exchangeRateMode) || exchangeRates,
+    customUsdRate
+  );
+  if (Number.isFinite(amountUahNumber)) {
     try {
-      effectiveRates = (await fetchNbuUahExchangeRatesByDate(date)) || exchangeRates;
+      effectiveRates =
+        (await fetchFlowExchangeRatesForMode({
+          date,
+          exchangeRateMode,
+          exchangeRates,
+          customUsdRate,
+        })) || effectiveRates;
     } catch (error) {
-      console.error(`Unable to load historical FX rates for ${date}`, error);
+      console.error(`Unable to load FX rates for ${date}`, error);
     }
   }
   const amountUsd =
@@ -1418,7 +1556,13 @@ export const saveFlowEntry = async ({ ownerId, groupPath, date, amount, descript
     Number.isFinite(amountUahNumber) && Number.isFinite(effectiveRates?.eur) && effectiveRates.eur > 0
       ? formatFlowStoredCurrencyAmount(amountUahNumber / effectiveRates.eur)
       : '';
-  const amountPayload = [normalizedAmountUah, amountUsd, amountEur].join('/');
+  const normalizedRowCustomUsdRate = normalizeFlowCustomUsdRate(rowCustomUsdRate);
+  const amountPayload = [
+    normalizedAmountUah,
+    amountUsd,
+    amountEur,
+    normalizedRowCustomUsdRate ? formatFlowStoredCurrencyAmount(normalizedRowCustomUsdRate) : '',
+  ].join('/');
   const value = buildFlowEntryValue({ amount: amountPayload, description });
   const entryId = generateFlowEntryId();
   await set(ref2(database, `multiData/flow/${ownerId}/${datePath}/${entryId}`), value);
@@ -1445,6 +1589,10 @@ export const updateFlowEntry = async ({
   nextGroupPath,
   prevEntry,
   nextEntry,
+  exchangeRates,
+  exchangeRateMode = 'current',
+  customUsdRate,
+  rowCustomUsdRate,
 }) => {
   if (!ownerId || !groupPath || !prevEntry || !nextEntry) return;
   const targetGroupPath = nextGroupPath || groupPath;
@@ -1462,6 +1610,10 @@ export const updateFlowEntry = async ({
     date: nextEntry.date,
     amount: nextEntry.amount,
     description: nextEntry.description,
+    exchangeRates,
+    exchangeRateMode,
+    customUsdRate,
+    rowCustomUsdRate: rowCustomUsdRate ?? nextEntry.customUsdRate,
   });
 };
 
