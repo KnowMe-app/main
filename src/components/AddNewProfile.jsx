@@ -1124,6 +1124,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   });
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
+  const searchListIsolationRef = useRef(Boolean((search || '').trim()));
   const [isExcelImporting, setIsExcelImporting] = useState(false);
   const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
   const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(() => (
@@ -1601,7 +1602,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return false;
     }
 
-    const queryKey = buildQueryKey('GITnew', filters, search);
+    const queryKey = buildListQueryKey('GITnew', filters);
     removeUserIdFromQuery(queryKey, userId);
     setUsers(prevUsers => {
       if (!prevUsers || !prevUsers[userId]) return prevUsers;
@@ -2064,6 +2065,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [profileSource, setProfileSource] = useState('');
   const profileSourceRef = useRef(profileSource);
   const [isResolvingEditMode, setIsResolvingEditMode] = useState(false);
+  const searchListIsolated =
+    Boolean((search || '').trim()) ||
+    searchBarQueryActive ||
+    Boolean((lastSearchBarQuery || '').trim());
+
+  useEffect(() => {
+    searchListIsolationRef.current = searchListIsolated;
+  }, [searchListIsolated]);
+
+  const canApplyLoadResultsToUsers = () =>
+    !isEditingRef.current && !searchListIsolationRef.current;
 
   const downloadLoadDebugLogs = useCallback(() => {
     const logs = loadDebugLogsRef.current || [];
@@ -2259,6 +2271,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   useEffect(() => {
     const normalized = (search || '').trim();
     if (!normalized) {
+      searchListIsolationRef.current = false;
       if (lastSearchBarQuery !== '') {
         setLastSearchBarQuery('');
       }
@@ -2267,6 +2280,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }
       return;
     }
+    searchListIsolationRef.current = true;
     if (normalized !== lastSearchBarQuery && searchBarQueryActive) {
       setSearchBarQueryActive(false);
     }
@@ -2275,6 +2289,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleSearchExecuted = useCallback(value => {
     const normalized = (value || '').trim();
     if (!normalized) {
+      searchListIsolationRef.current = false;
       setSearchLoading(false);
       setHasSearched(false);
       setCurrentPage(1);
@@ -2282,15 +2297,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setLastSearchBarQuery('');
       return;
     }
+    searchListIsolationRef.current = true;
     setSearchLoading(true);
     setHasSearched(true);
     setCurrentPage(1);
+    setUsers({});
+    setHasMore(false);
     setSearchBarQueryActive(true);
     setLastSearchBarQuery(normalized);
   }, [
     setSearchLoading,
     setHasSearched,
     setCurrentPage,
+    setUsers,
+    setHasMore,
     setSearchBarQueryActive,
     setLastSearchBarQuery,
   ]);
@@ -2572,6 +2592,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     normalizeQueryKey(
       `${mode || 'all'}:${term || ''}:${serializeQueryFilters(currentFilters)}`,
     );
+  const buildListQueryKey = (mode, currentFilters = {}) => buildQueryKey(mode, currentFilters, '');
 
   const resolveFilterByLoadSortMode = mode => {
     switch (mode) {
@@ -2890,6 +2911,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       loadSortMode,
       search,
       searchBarQueryActive,
+      searchListIsolated,
       filters: summarizeLoadFiltersForLog(filters),
       previousUsersCount: countObjectKeys(users),
       hasMore,
@@ -2899,6 +2921,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       dateOffset21,
       dateOffsetLA,
     });
+
+    if (searchListIsolated) {
+      appendLoadDebugLog('reload-effect:skip-search-list-isolated', {
+        reason: 'SearchBar owns the visible users list while search text is active',
+        currentFilter,
+        search,
+        lastSearchBarQuery,
+        searchBarQueryActive,
+      });
+      setCurrentPage(1);
+      setHasMore(false);
+      setCacheCount(0);
+      setBackendCount(0);
+      setSearchLoading(false);
+      setHasSearched(Boolean((search || lastSearchBarQuery || '').trim()));
+      return;
+    }
 
     setUsers({});
     setLastKey(null);
@@ -2967,7 +3006,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         branch: 'DATE2.1',
         searchIdAndSearchKeyOnlyMode,
       });
-      const queryKey = buildQueryKey('DATE2.1', filters, search);
+      const queryKey = buildListQueryKey('DATE2.1', filters);
       const ids = getIdsByQuery(queryKey);
       const cachedCards = ids.map(id => getCard(id)).filter(Boolean);
       if (cachedCards.length > 0 || (ids.length === 0 && searchKeyCoverageRef.current[serializeQueryFilters(filters)])) {
@@ -3001,7 +3040,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       if (searchIdAndSearchKeyOnlyMode) {
         const baseFilters = {};
-        const baseKey = buildQueryKey('DATE2.1', baseFilters, search);
+        const baseKey = buildListQueryKey('DATE2.1', baseFilters);
         const baseCovered = Boolean(searchKeyCoverageRef.current[serializeQueryFilters(baseFilters)]);
         if (baseCovered) {
           const baseIds = getIdsByQuery(baseKey);
@@ -3081,7 +3120,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
-    const queryKey = buildQueryKey(currentFilter, filters, search);
+    const queryKey = buildListQueryKey(currentFilter, filters);
     const ids = getIdsByQuery(queryKey);
     const cards = ids.map(id => getCard(id)).filter(Boolean);
     if (cards.length > 0) {
@@ -3113,7 +3152,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         .finally(() => setSearchLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, currentFilter, search, loadRequestId, searchIdAndSearchKeyOnlyMode]);
+  }, [filters, currentFilter, search, loadRequestId, searchIdAndSearchKeyOnlyMode, searchListIsolated]);
 
 
   const [adding, setAdding] = useState(false);
@@ -3533,8 +3572,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       cacheFetchedUsers(newUsers, cacheLoad2Users, currentFilters);
 
       // Оновлюємо стан користувачів
-      setUsers(prevUsers => mergeWithoutOverwrite(prevUsers, newUsers));
-      const queryKey = buildQueryKey(filterForload, currentFilters, search);
+      if (canApplyLoadResultsToUsers()) {
+        setUsers(prevUsers => mergeWithoutOverwrite(prevUsers, newUsers));
+      }
+      const queryKey = buildListQueryKey(filterForload, currentFilters);
       const existingIds = getIdsByQuery(queryKey);
       setIdsForQuery(queryKey, [
         ...new Set([...existingIds, ...Object.keys(newUsers)]),
@@ -3584,7 +3625,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const loadMoreUsersGitNew = async (currentFilters = filters, { targetLoadedCount = PAGE_SIZE, background = false, forceVisibleUpdate = false } = {}) => {
     const filtersKey = serializeQueryFilters(currentFilters);
     const activeFiltersKey = () => serializeQueryFilters(filtersRef.current);
-    const queryKey = buildQueryKey('GITnew', currentFilters, search);
+    const queryKey = buildListQueryKey('GITnew', currentFilters);
     const requestedCount = Math.max(PAGE_SIZE, Number(targetLoadedCount) || PAGE_SIZE);
     const cachedIds = getIdsByQuery(queryKey);
     const cachedCards = cachedIds.map(id => getCard(id)).filter(Boolean);
@@ -3602,7 +3643,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         acc[user.userId] = user;
         return acc;
       }, {});
-      if (!isEditingRef.current || forceVisibleUpdate) setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
+      if (!searchListIsolationRef.current && (!isEditingRef.current || forceVisibleUpdate)) setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       appendLoadDebugLog('loadMoreUsersGitNew:query-cache-hit', {
         queryKey,
         cachedIdsCount: cachedIds.length,
@@ -3644,7 +3685,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           acc[user.userId] = user;
           return acc;
         }, {});
-        setUsers(prev => mergeWithoutOverwrite(prev, visibleSlice));
+        if (!searchListIsolationRef.current && (!isEditingRef.current || forceVisibleUpdate)) {
+          setUsers(prev => mergeWithoutOverwrite(prev, visibleSlice));
+        }
         return result;
       });
     }
@@ -3677,7 +3720,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           normalizedPartialUsers,
         );
         cacheFetchedUsers(visiblePartialUsers, cacheLoad2Users, currentFilters);
-        if (!isEditingRef.current || forceVisibleUpdate) {
+        if (!searchListIsolationRef.current && (!isEditingRef.current || forceVisibleUpdate)) {
           setUsers(prev => mergeWithoutOverwrite(prev, visiblePartialUsers));
         }
         appendLoadDebugLog('loadMoreUsersGitNew:progress', {
@@ -3698,7 +3741,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const normalizedUsers = appendGitNewUsersToQuery(queryKey, res?.users || {});
         const { visibleUsers, droppedIds } = filterGitNewVisibleUsers(queryKey, normalizedUsers);
         cacheFetchedUsers(visibleUsers, cacheLoad2Users, currentFilters);
-        if (!isEditingRef.current || forceVisibleUpdate) setUsers(prev => mergeWithoutOverwrite(prev, visibleUsers));
+        if (!searchListIsolationRef.current && (!isEditingRef.current || forceVisibleUpdate)) setUsers(prev => mergeWithoutOverwrite(prev, visibleUsers));
 
         const afterIds = getIdsByQuery(queryKey);
         const backendCount = Math.max(0, afterIds.length - beforeIds.length);
@@ -3808,7 +3851,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         onProgress: partial => {
           if (filtersKey !== serializeQueryFilters(filtersRef.current)) return;
           cacheFetchedUsers(partial, cacheLoad2Users, currentFilters);
-          if (!isEditingRef.current) {
+          if (canApplyLoadResultsToUsers()) {
             setUsers(prev => mergeWithoutOverwrite(prev, partial));
           }
         },
@@ -3870,11 +3913,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }, {});
 
     cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
-    if (!isEditingRef.current) {
+    if (canApplyLoadResultsToUsers()) {
       setUsers(prev => mergeWithoutOverwrite(prev, normalizedUsers));
     }
 
-    const queryKey = buildQueryKey('DATE2.1', currentFilters, search);
+    const queryKey = buildListQueryKey('DATE2.1', currentFilters);
     const existingIds = getIdsByQuery(queryKey);
     setIdsForQuery(queryKey, [...new Set([...existingIds, ...Object.keys(normalizedUsers)])]);
 
@@ -4022,7 +4065,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return acc;
       }, {});
       cacheFetchedUsers(cachedUsers, cacheLoad2Users, currentFilters);
-      if (!isEditingRef.current) {
+      if (canApplyLoadResultsToUsers()) {
         setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       }
       loadedIds.push(...Object.keys(cachedUsers));
@@ -4053,7 +4096,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
               : partial;
             cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
-            if (!isEditingRef.current) {
+            if (canApplyLoadResultsToUsers()) {
               setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
             }
             loadedIds.push(...Object.keys(filteredPartial));
@@ -4108,7 +4151,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           });
 
           cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
-          if (!isEditingRef.current) {
+          if (canApplyLoadResultsToUsers()) {
             setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
           }
           loadedIds.push(...Object.keys(filteredUsers));
@@ -4201,7 +4244,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
           if (filteredIds.length > 0) {
             cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
-            if (!isEditingRef.current) {
+            if (canApplyLoadResultsToUsers()) {
               setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
             }
             loadedIds.push(...filteredIds);
@@ -4236,7 +4279,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         ? 'cache slice and backend fetch produced no accepted users'
         : null,
     });
-    const queryKey = buildQueryKey(queryMode, currentFilters, search);
+    const queryKey = buildListQueryKey(queryMode, currentFilters);
     const existingIds = getIdsByQuery(queryKey);
     setIdsForQuery(queryKey, [...new Set([...existingIds, ...loadedIds])]);
     return { cacheCount, backendCount, hasMore: more };
@@ -4317,7 +4360,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }, {});
 
       cacheFetchedUsers(cachedUsers, cacheLoad2Users, currentFilters);
-      if (!isEditingRef.current) {
+      if (canApplyLoadResultsToUsers()) {
         setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
       }
       if (fromCache) cacheCount += slice.length;
@@ -4442,7 +4485,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
         : res.users;
       cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
-      if (!isEditingRef.current) {
+      if (canApplyLoadResultsToUsers()) {
         setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
       }
       const nextOffset = Number.isFinite(res.dateOffsetLA) ? res.dateOffsetLA : res.lastKey;
@@ -4474,7 +4517,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const getGitNewQueryCardsCount = (currentFilters = filters) => {
-    const queryKey = buildQueryKey('GITnew', currentFilters, search);
+    const queryKey = buildListQueryKey('GITnew', currentFilters);
     const cards = getIdsByQuery(queryKey).map(id => getCard(id)).filter(Boolean);
     const { visibleUsers } = filterGitNewVisibleUsers(
       queryKey,
@@ -5654,6 +5697,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   })));
 
   const handleLoadUsers = () => {
+    searchListIsolationRef.current = false;
+    setSearch('');
+    if (location.search) {
+      const params = new URLSearchParams(location.search);
+      params.delete('search');
+      const nextSearch = params.toString();
+      navigate(
+        { pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : '' },
+        { replace: true },
+      );
+    }
+    setSearchBarQueryActive(false);
+    setLastSearchBarQuery('');
+    setUserNotFound(false);
     setUsers({});
     setHasMore(true);
     setCurrentPage(1);
