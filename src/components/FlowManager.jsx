@@ -16,6 +16,7 @@ import {
 } from './config';
 import { useAutoResize } from 'hooks/useAutoResize';
 import { color } from './styles';
+import { resolveFlowAmountInput } from 'utils/flowAmountFormula';
 
 const Wrap = styled.div`
   display: flex;
@@ -502,17 +503,23 @@ const sanitizeAmountChunk = value =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const normalizeFlowAmount = value => sanitizeAmountChunk(String(value || '').replace(',', '.'));
+const normalizeFlowAmount = value => sanitizeAmountChunk(String(value || '').replace(/,/g, '.'));
 const FLOW_DATE_YMD_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 const toAmountNumber = value => {
-  const normalized = String(value || '').trim().replace(',', '.');
+  const normalized = String(value || '').trim().replace(/,/g, '.');
   const parsed = Number.parseFloat(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const hasStoredFlowAmount = value => {
+  const normalized = String(value ?? '').trim().replace(/,/g, '.');
+  if (!normalized) return false;
+  return Number.isFinite(Number(normalized));
+};
+
 const formatFlowAmountForClipboard = value => {
-  const normalized = String(value || '').trim().replace(',', '.');
+  const normalized = String(value || '').trim().replace(/,/g, '.');
   const parsed = Number.parseFloat(normalized);
   if (!Number.isFinite(parsed)) return String(value || '').replace('.', ',');
   return parsed.toFixed(2).replace('.', ',');
@@ -535,6 +542,60 @@ const formatGroupTitle = groupPath => {
   return subgroup ? `${group}, ${subgroup}` : group;
 };
 
+const FORMULA_AMOUNT_CHAR_REGEX = /[0-9.,+\-*/%()\s×xXхХ÷:−–—]/;
+const FLOW_AMOUNT_START_REGEX = /^(?:[+-]?\d+(?:[.,]\d+)?|=)/;
+
+const splitFlowAmountAndDescription = value => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  if (raw.startsWith('=')) {
+    let index = 1;
+    while (index < raw.length && FORMULA_AMOUNT_CHAR_REGEX.test(raw[index])) {
+      index += 1;
+    }
+    const amountRaw = raw.slice(0, index).trim();
+    const description = raw.slice(index).trim();
+    if (!/\d/.test(amountRaw)) return null;
+    return { amountRaw, description };
+  }
+
+  const numberMatch = raw.match(/^([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
+  if (!numberMatch) return null;
+  return {
+    amountRaw: numberMatch[1],
+    description: numberMatch[2] || '',
+  };
+};
+
+const resolveFlowEntryLineForDisplay = line => {
+  const trimmedLine = String(line || '').trim();
+  if (!trimmedLine) return line;
+
+  const lineMatch = trimmedLine.match(/^(?:(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+)?(.+)$/);
+  if (!lineMatch) return line;
+
+  const amountParts = splitFlowAmountAndDescription(lineMatch[2]);
+  if (!amountParts) return line;
+
+  let resolvedAmount = '';
+  try {
+    resolvedAmount = normalizeFlowAmount(resolveFlowAmountInput(amountParts.amountRaw));
+  } catch {
+    return line;
+  }
+  if (!resolvedAmount || resolvedAmount === amountParts.amountRaw) return line;
+
+  const datePrefix = lineMatch[1] ? `${lineMatch[1]} ` : '';
+  return `${datePrefix}${resolvedAmount} ${amountParts.description || ''}`.trim();
+};
+
+const resolveFlowEntryInputForDisplay = rawText =>
+  String(rawText || '')
+    .split(/(\r?\n)/)
+    .map(part => (/\r?\n/.test(part) ? part : resolveFlowEntryLineForDisplay(part)))
+    .join('');
+
 export const parseFlowEntryLine = (line, fallbackDate = '') => {
   const trimmedLine = String(line || '').trim();
   if (!trimmedLine) return null;
@@ -542,20 +603,26 @@ export const parseFlowEntryLine = (line, fallbackDate = '') => {
   const leadingDateOnlyMatch = trimmedLine.match(/^(\d{1,2}\.\d{1,2}\.\d{4})(?:\s+(.*))?$/);
   if (leadingDateOnlyMatch) {
     const rest = String(leadingDateOnlyMatch[2] || '').trim();
-    if (rest && !/^[+-]?\d+(?:[.,]\d+)?(?:\s|$)/.test(rest)) {
+    if (rest && !FLOW_AMOUNT_START_REGEX.test(rest)) {
       return null;
     }
   }
 
-  const match = trimmedLine.match(
-    /^(?:(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+)?([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/,
-  );
-  if (!match) return null;
+  const lineMatch = trimmedLine.match(/^(?:(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+)?(.+)$/);
+  if (!lineMatch) return null;
+
+  const amountParts = splitFlowAmountAndDescription(lineMatch[2]);
+  if (!amountParts) return null;
 
   const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
-  const parsedDate = match[1] ? parseDisplayDate(match[1], fallbackYear) : fallbackDate;
-  const parsedAmount = normalizeFlowAmount(match[2] || '');
-  const parsedDescription = sanitizeEntryKeyChunk(match[3] || '');
+  const parsedDate = lineMatch[1] ? parseDisplayDate(lineMatch[1], fallbackYear) : fallbackDate;
+  let parsedAmount = '';
+  try {
+    parsedAmount = normalizeFlowAmount(resolveFlowAmountInput(amountParts.amountRaw));
+  } catch {
+    return null;
+  }
+  const parsedDescription = sanitizeEntryKeyChunk(amountParts.description || '');
 
   if (!parsedDate || !parsedAmount) return null;
   return {
@@ -831,13 +898,13 @@ export const FlowManager = ({ ownerId }) => {
         const historicalRates =
           FLOW_DATE_YMD_REGEX.test(String(row.date || '')) ? historicalRatesByDate[row.date] : null;
         const amountUsdDerived =
-          amountUsdStored > 0
+          hasStoredFlowAmount(row.amountUsd)
             ? amountUsdStored
             : Number.isFinite(amountUah) && Number.isFinite(historicalRates?.usd) && historicalRates.usd > 0
               ? amountUah / historicalRates.usd
               : 0;
         const amountEurDerived =
-          amountEurStored > 0
+          hasStoredFlowAmount(row.amountEur)
             ? amountEurStored
             : Number.isFinite(amountUah) && Number.isFinite(historicalRates?.eur) && historicalRates.eur > 0
               ? amountUah / historicalRates.eur
@@ -945,7 +1012,7 @@ export const FlowManager = ({ ownerId }) => {
     const datesMissingRates = [...new Set(
       flowRows
         .filter(row => {
-          const hasStoredFx = toAmountNumber(row.amountUsd) > 0 || toAmountNumber(row.amountEur) > 0;
+          const hasStoredFx = hasStoredFlowAmount(row.amountUsd) || hasStoredFlowAmount(row.amountEur);
           return !hasStoredFx && FLOW_DATE_YMD_REGEX.test(String(row.date || ''));
         })
         .map(row => row.date)
@@ -1160,11 +1227,11 @@ export const FlowManager = ({ ownerId }) => {
     }
   };
 
-  const handleSave = async ({ silentValidation = false } = {}) => {
+  const handleSave = async ({ silentValidation = false, rawText = entryInput } = {}) => {
     const normalizedCategory = normalizeCategoryPath(selectedCategoryPath) || DEFAULT_FLOW_CATEGORY;
-    const effectiveFallbackDate = resolveFlowFallbackDate(entryInput, dateYmd);
+    const effectiveFallbackDate = resolveFlowFallbackDate(rawText, dateYmd);
     const parsedEntries = parseFlowEntriesByDatesAndGroups({
-      rawText: entryInput,
+      rawText,
       fallbackDate: effectiveFallbackDate,
       defaultGroup: normalizedCategory,
     });
@@ -1301,16 +1368,14 @@ export const FlowManager = ({ ownerId }) => {
     const rowKey = getRowKey(row, idx);
     if (editingKey !== rowKey) return;
 
-    const match = String(editingDraft.line || '')
-      .trim()
-      .match(/^(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
-    if (!match) {
-      toast.error('Формат редагування: дд.мм або дд.мм.рррр 100 опис');
+    const parsedLine = parseFlowEntryLine(editingDraft.line, row.date);
+    if (!parsedLine) {
+      toast.error('Формат редагування: дд.мм або дд.мм.рррр 100 / =100+20 опис');
       return;
     }
-    const parsedDate = parseDisplayDate(match[1], new Date().getFullYear());
-    const nextAmount = normalizeFlowAmount(match[2] || '');
-    const nextDescription = sanitizeEntryKeyChunk(match[3] || '');
+    const parsedDate = parsedLine.date;
+    const nextAmount = parsedLine.amount;
+    const nextDescription = parsedLine.description;
     if (!parsedDate || !nextAmount) {
       toast.error('Для редагування потрібні валідні дата і сума');
       return;
@@ -1637,14 +1702,22 @@ export const FlowManager = ({ ownerId }) => {
               onKeyDown={e => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
-                  handleSave();
+                  const resolvedInput = resolveFlowEntryInputForDisplay(entryInput);
+                  if (resolvedInput !== entryInput) {
+                    setEntryInput(resolvedInput);
+                  }
+                  handleSave({ rawText: resolvedInput });
                   categoryInputRef.current?.focus();
                 }
               }}
               onBlur={() => {
-                handleSave({ silentValidation: true });
+                const resolvedInput = resolveFlowEntryInputForDisplay(entryInput);
+                if (resolvedInput !== entryInput) {
+                  setEntryInput(resolvedInput);
+                }
+                handleSave({ silentValidation: true, rawText: resolvedInput });
               }}
-              placeholder={'Заголовок\n20.01.2026 100 кава'}
+              placeholder={'Заголовок\n20.01.2026 =100+25*2 кава'}
               style={{ paddingRight: entryInput ? 34 : 8 }}
             />
             {entryInput && (
@@ -1674,7 +1747,7 @@ export const FlowManager = ({ ownerId }) => {
                   const categoryTotals = categorySums[group] || { uah: 0, usd: 0, eur: 0 };
                   const amountUah = categoryTotals.uah || 0;
                   const amountUahText = `${formatCategorySum(amountUah)} грн`;
-                  if (categoryTotals.usd > 0 || categoryTotals.eur > 0) {
+                  if (categoryTotals.usd !== 0 || categoryTotals.eur !== 0) {
                     return `${amountUahText} / ${formatCurrencyValue(categoryTotals.usd)} $ / ${formatCurrencyValue(categoryTotals.eur)} €`;
                   }
 
