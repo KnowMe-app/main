@@ -9,7 +9,7 @@ import { authNotifications } from './authNotifications';
 import {
   buildAuthProfilePayload,
   markAuthSession,
-  MY_PROFILE_NEW_ROUTE,
+  MY_PROFILE_ROUTE,
   normalizeAuthEmail,
   persistUserWithFallback,
 } from './authProfilePersistence';
@@ -344,7 +344,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   const { todayDays, todayDash } = getCurrentDate();
 
   const navigateAfterAuth = () => {
-    navigate(MY_PROFILE_NEW_ROUTE);
+    navigate(MY_PROFILE_ROUTE);
   };
 
   const handleLogin = async email => {
@@ -462,7 +462,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     const loggedIn = localStorage.getItem('isLoggedIn');
     if (isLoggedIn || loggedIn) {
       setIsLoggedIn(true);
-      navigate(MY_PROFILE_NEW_ROUTE);
+      navigate(MY_PROFILE_ROUTE);
     }
     // eslint-disable-next-line
   }, []);

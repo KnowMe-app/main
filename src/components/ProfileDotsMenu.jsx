@@ -160,8 +160,8 @@ export const ProfileDotsMenu = ({
   };
 
   const navItems = [
-    { path: '/my-profile-new', label: 'Нова анкета', icon: <FaUserEdit /> },
-    ...(isAdmin ? [{ path: '/my-profile', label: 'Мій профіль', icon: <FaRegUser /> }] : []),
+    { path: '/my-profile', label: 'Мій профіль', icon: <FaRegUser /> },
+    ...(isAdmin ? [{ path: '/my-profile-old', label: 'Старий профіль', icon: <FaUserEdit /> }] : []),
     ...(canSeePrivilegedNav && (isAdmin || resolvedAccess.canAccessAdd)
       ? [{ path: '/add', label: 'Додати анкету', description: 'Адмін-додавання профілів', icon: <MdPersonAddAlt1 /> }]
       : []),

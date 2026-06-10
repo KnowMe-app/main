@@ -1,513 +1,576 @@
-import React, { useEffect, useState, useRef } from 'react';
-import styled, { css } from 'styled-components';
-
-// import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
-import { auth, fetchUserData } from './config';
-import { makeUploadedInfo } from './makeUploadedInfo';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { FiX } from 'react-icons/fi';
+import { FaEye, FaEyeSlash } from 'react-icons/fa';
+import styled, { css, keyframes } from 'styled-components';
 import {
+  auth,
+  fetchUserData,
   updateDataInFiresoreDB,
-  updateDataInRealtimeDB,
   updateDataInNewUsersRTDB,
+  updateDataInRealtimeDB,
 } from './config';
+import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
+import { makeUploadedInfo } from './makeUploadedInfo';
+import { inputUpdateValue } from './inputUpdatedValue';
 import {
-  pickerFields,
-  getOptionLabel,
-  getOptionValue,
-} from './formFields';
-import {
-  onAuthStateChanged,
-  signOut,
   createUserWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
+  onAuthStateChanged,
   sendEmailVerification,
   signInWithEmailAndPassword,
-  fetchSignInMethodsForEmail,
+  signOut,
 } from 'firebase/auth';
-import { useNavigate } from 'react-router-dom';
-import { getCurrentDate } from './foramtDate';
-import InfoModal from './InfoModal';
 import Photos from './Photos';
-import { FaEye, FaEyeSlash } from 'react-icons/fa';
-
-import { color } from './styles';
-import { inputUpdateValue } from './inputUpdatedValue';
-import { useAutoResize } from '../hooks/useAutoResize';
+import InfoModal from './InfoModal';
 import { resolveAccess } from 'utils/accessLevel';
-import { normalizePhoneState } from './inputValidations';
+import { getCurrentDate } from './foramtDate';
 import { authNotifications } from './authNotifications';
+import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 
-const Container = styled.div`
+const Page = styled.div`
+  --accent: #E8791A;
+  --accent-light: #FFF0E0;
+  --accent-mid: #F5A24B;
+  --bg: #FAFAF8;
+  --card: #FFFFFF;
+  --text: #1A1A1A;
+  --muted: #7A7A72;
+  --border: #E8E8E2;
+  --radius: 14px;
+  --shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  --sticky-header-offset: 112px;
+`;
+const Topbar = styled.div`
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 20px;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: 10px;
-  background-color: #f5f5f5;
-
-  @media (max-width: 768px) { // Медіа-запит для пристроїв з шириною екрану до 768px
-    padding: 10px;
-  }
-  /* max-width: 450px; */
-
-  /* maxWidth:  */
-  /* height: 100vh; */
+  justify-content: space-between;
 `;
-
-const InnerContainer = styled.div`
-  max-width: 450px;
-  width: 100%;
-  background-color: #f0f0f0;
-  padding: 10px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-
-  @media (max-width: 768px) { // Медіа-запит для пристроїв з шириною екрану до 768px
-    background-color: #f5f5f5;
-    box-shadow: 0 4px 8px #f5f5f5;
-    border-radius: 0;
-  }
-`;
-
-const DotsButton = styled.button`
-  margin-top: -10px;
-  margin-bottom: 10px;
-  width: 40px;
-  height: 40px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  font-size: 24px;
-  color: ${color.accent5};
-  cursor: pointer;
-  padding: 0 0 6px 0;
-  margin-left: auto;
-  align-items: center;
-  justify-content: center;
-  display: flex;
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease;
-
-  &:hover {
-    background-color: ${color.paleAccent2};
-    border-color: ${color.paleAccent5};
-    color: ${color.accent};
-  }
-`;
-
-const PickerContainer = styled.div`
-  display: flex;
-  /* flex-direction: column; */
-  justify-content: center;
-  align-items: center;
-  background-color: #f0f0f0;
-  box-sizing: border-box; /* Додано */
-  @media (max-width: 768px) { // Медіа-запит для пристроїв з шириною екрану до 768px
-    background-color: #f5f5f5;
-  }
-`;
-
-const InputDiv = styled.div`
-  display: flex;
-  align-items: center;
-  position: relative;
-  margin: 10px 0;
-  padding: 10px;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-
-  box-sizing: border-box;
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 0; /* Запобігає переповненню при додаванні кнопок */
-  height: auto;
-`;
-
-// Стиль для інпутів
-const InputField = styled.input`
-  border: none;
-  outline: none;
-  flex: 1;
-  align-items: center;
-  /* padding-left: 10px; */
-  padding-left: ${({ fieldName, value }) => {
-    if (fieldName === 'phone') return '20px';
-    if (fieldName === 'telegram' || fieldName === 'instagram'|| fieldName === 'tiktok') return '25px';
-    if (fieldName === 'facebook') return /^\d+$/.test(value) ? "20px" : "25px";
-    if (fieldName === 'vk') return /^\d+$/.test(value) || value === ''  ? "23px" : "10px";
-    return '10px'; // Значення за замовчуванням
-  }};
-  max-width: 100%; 
-  min-width: 0; /* Дозволяє інпуту зменшуватися до нуля */
-  pointer-events: auto;
-  height: 100%;
-  resize: vertical;
-  /* box-sizing: border-box; */
-  /* min-width:  100px; */
-
-  /* Додати placeholder стилі для роботи з лейблом */
-  &::placeholder {
-    color: transparent; /* Ховаємо текст placeholder */
-  }
-`;
-
-const Hint = styled.label`
-  position: absolute;
-  /* padding-left: 10px; */
-  padding-left: ${({ fieldName, isActive }) => {
-    if (fieldName === 'phone') return '20px';
-    if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram'|| fieldName === 'tiktok') return '25px';
-    if (fieldName === 'vk') return '23px';
-    return '10px'; // Значення за замовчуванням
-  }};
-  /* left: 30px; */
-  /* top: 50%; */
-  /* transform: translateY(-50%); */
-  display: flex;
-  align-items: center;
-
-  transition: all 0.3s ease;
-  color: gray;
-  pointer-events: none;
-  display: flex;
-  align-items: center; /* Вирівнює по вертикалі */
-  gap: 8px; /* Відстань між іконкою і текстом, змініть за потреби */
-
-  ${({ isActive }) =>
-    isActive &&
-    css`
-      display: none;
-      /* left: 10px;
-      top: 0;
-      transform: translateY(-100%);
-      font-size: 12px;
-      color: orange; */
-    `}
-`;
-
-const Placeholder = styled.label`
-  position: absolute;
-  padding-left: 10px;
-  /* left: 30px; */
+const StickyHeader = styled.div`
+  position: sticky;
   top: 0;
-  transform: translateY(-100%);
-  transition: all 0.3s ease;
-  color: gray;
-  pointer-events: none;
-  display: flex;
-  align-items: center; /* Вирівнює по вертикалі */
-  gap: 8px; /* Відстань між іконкою і текстом, змініть за потреби */
-  font-size: 12px;
-
-  ${({ isActive }) =>
-    isActive &&
-    css`
-      left: 10px;
-      top: 0;
-      transform: translateY(-100%);
-      font-size: 12px;
-  color: orange;
+  z-index: 30;
+  background: var(--card);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+`;
+const FALLBACK_STICKY_HEADER_OFFSET = 112;
+const CONTENT_SECTION_TOP_GAP = 18;
+const STICKY_HEADER_EXTRA_GAP = CONTENT_SECTION_TOP_GAP;
+const SCROLL_ACTIVE_SECTION_GAP = 16;
+const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
+const ProgressWrap = styled.div`padding: 16px 20px 0;`;
+const Tabs = styled.div`padding:14px 20px;display:flex;gap:8px;overflow:auto;`;
+const Tab = styled.button`
+  flex-shrink: 0; padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 500;
+  border: 1.5px solid ${({ $complete, $active }) => ($complete ? '#2E9B55' : $active ? 'var(--accent)' : 'var(--border)')};
+  background: ${({ $active, $complete }) => ($active ? 'var(--accent)' : $complete ? '#EBF8EF' : 'var(--card)')};
+  color: ${({ $active, $complete }) => ($active ? '#fff' : $complete ? '#2E9B55' : 'var(--muted)')};
+`;
+const Card = styled.div`
+  margin: 0 20px 16px;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  scroll-margin-top: var(--sticky-header-offset);
+`;
+const FirstContentCard = styled(Card)`margin-top: ${CONTENT_SECTION_TOP_GAP}px;`;
+const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
+const FieldGroup = styled.div`padding:0 18px;`;
+const Field = styled.div`padding:14px 0;border-bottom:1px solid var(--border); &:last-child{border-bottom:none;}`;
+const Label = styled.div`font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px;`;
+const Input = styled.input`
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 38px 10px 14px;
+  outline: none;
+  &:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(232, 121, 26, .12); }
+  ${({ $missing }) => $missing && `
+    border-color: #D44;
+    box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
   `}
 `;
-
-
-const StatusMessage = styled.div`
-  color: ${({ published }) => (published ? 'green' : 'red')};
-  font-weight: bold;
-  margin-bottom: 10px;
-  align-self: flex-end;
-  text-align: right;
+const TextArea = styled.textarea`
   width: 100%;
-  `;
-
-const AuthInputDiv = styled(InputDiv)`
-  width: 100%;
-  margin-bottom: 15px;
-  ${({ missing }) =>
-    missing &&
-    css`
-      border-color: red;
-    `}
-  `;
-
-const AuthInputField = styled(InputField)`
-  padding-left: 20px;
-`;
-
-const AuthLabel = styled.label`
-  position: absolute;
-  left: 20px;
-  top: 50%;
-  transform: translateY(-50%);
-  transition: all 0.3s ease;
-  color: gray;
-  pointer-events: none;
-
-  ${({ isActive }) =>
-    isActive &&
-    css`
-      left: 20px;
-      top: 0;
-      transform: translateY(-100%);
-      font-size: 12px;
-      color: orange;
-    `}
-`;
-
-
-export const SubmitButton = styled.button`
-  padding: 11px 14px;
-  color: ${color.black};
-  border: 1px solid transparent;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 500;
-  align-self: flex-start;
-  width: 100%;
-  text-align: left;
-  background: linear-gradient(180deg, ${color.oppositeAccent} 0%, #fffaf2 100%);
-  box-shadow: inset 0 -1px 0 ${color.gray};
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    transform 0.2s ease;
-  margin-bottom: 6px;
-
-  &:last-child {
-    margin-bottom: 0;
-  }
-
-  &:hover {
-    background: ${color.paleAccent2};
-    border-color: ${color.paleAccent5};
-    transform: translateY(-1px);
-  }
-`;
-
-const PublishButton = styled.button`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 5px auto 0 auto;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 16px;
-  padding: 10px 20px;
-  background-color: ${color.accent5};
-  text-align: center;
-  font-weight: bold;
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
-
-  &:hover {
-    background-color: ${color.accent};
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
-
-  &:active {
-    transform: scale(0.98);
-  }
-`;
-
-const AgreeButton = styled(PublishButton)`
-  margin: 0;
-  font-size: 12px;
-  white-space: nowrap;
-  flex-grow: 1;
-`;
-const TermsButton = styled.button`
-  background-color: ${color.oppositeAccent};
-  border: 1px solid ${color.gray};
-  border-radius: 4px;
-  padding: 10px 20px;
-  width: 110px;
-  margin-left: 8px;
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: ${color.accent5};
-  &:hover {
-    background-color: ${color.paleAccent5};
-  }
-`;
-
-const AgreeContainer = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  margin-bottom: 10px;
-`;
-
-export const ExitButton = styled(SubmitButton)`
-  background: #fff;
-  color: ${color.accent3};
-  border-color: ${color.gray};
-
-  &:hover {
-    background-color: ${color.paleAccent2};
-  }
-`;
-
-// const iconMap = {
-//   user: <FaUser style={{ color: 'orange' }} />,
-//   mail: <FaMailBulk style={{ color: 'orange' }} />,
-//   phone: <FaPhone style={{ color: 'orange' }} />,
-//   'telegram-plane': <FaTelegramPlane style={{ color: 'orange' }} />,
-//   'facebook-f': <FaFacebookF style={{ color: 'orange' }} />,
-//   instagram: <FaInstagram style={{ color: 'orange' }} />,
-//   vk: <FaVk style={{ color: 'orange' }} />,
-// };
-
-const InputFieldContainer = styled.div`
-  display: flex;
-  align-items: center;
-  position: relative;
-  /* width: 100%; */
-  height: 100%; /* Дозволяє розтягувати висоту по висоті контейнера */
+  min-width: 0;
   box-sizing: border-box;
-  flex: 1 1 auto;
-  min-width: 0; /* Дозволяє контейнеру звужуватись разом з інпутом */
-  height: auto; /* Дозволяє висоті адаптуватися до вмісту */
-
-  &::before {
-    content: ${({ fieldName, value }) => {
-  if (fieldName === 'phone') return "'+'";
-  if (fieldName === 'telegram' || fieldName === 'instagram'|| fieldName === 'tiktok') return "'@'";
-  if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
-  if (fieldName === 'vk') return (/^\d+$/.test(value) || value === '' || value === undefined) ? "'id'" : "''";
-  return "''";
-}};
-    position: absolute;
-    left: 10px;
-    /* top: 50%; */
-    /* transform: ${({ fieldName, value }) => ((fieldName === 'phone' || fieldName === 'vk' || (fieldName === 'facebook' && /^\d+$/.test(value))) ? 'translateY(-45%)' : 'translateY(-45%)')}; */
-    display: flex;
-    align-items: center;
-    color: ${({ value }) => (value ? '#000' : 'gray')}; // Чорний, якщо є значення; сірий, якщо порожньо
-    font-size: 16px;
-    text-align: center;
-  }
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 38px 10px 14px;
+  outline: none;
+  min-height: 90px;
+  ${({ $missing }) => $missing && `
+    border-color: #D44;
+    box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
+  `}
 `;
-
-const ClearButton = styled.button`
+const FieldControl = styled.div`
+  position: relative;
+  width: 100%;
+  min-width: 0;
+`;
+const ClearFieldButton = styled.button`
   position: absolute;
-  right: 10px;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
   display: flex;
-  justify-content: center;
   align-items: center;
-  width: 32px;
-  height: 32px;
-  margin: -7px;
+  justify-content: center;
   padding: 0;
-
-  background: none;
   border: none;
   border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
   cursor: pointer;
-  color: gray;
-  font-size: 18px;
-  touch-action: manipulation;
+`;
+const ChipRow = styled.div`display:flex;flex-wrap:wrap;gap:6px;`;
+const Chip = styled.button`
+  padding: 6px 13px; border-radius: 99px; font-size: 13px; border: 1.5px solid ${({ selected }) => (selected ? 'var(--accent)' : 'var(--border)')};
+  background: ${({ selected }) => (selected ? 'var(--accent-light)' : 'var(--card)')}; color: ${({ selected }) => (selected ? 'var(--accent)' : 'var(--muted)')};
+  ${({ $missing }) => $missing && `
+    border-color: #D44;
+    box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
+  `}
+`;
+const SubmitWrap = styled.div`padding:20px;`;
+const PhotoSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: ${({ $isFirstContent }) => ($isFirstContent ? `${CONTENT_SECTION_TOP_GAP}px` : '0')} 20px 20px;
+  padding: 18px;
+  background: var(--card);
+  border-radius: var(--radius);
+  border: 1.5px dashed var(--border);
+  box-shadow: var(--shadow);
+  min-width: 0;
+  scroll-margin-top: var(--sticky-header-offset);
+`;
+const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
+const CustomOptionWrap = styled.div`margin-top:10px;`;
+const DotsButton = styled.button`
+  display:flex;align-items:center;justify-content:center;
+  width:34px;height:34px;border-radius:10px;border:1px solid var(--border);
+  background:var(--card);cursor:pointer;font-size:22px;line-height:1;color:var(--muted);
+  transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease, color .18s ease;
 
   &:hover {
-    color: black;
-    background-color: rgba(0, 0, 0, 0.04);
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   &:focus-visible {
-    outline: 2px solid ${color.accent5};
-    outline-offset: 1px;
-  }
-`;
-
-const TogglePasswordButton = styled.button`
-  position: absolute;
-  right: 20px;
-  display: flex;
-  align-items: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: gray;
-  font-size: 18px;
-
-  &:hover {
-    color: black;
-  }
-`;
-
-const ButtonGroup = styled.div`
-  display: flex;
-  gap: 8px;
-  /* margin-top: 10px; Відступ між інпутом і кнопками */
-  /* width: 100%; */
-  margin-left: 8px;
-  /* width: 100%;  */
-  box-sizing: border-box; 
-`;
-
-const Button = styled.button`
-  width: 35px; /* Встановіть ширину, яка визначатиме розмір кнопки */
-  height: 35px; /* Встановіть висоту, яка повинна дорівнювати ширині */
-  padding: 3px; /* Видаліть внутрішні відступи */
-  border: none;
-  background-color: ${color.accent5};
-  color: white;
-  border-radius: 50px;
-  cursor: pointer;
-  font-size: 12px;
-  flex: 0 1 auto;
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
-
-  &:hover {
-    background-color: ${color.accent}; /* Колір кнопки при наведенні */
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Тінь при наведенні */
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(232, 121, 26, .16);
   }
 
   &:active {
-    transform: scale(0.98); /* Легкий ефект при натисканні */
+    transform: scale(.98);
   }
 `;
 
-const initialProfileState = pickerFields.reduce(
-  (acc, field) => ({ ...acc, [field.name]: '' }),
-  { password: '', userId: '', publish: false }
+const AuthCard = styled(FirstContentCard)``;
+const hintPulse = keyframes`
+  0%, 100% { transform: translateX(0) scale(1); }
+  25% { transform: translateX(-2px) scale(1.02); }
+  50% { transform: translateX(2px) scale(1.03); }
+  75% { transform: translateX(-1px) scale(1.02); }
+`;
+const StatusBadge = styled.button`
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 99px;
+  background: #FEE9E9;
+  color: #D44;
+  cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
+`;
+const HighlightableLabel = styled(Label)`
+  display: inline-block;
+  ${({ $active }) => $active && css`
+    color: var(--accent);
+    animation: ${hintPulse} .45s ease-in-out;
+  `}
+`;
+
+const AuthIntro = styled.p`
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+`;
+const AuthField = styled(Field)`
+  ${({ $missing }) => $missing && `
+    ${Input} {
+      border-color: #D44;
+      box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
+    }
+  `}
+`;
+const PasswordToggleButton = styled.button`
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text);
+  }
+`;
+const TermsRow = styled.div`
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 0;
+  border-radius: 12px;
+  ${({ $missing, $active }) => ($missing || $active) && css`
+    margin: 8px 0;
+    padding: 14px 12px;
+    background: rgba(221, 68, 68, .06);
+    box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
+    animation: ${hintPulse} .45s ease-in-out;
+  `}
+`;
+const TermsCheckbox = styled.input`
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  ${({ $missing, $active }) => ($missing || $active) && `
+    outline: 2px solid #D44;
+    outline-offset: 2px;
+  `}
+`;
+const TermsText = styled.div`
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+`;
+const TermsButton = styled.button`
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+`;
+const AuthActionButton = styled(SubmitBtn)`
+  margin: 4px 0 20px;
+  ${({ $active }) => $active && css`
+    animation: ${hintPulse} .45s ease-in-out;
+    box-shadow: 0 0 0 4px rgba(232, 121, 26, .16);
+  `}
+`;
+
+const baseSections = [
+  { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'birth', 'country', 'region', 'city', 'maritalStatus'] },
+  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'ownKids', 'lastDelivery', 'csection', 'reward'] },
+  { key: 'appearance', title: '✨ Зовнішність', fields: ['eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race'] },
+  { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'vk'] },
+  { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main'] },
+];
+
+const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','vk','country','region','city','moreInfo_main']);
+const MY_PROFILE_DRAFT_STORAGE_KEY = 'myProfileDraft';
+
+const readMyProfileDraft = () => {
+  const savedDraft = localStorage.getItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+  if (!savedDraft) return null;
+
+  try {
+    const parsedDraft = JSON.parse(savedDraft);
+    if (!parsedDraft || typeof parsedDraft !== 'object' || Array.isArray(parsedDraft)) {
+      return null;
+    }
+
+    const { password: _password, userId: _userId, publish: _publish, ...draftFields } = parsedDraft;
+    return { ...draftFields, password: '' };
+  } catch (error) {
+    console.warn('Failed to load MyProfile draft.', error);
+    localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+    return null;
+  }
+};
+
+const buildMyProfileDraft = profileState => {
+  const { password: _password, userId: _userId, publish: _publish, ...draftState } = profileState || {};
+  return draftState;
+};
+
+const getStoredAuthenticatedOwnerId = () => (
+  localStorage.getItem('isLoggedIn') === 'true' ? localStorage.getItem('ownerId') || '' : ''
 );
 
-export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
-  const [state, setState] = useState(initialProfileState);
-  const [focused, setFocused] = useState(null);
-  const [missing, setMissing] = useState({});
-  const [showPassword, setShowPassword] = useState(false);
-  const [hasAgreed, setHasAgreed] = useState(false);
-  console.log('focused :>> ', focused);
+export const MyProfile = () => {
+  const [state, setState] = useState(() => readMyProfileDraft() || {});
   const navigate = useNavigate();
-  const currentUid = auth.currentUser?.uid;
+  const currentUid = auth.currentUser?.uid || getStoredAuthenticatedOwnerId();
   const access = resolveAccess({ uid: currentUid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
   const isAdmin = access.isAdmin;
-  const moreInfoRef = useRef(null);
-  const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
+  const [userId, setUserId] = useState('');
+  const [activeTab, setActiveTab] = useState('auth');
+  const [customOptionMode, setCustomOptionMode] = useState({});
+  const [missing, setMissing] = useState({});
+  const [hasAgreed, setHasAgreed] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [authHintStep, setAuthHintStep] = useState('');
+  const [stickyHeaderOffset, setStickyHeaderOffset] = useState(FALLBACK_STICKY_HEADER_OFFSET);
+  const stickyHeaderRef = useRef(null);
+  const sectionRefs = useRef({});
+  const tabsRef = useRef(null);
+  const tabRefs = useRef({});
+  const isManualScrollRef = useRef(false);
+  const programmaticScrollTimeoutRef = useRef(null);
+  const scrollFrameRef = useRef(null);
+  const latestFetchUidRef = useRef('');
+  const saveQueueRef = useRef(Promise.resolve());
+  const stateRef = useRef(state);
+  const editedFieldsRef = useRef(new Set());
+  const authHintTimersRef = useRef([]);
 
   useEffect(() => {
-    const savedDraft = localStorage.getItem('myProfileDraft');
-    if (savedDraft && !state.userId) {
-      setState(prev => ({ ...prev, ...JSON.parse(savedDraft) }));
-    }
-  }, [state.userId]);
+    stateRef.current = state;
+  }, [state]);
+
+  const restoreLocalDraft = useCallback(() => {
+    if (userId || stateRef.current.userId) return;
+
+    const localDraft = readMyProfileDraft();
+    if (!localDraft) return;
+
+    setState(prevState => {
+      if (prevState.userId) return prevState;
+      const nextState = { ...prevState, ...localDraft, password: prevState.password || '' };
+      stateRef.current = nextState;
+      return nextState;
+    });
+  }, [userId]);
 
   useEffect(() => {
-    if (!state.publish) {
-      localStorage.setItem('myProfileDraft', JSON.stringify(state));
-    } else {
-      localStorage.removeItem('myProfileDraft');
+    restoreLocalDraft();
+  }, [restoreLocalDraft]);
+
+  useEffect(() => {
+    window.addEventListener('focus', restoreLocalDraft);
+    window.addEventListener('pageshow', restoreLocalDraft);
+
+    return () => {
+      window.removeEventListener('focus', restoreLocalDraft);
+      window.removeEventListener('pageshow', restoreLocalDraft);
+    };
+  }, [restoreLocalDraft]);
+
+  useLayoutEffect(() => {
+    const updateStickyHeaderOffset = () => {
+      const headerHeight = stickyHeaderRef.current?.getBoundingClientRect().height || FALLBACK_STICKY_HEADER_OFFSET;
+      const nextOffset = Math.ceil(headerHeight + STICKY_HEADER_EXTRA_GAP);
+      setStickyHeaderOffset(prevOffset => (prevOffset === nextOffset ? prevOffset : nextOffset));
+    };
+
+    updateStickyHeaderOffset();
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined' && stickyHeaderRef.current
+      ? new ResizeObserver(updateStickyHeaderOffset)
+      : null;
+
+    if (resizeObserver && stickyHeaderRef.current) {
+      resizeObserver.observe(stickyHeaderRef.current);
     }
-  }, [state, state.publish]);
+
+    window.addEventListener('resize', updateStickyHeaderOffset);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateStickyHeaderOffset);
+    };
+  }, []);
+
+
+  useEffect(() => {
+    if (userId || state.userId) return;
+
+    localStorage.setItem(MY_PROFILE_DRAFT_STORAGE_KEY, JSON.stringify(buildMyProfileDraft(state)));
+  }, [state, userId]);
+
+  useEffect(() => () => {
+    authHintTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
+    if (programmaticScrollTimeoutRef.current) {
+      window.clearTimeout(programmaticScrollTimeoutRef.current);
+    }
+    if (scrollFrameRef.current) {
+      window.cancelAnimationFrame(scrollFrameRef.current);
+    }
+  }, []);
+
+  const normalizeProfileData = (data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
+    if (key === 'password') {
+      return acc;
+    }
+
+    if (key === 'photos' && Array.isArray(value)) {
+      acc[key] = value;
+      return acc;
+    }
+
+    if (Array.isArray(value)) {
+      acc[key] = value.length > 0 ? value[value.length - 1] : '';
+      return acc;
+    }
+
+    acc[key] = value;
+    return acc;
+  }, {});
+
+  const mergeLoadedProfileData = (loadedData, uid) => {
+    setState(prevState => {
+      const protectedFields = editedFieldsRef.current;
+      const nextState = { userRole: 'ed', ...loadedData, userId: uid };
+
+      protectedFields.forEach(fieldName => {
+        if (Object.prototype.hasOwnProperty.call(prevState, fieldName)) {
+          nextState[fieldName] = prevState[fieldName];
+        }
+      });
+
+      stateRef.current = nextState;
+      return nextState;
+    });
+  };
+
+  const updateFieldValue = (name, value, field) => {
+    const updatedValue = inputUpdateValue(value, field);
+    editedFieldsRef.current.add(name);
+    setMissing(prev => ({ ...prev, [name]: false }));
+
+    setState(prevState => {
+      const nextState = {
+        ...prevState,
+        [name]: updatedValue,
+      };
+
+      stateRef.current = nextState;
+      return nextState;
+    });
+  };
+
+  const saveFieldValue = (name, value, field) => {
+    const updatedValue = inputUpdateValue(value, field);
+    editedFieldsRef.current.add(name);
+    setMissing(prev => ({ ...prev, [name]: false }));
+
+    const nextState = {
+      ...stateRef.current,
+      [name]: updatedValue,
+    };
+
+    stateRef.current = nextState;
+    setState(nextState);
+    triggerAutosave(nextState);
+  };
+
+  const clearFieldValue = (name, field) => {
+    saveFieldValue(name, '', field);
+  };
+
+  const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
+  const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
+  const isProfileAccessConfirmed = Boolean(userId || state.userId);
+  const sections = useMemo(() => baseSections.map(section => {
+    if (section.key !== 'personal' || !isProfileAccessConfirmed || section.fields.includes('email')) {
+      return section;
+    }
+
+    const fields = [...section.fields];
+    fields.splice(2, 0, 'email');
+    return { ...section, fields };
+  }), [isProfileAccessConfirmed]);
+  const visibleSections = useMemo(() => sections
+    .map(section => ({ ...section, fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)) }))
+    .filter(section => section.fields.length > 0), [isDonorRole, sections]);
+  const firstSectionKey = visibleSections[0]?.key || 'personal';
+  const navSections = useMemo(() => [
+    ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
+    { key: 'photo', title: '📷 Фото', fields: ['photos'], isVirtual: true },
+    ...visibleSections,
+  ], [isProfileAccessConfirmed, visibleSections]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user?.uid) {
+        localStorage.removeItem('isLoggedIn');
+        localStorage.removeItem('ownerId');
+        setUserId('');
+        restoreLocalDraft();
+        return;
+      }
+
+      const uid = user.uid;
+      latestFetchUidRef.current = uid;
+      setUserId(uid);
+
+      try {
+        const { existingData } = await fetchUserData(uid);
+
+        if (!isMounted || latestFetchUidRef.current !== uid) {
+          return;
+        }
+
+        mergeLoadedProfileData(normalizeProfileData(existingData || {}), uid);
+      } catch (error) {
+        console.warn('Failed to load MyProfile profile data.', error);
+        if (!isMounted || latestFetchUidRef.current !== uid) {
+          return;
+        }
+        setUserId('');
+        restoreLocalDraft();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [restoreLocalDraft]);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async user => {
+      setIsEmailVerified(Boolean(user?.emailVerified));
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (state.areTermsConfirmed && !hasAgreed) {
@@ -515,79 +578,167 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, [state.areTermsConfirmed, hasAgreed]);
 
-  ////////////////////GPS
+  const handleExit = async () => {
+    await signOut(auth);
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('ownerId');
+    navigate('/');
+  };
+
+  const dotsMenu = () => (
+    <ProfileDotsMenu
+      navigate={navigate}
+      isAdmin={isAdmin}
+      access={access}
+      isEmailVerified={isEmailVerified}
+      showVerifyEmail
+      onExit={handleExit}
+      onSelect={() => setShowInfoModal(false)}
+    />
+  );
+
+  const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
+  const filledPct = useMemo(() => {
+    const keys = visibleSections.flatMap(s => s.fields);
+    const filled = keys.filter(name => String(state[name] || '').trim() !== '').length;
+    return Math.round((filled / keys.length) * 100);
+  }, [state, visibleSections]);
+
+
+  const sectionProgress = useMemo(() => visibleSections.reduce((acc, section) => {
+    const filled = section.fields.filter(name => String(state[name] || '').trim() !== '').length;
+    const total = section.fields.length;
+    acc[section.key] = {
+      filled,
+      total,
+      complete: total > 0 && filled === total,
+      progress: total > 0 ? Math.round((filled / total) * 100) : 0,
+    };
+    return acc;
+  }, {}), [state, visibleSections]);
+
+
+  const getSectionEntries = useCallback(() => navSections
+    .map(section => ({ key: section.key, node: sectionRefs.current[section.key] }))
+    .filter(item => Boolean(item.node)), [navSections]);
+
+  const getSectionTargetTop = useCallback((sectionEl) => {
+    const sectionTop = sectionEl.getBoundingClientRect().top + window.scrollY;
+    return Math.max(0, Math.round(sectionTop - stickyHeaderOffset));
+  }, [stickyHeaderOffset]);
+
+  const getActiveSectionKeyByScroll = useCallback(() => {
+    const entries = getSectionEntries();
+    if (entries.length === 0) return '';
+
+    const activationLine = window.scrollY + stickyHeaderOffset + SCROLL_ACTIVE_SECTION_GAP;
+    let activeKey = entries[0].key;
+
+    entries.forEach(({ key, node }) => {
+      const sectionTop = node.getBoundingClientRect().top + window.scrollY;
+      if (sectionTop <= activationLine) {
+        activeKey = key;
+      }
+    });
+
+    return activeKey;
+  }, [getSectionEntries, stickyHeaderOffset]);
+
+  const finishProgrammaticScroll = useCallback(() => {
+    isManualScrollRef.current = false;
+    if (programmaticScrollTimeoutRef.current) {
+      window.clearTimeout(programmaticScrollTimeoutRef.current);
+      programmaticScrollTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scrollToSection = useCallback((sectionKey) => {
+    const sectionEl = sectionRefs.current[sectionKey];
+    setActiveTab(sectionKey);
+    if (!sectionEl) return;
+
+    isManualScrollRef.current = true;
+
+    if (programmaticScrollTimeoutRef.current) {
+      window.clearTimeout(programmaticScrollTimeoutRef.current);
+    }
+
+    const targetTop = getSectionTargetTop(sectionEl);
+    window.scrollTo({ top: targetTop, behavior: 'smooth' });
+
+    programmaticScrollTimeoutRef.current = window.setTimeout(() => {
+      finishProgrammaticScroll();
+    }, PROGRAMMATIC_SCROLL_FALLBACK_MS);
+  }, [finishProgrammaticScroll, getSectionTargetTop]);
 
   useEffect(() => {
-    // Перевіряємо, чи підтримується API геолокації
-    if (navigator.geolocation) {
-      // Отримуємо координати
-      navigator.geolocation.getCurrentPosition(
-        position => {
-          // Успішний результат
-          const latitude = position.coords.latitude;
-          const longitude = position.coords.longitude;
-          console.log(`Latitude: ${latitude}, Longitude: ${longitude}`);
+    const handleScroll = () => {
+      if (scrollFrameRef.current) return;
 
-          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`)
-            .then(response => response.json())
-            .then(data => {
-              const address = data.address;
-              const street = address.road || '';
-              const city = address.city || address.town || address.village || '';
-              const state = address.state || '';
-              const country = address.country || '';
-              console.log(`Street: ${street}, City: ${city}, State: ${state}, Country: ${country}`);
-              setState(prevState => ({ ...prevState, city, street, state, country }));
-            })
-            .catch(error => console.error('Error:', error));
-        },
-        error => {
-          // Обробка помилок
-          console.error('Error getting location', error);
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        scrollFrameRef.current = null;
+
+        if (isManualScrollRef.current) {
+          const activeSectionEl = sectionRefs.current[activeTab];
+          if (activeSectionEl && Math.abs(window.scrollY - getSectionTargetTop(activeSectionEl)) <= 2) {
+            finishProgrammaticScroll();
+          }
+          return;
         }
-      );
-    } else {
-      console.log('Geolocation is not supported by this browser.');
-    }
-  }, []); // Порожній масив залежностей
 
-  ////////////////////GPS
+        const nextActiveKey = getActiveSectionKeyByScroll();
+        if (nextActiveKey) {
+          setActiveTab(prev => (prev === nextActiveKey ? prev : nextActiveKey));
+        }
+      });
+    };
 
-  const handleFocus = name => {
-    setFocused(name);
-  };
-  const handleBlur = () => {
-    setFocused(null);
-    setState(prevState => {
-      const normalizedState = normalizePhoneState(prevState);
-      handleSubmit(normalizedState);
-      return normalizedState;
-    });
-  };
-  const handleSubmit = async (newState) => {
-    const data = normalizePhoneState(newState ? newState : state);
-    const { password, ...profileData } = data;
-    const { existingData } = await fetchUserData(state.userId);
-    
-    const uploadedInfo = makeUploadedInfo(existingData, profileData);
-    delete uploadedInfo.password;
-    await updateDataInRealtimeDB(state.userId, uploadedInfo);
-    await updateDataInFiresoreDB(state.userId, uploadedInfo, 'check');
-  };
-  const handleExit = async () => {
-    try {
-      localStorage.removeItem('isLoggedIn');
-      localStorage.removeItem('userEmail');
-      localStorage.removeItem('myProfileDraft');
-      localStorage.removeItem('ownerId');
-      setState(initialProfileState);
-      setIsLoggedIn(false);
-      setShowInfoModal(false);
-      await signOut(auth);
-      navigate('/my-profile');
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (scrollFrameRef.current) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+    };
+  }, [activeTab, finishProgrammaticScroll, getActiveSectionKeyByScroll, getSectionTargetTop]);
+
+
+  useEffect(() => {
+    if (navSections.some(section => section.key === activeTab)) return;
+    setActiveTab(firstSectionKey);
+  }, [activeTab, firstSectionKey, navSections]);
+
+
+  useEffect(() => {
+    const tabsEl = tabsRef.current;
+    const activeTabEl = tabRefs.current[activeTab];
+
+    if (!tabsEl || !activeTabEl) return;
+
+    const tabsRect = tabsEl.getBoundingClientRect();
+    const activeTabRect = activeTabEl.getBoundingClientRect();
+    const targetLeft = tabsEl.scrollLeft
+      + activeTabRect.left
+      - tabsRect.left
+      - ((tabsRect.width - activeTabRect.width) / 2);
+
+    tabsEl.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
+  }, [activeTab]);
+
+  const handleAuthBadgeClick = () => {
+    if (isProfileAccessConfirmed) return;
+
+    authHintTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
+    scrollToSection('auth');
+    const sequence = ['email', 'password', 'terms', 'submit'];
+    setAuthHintStep('');
+    authHintTimersRef.current = sequence.flatMap((step, index) => ([
+      window.setTimeout(() => setAuthHintStep(step), 60 + index * 520),
+      window.setTimeout(() => setAuthHintStep(''), 460 + index * 520),
+    ]));
   };
 
   const isValidEmail = email => {
@@ -601,11 +752,11 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return code.includes('permission-denied') || code.includes('permission_denied') || message.includes('permission_denied');
   };
 
-  const persistUserWithFallback = async (userId, uploadedInfo, firestoreCondition = 'update') => {
+  const persistUserWithFallback = async (targetUserId, nextUploadedInfo, firestoreCondition = 'update') => {
     let shouldWriteFullProfileToNewUsers = false;
 
     try {
-      await updateDataInRealtimeDB(userId, uploadedInfo, firestoreCondition === 'set' ? undefined : 'update');
+      await updateDataInRealtimeDB(targetUserId, nextUploadedInfo, firestoreCondition === 'update' ? 'update' : undefined);
     } catch (error) {
       if (!isPermissionDeniedError(error)) {
         throw error;
@@ -615,38 +766,58 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     try {
-      await updateDataInFiresoreDB(userId, uploadedInfo, firestoreCondition);
+      await updateDataInFiresoreDB(targetUserId, nextUploadedInfo, firestoreCondition);
     } catch (error) {
       shouldWriteFullProfileToNewUsers = true;
       console.warn('Firestore write failed, fallback to newUsers.', error);
     }
 
     await updateDataInNewUsersRTDB(
-      userId,
-      shouldWriteFullProfileToNewUsers ? uploadedInfo : { lastLogin2: uploadedInfo.lastLogin2 },
+      targetUserId,
+      shouldWriteFullProfileToNewUsers ? nextUploadedInfo : { lastLogin2: nextUploadedInfo.lastLogin2 },
       'update'
     );
   };
 
-  const handleAgree = async () => {
-    const normalizedEmail = state.email.trim();
+  const handleAuthConfirm = async () => {
+    const currentState = stateRef.current || {};
+    const normalizedEmail = String(currentState.email || '').trim();
+    const password = String(currentState.password || '');
     const miss = {};
-    if (!normalizedEmail) miss.email = true;
-    if (!state.password) miss.password = true;
-    setMissing(miss);
-    if (Object.keys(miss).length) return;
-    if (!isValidEmail(normalizedEmail)) {
+
+    if (!normalizedEmail) {
+      miss.email = true;
+      authNotifications.emailRequired();
+    } else if (!isValidEmail(normalizedEmail)) {
+      miss.email = true;
       authNotifications.invalidEmail();
-      return;
     }
+
+    if (!password.trim()) {
+      miss.password = true;
+      authNotifications.passwordRequired();
+    }
+
+    if (!hasAgreed) {
+      miss.terms = true;
+      authNotifications.termsRequired();
+    }
+
+    setMissing(miss);
+
+    if (Object.keys(miss).length) return;
+
     try {
       const { todayDays, todayDash } = getCurrentDate();
       const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
       let userCredential;
       let uploadedInfo;
+      const { password: _password, userId: _userId, ...draftProfileData } = stateRef.current;
+
       if (methods.length > 0) {
-        userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, state.password);
+        userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
         uploadedInfo = {
+          ...draftProfileData,
           email: normalizedEmail,
           areTermsConfirmed: todayDays,
           lastLogin: todayDays,
@@ -656,9 +827,10 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         };
         await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'update');
       } else {
-        userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, state.password);
+        userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
         await sendEmailVerification(userCredential.user);
         uploadedInfo = {
+          ...draftProfileData,
           email: normalizedEmail,
           areTermsConfirmed: todayDays,
           registrationDate: todayDays,
@@ -672,487 +844,432 @@ export const MyProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       localStorage.setItem('isLoggedIn', 'true');
       localStorage.setItem('userEmail', normalizedEmail);
-      localStorage.removeItem('myProfileDraft');
+      localStorage.setItem('ownerId', userCredential.user.uid);
+      localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
 
-      setIsLoggedIn(true);
       setHasAgreed(true);
-      setState(prev => ({ ...prev, email: normalizedEmail, userId: userCredential.user.uid }));
-      if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
-        navigate('/my-profile');
-      }
+      setUserId(userCredential.user.uid);
+      setMissing({});
+      const nextState = {
+        ...stateRef.current,
+        ...uploadedInfo,
+        password: stateRef.current.password,
+      };
+      stateRef.current = nextState;
+      setState(nextState);
     } catch (error) {
-      if (error.code === 'auth/wrong-password') {
+      const errorCode = String(error?.code || '');
+
+      if (errorCode === 'auth/wrong-password' || errorCode === 'auth/invalid-credential') {
+        setMissing(prev => ({ ...prev, password: true }));
         authNotifications.wrongPassword();
+      } else if (errorCode === 'auth/invalid-email') {
+        setMissing(prev => ({ ...prev, email: true }));
+        authNotifications.invalidEmail();
+      } else if (errorCode === 'auth/weak-password') {
+        setMissing(prev => ({ ...prev, password: true }));
+        authNotifications.weakPassword();
       } else {
         console.error('auth error', error);
+        authNotifications.genericAuthError();
       }
     }
   };
 
-  const handlePublic = async () => {
-    if (!state.userId) {
-      const miss = {};
-      if (!state.email) {
-        miss.email = true;
-        authNotifications.emailRequired();
-      } else if (!isValidEmail(state.email)) {
-        miss.email = true;
-        authNotifications.invalidEmail();
-      }
-      if (!state.password) {
-        miss.password = true;
-        authNotifications.passwordRequired();
-      }
-      if (!hasAgreed) {
-        authNotifications.termsRequired();
-      }
-      setMissing(miss);
-      if (Object.keys(miss).length || !hasAgreed) return;
-      try {
-        const methods = await fetchSignInMethodsForEmail(auth, state.email);
-        let userCredential;
-        if (methods.length > 0) {
-          userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
-        } else {
-          userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
-          await sendEmailVerification(userCredential.user);
-        }
-        const uploadedInfo = {
-          email: state.email,
-          userId: userCredential.user.uid,
+  const saveState = (nextState, { directFields = [] } = {}) => {
+    const targetUserId = userId || nextState?.userId || stateRef.current.userId;
+    if (!targetUserId) return Promise.resolve();
+
+    saveQueueRef.current = saveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const { existingData } = await fetchUserData(targetUserId);
+        const { password: _password, ...profileData } = nextState;
+        const normalizedProfileData = {
+          ...profileData,
+          userRole: profileData.userRole || 'ed',
         };
-        await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
-        await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
-        setIsLoggedIn(true);
-        localStorage.removeItem('myProfileDraft');
-        setState(prev => ({ ...prev, userId: userCredential.user.uid }));
-      } catch (error) {
-        if (error.code === 'auth/wrong-password') {
-          authNotifications.wrongPassword();
-        } else {
-          console.error('auth error', error);
-        }
+        const uploadedInfo = makeUploadedInfo(existingData, normalizedProfileData);
+        directFields.forEach(field => {
+          if (Object.prototype.hasOwnProperty.call(normalizedProfileData, field)) {
+            uploadedInfo[field] = normalizedProfileData[field];
+          }
+        });
+        delete uploadedInfo.password;
+        await persistUserWithFallback(targetUserId, uploadedInfo, 'check');
+      });
+
+    return saveQueueRef.current;
+  };
+
+  const triggerAutosave = (nextState) => {
+    saveState(nextState).catch(error => {
+      console.warn('Autosave failed in MyProfile.', error);
+    });
+  };
+
+  const getSectionKeyByField = fieldName => visibleSections.find(section => section.fields.includes(fieldName))?.key || 'personal';
+
+  const validateRequiredProfileFields = () => {
+    const currentState = stateRef.current || {};
+    const miss = {};
+    const missingFieldNames = visibleSections
+      .flatMap(section => section.fields)
+      .filter(fieldName => String(currentState[fieldName] || '').trim() === '');
+
+    missingFieldNames.forEach(fieldName => {
+      miss[fieldName] = true;
+    });
+
+    setMissing(prev => ({ ...prev, ...miss }));
+
+    if (!missingFieldNames.length) return true;
+
+    const firstMissingField = missingFieldNames[0];
+    const firstMissingFieldLabel = getFieldLabel(fieldsMap.get(firstMissingField)) || firstMissingField;
+    toast.error(`Заповніть обов’язкове поле: ${firstMissingFieldLabel}`);
+    scrollToSection(getSectionKeyByField(firstMissingField));
+    return false;
+  };
+
+  const publishProfile = async () => {
+    if (!isProfileAccessConfirmed) {
+      await handleAuthConfirm();
+      if (!stateRef.current.userId && !userId) {
         return;
       }
     }
-    setState(prevState => ({ ...prevState, publish: true }));
-  };
 
-  const handleOverlayClick = e => {
-    if (e.target === e.currentTarget) {
-      handleCloseModal();
+    if (!validateRequiredProfileFields()) {
+      return;
+    }
+
+    const nextState = { ...stateRef.current, publish: true };
+    stateRef.current = nextState;
+    setState(nextState);
+
+    try {
+      await saveState(nextState, { directFields: ['publish'] });
+      localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+      toast.success('Анкету опубліковано');
+    } catch (error) {
+      console.error('publish error', error);
+      toast.error('Не вдалося опублікувати анкету. Спробуйте ще раз');
     }
   };
 
-  // зберігаємо дані при завантаженні сторінки
-  const fetchData = async user => {
-    // console.log('fetchData :>> ');
-    // const user = auth.currentUser;
-    // console.log('user :>> ', user.uid);
-    if (user && user.uid) {
-      const data = await fetchUserData(user.uid);
-      const existingData = data.existingData || {};
+  const renderField = (name) => {
+    const field = fieldsMap.get(name);
+    if (!field) return null;
+    const val = state[name] || '';
+    const isTextArea = name === 'moreInfo_main';
+    const isAppearanceField = sections.find(section => section.key === 'appearance')?.fields.includes(name);
+    const optionValues = Array.isArray(field.options) ? field.options.map(getOptionValue).map(String) : [];
+    const optionLabels = Array.isArray(field.options) ? field.options.map(getOptionLabel).map(String) : [];
+    const isYesNoField = optionValues.includes('No')
+      && optionValues.includes('Yes')
+      && optionLabels.includes('Ні')
+      && optionLabels.includes('Так');
+    const canUseCustomOption = isAppearanceField || isYesNoField || name === 'csection';
+    const customSelected = canUseCustomOption
+      && (Boolean(customOptionMode[name]) || (String(val).trim() !== '' && !optionValues.includes(String(val))));
 
-      const processedData = Object.keys(existingData).reduce((acc, key) => {
-        if (key === 'password') {
-          return acc;
-        }
-        const value = existingData[key];
-        if (key === 'photos' && Array.isArray(value)) {
-          // Зберегти лише останні 9 значень
-          acc[key] = value.slice(-9);
-        } else {
-          acc[key] = Array.isArray(value) ? value[value.length - 1] : value;
-        }
-        return acc;
-      }, {});
-
-      const { todayDays, todayDash } = getCurrentDate();
-      const defaults = {};
-      if (!existingData?.userRole) defaults.userRole = 'ed';
-      if (!existingData?.userId) defaults.userId = user.uid;
-      if (!existingData?.email && user.email) defaults.email = user.email;
-      if (!existingData?.registrationDate) defaults.registrationDate = todayDays;
-      if (!existingData?.areTermsConfirmed) defaults.areTermsConfirmed = todayDays;
-      if (!existingData?.lastLogin) defaults.lastLogin = todayDays;
-      if (!existingData?.lastLogin2) defaults.lastLogin2 = todayDash;
-
-      if (Object.keys(defaults).length) {
-        await updateDataInRealtimeDB(user.uid, defaults, 'update');
-        await updateDataInFiresoreDB(user.uid, defaults, 'check');
-        await updateDataInNewUsersRTDB(
-          user.uid,
-          { lastLogin2: todayDash },
-          'update'
-        );
-        Object.assign(processedData, defaults);
-      } else {
-        await updateDataInNewUsersRTDB(
-          user.uid,
-          { lastLogin2: todayDash },
-          'update'
-        );
-      }
-
-      console.log('processedData :>> ', processedData);
-      setState(prevState => ({
-        ...prevState, // Зберегти попередні значення
-        ...processedData,
-        userId: user.uid, // Оновити значення з отриманих даних
-      }));
-    }
-  };
-
-  // зберігаємо дані при завантаженні сторінки
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
-      if (user) {
-        setIsLoggedIn(true);
-        localStorage.setItem('isLoggedIn', 'true');
-        localStorage.setItem('ownerId', user.uid);
-        console.log('User is logged in: ', user.uid);
-        fetchData(user);
-      } else {
-        setIsLoggedIn(false);
-        localStorage.removeItem('isLoggedIn');
-        localStorage.removeItem('ownerId');
-        localStorage.removeItem('myProfileDraft');
-        setState(initialProfileState);
-        console.log('No user is logged in.');
-      }
-    });
-
-    // Clean up the subscription on component unmount
-    return () => unsubscribe();
-  }, [setIsLoggedIn]);
-
-  // useEffect(() => {
-  //   fetchData();
-  // }, []);
-
-  // Перенаправляємо на іншу сторінку
-  // Цей екран доступний і без авторизації
-
-  useEffect(() => {
-    // console.log('state.photos :>> ', state.photos);
-    handleSubmit();
-    // eslint-disable-next-line
-  }, [state.publish, state.photos]);
-
-  const [selectedField, setSelectedField] = useState(null);
-  const [modalCustomInput, setModalCustomInput] = useState('');
-  const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
-  const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
-  const visibleNonDonorFields = new Set([
-    'name',
-    'surname',
-    'email',
-    'phone',
-    'telegram',
-    'facebook',
-    'instagram',
-    'tiktok',
-    'vk',
-    'country',
-    'region',
-    'city',
-    'moreInfo_main',
-  ]);
-  const visiblePickerFields = pickerFields.filter(field => isDonorRole || visibleNonDonorFields.has(field.name));
-  // const [state, setState] = useState({ eyeColor: '', hairColor: '' });
-
-  const handleOpenModal = fieldName => {
-    setSelectedField(fieldName);
-    const fieldConfig = visiblePickerFields.find(field => field.name === fieldName);
-    const currentValue = typeof state[fieldName] === 'string' ? state[fieldName].trim() : '';
-    const hasPresetOption = Boolean(
-      currentValue &&
-      Array.isArray(fieldConfig?.options) &&
-      fieldConfig.options.some(option => {
-        const placeholder = String(option?.placeholder || '').trim().toLowerCase();
-        const ukrainian = String(option?.ukrainian || '').trim().toLowerCase();
-        const normalizedCurrent = currentValue.toLowerCase();
-        return normalizedCurrent === placeholder || normalizedCurrent === ukrainian;
-      }),
-    );
-    setModalCustomInput(hasPresetOption ? '' : currentValue);
-    // setIsModalOpen(true);
-  };
-
-  const [showInfoModal, setShowInfoModal] = useState(false);
-  const isSessionActive = Boolean(isLoggedIn || auth.currentUser);
-
-  useEffect(() => {
-    const logged = localStorage.getItem('isLoggedIn');
-    if (!isLoggedIn && logged) {
-      setIsLoggedIn(true);
-    }
-  }, [isLoggedIn, setIsLoggedIn]);
-
-  useEffect(() => {
-    if (!isLoggedIn) {
-      setShowInfoModal(false);
-    }
-  }, [isLoggedIn]);
-
-  const handleCloseModal = () => {
-    // setIsModalOpen(false);
-    setSelectedField(null);
-    setModalCustomInput('');
-    setShowInfoModal(false);
-  };
-
-  const handleSelectOption = option => {
-    if (selectedField) {
-      const optionValue = getOptionValue(option);
-      const newValue = optionValue === 'Clear' ? '' : optionValue;
-      setState(prevState => {
-        const newState = { ...prevState, [selectedField]: newValue };
-        handleSubmit(newState);
-        return newState;
-      });
-    }
-    handleCloseModal();
-  };
-
-  // const handleClear = fieldName => {
-  //   setState(prevState => ({ ...prevState, [fieldName]: '' }));
-  // };
-
-  const handleClear = (fieldName) => {
-    setState(prevState => {
-      const newState = { ...prevState };
-  
-      // Очищення конкретного поля
-      if (fieldName in newState) {
-        newState[fieldName] = '';
-      }
-  
-      handleSubmit(newState);
-      return newState;
-    });
-};
-
-  const handleModalCustomInputClear = () => {
-    if (!selectedField) return;
-    setState(prevState => {
-      if (!prevState[selectedField]) {
-        return prevState;
-      }
-      const newState = { ...prevState, [selectedField]: '' };
-      handleSubmit(newState);
-      return newState;
-    });
-  };
-
-  const [isEmailVerified, setIsEmailVerified] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async user => {
-      if (user && user.emailVerified) {
-        localStorage.setItem('ownerId', user.uid);
-        setIsEmailVerified(true);
-      } else {
-        localStorage.removeItem('ownerId');
-        setIsEmailVerified(false);
-      }
-    });
-
-    // Відписка від прослуховування при демонтажі компонента
-    return () => unsubscribe();
-  }, []);
-
-  const dotsMenu = () => (
-    <ProfileDotsMenu
-      navigate={navigate}
-      isAdmin={isAdmin}
-      access={access}
-      isEmailVerified={isEmailVerified}
-      showVerifyEmail
-      isSessionActive={isSessionActive}
-      onDeleteProfile={() => setShowInfoModal('delProfile')}
-      onViewProfile={() => setShowInfoModal('viewProfile')}
-      onExit={handleExit}
-      onSelect={() => setShowInfoModal(false)}
-    />
-  );
-
-  return (
-    <Container>
-      <InnerContainer>
-        {isSessionActive && (
-          <DotsButton
-            aria-label="Відкрити меню профілю"
-            onClick={() => {
-              setShowInfoModal('dotsMenu');
-            }}
-          >
-            ⋮
-          </DotsButton>
-        )}
-        <StatusMessage published={state.publish}>
-          {state.publish ? 'Анкета опублікована' : 'Анкета прихована'}
-        </StatusMessage>
-        {!state.userId && (
-          <>
-            <AuthInputDiv missing={missing.email}>
-              <AuthInputField
-                type="text"
-                name="email"
-                value={state.email}
-                onChange={e => setState(prev => ({ ...prev, email: e.target.value }))}
-                onFocus={() => handleFocus('emailReg')}
-                onBlur={handleBlur}
-              />
-              <AuthLabel isActive={focused === 'emailReg' || state.email}>Введіть емейл</AuthLabel>
-            </AuthInputDiv>
-            <AuthInputDiv missing={missing.password}>
-              <AuthInputField
-                type={showPassword ? 'text' : 'password'}
-                name="password"
-                value={state.password}
-                onChange={e => setState(prev => ({ ...prev, password: e.target.value }))}
-                onFocus={() => handleFocus('passwordReg')}
-                onBlur={handleBlur}
-                autoComplete="new-password"
-              />
-              <TogglePasswordButton type="button" onClick={() => setShowPassword(prev => !prev)}>
-                {showPassword ? <FaEyeSlash /> : <FaEye />}
-              </TogglePasswordButton>
-              <AuthLabel isActive={focused === 'passwordReg' || state.password}>Придумайте / введіть пароль</AuthLabel>
-            </AuthInputDiv>
-            <AgreeContainer>
-            <AgreeButton onClick={handleAgree}>Я погоджуюсь з умовами програми</AgreeButton>
-              <TermsButton onClick={() => navigate('/policy')}>Умови</TermsButton>
-            </AgreeContainer>
-          </>
-        )}
-        {state.userId && <Photos state={state} setState={setState} />}
-
-        {visiblePickerFields.map(field => {
-          // console.log('field.options:', field.options);
-          const isPickerField = Array.isArray(field.options);
-          const isCsectionField = field.name === 'csection';
-
-          return (
-            <PickerContainer>
-              <InputDiv key={field.name}>
-                <InputFieldContainer fieldName={field.name} value={state[field.name]}>
-                  <InputField
-                    fieldName={field.name}
-                    as={field.name === 'moreInfo_main' && 'textarea'}
-                    ref={field.name === 'moreInfo_main' ? moreInfoRef : null}
-                    inputMode={field.name === 'phone' ? 'numeric' : 'text'}
-                    name={field.name}
-                    value={state[field.name]}
-                    readOnly={isPickerField && !isCsectionField}
-                    onChange={e => {
-                      const value = e?.target?.value;
-                      field.name === 'moreInfo_main' && autoResizeMoreInfo(e.target);
-                      const updatedValue = inputUpdateValue(value, field)
-                      // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
-                      setState(prevState => ({ ...prevState, [field.name]: updatedValue }));
-                      // } else {
-                      // handleChange(field.name, value || '');
-                      // }
-                    }}
-                    onMouseDown={event => {
-                      if (isPickerField && !isCsectionField) {
-                        event.preventDefault();
-                      }
-                    }}
-                    onFocus={() => {
-                      if (!isPickerField || isCsectionField) {
-                        handleFocus(field.name);
-                      }
-                    }}
-                    onClick={() => {
-                      if (!isPickerField || isCsectionField) return;
-                      handleOpenModal(field.name);
-                      setShowInfoModal('pickerOptions');
-                    }}
-                    // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
-                    onBlur={() => handleBlur(field.name)}
-                  />
-                  {state[field.name] && (
-                    <ClearButton
-                      type="button"
-                      onMouseDown={event => event.preventDefault()}
-                      onClick={() => handleClear(field.name)}
-                    >
-                      &times; {/* HTML-символ для хрестика */}
-                    </ClearButton>
-                  )}
-                </InputFieldContainer>
-
-                <Hint fieldName={field.name} isActive={state[field.name]}>{field?.placeholder ?? ''}</Hint>
-                <Placeholder isActive={state[field.name]}>{field?.ukrainian ?? ''}</Placeholder>
-              </InputDiv>
-              {Array.isArray(field.options) && field.options.length === 2 && (
-                <ButtonGroup>
-                  <Button
-                    onClick={() => {
-                      setState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
-                      handleBlur(field.name);
-                    }}
+    return <Field key={name}>
+      <Label>{getFieldLabel(field)}</Label>
+      {Array.isArray(field.options) && field.options.length > 0 ? (
+        <>
+          <ChipRow>
+            {field.options.map(option => {
+              const optionValue = getOptionValue(option);
+              const selected = String(val) === String(optionValue);
+              return <Chip
+                key={`${name}-${optionValue}`}
+                selected={selected}
+                $missing={missing[name]}
+                onClick={() => {
+                  setCustomOptionMode(prev => ({ ...prev, [name]: false }));
+                  const isSelected = String(state[name] || '') === String(optionValue);
+                  const nextState = { ...stateRef.current, [name]: isSelected ? '' : optionValue };
+                  editedFieldsRef.current.add(name);
+                  setMissing(prev => ({ ...prev, [name]: false }));
+                  stateRef.current = nextState;
+                  setState(nextState);
+                  triggerAutosave(nextState);
+                }}
+                type="button"
+              >
+                {getOptionLabel(option)}
+              </Chip>;
+            })}
+            {canUseCustomOption ? (
+              <Chip
+                key={`${name}-custom-option`}
+                selected={customSelected}
+                onClick={() => {
+                  setCustomOptionMode(prev => ({ ...prev, [name]: true }));
+                  if (!customSelected) {
+                    updateFieldValue(name, '', field);
+                  }
+                }}
+                type="button"
+              >
+                Свій варіант
+              </Chip>
+            ) : null}
+          </ChipRow>
+          {canUseCustomOption && customSelected ? (
+            <CustomOptionWrap>
+              <FieldControl>
+                <Input
+                  value={val}
+                  $missing={missing[name]}
+                  placeholder="Введіть свій варіант"
+                  onChange={e => updateFieldValue(name, e.target.value, field)}
+                  onBlur={e => saveFieldValue(name, e.target.value, field)}
+                />
+                {val ? (
+                  <ClearFieldButton
+                    type="button"
+                    onMouseDown={event => event.preventDefault()}
+                    onClick={() => clearFieldValue(name, field)}
+                    aria-label="Очистити поле"
                   >
-                    Так
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setState(prevState => ({ ...prevState, [field.name]: 'No' }));
-                      handleBlur(field.name);
-                    }}
-                  >
-                    Ні
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setState(prevState => ({ ...prevState, [field.name]: 'Other' }));
-                      handleBlur(field.name);
-                    }}
-                  >
-                    Інше
-                  </Button>
-                </ButtonGroup>
-              )}
-              {field.name === 'csection' && (
-                <ButtonGroup>
-                  {field.options.map(option => (
-                    <Button
-                      key={`${field.name}-${getOptionValue(option)}`}
-                      type="button"
-                      onClick={() => {
-                        setState(prevState => ({ ...prevState, [field.name]: getOptionValue(option) }));
-                        handleBlur(field.name);
-                      }}
-                    >
-                      {getOptionLabel(option)}
-                    </Button>
-                  ))}
-                </ButtonGroup>
-              )}
-            </PickerContainer>
-          );
-        })}
-        {!state.publish && (
-          <PublishButton onClick={handlePublic}>Опублікувати</PublishButton>
-        )}
-      </InnerContainer>
-
-      {showInfoModal && (
-        <InfoModal
-          onClose={handleOverlayClick}
-          options={visiblePickerFields.find(field => field.name === selectedField)?.options}
-          onSelect={handleSelectOption}
-          onCustomInputClear={handleModalCustomInputClear}
-          text={showInfoModal}
-          Context={dotsMenu}
-          initialCustomInput={modalCustomInput}
-        />
+                    <FiX size={16} />
+                  </ClearFieldButton>
+                ) : null}
+              </FieldControl>
+            </CustomOptionWrap>
+          ) : null}
+        </>
+      ) : isTextArea ? (
+        <FieldControl>
+          <TextArea
+            value={val}
+            $missing={missing[name]}
+            placeholder={getFieldPlaceholder(field)}
+            onChange={e => updateFieldValue(name, e.target.value, field)}
+            onBlur={e => saveFieldValue(name, e.target.value, field)}
+          />
+          {val ? (
+            <ClearFieldButton
+              type="button"
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => clearFieldValue(name, field)}
+              aria-label="Очистити поле"
+            >
+              <FiX size={16} />
+            </ClearFieldButton>
+          ) : null}
+        </FieldControl>
+      ) : (
+        <FieldControl>
+          <Input
+            value={val}
+            $missing={missing[name]}
+            placeholder={getFieldPlaceholder(field)}
+            onChange={e => updateFieldValue(name, e.target.value, field)}
+            onBlur={e => saveFieldValue(name, e.target.value, field)}
+          />
+          {val ? (
+            <ClearFieldButton
+              type="button"
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => clearFieldValue(name, field)}
+              aria-label="Очистити поле"
+            >
+              <FiX size={16} />
+            </ClearFieldButton>
+          ) : null}
+        </FieldControl>
       )}
-    </Container>
-  );
-};
+    </Field>;
+  };
 
-export default MyProfile;
+  return <Page style={{ '--sticky-header-offset': `${stickyHeaderOffset}px` }}>
+    <StickyHeader ref={stickyHeaderRef}>
+      <Topbar>
+        <div style={{ fontFamily: 'Playfair Display, serif', fontSize: 18 }}>Know<span style={{ color: '#E8791A', fontStyle: 'italic' }}>Me</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <StatusBadge type="button" $clickable={!isProfileAccessConfirmed} onClick={handleAuthBadgeClick}>
+            ● {isProfileAccessConfirmed ? 'Прихована' : 'Логін не відбувся'}
+          </StatusBadge>
+          {isProfileAccessConfirmed && (
+            <DotsButton type='button' aria-label='Відкрити меню профілю' onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
+          )}
+        </div>
+      </Topbar>
+
+      <ProgressWrap>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>Заповнено анкету</span>
+        <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>{filledPct}%</span>
+      </div>
+      <div style={{ height: 5, background: 'var(--border)', borderRadius: 99 }}>
+        <div style={{ width: `${filledPct}%`, height: '100%', borderRadius: 99, background: 'linear-gradient(90deg, var(--accent) 0%, var(--accent-mid) 100%)' }} />
+      </div>
+    </ProgressWrap>
+
+      <Tabs ref={tabsRef}>
+        {navSections.map(s => {
+          const info = s.key === 'photo'
+            ? { complete: Array.isArray(state.photos) && state.photos.length > 0 }
+            : sectionProgress[s.key] || {};
+          return <Tab
+            key={s.key}
+            ref={node => { tabRefs.current[s.key] = node; }}
+            $active={activeTab === s.key}
+            $complete={Boolean(info.complete)}
+            type="button"
+            onClick={() => scrollToSection(s.key)}
+          >
+            {s.title}
+          </Tab>;
+        })}
+      </Tabs>
+    </StickyHeader>
+
+    {!isProfileAccessConfirmed && <AuthCard ref={node => { sectionRefs.current.auth = node; }}>
+      <Header>
+        <div>🔐</div>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Доступ до анкети</div>
+      </Header>
+      <FieldGroup>
+        <Field>
+          <AuthIntro>
+            Введіть email і пароль, щоб продовжити заповнення анкети. Якщо акаунт уже існує — ми виконаємо вхід, якщо ні — створимо профіль донора.
+          </AuthIntro>
+        </Field>
+        <AuthField $missing={missing.email}>
+          <HighlightableLabel $active={authHintStep === 'email'}>Email</HighlightableLabel>
+          <FieldControl>
+            <Input
+              type="email"
+              name="email"
+              value={state.email || ''}
+              placeholder="Введіть емейл"
+              autoComplete="email"
+              onChange={e => {
+                const value = e.target.value;
+                editedFieldsRef.current.add('email');
+                setMissing(prev => ({ ...prev, email: false }));
+                setState(prevState => {
+                  const nextState = { ...prevState, email: value };
+                  stateRef.current = nextState;
+                  return nextState;
+                });
+              }}
+            />
+            {state.email ? (
+              <ClearFieldButton
+                type="button"
+                onMouseDown={event => event.preventDefault()}
+                onClick={() => {
+                  editedFieldsRef.current.add('email');
+                  setState(prevState => {
+                    const nextState = { ...prevState, email: '' };
+                    stateRef.current = nextState;
+                    return nextState;
+                  });
+                }}
+                aria-label="Очистити email"
+              >
+                <FiX size={16} />
+              </ClearFieldButton>
+            ) : null}
+          </FieldControl>
+        </AuthField>
+        <AuthField $missing={missing.password}>
+          <HighlightableLabel $active={authHintStep === 'password'}>Password</HighlightableLabel>
+          <FieldControl>
+            <Input
+              type={showPassword ? 'text' : 'password'}
+              name="password"
+              value={state.password || ''}
+              placeholder="Придумайте / введіть пароль"
+              autoComplete="new-password"
+              onChange={e => {
+                const value = e.target.value;
+                setMissing(prev => ({ ...prev, password: false }));
+                setState(prevState => {
+                  const nextState = { ...prevState, password: value };
+                  stateRef.current = nextState;
+                  return nextState;
+                });
+              }}
+            />
+            <PasswordToggleButton type="button" onClick={() => setShowPassword(prev => !prev)} aria-label={showPassword ? 'Приховати пароль' : 'Показати пароль'}>
+              {showPassword ? <FaEyeSlash /> : <FaEye />}
+            </PasswordToggleButton>
+          </FieldControl>
+        </AuthField>
+        <TermsRow $missing={missing.terms} $active={authHintStep === 'terms'}>
+          <TermsCheckbox
+            id="my-profile-terms"
+            type="checkbox"
+            checked={hasAgreed}
+            $missing={missing.terms}
+            $active={authHintStep === 'terms'}
+            onChange={e => {
+              setHasAgreed(e.target.checked);
+              setMissing(prev => ({ ...prev, terms: false }));
+            }}
+          />
+          <TermsText>
+            <label htmlFor="my-profile-terms">Я підтверджую згоду з умовами програми. </label>
+            <TermsButton type="button" onClick={() => navigate('/policy')}>Умови</TermsButton>
+          </TermsText>
+        </TermsRow>
+        <AuthActionButton type="button" $active={authHintStep === 'submit'} onClick={handleAuthConfirm}>Підтвердити і продовжити</AuthActionButton>
+      </FieldGroup>
+    </AuthCard>}
+
+    <PhotoSection ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>Додайте до 5 фото. Перше — головне</p>
+      <Photos
+        state={{ ...state, userId }}
+        setState={next => {
+          setState(prevState => {
+            const nextState = typeof next === 'function' ? next(prevState) : next;
+            stateRef.current = nextState;
+            return nextState;
+          });
+        }}
+        uploadInputId="my-profile-photo-upload"
+        compact
+        maxPhotos={5}
+      />
+    </PhotoSection>
+
+
+    {visibleSections.map(section => {
+      const SectionCard = !isProfileAccessConfirmed && section.key === firstSectionKey ? FirstContentCard : Card;
+      return (
+      <SectionCard key={section.key} ref={node => { sectionRefs.current[section.key] = node; }}>
+        <Header>
+          <div>{section.title.split(' ')[0]}</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{section.title.replace(/^\S+\s/, '')}</div>
+          <div style={{ marginLeft: 'auto', fontSize: 11, color: sectionProgress[section.key]?.complete ? '#2E9B55' : 'var(--muted)', background: sectionProgress[section.key]?.complete ? '#EBF8EF' : 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>
+            {sectionProgress[section.key]?.filled || 0}/{sectionProgress[section.key]?.total || section.fields.length}
+          </div>
+        </Header>
+        <FieldGroup>{section.fields.map(renderField)}</FieldGroup>
+      </SectionCard>
+      );
+    })}
+
+
+
+    {showInfoModal && (
+      <InfoModal
+        onClose={() => setShowInfoModal(false)}
+        text={showInfoModal}
+        Context={dotsMenu}
+      />
+    )}
+
+    <SubmitWrap>
+      <SubmitBtn type="button" onClick={publishProfile}>Опублікувати анкету</SubmitBtn>
+      <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>Анкету можна приховати або видалити будь-коли в налаштуваннях профілю.</p>
+    </SubmitWrap>
+  </Page>;
+};

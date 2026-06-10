@@ -1,0 +1,1158 @@
+import React, { useEffect, useState, useRef } from 'react';
+import styled, { css } from 'styled-components';
+
+// import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
+import { auth, fetchUserData } from './config';
+import { makeUploadedInfo } from './makeUploadedInfo';
+import {
+  updateDataInFiresoreDB,
+  updateDataInRealtimeDB,
+  updateDataInNewUsersRTDB,
+} from './config';
+import {
+  pickerFields,
+  getOptionLabel,
+  getOptionValue,
+} from './formFields';
+import {
+  onAuthStateChanged,
+  signOut,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signInWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
+} from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
+import { getCurrentDate } from './foramtDate';
+import InfoModal from './InfoModal';
+import Photos from './Photos';
+import { FaEye, FaEyeSlash } from 'react-icons/fa';
+
+import { color } from './styles';
+import { inputUpdateValue } from './inputUpdatedValue';
+import { useAutoResize } from '../hooks/useAutoResize';
+import { resolveAccess } from 'utils/accessLevel';
+import { normalizePhoneState } from './inputValidations';
+import { authNotifications } from './authNotifications';
+import { ProfileDotsMenu } from './ProfileDotsMenu';
+
+const Container = styled.div`
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  background-color: #f5f5f5;
+
+  @media (max-width: 768px) { // Медіа-запит для пристроїв з шириною екрану до 768px
+    padding: 10px;
+  }
+  /* max-width: 450px; */
+
+  /* maxWidth:  */
+  /* height: 100vh; */
+`;
+
+const InnerContainer = styled.div`
+  max-width: 450px;
+  width: 100%;
+  background-color: #f0f0f0;
+  padding: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+
+  @media (max-width: 768px) { // Медіа-запит для пристроїв з шириною екрану до 768px
+    background-color: #f5f5f5;
+    box-shadow: 0 4px 8px #f5f5f5;
+    border-radius: 0;
+  }
+`;
+
+const DotsButton = styled.button`
+  margin-top: -10px;
+  margin-bottom: 10px;
+  width: 40px;
+  height: 40px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-size: 24px;
+  color: ${color.accent5};
+  cursor: pointer;
+  padding: 0 0 6px 0;
+  margin-left: auto;
+  align-items: center;
+  justify-content: center;
+  display: flex;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+
+  &:hover {
+    background-color: ${color.paleAccent2};
+    border-color: ${color.paleAccent5};
+    color: ${color.accent};
+  }
+`;
+
+const PickerContainer = styled.div`
+  display: flex;
+  /* flex-direction: column; */
+  justify-content: center;
+  align-items: center;
+  background-color: #f0f0f0;
+  box-sizing: border-box; /* Додано */
+  @media (max-width: 768px) { // Медіа-запит для пристроїв з шириною екрану до 768px
+    background-color: #f5f5f5;
+  }
+`;
+
+const InputDiv = styled.div`
+  display: flex;
+  align-items: center;
+  position: relative;
+  margin: 10px 0;
+  padding: 10px;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0; /* Запобігає переповненню при додаванні кнопок */
+  height: auto;
+`;
+
+// Стиль для інпутів
+const InputField = styled.input`
+  border: none;
+  outline: none;
+  flex: 1;
+  align-items: center;
+  /* padding-left: 10px; */
+  padding-left: ${({ fieldName, value }) => {
+    if (fieldName === 'phone') return '20px';
+    if (fieldName === 'telegram' || fieldName === 'instagram'|| fieldName === 'tiktok') return '25px';
+    if (fieldName === 'facebook') return /^\d+$/.test(value) ? "20px" : "25px";
+    if (fieldName === 'vk') return /^\d+$/.test(value) || value === ''  ? "23px" : "10px";
+    return '10px'; // Значення за замовчуванням
+  }};
+  max-width: 100%; 
+  min-width: 0; /* Дозволяє інпуту зменшуватися до нуля */
+  pointer-events: auto;
+  height: 100%;
+  resize: vertical;
+  /* box-sizing: border-box; */
+  /* min-width:  100px; */
+
+  /* Додати placeholder стилі для роботи з лейблом */
+  &::placeholder {
+    color: transparent; /* Ховаємо текст placeholder */
+  }
+`;
+
+const Hint = styled.label`
+  position: absolute;
+  /* padding-left: 10px; */
+  padding-left: ${({ fieldName, isActive }) => {
+    if (fieldName === 'phone') return '20px';
+    if (fieldName === 'telegram' || fieldName === 'facebook' || fieldName === 'instagram'|| fieldName === 'tiktok') return '25px';
+    if (fieldName === 'vk') return '23px';
+    return '10px'; // Значення за замовчуванням
+  }};
+  /* left: 30px; */
+  /* top: 50%; */
+  /* transform: translateY(-50%); */
+  display: flex;
+  align-items: center;
+
+  transition: all 0.3s ease;
+  color: gray;
+  pointer-events: none;
+  display: flex;
+  align-items: center; /* Вирівнює по вертикалі */
+  gap: 8px; /* Відстань між іконкою і текстом, змініть за потреби */
+
+  ${({ isActive }) =>
+    isActive &&
+    css`
+      display: none;
+      /* left: 10px;
+      top: 0;
+      transform: translateY(-100%);
+      font-size: 12px;
+      color: orange; */
+    `}
+`;
+
+const Placeholder = styled.label`
+  position: absolute;
+  padding-left: 10px;
+  /* left: 30px; */
+  top: 0;
+  transform: translateY(-100%);
+  transition: all 0.3s ease;
+  color: gray;
+  pointer-events: none;
+  display: flex;
+  align-items: center; /* Вирівнює по вертикалі */
+  gap: 8px; /* Відстань між іконкою і текстом, змініть за потреби */
+  font-size: 12px;
+
+  ${({ isActive }) =>
+    isActive &&
+    css`
+      left: 10px;
+      top: 0;
+      transform: translateY(-100%);
+      font-size: 12px;
+  color: orange;
+  `}
+`;
+
+
+const StatusMessage = styled.div`
+  color: ${({ published }) => (published ? 'green' : 'red')};
+  font-weight: bold;
+  margin-bottom: 10px;
+  align-self: flex-end;
+  text-align: right;
+  width: 100%;
+  `;
+
+const AuthInputDiv = styled(InputDiv)`
+  width: 100%;
+  margin-bottom: 15px;
+  ${({ missing }) =>
+    missing &&
+    css`
+      border-color: red;
+    `}
+  `;
+
+const AuthInputField = styled(InputField)`
+  padding-left: 20px;
+`;
+
+const AuthLabel = styled.label`
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: all 0.3s ease;
+  color: gray;
+  pointer-events: none;
+
+  ${({ isActive }) =>
+    isActive &&
+    css`
+      left: 20px;
+      top: 0;
+      transform: translateY(-100%);
+      font-size: 12px;
+      color: orange;
+    `}
+`;
+
+
+export const SubmitButton = styled.button`
+  padding: 11px 14px;
+  color: ${color.black};
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  align-self: flex-start;
+  width: 100%;
+  text-align: left;
+  background: linear-gradient(180deg, ${color.oppositeAccent} 0%, #fffaf2 100%);
+  box-shadow: inset 0 -1px 0 ${color.gray};
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+  margin-bottom: 6px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+
+  &:hover {
+    background: ${color.paleAccent2};
+    border-color: ${color.paleAccent5};
+    transform: translateY(-1px);
+  }
+`;
+
+const PublishButton = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 5px auto 0 auto;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 10px 20px;
+  background-color: ${color.accent5};
+  text-align: center;
+  font-weight: bold;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+
+  &:hover {
+    background-color: ${color.accent};
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+`;
+
+const AgreeButton = styled(PublishButton)`
+  margin: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  flex-grow: 1;
+`;
+const TermsButton = styled.button`
+  background-color: ${color.oppositeAccent};
+  border: 1px solid ${color.gray};
+  border-radius: 4px;
+  padding: 10px 20px;
+  width: 110px;
+  margin-left: 8px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: ${color.accent5};
+  &:hover {
+    background-color: ${color.paleAccent5};
+  }
+`;
+
+const AgreeContainer = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 10px;
+`;
+
+export const ExitButton = styled(SubmitButton)`
+  background: #fff;
+  color: ${color.accent3};
+  border-color: ${color.gray};
+
+  &:hover {
+    background-color: ${color.paleAccent2};
+  }
+`;
+
+// const iconMap = {
+//   user: <FaUser style={{ color: 'orange' }} />,
+//   mail: <FaMailBulk style={{ color: 'orange' }} />,
+//   phone: <FaPhone style={{ color: 'orange' }} />,
+//   'telegram-plane': <FaTelegramPlane style={{ color: 'orange' }} />,
+//   'facebook-f': <FaFacebookF style={{ color: 'orange' }} />,
+//   instagram: <FaInstagram style={{ color: 'orange' }} />,
+//   vk: <FaVk style={{ color: 'orange' }} />,
+// };
+
+const InputFieldContainer = styled.div`
+  display: flex;
+  align-items: center;
+  position: relative;
+  /* width: 100%; */
+  height: 100%; /* Дозволяє розтягувати висоту по висоті контейнера */
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0; /* Дозволяє контейнеру звужуватись разом з інпутом */
+  height: auto; /* Дозволяє висоті адаптуватися до вмісту */
+
+  &::before {
+    content: ${({ fieldName, value }) => {
+  if (fieldName === 'phone') return "'+'";
+  if (fieldName === 'telegram' || fieldName === 'instagram'|| fieldName === 'tiktok') return "'@'";
+  if (fieldName === 'facebook') return /^\d+$/.test(value) ? "'='" : "'@'";
+  if (fieldName === 'vk') return (/^\d+$/.test(value) || value === '' || value === undefined) ? "'id'" : "''";
+  return "''";
+}};
+    position: absolute;
+    left: 10px;
+    /* top: 50%; */
+    /* transform: ${({ fieldName, value }) => ((fieldName === 'phone' || fieldName === 'vk' || (fieldName === 'facebook' && /^\d+$/.test(value))) ? 'translateY(-45%)' : 'translateY(-45%)')}; */
+    display: flex;
+    align-items: center;
+    color: ${({ value }) => (value ? '#000' : 'gray')}; // Чорний, якщо є значення; сірий, якщо порожньо
+    font-size: 16px;
+    text-align: center;
+  }
+`;
+
+const ClearButton = styled.button`
+  position: absolute;
+  right: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -7px;
+  padding: 0;
+
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: gray;
+  font-size: 18px;
+  touch-action: manipulation;
+
+  &:hover {
+    color: black;
+    background-color: rgba(0, 0, 0, 0.04);
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${color.accent5};
+    outline-offset: 1px;
+  }
+`;
+
+const TogglePasswordButton = styled.button`
+  position: absolute;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: gray;
+  font-size: 18px;
+
+  &:hover {
+    color: black;
+  }
+`;
+
+const ButtonGroup = styled.div`
+  display: flex;
+  gap: 8px;
+  /* margin-top: 10px; Відступ між інпутом і кнопками */
+  /* width: 100%; */
+  margin-left: 8px;
+  /* width: 100%;  */
+  box-sizing: border-box; 
+`;
+
+const Button = styled.button`
+  width: 35px; /* Встановіть ширину, яка визначатиме розмір кнопки */
+  height: 35px; /* Встановіть висоту, яка повинна дорівнювати ширині */
+  padding: 3px; /* Видаліть внутрішні відступи */
+  border: none;
+  background-color: ${color.accent5};
+  color: white;
+  border-radius: 50px;
+  cursor: pointer;
+  font-size: 12px;
+  flex: 0 1 auto;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+
+  &:hover {
+    background-color: ${color.accent}; /* Колір кнопки при наведенні */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Тінь при наведенні */
+  }
+
+  &:active {
+    transform: scale(0.98); /* Легкий ефект при натисканні */
+  }
+`;
+
+const initialProfileState = pickerFields.reduce(
+  (acc, field) => ({ ...acc, [field.name]: '' }),
+  { password: '', userId: '', publish: false }
+);
+
+export const MyProfileOld = ({ isLoggedIn, setIsLoggedIn }) => {
+  const [state, setState] = useState(initialProfileState);
+  const [focused, setFocused] = useState(null);
+  const [missing, setMissing] = useState({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [hasAgreed, setHasAgreed] = useState(false);
+  console.log('focused :>> ', focused);
+  const navigate = useNavigate();
+  const currentUid = auth.currentUser?.uid;
+  const access = resolveAccess({ uid: currentUid, accessLevel: state.accessLevel || localStorage.getItem('accessLevel') });
+  const isAdmin = access.isAdmin;
+  const moreInfoRef = useRef(null);
+  const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
+
+  useEffect(() => {
+    const savedDraft = localStorage.getItem('myProfileDraft');
+    if (savedDraft && !state.userId) {
+      setState(prev => ({ ...prev, ...JSON.parse(savedDraft) }));
+    }
+  }, [state.userId]);
+
+  useEffect(() => {
+    if (!state.publish) {
+      localStorage.setItem('myProfileDraft', JSON.stringify(state));
+    } else {
+      localStorage.removeItem('myProfileDraft');
+    }
+  }, [state, state.publish]);
+
+  useEffect(() => {
+    if (state.areTermsConfirmed && !hasAgreed) {
+      setHasAgreed(true);
+    }
+  }, [state.areTermsConfirmed, hasAgreed]);
+
+  ////////////////////GPS
+
+  useEffect(() => {
+    // Перевіряємо, чи підтримується API геолокації
+    if (navigator.geolocation) {
+      // Отримуємо координати
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          // Успішний результат
+          const latitude = position.coords.latitude;
+          const longitude = position.coords.longitude;
+          console.log(`Latitude: ${latitude}, Longitude: ${longitude}`);
+
+          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`)
+            .then(response => response.json())
+            .then(data => {
+              const address = data.address;
+              const street = address.road || '';
+              const city = address.city || address.town || address.village || '';
+              const state = address.state || '';
+              const country = address.country || '';
+              console.log(`Street: ${street}, City: ${city}, State: ${state}, Country: ${country}`);
+              setState(prevState => ({ ...prevState, city, street, state, country }));
+            })
+            .catch(error => console.error('Error:', error));
+        },
+        error => {
+          // Обробка помилок
+          console.error('Error getting location', error);
+        }
+      );
+    } else {
+      console.log('Geolocation is not supported by this browser.');
+    }
+  }, []); // Порожній масив залежностей
+
+  ////////////////////GPS
+
+  const handleFocus = name => {
+    setFocused(name);
+  };
+  const handleBlur = () => {
+    setFocused(null);
+    setState(prevState => {
+      const normalizedState = normalizePhoneState(prevState);
+      handleSubmit(normalizedState);
+      return normalizedState;
+    });
+  };
+  const handleSubmit = async (newState) => {
+    const data = normalizePhoneState(newState ? newState : state);
+    const { password, ...profileData } = data;
+    const { existingData } = await fetchUserData(state.userId);
+    
+    const uploadedInfo = makeUploadedInfo(existingData, profileData);
+    delete uploadedInfo.password;
+    await updateDataInRealtimeDB(state.userId, uploadedInfo);
+    await updateDataInFiresoreDB(state.userId, uploadedInfo, 'check');
+  };
+  const handleExit = async () => {
+    try {
+      localStorage.removeItem('isLoggedIn');
+      localStorage.removeItem('userEmail');
+      localStorage.removeItem('myProfileDraft');
+      localStorage.removeItem('ownerId');
+      setState(initialProfileState);
+      setIsLoggedIn(false);
+      setShowInfoModal(false);
+      await signOut(auth);
+      navigate('/my-profile');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
+  const isValidEmail = email => {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailPattern.test(email);
+  };
+
+  const isPermissionDeniedError = error => {
+    const code = String(error?.code || '').toLowerCase();
+    const message = String(error?.message || '').toLowerCase();
+    return code.includes('permission-denied') || code.includes('permission_denied') || message.includes('permission_denied');
+  };
+
+  const persistUserWithFallback = async (userId, uploadedInfo, firestoreCondition = 'update') => {
+    let shouldWriteFullProfileToNewUsers = false;
+
+    try {
+      await updateDataInRealtimeDB(userId, uploadedInfo, firestoreCondition === 'set' ? undefined : 'update');
+    } catch (error) {
+      if (!isPermissionDeniedError(error)) {
+        throw error;
+      }
+      shouldWriteFullProfileToNewUsers = true;
+      console.warn('No write access to users/$uid, fallback to newUsers.');
+    }
+
+    try {
+      await updateDataInFiresoreDB(userId, uploadedInfo, firestoreCondition);
+    } catch (error) {
+      shouldWriteFullProfileToNewUsers = true;
+      console.warn('Firestore write failed, fallback to newUsers.', error);
+    }
+
+    await updateDataInNewUsersRTDB(
+      userId,
+      shouldWriteFullProfileToNewUsers ? uploadedInfo : { lastLogin2: uploadedInfo.lastLogin2 },
+      'update'
+    );
+  };
+
+  const handleAgree = async () => {
+    const normalizedEmail = state.email.trim();
+    const miss = {};
+    if (!normalizedEmail) miss.email = true;
+    if (!state.password) miss.password = true;
+    setMissing(miss);
+    if (Object.keys(miss).length) return;
+    if (!isValidEmail(normalizedEmail)) {
+      authNotifications.invalidEmail();
+      return;
+    }
+    try {
+      const { todayDays, todayDash } = getCurrentDate();
+      const methods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
+      let userCredential;
+      let uploadedInfo;
+      if (methods.length > 0) {
+        userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, state.password);
+        uploadedInfo = {
+          email: normalizedEmail,
+          areTermsConfirmed: todayDays,
+          lastLogin: todayDays,
+          lastLogin2: todayDash,
+          userId: userCredential.user.uid,
+          userRole: 'ed',
+        };
+        await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'update');
+      } else {
+        userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, state.password);
+        await sendEmailVerification(userCredential.user);
+        uploadedInfo = {
+          email: normalizedEmail,
+          areTermsConfirmed: todayDays,
+          registrationDate: todayDays,
+          lastLogin: todayDays,
+          lastLogin2: todayDash,
+          userId: userCredential.user.uid,
+          userRole: 'ed',
+        };
+        await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'set');
+      }
+
+      localStorage.setItem('isLoggedIn', 'true');
+      localStorage.setItem('userEmail', normalizedEmail);
+      localStorage.removeItem('myProfileDraft');
+
+      setIsLoggedIn(true);
+      setHasAgreed(true);
+      setState(prev => ({ ...prev, email: normalizedEmail, userId: userCredential.user.uid }));
+      if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
+        navigate('/my-profile');
+      }
+    } catch (error) {
+      if (error.code === 'auth/wrong-password') {
+        authNotifications.wrongPassword();
+      } else {
+        console.error('auth error', error);
+      }
+    }
+  };
+
+  const handlePublic = async () => {
+    if (!state.userId) {
+      const miss = {};
+      if (!state.email) {
+        miss.email = true;
+        authNotifications.emailRequired();
+      } else if (!isValidEmail(state.email)) {
+        miss.email = true;
+        authNotifications.invalidEmail();
+      }
+      if (!state.password) {
+        miss.password = true;
+        authNotifications.passwordRequired();
+      }
+      if (!hasAgreed) {
+        authNotifications.termsRequired();
+      }
+      setMissing(miss);
+      if (Object.keys(miss).length || !hasAgreed) return;
+      try {
+        const methods = await fetchSignInMethodsForEmail(auth, state.email);
+        let userCredential;
+        if (methods.length > 0) {
+          userCredential = await signInWithEmailAndPassword(auth, state.email, state.password);
+        } else {
+          userCredential = await createUserWithEmailAndPassword(auth, state.email, state.password);
+          await sendEmailVerification(userCredential.user);
+        }
+        const uploadedInfo = {
+          email: state.email,
+          userId: userCredential.user.uid,
+        };
+        await updateDataInRealtimeDB(userCredential.user.uid, uploadedInfo, 'update');
+        await updateDataInFiresoreDB(userCredential.user.uid, uploadedInfo, 'update');
+        setIsLoggedIn(true);
+        localStorage.removeItem('myProfileDraft');
+        setState(prev => ({ ...prev, userId: userCredential.user.uid }));
+      } catch (error) {
+        if (error.code === 'auth/wrong-password') {
+          authNotifications.wrongPassword();
+        } else {
+          console.error('auth error', error);
+        }
+        return;
+      }
+    }
+    setState(prevState => ({ ...prevState, publish: true }));
+  };
+
+  const handleOverlayClick = e => {
+    if (e.target === e.currentTarget) {
+      handleCloseModal();
+    }
+  };
+
+  // зберігаємо дані при завантаженні сторінки
+  const fetchData = async user => {
+    // console.log('fetchData :>> ');
+    // const user = auth.currentUser;
+    // console.log('user :>> ', user.uid);
+    if (user && user.uid) {
+      const data = await fetchUserData(user.uid);
+      const existingData = data.existingData || {};
+
+      const processedData = Object.keys(existingData).reduce((acc, key) => {
+        if (key === 'password') {
+          return acc;
+        }
+        const value = existingData[key];
+        if (key === 'photos' && Array.isArray(value)) {
+          // Зберегти лише останні 9 значень
+          acc[key] = value.slice(-9);
+        } else {
+          acc[key] = Array.isArray(value) ? value[value.length - 1] : value;
+        }
+        return acc;
+      }, {});
+
+      const { todayDays, todayDash } = getCurrentDate();
+      const defaults = {};
+      if (!existingData?.userRole) defaults.userRole = 'ed';
+      if (!existingData?.userId) defaults.userId = user.uid;
+      if (!existingData?.email && user.email) defaults.email = user.email;
+      if (!existingData?.registrationDate) defaults.registrationDate = todayDays;
+      if (!existingData?.areTermsConfirmed) defaults.areTermsConfirmed = todayDays;
+      if (!existingData?.lastLogin) defaults.lastLogin = todayDays;
+      if (!existingData?.lastLogin2) defaults.lastLogin2 = todayDash;
+
+      if (Object.keys(defaults).length) {
+        await updateDataInRealtimeDB(user.uid, defaults, 'update');
+        await updateDataInFiresoreDB(user.uid, defaults, 'check');
+        await updateDataInNewUsersRTDB(
+          user.uid,
+          { lastLogin2: todayDash },
+          'update'
+        );
+        Object.assign(processedData, defaults);
+      } else {
+        await updateDataInNewUsersRTDB(
+          user.uid,
+          { lastLogin2: todayDash },
+          'update'
+        );
+      }
+
+      console.log('processedData :>> ', processedData);
+      setState(prevState => ({
+        ...prevState, // Зберегти попередні значення
+        ...processedData,
+        userId: user.uid, // Оновити значення з отриманих даних
+      }));
+    }
+  };
+
+  // зберігаємо дані при завантаженні сторінки
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      if (user) {
+        setIsLoggedIn(true);
+        localStorage.setItem('isLoggedIn', 'true');
+        localStorage.setItem('ownerId', user.uid);
+        console.log('User is logged in: ', user.uid);
+        fetchData(user);
+      } else {
+        setIsLoggedIn(false);
+        localStorage.removeItem('isLoggedIn');
+        localStorage.removeItem('ownerId');
+        localStorage.removeItem('myProfileDraft');
+        setState(initialProfileState);
+        console.log('No user is logged in.');
+      }
+    });
+
+    // Clean up the subscription on component unmount
+    return () => unsubscribe();
+  }, [setIsLoggedIn]);
+
+  // useEffect(() => {
+  //   fetchData();
+  // }, []);
+
+  // Перенаправляємо на іншу сторінку
+  // Цей екран доступний і без авторизації
+
+  useEffect(() => {
+    // console.log('state.photos :>> ', state.photos);
+    handleSubmit();
+    // eslint-disable-next-line
+  }, [state.publish, state.photos]);
+
+  const [selectedField, setSelectedField] = useState(null);
+  const [modalCustomInput, setModalCustomInput] = useState('');
+  const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
+  const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
+  const visibleNonDonorFields = new Set([
+    'name',
+    'surname',
+    'email',
+    'phone',
+    'telegram',
+    'facebook',
+    'instagram',
+    'tiktok',
+    'vk',
+    'country',
+    'region',
+    'city',
+    'moreInfo_main',
+  ]);
+  const visiblePickerFields = pickerFields.filter(field => isDonorRole || visibleNonDonorFields.has(field.name));
+  // const [state, setState] = useState({ eyeColor: '', hairColor: '' });
+
+  const handleOpenModal = fieldName => {
+    setSelectedField(fieldName);
+    const fieldConfig = visiblePickerFields.find(field => field.name === fieldName);
+    const currentValue = typeof state[fieldName] === 'string' ? state[fieldName].trim() : '';
+    const hasPresetOption = Boolean(
+      currentValue &&
+      Array.isArray(fieldConfig?.options) &&
+      fieldConfig.options.some(option => {
+        const placeholder = String(option?.placeholder || '').trim().toLowerCase();
+        const ukrainian = String(option?.ukrainian || '').trim().toLowerCase();
+        const normalizedCurrent = currentValue.toLowerCase();
+        return normalizedCurrent === placeholder || normalizedCurrent === ukrainian;
+      }),
+    );
+    setModalCustomInput(hasPresetOption ? '' : currentValue);
+    // setIsModalOpen(true);
+  };
+
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const isSessionActive = Boolean(isLoggedIn || auth.currentUser);
+
+  useEffect(() => {
+    const logged = localStorage.getItem('isLoggedIn');
+    if (!isLoggedIn && logged) {
+      setIsLoggedIn(true);
+    }
+  }, [isLoggedIn, setIsLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setShowInfoModal(false);
+    }
+  }, [isLoggedIn]);
+
+  const handleCloseModal = () => {
+    // setIsModalOpen(false);
+    setSelectedField(null);
+    setModalCustomInput('');
+    setShowInfoModal(false);
+  };
+
+  const handleSelectOption = option => {
+    if (selectedField) {
+      const optionValue = getOptionValue(option);
+      const newValue = optionValue === 'Clear' ? '' : optionValue;
+      setState(prevState => {
+        const newState = { ...prevState, [selectedField]: newValue };
+        handleSubmit(newState);
+        return newState;
+      });
+    }
+    handleCloseModal();
+  };
+
+  // const handleClear = fieldName => {
+  //   setState(prevState => ({ ...prevState, [fieldName]: '' }));
+  // };
+
+  const handleClear = (fieldName) => {
+    setState(prevState => {
+      const newState = { ...prevState };
+  
+      // Очищення конкретного поля
+      if (fieldName in newState) {
+        newState[fieldName] = '';
+      }
+  
+      handleSubmit(newState);
+      return newState;
+    });
+};
+
+  const handleModalCustomInputClear = () => {
+    if (!selectedField) return;
+    setState(prevState => {
+      if (!prevState[selectedField]) {
+        return prevState;
+      }
+      const newState = { ...prevState, [selectedField]: '' };
+      handleSubmit(newState);
+      return newState;
+    });
+  };
+
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async user => {
+      if (user && user.emailVerified) {
+        localStorage.setItem('ownerId', user.uid);
+        setIsEmailVerified(true);
+      } else {
+        localStorage.removeItem('ownerId');
+        setIsEmailVerified(false);
+      }
+    });
+
+    // Відписка від прослуховування при демонтажі компонента
+    return () => unsubscribe();
+  }, []);
+
+  const dotsMenu = () => (
+    <ProfileDotsMenu
+      navigate={navigate}
+      isAdmin={isAdmin}
+      access={access}
+      isEmailVerified={isEmailVerified}
+      showVerifyEmail
+      isSessionActive={isSessionActive}
+      onDeleteProfile={() => setShowInfoModal('delProfile')}
+      onViewProfile={() => setShowInfoModal('viewProfile')}
+      onExit={handleExit}
+      onSelect={() => setShowInfoModal(false)}
+    />
+  );
+
+  return (
+    <Container>
+      <InnerContainer>
+        {isSessionActive && (
+          <DotsButton
+            aria-label="Відкрити меню профілю"
+            onClick={() => {
+              setShowInfoModal('dotsMenu');
+            }}
+          >
+            ⋮
+          </DotsButton>
+        )}
+        <StatusMessage published={state.publish}>
+          {state.publish ? 'Анкета опублікована' : 'Анкета прихована'}
+        </StatusMessage>
+        {!state.userId && (
+          <>
+            <AuthInputDiv missing={missing.email}>
+              <AuthInputField
+                type="text"
+                name="email"
+                value={state.email}
+                onChange={e => setState(prev => ({ ...prev, email: e.target.value }))}
+                onFocus={() => handleFocus('emailReg')}
+                onBlur={handleBlur}
+              />
+              <AuthLabel isActive={focused === 'emailReg' || state.email}>Введіть емейл</AuthLabel>
+            </AuthInputDiv>
+            <AuthInputDiv missing={missing.password}>
+              <AuthInputField
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                value={state.password}
+                onChange={e => setState(prev => ({ ...prev, password: e.target.value }))}
+                onFocus={() => handleFocus('passwordReg')}
+                onBlur={handleBlur}
+                autoComplete="new-password"
+              />
+              <TogglePasswordButton type="button" onClick={() => setShowPassword(prev => !prev)}>
+                {showPassword ? <FaEyeSlash /> : <FaEye />}
+              </TogglePasswordButton>
+              <AuthLabel isActive={focused === 'passwordReg' || state.password}>Придумайте / введіть пароль</AuthLabel>
+            </AuthInputDiv>
+            <AgreeContainer>
+            <AgreeButton onClick={handleAgree}>Я погоджуюсь з умовами програми</AgreeButton>
+              <TermsButton onClick={() => navigate('/policy')}>Умови</TermsButton>
+            </AgreeContainer>
+          </>
+        )}
+        {state.userId && <Photos state={state} setState={setState} />}
+
+        {visiblePickerFields.map(field => {
+          // console.log('field.options:', field.options);
+          const isPickerField = Array.isArray(field.options);
+          const isCsectionField = field.name === 'csection';
+
+          return (
+            <PickerContainer>
+              <InputDiv key={field.name}>
+                <InputFieldContainer fieldName={field.name} value={state[field.name]}>
+                  <InputField
+                    fieldName={field.name}
+                    as={field.name === 'moreInfo_main' && 'textarea'}
+                    ref={field.name === 'moreInfo_main' ? moreInfoRef : null}
+                    inputMode={field.name === 'phone' ? 'numeric' : 'text'}
+                    name={field.name}
+                    value={state[field.name]}
+                    readOnly={isPickerField && !isCsectionField}
+                    onChange={e => {
+                      const value = e?.target?.value;
+                      field.name === 'moreInfo_main' && autoResizeMoreInfo(e.target);
+                      const updatedValue = inputUpdateValue(value, field)
+                      // if (state[field.name]!=='No' && state[field.name]!=='Yes') {
+                      setState(prevState => ({ ...prevState, [field.name]: updatedValue }));
+                      // } else {
+                      // handleChange(field.name, value || '');
+                      // }
+                    }}
+                    onMouseDown={event => {
+                      if (isPickerField && !isCsectionField) {
+                        event.preventDefault();
+                      }
+                    }}
+                    onFocus={() => {
+                      if (!isPickerField || isCsectionField) {
+                        handleFocus(field.name);
+                      }
+                    }}
+                    onClick={() => {
+                      if (!isPickerField || isCsectionField) return;
+                      handleOpenModal(field.name);
+                      setShowInfoModal('pickerOptions');
+                    }}
+                    // placeholder={field.placeholder} // Обов'язково для псевдокласу :placeholder-shown
+                    onBlur={() => handleBlur(field.name)}
+                  />
+                  {state[field.name] && (
+                    <ClearButton
+                      type="button"
+                      onMouseDown={event => event.preventDefault()}
+                      onClick={() => handleClear(field.name)}
+                    >
+                      &times; {/* HTML-символ для хрестика */}
+                    </ClearButton>
+                  )}
+                </InputFieldContainer>
+
+                <Hint fieldName={field.name} isActive={state[field.name]}>{field?.placeholder ?? ''}</Hint>
+                <Placeholder isActive={state[field.name]}>{field?.ukrainian ?? ''}</Placeholder>
+              </InputDiv>
+              {Array.isArray(field.options) && field.options.length === 2 && (
+                <ButtonGroup>
+                  <Button
+                    onClick={() => {
+                      setState(prevState => ({ ...prevState, [field.name]: 'Yes' }));
+                      handleBlur(field.name);
+                    }}
+                  >
+                    Так
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setState(prevState => ({ ...prevState, [field.name]: 'No' }));
+                      handleBlur(field.name);
+                    }}
+                  >
+                    Ні
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setState(prevState => ({ ...prevState, [field.name]: 'Other' }));
+                      handleBlur(field.name);
+                    }}
+                  >
+                    Інше
+                  </Button>
+                </ButtonGroup>
+              )}
+              {field.name === 'csection' && (
+                <ButtonGroup>
+                  {field.options.map(option => (
+                    <Button
+                      key={`${field.name}-${getOptionValue(option)}`}
+                      type="button"
+                      onClick={() => {
+                        setState(prevState => ({ ...prevState, [field.name]: getOptionValue(option) }));
+                        handleBlur(field.name);
+                      }}
+                    >
+                      {getOptionLabel(option)}
+                    </Button>
+                  ))}
+                </ButtonGroup>
+              )}
+            </PickerContainer>
+          );
+        })}
+        {!state.publish && (
+          <PublishButton onClick={handlePublic}>Опублікувати</PublishButton>
+        )}
+      </InnerContainer>
+
+      {showInfoModal && (
+        <InfoModal
+          onClose={handleOverlayClick}
+          options={visiblePickerFields.find(field => field.name === selectedField)?.options}
+          onSelect={handleSelectOption}
+          onCustomInputClear={handleModalCustomInputClear}
+          text={showInfoModal}
+          Context={dotsMenu}
+          initialCustomInput={modalCustomInput}
+        />
+      )}
+    </Container>
+  );
+};
+
+export default MyProfileOld;
