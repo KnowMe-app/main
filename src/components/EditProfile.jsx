@@ -10,7 +10,6 @@ import {
   syncUserSearchIdIndex,
   auth,
 } from './config';
-import { makeUploadedInfo } from './makeUploadedInfo';
 import { ProfileForm } from './ProfileForm';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
@@ -103,6 +102,67 @@ const sanitizeOverlayValue = value => {
 
 const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
 const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction', 'cacheVersion']);
+
+
+const normalizeDeletedKeys = (...sources) => {
+  const deleted = new Set();
+
+  sources.forEach(source => {
+    if (!source) return;
+
+    if (Array.isArray(source)) {
+      source.forEach(key => {
+        if (key && key !== 'userId') deleted.add(String(key));
+      });
+      return;
+    }
+
+    if (source instanceof Set) {
+      source.forEach(key => {
+        if (key && key !== 'userId') deleted.add(String(key));
+      });
+      return;
+    }
+
+    if (typeof source === 'object') {
+      Object.keys(source).forEach(key => {
+        if (key && key !== 'userId') deleted.add(String(key));
+      });
+    }
+  });
+
+  return [...deleted];
+};
+
+const applyDeletedKeysToPayload = (payload, deletedKeys = []) => {
+  deletedKeys.forEach(key => {
+    if (key && key !== 'userId') {
+      payload[key] = null;
+    }
+  });
+
+  return payload;
+};
+
+const applyDeletedKeysToSnapshot = (snapshot, deletedKeys = []) => {
+  const nextSnapshot = snapshot && typeof snapshot === 'object' ? { ...snapshot } : {};
+
+  deletedKeys.forEach(key => {
+    if (key && key !== 'userId') {
+      delete nextSnapshot[key];
+    }
+  });
+
+  return nextSnapshot;
+};
+
+const prepareSyncedSnapshot = (snapshot, deletedKeys = []) => {
+  const cleaned = applyDeletedKeysToSnapshot(snapshot, deletedKeys);
+  delete cleaned.cacheVersion;
+  delete cleaned.cachedAt;
+
+  return cleaned;
+};
 
 const DEBUG_PROFILE_SAVE = true;
 
@@ -320,6 +380,11 @@ const EditProfile = () => {
   }, [userId, currentUid, isAdmin]);
 
   const deletingFieldsRef = useRef(new Set());
+  const pendingDeletedKeysRef = useRef(new Set());
+  const lastSyncedSnapshotRef = useRef(prepareSyncedSnapshot(state || {}));
+  const syncQueueRef = useRef(Promise.resolve());
+  const activeSyncCountRef = useRef(0);
+  const submitSequenceRef = useRef(0);
 
   const clearDeletingFieldAfterSubmit = useCallback((fieldName, submitPromise) => {
     Promise.resolve(submitPromise)
@@ -353,7 +418,7 @@ const EditProfile = () => {
     [navigate, location.pathname],
   );
 
-  async function remoteUpdate({ updatedState, overwrite, delCondition }) {
+  async function remoteUpdate({ updatedState, overwrite, delCondition, deletedKeys = [], baseSnapshot }) {
     const editorUserId = auth.currentUser?.uid;
     const canWriteMain = isAdminUid(editorUserId);
 
@@ -379,16 +444,9 @@ const EditProfile = () => {
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     if (updatedState?.userId?.length > 20) {
-      const existingData = await fetchUserById(updatedState.userId) || {};
+      const previousSnapshot = baseSnapshot || {};
 
-      await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState, delCondition);
-
-      const sanitizedExistingData = { ...existingData };
-      if (delCondition) {
-        Object.keys(delCondition).forEach(key => {
-          delete sanitizedExistingData[key];
-        });
-      }
+      await syncUserSearchIdIndex(updatedState.userId, previousSnapshot, updatedState, deletedKeys);
 
       const cleanedState = Object.fromEntries(
         Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
@@ -413,14 +471,7 @@ const EditProfile = () => {
         },
       });
 
-      const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
-      if (delCondition) {
-        Object.keys(delCondition).forEach(key => {
-          if (key !== 'userId') {
-            uploadedInfo[key] = null;
-          }
-        });
-      }
+      const uploadedInfo = applyDeletedKeysToPayload({ ...cleanedState }, deletedKeys);
 
       debugProfileSave('remoteUpdate:payload-before-backend', {
         delCondition,
@@ -450,36 +501,61 @@ const EditProfile = () => {
         )
       );
       delete cleanedStateForNewUsers.cacheVersion;
-      if (delCondition) {
-        Object.keys(delCondition).forEach(key => {
-          if (key !== 'userId') {
-            cleanedStateForNewUsers[key] = null;
-          }
-        });
-      }
+      applyDeletedKeysToPayload(cleanedStateForNewUsers, deletedKeys);
 
       await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update', true);
     } else if (updatedState?.userId) {
-      const existingData = await fetchUserById(updatedState.userId) || {};
-      await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState, delCondition);
-      const payloadForNewUsers = { ...updatedState };
-      if (delCondition) {
-        Object.keys(delCondition).forEach(key => {
-          if (key !== 'userId') {
-            payloadForNewUsers[key] = null;
-          }
-        });
-      }
+      const previousSnapshot = baseSnapshot || {};
+      await syncUserSearchIdIndex(updatedState.userId, previousSnapshot, updatedState, deletedKeys);
+      const payloadForNewUsers = applyDeletedKeysToPayload({ ...updatedState }, deletedKeys);
       await updateDataInNewUsersRTDB(updatedState.userId, payloadForNewUsers, 'update', true);
     }
 
-    try {
-      const fresh = await fetchUserById(updatedState.userId);
-      return fresh || updatedState;
-    } catch {
-      return updatedState;
-    }
+    return prepareSyncedSnapshot(updatedState, deletedKeys);
   }
+
+
+  const enqueueProfileSync = useCallback(({ updatedState, overwrite, delCondition, deletedKeys, submitSeq }) => {
+    activeSyncCountRef.current += 1;
+    setIsSyncing(true);
+
+    const runSync = async () => {
+      const baseSnapshot = lastSyncedSnapshotRef.current || {};
+      const syncedSnapshot = await remoteUpdate({
+        updatedState,
+        overwrite,
+        delCondition,
+        deletedKeys,
+        baseSnapshot,
+      });
+
+      const finalSnapshot = prepareSyncedSnapshot(syncedSnapshot || updatedState, deletedKeys);
+      lastSyncedSnapshotRef.current = finalSnapshot;
+      deletedKeys.forEach(key => pendingDeletedKeysRef.current.delete(key));
+
+      if (submitSeq === submitSequenceRef.current) {
+        await refreshOverlays();
+      }
+
+      return finalSnapshot;
+    };
+
+    const queuedSync = syncQueueRef.current
+      .catch(error => {
+        console.error('Previous profile sync failed', error);
+      })
+      .then(runSync)
+      .finally(() => {
+        activeSyncCountRef.current = Math.max(0, activeSyncCountRef.current - 1);
+        if (activeSyncCountRef.current === 0) {
+          setIsSyncing(false);
+        }
+      });
+
+    syncQueueRef.current = queuedSync.catch(() => {});
+
+    return queuedSync;
+  }, [refreshOverlays]);
 
 
   useEffect(() => {
@@ -495,6 +571,12 @@ const EditProfile = () => {
   useEffect(() => {
     const cachedCard = getCard(userId) || location.state || null;
     setState(cachedCard);
+    lastSyncedSnapshotRef.current = prepareSyncedSnapshot(cachedCard || {});
+    pendingDeletedKeysRef.current.clear();
+    syncQueueRef.current = Promise.resolve();
+    activeSyncCountRef.current = 0;
+    submitSequenceRef.current = 0;
+    setIsSyncing(false);
     setDataSource(cachedCard ? 'cache' : '');
   }, [userId, location.state]);
 
@@ -518,6 +600,7 @@ const EditProfile = () => {
               }
             : { userId };
         setState(formatted);
+        lastSyncedSnapshotRef.current = prepareSyncedSnapshot(formatted);
         updateCachedUser(formatted);
         setDataSource('backend');
       } catch (error) {
@@ -561,8 +644,10 @@ const EditProfile = () => {
 
     setState(updatedState);
 
-    const removeKeys = delCondition ? Object.keys(delCondition) : [];
-    updateCachedUser(updatedState, { removeKeys });
+    const removeKeys = normalizeDeletedKeys(delCondition);
+    removeKeys.forEach(key => pendingDeletedKeysRef.current.add(key));
+    const deletedKeys = normalizeDeletedKeys(pendingDeletedKeysRef.current, removeKeys);
+    updateCachedUser(updatedState, { removeKeys: deletedKeys });
 
     const formattedLastDelivery = formatDateToServer(
       formatDateAndFormula(updatedState.lastDelivery),
@@ -572,27 +657,15 @@ const EditProfile = () => {
       ...(formattedLastDelivery ? { lastDelivery: formattedLastDelivery } : {}),
     };
     delete syncedState.cacheVersion;
-    setIsSyncing(true);
-    try {
-      const serverData = await remoteUpdate({
-        updatedState: syncedState,
-        overwrite,
-        delCondition,
-      });
-      const serverLast = normalizeLastAction(serverData?.lastAction);
-      if (serverLast && serverLast > updatedState.lastAction) {
-        const formattedServerData = {
-          ...serverData,
-          lastAction: serverLast,
-          lastDelivery: formatDateToDisplay(serverData.lastDelivery),
-        };
-        updateCachedUser(formattedServerData);
-        setState(formattedServerData);
-      }
-    } finally {
-      setIsSyncing(false);
-      await refreshOverlays();
-    }
+    const submitSeq = ++submitSequenceRef.current;
+
+    return enqueueProfileSync({
+      updatedState: syncedState,
+      overwrite,
+      delCondition,
+      deletedKeys,
+      submitSeq,
+    });
   };
 
   const handleFieldFocus = fieldName => {
@@ -756,6 +829,7 @@ const EditProfile = () => {
       const newState = { ...prev };
       const deletedValue = newState[fieldName];
       delete newState[fieldName];
+      pendingDeletedKeysRef.current.add(fieldName);
       handleSubmit(newState, 'overwrite', { [fieldName]: deletedValue });
       return newState;
     });
