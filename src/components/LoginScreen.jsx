@@ -72,14 +72,6 @@ const WelcomeAccent = styled.span`
   color: var(--accent);
 `;
 
-const IntroText = styled.p`
-  margin: 8px auto 0;
-  max-width: 320px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-`;
-
 const InputDiv = styled.div`
   display: flex;
   align-items: center;
@@ -244,12 +236,6 @@ const RoleName = styled.span`
   color: var(--text);
   font-size: 14px;
   font-weight: 800;
-`;
-
-const RoleHint = styled.span`
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
 `;
 
 const TermsButton = styled.button`
@@ -492,7 +478,6 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         <LoginCard>
           <BrandBlock>
             <WelcomeText>KnowMe<WelcomeAccent>.</WelcomeAccent></WelcomeText>
-            <IntroText>Загальний вхід для донорів, агентств і команди. Оберіть роль — ми відкриємо відповідний формат анкети.</IntroText>
           </BrandBlock>
 
           <InputDiv $active={focused === 'email' || Boolean(state.email)}>
@@ -532,14 +517,12 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
                 <RoleRadio type="radio" name="userRole" value="ed" checked={selectedRole === 'ed'} onChange={e => setSelectedRole(e.target.value)} />
                 <RoleText>
                   <RoleName>Я донор яйцеклітин</RoleName>
-                  <RoleHint>Перейти до нової анкети з полегшеним сценарієм заповнення.</RoleHint>
                 </RoleText>
               </RoleOption>
               <RoleOption $selected={selectedRole === 'ag'}>
                 <RoleRadio type="radio" name="userRole" value="ag" checked={selectedRole === 'ag'} onChange={e => setSelectedRole(e.target.value)} />
                 <RoleText>
                   <RoleName>Ми агентство і шукаємо ДО</RoleName>
-                  <RoleHint>Зберегти роль агентства та працювати з доступним набором полів.</RoleHint>
                 </RoleText>
               </RoleOption>
             </RoleGrid>
