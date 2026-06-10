@@ -5,7 +5,7 @@ import {
 } from './config';
 
 export const MY_PROFILE_DRAFT_STORAGE_KEY = 'myProfileDraft';
-export const MY_PROFILE_NEW_ROUTE = '/my-profile-new';
+export const MY_PROFILE_ROUTE = '/my-profile';
 
 export const isPermissionDeniedError = error => {
   const code = String(error?.code || '').toLowerCase();
