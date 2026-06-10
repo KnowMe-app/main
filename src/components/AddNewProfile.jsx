@@ -47,9 +47,9 @@ import { resolveAccess } from 'utils/accessLevel';
 import { normalizePhoneState } from './inputValidations';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import InfoModal from './InfoModal';
-import { VerifyEmail } from './VerifyEmail';
 
 import { color, coloredCard, uiTokens } from './styles';
+import { ProfileDotsMenu } from './ProfileDotsMenu';
 //import { formatPhoneNumber } from './inputValidations';
 import { UsersList } from './UsersList';
 import {
@@ -3209,25 +3209,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setAdding(false);
     }
   };
-  const dotsMenu = () => {
-    return (
-      <>
-        {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
-          <>
-            <SubmitButton onClick={() => navigate('/my-profile')}>my profile</SubmitButton>
-            <SubmitButton onClick={() => navigate('/my-profile-new')}>my profile new</SubmitButton>
-            {(isAdmin || access.canAccessAdd) && <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>}
-            {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>}
-          </>
-        )}
-        {isAdmin && <SubmitButton onClick={() => navigate('/flow')}>flow</SubmitButton>}
-        <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
-        <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
-        {!isEmailVerified && <VerifyEmail />}
-        {isLoggedIn && <ExitButton onClick={handleExit}>exit</ExitButton>}
-      </>
-    );
-  };
+  const dotsMenu = () => (
+    <ProfileDotsMenu
+      navigate={navigate}
+      isAdmin={isAdmin}
+      access={access}
+      isEmailVerified={isEmailVerified}
+      showVerifyEmail
+      isSessionActive={isLoggedIn}
+      onDeleteProfile={() => setShowInfoModal('delProfile')}
+      onViewProfile={() => setShowInfoModal('viewProfile')}
+      onExit={handleExit}
+      onSelect={() => setShowInfoModal(false)}
+    />
+  );
 
   const delConfirm = () => {
     const handleRemoveUser = async () => {
@@ -5979,6 +5974,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </DownloadSizeToastToggleButton>
             )}
             <DotsButton
+              aria-label="Відкрити меню профілю"
               onClick={() => {
                 setShowInfoModal('dotsMenu');
               }}

@@ -22,13 +22,12 @@ import {
   signOut,
 } from 'firebase/auth';
 import Photos from './Photos';
-import { VerifyEmail } from './VerifyEmail';
 import InfoModal from './InfoModal';
 import { resolveAccess } from 'utils/accessLevel';
 import { getCurrentDate } from './foramtDate';
 import { authNotifications } from './authNotifications';
-import { ExitButton, SubmitButton } from './MyProfile';
 import toast from 'react-hot-toast';
+import { ProfileDotsMenu } from './ProfileDotsMenu';
 
 const Page = styled.div`
   --accent: #E8791A;
@@ -166,8 +165,25 @@ const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradie
 const CustomOptionWrap = styled.div`margin-top:10px;`;
 const DotsButton = styled.button`
   display:flex;align-items:center;justify-content:center;
-  width:34px;height:34px;border-radius:8px;border:1px solid var(--border);
+  width:34px;height:34px;border-radius:10px;border:1px solid var(--border);
   background:var(--card);cursor:pointer;font-size:22px;line-height:1;color:var(--muted);
+  transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease, color .18s ease;
+
+  &:hover {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(232, 121, 26, .16);
+  }
+
+  &:active {
+    transform: scale(.98);
+  }
 `;
 
 const AuthCard = styled(FirstContentCard)``;
@@ -570,19 +586,15 @@ export const MyProfileNew = () => {
   };
 
   const dotsMenu = () => (
-    <>
-      {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
-        <>
-          <SubmitButton onClick={() => navigate('/my-profile')}>my profile</SubmitButton>
-          <SubmitButton onClick={() => navigate('/my-profile-new')}>my profile new</SubmitButton>
-          {(isAdmin || access.canAccessAdd) && <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>}
-          {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>}
-        </>
-      )}
-      {isAdmin && <SubmitButton onClick={() => navigate('/flow')}>flow</SubmitButton>}
-      {!isEmailVerified && <VerifyEmail />}
-      <ExitButton onClick={handleExit}>exit</ExitButton>
-    </>
+    <ProfileDotsMenu
+      navigate={navigate}
+      isAdmin={isAdmin}
+      access={access}
+      isEmailVerified={isEmailVerified}
+      showVerifyEmail
+      onExit={handleExit}
+      onSelect={() => setShowInfoModal(false)}
+    />
   );
 
   const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
@@ -1081,7 +1093,9 @@ export const MyProfileNew = () => {
           <StatusBadge type="button" $clickable={!isProfileAccessConfirmed} onClick={handleAuthBadgeClick}>
             ● {isProfileAccessConfirmed ? 'Прихована' : 'Логін не відбувся'}
           </StatusBadge>
-          {isProfileAccessConfirmed && <DotsButton type='button' onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>}
+          {isProfileAccessConfirmed && (
+            <DotsButton type='button' aria-label='Відкрити меню профілю' onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
+          )}
         </div>
       </Topbar>
 

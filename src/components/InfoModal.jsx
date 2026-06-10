@@ -148,6 +148,14 @@ const LargeModalContent = styled(ModalContent)`
   overflow: auto;
 `;
 
+const MenuModalContent = styled(ModalContent)`
+  width: min(92vw, 380px);
+  padding: 14px;
+  border-radius: 22px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(232, 232, 226, 0.9);
+`;
+
 const OrangeStrong = styled.strong`
   color: orange;
 `;
@@ -317,6 +325,10 @@ export const InfoModal = ({
 
   if (text === 'moreActions' || text === 'flowComposer') {
     ContentComponent = LargeModalContent;
+  }
+
+  if (text === 'dotsMenu') {
+    ContentComponent = MenuModalContent;
   }
 
   const handleOverlayClick = event => {

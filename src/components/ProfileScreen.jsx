@@ -9,13 +9,13 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import InfoModal from './InfoModal';
 import Photos from './Photos';
-import { VerifyEmail } from './VerifyEmail';
 
 import { color } from './styles';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { resolveAccess } from 'utils/accessLevel';
 import { normalizePhoneState } from './inputValidations';
+import { ProfileDotsMenu } from './ProfileDotsMenu';
 
 const Container = styled.div`
   display: flex;
@@ -587,29 +587,27 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     return () => unsubscribe();
   }, []);
 
-  const dotsMenu = () => {
-    return (
-      <>
-        {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
-          <>
-            <SubmitButton onClick={() => navigate('/my-profile')}>my profile</SubmitButton>
-            {(isAdmin || access.canAccessAdd) && <SubmitButton onClick={() => navigate('/add')}>add</SubmitButton>}
-            {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => navigate('/matching')}>matching</SubmitButton>}
-          </>
-        )}
-        <SubmitButton onClick={() => setShowInfoModal('delProfile')}>Видалити анкету</SubmitButton>
-        <SubmitButton onClick={() => setShowInfoModal('viewProfile')}>Переглянути анкету</SubmitButton>
-        {!isEmailVerified && <VerifyEmail />}
-        {isLoggedIn && <ExitButton onClick={handleExit}>exit</ExitButton>}
-      </>
-    );
-  };
+  const dotsMenu = () => (
+    <ProfileDotsMenu
+      navigate={navigate}
+      isAdmin={isAdmin}
+      access={access}
+      isEmailVerified={isEmailVerified}
+      showVerifyEmail
+      isSessionActive={isLoggedIn}
+      onDeleteProfile={() => setShowInfoModal('delProfile')}
+      onViewProfile={() => setShowInfoModal('viewProfile')}
+      onExit={handleExit}
+      onSelect={() => setShowInfoModal(false)}
+    />
+  );
 
   return (
     <Container>
       <InnerContainer>
         {isLoggedIn && (
           <DotsButton
+            aria-label="Відкрити меню профілю"
             onClick={() => {
               setShowInfoModal('dotsMenu');
             }}
