@@ -88,7 +88,7 @@ web_modules/
 .next
 out
 
-# Create React App build output
+# Production build output
 build/
 
 # Nuxt.js build / generate output

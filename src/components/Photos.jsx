@@ -355,7 +355,7 @@ export const Photos = ({ state, setState, collection, hideFirstPhoto = false, up
               onError={e => {
                 console.error('Image failed to load', url, e);
                 e.target.onerror = null;
-                e.target.src = '/logo192.png';
+                e.target.src = '/favicon2.ico';
               }}
             />
             <DeleteButton
