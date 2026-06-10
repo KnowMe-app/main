@@ -9,6 +9,13 @@ const normalize = level =>
     .replace(/_/g, '')
     .replace(/&/g, 'and');
 
+export const normalizeRole = role => String(role || '').trim().toLowerCase();
+
+export const isNonEdRole = role => {
+  const normalizedRole = normalizeRole(role);
+  return Boolean(normalizedRole) && normalizedRole !== 'ed';
+};
+
 const parseAccessLevel = accessLevel => {
   const level = normalize(accessLevel);
   if (!level) {
@@ -26,14 +33,16 @@ export const canAccessMatchingByLevel = accessLevel => {
   return hasMatching;
 };
 
+export const canAccessMatchingByRole = ({ role, userRole } = {}) => isNonEdRole(userRole || role);
+
 export const canAccessAddByLevel = accessLevel => {
   const { hasAdd } = parseAccessLevel(accessLevel);
   return hasAdd;
 };
 
-export const resolveAccess = ({ uid, accessLevel }) => {
+export const resolveAccess = ({ uid, accessLevel, role, userRole } = {}) => {
   const isAdmin = isAdminUid(uid);
-  const canAccessMatching = isAdmin || canAccessMatchingByLevel(accessLevel);
+  const canAccessMatching = isAdmin || canAccessMatchingByLevel(accessLevel) || canAccessMatchingByRole({ role, userRole });
   const canAccessAdd = isAdmin || canAccessAddByLevel(accessLevel);
 
   return {

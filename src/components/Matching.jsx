@@ -1327,6 +1327,7 @@ const Matching = () => {
   const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
+  const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('userRole') || '');
   const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
     () => localStorage.getItem('additionalAccessRules') || ''
   );
@@ -1338,7 +1339,11 @@ const Matching = () => {
   const [additionalNextOffset, setAdditionalNextOffset] = useState(0);
   const [photoCacheByUserId, setPhotoCacheByUserId] = useState({});
   const [roleIndexSets] = useState(null);
-  const access = resolveAccess({ uid: auth.currentUser?.uid, accessLevel: currentAccessLevel });
+  const access = resolveAccess({
+    uid: auth.currentUser?.uid,
+    accessLevel: currentAccessLevel,
+    userRole: currentUserRole,
+  });
   const isAdmin = access.isAdmin;
   const isIndexedDebugTestUser = String(auth.currentUser?.uid || ownerId || '').trim() === MATCHING_LOG_MODE_TEST_USER_ID;
   const parsedAdditionalAccessRules = useMemo(
@@ -1754,6 +1759,7 @@ const Matching = () => {
 
       const profile = fetchedProfile;
       const accessLevel = profile?.accessLevel || '';
+      const userRole = profile?.userRole || profile?.role || '';
       const additionalAccessRules = profile?.additionalAccessRules || '';
       const searchKeySetsOfExactUser = await resolveAdditionalSearchKeySetKeysForMatching(profile, normalizedAccessUserId);
 
@@ -1804,6 +1810,7 @@ const Matching = () => {
         currentSearchKeySetKeys: searchKeySetsOfExactUser,
       };
       setCurrentAccessLevel(prev => (prev === accessLevel ? prev : accessLevel));
+      setCurrentUserRole(prev => (prev === userRole ? prev : userRole));
       setCurrentAdditionalAccessRules(prev => (prev === additionalAccessRules ? prev : additionalAccessRules));
       setCurrentSearchKeySetKeys(prev => (
         getSearchKeySetsOfExactUserSignature(prev) === getSearchKeySetsOfExactUserSignature(searchKeySetsOfExactUser)
@@ -1811,6 +1818,7 @@ const Matching = () => {
           : searchKeySetsOfExactUser
       ));
       localStorage.setItem('accessLevel', accessLevel);
+      localStorage.setItem('userRole', userRole);
       localStorage.setItem('additionalAccessRules', additionalAccessRules);
       localStorage.setItem('additionalSearchKeySetKeys', searchKeySetsOfExactUser.join(','));
       setMultiDataOwnerIds(resolveMatchingMultiDataOwnerIds({ viewerId: normalizedAccessUserId, profile }));
@@ -1947,15 +1955,18 @@ const Matching = () => {
           try {
             const profile = await fetchUserById(user.uid);
             const accessLevel = profile?.accessLevel || '';
+            const userRole = profile?.userRole || profile?.role || '';
             const additionalAccessRules = profile?.additionalAccessRules || '';
             const searchKeySetKeys = await resolveAdditionalSearchKeySetKeysForMatching(profile, user.uid);
 
             console.info('[Matching][additionalNewUsers] resolvedSearchKeySetKeys', searchKeySetKeys);
 
             setCurrentAccessLevel(accessLevel);
+            setCurrentUserRole(userRole);
             setCurrentAdditionalAccessRules(additionalAccessRules);
             setCurrentSearchKeySetKeys(searchKeySetKeys);
             localStorage.setItem('accessLevel', accessLevel);
+            localStorage.setItem('userRole', userRole);
             localStorage.setItem('additionalAccessRules', additionalAccessRules);
             localStorage.setItem('additionalSearchKeySetKeys', searchKeySetKeys.join(','));
             const rawMultiDataAccessUserIds = profile?.[MULTI_DATA_ACCESS_FIELD];
@@ -1981,6 +1992,7 @@ const Matching = () => {
           } catch (error) {
             console.error('Failed to refresh access profile on Matching', error);
             const cachedAccessLevel = localStorage.getItem('accessLevel') || '';
+            const cachedUserRole = localStorage.getItem('userRole') || '';
             const cachedAdditionalAccessRules = localStorage.getItem('additionalAccessRules') || '';
             const cachedSearchKeySetKeys = normalizeSearchKeySetKeys(localStorage.getItem('additionalSearchKeySetKeys') || '');
             const fallbackSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(cachedSearchKeySetKeys, user.uid)
@@ -1988,6 +2000,7 @@ const Matching = () => {
               : await resolveAdditionalSearchKeySetKeysForMatching(null, user.uid);
             console.info('[Matching][additionalNewUsers] resolvedSearchKeySetsOfExactUser', fallbackSearchKeySetKeys);
             setCurrentAccessLevel(cachedAccessLevel);
+            setCurrentUserRole(cachedUserRole);
             setCurrentAdditionalAccessRules(cachedAdditionalAccessRules);
             setCurrentSearchKeySetKeys(fallbackSearchKeySetKeys);
           }
@@ -1997,6 +2010,7 @@ const Matching = () => {
       } else {
         localStorage.removeItem('ownerId');
         localStorage.removeItem('accessLevel');
+        localStorage.removeItem('userRole');
         localStorage.removeItem('additionalAccessRules');
         localStorage.removeItem('additionalSearchKeySetKeys');
         setOwnerId('');
@@ -2009,6 +2023,7 @@ const Matching = () => {
         setSharedReactionCandidateUsers([]);
         setSharedComments({});
         setCurrentAccessLevel('');
+        setCurrentUserRole('');
         setCurrentAdditionalAccessRules('');
         setCurrentSearchKeySetKeys([]);
         resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
