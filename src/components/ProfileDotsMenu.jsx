@@ -160,15 +160,15 @@ export const ProfileDotsMenu = ({
   };
 
   const navItems = [
-    { path: '/my-profile-new', label: 'Нова анкета', description: 'Сучасний профіль і редагування', icon: <FaUserEdit /> },
-    { path: '/my-profile', label: 'Мій профіль', description: 'Класичний екран анкети', icon: <FaRegUser /> },
+    { path: '/my-profile-new', label: 'Нова анкета', icon: <FaUserEdit /> },
+    ...(isAdmin ? [{ path: '/my-profile', label: 'Мій профіль', icon: <FaRegUser /> }] : []),
     ...(canSeePrivilegedNav && (isAdmin || resolvedAccess.canAccessAdd)
       ? [{ path: '/add', label: 'Додати анкету', description: 'Адмін-додавання профілів', icon: <MdPersonAddAlt1 /> }]
       : []),
     ...(canSeePrivilegedNav && (isAdmin || resolvedAccess.canAccessMatching)
       ? [{ path: '/matching', label: 'Matching', description: 'Пошук і порівняння анкет', icon: <FaUsers /> }]
       : []),
-    ...(isAdmin ? [{ path: '/flow', label: 'Flow', description: 'Адмін-сценарії комунікацій', icon: <FaProjectDiagram /> }] : []),
+    ...(isAdmin ? [{ path: '/flow', label: 'Flow', icon: <FaProjectDiagram /> }] : []),
   ];
 
   return (
@@ -193,7 +193,7 @@ export const ProfileDotsMenu = ({
               <ItemIcon>{item.icon}</ItemIcon>
               <span>
                 <ItemLabel>{item.label}</ItemLabel>
-                <ItemDescription>{item.description}</ItemDescription>
+                {item.description ? <ItemDescription>{item.description}</ItemDescription> : null}
               </span>
               {active ? <ActivePill>зараз</ActivePill> : null}
             </MenuItem>
