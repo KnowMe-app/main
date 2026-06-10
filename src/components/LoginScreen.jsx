@@ -1,242 +1,287 @@
 import { useEffect, useState } from 'react';
 import styled, { css } from 'styled-components';
 import { FaUser, FaLock } from 'react-icons/fa';
-import {
-  auth,
-  updateDataInFiresoreDB,
-  updateDataInRealtimeDB,
-  updateDataInNewUsersRTDB,
-} from './config';
+import { auth } from './config';
 import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
 import { useNavigate } from 'react-router-dom';
-import { color } from './styles';
 import { authNotifications } from './authNotifications';
+import {
+  buildAuthProfilePayload,
+  markAuthSession,
+  MY_PROFILE_NEW_ROUTE,
+  normalizeAuthEmail,
+  persistUserWithFallback,
+} from './authProfilePersistence';
 
 const Container = styled.div`
+  --accent: #E8791A;
+  --accent-light: #FFF0E0;
+  --accent-mid: #F5A24B;
+  --bg: #FAFAF8;
+  --card: #FFFFFF;
+  --text: #1A1A1A;
+  --muted: #7A7A72;
+  --border: #E8E8E2;
+  --radius: 14px;
+  --shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  min-height: 100vh;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  padding: 20px;
-  background-color: #f0f0f0;
-  height: 100vh;
+  justify-content: center;
+  padding: 24px 16px;
+  background:
+    radial-gradient(circle at top left, rgba(232, 121, 26, 0.12), transparent 30%),
+    var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  box-sizing: border-box;
 `;
 
 const InnerContainer = styled.div`
-  max-width: 450px;
-  width: 100%;
-  background-color: #f0f0f0;
-  padding: 20px;
-  /* box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); */
-  /* border-radius: 8px; */
+  width: min(100%, 460px);
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
+  gap: 16px;
+`;
+
+const LoginCard = styled.div`
+  width: 100%;
+  box-sizing: border-box;
+  padding: 22px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+`;
+
+const BrandBlock = styled.div`
+  text-align: center;
+  margin-bottom: 20px;
+`;
+
+const WelcomeText = styled.h1`
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(26px, 8vw, 34px);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+`;
+
+const WelcomeAccent = styled.span`
+  color: var(--accent);
+`;
+
+const IntroText = styled.p`
+  margin: 8px auto 0;
+  max-width: 320px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
 `;
 
 const InputDiv = styled.div`
   display: flex;
   align-items: center;
   position: relative;
-  margin: 10px 0;
-  padding: 10px;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  width: 100%;
+  margin-top: 14px;
+  padding: 0 14px;
+  min-height: 48px;
+  background: var(--bg);
+  border: 1.5px solid ${({ $active }) => ($active ? 'var(--accent)' : 'var(--border)')};
+  border-radius: 12px;
   box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  box-shadow: ${({ $active }) => ($active ? '0 0 0 3px rgba(232, 121, 26, .12)' : 'none')};
+`;
+
+const FieldIcon = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 10px;
+  color: var(--accent);
 `;
 
 const InputField = styled.input`
+  min-width: 0;
+  flex: 1;
   border: none;
   outline: none;
-  flex: 1;
-  padding-left: 10px;
-  pointer-events: auto;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  padding: 18px 0 6px;
 `;
 
 const Label = styled.label`
   position: absolute;
-  left: 30px;
+  left: 44px;
   top: 50%;
   transform: translateY(-50%);
-  transition: all 0.3s ease;
-  color: gray;
+  transition: all 0.2s ease;
+  color: var(--muted);
+  font-size: 14px;
   pointer-events: none;
 
   ${({ isActive }) =>
     isActive &&
     css`
-      left: 10px;
-      top: 0;
-      transform: translateY(-100%);
-      font-size: 12px;
-      color: orange;
+      top: 8px;
+      transform: translateY(0);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
     `}
 `;
 
 const SubmitButton = styled.button`
-  cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 5px auto 0 auto;
-  color: ${({ disabled }) => (disabled ? '#b0b0b0' : 'white')};
+  width: 100%;
+  margin-top: 18px;
+  padding: 16px;
+  color: #fff;
   border: none;
-  border-radius: 5px;
-  cursor: pointer;
+  border-radius: var(--radius);
+  cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
   font-size: 16px;
-  padding: 10px 20px;
-  background-color: ${({ disabled }) => (disabled ? '#d0d0d0' : color.accent5)}; /* Сірий для вимкненої кнопки, синій для активної */
-  text-align: center;
-  font-weight: bold;
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  font-weight: 800;
+  background: ${({ disabled }) => (disabled ? '#c9c9c2' : 'linear-gradient(135deg, #E8791A 0%, #F5A24B 100%)')};
+  box-shadow: ${({ disabled }) => (disabled ? 'none' : '0 10px 24px rgba(232, 121, 26, 0.22)')};
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
 
   &:hover {
-    background-color: ${({ disabled }) => (disabled ? '#d0d0d0' : color.accent5)}; /* Темніший відтінок для активної кнопки */
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    filter: ${({ disabled }) => (disabled ? 'none' : 'brightness(1.02)')};
+    box-shadow: ${({ disabled }) => (disabled ? 'none' : '0 14px 30px rgba(232, 121, 26, 0.28)')};
+    transform: ${({ disabled }) => (disabled ? 'none' : 'translateY(-1px)')};
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(232, 121, 26, .18);
   }
 
   &:active {
-    background-color: ${({ disabled }) => (disabled ? '#d0d0d0' : color.accent5)}; /* Ще темніший відтінок для натискання */
-    transform: scale(0.98);
+    transform: ${({ disabled }) => (disabled ? 'none' : 'scale(0.99)')};
   }
 `;
 
-// Стилі для чекбоксу
 const CheckboxContainer = styled.div`
-  margin-top: 10px;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center; /* Центрує по вертикалі */
-  justify-content: center; /* Центрує по горизонталі */
-  width: auto;
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
 `;
 
 const CheckboxLabel = styled.label`
-  font-size: 12px;
-
-  /* font-weight: bold; */
-  color: #333;
+  color: var(--text);
   cursor: pointer;
-  display: inline-block;
-  vertical-align: middle;
-  max-width: 300px;
-  transition: color 0.3s ease, box-shadow 0.3s ease;
+  font-size: 12px;
+  line-height: 1.45;
+
   &:hover {
-    color: ${color.accent5}; /* Зміна кольору при наведенні */
+    color: var(--accent);
   }
 `;
 
-const RoleBlock = styled.div`
+const RoleBlock = styled.fieldset`
   width: 100%;
-  margin-top: 8px;
-  margin-bottom: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  border: none;
 `;
 
-const RoleTitle = styled.p`
-  margin: 0;
-  color: #333;
-  font-size: 14px;
+const RoleTitle = styled.legend`
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+`;
+
+const RoleGrid = styled.div`
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
 `;
 
 const RoleOption = styled.label`
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1.5px solid ${({ $selected }) => ($selected ? 'var(--accent)' : 'var(--border)')};
+  border-radius: 14px;
+  background: ${({ $selected }) => ($selected ? 'var(--accent-light)' : 'var(--card)')};
   cursor: pointer;
-  color: #333;
-  font-size: 14px;
-`;
-
-const isPermissionDeniedError = error => {
-  const code = String(error?.code || '').toLowerCase();
-  const message = String(error?.message || '').toLowerCase();
-  return code.includes('permission-denied') || code.includes('permission_denied') || message.includes('permission_denied');
-};
-
-const persistUserWithFallback = async (userId, uploadedInfo, firestoreCondition = 'update') => {
-  let shouldWriteFullProfileToNewUsers = false;
-
-  try {
-    await updateDataInRealtimeDB(userId, uploadedInfo, firestoreCondition === 'set' ? undefined : 'update');
-  } catch (error) {
-    if (!isPermissionDeniedError(error)) {
-      throw error;
-    }
-    shouldWriteFullProfileToNewUsers = true;
-    console.warn('No write access to users/$uid, fallback to newUsers.');
-  }
-
-  try {
-    await updateDataInFiresoreDB(userId, uploadedInfo, firestoreCondition);
-  } catch (error) {
-    shouldWriteFullProfileToNewUsers = true;
-    console.warn('Firestore write failed, fallback to newUsers.', error);
-  }
-
-  await updateDataInNewUsersRTDB(
-    userId,
-    shouldWriteFullProfileToNewUsers ? uploadedInfo : { lastLogin2: uploadedInfo.lastLogin2 },
-    'update'
-  );
-};
-
-const TermsButton = styled.button`
-  background-color: ${color.oppositeAccent};
-  border: 1px solid ${color.gray};
-  border-radius: 4px;
-  padding: 10px 6px;
-  margin-left: 8px;
-  font-size: 16px;
-  cursor: pointer;
-  color: ${color.accent5};
+  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
 
   &:hover {
-    background-color: ${color.paleAccent5};
+    transform: translateY(-1px);
+    border-color: var(--accent-mid);
+  }
+`;
+
+const RoleRadio = styled.input`
+  margin-top: 2px;
+  accent-color: var(--accent);
+`;
+
+const RoleText = styled.span`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+`;
+
+const RoleName = styled.span`
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+`;
+
+const RoleHint = styled.span`
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+`;
+
+const TermsButton = styled.button`
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 `;
 
 const CustomCheckbox = styled.input`
-  appearance: none; /* Сховати стандартний чекбокс */
-  width: 15px; /* Розмір чекбоксу */
-  height: 15px;
-  border: 2px solid #ccc;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.3s ease, border-color 0.3s ease;
-  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
   flex-shrink: 0;
-
-  /* Стиль для відміченого чекбоксу */
-  &:checked {
-    background-color: ${color.accent5}; /* Колір заповнення для відміченого чекбоксу */
-    border-color: ${color.accent5};
-  }
-
-  /* Стиль для чекбоксу при наведенні */
-  &:hover {
-    border-color: ${color.accent};
-  }
-`;
-
-const WelcomeText = styled.h1`
-  font-weight: bold;
-  text-align: center;
-  margin: 20px 0;
-  color: ${color.accent5};
-  /* font-size: 24px; */
 `;
 
 const LoadingOverlay = styled.div`
   position: fixed;
   inset: 0;
-  background: rgba(240, 240, 240, 0.7);
+  background: rgba(250, 250, 248, 0.78);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -247,8 +292,8 @@ const LoadingOverlay = styled.div`
 const Spinner = styled.div`
   width: 44px;
   height: 44px;
-  border: 4px solid #d8d8d8;
-  border-top-color: ${color.accent5};
+  border: 4px solid #f2ded0;
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 
@@ -273,18 +318,15 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     password: '',
   });
 
-  const [focused, setFocused] = useState({
-    email: false,
-    password: false,
-  });
+  const [focused, setFocused] = useState(null);
 
   const navigate = useNavigate();
 
   useEffect(() => {
     const checkAutofill = () => {
       setFocused({
-        email: document.querySelector('input[name="email"]').value !== '',
-        password: document.querySelector('input[name="password"]').value !== '',
+        email: document.querySelector('input[name="email"]')?.value !== '',
+        password: document.querySelector('input[name="password"]')?.value !== '',
       });
     };
 
@@ -309,82 +351,76 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     setFocused(null);
   };
 
-  const handleLabelClick = () => {
-    navigate('/policy'); // Перехід на сторінку політики конфіденційності
-  };
-
   const handleTermsClick = () => {
     navigate('/policy');
+  };
+
+  const { todayDays, todayDash } = getCurrentDate();
+
+  const navigateAfterAuth = () => {
+    navigate(MY_PROFILE_NEW_ROUTE);
   };
 
   const handleLogin = async email => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, state.password);
-      const uploadedInfo = {
-        areTermsConfirmed: todayDays,
-        lastLogin: todayDays,
-        lastLogin2: todayDash,
+      const uploadedInfo = buildAuthProfilePayload({
         email,
         userId: userCredential.user.uid,
         userRole: selectedRole,
-      };
+        todayDays,
+        todayDash,
+      });
 
       await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'update');
 
-      localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('userEmail', email);
-      localStorage.removeItem('myProfileDraft');
-
+      markAuthSession({ email, userId: userCredential.user.uid });
       setIsLoggedIn(true);
-      if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
-        navigate('/my-profile');
-      }
+      navigateAfterAuth();
       console.log('User signed in:', userCredential.user);
     } catch (error) {
-      if (error.code === 'auth/wrong-password') {
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         authNotifications.wrongPassword();
       } else {
         console.error('Error signing in:', error);
+        authNotifications.genericAuthError();
       }
     }
   };
-
-  const { todayDays, todayDash } = getCurrentDate();
 
   const handleRegistration = async email => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, state.password);
       console.log('User registered in:', userCredential.user);
 
-      const uploadedInfo = {
+      const uploadedInfo = buildAuthProfilePayload({
         email,
-        areTermsConfirmed: todayDays,
-        registrationDate: todayDays,
-        lastLogin: todayDays,
-        lastLogin2: todayDash,
         userId: userCredential.user.uid,
         userRole: selectedRole,
-      };
+        todayDays,
+        todayDash,
+        isRegistration: true,
+      });
 
       await sendEmailVerification(userCredential.user);
       await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'set');
 
-      localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('userEmail', email);
-      localStorage.removeItem('myProfileDraft');
-
+      markAuthSession({ email, userId: userCredential.user.uid });
       setIsLoggedIn(true);
-      if (userCredential.user.uid !== process.env.REACT_APP_USER1) {
-        navigate('/my-profile');
-      }
+      navigateAfterAuth();
     } catch (error) {
-      console.error('Error signing in:', error);
+      if (error.code === 'auth/weak-password') {
+        authNotifications.weakPassword();
+      } else {
+        console.error('Error signing in:', error);
+        authNotifications.genericAuthError();
+      }
     }
   };
 
   const handleAuth = async () => {
     const hasEmailTrailingSpace = /\s$/.test(state.email);
-    const normalizedEmail = state.email.trim();
+    const normalizedEmail = normalizeAuthEmail(state.email);
 
     if (!normalizedEmail) {
       authNotifications.emailRequired();
@@ -440,7 +476,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     const loggedIn = localStorage.getItem('isLoggedIn');
     if (isLoggedIn || loggedIn) {
       setIsLoggedIn(true);
-      navigate('/my-profile');
+      navigate(MY_PROFILE_NEW_ROUTE);
     }
     // eslint-disable-next-line
   }, []);
@@ -453,64 +489,74 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
         </LoadingOverlay>
       )}
       <InnerContainer>
-        <WelcomeText>KnowMe: Egg Donor</WelcomeText>
-        <InputDiv>
-          <FaUser style={{ marginRight: '10px', color: 'orange' }} />
-          <InputField
-            type="text"
-            name="email"
-            placeholder=""
-            value={state.email}
-            onChange={handleChange}
-            onFocus={() => handleFocus('email')}
-            onBlur={handleBlur}
-          />
-          <Label isActive={focused === 'email' || state.email}>Поштова скринька</Label>
-        </InputDiv>
-        <InputDiv>
-          <FaLock style={{ marginRight: '10px', color: 'orange' }} />
-          <InputField
-            type="password"
-            name="password"
-            placeholder=""
-            value={state.password}
-            onChange={handleChange}
-            onFocus={() => handleFocus('password')}
-            onBlur={handleBlur}
-            autoComplete="new-password"
-          />
-          <Label isActive={focused === 'password' || state.password}>Пароль</Label>
-        </InputDiv>
+        <LoginCard>
+          <BrandBlock>
+            <WelcomeText>KnowMe<WelcomeAccent>.</WelcomeAccent></WelcomeText>
+            <IntroText>Загальний вхід для донорів, агентств і команди. Оберіть роль — ми відкриємо відповідний формат анкети.</IntroText>
+          </BrandBlock>
 
-        <RoleBlock>
-          <RoleTitle>Оберіть роль (обов&apos;язково):</RoleTitle>
-          <RoleOption>
-            <input type="radio" name="userRole" value="ed" checked={selectedRole === 'ed'} onChange={e => setSelectedRole(e.target.value)} />
-            Я донор яйцеклітин
-          </RoleOption>
-          <RoleOption>
-            <input type="radio" name="userRole" value="ag" checked={selectedRole === 'ag'} onChange={e => setSelectedRole(e.target.value)} />
-            Ми агентство і шукаємо ДО
-          </RoleOption>
-        </RoleBlock>
+          <InputDiv $active={focused === 'email' || Boolean(state.email)}>
+            <FieldIcon><FaUser /></FieldIcon>
+            <InputField
+              type="email"
+              name="email"
+              placeholder=""
+              value={state.email}
+              onChange={handleChange}
+              onFocus={() => handleFocus('email')}
+              onBlur={handleBlur}
+              autoComplete="email"
+            />
+            <Label isActive={focused === 'email' || state.email}>Поштова скринька</Label>
+          </InputDiv>
 
-        {/* Чекбокс з умовою для активації кнопки */}
-        <CheckboxContainer style={{ display: 'flex', alignItems: 'center', marginTop: '10px' }}>
-          <CustomCheckbox type="checkbox" checked={isChecked} onChange={handleCheckboxChange} style={{ marginRight: '10px' }} />
-          <CheckboxLabel onClick={handleLabelClick}>
-            Я погоджуюся з Угодою користувача та надаю згоду на обробку моїх персональних даних та вчинення пов’язаних з цим дій відповідно до розділу Політики
-            конфіденційності Угодои користувача
-          </CheckboxLabel>
-          <TermsButton onClick={handleTermsClick}>Умови</TermsButton>
-        </CheckboxContainer>
+          <InputDiv $active={focused === 'password' || Boolean(state.password)}>
+            <FieldIcon><FaLock /></FieldIcon>
+            <InputField
+              type="password"
+              name="password"
+              placeholder=""
+              value={state.password}
+              onChange={handleChange}
+              onFocus={() => handleFocus('password')}
+              onBlur={handleBlur}
+              autoComplete="current-password"
+            />
+            <Label isActive={focused === 'password' || state.password}>Пароль</Label>
+          </InputDiv>
 
-        {/* Кнопка стане активною лише коли галочка натиснута */}
-        <SubmitButton onClick={handleAuth} disabled={isLoading}>
-          Вхід / Реєстрація
-        </SubmitButton>
+          <RoleBlock>
+            <RoleTitle>Оберіть роль</RoleTitle>
+            <RoleGrid>
+              <RoleOption $selected={selectedRole === 'ed'}>
+                <RoleRadio type="radio" name="userRole" value="ed" checked={selectedRole === 'ed'} onChange={e => setSelectedRole(e.target.value)} />
+                <RoleText>
+                  <RoleName>Я донор яйцеклітин</RoleName>
+                  <RoleHint>Перейти до нової анкети з полегшеним сценарієм заповнення.</RoleHint>
+                </RoleText>
+              </RoleOption>
+              <RoleOption $selected={selectedRole === 'ag'}>
+                <RoleRadio type="radio" name="userRole" value="ag" checked={selectedRole === 'ag'} onChange={e => setSelectedRole(e.target.value)} />
+                <RoleText>
+                  <RoleName>Ми агентство і шукаємо ДО</RoleName>
+                  <RoleHint>Зберегти роль агентства та працювати з доступним набором полів.</RoleHint>
+                </RoleText>
+              </RoleOption>
+            </RoleGrid>
+          </RoleBlock>
 
-        {/* <SubmitButton onClick={handleLogin}>Вхід</SubmitButton> */}
-        {/* <SubmitButton onClick={handleRegistration}>Реєстрація</SubmitButton> */}
+          <CheckboxContainer>
+            <CustomCheckbox id="login-terms" type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
+            <CheckboxLabel htmlFor="login-terms">
+              Я погоджуюся з Угодою користувача та надаю згоду на обробку моїх персональних даних відповідно до Політики конфіденційності.
+            </CheckboxLabel>
+            <TermsButton type="button" onClick={handleTermsClick}>Умови</TermsButton>
+          </CheckboxContainer>
+
+          <SubmitButton type="button" onClick={handleAuth} disabled={isLoading}>
+            {isLoading ? 'Зачекайте…' : 'Вхід / Реєстрація'}
+          </SubmitButton>
+        </LoginCard>
       </InnerContainer>
     </Container>
   );

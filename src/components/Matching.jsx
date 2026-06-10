@@ -15,7 +15,6 @@ import {
   CommentBox,
   CommentInput,
   Container,
-  ExitButton,
   FilterContainer,
   FilterOverlay,
   FilterResetButton,
@@ -28,7 +27,6 @@ import {
   SkeletonInfo,
   SkeletonLine,
   SkeletonPhoto,
-  SubmitButton,
   ThemeToggleButton,
   ThemeToggleKnob,
   ThemeToggleScene,
@@ -111,6 +109,7 @@ import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
 import { getContactEntries, CONTACT_LINK_BUILDERS } from './contactMethods';
+import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
 import {
@@ -5396,16 +5395,14 @@ const Matching = () => {
   const showBackendTrafficToggle = ownerId === BACKEND_TRAFFIC_TRACKING_TEST_UID;
 
   const dotsMenu = () => (
-    <>
-      {(isAdmin || access.canAccessAdd || access.canAccessMatching) && (
-        <>
-          <SubmitButton onClick={() => { saveScrollPosition(); navigate('/my-profile'); }}>my profile</SubmitButton>
-          {(isAdmin || access.canAccessAdd) && <SubmitButton onClick={() => { saveScrollPosition(); navigate('/add'); }}>add</SubmitButton>}
-          {(isAdmin || access.canAccessMatching) && <SubmitButton onClick={() => { saveScrollPosition(); navigate('/matching'); }}>matching</SubmitButton>}
-        </>
-      )}
-      <ExitButton onClick={handleExit}>exit</ExitButton>
-    </>
+    <ProfileDotsMenu
+      navigate={navigate}
+      isAdmin={isAdmin}
+      access={access}
+      onExit={handleExit}
+      onSelect={() => setShowInfoModal(false)}
+      beforeNavigate={saveScrollPosition}
+    />
   );
 
   return (
@@ -5542,7 +5539,7 @@ const Matching = () => {
                   <BackendTrafficToggleStatus>{debugShowAllIndexedCards ? 'ALL' : 'NORMAL'}</BackendTrafficToggleStatus>
                 </BackendTrafficToggleButton>
               )}
-              <ActionButton onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
+              <ActionButton aria-label="Відкрити меню профілю" onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
             </TopActions>
           </HeaderContainer>
           {!ownerId && (
