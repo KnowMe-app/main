@@ -1,149 +1,96 @@
-# React homework template 
+# KnowMe: Egg Donor
 
-Этот проект был создан при помощи
-[Create React App](https://github.com/facebook/create-react-app). Для знакомства
-и настройки дополнительных возможностей
-[обратись к документации](https://facebook.github.io/create-react-app/docs/getting-started).
+KnowMe is a React application for managing egg-donor profiles, profile matching, photos, contact details, medication and stimulation schedules, and data import/export workflows.
 
-## Создание репозитория по шаблону
+## Tech stack
 
-Используй этот репозиторий организации GoIT как шаблон для создания репозитория
-своего проекта. Для этого нажми на кнопку `«Use this template»` и выбери опцию
-`«Create a new repository»`, как показано на изображении.
+- React 18 and react-scripts
+- React Router with the `/main` GitHub Pages basename
+- Redux Toolkit and Redux Persist
+- Firebase Authentication, Firestore, Realtime Database, and Storage
+- styled-components
+- XLSX import/export utilities
 
-![Creating repo from a template step 1](./assets/template-step-1.png)
+## Local setup
 
-На следующем шаге откроется страница создания нового репозитория. Заполни поле
-его имени, убедись что репозиторий публичный, после чего нажми кнопку
-`«Create repository from template»`.
+1. Install an LTS version of Node.js.
+2. Install dependencies:
 
-![Creating repo from a template step 2](./assets/template-step-2.png)
+   ```bash
+   npm install
+   ```
 
-После того как репозиторий будет создан, необходимо перейти в настройки
-созданного репозитория на вкладку `Settings` > `Actions` > `General` как
-показано на изображении.
+3. Create a local `.env` file with the required Firebase and API variables.
+4. Start the development server:
 
-![Settings GitHub Actions permissions step 1](./assets/gh-actions-perm-1.png)
+   ```bash
+   npm start
+   ```
 
-Проскролив страницу до самого конца, в секции `«Workflow permissions»` выбери
-опцию `«Read and write permissions»` и поставь галочку в чекбоксе. Это
-необходимо для автоматизации процесса деплоя проекта.
+The app runs locally at [http://localhost:3000](http://localhost:3000).
 
-![Settings GitHub Actions permissions step 2](./assets/gh-actions-perm-2.png)
+## Environment variables
 
-Теперь у тебя есть личный репозиторий проекта, со структурой файлов и папок
-репозитория-шаблона. Далее работай с ним как с любым другим личным репозиторием,
-клонируй его себе на компьютер, пиши код, делай коммиты и отправляй их на
-GitHub.
+The app expects these variables to be available at build/runtime:
 
-## Подготовка к работе
-
-1. Убедись что на компьютере установлена LTS-версия Node.js.
-   [Скачай и установи](https://nodejs.org/en/) её если необходимо.
-2. Установи базовые зависимости проекта командой `npm install`.
-3. Запусти режим разработки, выполнив команду `npm start`.
-4. Перейди в браузере по адресу [http://localhost:3000](http://localhost:3000).
-   Эта страница будет автоматически перезагружаться после сохранения изменений в
-   файлах проекта.
-
-## Безопасность и переменные окружения
-
-- Никогда не коммитьте сгенерированные сборки (`build/`), так как они могут
-  содержать вшитые значения переменных окружения, включая ключи API.
-- Все ключи и идентификаторы (например, Firebase) должны храниться в `.env`
-  файлах и подставляться через `REACT_APP_*` переменные, как это используется в
-  `src/components/config.js`.
-- Если ключ был опубликован, его нужно срочно отозвать/перегенерировать в
-  консоли провайдера и заменить значение в локальных `.env` файлах.
-
-## Деплой
-
-Продакшн версия проекта будет автоматически проходить линтинг, собираться и
-деплоиться на GitHub Pages, в ветку `gh-pages`, каждый раз когда обновляется
-ветка `main`. Например, после прямого пуша или принятого пул-реквеста. Для этого
-необходимо в файле `package.json` отредактировать поле `homepage`, заменив
-`your_username` и `your_repo_name` на свои, и отправить изменения на GitHub.
-
-```json
-"homepage": "https://your_username.github.io/your_repo_name/"
+```dotenv
+REACT_APP_API_KEY=
+REACT_APP_AUTH_DOMAIN=
+REACT_APP_DATABASE_URL=
+REACT_APP_PROJECT_ID=
+REACT_APP_STORAGE_BUCKET=
+REACT_APP_MESSAGING_SENDER_ID=
+REACT_APP_APP_ID=
+REACT_APP_USER1=
+REACT_APP_OPENAI_API_KEY=
+OPENAI_API_KEY=
 ```
 
-Далее необходимо зайти в настройки GitHub-репозитория (`Settings` > `Pages`) и
-выставить раздачу продакшн версии файлов из папки `/root` ветки `gh-pages`, если
-это небыло сделано автоматически.
+Keep secrets in local `.env` files and GitHub Actions secrets. Do not commit generated builds or local environment files.
 
-![GitHub Pages settings](./assets/repo-settings.png)
+## Available scripts
 
-### Статус деплоя
+- `npm start` — run the local development server.
+- `npm run build` — create a production build in `build/`.
+- `npm test` — run the test suite in watch mode.
+- `npm run lint:js` — lint JavaScript and JSX sources under `src/`.
 
-Статус деплоя крайнего коммита отображается иконкой возле его идентификатора.
+## Deployment
 
-- **Желтый цвет** - выполняется сборка и деплой проекта.
-- **Зеленый цвет** - деплой завершился успешно.
-- **Красный цвет** - во время линтинга, сборки или деплоя произошла ошибка.
+The repository deploys to GitHub Pages from the `main` branch using `.github/workflows/deploy.yml`.
 
-Более детальную информацию о статусе можно посмотреть кликнув по иконке, и в
-выпадающем окне перейти по ссылке `Details`.
+The workflow:
 
-![Deployment status](./assets/deploy-status.png)
+1. checks out the repository;
+2. installs Node.js 16;
+3. creates `.env` from GitHub Actions secrets;
+4. installs dependencies;
+5. runs `npm run lint:js` and `npm run build`;
+6. publishes the `build/` directory to the `gh-pages` branch.
 
-### Живая страница
+The production URL is configured in `package.json` as `https://KnowMe-app.github.io/main`.
 
-Через какое-то время, обычно пару минут, живую страницу можно будет посмотреть
-по адресу указанному в отредактированном свойстве `homepage`. Например, вот
-ссылка на живую версию для этого репозитория
-[https://goitacademy.github.io/react-homework-template](https://goitacademy.github.io/react-homework-template).
+## Routing
 
-Если открывается пустая страница, убедись что во вкладке `Console` нет ошибок
-связанных с неправильными путями к CSS и JS файлам проекта (**404**). Скорее
-всего у тебя неправильное значение свойства `homepage` в файле `package.json`.
+The app is hosted under `/main`, so the router is configured with `basename="/main"` in `src/index.js`.
 
-### Маршрутизация
+## Search filters
 
-Если приложение использует библиотеку `react-router-dom` для маршрутизации,
-необходимо дополнительно настроить компонент `<BrowserRouter>`, передав в пропе
-`basename` точное название твоего репозитория. Слеш в начале строки обязателен.
-
-```jsx
-<BrowserRouter basename="/your_repo_name">
-  <App />
-</BrowserRouter>
-```
-
-## Как это работает
-
-![How it works](./assets/how-it-works.png)
-
-1. После каждого пуша в ветку `main` GitHub-репозитория, запускается специальный
-   скрипт (GitHub Action) из файла `.github/workflows/deploy.yml`.
-2. Все файлы репозитория копируются на сервер, где проект инициализируется и
-   проходит линтинг и сборку перед деплоем.
-3. Если все шаги прошли успешно, собранная продакшн версия файлов проекта
-   отправляется в ветку `gh-pages`. В противном случае, в логе выполнения
-   скрипта будет указано в чем проблема.
-
-## Фильтры поиска
-
-На странице добавления профиля доступны радиокнопки для фильтрации списка
-пользователей по истории кесарева сечения, семейному положению и резус-фактору.
-Радиокнопки расположены над списком пользователей.
+The add-profile page includes radio-button filters for user history of C-section, marital status, and Rh factor. The filters appear above the user list.
 
 ## Helper constants
 
-Дополнительные константы для пагинации располагаются в `src/components/constants.js`:
+Additional pagination constants live in `src/components/constants.js`:
 
-- `INVALID_DATE_TOKENS` — список некорректных значений даты, по которым
-  выполняется поиск, если для нужной даты записей нет.
+- `INVALID_DATE_TOKENS` — invalid date values used as fallback search tokens when matching date records are unavailable.
 
-## Особенности
-- Добавлен фильтр возраста 43+
+## Features
 
-## Работа с карточками в Local Storage
+- Includes an age filter for 43+ profiles.
 
-Все карточки хранятся в едином объекте `cards`, а списки (`favorite`, `load2` и
-т.п.) содержат только массивы их идентификаторов.
+## Local Storage card cache
 
-### Структура Local Storage
+Cards are stored in a shared `cards` object, while lists such as `favorite` and `load2` keep arrays of card identifiers.
 
 ```json
 {
@@ -157,34 +104,22 @@ GitHub.
 
 ### API
 
-- `addCardToList(id, listKey)` – добавляет идентификатор в список без
-  дубликатов.
-- `updateCard(id, data, remoteSave)` – сохраняет изменения в локальном
-  хранилище и параллельно отправляет их на бекенд.
-- `getCardsByList(listKey, remoteFetch)` – возвращает карточки списка; если
-  данные устарели (TTL 6 часов), запрашивает обновления у бекенда и
-  синхронизирует их.
+- `addCardToList(id, listKey)` — adds an identifier to a list without duplicates.
+- `updateCard(id, data, remoteSave)` — saves updates in local storage and sends them to the backend in parallel.
+- `getCardsByList(listKey, remoteFetch)` — returns cards for a list; if data is older than the 6-hour TTL, it refreshes the data from the backend.
 
-### Пример использования
+### Example
 
 ```js
-// добавить карточку в два списка
 addCardToList('1', 'load2');
 addCardToList('1', 'favorite');
 
-// обновить данные и параллельно сохранить их на сервере
-updateCard('1', { title: 'Новый заголовок' }, saveToServer);
+updateCard('1', { title: 'New title' }, saveToServer);
 
-// при запросе любого списка карточка будет актуальной без лишних запросов
 const load2Cards = await getCardsByList('load2', fetchCard);
 const favoriteCards = await getCardsByList('favorite', fetchCard);
 ```
 
-Каждая карточка содержит поле `lastAction`. При невозможности получить карточку с
-бекенда её идентификатор удаляется из соответствующего списка.
+Each card has a `lastAction` field. If a card cannot be loaded from the backend, its identifier is removed from the related list.
 
-Страница `AddNewProfile` использует эти списки `favorite` и `load2` через
-`cardsStorage` вместе с объектом `queries`, где каждому поисковому ключу
-соответствует список идентификаторов. Перед обращением к серверу данные
-берутся из `queries`, а при их отсутствии или устаревании (старше 6 часов)
-запрашиваются с бэкенда.
+`AddNewProfile` uses the `favorite` and `load2` lists through `cardsStorage` together with the `queries` object, where each search key maps to a list of identifiers. Before requesting the backend, the app reads from `queries`; if data is missing or older than 6 hours, it fetches fresh data from the backend.
