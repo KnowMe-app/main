@@ -53,22 +53,26 @@ export const App = () => {
       if (user) {
         localStorage.setItem('ownerId', user.uid);
         let accessLevel = '';
+        let userRole = '';
         try {
           const profile = await fetchUserById(user.uid);
           accessLevel = profile?.accessLevel || '';
+          userRole = profile?.userRole || profile?.role || '';
         } catch (error) {
-          console.error('Failed to load accessLevel for routes', error);
+          console.error('Failed to load access profile for routes', error);
         }
 
-        const access = resolveAccess({ uid: user.uid, accessLevel });
+        const access = resolveAccess({ uid: user.uid, accessLevel, userRole });
         setIsAdmin(access.isAdmin);
         setCanAccessAdd(access.canAccessAdd);
         setCanAccessMatching(access.canAccessMatching);
         localStorage.setItem('accessLevel', accessLevel);
+        localStorage.setItem('userRole', userRole);
         setIsAccessResolved(true);
       } else {
         localStorage.removeItem('ownerId');
         localStorage.removeItem('accessLevel');
+        localStorage.removeItem('userRole');
         setIsAdmin(false);
         setCanAccessAdd(false);
         setCanAccessMatching(false);
