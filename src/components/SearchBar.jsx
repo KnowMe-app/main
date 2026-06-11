@@ -510,9 +510,17 @@ const getParserForSearchKey = key => {
   return SEARCH_KEY_PARSERS[key] || (value => value?.trim());
 };
 
-const getParsedCandidatesForKey = (key, rawQuery) => {
+export const parseExplicitSearchKeyCandidate = (key, rawQuery) => {
   const parser = getParserForSearchKey(key);
   const parsedValue = parser(rawQuery);
+  if (parsedValue) return parsedValue;
+
+  if (!SEARCH_ID_INDEXED_FIELDS.has(key)) return null;
+  return normalizeSearchIdInput(key, rawQuery) || null;
+};
+
+const getParsedCandidatesForKey = (key, rawQuery) => {
+  const parsedValue = parseExplicitSearchKeyCandidate(key, rawQuery);
   if (!parsedValue) return [];
 
   if (key === 'phone') {
@@ -537,14 +545,18 @@ const parseGroupedSearchValues = input => {
 };
 
 const parseTelegramId = input => {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
   const urlPattern = /t\.me\/([^/?#]+)/;
-  const urlMatch = input.match(urlPattern);
+  const urlMatch = trimmed.match(urlPattern);
   if (urlMatch && urlMatch[1]) return urlMatch[1];
   const atPattern = /^@(\w+)/;
-  const atMatch = input.match(atPattern);
+  const atMatch = trimmed.match(atPattern);
   if (atMatch && atMatch[1]) return atMatch[1];
-  const textPattern = /(?:телеграм|телега|teleg|t(?=\s|:)|т(?=\s|:))\s*:?\s([a-zA-Z0-9._]+)/i;
-  const textMatch = input.match(textPattern);
+  const textPattern = /(?:telegram|tg|телеграм|телега|teleg|t(?=\s|:)|т(?=\s|:))\s*:?\s@?([a-zA-Z0-9._]+)/i;
+  const textMatch = trimmed.match(textPattern);
   if (textMatch && textMatch[1]) return textMatch[1];
   return null;
 };
@@ -687,16 +699,14 @@ const prioritizeEqualToKeys = (keys, priorityKey) => {
   return [priorityKey, ...keys.filter(key => key !== priorityKey)];
 };
 
-const resolveExecutionPlan = ({ allKeys, selectedKeys, detectedKey, rawQuery, dateLikeKeys }) => {
+export const resolveExecutionPlan = ({ allKeys, selectedKeys, detectedKey, rawQuery, dateLikeKeys }) => {
   const normalizedSelectedKeys = Array.isArray(selectedKeys) ? selectedKeys : [];
-  const isAllEnabled = normalizedSelectedKeys.length === allKeys.length;
-  const isAllDisabled = normalizedSelectedKeys.length === 0;
-  const hasExplicitSelectedKeys = !isAllDisabled && !isAllEnabled;
-  const baseKeys = hasExplicitSelectedKeys ? normalizedSelectedKeys : allKeys;
+  const hasSelectedKeys = normalizedSelectedKeys.length > 0;
+  const baseKeys = hasSelectedKeys ? normalizedSelectedKeys : allKeys;
 
   const hasDateScopedKeys = dateLikeKeys instanceof Set;
   const queryLooksLikeDate = hasDateScopedKeys ? looksLikeDateQuery(rawQuery) : false;
-  const shouldApplyDateScope = hasDateScopedKeys && !hasExplicitSelectedKeys;
+  const shouldApplyDateScope = hasDateScopedKeys && !hasSelectedKeys;
   const filteredBaseKeys = shouldApplyDateScope
     ? baseKeys.filter(key =>
       queryLooksLikeDate ? dateLikeKeys.has(key) : !dateLikeKeys.has(key)
@@ -704,25 +714,8 @@ const resolveExecutionPlan = ({ allKeys, selectedKeys, detectedKey, rawQuery, da
     : baseKeys;
   const effectiveBaseKeys = filteredBaseKeys.length > 0 ? filteredBaseKeys : baseKeys;
 
-  if (detectedKey && effectiveBaseKeys.includes(detectedKey)) {
-    const prioritizedKeys = prioritizeEqualToKeys(effectiveBaseKeys, detectedKey);
-    const shouldRunDetectedOnlyFirst = !hasExplicitSelectedKeys && (isAllEnabled || isAllDisabled);
-
-    if (shouldRunDetectedOnlyFirst) {
-      return {
-        primaryKeys: [detectedKey],
-        fallbackKeys: prioritizedKeys.filter(key => key !== detectedKey),
-      };
-    }
-
-    return {
-      primaryKeys: prioritizedKeys,
-      fallbackKeys: [],
-    };
-  }
-
   return {
-    primaryKeys: [...effectiveBaseKeys],
+    primaryKeys: prioritizeEqualToKeys(effectiveBaseKeys, detectedKey),
     fallbackKeys: [],
   };
 };
@@ -890,34 +883,6 @@ const SearchBar = ({
 
     if (!effectiveEnabledSearchKeys) return true;
     return Boolean(effectiveEnabledSearchKeys[key]);
-  };
-
-  const resolveStrictSearchKeySet = () => {
-    const effectiveEnabledSearchKeys =
-      enabledSearchKeys && typeof enabledSearchKeys === 'object'
-        ? enabledSearchKeys
-        : searchOptions?.enabledSearchKeys;
-
-    if (!effectiveEnabledSearchKeys || typeof effectiveEnabledSearchKeys !== 'object') {
-      return null;
-    }
-
-    const strictKeys = [
-      'userId',
-      'facebook',
-      'instagram',
-      'telegram',
-      'email',
-      'tiktok',
-      'twitter',
-      'line',
-      'otherLink',
-      'phone',
-      'vk',
-      'other',
-    ].filter(key => Boolean(effectiveEnabledSearchKeys[key]));
-
-    return strictKeys.length > 0 ? new Set(strictKeys) : null;
   };
 
   const loadCachedResult = (key, value, requestId = null) => {
@@ -1162,10 +1127,7 @@ const SearchBar = ({
       selectedKeys: selectedEqualToKeys,
       rawQuery,
     });
-    const keysToTry = [
-      ...(equalToExecutionPlan.primaryKeys || []),
-      ...(equalToExecutionPlan.fallbackKeys || []),
-    ];
+    const keysToTry = equalToExecutionPlan.primaryKeys || [];
 
     let found = false;
     for (const equalToKey of keysToTry) {
@@ -1198,10 +1160,7 @@ const SearchBar = ({
       rawQuery,
       dateLikeKeys: new Set(allSearchKeyFields),
     });
-    const keysToTry = [
-      ...(executionPlan.primaryKeys || []),
-      ...(executionPlan.fallbackKeys || []),
-    ];
+    const keysToTry = executionPlan.primaryKeys || [];
 
     let found = false;
     for (const searchKeyField of keysToTry) {
@@ -1251,7 +1210,7 @@ const SearchBar = ({
 
     const searchIdInput = parseSearchIdExact(rawQuery);
 
-    if (searchIdInput) {
+    if (isSearchEnabled('searchId') && searchIdInput) {
       const searchIdPrefixStrategy = resolveSearchIdPrefixStrategy(searchIdInput, searchOptions);
       const prefixesToIterate =
         searchIdPrefixStrategy.primaryPrefixes?.length > 0
@@ -1286,10 +1245,12 @@ const SearchBar = ({
       }
     }
 
-    const equalToResult = await runEqualToAllCardsSearch(rawQuery, isStaleRequest, resultMap);
-    if (isStaleRequest()) return { found: false, results: resultMap };
-    if (equalToResult.found) {
-      foundCombinedResults = true;
+    if (isSearchEnabled('equalToAllCards')) {
+      const equalToResult = await runEqualToAllCardsSearch(rawQuery, isStaleRequest, resultMap);
+      if (isStaleRequest()) return { found: false, results: resultMap };
+      if (equalToResult.found) {
+        foundCombinedResults = true;
+      }
     }
 
     return { found: foundCombinedResults, results: resultMap };
@@ -1635,11 +1596,13 @@ const SearchBar = ({
       }
       return;
     }
-    const strictSearchKeySet = resolveStrictSearchKeySet();
-    const isCombinedSearchMode =
-      !strictSearchKeySet &&
-      isSearchEnabled('searchId') &&
-      isSearchEnabled('equalToAllCards');
+    const selectedAdvancedSearchModes = [
+      'partialUserId',
+      'searchId',
+      'searchKey',
+      'equalToAllCards',
+    ].filter(key => isSearchEnabled(key));
+    const shouldUseSelectedAdvancedSearchModes = selectedAdvancedSearchModes.length > 0;
 
     const repeatedValues = parseGroupedSearchValues(trimmed);
     if (repeatedValues.length > 0) {
@@ -1698,7 +1661,7 @@ const SearchBar = ({
       return;
     }
 
-    if (isCombinedSearchMode) {
+    if (shouldUseSelectedAdvancedSearchModes) {
       const combinedResults = {};
       const combinedResult = await runCombinedSearchForQuery(rawQuery, isStaleRequest, combinedResults);
       if (isStaleRequest()) return;
@@ -1708,20 +1671,11 @@ const SearchBar = ({
         applyState({}, requestId);
         applyUsers({ ...combinedResults }, requestId);
       } else {
+        applyState({}, requestId);
+        applyUsers({}, requestId);
         applyUserNotFound(true, requestId);
       }
       return;
-    }
-
-    if (isSearchEnabled('partialUserId')) {
-      const partialUserIdResult = await runPartialUserIdSearch(rawQuery, isStaleRequest);
-      if (isStaleRequest()) return;
-      if (partialUserIdResult.found) {
-        applyUserNotFound(false, requestId);
-        applyState({}, requestId);
-        applyUsers({ ...partialUserIdResult.results }, requestId);
-        return;
-      }
     }
 
     const looksLikeExactUserId = Boolean(parseUserId(rawQuery));
@@ -1733,202 +1687,6 @@ const SearchBar = ({
         requestId,
       })
     ) return;
-
-    const shouldContinueAfterSearchIdMiss =
-      isSearchEnabled('equalToAllCards') || isSearchEnabled('searchKey');
-
-    let continuedAfterSearchIdMiss = false;
-
-    if (isSearchEnabled('searchId')) {
-      const searchIdHandled = await processUserSearch('searchId', parseSearchIdExact, rawQuery, {
-        // Якщо користувач випадково лишив searchId увімкненим, miss не має
-        // блокувати інші явно вибрані джерела пошуку, зокрема equalTo lastAction.
-        continueOnMiss: shouldContinueAfterSearchIdMiss,
-        deferNotFoundOnMiss: shouldContinueAfterSearchIdMiss,
-        requestId,
-      });
-      if (isStaleRequest()) return;
-      if (searchIdHandled) return;
-      continuedAfterSearchIdMiss = shouldContinueAfterSearchIdMiss;
-    }
-
-    let triedSearchIdFallbackSource = false;
-
-    if (isSearchEnabled('searchKey')) {
-      triedSearchIdFallbackSource = triedSearchIdFallbackSource || continuedAfterSearchIdMiss;
-      const searchKeyResult = await runSearchKeyBucketSearch(rawQuery, isStaleRequest);
-      if (isStaleRequest()) return;
-      if (searchKeyResult.found) {
-        applyUserNotFound(false, requestId);
-        applyState({}, requestId);
-        applyUsers({ ...searchKeyResult.results }, requestId);
-        return;
-      }
-    }
-
-    if (isSearchEnabled('equalToAllCards')) {
-      triedSearchIdFallbackSource = triedSearchIdFallbackSource || continuedAfterSearchIdMiss;
-      const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
-      const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
-        ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
-        : [];
-      const equalToExecutionPlan = resolveEqualToExecutionKeys({
-        allKeys: allEqualToKeys,
-        selectedKeys: selectedEqualToKeys,
-        rawQuery,
-      });
-      const primaryEqualToKeys = equalToExecutionPlan.primaryKeys || [];
-      const fallbackEqualToKeys = equalToExecutionPlan.fallbackKeys || [];
-      const aggregatedResults = {};
-      let foundEqualToResults = false;
-      let emittedProgressiveResults = false;
-      let usedFreshEqualToCache = false;
-
-      for (const equalToKey of primaryEqualToKeys) {
-        const candidates = getParsedCandidatesForKey(equalToKey, rawQuery);
-        for (const parsedValue of candidates) {
-          if (isStaleRequest()) return;
-          const queryParams = { [equalToKey]: parsedValue };
-          emitSearchLabel(queryParams, {
-            mode: 'equalToAllCards',
-            stage: 'primary',
-            key: equalToKey,
-            selectedKeysCount: selectedEqualToKeys.length,
-          });
-          const hasCache = loadCachedResult(equalToKey, parsedValue, requestId);
-          const freshCache = hasCache && isCacheFresh(equalToKey, parsedValue);
-          if (freshCache) {
-            usedFreshEqualToCache = true;
-            foundEqualToResults = true;
-            continue;
-          }
-
-          const res = await cachedSearch(queryParams, {
-            forceEqualToAllCards: true,
-            equalToKeys: [equalToKey],
-          });
-          if (isStaleRequest()) return;
-          if (!res || Object.keys(res).length === 0) {
-            continue;
-          }
-
-          foundEqualToResults = true;
-
-          if (Array.isArray(res)) {
-            res.forEach(card => {
-              if (card?.userId) {
-                aggregatedResults[card.userId] = card;
-              }
-            });
-          } else if ('userId' in res) {
-            aggregatedResults[res.userId] = res;
-          } else {
-            Object.assign(aggregatedResults, res);
-          }
-
-          if (Object.keys(aggregatedResults).length > 0) {
-            applyUserNotFound(false, requestId);
-            if (!emittedProgressiveResults) {
-              applyState({}, requestId);
-              emittedProgressiveResults = true;
-            }
-            applyUsers({ ...aggregatedResults }, requestId);
-          }
-        }
-      }
-
-      if (fallbackEqualToKeys.length > 0) {
-        for (const equalToKey of fallbackEqualToKeys) {
-          const candidates = getParsedCandidatesForKey(equalToKey, rawQuery);
-          for (const parsedValue of candidates) {
-            if (isStaleRequest()) return;
-            const queryParams = { [equalToKey]: parsedValue };
-            emitSearchLabel(queryParams, {
-              mode: 'equalToAllCards',
-              stage: 'fallback',
-              key: equalToKey,
-              selectedKeysCount: selectedEqualToKeys.length,
-            });
-            const hasCache = loadCachedResult(equalToKey, parsedValue, requestId);
-            const freshCache = hasCache && isCacheFresh(equalToKey, parsedValue);
-            if (freshCache) {
-              usedFreshEqualToCache = true;
-              foundEqualToResults = true;
-              continue;
-            }
-
-            const res = await cachedSearch(queryParams, {
-              forceEqualToAllCards: true,
-              equalToKeys: [equalToKey],
-            });
-            if (isStaleRequest()) return;
-            if (!res || Object.keys(res).length === 0) {
-              continue;
-            }
-
-            foundEqualToResults = true;
-
-            if (Array.isArray(res)) {
-              res.forEach(card => {
-                if (card?.userId) {
-                  aggregatedResults[card.userId] = card;
-                }
-              });
-            } else if ('userId' in res) {
-              aggregatedResults[res.userId] = res;
-            } else {
-              Object.assign(aggregatedResults, res);
-            }
-
-            if (Object.keys(aggregatedResults).length > 0) {
-              applyUserNotFound(false, requestId);
-              if (!emittedProgressiveResults) {
-                applyState({}, requestId);
-                emittedProgressiveResults = true;
-              }
-              applyUsers({ ...aggregatedResults }, requestId);
-            }
-          }
-        }
-      }
-
-      if (foundEqualToResults) {
-        if (usedFreshEqualToCache && Object.keys(aggregatedResults).length === 0) {
-          applyUserNotFound(false, requestId);
-          return;
-        }
-
-        applyUserNotFound(false, requestId);
-        applyState({}, requestId);
-        applyUsers(aggregatedResults, requestId);
-
-        const [firstMatchedKey] = Object.keys(aggregatedResults);
-        if (firstMatchedKey) {
-          const sampleCard = aggregatedResults[firstMatchedKey];
-          const sampleParams = [...primaryEqualToKeys, ...fallbackEqualToKeys].reduce((acc, key) => {
-            const parser = EQUAL_TO_SEARCH_PARSERS[key] || (value => value?.trim());
-            const parsedValue = parser(rawQuery);
-            if (parsedValue) {
-              acc[key] = parsedValue;
-            }
-            return acc;
-          }, {});
-          notifySearchResult(sampleParams, sampleCard, {
-            preferredKeys: [...primaryEqualToKeys, ...fallbackEqualToKeys],
-          });
-        }
-
-        return;
-      }
-    }
-
-    if (triedSearchIdFallbackSource) {
-      applyUserNotFound(true, requestId);
-      applyState({}, requestId);
-      applyUsers({}, requestId);
-      return;
-    }
-
 
     if (
       !looksLikeExactUserId &&
