@@ -72,11 +72,19 @@ const zoneActionButtonStyle = {
 };
 
 const secondaryActionsStyle = {
-  marginLeft: 'auto',
   display: 'flex',
   alignItems: 'center',
   gap: '5px',
   flexShrink: 0,
+};
+
+const compactTopActionButtonStyle = {
+  ...zoneActionButtonStyle,
+  display: 'inline-flex',
+  width: '30px',
+  height: '30px',
+  minHeight: '30px',
+  flex: '0 0 30px',
 };
 
 const addedOverlayEntryStyle = {
@@ -862,7 +870,12 @@ const TopBlock = ({
           </div>
         ))}
         <div style={secondaryActionsStyle}>
-          {showSideActions && btnExport(cardData)}
+          {showSideActions &&
+            btnExport(cardData, {
+              ...compactTopActionButtonStyle,
+              backgroundColor: 'green',
+              color: '#fff',
+            })}
           {additionalActions}
         </div>
       </div>

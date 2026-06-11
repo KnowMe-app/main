@@ -9,6 +9,21 @@ import { renderAllFields } from './ProfileForm';
 import StimulationSchedule from './StimulationSchedule';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 
+const cardActionButtonStyle = {
+  width: '30px',
+  height: '30px',
+  minHeight: '30px',
+  flex: '0 0 30px',
+  padding: 0,
+  border: 'none',
+  borderRadius: '9px',
+  color: '#fff',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  boxShadow: '0 3px 8px rgba(17, 24, 39, 0.25)',
+};
+
 // Компонент для рендерингу картки користувача
 const UserCard = ({
   userData,
@@ -198,8 +213,19 @@ const UsersList = ({
               isDateInRange={isDateInRange}
               actions={
                 <>
-                  {btnCompare(index, users, setUsers, setShowInfoModal, setCompare)}
-                  {btnMore(userData, onOpenMoreActions)}
+                  {btnCompare(
+                    index,
+                    users,
+                    setUsers,
+                    setShowInfoModal,
+                    setCompare,
+                    { ...cardActionButtonStyle, backgroundColor: 'purple' },
+                  )}
+                  {btnMore(
+                    userData,
+                    onOpenMoreActions,
+                    { ...cardActionButtonStyle, backgroundColor: '#1976d2' },
+                  )}
                 </>
               }
             />
