@@ -17,6 +17,80 @@ const makeSnapshot = (value = null) => ({
 
 const loadModule = () => require('../matchingDataProvider');
 
+
+describe('buildMatchingIndexFilterGroups bucket selection', () => {
+  beforeEach(() => {
+    jest.resetModules();
+  });
+
+  it('uses selected non-no point buckets when no is unchecked', () => {
+    const { buildMatchingIndexFilterGroups } = loadModule();
+
+    const groups = buildMatchingIndexFilterGroups({
+      filters: {
+        csection: {
+          cs2plus: true,
+          cs1: true,
+          cs0: true,
+          other: true,
+          no: false,
+        },
+      },
+      collectionSource: 'newUsers',
+    });
+
+    expect(groups).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        indexName: 'csection',
+        values: ['cs2plus', 'cs1', 'cs0', 'other'],
+        selectedValues: ['cs2plus', 'cs1', 'cs0', 'other'],
+        allSelected: false,
+        groupActive: true,
+      }),
+    ]));
+    expect(groups.find(group => group.indexName === 'csection')?.values).not.toContain('no');
+  });
+
+
+  it('does not include implicit no from other-like buckets when explicit no is unchecked', () => {
+    const { buildMatchingIndexFilterGroups } = loadModule();
+
+    const groups = buildMatchingIndexFilterGroups({
+      filters: {
+        role: { ed: true, sm: true, ag: true, ip: true, pp: true, cl: true, other: true, empty: false },
+        maritalStatus: { married: true, unmarried: true, other: true, empty: false },
+        bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: false },
+        rh: { '+': true, '-': true, other: true, empty: false },
+      },
+      collectionSource: 'newUsers',
+    });
+
+    expect(groups.find(group => group.indexName === 'role')?.values).not.toContain('no');
+    expect(groups.find(group => group.indexName === 'maritalStatus')?.values).not.toContain('no');
+    expect(groups.find(group => group.indexName === 'blood')?.values).not.toContain('no');
+  });
+
+  it('keeps derived imt filters out of additional newUsers searchKeySets', () => {
+    const { buildMatchingIndexFilterGroups } = loadModule();
+
+    const groups = buildMatchingIndexFilterGroups({
+      filters: {
+        imt: {
+          le28: true,
+          '29_31': true,
+          '32_35': true,
+          '36_plus': true,
+          other: true,
+          no: false,
+        },
+      },
+      collectionSource: 'newUsers',
+    });
+
+    expect(groups.some(group => group.indexName === 'imt')).toBe(false);
+  });
+});
+
 describe('fetchMatchingIndexedCandidates index-id cache', () => {
   beforeEach(() => {
     jest.resetModules();
@@ -45,8 +119,8 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
 
     expect(mockFirebaseGet).toHaveBeenCalledTimes(1);
     expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/role/ag');
-    expect(first.userIds).toEqual(['user00000000000000000001', 'user00000000000000000002']);
-    expect(second.userIds).toEqual(['user00000000000000000003']);
+    expect(first.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000002']);
+    expect(second.pageIds).toEqual(['user00000000000000000003']);
   });
 
   it('rereads bucket after matching index TTL expires', async () => {
@@ -70,8 +144,8 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const base = await fetchMatchingIndexedCandidates({ filters, limit: 5, hydrateUsersByIds });
 
     expect(mockFirebaseGet).toHaveBeenCalledTimes(1);
-    expect(excluded.userIds).toEqual(['user00000000000000000002', 'user00000000000000000003']);
-    expect(base.userIds).toEqual(['user00000000000000000001', 'user00000000000000000002', 'user00000000000000000003']);
+    expect(excluded.pageIds).toEqual(['user00000000000000000002', 'user00000000000000000003']);
+    expect(base.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000002', 'user00000000000000000003']);
   });
 });
 
