@@ -1,4 +1,4 @@
-import { getEffectiveCycleStatus } from '../cycleStatus';
+import { getEffectiveCycleStatus, PREGNANCY_DURATION_DAYS } from '../cycleStatus';
 
 const formatServerDate = date => {
   const year = date.getFullYear();
@@ -32,6 +32,43 @@ describe('getEffectiveCycleStatus', () => {
     };
 
     expect(getEffectiveCycleStatus(user)).toBe('menstruation');
+  });
+
+  it('resets stale pregnant status when lastDelivery is not in the future', () => {
+    const base = new Date();
+    base.setHours(12, 0, 0, 0);
+    const past = new Date(base);
+    past.setDate(base.getDate() - 7);
+    const user = {
+      cycleStatus: 'pregnant',
+      lastDelivery: formatServerDate(past),
+    };
+
+    expect(getEffectiveCycleStatus(user)).toBe('menstruation');
+  });
+
+  it('resets stale pregnant status when expected delivery from lastCycle is not in the future', () => {
+    const lastCycle = new Date();
+    lastCycle.setHours(12, 0, 0, 0);
+    lastCycle.setDate(lastCycle.getDate() - PREGNANCY_DURATION_DAYS);
+    const user = {
+      cycleStatus: 'pregnant',
+      lastCycle: formatServerDate(lastCycle),
+    };
+
+    expect(getEffectiveCycleStatus(user)).toBe('menstruation');
+  });
+
+  it('keeps pregnant status when expected delivery from lastCycle is still in the future', () => {
+    const lastCycle = new Date();
+    lastCycle.setHours(12, 0, 0, 0);
+    lastCycle.setDate(lastCycle.getDate() - PREGNANCY_DURATION_DAYS + 1);
+    const user = {
+      cycleStatus: 'pregnant',
+      lastCycle: formatServerDate(lastCycle),
+    };
+
+    expect(getEffectiveCycleStatus(user)).toBe('pregnant');
   });
 
   it('returns undefined when user has no cycleStatus or future delivery', () => {

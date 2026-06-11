@@ -4,6 +4,7 @@ import { formatDateToDisplay, formatDateToServer } from 'components/inputValidat
 import { generateSchedule, serializeSchedule } from '../StimulationSchedule';
 import InfoModal from 'components/InfoModal';
 import { UnderlinedInput, AttentionButton, AttentionDiv, OrangeBtn, color } from 'components/styles';
+import { getExpectedDeliveryDate } from 'utils/cycleStatus';
 
 const calculateNextDate = dateString => {
   if (!dateString) return '';
@@ -142,6 +143,16 @@ const normalizeScheduleEntries = schedule => {
     .filter(item => item && item.date);
 };
 
+const buildPregnancyFollowUpDates = lastCycleDate => {
+  const lastDelivery = getExpectedDeliveryDate(lastCycleDate);
+  if (!lastDelivery) return null;
+
+  const getInTouch = new Date(lastDelivery);
+  getInTouch.setMonth(getInTouch.getMonth() + 9);
+
+  return { lastDelivery, getInTouch };
+};
+
 const isDefaultSchedule = (lastCycle, scheduleString) => {
   if (!lastCycle || !scheduleString) return false;
   const baseDate = parseDate(lastCycle);
@@ -216,11 +227,8 @@ export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {
       const lastCycleFormatted = formatDateToServer(formatDate(date));
 
       if (normalizedStatus === 'pregnant') {
-        const lastDelivery = new Date(date);
-        lastDelivery.setDate(lastDelivery.getDate() + 7 * 40);
-
-        const getInTouch = new Date(lastDelivery);
-        getInTouch.setMonth(getInTouch.getMonth() + 9);
+        const pregnancyFollowUpDates = buildPregnancyFollowUpDates(date);
+        const { lastDelivery, getInTouch } = pregnancyFollowUpDates;
 
         const existingLastDelivery = parseDate(userData.lastDelivery);
         const today = new Date();
@@ -256,12 +264,9 @@ export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {
           }
 
           if (hasUpcomingDelivery) {
-            const recalculatedDelivery = new Date(date);
-            recalculatedDelivery.setDate(recalculatedDelivery.getDate() + 7 * 40);
-            const recalculatedGetInTouch = new Date(recalculatedDelivery);
-            recalculatedGetInTouch.setMonth(recalculatedGetInTouch.getMonth() + 9);
-            updates.lastDelivery = formatDateToServer(formatDate(recalculatedDelivery));
-            updates.getInTouch = formatDateToServer(formatDate(recalculatedGetInTouch));
+            const pregnancyFollowUpDates = buildPregnancyFollowUpDates(date);
+            updates.lastDelivery = formatDateToServer(formatDate(pregnancyFollowUpDates.lastDelivery));
+            updates.getInTouch = formatDateToServer(formatDate(pregnancyFollowUpDates.getInTouch));
           } else if (userData.lastDelivery) {
             updates.lastDelivery = '';
           }
@@ -305,11 +310,8 @@ export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {
       if (newState === 'pregnant') {
         const lastCycleDate = parseDate(userData.lastCycle);
         if (lastCycleDate) {
-          const lastDelivery = new Date(lastCycleDate);
-          lastDelivery.setDate(lastDelivery.getDate() + 7 * 40);
-
-          const getInTouch = new Date(lastDelivery);
-          getInTouch.setMonth(getInTouch.getMonth() + 9);
+          const pregnancyFollowUpDates = buildPregnancyFollowUpDates(lastCycleDate);
+          const { lastDelivery, getInTouch } = pregnancyFollowUpDates;
 
           const existingLastDelivery = parseDate(userData.lastDelivery);
           const today = new Date();
