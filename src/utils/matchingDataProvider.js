@@ -9,6 +9,11 @@ export const MATCHING_USERS_INDEX_ROOT = `${MATCHING_INDEX_ROOT}/users`;
 
 const BLOOD_BUCKETS = ['1+', '1-', '1', '2+', '2-', '2', '3+', '3-', '3', '4+', '4-', '4', '?', 'no'];
 const ROLE_BUCKETS = ['ed', 'sm', 'ag', 'ip', 'pp', 'cl', '?', 'no'];
+const CSECTION_BUCKETS = ['cs2plus', 'cs1', 'cs0', 'other', 'no'];
+const IMT_BUCKETS = ['le28', '29_31', '32_35', '36_plus', '?', 'no'];
+const CONTACT_BUCKETS = ['vk', 'instagram', 'ameblo', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email', 'twitter', 'line', 'otherLink'];
+const USER_ID_BUCKETS = ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'];
+const FIELD_COUNT_BUCKETS = ['le5', 'f6_10', 'f11_20', 'f20_plus'];
 const AGE_BUCKETS_BY_MATCHING_KEY = {
   le21: ['le21'],
   le25: ['le21', '22_25'],
@@ -38,6 +43,12 @@ const selectedFilterKeys = group => {
     .map(([key]) => key);
 };
 
+const hasFilterOption = (group, option) =>
+  Boolean(group && typeof group === 'object' && Object.prototype.hasOwnProperty.call(group, option));
+
+const shouldIncludeNoBucket = (group, noOption = 'empty') =>
+  !hasFilterOption(group, noOption) || Boolean(group?.[noOption]);
+
 const getFilterGroupDebugState = (groupName, group) => {
   const normalizedGroup = group && typeof group === 'object' ? group : {};
   const entries = Object.entries(normalizedGroup);
@@ -53,6 +64,9 @@ const getFilterGroupDebugState = (groupName, group) => {
 };
 
 const unique = values => [...new Set((values || []).filter(Boolean))];
+
+const mapSelectedFilterBuckets = (group, bucketMap = {}) =>
+  selectedFilterKeys(group).map(key => bucketMap[key] || key);
 
 const addGroup = (groups, indexName, values, debug = {}) => {
   const normalizedValues = unique(values.map(value => String(value || '').trim()).filter(Boolean));
@@ -77,7 +91,8 @@ const buildRoleBuckets = (filters, collectionSource) => {
   if (selected.includes('cl')) buckets.push('cl');
   if (selected.includes('empty')) buckets.push('no');
   if (selected.includes('other')) {
-    buckets.push('?', 'no');
+    buckets.push('?');
+    if (shouldIncludeNoBucket(filters?.userRole || filters?.role, 'empty')) buckets.push('no');
     ROLE_BUCKETS.forEach(bucket => {
       if (!['ed', 'ag', 'ip', 'no'].includes(bucket)) buckets.push(bucket);
     });
@@ -85,7 +100,11 @@ const buildRoleBuckets = (filters, collectionSource) => {
 
   // Matching treats additional newUsers without a role as donor profiles, so keep
   // the indexed provider aligned with the existing post-filter fallback.
-  if (collectionSource === 'newUsers' && selected.includes('ed')) buckets.push('no');
+  if (
+    collectionSource === 'newUsers' &&
+    selected.includes('ed') &&
+    shouldIncludeNoBucket(filters?.userRole || filters?.role, 'empty')
+  ) buckets.push('no');
 
   return buckets;
 };
@@ -103,6 +122,12 @@ const buildBloodBuckets = filters => {
   if (!bloodGroupActive && !rhActive) return [];
 
   return BLOOD_BUCKETS.filter(bucket => {
+    if (bucket === 'no') {
+      const bloodNoAllowed = bloodGroupActive ? shouldIncludeNoBucket(filters?.bloodGroup, 'empty') : true;
+      const rhNoAllowed = rhActive ? shouldIncludeNoBucket(filters?.rh, 'empty') : true;
+      return bloodNoAllowed && rhNoAllowed;
+    }
+
     const meta = getBloodMeta(bucket);
     const bloodAllowed = bloodGroupActive ? Boolean(filters?.bloodGroup?.[meta.bloodGroup]) : true;
     const rhAllowed = rhActive ? Boolean(filters?.rh?.[meta.rh]) : true;
@@ -117,7 +142,10 @@ const buildMaritalStatusBuckets = filters => {
   const buckets = [];
   if (selected.includes('married')) buckets.push('+');
   if (selected.includes('unmarried')) buckets.push('-');
-  if (selected.includes('other')) buckets.push('?', 'no');
+  if (selected.includes('other')) {
+    buckets.push('?');
+    if (shouldIncludeNoBucket(filters?.maritalStatus, 'empty')) buckets.push('no');
+  }
   if (selected.includes('empty')) buckets.push('no');
   return buckets;
 };
@@ -127,6 +155,9 @@ const buildAgeBuckets = filters => {
   if (!selected.length) return [];
   return selected.flatMap(key => AGE_BUCKETS_BY_MATCHING_KEY[key] || []);
 };
+
+const buildPointBuckets = (filters, filterName, bucketMap = {}) =>
+  mapSelectedFilterBuckets(filters?.[filterName], bucketMap);
 
 export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource = 'users' } = {}) => {
   const groups = [];
@@ -169,6 +200,55 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
       ...getFilterGroupDebugState('age', filters?.age),
     }
   );
+  addGroup(
+    groups,
+    'csection',
+    CSECTION_BUCKETS.filter(bucket => buildPointBuckets(filters, 'csection').includes(bucket)),
+    {
+      source: 'searchKey/users',
+      ...getFilterGroupDebugState('csection', filters?.csection),
+    }
+  );
+  addGroup(
+    groups,
+    'contact',
+    CONTACT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'contact').includes(bucket)),
+    {
+      source: 'searchKey/users',
+      ...getFilterGroupDebugState('contact', filters?.contact),
+    }
+  );
+  addGroup(
+    groups,
+    'userId',
+    USER_ID_BUCKETS.filter(bucket => buildPointBuckets(filters, 'userId').includes(bucket)),
+    {
+      source: 'searchKey/users',
+      ...getFilterGroupDebugState('userId', filters?.userId),
+    }
+  );
+  addGroup(
+    groups,
+    'fields',
+    FIELD_COUNT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'fields').includes(bucket)),
+    {
+      source: 'searchKey/users',
+      ...getFilterGroupDebugState('fields', filters?.fields),
+    }
+  );
+
+  if (collectionSource !== 'newUsers') {
+    addGroup(
+      groups,
+      'imt',
+      IMT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'imt', { other: '?' }).includes(bucket)),
+      {
+        source: 'searchKey/users',
+        ...getFilterGroupDebugState('imt', filters?.imt),
+      }
+    );
+  }
+
   return groups;
 };
 

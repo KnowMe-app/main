@@ -80,4 +80,38 @@ describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
     expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKeySets/owner-1_1/age');
     expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, expect.stringContaining('/age/d_'));
   });
+
+  it('does not read no bucket when point filter sends selected non-no buckets', async () => {
+    const { getIndexedNewUsersIdsByRules } = loadModule();
+
+    mockFirebaseGet.mockImplementation(path => {
+      const buckets = {
+        'searchKeySets/owner-1_1/role/ed': { U1: true, U2: true, U3: true, U4: true, U5: true },
+        'searchKeySets/owner-1_1/csection/cs2plus': { U1: true },
+        'searchKeySets/owner-1_1/csection/cs1': { U2: true },
+        'searchKeySets/owner-1_1/csection/cs0': { U3: true },
+        'searchKeySets/owner-1_1/csection/other': { U4: true },
+        'searchKeySets/owner-1_1/csection/no': { U5: true },
+      };
+      return Promise.resolve(makeSnapshot(Object.prototype.hasOwnProperty.call(buckets, path), buckets[path]));
+    });
+
+    const result = await getIndexedNewUsersIdsByRules({
+      rawRules: 'role: ed',
+      accessUserId: 'owner-1',
+      searchKeySetKeys: ['owner-1_1'],
+      additionalFilterBucketGroups: [{
+        indexName: 'csection',
+        values: ['cs2plus', 'cs1', 'cs0', 'other'],
+        selectedValues: ['cs2plus', 'cs1', 'cs0', 'other'],
+        allSelected: false,
+        groupActive: true,
+      }],
+    });
+
+    expect(result.userIds).toEqual(['U1', 'U2', 'U3', 'U4']);
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKeySets/owner-1_1/csection/cs2plus');
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKeySets/owner-1_1/csection/no');
+  });
+
 });
