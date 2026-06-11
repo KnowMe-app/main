@@ -1,4 +1,4 @@
-import { getEffectiveCycleStatus, MAX_PREGNANCY_DAYS } from '../cycleStatus';
+import { getEffectiveCycleStatus, PREGNANCY_DURATION_DAYS } from '../cycleStatus';
 
 const formatServerDate = date => {
   const year = date.getFullYear();
@@ -47,10 +47,10 @@ describe('getEffectiveCycleStatus', () => {
     expect(getEffectiveCycleStatus(user)).toBe('menstruation');
   });
 
-  it('resets stale pregnant status from lastCycle after 41 weeks', () => {
+  it('resets stale pregnant status when expected delivery from lastCycle is not in the future', () => {
     const lastCycle = new Date();
     lastCycle.setHours(12, 0, 0, 0);
-    lastCycle.setDate(lastCycle.getDate() - MAX_PREGNANCY_DAYS);
+    lastCycle.setDate(lastCycle.getDate() - PREGNANCY_DURATION_DAYS);
     const user = {
       cycleStatus: 'pregnant',
       lastCycle: formatServerDate(lastCycle),
@@ -59,10 +59,10 @@ describe('getEffectiveCycleStatus', () => {
     expect(getEffectiveCycleStatus(user)).toBe('menstruation');
   });
 
-  it('keeps pregnant status before the 41-week reset point', () => {
+  it('keeps pregnant status when expected delivery from lastCycle is still in the future', () => {
     const lastCycle = new Date();
     lastCycle.setHours(12, 0, 0, 0);
-    lastCycle.setDate(lastCycle.getDate() - MAX_PREGNANCY_DAYS + 1);
+    lastCycle.setDate(lastCycle.getDate() - PREGNANCY_DURATION_DAYS + 1);
     const user = {
       cycleStatus: 'pregnant',
       lastCycle: formatServerDate(lastCycle),

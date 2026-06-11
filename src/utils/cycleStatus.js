@@ -1,5 +1,5 @@
 const SERVER_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
-const MAX_PREGNANCY_DAYS = 41 * 7;
+const PREGNANCY_DURATION_DAYS = 40 * 7;
 
 const parseServerDate = value => {
   if (typeof value !== 'string') return null;
@@ -18,16 +18,26 @@ const normalizeDate = date => {
   return normalized;
 };
 
-const getPregnancyDaysFromLastCycle = lastCycle => {
-  const parsedLastCycle = parseServerDate(lastCycle);
-  if (!parsedLastCycle) return null;
+const isFutureDate = date => {
+  const normalizedDate = normalizeDate(date);
+  if (!normalizedDate) return false;
 
   const today = normalizeDate(new Date());
-  const normalizedLastCycle = normalizeDate(parsedLastCycle);
-  const diffMs = today.getTime() - normalizedLastCycle.getTime();
-  if (diffMs < 0) return null;
+  return normalizedDate.getTime() > today.getTime();
+};
 
-  return Math.floor(diffMs / (24 * 60 * 60 * 1000));
+export const getExpectedDeliveryDate = lastCycleDate => {
+  if (!lastCycleDate) return null;
+  const expectedDelivery = new Date(lastCycleDate);
+  if (Number.isNaN(expectedDelivery.getTime())) return null;
+
+  expectedDelivery.setDate(expectedDelivery.getDate() + PREGNANCY_DURATION_DAYS);
+  return expectedDelivery;
+};
+
+const getExpectedDeliveryFromLastCycle = lastCycle => {
+  const parsedLastCycle = parseServerDate(lastCycle);
+  return getExpectedDeliveryDate(parsedLastCycle);
 };
 
 export const getEffectiveCycleStatus = user => {
@@ -35,8 +45,7 @@ export const getEffectiveCycleStatus = user => {
 
   const parsedDelivery = parseServerDate(user.lastDelivery);
   if (parsedDelivery) {
-    const today = normalizeDate(new Date());
-    if (normalizeDate(parsedDelivery).getTime() > today.getTime()) {
+    if (isFutureDate(parsedDelivery)) {
       return 'pregnant';
     }
 
@@ -46,8 +55,8 @@ export const getEffectiveCycleStatus = user => {
   }
 
   if (user.cycleStatus === 'pregnant') {
-    const pregnancyDays = getPregnancyDaysFromLastCycle(user.lastCycle);
-    if (pregnancyDays !== null && pregnancyDays >= MAX_PREGNANCY_DAYS) {
+    const expectedDelivery = getExpectedDeliveryFromLastCycle(user.lastCycle);
+    if (expectedDelivery && !isFutureDate(expectedDelivery)) {
       return 'menstruation';
     }
   }
@@ -55,4 +64,4 @@ export const getEffectiveCycleStatus = user => {
   return user.cycleStatus;
 };
 
-export { parseServerDate, MAX_PREGNANCY_DAYS };
+export { parseServerDate, PREGNANCY_DURATION_DAYS };
