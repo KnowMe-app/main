@@ -1,4 +1,4 @@
-import { getEffectiveCycleStatus } from '../cycleStatus';
+import { getEffectiveCycleStatus, MAX_PREGNANCY_DAYS } from '../cycleStatus';
 
 const formatServerDate = date => {
   const year = date.getFullYear();
@@ -32,6 +32,43 @@ describe('getEffectiveCycleStatus', () => {
     };
 
     expect(getEffectiveCycleStatus(user)).toBe('menstruation');
+  });
+
+  it('resets stale pregnant status when lastDelivery is not in the future', () => {
+    const base = new Date();
+    base.setHours(12, 0, 0, 0);
+    const past = new Date(base);
+    past.setDate(base.getDate() - 7);
+    const user = {
+      cycleStatus: 'pregnant',
+      lastDelivery: formatServerDate(past),
+    };
+
+    expect(getEffectiveCycleStatus(user)).toBe('menstruation');
+  });
+
+  it('resets stale pregnant status from lastCycle after 41 weeks', () => {
+    const lastCycle = new Date();
+    lastCycle.setHours(12, 0, 0, 0);
+    lastCycle.setDate(lastCycle.getDate() - MAX_PREGNANCY_DAYS);
+    const user = {
+      cycleStatus: 'pregnant',
+      lastCycle: formatServerDate(lastCycle),
+    };
+
+    expect(getEffectiveCycleStatus(user)).toBe('menstruation');
+  });
+
+  it('keeps pregnant status before the 41-week reset point', () => {
+    const lastCycle = new Date();
+    lastCycle.setHours(12, 0, 0, 0);
+    lastCycle.setDate(lastCycle.getDate() - MAX_PREGNANCY_DAYS + 1);
+    const user = {
+      cycleStatus: 'pregnant',
+      lastCycle: formatServerDate(lastCycle),
+    };
+
+    expect(getEffectiveCycleStatus(user)).toBe('pregnant');
   });
 
   it('returns undefined when user has no cycleStatus or future delivery', () => {
