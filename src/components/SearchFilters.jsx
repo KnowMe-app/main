@@ -42,7 +42,7 @@ export const SearchFilters = ({
     groups = [
       {
         filterName: 'userRole',
-        label: '',
+        label: 'Тип профілю',
         options: [
           { val: 'ed', label: 'ДО' },
           { val: 'ag', label: 'Агентства' },
@@ -52,7 +52,7 @@ export const SearchFilters = ({
       },
       {
         filterName: 'maritalStatus',
-        label: '',
+        label: 'Статус',
         options: [
           { val: 'married', label: 'Married' },
           { val: 'unmarried', label: 'Single' },
@@ -73,7 +73,7 @@ export const SearchFilters = ({
       },
       {
         filterName: 'rh',
-        label: '',
+        label: 'Rh',
         options: [
           { val: '+', label: 'Rh+' },
           { val: '-', label: 'Rh-' },
@@ -107,7 +107,7 @@ export const SearchFilters = ({
       },
       {
         filterName: 'country',
-        label: '',
+        label: 'Країна',
         options: [
           { val: 'ua', label: 'Ukraine' },
           { val: 'other', label: 'Other country' },
