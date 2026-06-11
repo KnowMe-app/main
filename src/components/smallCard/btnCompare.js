@@ -1,6 +1,13 @@
 import React from 'react';
 import { handleSubmitAll } from './actions';
 
+const compareIcon = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M7 7h11M7 7l3-3M7 7l3 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M17 17H6M17 17l-3-3M17 17l-3 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 export const btnCompare = (
   index,
   users,
@@ -8,6 +15,7 @@ export const btnCompare = (
   setShowInfoModal,
   setCompare,
   style = {},
+  content = compareIcon,
 ) => {
   const delKeys = [
     'photos',
@@ -225,10 +233,13 @@ const handleCompareClick = (e, index, users, delKeys, setShowInfoModal, setCompa
 
   return (
     <button
+      type="button"
       style={{ ...styles.removeButton, ...style }}
+      aria-label="Порівняти"
+      title="Порівняти"
       onClick={(e) => handleCompareClick(e, index, users, delKeys, setShowInfoModal, setCompare)}
->
-      comp
+    >
+      {content}
     </button>
   );
 };
@@ -236,12 +247,19 @@ const handleCompareClick = (e, index, users, delKeys, setShowInfoModal, setCompa
 // Стилі
 const styles = {
   removeButton: {
-    padding: '3px 6px',
+    width: '30px',
+    height: '30px',
+    minHeight: '30px',
+    padding: 0,
     backgroundColor: 'purple',
     color: 'white',
     border: 'none',
-    borderRadius: '5px',
+    borderRadius: '9px',
     cursor: 'pointer',
     position: 'static',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 3px 8px rgba(17, 24, 39, 0.25)',
   },
 };
