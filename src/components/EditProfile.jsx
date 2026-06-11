@@ -160,6 +160,11 @@ const applyDeletedKeysToSnapshot = (snapshot, deletedKeys = []) => {
   return nextSnapshot;
 };
 
+const filterObjectByAllowedKeys = (source, isAllowedKey) =>
+  Object.fromEntries(
+    Object.entries(source || {}).filter(([key]) => isAllowedKey(key))
+  );
+
 const prepareSyncedSnapshot = (snapshot, deletedKeys = []) => {
   const cleaned = applyDeletedKeysToSnapshot(snapshot, deletedKeys);
   delete cleaned.cacheVersion;
@@ -448,15 +453,13 @@ const EditProfile = () => {
     const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'userId'];
     const ppTechnicalInputFields = ['name', 'surname', ...contacts];
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
+    const isMainProfileField = key => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key);
 
     if (updatedState?.userId?.length > 20) {
-      const existingData = await fetchUserById(updatedState.userId) || {};
+      const fetchedExistingData = await fetchUserById(updatedState.userId);
+      const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
 
-      await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState, deletedKeys);
-
-      const cleanedState = Object.fromEntries(
-        Object.entries(updatedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
-      );
+      const cleanedState = filterObjectByAllowedKeys(updatedState, isMainProfileField);
       delete cleanedState.cacheVersion;
       if (delCondition) {
         Object.keys(delCondition).forEach(key => {
@@ -477,11 +480,14 @@ const EditProfile = () => {
         },
       });
 
-      const sanitizedExistingData = applyDeletedKeysToSnapshot(existingData, deletedKeys);
+      const mainProfileExistingData = filterObjectByAllowedKeys(existingData, isMainProfileField);
+      const sanitizedExistingData = applyDeletedKeysToSnapshot(mainProfileExistingData, deletedKeys);
       const uploadedInfo = applyDeletedKeysToPayload(
         makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite),
         deletedKeys
       );
+
+      await syncUserSearchIdIndex(updatedState.userId, existingData, uploadedInfo, deletedKeys);
 
       debugProfileSave('remoteUpdate:payload-before-backend', {
         delCondition,
@@ -515,9 +521,10 @@ const EditProfile = () => {
 
       await updateDataInNewUsersRTDB(updatedState.userId, cleanedStateForNewUsers, 'update', true);
     } else if (updatedState?.userId) {
-      const existingData = await fetchUserById(updatedState.userId) || {};
-      await syncUserSearchIdIndex(updatedState.userId, existingData, updatedState, deletedKeys);
+      const fetchedExistingData = await fetchUserById(updatedState.userId);
+      const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
       const payloadForNewUsers = applyDeletedKeysToPayload({ ...updatedState }, deletedKeys);
+      await syncUserSearchIdIndex(updatedState.userId, existingData, payloadForNewUsers, deletedKeys);
       await updateDataInNewUsersRTDB(updatedState.userId, payloadForNewUsers, 'update', true);
     }
 
