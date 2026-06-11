@@ -135,6 +135,31 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     expect(mockFirebaseGet).toHaveBeenCalledTimes(2);
   });
 
+  it('scans numeric field-count buckets for selected Fields ranges', async () => {
+    const { fetchMatchingIndexedCandidates } = loadModule();
+    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
+    const filters = { fields: { le5: true, f6_10: false, f11_20: false, f20_plus: true } };
+
+    mockFirebaseGet.mockResolvedValueOnce(makeSnapshot({
+      0: { user00000000000000000001: true },
+      5: { user00000000000000000002: true },
+      6: { user00000000000000000003: true },
+      21: { user00000000000000000004: true },
+      le5: { user00000000000000000099: true },
+    }));
+
+    const result = await fetchMatchingIndexedCandidates({ filters, limit: 10, hydrateUsersByIds });
+
+    expect(mockFirebaseGet).toHaveBeenCalledTimes(1);
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields');
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/fields/le5');
+    expect(result.pageIds).toEqual([
+      'user00000000000000000001',
+      'user00000000000000000002',
+      'user00000000000000000004',
+    ]);
+  });
+
   it('applies excluded reactions without corrupting the base cached id list', async () => {
     const { fetchMatchingIndexedCandidates } = loadModule();
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
