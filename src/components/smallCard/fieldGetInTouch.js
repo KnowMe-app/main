@@ -83,10 +83,13 @@ export const fieldGetInTouch = (
     <OrangeBtn
       onClick={() => (onClick ? onClick(days) : null)}
       style={{
-        width: '25px' /* Встановіть ширину, яка визначатиме розмір кнопки */,
-        height: '25px' /* Встановіть висоту, яка повинна дорівнювати ширині */,
-        marginLeft: '5px',
+        minWidth: '24px',
+        width: '24px',
+        height: '24px',
+        padding: 0,
+        marginLeft: 0,
         marginRight: 0,
+        fontSize: '11px',
       }}
     >
       {label}
@@ -94,7 +97,7 @@ export const fieldGetInTouch = (
   );
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '3px', flexWrap: 'wrap', minWidth: 0, width: '100%' }}>
       <UnderlinedInput
         type="text"
         value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
@@ -174,14 +177,19 @@ export const fieldGetInTouch = (
         style={{
           marginLeft: 0,
           textAlign: 'left',
+          flex: '1 1 9.5ch',
+          minWidth: '8ch',
+          maxWidth: '11ch',
         }}
       />
-      <ActionButton label="3д" days={3} onClick={handleAddDays} />
-      {/* <ActionButton label="7д" days={7} onClick={handleAddDays} /> */}
-      <ActionButton label="1м" days={30} onClick={handleAddDays} />
-      <ActionButton label="3м" days={90} onClick={handleAddDays} />
-      <ActionButton label="6м" days={180} onClick={handleAddDays} />
-      <ActionButton label="1р" days={365} onClick={handleAddDays} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexWrap: 'wrap' }}>
+        <ActionButton label="3д" days={3} onClick={handleAddDays} />
+        {/* <ActionButton label="7д" days={7} onClick={handleAddDays} /> */}
+        <ActionButton label="1м" days={30} onClick={handleAddDays} />
+        <ActionButton label="3м" days={90} onClick={handleAddDays} />
+        <ActionButton label="6м" days={180} onClick={handleAddDays} />
+        <ActionButton label="1р" days={365} onClick={handleAddDays} />
+      </div>
     </div>
   );
 };

@@ -47,12 +47,13 @@ export const FieldComment = ({ userData, setUsers, setState, submitOptions = {} 
         style={{
           // marginLeft: '10px',
           width: '100%',
-          // height: 25,
-          // minHeight: '40px',
+          minHeight: '30px',
+          maxHeight: '72px',
           resize: 'none',
-          overflow: 'hidden',
+          overflowY: 'auto',
           padding: '5px',
           paddingRight: userData.myComment ? '32px' : '5px',
+          boxSizing: 'border-box',
         }}
       />
       {userData.myComment && (

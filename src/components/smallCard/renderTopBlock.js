@@ -39,7 +39,8 @@ const topButtonsRowStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: '5px',
-  marginBottom: '7px',
+  flexWrap: 'wrap',
+  marginBottom: '6px',
 };
 
 const topButtonsZoneStyle = {
@@ -57,7 +58,6 @@ const topButtonsZoneStyle = {
   transition: 'transform 0.15s ease, box-shadow 0.15s ease',
 };
 
-const topButtonsZones = ['#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#0288d1'];
 
 const zoneActionButtonStyle = {
   position: 'static',
@@ -76,6 +76,8 @@ const secondaryActionsStyle = {
   alignItems: 'center',
   gap: '5px',
   flexShrink: 0,
+  flexWrap: 'wrap',
+  marginLeft: 'auto',
 };
 
 const compactTopActionButtonStyle = {
@@ -146,22 +148,46 @@ const roleBadgeStyle = role => ({
   color: '#fff',
   flexShrink: 0,
   border: `1px solid rgba(255,255,255,0.3)`,
+  cursor: 'pointer',
+  lineHeight: 1.4,
 });
 
 const statusRowStyle = {
   display: 'flex',
-  flexDirection: 'column',
-  gap: '3px',
-  padding: '5px 0',
-  borderTop: '1px solid rgba(255,255,255,0.1)',
-  borderBottom: '1px solid rgba(255,255,255,0.1)',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: '4px',
+  padding: '5px 6px',
+  borderRadius: '8px',
+  background: 'rgba(255,255,255,0.08)',
+  border: '1px solid rgba(255,255,255,0.1)',
   margin: '5px 0',
+};
+
+const statusItemStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  minWidth: 0,
+  flex: '1 1 120px',
+};
+
+const getInTouchStatusItemStyle = {
+  ...statusItemStyle,
+  flex: '2 1 170px',
+};
+
+const roleEditorStyle = {
+  width: '100%',
+  padding: '4px 6px',
+  borderRadius: '8px',
+  background: 'rgba(0,0,0,0.12)',
+  border: '1px solid rgba(255,255,255,0.14)',
 };
 
 const bioSectionStyle = {
   display: 'flex',
   flexDirection: 'column',
-  gap: '2px',
+  gap: '3px',
 };
 
 const bioRowStyle = {
@@ -169,38 +195,50 @@ const bioRowStyle = {
   alignItems: 'center',
   flexWrap: 'wrap',
   gap: '4px',
-  fontSize: '13px',
+  fontSize: '12px',
+};
+
+const factChipStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '3px',
+  minWidth: 0,
+  padding: '1px 5px',
+  borderRadius: '999px',
+  background: 'rgba(255,255,255,0.08)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  lineHeight: 1.35,
 };
 
 const contactsSectionStyle = {
   display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'flex-start',
-  gap: '2px',
+  flexDirection: 'row',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: '3px 6px',
   marginTop: '4px',
+  fontSize: '12px',
 };
 
 const commentsSectionStyle = {
-  marginTop: '6px',
-  padding: '5px 7px',
+  marginTop: '5px',
+  padding: '4px 6px',
   borderRadius: '7px',
   background: 'rgba(255,255,255,0.07)',
   display: 'flex',
   flexDirection: 'column',
   gap: '3px',
+  maxHeight: '190px',
+  overflowY: 'auto',
 };
 
 const detailsToggleStyle = {
-  position: 'absolute',
-  bottom: '8px',
-  right: '8px',
+  ...compactTopActionButtonStyle,
   cursor: 'pointer',
   color: '#ebe0c2',
-  opacity: 0.6,
+  background: 'rgba(255,255,255,0.12)',
+  opacity: 0.85,
   lineHeight: 1,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
 };
 
 const multiCommentStyle = {
@@ -208,14 +246,19 @@ const multiCommentStyle = {
   color: '#f3dfab',
   cursor: 'pointer',
   textDecoration: 'none',
-  fontSize: '60%',
+  fontSize: '11px',
+  lineHeight: 1.25,
+  display: '-webkit-box',
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
 };
 
 const multiCommentRowStyle = {
-  marginTop: '6px',
+  marginTop: '2px',
   display: 'flex',
   alignItems: 'center',
-  gap: '6px',
+  gap: '5px',
 };
 
 const commentAuthorButtonStyle = {
@@ -451,6 +494,7 @@ const TopBlock = ({
   const [isCommentModalOpen, setIsCommentModalOpen] = React.useState(false);
   const [selectedComment, setSelectedComment] = React.useState(null);
   const [commentToDelete, setCommentToDelete] = React.useState(null);
+  const [isRoleEditorOpen, setIsRoleEditorOpen] = React.useState(false);
   const [backendMultiComments, setBackendMultiComments] = React.useState([]);
   const isAdmin = isAdminUid(auth.currentUser?.uid);
   const cardData = React.useMemo(() => {
@@ -698,14 +742,208 @@ const TopBlock = ({
   };
 
   const cardRole = cardData.role || cardData.userRole;
+  const displayRole = cardRole || 'role';
+  const identityMeta = renderIdentityMeta(cardData);
+  const deliveryInfo = fieldDeliveryInfo(setUsers, setState, cardData, submitOptions);
+
+  const handleDetailsRefresh = async event => {
+    event.stopPropagation();
+    const details = document.getElementById(cardData.userId);
+    const showDetails = () => {
+      if (details) {
+        details.style.display = 'block';
+        details.style.marginTop = '8px';
+        const bg = getParentBackground(details);
+        details.style.color = getContrastColor(bg);
+      }
+    };
+
+    showDetails();
+    await refreshCardFromBackend();
+  };
+
+  const blueActionElement = topBlueAction ? (
+    <button
+      type="button"
+      onClick={event => {
+        event.stopPropagation();
+        if (typeof topBlueAction.onClick === 'function') {
+          topBlueAction.onClick(cardData);
+        }
+      }}
+      style={{ ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' }}
+      aria-label={topBlueAction.ariaLabel || topBlueAction.title || 'Синя кнопка'}
+      title={topBlueAction.title || topBlueAction.ariaLabel || 'Синя кнопка'}
+    >
+      {topBlueAction.icon}
+    </button>
+  ) : (
+    isFromListOfUsers &&
+    typeof setSearch === 'function' &&
+    btnEdit(
+      cardData,
+      setSearch,
+      setState,
+      { ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' },
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    )
+  );
+
+  const topActions = [
+    {
+      key: 'delete',
+      color: '#d32f2f',
+      content: btnDel(
+        cardData,
+        setShowInfoModal,
+        setUserIdToDelete,
+        isFromListOfUsers,
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 7h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M7 7l1 12a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9L17 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M10 11v5M14 11v5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>,
+        { ...zoneActionButtonStyle, backgroundColor: '#d32f2f', color: '#fff' }
+      ),
+    },
+    {
+      key: 'dislike',
+      color: '#ef6c00',
+      content: (
+        <BtnDislike
+          title="Дизлайк"
+          ariaLabel="Дизлайк"
+          userId={cardData.userId}
+          userData={cardData}
+          dislikeUsers={dislikeUsers}
+          setDislikeUsers={setDislikeUsers}
+          onDislikeAdded={() =>
+            handleChange(
+              setUsers,
+              setState,
+              cardData.userId,
+              'getInTouch',
+              '2099-99-99',
+              true,
+              { currentFilter, isDateInRange, ...submitOptions },
+            )
+          }
+          onDislikeRemoved={() =>
+            handleChange(
+              setUsers,
+              setState,
+              cardData.userId,
+              'getInTouch',
+              '',
+              true,
+              { currentFilter, isDateInRange, ...submitOptions },
+            )
+          }
+          favoriteUsers={favoriteUsers}
+          setFavoriteUsers={setFavoriteUsers}
+          customStyle={{
+            ...zoneActionButtonStyle,
+            backgroundColor: '#ef6c00',
+            border: 'none',
+          }}
+          inactiveIconColor="#fff"
+          activeIconColor="#1f2937"
+          iconSize={15}
+        />
+      ),
+    },
+    {
+      key: 'favorite',
+      color: '#f9a825',
+      content: (
+        <BtnFavorite
+          title="В обране"
+          ariaLabel="В обране"
+          userId={cardData.userId}
+          userData={cardData}
+          favoriteUsers={favoriteUsers}
+          setFavoriteUsers={setFavoriteUsers}
+          dislikeUsers={dislikeUsers}
+          setDislikeUsers={setDislikeUsers}
+          onDislikeRemoved={() =>
+            handleChange(
+              setUsers,
+              setState,
+              cardData.userId,
+              'getInTouch',
+              '',
+              true,
+              { currentFilter, isDateInRange, ...submitOptions },
+            )
+          }
+          customStyle={{
+            ...zoneActionButtonStyle,
+            backgroundColor: '#f9a825',
+            border: 'none',
+          }}
+          inactiveIconColor="#fff"
+          activeIconColor="#1f2937"
+          iconSize={15}
+        />
+      ),
+    },
+    typeof onOpenMedications === 'function' && {
+      key: 'medications',
+      color: '#2e7d32',
+      content: (
+        <button
+          type="button"
+          style={{ ...zoneActionButtonStyle, backgroundColor: '#2e7d32', color: '#fff' }}
+          onClick={event => {
+            event.stopPropagation();
+            onOpenMedications(cardData);
+          }}
+          disabled={!cardData?.userId}
+          aria-label="Ліки"
+          title="Ліки"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M8.5 8.5l7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M6.2 10.8a3.25 3.25 0 0 1 4.6-4.6l6.9 6.9a3.25 3.25 0 1 1-4.6 4.6l-6.9-6.9z" stroke="currentColor" strokeWidth="2" />
+          </svg>
+        </button>
+      ),
+    },
+    blueActionElement && {
+      key: 'blue-action',
+      color: '#0288d1',
+      content: blueActionElement,
+    },
+  ].filter(action => action && action.content);
 
   return (
     <div style={topBlockContainerStyle}>
       <div style={cardHeaderStyle}>
         <div style={cardNameRowStyle}>
           <div style={cardNameStyle}>{buildName(cardData)}</div>
-          {cardRole && <span style={roleBadgeStyle(cardRole)}>{cardRole}</span>}
+          <button
+            type="button"
+            style={roleBadgeStyle(cardRole)}
+            onClick={event => {
+              event.stopPropagation();
+              setIsRoleEditorOpen(open => !open);
+            }}
+            aria-expanded={isRoleEditorOpen}
+            aria-label="Редагувати роль"
+            title="Редагувати роль"
+          >
+            {displayRole}
+          </button>
         </div>
+        {isRoleEditorOpen && (
+          <div style={roleEditorStyle} onClick={event => event.stopPropagation()}>
+            {fieldRole(cardData, setUsers, setState, submitOptions)}
+          </div>
+        )}
         {renderOverlayEntries(['surname', 'name', 'fathersname'])}
         <div style={cardIdRowStyle}>
           {cardData.lastAction && <span>{formatDateToDisplay(normalizeLastAction(cardData.lastAction))}</span>}
@@ -725,148 +963,13 @@ const TopBlock = ({
         </div>
       </div>
       <div style={topButtonsRowStyle}>
-        {topButtonsZones.map((zoneColor, idx) => (
+        {topActions.map(action => (
           <div
-            key={`top-zone-${idx}`}
-            aria-label={`top-zone-${idx + 1}`}
-            style={{ ...topButtonsZoneStyle, backgroundColor: zoneColor }}
+            key={action.key}
+            aria-label={action.key}
+            style={{ ...topButtonsZoneStyle, backgroundColor: action.color }}
           >
-            {idx === 0 &&
-              btnDel(
-                cardData,
-                setShowInfoModal,
-                setUserIdToDelete,
-                isFromListOfUsers,
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M4 7h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  <path d="M7 7l1 12a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9L17 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  <path d="M10 11v5M14 11v5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                </svg>,
-                { ...zoneActionButtonStyle, backgroundColor: '#d32f2f', color: '#fff' }
-              )}
-            {idx === 1 && (
-              <BtnDislike
-                title="Дизлайк"
-                ariaLabel="Дизлайк"
-                userId={cardData.userId}
-                userData={cardData}
-                dislikeUsers={dislikeUsers}
-                setDislikeUsers={setDislikeUsers}
-                onDislikeAdded={() =>
-                  handleChange(
-                    setUsers,
-                    setState,
-                    cardData.userId,
-                    'getInTouch',
-                    '2099-99-99',
-                    true,
-                    { currentFilter, isDateInRange, ...submitOptions },
-                  )
-                }
-                onDislikeRemoved={() =>
-                  handleChange(
-                    setUsers,
-                    setState,
-                    cardData.userId,
-                    'getInTouch',
-                    '',
-                    true,
-                    { currentFilter, isDateInRange, ...submitOptions },
-                  )
-                }
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-                customStyle={{
-                  ...zoneActionButtonStyle,
-                  backgroundColor: '#ef6c00',
-                  border: 'none',
-                }}
-                inactiveIconColor="#fff"
-                activeIconColor="#1f2937"
-                iconSize={15}
-              />
-            )}
-            {idx === 2 && (
-              <BtnFavorite
-                title="В обране"
-                ariaLabel="В обране"
-                userId={cardData.userId}
-                userData={cardData}
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-                dislikeUsers={dislikeUsers}
-                setDislikeUsers={setDislikeUsers}
-                onDislikeRemoved={() =>
-                  handleChange(
-                    setUsers,
-                    setState,
-                    cardData.userId,
-                    'getInTouch',
-                    '',
-                    true,
-                    { currentFilter, isDateInRange, ...submitOptions },
-                  )
-                }
-                customStyle={{
-                  ...zoneActionButtonStyle,
-                  backgroundColor: '#f9a825',
-                  border: 'none',
-                }}
-                inactiveIconColor="#fff"
-                activeIconColor="#1f2937"
-                iconSize={15}
-              />
-            )}
-            {idx === 3 && (
-              <button
-                style={{ ...zoneActionButtonStyle, backgroundColor: '#2e7d32', color: '#fff' }}
-                onClick={event => {
-                  event.stopPropagation();
-                  if (typeof onOpenMedications === 'function') {
-                    onOpenMedications(cardData);
-                  }
-                }}
-                disabled={!cardData?.userId || typeof onOpenMedications !== 'function'}
-                aria-label="Ліки"
-                title="Ліки"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M8.5 8.5l7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  <path d="M6.2 10.8a3.25 3.25 0 0 1 4.6-4.6l6.9 6.9a3.25 3.25 0 1 1-4.6 4.6l-6.9-6.9z" stroke="currentColor" strokeWidth="2" />
-                </svg>
-              </button>
-            )}
-            {idx === 4 &&
-              (topBlueAction ? (
-                <button
-                  type="button"
-                  onClick={event => {
-                    event.stopPropagation();
-                    if (typeof topBlueAction.onClick === 'function') {
-                      topBlueAction.onClick(cardData);
-                    }
-                  }}
-                  style={{ ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' }}
-                  aria-label={topBlueAction.ariaLabel || topBlueAction.title || 'Синя кнопка'}
-                  title={topBlueAction.title || topBlueAction.ariaLabel || 'Синя кнопка'}
-                >
-                  {topBlueAction.icon}
-                </button>
-              ) : (
-                isFromListOfUsers &&
-                typeof setSearch === 'function' &&
-                btnEdit(
-                  cardData,
-                  setSearch,
-                  setState,
-                  { ...zoneActionButtonStyle, backgroundColor: '#0288d1', color: '#fff' },
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M4 20h4l10-10-4-4L4 16v4z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-                    <path d="M13 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                  </svg>
-                )
-              ))}
+            {action.content}
           </div>
         ))}
         <div style={secondaryActionsStyle}>
@@ -877,26 +980,45 @@ const TopBlock = ({
               color: '#fff',
             })}
           {additionalActions}
+          <button
+            type="button"
+            onClick={handleDetailsRefresh}
+            style={detailsToggleStyle}
+            title="Оновити дані з бекенду та показати всі поля"
+            aria-label="Оновити дані з бекенду та показати всі поля"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 12a8 8 0 0 1 14.93-4H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M20 12a8 8 0 0 1-14.93 4H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
         </div>
       </div>
       <div style={statusRowStyle}>
-        {fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, submitOptions)}
-        {fieldRole(cardData, setUsers, setState, submitOptions)}
-        {!hasHiddenCycleFieldRole && <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />}
+        <div style={getInTouchStatusItemStyle}>
+          {fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, submitOptions)}
+        </div>
+        {!hasHiddenCycleFieldRole && (
+          <div style={statusItemStyle}>
+            <FieldLastCycle userData={cardData} setUsers={setUsers} setState={setState} submitOptions={submitOptions} />
+          </div>
+        )}
       </div>
       <div style={bioSectionStyle}>
         <div style={bioRowStyle}>
           {cardData.birth && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <span style={factChipStyle}>
               {cardData.birth} {fieldBirth(cardData.birth)}
             </span>
           )}
-          <div style={identityMetaStyle}>{renderIdentityMeta(cardData)}</div>
+          {identityMeta.length > 0 && (
+            <div style={{ ...factChipStyle, ...identityMetaStyle }}>{identityMeta}</div>
+          )}
+          {deliveryInfo && <div style={factChipStyle}>{deliveryInfo}</div>}
+          {region && <div style={factChipStyle}>{region}</div>}
         </div>
         {renderOverlayEntries(['birth', 'maritalStatus', 'blood', 'height', 'weight'])}
-        <div>{fieldDeliveryInfo(setUsers, setState, cardData, submitOptions)}</div>
         {renderOverlayEntries(['lastDelivery', 'ownKids'])}
-        {region && <div>{region}</div>}
         {renderOverlayEntries('region')}
       </div>
       <div style={contactsSectionStyle}>
@@ -1035,31 +1157,6 @@ const TopBlock = ({
         </div>
       )}
 
-      <div
-        onClick={async e => {
-          e.stopPropagation();
-          const details = document.getElementById(cardData.userId);
-          const showDetails = () => {
-            if (details) {
-              details.style.display = 'block';
-              details.style.marginTop = '8px';
-              const bg = getParentBackground(details);
-              details.style.color = getContrastColor(bg);
-            }
-          };
-
-          showDetails();
-          await refreshCardFromBackend();
-        }}
-        style={detailsToggleStyle}
-        title="Оновити дані з бекенду та показати всі поля"
-        aria-label="Оновити дані з бекенду та показати всі поля"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M4 12a8 8 0 0 1 14.93-4H15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M20 12a8 8 0 0 1-14.93 4H9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </div>
     </div>
   );
 };

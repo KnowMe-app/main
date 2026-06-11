@@ -36,25 +36,28 @@ export const fieldWriter = (userData, setUsers, setState, submitOptions = {}) =>
             )
           }
           style={{
-            flexGrow: 1, // Займає залишковий простір
-            maxWidth: '100%', // Обмежує ширину контейнером
+            flexGrow: 1,
+            minWidth: 0,
+            maxWidth: '100%',
           }}
         />
       </div>
 
       {/* Нижній рядок: кнопки */}
-      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', width: '100%' }}>
+      <div style={{ display: 'flex', gap: '2px', flexWrap: 'nowrap', overflowX: 'auto', width: '100%' }}>
         {['IgF', 'IgTT', 'Ср', 'Срр', 'Ik', 'Т', 'V', 'W', 'ТТ', 'Ін'].map(code => (
           <OrangeBtn
             key={code}
             onClick={() => handleCodeClick(code)}
             style={{
               cursor: 'pointer',
-              flex: '1', // Рівномірно розподіляє кнопки по всій ширині
-              width: '25px' /* Встановіть ширину, яка визначатиме розмір кнопки */,
-              height: '25px' /* Встановіть висоту, яка повинна дорівнювати ширині */,
-              marginLeft: '5px',
+              flex: '0 0 auto',
+              minWidth: '25px',
+              width: '25px',
+              height: '24px',
+              marginLeft: 0,
               marginRight: 0,
+              padding: 0,
               color: 'black',
             }}
           >
