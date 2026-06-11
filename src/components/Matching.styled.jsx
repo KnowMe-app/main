@@ -332,39 +332,93 @@ export const TopActions = styled.div`
   position: static;
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
   z-index: 10;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 2px;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+`;
+
+export const TopActionGroup = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 4px;
+  border: 1px solid var(--matching-section-border, rgba(255, 255, 255, 0.14));
+  border-radius: 999px;
+  background: var(--matching-section-bg, rgba(255, 255, 255, 0.82));
+  box-shadow: var(--matching-section-shadow, 0 8px 18px rgba(22, 22, 22, 0.08));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 `;
 
 export const ActionButton = styled.button`
+  position: relative;
   width: 35px;
   height: 35px;
   padding: 3px;
-  border: none;
-  background: var(--matching-action-bg, ${color.accent5});
-  color: var(--matching-action-color, white);
+  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-accent, #FF9500)' : 'transparent')};
+  background: ${({ $active }) => ($active ? 'rgba(255, 149, 0, 0.14)' : 'var(--matching-action-bg, ' + color.accent5 + ')')};
+  color: ${({ $active }) => ($active ? 'var(--matching-accent, #FF9500)' : 'var(--matching-action-color, white)')};
   box-shadow: var(--matching-action-shadow, none);
-  transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), background 240ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 240ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), background 240ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 240ms cubic-bezier(0.4, 0, 0.2, 1), border-color 240ms cubic-bezier(0.4, 0, 0.2, 1), color 240ms cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50px;
   cursor: pointer;
   font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
+
   &:hover:not(:disabled) {
     transform: translateY(-1px) scale(1.03);
+    border-color: var(--matching-accent, #FF9500);
   }
 
   &:active:not(:disabled) {
     transform: scale(0.96);
   }
 
+  &:focus-visible {
+    outline: 3px solid rgba(247, 147, 30, 0.42);
+    outline-offset: 2px;
+  }
+
   &:disabled {
     background-color: ${color.gray3};
     color: ${color.gray4};
+    box-shadow: none;
     cursor: default;
   }
 `;
+
+export const ActionBadge = styled.span`
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 2px solid var(--matching-panel-bg, #fff);
+  border-radius: 999px;
+  background: var(--matching-accent, #FF9500);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
+`;
+
 
 
 
@@ -536,12 +590,22 @@ export const BackendTrafficToggleStatus = styled.span`
 `;
 
 export const HeaderContainer = styled.div`
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 12;
   display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: max(10px, env(safe-area-inset-top)) 12px 10px;
+  background: var(--matching-panel-bg, rgba(246, 247, 249, 0.94));
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+
+  @media (max-width: 768px) {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
 `;
 
 export const LoadMoreButton = styled.button`
@@ -616,26 +680,29 @@ export const FilterOverlay = styled.div`
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.42);
   z-index: 15;
   display: ${props => (props.show ? 'block' : 'none')};
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
 `;
 
-export const FilterContainer = styled.div`
+export const FilterContainer = styled.aside`
   position: fixed;
   top: 0;
   right: 0;
   height: 100%;
-  width: 320px;
-  max-width: 80%;
+  width: min(390px, 92vw);
   ${matchingThemeVars}
   background: var(--matching-panel-bg);
   color: var(--matching-panel-text);
   z-index: 20;
   transform: translateX(${props => (props.show ? '0' : '100%')});
-  transition: transform 0.3s ease-in-out;
-  padding: 10px;
+  transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  box-shadow: ${props => (props.show ? '-24px 0 48px rgba(0, 0, 0, 0.24)' : 'none')};
 
   input,
   textarea,
@@ -646,49 +713,175 @@ export const FilterContainer = styled.div`
   }
 
   button {
-    transition: background 220ms cubic-bezier(0.4, 0, 0.2, 1), color 220ms cubic-bezier(0.4, 0, 0.2, 1), border-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+    transition: background 220ms cubic-bezier(0.4, 0, 0.2, 1), color 220ms cubic-bezier(0.4, 0, 0.2, 1), border-color 220ms cubic-bezier(0.4, 0, 0.2, 1), transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 `;
 
-export const FilterResetButton = styled.button`
-  width: 100%;
-  padding: 10px;
-  margin: 0 0 10px;
-  border: 1px solid ${color.gray3};
-  border-radius: 8px;
-  background: ${color.accent5};
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
+export const FilterDrawerHeader = styled.div`
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: max(16px, env(safe-area-inset-top)) 16px 12px;
+  border-bottom: 1px solid var(--matching-section-border, #eee);
+  background: var(--matching-panel-bg, #fff);
 `;
 
+export const FilterDrawerTitle = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`;
+
+export const FilterDrawerHeading = styled.h2`
+  margin: 0;
+  color: var(--matching-header-text, #161616);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+`;
+
+export const FilterDrawerSubtitle = styled.p`
+  margin: 0;
+  color: var(--matching-muted-text, #6B7280);
+  font-size: 12px;
+  line-height: 1.35;
+`;
+
+export const FilterDrawerClose = styled.button`
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--matching-section-border, #E8E2D8);
+  border-radius: 999px;
+  background: var(--matching-action-bg, #fff);
+  color: var(--matching-action-color, #FF9500);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--matching-accent, #FF9500);
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 3px solid rgba(247, 147, 30, 0.38);
+    outline-offset: 2px;
+  }
+`;
+
+export const FilterDrawerBody = styled.div`
+  flex: 1 1 auto;
+  padding: 12px 14px 96px;
+`;
+
+export const FilterDrawerSection = styled.section`
+  margin: 0 0 12px;
+`;
+
+export const FilterDrawerFooter = styled.div`
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 12px 14px max(14px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--matching-section-border, #eee);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--matching-panel-bg, #fff) 18%);
+`;
+
+
+export const FilterResetButton = styled.button`
+  width: 100%;
+  padding: 12px 14px;
+  margin: 0;
+  border: 1px solid rgba(220, 38, 38, 0.28);
+  border-radius: 14px;
+  background: rgba(220, 38, 38, 0.06);
+  color: #b42318;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    background: rgba(220, 38, 38, 0.1);
+    border-color: rgba(220, 38, 38, 0.42);
+  }
+
+  &:focus-visible {
+    outline: 3px solid rgba(220, 38, 38, 0.22);
+    outline-offset: 2px;
+  }
+`;
+
+
 export const CollectionSourceWrap = styled.div`
-  margin: 0 0 10px;
-  border: 1px solid ${color.gray3};
-  border-radius: 8px;
+  margin: 0 0 12px;
+  border: 1px solid var(--matching-section-border, ${color.gray3});
+  border-radius: 16px;
   padding: 10px;
   background: var(--matching-section-bg, #fff);
   color: var(--matching-panel-text, #2c2d38);
+  box-shadow: var(--matching-section-shadow, 0 8px 18px rgba(22, 22, 22, 0.06));
 `;
 
 export const CollectionSourceTitle = styled.p`
   margin: 0 0 8px;
-  font-weight: 600;
-  color: #2c2d38;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--matching-chip-label, #6B7280);
+`;
+
+export const CollectionSourceOptions = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
 `;
 
 export const CollectionSourceLabel = styled.label`
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 0 6px;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid ${({ $active }) => ($active ? 'var(--matching-accent, #FF9500)' : 'var(--matching-chip-border, #E5E0D8)')};
+  border-radius: 12px;
+  background: ${({ $active }) => ($active ? 'rgba(255, 149, 0, 0.14)' : 'var(--matching-chip-bg, #fff)')};
+  color: ${({ $active }) => ($active ? 'var(--matching-accent, #FF9500)' : 'var(--matching-chip-text, #2c2d38)')};
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
   cursor: pointer;
-  color: #2c2d38;
 
   input {
-    accent-color: ${color.accent5};
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  &:hover {
+    border-color: var(--matching-accent, #FF9500);
+  }
+
+  &:has(input:focus-visible) {
+    outline: 3px solid rgba(247, 147, 30, 0.38);
+    outline-offset: 2px;
   }
 `;
+
 
 export const Title = styled.span`
   color: ${props => getRoleColors(props.$role).text};
@@ -1373,31 +1566,49 @@ export const ModernContactLink = styled.a`
 
 export const ModernDesktopNavButton = styled.button`
   position: absolute;
-  top: 50%;
-  ${({ $side }) => ($side === 'left' ? 'left: 8px;' : 'right: 8px;')}
-  transform: translateY(-50%);
+  top: 0;
+  bottom: 0;
+  ${({ $side }) => ($side === 'left' ? 'left: 0;' : 'right: 0;')}
   z-index: 9;
-  width: 26px;
-  height: 40px;
-  border: 1px solid rgba(255, 255, 255, 0.26);
-  border-radius: 999px;
-  background: rgba(21, 18, 15, 0.26);
-  color: rgba(255, 255, 255, 0.84);
+  width: 56px;
+  border: 0;
+  border-radius: ${({ $side }) => ($side === 'left' ? `${STACK_CARD_RADIUS} 0 0 ${STACK_CARD_RADIUS}` : `0 ${STACK_CARD_RADIUS} ${STACK_CARD_RADIUS} 0`)};
+  background: ${({ $side }) => ($side === 'left'
+    ? 'linear-gradient(90deg, rgba(12, 10, 8, 0.38) 0%, rgba(12, 10, 8, 0.10) 62%, transparent 100%)'
+    : 'linear-gradient(270deg, rgba(12, 10, 8, 0.38) 0%, rgba(12, 10, 8, 0.10) 62%, transparent 100%)')};
+  color: rgba(255, 255, 255, 0.88);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  backdrop-filter: blur(8px);
-  transition: opacity 0.2s ease, background 0.2s ease;
+  opacity: 0.72;
+  transition: opacity 0.2s ease, background 0.2s ease, color 0.2s ease;
+
+  svg {
+    width: 26px;
+    height: 44px;
+    padding: 0 5px;
+    border: 1px solid rgba(255, 255, 255, 0.26);
+    border-radius: 999px;
+    background: rgba(21, 18, 15, 0.34);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-sizing: border-box;
+  }
 
   &:hover:not(:disabled),
   &:focus-visible:not(:disabled) {
-    background: rgba(21, 18, 15, 0.68);
+    opacity: 1;
     color: #fff;
   }
 
+  &:focus-visible {
+    outline: 3px solid rgba(247, 147, 30, 0.42);
+    outline-offset: -4px;
+  }
+
   &:disabled {
-    opacity: 0.24;
+    opacity: 0.18;
     cursor: default;
   }
 
@@ -1405,6 +1616,7 @@ export const ModernDesktopNavButton = styled.button`
     display: none;
   }
 `;
+
 
 export const ModernActionRail = styled.div`
   position: absolute;

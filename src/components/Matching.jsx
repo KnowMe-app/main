@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
 import {
+  ActionBadge,
   ActionButton,
   AdminToggle,
   AnimatedCard,
@@ -10,12 +11,21 @@ import {
   CardWrapper,
   ClickableId,
   CollectionSourceLabel,
+  CollectionSourceOptions,
   CollectionSourceTitle,
   CollectionSourceWrap,
   CommentBox,
   CommentInput,
   Container,
   FilterContainer,
+  FilterDrawerBody,
+  FilterDrawerClose,
+  FilterDrawerFooter,
+  FilterDrawerHeader,
+  FilterDrawerHeading,
+  FilterDrawerSection,
+  FilterDrawerSubtitle,
+  FilterDrawerTitle,
   FilterOverlay,
   FilterResetButton,
   Grid,
@@ -31,6 +41,7 @@ import {
   ThemeToggleKnob,
   ThemeToggleScene,
   ThemeToggleTrackIcon,
+  TopActionGroup,
   TopActions,
   ModernActionRail,
   ModernBioText,
@@ -93,7 +104,7 @@ import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import SearchBar from './SearchBar';
 import PhotoViewer from './PhotoViewer';
-import FilterPanel from './FilterPanel';
+import FilterPanel, { getDefaultFilters } from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
 import { incrementMatchingLoadStat, logMatchingLocalStorageCacheStats, normalizeQueryKey, getIdsByQuery, setIdsForQuery, getCard, clearMatchingCache } from '../utils/cardIndex';
@@ -1277,6 +1288,19 @@ const fetchUsersByLastLogin2FromCollection = async (collection = 'users', limit 
   };
 };
 
+const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
+  if (!currentFilters || !defaultFilters) return 0;
+
+  return Object.keys(defaultFilters).reduce((count, groupName) => {
+    const defaultGroup = defaultFilters[groupName] || {};
+    const currentGroup = currentFilters[groupName] || {};
+    const changed = Object.keys(defaultGroup).some(optionName =>
+      Boolean(currentGroup[optionName]) !== Boolean(defaultGroup[optionName])
+    );
+    return changed ? count + 1 : count;
+  }, 0);
+};
+
 const Matching = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
@@ -1343,6 +1367,17 @@ const Matching = () => {
     accessLevel: currentAccessLevel,
     userRole: currentUserRole,
   });
+  const matchingDefaultFilters = useMemo(
+    () => getDefaultFilters({ mode: 'matching', nonAdminAllActive: !access.isAdmin }),
+    [access.isAdmin],
+  );
+  const activeFilterGroupCount = useMemo(
+    () => countChangedMatchingFilterGroups(filters, matchingDefaultFilters),
+    [filters, matchingDefaultFilters],
+  );
+  const filterDrawerSubtitle = activeFilterGroupCount > 0
+    ? `Активно змінено груп: ${activeFilterGroupCount}`
+    : 'Всі профілі показані за поточними правилами доступу';
   const isAdmin = access.isAdmin;
   const isIndexedDebugTestUser = String(auth.currentUser?.uid || ownerId || '').trim() === MATCHING_LOG_MODE_TEST_USER_ID;
   const parsedAdditionalAccessRules = useMemo(
@@ -5423,100 +5458,158 @@ const Matching = () => {
   return (
     <>
       {showFilters && <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />}
-      <FilterContainer show={showFilters} $themeMode={themeMode} onClick={e => e.stopPropagation()}>
-        {isAdmin && (
-          <SearchBar
-            searchFunc={searchUsers}
-            setUsers={applySearchResults}
-            setUserNotFound={() => {}}
-            wrapperStyle={{ width: '100%', marginBottom: '10px' }}
-            leftIcon="🔍"
-            storageKey={SEARCH_KEY}
-            onClear={reloadDefault}
+      <FilterContainer
+        show={showFilters}
+        $themeMode={themeMode}
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="matching-filter-title"
+      >
+        <FilterDrawerHeader>
+          <FilterDrawerTitle>
+            <FilterDrawerHeading id="matching-filter-title">Фільтри matching</FilterDrawerHeading>
+            <FilterDrawerSubtitle>{filterDrawerSubtitle}</FilterDrawerSubtitle>
+          </FilterDrawerTitle>
+          <FilterDrawerClose
+            type="button"
+            aria-label="Закрити фільтри"
+            title="Закрити фільтри"
+            onClick={() => setShowFilters(false)}
+          >
+            <FaTimes />
+          </FilterDrawerClose>
+        </FilterDrawerHeader>
+        <FilterDrawerBody>
+          {isAdmin && (
+            <FilterDrawerSection aria-label="Пошук профілів">
+              <SearchBar
+                searchFunc={searchUsers}
+                setUsers={applySearchResults}
+                setUserNotFound={() => {}}
+                wrapperStyle={{ width: '100%', marginBottom: 0 }}
+                leftIcon="🔍"
+                storageKey={SEARCH_KEY}
+                onClear={reloadDefault}
+              />
+            </FilterDrawerSection>
+          )}
+          <CollectionSourceWrap>
+            <CollectionSourceTitle>Колекція профілів</CollectionSourceTitle>
+            <CollectionSourceOptions>
+              <CollectionSourceLabel $active={collectionSource === 'users'}>
+                <input
+                  type="radio"
+                  name="matchingCollectionSource"
+                  value="users"
+                  checked={collectionSource === 'users'}
+                  onChange={e => switchCollectionSource(e.target.value)}
+                />
+                Основний список
+              </CollectionSourceLabel>
+              <CollectionSourceLabel $active={collectionSource === 'newUsers'}>
+                <input
+                  type="radio"
+                  name="matchingCollectionSource"
+                  value="newUsers"
+                  checked={collectionSource === 'newUsers'}
+                  onChange={e => switchCollectionSource(e.target.value)}
+                />
+                Додатковий список
+              </CollectionSourceLabel>
+            </CollectionSourceOptions>
+          </CollectionSourceWrap>
+          <FilterPanel
+            mode="matching"
+            hideUserId
+            hideCommentLength
+            onChange={handleFiltersChange}
+            resetToken={filterResetToken}
+            nonAdminAllActive={!isAdmin}
           />
-        )}
-        <FilterResetButton onClick={resetFiltersAndCache}>
-          Скинути фільтри та кеш
-        </FilterResetButton>
-        <CollectionSourceWrap>
-          <CollectionSourceTitle>Колекція профілів:</CollectionSourceTitle>
-          <CollectionSourceLabel>
-            <input
-              type="radio"
-              name="matchingCollectionSource"
-              value="users"
-              checked={collectionSource === 'users'}
-              onChange={e => switchCollectionSource(e.target.value)}
-            />
-            Основний список
-          </CollectionSourceLabel>
-          <CollectionSourceLabel>
-            <input
-              type="radio"
-              name="matchingCollectionSource"
-              value="newUsers"
-              checked={collectionSource === 'newUsers'}
-              onChange={e => switchCollectionSource(e.target.value)}
-            />
-            Додатковий список
-          </CollectionSourceLabel>
-        </CollectionSourceWrap>
-        <FilterPanel
-          mode="matching"
-          hideUserId
-          hideCommentLength
-          onChange={handleFiltersChange}
-          resetToken={filterResetToken}
-          nonAdminAllActive={!isAdmin}
-        />
+        </FilterDrawerBody>
+        <FilterDrawerFooter>
+          <FilterResetButton type="button" onClick={resetFiltersAndCache}>
+            Скинути фільтри й оновити кеш
+          </FilterResetButton>
+        </FilterDrawerFooter>
       </FilterContainer>
       <Container $themeMode={themeMode}>
         <InnerContainer>
           <HeaderContainer>
             <TopActions>
-              <ThemeToggleButton
-                type="button"
-                $themeMode={themeMode}
-                aria-pressed={themeMode === 'light'}
-                aria-label={themeMode === 'light' ? 'Switch Matching to dark theme' : 'Switch Matching to light theme'}
-                title={themeMode === 'light' ? 'Dark theme' : 'Light theme'}
-                onClick={handleThemeToggle}
-              >
-                <ThemeToggleTrackIcon $side="left" $active={themeMode === 'dark'} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" role="img">
-                    <path fill="currentColor" d="M15.4 2.8a7.4 7.4 0 1 0 5.8 10.8 6.2 6.2 0 1 1-5.8-10.8Z" />
-                    <circle cx="6" cy="6" r="1.4" fill="#ffd45c" />
-                    <circle cx="19" cy="5.5" r="1.1" fill="#ffd45c" />
-                  </svg>
-                </ThemeToggleTrackIcon>
-                <ThemeToggleTrackIcon $side="right" $active={themeMode === 'light'} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" role="img">
-                    <circle cx="9" cy="9" r="4" fill="#ffd45c" />
-                    <path fill="currentColor" d="M8 17.5h8.8a3.8 3.8 0 0 0 .4-7.6 5.3 5.3 0 0 0-10.1 1.7A3 3 0 0 0 8 17.5Z" />
-                  </svg>
-                </ThemeToggleTrackIcon>
-                <ThemeToggleKnob $themeMode={themeMode} aria-hidden="true">
-                  <ThemeToggleScene $themeMode={themeMode} />
-                </ThemeToggleKnob>
-              </ThemeToggleButton>
-              {viewMode !== 'default' && (
-                <ActionButton onClick={reloadDefault}><FaDownload /></ActionButton>
-              )}
-              <ActionButton onClick={() => setShowFilters(s => !s)}><FaFilter /></ActionButton>
-              <ActionButton
-                onClick={loadDislikeCards}
-                disabled={viewMode === 'dislikes' || !ownerId}
-              >
-                <FaTimes />
-              </ActionButton>
-              <ActionButton
-                onClick={loadFavoriteCards}
-                disabled={viewMode === 'favorites' || !ownerId}
-              >
-                <FaHeart />
-              </ActionButton>
-              {showBackendTrafficToggle && (
-                <BackendTrafficToggleButton
+              <TopActionGroup aria-label="Основні дії matching">
+                <ActionButton
+                  type="button"
+                  onClick={() => setShowFilters(s => !s)}
+                  $active={showFilters || activeFilterGroupCount > 0}
+                  aria-label={showFilters ? 'Закрити фільтри' : 'Відкрити фільтри'}
+                  title={showFilters ? 'Закрити фільтри' : 'Відкрити фільтри'}
+                >
+                  <FaFilter />
+                  {activeFilterGroupCount > 0 && <ActionBadge>{activeFilterGroupCount}</ActionBadge>}
+                </ActionButton>
+                <ActionButton
+                  type="button"
+                  onClick={loadDislikeCards}
+                  disabled={viewMode === 'dislikes' || !ownerId}
+                  $active={viewMode === 'dislikes'}
+                  aria-label="Показати дизлайки"
+                  title="Показати дизлайки"
+                >
+                  <FaTimes />
+                </ActionButton>
+                <ActionButton
+                  type="button"
+                  onClick={loadFavoriteCards}
+                  disabled={viewMode === 'favorites' || !ownerId}
+                  $active={viewMode === 'favorites'}
+                  aria-label="Показати обране"
+                  title="Показати обране"
+                >
+                  <FaHeart />
+                </ActionButton>
+              </TopActionGroup>
+              <TopActionGroup aria-label="Налаштування matching">
+                <ThemeToggleButton
+                  type="button"
+                  $themeMode={themeMode}
+                  aria-pressed={themeMode === 'light'}
+                  aria-label={themeMode === 'light' ? 'Перемкнути Matching на темну тему' : 'Перемкнути Matching на світлу тему'}
+                  title={themeMode === 'light' ? 'Темна тема' : 'Світла тема'}
+                  onClick={handleThemeToggle}
+                >
+                  <ThemeToggleTrackIcon $side="left" $active={themeMode === 'dark'} aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img">
+                      <path fill="currentColor" d="M15.4 2.8a7.4 7.4 0 1 0 5.8 10.8 6.2 6.2 0 1 1-5.8-10.8Z" />
+                      <circle cx="6" cy="6" r="1.4" fill="#ffd45c" />
+                      <circle cx="19" cy="5.5" r="1.1" fill="#ffd45c" />
+                    </svg>
+                  </ThemeToggleTrackIcon>
+                  <ThemeToggleTrackIcon $side="right" $active={themeMode === 'light'} aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img">
+                      <circle cx="9" cy="9" r="4" fill="#ffd45c" />
+                      <path fill="currentColor" d="M8 17.5h8.8a3.8 3.8 0 0 0 .4-7.6 5.3 5.3 0 0 0-10.1 1.7A3 3 0 0 0 8 17.5Z" />
+                    </svg>
+                  </ThemeToggleTrackIcon>
+                  <ThemeToggleKnob $themeMode={themeMode} aria-hidden="true">
+                    <ThemeToggleScene $themeMode={themeMode} />
+                  </ThemeToggleKnob>
+                </ThemeToggleButton>
+                {viewMode !== 'default' && (
+                  <ActionButton
+                    type="button"
+                    onClick={reloadDefault}
+                    aria-label="Повернутись до основного списку"
+                    title="Повернутись до основного списку"
+                  >
+                    <FaDownload />
+                  </ActionButton>
+                )}
+              </TopActionGroup>
+              <TopActionGroup aria-label="Адміністративні дії matching">
+                {showBackendTrafficToggle && (
+                  <BackendTrafficToggleButton
                   type="button"
                   $active={downloadSizeToastsEnabled}
                   aria-pressed={downloadSizeToastsEnabled}
@@ -5554,7 +5647,15 @@ const Matching = () => {
                   <BackendTrafficToggleStatus>{debugShowAllIndexedCards ? 'ALL' : 'NORMAL'}</BackendTrafficToggleStatus>
                 </BackendTrafficToggleButton>
               )}
-              <ActionButton aria-label="Відкрити меню профілю" onClick={() => setShowInfoModal('dotsMenu')}><FaEllipsisV /></ActionButton>
+                <ActionButton
+                  type="button"
+                  aria-label="Відкрити меню профілю"
+                  title="Відкрити меню профілю"
+                  onClick={() => setShowInfoModal('dotsMenu')}
+                >
+                  <FaEllipsisV />
+                </ActionButton>
+              </TopActionGroup>
             </TopActions>
           </HeaderContainer>
           {!ownerId && (
@@ -5578,7 +5679,7 @@ const Matching = () => {
                       $side="left"
                       onClick={e => { e.stopPropagation(); navigateActiveProfile(-1); }}
                       disabled={activeProfileIndex === 0}
-                      aria-label="Previous profile"
+                      aria-label="Previous profile" title="Попередній профіль"
                     >
                       <FaChevronLeft />
                     </ModernDesktopNavButton>
@@ -5587,7 +5688,7 @@ const Matching = () => {
                       $side="right"
                       onClick={e => { e.stopPropagation(); navigateActiveProfile(1); }}
                       disabled={activeProfileIndex >= filteredUsers.length - 1}
-                      aria-label="Next profile"
+                      aria-label="Next profile" title="Наступний профіль"
                     >
                       <FaChevronRight />
                     </ModernDesktopNavButton>
