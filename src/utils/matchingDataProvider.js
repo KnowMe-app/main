@@ -3,6 +3,12 @@ import { database } from 'components/config';
 import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
 import { getIndexedNewUsersIdsByRules, normalizeSearchKeySetKeys } from './newUsersFilterSetsIndex';
+import {
+  FIELD_COUNT_RANGE_BUCKETS,
+  FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
+  collectFieldCountIdsFromIndexNode,
+  hasFieldCountRangeBuckets,
+} from './fieldCountBuckets';
 
 export const MATCHING_INDEX_ROOT = 'searchKey';
 export const MATCHING_USERS_INDEX_ROOT = `${MATCHING_INDEX_ROOT}/users`;
@@ -13,7 +19,7 @@ const CSECTION_BUCKETS = ['cs2plus', 'cs1', 'cs0', 'other', 'no'];
 const IMT_BUCKETS = ['le28', '29_31', '32_35', '36_plus', '?', 'no'];
 const CONTACT_BUCKETS = ['vk', 'instagram', 'ameblo', 'facebook', 'phone', 'telegram', 'telegram2', 'tiktok', 'linkedin', 'youtube', 'email', 'twitter', 'line', 'otherLink'];
 const USER_ID_BUCKETS = ['vk', 'aa', 'ab', 'id', 'long', 'mid', 'other'];
-const FIELD_COUNT_BUCKETS = ['le5', 'f6_10', 'f11_20', 'f20_plus'];
+const FIELD_COUNT_BUCKETS = FIELD_COUNT_RANGE_BUCKETS;
 const AGE_BUCKETS_BY_MATCHING_KEY = {
   le21: ['le21'],
   le25: ['le21', '22_25'],
@@ -258,6 +264,13 @@ const collectIdsFromValue = value => {
 };
 
 const readBucketIds = async ({ rootPath, indexName, values }) => {
+  if (indexName === FIELD_COUNT_SEARCH_KEY_INDEX_NAME && hasFieldCountRangeBuckets(values)) {
+    const snapshot = await get(ref(database, `${rootPath}/${indexName}`));
+    return snapshot.exists()
+      ? collectFieldCountIdsFromIndexNode(snapshot.val(), values)
+      : new Set();
+  }
+
   const ids = new Set();
   await Promise.all(values.map(async value => {
     const snapshot = await get(ref(database, `${rootPath}/${indexName}/${value}`));

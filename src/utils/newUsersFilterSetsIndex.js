@@ -20,6 +20,11 @@ import {
   resolveAdditionalAccessSearchKeyBuckets,
 } from './additionalAccessRules';
 import {
+  FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
+  collectFieldCountIdsFromIndexNode,
+  hasFieldCountRangeBuckets,
+} from './fieldCountBuckets';
+import {
   getCachedSearchKeyPayload,
   peekCachedSearchKeyPayload,
   saveCachedAdditionalRulesSetIndex,
@@ -1321,6 +1326,31 @@ export const getIndexedNewUsersIdsByRules = async ({
           idsBeforePreciseFilter,
           idsAfterPreciseFilter: null,
         });
+      } else if (indexName === FIELD_COUNT_SEARCH_KEY_INDEX_NAME && hasFieldCountRangeBuckets(normalizedValues)) {
+        const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}`;
+        resultPaths.push(`${path}|fieldCountRanges=${normalizedValues.join(',')}`);
+        emitDebug('additionalMatching: field-count range lookup', {
+          setKey: entry.setKey,
+          path,
+          ranges: normalizedValues,
+        });
+        // eslint-disable-next-line no-await-in-loop
+        const payload = await readBucketPayload(path);
+        const fieldsIndexValue = payload?.exists && payload.value && typeof payload.value === 'object'
+          ? payload.value
+          : {};
+        const fieldCountIds = collectFieldCountIdsFromIndexNode(fieldsIndexValue, normalizedValues);
+        fieldCountIds.forEach(userId => idsForFilter.add(userId));
+
+        if (payload?.exists) {
+          existingBucketsForSet += 1;
+          if (fieldCountIds.size === 0) emptyBucketsForSet += 1;
+        } else {
+          missingBucketsForSet += 1;
+        }
+
+        if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
+        setsMap[entry.setKey][indexName] = fieldsIndexValue;
       } else for (const value of normalizedValues) {
         const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}/${value}`;
         resultPaths.push(path);
