@@ -40,7 +40,7 @@ export const isFieldCountInSelectedRanges = (countKey, rangeBuckets = []) => {
 
 export const collectFieldCountIdsFromIndexNode = (fieldsIndexNode, rangeBuckets = []) => {
   const ids = new Set();
-  if (!fieldsIndexNode || typeof fieldsIndexNode !== 'object' || Array.isArray(fieldsIndexNode)) return ids;
+  if (!fieldsIndexNode || typeof fieldsIndexNode !== 'object') return ids;
 
   Object.entries(fieldsIndexNode).forEach(([countKey, usersMap]) => {
     if (!isFieldCountInSelectedRanges(countKey, rangeBuckets)) return;
