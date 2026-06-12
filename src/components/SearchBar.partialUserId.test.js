@@ -1,8 +1,7 @@
 import React from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
-import SearchBar, { getFreshCachedSearchResult, parseExplicitSearchKeyCandidate, parsePartialUserIdPrefix, resolveExecutionPlan } from './SearchBar';
-import { getCacheKey } from '../utils/cache';
+import SearchBar, { getFreshCachedSearchResult, getSearchCacheKeyForParams, parseExplicitSearchKeyCandidate, parsePartialUserIdPrefix, resolveExecutionPlan } from './SearchBar';
 import { updateCard } from '../utils/cardsStorage';
 import { resetMatchingLocalStorageCache, setIdsForQuery } from '../utils/cardIndex';
 
@@ -74,9 +73,14 @@ describe('SearchBar cache-first search', () => {
 
   it('returns cached cards for repeated partial userId searches without calling the backend search function', async () => {
     updateCard('Anna123', { userId: 'Anna123', name: 'Anna Cached' });
-    setIdsForQuery(getCacheKey('search', 'userId=Anna123'), ['Anna123']);
+    setIdsForQuery(
+      getSearchCacheKeyForParams('userId', 'Anna123', { forcePartialUserIdSearch: true }),
+      ['Anna123'],
+    );
 
-    const cachedResult = getFreshCachedSearchResult('userId', 'Anna123');
+    const cachedResult = getFreshCachedSearchResult('userId', 'Anna123', {
+      forcePartialUserIdSearch: true,
+    });
     expect(cachedResult.hit).toBe(true);
     expect(cachedResult.cards).toHaveLength(1);
     expect(cachedResult.cards[0].name).toBe('Anna Cached');
@@ -128,5 +132,32 @@ describe('SearchBar cache-first search', () => {
       root.unmount();
     });
     document.body.removeChild(container);
+  });
+
+  it('keeps scoped searchId prefix cache entries isolated for repeated searches', () => {
+    updateCard('ig-user', { userId: 'ig-user', name: 'Instagram Match' });
+    updateCard('tg-user', { userId: 'tg-user', name: 'Telegram Match' });
+
+    setIdsForQuery(
+      getSearchCacheKeyForParams('searchId', 'shared-id', { searchIdPrefixes: ['instagram'] }),
+      ['ig-user'],
+    );
+    setIdsForQuery(
+      getSearchCacheKeyForParams('searchId', 'shared-id', { searchIdPrefixes: ['telegram'] }),
+      ['tg-user'],
+    );
+
+    const instagramResult = getFreshCachedSearchResult('searchId', 'shared-id', {
+      searchIdPrefixes: ['instagram'],
+    });
+    const telegramResult = getFreshCachedSearchResult('searchId', 'shared-id', {
+      searchIdPrefixes: ['telegram'],
+    });
+
+    expect(instagramResult.hit).toBe(true);
+    expect(instagramResult.ids).toEqual(['ig-user']);
+    expect(telegramResult.hit).toBe(true);
+    expect(telegramResult.ids).toEqual(['tg-user']);
+    expect(getFreshCachedSearchResult('searchId', 'shared-id').hit).toBe(false);
   });
 });
