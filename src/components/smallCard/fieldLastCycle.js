@@ -498,10 +498,13 @@ export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {
       </style>
       <div
         style={{
-          display: 'inline-flex',
+          display: 'flex',
           alignItems: 'center',
-          gap: '8px',
-          flexWrap: 'nowrap',
+          gap: '4px',
+          flexWrap: 'wrap',
+          minWidth: 0,
+          width: '100%',
+          overflow: 'hidden',
         }}
       >
         <UnderlinedInput
@@ -513,9 +516,23 @@ export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {
           style={{
             textAlign: 'left',
             color: 'white',
+            marginLeft: 0,
+            flex: '1 1 8.5ch',
+            minWidth: '7.5ch',
+            maxWidth: '10.5ch',
           }}
         />
-        <OrangeBtn onClick={handleSetToday} style={{ width: '25px', height: '25px', marginLeft: '5px' }}>
+        <OrangeBtn
+          onClick={handleSetToday}
+          style={{
+            width: '22px',
+            minWidth: '22px',
+            height: '22px',
+            marginLeft: 0,
+            padding: 0,
+            borderRadius: '7px',
+          }}
+        >
           T
         </OrangeBtn>
         {status === 'pregnant' ? (
@@ -532,7 +549,15 @@ export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {
             <span>{`${pregnancyDuration.weeks}т${pregnancyDuration.days}д`}</span>
           </React.Fragment>
         ) : status === 'stimulation' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '3px',
+              flexWrap: 'wrap',
+              minWidth: 0,
+            }}
+          >
             <AttentionDiv
               onClick={handleStatusClick}
               style={{
