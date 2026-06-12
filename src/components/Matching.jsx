@@ -81,6 +81,7 @@ import {
   fetchFavoriteUsers,
   fetchDislikeUsers,
   addContactViewUser,
+  addMatchingSearchQuery,
   filterMain,
   searchUsersOnly,
   fetchUserComments,
@@ -3712,6 +3713,10 @@ const Matching = () => {
     loadFavoriteCards();
   };
 
+  const handleMatchingSearchExecuted = React.useCallback(value => {
+    addMatchingSearchQuery(value, ownerId);
+  }, [ownerId]);
+
   const searchUsers = async params => {
     const [key, value] = Object.entries(params)[0] || [];
     const term = key && value ? `${key}=${value}` : undefined;
@@ -5598,6 +5603,7 @@ const Matching = () => {
                 wrapperStyle={{ width: '100%', marginBottom: 0 }}
                 leftIcon="🔍"
                 storageKey={SEARCH_KEY}
+                onSearchExecuted={handleMatchingSearchExecuted}
                 onClear={reloadDefault}
               />
             </FilterDrawerSection>

@@ -577,6 +577,21 @@ export const addContactViewUser = async (userId, ownerId) => {
   }
 };
 
+export const addMatchingSearchQuery = async (searchQuery, ownerId) => {
+  try {
+    const owner = auth.currentUser;
+    if (!owner) return;
+
+    const normalizedQuery = String(searchQuery || '').trim();
+    if (!normalizedQuery) return;
+
+    const queryRef = push(ref2(database, `multiData/searchQueries/${ownerId || owner.uid}`));
+    await set(queryRef, normalizedQuery);
+  } catch (error) {
+    console.error('Error adding matching search query:', error);
+  }
+};
+
 export const removeDislikeUser = async (userId, ownerId) => {
   try {
     const owner = auth.currentUser;
