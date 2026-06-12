@@ -4975,34 +4975,6 @@ const Matching = () => {
     viewMode,
   ]);
 
-  const navigateActiveProfile = React.useCallback((step) => {
-    setActiveProfileIndex(index => {
-      if (filteredUsers.length === 0) return 0;
-      const nextIndex = Math.max(0, Math.min(filteredUsers.length - 1, index + step));
-      return nextIndex;
-    });
-  }, [filteredUsers.length]);
-
-  useEffect(() => {
-    const handleKeyDown = event => {
-      const target = event.target;
-      const tagName = target?.tagName?.toLowerCase();
-      const isTyping = tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target?.isContentEditable;
-      if (isTyping) return;
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        navigateActiveProfile(1);
-      }
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        navigateActiveProfile(-1);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigateActiveProfile]);
-
   const additionalFiltersDebugSignatureRef = useRef('');
   useEffect(() => {
     if (collectionSource !== 'newUsers') return;
@@ -5093,6 +5065,96 @@ const Matching = () => {
       if (stats && typeof console.table === 'function') console.table([stats]);
     });
   }, [loadMore]);
+
+  const triggerEndOfDeckLoad = React.useCallback((reason = 'navigate-forward') => {
+    if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
+    if (renderedCardsLength < 1) return;
+
+    const sourceNextOffset = collectionSource === 'newUsers' && parsedAdditionalAccessRules.length > 0
+      ? additionalNextOffset
+      : (viewMode === 'favorites' || viewMode === 'dislikes'
+        ? (reactionPaginationByType[viewMode] || buildEmptyReactionPagination()).nextOffset
+        : undefined);
+    const sourceCursorSignature = stableAdditionalSignature(
+      sourceNextOffset !== undefined && sourceNextOffset !== null
+        ? { type: 'sourceNextOffset', value: sourceNextOffset }
+        : { type: 'lastKey', value: lastKey ?? null }
+    );
+    const triggerSignature = stableAdditionalSignature({
+      type: 'end-of-deck-navigation',
+      reason,
+      viewMode,
+      collectionSource,
+      sourceCursorSignature,
+      renderedLength: renderedCardsLength,
+      activeProfileIndex,
+      filtersSignature: stableAdditionalSignature(filtersRef.current || {}),
+      loadedIdsCount: loadedIdsRef.current?.size || 0,
+    });
+
+    console.log('[Matching][endOfDeckLoad] requested', {
+      reason,
+      renderedLength: renderedCardsLength,
+      activeProfileIndex,
+      hasMore: Boolean(hasMoreRef.current),
+      loadingRefCurrent: Boolean(loadingRef.current),
+      sourceNextOffset,
+      lastKey,
+    });
+
+    runAutoLoadMore(`end-of-deck:${triggerSignature}`, {
+      currentVisibleCount: renderedCardsLength,
+      targetVisibleCount: renderedCardsLength + MATCHING_VISIBLE_BUFFER,
+      limit: MATCHING_REFILL_LIMIT,
+    });
+  }, [
+    activeProfileIndex,
+    additionalNextOffset,
+    collectionSource,
+    lastKey,
+    parsedAdditionalAccessRules.length,
+    reactionPaginationByType,
+    renderedCardsLength,
+    runAutoLoadMore,
+    viewMode,
+  ]);
+
+  const navigateActiveProfile = React.useCallback((step) => {
+    if (filteredUsers.length === 0) {
+      setActiveProfileIndex(0);
+      return;
+    }
+
+    const nextIndex = Math.max(0, Math.min(filteredUsers.length - 1, activeProfileIndex + step));
+    const isForwardNavigation = step > 0;
+    const reachesDeckEnd = isForwardNavigation && nextIndex >= filteredUsers.length - 1;
+
+    setActiveProfileIndex(nextIndex);
+
+    if (reachesDeckEnd) {
+      triggerEndOfDeckLoad(nextIndex === activeProfileIndex ? 'swipe-at-last-card' : 'swipe-to-last-card');
+    }
+  }, [activeProfileIndex, filteredUsers.length, triggerEndOfDeckLoad]);
+
+  useEffect(() => {
+    const handleKeyDown = event => {
+      const target = event.target;
+      const tagName = target?.tagName?.toLowerCase();
+      const isTyping = tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target?.isContentEditable;
+      if (isTyping) return;
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        navigateActiveProfile(1);
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        navigateActiveProfile(-1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigateActiveProfile]);
 
   useEffect(() => {
     writeMatchingDebugLog('autoLoadEffect:evaluated', {
@@ -5701,7 +5763,7 @@ const Matching = () => {
                       type="button"
                       $side="right"
                       onClick={e => { e.stopPropagation(); navigateActiveProfile(1); }}
-                      disabled={activeProfileIndex >= filteredUsers.length - 1}
+                      disabled={activeProfileIndex >= filteredUsers.length - 1 && (!hasMore || loading)}
                       aria-label="Next profile" title="Наступний профіль"
                     >
                       <FaChevronRight />
