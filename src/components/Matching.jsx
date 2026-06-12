@@ -79,6 +79,7 @@ import {
   lazyLoadProfilePhotos,
   fetchFavoriteUsers,
   fetchDislikeUsers,
+  addContactViewUser,
   filterMain,
   searchUsersOnly,
   fetchUserComments,
@@ -915,6 +916,7 @@ const SwipeableCard = ({
   const [dir, setDir] = useState(null);
   const favoriteButtonWrapRef = useRef(null);
   const dislikeButtonWrapRef = useRef(null);
+  const contactViewKeysRef = useRef(new Set());
   const touchStart = useRef(null);
   const swipedRef = useRef(false);
 
@@ -1003,6 +1005,17 @@ const SwipeableCard = ({
     `uiFailedFilters=${Array.isArray(diagnostics.uiFailedFilters) && diagnostics.uiFailedFilters.length ? diagnostics.uiFailedFilters.join('|') : '-'}`,
     `searchKeyFailedFilters=${Array.isArray(diagnostics.searchKeyFailedFilters) && diagnostics.searchKeyFailedFilters.length ? diagnostics.searchKeyFailedFilters.join('|') : '-'}`,
   ] : [];
+
+  const handleContactsToggle = e => {
+    e.stopPropagation();
+    const owner = auth.currentUser;
+    if (!e.currentTarget.open || !owner || !user.userId) return;
+    const contactViewKey = `${multiDataOwnerId || owner.uid}:${user.userId}`;
+    if (contactViewKeysRef.current.has(contactViewKey)) return;
+    contactViewKeysRef.current.add(contactViewKey);
+    void addContactViewUser(user.userId, multiDataOwnerId);
+  };
+
   const handleTouchStart = e => {
     if (!e.touches || e.touches.length !== 1) return;
     const touch = e.touches[0];
@@ -1160,7 +1173,7 @@ const SwipeableCard = ({
           ))}
           {sections.filter(section => section.variant === 'contacts').map(section => (
             <ModernSection key={section.title}>
-              <ModernContactDetails onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+              <ModernContactDetails onToggle={handleContactsToggle} onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
                 <ModernContactSummary>Show contacts</ModernContactSummary>
                 <ProfileContactLinks user={user} role={resolvedRole} />
               </ModernContactDetails>

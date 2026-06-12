@@ -567,6 +567,16 @@ export const addDislikeUser = async (userId, ownerId) => {
   }
 };
 
+export const addContactViewUser = async (userId, ownerId) => {
+  try {
+    const owner = auth.currentUser;
+    if (!owner) return;
+    await set(ref2(database, `multiData/contactViews/${ownerId || owner.uid}/${userId}`), true);
+  } catch (error) {
+    console.error('Error adding contact view user:', error);
+  }
+};
+
 export const removeDislikeUser = async (userId, ownerId) => {
   try {
     const owner = auth.currentUser;
