@@ -71,6 +71,7 @@ import {
   ModernSectionTitle,
   BackendTrafficToggleButton,
   BackendTrafficToggleStatus,
+  MatchingModeLabel,
 } from './Matching.styled';
 import {
   fetchUsersByLastLogin2,
@@ -116,7 +117,7 @@ import {
 import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
-import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaDownload, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt } from 'react-icons/fa';
+import { FaFacebookF, FaFilter, FaTimes, FaHeart, FaEllipsisV, FaInstagram, FaTelegramPlane, FaViber, FaWhatsapp, FaVk, FaGlobe, FaLinkedin, FaYoutube, FaChevronLeft, FaChevronRight, FaMapMarkerAlt } from 'react-icons/fa';
 import { FaPhoneVolume, FaXTwitter } from 'react-icons/fa6';
 import { MdEmail } from 'react-icons/md';
 import { SiTiktok } from 'react-icons/si';
@@ -3680,6 +3681,37 @@ const Matching = () => {
 
   const loadDislikeCards = () => switchMatchingMode('dislikes');
 
+  const matchingModeLabel = {
+    default: 'Загальний список',
+    favorites: 'Обране',
+    dislikes: 'Дизлайки',
+    search: 'Пошук',
+  }[viewMode] || 'Matching';
+
+  const handleDislikeModeClick = () => {
+    if (viewMode === 'dislikes') {
+      reloadDefault();
+      return;
+    }
+
+    loadDislikeCards();
+  };
+
+  const handleDefaultModeClick = () => {
+    if (viewMode !== 'default') {
+      reloadDefault();
+    }
+  };
+
+  const handleFavoriteModeClick = () => {
+    if (viewMode === 'favorites') {
+      reloadDefault();
+      return;
+    }
+
+    loadFavoriteCards();
+  };
+
   const searchUsers = async params => {
     const [key, value] = Object.entries(params)[0] || [];
     const term = key && value ? `${key}=${value}` : undefined;
@@ -5614,7 +5646,7 @@ const Matching = () => {
         <InnerContainer>
           <HeaderContainer>
             <TopActions>
-              <TopActionGroup aria-label="Основні дії matching">
+              <TopActionGroup aria-label="Фільтри matching">
                 <ActionButton
                   type="button"
                   onClick={() => setShowFilters(s => !s)}
@@ -5625,27 +5657,41 @@ const Matching = () => {
                   <FaFilter />
                   {activeFilterGroupCount > 0 && <ActionBadge>{activeFilterGroupCount}</ActionBadge>}
                 </ActionButton>
+              </TopActionGroup>
+              <TopActionGroup aria-label="Навігація matching">
                 <ActionButton
                   type="button"
-                  onClick={loadDislikeCards}
-                  disabled={viewMode === 'dislikes' || !ownerId}
+                  onClick={handleDislikeModeClick}
+                  disabled={!ownerId}
                   $active={viewMode === 'dislikes'}
-                  aria-label="Показати дизлайки"
-                  title="Показати дизлайки"
+                  aria-label={viewMode === 'dislikes' ? 'Повернутись до загального списку' : 'Показати дизлайки'}
+                  title={viewMode === 'dislikes' ? 'Повернутись до загального списку' : 'Показати дизлайки'}
                 >
                   <FaTimes />
                 </ActionButton>
                 <ActionButton
                   type="button"
-                  onClick={loadFavoriteCards}
-                  disabled={viewMode === 'favorites' || !ownerId}
+                  onClick={handleDefaultModeClick}
+                  disabled={!ownerId}
+                  $active={viewMode === 'default'}
+                  $wide
+                  aria-label="До загального списку"
+                  title="До загального списку"
+                >
+                  Всі
+                </ActionButton>
+                <ActionButton
+                  type="button"
+                  onClick={handleFavoriteModeClick}
+                  disabled={!ownerId}
                   $active={viewMode === 'favorites'}
-                  aria-label="Показати обране"
-                  title="Показати обране"
+                  aria-label={viewMode === 'favorites' ? 'Повернутись до загального списку' : 'Показати обране'}
+                  title={viewMode === 'favorites' ? 'Повернутись до загального списку' : 'Показати обране'}
                 >
                   <FaHeart />
                 </ActionButton>
               </TopActionGroup>
+              <MatchingModeLabel aria-live="polite">{matchingModeLabel}</MatchingModeLabel>
               <TopActionGroup aria-label="Налаштування matching">
                 <ThemeToggleButton
                   type="button"
@@ -5672,16 +5718,6 @@ const Matching = () => {
                     <ThemeToggleScene $themeMode={themeMode} />
                   </ThemeToggleKnob>
                 </ThemeToggleButton>
-                {viewMode !== 'default' && (
-                  <ActionButton
-                    type="button"
-                    onClick={reloadDefault}
-                    aria-label="Повернутись до основного списку"
-                    title="Повернутись до основного списку"
-                  >
-                    <FaDownload />
-                  </ActionButton>
-                )}
               </TopActionGroup>
               <TopActionGroup aria-label="Адміністративні дії matching">
                 {showBackendTrafficToggle && (

@@ -361,9 +361,10 @@ export const TopActionGroup = styled.div`
 
 export const ActionButton = styled.button`
   position: relative;
-  width: 35px;
+  width: ${({ $wide }) => ($wide ? 'auto' : '35px')};
+  min-width: ${({ $wide }) => ($wide ? '44px' : '35px')};
   height: 35px;
-  padding: 3px;
+  padding: ${({ $wide }) => ($wide ? '3px 10px' : '3px')};
   border: 1px solid ${({ $active }) => ($active ? 'var(--matching-accent, #FF9500)' : 'transparent')};
   background: ${({ $active }) => ($active ? 'rgba(255, 149, 0, 0.14)' : 'var(--matching-action-bg, ' + color.accent5 + ')')};
   color: ${({ $active }) => ($active ? 'var(--matching-accent, #FF9500)' : 'var(--matching-action-color, white)')};
@@ -371,7 +372,9 @@ export const ActionButton = styled.button`
   transition: transform 240ms cubic-bezier(0.4, 0, 0.2, 1), background 240ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 240ms cubic-bezier(0.4, 0, 0.2, 1), border-color 240ms cubic-bezier(0.4, 0, 0.2, 1), color 240ms cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50px;
   cursor: pointer;
-  font-size: 18px;
+  font-size: ${({ $wide }) => ($wide ? '13px' : '18px')};
+  font-weight: ${({ $wide }) => ($wide ? '800' : 'inherit')};
+  letter-spacing: ${({ $wide }) => ($wide ? '0.01em' : 'normal')};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -417,6 +420,23 @@ export const ActionBadge = styled.span`
   font-weight: 800;
   line-height: 1;
   box-sizing: border-box;
+`;
+
+export const MatchingModeLabel = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 31px;
+  padding: 3px 10px;
+  border: 1px solid var(--matching-section-border, rgba(255, 255, 255, 0.14));
+  border-radius: 999px;
+  background: var(--matching-section-bg, rgba(255, 255, 255, 0.82));
+  color: var(--matching-muted-text, #6B7280);
+  box-shadow: var(--matching-section-shadow, 0 8px 18px rgba(22, 22, 22, 0.08));
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  flex: 0 0 auto;
 `;
 
 
