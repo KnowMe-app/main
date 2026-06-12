@@ -36,10 +36,8 @@ const matchingThemeVars = css`
   --matching-hero-bottom: ${({ $themeMode }) => ($themeMode === 'light'
     ? 'linear-gradient(180deg, rgba(22, 22, 22, 0) 0%, rgba(22, 22, 22, 0.22) 100%)'
     : 'linear-gradient(180deg, transparent 0%, rgba(9, 7, 5, 0.36) 46%, rgba(9, 7, 5, 0.66) 100%)')};
-  --matching-rail-bg: ${({ $themeMode }) => ($themeMode === 'light'
-    ? 'rgba(246, 247, 249, 0.72)'
-    : 'rgba(12, 9, 7, 0.72)')};
-  --matching-rail-border: ${({ $themeMode }) => ($themeMode === 'light' ? 'rgba(229, 224, 216, 0.82)' : 'rgba(255, 214, 148, 0.1)')};
+  --matching-rail-bg: transparent;
+  --matching-rail-border: transparent;
   --matching-action-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#211b16')};
   --matching-action-color: ${({ $themeMode }) => ($themeMode === 'light' ? '#FF9500' : '#fff8ec')};
   --matching-action-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 8px 18px rgba(22, 22, 22, 0.10)' : '0 8px 18px rgba(0, 0, 0, 0.22)')};
@@ -598,9 +596,7 @@ export const HeaderContainer = styled.div`
   align-items: center;
   gap: 8px;
   padding: max(10px, env(safe-area-inset-top)) 12px 10px;
-  background: var(--matching-panel-bg, rgba(246, 247, 249, 0.94));
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: transparent;
 
   @media (max-width: 768px) {
     padding-left: 8px;
@@ -1633,8 +1629,6 @@ export const ModernActionRail = styled.div`
   pointer-events: none;
   background: var(--matching-rail-bg);
   border-top: 1px solid var(--matching-rail-border);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
 
   & > span {
     pointer-events: auto;
