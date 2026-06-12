@@ -1,4 +1,14 @@
-import { parseExplicitSearchKeyCandidate, parsePartialUserIdPrefix, resolveExecutionPlan } from './SearchBar';
+import React from 'react';
+import { act } from 'react-dom/test-utils';
+import { createRoot } from 'react-dom/client';
+import SearchBar, { getFreshCachedSearchResult, parseExplicitSearchKeyCandidate, parsePartialUserIdPrefix, resolveExecutionPlan } from './SearchBar';
+import { getCacheKey } from '../utils/cache';
+import { updateCard } from '../utils/cardsStorage';
+import { resetMatchingLocalStorageCache, setIdsForQuery } from '../utils/cardIndex';
+
+beforeAll(() => {
+  window.IS_REACT_ACT_ENVIRONMENT = true;
+});
 
 describe('parsePartialUserIdPrefix', () => {
   it('allows exact-case catalog key prefixes for users/newUsers userId search', () => {
@@ -53,5 +63,70 @@ describe('resolveExecutionPlan', () => {
       primaryKeys: ['telegram', 'phone', 'email'],
       fallbackKeys: [],
     });
+  });
+});
+
+
+describe('SearchBar cache-first search', () => {
+  beforeEach(() => {
+    resetMatchingLocalStorageCache('SearchBar cache-first test');
+  });
+
+  it('returns cached cards for repeated partial userId searches without calling the backend search function', async () => {
+    updateCard('Anna123', { userId: 'Anna123', name: 'Anna Cached' });
+    setIdsForQuery(getCacheKey('search', 'userId=Anna123'), ['Anna123']);
+
+    const cachedResult = getFreshCachedSearchResult('userId', 'Anna123');
+    expect(cachedResult.hit).toBe(true);
+    expect(cachedResult.cards).toHaveLength(1);
+    expect(cachedResult.cards[0].name).toBe('Anna Cached');
+
+    const searchFunc = jest.fn().mockResolvedValue({});
+    const setUsers = jest.fn();
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.render(React.createElement(SearchBar, {
+        searchFunc,
+        search: 'Anna123',
+        setSearch: jest.fn(),
+        setUsers,
+        setState: jest.fn(),
+        setUserNotFound: jest.fn(),
+        enabledSearchKeys: {
+          partialUserId: true,
+          searchId: false,
+          searchKey: false,
+          equalToAllCards: false,
+        },
+        searchOptions: {
+          enabledSearchKeys: {
+            partialUserId: true,
+            searchId: false,
+            searchKey: false,
+            equalToAllCards: false,
+          },
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    expect(setUsers).toHaveBeenCalledWith({
+      Anna123: expect.objectContaining({
+        userId: 'Anna123',
+        name: 'Anna Cached',
+      }),
+    });
+    expect(searchFunc).not.toHaveBeenCalled();
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
   });
 });

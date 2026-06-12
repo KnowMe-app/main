@@ -773,6 +773,56 @@ const isSearchPerfDebugEnabled = () => {
   }
 };
 
+
+export const getFreshCachedSearchResult = (key, value) => {
+  if (!key || value === undefined || value === null || String(value).trim() === '') {
+    return { hit: false, cards: [], map: {} };
+  }
+
+  const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
+  const queries = loadQueries();
+  const entry = queries[cacheKey];
+  if (!entry) return { hit: false, cards: [], map: {} };
+
+  const timestampSource =
+    typeof entry.cachedAt === 'number' && Number.isFinite(entry.cachedAt)
+      ? entry.cachedAt
+      : Number(entry.cachedAt ?? entry.lastAction ?? 0);
+  if (!Number.isFinite(timestampSource) || timestampSource <= 0) {
+    return { hit: false, cards: [], map: {} };
+  }
+  if (Date.now() - timestampSource >= TTL_MS) {
+    return { hit: false, cards: [], map: {} };
+  }
+
+  const ids = getIdsByQuery(cacheKey);
+  if (ids.length === 0) return { hit: false, cards: [], map: {} };
+
+  const cards = ids.map(id => getCard(id)).filter(Boolean);
+  if (cards.length === 0 || cards.length !== ids.length) {
+    return { hit: false, cards: [], map: {} };
+  }
+
+  const map = cards.reduce((acc, card) => {
+    if (card?.userId) acc[card.userId] = card;
+    return acc;
+  }, {});
+
+  return {
+    hit: Object.keys(map).length > 0,
+    cards,
+    map,
+    cacheKey,
+    ids,
+  };
+};
+
+const formatCachedSearchResult = cachedResult => {
+  if (!cachedResult?.hit) return null;
+  if (cachedResult.cards.length === 1) return cachedResult.cards[0];
+  return { ...cachedResult.map };
+};
+
 const SearchBar = ({
   searchFunc,
   setUsers,
@@ -886,42 +936,20 @@ const SearchBar = ({
   };
 
   const loadCachedResult = (key, value, requestId = null) => {
-    const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
-    const ids = getIdsByQuery(cacheKey);
-    if (ids.length > 0) {
-      const cards = ids.map(id => getCard(id)).filter(Boolean);
-      if (cards.length > 0) {
-        applyUserNotFound(false, requestId);
-        if (key === 'name' || key === 'names' || cards.length > 1) {
-          applyState({}, requestId);
-          const map = {};
-          cards.forEach(c => {
-            map[c.userId] = c;
-          });
-          applyUsers(map, requestId);
-        } else {
-          applyState(cards[0], requestId);
-        }
-        return true;
-      }
+    const cachedResult = getFreshCachedSearchResult(key, value);
+    if (!cachedResult.hit) return false;
+
+    applyUserNotFound(false, requestId);
+    if (key === 'name' || key === 'names' || cachedResult.cards.length > 1) {
+      applyState({}, requestId);
+      applyUsers({ ...cachedResult.map }, requestId);
+    } else {
+      applyState(cachedResult.cards[0], requestId);
     }
-    return false;
+    return true;
   };
 
-  const isCacheFresh = (key, value) => {
-    const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
-    const queries = loadQueries();
-    const entry = queries[cacheKey];
-    if (!entry) return false;
-    const timestampSource =
-      typeof entry.cachedAt === 'number' && Number.isFinite(entry.cachedAt)
-        ? entry.cachedAt
-        : Number(entry.cachedAt ?? entry.lastAction ?? 0);
-    if (!Number.isFinite(timestampSource) || timestampSource <= 0) {
-      return false;
-    }
-    return Date.now() - timestampSource < TTL_MS;
-  };
+  const isCacheFresh = (key, value) => getFreshCachedSearchResult(key, value).hit;
 
   const addToHistory = value => {
     const trimmedVal = value.trim();
@@ -1257,6 +1285,15 @@ const SearchBar = ({
   };
 
   const cachedSearch = async (params, extraOptions = {}) => {
+    const [key, value] = Object.entries(params)[0] || [];
+    const cachedResult = getFreshCachedSearchResult(key, value);
+    if (cachedResult.hit) {
+      if (perfDebugEnabledRef.current) {
+        console.debug('[SearchPerf][cache-hit]', { params, ids: cachedResult.ids });
+      }
+      return formatCachedSearchResult(cachedResult);
+    }
+
     const perfLabel = `[SearchPerf][searchFunc] ${JSON.stringify(params)}`;
     if (perfDebugEnabledRef.current) console.time(perfLabel);
     const res = await searchFunc(params, {
@@ -1269,7 +1306,6 @@ const SearchBar = ({
       return res;
     }
 
-    const [key, value] = Object.entries(params)[0] || [];
     const arr = Array.isArray(res)
       ? res
       : 'userId' in res
