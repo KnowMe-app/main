@@ -2,6 +2,7 @@ import { endAt, get as firebaseGet, orderByKey, query, ref, remove, set, startAt
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 
 import {
+  collectAgeIdsByFilters,
   createAgeSearchKeyIndexInCollection,
   createContactSearchKeyIndexInCollection,
   createCsectionSearchKeyIndexInCollection,
@@ -72,6 +73,21 @@ const getAgeRangeBounds = values => {
   const dates = [...new Set((Array.isArray(values) ? values : []).map(v => String(v || '').trim()).filter(isAgeBucket))].sort();
   if (!dates.length) return null;
   return { startKey: dates[0], endKey: dates[dates.length - 1] };
+};
+
+
+const AGE_SPECIAL_BUCKETS = new Set(['?', 'other', 'no', 'empty']);
+
+const buildAgeFilterMapFromSearchKeyValues = (values, { specialOnly = false } = {}) => {
+  const filters = (Array.isArray(values) ? values : []).reduce((acc, value) => {
+    const normalized = String(value || '').trim();
+    if (!normalized || isAgeBucket(normalized)) return acc;
+    if (specialOnly && !AGE_SPECIAL_BUCKETS.has(normalized)) return acc;
+    acc[normalized] = true;
+    return acc;
+  }, {});
+
+  return Object.keys(filters).length ? filters : null;
 };
 
 const getSearchKeySetInputIndex = (setKey, accessUserId = '') => {
@@ -1277,55 +1293,78 @@ export const getIndexedNewUsersIdsByRules = async ({
       const normalizedValues = Array.isArray(values) ? values.filter(Boolean) : [];
       const idsForFilter = new Set();
       const ageRange = indexName === 'age' ? getAgeRangeBounds(normalizedValues) : null;
-      if (indexName === 'age' && !ageRange) {
+      const ageFilterMap = indexName === 'age'
+        ? buildAgeFilterMapFromSearchKeyValues(normalizedValues, { specialOnly: Boolean(ageRange) })
+        : null;
+      if (indexName === 'age' && !ageRange && !ageFilterMap) {
         emitDebug('additionalMatching: age filter skipped because inactive', { setKey: entry.setKey });
         continue;
       }
 
-      if (indexName === 'age' && ageRange) {
-        const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/age`;
-        resultPaths.push(`${path}|startAt=${ageRange.startKey}|endAt=${ageRange.endKey}`);
-        emitDebug('additionalMatching: age DOB range lookup', {
-          setKey: entry.setKey,
-          path,
-          startAt: ageRange.startKey,
-          endAt: ageRange.endKey,
-        });
-        // eslint-disable-next-line no-await-in-loop
-        const queryStartAtMs = Date.now();
-        const payload = await readAgeRangePayload({ setKey: entry.setKey, startKey: ageRange.startKey, endKey: ageRange.endKey });
-        const queryDurationMs = Date.now() - queryStartAtMs;
-        const flattenStartAtMs = Date.now();
-        const rangeValue = payload?.exists && payload.value && typeof payload.value === 'object' ? payload.value : {};
-        const dateBuckets = Object.entries(rangeValue);
-        if (payload?.exists) existingBucketsForSet += 1; else missingBucketsForSet += 1;
-        dateBuckets.forEach(([dateKey, bucket]) => {
-          if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
-          if (!setsMap[entry.setKey].age) setsMap[entry.setKey].age = {};
-          setsMap[entry.setKey].age[dateKey] = bucket;
-          Object.keys(bucket || {}).forEach(userId => userId && idsForFilter.add(userId));
-        });
-        const flattenDurationMs = Date.now() - flattenStartAtMs;
-        const idsBeforePreciseFilter = idsForFilter.size;
-        if (idsBeforePreciseFilter > LARGE_AGE_RANGE_IDS_WARNING_THRESHOLD) {
-          console.warn('additionalMatching: unusually large DOB range result', {
+      if (indexName === 'age') {
+        if (ageRange) {
+          const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/age`;
+          resultPaths.push(`${path}|startAt=${ageRange.startKey}|endAt=${ageRange.endKey}`);
+          emitDebug('additionalMatching: age DOB range lookup', {
+            setKey: entry.setKey,
+            path,
+            startAt: ageRange.startKey,
+            endAt: ageRange.endKey,
+          });
+          // eslint-disable-next-line no-await-in-loop
+          const queryStartAtMs = Date.now();
+          const payload = await readAgeRangePayload({ setKey: entry.setKey, startKey: ageRange.startKey, endKey: ageRange.endKey });
+          const queryDurationMs = Date.now() - queryStartAtMs;
+          const flattenStartAtMs = Date.now();
+          const rangeValue = payload?.exists && payload.value && typeof payload.value === 'object' ? payload.value : {};
+          const dateBuckets = Object.entries(rangeValue);
+          if (payload?.exists) existingBucketsForSet += 1; else missingBucketsForSet += 1;
+          dateBuckets.forEach(([dateKey, bucket]) => {
+            if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
+            if (!setsMap[entry.setKey].age) setsMap[entry.setKey].age = {};
+            setsMap[entry.setKey].age[dateKey] = bucket;
+            Object.keys(bucket || {}).forEach(userId => userId && idsForFilter.add(userId));
+          });
+          const flattenDurationMs = Date.now() - flattenStartAtMs;
+          const idsBeforePreciseFilter = idsForFilter.size;
+          if (idsBeforePreciseFilter > LARGE_AGE_RANGE_IDS_WARNING_THRESHOLD) {
+            console.warn('additionalMatching: unusually large DOB range result', {
+              setKey: entry.setKey,
+              startAt: ageRange.startKey,
+              endAt: ageRange.endKey,
+              idsBeforePreciseFilter,
+            });
+          }
+          emitDebug('additionalMatching: age DOB range lookup metrics', {
             setKey: entry.setKey,
             startAt: ageRange.startKey,
             endAt: ageRange.endKey,
+            queryStartAt: queryStartAtMs,
+            queryDurationMs,
+            flattenDurationMs,
+            preciseFilterDurationMs: null,
             idsBeforePreciseFilter,
+            idsAfterPreciseFilter: null,
           });
         }
-        emitDebug('additionalMatching: age DOB range lookup metrics', {
-          setKey: entry.setKey,
-          startAt: ageRange.startKey,
-          endAt: ageRange.endKey,
-          queryStartAt: queryStartAtMs,
-          queryDurationMs,
-          flattenDurationMs,
-          preciseFilterDurationMs: null,
-          idsBeforePreciseFilter,
-          idsAfterPreciseFilter: null,
-        });
+
+        if (ageFilterMap) {
+          const rootPath = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}`;
+          resultPaths.push(`${rootPath}/age|filters=${Object.keys(ageFilterMap).join(',')}`);
+          emitDebug('additionalMatching: age frontend bucket lookup via DOB ranges', {
+            setKey: entry.setKey,
+            rootPath,
+            filters: ageFilterMap,
+          });
+          // eslint-disable-next-line no-await-in-loop
+          const ageIds = await collectAgeIdsByFilters(ageFilterMap, [rootPath]);
+          if (ageIds instanceof Set) {
+            if (ageIds.size > 0) existingBucketsForSet += 1; else emptyBucketsForSet += 1;
+            ageIds.forEach(userId => userId && idsForFilter.add(userId));
+          } else {
+            missingBucketsForSet += 1;
+          }
+        }
       } else if (indexName === FIELD_COUNT_SEARCH_KEY_INDEX_NAME && hasFieldCountRangeBuckets(normalizedValues)) {
         const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}`;
         resultPaths.push(`${path}|fieldCountRanges=${normalizedValues.join(',')}`);

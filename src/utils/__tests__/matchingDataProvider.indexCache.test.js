@@ -1,5 +1,6 @@
 const mockFirebaseGet = jest.fn();
 const mockFirebaseRef = jest.fn((database, path) => path);
+const mockCollectAgeIdsByFilters = jest.fn();
 
 jest.mock('firebase/database', () => ({
   get: (...args) => mockFirebaseGet(...args),
@@ -8,6 +9,7 @@ jest.mock('firebase/database', () => ({
 
 jest.mock('components/config', () => ({
   database: { app: 'test-db' },
+  collectAgeIdsByFilters: (...args) => mockCollectAgeIdsByFilters(...args),
 }));
 
 const makeSnapshot = (value = null) => ({
@@ -103,6 +105,11 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
       user00000000000000000001: true,
       user00000000000000000002: true,
     }));
+    mockCollectAgeIdsByFilters.mockResolvedValue(new Set([
+      'user00000000000000000001',
+      'user00000000000000000002',
+      'user00000000000000000003',
+    ]));
   });
 
   afterEach(() => {
@@ -158,6 +165,39 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
       'user00000000000000000002',
       'user00000000000000000004',
     ]);
+  });
+
+
+  it('uses backend birth-date ranges for matching users age filters instead of frontend bucket nodes', async () => {
+    const { fetchMatchingIndexedCandidates } = loadModule();
+    const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
+    const filters = {
+      age: {
+        le25: true,
+        '26_30': true,
+        '31_33': false,
+        '34_36': false,
+        '37_plus': false,
+        other: true,
+      },
+    };
+
+    mockCollectAgeIdsByFilters.mockResolvedValueOnce(new Set([
+      'user00000000000000000003',
+      'user00000000000000000001',
+      'user00000000000000000002',
+    ]));
+
+    const result = await fetchMatchingIndexedCandidates({ filters, limit: 2, hydrateUsersByIds });
+
+    expect(mockCollectAgeIdsByFilters).toHaveBeenCalledWith(filters.age, ['searchKey/users']);
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/age/le21');
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/age/22_25');
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/age/26_30');
+    expect(result.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000002']);
+    expect(result.hasMore).toBe(true);
+    expect(result.usedAgeDateRangeReader).toBe(true);
+    expect(result.ageDateRangeIdsCount).toBe(3);
   });
 
   it('applies excluded reactions without corrupting the base cached id list', async () => {

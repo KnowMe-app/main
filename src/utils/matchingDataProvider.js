@@ -1,5 +1,5 @@
 import { get, ref } from 'firebase/database';
-import { database } from 'components/config';
+import { collectAgeIdsByFilters, database } from 'components/config';
 import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
 import { getIndexedNewUsersIdsByRules, normalizeSearchKeySetKeys } from './newUsersFilterSetsIndex';
@@ -280,6 +280,18 @@ const readBucketIds = async ({ rootPath, indexName, values }) => {
   return ids;
 };
 
+const readMatchingUsersFilterIds = async ({ group, filters }) => {
+  if (group?.indexName === 'age') {
+    // searchKey/users/age is stored by backend birth-date keys (d_YYYY-MM-DD),
+    // while matching UI/frontend still uses buckets such as le21/22_25/26_30.
+    // Reuse the shared date-range reader so wide age filters page through the
+    // real backend date index instead of looking for non-existent bucket nodes.
+    return collectAgeIdsByFilters(filters?.age, [MATCHING_USERS_INDEX_ROOT]);
+  }
+
+  return readBucketIds({ rootPath: MATCHING_USERS_INDEX_ROOT, ...group });
+};
+
 const intersectIdSets = sets => {
   const usableSets = (sets || []).filter(set => set instanceof Set);
   if (!usableSets.length) return null;
@@ -526,9 +538,12 @@ export const fetchMatchingIndexedCandidates = async ({
   }
 
   const idSets = await Promise.all(
-    filterGroups.map(group => readBucketIds({ rootPath: MATCHING_USERS_INDEX_ROOT, ...group }))
+    filterGroups.map(group => readMatchingUsersFilterIds({ group, filters }))
   );
   const allMatchingIds = intersectIdSets(idSets) || [];
+  const ageDateRangeIdsCount = filterGroups.some(group => group.indexName === 'age')
+    ? (idSets[filterGroups.findIndex(group => group.indexName === 'age')]?.size || 0)
+    : null;
   if (useIndexIdCache) {
     setIndexIdsForQuery(cacheKey, allMatchingIds, {
       complete: true,
@@ -555,6 +570,8 @@ export const fetchMatchingIndexedCandidates = async ({
     nextOffset,
     hasMore,
     filterGroups,
+    usedAgeDateRangeReader: ageDateRangeIdsCount !== null,
+    ageDateRangeIdsCount,
   };
 };
 
