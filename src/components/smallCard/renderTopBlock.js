@@ -168,11 +168,11 @@ const roleBadgeStyle = role => ({
 });
 
 const statusRowStyle = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))',
-  alignItems: 'center',
-  gap: '4px',
-  padding: '5px 6px',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'stretch',
+  gap: '6px',
+  padding: '6px',
   borderRadius: '8px',
   background: 'rgba(255,255,255,0.08)',
   border: '1px solid rgba(255,255,255,0.1)',
@@ -187,7 +187,7 @@ const statusItemStyle = {
   alignItems: 'center',
   minWidth: 0,
   width: '100%',
-  overflow: 'hidden',
+  overflow: 'visible',
 };
 
 const getInTouchStatusItemStyle = {

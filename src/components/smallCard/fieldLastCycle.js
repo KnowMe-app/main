@@ -4,6 +4,7 @@ import { formatDateToDisplay, formatDateToServer } from 'components/inputValidat
 import { generateSchedule, serializeSchedule } from '../StimulationSchedule';
 import InfoModal from 'components/InfoModal';
 import { UnderlinedInput, AttentionButton, AttentionDiv, OrangeBtn, color } from 'components/styles';
+import { compactDateButtonStyle, compactDateInputStyle, compactDateRowStyle } from './compactDateRowStyles';
 import { getExpectedDeliveryDate } from 'utils/cycleStatus';
 
 const calculateNextDate = dateString => {
@@ -496,42 +497,18 @@ export const FieldLastCycle = ({ userData, setUsers, setState, submitOptions = {
       }
     `}
       </style>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          flexWrap: 'wrap',
-          minWidth: 0,
-          width: '100%',
-          overflow: 'hidden',
-        }}
-      >
+      <div style={compactDateRowStyle}>
         <UnderlinedInput
           type="text"
           value={localValue}
           placeholder="міс"
           onChange={handleLastCycleChange}
           onBlur={handleBlur}
-          style={{
-            textAlign: 'left',
-            color: 'white',
-            marginLeft: 0,
-            flex: '1 1 8.5ch',
-            minWidth: '7.5ch',
-            maxWidth: '10.5ch',
-          }}
+          style={{ ...compactDateInputStyle, color: 'white' }}
         />
         <OrangeBtn
           onClick={handleSetToday}
-          style={{
-            width: '22px',
-            minWidth: '22px',
-            height: '22px',
-            marginLeft: 0,
-            padding: 0,
-            borderRadius: '7px',
-          }}
+          style={compactDateButtonStyle}
         >
           T
         </OrangeBtn>
