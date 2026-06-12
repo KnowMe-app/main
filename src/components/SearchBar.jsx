@@ -774,12 +774,58 @@ const isSearchPerfDebugEnabled = () => {
 };
 
 
-export const getFreshCachedSearchResult = (key, value) => {
+const SEARCH_CACHE_SCOPE_OPTION_KEYS = [
+  'searchIdPrefixes',
+  'searchKeyFields',
+  'equalToKeys',
+  'forceEqualToAllCards',
+  'forceSearchKeyBucket',
+  'forcePartialUserIdSearch',
+  'allowTelegramPrefixMatches',
+];
+
+const normalizeSearchCacheScopeValue = value => {
+  if (Array.isArray(value)) {
+    return value.map(normalizeSearchCacheScopeValue).sort();
+  }
+  if (value && typeof value === 'object') {
+    return Object.keys(value).sort().reduce((acc, scopeKey) => {
+      const normalizedValue = normalizeSearchCacheScopeValue(value[scopeKey]);
+      if (normalizedValue !== undefined) acc[scopeKey] = normalizedValue;
+      return acc;
+    }, {});
+  }
+  if (value === undefined || value === null || value === false) return undefined;
+  return value;
+};
+
+const buildSearchCacheScope = options => {
+  if (!options || typeof options !== 'object') return null;
+
+  const scope = SEARCH_CACHE_SCOPE_OPTION_KEYS.reduce((acc, scopeKey) => {
+    const normalizedValue = normalizeSearchCacheScopeValue(options[scopeKey]);
+    if (normalizedValue !== undefined) acc[scopeKey] = normalizedValue;
+    return acc;
+  }, {});
+
+  return Object.keys(scope).length > 0 ? scope : null;
+};
+
+export const getSearchCacheKeyForParams = (key, value, options = {}) => {
+  const baseQueryKey = `${key}=${value}`;
+  const scope = buildSearchCacheScope(options);
+  const scopedQueryKey = scope
+    ? `${baseQueryKey}|scope=${JSON.stringify(scope)}`
+    : baseQueryKey;
+  return getCacheKey('search', normalizeQueryKey(scopedQueryKey));
+};
+
+export const getFreshCachedSearchResult = (key, value, options = {}) => {
   if (!key || value === undefined || value === null || String(value).trim() === '') {
     return { hit: false, cards: [], map: {} };
   }
 
-  const cacheKey = getCacheKey('search', normalizeQueryKey(`${key}=${value}`));
+  const cacheKey = getSearchCacheKeyForParams(key, value, options);
   const queries = loadQueries();
   const entry = queries[cacheKey];
   if (!entry) return { hit: false, cards: [], map: {} };
@@ -1286,10 +1332,10 @@ const SearchBar = ({
 
   const cachedSearch = async (params, extraOptions = {}) => {
     const [key, value] = Object.entries(params)[0] || [];
-    const cachedResult = getFreshCachedSearchResult(key, value);
+    const cachedResult = getFreshCachedSearchResult(key, value, extraOptions);
     if (cachedResult.hit) {
       if (perfDebugEnabledRef.current) {
-        console.debug('[SearchPerf][cache-hit]', { params, ids: cachedResult.ids });
+        console.debug('[SearchPerf][cache-hit]', { params, options: extraOptions, ids: cachedResult.ids });
       }
       return formatCachedSearchResult(cachedResult);
     }
@@ -1314,10 +1360,7 @@ const SearchBar = ({
     const updatedArr = arr.map(u => updateCard(u.userId, u));
 
     if (key && value) {
-      const cacheKey = getCacheKey(
-        'search',
-        normalizeQueryKey(`${key}=${value}`),
-      );
+      const cacheKey = getSearchCacheKeyForParams(key, value, extraOptions);
       setIdsForQuery(cacheKey, updatedArr.map(u => u.userId));
     }
 
