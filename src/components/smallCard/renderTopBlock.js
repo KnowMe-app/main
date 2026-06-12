@@ -33,14 +33,22 @@ import { isAdminUid } from 'utils/accessLevel';
 import { auth } from '../config';
 import toast from 'react-hot-toast';
 
-const topBlockContainerStyle = { padding: '8px', position: 'relative' };
+const topBlockContainerStyle = {
+  padding: '8px',
+  position: 'relative',
+  boxSizing: 'border-box',
+  width: '100%',
+  minWidth: 0,
+  overflow: 'hidden',
+};
 
 const topButtonsRowStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: '5px',
   flexWrap: 'wrap',
-  marginBottom: '6px',
+  marginBottom: '5px',
+  minWidth: 0,
 };
 
 const topButtonsZoneStyle = {
@@ -75,9 +83,11 @@ const secondaryActionsStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: '5px',
-  flexShrink: 0,
+  flex: '1 1 90px',
+  justifyContent: 'flex-end',
   flexWrap: 'wrap',
   marginLeft: 'auto',
+  minWidth: 0,
 };
 
 const compactTopActionButtonStyle = {
@@ -109,7 +119,8 @@ const identityMetaStyle = {
 };
 
 const cardHeaderStyle = {
-  marginBottom: '6px',
+  marginBottom: '5px',
+  minWidth: 0,
 };
 
 const cardNameRowStyle = {
@@ -123,7 +134,9 @@ const cardNameRowStyle = {
 const cardNameStyle = {
   fontSize: '15px',
   fontWeight: 700,
-  lineHeight: 1.25,
+  lineHeight: 1.2,
+  minWidth: 0,
+  overflowWrap: 'anywhere',
 };
 
 const cardIdRowStyle = {
@@ -133,6 +146,8 @@ const cardIdRowStyle = {
   fontSize: '10px',
   opacity: 0.55,
   flexWrap: 'wrap',
+  minWidth: 0,
+  overflowWrap: 'anywhere',
 };
 
 const roleBadgeStyle = role => ({
@@ -153,27 +168,30 @@ const roleBadgeStyle = role => ({
 });
 
 const statusRowStyle = {
-  display: 'flex',
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))',
   alignItems: 'center',
-  flexWrap: 'wrap',
   gap: '4px',
   padding: '5px 6px',
   borderRadius: '8px',
   background: 'rgba(255,255,255,0.08)',
   border: '1px solid rgba(255,255,255,0.1)',
   margin: '5px 0',
+  boxSizing: 'border-box',
+  width: '100%',
+  minWidth: 0,
 };
 
 const statusItemStyle = {
-  display: 'inline-flex',
+  display: 'flex',
   alignItems: 'center',
   minWidth: 0,
-  flex: '1 1 120px',
+  width: '100%',
+  overflow: 'hidden',
 };
 
 const getInTouchStatusItemStyle = {
   ...statusItemStyle,
-  flex: '2 1 170px',
 };
 
 const roleEditorStyle = {
@@ -182,12 +200,15 @@ const roleEditorStyle = {
   borderRadius: '8px',
   background: 'rgba(0,0,0,0.12)',
   border: '1px solid rgba(255,255,255,0.14)',
+  boxSizing: 'border-box',
+  minWidth: 0,
 };
 
 const bioSectionStyle = {
   display: 'flex',
   flexDirection: 'column',
   gap: '3px',
+  minWidth: 0,
 };
 
 const bioRowStyle = {
@@ -196,6 +217,7 @@ const bioRowStyle = {
   flexWrap: 'wrap',
   gap: '4px',
   fontSize: '12px',
+  minWidth: 0,
 };
 
 const factChipStyle = {
@@ -203,11 +225,13 @@ const factChipStyle = {
   alignItems: 'center',
   gap: '3px',
   minWidth: 0,
+  maxWidth: '100%',
   padding: '1px 5px',
   borderRadius: '999px',
   background: 'rgba(255,255,255,0.08)',
   border: '1px solid rgba(255,255,255,0.08)',
   lineHeight: 1.35,
+  overflowWrap: 'anywhere',
 };
 
 const contactsSectionStyle = {
@@ -218,6 +242,8 @@ const contactsSectionStyle = {
   gap: '3px 6px',
   marginTop: '4px',
   fontSize: '12px',
+  minWidth: 0,
+  overflowWrap: 'anywhere',
 };
 
 const commentsSectionStyle = {
@@ -228,8 +254,11 @@ const commentsSectionStyle = {
   display: 'flex',
   flexDirection: 'column',
   gap: '3px',
-  maxHeight: '190px',
-  overflowY: 'auto',
+  minHeight: '36px',
+  height: 'auto',
+  overflow: 'visible',
+  boxSizing: 'border-box',
+  minWidth: 0,
 };
 
 const detailsToggleStyle = {
@@ -252,6 +281,8 @@ const multiCommentStyle = {
   WebkitLineClamp: 2,
   WebkitBoxOrient: 'vertical',
   overflow: 'hidden',
+  minWidth: 0,
+  overflowWrap: 'anywhere',
 };
 
 const multiCommentRowStyle = {
@@ -259,6 +290,7 @@ const multiCommentRowStyle = {
   display: 'flex',
   alignItems: 'center',
   gap: '5px',
+  minWidth: 0,
 };
 
 const commentAuthorButtonStyle = {

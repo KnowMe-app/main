@@ -83,13 +83,14 @@ export const fieldGetInTouch = (
     <OrangeBtn
       onClick={() => (onClick ? onClick(days) : null)}
       style={{
-        minWidth: '24px',
-        width: '24px',
-        height: '24px',
+        minWidth: '22px',
+        width: '22px',
+        height: '22px',
         padding: 0,
         marginLeft: 0,
         marginRight: 0,
-        fontSize: '11px',
+        fontSize: '10px',
+        borderRadius: '7px',
       }}
     >
       {label}
@@ -97,7 +98,17 @@ export const fieldGetInTouch = (
   );
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '3px', flexWrap: 'wrap', minWidth: 0, width: '100%' }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '3px',
+        flexWrap: 'wrap',
+        minWidth: 0,
+        width: '100%',
+        overflow: 'hidden',
+      }}
+    >
       <UnderlinedInput
         type="text"
         value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
@@ -177,12 +188,21 @@ export const fieldGetInTouch = (
         style={{
           marginLeft: 0,
           textAlign: 'left',
-          flex: '1 1 9.5ch',
-          minWidth: '8ch',
-          maxWidth: '11ch',
+          flex: '1 1 8.5ch',
+          minWidth: '7.5ch',
+          maxWidth: '10.5ch',
         }}
       />
-      <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexWrap: 'wrap' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '2px',
+          flex: '999 1 112px',
+          flexWrap: 'wrap',
+          minWidth: 0,
+        }}
+      >
         <ActionButton label="3д" days={3} onClick={handleAddDays} />
         {/* <ActionButton label="7д" days={7} onClick={handleAddDays} /> */}
         <ActionButton label="1м" days={30} onClick={handleAddDays} />

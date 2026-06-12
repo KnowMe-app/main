@@ -109,7 +109,7 @@ export const fieldDeliveryInfo = (setUsers, setState, userData, submitOptions = 
 
   // Повертаємо результат
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: '5px' }}>
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: '5px', flexWrap: 'wrap', minWidth: 0 }}>
       {parts.map((part, index) => (
         <span key={`part-${index}`} style={{ whiteSpace: 'nowrap' }}>
           {part}
