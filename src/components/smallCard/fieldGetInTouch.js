@@ -5,6 +5,12 @@ import {
   formatDateToServer,
 } from 'components/inputValidations';
 import { OrangeBtn, UnderlinedInput } from 'components/styles';
+import {
+  compactDateActionsStyle,
+  compactDateButtonStyle,
+  compactDateInputStyle,
+  compactDateRowStyle,
+} from './compactDateRowStyles';
 
 export const fieldGetInTouch = (
   userData,
@@ -82,33 +88,14 @@ export const fieldGetInTouch = (
   const ActionButton = ({ label, days, onClick }) => (
     <OrangeBtn
       onClick={() => (onClick ? onClick(days) : null)}
-      style={{
-        minWidth: '22px',
-        width: '22px',
-        height: '22px',
-        padding: 0,
-        marginLeft: 0,
-        marginRight: 0,
-        fontSize: '10px',
-        borderRadius: '7px',
-      }}
+      style={compactDateButtonStyle}
     >
       {label}
     </OrangeBtn>
   );
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '3px',
-        flexWrap: 'wrap',
-        minWidth: 0,
-        width: '100%',
-        overflow: 'hidden',
-      }}
-    >
+    <div style={compactDateRowStyle}>
       <UnderlinedInput
         type="text"
         value={formatDateToDisplay(formatDateAndFormula(userData.getInTouch)) || ''}
@@ -185,24 +172,9 @@ export const fieldGetInTouch = (
             { currentFilter, isDateInRange, ...submitOptions },
           );
         }}
-        style={{
-          marginLeft: 0,
-          textAlign: 'left',
-          flex: '1 1 8.5ch',
-          minWidth: '7.5ch',
-          maxWidth: '10.5ch',
-        }}
+        style={compactDateInputStyle}
       />
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '2px',
-          flex: '999 1 112px',
-          flexWrap: 'wrap',
-          minWidth: 0,
-        }}
-      >
+      <div style={compactDateActionsStyle}>
         <ActionButton label="3д" days={3} onClick={handleAddDays} />
         {/* <ActionButton label="7д" days={7} onClick={handleAddDays} /> */}
         <ActionButton label="1м" days={30} onClick={handleAddDays} />
