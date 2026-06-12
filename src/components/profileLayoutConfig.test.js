@@ -138,6 +138,8 @@ describe('profileLayoutConfig', () => {
       weight: ['94', ''],
       blood: ['3+', ''],
       experience: ['0', ''],
+      telegram: ['@old', ''],
+      website: ['old.example', 'new.example'],
     };
     const updatedBirthUser = {
       userRole: 'ed',
@@ -148,6 +150,9 @@ describe('profileLayoutConfig', () => {
 
     expect(getProfileAge(removedBirthUser)).toBe('');
     expect(getHeroFields(removedBirthUser, 'ed')).toEqual([]);
+    expect(getProfileSections(removedBirthUser, 'ed')
+      .find(section => section.title === 'Contacts')?.fields
+      .map(field => [field.key, field.value])).toEqual([['website', 'new.example']]);
     expect(shouldRenderField(['25.09.1996', ''])).toBe(false);
     expect(getProfileAge(updatedBirthUser)).toBe('29');
     expect(getHeroFields(updatedBirthUser, 'ed').map(field => [field.key, field.value])).toEqual([

@@ -292,7 +292,7 @@ const contactFields = CONTACT_FIELDS.map(key =>
   field(
     key,
     key === 'otherLink' ? 'Other link' : key.charAt(0).toUpperCase() + key.slice(1),
-    user => getContactValues(user, key).join(', ')
+    user => getContactValues(user, key, getMatchingCurrentValue).join(', ')
   )
 );
 
