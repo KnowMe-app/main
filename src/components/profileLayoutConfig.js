@@ -6,8 +6,15 @@ import { CONTACT_FIELDS, getContactValues } from './contactMethods';
 
 const EMPTY_VALUES = new Set(['', '-', '—', 'n/a', 'na', 'null', 'undefined', 'none', 'немає', 'нет']);
 
+const getMatchingCurrentValue = value => {
+  if (Array.isArray(value)) {
+    return value.length > 0 ? getMatchingCurrentValue(value[value.length - 1]) : undefined;
+  }
+  return getCurrentValue(value);
+};
+
 export const normalizeDisplayValue = value => {
-  const current = getCurrentValue(value);
+  const current = getMatchingCurrentValue(value);
   if (Array.isArray(current)) {
     return current.map(normalizeDisplayValue).filter(Boolean).join(', ');
   }
@@ -90,8 +97,9 @@ export const getProfileName = user => {
 };
 
 export const getProfileAge = user => {
-  if (!user?.birth) return '';
-  const age = utilCalculateAge(user.birth);
+  const birth = normalizeDisplayValue(user?.birth);
+  if (!birth) return '';
+  const age = utilCalculateAge(birth);
   return age ? String(age) : '';
 };
 

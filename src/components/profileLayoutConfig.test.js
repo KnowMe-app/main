@@ -1,6 +1,7 @@
 import {
   getHeroFields,
   getProfilePhotos,
+  getProfileAge,
   getProfileRole,
   getProfileSections,
   getQuickFacts,
@@ -127,6 +128,33 @@ describe('profileLayoutConfig', () => {
     expect(getProfileRole({ role: 'egg_donor' })).toBe('ed');
     expect(getProfileRole({ role: 'intended parents' })).toBe('ip');
     expect(getProfileRole({ role: 'sm' })).toBe('other');
+  });
+
+  it('uses the latest array value on Matching and hides fields removed with an empty latest value', () => {
+    const removedBirthUser = {
+      userRole: 'ed',
+      birth: ['25.09.1996', ''],
+      height: ['165', ''],
+      weight: ['94', ''],
+      blood: ['3+', ''],
+      experience: ['0', ''],
+    };
+    const updatedBirthUser = {
+      userRole: 'ed',
+      birth: ['25.09.1996', '26.09.1996'],
+      height: ['160', '165'],
+      weight: ['90', '94'],
+    };
+
+    expect(getProfileAge(removedBirthUser)).toBe('');
+    expect(getHeroFields(removedBirthUser, 'ed')).toEqual([]);
+    expect(shouldRenderField(['25.09.1996', ''])).toBe(false);
+    expect(getProfileAge(updatedBirthUser)).toBe('29');
+    expect(getHeroFields(updatedBirthUser, 'ed').map(field => [field.key, field.value])).toEqual([
+      ['height', '165'],
+      ['weight', '94'],
+      ['bmi', '35'],
+    ]);
   });
 
 });
