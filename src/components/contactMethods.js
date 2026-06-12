@@ -98,14 +98,14 @@ export const CONTACT_LINK_BUILDERS = {
 
 export const isHiddenTelegramValue = value => String(value ?? '').trim().startsWith('УК СМ');
 
-const valueList = value => {
-  const current = getCurrentValue(value);
+const valueList = (value, currentValueGetter = getCurrentValue) => {
+  const current = currentValueGetter(value);
   if (Array.isArray(current)) return current;
   return current ? [current] : [];
 };
 
-export const getContactValues = (data, key) => {
-  const values = valueList(data?.[key])
+export const getContactValues = (data, key, currentValueGetter) => {
+  const values = valueList(data?.[key], currentValueGetter)
     .map(value => (typeof value === 'string' ? value.trim() : value))
     .filter(value => value !== null && value !== undefined && String(value).trim() !== '');
 
