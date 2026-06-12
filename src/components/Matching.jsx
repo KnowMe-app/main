@@ -474,6 +474,7 @@ const isValidId = isValidMatchingUserId;
 const isShortId = isShortMatchingUserId;
 const isAllowedIdForCollection = isAllowedIdForMatchingCollection;
 const NEW_USERS_USER_ID_PREFIXES = ['-O', 'AA', 'AB', 'VK', 'ID'];
+const MATCHING_HIDDEN_CONTACT_KEYS = ['vk'];
 const isLikelyNewUsersUserId = id => {
   const value = String(id || '').trim();
   return Boolean(value) && (
@@ -763,7 +764,7 @@ const getContactLabel = key => ({
 }[key] || key.charAt(0).toUpperCase() + key.slice(1));
 
 const ProfileContactLinks = ({ user, role }) => {
-  const entries = getContactEntries(user);
+  const entries = getContactEntries(user).filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key));
   if (!entries.length) return null;
 
   return (
@@ -955,7 +956,7 @@ const SwipeableCard = ({
   const usedSummaryFieldKeys = collectProfileFieldKeys(heroFields);
   const bodyHeroFields = getQuickFacts(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys] });
   const usedBodyFieldKeys = collectProfileFieldKeys(bodyHeroFields);
-  const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys, ...usedBodyFieldKeys] });
+  const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys, ...usedBodyFieldKeys, ...MATCHING_HIDDEN_CONTACT_KEYS] });
   const bio = getProfileBio(user);
   const initials = name
     .split(/\s+/)
