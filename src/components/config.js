@@ -3566,7 +3566,7 @@ const collectIdsFromAgeSnapshot = (snapshot, idSet) => {
   });
 };
 
-const collectAgeIdsByFilters = async (ageFilters, rootPaths = [SEARCH_KEY_INDEX_ROOT]) => {
+export const collectAgeIdsByFilters = async (ageFilters, rootPaths = [SEARCH_KEY_INDEX_ROOT]) => {
   const shouldApplyAge = hasExplicitFilterSelection(ageFilters);
   if (!shouldApplyAge) return null;
 

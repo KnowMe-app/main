@@ -2,6 +2,7 @@ const mockFirebaseGet = jest.fn();
 const mockFirebaseRef = jest.fn((database, path) => path);
 const mockPeekCachedSearchKeyPayload = jest.fn();
 const mockGetCachedSearchKeyPayload = jest.fn((path, loader) => loader());
+const mockCollectAgeIdsByFilters = jest.fn();
 
 jest.mock('firebase/database', () => ({
   get: (...args) => mockFirebaseGet(...args),
@@ -16,6 +17,7 @@ jest.mock('firebase/database', () => ({
 }));
 
 jest.mock('components/config', () => ({
+  collectAgeIdsByFilters: (...args) => mockCollectAgeIdsByFilters(...args),
   createAgeSearchKeyIndexInCollection: jest.fn(),
   createContactSearchKeyIndexInCollection: jest.fn(),
   createCsectionSearchKeyIndexInCollection: jest.fn(),
@@ -53,6 +55,7 @@ describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
     mockFirebaseRef.mockImplementation((database, path) => path);
     mockPeekCachedSearchKeyPayload.mockReturnValue(null);
     mockGetCachedSearchKeyPayload.mockImplementation((path, loader) => loader());
+    mockCollectAgeIdsByFilters.mockResolvedValue(new Set());
     jest.spyOn(console, 'info').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -79,6 +82,40 @@ describe('getIndexedNewUsersIdsByRules searchKeySets access scope', () => {
     expect(result.userIds).toEqual(['U1', 'U2']);
     expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKeySets/owner-1_1/age');
     expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, expect.stringContaining('/age/d_'));
+  });
+
+
+  it('reads searchKeySets age matching buckets through backend DOB ranges', async () => {
+    const { getIndexedNewUsersIdsByRules } = loadModule();
+
+    mockFirebaseGet.mockImplementation(path => {
+      const buckets = {
+        'searchKeySets/owner-1_1/role/ed': { U1: true, U2: true, U3: true },
+      };
+      return Promise.resolve(makeSnapshot(Object.prototype.hasOwnProperty.call(buckets, path), buckets[path]));
+    });
+    mockCollectAgeIdsByFilters.mockResolvedValueOnce(new Set(['U1', 'U3']));
+
+    const result = await getIndexedNewUsersIdsByRules({
+      rawRules: 'role: ed',
+      accessUserId: 'owner-1',
+      searchKeySetKeys: ['owner-1_1'],
+      additionalFilterBucketGroups: [{
+        indexName: 'age',
+        values: ['le21', '22_25', '26_30', '?'],
+        selectedValues: ['le25', '26_30', 'other'],
+        allSelected: false,
+        groupActive: true,
+      }],
+    });
+
+    expect(mockCollectAgeIdsByFilters).toHaveBeenCalledWith(
+      { le21: true, '22_25': true, '26_30': true, '?': true },
+      ['searchKeySets/owner-1_1'],
+    );
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKeySets/owner-1_1/age/le21');
+    expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKeySets/owner-1_1/age/26_30');
+    expect(result.userIds).toEqual(['U1', 'U3']);
   });
 
   it('does not read no bucket when point filter sends selected non-no buckets', async () => {
