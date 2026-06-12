@@ -29,6 +29,8 @@ export const BtnDislike = ({
   inactiveIconColor = '#fff',
   activeIconColor = color.reactionIdleIcon,
   iconSize = 18,
+  activeBorderWidth = 4,
+  activeBoxShadowWidth = 2,
   title = 'Дизлайк',
   ariaLabel = 'Дизлайк',
   multiDataOwnerId,
@@ -126,11 +128,11 @@ export const BtnDislike = ({
           ? activeColor
           : customBackground || customBackgroundColor || color.accent5,
         border: isDisliked
-          ? `4px solid ${activeBorderColor}`
+          ? `${activeBorderWidth}px solid ${activeBorderColor}`
           : customBorder || `2px solid ${color.reactionIdleBorder}`,
         color: isDisliked ? resolvedActiveIconColor : resolvedInactiveIconColor,
         boxShadow: isDisliked
-          ? `0 0 0 2px ${activeColor}`
+          ? `0 0 0 ${activeBoxShadowWidth}px ${activeColor}`
           : customBoxShadow || 'none',
         opacity: 1,
         zIndex: 1,

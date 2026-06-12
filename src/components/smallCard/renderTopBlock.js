@@ -12,6 +12,7 @@ import { handleChange } from './actions';
 import { fieldRole } from './fieldRole';
 import { FieldLastCycle } from './fieldLastCycle';
 import { FieldComment } from './FieldComment';
+import { compactDateButtonStyle } from './compactDateRowStyles';
 import { fieldBirth } from './fieldBirth';
 import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
@@ -97,6 +98,18 @@ const compactTopActionButtonStyle = {
   height: '30px',
   minHeight: '30px',
   flex: '0 0 30px',
+};
+
+const compactReactionButtonStyle = {
+  ...compactDateButtonStyle,
+  position: 'static',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minHeight: compactDateButtonStyle.height,
+  padding: 0,
+  margin: 0,
+  boxShadow: '0 2px 5px rgba(17, 24, 39, 0.18)',
 };
 
 const addedOverlayEntryStyle = {
@@ -824,6 +837,84 @@ const TopBlock = ({
     )
   );
 
+  const getInTouchReactionActions = (
+    <>
+      <BtnDislike
+        title="Дизлайк"
+        ariaLabel="Дизлайк"
+        userId={cardData.userId}
+        userData={cardData}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        onDislikeAdded={() =>
+          handleChange(
+            setUsers,
+            setState,
+            cardData.userId,
+            'getInTouch',
+            '2099-99-99',
+            true,
+            { currentFilter, isDateInRange, ...submitOptions },
+          )
+        }
+        onDislikeRemoved={() =>
+          handleChange(
+            setUsers,
+            setState,
+            cardData.userId,
+            'getInTouch',
+            '',
+            true,
+            { currentFilter, isDateInRange, ...submitOptions },
+          )
+        }
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        customStyle={{
+          ...compactReactionButtonStyle,
+          backgroundColor: '#ef6c00',
+          border: 'none',
+        }}
+        inactiveIconColor="#fff"
+        activeIconColor="#1f2937"
+        iconSize={11}
+        activeBorderWidth={2}
+        activeBoxShadowWidth={1}
+      />
+      <BtnFavorite
+        title="В обране"
+        ariaLabel="В обране"
+        userId={cardData.userId}
+        userData={cardData}
+        favoriteUsers={favoriteUsers}
+        setFavoriteUsers={setFavoriteUsers}
+        dislikeUsers={dislikeUsers}
+        setDislikeUsers={setDislikeUsers}
+        onDislikeRemoved={() =>
+          handleChange(
+            setUsers,
+            setState,
+            cardData.userId,
+            'getInTouch',
+            '',
+            true,
+            { currentFilter, isDateInRange, ...submitOptions },
+          )
+        }
+        customStyle={{
+          ...compactReactionButtonStyle,
+          backgroundColor: '#f9a825',
+          border: 'none',
+        }}
+        inactiveIconColor="#fff"
+        activeIconColor="#1f2937"
+        iconSize={11}
+        activeBorderWidth={2}
+        activeBoxShadowWidth={1}
+      />
+    </>
+  );
+
   const topActions = [
     {
       key: 'delete',
@@ -840,87 +931,6 @@ const TopBlock = ({
           <path d="M10 11v5M14 11v5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>,
         { ...zoneActionButtonStyle, backgroundColor: '#d32f2f', color: '#fff' }
-      ),
-    },
-    {
-      key: 'dislike',
-      color: '#ef6c00',
-      content: (
-        <BtnDislike
-          title="Дизлайк"
-          ariaLabel="Дизлайк"
-          userId={cardData.userId}
-          userData={cardData}
-          dislikeUsers={dislikeUsers}
-          setDislikeUsers={setDislikeUsers}
-          onDislikeAdded={() =>
-            handleChange(
-              setUsers,
-              setState,
-              cardData.userId,
-              'getInTouch',
-              '2099-99-99',
-              true,
-              { currentFilter, isDateInRange, ...submitOptions },
-            )
-          }
-          onDislikeRemoved={() =>
-            handleChange(
-              setUsers,
-              setState,
-              cardData.userId,
-              'getInTouch',
-              '',
-              true,
-              { currentFilter, isDateInRange, ...submitOptions },
-            )
-          }
-          favoriteUsers={favoriteUsers}
-          setFavoriteUsers={setFavoriteUsers}
-          customStyle={{
-            ...zoneActionButtonStyle,
-            backgroundColor: '#ef6c00',
-            border: 'none',
-          }}
-          inactiveIconColor="#fff"
-          activeIconColor="#1f2937"
-          iconSize={15}
-        />
-      ),
-    },
-    {
-      key: 'favorite',
-      color: '#f9a825',
-      content: (
-        <BtnFavorite
-          title="В обране"
-          ariaLabel="В обране"
-          userId={cardData.userId}
-          userData={cardData}
-          favoriteUsers={favoriteUsers}
-          setFavoriteUsers={setFavoriteUsers}
-          dislikeUsers={dislikeUsers}
-          setDislikeUsers={setDislikeUsers}
-          onDislikeRemoved={() =>
-            handleChange(
-              setUsers,
-              setState,
-              cardData.userId,
-              'getInTouch',
-              '',
-              true,
-              { currentFilter, isDateInRange, ...submitOptions },
-            )
-          }
-          customStyle={{
-            ...zoneActionButtonStyle,
-            backgroundColor: '#f9a825',
-            border: 'none',
-          }}
-          inactiveIconColor="#fff"
-          activeIconColor="#1f2937"
-          iconSize={15}
-        />
       ),
     },
     typeof onOpenMedications === 'function' && {
@@ -1028,7 +1038,15 @@ const TopBlock = ({
       </div>
       <div style={statusRowStyle}>
         <div style={getInTouchStatusItemStyle}>
-          {fieldGetInTouch(cardData, setUsers, setState, currentFilter, isDateInRange, submitOptions)}
+          {fieldGetInTouch(
+            cardData,
+            setUsers,
+            setState,
+            currentFilter,
+            isDateInRange,
+            submitOptions,
+            getInTouchReactionActions,
+          )}
         </div>
         {!hasHiddenCycleFieldRole && (
           <div style={statusItemStyle}>

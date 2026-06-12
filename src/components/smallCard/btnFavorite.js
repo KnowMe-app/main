@@ -28,6 +28,8 @@ export const BtnFavorite = ({
   inactiveIconColor = '#fff',
   activeIconColor = color.reactionIdleIcon,
   iconSize = 18,
+  activeBorderWidth = 4,
+  activeBoxShadowWidth = 2,
   title = 'В обране',
   ariaLabel = 'В обране',
   multiDataOwnerId,
@@ -122,11 +124,11 @@ export const BtnFavorite = ({
           ? activeColor
           : customBackground || customBackgroundColor || color.accent5,
         border: isFavorite
-          ? `4px solid ${activeBorderColor}`
+          ? `${activeBorderWidth}px solid ${activeBorderColor}`
           : customBorder || `2px solid ${color.reactionIdleBorder}`,
         color: isFavorite ? resolvedActiveIconColor : resolvedInactiveIconColor,
         boxShadow: isFavorite
-          ? `0 0 0 2px ${activeColor}`
+          ? `0 0 0 ${activeBoxShadowWidth}px ${activeColor}`
           : customBoxShadow || 'none',
         opacity: 1,
         zIndex: 1,

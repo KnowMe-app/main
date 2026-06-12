@@ -19,6 +19,7 @@ export const fieldGetInTouch = (
   currentFilter,
   isDateInRange,
   submitOptions = {},
+  trailingActions = null,
 ) => {
   const handleAddDays = days => {
     const currentDate = new Date();
@@ -181,6 +182,7 @@ export const fieldGetInTouch = (
         <ActionButton label="3м" days={90} onClick={handleAddDays} />
         <ActionButton label="6м" days={180} onClick={handleAddDays} />
         <ActionButton label="1р" days={365} onClick={handleAddDays} />
+        {trailingActions}
       </div>
     </div>
   );
