@@ -18,6 +18,13 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('CONTACT_LINK_BUILDERS.whatsappFromPhone');
   });
 
+  it('hides VK contacts from matching cards for every viewer, including admins', () => {
+    const matchingSource = source();
+
+    expect(matchingSource).toContain("const MATCHING_HIDDEN_CONTACT_KEYS = ['vk'];");
+    expect(matchingSource).toContain('getContactEntries(user).filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key))');
+    expect(matchingSource).toContain('...MATCHING_HIDDEN_CONTACT_KEYS');
+  });
 
   it('builds matching profile names only from approved identity fields', () => {
     const matchingSource = source();
