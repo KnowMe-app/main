@@ -2391,7 +2391,6 @@ ${entries.join('\n')}`;
         .map(value => value.trim().toLowerCase())
         .filter(Boolean);
   const shouldHideFieldsForClPp = roleTokens.some(role => ['pp', 'cl'].includes(role));
-  const shouldShowPpTechnicalInput = roleTokens.includes('pp');
   const [ppTechnicalInput, setPpTechnicalInput] = useState('');
 
   const handlePpTechnicalInputSubmit = useCallback(() => {
@@ -2604,7 +2603,7 @@ ${entries.join('\n')}`;
               : state[field.name] || '';
           return (
             <React.Fragment key={index}>
-            {shouldShowPpTechnicalInput && field.name === 'name' && (
+            {field.name === 'name' && (
               <PickerContainer>
                 <FieldMainRow>
                   <InputDiv>
