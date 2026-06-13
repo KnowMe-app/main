@@ -92,7 +92,6 @@ import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { btnMerge } from './smallCard/btnMerge';
 import FilterPanel, { getInitialFilters } from './FilterPanel';
 import SearchBar, { detectSearchParams } from './SearchBar';
-import { clearCacheByPrefix } from 'hooks/cardsCache';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import { newUsersMirrorFieldNames } from './formFields';
@@ -5139,7 +5138,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleClearCache = () => {
     clearAllCardsCache();
-    clearCacheByPrefix('searchHistory');
     localStorage.removeItem(SEARCH_KEY);
     setSearch('');
     setUsers({});
