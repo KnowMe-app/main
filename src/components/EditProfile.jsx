@@ -11,6 +11,7 @@ import {
   auth,
 } from './config';
 import { ProfileForm } from './ProfileForm';
+import { pickerFieldNames } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { renderTopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
@@ -450,8 +451,7 @@ const EditProfile = () => {
     }
 
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
-    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'userId'];
-    const ppTechnicalInputFields = ['name', 'surname', ...contacts];
+    const ppTechnicalInputFields = pickerFieldNames;
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
     const isMainProfileField = key => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key);
 
@@ -874,8 +874,7 @@ const EditProfile = () => {
 
   const persistCanonicalByRules = async mergedCard => {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
-    const contacts = ['instagram', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'userId'];
-    const ppTechnicalInputFields = ['name', 'surname', ...contacts];
+    const ppTechnicalInputFields = pickerFieldNames;
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     if (mergedCard?.userId?.length > 20) {
