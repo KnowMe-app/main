@@ -743,6 +743,8 @@ const LocalIndexOverlay = styled.div`
 
 const LocalIndexModal = styled.div`
   width: min(560px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   background: #fff;
   border-radius: 10px;
   padding: 16px;
@@ -5627,7 +5629,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const renderSourceCards = sortedIds
     .map(getRenderCardById)
     .filter(Boolean);
+  const searchBarContactsForExport = searchBarQueryActive ? renderSourceCards : [];
+  const searchBarContactsExportCount = searchBarContactsForExport.length;
   const renderVisibleCards = filterRenderCards(renderSourceCards);
+
+  const saveSearchBarContacts = () => {
+    if (searchBarContactsExportCount === 0) {
+      toast.error('Немає знайдених SearchBar карток для експорту');
+      return;
+    }
+
+    const contactsById = searchBarContactsForExport.reduce((acc, card, index) => {
+      const userId = card?.userId || card?.id || `search-result-${index}`;
+      acc[userId] = { ...card, userId };
+      return acc;
+    }, {});
+
+    saveToContactCsv(contactsById);
+  };
   const renderVisibleIds = renderVisibleCards.map(card => card.userId);
   const loadedPages = Math.ceil(renderVisibleIds.length / PAGE_SIZE) || 1;
   const totalPages = shouldPaginate ? Math.max(loadedPages, hasMore ? currentPage + 1 : currentPage) : 1;
@@ -6640,6 +6659,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 <SaveModalActionButton type="button" onClick={exportFilteredUsersCsv}>
                   <SaveModalActionTitle>CSV з активними фільтрами</SaveModalActionTitle>
                   <SaveModalComment>Ті самі дані, але у CSV для таблиць; також ділиться на файли максимум по 5000 рядків контактів.</SaveModalComment>
+                </SaveModalActionButton>
+                <SaveModalActionButton
+                  type="button"
+                  onClick={saveSearchBarContacts}
+                  disabled={searchBarContactsExportCount === 0}
+                >
+                  <SaveModalActionTitle>saveSearchBar contacts</SaveModalActionTitle>
+                  <SaveModalComment>CSV експорт усіх карток, знайдених останнім SearchBar запитом: {searchBarContactsExportCount}. Використовує повний результат пошуку, а не тільки поточні {PAGE_SIZE} карток на екрані.</SaveModalComment>
                 </SaveModalActionButton>
                 <SaveModalActionButton type="button" onClick={saveAllContacts}>
                   <SaveModalActionTitle>VCF вся колекція</SaveModalActionTitle>
