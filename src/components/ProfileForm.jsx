@@ -2633,7 +2633,7 @@ ${entries.join('\n')}`;
               : state[field.name] || '';
           return (
             <React.Fragment key={index}>
-            {field.name === 'name' && (
+            {field.name === 'birth' && (
               <PickerContainer>
                 <FieldMainRow>
                   <InputDiv>
