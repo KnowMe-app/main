@@ -223,6 +223,25 @@ const appendFieldValue = (currentValue, nextValue) => {
   return [normalizedCurrentValue, normalizedNextValue];
 };
 
+const appendTextBlockValue = (currentValue, nextValue) => {
+  const normalizedNextValue = String(nextValue ?? '').trim();
+  if (!normalizedNextValue) return currentValue;
+
+  if (Array.isArray(currentValue)) {
+    const normalizedCurrentValues = currentValue
+      .map(value => String(value ?? '').trim())
+      .filter(Boolean);
+    return [...normalizedCurrentValues, normalizedNextValue].join('\n');
+  }
+
+  const normalizedCurrentValue = String(currentValue ?? '').trim();
+  if (!normalizedCurrentValue) {
+    return normalizedNextValue;
+  }
+
+  return `${normalizedCurrentValue}\n${normalizedNextValue}`;
+};
+
 const normalizePpTechnicalTargetValue = (fieldName, value) => {
   const rawValue = String(value ?? '').trim();
   if (!rawValue) return '';
@@ -265,7 +284,7 @@ const parsePpTechnicalKeyValueInput = rawInput => {
   };
 
   for (const line of lines) {
-    const keyValueMatch = line.match(/^([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)$/);
+    const keyValueMatch = line.match(/^([A-Za-z][A-Za-z0-9_\s]*)\s*:\s*(.*)$/);
 
     if (keyValueMatch) {
       const fieldName = normalizePpTechnicalKeyValueField(keyValueMatch[1]);
@@ -315,6 +334,11 @@ const PP_TECHNICAL_APPEND_FIELD_NAMES = new Set([
 ]);
 
 const applyPpTechnicalKeyValueEntry = (stateDraft, fieldName, normalizedValue) => {
+  if (fieldName === 'myComment') {
+    stateDraft[fieldName] = appendTextBlockValue(stateDraft[fieldName], normalizedValue);
+    return;
+  }
+
   if (PP_TECHNICAL_APPEND_FIELD_NAMES.has(fieldName)) {
     stateDraft[fieldName] = appendFieldValue(stateDraft[fieldName], normalizedValue);
     return;
@@ -2451,7 +2475,7 @@ ${entries.join('\n')}`;
             resolvedTechnicalTarget.value
           );
           nextState[resolvedTechnicalTarget.fieldName] = appendFieldValue(
-            prevState[resolvedTechnicalTarget.fieldName],
+            nextState[resolvedTechnicalTarget.fieldName],
             normalizedTechnicalValue
           );
         }
@@ -2461,20 +2485,20 @@ ${entries.join('\n')}`;
         if (contactType) {
           if (contactType === 'phone') {
             const rawPhoneValue = Array.isArray(contactValues) ? contactValues[0] : contactValues;
-            nextState.phone = appendFieldValue(prevState.phone, normalizePhoneValue(rawPhoneValue));
+            nextState.phone = appendFieldValue(nextState.phone, normalizePhoneValue(rawPhoneValue));
           } else if (contactType === 'email') {
             const rawEmailValue = Array.isArray(contactValues) ? contactValues[0] : contactValues;
-            nextState.email = appendFieldValue(prevState.email, String(rawEmailValue || '').trim());
+            nextState.email = appendFieldValue(nextState.email, String(rawEmailValue || '').trim());
           } else {
             const rawContactValue = Array.isArray(contactValues) ? contactValues[0] : contactValues;
-            nextState[contactType] = appendFieldValue(prevState[contactType], rawContactValue);
+            nextState[contactType] = appendFieldValue(nextState[contactType], rawContactValue);
           }
         }
         if (name) {
-          nextState.name = appendFieldValue(prevState.name, name);
+          nextState.name = appendFieldValue(nextState.name, name);
         }
         if (surname) {
-          nextState.surname = appendFieldValue(prevState.surname, surname);
+          nextState.surname = appendFieldValue(nextState.surname, surname);
         }
       }
 
@@ -2633,7 +2657,7 @@ ${entries.join('\n')}`;
               : state[field.name] || '';
           return (
             <React.Fragment key={index}>
-            {field.name === 'birth' && (
+            {field.name === 'birth' && roleTokens.includes('pp') && (
               <PickerContainer>
                 <FieldMainRow>
                   <InputDiv>
