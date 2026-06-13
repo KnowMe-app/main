@@ -1144,6 +1144,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [pendingLocalNewUsersData, setPendingLocalNewUsersData] = useState(null);
   const [exportDataSource, setExportDataSource] = useState('server');
   const [exportOnlyPhonesStartingWith38, setExportOnlyPhonesStartingWith38] = useState(false);
+  const [contactExportFormat, setContactExportFormat] = useState('vcf');
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [localExportUsersData, setLocalExportUsersData] = useState(null);
   const [localExportNewUsersData, setLocalExportNewUsersData] = useState(null);
@@ -4603,6 +4604,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setCurrentPage(page);
   };
 
+  const saveContactsBySelectedFormat = useCallback((contacts, format = contactExportFormat) => {
+    if (!contacts) return;
+
+    if (format === 'csv') {
+      saveToContactCsv(contacts);
+      return;
+    }
+
+    saveToContact(contacts);
+  }, [contactExportFormat]);
+
   const exportFilteredUsers = async () => {
     let fav = favoriteUsersData;
     if (filters.favorite?.favOnly && Object.keys(fav).length === 0) {
@@ -4613,7 +4625,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const allUsers = await getExportContactsBySource(filters, fav);
     if (!allUsers) return;
 
-    saveToContact(allUsers);
+    saveContactsBySelectedFormat(allUsers);
   };
 
   const getMergedUsersFromLocalExportCollections = useCallback(() => {
@@ -4738,36 +4750,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     hasPhoneStartingWith38,
   ]);
 
-  const exportFilteredUsersCsv = async () => {
-    let fav = favoriteUsersData;
-    if (filters.favorite?.favOnly && Object.keys(fav).length === 0) {
-      fav = await fetchFavoriteUsers(auth.currentUser.uid);
-      setFavoriteUsersData(fav);
-    }
-
-    const allUsers = await getExportContactsBySource(filters, fav);
-    if (!allUsers) return;
-
-    saveToContactCsv(allUsers);
-  };
-
   const saveAllContacts = async () => {
     const res = await getExportContactsBySource({}, favoriteUsersData);
     if (!res) return;
-    saveToContact(res);
-  };
-
-  const saveFilteredContactsVcf = async () => {
-    let fav = favoriteUsersData;
-    if (filters.favorite?.favOnly && Object.keys(fav).length === 0) {
-      fav = await fetchFavoriteUsers(auth.currentUser.uid);
-      setFavoriteUsersData(fav);
-    }
-
-    const allUsers = await getExportContactsBySource(filters, fav);
-    if (!allUsers) return;
-
-    saveToContact(allUsers);
+    saveContactsBySelectedFormat(res);
   };
 
   const fetchAndMergeFavoriteUsers = useCallback(async () => {
@@ -5643,7 +5629,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return acc;
     }, {});
 
-    saveToContactCsv(contactsById);
+    saveContactsBySelectedFormat(contactsById);
   };
   const renderVisibleIds = renderVisibleCards.map(card => card.userId);
   const loadedPages = Math.ceil(renderVisibleIds.length / PAGE_SIZE) || 1;
@@ -6648,31 +6634,53 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             </SaveModalSection>
 
             <SaveModalSection>
+              <SaveModalSectionTitle>Формат збереження</SaveModalSectionTitle>
+              <SaveModalRadioRow>
+                <input
+                  type="radio"
+                  name="contactExportFormat"
+                  value="vcf"
+                  checked={contactExportFormat === 'vcf'}
+                  onChange={() => setContactExportFormat('vcf')}
+                />
+                <span>
+                  VCF
+                  <SaveModalComment>Файл контактів для імпорту в телефон, address book або інші застосунки контактів.</SaveModalComment>
+                </span>
+              </SaveModalRadioRow>
+              <SaveModalRadioRow>
+                <input
+                  type="radio"
+                  name="contactExportFormat"
+                  value="csv"
+                  checked={contactExportFormat === 'csv'}
+                  onChange={() => setContactExportFormat('csv')}
+                />
+                <span>
+                  CSV
+                  <SaveModalComment>Табличний файл для Excel, Google Sheets або ручної перевірки контактів.</SaveModalComment>
+                </span>
+              </SaveModalRadioRow>
+            </SaveModalSection>
+
+            <SaveModalSection>
               <SaveModalSectionTitle>Варіанти збереження</SaveModalSectionTitle>
               <SaveModalActions>
                 <SaveModalActionButton type="button" onClick={exportFilteredUsers}>
-                  <SaveModalActionTitle>VCF з активними фільтрами</SaveModalActionTitle>
-                  <SaveModalComment>Основний експорт контактів: бере всю вибрану колекцію, застосовує вже активні чекбокси панелі фільтрів і ділить файли максимум по 5000 контактів.</SaveModalComment>
-                </SaveModalActionButton>
-                <SaveModalActionButton type="button" onClick={exportFilteredUsersCsv}>
-                  <SaveModalActionTitle>CSV з активними фільтрами</SaveModalActionTitle>
-                  <SaveModalComment>Ті самі дані, але у CSV для таблиць; також ділиться на файли максимум по 5000 рядків контактів.</SaveModalComment>
+                  <SaveModalActionTitle>З активними фільтрами</SaveModalActionTitle>
+                  <SaveModalComment>Бере всю вибрану backend/local колекцію, застосовує активні чекбокси панелі фільтрів і зберігає у форматі, вибраному вище. Файли діляться максимум по 5000 контактів.</SaveModalComment>
                 </SaveModalActionButton>
                 <SaveModalActionButton
                   type="button"
                   onClick={saveSearchBarContacts}
                   disabled={searchBarContactsExportCount === 0}
                 >
-                  <SaveModalActionTitle>saveSearchBar contacts</SaveModalActionTitle>
-                  <SaveModalComment>CSV експорт усіх карток, знайдених останнім SearchBar запитом: {searchBarContactsExportCount}. Використовує повний результат пошуку, а не тільки поточні {PAGE_SIZE} карток на екрані.</SaveModalComment>
+                  <SaveModalActionTitle>SearchBar contacts</SaveModalActionTitle>
+                  <SaveModalComment>Експортує картки з останнього SearchBar запиту: {searchBarContactsExportCount}. Це вже знайдений SearchBar набір, а не backend/local вибір джерела; формат VCF/CSV береться з блоку вище. Використовує повний результат пошуку, а не тільки поточні {PAGE_SIZE} карток на екрані.</SaveModalComment>
                 </SaveModalActionButton>
                 <SaveModalActionButton type="button" onClick={saveAllContacts}>
-                  <SaveModalActionTitle>VCF вся колекція</SaveModalActionTitle>
-                  <SaveModalComment>Ігнорує активні фільтри панелі й експортує всю вибрану backend/local колекцію.</SaveModalComment>
-                </SaveModalActionButton>
-                <SaveModalActionButton type="button" onClick={saveFilteredContactsVcf}>
-                  <SaveModalActionTitle>VCF дубль поточного фільтрованого експорту</SaveModalActionTitle>
-                  <SaveModalComment>Збережено для сумісності зі старою кнопкою saveVCF; використовує ту саму логіку, що VCF з активними фільтрами.</SaveModalComment>
+                  <SaveModalActionTitle>Вся колекція</SaveModalActionTitle>
+                  <SaveModalComment>Ігнорує активні фільтри панелі й експортує всю вибрану backend/local колекцію у форматі, вибраному вище.</SaveModalComment>
                 </SaveModalActionButton>
                 <SaveModalActionButton type="button" onClick={() => setShowSaveModal(false)}>
                   <SaveModalActionTitle>Закрити</SaveModalActionTitle>
