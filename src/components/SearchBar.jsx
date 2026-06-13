@@ -1407,17 +1407,22 @@ const SearchBar = ({
     forcedEqualToKeys = null,
   ) => {
     const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
+    const hasExplicitEqualToKeys = Array.isArray(forcedEqualToKeys) || Array.isArray(searchOptions?.equalToKeys);
     const selectedEqualToKeys = Array.isArray(forcedEqualToKeys)
       ? normalizeConfiguredSearchKeys(forcedEqualToKeys, allEqualToKeys)
       : resolveSelectedSearchKeys(searchOptions, 'equalToKeys', allEqualToKeys);
+    let found = false;
+
+    if (hasExplicitEqualToKeys && selectedEqualToKeys.length === 0) {
+      return { found, results: resultMap };
+    }
+
     const equalToExecutionPlan = resolveEqualToExecutionKeys({
       allKeys: allEqualToKeys,
       selectedKeys: selectedEqualToKeys,
       rawQuery,
     });
     const keysToTry = equalToExecutionPlan.primaryKeys || [];
-
-    let found = false;
     for (const equalToKey of keysToTry) {
       const candidates = getParsedCandidatesForKey(equalToKey, rawQuery);
       for (const parsedValue of candidates) {
