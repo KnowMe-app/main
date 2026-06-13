@@ -9,7 +9,7 @@ import { useAutoResize } from '../hooks/useAutoResize';
 import { color, OrangeBtn, uiTokens } from './styles';
 import {
   pickerFieldsExtended as pickerFields,
-  pickerFieldNames,
+  ppTechnicalKeyValueFieldNames,
   getFieldLabel,
   getFieldPlaceholder,
   getOptionLabel,
@@ -242,7 +242,7 @@ const normalizePpTechnicalFieldKey = rawKey =>
   String(rawKey || '').trim().toLowerCase().replace(/\s+/g, '');
 
 const PP_TECHNICAL_FIELD_ALIASES = Object.fromEntries(
-  pickerFieldNames.map(fieldName => [normalizePpTechnicalFieldKey(fieldName), fieldName])
+  ppTechnicalKeyValueFieldNames.map(fieldName => [normalizePpTechnicalFieldKey(fieldName), fieldName])
 );
 
 const normalizePpTechnicalKeyValueField = rawKey => {
@@ -293,6 +293,34 @@ const parsePpTechnicalKeyValueInput = rawInput => {
   finishActiveBlock();
 
   return entries.filter(({ value }) => String(value ?? '').trim());
+};
+
+const PP_TECHNICAL_APPEND_FIELD_NAMES = new Set([
+  'name',
+  'surname',
+  'phone',
+  'email',
+  'telegram',
+  'facebook',
+  'instagram',
+  'ameblo',
+  'tiktok',
+  'linkedin',
+  'youtube',
+  'twitter',
+  'line',
+  'otherLink',
+  'other',
+  'vk',
+]);
+
+const applyPpTechnicalKeyValueEntry = (stateDraft, fieldName, normalizedValue) => {
+  if (PP_TECHNICAL_APPEND_FIELD_NAMES.has(fieldName)) {
+    stateDraft[fieldName] = appendFieldValue(stateDraft[fieldName], normalizedValue);
+    return;
+  }
+
+  stateDraft[fieldName] = normalizedValue;
 };
 
 const normalizePpTechnicalKeyValueEntry = (fieldName, value) => {
@@ -2408,7 +2436,7 @@ ${entries.join('\n')}`;
           const normalizedValue = normalizePpTechnicalKeyValueEntry(fieldName, value);
           if (!normalizedValue) return;
 
-          nextState[fieldName] = appendFieldValue(prevState[fieldName], normalizedValue);
+          applyPpTechnicalKeyValueEntry(nextState, fieldName, normalizedValue);
         });
       } else if (!parsed) {
         const resolvedTechnicalTarget = resolvePpTechnicalInputTarget(rawValue, {
