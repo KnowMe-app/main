@@ -35,7 +35,7 @@ describe('clearAllCardsCache', () => {
     localStorage.clear();
   });
 
-  it('removes card, query, search key, and legacy matching cache entries while preserving search history', () => {
+  it('removes card, query, search key, search history, and legacy matching cache entries', () => {
     localStorage.setItem('cards', '{}');
     localStorage.setItem('queries', '{}');
     localStorage.setItem('matchingIndexQueries', '{}');
@@ -57,7 +57,7 @@ describe('clearAllCardsCache', () => {
     expect(localStorage.getItem('queries')).toBeNull();
     expect(localStorage.getItem('matchingIndexQueries')).toBeNull();
     expect(localStorage.getItem('searchKey:v2:users/phone/123')).toBeNull();
-    expect(localStorage.getItem('searchHistory:queries')).toBe('{}');
+    expect(localStorage.getItem('searchHistory:queries')).toBeNull();
     expect(localStorage.getItem('cardsCache:load2')).toBeNull();
     expect(localStorage.getItem('additionalNewUsers:filters')).toBeNull();
     expect(localStorage.getItem('matchingIndex:lastAction')).toBeNull();

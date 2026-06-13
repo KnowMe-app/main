@@ -12,7 +12,7 @@ export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
 export const MATCHING_QUERY_MAX_IDS = 2000;
 export const MATCHING_INDEX_CACHE_VERSION = 1;
 const MATCHING_LOCAL_STORAGE_KEYS = new Set([CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY]);
-const MATCHING_LOCAL_STORAGE_PREFIXES = ['searchKey:', 'cardsCache:'];
+const MATCHING_LOCAL_STORAGE_PREFIXES = ['searchKey:', 'searchHistory:', 'cardsCache:'];
 const MATCHING_LOCAL_STORAGE_SUBSTRINGS = [
   'matchingindex',
   'searchkeysets',
