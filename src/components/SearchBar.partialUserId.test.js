@@ -40,8 +40,8 @@ describe('parseExplicitSearchKeyCandidate', () => {
 
 
   it('normalizes UK trigger telegram queries through the shared telegram parser', () => {
-    expect(parseTelegramSearchValue('УК СМ ALIA 09.10.2025')).toBe('УК СМ ALIA 09.10.2025');
-    expect(parseTelegramSearchValue('УК СМ Надія @nadia_agent')).toBe('УК СМ Надія @nadia_agent');
+    expect(parseTelegramSearchValue('УК СМ ALIA 09.10.2025')).toBeNull();
+    expect(parseTelegramSearchValue('УК СМ Надія @nadia_agent')).toBeNull();
     expect(parseTelegramSearchValue('@plain_handle')).toBe('plain_handle');
     expect(parseTelegramSearchValue('https://t.me/plain_handle')).toBe('plain_handle');
   });
@@ -80,6 +80,8 @@ describe('resolveExecutionPlan', () => {
     expect(getSelectedAdvancedSearchModes({ searchIdPrefixes: ['telegram'] }, enabled)).toEqual(['searchId']);
     expect(getSelectedAdvancedSearchModes({ equalToKeys: ['telegram'] }, enabled)).toEqual(['equalToAllCards']);
     expect(getSelectedAdvancedSearchModes({ searchIdPrefixes: ['telegram'], equalToKeys: ['telegram'] }, key => key === 'searchId')).toEqual(['searchId']);
+    expect(getSelectedAdvancedSearchModes({ enabledSearchKeys: { partialUserId: true } }, enabled)).toEqual(['partialUserId']);
+    expect(getSelectedAdvancedSearchModes({ enabledSearchKeys: { searchId: true, searchKey: true, equalToAllCards: true } }, enabled)).toEqual(['searchId', 'searchKey', 'equalToAllCards']);
   });
 });
 
@@ -117,6 +119,35 @@ describe('SearchBar result validation', () => {
       { userId: 'Anna123' },
       { userId: 'Anna' },
       { forcePartialUserIdSearch: true },
+    )).toBe(true);
+  });
+
+  it('keeps default name and short phone searches as substring matches', () => {
+    expect(doesCardMatchSearchParams(
+      { userId: 'name-match', name: 'Anna' },
+      { name: 'Ann' },
+    )).toBe(true);
+    expect(doesCardMatchSearchParams(
+      { userId: 'phone-match', phone: '380501234567' },
+      { phone: '1234' },
+    )).toBe(true);
+  });
+
+  it('uses exact validation for equalTo fields and normalized date bucket values', () => {
+    expect(doesCardMatchSearchParams(
+      { userId: 'comment-miss', myComment: 'abcd' },
+      { myComment: 'abc' },
+      { forceEqualToAllCards: true },
+    )).toBe(false);
+    expect(doesCardMatchSearchParams(
+      { userId: 'date-match', getInTouch: '2025-01-30' },
+      { getInTouch: '30.01.2025' },
+      { forceSearchKeyBucket: true },
+    )).toBe(true);
+    expect(doesCardMatchSearchParams(
+      { userId: 'timestamp-match', lastAction: new Date('2025-01-30T15:00:00Z').getTime() },
+      { lastAction: '30.01.2025' },
+      { forceSearchKeyBucket: true },
     )).toBe(true);
   });
 });
