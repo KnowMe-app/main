@@ -94,6 +94,7 @@ import FilterPanel, { getInitialFilters } from './FilterPanel';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
+import { pickerFieldNames } from './formFields';
 import { PAGE_SIZE, database } from './config';
 import { get as firebaseGet, push, ref } from 'firebase/database';
 import {
@@ -1632,8 +1633,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
     const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
-    const contacts = ['instagram', 'ameblo', 'facebook', 'email', 'phone', 'telegram', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other', 'vk', 'userId'];
-    const ppTechnicalInputFields = ['name', 'surname', ...contacts];
+    const ppTechnicalInputFields = pickerFieldNames;
     const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
 
     const now = Date.now();

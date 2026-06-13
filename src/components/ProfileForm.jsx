@@ -9,6 +9,7 @@ import { useAutoResize } from '../hooks/useAutoResize';
 import { color, OrangeBtn, uiTokens } from './styles';
 import {
   pickerFieldsExtended as pickerFields,
+  pickerFieldNames,
   getFieldLabel,
   getFieldPlaceholder,
   getOptionLabel,
@@ -235,6 +236,71 @@ const normalizePpTechnicalTargetValue = (fieldName, value) => {
   }
 
   return inputUpdateValue(rawValue, { name: fieldName });
+};
+
+const normalizePpTechnicalFieldKey = rawKey =>
+  String(rawKey || '').trim().toLowerCase().replace(/\s+/g, '');
+
+const PP_TECHNICAL_FIELD_ALIASES = Object.fromEntries(
+  pickerFieldNames.map(fieldName => [normalizePpTechnicalFieldKey(fieldName), fieldName])
+);
+
+const normalizePpTechnicalKeyValueField = rawKey => {
+  const normalized = normalizePpTechnicalFieldKey(rawKey);
+  return PP_TECHNICAL_FIELD_ALIASES[normalized] || '';
+};
+
+const parsePpTechnicalKeyValueInput = rawInput => {
+  const lines = String(rawInput || '').replace(/\r\n/g, '\n').split('\n');
+  const entries = [];
+  let activeBlock = null;
+
+  const finishActiveBlock = () => {
+    if (!activeBlock) return;
+    entries.push({
+      fieldName: activeBlock.fieldName,
+      value: activeBlock.lines.join('\n').trim(),
+    });
+    activeBlock = null;
+  };
+
+  for (const line of lines) {
+    const keyValueMatch = line.match(/^([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)$/);
+
+    if (keyValueMatch) {
+      const fieldName = normalizePpTechnicalKeyValueField(keyValueMatch[1]);
+      if (!fieldName) {
+        if (activeBlock) activeBlock.lines.push(line.replace(/^\s{2}/, ''));
+        continue;
+      }
+
+      finishActiveBlock();
+
+      const rawValue = keyValueMatch[2] ?? '';
+      if (rawValue.trim() === '|') {
+        activeBlock = { fieldName, lines: [] };
+      } else {
+        entries.push({ fieldName, value: rawValue.trim() });
+      }
+      continue;
+    }
+
+    if (activeBlock) {
+      activeBlock.lines.push(line.replace(/^\s{2}/, ''));
+    }
+  }
+
+  finishActiveBlock();
+
+  return entries.filter(({ value }) => String(value ?? '').trim());
+};
+
+const normalizePpTechnicalKeyValueEntry = (fieldName, value) => {
+  if (fieldName === 'myComment') {
+    return String(value ?? '').trim();
+  }
+
+  return normalizePpTechnicalTargetValue(fieldName, value);
 };
 
 const REPRODUCTIVE_FIELDS = [
@@ -2325,19 +2391,26 @@ ${entries.join('\n')}`;
         .map(value => value.trim().toLowerCase())
         .filter(Boolean);
   const shouldHideFieldsForClPp = roleTokens.some(role => ['pp', 'cl'].includes(role));
-  const shouldShowPpTechnicalInput = roleTokens.includes('pp');
   const [ppTechnicalInput, setPpTechnicalInput] = useState('');
 
   const handlePpTechnicalInputSubmit = useCallback(() => {
     const rawValue = String(ppTechnicalInput || '').trim();
     if (!rawValue) return;
 
+    const keyValueEntries = parsePpTechnicalKeyValueInput(rawValue);
     const parsed = parseUkTriggerQuery(rawValue);
 
     setState(prevState => {
       const nextState = { ...prevState };
 
-      if (!parsed) {
+      if (keyValueEntries.length > 0) {
+        keyValueEntries.forEach(({ fieldName, value }) => {
+          const normalizedValue = normalizePpTechnicalKeyValueEntry(fieldName, value);
+          if (!normalizedValue) return;
+
+          nextState[fieldName] = appendFieldValue(prevState[fieldName], normalizedValue);
+        });
+      } else if (!parsed) {
         const resolvedTechnicalTarget = resolvePpTechnicalInputTarget(rawValue, {
           normalizePhone: normalizePhoneValue,
         });
@@ -2530,7 +2603,7 @@ ${entries.join('\n')}`;
               : state[field.name] || '';
           return (
             <React.Fragment key={index}>
-            {shouldShowPpTechnicalInput && field.name === 'name' && (
+            {field.name === 'name' && (
               <PickerContainer>
                 <FieldMainRow>
                   <InputDiv>
@@ -2538,6 +2611,7 @@ ${entries.join('\n')}`;
                       <InputField
                         fieldName="ppTechnicalInput"
                         name="ppTechnicalInput"
+                        as="textarea"
                         value={ppTechnicalInput}
                         onChange={e => setPpTechnicalInput(e?.target?.value || '')}
                         onBlur={handlePpTechnicalInputSubmit}
@@ -3399,6 +3473,12 @@ const InputField = styled.input`
       return css`
         min-height: 28px;
         max-height: 84px;
+        resize: vertical;
+      `;
+    }
+    if (as === 'textarea' && baseFieldName === 'ppTechnicalInput') {
+      return css`
+        min-height: 64px;
         resize: vertical;
       `;
     }
