@@ -1,6 +1,7 @@
 import {
   buildSearchIdRecordKey,
   normalizeSearchIdInput,
+  buildSearchIdCandidateKeys,
 } from './searchKeyUtils';
 
 const youtubeChannelId = 'UC4LwxzuzRqwSpa1A64eziDQ';
@@ -24,5 +25,17 @@ describe('searchKeyUtils YouTube normalization', () => {
       .toBe('KnowMeOfficial');
     expect(normalizeSearchIdInput('youtube', 'youtube: channel/UC4LwxzuzRqwSpa1A64eziDQ'))
       .toBe('channel/UC4LwxzuzRqwSpa1A64eziDQ');
+  });
+});
+
+
+describe('searchKeyUtils exact searchId behavior', () => {
+  it('builds only the exact selected telegram key when variants are disabled', () => {
+    const normalized = normalizeSearchIdInput('telegram', 'УК СМ ALIA 09.10.2025');
+
+    expect(buildSearchIdCandidateKeys(normalized, 'УК СМ ALIA 09.10.2025', ['telegram'], {
+      includeVariants: false,
+      includePrefixMatches: false,
+    })).toEqual(['telegram_ук см alia 09.10.2025']);
   });
 });
