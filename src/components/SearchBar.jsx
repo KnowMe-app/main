@@ -544,7 +544,12 @@ const parseGroupedSearchValues = input => {
     .filter(Boolean);
 };
 
-const parseTelegramId = input => {
+export const parseTelegramSearchValue = input => {
+  const parsedUkTrigger = parseUkTriggerQuery(input);
+  if (parsedUkTrigger?.searchPair?.telegram) {
+    return parsedUkTrigger.searchPair.telegram;
+  }
+
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
   if (!trimmed) return null;
@@ -560,6 +565,8 @@ const parseTelegramId = input => {
   if (textMatch && textMatch[1]) return textMatch[1];
   return null;
 };
+
+const parseTelegramId = parseTelegramSearchValue;
 
 const parseOtherContact = input => {
   if (typeof input !== 'string') return null;
@@ -762,6 +769,14 @@ export const detectSearchParamsByQueryContent = query => {
 };
 
 export const detectSearchParams = query => detectSearchParamsByQueryContent(query);
+
+
+export const getSelectedAdvancedSearchModes = (searchOptions = {}, isSearchEnabled = () => true) => [
+  searchOptions?.enablePartialUserIdSearch ? 'partialUserId' : null,
+  Array.isArray(searchOptions?.searchIdPrefixes) && searchOptions.searchIdPrefixes.length > 0 ? 'searchId' : null,
+  Array.isArray(searchOptions?.searchKeyFields) && searchOptions.searchKeyFields.length > 0 ? 'searchKey' : null,
+  Array.isArray(searchOptions?.equalToKeys) && searchOptions.equalToKeys.length > 0 ? 'equalToAllCards' : null,
+].filter(key => key && isSearchEnabled(key));
 
 const isSearchPerfDebugEnabled = () => {
   if (typeof window === 'undefined') return false;
@@ -1066,21 +1081,39 @@ const SearchBar = ({
 
   const notifySearchResult = () => {};
 
-  const mergeSearchResultMap = (acc, res) => {
+  const isSearchDebugEnabled = () => {
+    try {
+      return window.localStorage.getItem('searchDebug') === '1';
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const attachSearchDebugMeta = (card, meta) => {
+    if (!card || !meta || !isSearchDebugEnabled()) return card;
+    return {
+      ...card,
+      __searchDebug: meta,
+    };
+  };
+
+  const mergeSearchResultMap = (acc, res, meta = null) => {
     if (!res || Object.keys(res).length === 0) return;
     if (Array.isArray(res)) {
       res.forEach(card => {
         if (card?.userId) {
-          acc[card.userId] = card;
+          acc[card.userId] = attachSearchDebugMeta(card, meta);
         }
       });
       return;
     }
     if ('userId' in res) {
-      acc[res.userId] = res;
+      acc[res.userId] = attachSearchDebugMeta(res, meta);
       return;
     }
-    Object.assign(acc, res);
+    Object.entries(res).forEach(([userId, card]) => {
+      acc[userId] = attachSearchDebugMeta(card, meta);
+    });
   };
 
   const buildRepeatedSearchContext = value => {
@@ -1214,7 +1247,7 @@ const SearchBar = ({
         if (isStaleRequest()) return { found, results: resultMap };
         if (!res || Object.keys(res).length === 0) continue;
         found = true;
-        mergeSearchResultMap(resultMap, res);
+        mergeSearchResultMap(resultMap, res, { mode: 'equalToAllCards', key: equalToKey, value: parsedValue });
       }
     }
 
@@ -1247,7 +1280,7 @@ const SearchBar = ({
         if (isStaleRequest()) return { found, results: resultMap };
         if (!res || Object.keys(res).length === 0) continue;
         found = true;
-        mergeSearchResultMap(resultMap, res);
+        mergeSearchResultMap(resultMap, res, { mode: 'searchKey', key: searchKeyField, value: parsedValue });
       }
     }
 
@@ -1267,7 +1300,7 @@ const SearchBar = ({
       return { found: false, results: resultMap };
     }
 
-    mergeSearchResultMap(resultMap, partialResult);
+    mergeSearchResultMap(resultMap, partialResult, { mode: 'partialUserId', key: 'userId', value: userIdPrefix });
     return { found: true, results: resultMap };
   };
 
@@ -1309,10 +1342,10 @@ const SearchBar = ({
       );
       if (isStaleRequest()) return { found: false, results: resultMap };
 
-      searchIdResults.forEach(searchIdResult => {
+      searchIdResults.forEach((searchIdResult, index) => {
         if (!searchIdResult || Object.keys(searchIdResult).length === 0) return;
         foundCombinedResults = true;
-        mergeSearchResultMap(resultMap, searchIdResult);
+        mergeSearchResultMap(resultMap, searchIdResult, { mode: 'searchId', key: prefixesToIterate[index], value: searchIdInput });
       });
     }
 
@@ -1488,21 +1521,8 @@ const SearchBar = ({
         platform !== 'searchId' && SEARCH_ID_SCOPED_PLATFORMS.has(platform)
           ? [platform]
           : undefined;
-      const mergeSearchResult = (acc, res) => {
-        if (!res || Object.keys(res).length === 0) return;
-        if (Array.isArray(res)) {
-          res.forEach(card => {
-            if (card?.userId) {
-              acc[card.userId] = card;
-            }
-          });
-          return;
-        }
-        if ('userId' in res) {
-          acc[res.userId] = res;
-          return;
-        }
-        Object.assign(acc, res);
+      const mergeSearchResult = (acc, res, meta = null) => {
+        mergeSearchResultMap(acc, res, meta);
       };
 
       let finalRes = null;
@@ -1519,8 +1539,8 @@ const SearchBar = ({
           )
         );
 
-        prefixResults.forEach(partialRes => {
-          mergeSearchResult(aggregatedResults, partialRes);
+        prefixResults.forEach((partialRes, index) => {
+          mergeSearchResult(aggregatedResults, partialRes, { mode: 'searchId', key: prefixesToIterate[index], value: id });
         });
 
         if (Object.keys(aggregatedResults).length > 0) {
@@ -1680,12 +1700,7 @@ const SearchBar = ({
       }
       return;
     }
-    const selectedAdvancedSearchModes = [
-      'partialUserId',
-      'searchId',
-      'searchKey',
-      'equalToAllCards',
-    ].filter(key => isSearchEnabled(key));
+    const selectedAdvancedSearchModes = getSelectedAdvancedSearchModes(searchOptions, isSearchEnabled);
     const shouldUseSelectedAdvancedSearchModes = selectedAdvancedSearchModes.length > 0;
 
     const repeatedValues = parseGroupedSearchValues(trimmed);

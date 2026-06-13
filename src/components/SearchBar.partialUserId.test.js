@@ -1,7 +1,7 @@
 import React from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
-import SearchBar, { getFreshCachedSearchResult, getSearchCacheKeyForParams, parseExplicitSearchKeyCandidate, parsePartialUserIdPrefix, resolveExecutionPlan } from './SearchBar';
+import SearchBar, { getFreshCachedSearchResult, getSearchCacheKeyForParams, getSelectedAdvancedSearchModes, parseExplicitSearchKeyCandidate, parsePartialUserIdPrefix, parseTelegramSearchValue, resolveExecutionPlan } from './SearchBar';
 import { updateCard } from '../utils/cardsStorage';
 import { resetMatchingLocalStorageCache, setIdsForQuery } from '../utils/cardIndex';
 
@@ -37,6 +37,14 @@ describe('parseExplicitSearchKeyCandidate', () => {
   it('keeps labeled telegram parsing working before falling back to raw key normalization', () => {
     expect(parseExplicitSearchKeyCandidate('telegram', 'telegram: Anna_Smile0808')).toBe('Anna_Smile0808');
   });
+
+
+  it('normalizes UK trigger telegram queries through the shared telegram parser', () => {
+    expect(parseTelegramSearchValue('УК СМ ALIA 09.10.2025')).toBe('УК СМ ALIA 09.10.2025');
+    expect(parseTelegramSearchValue('УК СМ Надія @nadia_agent')).toBe('УК СМ Надія @nadia_agent');
+    expect(parseTelegramSearchValue('@plain_handle')).toBe('plain_handle');
+    expect(parseTelegramSearchValue('https://t.me/plain_handle')).toBe('plain_handle');
+  });
 });
 
 describe('resolveExecutionPlan', () => {
@@ -62,6 +70,16 @@ describe('resolveExecutionPlan', () => {
       primaryKeys: ['telegram', 'phone', 'email'],
       fallbackKeys: [],
     });
+  });
+
+
+  it('only treats explicitly configured advanced scopes as selected', () => {
+    const enabled = key => ({ searchId: true, searchKey: true, equalToAllCards: true, partialUserId: true }[key]);
+
+    expect(getSelectedAdvancedSearchModes({}, enabled)).toEqual([]);
+    expect(getSelectedAdvancedSearchModes({ searchIdPrefixes: ['telegram'] }, enabled)).toEqual(['searchId']);
+    expect(getSelectedAdvancedSearchModes({ equalToKeys: ['telegram'] }, enabled)).toEqual(['equalToAllCards']);
+    expect(getSelectedAdvancedSearchModes({ searchIdPrefixes: ['telegram'], equalToKeys: ['telegram'] }, key => key === 'searchId')).toEqual(['searchId']);
   });
 });
 
@@ -108,6 +126,7 @@ describe('SearchBar cache-first search', () => {
           equalToAllCards: false,
         },
         searchOptions: {
+          enablePartialUserIdSearch: true,
           enabledSearchKeys: {
             partialUserId: true,
             searchId: false,
