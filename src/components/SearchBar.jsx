@@ -545,11 +545,6 @@ const parseGroupedSearchValues = input => {
 };
 
 export const parseTelegramSearchValue = input => {
-  const parsedUkTrigger = parseUkTriggerQuery(input);
-  if (parsedUkTrigger?.searchPair?.telegram) {
-    return parsedUkTrigger.searchPair.telegram;
-  }
-
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
   if (!trimmed) return null;
@@ -740,11 +735,6 @@ const resolveEqualToExecutionKeys = ({ allKeys, selectedKeys, rawQuery }) => {
 
 
 export const detectSearchParamsByQueryContent = query => {
-  const parsedUkTrigger = parseUkTriggerQuery(query);
-  if (parsedUkTrigger?.searchPair?.telegram) {
-    return { key: 'telegram', value: parsedUkTrigger.searchPair.telegram };
-  }
-
   const trimmed = query.trim();
   const parsers = [
     ['facebook', parseFacebookId],
@@ -779,6 +769,50 @@ const normalizeComparableSearchValue = (key, value) => {
     return normalizeSearchIdInput(key, raw).toLowerCase();
   }
   return raw.replace(/\s+/g, ' ').toLowerCase();
+};
+
+const EXACT_SEARCH_ID_VALIDATION_FIELDS = new Set(
+  [...SEARCH_ID_INDEXED_FIELDS].filter(key => key !== 'name' && key !== 'surname' && key !== 'phone'),
+);
+
+const normalizeDateComparableValue = value => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+
+  const numericDate = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+  if (numericDate) {
+    const [, day, month, year] = numericDate;
+    const fullYear = year.length === 2 ? `20${year}` : year;
+    return `${fullYear.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  const isoDate = raw.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+  if (isoDate) {
+    const [, year, month, day] = isoDate;
+    return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  const timestamp = Number(raw);
+  if (Number.isFinite(timestamp) && timestamp > 0) {
+    const millis = timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+    const date = new Date(millis);
+    if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  }
+
+  const date = new Date(raw);
+  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+
+  return raw.replace(/\s+/g, ' ').toLowerCase();
+};
+
+const isDateSearchValidationKey = key =>
+  DATE_LIKE_EQUAL_TO_KEYS.has(key) || SEARCH_KEY_BUCKET_SEARCH_PARSERS[key];
+
+const shouldUseExactFieldValidation = (key, expected, options = {}) => {
+  if (options.forceEqualToAllCards) return true;
+  if (isDateSearchValidationKey(key)) return true;
+  if (key === 'phone') return String(expected || '').replace(/\D/g, '').length >= 10;
+  return EXACT_SEARCH_ID_VALIDATION_FIELDS.has(key);
 };
 
 const getCardFieldValues = (card, key) => {
@@ -830,9 +864,18 @@ export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
   if (fieldValues.length === 0) return false;
 
   return fieldValues.some(fieldValue => {
+    if (isDateSearchValidationKey(key)) {
+      const normalizedDateFieldValue = normalizeDateComparableValue(fieldValue);
+      const normalizedDateExpected = normalizeDateComparableValue(value);
+      return Boolean(normalizedDateFieldValue && normalizedDateExpected && normalizedDateFieldValue === normalizedDateExpected);
+    }
+
     const normalizedFieldValue = normalizeComparableSearchValue(key, fieldValue);
     if (!normalizedFieldValue) return false;
-    if (SEARCH_ID_INDEXED_FIELDS.has(key)) return normalizedFieldValue === expected;
+    if (key === 'telegram' && options.allowTelegramPrefixMatches) {
+      return normalizedFieldValue.startsWith(expected);
+    }
+    if (shouldUseExactFieldValidation(key, expected, options)) return normalizedFieldValue === expected;
     return normalizedFieldValue.includes(expected);
   });
 };
@@ -845,12 +888,18 @@ export const filterSearchResultByParams = (result, params = {}, options = {}) =>
   return cardsToResultShape(filteredCards, result);
 };
 
-export const getSelectedAdvancedSearchModes = (searchOptions = {}, isSearchEnabled = () => true) => [
-  searchOptions?.enablePartialUserIdSearch ? 'partialUserId' : null,
-  Array.isArray(searchOptions?.searchIdPrefixes) && searchOptions.searchIdPrefixes.length > 0 ? 'searchId' : null,
-  Array.isArray(searchOptions?.searchKeyFields) && searchOptions.searchKeyFields.length > 0 ? 'searchKey' : null,
-  Array.isArray(searchOptions?.equalToKeys) && searchOptions.equalToKeys.length > 0 ? 'equalToAllCards' : null,
-].filter(key => key && isSearchEnabled(key));
+export const getSelectedAdvancedSearchModes = (searchOptions = {}, isSearchEnabled = () => true) => {
+  const enabledKeys = searchOptions?.enabledSearchKeys;
+  const isExplicitlyEnabled = key =>
+    enabledKeys && typeof enabledKeys === 'object' && Boolean(enabledKeys[key]);
+
+  return [
+    (searchOptions?.enablePartialUserIdSearch || isExplicitlyEnabled('partialUserId')) ? 'partialUserId' : null,
+    (isExplicitlyEnabled('searchId') || (Array.isArray(searchOptions?.searchIdPrefixes) && searchOptions.searchIdPrefixes.length > 0)) ? 'searchId' : null,
+    (isExplicitlyEnabled('searchKey') || (Array.isArray(searchOptions?.searchKeyFields) && searchOptions.searchKeyFields.length > 0)) ? 'searchKey' : null,
+    (isExplicitlyEnabled('equalToAllCards') || (Array.isArray(searchOptions?.equalToKeys) && searchOptions.equalToKeys.length > 0)) ? 'equalToAllCards' : null,
+  ].filter(key => key && isSearchEnabled(key));
+};
 
 const isSearchPerfDebugEnabled = () => {
   if (typeof window === 'undefined') return false;
