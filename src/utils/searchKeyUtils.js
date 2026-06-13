@@ -160,6 +160,44 @@ export const normalizeExactSearchIdInput = (rawValue, searchIdPrefixes) => {
   return normalizedValue || baseValue.replace(/\s+/g, ' ');
 };
 
+
+export const formatLocalIsoDate = date => {
+  const year = String(date.getFullYear()).padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const normalizeSearchDateComparableValue = value => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+
+  const numericDate = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+  if (numericDate) {
+    const [, day, month, year] = numericDate;
+    const fullYear = year.length === 2 ? `20${year}` : year;
+    return `${fullYear.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  const isoDate = raw.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+  if (isoDate) {
+    const [, year, month, day] = isoDate;
+    return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  const timestamp = Number(raw);
+  if (Number.isFinite(timestamp) && timestamp > 0) {
+    const millis = timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+    const date = new Date(millis);
+    if (!Number.isNaN(date.getTime())) return formatLocalIsoDate(date);
+  }
+
+  const date = new Date(raw);
+  if (!Number.isNaN(date.getTime())) return formatLocalIsoDate(date);
+
+  return raw.replace(/\s+/g, ' ').toLowerCase();
+};
+
 const normalizePhoneSearchIdValue = rawValue => normalizePhoneValue(rawValue);
 
 export const buildSearchIdCandidateKeys = (

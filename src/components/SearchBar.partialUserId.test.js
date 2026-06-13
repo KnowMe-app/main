@@ -154,6 +154,16 @@ describe('SearchBar result validation', () => {
       { lastAction: '30.01.2025' },
       { forceSearchKeyBucket: true },
     )).toBe(true);
+    expect(filterSearchResultByParams(
+      {
+        wrongDateField: { userId: 'wrongDateField', getInTouch: '13.06.2026', createdAt: '14.05.2026' },
+        createdAtMatch: { userId: 'createdAtMatch', getInTouch: '14.05.2026', createdAt: '13.06.2026' },
+      },
+      { createdAt: '13.06.2026' },
+      { forceEqualToAllCards: true, equalToKeys: ['createdAt'] },
+    )).toEqual({
+      createdAtMatch: { userId: 'createdAtMatch', getInTouch: '14.05.2026', createdAt: '13.06.2026' },
+    });
   });
 });
 
