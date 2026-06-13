@@ -458,14 +458,39 @@ const resolveDetectedContactParams = rawSearch => {
   return CONTACT_SEARCH_LABEL_KEYS.has(detectedParams?.key) ? detectedParams : null;
 };
 
+const normalizeConfiguredSearchKeys = (keys, allKeys) => {
+  if (!Array.isArray(keys)) return [];
+  return [...new Set(
+    keys
+      .map(key => (typeof key === 'string' ? key.trim() : ''))
+      .filter(key => allKeys.includes(key)),
+  )];
+};
+
+const getEnabledFieldKeys = (enabledKeys, allKeys) => {
+  if (!enabledKeys || typeof enabledKeys !== 'object') return null;
+  const configuredFieldKeys = allKeys.filter(key => Object.prototype.hasOwnProperty.call(enabledKeys, key));
+  if (configuredFieldKeys.length === 0) return null;
+  return configuredFieldKeys.filter(key => Boolean(enabledKeys[key]));
+};
+
+const resolveSelectedSearchKeys = (searchOptions = {}, optionKey, allKeys) => {
+  if (Array.isArray(searchOptions?.[optionKey])) {
+    return normalizeConfiguredSearchKeys(searchOptions[optionKey], allKeys);
+  }
+
+  return getEnabledFieldKeys(searchOptions?.enabledSearchKeys, allKeys) || [];
+};
+
+const hasExplicitEmptySearchKeyList = (searchOptions = {}, optionKey) =>
+  Array.isArray(searchOptions?.[optionKey]) && searchOptions[optionKey].length === 0;
+
 const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
-  const configuredPrefixes = Array.isArray(searchOptions?.searchIdPrefixes)
-    ? [...new Set(
-      searchOptions.searchIdPrefixes
-        .map(prefix => (typeof prefix === 'string' ? prefix.trim() : ''))
-        .filter(prefix => SEARCH_ID_PREFIX_KEYS.includes(prefix)),
-    )]
-    : [];
+  const configuredPrefixes = resolveSelectedSearchKeys(
+    searchOptions,
+    'searchIdPrefixes',
+    SEARCH_ID_PREFIX_KEYS,
+  );
 
   const executionPlan = resolveExecutionPlan({
     allKeys: SEARCH_ID_PREFIX_KEYS,
@@ -545,6 +570,9 @@ const parseGroupedSearchValues = input => {
 };
 
 export const parseTelegramSearchValue = input => {
+  const parsedUkTrigger = parseUkTriggerQuery(input);
+  if (parsedUkTrigger?.searchPair?.telegram) return null;
+
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
   if (!trimmed) return null;
@@ -775,6 +803,13 @@ const EXACT_SEARCH_ID_VALIDATION_FIELDS = new Set(
   [...SEARCH_ID_INDEXED_FIELDS].filter(key => key !== 'name' && key !== 'surname' && key !== 'phone'),
 );
 
+const formatLocalIsoDate = date => {
+  const year = String(date.getFullYear()).padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const normalizeDateComparableValue = value => {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -796,11 +831,11 @@ const normalizeDateComparableValue = value => {
   if (Number.isFinite(timestamp) && timestamp > 0) {
     const millis = timestamp < 10000000000 ? timestamp * 1000 : timestamp;
     const date = new Date(millis);
-    if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+    if (!Number.isNaN(date.getTime())) return formatLocalIsoDate(date);
   }
 
   const date = new Date(raw);
-  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  if (!Number.isNaN(date.getTime())) return formatLocalIsoDate(date);
 
   return raw.replace(/\s+/g, ' ').toLowerCase();
 };
@@ -892,12 +927,26 @@ export const getSelectedAdvancedSearchModes = (searchOptions = {}, isSearchEnabl
   const enabledKeys = searchOptions?.enabledSearchKeys;
   const isExplicitlyEnabled = key =>
     enabledKeys && typeof enabledKeys === 'object' && Boolean(enabledKeys[key]);
+  const hasSelectableFields = (optionKey, allKeys) => {
+    if (Array.isArray(searchOptions?.[optionKey])) return searchOptions[optionKey].length > 0;
+    const enabledFieldKeys = getEnabledFieldKeys(enabledKeys, allKeys);
+    return enabledFieldKeys === null || enabledFieldKeys.length > 0;
+  };
 
   return [
     (searchOptions?.enablePartialUserIdSearch || isExplicitlyEnabled('partialUserId')) ? 'partialUserId' : null,
-    (isExplicitlyEnabled('searchId') || (Array.isArray(searchOptions?.searchIdPrefixes) && searchOptions.searchIdPrefixes.length > 0)) ? 'searchId' : null,
-    (isExplicitlyEnabled('searchKey') || (Array.isArray(searchOptions?.searchKeyFields) && searchOptions.searchKeyFields.length > 0)) ? 'searchKey' : null,
-    (isExplicitlyEnabled('equalToAllCards') || (Array.isArray(searchOptions?.equalToKeys) && searchOptions.equalToKeys.length > 0)) ? 'equalToAllCards' : null,
+    (
+      (isExplicitlyEnabled('searchId') && !hasExplicitEmptySearchKeyList(searchOptions, 'searchIdPrefixes') && hasSelectableFields('searchIdPrefixes', SEARCH_ID_PREFIX_KEYS)) ||
+      (Array.isArray(searchOptions?.searchIdPrefixes) && searchOptions.searchIdPrefixes.length > 0)
+    ) ? 'searchId' : null,
+    (
+      (isExplicitlyEnabled('searchKey') && !hasExplicitEmptySearchKeyList(searchOptions, 'searchKeyFields') && hasSelectableFields('searchKeyFields', Object.keys(SEARCH_KEY_BUCKET_SEARCH_PARSERS))) ||
+      (Array.isArray(searchOptions?.searchKeyFields) && searchOptions.searchKeyFields.length > 0)
+    ) ? 'searchKey' : null,
+    (
+      (isExplicitlyEnabled('equalToAllCards') && !hasExplicitEmptySearchKeyList(searchOptions, 'equalToKeys') && hasSelectableFields('equalToKeys', Object.keys(EQUAL_TO_SEARCH_PARSERS))) ||
+      (Array.isArray(searchOptions?.equalToKeys) && searchOptions.equalToKeys.length > 0)
+    ) ? 'equalToAllCards' : null,
   ].filter(key => key && isSearchEnabled(key));
 };
 
@@ -1289,9 +1338,7 @@ const SearchBar = ({
 
     if (isSearchEnabled('equalToAllCards')) {
       const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
-      const selectedEqualToKeys = Array.isArray(searchOptions?.equalToKeys)
-        ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
-        : [];
+      const selectedEqualToKeys = resolveSelectedSearchKeys(searchOptions, 'equalToKeys', allEqualToKeys);
       const equalToExecutionPlan = resolveEqualToExecutionKeys({
         allKeys: allEqualToKeys,
         selectedKeys: selectedEqualToKeys,
@@ -1361,10 +1408,8 @@ const SearchBar = ({
   ) => {
     const allEqualToKeys = Object.keys(EQUAL_TO_SEARCH_PARSERS);
     const selectedEqualToKeys = Array.isArray(forcedEqualToKeys)
-      ? forcedEqualToKeys.filter(key => allEqualToKeys.includes(key))
-      : Array.isArray(searchOptions?.equalToKeys)
-        ? searchOptions.equalToKeys.filter(key => allEqualToKeys.includes(key))
-        : [];
+      ? normalizeConfiguredSearchKeys(forcedEqualToKeys, allEqualToKeys)
+      : resolveSelectedSearchKeys(searchOptions, 'equalToKeys', allEqualToKeys);
     const equalToExecutionPlan = resolveEqualToExecutionKeys({
       allKeys: allEqualToKeys,
       selectedKeys: selectedEqualToKeys,
@@ -1393,9 +1438,7 @@ const SearchBar = ({
 
   const runSearchKeyBucketSearch = async (rawQuery, isStaleRequest, resultMap = {}) => {
     const allSearchKeyFields = Object.keys(SEARCH_KEY_BUCKET_SEARCH_PARSERS);
-    const selectedSearchKeyFields = Array.isArray(searchOptions?.searchKeyFields)
-      ? searchOptions.searchKeyFields.filter(key => allSearchKeyFields.includes(key))
-      : [];
+    const selectedSearchKeyFields = resolveSelectedSearchKeys(searchOptions, 'searchKeyFields', allSearchKeyFields);
     const executionPlan = resolveExecutionPlan({
       allKeys: allSearchKeyFields,
       selectedKeys: selectedSearchKeyFields,

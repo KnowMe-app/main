@@ -42,6 +42,7 @@ describe('parseExplicitSearchKeyCandidate', () => {
   it('normalizes UK trigger telegram queries through the shared telegram parser', () => {
     expect(parseTelegramSearchValue('УК СМ ALIA 09.10.2025')).toBeNull();
     expect(parseTelegramSearchValue('УК СМ Надія @nadia_agent')).toBeNull();
+    expect(parseTelegramSearchValue('УК СМ tg: nadia_agent')).toBeNull();
     expect(parseTelegramSearchValue('@plain_handle')).toBe('plain_handle');
     expect(parseTelegramSearchValue('https://t.me/plain_handle')).toBe('plain_handle');
   });
@@ -82,6 +83,10 @@ describe('resolveExecutionPlan', () => {
     expect(getSelectedAdvancedSearchModes({ searchIdPrefixes: ['telegram'], equalToKeys: ['telegram'] }, key => key === 'searchId')).toEqual(['searchId']);
     expect(getSelectedAdvancedSearchModes({ enabledSearchKeys: { partialUserId: true } }, enabled)).toEqual(['partialUserId']);
     expect(getSelectedAdvancedSearchModes({ enabledSearchKeys: { searchId: true, searchKey: true, equalToAllCards: true } }, enabled)).toEqual(['searchId', 'searchKey', 'equalToAllCards']);
+    expect(getSelectedAdvancedSearchModes({ enabledSearchKeys: { searchId: true, telegram: false } }, enabled)).toEqual([]);
+    expect(getSelectedAdvancedSearchModes({ enabledSearchKeys: { equalToAllCards: true, telegram: false } }, enabled)).toEqual([]);
+    expect(getSelectedAdvancedSearchModes({ enabledSearchKeys: { searchId: true, telegram: true } }, enabled)).toEqual(['searchId']);
+    expect(getSelectedAdvancedSearchModes({ enabledSearchKeys: { searchId: true }, searchIdPrefixes: [] }, enabled)).toEqual([]);
   });
 });
 
