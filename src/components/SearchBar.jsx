@@ -15,7 +15,7 @@ import {
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
-import { SEARCH_ID_INDEXED_FIELDS, normalizeSearchIdInput } from '../utils/searchKeyUtils';
+import { SEARCH_ID_INDEXED_FIELDS, normalizeSearchIdInput, normalizeSearchDateComparableValue } from '../utils/searchKeyUtils';
 
 const SearchIcon = (
   <svg
@@ -803,43 +803,6 @@ const EXACT_SEARCH_ID_VALIDATION_FIELDS = new Set(
   [...SEARCH_ID_INDEXED_FIELDS].filter(key => key !== 'name' && key !== 'surname' && key !== 'phone'),
 );
 
-const formatLocalIsoDate = date => {
-  const year = String(date.getFullYear()).padStart(4, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const normalizeDateComparableValue = value => {
-  const raw = String(value ?? '').trim();
-  if (!raw) return '';
-
-  const numericDate = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
-  if (numericDate) {
-    const [, day, month, year] = numericDate;
-    const fullYear = year.length === 2 ? `20${year}` : year;
-    return `${fullYear.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  }
-
-  const isoDate = raw.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
-  if (isoDate) {
-    const [, year, month, day] = isoDate;
-    return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  }
-
-  const timestamp = Number(raw);
-  if (Number.isFinite(timestamp) && timestamp > 0) {
-    const millis = timestamp < 10000000000 ? timestamp * 1000 : timestamp;
-    const date = new Date(millis);
-    if (!Number.isNaN(date.getTime())) return formatLocalIsoDate(date);
-  }
-
-  const date = new Date(raw);
-  if (!Number.isNaN(date.getTime())) return formatLocalIsoDate(date);
-
-  return raw.replace(/\s+/g, ' ').toLowerCase();
-};
-
 const isDateSearchValidationKey = key =>
   DATE_LIKE_EQUAL_TO_KEYS.has(key) || SEARCH_KEY_BUCKET_SEARCH_PARSERS[key];
 
@@ -900,8 +863,8 @@ export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
 
   return fieldValues.some(fieldValue => {
     if (isDateSearchValidationKey(key)) {
-      const normalizedDateFieldValue = normalizeDateComparableValue(fieldValue);
-      const normalizedDateExpected = normalizeDateComparableValue(value);
+      const normalizedDateFieldValue = normalizeSearchDateComparableValue(fieldValue);
+      const normalizedDateExpected = normalizeSearchDateComparableValue(value);
       return Boolean(normalizedDateFieldValue && normalizedDateExpected && normalizedDateFieldValue === normalizedDateExpected);
     }
 

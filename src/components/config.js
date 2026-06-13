@@ -39,6 +39,7 @@ import {
   getEqualToCandidates,
   makeSearchKeyValue,
   normalizeSearchIdInput,
+  normalizeSearchDateComparableValue,
   shouldSkipBroadFallbackForExactSearchId,
 } from '../utils/searchKeyUtils';
 import { resolveEqualToSearchKeys } from '../utils/searchKeyCheckboxFilters';
@@ -2211,6 +2212,33 @@ const executeSearchBySearchKeyBucket = async (searchKeys, rawSearchValue, unique
   }
 };
 
+
+const DATE_LIKE_EQUAL_TO_FIELDS = new Set([
+  'getInTouch',
+  'lastAction',
+  'lastLogin2',
+  'createdAt',
+  'lastCycle',
+  'lastLogin',
+]);
+
+const isEqualToFieldMatch = (userData, key, expectedValue) => {
+  if (!userData || !key) return false;
+  const fieldValue = key === 'userId' ? userData.userId : userData[key];
+  const values = Array.isArray(fieldValue) ? fieldValue : [fieldValue];
+
+  if (DATE_LIKE_EQUAL_TO_FIELDS.has(key)) {
+    const expectedDate = normalizeSearchDateComparableValue(expectedValue);
+    return Boolean(expectedDate && values.some(value =>
+      normalizeSearchDateComparableValue(value) === expectedDate
+    ));
+  }
+
+  const expected = String(expectedValue ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+  if (!expected) return false;
+  return values.some(value => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase() === expected);
+};
+
 const buildEqualToQueriesForField = (collectionRef, key, candidate) => {
   if (key === 'lastAction') {
     const ranges = getIsoDateVariantsForSearch(candidate)
@@ -2264,7 +2292,9 @@ const executeSearchByEqualToFields = async (searchKeys, rawSearchValue, uniqueUs
             if (snapshot.exists()) {
               snapshot.forEach(userSnapshot => {
                 const userId = userSnapshot.key;
+                const userData = userSnapshot.val();
                 if (uniqueUserIds.has(userId)) return;
+                if (!isEqualToFieldMatch({ userId, ...userData }, key, candidate)) return;
 
                 uniqueUserIds.add(userId);
                 promises.push(addUserToResults(userId, users));
