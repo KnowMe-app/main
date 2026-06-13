@@ -1852,7 +1852,7 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
-    ? { includeVariants: false, includePrefixMatches: true, includeAdaptedPhoneVariant: true }
+    ? { includeVariants: false, includePrefixMatches: false, includeAdaptedPhoneVariant: true }
     : { includeVariants: searchKey !== 'telegram', includePrefixMatches: searchKey !== 'telegram' };
   const users = {};
   const uniqueUserIds = new Set();
@@ -2401,7 +2401,7 @@ export const fetchNewUsersCollectionInRTDB = async (searchedValue, options = {})
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, { searchIdPrefixes });
   const shouldSkipBroadFallback = shouldSkipBroadFallbackForExactSearchId(searchKey, options);
   const searchIdOptions = shouldSkipBroadFallback
-    ? { includeVariants: false, includePrefixMatches: true, includeAdaptedPhoneVariant: true }
+    ? { includeVariants: false, includePrefixMatches: false, includeAdaptedPhoneVariant: true }
     : {
       includeVariants: searchKey !== 'telegram',
       includePrefixMatches: searchKey !== 'telegram' || allowTelegramPrefixMatches,
