@@ -801,6 +801,16 @@ export const FilterDrawerSection = styled.section`
   margin: 0 0 12px;
 `;
 
+export const MatchingSearchStatusMessage = styled.p`
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(247, 147, 30, 0.1);
+  color: var(--matching-text, #2d2d2d);
+  font-size: 13px;
+  font-weight: 700;
+`;
+
 export const FilterDrawerFooter = styled.div`
   position: sticky;
   bottom: 0;
