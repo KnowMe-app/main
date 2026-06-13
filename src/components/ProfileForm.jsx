@@ -2637,6 +2637,28 @@ ${entries.join('\n')}`;
           })}
         </div>
       )}
+      <PickerContainer>
+        <FieldMainRow>
+          <InputDiv>
+            <InputFieldContainer fieldName="ppTechnicalInput" value={ppTechnicalInput}>
+              <InputField
+                fieldName="ppTechnicalInput"
+                name="ppTechnicalInput"
+                as="textarea"
+                ref={ppTechnicalInputRef}
+                rows={1}
+                value={ppTechnicalInput}
+                onChange={e => {
+                  setPpTechnicalInput(e?.target?.value || '');
+                  autoResizePpTechnicalInput(e.target);
+                }}
+                onBlur={handlePpTechnicalInputSubmit}
+                placeholder="Технічний інпут для PP"
+              />
+            </InputFieldContainer>
+          </InputDiv>
+        </FieldMainRow>
+      </PickerContainer>
       {sortedFieldsToRender
         .filter(field => !['myComment', 'writer'].includes(field.name))
         .filter(field => (isAdmin ? true : field.name !== ADDITIONAL_ACCESS_FIELD))
@@ -2657,30 +2679,6 @@ ${entries.join('\n')}`;
               : state[field.name] || '';
           return (
             <React.Fragment key={index}>
-            {field.name === 'birth' && roleTokens.includes('pp') && (
-              <PickerContainer>
-                <FieldMainRow>
-                  <InputDiv>
-                    <InputFieldContainer fieldName="ppTechnicalInput" value={ppTechnicalInput}>
-                      <InputField
-                        fieldName="ppTechnicalInput"
-                        name="ppTechnicalInput"
-                        as="textarea"
-                        ref={ppTechnicalInputRef}
-                        rows={1}
-                        value={ppTechnicalInput}
-                        onChange={e => {
-                          setPpTechnicalInput(e?.target?.value || '');
-                          autoResizePpTechnicalInput(e.target);
-                        }}
-                        onBlur={handlePpTechnicalInputSubmit}
-                        placeholder="Технічний інпут для PP"
-                      />
-                    </InputFieldContainer>
-                  </InputDiv>
-                </FieldMainRow>
-              </PickerContainer>
-            )}
             <PickerContainer
               style={hasOverlaySuggestions ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
             >
