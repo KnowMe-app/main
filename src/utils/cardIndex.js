@@ -12,6 +12,22 @@ export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
 export const MATCHING_QUERY_MAX_IDS = 2000;
 export const MATCHING_INDEX_CACHE_VERSION = 1;
 const MATCHING_LOCAL_STORAGE_KEYS = new Set([CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY]);
+const MATCHING_LOCAL_STORAGE_PREFIXES = ['searchKey:', 'searchHistory:', 'cardsCache:'];
+const MATCHING_LOCAL_STORAGE_SUBSTRINGS = [
+  'matchingindex',
+  'searchkeysets',
+  'additionalnewusers',
+];
+
+export const isMatchingLocalStorageCacheKey = key => {
+  const normalized = String(key || '');
+  const lower = normalized.toLowerCase();
+  return (
+    MATCHING_LOCAL_STORAGE_KEYS.has(normalized) ||
+    MATCHING_LOCAL_STORAGE_PREFIXES.some(prefix => normalized.startsWith(prefix)) ||
+    MATCHING_LOCAL_STORAGE_SUBSTRINGS.some(fragment => lower.includes(fragment))
+  );
+};
 const localJsonCache = new Map();
 const pendingSaveTimers = new Map();
 const pendingSaveValues = new Map();
@@ -91,11 +107,7 @@ const resetMatchingStorageKey = key => {
 export const resetMatchingLocalStorageCache = (reason = 'manual') => {
   const dynamicKeysToReset = typeof localStorage === 'undefined'
     ? []
-    : Object.keys(localStorage).filter(key => {
-      const normalized = String(key || '');
-      const lower = normalized.toLowerCase();
-      return lower.includes('matchingindex') || lower.startsWith('searchkey:') || lower.includes('searchkeysets');
-    });
+    : Object.keys(localStorage).filter(isMatchingLocalStorageCacheKey);
   const keysToReset = [...new Set([CARDS_KEY, QUERIES_KEY, INDEX_QUERIES_KEY, ...dynamicKeysToReset])];
   logMatchingCacheDebug('clearMatchingCache started', { reason, keys: keysToReset });
   const rows = getMatchingLocalStorageCacheStats();

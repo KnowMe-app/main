@@ -92,6 +92,7 @@ import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { btnMerge } from './smallCard/btnMerge';
 import FilterPanel, { getInitialFilters } from './FilterPanel';
 import SearchBar, { detectSearchParams } from './SearchBar';
+import { clearCacheByPrefix } from 'hooks/cardsCache';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import { newUsersMirrorFieldNames } from './formFields';
@@ -1125,6 +1126,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   });
   const [searchBarQueryActive, setSearchBarQueryActive] = useState(false);
   const [lastSearchBarQuery, setLastSearchBarQuery] = useState('');
+  const [searchBarResetVersion, setSearchBarResetVersion] = useState(0);
   const searchListIsolationRef = useRef(Boolean((search || '').trim()));
   const [isExcelImporting, setIsExcelImporting] = useState(false);
   const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
@@ -5135,6 +5137,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleClearCache = () => {
     clearAllCardsCache();
+    clearCacheByPrefix('searchHistory');
+    localStorage.removeItem(SEARCH_KEY);
+    setSearch('');
+    setUsers({});
+    setFavoriteUsersData({});
+    setDislikeUsersData({});
+    setSearchKeyValuePair(null);
+    setSearchLoading(false);
+    setHasSearched(false);
+    setUserNotFound(false);
+    setHasMore(true);
+    setCurrentPage(1);
+    setLastKey(null);
+    setLastKey21(null);
+    setSearchBarQueryActive(false);
+    setLastSearchBarQuery('');
+    setCacheCount(0);
+    setBackendCount(0);
+    setDuplicates('');
+    setIsDuplicateView(false);
+    searchListIsolationRef.current = false;
+    renderCacheHydrationIdsRef.current = new Set();
+    setSearchBarResetVersion(version => version + 1);
     toast.success('Cache cleared');
   };
 
@@ -5986,6 +6011,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
         <SearchBarRow>
           <SearchBar
+            key={`add-search-${searchBarResetVersion}`}
             searchFunc={fetchNewUsersCollectionInRTDB}
             search={search}
             setSearch={value => {

@@ -35,17 +35,37 @@ describe('clearAllCardsCache', () => {
     localStorage.clear();
   });
 
-  it('removes only cards and queries entries', () => {
+  it('removes card, query, search key, search history, and legacy matching cache entries', () => {
     localStorage.setItem('cards', '{}');
     localStorage.setItem('queries', '{}');
+    localStorage.setItem('matchingIndexQueries', '{}');
+    localStorage.setItem('searchKey:v2:users/phone/123', '{}');
+    localStorage.setItem('searchHistory:queries', '{}');
+    localStorage.setItem('cardsCache:load2', '{}');
+    localStorage.setItem('additionalNewUsers:filters', '{}');
+    localStorage.setItem('matchingIndex:lastAction', '{}');
+    localStorage.setItem('searchKeySets:owner', '{}');
     localStorage.setItem('isLoggedIn', 'true');
+    localStorage.setItem('ownerId', 'owner-1');
+    localStorage.setItem('accessLevel', 'admin');
+    localStorage.setItem('userRole', 'admin');
     localStorage.setItem('other', 'value');
 
     clearAllCardsCache();
 
     expect(localStorage.getItem('cards')).toBeNull();
     expect(localStorage.getItem('queries')).toBeNull();
+    expect(localStorage.getItem('matchingIndexQueries')).toBeNull();
+    expect(localStorage.getItem('searchKey:v2:users/phone/123')).toBeNull();
+    expect(localStorage.getItem('searchHistory:queries')).toBeNull();
+    expect(localStorage.getItem('cardsCache:load2')).toBeNull();
+    expect(localStorage.getItem('additionalNewUsers:filters')).toBeNull();
+    expect(localStorage.getItem('matchingIndex:lastAction')).toBeNull();
+    expect(localStorage.getItem('searchKeySets:owner')).toBeNull();
     expect(localStorage.getItem('other')).toBe('value');
     expect(localStorage.getItem('isLoggedIn')).toBe('true');
+    expect(localStorage.getItem('ownerId')).toBe('owner-1');
+    expect(localStorage.getItem('accessLevel')).toBe('admin');
+    expect(localStorage.getItem('userRole')).toBe('admin');
   });
 });
