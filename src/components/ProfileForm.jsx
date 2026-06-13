@@ -942,12 +942,14 @@ export const ProfileForm = ({
   const canManageAccessLevel = isAdmin;
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
+  const ppTechnicalInputRef = useRef(null);
   const additionalAccessRulesRef = useRef(null);
   const multiDataAccessUserIdsRef = useRef(null);
   const [customField, setCustomField] = useState({ key: '', value: '' });
   const [collection, setCollection] = useState('newUsers');
   const [selectedField, setSelectedField] = useState(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [ppTechnicalInput, setPpTechnicalInput] = useState('');
   const [autoOverlayFieldAdditions, setAutoOverlayFieldAdditions] = useState({});
   const [dismissedOverlayEntries, setDismissedOverlayEntries] = useState({});
   const [showAdditionalRulesModal, setShowAdditionalRulesModal] = useState(false);
@@ -1836,6 +1838,7 @@ export const ProfileForm = ({
 
   const autoResizeMyComment = useAutoResize(textareaRef, state.myComment);
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
+  const autoResizePpTechnicalInput = useAutoResize(ppTechnicalInputRef, ppTechnicalInput);
   const autoResizeAdditionalAccessRules = useAutoResize(additionalAccessRulesRef, state[ADDITIONAL_ACCESS_FIELD]);
   const autoResizeMultiDataAccessUserIds = useAutoResize(multiDataAccessUserIdsRef, state[MULTI_DATA_ACCESS_FIELD]);
 
@@ -2391,7 +2394,6 @@ ${entries.join('\n')}`;
         .map(value => value.trim().toLowerCase())
         .filter(Boolean);
   const shouldHideFieldsForClPp = roleTokens.some(role => ['pp', 'cl'].includes(role));
-  const [ppTechnicalInput, setPpTechnicalInput] = useState('');
 
   const handlePpTechnicalInputSubmit = useCallback(() => {
     const rawValue = String(ppTechnicalInput || '').trim();
@@ -2612,8 +2614,13 @@ ${entries.join('\n')}`;
                         fieldName="ppTechnicalInput"
                         name="ppTechnicalInput"
                         as="textarea"
+                        ref={ppTechnicalInputRef}
+                        rows={1}
                         value={ppTechnicalInput}
-                        onChange={e => setPpTechnicalInput(e?.target?.value || '')}
+                        onChange={e => {
+                          setPpTechnicalInput(e?.target?.value || '');
+                          autoResizePpTechnicalInput(e.target);
+                        }}
                         onBlur={handlePpTechnicalInputSubmit}
                         placeholder="Технічний інпут для PP"
                       />
@@ -3478,8 +3485,8 @@ const InputField = styled.input`
     }
     if (as === 'textarea' && baseFieldName === 'ppTechnicalInput') {
       return css`
-        min-height: 64px;
-        resize: vertical;
+        overflow: hidden;
+        resize: none;
       `;
     }
     return null;
