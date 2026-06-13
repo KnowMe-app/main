@@ -261,3 +261,7 @@ export const pickerFieldsExtended = [
   ...pickerFields,
 
  ]
+
+export const pickerFieldNames = [
+  ...new Set(pickerFieldsExtended.map(field => field?.name).filter(Boolean)),
+];
