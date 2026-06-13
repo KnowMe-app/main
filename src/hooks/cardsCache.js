@@ -6,6 +6,15 @@ const TTL_MS = CACHE_TTL_MS;
 export const getCacheKey = (mode, term) =>
   `cards:${mode}${term ? `:${term}` : ''}`;
 
+
+export const clearCacheByPrefix = prefix => {
+  if (!prefix || typeof localStorage === 'undefined') return 0;
+  const cachePrefix = `${prefix}:`;
+  const keys = Object.keys(localStorage).filter(key => key.startsWith(cachePrefix));
+  keys.forEach(key => localStorage.removeItem(key));
+  return keys.length;
+};
+
 export const createCache = (prefix, ttl = TTL_MS) => {
   const CACHE_PREFIX = `${prefix}:`;
 
