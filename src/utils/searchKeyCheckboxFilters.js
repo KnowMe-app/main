@@ -46,20 +46,19 @@ export const getSearchIdPrefixes = searchIdPrefixes => {
 };
 
 export const resolveEqualToSearchKeys = equalToKeys => {
-  const normalizedSelected = Array.isArray(equalToKeys)
-    ? equalToKeys
-      .map(key => (typeof key === 'string' ? key.trim() : ''))
-      .filter(Boolean)
-    : [];
+  if (!Array.isArray(equalToKeys)) {
+    return [...EQUAL_TO_INDEX_KEYS];
+  }
+
+  const normalizedSelected = equalToKeys
+    .map(key => (typeof key === 'string' ? key.trim() : ''))
+    .filter(Boolean);
 
   const allowedSelected = EQUAL_TO_INDEX_KEYS.filter(key =>
     normalizedSelected.includes(key)
   );
 
-  if (
-    allowedSelected.length === 0 ||
-    allowedSelected.length === EQUAL_TO_INDEX_KEYS.length
-  ) {
+  if (allowedSelected.length === EQUAL_TO_INDEX_KEYS.length) {
     return [...EQUAL_TO_INDEX_KEYS];
   }
 
