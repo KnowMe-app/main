@@ -1290,6 +1290,11 @@ const SearchBar = ({
         searchIdPrefixStrategy.primaryPrefixes?.length > 0
           ? searchIdPrefixStrategy.primaryPrefixes
           : searchIdPrefixStrategy.fallbackPrefixes || [];
+      const [primarySearchIdPrefix] = prefixesToIterate;
+      emitSearchLabel(
+        primarySearchIdPrefix ? { [primarySearchIdPrefix]: searchIdInput } : { searchId: searchIdInput },
+        { mode: 'searchId', stage: 'combined' },
+      );
 
       const searchIdResults = await Promise.all(
         prefixesToIterate.map(prefix =>
@@ -1865,6 +1870,12 @@ const SearchBar = ({
           rows={1}
           value={search || ''}
           onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              writeData(search);
+            }
+          }}
           onFocus={() => setShowHistory(true)}
           onBlur={() => {
             setTimeout(() => setShowHistory(false), 100);

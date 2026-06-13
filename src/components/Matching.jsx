@@ -72,6 +72,7 @@ import {
   BackendTrafficToggleButton,
   BackendTrafficToggleStatus,
   MatchingModeLabel,
+  MatchingSearchStatusMessage,
 } from './Matching.styled';
 import {
   fetchUsersByLastLogin2,
@@ -105,7 +106,7 @@ import {
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
-import SearchBar from './SearchBar';
+import SearchBar, { getSearchCacheKeyForParams } from './SearchBar';
 import PhotoViewer from './PhotoViewer';
 import FilterPanel, { getDefaultFilters } from './FilterPanel';
 import { useAutoResize } from '../hooks/useAutoResize';
@@ -200,6 +201,32 @@ import {
   isValidMatchingUserId,
 } from 'utils/matchingDataProvider';
 
+
+const MATCHING_SEARCH_ID_PREFIXES = ['phone'];
+const MATCHING_SEARCH_BAR_ENABLED_KEYS = {
+  searchId: true,
+  phone: true,
+  equalToAllCards: false,
+  searchKey: false,
+  partialUserId: false,
+};
+
+const getMatchingSearchResultCount = result => {
+  if (!result) return 0;
+  if (Array.isArray(result)) return result.filter(Boolean).length;
+  if (result.userId) return 1;
+  if (typeof result === 'object') return Object.keys(result).length;
+  return 0;
+};
+
+const formatMatchingSearchKeyLabel = searchKey => {
+  const entries = searchKey && typeof searchKey === 'object' ? Object.entries(searchKey) : [];
+  if (entries.length === 0) return '';
+
+  const [[key, value]] = entries;
+  const normalizedValue = String(value ?? '').trim();
+  return normalizedValue ? `${key}: ${normalizedValue}` : key;
+};
 
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
 const MATCHING_LOG_MODE_TEST_USER_ID = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
@@ -1343,6 +1370,8 @@ const Matching = () => {
   const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
   const ownDislikeUsersRef = useRef(ownDislikeUsers);
   const [viewMode, setViewMode] = useState('default');
+  const [matchingSearchStatus, setMatchingSearchStatus] = useState('');
+  const matchingSearchKeyRef = useRef(null);
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
   const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
   const [debugShowAllIndexedCards, setDebugShowAllIndexedCards] = useState(getStoredDebugShowAllIndexedCards);
@@ -1614,6 +1643,8 @@ const Matching = () => {
     }
   };
 
+  // Kept for the existing search-mode stale-load guards/tests; Matching searchBar now uses status-only handlers.
+  // eslint-disable-next-line no-unused-vars
   const applySearchResults = async res => {
     const arr = Array.isArray(res) ? res : Object.values(res || {});
     const filtered = arr.filter(u => isValidId(u?.userId));
@@ -3713,14 +3744,50 @@ const Matching = () => {
     loadFavoriteCards();
   };
 
+  const buildMatchingSearchStatusText = React.useCallback((status, searchKey = matchingSearchKeyRef.current) => {
+    const keyLabel = formatMatchingSearchKeyLabel(searchKey);
+    const suffix = keyLabel ? `: ${keyLabel}` : '';
+
+    if (status === 'found') return `Знайшов у searchId${suffix}`;
+    if (status === 'notFound') return `Не знайшов у searchId${suffix}`;
+    if (status === 'searching') return `Шукаю в searchId${suffix}`;
+    return '';
+  }, []);
+
+  const handleMatchingSearchKey = React.useCallback(nextSearchKey => {
+    matchingSearchKeyRef.current = nextSearchKey;
+    setMatchingSearchStatus(buildMatchingSearchStatusText('searching', nextSearchKey));
+  }, [buildMatchingSearchStatusText]);
+
   const handleMatchingSearchExecuted = React.useCallback(value => {
-    addMatchingSearchQuery(value, ownerId);
+    const normalizedValue = String(value || '').trim();
+    addMatchingSearchQuery(normalizedValue, ownerId);
+    matchingSearchKeyRef.current = null;
+    setMatchingSearchStatus(normalizedValue ? 'Шукаю в searchId...' : '');
   }, [ownerId]);
 
-  const searchUsers = async params => {
+  const handleMatchingSearchResultStatus = React.useCallback(result => {
+    const resultCount = getMatchingSearchResultCount(result);
+    setMatchingSearchStatus(buildMatchingSearchStatusText(resultCount > 0 ? 'found' : 'notFound'));
+  }, [buildMatchingSearchStatusText]);
+
+  const handleMatchingSearchStateStatus = React.useCallback(nextState => {
+    if (!nextState || Object.keys(nextState).length === 0) return;
+    handleMatchingSearchResultStatus(nextState);
+  }, [handleMatchingSearchResultStatus]);
+
+  const handleMatchingSearchNotFound = React.useCallback(isNotFound => {
+    if (isNotFound) {
+      setMatchingSearchStatus(buildMatchingSearchStatusText('notFound'));
+    }
+  }, [buildMatchingSearchStatusText]);
+
+  const searchUsers = async (params, options = {}) => {
     const [key, value] = Object.entries(params)[0] || [];
     const term = key && value ? `${key}=${value}` : undefined;
-    const cacheKey = getCacheKey('search', term ? normalizeQueryKey(term) : term);
+    const cacheKey = key && value
+      ? getSearchCacheKeyForParams(key, value, options)
+      : getCacheKey('search', term ? normalizeQueryKey(term) : term);
     const ids = getIdsByQuery(cacheKey).filter(isValidId);
     if (ids.length > 0) {
       const cards = ids.map(id => getCard(id)).filter(c => c && isValidId(c.userId));
@@ -3731,15 +3798,19 @@ const Matching = () => {
         return cards[0];
       }
     }
-    const res = await searchUsersOnly(params);
+    const res = await searchUsersOnly(params, options);
     if (res && Object.keys(res).length > 0) {
-      const arr = Array.isArray(res) ? res : Object.values(res);
-      const filtered = arr.filter(u => isValidId(u.userId));
+      const arr = Array.isArray(res)
+        ? res
+        : res.userId
+          ? [res]
+          : Object.values(res);
+      const filtered = arr.filter(u => isValidId(u?.userId));
       filtered.forEach(u => updateCard(u.userId, u));
       setIdsForQuery(cacheKey, filtered.map(u => u.userId));
-      return Array.isArray(res)
-        ? filtered
-        : Object.fromEntries(filtered.map(u => [u.userId, u]));
+      if (Array.isArray(res)) return filtered;
+      if (res.userId) return filtered[0] || {};
+      return Object.fromEntries(filtered.map(u => [u.userId, u]));
     }
     return res;
   };
@@ -5598,14 +5669,30 @@ const Matching = () => {
             <FilterDrawerSection aria-label="Пошук профілів">
               <SearchBar
                 searchFunc={searchUsers}
-                setUsers={applySearchResults}
-                setUserNotFound={() => {}}
+                setUsers={handleMatchingSearchResultStatus}
+                setState={handleMatchingSearchStateStatus}
+                setUserNotFound={handleMatchingSearchNotFound}
                 wrapperStyle={{ width: '100%', marginBottom: 0 }}
                 leftIcon="🔍"
                 storageKey={SEARCH_KEY}
+                onSearchKey={handleMatchingSearchKey}
                 onSearchExecuted={handleMatchingSearchExecuted}
-                onClear={reloadDefault}
+                onClear={() => {
+                  setMatchingSearchStatus('');
+                  matchingSearchKeyRef.current = null;
+                  reloadDefault();
+                }}
+                enabledSearchKeys={MATCHING_SEARCH_BAR_ENABLED_KEYS}
+                searchOptions={{
+                  searchIdPrefixes: MATCHING_SEARCH_ID_PREFIXES,
+                  enabledSearchKeys: MATCHING_SEARCH_BAR_ENABLED_KEYS,
+                }}
               />
+              {matchingSearchStatus && (
+                <MatchingSearchStatusMessage aria-live="polite">
+                  {matchingSearchStatus}
+                </MatchingSearchStatusMessage>
+              )}
             </FilterDrawerSection>
           )}
           <CollectionSourceWrap>
