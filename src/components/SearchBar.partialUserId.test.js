@@ -1,7 +1,7 @@
 import React from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
-import SearchBar, { getFreshCachedSearchResult, getSearchCacheKeyForParams, getSelectedAdvancedSearchModes, parseExplicitSearchKeyCandidate, parsePartialUserIdPrefix, parseTelegramSearchValue, resolveExecutionPlan } from './SearchBar';
+import SearchBar, { getFreshCachedSearchResult, getSearchCacheKeyForParams, doesCardMatchSearchParams, filterSearchResultByParams, getSelectedAdvancedSearchModes, parseExplicitSearchKeyCandidate, parsePartialUserIdPrefix, parseTelegramSearchValue, resolveExecutionPlan } from './SearchBar';
 import { updateCard } from '../utils/cardsStorage';
 import { resetMatchingLocalStorageCache, setIdsForQuery } from '../utils/cardIndex';
 
@@ -83,6 +83,43 @@ describe('resolveExecutionPlan', () => {
   });
 });
 
+
+
+
+describe('SearchBar result validation', () => {
+  it('filters cached telegram search results before rendering them', () => {
+    const result = {
+      valid: { userId: 'valid', telegram: 'УК СМ ALIA 09.10.2025' },
+      stale: { userId: 'stale', telegram: 'other_handle' },
+      missing: { userId: 'missing', name: 'No Telegram' },
+    };
+
+    expect(filterSearchResultByParams(result, { telegram: 'УК СМ ALIA 09.10.2025' })).toEqual({
+      valid: result.valid,
+    });
+  });
+
+  it('validates searchId results against the selected telegram prefix', () => {
+    expect(doesCardMatchSearchParams(
+      { userId: 'valid', telegram: 'УК СМ ALIA 09.10.2025' },
+      { searchId: 'УК СМ ALIA 09.10.2025' },
+      { searchIdPrefixes: ['telegram'] },
+    )).toBe(true);
+    expect(doesCardMatchSearchParams(
+      { userId: 'wrong', instagram: 'УК СМ ALIA 09.10.2025' },
+      { searchId: 'УК СМ ALIA 09.10.2025' },
+      { searchIdPrefixes: ['telegram'] },
+    )).toBe(false);
+  });
+
+  it('keeps partial userId validation as a prefix match', () => {
+    expect(doesCardMatchSearchParams(
+      { userId: 'Anna123' },
+      { userId: 'Anna' },
+      { forcePartialUserIdSearch: true },
+    )).toBe(true);
+  });
+});
 
 describe('SearchBar cache-first search', () => {
   beforeEach(() => {

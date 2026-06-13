@@ -771,6 +771,80 @@ export const detectSearchParamsByQueryContent = query => {
 export const detectSearchParams = query => detectSearchParamsByQueryContent(query);
 
 
+
+const normalizeComparableSearchValue = (key, value) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (SEARCH_ID_INDEXED_FIELDS.has(key)) {
+    return normalizeSearchIdInput(key, raw).toLowerCase();
+  }
+  return raw.replace(/\s+/g, ' ').toLowerCase();
+};
+
+const getCardFieldValues = (card, key) => {
+  if (!card || !key) return [];
+  if (key === 'searchId') return [];
+  const value = key === 'userId' ? card.userId : card[key];
+  if (Array.isArray(value)) return value.filter(item => item !== undefined && item !== null);
+  if (value === undefined || value === null) return [];
+  return [value];
+};
+
+const normalizeResultToCards = result => {
+  if (!result || Object.keys(result).length === 0) return [];
+  if (Array.isArray(result)) return result.filter(Boolean);
+  if ('userId' in result) return [result];
+  return Object.values(result).filter(Boolean);
+};
+
+const cardsToResultShape = (cards, originalResult) => {
+  if (Array.isArray(originalResult)) return cards;
+  if ('userId' in (originalResult || {})) return cards[0] || {};
+  return cards.reduce((acc, card) => {
+    if (card?.userId) acc[card.userId] = card;
+    return acc;
+  }, {});
+};
+
+export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
+  const [[key, value]] = Object.entries(params || {});
+  if (!key || value === undefined || value === null || String(value).trim() === '') return true;
+
+  if (key === 'searchId') {
+    const prefixes = Array.isArray(options.searchIdPrefixes) && options.searchIdPrefixes.length > 0
+      ? options.searchIdPrefixes
+      : [inferSearchIdPrefix(value)].filter(Boolean);
+    if (prefixes.length === 0) return true;
+    return prefixes.some(prefix => doesCardMatchSearchParams(card, { [prefix]: value }, options));
+  }
+
+  if (key === 'userId') {
+    const cardUserId = String(card?.userId || '').trim();
+    const expectedUserId = String(value || '').trim();
+    return options.forcePartialUserIdSearch ? cardUserId.startsWith(expectedUserId) : cardUserId === expectedUserId;
+  }
+
+  const expected = normalizeComparableSearchValue(key, value);
+  if (!expected) return true;
+  const fieldValues = getCardFieldValues(card, key);
+  if (fieldValues.length === 0) return false;
+
+  return fieldValues.some(fieldValue => {
+    const normalizedFieldValue = normalizeComparableSearchValue(key, fieldValue);
+    if (!normalizedFieldValue) return false;
+    if (SEARCH_ID_INDEXED_FIELDS.has(key)) return normalizedFieldValue === expected;
+    return normalizedFieldValue.includes(expected);
+  });
+};
+
+export const filterSearchResultByParams = (result, params = {}, options = {}) => {
+  const cards = normalizeResultToCards(result);
+  if (cards.length === 0) return result;
+  const filteredCards = cards.filter(card => doesCardMatchSearchParams(card, params, options));
+  if (filteredCards.length === cards.length) return result;
+  return cardsToResultShape(filteredCards, result);
+};
+
 export const getSelectedAdvancedSearchModes = (searchOptions = {}, isSearchEnabled = () => true) => [
   searchOptions?.enablePartialUserIdSearch ? 'partialUserId' : null,
   Array.isArray(searchOptions?.searchIdPrefixes) && searchOptions.searchIdPrefixes.length > 0 ? 'searchId' : null,
@@ -996,21 +1070,34 @@ const SearchBar = ({
     return Boolean(effectiveEnabledSearchKeys[key]);
   };
 
-  const loadCachedResult = (key, value, requestId = null) => {
-    const cachedResult = getFreshCachedSearchResult(key, value);
+  const loadCachedResult = (key, value, requestId = null, options = {}) => {
+    const cachedResult = getFreshCachedSearchResult(key, value, options);
     if (!cachedResult.hit) return false;
 
+    const filteredMap = filterSearchResultByParams(cachedResult.map, { [key]: value }, options);
+    const filteredCards = Object.values(filteredMap || {});
+    if (filteredCards.length === 0) return false;
+
+    if (filteredCards.length !== cachedResult.cards.length && cachedResult.cacheKey) {
+      setIdsForQuery(cachedResult.cacheKey, filteredCards.map(card => card.userId).filter(Boolean));
+    }
+
     applyUserNotFound(false, requestId);
-    if (key === 'name' || key === 'names' || cachedResult.cards.length > 1) {
+    if (key === 'name' || key === 'names' || filteredCards.length > 1) {
       applyState({}, requestId);
-      applyUsers({ ...cachedResult.map }, requestId);
+      applyUsers({ ...filteredMap }, requestId);
     } else {
-      applyState(cachedResult.cards[0], requestId);
+      applyState(filteredCards[0], requestId);
     }
     return true;
   };
 
-  const isCacheFresh = (key, value) => getFreshCachedSearchResult(key, value).hit;
+  const isCacheFresh = (key, value, options = {}) => {
+    const cachedResult = getFreshCachedSearchResult(key, value, options);
+    if (!cachedResult.hit) return false;
+    const filteredMap = filterSearchResultByParams(cachedResult.map, { [key]: value }, options);
+    return Object.keys(filteredMap || {}).length > 0;
+  };
 
   const addToHistory = value => {
     const trimmedVal = value.trim();
@@ -1375,7 +1462,16 @@ const SearchBar = ({
       if (perfDebugEnabledRef.current) {
         console.debug('[SearchPerf][cache-hit]', { params, options: extraOptions, ids: cachedResult.ids });
       }
-      return formatCachedSearchResult(cachedResult);
+      const filteredCachedMap = filterSearchResultByParams(cachedResult.map, params, extraOptions);
+      if (Object.keys(filteredCachedMap || {}).length === 0) {
+        if (cachedResult.cacheKey) setIdsForQuery(cachedResult.cacheKey, []);
+      } else {
+        const filteredCards = Object.values(filteredCachedMap);
+        if (filteredCards.length !== cachedResult.cards.length && cachedResult.cacheKey) {
+          setIdsForQuery(cachedResult.cacheKey, filteredCards.map(card => card.userId).filter(Boolean));
+        }
+        return formatCachedSearchResult({ ...cachedResult, cards: filteredCards, map: filteredCachedMap });
+      }
     }
 
     const perfLabel = `[SearchPerf][searchFunc] ${JSON.stringify(params)}`;
@@ -1390,11 +1486,16 @@ const SearchBar = ({
       return res;
     }
 
-    const arr = Array.isArray(res)
-      ? res
-      : 'userId' in res
-        ? [res]
-        : Object.values(res);
+    const filteredRes = filterSearchResultByParams(res, params, extraOptions);
+    if (!filteredRes || Object.keys(filteredRes).length === 0) {
+      return Array.isArray(res) ? [] : {};
+    }
+
+    const arr = Array.isArray(filteredRes)
+      ? filteredRes
+      : 'userId' in filteredRes
+        ? [filteredRes]
+        : Object.values(filteredRes);
     const updatedArr = arr.map(u => updateCard(u.userId, u));
 
     if (key && value) {
@@ -1402,8 +1503,8 @@ const SearchBar = ({
       setIdsForQuery(cacheKey, updatedArr.map(u => u.userId));
     }
 
-    if (Array.isArray(res)) return updatedArr;
-    if ('userId' in res) return updatedArr[0];
+    if (Array.isArray(filteredRes)) return updatedArr;
+    if ('userId' in filteredRes) return updatedArr[0];
     return updatedArr.reduce((acc, card) => {
       acc[card.userId] = card;
       return acc;
@@ -1434,8 +1535,9 @@ const SearchBar = ({
           const telegramValue = candidate?.trim();
           if (!telegramValue) continue;
 
-          const hasCache = loadCachedResult('telegram', telegramValue, requestId);
-          const freshCache = hasCache && isCacheFresh('telegram', telegramValue);
+          const cacheOptions = { allowTelegramPrefixMatches: true };
+          const hasCache = loadCachedResult('telegram', telegramValue, requestId, cacheOptions);
+          const freshCache = hasCache && isCacheFresh('telegram', telegramValue, cacheOptions);
 
           if (index === 0) {
             emitSearchLabel({ telegram: telegramValue }, {
@@ -1499,18 +1601,6 @@ const SearchBar = ({
         }
       }
 
-      const hasCache = loadCachedResult(platform, id, requestId);
-      const freshCache = hasCache && isCacheFresh(platform, id);
-      const result = { [platform]: id };
-      emitSearchLabel(result, { mode: platform, stage: 'initial' });
-      if (freshCache) {
-        notifySearchResult(result, null, { preferredKeys: [platform] });
-        return true;
-      }
-      if (!hasCache) {
-        applyState({}, requestId);
-        applyUsers({}, requestId);
-      }
       const searchIdPrefixStrategy =
         platform === 'searchId'
           ? resolveSearchIdPrefixStrategy(trimmedInput, searchOptions)
@@ -1521,6 +1611,19 @@ const SearchBar = ({
         platform !== 'searchId' && SEARCH_ID_SCOPED_PLATFORMS.has(platform)
           ? [platform]
           : undefined;
+      const scopedCacheOptions = scopedSearchIdPrefixes ? { searchIdPrefixes: scopedSearchIdPrefixes } : {};
+      const hasCache = loadCachedResult(platform, id, requestId, scopedCacheOptions);
+      const freshCache = hasCache && isCacheFresh(platform, id, scopedCacheOptions);
+      const result = { [platform]: id };
+      emitSearchLabel(result, { mode: platform, stage: 'initial' });
+      if (freshCache) {
+        notifySearchResult(result, null, { preferredKeys: [platform] });
+        return true;
+      }
+      if (!hasCache) {
+        applyState({}, requestId);
+        applyUsers({}, requestId);
+      }
       const mergeSearchResult = (acc, res, meta = null) => {
         mergeSearchResultMap(acc, res, meta);
       };
