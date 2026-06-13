@@ -265,3 +265,13 @@ export const pickerFieldsExtended = [
 export const pickerFieldNames = [
   ...new Set(pickerFieldsExtended.map(field => field?.name).filter(Boolean)),
 ];
+
+export const nonPickerContactFieldNames = ['ameblo', 'line', 'other'];
+
+export const ppTechnicalKeyValueFieldNames = [
+  ...new Set([...pickerFieldNames, ...nonPickerContactFieldNames]),
+].filter(fieldName => fieldName !== 'userId');
+
+export const newUsersMirrorFieldNames = [
+  ...new Set([...pickerFieldNames, ...nonPickerContactFieldNames]),
+].filter(fieldName => fieldName !== 'publish');
