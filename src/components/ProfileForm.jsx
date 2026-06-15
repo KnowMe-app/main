@@ -421,7 +421,7 @@ const getFirebaseRealtimeDatabaseName = () => {
   }
 };
 const canOpenSearchIdBackendShortcut = (fieldName, value) =>
-  SEARCH_ID_INDEXED_FIELDS.has(fieldName) && String(value ?? '').trim();
+  (fieldName === 'userId' || SEARCH_ID_INDEXED_FIELDS.has(fieldName)) && String(value ?? '').trim();
 const searchIdRecordContainsUserId = (recordValue, userId) => {
   if (!userId) return false;
   if (Array.isArray(recordValue)) return recordValue.includes(userId);
@@ -429,6 +429,18 @@ const searchIdRecordContainsUserId = (recordValue, userId) => {
     return Object.values(recordValue).includes(userId);
   }
   return recordValue === userId;
+};
+
+const buildUsersBackendUrl = userId => {
+  if (!userId) return '';
+
+  const projectId = getFirebaseConsoleProjectId();
+  const databaseName = getFirebaseRealtimeDatabaseName();
+  const encodedPath = ['users', userId]
+    .map(segment => `~2F${encodeURIComponent(segment)}`)
+    .join('');
+
+  return `https://console.firebase.google.com/u/0/project/${projectId}/database/${databaseName}/data/${encodedPath}`;
 };
 const buildSearchIdBackendUrl = searchIdRecordKey => {
   if (!searchIdRecordKey) return '';
@@ -2545,6 +2557,11 @@ ${entries.join('\n')}`;
     const userId = String(state?.userId || '').trim();
     if (!userId) {
       toast.error('Немає userId для пошуку запису searchId.');
+      return;
+    }
+
+    if (fieldName === 'userId') {
+      window.open(buildUsersBackendUrl(String(value || userId).trim()), '_blank', 'noopener,noreferrer');
       return;
     }
 

@@ -94,7 +94,12 @@ import FilterPanel, { getInitialFilters } from './FilterPanel';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
-import { newUsersMirrorFieldNames } from './formFields';
+import {
+  isUsersAllowedField,
+  pickUsersAllowedFields,
+  sanitizeNewUsersPayload,
+  sanitizeTechnicalPayload,
+} from './formFields';
 import { PAGE_SIZE, database } from './config';
 import { get as firebaseGet, push, ref } from 'firebase/database';
 import {
@@ -1636,10 +1641,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
-    const fieldsForNewUsersOnly = ['role', 'lastCycle', 'myComment', 'writer', 'cycleStatus', 'stimulationSchedule'];
-    const ppTechnicalInputFields = newUsersMirrorFieldNames;
-    const commonFields = ['lastAction', 'lastLogin2', 'getInTouch', 'lastDelivery', 'ownKids', 'cycleStatus', 'stimulationSchedule'];
-
     const now = Date.now();
     const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
     const updatedState = { ...baseState, lastAction: now };
@@ -1740,21 +1741,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       if (syncedState?.userId?.length > 20) {
 
-        const cleanedState = Object.fromEntries(
-          Object.entries(syncedState).filter(([key]) => commonFields.includes(key) || !fieldsForNewUsersOnly.includes(key))
-        );
+        const cleanedState = sanitizeTechnicalPayload(pickUsersAllowedFields(syncedState));
         if (delCondition) {
           Object.keys(delCondition).forEach(key => {
-            if (key !== 'userId') {
+            if (key !== 'userId' && isUsersAllowedField(key)) {
               delete cleanedState[key];
             }
           });
         }
 
-        const sanitizedExistingData = { ...(existingData || {}) };
+        const sanitizedExistingData = sanitizeTechnicalPayload(pickUsersAllowedFields(existingData || {}));
         if (delCondition) {
           Object.keys(delCondition).forEach(key => {
-            if (key !== 'userId') {
+            if (key !== 'userId' && isUsersAllowedField(key)) {
               delete sanitizedExistingData[key];
             }
           });
@@ -1763,7 +1762,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const uploadedInfo = makeUploadedInfo(sanitizedExistingData, cleanedState, overwrite);
         if (delCondition) {
           Object.keys(delCondition).forEach(key => {
-            uploadedInfo[key] = null;
+            if (isUsersAllowedField(key)) {
+              uploadedInfo[key] = null;
+            }
           });
         }
 
@@ -1775,28 +1776,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           ]);
         }
 
-        const cleanedStateForNewUsers = Object.fromEntries(
-          Object.entries(syncedState).filter(([key]) =>
-            [...fieldsForNewUsersOnly, ...ppTechnicalInputFields, 'getInTouch', 'lastDelivery', 'ownKids'].includes(key)
-          )
-        );
-        if (delCondition) {
-          Object.keys(delCondition).forEach(key => {
-            if (key !== 'userId') {
-              cleanedStateForNewUsers[key] = null;
-            }
-          });
-        }
-
-        console.log('[SAVE] payload to firebase:', cleanedStateForNewUsers);
-        await updateDataInNewUsersRTDB(
-          syncedState.userId,
-          cleanedStateForNewUsers,
-          'update'
-        );
       } else {
         if (newState) {
-          const newStateWithDelivery = { ...syncedState };
+          const newStateWithDelivery = sanitizeNewUsersPayload({ ...syncedState });
 
           if (formattedLastDelivery) {
             newStateWithDelivery.lastDelivery = formattedLastDelivery;
@@ -1815,8 +1797,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             'update'
           );
         } else {
-          console.log('[SAVE] payload to firebase:', syncedState);
-          await updateDataInNewUsersRTDB(syncedState.userId, syncedState, 'update');
+          const cleanedNewUsersState = sanitizeNewUsersPayload(syncedState);
+          console.log('[SAVE] payload to firebase:', cleanedNewUsersState);
+          await updateDataInNewUsersRTDB(syncedState.userId, cleanedNewUsersState, 'update');
         }
       }
       console.log('[LS cards before]', getLocalStorageCardsDebugSnapshot());
