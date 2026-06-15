@@ -6,8 +6,6 @@ import styled, { css, keyframes } from 'styled-components';
 import {
   auth,
   fetchUserData,
-  updateDataInFiresoreDB,
-  updateDataInRealtimeDB,
 } from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
@@ -25,6 +23,7 @@ import InfoModal from './InfoModal';
 import { resolveAccess } from 'utils/accessLevel';
 import { getCurrentDate } from './foramtDate';
 import { authNotifications } from './authNotifications';
+import { persistUserWithFallback } from './authProfilePersistence';
 import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 
@@ -745,14 +744,7 @@ export const MyProfile = () => {
     return emailPattern.test(email);
   };
 
-  const persistUserProfile = async (targetUserId, nextUploadedInfo, firestoreCondition = 'update') => {
-    await updateDataInRealtimeDB(
-      targetUserId,
-      nextUploadedInfo,
-      firestoreCondition === 'update' ? 'update' : undefined
-    );
-    await updateDataInFiresoreDB(targetUserId, nextUploadedInfo, firestoreCondition);
-  };
+  const persistUserProfile = persistUserWithFallback;
 
   const handleAuthConfirm = async () => {
     const currentState = stateRef.current || {};
