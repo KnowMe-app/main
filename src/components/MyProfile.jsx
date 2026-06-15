@@ -7,7 +7,6 @@ import {
   auth,
   fetchUserData,
   updateDataInFiresoreDB,
-  updateDataInNewUsersRTDB,
   updateDataInRealtimeDB,
 } from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
@@ -496,7 +495,7 @@ export const MyProfile = () => {
 
     stateRef.current = nextState;
     setState(nextState);
-    triggerAutosave(nextState);
+    triggerAutosave(nextState, { directFields: [name] });
   };
 
   const clearFieldValue = (name, field) => {
@@ -746,37 +745,13 @@ export const MyProfile = () => {
     return emailPattern.test(email);
   };
 
-  const isPermissionDeniedError = error => {
-    const code = String(error?.code || '').toLowerCase();
-    const message = String(error?.message || '').toLowerCase();
-    return code.includes('permission-denied') || code.includes('permission_denied') || message.includes('permission_denied');
-  };
-
-  const persistUserWithFallback = async (targetUserId, nextUploadedInfo, firestoreCondition = 'update') => {
-    let shouldWriteFullProfileToNewUsers = false;
-
-    try {
-      await updateDataInRealtimeDB(targetUserId, nextUploadedInfo, firestoreCondition === 'update' ? 'update' : undefined);
-    } catch (error) {
-      if (!isPermissionDeniedError(error)) {
-        throw error;
-      }
-      shouldWriteFullProfileToNewUsers = true;
-      console.warn('No write access to users/$uid, fallback to newUsers.');
-    }
-
-    try {
-      await updateDataInFiresoreDB(targetUserId, nextUploadedInfo, firestoreCondition);
-    } catch (error) {
-      shouldWriteFullProfileToNewUsers = true;
-      console.warn('Firestore write failed, fallback to newUsers.', error);
-    }
-
-    await updateDataInNewUsersRTDB(
+  const persistUserProfile = async (targetUserId, nextUploadedInfo, firestoreCondition = 'update') => {
+    await updateDataInRealtimeDB(
       targetUserId,
-      shouldWriteFullProfileToNewUsers ? nextUploadedInfo : { lastLogin2: nextUploadedInfo.lastLogin2 },
-      'update'
+      nextUploadedInfo,
+      firestoreCondition === 'update' ? 'update' : undefined
     );
+    await updateDataInFiresoreDB(targetUserId, nextUploadedInfo, firestoreCondition);
   };
 
   const handleAuthConfirm = async () => {
@@ -825,7 +800,7 @@ export const MyProfile = () => {
           userId: userCredential.user.uid,
           userRole: 'ed',
         };
-        await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'update');
+        await persistUserProfile(userCredential.user.uid, uploadedInfo, 'update');
       } else {
         userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
         await sendEmailVerification(userCredential.user);
@@ -839,7 +814,7 @@ export const MyProfile = () => {
           userId: userCredential.user.uid,
           userRole: 'ed',
         };
-        await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'set');
+        await persistUserProfile(userCredential.user.uid, uploadedInfo, 'set');
       }
 
       localStorage.setItem('isLoggedIn', 'true');
@@ -896,14 +871,14 @@ export const MyProfile = () => {
           }
         });
         delete uploadedInfo.password;
-        await persistUserWithFallback(targetUserId, uploadedInfo, 'check');
+        await persistUserProfile(targetUserId, uploadedInfo, 'check');
       });
 
     return saveQueueRef.current;
   };
 
-  const triggerAutosave = (nextState) => {
-    saveState(nextState).catch(error => {
+  const triggerAutosave = (nextState, options) => {
+    saveState(nextState, options).catch(error => {
       console.warn('Autosave failed in MyProfile.', error);
     });
   };
@@ -994,7 +969,7 @@ export const MyProfile = () => {
                   setMissing(prev => ({ ...prev, [name]: false }));
                   stateRef.current = nextState;
                   setState(nextState);
-                  triggerAutosave(nextState);
+                  triggerAutosave(nextState, { directFields: [name] });
                 }}
                 type="button"
               >
