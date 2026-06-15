@@ -292,3 +292,75 @@ export const ppTechnicalKeyValueFieldNames = [
 export const newUsersMirrorFieldNames = [
   ...new Set([...pickerFieldNames, ...nonPickerContactFieldNames]),
 ].filter(fieldName => fieldName !== 'publish');
+
+
+export const fieldsForNewUsersOnly = [
+  'role',
+  'lastCycle',
+  'myComment',
+  'writer',
+  'cycleStatus',
+  'stimulationSchedule',
+];
+
+export const fieldsForBothCollections = [
+  'userId',
+  'lastAction',
+  'lastLogin2',
+  'getInTouch',
+  'lastDelivery',
+  'ownKids',
+  'cycleStatus',
+  'stimulationSchedule',
+];
+
+export const newUsersRequiredFieldNames = [
+  ...new Set([
+    ...fieldsForNewUsersOnly,
+    ...newUsersMirrorFieldNames,
+    ...fieldsForBothCollections,
+  ]),
+];
+
+export const newUsersSanitizedFieldNames = [
+  '__sourceCollection',
+  '__photosHydrated',
+  '__profileSnapshotVersion',
+  '__profileSnapshotSource',
+  '__profileSnapshotUpdatedAt',
+  'cachedAt',
+  'cacheVersion',
+  'cashVersion',
+  'cash version',
+  'localVersion',
+  'localUpdatedAt',
+  'source',
+  'dataSource',
+  'loading',
+  'loadingCounter',
+  'photos',
+  'photo',
+];
+
+export const isSharedCollectionField = key => fieldsForBothCollections.includes(key);
+
+export const isUsersAllowedField = key =>
+  isSharedCollectionField(key) || !fieldsForNewUsersOnly.includes(key);
+
+export const isNewUsersAllowedField = key => newUsersRequiredFieldNames.includes(key);
+
+export const isNewUsersSanitizedField = key => newUsersSanitizedFieldNames.includes(key);
+
+export const pickUsersAllowedFields = source => Object.fromEntries(
+  Object.entries(source || {}).filter(([key]) => isUsersAllowedField(key))
+);
+
+export const pickNewUsersAllowedFields = source => Object.fromEntries(
+  Object.entries(source || {}).filter(([key]) => isNewUsersAllowedField(key))
+);
+
+export const sanitizeTechnicalPayload = payload => Object.fromEntries(
+  Object.entries(payload || {}).filter(([key]) => !isNewUsersSanitizedField(key))
+);
+
+export const sanitizeNewUsersPayload = sanitizeTechnicalPayload;
