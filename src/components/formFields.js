@@ -157,6 +157,14 @@ export const educationModalOptions = [
   { placeholder: 'PhD', ukrainian: 'Доктор філософії (PhD)' },
 ];
 
+export const surrogacyProgramInterestOptions = [
+  { placeholder: 'Not considering at all', ukrainian: 'Зовсім не розглядаю' },
+  { placeholder: 'Maybe later', ukrainian: 'Можливо, пізніше' },
+  { placeholder: 'Need more information', ukrainian: 'Потрібно більше інформації' },
+  { placeholder: 'Open to consultation', ukrainian: 'Готова до консультації' },
+  { placeholder: 'Considering', ukrainian: 'Розглядаю' },
+];
+
 export const csectionOptions = [
   { placeholder: '-', ukrainian: 'Ні' },
   { placeholder: '1', ukrainian: '1' },
@@ -236,6 +244,15 @@ export const pickerFields = [
   { name: 'profession', label: 'Професія', ukrainian: 'Професія', placeholder: 'Лікар', svg: 'no', width: '33%' },
   { name: 'twinsInFamily', label: 'Чи були двійнята в родині?', ukrainian: 'Чи були двійнята в родині?', placeholder: 'Так / Ні / Інше', svg: 'no', width: '33%', options: yesNoOptions },
   { name: 'moreInfo_main', label: 'Про себе', ukrainian: 'Про себе', placeholder: 'Коротко розкажіть про себе', ukrainianHint: 'До 300 символів', svg: 'no', width: '100%' },
+  {
+    name: 'surrogacyProgramInterest',
+    label: 'Чи розглядаєте ви потенційну участь у програмі сурогатного материнства?',
+    ukrainian: 'Чи розглядаєте ви потенційну участь у програмі сурогатного материнства?',
+    placeholder: 'Оберіть варіант',
+    svg: 'no',
+    width: '100%',
+    options: surrogacyProgramInterestOptions,
+  },
 
 ];
 
