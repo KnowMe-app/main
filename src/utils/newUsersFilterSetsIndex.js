@@ -1289,7 +1289,8 @@ export const getIndexedNewUsersIdsByRules = async ({
       return false;
     });
 
-    for (const { indexName, values } of bucketGroups) {
+    for (const group of bucketGroups) {
+      const { indexName, values } = group;
       const normalizedValues = Array.isArray(values) ? values.filter(Boolean) : [];
       const idsForFilter = new Set();
       const ageRange = indexName === 'age' ? getAgeRangeBounds(normalizedValues) : null;
@@ -1390,30 +1391,67 @@ export const getIndexedNewUsersIdsByRules = async ({
 
         if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
         setsMap[entry.setKey][indexName] = fieldsIndexValue;
-      } else for (const value of normalizedValues) {
-        const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}/${value}`;
-        resultPaths.push(path);
-        emitDebug('reading Firebase path', { path, setKey: entry.setKey, indexName, value });
+      } else {
+        const excludedValues = Array.isArray(group?.excludedValues)
+          ? [...new Set(group.excludedValues.filter(Boolean).map(String))]
+          : [];
+        const useExcludeStrategy = group?.indexStrategy === 'exclude-buckets'
+          && excludedValues.length > 0
+          && filterSets.length > 0;
+        const valuesToRead = useExcludeStrategy ? excludedValues : normalizedValues;
 
-        // eslint-disable-next-line no-await-in-loop
-        const payload = await readBucketPayload(path);
-        const bucketValue = payload?.exists && payload.value && typeof payload.value === 'object'
-          ? payload.value
-          : {};
-        const bucketIdsCount = Object.keys(bucketValue).filter(Boolean).length;
+        emitDebug('additionalMatching: bucket read strategy', {
+          setKey: entry.setKey,
+          indexName,
+          strategy: useExcludeStrategy ? 'exclude-buckets' : 'include-buckets',
+          valuesCount: normalizedValues.length,
+          excludedValuesCount: excludedValues.length,
+          baseFilterSetsCount: filterSets.length,
+        });
 
-        if (payload?.exists) {
-          existingBucketsForSet += 1;
-          if (bucketIdsCount === 0) emptyBucketsForSet += 1;
-        } else {
-          missingBucketsForSet += 1;
+        const bucketReads = await Promise.all(valuesToRead.map(async value => {
+          const path = `${SEARCH_KEY_SETS_ROOT}/${entry.setKey}/${indexName}/${value}`;
+          resultPaths.push(path);
+          emitDebug('reading Firebase path', { path, setKey: entry.setKey, indexName, value });
+
+          const payload = await readBucketPayload(path);
+          const bucketValue = payload?.exists && payload.value && typeof payload.value === 'object'
+            ? payload.value
+            : {};
+          return { value, payload, bucketValue };
+        }));
+
+        const excludedIds = new Set();
+        for (const { value, payload, bucketValue } of bucketReads) {
+          const bucketIds = Object.keys(bucketValue).filter(Boolean);
+
+          if (payload?.exists) {
+            existingBucketsForSet += 1;
+            if (bucketIds.length === 0) emptyBucketsForSet += 1;
+          } else {
+            missingBucketsForSet += 1;
+          }
+
+          if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
+          if (!setsMap[entry.setKey][indexName]) setsMap[entry.setKey][indexName] = {};
+          setsMap[entry.setKey][indexName][value] = bucketValue;
+
+          bucketIds.sort((a, b) => a.localeCompare(b)).forEach(userId => {
+            if (!userId) return;
+            if (useExcludeStrategy) excludedIds.add(userId);
+            else idsForFilter.add(userId);
+          });
         }
 
-        if (!setsMap[entry.setKey]) setsMap[entry.setKey] = {};
-        if (!setsMap[entry.setKey][indexName]) setsMap[entry.setKey][indexName] = {};
-        setsMap[entry.setKey][indexName][value] = bucketValue;
-
-        Object.keys(bucketValue).sort((a, b) => a.localeCompare(b)).forEach(userId => { if (userId) idsForFilter.add(userId); });
+        if (useExcludeStrategy) {
+          const [firstSet, ...restSets] = [...filterSets].sort((a, b) => a.size - b.size);
+          [...firstSet]
+            .sort((a, b) => a.localeCompare(b))
+            .forEach(userId => {
+              if (excludedIds.has(userId)) return;
+              if (restSets.every(set => set.has(userId))) idsForFilter.add(userId);
+            });
+        }
       }
 
       // OR between bucket values for the same indexName, AND between different indexName fields.

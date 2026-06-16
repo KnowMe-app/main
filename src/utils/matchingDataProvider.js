@@ -93,6 +93,21 @@ const addGroup = (groups, indexName, values, debug = {}) => {
   });
 };
 
+const buildExcludeBucketMeta = ({ group, allBuckets = [], bucketMap = {}, allowedBuckets = [] } = {}) => {
+  if (!hasActiveFilterGroup(group)) return {};
+  const normalizedAllowed = new Set((allowedBuckets || []).map(String));
+  const excludedValues = (allBuckets || [])
+    .map(String)
+    .filter(bucket => !normalizedAllowed.has(bucket) && group?.[normalizeBucketFilterKey(bucket, bucketMap)] === false);
+
+  if (!excludedValues.length || !normalizedAllowed.size) return {};
+
+  return {
+    excludedValues,
+    indexStrategy: excludedValues.length < normalizedAllowed.size ? 'exclude-buckets' : 'include-buckets',
+  };
+};
+
 const buildRoleBuckets = (filters, collectionSource) => {
   const roleFilters = filters?.userRole || filters?.role;
   const buckets = buildAllowedBucketsFromFilterGroup(roleFilters, ROLE_BUCKETS, { no: 'empty', '?': 'other' });
@@ -135,10 +150,12 @@ const buildBloodBuckets = filters => {
   });
 };
 
+const MARITAL_STATUS_BUCKETS = ['+', '-', '?', 'no'];
+const MARITAL_STATUS_BUCKET_MAP = { '+': 'married', '-': 'unmarried', '?': 'other', no: 'empty' };
 const buildMaritalStatusBuckets = filters => buildAllowedBucketsFromFilterGroup(
   filters?.maritalStatus,
-  ['+', '-', '?', 'no'],
-  { '+': 'married', '-': 'unmarried', '?': 'other', no: 'empty' }
+  MARITAL_STATUS_BUCKETS,
+  MARITAL_STATUS_BUCKET_MAP
 );
 
 const buildAgeBuckets = filters => {
@@ -152,34 +169,42 @@ const buildPointBuckets = (filters, filterName, bucketMap = {}) =>
 
 export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource = 'users' } = {}) => {
   const groups = [];
+  const roleBuckets = buildRoleBuckets(filters, collectionSource);
+  const roleFilters = filters?.userRole || filters?.role;
   addGroup(
     groups,
     'role',
-    buildRoleBuckets(filters, collectionSource),
+    roleBuckets,
     {
       source: 'searchKey/users',
-      ...getFilterGroupDebugState('userRole', filters?.userRole || filters?.role),
+      ...getFilterGroupDebugState('userRole', roleFilters),
+      ...buildExcludeBucketMeta({ group: roleFilters, allBuckets: ROLE_BUCKETS, bucketMap: { no: 'empty', '?': 'other' }, allowedBuckets: roleBuckets }),
     }
   );
+  const maritalStatusBuckets = buildMaritalStatusBuckets(filters);
   addGroup(
     groups,
     'maritalStatus',
-    buildMaritalStatusBuckets(filters),
+    maritalStatusBuckets,
     {
       source: 'searchKey/users',
       ...getFilterGroupDebugState('maritalStatus', filters?.maritalStatus),
+      ...buildExcludeBucketMeta({ group: filters?.maritalStatus, allBuckets: MARITAL_STATUS_BUCKETS, bucketMap: MARITAL_STATUS_BUCKET_MAP, allowedBuckets: maritalStatusBuckets }),
     }
   );
+  const bloodBuckets = buildBloodBuckets(filters);
   addGroup(
     groups,
     'blood',
-    buildBloodBuckets(filters),
+    bloodBuckets,
     {
       source: 'searchKey/users',
       ...getFilterGroupDebugState('bloodGroup+rh', {
         ...(filters?.bloodGroup || {}),
         ...(filters?.rh ? Object.fromEntries(Object.entries(filters.rh).map(([key, value]) => [`rh:${key}`, value])) : {}),
       }),
+      excludedValues: BLOOD_BUCKETS.filter(bucket => !bloodBuckets.includes(bucket)),
+      indexStrategy: BLOOD_BUCKETS.filter(bucket => !bloodBuckets.includes(bucket)).length < bloodBuckets.length ? 'exclude-buckets' : 'include-buckets',
     }
   );
   addGroup(
@@ -191,51 +216,61 @@ export const buildMatchingIndexFilterGroups = ({ filters = {}, collectionSource 
       ...getFilterGroupDebugState('age', filters?.age),
     }
   );
+  const csectionBuckets = CSECTION_BUCKETS.filter(bucket => buildPointBuckets(filters, 'csection').includes(bucket));
   addGroup(
     groups,
     'csection',
-    CSECTION_BUCKETS.filter(bucket => buildPointBuckets(filters, 'csection').includes(bucket)),
+    csectionBuckets,
     {
       source: 'searchKey/users',
       ...getFilterGroupDebugState('csection', filters?.csection),
+      ...buildExcludeBucketMeta({ group: filters?.csection, allBuckets: CSECTION_BUCKETS, allowedBuckets: csectionBuckets }),
     }
   );
+  const contactBuckets = CONTACT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'contact').includes(bucket));
   addGroup(
     groups,
     'contact',
-    CONTACT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'contact').includes(bucket)),
+    contactBuckets,
     {
       source: 'searchKey/users',
       ...getFilterGroupDebugState('contact', filters?.contact),
+      ...buildExcludeBucketMeta({ group: filters?.contact, allBuckets: CONTACT_BUCKETS, allowedBuckets: contactBuckets }),
     }
   );
+  const userIdBuckets = USER_ID_BUCKETS.filter(bucket => buildPointBuckets(filters, 'userId').includes(bucket));
   addGroup(
     groups,
     'userId',
-    USER_ID_BUCKETS.filter(bucket => buildPointBuckets(filters, 'userId').includes(bucket)),
+    userIdBuckets,
     {
       source: 'searchKey/users',
       ...getFilterGroupDebugState('userId', filters?.userId),
+      ...buildExcludeBucketMeta({ group: filters?.userId, allBuckets: USER_ID_BUCKETS, allowedBuckets: userIdBuckets }),
     }
   );
+  const fieldBuckets = FIELD_COUNT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'fields').includes(bucket));
   addGroup(
     groups,
     'fields',
-    FIELD_COUNT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'fields').includes(bucket)),
+    fieldBuckets,
     {
       source: 'searchKey/users',
       ...getFilterGroupDebugState('fields', filters?.fields),
+      ...buildExcludeBucketMeta({ group: filters?.fields, allBuckets: FIELD_COUNT_BUCKETS, allowedBuckets: fieldBuckets }),
     }
   );
 
   if (collectionSource !== 'newUsers') {
+    const imtBuckets = IMT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'imt', { other: '?' }).includes(bucket));
     addGroup(
       groups,
       'imt',
-      IMT_BUCKETS.filter(bucket => buildPointBuckets(filters, 'imt', { other: '?' }).includes(bucket)),
+      imtBuckets,
       {
         source: 'searchKey/users',
         ...getFilterGroupDebugState('imt', filters?.imt),
+        ...buildExcludeBucketMeta({ group: filters?.imt, allBuckets: IMT_BUCKETS, bucketMap: { other: '?' }, allowedBuckets: imtBuckets }),
       }
     );
   }
@@ -1195,6 +1230,8 @@ export const fetchFilteredMatchingSourceChunk = ({
     exclude,
     isSameCursor: isSameMatchingCursor,
     getSourceLimit: ({ remaining }) => remaining + exclude.size + 1,
+    maxSourceCards: 500,
+    debugLabel: `matchingSourceBackfill:${collectionSource}`,
     fetchSourcePage: ({ limit: sourceLimit, cursor }) => (
       collectionSource === 'newUsers'
         ? fetchUsersByLastLogin2FromCollection('newUsers', sourceLimit, cursor)
