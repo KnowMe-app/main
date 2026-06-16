@@ -5,6 +5,7 @@ export const MAX_LOCAL_CACHE_ITEM_BYTES = 3 * 1024 * 1024;
 
 const SEARCH_KEY_PREFIX = 'searchKey:';
 const TTL_MS = CACHE_TTL_MS;
+const NEGATIVE_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const normalizePath = path =>
   String(path || '')
@@ -24,13 +25,18 @@ export const isEmptyCachedValue = value => {
 const isValidPayloadForCache = payload => {
   if (!payload || typeof payload !== 'object') return false;
   if (payload.version && payload.version !== MATCHING_CACHE_VERSION) return false;
+  if (payload.exists === false) return true;
   if (payload.exists !== true) return false;
-  return !isEmptyCachedValue(payload.value);
+  return true;
 };
 
+const isNegativePayload = payload => (
+  !payload || payload.exists === false || isEmptyCachedValue(payload.value)
+);
+
 const normalizePayloadForCache = payload => ({
-  exists: true,
-  value: payload.value,
+  exists: payload?.exists === false ? false : true,
+  value: payload?.exists === false ? null : (payload?.value ?? {}),
   version: MATCHING_CACHE_VERSION,
 });
 
@@ -88,12 +94,13 @@ const readStorageRecord = storageKey => {
 
   try {
     const parsed = JSON.parse(raw);
-    if (TTL_MS && parsed?.timestamp && Date.now() - parsed.timestamp > TTL_MS) {
+    const data = getStoredData(parsed);
+    const ttl = isNegativePayload(data) ? NEGATIVE_CACHE_TTL_MS : TTL_MS;
+    if (ttl && parsed?.timestamp && Date.now() - parsed.timestamp > ttl) {
       safeRemoveItem(storageKey);
       return null;
     }
 
-    const data = getStoredData(parsed);
     if (!isValidPayloadForCache(data)) {
       safeRemoveItem(storageKey);
       return null;
@@ -185,7 +192,7 @@ export const cleanupMatchingLocalStorageCache = ({ debug = false } = {}) => {
         return;
       }
       if (isNegativeOrEmptyRecord(key, parsed)) {
-        remove('negative');
+        stats.negative += 1;
       }
     } catch {
       remove('corrupted');

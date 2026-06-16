@@ -10,6 +10,8 @@ export const collectFilteredMatchingSourceCards = async ({
   getSourceLimit,
   onPart,
   maxPages = 2,
+  maxSourceCards = 500,
+  debugLabel = 'matchingSourceBackfill',
 }) => {
   const visibleTarget = Math.max(1, Number(targetVisibleCount) || 1);
   const collected = [];
@@ -22,8 +24,9 @@ export const collectFilteredMatchingSourceCards = async ({
   let sourceCardsCount = 0;
   let filteredCardsCount = 0;
   let emittedCardsCount = 0;
+  const safeMaxSourceCards = Math.max(1, Number(maxSourceCards) || 500);
 
-  while (collected.length < visibleTarget && sourceHasMore && loadedPages < maxPages) {
+  while (collected.length < visibleTarget && sourceHasMore && loadedPages < maxPages && sourceCardsCount < safeMaxSourceCards) {
     loadedPages += 1;
     if (typeof window !== 'undefined' && window.matchingLoadStats) {
       window.matchingLoadStats.backfillPages = (Number(window.matchingLoadStats.backfillPages) || 0) + 1;
@@ -74,6 +77,10 @@ export const collectFilteredMatchingSourceCards = async ({
     sourceHasMore = Boolean(sourceRes?.hasMore) && cursorAdvanced;
     cursor = nextCursor;
 
+    if (sourceCardsCount >= safeMaxSourceCards) {
+      stopReason = 'max_source_cards_reached';
+      break;
+    }
     if (!sourceRes?.hasMore) {
       stopReason = validSlice.length ? 'source_exhausted' : 'no_visible_cards_added';
       break;
@@ -89,6 +96,20 @@ export const collectFilteredMatchingSourceCards = async ({
   }
 
   if (!stopReason && loadedPages >= maxPages && collected.length < visibleTarget) stopReason = 'max_pages_reached';
+  if (!stopReason && sourceCardsCount >= safeMaxSourceCards && collected.length < visibleTarget) stopReason = 'max_source_cards_reached';
+
+  const finalStopReason = stopReason || (collected.length ? 'target_reached' : 'no_visible_cards_added');
+  if (typeof console !== 'undefined' && finalStopReason !== 'target_reached') {
+    console.info(`[${debugLabel}] stopped`, {
+      stopReason: finalStopReason,
+      loadedPages,
+      sourceCardsCount,
+      filteredCardsCount,
+      emittedCardsCount,
+      cursorAdvanced,
+      sourceHasMore,
+    });
+  }
 
   return {
     users: collected,
@@ -101,6 +122,6 @@ export const collectFilteredMatchingSourceCards = async ({
     filteredCardsCount,
     emittedCardsCount,
     loadedPages,
-    stopReason: stopReason || (collected.length ? 'target_reached' : 'no_visible_cards_added'),
+    stopReason: finalStopReason,
   };
 };
