@@ -71,6 +71,15 @@ const getFilterGroupDebugState = (groupName, group) => {
 
 const unique = values => [...new Set((values || []).filter(Boolean))];
 
+const normalizeBucketFilterKey = (bucket, bucketMap = {}) => bucketMap[bucket] || bucket;
+
+const buildAllowedBucketsFromFilterGroup = (group, allBuckets = [], bucketMap = {}) => {
+  if (!hasActiveFilterGroup(group)) return [];
+  return (allBuckets || [])
+    .filter(bucket => Boolean(group?.[normalizeBucketFilterKey(bucket, bucketMap)]))
+    .map(String);
+};
+
 const mapSelectedFilterBuckets = (group, bucketMap = {}) =>
   selectedFilterKeys(group).map(key => bucketMap[key] || key);
 
@@ -85,34 +94,19 @@ const addGroup = (groups, indexName, values, debug = {}) => {
 };
 
 const buildRoleBuckets = (filters, collectionSource) => {
-  const selected = selectedFilterKeys(filters?.userRole || filters?.role);
-  if (!selected.length) return [];
-
-  const buckets = [];
-  if (selected.includes('ed')) buckets.push('ed');
-  if (selected.includes('ag')) buckets.push('ag');
-  if (selected.includes('ip')) buckets.push('ip');
-  if (selected.includes('sm')) buckets.push('sm');
-  if (selected.includes('pp')) buckets.push('pp');
-  if (selected.includes('cl')) buckets.push('cl');
-  if (selected.includes('empty')) buckets.push('no');
-  if (selected.includes('other')) {
-    buckets.push('?');
-    if (shouldIncludeNoBucket(filters?.userRole || filters?.role, 'empty')) buckets.push('no');
-    ROLE_BUCKETS.forEach(bucket => {
-      if (!['ed', 'ag', 'ip', 'no'].includes(bucket)) buckets.push(bucket);
-    });
-  }
+  const roleFilters = filters?.userRole || filters?.role;
+  const buckets = buildAllowedBucketsFromFilterGroup(roleFilters, ROLE_BUCKETS, { no: 'empty', '?': 'other' });
+  if (!buckets.length) return [];
 
   // Matching treats additional newUsers without a role as donor profiles, so keep
   // the indexed provider aligned with the existing post-filter fallback.
   if (
     collectionSource === 'newUsers' &&
-    selected.includes('ed') &&
-    shouldIncludeNoBucket(filters?.userRole || filters?.role, 'empty')
+    Boolean(roleFilters?.ed) &&
+    shouldIncludeNoBucket(roleFilters, 'empty')
   ) buckets.push('no');
 
-  return buckets;
+  return unique(buckets);
 };
 
 const getBloodMeta = bucket => {
@@ -141,20 +135,11 @@ const buildBloodBuckets = filters => {
   });
 };
 
-const buildMaritalStatusBuckets = filters => {
-  const selected = selectedFilterKeys(filters?.maritalStatus);
-  if (!selected.length) return [];
-
-  const buckets = [];
-  if (selected.includes('married')) buckets.push('+');
-  if (selected.includes('unmarried')) buckets.push('-');
-  if (selected.includes('other')) {
-    buckets.push('?');
-    if (shouldIncludeNoBucket(filters?.maritalStatus, 'empty')) buckets.push('no');
-  }
-  if (selected.includes('empty')) buckets.push('no');
-  return buckets;
-};
+const buildMaritalStatusBuckets = filters => buildAllowedBucketsFromFilterGroup(
+  filters?.maritalStatus,
+  ['+', '-', '?', 'no'],
+  { '+': 'married', '-': 'unmarried', '?': 'other', no: 'empty' }
+);
 
 const buildAgeBuckets = filters => {
   const selected = selectedFilterKeys(filters?.age);

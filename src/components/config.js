@@ -3349,6 +3349,14 @@ const getBloodBucketMeta = bucket => {
 const hasExplicitFilterSelection = filterMap =>
   Boolean(filterMap && typeof filterMap === 'object' && Object.values(filterMap).some(value => value === false));
 
+const bucketGroupExcludesNo = group => {
+  if (!group?.allBuckets?.map(String).includes('no')) return false;
+  const buckets = Array.isArray(group?.buckets) ? group.buckets.map(String) : [];
+  return buckets.length > 0 && !buckets.includes('no');
+};
+
+const isNoExcludingSearchKeyPointGroup = group => Boolean(group?.supportsPointCheck && bucketGroupExcludesNo(group));
+
 const isBucketAllowedByFilters = (bucket, filterSettings = {}) => {
   const { bloodGroup, rh } = getBloodBucketMeta(bucket);
   const bloodGroupFilters = filterSettings?.bloodGroup;
@@ -5129,6 +5137,10 @@ const isBroadSearchKeyPointGroup = group => {
 
   if (!group?.supportsPointCheck || allCount < SEARCH_KEY_BROAD_POINT_CHECK_MIN_BUCKETS) return false;
   if (allowedCount <= 1 || allowedCount >= allCount) return false;
+  // `no` often contains the bulk of cards. When a filter explicitly excludes it,
+  // keep the group in the indexed/point-check path instead of scanning the broad
+  // source and rejecting `no` records after hydration.
+  if (isNoExcludingSearchKeyPointGroup(group)) return false;
 
   return allowedCount / allCount >= SEARCH_KEY_BROAD_POINT_CHECK_RATIO;
 };
@@ -5434,6 +5446,7 @@ export const fetchUsersBySearchKeyPaged = async ({
           allBucketsCount: (group.allBuckets || []).length,
           bucketsSample: (group.buckets || []).slice(0, 20),
           supportsPointCheck: Boolean(group.supportsPointCheck),
+          noBucketExcluded: bucketGroupExcludesNo(group),
           deferredBecauseBroad: broadPointCheckGroups.includes(group),
         })),
       });
