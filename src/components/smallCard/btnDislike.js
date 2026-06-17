@@ -9,7 +9,7 @@ import { color } from '../styles';
 import { setDislike, cacheDislikedUsers } from 'utils/dislikesStorage';
 import { setFavorite } from 'utils/favoritesStorage';
 import { removeCardFromList } from 'utils/cardsStorage';
-import { FaTimes } from 'react-icons/fa';
+import { FaThumbsDown } from 'react-icons/fa';
 
 export const BtnDislike = ({
   userId,
@@ -151,7 +151,7 @@ export const BtnDislike = ({
         toggleDislike();
       }}
     >
-      <FaTimes size={iconSize} color={isDisliked ? resolvedActiveIconColor : resolvedInactiveIconColor} />
+      <FaThumbsDown size={iconSize} color={isDisliked ? resolvedActiveIconColor : resolvedInactiveIconColor} />
     </button>
   );
 };

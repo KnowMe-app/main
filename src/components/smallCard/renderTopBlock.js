@@ -842,6 +842,34 @@ const TopBlock = ({
 
   const getInTouchReactionActions = (
     <>
+      <button
+        type="button"
+        style={{
+          ...compactReactionButtonStyle,
+          backgroundColor: '#d32f2f',
+          border: 'none',
+          color: '#fff',
+        }}
+        onClick={event => {
+          event.stopPropagation();
+          handleChange(
+            setUsers,
+            setState,
+            cardData.userId,
+            'getInTouch',
+            '',
+            true,
+            { currentFilter, isDateInRange, ...submitOptions },
+          );
+        }}
+        disabled={!cardData?.userId}
+        title="Видалити дату контакту"
+        aria-label="Видалити дату контакту"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+        </svg>
+      </button>
       <BtnDislike
         title="Дизлайк"
         ariaLabel="Дизлайк"
