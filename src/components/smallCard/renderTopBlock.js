@@ -536,7 +536,8 @@ const TopBlock = ({
   topBlueAction = null,
   additionalActions = null,
   overlayFieldAdditions = {},
-  onSubmitHistorySnapshot = null
+  onSubmitHistorySnapshot = null,
+  stimulationScheduleToggle = null
 }) => {
   const [editableComment, setEditableComment] = React.useState('');
   const [isCommentModalOpen, setIsCommentModalOpen] = React.useState(false);
@@ -946,6 +947,45 @@ const TopBlock = ({
     </>
   );
 
+  const stimulationScheduleToggleTitle = stimulationScheduleToggle?.visible
+    ? 'Приховати графік стимуляції'
+    : 'Показати графік стимуляції';
+
+  const stimulationScheduleToggleButton = stimulationScheduleToggle ? (
+    <button
+      type="button"
+      onClick={event => {
+        event.stopPropagation();
+        if (typeof stimulationScheduleToggle.onToggle === 'function') {
+          stimulationScheduleToggle.onToggle(cardData);
+        }
+      }}
+      style={{
+        ...detailsToggleStyle,
+        backgroundColor: stimulationScheduleToggle.visible ? '#6a1b9a' : '#455a64',
+      }}
+      disabled={stimulationScheduleToggle.disabled}
+      title={stimulationScheduleToggle.title || stimulationScheduleToggleTitle}
+      aria-label={stimulationScheduleToggle.ariaLabel || stimulationScheduleToggleTitle}
+      aria-pressed={Boolean(stimulationScheduleToggle.visible)}
+    >
+      {stimulationScheduleToggle.visible ? (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 19V5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M4 17H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M7 14L11 10L14 13L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M5 5L19 19" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+        </svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 19V5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M4 17H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M7 14L11 10L14 13L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  ) : null;
+
   const topActions = [
     {
       key: 'delete',
@@ -1053,6 +1093,7 @@ const TopBlock = ({
               color: '#fff',
             })}
           {additionalActions}
+          {stimulationScheduleToggleButton}
           <button
             type="button"
             onClick={handleDetailsRefresh}
@@ -1261,6 +1302,7 @@ export const renderTopBlock = ({
   additionalActions = null,
   overlayFieldAdditions = {},
   onSubmitHistorySnapshot = null,
+  stimulationScheduleToggle = null,
 }) => (
   <TopBlock
     userData={userData}
@@ -1281,5 +1323,6 @@ export const renderTopBlock = ({
     additionalActions={additionalActions}
     overlayFieldAdditions={overlayFieldAdditions}
     onSubmitHistorySnapshot={onSubmitHistorySnapshot}
+    stimulationScheduleToggle={stimulationScheduleToggle}
   />
 );
