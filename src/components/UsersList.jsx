@@ -47,6 +47,7 @@ const UserCard = ({
     cycleStatus: effectiveStatus ?? userData?.cycleStatus,
   };
   const shouldShowSchedule = ['stimulation', 'pregnant'].includes(effectiveStatus);
+  const [isStimulationScheduleVisible, setIsStimulationScheduleVisible] = React.useState(true);
   const role = userData?.role || userData?.userRole;
 
   return (
@@ -68,9 +69,15 @@ const UserCard = ({
           onOpenMedications,
           setSearch,
           additionalActions: actions,
+          stimulationScheduleToggle: shouldShowSchedule
+            ? {
+                visible: isStimulationScheduleVisible,
+                onToggle: () => setIsStimulationScheduleVisible(prev => !prev),
+              }
+            : null,
         })}
       </div>
-      {shouldShowSchedule && (
+      {shouldShowSchedule && isStimulationScheduleVisible && (
         <div style={{ ...coloredCard(role), marginBottom: '8px' }}>
           <StimulationSchedule
             userData={scheduleUserData}

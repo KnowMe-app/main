@@ -5511,6 +5511,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const effectiveCycleStatus = getEffectiveCycleStatus(state);
   const scheduleUserData = state;
   const shouldShowSchedule = ['stimulation', 'pregnant'].includes(effectiveCycleStatus);
+  const [isStimulationScheduleVisible, setIsStimulationScheduleVisible] = useState(true);
+
+  useEffect(() => {
+    setIsStimulationScheduleVisible(true);
+  }, [state?.userId, shouldShowSchedule]);
 
 
   // const fieldsToRender = [
@@ -6164,9 +6169,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 },
                 overlayFieldAdditions: {},
                 onSubmitHistorySnapshot: handleTopBlockSubmitHistorySnapshot,
+                stimulationScheduleToggle: shouldShowSchedule
+                  ? {
+                      visible: isStimulationScheduleVisible,
+                      onToggle: () => setIsStimulationScheduleVisible(prev => !prev),
+                    }
+                  : null,
               })}
             </div>
-            {shouldShowSchedule && state && (
+            {shouldShowSchedule && isStimulationScheduleVisible && state && (
               <div style={{ ...coloredCard(), marginBottom: '8px' }}>
               <StimulationSchedule
                 userData={scheduleUserData}
