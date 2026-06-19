@@ -972,31 +972,40 @@ export const getSearchCacheKeyForParams = (key, value, options = {}) => {
 
 export const getFreshCachedSearchResult = (key, value, options = {}) => {
   if (!key || value === undefined || value === null || String(value).trim() === '') {
-    return { hit: false, cards: [], map: {} };
+    return { hit: false, negativeHit: false, cards: [], map: {} };
   }
 
   const cacheKey = getSearchCacheKeyForParams(key, value, options);
   const queries = loadQueries();
   const entry = queries[cacheKey];
-  if (!entry) return { hit: false, cards: [], map: {} };
+  if (!entry) return { hit: false, negativeHit: false, cards: [], map: {} };
 
   const timestampSource =
     typeof entry.cachedAt === 'number' && Number.isFinite(entry.cachedAt)
       ? entry.cachedAt
       : Number(entry.cachedAt ?? entry.lastAction ?? 0);
   if (!Number.isFinite(timestampSource) || timestampSource <= 0) {
-    return { hit: false, cards: [], map: {} };
+    return { hit: false, negativeHit: false, cards: [], map: {} };
   }
   if (Date.now() - timestampSource >= TTL_MS) {
-    return { hit: false, cards: [], map: {} };
+    return { hit: false, negativeHit: false, cards: [], map: {} };
   }
 
   const ids = getIdsByQuery(cacheKey);
-  if (ids.length === 0) return { hit: false, cards: [], map: {} };
+  if (ids.length === 0) {
+    return {
+      hit: false,
+      negativeHit: true,
+      cards: [],
+      map: {},
+      cacheKey,
+      ids: [],
+    };
+  }
 
   const cards = ids.map(id => getCard(id)).filter(Boolean);
   if (cards.length === 0 || cards.length !== ids.length) {
-    return { hit: false, cards: [], map: {} };
+    return { hit: false, negativeHit: false, cards: [], map: {} };
   }
 
   const map = cards.reduce((acc, card) => {
@@ -1006,6 +1015,7 @@ export const getFreshCachedSearchResult = (key, value, options = {}) => {
 
   return {
     hit: Object.keys(map).length > 0,
+    negativeHit: false,
     cards,
     map,
     cacheKey,
@@ -1518,6 +1528,12 @@ const SearchBar = ({
   const cachedSearch = async (params, extraOptions = {}) => {
     const [key, value] = Object.entries(params)[0] || [];
     const cachedResult = getFreshCachedSearchResult(key, value, extraOptions);
+    if (cachedResult.negativeHit) {
+      if (perfDebugEnabledRef.current) {
+        console.debug('[SearchPerf][cache-negative-hit]', { params, options: extraOptions });
+      }
+      return {};
+    }
     if (cachedResult.hit) {
       if (perfDebugEnabledRef.current) {
         console.debug('[SearchPerf][cache-hit]', { params, options: extraOptions, ids: cachedResult.ids });
@@ -1525,6 +1541,7 @@ const SearchBar = ({
       const filteredCachedMap = filterSearchResultByParams(cachedResult.map, params, extraOptions);
       if (Object.keys(filteredCachedMap || {}).length === 0) {
         if (cachedResult.cacheKey) setIdsForQuery(cachedResult.cacheKey, []);
+        return {};
       } else {
         const filteredCards = Object.values(filteredCachedMap);
         if (filteredCards.length !== cachedResult.cards.length && cachedResult.cacheKey) {
@@ -1543,11 +1560,19 @@ const SearchBar = ({
     });
     if (perfDebugEnabledRef.current) console.timeEnd(perfLabel);
     if (!res || Object.keys(res).length === 0) {
+      if (key && value) {
+        const cacheKey = getSearchCacheKeyForParams(key, value, extraOptions);
+        setIdsForQuery(cacheKey, []);
+      }
       return res;
     }
 
     const filteredRes = filterSearchResultByParams(res, params, extraOptions);
     if (!filteredRes || Object.keys(filteredRes).length === 0) {
+      if (key && value) {
+        const cacheKey = getSearchCacheKeyForParams(key, value, extraOptions);
+        setIdsForQuery(cacheKey, []);
+      }
       return Array.isArray(res) ? [] : {};
     }
 
