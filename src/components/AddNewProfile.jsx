@@ -91,7 +91,7 @@ import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 // import { UploadJson } from './topBtns/uploadNewJSON';
 import { btnMerge } from './smallCard/btnMerge';
 import FilterPanel, { getInitialFilters } from './FilterPanel';
-import SearchBar, { detectSearchParams } from './SearchBar';
+import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './SearchBar';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
 import {
@@ -3180,6 +3180,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         normalizedSearchKeyValuePair,
       });
       updateCachedUser(newProfile);
+      if (normalizedSearchKeyValuePair && newProfile?.userId) {
+        const [cacheKeyName, cacheValue] = Object.entries(normalizedSearchKeyValuePair)[0] || [];
+        if (cacheKeyName && cacheValue) {
+          const profileSearchCacheKey = getSearchCacheKeyForParams(cacheKeyName, cacheValue, {
+            searchIdPrefixes: selectedSearchIdPrefixes,
+            equalToKeys: selectedEqualToKeys,
+            searchKeyFields: selectedSearchKeyFields,
+            enabledSearchKeys: effectiveEnabledSearchKeys,
+            cacheScope: { collections: ['newUsers', 'users'] },
+          });
+          setIdsForQuery(profileSearchCacheKey, [newProfile.userId]);
+        }
+      }
       cacheFetchedUsers(
         { [newProfile.userId]: newProfile },
         cacheLoad2Users,
@@ -6041,6 +6054,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               searchKeyFields: selectedSearchKeyFields,
               autoOtherFallback: shouldAutoRunOtherFallback,
               enabledSearchKeys: effectiveEnabledSearchKeys,
+              cacheScope: { collections: ['newUsers', 'users'] },
             }}
             searchHistoryLimit={15}
             suppressInitialSearchExecution={Boolean(
