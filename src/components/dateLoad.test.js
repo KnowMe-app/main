@@ -72,7 +72,12 @@ describe('fetchFilteredUsersByPage', () => {
       filterMainFn,
     );
 
-    expect(fetchDateFn).toHaveBeenNthCalledWith(2, '2026-06-19', expect.any(Number), { afterKey: 'u21' });
+    expect(fetchDateFn).toHaveBeenNthCalledWith(
+      2,
+      '2026-06-19',
+      expect.any(Number),
+      expect.objectContaining({ afterKey: 'u21' }),
+    );
     expect(Object.keys(result.users)).toEqual([
       'u01',
       'u21',
@@ -88,7 +93,7 @@ describe('fetchFilteredUsersByPage', () => {
     ]);
   });
 
-  it('keeps hasMore true when a short visible page still has unread same-date backend records', async () => {
+  it('clears hasMore after sparse filters exhaust same-date backend records', async () => {
     const { fetchFilteredUsersByPage } = await import('./dateLoad');
     const entries = Array.from({ length: 40 }, (_, index) => {
       const id = `u${String(index + 1).padStart(2, '0')}`;
@@ -117,6 +122,88 @@ describe('fetchFilteredUsersByPage', () => {
     );
 
     expect(Object.keys(result.users)).toEqual(['u01']);
+    expect(result.hasMore).toBe(false);
+  });
+
+  it('keeps hasMore true when enough visible records stop before unread same-date backend records', async () => {
+    const { fetchFilteredUsersByPage } = await import('./dateLoad');
+    const entries = Array.from({ length: 50 }, (_, index) => {
+      const id = `u${String(index + 1).padStart(2, '0')}`;
+      return [id, { userId: id, getInTouch: '2026-06-19', keep: true }];
+    });
+    const fetchDateFn = jest.fn(async (dateStr, limit, { afterKey } = {}) => {
+      if (dateStr !== '2026-06-19') return { entries: [], hasMore: false, lastKey: null };
+      const startIndex = afterKey ? entries.findIndex(([id]) => id === afterKey) + 1 : 0;
+      const batch = entries.slice(startIndex, startIndex + limit);
+      return {
+        entries: batch,
+        hasMore: startIndex + limit < entries.length,
+        lastKey: batch.length ? batch[batch.length - 1][0] : null,
+      };
+    });
+
+    const result = await fetchFilteredUsersByPage(
+      0,
+      fetchDateFn,
+      async id => ({ hydrated: id }),
+      {},
+      {},
+      {},
+      source => source.filter(([, user]) => user.keep),
+    );
+
+    expect(Object.keys(result.users)).toHaveLength(20);
     expect(result.hasMore).toBe(true);
+  });
+});
+
+describe('defaultFetchByDate', () => {
+  beforeEach(() => {
+    jest.resetModules();
+  });
+
+  it('builds entries and cursors from Firebase snapshot iteration order', async () => {
+    const database = await import('firebase/database');
+    database.getDatabase.mockReturnValue('db');
+    database.ref.mockImplementation((db, col) => `${db}/${col}`);
+    database.orderByChild.mockImplementation(child => ['orderByChild', child]);
+    database.equalTo.mockImplementation(value => ['equalTo', value]);
+    database.limitToFirst.mockImplementation(value => ['limitToFirst', value]);
+    database.query.mockImplementation((...args) => args);
+    database.get.mockResolvedValueOnce({
+      exists: () => true,
+      val: () => ({ z: { userId: 'z' }, a: { userId: 'a' } }),
+      forEach: callback => {
+        callback({ key: 'a', val: () => ({ userId: 'a' }) });
+        callback({ key: 'z', val: () => ({ userId: 'z' }) });
+      },
+    }).mockResolvedValueOnce({
+      exists: () => false,
+    });
+
+    const { defaultFetchByDate } = await import('./dateLoad');
+    const result = await defaultFetchByDate('2026-06-19', 20);
+
+    expect(result.entries.map(([id]) => id)).toEqual(['a', 'z']);
+    expect(result.lastKey).toBe('z');
+    expect(result.afterKeys).toEqual({ newUsers: 'z' });
+  });
+
+  it('uses collection-specific cursors instead of applying a merged key to every collection', async () => {
+    const database = await import('firebase/database');
+    database.getDatabase.mockReturnValue('db');
+    database.ref.mockImplementation((db, col) => `${db}/${col}`);
+    database.orderByChild.mockImplementation(child => ['orderByChild', child]);
+    database.startAfter.mockImplementation((date, key) => ['startAfter', date, key]);
+    database.endAt.mockImplementation(date => ['endAt', date]);
+    database.limitToFirst.mockImplementation(value => ['limitToFirst', value]);
+    database.query.mockImplementation((...args) => args);
+    database.get.mockResolvedValue({ exists: () => false });
+
+    const { defaultFetchByDate } = await import('./dateLoad');
+    await defaultFetchByDate('2026-06-19', 20, { afterKey: 'merged', afterKeys: { newUsers: 'new-cursor' } });
+
+    expect(database.startAfter).toHaveBeenCalledWith('2026-06-19', 'new-cursor');
+    expect(database.startAfter).not.toHaveBeenCalledWith('2026-06-19', 'merged');
   });
 });
