@@ -263,6 +263,31 @@ describe('SearchBar cache-first search', () => {
     expect(getFreshCachedSearchResult('searchId', 'shared-id').hit).toBe(false);
   });
 
+
+
+  it('does not treat pruned positive cache entries as negative hits', () => {
+    const cacheKey = getSearchCacheKeyForParams('instagram', 'missing-card');
+    setIdsForQuery(cacheKey, ['missing-user']);
+
+    const cachedResult = getFreshCachedSearchResult('instagram', 'missing-card');
+
+    expect(cachedResult.hit).toBe(false);
+    expect(cachedResult.negativeHit).toBe(false);
+  });
+
+  it('keeps negative cache entries isolated by collection scope', () => {
+    const usersScope = { cacheScope: { collections: ['users'] } };
+    const allCollectionsScope = { cacheScope: { collections: ['newUsers', 'users'] } };
+    setIdsForQuery(
+      getSearchCacheKeyForParams('instagram', 'collection-only', usersScope),
+      [],
+      { isNegativeHit: true }
+    );
+
+    expect(getFreshCachedSearchResult('instagram', 'collection-only', usersScope).negativeHit).toBe(true);
+    expect(getFreshCachedSearchResult('instagram', 'collection-only', allCollectionsScope).negativeHit).toBe(false);
+  });
+
   it('caches negative search results so repeated identical searches skip backend calls', async () => {
     const searchFunc = jest.fn().mockResolvedValue({});
     const setUserNotFound = jest.fn();

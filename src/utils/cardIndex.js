@@ -402,6 +402,7 @@ export const getQueryEntry = queryKey => {
   return {
     ids,
     cachedAt,
+    isNegativeHit: Boolean(updatedEntry?.isNegativeHit),
   };
 };
 
@@ -427,14 +428,20 @@ export const getIdsByQuery = queryKey => {
   return ids;
 };
 
-export const setIdsForQuery = (queryKey, ids) => {
+export const setIdsForQuery = (queryKey, ids, options = {}) => {
   const key = normalizeQueryKey(queryKey);
   const queries = loadQueries();
   const now = Date.now();
   const nextIds = Array.isArray(ids) ? ids.slice(0, MATCHING_QUERY_MAX_IDS) : [];
-  queries[key] = { ids: nextIds, cachedAt: now, lastAction: now };
+  const isNegativeHit = Boolean(options?.isNegativeHit && nextIds.length === 0);
+  queries[key] = {
+    ids: nextIds,
+    cachedAt: now,
+    lastAction: now,
+    ...(isNegativeHit ? { isNegativeHit: true } : {}),
+  };
   saveQueries(queries);
-  logMatchingCacheDebug('query ids cache save', { key, idsCount: nextIds.length });
+  logMatchingCacheDebug('query ids cache save', { key, idsCount: nextIds.length, isNegativeHit });
 };
 
 export const getIndexIdsByQuery = (queryKey, options = {}) => {

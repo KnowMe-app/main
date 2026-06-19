@@ -6,6 +6,7 @@ import { getCacheKey } from '../utils/cache';
 import {
   normalizeQueryKey,
   getIdsByQuery,
+  getQueryEntry,
   getCard,
   setIdsForQuery,
   loadQueries,
@@ -932,6 +933,7 @@ const SEARCH_CACHE_SCOPE_OPTION_KEYS = [
   'forceSearchKeyBucket',
   'forcePartialUserIdSearch',
   'allowTelegramPrefixMatches',
+  'cacheScope',
 ];
 
 const normalizeSearchCacheScopeValue = value => {
@@ -991,8 +993,8 @@ export const getFreshCachedSearchResult = (key, value, options = {}) => {
     return { hit: false, negativeHit: false, cards: [], map: {} };
   }
 
-  const ids = getIdsByQuery(cacheKey);
-  if (ids.length === 0) {
+  const { ids, isNegativeHit } = getQueryEntry(cacheKey);
+  if (ids.length === 0 && isNegativeHit) {
     return {
       hit: false,
       negativeHit: true,
@@ -1559,10 +1561,14 @@ const SearchBar = ({
       ...extraOptions,
     });
     if (perfDebugEnabledRef.current) console.timeEnd(perfLabel);
-    if (!res || Object.keys(res).length === 0) {
+    if (!res) {
+      return res;
+    }
+
+    if (Object.keys(res).length === 0) {
       if (key && value) {
         const cacheKey = getSearchCacheKeyForParams(key, value, extraOptions);
-        setIdsForQuery(cacheKey, []);
+        setIdsForQuery(cacheKey, [], { isNegativeHit: true });
       }
       return res;
     }
@@ -1571,7 +1577,7 @@ const SearchBar = ({
     if (!filteredRes || Object.keys(filteredRes).length === 0) {
       if (key && value) {
         const cacheKey = getSearchCacheKeyForParams(key, value, extraOptions);
-        setIdsForQuery(cacheKey, []);
+        setIdsForQuery(cacheKey, [], { isNegativeHit: true });
       }
       return Array.isArray(res) ? [] : {};
     }
