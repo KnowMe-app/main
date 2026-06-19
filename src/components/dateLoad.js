@@ -34,6 +34,7 @@ const normalizeDateFetchResult = result => {
     entries,
     hasMore: Boolean(result?.hasMore),
     lastKey: result?.lastKey ?? (entries.length > 0 ? entries[entries.length - 1][0] : null),
+    afterKeys: result?.afterKeys ?? null,
   };
 };
 
@@ -42,9 +43,12 @@ export async function defaultFetchByDate(dateStr, limit, options = {}) {
 
   const collections = ['newUsers', 'users'];
   const combined = {};
+  const orderedEntries = [];
+  const nextCursors = {};
   let hasMore = false;
   let lastKey = null;
-  const { afterKey = null } = options || {};
+  const { afterKey = null, afterKeys = null } = options || {};
+  const hasCollectionCursors = afterKeys && typeof afterKeys === 'object';
   const fetchLimit = Math.max(1, Number(limit) || PAGE_SIZE) + 1;
 
   // Iterate through both collections and gather matching records.
@@ -52,11 +56,12 @@ export async function defaultFetchByDate(dateStr, limit, options = {}) {
   // has candidates after filters remove the first batch.
   for (const col of collections) {
     const collectionRef = ref2(db, col);
-    const q = afterKey
+    const collectionAfterKey = hasCollectionCursors ? afterKeys[col] : afterKey;
+    const q = collectionAfterKey
       ? query(
           collectionRef,
           orderByChild('getInTouch'),
-          startAfter(dateStr, afterKey),
+          startAfter(dateStr, collectionAfterKey),
           endAt(dateStr),
           limitToFirst(fetchLimit),
         )
@@ -69,23 +74,39 @@ export async function defaultFetchByDate(dateStr, limit, options = {}) {
     // eslint-disable-next-line no-await-in-loop
     const snap = await get(q);
     if (snap.exists()) {
-      Object.entries(snap.val()).forEach(([id, data]) => {
-        if (!combined[id]) combined[id] = data;
-      });
+      if (typeof snap.forEach === 'function') {
+        snap.forEach(childSnap => {
+          const id = childSnap.key;
+          const data = childSnap.val();
+          nextCursors[col] = id;
+          if (!combined[id]) {
+            combined[id] = data;
+            orderedEntries.push([id, data]);
+          }
+        });
+      } else {
+        Object.entries(snap.val()).forEach(([id, data]) => {
+          nextCursors[col] = id;
+          if (!combined[id]) {
+            combined[id] = data;
+            orderedEntries.push([id, data]);
+          }
+        });
+      }
     }
 
-    if (Object.keys(combined).length >= fetchLimit) {
+    if (orderedEntries.length >= fetchLimit) {
       hasMore = true;
       break;
     }
   }
 
-  const entries = Object.entries(combined).slice(0, fetchLimit);
+  const entries = orderedEntries.slice(0, fetchLimit);
   const limitedEntries = entries.slice(0, Math.max(1, Number(limit) || PAGE_SIZE));
   hasMore = hasMore || entries.length > limitedEntries.length;
   lastKey = limitedEntries.length > 0 ? limitedEntries[limitedEntries.length - 1][0] : null;
 
-  return { entries: limitedEntries, hasMore, lastKey };
+  return { entries: limitedEntries, hasMore, lastKey, afterKeys: nextCursors };
 }
 
 
@@ -111,6 +132,7 @@ export async function fetchFilteredUsersByPage(
   }
 
   const combined = [];
+  const seenIds = new Set();
   let filtered = [];
   let backendHasMore = false;
 
@@ -128,9 +150,11 @@ export async function fetchFilteredUsersByPage(
   };
 
   const appendFetchedEntries = async entries => {
-    const ids = entries.map(([id]) => id);
+    const newEntries = entries.filter(([id]) => !seenIds.has(id));
+    newEntries.forEach(([id]) => seenIds.add(id));
+    const ids = newEntries.map(([id]) => id);
     const extras = await Promise.all(ids.map(id => fetchUserByIdFn(id)));
-    entries.forEach(([id, data], i) => {
+    newEntries.forEach(([id, data], i) => {
       const extra = extras[i];
       combined.push([id, extra ? { ...data, ...extra } : data]);
     });
@@ -146,27 +170,31 @@ export async function fetchFilteredUsersByPage(
 
   const loadDateUntilEnough = async dateStr => {
     let afterKey = null;
+    let afterKeys = null;
     let dateHasMore = true;
 
     while (filtered.length < target && dateHasMore) {
       const fetchLimit = limit - filtered.length;
       // eslint-disable-next-line no-await-in-loop
       const batchResult = normalizeDateFetchResult(
-        await fetchDateFn(dateStr, fetchLimit, { afterKey })
+        await fetchDateFn(dateStr, fetchLimit, { afterKey, afterKeys })
       );
       const { entries } = batchResult;
 
       if (entries.length === 0) {
         dateHasMore = false;
-        backendHasMore = backendHasMore || batchResult.hasMore;
         break;
       }
 
       // eslint-disable-next-line no-await-in-loop
       await appendFetchedEntries(entries);
       afterKey = batchResult.lastKey ?? entries[entries.length - 1][0];
-      dateHasMore = Boolean(batchResult.hasMore && afterKey);
-      backendHasMore = backendHasMore || dateHasMore;
+      afterKeys = batchResult.afterKeys ?? afterKeys;
+      dateHasMore = Boolean(batchResult.hasMore && (afterKey || afterKeys));
+    }
+
+    if (filtered.length >= target && dateHasMore) {
+      backendHasMore = true;
     }
   };
 
@@ -191,8 +219,6 @@ export async function fetchFilteredUsersByPage(
     await loadDateUntilEnough(INVALID_DATE_TOKENS[invalidIndex]);
     invalidIndex += 1;
   }
-
-  backendHasMore = backendHasMore || dayOffset < MAX_LOAD_DAYS || invalidIndex < INVALID_DATE_TOKENS.length;
 
   const slice = filtered.slice(startOffset, startOffset + PAGE_SIZE);
 
