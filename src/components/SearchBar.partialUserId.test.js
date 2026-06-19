@@ -262,4 +262,84 @@ describe('SearchBar cache-first search', () => {
     expect(telegramResult.ids).toEqual(['tg-user']);
     expect(getFreshCachedSearchResult('searchId', 'shared-id').hit).toBe(false);
   });
+
+  it('caches negative search results so repeated identical searches skip backend calls', async () => {
+    const searchFunc = jest.fn().mockResolvedValue({});
+    const setUserNotFound = jest.fn();
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.render(React.createElement(SearchBar, {
+        searchFunc,
+        search: 'https://www.instagram.com/_sky.lol_?igsh=MTd4Y2swbGJmc3Vsbw==',
+        setSearch: jest.fn(),
+        setUsers: jest.fn(),
+        setState: jest.fn(),
+        setUserNotFound,
+        enabledSearchKeys: {
+          userId: false,
+          facebook: false,
+          instagram: true,
+          ameblo: false,
+          telegram: false,
+          email: false,
+          tiktok: false,
+          phone: false,
+          vk: false,
+          other: false,
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    expect(searchFunc).toHaveBeenCalledTimes(1);
+    const cachedResult = getFreshCachedSearchResult('instagram', '_sky.lol_', {
+      searchIdPrefixes: ['instagram'],
+    });
+    expect(cachedResult.negativeHit).toBe(true);
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.unmount();
+    });
+
+    const secondRoot = createRoot(container);
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      secondRoot.render(React.createElement(SearchBar, {
+        searchFunc,
+        search: 'https://www.instagram.com/_sky.lol_?igsh=MTd4Y2swbGJmc3Vsbw==',
+        setSearch: jest.fn(),
+        setUsers: jest.fn(),
+        setState: jest.fn(),
+        setUserNotFound,
+        enabledSearchKeys: {
+          userId: false,
+          facebook: false,
+          instagram: true,
+          ameblo: false,
+          telegram: false,
+          email: false,
+          tiktok: false,
+          phone: false,
+          vk: false,
+          other: false,
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    expect(searchFunc).toHaveBeenCalledTimes(1);
+    expect(setUserNotFound).toHaveBeenLastCalledWith(true);
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      secondRoot.unmount();
+    });
+    document.body.removeChild(container);
+  });
 });
