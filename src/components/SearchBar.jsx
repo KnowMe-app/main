@@ -880,7 +880,12 @@ export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
           : '';
         if (
           normalizedFieldValue === normalizedUkTrigger ||
-          (normalizedHandle && normalizedFieldValue === normalizedHandle)
+          (normalizedHandle && normalizedFieldValue === normalizedHandle) ||
+          (
+            options.allowTelegramPrefixMatches &&
+            normalizedHandle &&
+            normalizedFieldValue.startsWith(normalizedHandle)
+          )
         ) {
           return true;
         }
