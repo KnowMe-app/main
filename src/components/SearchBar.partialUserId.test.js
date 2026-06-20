@@ -138,6 +138,23 @@ describe('SearchBar result validation', () => {
     )).toBe(true);
   });
 
+  it('allows UK-trigger telegram handle prefix matches only when prefix matching is enabled', () => {
+    const card = {
+      userId: 'uk-trigger-prefix-match',
+      telegram: ['Oksana_Koshel'],
+    };
+
+    expect(doesCardMatchSearchParams(
+      card,
+      { telegram: 'УК СМ Оксана Кошель @Oksana' },
+      { allowTelegramPrefixMatches: true },
+    )).toBe(true);
+    expect(doesCardMatchSearchParams(
+      card,
+      { telegram: 'УК СМ Оксана Кошель @Oksana' },
+    )).toBe(false);
+  });
+
   it('keeps partial userId validation as a prefix match', () => {
     expect(doesCardMatchSearchParams(
       { userId: 'Anna123' },
