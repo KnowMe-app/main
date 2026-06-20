@@ -871,8 +871,24 @@ export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
 
     const normalizedFieldValue = normalizeComparableSearchValue(key, fieldValue);
     if (!normalizedFieldValue) return false;
-    if (key === 'telegram' && options.allowTelegramPrefixMatches) {
-      return normalizedFieldValue.startsWith(expected);
+    if (key === 'telegram') {
+      const expectedUkTrigger = parseUkTriggerQuery(String(value || ''));
+      if (expectedUkTrigger?.searchPair?.telegram) {
+        const normalizedUkTrigger = normalizeComparableSearchValue(key, expectedUkTrigger.searchPair.telegram);
+        const normalizedHandle = expectedUkTrigger.handle
+          ? normalizeComparableSearchValue(key, expectedUkTrigger.handle)
+          : '';
+        if (
+          normalizedFieldValue === normalizedUkTrigger ||
+          (normalizedHandle && normalizedFieldValue === normalizedHandle)
+        ) {
+          return true;
+        }
+      }
+
+      if (options.allowTelegramPrefixMatches) {
+        return normalizedFieldValue.startsWith(expected);
+      }
     }
     if (shouldUseExactFieldValidation(key, expected, options)) return normalizedFieldValue === expected;
     return normalizedFieldValue.includes(expected);

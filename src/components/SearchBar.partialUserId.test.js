@@ -119,6 +119,25 @@ describe('SearchBar result validation', () => {
     )).toBe(false);
   });
 
+
+  it('validates UK-trigger telegram searchId results by full value or handle', () => {
+    const card = {
+      userId: 'uk-trigger-match',
+      telegram: ['УК СМ Sasha @SashaLjr', 'SashaLjr'],
+    };
+
+    expect(doesCardMatchSearchParams(
+      card,
+      { searchId: 'УК СМ Sasha @SashaLjr' },
+      { searchIdPrefixes: ['telegram'] },
+    )).toBe(true);
+    expect(doesCardMatchSearchParams(
+      { userId: 'handle-only-match', telegram: ['SashaLjr'] },
+      { searchId: 'УК СМ Sasha @SashaLjr' },
+      { searchIdPrefixes: ['telegram'] },
+    )).toBe(true);
+  });
+
   it('keeps partial userId validation as a prefix match', () => {
     expect(doesCardMatchSearchParams(
       { userId: 'Anna123' },
