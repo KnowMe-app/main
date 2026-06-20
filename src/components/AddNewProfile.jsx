@@ -1640,6 +1640,39 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return true;
   };
 
+  const refillGitAfterGetInTouchChange = (submittedState, previousData = null) => {
+    if (currentFilter !== 'DATE2' || !submittedState?.userId) return;
+    if (previousData && previousData.getInTouch === submittedState.getInTouch) return;
+
+    const willHideSubmittedCard = isFutureGetInTouchDate(submittedState.getInTouch);
+    if (willHideSubmittedCard) {
+      setUsers(prevUsers => {
+        if (!prevUsers || !prevUsers[submittedState.userId]) return prevUsers;
+        const { [submittedState.userId]: _hiddenUser, ...restUsers } = prevUsers;
+        return restUsers;
+      });
+    }
+
+    const visibleCount = Math.max(0, countObjectKeys(users) - (willHideSubmittedCard && users?.[submittedState.userId] ? 1 : 0));
+    if (visibleCount >= PAGE_SIZE || !hasMore) return;
+
+    appendLoadDebugLog('handleSubmit:git-refill-after-getInTouch-change', {
+      userId: submittedState.userId,
+      previousGetInTouch: previousData?.getInTouch ?? null,
+      nextGetInTouch: submittedState.getInTouch ?? null,
+      visibleCount,
+      targetVisibleCount: PAGE_SIZE,
+      hasMore,
+    });
+
+    Promise.resolve(loadMoreUsers2(filters)).catch(error => {
+      appendLoadDebugLog('handleSubmit:git-refill-after-getInTouch-error', {
+        userId: submittedState.userId,
+        message: error?.message || String(error),
+      });
+    });
+  };
+
   const handleSubmit = async (newState, overwrite, delCondition, makeIndex) => {
     const now = Date.now();
     const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
@@ -1736,6 +1769,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           toast.error(`Індексація не виконана (${details}), продовжуємо збереження`);
         }
       }
+      refillGitAfterGetInTouchChange(optimisticCard, existingData);
 
       console.log('[SAVE] userId:', syncedState.userId);
 
@@ -3601,13 +3635,136 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
-  const loadMoreUsers2 = async (currentFilters = filters) => {
-    return loadMoreUsers2Base(currentFilters, {
-      validateGetInTouchDate: true,
-      useDateByDateBackendFetch: true,
+  const loadMoreUsersGitSimple = async (currentFilters = filters) => {
+    appendLoadDebugLog('loadMoreUsersGitSimple:start', {
       queryMode: 'DATE2',
+      dateOffset2,
+      pageSize: PAGE_SIZE,
+      hasMore,
+      filters: summarizeLoadFiltersForLog(currentFilters),
     });
+
+    if (isEditingRef.current) {
+      appendLoadDebugLog('loadMoreUsersGitSimple:return-zero', {
+        reason: 'isEditingRef.current is true',
+      });
+      return { cacheCount: 0, backendCount: 0, hasMore };
+    }
+
+    let favRaw = getFavorites();
+    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
+    let dislikedUsersMap = Object.fromEntries(
+      Object.entries(getDislikes()).filter(([, v]) => v),
+    );
+    const reactionFilters = currentFilters?.reaction;
+    const hasExplicitReactionSelection =
+      reactionFilters && Object.values(reactionFilters).some(value => value === false);
+    const ownerUid = auth.currentUser?.uid || ownerId;
+
+    if (hasExplicitReactionSelection && ownerUid) {
+      if (reactionFilters.like && Object.keys(fav).length === 0) {
+        fav = await fetchFavoriteUsers(ownerUid);
+        setFavoriteUsersData(fav);
+        syncFavorites(fav);
+      }
+      if (reactionFilters.dislike && Object.keys(dislikedUsersMap).length === 0) {
+        dislikedUsersMap = await fetchDislikeUsers(ownerUid);
+        setDislikeUsersData(dislikedUsersMap);
+        syncDislikes(dislikedUsersMap);
+      }
+    }
+    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0 && ownerUid) {
+      fav = await fetchFavoriteUsers(ownerUid);
+      setFavoriteUsersData(fav);
+      syncFavorites(fav);
+    }
+
+    const loadedIds = [];
+    const loadDropReasons = {};
+    const res = await fetchFilteredUsersByPage(
+      dateOffset2,
+      undefined,
+      id => fetchUserById(id),
+      currentFilters,
+      fav,
+      dislikedUsersMap,
+      filterMain,
+      partial => {
+        const normalizedPartial = Object.entries(partial || {}).reduce((acc, [id, user]) => {
+          const userId = user?.userId || id;
+          if (!userId) return acc;
+          acc[userId] = { ...user, userId };
+          return acc;
+        }, {});
+        const partialIds = Object.keys(normalizedPartial);
+        if (!partialIds.length) return;
+        cacheFetchedUsers(normalizedPartial, cacheLoad2Users, currentFilters);
+        if (canApplyLoadResultsToUsers()) {
+          setUsers(prev => mergeWithoutOverwrite(prev, normalizedPartial));
+        }
+        partialIds.forEach(id => {
+          if (!loadedIds.includes(id)) loadedIds.push(id);
+        });
+        appendLoadDebugLog('loadMoreUsersGitSimple:progress', {
+          queryMode: 'DATE2',
+          partialCount: partialIds.length,
+          loadedIdsCount: loadedIds.length,
+          targetVisibleCount: PAGE_SIZE,
+        });
+      }
+    );
+
+    const backendEntries = Object.entries(res?.users || {});
+    const normalizedUsers = backendEntries.reduce((acc, [id, user]) => {
+      const userId = user?.userId || id;
+      if (!userId) {
+        countLoadFilterDrop(loadDropReasons, 'missingUserId');
+        return acc;
+      }
+      acc[userId] = { ...user, userId };
+      return acc;
+    }, {});
+    const backendIds = Object.keys(normalizedUsers);
+
+    cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
+    if (canApplyLoadResultsToUsers()) {
+      setUsers(prev => mergeWithoutOverwrite(prev, normalizedUsers));
+    }
+    backendIds.forEach(id => {
+      if (!loadedIds.includes(id)) loadedIds.push(id);
+    });
+
+    const nextOffset = Number.isFinite(Number(res?.lastKey)) ? Number(res.lastKey) : dateOffset2 + backendIds.length;
+    const nextHasMore = Boolean(res?.hasMore);
+    setDateOffset2(nextOffset);
+    setHasMore(nextHasMore);
+
+    const queryKey = buildListQueryKey('DATE2', currentFilters);
+    const existingIds = getIdsByQuery(queryKey);
+    setIdsForQuery(queryKey, [...new Set([...existingIds, ...loadedIds])]);
+
+    appendLoadDebugLog('loadMoreUsersGitSimple:result', {
+      queryMode: 'DATE2',
+      rawUsersCount: backendEntries.length,
+      backendCount: backendIds.length,
+      loadedIdsCount: loadedIds.length,
+      previousOffset: dateOffset2,
+      nextOffset,
+      hasMore: nextHasMore,
+      targetVisibleCount: PAGE_SIZE,
+      stopReason: backendIds.length >= PAGE_SIZE
+        ? 'target-visible-reached'
+        : nextHasMore
+          ? 'partial-page-backend-has-more'
+          : 'backend-exhausted',
+      dropReasons: loadDropReasons,
+      zeroReason: backendIds.length === 0 ? 'backend getInTouch scan produced no accepted users' : null,
+    });
+
+    return { cacheCount: 0, backendCount: backendIds.length, hasMore: nextHasMore };
   };
+
+  const loadMoreUsers2 = async (currentFilters = filters) => loadMoreUsersGitSimple(currentFilters);
 
   const loadMoreUsers21 = async (currentFilters = filters) => {
     return loadMoreUsers2Base(currentFilters, {
